@@ -1,0 +1,200 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "auto-pr-plugin",
+  "branchName": "feat/auto-pr-plugin",
+  "createdAt": "2026-07-05T06:56:44Z",
+  "updatedAt": "2026-07-05T07:02:07.728Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add autoPr root config schema",
+      "description": "**Goal** — Add the top-level `autoPr` config schema with opt-in defaults at the root config layer.\n\n**Motivation** — Unattended / headless / scheduled runs — the default posture of this workspace — have no way to surface a completed feature; the operator only learns of success by inspecting logs.\n\n**Approach** — Config: top-level plugin config keys live beside `curator: CuratorConfigSchema.optional()` at `src/config/schemas.ts:413`. `autoPr` is added as a sibling top-level key. It is **not** wired into `mergePackageConfig` (`src/config/merge.ts:34`) — that function merges only per-package `execution.*` fields (`flakeDetection`, `mutationCheck`), and PR creation is a repo-level, once-per-run action with no per-package variation.\n\n**Scope** — In: defining and defaulting the root `autoPr` schema fields used by the built-in plugin. Out: any forge logic, PR body generation, template discovery, loader registration, or per-package config merge changes.\n\n**Interface** — none specified in the spec beyond adding a top-level `autoPr` sibling key to `NaxConfigSchema` with `enabled` and `draft` defaults.",
+      "acceptanceCriteria": [
+        "Given `NaxConfigSchema.parse({})`, when the config is parsed, then `config.autoPr.enabled === false`.",
+        "Given `NaxConfigSchema.parse({})`, when the config is parsed, then `config.autoPr.draft === true`.",
+        "Given `NaxConfigSchema.parse({ autoPr: { enabled: true } })`, when the config is parsed, then `autoPr.enabled === true` and `autoPr.draft === true`.",
+        "Given `NaxConfigSchema.safeParse({ autoPr: { enabled: \"yes\" } })`, when the config is parsed, then `success === false`."
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "plugin"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Single schema extension with existing config-test patterns and no new runtime integration.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/config/schemas.ts",
+        "src/config/merge.ts",
+        "test/unit/config/curator-config.test.ts",
+        "test/unit/config/schemas.test.ts"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Build pure title, body, and template helpers",
+      "description": "**Goal** — Add the pure builder and template-discovery modules used to assemble unattended draft PR/MR content.\n\n**Motivation** — This plugin fills the documented gap for the unattended path while preserving `nax-finish` as the assurance gate.\n\n**Approach** — Deterministic and dependency-injected. The plugin shells out to the `gh` / `glab` CLIs through an injected runner (`_deps` per `forbidden-patterns.md`) — no LLM calls, no network library. Pure string/fs logic (title, body, template discovery) lives in separate modules with no I/O so they unit-test without spawning anything.\n\nModule layout under `src/plugins/builtin/auto-pr/`:\n\n| File | Concern | I/O |\n|:-----|:--------|:----|\n| `types.ts` | `AutoPrConfig`, `ForgeKind`, `AutoPrDeps` | none |\n| `pr-body.ts` | `buildTitle(ctx)`, `buildBody(ctx, template)` | none (pure) |\n| `template.ts` | `findPrTemplate(workdir, forge, deps)` | fs via injected `deps.readText` |\n| `forge.ts` | `detectForge(remoteUrl)`, `hasOpenPr(...)`, `openDraft(...)` | subprocess via injected `deps.run` |\n| `index.ts` | `autoPrPlugin` + `shouldRun` / `execute` wiring the above | orchestration only |\n\n`buildBody(ctx, template)` produces, for a run with template present:\n\n```text\n> Auto-opened by nax — review pending. Run nax-finish before merge.\n\n## Run summary\n- Feature: auto-pr-plugin\n- Stories: 4 passed / 0 failed / 0 skipped\n- Cost: $0.42 · Duration: 3m 12s\n- PRD: .nax/features/auto-pr-plugin/prd.json\n\n| Story | Title | ACs |\n|-------|-------|-----|\n| US-001 | Config foundation | 4 |\n| ...    | ...               | .. |\n\n---\n## Checklist\n- [ ] Tests pass\n- [ ] ...\n```\n\nWhen `template` is `null`, the body is the banner + run summary only (no `---` separator, no template block).\n\nTemplate discovery (`findPrTemplate`)\n\nPreserve-not-fill. Returns the first match or `null`:\n\n- **GitHub:** `.github/PULL_REQUEST_TEMPLATE.md`, `.github/pull_request_template.md`, `PULL_REQUEST_TEMPLATE.md`, `docs/PULL_REQUEST_TEMPLATE.md` (first found, in that order).\n- **GitLab:** `.gitlab/merge_request_templates/Default.md`, else the first `*.md` under `.gitlab/merge_request_templates/`.\n- **Multi-template dirs** (`.github/PULL_REQUEST_TEMPLATE/`): skipped (too ambiguous unattended) → `null`.\n\nRationale: passing `--body` / `--description` to `gh` / `glab` suppresses the repo's default template, so the plugin must read and re-embed it verbatim or the checklist silently vanishes.\n\n**Scope** — In: `types.ts`, `pr-body.ts`, and `template.ts` with pure markdown/title logic and injected template reads. Out: subprocess execution, forge detection, loader registration, or cleanup-pipeline changes.\n\n**Interface**\n```typescript\ninterface AutoPrDeps {\n  run(cmd: string[], opts: { cwd: string }): Promise<{ exitCode: number; stdout: string; stderr: string }>;\n  readText(path: string): Promise<string | null>;\n}\n```",
+      "acceptanceCriteria": [
+        "Given a context whose `feature` is `\"auto-pr-plugin\"`, when `buildTitle` is called, then it returns `\"feat: auto-pr-plugin\"`.",
+        "Given `buildBody(ctx, null)`, when the body is generated, then the result includes a review-pending banner referencing `nax-finish`.",
+        "Given `buildBody(ctx, null)`, when the body is generated, then the story table has exactly `ctx.stories.length` rows.",
+        "Given `buildBody(ctx, null)` and `storySummary` of `{ completed: 3, failed: 0, skipped: 1, paused: 0 }`, when the body is generated, then the result reports `3 passed` and `1 skipped`.",
+        "Given `buildBody(ctx, \"## Checklist\\n- [ ] x\")`, when the body is generated, then the result ends with the template text verbatim and includes a preceding `---` separator.",
+        "Given `buildBody(ctx, null)`, when the body is generated, then the result contains no `---` template separator.",
+        "Given `findPrTemplate(workdir, \"github\", deps)` where `deps.readText` resolves `.github/pull_request_template.md`, when the template is looked up, then the function returns that file's contents.",
+        "Given `findPrTemplate(workdir, \"github\", deps)` where both `.github/PULL_REQUEST_TEMPLATE.md` and `docs/PULL_REQUEST_TEMPLATE.md` resolve, when the template is looked up, then the function returns the `.github/PULL_REQUEST_TEMPLATE.md` contents.",
+        "Given `findPrTemplate(workdir, \"gitlab\", deps)` where `deps.readText` resolves `.gitlab/merge_request_templates/Default.md`, when the template is looked up, then the function returns that file's contents.",
+        "Given `findPrTemplate(workdir, \"github\", deps)` where no template path resolves, when the template is looked up, then the function returns `null`."
+      ],
+      "tags": [
+        "feature",
+        "plugin",
+        "markdown"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Three focused additive modules with pure logic and straightforward injected I/O boundaries.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/plugins/extensions.ts",
+        "src/plugins/types.ts",
+        "src/execution/lifecycle/run-cleanup.ts",
+        "src/plugins/builtin/curator/index.ts"
+      ],
+      "expectedFiles": [
+        "src/plugins/builtin/auto-pr/types.ts",
+        "src/plugins/builtin/auto-pr/pr-body.ts",
+        "src/plugins/builtin/auto-pr/template.ts"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Implement forge CLI adapter",
+      "description": "**Goal** — Add the forge adapter that detects GitHub vs GitLab, checks for existing open PRs/MRs, and opens drafts through injected CLI runners.\n\n**Motivation** — This plugin fills the documented gap for the unattended path while preserving `nax-finish` as the assurance gate.\n\n**Approach** — Deterministic and dependency-injected. The plugin shells out to the `gh` / `glab` CLIs through an injected runner (`_deps` per `forbidden-patterns.md`) — no LLM calls, no network library.\n\nModule layout under `src/plugins/builtin/auto-pr/`:\n\n| File | Concern | I/O |\n|:-----|:--------|:----|\n| `types.ts` | `AutoPrConfig`, `ForgeKind`, `AutoPrDeps` | none |\n| `pr-body.ts` | `buildTitle(ctx)`, `buildBody(ctx, template)` | none (pure) |\n| `template.ts` | `findPrTemplate(workdir, forge, deps)` | fs via injected `deps.readText` |\n| `forge.ts` | `detectForge(remoteUrl)`, `hasOpenPr(...)`, `openDraft(...)` | subprocess via injected `deps.run` |\n| `index.ts` | `autoPrPlugin` + `shouldRun` / `execute` wiring the above | orchestration only |\n\n**Scope** — In: `forge.ts` only, including forge host detection, idempotency checks, CLI argv construction, and success/failure result parsing. Out: config defaults, markdown builders, template discovery, loader registration, or post-run orchestration.\n\n**Interface**\n```typescript\ninterface AutoPrDeps {\n  run(cmd: string[], opts: { cwd: string }): Promise<{ exitCode: number; stdout: string; stderr: string }>;\n  readText(path: string): Promise<string | null>;\n}\n```",
+      "acceptanceCriteria": [
+        "Given `detectForge(\"git@github.com:owner/repo.git\")`, when the forge is detected, then the function returns `\"github\"`.",
+        "Given `detectForge(\"https://gitlab.com/owner/repo.git\")`, when the forge is detected, then the function returns `\"gitlab\"`.",
+        "Given `detectForge(\"https://example.com/owner/repo.git\")`, when the forge is detected, then the function returns `null`.",
+        "Given `openDraft` for a GitHub forge with `draft: true`, when the runner is invoked, then the argv begins with `[\"gh\", \"pr\", \"create\", \"--draft\", ...]` and includes the branch via `--head`.",
+        "Given `openDraft` for a GitLab forge with `draft: true`, when the runner is invoked, then the argv begins with `[\"glab\", \"mr\", \"create\", \"--draft\", ...]` and includes the branch via `--source-branch`.",
+        "Given `openDraft` with `draft: false`, when the runner is invoked, then the argv omits `--draft`.",
+        "Given `openDraft` where the runner returns `exitCode: 0`, when stdout contains the created PR URL, then the returned result carries that URL.",
+        "Given `openDraft` where the runner returns a non-zero `exitCode`, when the result is returned, then `success === false`.",
+        "Given `hasOpenPr` where the injected list runner returns a non-empty JSON array for the branch, when the open PR state is checked, then the function returns `true`.",
+        "Given `hasOpenPr` where the injected list runner returns an empty JSON array for the branch, when the open PR state is checked, then the function returns `false`."
+      ],
+      "tags": [
+        "feature",
+        "plugin",
+        "cli"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Single new adapter module with subprocess composition, host parsing, and result decoding behind injected dependencies.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/plugins/extensions.ts",
+        "src/plugins/builtin/curator/index.ts",
+        "src/utils/bun-deps.ts",
+        "src/plugins/builtin/auto-pr/types.ts"
+      ],
+      "expectedFiles": [
+        "src/plugins/builtin/auto-pr/forge.ts"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Assemble and register the built-in auto-pr plugin",
+      "description": "**Goal** — Wire the built-in `autoPr` post-run action into the runtime, registration path, and production happy/failure flows.\n\n**Motivation** — nax's `README.md:181` advertises \"auto-PR creation\" as the example `IPostRunAction`, and the extension seam is fully wired (`run-cleanup.ts:146` already drives `getPostRunActions()` → `shouldRun` → `execute` on every run), but **no plugin ships**.\n\n**Approach** — Verified integration points (signatures confirmed against the current tree):\n\n- **`IPostRunAction`** — `src/plugins/extensions.ts` (re-exported from `src/plugins/types.ts`): `{ name: string; description: string; shouldRun(ctx): Promise<boolean>; execute(ctx): Promise<PostRunActionResult> }`.\n- **`PostRunContext`** — fields consumed: `branch`, `feature`, `workdir`, `prdPath`, `totalCost`, `totalDurationMs`, `storySummary { completed, failed, skipped, paused }`, `stories` (`UserStory[]`), `config` (typed `unknown` — read loosely), `logger` (`PluginLogger`, write-only).\n- **`PostRunActionResult`** — `{ success: boolean; message: string; url?: string; skipped?: boolean; reason?: string }`.\n- **`NaxPlugin`** — `{ name, version, provides: [\"post-run-action\"], setup, teardown, extensions: { postRunAction } }`.\n- **Precedent to mirror:** `src/plugins/builtin/curator/index.ts` — the one existing built-in plugin implementing `IPostRunAction` (`curatorAction` at :70, `curatorPlugin` at :128). It reads its config loosely off `ctx.config.curator` (`:32-39`) and returns a failure result (never throws) on error (`:115-121`). This plugin follows the same shape.\n- **Registration:** `src/plugins/loader.ts` registers `curatorPlugin` at :114-123 (skips when disabled). The new `autoPrPlugin` is registered the same way.\n- **Config:** top-level plugin config keys live beside `curator: CuratorConfigSchema.optional()` at `src/config/schemas.ts:413`. `autoPr` is added as a sibling top-level key. It is **not** wired into `mergePackageConfig` (`src/config/merge.ts:34`) — that function merges only per-package `execution.*` fields (`flakeDetection`, `mutationCheck`), and PR creation is a repo-level, once-per-run action with no per-package variation.\n\nFailure Handling\n\nFail-open — a failed PR open never fails the run (the run already succeeded before the post-run action fires; `run-cleanup.ts` wraps every action in try/catch as a non-blocking warning).\n\n- Missing `gh` / `glab` binary or non-zero forge exit → `execute` returns `{ success: false, message }` (recoverable; logged as a warning). No throw.\n- Unknown forge host or an already-open PR → `shouldRun` returns `false` (clean skip).\n- Logs use `ctx.logger` (write-only `PluginLogger`); no `console.*`, no emojis in log strings.\n\n### Seams\n\n- **US-002 → US-004:** `buildTitle` / `buildBody` / `findPrTemplate` are consumed by `execute`. US-004 AC-8 stubs `openDraft` and asserts `execute` passes it the `buildTitle` title and `buildBody` body — proving the builders and the forge call are wired, not just present. `findPrTemplate` is exercised on the same happy path (its result feeds `buildBody`), so AC-8 also proves the template lookup runs in the production caller.\n- **US-003 → US-004:** `openDraft` / `hasOpenPr` / `detectForge` are consumed by `execute` / `shouldRun`. US-004 AC-5/AC-6/AC-8/AC-9 stub these and assert the production path invokes them with the expected arguments.\n- **US-004 → loader:** `autoPrPlugin` becomes discoverable via `pluginRegistry.getPostRunActions()` after `loadPlugins`. US-004 AC-10 asserts this.\n\n**Scope** — In: `src/plugins/builtin/auto-pr/index.ts`, loader registration, and integration tests for shouldRun/execute/registry behavior. Out: changes to cleanup sequencing, reporter behavior, or any `nax-finish` review/gating flow.\n\n**Interface** — `{ name: string; description: string; shouldRun(ctx): Promise<boolean>; execute(ctx): Promise<PostRunActionResult> }` and `{ name, version, provides: [\"post-run-action\"], setup, teardown, extensions: { postRunAction } }`.",
+      "acceptanceCriteria": [
+        "Given `ctx.config.autoPr.enabled === false`, when `autoPrPlugin.shouldRun` is called, then it returns `false`.",
+        "Given `ctx.storySummary.failed > 0`, when `shouldRun` is called, then it returns `false`.",
+        "Given `ctx.storySummary.paused > 0`, when `shouldRun` is called, then it returns `false`.",
+        "Given `ctx.storySummary.completed === 0`, when `shouldRun` is called, then it returns `false`.",
+        "Given a remote whose host resolves to no forge, when `shouldRun` is called and `detectForge` returns `null`, then it returns `false`.",
+        "Given `hasOpenPr` reports an existing open PR for the branch, when `shouldRun` is called, then it returns `false` and logs the skip reason.",
+        "Given the plugin is enabled, every story passed, a forge is detected, and no open PR exists, when `shouldRun` is called, then it returns `true`.",
+        "Given the happy path, when `execute` is called, then it invokes `openDraft` with the `buildTitle` title and `buildBody` body and returns a `PostRunActionResult` with `success === true` and the created PR `url`.",
+        "Given `openDraft` reports a non-zero forge failure, when `execute` is called, then it returns `{ success: false }` and does not throw.",
+        "Given the forge CLI is unavailable and `openDraft` throws, when `execute` is called, then it returns `{ success: false }`, records the failure through `ctx.logger.warn`, and makes no `console.*` call.",
+        "Given `loadPlugins` runs with `\"nax-auto-pr\"` not present in the disabled set, when `getPostRunActions()` is read from the returned `PluginRegistry`, then it includes an action named `\"nax-auto-pr\"`."
+      ],
+      "tags": [
+        "feature",
+        "plugin",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a standard multi-file integration against existing plugin seams, loader wiring, and post-run tests rather than a new architectural pattern.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/plugins/extensions.ts",
+        "src/plugins/types.ts",
+        "src/plugins/loader.ts",
+        "src/execution/lifecycle/run-cleanup.ts",
+        "src/plugins/builtin/curator/index.ts"
+      ],
+      "expectedFiles": [
+        "src/plugins/builtin/auto-pr/index.ts"
+      ]
+    }
+  ],
+  "analysis": "This feature extends an existing built-in plugin architecture rather than introducing a new subsystem. The runtime seam already exists: `buildPostRunContext()` assembles the run metadata exposed to post-run actions, including `feature`, `branch`, `prdPath`, `stories`, and the full loosely typed `config` object in `src/execution/lifecycle/run-cleanup.ts:60`, and `cleanupRun()` already executes `shouldRun()` then `execute()` sequentially, logs `result.url` on success, logs warnings on `{ success: false }`, and swallows thrown exceptions so post-run failures do not fail the run in `src/execution/lifecycle/run-cleanup.ts:110`. That means the new work should stay inside the plugin/config surfaces and return structured `PostRunActionResult` values instead of changing the cleanup pipeline.\n\nThe plugin contracts are already stable. `PostRunContext`, `PostRunActionResult`, and `IPostRunAction` are defined in `src/plugins/extensions.ts:194` and require only `shouldRun(context): Promise<boolean>` plus `execute(context): Promise<PostRunActionResult>`. `NaxPlugin` declares the built-in plugin envelope in `src/plugins/types.ts:72`. The closest precedent is the built-in curator plugin in `src/plugins/builtin/curator/index.ts:32`, which reads `context.config` loosely, keeps logic inside helper functions, and converts failures into `{ success: false, message }` instead of throwing in `src/plugins/builtin/curator/index.ts:83`. The new auto-PR plugin should mirror that shape to minimize architectural drift.\n\nThe built-in registration point is `loadPlugins()` in `src/plugins/loader.ts:99`. It currently registers `curatorPlugin` directly before discovering filesystem plugins, and the registration behavior is already covered by `test/unit/plugins/builtin/curator-registration.test.ts:1`. Any mistake here affects both normal runs and plugin discovery surfaces because `loadPlugins()` is called from setup/runtime paths and `PluginRegistry.getPostRunActions()` is the only way cleanup sees post-run actions. The registry behavior itself is already exercised by the curator registration test and does not require new abstractions.\n\nConfig changes are localized. Top-level plugin config keys are declared inside `NaxConfigSchema` where `curator: CuratorConfigSchema.optional()` already lives in `src/config/schemas.ts:413`. `mergePackageConfig()` explicitly merges only selected per-package sections and should remain unchanged for this feature because it starts by checking mergeable fields and then only deep-merges agent/models/routing/execution/review/acceptance/quality/context/project in `src/config/merge.ts:34`. The migration path is therefore minimal: add an optional top-level `autoPr` schema with defaults, do not touch per-package merge behavior, and rely on opt-in defaults so existing configs remain backward compatible.\n\nThe existing test layout provides clear landing zones. Schema/default behavior is covered by unit suites such as `test/unit/config/curator-config.test.ts:1` and `test/unit/config/schemas.test.ts:1`, so the new config foundation should follow that pattern. Post-run orchestration and log/result handling are already exercised in `test/unit/execution/lifecycle/run-cleanup.test.ts:1`, which verifies execution order, skipping, and non-blocking failure behavior. Built-in plugin discoverability is already modeled in `test/unit/plugins/builtin/curator-registration.test.ts:1`, and `test/unit/plugins/builtin/curator-acceptance.test.ts:1` shows the repo’s pattern of mapping acceptance criteria to concrete test files for a built-in post-run plugin. Implementation agents should extend these existing areas instead of inventing a separate harness.\n\nNew code should live under `src/plugins/builtin/auto-pr/` as a small set of focused modules. The spec’s dependency order is sound: schema first, then pure builders (`types.ts`, `pr-body.ts`, `template.ts`), then the forge adapter (`forge.ts`), then plugin assembly/registration (`index.ts`, loader wiring). The key technical decisions are: keep markdown/title/template logic pure and unit-testable; inject subprocess/filesystem dependencies via an `AutoPrDeps` interface rather than calling `Bun.spawn` directly from helpers; detect forge from git remote rather than from config; preserve repo templates by re-embedding them in the CLI body text because `gh`/`glab` template behavior is suppressed when body text is provided; and fail open so unattended success runs are not reclassified as failed when draft creation cannot proceed.\n\nPrimary risks are integration and compatibility rather than algorithmic complexity. First, `context.config` is typed as `unknown`, so loose reads must defensively narrow like the curator plugin or the plugin may throw on partial configs. Second, shelling out to `gh`/`glab` introduces environment-dependent failure modes (binary missing, auth missing, non-zero exit, unexpected stdout), so adapter functions must return structured failure results and avoid propagating exceptions. Third, template discovery is forge-specific and must preserve the repository’s checklist verbatim; getting precedence wrong would silently degrade PR quality. Fourth, built-in registration is sensitive because duplicate names or disabled-set handling could change plugin loading globally. Backward compatibility is otherwise strong because `autoPr.enabled` defaults to `false`, `autoPr.draft` defaults to `true`, no existing config keys are renamed, and no migration is required beyond opting in at the root config.",
+  "routingProfile": "cross-agent-mm"
+}
