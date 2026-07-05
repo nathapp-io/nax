@@ -3,7 +3,7 @@
   "feature": "auto-pr-plugin",
   "branchName": "feat/auto-pr-plugin",
   "createdAt": "2026-07-05T06:56:44Z",
-  "updatedAt": "2026-07-05T07:02:07.728Z",
+  "updatedAt": "2026-07-05T07:17:43.753Z",
   "userStories": [
     {
       "id": "US-001",
@@ -34,14 +34,20 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "simple",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/config/schemas.ts",
         "src/config/merge.ts",
         "test/unit/config/curator-config.test.ts",
         "test/unit/config/schemas.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "02d8c1620d21504918b7f5a327e9cd1fab1f3dc3"
     },
     {
       "id": "US-002",
@@ -90,7 +96,10 @@
         "src/plugins/builtin/auto-pr/types.ts",
         "src/plugins/builtin/auto-pr/pr-body.ts",
         "src/plugins/builtin/auto-pr/template.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -139,7 +148,10 @@
       ],
       "expectedFiles": [
         "src/plugins/builtin/auto-pr/forge.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -192,7 +204,10 @@
       ],
       "expectedFiles": [
         "src/plugins/builtin/auto-pr/index.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "This feature extends an existing built-in plugin architecture rather than introducing a new subsystem. The runtime seam already exists: `buildPostRunContext()` assembles the run metadata exposed to post-run actions, including `feature`, `branch`, `prdPath`, `stories`, and the full loosely typed `config` object in `src/execution/lifecycle/run-cleanup.ts:60`, and `cleanupRun()` already executes `shouldRun()` then `execute()` sequentially, logs `result.url` on success, logs warnings on `{ success: false }`, and swallows thrown exceptions so post-run failures do not fail the run in `src/execution/lifecycle/run-cleanup.ts:110`. That means the new work should stay inside the plugin/config surfaces and return structured `PostRunActionResult` values instead of changing the cleanup pipeline.\n\nThe plugin contracts are already stable. `PostRunContext`, `PostRunActionResult`, and `IPostRunAction` are defined in `src/plugins/extensions.ts:194` and require only `shouldRun(context): Promise<boolean>` plus `execute(context): Promise<PostRunActionResult>`. `NaxPlugin` declares the built-in plugin envelope in `src/plugins/types.ts:72`. The closest precedent is the built-in curator plugin in `src/plugins/builtin/curator/index.ts:32`, which reads `context.config` loosely, keeps logic inside helper functions, and converts failures into `{ success: false, message }` instead of throwing in `src/plugins/builtin/curator/index.ts:83`. The new auto-PR plugin should mirror that shape to minimize architectural drift.\n\nThe built-in registration point is `loadPlugins()` in `src/plugins/loader.ts:99`. It currently registers `curatorPlugin` directly before discovering filesystem plugins, and the registration behavior is already covered by `test/unit/plugins/builtin/curator-registration.test.ts:1`. Any mistake here affects both normal runs and plugin discovery surfaces because `loadPlugins()` is called from setup/runtime paths and `PluginRegistry.getPostRunActions()` is the only way cleanup sees post-run actions. The registry behavior itself is already exercised by the curator registration test and does not require new abstractions.\n\nConfig changes are localized. Top-level plugin config keys are declared inside `NaxConfigSchema` where `curator: CuratorConfigSchema.optional()` already lives in `src/config/schemas.ts:413`. `mergePackageConfig()` explicitly merges only selected per-package sections and should remain unchanged for this feature because it starts by checking mergeable fields and then only deep-merges agent/models/routing/execution/review/acceptance/quality/context/project in `src/config/merge.ts:34`. The migration path is therefore minimal: add an optional top-level `autoPr` schema with defaults, do not touch per-package merge behavior, and rely on opt-in defaults so existing configs remain backward compatible.\n\nThe existing test layout provides clear landing zones. Schema/default behavior is covered by unit suites such as `test/unit/config/curator-config.test.ts:1` and `test/unit/config/schemas.test.ts:1`, so the new config foundation should follow that pattern. Post-run orchestration and log/result handling are already exercised in `test/unit/execution/lifecycle/run-cleanup.test.ts:1`, which verifies execution order, skipping, and non-blocking failure behavior. Built-in plugin discoverability is already modeled in `test/unit/plugins/builtin/curator-registration.test.ts:1`, and `test/unit/plugins/builtin/curator-acceptance.test.ts:1` shows the repo’s pattern of mapping acceptance criteria to concrete test files for a built-in post-run plugin. Implementation agents should extend these existing areas instead of inventing a separate harness.\n\nNew code should live under `src/plugins/builtin/auto-pr/` as a small set of focused modules. The spec’s dependency order is sound: schema first, then pure builders (`types.ts`, `pr-body.ts`, `template.ts`), then the forge adapter (`forge.ts`), then plugin assembly/registration (`index.ts`, loader wiring). The key technical decisions are: keep markdown/title/template logic pure and unit-testable; inject subprocess/filesystem dependencies via an `AutoPrDeps` interface rather than calling `Bun.spawn` directly from helpers; detect forge from git remote rather than from config; preserve repo templates by re-embedding them in the CLI body text because `gh`/`glab` template behavior is suppressed when body text is provided; and fail open so unattended success runs are not reclassified as failed when draft creation cannot proceed.\n\nPrimary risks are integration and compatibility rather than algorithmic complexity. First, `context.config` is typed as `unknown`, so loose reads must defensively narrow like the curator plugin or the plugin may throw on partial configs. Second, shelling out to `gh`/`glab` introduces environment-dependent failure modes (binary missing, auth missing, non-zero exit, unexpected stdout), so adapter functions must return structured failure results and avoid propagating exceptions. Third, template discovery is forge-specific and must preserve the repository’s checklist verbatim; getting precedence wrong would silently degrade PR quality. Fourth, built-in registration is sensitive because duplicate names or disabled-set handling could change plugin loading globally. Backward compatibility is otherwise strong because `autoPr.enabled` defaults to `false`, `autoPr.draft` defaults to `true`, no existing config keys are renamed, and no migration is required beyond opting in at the root config.",
