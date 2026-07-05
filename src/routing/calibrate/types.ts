@@ -31,32 +31,51 @@ export interface BandStat {
 }
 
 /**
- * Proposed change for a complexity band's routing tier. Populated by later
- * calibration stages once threshold logic is introduced.
+ * Proposed change for a complexity band's routing tier. US-003 introduces the
+ * pure proposal logic that populates these fields. `band`/`from`/`to`/`direction`
+ * are the AC surface; `complexity`/`fromTier`/`toTier` keep the older shape for
+ * downstream consumers (CLI / artifact writers).
  */
 export interface TierAdjustment {
+  /** Complexity label, the "band" the proposal refers to. */
+  band: string;
+  /** Tier the band is currently mapped to. */
+  from: ModelTier;
+  /** Tier the proposal recommends. */
+  to: ModelTier;
+  /** Direction of the proposed rung move. */
+  direction: "upgrade" | "downgrade";
+  /** Complexity label kept for downstream consumers that prefer the longer key. */
   complexity: string;
   fromTier: ModelTier;
   toTier: ModelTier;
+  /** Short human-readable rationale for the proposal. */
   rationale: string;
 }
 
 /**
- * Evidence-backed keyword suggestion used to refine classification.
- * Populated by later calibration stages.
+ * Evidence-backed keyword suggestion used to refine classification. US-003
+ * emits advisory hints carrying a `message` (referencing `classify.ts`) but no
+ * tier-move fields — a hint refines classification, not tier routing.
  */
 export interface KeywordHint {
-  keyword: string;
-  targetComplexity: Complexity;
-  occurrences: number;
+  /** Human-readable advisory message pointing at classify.ts. */
+  message: string;
+  keyword?: string;
+  targetComplexity?: Complexity;
+  occurrences?: number;
 }
 
 /**
  * Band deliberately skipped by the calibration step (e.g. insufficient samples).
+ * US-003 records the observed `sampleCount` and the `minSamples` threshold that
+ * caused the skip so the consumer can surface them in the artifact.
  */
 export interface SkippedBand {
   complexity: string;
   reason: "insufficient-samples" | "missing-mapping" | "no-history";
+  sampleCount?: number;
+  minSamples?: number;
 }
 
 /**
