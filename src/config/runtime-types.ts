@@ -48,6 +48,24 @@ export interface AutoModeConfig {
   };
 }
 
+/** Auto route calibration thresholds (US-001) */
+export interface AutoRouteUpgradeConfig {
+  escalationRate: number;
+  mismatchRate: number;
+}
+
+export interface AutoRouteDowngradeConfig {
+  firstPassRate: number;
+  escalationRate: number;
+}
+
+export interface AutoRouteConfig {
+  enabled: boolean;
+  minSamples: number;
+  upgrade: AutoRouteUpgradeConfig;
+  downgrade: AutoRouteDowngradeConfig;
+}
+
 /** Rectification config — unified cap for story-orchestrator + regression cycles. */
 export interface RectificationConfig {
   /** Enable rectification loop. Default: true. */
@@ -535,6 +553,8 @@ export interface NaxConfig {
   models: ModelsConfig;
   /** Auto mode / routing config */
   autoMode: AutoModeConfig;
+  /** Auto route calibration config */
+  autoRoute: AutoRouteConfig;
   /** Routing strategy config */
   routing: RoutingConfig;
   /** Execution limits */

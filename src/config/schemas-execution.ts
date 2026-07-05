@@ -23,6 +23,29 @@ const AutoModeConfigSchema = z.object({
   }),
 });
 
+export const AutoRouteUpgradeConfigSchema = z.object({
+  escalationRate: z.number().min(0).max(1).default(0.3),
+  mismatchRate: z.number().min(0).max(1).default(0.25),
+});
+
+export const AutoRouteDowngradeConfigSchema = z.object({
+  firstPassRate: z.number().min(0).max(1).default(0.9),
+  escalationRate: z.number().min(0).max(1).default(0.05),
+});
+
+export const AutoRouteConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  minSamples: z.number().int().min(1).default(8),
+  upgrade: AutoRouteUpgradeConfigSchema.default({
+    escalationRate: 0.3,
+    mismatchRate: 0.25,
+  }),
+  downgrade: AutoRouteDowngradeConfigSchema.default({
+    firstPassRate: 0.9,
+    escalationRate: 0.05,
+  }),
+});
+
 const RectificationConfigSchema = z.object({
   enabled: z.boolean().default(true),
   /** Total iteration cap for the unified fix cycle (shared by story-orchestrator

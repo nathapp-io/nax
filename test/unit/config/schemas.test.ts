@@ -462,3 +462,38 @@ describe("NaxConfigSchema — superRefine: tierOrder agent cross-section validat
     expect(issue?.message).toContain('"tier": "balanced", "agent": "opencode"');
   });
 });
+
+describe("autoRoute config foundation (US-001)", () => {
+  test("autoRoute.enabled defaults to false", () => {
+    const config = NaxConfigSchema.parse({});
+    expect(config.autoRoute.enabled).toBe(false);
+  });
+
+  test("autoRoute.minSamples defaults to 8", () => {
+    const config = NaxConfigSchema.parse({});
+    expect(config.autoRoute.minSamples).toBe(8);
+  });
+
+  test("autoRoute.upgrade defaults: escalationRate 0.3, mismatchRate 0.25", () => {
+    const config = NaxConfigSchema.parse({});
+    expect(config.autoRoute.upgrade.escalationRate).toBe(0.3);
+    expect(config.autoRoute.upgrade.mismatchRate).toBe(0.25);
+  });
+
+  test("autoRoute.downgrade defaults: firstPassRate 0.9, escalationRate 0.05", () => {
+    const config = NaxConfigSchema.parse({});
+    expect(config.autoRoute.downgrade.firstPassRate).toBe(0.9);
+    expect(config.autoRoute.downgrade.escalationRate).toBe(0.05);
+  });
+
+  test("partial override preserves defaults: minSamples=20, enabled=false", () => {
+    const config = NaxConfigSchema.parse({ autoRoute: { minSamples: 20 } });
+    expect(config.autoRoute.minSamples).toBe(20);
+    expect(config.autoRoute.enabled).toBe(false);
+  });
+
+  test("enabled rejects non-boolean values", () => {
+    const result = NaxConfigSchema.safeParse({ autoRoute: { enabled: "yes" } });
+    expect(result.success).toBe(false);
+  });
+});
