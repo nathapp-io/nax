@@ -78,13 +78,13 @@ function getComplexityRouting(context: PostRunContext): Record<string, ModelTier
   return { simple: "fast", medium: "balanced", complex: "powerful", expert: "powerful" };
 }
 
-/** Build the proposal artifact once `shouldRun` has decided calibration is worthwhile. */
-function buildProposal(context: PostRunContext, cfg: AutoRouteConfig) {
+/** Build the proposal artifact from the same pipeline `shouldRun` evaluates. */
+async function buildProposal(context: PostRunContext, cfg: AutoRouteConfig) {
   const mapping = getComplexityRouting(context);
-  // `shouldRun` already gated on history yielding a result; here we resolve and persist.
-  // We re-invoke the core here for execute because shouldRun may not have a path back to
-  // its computed proposal — execute is a separate awaitable turn.
-  return _autoRouteDeps.proposeAdjustments([], mapping, {
+  const outputDir = context.outputDir ?? context.globalDir ?? "";
+  const runs = await _autoRouteDeps.loadRunMetrics(outputDir);
+  const bandStats = _autoRouteDeps.computeBandStats(runs, mapping);
+  return _autoRouteDeps.proposeAdjustments(bandStats, mapping, {
     minSamples: cfg.minSamples,
     upgradeEscalationRate: cfg.upgrade.escalationRate,
     upgradeMismatchRate: cfg.upgrade.mismatchRate,
@@ -127,7 +127,7 @@ const autoRouteAction: IPostRunAction = {
       const cfg = getAutoRouteConfig(context);
       const outputDir = context.outputDir ?? context.globalDir ?? process.cwd();
 
-      const proposal = buildProposal(context, cfg);
+      const proposal = await buildProposal(context, cfg);
       const target = join(outputDir, PROPOSAL_FILENAME);
 
       await _autoRouteDeps.writeFile(target, JSON.stringify(proposal, null, 2));
