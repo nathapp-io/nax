@@ -28,11 +28,16 @@ const TS_COMPARISON_PAIRS: ReadonlyArray<PatternReplacement> = [
 const TS_COMPARISON_FLIP_ID = "ts:cmp-flip";
 
 function flipWithPairs(pairs: ReadonlyArray<PatternReplacement>, snippet: string): string[] {
+  const seen = new Set<string>();
   const results: string[] = [];
   for (const [pattern, replacement] of pairs) {
     if (pattern.test(snippet)) {
       pattern.lastIndex = 0;
-      results.push(snippet.replace(pattern, replacement));
+      const produced = snippet.replace(pattern, replacement);
+      if (!seen.has(produced)) {
+        seen.add(produced);
+        results.push(produced);
+      }
     }
   }
   return results;
@@ -41,9 +46,17 @@ function flipWithPairs(pairs: ReadonlyArray<PatternReplacement>, snippet: string
 const TS_BOOLEAN_FLIP_ID = "ts:bool-flip";
 
 function applyBooleanFlip(snippet: string): string[] {
+  const seen = new Set<string>();
   const results: string[] = [];
-  if (/\btrue\b/.test(snippet)) results.push(snippet.replace(/\btrue\b/g, "false"));
-  if (/\bfalse\b/.test(snippet)) results.push(snippet.replace(/\bfalse\b/g, "true"));
+  if (/\btrue\b/.test(snippet)) {
+    const produced = snippet.replace(/\btrue\b/g, "false");
+    seen.add(produced);
+    results.push(produced);
+  }
+  if (/\bfalse\b/.test(snippet)) {
+    const produced = snippet.replace(/\bfalse\b/g, "true");
+    if (!seen.has(produced)) results.push(produced);
+  }
   return results;
 }
 

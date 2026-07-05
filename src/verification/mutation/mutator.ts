@@ -56,8 +56,5 @@ export function generateMutants(input: GenerateMutantsInput): Mutant[] {
     }
   }
 
-  if (max !== undefined && mutants.length > max) {
-    return mutants.slice(0, max);
-  }
   return mutants;
 }

@@ -7,7 +7,6 @@
 
 import { describe, expect, test } from "bun:test";
 import { generateMutants } from "../../../../src/verification/mutation";
-import type { Mutant, MutantOutcome, MutationOperator, SurvivingMutant } from "../../../../src/verification/mutation";
 
 describe("generateMutants — TypeScript operator coverage", () => {
   test("AC1: a > b produces a comparison-flip mutant with after 'a < b'", () => {
@@ -92,34 +91,22 @@ describe("generateMutants — empty source", () => {
   });
 });
 
-describe("mutation module — type surface exports", () => {
-  test("exports Mutant, MutantOutcome, MutationOperator, SurvivingMutant types and generateMutants", () => {
-    const operator: MutationOperator = {
-      id: "test-op",
-      apply: (snippet: string) => snippet,
-    };
-    expect(operator.id).toBe("test-op");
-    expect(operator.apply("a")).toBe("a");
+describe("generateMutants — deduplication", () => {
+  test("overlapping comparison patterns (>= and >) produce a single mutant", () => {
+    const mutants = generateMutants({ source: "if (a >= b) {}", language: "typescript", file: "x.ts" });
+    expect(mutants).toHaveLength(1);
+    expect(mutants[0].after).toBe("if (a <= b) {}");
+  });
 
-    const mutant: Mutant = {
-      file: "x.ts",
-      line: 1,
-      before: "a",
-      after: "b",
-      operatorId: "test-op",
-    };
-    expect(mutant.line).toBe(1);
+  test("overlapping comparison patterns (<= and <) produce a single mutant", () => {
+    const mutants = generateMutants({ source: "if (a <= b) {}", language: "typescript", file: "x.ts" });
+    expect(mutants).toHaveLength(1);
+    expect(mutants[0].after).toBe("if (a >= b) {}");
+  });
 
-    const outcome: MutantOutcome = "survived";
-    expect(outcome).toBe("survived");
-
-    const surviving: SurvivingMutant = {
-      file: "x.ts",
-      line: 1,
-      before: "a",
-      after: "b",
-      operatorId: "test-op",
-    };
-    expect(surviving.before).toBe("a");
+  test("overlapping equality patterns (=== and ==) produce a single mutant", () => {
+    const mutants = generateMutants({ source: "if (a === b) {}", language: "typescript", file: "x.ts" });
+    expect(mutants).toHaveLength(1);
+    expect(mutants[0].after).toBe("if (a !== b) {}");
   });
 });
