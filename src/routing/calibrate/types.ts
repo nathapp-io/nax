@@ -111,3 +111,16 @@ export interface CalibrationThresholds {
   downgradeEscalationRate?: number;
   downgradeFirstPassRate?: number;
 }
+
+/**
+ * Public artifact shape written by both the CLI (`--json`) and the
+ * `auto-route` plugin's `routing-proposal.json`. Renames the internal
+ * `hints` field to `keywordHints` and omits internal-only fields
+ * (`bandStats`) so the two writers share exactly one on-disk contract.
+ */
+export interface ProposalArtifact {
+  generatedAt: string;
+  adjustments: TierAdjustment[];
+  keywordHints: KeywordHint[];
+  skipped: SkippedBand[];
+}

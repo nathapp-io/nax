@@ -35,6 +35,7 @@ import type {
   CalibrationProposal,
   CalibrationThresholds,
   KeywordHint,
+  ProposalArtifact,
   SkippedBand,
   TierAdjustment,
 } from "./types";
@@ -154,5 +155,20 @@ export function proposeAdjustments(
     adjustments,
     hints,
     skipped,
+  };
+}
+
+/**
+ * Build the public artifact view shared by the CLI's `--json` output and the
+ * `auto-route` plugin's `routing-proposal.json` — one on-disk contract for
+ * both writers. Renames `hints` to `keywordHints` and drops internal-only
+ * fields (`bandStats`).
+ */
+export function buildProposalArtifact(proposal: CalibrationProposal): ProposalArtifact {
+  return {
+    generatedAt: proposal.generatedAt,
+    adjustments: proposal.adjustments,
+    keywordHints: proposal.hints,
+    skipped: proposal.skipped,
   };
 }

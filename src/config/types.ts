@@ -48,9 +48,6 @@ export type {
   AcceptanceFixConfig,
   AcceptanceTestStrategy,
   AutoModeConfig,
-  AutoRouteConfig,
-  AutoRouteDowngradeConfig,
-  AutoRouteUpgradeConfig,
   ConstitutionConfig,
   ContextAutoDetectConfig,
   ContextConfig,
@@ -84,3 +81,4 @@ export type {
   ProjectProfile,
   CuratorConfig,
 } from "./runtime-types";
+export type { AutoRouteConfig, AutoRouteDowngradeConfig, AutoRouteUpgradeConfig } from "./runtime-types-auto-route";

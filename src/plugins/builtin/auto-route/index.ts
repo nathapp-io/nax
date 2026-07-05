@@ -12,10 +12,13 @@
 
 import { join } from "node:path";
 import type { ModelTier } from "@/config/schema-types";
-import { loadRunMetrics as _loadRunMetrics } from "@/metrics/tracker";
+import { loadRunMetrics as _loadRunMetrics } from "@/metrics";
 import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
-import { computeBandStats as _computeBandStats } from "@/routing/calibrate/band-stats";
-import { proposeAdjustments as _proposeAdjustments } from "@/routing/calibrate/propose";
+import {
+  computeBandStats as _computeBandStats,
+  proposeAdjustments as _proposeAdjustments,
+  buildProposalArtifact,
+} from "@/routing";
 import type { AutoRouteConfig, AutoRouteCoreFns, AutoRouteDeps } from "./types";
 
 const PLUGIN_NAME = "nax-auto-route";
@@ -78,10 +81,25 @@ function getComplexityRouting(context: PostRunContext): Record<string, ModelTier
   return { simple: "fast", medium: "balanced", complex: "powerful", expert: "powerful" };
 }
 
-/** Build the proposal artifact from the same pipeline `shouldRun` evaluates. */
-async function buildProposal(context: PostRunContext, cfg: AutoRouteConfig) {
+/**
+ * Per-run memo of the computed proposal, keyed by the `PostRunContext` identity
+ * the runner passes to both `shouldRun` and `execute` for the same run — avoids
+ * re-reading run history and recomputing calibration twice per run.
+ */
+const _proposalMemo = new WeakMap<PostRunContext, ReturnType<typeof _autoRouteDeps.proposeAdjustments>>();
+
+/** Compute (once per context) the calibration proposal both `shouldRun` and `execute` need. */
+async function computeProposal(context: PostRunContext, cfg: AutoRouteConfig) {
+  const cached = _proposalMemo.get(context);
+  if (cached) return cached;
+
   const mapping = getComplexityRouting(context);
-  const outputDir = context.outputDir ?? context.globalDir ?? "";
+  const outputDir = context.outputDir ?? context.globalDir;
+  if (outputDir === undefined) {
+    const empty = _autoRouteDeps.proposeAdjustments([], mapping, { minSamples: cfg.minSamples });
+    _proposalMemo.set(context, empty);
+    return empty;
+  }
   const runs = await _autoRouteDeps.loadRunMetrics(outputDir);
   const bandStats = _autoRouteDeps.computeBandStats(runs, mapping);
   const proposal = _autoRouteDeps.proposeAdjustments(bandStats, mapping, {
@@ -91,6 +109,13 @@ async function buildProposal(context: PostRunContext, cfg: AutoRouteConfig) {
     downgradeEscalationRate: cfg.downgrade.escalationRate,
     downgradeFirstPassRate: cfg.downgrade.firstPassRate,
   });
+  _proposalMemo.set(context, proposal);
+  return proposal;
+}
+
+/** Build the proposal artifact from the same pipeline `shouldRun` evaluates. */
+async function buildProposal(context: PostRunContext, cfg: AutoRouteConfig) {
+  const proposal = await computeProposal(context, cfg);
   // The pure core is wall-clock free, so it emits an empty `generatedAt`.
   // The artifact is the public contract — stamp it here, at the I/O boundary.
   return { ...proposal, generatedAt: new Date().toISOString() };
@@ -107,20 +132,9 @@ const autoRouteAction: IPostRunAction = {
     const cfg = getAutoRouteConfig(context);
     if (!cfg.enabled) return false;
 
-    const outputDir = context.outputDir ?? context.globalDir ?? "";
-    const runs = await _autoRouteDeps.loadRunMetrics(outputDir);
-    const mapping = getComplexityRouting(context);
-
-    // Reuse the pure core: it is fail-open and skips bands below minSamples,
-    // returning empty adjustments when no band qualifies.
-    const bandStats = _autoRouteDeps.computeBandStats(runs, mapping);
-    const proposal = _autoRouteDeps.proposeAdjustments(bandStats, mapping, {
-      minSamples: cfg.minSamples,
-      upgradeEscalationRate: cfg.upgrade.escalationRate,
-      upgradeMismatchRate: cfg.upgrade.mismatchRate,
-      downgradeEscalationRate: cfg.downgrade.escalationRate,
-      downgradeFirstPassRate: cfg.downgrade.firstPassRate,
-    });
+    // Reuse the pure core via the shared memo: it is fail-open and skips bands
+    // below minSamples, returning empty adjustments when no band qualifies.
+    const proposal = await computeProposal(context, cfg);
 
     return proposal.adjustments.length > 0;
   },
@@ -136,7 +150,7 @@ const autoRouteAction: IPostRunAction = {
       const proposal = await buildProposal(context, cfg);
       const target = join(outputDir, PROPOSAL_FILENAME);
 
-      await _autoRouteDeps.writeFile(target, JSON.stringify(proposal, null, 2));
+      await _autoRouteDeps.writeFile(target, JSON.stringify(buildProposalArtifact(proposal), null, 2));
 
       return {
         success: true,

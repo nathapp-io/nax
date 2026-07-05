@@ -14,16 +14,11 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
-import {
-  _routingCalibrateDeps,
-  parseMinSamplesFlag,
-  routingCalibrateCommand,
-  runRoutingCalibrateCli,
-} from "../../../src/cli/routing-calibrate";
-import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { NaxError } from "../../../src/errors";
-import type { RunMetrics } from "../../../src/metrics";
+import { _routingCalibrateDeps, parseMinSamplesFlag, routingCalibrateCommand, runRoutingCalibrateCli } from "@/cli";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
+import { NaxError } from "@/errors";
+import type { RunMetrics } from "@/metrics";
 
 type CalibrateDeps = typeof _routingCalibrateDeps;
 

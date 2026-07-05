@@ -15,7 +15,7 @@
 
 import { describe, expect, test } from "bun:test";
 import type { Complexity, ModelTier } from "@/config/schema-types";
-import { proposeAdjustments } from "@/routing/calibrate/propose";
+import { proposeAdjustments } from "@/routing";
 import type {
   BandStat,
   CalibrationProposal,

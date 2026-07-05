@@ -25,11 +25,9 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PostRunContext } from "@/plugins/extensions";
-import { loadPlugins } from "@/plugins";
-import { autoRoutePlugin, _autoRouteDeps } from "@/plugins/builtin/auto-route";
-import type { AutoRouteDeps } from "@/plugins/builtin/auto-route/types";
-import type { RunMetrics, StoryMetrics } from "@/metrics/types";
-import type { TierAdjustment } from "@/routing/calibrate/types";
+import { _autoRouteDeps, autoRoutePlugin, loadPlugins, type AutoRouteDeps } from "@/plugins";
+import type { RunMetrics, StoryMetrics } from "@/metrics";
+import type { TierAdjustment } from "@/routing";
 
 const PLUGIN_NAME = "nax-auto-route";
 

@@ -8,6 +8,7 @@
 import type { ConstitutionConfig } from "@/constitution/types";
 import type { ReviewConfig } from "@/review/types";
 import type { AgentConfig, GenerateConfig } from "./runtime-types-agent";
+import type { AutoRouteConfig } from "./runtime-types-auto-route";
 import type { ContextConfig } from "./runtime-types-context";
 import type {
   FlakeDetectionConfig,
@@ -34,36 +35,13 @@ export interface EscalationEntry {
 /** Auto mode configuration */
 export interface AutoModeConfig {
   enabled: boolean;
-  /** Model tier per complexity */
-  complexityRouting: Record<Complexity, ModelTier>;
-  /** Escalation config */
+  complexityRouting: Record<Complexity, ModelTier>; // Model tier per complexity
   escalation: {
     enabled: boolean;
-    /** Ordered tier escalation with per-tier attempt budgets */
-    tierOrder: Array<{ tier: string; attempts: number; agent?: string }>;
-    /** When a batch fails, escalate all stories in the batch (default: true) */
-    escalateEntireBatch?: boolean;
-    /** Reset behaviour for failed stories on re-run (ADR-025). */
-    resetMode: "initial" | "last";
+    tierOrder: Array<{ tier: string; attempts: number; agent?: string }>; // Ordered tier escalation with per-tier attempt budgets
+    escalateEntireBatch?: boolean; // When a batch fails, escalate all stories in the batch (default: true)
+    resetMode: "initial" | "last"; // Reset behaviour for failed stories on re-run (ADR-025)
   };
-}
-
-/** Auto route calibration thresholds (US-001) */
-export interface AutoRouteUpgradeConfig {
-  escalationRate: number;
-  mismatchRate: number;
-}
-
-export interface AutoRouteDowngradeConfig {
-  firstPassRate: number;
-  escalationRate: number;
-}
-
-export interface AutoRouteConfig {
-  enabled: boolean;
-  minSamples: number;
-  upgrade: AutoRouteUpgradeConfig;
-  downgrade: AutoRouteDowngradeConfig;
 }
 
 /** Rectification config — unified cap for story-orchestrator + regression cycles. */
@@ -553,8 +531,7 @@ export interface NaxConfig {
   models: ModelsConfig;
   /** Auto mode / routing config */
   autoMode: AutoModeConfig;
-  /** Auto route calibration config */
-  autoRoute: AutoRouteConfig;
+  autoRoute: AutoRouteConfig; // Auto route calibration config
   /** Routing strategy config */
   routing: RoutingConfig;
   /** Execution limits */

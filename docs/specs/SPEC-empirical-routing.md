@@ -114,45 +114,50 @@ Example (`--json`):
 
 ```json
 {
+  "generatedAt": "2026-07-05T00:00:00.000Z",
   "adjustments": [
     { "band": "simple", "from": "fast", "to": "balanced", "direction": "upgrade",
-      "reason": "escalationRate 0.40 >= 0.30 and mismatchRate 0.30 >= 0.25",
-      "evidence": { "sampleCount": 10, "escalationRate": 0.40, "mismatchRate": 0.30, "firstPassRate": 0.60 } }
+      "complexity": "simple", "fromTier": "fast", "toTier": "balanced",
+      "rationale": "escalationRate=0.4 >= 0.3 and mismatchRate=0.3 >= 0.25" }
   ],
   "keywordHints": [
-    { "band": "simple", "message": "simple bucket shows high mismatch; review SIMPLE_KEYWORDS in src/routing/classify.ts" }
+    { "message": "classify.ts: high mismatch for band \"simple\" (mismatchRate=0.3) — review keyword classification." }
   ],
   "skipped": [
-    { "band": "expert", "sampleCount": 3, "minSamples": 8 }
+    { "complexity": "expert", "reason": "insufficient-samples", "sampleCount": 3, "minSamples": 8 }
   ]
 }
 ```
 
 ### File Format (`routing-proposal.json`)
 
-The post-run plugin writes one artifact per run. Its shape is exactly the
-`CalibrationProposal` object above (the same object the CLI emits under `--json`):
+The post-run plugin writes one artifact per run, via the same
+`buildProposalArtifact()` transform (`src/routing/calibrate/propose.ts`) the CLI's
+`--json` output uses — one on-disk contract for both writers:
 
 ```json
 {
+  "generatedAt": "2026-07-05T00:00:00.000Z",
   "adjustments": [
     { "band": "complex", "from": "powerful", "to": "balanced", "direction": "downgrade",
-      "reason": "firstPassRate 0.95 >= 0.90 and escalationRate 0.02 <= 0.05",
-      "evidence": { "sampleCount": 12, "escalationRate": 0.02, "mismatchRate": 0.00, "firstPassRate": 0.95 } }
+      "complexity": "complex", "fromTier": "powerful", "toTier": "balanced",
+      "rationale": "firstPassRate=0.95 >= 0.9 and escalationRate=0.02 <= 0.05" }
   ],
   "keywordHints": [],
   "skipped": []
 }
 ```
 
-- `adjustments[]` — `{ band: Complexity, from: ModelTier, to: ModelTier,
-  direction: "upgrade" | "downgrade", reason: string, evidence: BandStat-subset }`.
-- `keywordHints[]` — `{ band: Complexity, message: string }` (text only; carries no `from`/`to`
-  — never applyable).
-- `skipped[]` — `{ band: Complexity, sampleCount: number, minSamples: number }` for bands below
-  the sample floor.
+- `generatedAt` — ISO timestamp stamped at the I/O boundary (the pure core is wall-clock free).
+- `adjustments[]` — `{ band, from, to, direction: "upgrade" | "downgrade", complexity, fromTier,
+  toTier, rationale }` (`band`/`from`/`to` are the canonical fields; `complexity`/`fromTier`/`toTier`
+  duplicate them for consumers that prefer the longer keys).
+- `keywordHints[]` — `{ message, keyword?, targetComplexity?, occurrences? }` (text-first advisory;
+  carries no `from`/`to` — never applyable).
+- `skipped[]` — `{ complexity, reason: "insufficient-samples" | "missing-mapping" | "no-history",
+  sampleCount?, minSamples? }` for bands below the sample floor.
 
-An empty proposal serializes all three arrays empty.
+An empty proposal serializes `adjustments`, `keywordHints`, and `skipped` all empty.
 
 ### Failure Handling
 

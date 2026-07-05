@@ -1,17 +1,15 @@
 import { mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
-import { DEFAULT_CONFIG } from "../config";
+import { DEFAULT_CONFIG, loadConfig as _loadConfig, deepMergeConfig } from "../config";
 import type { NaxConfig } from "../config";
-import { loadConfig as _loadConfig } from "../config/loader";
-import { deepMergeConfig } from "../config/merger";
 import { NaxError } from "../errors";
 import { loadRunMetrics as _loadRunMetrics } from "../metrics";
 import type { RunMetrics } from "../metrics";
 import { projectInputDir, projectOutputDir } from "../runtime";
 import { saveJsonFile } from "../utils/json-file";
 
-import { computeBandStats, proposeAdjustments } from "../routing";
-import type { CalibrationProposal, KeywordHint, TierAdjustment } from "../routing/calibrate";
+import { buildProposalArtifact, computeBandStats, proposeAdjustments } from "../routing";
+import type { CalibrationProposal, TierAdjustment } from "../routing/calibrate";
 
 export interface RoutingCalibrateOptions {
   apply?: boolean;
@@ -37,13 +35,12 @@ export interface RoutingCalibrateDeps {
 
 export const _routingCalibrateDeps: RoutingCalibrateDeps = {
   loadRunMetrics: (outputDir: string) => _loadRunMetrics(outputDir),
-  readConfig: async (workdir: string): Promise<NaxConfig | null> => {
-    try {
-      return await _loadConfig(workdir);
-    } catch {
-      return null;
-    }
-  },
+  // `loadConfig` never returns null for "no config file" — that case resolves to
+  // DEFAULT_CONFIG. A thrown error here means the existing config is genuinely
+  // invalid (legacy keys, failed schema parse), so it must propagate rather than
+  // be swallowed into `null` — treating it as "no prior config" would let `--apply`
+  // silently overwrite the user's real (if stale) config with defaults.
+  readConfig: (workdir: string): Promise<NaxConfig | null> => _loadConfig(workdir),
   writeConfig: async (workdir: string, config: NaxConfig): Promise<void> => {
     const dir = projectInputDir(workdir);
     mkdirSync(dir, { recursive: true });
@@ -136,20 +133,6 @@ function mergeComplexityRouting(prior: Record<string, string>, adjustments: Tier
   return merged;
 }
 
-interface JsonView {
-  adjustments: TierAdjustment[];
-  keywordHints: KeywordHint[];
-  skipped: CalibrationProposal["skipped"];
-}
-
-function buildJsonView(proposal: CalibrationProposal): JsonView {
-  return {
-    adjustments: proposal.adjustments,
-    keywordHints: proposal.hints,
-    skipped: proposal.skipped,
-  };
-}
-
 function printHumanView(emit: (msg: string) => void, proposal: CalibrationProposal): void {
   emit(`[routing-calibrate] generated at ${proposal.generatedAt}`);
   for (const adj of proposal.adjustments) {
@@ -195,7 +178,7 @@ export async function routingCalibrateCommand(
       skipped: [],
     };
     if (options.json) {
-      deps.stdout(JSON.stringify(buildJsonView(emptyProposal)));
+      deps.stdout(JSON.stringify(buildProposalArtifact(emptyProposal)));
     } else {
       deps.stderr("[routing-calibrate] No run history found — insufficient history for calibration.");
     }
@@ -213,7 +196,7 @@ export async function routingCalibrateCommand(
   proposal.bandStats = bandStats;
 
   if (options.json) {
-    deps.stdout(JSON.stringify(buildJsonView(proposal)));
+    deps.stdout(JSON.stringify(buildProposalArtifact(proposal)));
   } else {
     printHumanView(deps.stdout, proposal);
   }
