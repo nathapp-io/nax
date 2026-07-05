@@ -13,6 +13,7 @@ import { getSafeLogger as _getSafeLoggerFromModule } from "../logger";
 import { errorMessage } from "../utils/errors";
 import { validateModulePath } from "../utils/path-security";
 import { autoPrPlugin } from "./builtin/auto-pr";
+import { autoRoutePlugin } from "./builtin/auto-route";
 import { curatorPlugin } from "./builtin/curator";
 import { createPluginLogger } from "./plugin-logger";
 import { PluginRegistry } from "./registry";
@@ -143,6 +144,19 @@ export async function loadPlugins(
     }
   } else {
     logger?.info("plugins", `Skipping disabled plugin: '${autoPrPlugin.name}' (built-in)`);
+  }
+
+  if (!disabledSet.has(autoRoutePlugin.name)) {
+    if (autoRoutePlugin.setup) {
+      const pluginLogger = createPluginLogger(autoRoutePlugin.name);
+      await autoRoutePlugin.setup({}, pluginLogger);
+    }
+    const autoRouteAction = autoRoutePlugin.extensions.postRunAction;
+    if (autoRouteAction) {
+      builtinPostRunActions.push(autoRouteAction);
+    }
+  } else {
+    logger?.info("plugins", `Skipping disabled plugin: '${autoRoutePlugin.name}' (built-in)`);
   }
 
   // 1. Load plugins from global directory
