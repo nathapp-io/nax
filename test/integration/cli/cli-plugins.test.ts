@@ -144,7 +144,7 @@ describe("pluginsListCommand", () => {
           maxIterations: 20,
           timeout: 1800000,
         },
-        disabledPlugins: ["nax-curator"],
+        disabledPlugins: ["nax-curator", "nax-auto-pr"],
       };
 
       const capture = captureConsoleLog();

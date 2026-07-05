@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import * as fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 
-const DISABLE_BUILTIN_PLUGINS = ["nax-curator"];
+const DISABLE_BUILTIN_PLUGINS = ["nax-curator", "nax-auto-pr"];
 
 function loadPlugins(
   ...args: Parameters<typeof loadPluginsWithBuiltins>
