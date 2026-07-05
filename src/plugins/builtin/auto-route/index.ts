@@ -84,13 +84,16 @@ async function buildProposal(context: PostRunContext, cfg: AutoRouteConfig) {
   const outputDir = context.outputDir ?? context.globalDir ?? "";
   const runs = await _autoRouteDeps.loadRunMetrics(outputDir);
   const bandStats = _autoRouteDeps.computeBandStats(runs, mapping);
-  return _autoRouteDeps.proposeAdjustments(bandStats, mapping, {
+  const proposal = _autoRouteDeps.proposeAdjustments(bandStats, mapping, {
     minSamples: cfg.minSamples,
     upgradeEscalationRate: cfg.upgrade.escalationRate,
     upgradeMismatchRate: cfg.upgrade.mismatchRate,
     downgradeEscalationRate: cfg.downgrade.escalationRate,
     downgradeFirstPassRate: cfg.downgrade.firstPassRate,
   });
+  // The pure core is wall-clock free, so it emits an empty `generatedAt`.
+  // The artifact is the public contract — stamp it here, at the I/O boundary.
+  return { ...proposal, generatedAt: new Date().toISOString() };
 }
 
 /**
@@ -125,7 +128,10 @@ const autoRouteAction: IPostRunAction = {
   async execute(context: PostRunContext): Promise<PostRunActionResult> {
     try {
       const cfg = getAutoRouteConfig(context);
-      const outputDir = context.outputDir ?? context.globalDir ?? process.cwd();
+      const outputDir = context.outputDir ?? context.globalDir;
+      if (!outputDir) {
+        return { success: true, message: "Auto-route proposal skipped — no outputDir available" };
+      }
 
       const proposal = await buildProposal(context, cfg);
       const target = join(outputDir, PROPOSAL_FILENAME);

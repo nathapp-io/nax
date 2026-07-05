@@ -47,6 +47,7 @@ function makeContext(overrides: Partial<PostRunContext> = {}): PostRunContext {
     version: "0.1.0",
     pluginConfig: {},
     logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+    outputDir: "/tmp/auto-route-output",
     config: {
       autoRoute: {
         enabled: true,
@@ -262,9 +263,15 @@ describe("autoRoutePlugin.execute", () => {
 
     expect(captured.length).toBe(1);
     expect(captured[0]?.path.endsWith("routing-proposal.json")).toBe(true);
+    // Resolved directory must match the project outputDir, not cwd.
+    expect(captured[0]?.path).toBe(`${ctx.outputDir}/routing-proposal.json`);
     const parsed = JSON.parse(captured[0]?.data ?? "{}") as {
+      generatedAt: string;
       adjustments: TierAdjustment[];
     };
+    // Artifact contract: generatedAt populated, adjustment matches the
+    // computed proposal (no fabrication).
+    expect(parsed.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(parsed.adjustments).toHaveLength(1);
     expect(parsed.adjustments[0]).toEqual(expectedAdjustment);
   });
@@ -281,6 +288,7 @@ describe("autoRoutePlugin.execute", () => {
 
     expect(captured.length).toBe(1);
     expect(captured[0]?.path.endsWith("routing-proposal.json")).toBe(true);
+    expect(captured[0]?.path).toBe(`${ctx.outputDir}/routing-proposal.json`);
     // No path referencing autoMode.complexityRouting
     const hasAutoModeWrite = captured.some((c) => c.path.includes("autoMode.complexityRouting"));
     expect(hasAutoModeWrite).toBe(false);
