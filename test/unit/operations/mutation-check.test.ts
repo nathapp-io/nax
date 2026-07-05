@@ -1,0 +1,452 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
+import { mutationCheckOp, _mutationCheckDeps } from "@/operations";
+import type { MutationCheckDeps } from "@/operations";
+import { makeTempDir, cleanupTempDir } from "../../helpers/temp";
+
+const FAKE_STORY = { id: "US-004", title: "mutation-check op" } as any;
+
+function ctxWithConfig(execution: Record<string, unknown> = {}): any {
+  const config = { execution } as any;
+  return {
+    runtime: {},
+    storyId: "US-004",
+    packageView: {
+      packageDir: "packages/agent",
+      repoRoot: "/repo",
+      hasOverride: false,
+      config,
+      select: (s: any) => s.select(config),
+    },
+  } as any;
+}
+
+const originalMutationCheckDeps = { ..._mutationCheckDeps };
+afterEach(() => Object.assign(_mutationCheckDeps, originalMutationCheckDeps));
+
+function fakeDeps(overrides: Partial<MutationCheckDeps> = {}): MutationCheckDeps {
+  return {
+    detectLanguage: async () => "typescript" as any,
+    getChangedNonTestFiles: async () => [],
+    selectScopedTests: async () => ({
+      effectiveCommand: "bun test",
+      isFullSuite: true,
+      thresholdFallback: false,
+      isMonorepoOrchestrator: false,
+    }),
+    regression: async () => ({
+      status: "SUCCESS" as const,
+      success: true,
+      countsTowardEscalation: true,
+      output: "",
+    }),
+    ...overrides,
+  };
+}
+
+describe("mutationCheckOp — AC1: DeterministicOperation shape", () => {
+  test("kind is deterministic", () => {
+    expect(mutationCheckOp.kind).toBe("deterministic");
+  });
+
+  test("name is mutation-check", () => {
+    expect(mutationCheckOp.name).toBe("mutation-check");
+  });
+
+  test("stage is verify", () => {
+    expect(mutationCheckOp.stage).toBe("verify");
+  });
+});
+
+describe("mutationCheckOp — AC2: disabled short-circuit", () => {
+  test("returns success=true with empty survivors and never calls scoped tests/regression", async () => {
+    let selectionCalled = false;
+    let regressionCalled = false;
+    const deps = fakeDeps({
+      selectScopedTests: async () => {
+        selectionCalled = true;
+        return {
+          effectiveCommand: "bun test",
+          isFullSuite: true,
+          thresholdFallback: false,
+          isMonorepoOrchestrator: false,
+        };
+      },
+      regression: async () => {
+        regressionCalled = true;
+        return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" };
+      },
+    });
+    const dir = makeTempDir("nax-mutation-test-");
+    try {
+      const out = await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          resolvedTestPatterns: {
+            globs: ["**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [":!*.test.ts"],
+            testDirs: ["test"],
+          },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: false, maxMutants: 3, timeoutSeconds: 60 } }),
+        deps,
+      );
+      expect(out.success).toBe(true);
+      expect(out.survivors).toEqual([]);
+      expect(selectionCalled).toBe(false);
+      expect(regressionCalled).toBe(false);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+describe("mutationCheckOp — AC3: surviving mutant (regression SUCCESS)", () => {
+  test("records one survivor when regression succeeds against a mutated file", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    let capturedRegressionCommand: string | undefined;
+    try {
+      const file = join(dir, "src", "foo.ts");
+      await Bun.write(file, "if (a == b) { return 1; }\n");
+
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [file],
+        selectScopedTests: async () => ({
+          effectiveCommand: "bun test src/foo.test.ts",
+          isFullSuite: false,
+          thresholdFallback: false,
+          isMonorepoOrchestrator: false,
+        }),
+        regression: async (opts: any) => {
+          capturedRegressionCommand = opts.command;
+          return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" };
+        },
+      });
+
+      const out = await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          storyGitRef: "abc123",
+          repoRoot: dir,
+          resolvedTestPatterns: {
+            globs: ["**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [":!*.test.ts"],
+            testDirs: ["test"],
+          },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
+        deps,
+      );
+
+      expect(out.success).toBe(true);
+      expect(out.survivors.length).toBe(1);
+      expect(out.survivors[0].file).toBe(file);
+      expect(out.survivors[0].line).toBe(1);
+      expect(out.survivors[0].operatorId).toBe("ts:cmp-flip");
+      expect(capturedRegressionCommand).toBe("bun test src/foo.test.ts");
+      // File must be restored after revert.
+      const after = await Bun.file(file).text();
+      expect(after).toBe("if (a == b) { return 1; }\n");
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+describe("mutationCheckOp — AC4: TEST_FAILURE kills the mutant", () => {
+  test("returns empty survivors when regression returns TEST_FAILURE", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    try {
+      const file = join(dir, "src", "foo.ts");
+      await Bun.write(file, "if (a == b) { return 1; }\n");
+
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [file],
+        selectScopedTests: async () => ({
+          effectiveCommand: "bun test src/foo.test.ts",
+          isFullSuite: false,
+          thresholdFallback: false,
+          isMonorepoOrchestrator: false,
+        }),
+        regression: async () => ({
+          status: "TEST_FAILURE" as const,
+          success: false,
+          countsTowardEscalation: true,
+          output: "1 test failed",
+        }),
+      });
+
+      const out = await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          storyGitRef: "abc123",
+          repoRoot: dir,
+          resolvedTestPatterns: {
+            globs: ["**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [":!*.test.ts"],
+            testDirs: ["test"],
+          },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
+        deps,
+      );
+
+      expect(out.success).toBe(true);
+      expect(out.survivors).toEqual([]);
+      const after = await Bun.file(file).text();
+      expect(after).toBe("if (a == b) { return 1; }\n");
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+describe("mutationCheckOp — AC5: TIMEOUT is classified errored (not survived)", () => {
+  test("returns empty survivors when regression returns TIMEOUT", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    try {
+      const file = join(dir, "src", "foo.ts");
+      await Bun.write(file, "if (a == b) { return 1; }\n");
+
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [file],
+        selectScopedTests: async () => ({
+          effectiveCommand: "bun test src/foo.test.ts",
+          isFullSuite: false,
+          thresholdFallback: false,
+          isMonorepoOrchestrator: false,
+        }),
+        regression: async () => ({
+          status: "TIMEOUT" as const,
+          success: false,
+          countsTowardEscalation: false,
+          output: "",
+        }),
+      });
+
+      const out = await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          storyGitRef: "abc123",
+          repoRoot: dir,
+          resolvedTestPatterns: {
+            globs: ["**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [":!*.test.ts"],
+            testDirs: ["test"],
+          },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
+        deps,
+      );
+
+      expect(out.success).toBe(true);
+      expect(out.survivors).toEqual([]);
+      const after = await Bun.file(file).text();
+      expect(after).toBe("if (a == b) { return 1; }\n");
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+describe("mutationCheckOp — AC6: unsupported language no-ops", () => {
+  test("python language → empty survivors, regression not called", async () => {
+    let regressionCalled = false;
+    const dir = makeTempDir("nax-mutation-test-");
+    try {
+      const deps = fakeDeps({
+        detectLanguage: async () => "python" as any,
+        getChangedNonTestFiles: async () => ["src/foo.py"],
+        regression: async () => {
+          regressionCalled = true;
+          return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" };
+        },
+      });
+      const out = await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          storyGitRef: "abc",
+          resolvedTestPatterns: {
+            globs: ["**/*.py"],
+            regex: [/test_.*\.py$/],
+            pathspec: [":!test_*.py"],
+            testDirs: ["tests"],
+          },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
+        deps,
+      );
+      expect(out.success).toBe(true);
+      expect(out.survivors).toEqual([]);
+      expect(regressionCalled).toBe(false);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+describe("mutationCheckOp — AC7: maxMutants caps regression calls", () => {
+  test("calls regression at most maxMutants times even when more candidates exist", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    let regressionCalls = 0;
+    try {
+      const file = join(dir, "src", "foo.ts");
+      // 5 candidate mutants — every line has a comparison.
+      await Bun.write(file, ["a == b", "c == d", "e == f", "g == h", "i == j"].join("\n") + "\n");
+
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [file],
+        selectScopedTests: async () => ({
+          effectiveCommand: "bun test",
+          isFullSuite: true,
+          thresholdFallback: false,
+          isMonorepoOrchestrator: false,
+        }),
+        regression: async () => {
+          regressionCalls += 1;
+          return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" };
+        },
+      });
+
+      const out = await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          storyGitRef: "abc",
+          repoRoot: dir,
+          resolvedTestPatterns: {
+            globs: ["**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [":!*.test.ts"],
+            testDirs: ["test"],
+          },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 2, timeoutSeconds: 60 } }),
+        deps,
+      );
+      expect(out.success).toBe(true);
+      expect(regressionCalls).toBeLessThanOrEqual(2);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+describe("mutationCheckOp — AC8: forwards mutant + storyGitRef + effectiveCommand", () => {
+  test("selectScopedTests receives mutated file and storyGitRef; regression receives effectiveCommand", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    let capturedSelectInput: any = undefined;
+    let capturedRegressionCommand: string | undefined;
+    try {
+      const file = join(dir, "src", "foo.ts");
+      await Bun.write(file, "if (a == b) { return 1; }\n");
+
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [file],
+        selectScopedTests: async (input: any) => {
+          capturedSelectInput = input;
+          return {
+            effectiveCommand: "bun test src/foo.test.ts",
+            isFullSuite: false,
+            thresholdFallback: false,
+            isMonorepoOrchestrator: false,
+          };
+        },
+        regression: async (opts: any) => {
+          capturedRegressionCommand = opts.command;
+          return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" };
+        },
+      });
+
+      await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          storyGitRef: "deadbeef",
+          repoRoot: dir,
+          resolvedTestPatterns: {
+            globs: ["**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [":!*.test.ts"],
+            testDirs: ["test"],
+          },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
+        deps,
+      );
+
+      expect(capturedSelectInput).toBeDefined();
+      expect(capturedSelectInput.storyGitRef).toBe("deadbeef");
+      const referenced = JSON.stringify(capturedSelectInput);
+      expect(referenced).toContain("src/foo.ts");
+      expect(capturedRegressionCommand).toBe("bun test src/foo.test.ts");
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+describe("mutationCheckOp — AC9: regression throw still reverts and reports success", () => {
+  test("restores file when regression throws and returns success=true", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    try {
+      const file = join(dir, "src", "foo.ts");
+      const originalLine = "if (a == b) { return 1; }";
+      await Bun.write(file, `${originalLine}\n`);
+
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [file],
+        selectScopedTests: async () => ({
+          effectiveCommand: "bun test src/foo.test.ts",
+          isFullSuite: false,
+          thresholdFallback: false,
+          isMonorepoOrchestrator: false,
+        }),
+        regression: async () => {
+          throw new Error("subprocess exploded");
+        },
+      });
+
+      const out = await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          storyGitRef: "abc",
+          repoRoot: dir,
+          resolvedTestPatterns: {
+            globs: ["**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [":!*.test.ts"],
+            testDirs: ["test"],
+          },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
+        deps,
+      );
+
+      expect(out.success).toBe(true);
+      // File must be restored to its original contents after the throw.
+      const after = await Bun.file(file).text();
+      expect(after).toBe(`${originalLine}\n`);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});

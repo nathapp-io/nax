@@ -123,3 +123,5 @@ export { typecheckCheckOp, _typecheckCheckDeps } from "./typecheck-check";
 export type { TypecheckCheckInput, TypecheckCheckOutput, TypecheckCheckDeps } from "./typecheck-check";
 export { verifyScopedOp, _verifyScopedDeps } from "./verify-scoped";
 export type { VerifyScopedInput, VerifyScopedOutput, VerifyScopedDeps } from "./verify-scoped";
+export { mutationCheckOp, _mutationCheckDeps } from "./mutation-check";
+export type { MutationCheckInput, MutationCheckOutput, MutationCheckDeps } from "./mutation-check";
