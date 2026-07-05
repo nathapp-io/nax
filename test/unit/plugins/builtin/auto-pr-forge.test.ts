@@ -163,4 +163,32 @@ describe("hasOpenPr", () => {
 
     expect(result).toBe(false);
   });
+
+  test("GitLab path — returns true for a non-empty JSON MR list", async () => {
+    const deps = makeDeps(async () => ({
+      exitCode: 0,
+      stdout: JSON.stringify([{ iid: 7, source_branch: "nax/auto-pr", state: "opened" }]),
+      stderr: "",
+    }));
+
+    const result = await hasOpenPr("gitlab", "nax/auto-pr", deps, "/workdir");
+
+    expect(result).toBe(true);
+  });
+
+  test("GitLab path — emits glab mr list with --output json so the result parses", async () => {
+    const captured: CapturedRun[] = [];
+    const deps = makeDeps(
+      async () => ({ exitCode: 0, stdout: "[]", stderr: "" }),
+      captured,
+    );
+
+    await hasOpenPr("gitlab", "nax/auto-pr", deps, "/workdir");
+
+    const argv = captured[0]?.cmd ?? [];
+    expect(argv[0]).toBe("glab");
+    expect(argv).toContain("--output");
+    const outputIdx = argv.indexOf("--output");
+    expect(argv[outputIdx + 1]).toBe("json");
+  });
 });

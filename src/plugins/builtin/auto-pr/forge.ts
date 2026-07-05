@@ -2,7 +2,7 @@
  * Auto-PR Plugin — Forge Adapter
  *
  * Detects GitHub vs GitLab from a git remote URL, checks for an existing open
- * PR/MR on a branch, and opens draft PRs/MRs through the injected `_deps.run`
+ * PR/MR on a branch, and opens draft PRs/MRs through the injected `deps.run`
  * runner. All subprocess access flows through `AutoPrDeps` so tests can swap
  * in fakes — no `Bun.spawn` calls live in this file.
  */
@@ -31,7 +31,7 @@ export async function hasOpenPr(forge: ForgeKind, branch: string, deps: AutoPrDe
   const cmd =
     forge === "github"
       ? ["gh", "pr", "list", "--head", branch, "--state", "open", "--json", "number"]
-      : ["glab", "mr", "list", "--source-branch", branch, "--state", "opened"];
+      : ["glab", "mr", "list", "--source-branch", branch, "--state", "opened", "--output", "json"];
   const result = await deps.run(cmd, { cwd });
   if (result.exitCode !== 0) return false;
   try {
