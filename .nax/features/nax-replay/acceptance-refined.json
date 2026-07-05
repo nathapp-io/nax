@@ -1,0 +1,261 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "Given `@/replay` is imported, when the module exports are inspected, then it exposes `inferPhases` as a callable function.",
+    "refined": "After `import { inferPhases } from '@/replay'`, `typeof inferPhases === 'function'` is true and `inferPhases.length === 2` (arity: entries, storyId).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "[inferPhases] returns a phase list containing an entry with `name === \"implementer\"` and `status === \"pass\"` when given a log-entry array containing `{ stage: \"story-orchestrator\", message: \"Phase passed: implementer\", data: { storyId: \"US-002\" } }` and called as `inferPhases(entries, \"US-002\")`.",
+    "refined": "Given `entries = [{ stage: 'story-orchestrator', message: 'Phase passed: implementer', data: { storyId: 'US-002' } }]`, calling `inferPhases(entries, 'US-002')` returns an array where `result[0].name === 'implementer' && result[0].status === 'pass' && result.length === 1`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "[inferPhases] returns phase names exactly `[\"test-writer\", \"implementer\"]` in that order when given `Phase passed: test-writer` followed by `Phase passed: implementer` for `storyId \"US-002\"`.",
+    "refined": "Given `entries` containing two entries in order: `{ stage: 'story-orchestrator', message: 'Phase passed: test-writer', data: { storyId: 'US-002' } }` then `{ stage: 'story-orchestrator', message: 'Phase passed: implementer', data: { storyId: 'US-002' } }`, calling `inferPhases(entries, 'US-002')` returns an array where `result.map(p => p.name)` equals exactly `['test-writer', 'implementer']` and `result.length === 2`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "[inferPhases] returns a phase list containing an entry with `name === \"full-suite-gate\"` and `status === \"fail\"` when given `{ stage: \"story-orchestrator\", message: \"Phase failed: full-suite-gate\", data: { storyId: \"US-002\" } }`.",
+    "refined": "Given `entries = [{ stage: 'story-orchestrator', message: 'Phase failed: full-suite-gate', data: { storyId: 'US-002' } }]`, calling `inferPhases(entries, 'US-002')` returns an array where `result.some(p => p.name === 'full-suite-gate' && p.status === 'fail')` is true.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "[inferPhases] returns a non-empty escalation list for `US-002` when given an entry `{ stage: \"agent-manager\", message: \"fail-stale: immediate same-agent retry\", data: { storyId: \"US-002\" } }`.",
+    "refined": "Given `entries = [{ stage: 'agent-manager', message: 'fail-stale: immediate same-agent retry', data: { storyId: 'US-002' } }]`, calling `inferPhases(entries, 'US-002')` returns an object where `result.escalations !== undefined && Array.isArray(result.escalations) && result.escalations.length > 0` is true.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Given `@/replay` is imported, when the module exports are inspected, then it exposes `reconstructTimeline`.",
+    "refined": "After `import { reconstructTimeline } from '@/replay'`, `typeof reconstructTimeline === 'function'` is true and `reconstructTimeline.length >= 2` (arity: logSpine, metrics, optional registry).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "[reconstructTimeline] returns a `RunTimeline` whose `runId` and `feature` equal the metrics and registry values and whose `stories` length equals the number of stories in the matching `RunMetrics` entry when given a parsed log spine plus a matching `RunMetrics` entry.",
+    "refined": "Given `logSpine` with run-start event, `runMetrics` with 3 stories, and `registry` with matching runId, calling `reconstructTimeline(logSpine, runMetrics, registry)` returns an object where `result.runId === runMetrics.runId && result.feature === registry.feature && result.stories.length === runMetrics.stories.length`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "[reconstructTimeline] returns a `StoryTimeline` with `status === \"passed\"`, `finalTier === \"balanced\"`, `cost === 0.42`, and `attempts === 2` when the matching `StoryMetrics` entry has `success: true, finalTier: \"balanced\", cost: 0.42, attempts: 2`.",
+    "refined": "Given `storyMetrics = { storyId: 'US-002', success: true, finalTier: 'balanced', cost: 0.42, attempts: 2 }` and corresponding log spine, calling `reconstructTimeline(logSpine, runMetrics, registry)` returns a `StoryTimeline` in `result.stories` where `story.status === 'passed' && story.finalTier === 'balanced' && story.cost === 0.42 && story.attempts === 2`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "[reconstructTimeline] returns a `RunTimeline` with `status === \"crashed\"` and `StoryTimeline.cost === undefined` for each story when given a log spine and a `status.json` object carrying a crash signal but no matching `RunMetrics` entry.",
+    "refined": "Given `logSpine` with crash signal and `status.json = { crashed: true, exitCode: 1 }` with no matching `RunMetrics`, calling `reconstructTimeline(logSpine, null, registry)` or equivalent degraded path returns `result.status === 'crashed' && result.stories.every(s => s.cost === undefined)`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "[reconstructTimeline] returns `rootCausePhaseIndex` equal to the index of the inferred failed phase when a story has `success: false` and its inferred phases end in a phase with `status === \"fail\"`.",
+    "refined": "Given a story with `success: false` and inferred phases `['test-writer', 'implementer', 'full-suite-gate']` where `full-suite-gate.status === 'fail'` (last), calling `reconstructTimeline` returns a `StoryTimeline` where `story.rootCausePhaseIndex === 2` (0-indexed position of failed phase).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "[reconstructTimeline] returns `inferred === true` on the `RunTimeline`.",
+    "refined": "Calling `reconstructTimeline(logSpine, runMetrics, registry)` returns an object where `result.inferred === true`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "[reconstructTimeline] returns `naxVersion === \"0.71.1\"` when the log spine includes `{ stage: \"run.start\", data: { naxVersion: \"0.71.1\" } }`.",
+    "refined": "Given `logSpine` containing `{ stage: 'run.start', data: { naxVersion: '0.71.1' } }`, calling `reconstructTimeline(logSpine, runMetrics, registry)` returns `result.naxVersion === '0.71.1'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Given `@/replay` is imported, when the module exports are inspected, then it exposes `discoverRun`.",
+    "refined": "After importing from `@/replay`, `typeof discoverRun === 'function'` evaluates to true.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "[discoverRun] resolves to an object whose `meta.feature` equals the registry meta feature and whose `jsonlPath` ends in `.jsonl` when given an injected runs-dir containing a `<dir>/meta.json` whose `runId` equals the query and called as `discoverRun(\"run-2026-07-04T10-51-37-987Z\")`.",
+    "refined": "When `discoverRun(\"run-2026-07-04T10-51-37-987Z\")` is called with an injected mock whose registry contains a run with `runId: \"run-2026-07-04T10-51-37-987Z\"` and `meta.feature: \"my-feature\"`, the returned object satisfies `result.meta.feature === \"my-feature\"` and `result.jsonlPath.endsWith(\".jsonl\")` is true.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "[discoverRun] resolves to that same run when called as `discoverRun(\"run-2026-07-04\")` and the registry entry's `meta.runId` starts with the query.",
+    "refined": "When `discoverRun(\"run-2026-07-04\")` is called and the registry contains a run with `runId: \"run-2026-07-04T10-51-37-987Z\"`, the returned object's `meta.runId` is `\"run-2026-07-04T10-51-37-987Z\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "[discoverRun] resolves to the registry entry whose `runId` is lexicographically greatest when called with no argument and given two registry entries.",
+    "refined": "When `discoverRun()` is called with no argument and the registry contains entries with `runId` values `[\"run-2026-07-04T10-51-37-987Z\", \"run-2026-08-04T10-51-37-987Z\"]`, the returned object's `meta.runId` equals `\"run-2026-08-04T10-51-37-987Z\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "[discoverRun] throws a `NaxError` with `code === \"RUN_NOT_FOUND\"` when no registry entry matches the query.",
+    "refined": "When `discoverRun(\"nonexistent-run\")` is called and no registry entry matches, a `NaxError` is thrown with `error.code === \"RUN_NOT_FOUND\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "[discoverRun] throws a `NaxError` with `code === \"RUN_NOT_FOUND\"` when more than one registry entry matches the supplied run-id prefix.",
+    "refined": "When `discoverRun(\"run-2026-07\")` is called and the registry contains multiple entries with `runId` values that start with \"run-2026-07\" (e.g., \"run-2026-07-04T10-51-37-987Z\" and \"run-2026-07-05T10-51-37-987Z\"), a `NaxError` is thrown with `error.code === \"RUN_NOT_FOUND\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given `@/replay` is imported, when the module exports are inspected, then it exposes `renderReport`.",
+    "refined": "Import `* as replay from '@/replay'` and assert `typeof replay.renderReport === 'function'`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "[renderReport] returns a string containing the passed story's id on a single summary line and the failed story's inferred phase names on their own lines when given a `RunTimeline` with one `passed` and one `failed` story and default options.",
+    "refined": "Call `renderReport(timeline)` where timeline contains a passed story (id: \"PASS-1\", phases: [{name: \"p1\", status: \"passed\"}]) and a failed story (id: \"FAIL-1\", phases: [{name: \"phase1\", status: \"fail\"}, {name: \"phase2\", status: \"fail\"}]). Assert returned string: includes \"PASS-1\" exactly once, includes \"FAIL-1\" exactly once, includes \"phase1\" on its own line, includes \"phase2\" on its own line.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Given default options, [renderReport] returns no per-phase lines for a `passed` story and includes the failed story's phases.",
+    "refined": "Call `renderReport(timeline)` with timeline containing passed story (id: \"PASS-1\", phases: [{name: \"setup\", status: \"passed\"}, {name: \"execute\", status: \"passed\"}]) and failed story (id: \"FAIL-1\", phases: [{name: \"setup\", status: \"fail\"}]). Assert returned string: contains no line matching `/^(?!.*PASS-1).*setup.*execute/` (no phase lines for PASS-1), and contains \"setup\" associated with FAIL-1.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "[renderReport] returns a string containing a passed story's phase names when called with `{ all: true }`.",
+    "refined": "Call `renderReport(timeline, { all: true })` where timeline contains passed story (id: \"PASS-1\", phases: [{name: \"phaseA\", status: \"passed\"}, {name: \"phaseB\", status: \"passed\"}]). Assert returned string contains \"phaseA\" and contains \"phaseB\".",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "[renderReport] returns a string containing US-002's block and not containing any other story id when called with `{ story: \"US-002\" }`.",
+    "refined": "Call `renderReport(timeline, { story: \"US-002\" })` where timeline contains stories with ids \"US-001\", \"US-002\", \"US-003\". Assert returned string matches `/US-002/` and does not match `/US-001/|/US-003/`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "[renderReport] returns a string containing the text `root cause` on the failed terminal phase line when a failed story's terminal phase has `status: \"fail\"`.",
+    "refined": "Call `renderReport(timeline)` where timeline contains a failed story with phases ending in terminal phase (name: \"verify\", status: \"fail\", isTerminal: true). Assert returned string contains \"root cause\" on the same line as \"verify\".",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "[renderReport] returns a header containing the `runId`, the `feature`, the run `status`, the story count, and the total cost.",
+    "refined": "Call `renderReport(timeline)` where timeline has runId: \"run-abc\", feature: \"my-feature\", status: \"failed\", stories array of length 3, and cost: 0.05. Assert returned string contains \"run-abc\", \"my-feature\", \"failed\", \"3\" (or \"3 stories\"), and \"0.05\".",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "[renderReport] returns a string containing the best-effort notice indicating phases were reconstructed from logs.",
+    "refined": "Call `renderReport(timeline)` where timeline has `reconstructed: true` on at least one phase. Assert returned string matches /best[- ]effort|reconstructed|from logs/i.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "[renderReport] returns a string whose header contains `CRASHED` and that renders a placeholder for missing cost without throwing when given a `RunTimeline` with `status: \"crashed\"` and a story whose `cost` is `undefined`.",
+    "refined": "Call `renderReport(timeline)` where timeline has status: \"crashed\" and a story with cost: undefined. Assert: (1) returned string contains \"CRASHED\", (2) no thrown error, (3) returned string contains a placeholder for missing cost (e.g., \"N/A\", \"-\", \"unknown\", or \"0\" but not undefined).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "Given `@/replay` is imported, when the module exports are inspected, then it exposes `toReplayJson`.",
+    "refined": "Import `toReplayJson` from `@/replay` and assert it is a function (typeof === 'function').",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-29",
+    "original": "[toReplayJson] returns an object whose `runId`, `feature`, and `status` equal the timeline's and whose `stories` array length equals `timeline.stories.length` when given a `RunTimeline`.",
+    "refined": "Call `toReplayJson(timeline)` where `timeline` is a `RunTimeline` with known `runId`, `feature`, `status`, and `stories.length = N`. Assert the returned object has `runId === timeline.runId`, `feature === timeline.feature`, `status === timeline.status`, and `stories.length === N`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "Given a stubbed `discoverRun`, when `runReplay(\"run-x\", {})` is called, then `discoverRun` is invoked once with `\"run-x\"`.",
+    "refined": "Create a spy/mock for `discoverRun`. Call `runReplay('run-x', {})`. Assert `discoverRun` was called exactly once with `'run-x'` as the first argument.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "Given stubbed `discoverRun` and file reads that yield a known `RunTimeline`, when `runReplay(query, {})` is called, then `renderReport` is invoked once with a timeline whose `runId` matches the known value.",
+    "refined": "Stub `discoverRun` to return a `RunTimeline` with `runId = 'known-run-id'`. Create a spy for `renderReport`. Call `runReplay('query', {})`. Assert `renderReport` was called exactly once and the first argument's `runId === 'known-run-id'`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "Given the same stubs, when `runReplay(query, { json: true })` is called, then `toReplayJson` is invoked, its serialization is written to the injected output writer, and `renderReport` is not invoked.",
+    "refined": "Stub `discoverRun` to return a `RunTimeline`. Create spies for `toReplayJson` and `renderReport`. Create a mock output writer. Call `runReplay('query', { json: true })`. Assert `toReplayJson` was called exactly once, the output writer received a stringified JSON string, and `renderReport` was not called.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "Given `@/replay` or the command module is imported, when the module exports are inspected, then it exposes `registerReplayCommand`.",
+    "refined": "Import `registerReplayCommand` from `@/replay` or the commands module and assert it is a function (typeof === 'function').",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "[registerReplayCommand] adds a subcommand named `replay` that accepts an optional positional run-id and exposes a `--json` option when applied to a fresh commander `Command` instance.",
+    "refined": "Create a new `Command()` instance. Call `registerReplayCommand(cmd)`. Assert `cmd.commands` contains a command with `name === 'replay'`. Call `.parse(['node', 'test', 'run-id']) on the command chain. Assert the parsed `runId` equals `'run-id'` and the command has an option matching `/--json/`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "Given `discoverRun` throws `NaxError { code: \"RUN_NOT_FOUND\" }`, when `runReplay(\"missing\", {})` is called, then it resolves to exit code `1` and writes a message containing `\"missing\"` to the injected error writer.",
+    "refined": "Stub `discoverRun` to throw `new NaxError({ code: 'RUN_NOT_FOUND' })`. Create a mock error writer. Call `runReplay('missing', {})`. Assert the returned exit code is `1` and the error writer received a string containing `'missing'`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-36",
+    "original": "Given a JSONL file containing malformed lines alongside valid entries, when `runReplay(query, {})` is called, then it skips the malformed lines, writes a report from the remaining spine, and resolves to exit code `0`.",
+    "refined": "Create a JSONL file with 3 entries where entry 2 is malformed (invalid JSON). Stub `discoverRun` to yield this file. Call `runReplay('query', {})`. Assert exit code is `0`, `renderReport` was called once with a timeline derived from the 2 valid entries.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-37",
+    "original": "Given an injected registry and files for a run with a crash signal and no metrics entry, when `runReplay(query, {})` is called, then it writes a report whose header contains `CRASHED` to the injected output writer and resolves to exit code `0`.",
+    "refined": "Stub `discoverRun` to return a `RunTimeline` with `status: 'crashed'` and no `metrics`. Create a mock output writer. Call `runReplay('query', {})`. Assert exit code is `0` and the output writer received a string containing `'CRASHED'`.",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]
