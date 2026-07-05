@@ -1,2 +1,3 @@
 [2026-07-05T07:24:41.821Z] US-001 — PASSED — Add autoPr root config schema — Cost: $1.7311
 [2026-07-05T07:34:44.499Z] US-002 — PASSED — Build pure title, body, and template helpers — Cost: $0.6304
+[2026-07-05T07:42:05.026Z] US-003 — PASSED — Implement forge CLI adapter — Cost: $0.3833
