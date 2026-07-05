@@ -1,1 +1,2 @@
 [2026-07-05T03:42:52.189Z] US-001 — PASSED — Add mutation-check execution config and selector — Cost: $2.3905
+[2026-07-05T03:54:17.781Z] US-002 — PASSED — Build deterministic mutation generation core — Cost: $0.8623

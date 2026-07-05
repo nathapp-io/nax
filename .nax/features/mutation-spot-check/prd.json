@@ -3,7 +3,7 @@
   "feature": "mutation-spot-check",
   "branchName": "feat/mutation-spot-check",
   "createdAt": "2026-07-05T03:09:06Z",
-  "updatedAt": "2026-07-05T03:42:55.682Z",
+  "updatedAt": "2026-07-05T03:54:21.336Z",
   "userStories": [
     {
       "id": "US-001",
@@ -73,8 +73,8 @@
         "algorithm"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -136,7 +136,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/verification/types.ts",
@@ -149,7 +151,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ddc24ccfd1bf951c783a6ce6888609e543afdde5"
     },
     {
       "id": "US-004",
