@@ -43,6 +43,7 @@ const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
   "generate",
   "project",
   "curator",
+  "autoPr",
   "debate",
   "profile",
   "profileChain",

@@ -13,7 +13,7 @@ import { loadPlugins as loadPluginsWithBuiltins } from "../../../src/plugins/loa
 import type { NaxPlugin, PluginConfigEntry } from "../../../src/plugins/types";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 
-const DISABLE_BUILTIN_PLUGINS = ["nax-curator"];
+const DISABLE_BUILTIN_PLUGINS = ["nax-curator", "nax-auto-pr"];
 
 // Test fixture helpers
 async function createTempDir(): Promise<string> {

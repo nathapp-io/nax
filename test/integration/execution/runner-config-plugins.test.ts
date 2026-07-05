@@ -17,7 +17,7 @@ import { loadConfig } from "../../../src/config/loader";
 import { _resetPluginErrorSink, _setPluginErrorSink, loadPlugins as loadPluginsWithBuiltins } from "../../../src/plugins/loader";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 
-const DISABLE_BUILTIN_PLUGINS = ["nax-curator"];
+const DISABLE_BUILTIN_PLUGINS = ["nax-curator", "nax-auto-pr"];
 
 function loadPlugins(
   ...args: Parameters<typeof loadPluginsWithBuiltins>

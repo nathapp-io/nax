@@ -577,6 +577,7 @@ export interface NaxConfig {
   debate?: import("../debate/types").DebateConfig;
   /** Curator configuration */
   curator?: CuratorConfig;
+  autoPr: import("./runtime-types-autopr").AutoPrConfig;
   /** Configuration profile name. For a multi-profile chain this is the composite, e.g. "a+b" (default: "default") */
   profile: string;
   /**

@@ -411,6 +411,13 @@ export const NaxConfigSchema = z
       },
     })),
     curator: CuratorConfigSchema.optional(),
+    autoPr: z
+      .object({
+        enabled: z.boolean().default(false),
+        draft: z.boolean().default(true),
+      })
+      .optional()
+      .default({ enabled: false, draft: true }),
     profile: z.string().default("default"),
     profileChain: z.array(z.string()).default([]),
   })
