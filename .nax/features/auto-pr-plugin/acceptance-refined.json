@@ -1,0 +1,247 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "Given `NaxConfigSchema.parse({})`, when the config is parsed, then `config.autoPr.enabled === false`.",
+    "refined": "Assert that `NaxConfigSchema.parse({}).autoPr.enabled` is `false` (boolean literal).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "Given `NaxConfigSchema.parse({})`, when the config is parsed, then `config.autoPr.draft === true`.",
+    "refined": "Assert that `NaxConfigSchema.parse({}).autoPr.draft` is `true` (boolean literal).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "Given `NaxConfigSchema.parse({ autoPr: { enabled: true } })`, when the config is parsed, then `autoPr.enabled === true` and `autoPr.draft === true`.",
+    "refined": "Assert that `NaxConfigSchema.parse({ autoPr: { enabled: true } }).autoPr.enabled` is `true` AND `.autoPr.draft` is `true` (both boolean literals).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Given `NaxConfigSchema.safeParse({ autoPr: { enabled: \"yes\" } })`, when the config is parsed, then `success === false`.",
+    "refined": "Assert that `NaxConfigSchema.safeParse({ autoPr: { enabled: 'yes' } }).success` is `false` (boolean literal), indicating invalid type for `enabled` field.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "Given a context whose `feature` is `\"auto-pr-plugin\"`, when `buildTitle` is called, then it returns `\"feat: auto-pr-plugin\"`.",
+    "refined": "Assert that `buildTitle({ feature: 'auto-pr-plugin', stories: [], cost: 0, duration: 0, prdPath: '' })` returns the string `\"feat: auto-pr-plugin\"` exactly.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Given `buildBody(ctx, null)`, when the body is generated, then the result includes a review-pending banner referencing `nax-finish`.",
+    "refined": "Assert that the string returned by `buildBody(ctx, null)` contains the substring `\"Auto-opened by nax — review pending. Run nax-finish before merge.\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-7",
+    "original": "Given `buildBody(ctx, null)`, when the body is generated, then the story table has exactly `ctx.stories.length` rows.",
+    "refined": "Assert that when `buildBody({ ...ctx, stories: [...] }, null)` is called, the returned string contains exactly `ctx.stories.length + 1` pipe-separated cells in the story table header and data rows combined (excluding the header separator row `|-------|...`). Each data row matches pattern `| US-XXX | ... | .. |`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "Given `buildBody(ctx, null)` and `storySummary` of `{ completed: 3, failed: 0, skipped: 1, paused: 0 }`, when the body is generated, then the result reports `3 passed` and `1 skipped`.",
+    "refined": "Assert that `buildBody({ ...ctx, stories: [], storySummary: { completed: 3, failed: 0, skipped: 1, paused: 0 } }, null)` returns a string containing both `\"3 passed\"` and `\"1 skipped\"` as substrings in the run summary line.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "Given `buildBody(ctx, \"## Checklist\\n- [ ] x\")`, when the body is generated, then the result ends with the template text verbatim and includes a preceding `---` separator.",
+    "refined": "Assert that `buildBody(ctx, \"## Checklist\\n- [ ] x\")` returns a string that (1) ends with `\"## Checklist\\n- [ ] x\"` exactly, and (2) contains `\"---\\n\\n## Checklist\"` somewhere in the string before the end.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "Given `buildBody(ctx, null)`, when the body is generated, then the result contains no `---` template separator.",
+    "refined": "Assert that `buildBody(ctx, null)` returns a string that does not contain the substring `\"---\"` anywhere.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given `findPrTemplate(workdir, \"github\", deps)` where `deps.readText` resolves `.github/pull_request_template.md`, when the template is looked up, then the function returns that file's contents.",
+    "refined": "Assert that `findPrTemplate('/wd', 'github', { readText: async (p) => p === '.github/pull_request_template.md' ? 'template content' : null, run: noop })` returns `'template content'` when `deps.readText('.github/pull_request_template.md')` resolves to `'template content'` and all other paths resolve to `null`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given `findPrTemplate(workdir, \"github\", deps)` where both `.github/PULL_REQUEST_TEMPLATE.md` and `docs/PULL_REQUEST_TEMPLATE.md` resolve, when the template is looked up, then the function returns the `.github/PULL_REQUEST_TEMPLATE.md` contents.",
+    "refined": "Assert that `findPrTemplate('/wd', 'github', { readText: async (p) => p === '.github/PULL_REQUEST_TEMPLATE.md' ? 'github content' : p === 'docs/PULL_REQUEST_TEMPLATE.md' ? 'docs content' : null, run: noop })` returns `'github content'` (not `'docs content'`), verifying the `.github/` path takes precedence over `docs/`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Given `findPrTemplate(workdir, \"gitlab\", deps)` where `deps.readText` resolves `.gitlab/merge_request_templates/Default.md`, when the template is looked up, then the function returns that file's contents.",
+    "refined": "Assert that `findPrTemplate('/wd', 'gitlab', { readText: async (p) => p === '.gitlab/merge_request_templates/Default.md' ? 'gitlab default content' : null, run: noop })` returns `'gitlab default content'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given `findPrTemplate(workdir, \"github\", deps)` where no template path resolves, when the template is looked up, then the function returns `null`.",
+    "refined": "Assert that `findPrTemplate('/wd', 'github', { readText: async () => null, run: noop })` returns `null` (all checked paths return `null`).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given `detectForge(\"git@github.com:owner/repo.git\")`, when the forge is detected, then the function returns `\"github\"`.",
+    "refined": "Calling `detectForge(\"git@github.com:owner/repo.git\")` returns the string value `\"github\"` (type `ForgeKind.GITHUB`). The return value is a non-null string matching the literal `ForgeKind.GITHUB`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given `detectForge(\"https://gitlab.com/owner/repo.git\")`, when the forge is detected, then the function returns `\"gitlab\"`.",
+    "refined": "Calling `detectForge(\"https://gitlab.com/owner/repo.git\")` returns the string value `\"gitlab\"` (type `ForgeKind.GITLAB`). The return value is a non-null string matching the literal `ForgeKind.GITLAB`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given `detectForge(\"https://example.com/owner/repo.git\")`, when the forge is detected, then the function returns `null`.",
+    "refined": "Calling `detectForge(\"https://example.com/owner/repo.git\")` returns `null`. The return type is `ForgeKind | null` and the actual value is the JavaScript `null` literal.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given `openDraft` for a GitHub forge with `draft: true`, when the runner is invoked, then the argv begins with `[\"gh\", \"pr\", \"create\", \"--draft\", ...]` and includes the branch via `--head`.",
+    "refined": "When `openDraft({ forge: \"github\", branch: \"my-branch\", draft: true, title: \"...\", body: \"...\", cwd: \"/tmp\" })` is called, `_deps.run` is invoked with an `argv` array where: (1) `argv[0] === \"gh\"`, `argv[1] === \"pr\"`, `argv[2] === \"create\"`, `argv[3] === \"--draft\"`, and (2) argv contains an element matching the regex pattern `--head=my-branch`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given `openDraft` for a GitLab forge with `draft: true`, when the runner is invoked, then the argv begins with `[\"glab\", \"mr\", \"create\", \"--draft\", ...]` and includes the branch via `--source-branch`.",
+    "refined": "When `openDraft({ forge: \"gitlab\", branch: \"my-branch\", draft: true, title: \"...\", body: \"...\", cwd: \"/tmp\" })` is called, `_deps.run` is invoked with an `argv` array where: (1) `argv[0] === \"glab\"`, `argv[1] === \"mr\"`, `argv[2] === \"create\"`, `argv[3] === \"--draft\"`, and (2) argv contains an element matching the regex pattern `--source-branch=my-branch`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given `openDraft` with `draft: false`, when the runner is invoked, then the argv omits `--draft`.",
+    "refined": "When `openDraft({ forge: \"github\", branch: \"my-branch\", draft: false, title: \"...\", body: \"...\", cwd: \"/tmp\" })` is called, the `argv` array passed to `_deps.run` contains no element equal to the string `\"--draft\"`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Given `openDraft` where the runner returns `exitCode: 0`, when stdout contains the created PR URL, then the returned result carries that URL.",
+    "refined": "When `_deps.run` resolves to `{ exitCode: 0, stdout: \"https://github.com/owner/repo/pull/123\\n\", stderr: \"\" }`, the returned `Promise<OpenDraftResult>` resolves to an object where `success === true` and `url === \"https://github.com/owner/repo/pull/123\"`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Given `openDraft` where the runner returns a non-zero `exitCode`, when the result is returned, then `success === false`.",
+    "refined": "When `_deps.run` resolves to `{ exitCode: 1, stdout: \"\", stderr: \"error message\" }`, the returned `Promise<OpenDraftResult>` resolves to an object where `success === false`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Given `hasOpenPr` where the injected list runner returns a non-empty JSON array for the branch, when the open PR state is checked, then the function returns `true`.",
+    "refined": "When `_deps.run` resolves to `{ exitCode: 0, stdout: \"[{\\\"number\\\": 42}]\", stderr: \"\" }` for the branch query, `hasOpenPr({ forge: \"github\", branch: \"my-branch\", cwd: \"/tmp\" })` returns `Promise<boolean>` resolving to `true`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Given `hasOpenPr` where the injected list runner returns an empty JSON array for the branch, when the open PR state is checked, then the function returns `false`.",
+    "refined": "When `_deps.run` resolves to `{ exitCode: 0, stdout: \"[]\", stderr: \"\" }` for the branch query, `hasOpenPr({ forge: \"github\", branch: \"my-branch\", cwd: \"/tmp\" })` returns `Promise<boolean>` resolving to `false`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "Given `ctx.config.autoPr.enabled === false`, when `autoPrPlugin.shouldRun` is called, then it returns `false`.",
+    "refined": "When `autoPrPlugin.shouldRun({ ...defaultCtx, config: { autoPr: { enabled: false } } })` is invoked, the return value is `false`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Given `ctx.storySummary.failed > 0`, when `shouldRun` is called, then it returns `false`.",
+    "refined": "When `autoPrPlugin.shouldRun({ ...defaultCtx, storySummary: { failed: 1, completed: 5, skipped: 0, paused: 0 } })` is invoked, the return value is `false`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-27",
+    "original": "Given `ctx.storySummary.paused > 0`, when `shouldRun` is called, then it returns `false`.",
+    "refined": "When `autoPrPlugin.shouldRun({ ...defaultCtx, storySummary: { failed: 0, completed: 5, skipped: 0, paused: 1 } })` is invoked, the return value is `false`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-28",
+    "original": "Given `ctx.storySummary.completed === 0`, when `shouldRun` is called, then it returns `false`.",
+    "refined": "When `autoPrPlugin.shouldRun({ ...defaultCtx, storySummary: { failed: 0, completed: 0, skipped: 0, paused: 0 } })` is invoked, the return value is `false`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-29",
+    "original": "Given a remote whose host resolves to no forge, when `shouldRun` is called and `detectForge` returns `null`, then it returns `false`.",
+    "refined": "When `detectForge` is stubbed to return `null` and `autoPrPlugin.shouldRun(defaultCtx)` is invoked, the return value is `false`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "Given `hasOpenPr` reports an existing open PR for the branch, when `shouldRun` is called, then it returns `false` and logs the skip reason.",
+    "refined": "When `hasOpenPr` is stubbed to return `true` and `autoPrPlugin.shouldRun(defaultCtx)` is invoked, the return value is `false` and `ctx.logger.warn` was called with a string containing `\"already open\"` or `\"skip\"`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "Given the plugin is enabled, every story passed, a forge is detected, and no open PR exists, when `shouldRun` is called, then it returns `true`.",
+    "refined": "When `autoPrPlugin.shouldRun({ ...defaultCtx, config: { autoPr: { enabled: true } }, storySummary: { failed: 0, completed: 3, skipped: 0, paused: 0 }, detectForge: stubForge, hasOpenPr: stubFalse })` is invoked, the return value is `true`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "Given the happy path, when `execute` is called, then it invokes `openDraft` with the `buildTitle` title and `buildBody` body and returns a `PostRunActionResult` with `success === true` and the created PR `url`.",
+    "refined": "When `openDraft` is stubbed to return `{ url: \"https://github.com/owner/repo/pull/123\" }` and `autoPrPlugin.execute(defaultCtx)` is invoked, `openDraft` was called with `(branch, { title: <string>, body: <string> }, expect.any(Function))` and the returned `PostRunActionResult` has `success: true` and `url: \"https://github.com/owner/repo/pull/123\"`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "Given `openDraft` reports a non-zero forge failure, when `execute` is called, then it returns `{ success: false }` and does not throw.",
+    "refined": "When `openDraft` is stubbed to return `{ success: false, message: \"forge exited with 1\" }` and `autoPrPlugin.execute(defaultCtx)` is invoked, the returned value is `{ success: false, message: \"forge exited with 1\" }` and no exception is thrown.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "Given the forge CLI is unavailable and `openDraft` throws, when `execute` is called, then it returns `{ success: false }`, records the failure through `ctx.logger.warn`, and makes no `console.*` call.",
+    "refined": "When `openDraft` is stubbed to throw `new Error(\"ENOENT: gh not found\")` and `autoPrPlugin.execute(defaultCtx)` is invoked, the returned value is `{ success: false }`, `ctx.logger.warn` was called exactly once, and `console.warn`, `console.error`, and `console.log` were not called.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "Given `loadPlugins` runs with `\"nax-auto-pr\"` not present in the disabled set, when `getPostRunActions()` is read from the returned `PluginRegistry`, then it includes an action named `\"nax-auto-pr\"`.",
+    "refined": "When `loadPlugins({ disabled: [] })` is called and the returned registry's `getPostRunActions()` is invoked, the resulting array contains an action object with `name: \"nax-auto-pr\"`.",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]
