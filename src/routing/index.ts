@@ -20,3 +20,15 @@ export {
   tryLlmBatchRoute,
   _tryLlmBatchRouteDeps,
 } from "./router";
+
+// Calibration primitives (US-002)
+export { computeBandStats } from "./calibrate/band-stats";
+export type { ComplexityMapping } from "./calibrate/band-stats";
+export type {
+  BandStat,
+  CalibrationProposal,
+  CalibrationThresholds,
+  KeywordHint,
+  SkippedBand,
+  TierAdjustment,
+} from "./calibrate/types";
