@@ -123,6 +123,11 @@ export async function buildPlanForStrategy(
   if (inputs.fullSuiteGate && (isThreeSession || regressionMode === "per-story")) {
     builder.addFullSuiteGate(inputs.fullSuiteGate);
   }
+  // Mutation check: opt-in advisory spot-check that runs immediately after GREEN.
+  // Always success=true (advisory) so it never short-circuits downstream phases.
+  if (inputs.mutationCheck) {
+    builder.addMutationCheck(inputs.mutationCheck);
+  }
   if (isThreeSession && inputs.verifier) {
     builder.addVerifier(inputs.verifier);
   }

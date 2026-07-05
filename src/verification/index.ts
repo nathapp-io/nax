@@ -12,3 +12,4 @@ export * from "./rectification";
 export * from "./flake-probe";
 export * from "./flake-triage";
 export * from "./flake-baseline-diff";
+export * from "./mutation";

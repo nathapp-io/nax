@@ -1,0 +1,122 @@
+/**
+ * Mutation generation core — per-language operator tables.
+ *
+ * Operators are deterministic: a given input snippet maps to a fixed set of
+ * replacements. Each operator carries a stable id used by the result
+ * classifier to identify which transformation produced a given mutant.
+ */
+
+import type { MutationOperator } from "./types";
+
+type PatternReplacement = readonly [RegExp, string];
+
+/**
+ * Comparison-operator flips. Patterns are module-local so they are
+ * reused across calls without leaking `lastIndex` state.
+ */
+const TS_COMPARISON_PAIRS: ReadonlyArray<PatternReplacement> = [
+  [/==/g, "!="],
+  [/!=/g, "=="],
+  [/===/g, "!=="],
+  [/!==/g, "==="],
+  [/>=/g, "<="],
+  [/<=/g, ">="],
+];
+
+// Bare >/< flips require whitespace on both sides — the shape a real
+// comparison takes (`a > b`), but neither an arrow function (`x => x`, no
+// space before `>`) nor a generic (`Array<string>`, no space before `<` and
+// none before the closing `>` either) takes. Scoping this way avoids
+// producing mutants that fail to compile — always "killed" regardless of
+// test quality.
+const COMPARISON_GT = /(?<=\s)>(?!=)(?=\s|$)/g;
+const COMPARISON_LT = /(?<=\s)<(?!=)(?=\s)/g;
+
+function applyComparisonBracketFlip(snippet: string): string[] {
+  const seen = new Set<string>();
+  const results: string[] = [];
+  if (COMPARISON_GT.test(snippet)) {
+    COMPARISON_GT.lastIndex = 0;
+    const produced = snippet.replace(COMPARISON_GT, "<");
+    if (produced !== snippet) {
+      seen.add(produced);
+      results.push(produced);
+    }
+  }
+  if (COMPARISON_LT.test(snippet)) {
+    COMPARISON_LT.lastIndex = 0;
+    const produced = snippet.replace(COMPARISON_LT, ">");
+    if (produced !== snippet && !seen.has(produced)) {
+      results.push(produced);
+    }
+  }
+  return results;
+}
+
+const TS_COMPARISON_BRACKET_FLIP_ID = "ts:cmp-bracket-flip";
+
+const TS_COMPARISON_FLIP_ID = "ts:cmp-flip";
+
+function flipWithPairs(pairs: ReadonlyArray<PatternReplacement>, snippet: string): string[] {
+  const seen = new Set<string>();
+  const results: string[] = [];
+  for (const [pattern, replacement] of pairs) {
+    if (pattern.test(snippet)) {
+      pattern.lastIndex = 0;
+      const produced = snippet.replace(pattern, replacement);
+      if (!seen.has(produced)) {
+        seen.add(produced);
+        results.push(produced);
+      }
+    }
+  }
+  return results;
+}
+
+const TS_BOOLEAN_FLIP_ID = "ts:bool-flip";
+
+function applyBooleanFlip(snippet: string): string[] {
+  const seen = new Set<string>();
+  const results: string[] = [];
+  if (/\btrue\b/.test(snippet)) {
+    const produced = snippet.replace(/\btrue\b/g, "false");
+    seen.add(produced);
+    results.push(produced);
+  }
+  if (/\bfalse\b/.test(snippet)) {
+    const produced = snippet.replace(/\bfalse\b/g, "true");
+    if (!seen.has(produced)) results.push(produced);
+  }
+  return results;
+}
+
+const TS_ARITHMETIC_PAIRS: ReadonlyArray<PatternReplacement> = [
+  [/\+/g, "-"],
+  [/-/g, "+"],
+  [/\*/g, "/"],
+  [/\//g, "*"],
+];
+
+const TS_ARITHMETIC_FLIP_ID = "ts:arith-flip";
+
+const TYPESCRIPT_OPERATORS: ReadonlyArray<MutationOperator> = [
+  { id: TS_COMPARISON_FLIP_ID, apply: (snippet) => flipWithPairs(TS_COMPARISON_PAIRS, snippet) },
+  { id: TS_COMPARISON_BRACKET_FLIP_ID, apply: applyComparisonBracketFlip },
+  { id: TS_BOOLEAN_FLIP_ID, apply: applyBooleanFlip },
+  { id: TS_ARITHMETIC_FLIP_ID, apply: (snippet) => flipWithPairs(TS_ARITHMETIC_PAIRS, snippet) },
+];
+
+const PYTHON_OPERATORS: ReadonlyArray<MutationOperator> = [];
+const GO_OPERATORS: ReadonlyArray<MutationOperator> = [];
+
+const SUPPORTED_LANGUAGES: ReadonlyMap<string, ReadonlyArray<MutationOperator>> = new Map([
+  ["typescript", TYPESCRIPT_OPERATORS],
+  ["javascript", TYPESCRIPT_OPERATORS],
+  ["python", PYTHON_OPERATORS],
+  ["go", GO_OPERATORS],
+]);
+
+export function getOperatorsForLanguage(language: string | undefined): ReadonlyArray<MutationOperator> {
+  if (!language) return [];
+  return SUPPORTED_LANGUAGES.get(language) ?? [];
+}

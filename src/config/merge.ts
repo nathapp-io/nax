@@ -16,7 +16,8 @@ import type { NaxConfig } from "./schema";
  * - agent: protocol, maxInteractionTurns, promptAudit (deep)
  * - models: per-agent model tier mappings (deep)
  * - routing: strategy, llm (deep)
- * - execution: smartTestRunner, regressionGate (deep), verificationTimeoutSeconds
+ * - execution: smartTestRunner, regressionGate (deep), flakeDetection (deep),
+ *   mutationCheck (deep), verificationTimeoutSeconds
  * - review: enabled, checks, commands (deep), semantic (deep)
  * - acceptance: enabled, generateTests, testPath
  * - quality: requireTests, requireTypecheck, requireLint, commands (deep), testing (deep)
@@ -88,6 +89,10 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
       flakeDetection: {
         ...root.execution.flakeDetection,
         ...packageOverride.execution?.flakeDetection,
+      },
+      mutationCheck: {
+        ...root.execution.mutationCheck,
+        ...packageOverride.execution?.mutationCheck,
       },
     },
     review: {

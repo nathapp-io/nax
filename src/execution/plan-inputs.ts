@@ -16,6 +16,7 @@ import type {
   GreenfieldGateInput,
   ImplementerInput,
   LintCheckInput,
+  MutationCheckInput,
   SemanticReviewInput,
   TestPresenceGateInput,
   TestWriterInput,
@@ -48,6 +49,7 @@ export interface PlanInputs {
   readonly implementer?: ImplementerInput;
   readonly testPresenceGate?: TestPresenceGateInput;
   readonly fullSuiteGate?: FullSuiteGateInput;
+  readonly mutationCheck?: MutationCheckInput;
   readonly verifier?: VerifierInput;
   readonly verifyScoped?: VerifyScopedInput;
   readonly lintCheck?: LintCheckInput;
@@ -422,6 +424,22 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
         }
       : undefined;
 
+  // mutationCheck: opt-in advisory spot-check gated by execution.mutationCheck.enabled.
+  // Mirrors verifyScoped's anchor set so package-relative diff + repoRoot mapping are
+  // consistent across both ops that consume the same git history.
+  const mutationCheckInput: MutationCheckInput | undefined =
+    ctx.config.execution?.mutationCheck?.enabled === true
+      ? {
+          story,
+          workdir: ctx.workdir,
+          storyId: story.id,
+          storyGitRef: ctx.storyGitRef,
+          repoRoot: ctx.projectDir,
+          packagePrefix: packageDirRel,
+          resolvedTestPatterns,
+        }
+      : undefined;
+
   return {
     story,
     config,
@@ -430,6 +448,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     implementer: implementerInput,
     testPresenceGate: testPresenceGateInput,
     fullSuiteGate: fullSuiteGateInput,
+    mutationCheck: mutationCheckInput,
     verifier: verifierInput,
     verifyScoped: verifyScopedInput,
     lintCheck: lintCheckInput,

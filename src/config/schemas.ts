@@ -140,6 +140,11 @@ export const NaxConfigSchema = z
         maxProbesPerGate: 5,
         probeTimeoutSeconds: 60,
       },
+      mutationCheck: {
+        enabled: false,
+        maxMutants: 3,
+        timeoutSeconds: 60,
+      },
     } as unknown as Parameters<typeof ExecutionConfigSchema.default>[0]),
     quality: QualityConfigSchema.default({
       requireTypecheck: true,

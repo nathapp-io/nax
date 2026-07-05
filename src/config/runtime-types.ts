@@ -9,7 +9,12 @@ import type { ConstitutionConfig } from "@/constitution/types";
 import type { ReviewConfig } from "@/review/types";
 import type { AgentConfig, GenerateConfig } from "./runtime-types-agent";
 import type { ContextConfig } from "./runtime-types-context";
-import type { FlakeDetectionConfig, SmartTestRunnerConfig } from "./runtime-types-execution";
+import type {
+  FlakeDetectionConfig,
+  MutationCheckConfig,
+  SmartTestRunnerConfig,
+  WorktreeDependenciesConfig,
+} from "./runtime-types-execution";
 import type {
   Complexity,
   ConfiguredModel,
@@ -92,15 +97,7 @@ export interface RegressionGateConfig {
   mode?: "deferred" | "per-story" | "disabled";
 }
 
-export type { SmartTestRunnerConfig } from "./runtime-types-execution";
-
-/** Worktree dependency preparation strategy (WT-DEPS-001) */
-export interface WorktreeDependenciesConfig {
-  /** How nax should prepare a fresh worktree before story execution */
-  mode: "inherit" | "provision" | "off";
-  /** Explicit provisioning command override (valid only in provision mode) */
-  setupCommand?: string | null;
-}
+export type { SmartTestRunnerConfig, WorktreeDependenciesConfig } from "./runtime-types-execution";
 
 /** Execution limits */
 export interface ExecutionConfig {
@@ -162,9 +159,11 @@ export interface ExecutionConfig {
   storyIsolation: "shared" | "worktree";
   /** Flake-detection probe config (isolation re-run mechanic). */
   flakeDetection: FlakeDetectionConfig;
+  /** Mutation-check spot-check config (US-001) — opt-in mutation testing after GREEN. */
+  mutationCheck: MutationCheckConfig;
 }
 
-export type { FlakeDetectionConfig } from "./runtime-types-execution";
+export type { FlakeDetectionConfig, MutationCheckConfig } from "./runtime-types-execution";
 
 /** Quality gate config */
 export interface QualityConfig {

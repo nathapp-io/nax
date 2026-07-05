@@ -14,6 +14,24 @@ export interface FlakeDetectionConfig {
   probeTimeoutSeconds: number;
 }
 
+/** Worktree dependency preparation strategy (WT-DEPS-001) */
+export interface WorktreeDependenciesConfig {
+  /** How nax should prepare a fresh worktree before story execution */
+  mode: "inherit" | "provision" | "off";
+  /** Explicit provisioning command override (valid only in provision mode) */
+  setupCommand?: string | null;
+}
+
+/** Mutation-check config (US-001) — opt-in mutation-testing spot-check. */
+export interface MutationCheckConfig {
+  /** Enable mutation-check spot-check after GREEN. Default false. */
+  enabled: boolean;
+  /** Max mutants generated per story (budget cap). */
+  maxMutants: number;
+  /** Per-mutant subprocess timeout in seconds. */
+  timeoutSeconds: number;
+}
+
 /** Smart test runner configuration (STR-007) */
 export interface SmartTestRunnerConfig {
   /** Enable smart test runner (default: true) */

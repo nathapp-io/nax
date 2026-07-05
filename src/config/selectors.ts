@@ -51,6 +51,15 @@ export const verifyConfigSelector = reshapeSelector("verify", (c: NaxConfig) => 
   testCommand: c.quality?.commands?.test,
 }));
 
+// Mutation-check (US-001) — opt-in mutation testing after GREEN. Reshape (not pick)
+// because the selector projects only the nested mutationCheck subtree so callers
+// don't need to know the path; pickSelector("mutation-check", "execution") would
+// return the whole execution object which has the wrong shape.
+export const mutationCheckConfigSelector = reshapeSelector(
+  "mutation-check",
+  (c: NaxConfig) => c.execution?.mutationCheck,
+);
+
 export const rectificationGateConfigSelector = pickSelector(
   "rectification-gate",
   "execution",
@@ -138,6 +147,7 @@ export type ContextConfig = ReturnType<typeof contextConfigSelector.select>;
 export type ContextToolRuntimeConfig = ReturnType<typeof contextToolRuntimeConfigSelector.select>;
 export type PromptLoaderConfig = ReturnType<typeof promptLoaderConfigSelector.select>;
 export type LlmRoutingConfig = ReturnType<typeof llmRoutingConfigSelector.select>;
+export type MutationCheckConfig = ReturnType<typeof mutationCheckConfigSelector.select>;
 export type AutofixConfig = ReturnType<typeof autofixConfigSelector.select>;
 export type ExecutionGatesConfig = ReturnType<typeof executionGatesConfigSelector.select>;
 export type NonBlockingFixConfig = NonNullable<z.infer<typeof AdversarialReviewConfigSchema>["nonBlockingFix"]>;

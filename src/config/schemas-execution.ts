@@ -117,6 +117,19 @@ const FlakeDetectionConfigSchema = z.object({
   probeTimeoutSeconds: z.number().int().min(5).max(600).default(60),
 });
 
+/**
+ * Mutation-check config (US-001). Opt-in mutation-testing spot-check that runs
+ * after GREEN passes to verify the test suite actually catches real defects.
+ * `enabled` defaults to `false` so existing runs are unaffected.
+ */
+const MutationCheckConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Max mutants per story (budget cap for the spot-check). */
+  maxMutants: z.number().int().min(1).max(50).default(3),
+  /** Per-mutant subprocess timeout in seconds. */
+  timeoutSeconds: z.number().int().min(5).max(600).default(60),
+});
+
 export const ExecutionConfigSchema = z.object({
   maxIterations: z.number().int().positive({ message: "maxIterations must be > 0" }),
   iterationDelayMs: z.number().int().nonnegative(),
@@ -160,6 +173,11 @@ export const ExecutionConfigSchema = z.object({
     probeRuns: 2,
     maxProbesPerGate: 5,
     probeTimeoutSeconds: 60,
+  }),
+  mutationCheck: MutationCheckConfigSchema.default({
+    enabled: false,
+    maxMutants: 3,
+    timeoutSeconds: 60,
   }),
 });
 

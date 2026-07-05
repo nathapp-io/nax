@@ -8,6 +8,7 @@ import {
   greenfieldGateOp,
   implementerOp,
   lintCheckOp,
+  mutationCheckOp,
   semanticReviewOp,
   testPresenceGateOp,
   testWriterOp,
@@ -21,6 +22,7 @@ import type {
   GreenfieldGateInput,
   ImplementerInput,
   LintCheckInput,
+  MutationCheckInput,
   SemanticReviewInput,
   TestPresenceGateInput,
   TestWriterInput,
@@ -74,6 +76,13 @@ export class StoryOrchestratorBuilder {
   addFullSuiteGate(input: FullSuiteGateInput): this;
   addFullSuiteGate(value: FullSuiteGateInput | OrchestratorSlot<unknown, unknown, unknown>): this {
     setPhase(this.state, "full-suite-gate", isSlot(value) ? value : { op: fullSuiteGateOp, input: value });
+    return this;
+  }
+
+  addMutationCheck<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addMutationCheck(input: MutationCheckInput): this;
+  addMutationCheck(value: MutationCheckInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+    setPhase(this.state, "mutation-check", isSlot(value) ? value : { op: mutationCheckOp, input: value });
     return this;
   }
 
