@@ -9,9 +9,17 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { computeBandStats } from "@/routing";
-import type { RunMetrics, StoryMetrics } from "@/metrics/types";
 import type { Complexity, ModelTier } from "@/config/schema-types";
+import type { RunMetrics, StoryMetrics } from "@/metrics/types";
+import { computeBandStats } from "@/routing";
+import type {
+  BandStat,
+  CalibrationProposal,
+  CalibrationThresholds,
+  KeywordHint,
+  SkippedBand,
+  TierAdjustment,
+} from "@/routing";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -19,7 +27,6 @@ import type { Complexity, ModelTier } from "@/config/schema-types";
 
 function makeStoryMetrics(overrides: Partial<StoryMetrics> & { storyId: string }): StoryMetrics {
   return {
-    storyId: overrides.storyId,
     complexity: "medium",
     modelTier: "balanced",
     modelUsed: "claude-sonnet-4-5",
@@ -182,5 +189,75 @@ describe("computeBandStats - empty history", () => {
     const runs: RunMetrics[] = [makeRun([])];
     const bands = computeBandStats(runs, mapping);
     expect(bands).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression guards: cross-run flattening + public-type surface
+// (Adversarial review #2/#3 — not covered by ACs but required for the
+//  library to fulfill its stated purpose.)
+// ---------------------------------------------------------------------------
+
+describe("computeBandStats - cross-run flattening", () => {
+  test("merges same-band stories across multiple runs into one BandStat", () => {
+    const runAStories = [
+      makeStoryMetrics({
+        storyId: "US-A1",
+        complexity: "simple",
+        initialComplexity: "simple",
+        finalTier: "fast",
+        attempts: 2,
+        firstPassSuccess: false,
+      }),
+      makeStoryMetrics({ storyId: "US-A2", complexity: "simple", initialComplexity: "simple", finalTier: "fast" }),
+    ];
+    const runBStories = [
+      makeStoryMetrics({ storyId: "US-B1", complexity: "simple", initialComplexity: "simple", finalTier: "fast" }),
+      makeStoryMetrics({ storyId: "US-B2", complexity: "simple", initialComplexity: "simple", finalTier: "fast" }),
+    ];
+    const runs = [makeRun(runAStories), { ...makeRun(runBStories), runId: "run-002" }];
+
+    const bands = computeBandStats(runs, mapping);
+    const simple = bands.find((b) => b.complexity === "simple");
+
+    expect(simple?.sampleCount).toBe(4);
+    expect(simple?.escalationRate).toBe(0.25); // 1 of 4 escalated (US-A1)
+  });
+
+  test("preserves empty runs in the middle of the runs array", () => {
+    const stories = [
+      makeStoryMetrics({ storyId: "US-001", complexity: "simple", initialComplexity: "simple", finalTier: "fast" }),
+      makeStoryMetrics({ storyId: "US-002", complexity: "simple", initialComplexity: "simple", finalTier: "fast" }),
+    ];
+    const runs: RunMetrics[] = [makeRun([]), makeRun(stories), makeRun([])];
+
+    const bands = computeBandStats(runs, mapping);
+    const simple = bands.find((b) => b.complexity === "simple");
+
+    expect(simple?.sampleCount).toBe(2);
+  });
+});
+
+describe("@/routing barrel - calibration public type surface", () => {
+  test("re-exports all calibration types (compile-time surface guard)", () => {
+    // Type-only references preserve the public barrel contract: removing
+    // any of these from `src/routing/index.ts` would break the imports
+    // below at compile time. The `expect(_)` assertion forces the file
+    // to actually import the symbols (no "unused import" elimination).
+    const _: {
+      computeBandStats: typeof computeBandStats;
+      BandStat: BandStat;
+      TierAdjustment: TierAdjustment;
+      KeywordHint: KeywordHint;
+      SkippedBand: SkippedBand;
+      CalibrationProposal: CalibrationProposal;
+      CalibrationThresholds: CalibrationThresholds;
+    } = {} as never;
+    expect(_).toBeDefined();
+  });
+
+  test("runtime-exports computeBandStats (the only value export)", async () => {
+    const surface = await import("@/routing");
+    expect(typeof surface.computeBandStats).toBe("function");
   });
 });
