@@ -1,0 +1,247 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "Given the execution config with `mutationCheck` unset, when the config is parsed, then `config.execution.mutationCheck.enabled === false`.",
+    "refined": "parseConfig(schema, {}).execution.mutationCheck.enabled === false",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "Given the execution config with `mutationCheck` unset, when the config is parsed, then `config.execution.mutationCheck.maxMutants === 3`.",
+    "refined": "parseConfig(schema, {}).execution.mutationCheck.maxMutants === 3",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "Given the execution config with `mutationCheck` unset, when the config is parsed, then `config.execution.mutationCheck.timeoutSeconds` is a positive integer.",
+    "refined": "const timeout = parseConfig(schema, {}).execution.mutationCheck.timeoutSeconds; Number.isInteger(timeout) && timeout > 0",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Given a config where `mutationCheck.maxMutants` is set to `5`, when the config is parsed, then resolved `maxMutants === 5`.",
+    "refined": "parseConfig(schema, { execution: { mutationCheck: { maxMutants: 5 } } }).execution.mutationCheck.maxMutants === 5",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "Given a root config whose `mutationCheck.enabled` is `false` and a per-package override `{ execution: { mutationCheck: { enabled: true } } }`, when `mergePackageConfig()` merges them, then resolved `enabled === true` and `maxMutants` retains the root or default value.",
+    "refined": "const merged = mergePackageConfig({ execution: { mutationCheck: { enabled: false, maxMutants: 3 } } }, { execution: { mutationCheck: { enabled: true } } }); merged.execution.mutationCheck.enabled === true && merged.execution.mutationCheck.maxMutants === 3",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Given a parsed config, when the `mutation-check` config selector is applied, then it returns an object exposing `enabled`, `maxMutants`, and `timeoutSeconds`.",
+    "refined": "const selected = mutationCheckConfigSelector.select(parsedConfig); hasOwnProperty(selected, 'enabled') && hasOwnProperty(selected, 'maxMutants') && hasOwnProperty(selected, 'timeoutSeconds')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "Given a source containing `a > b` and language `\"typescript\"`, when `generateMutants` is called, then it returns at least one `Mutant` whose `after` contains `a < b` and whose `operatorId` names a comparison-flip operator.",
+    "refined": "Call `generateMutants('a > b', 'typescript')`. Assert result is an array containing at least one Mutant M where M.after === 'a < b' AND M.operatorId matches /comparison|relational|inequality/i.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "Given a source containing the boolean literal `true` and language `\"typescript\"`, when `generateMutants` is called, then it returns a `Mutant` whose `after` replaces that token with `false`.",
+    "refined": "Call `generateMutants('const x = true', 'typescript')`. Assert result is an array containing at least one Mutant M where M.after === 'const x = false'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "Given a source containing `x + y` and language `\"typescript\"`, when `generateMutants` is called, then it returns a `Mutant` whose `after` contains `x - y`.",
+    "refined": "Call `generateMutants('x + y', 'typescript')`. Assert result is an array containing at least one Mutant M where M.after === 'x - y'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "Given `generateMutants` returns a `Mutant`, when that `Mutant` is inspected, then it exposes `file`, `line` (1-indexed), `before`, `after`, and `operatorId`.",
+    "refined": "Call `generateMutants('a > b', 'typescript')`. For each Mutant M in result, assert: typeof M.file === 'string', typeof M.line === 'number' && M.line >= 1, typeof M.before === 'string', typeof M.after === 'string', typeof M.operatorId === 'string'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given language `\"python\"`, when `generateMutants` is called, then it returns an empty array.",
+    "refined": "Call `generateMutants('a > b', 'python')`. Assert result is a non-null array with length === 0.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given language `\"go\"`, when `generateMutants` is called, then it returns an empty array.",
+    "refined": "Call `generateMutants('a > b', 'go')`. Assert result is a non-null array with length === 0.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Given an `undefined` language, when `generateMutants` is called, then it returns an empty array.",
+    "refined": "Call `generateMutants('a > b', undefined)`. Assert result is a non-null array with length === 0.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given a source with 10 operator-matchable lines and `max = 3`, when `generateMutants` is called, then it returns at most 3 `Mutant`s.",
+    "refined": "Construct a source with 10 lines each containing 'a > b'. Call `generateMutants(source, 'typescript', { max: 3 })`. Assert result.length <= 3.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given a source containing no operator-matchable tokens, when `generateMutants` is called, then it returns an empty array.",
+    "refined": "Call `generateMutants('const x = 1; const y = 2;', 'typescript')`. Assert result is a non-null array with length === 0.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given a temp file the test creates, when `applyMutant(m)` is called, then reading the file back returns `m.after` on line `m.line`.",
+    "refined": "Given a temp file created via `Bun.file(path).text()` containing original content, when `applyMutant({ filePath: path, line: m.line, before: m.before, after: m.after })` is called, then reading the file back with `Bun.file(path).text()` and splitting by newline yields `m.after` at index `m.line - 1` (0-indexed).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given a temp file and a mutant `m`, when `applyMutant(m)` is followed by `revertMutant(m)`, then the file contents are byte-for-byte identical to the original contents.",
+    "refined": "Given a temp file created with content `C` from `Bun.file(path).arrayBuffer()`, when `applyMutant({ filePath: path, ... })` is called and then `revertMutant({ filePath: path, ... })` is called, then `Bun.file(path).arrayBuffer()` returns a byte sequence identical to `C` (verified via `Buffer.from(original).equals(Buffer.from(current))`).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given a `VerificationResult` with `status: \"TEST_FAILURE\"`, when `classifyMutant` is called, then it returns `\"killed\"`.",
+    "refined": "When `classifyMutant({ status: 'TEST_FAILURE' } as VerificationResult)` is called, the return value is strictly equal to `'killed'` (verified via `expect(classifyMutant(result)).toBe('killed')`).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given a `VerificationResult` with `status: \"SUCCESS\"`, when `classifyMutant` is called, then it returns `\"survived\"`.",
+    "refined": "When `classifyMutant({ status: 'SUCCESS' } as VerificationResult)` is called, the return value is strictly equal to `'survived'` (verified via `expect(classifyMutant(result)).toBe('survived')`).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given a `VerificationResult` whose `status` is `\"ENVIRONMENTAL_FAILURE\"`, `\"ASSET_CHECK_FAILED\"`, or `\"TIMEOUT\"`, when `classifyMutant` is called, then it returns `\"errored\"`.",
+    "refined": "When `classifyMutant({ status: 'ENVIRONMENTAL_FAILURE' } as VerificationResult)`, `classifyMutant({ status: 'ASSET_CHECK_FAILED' } as VerificationResult)`, and `classifyMutant({ status: 'TIMEOUT' } as VerificationResult)` are each called, each return value is strictly equal to `'errored'` (verified via `expect(classifyMutant(result)).toBe('errored')` for each status).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Given `mutationCheckOp` imported from the `@/operations` barrel, when it is inspected, then `kind === \"deterministic\"`, `name === \"mutation-check\"`, and `stage === \"verify\"`.",
+    "refined": "Assert `mutationCheckOp.kind === 'deterministic'`, `mutationCheckOp.name === 'mutation-check'`, and `mutationCheckOp.stage === 'verify'`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Given `mutationCheck.enabled === false`, when `mutationCheckOp.execute()` runs, then it returns `success: true` with an empty `survivors` list and never calls the injected `selectScopedTests` or `regression` deps.",
+    "refined": "When `MutationCheckConfig.enabled` is `false`, calling `mutationCheckOp.execute(input, ctx, mockDeps)` returns `{ success: true, survivors: [] }` and `mockDeps.selectScopedTests` and `mockDeps.regression` are never invoked.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Given injected `getChangedNonTestFiles` resolves to one TypeScript source file, its content yields one mutant, and injected `regression` returns `status: \"SUCCESS\"`, when `mutationCheckOp.execute()` runs, then it returns `success: true` and `survivors` contains one entry whose `file`, `line`, and `operatorId` identify that mutant.",
+    "refined": "When `mockDeps.getChangedNonTestFiles` returns `['file.ts']`, `mockDeps.detectLanguage` returns `'typescript'`, `generateMutants` yields one mutant `{ file: 'file.ts', line: 10, operatorId: 'negation' }`, and `mockDeps.regression` returns `{ status: 'SUCCESS' }`, then `mutationCheckOp.execute()` returns `{ success: true, survivors: [{ file: 'file.ts', line: 10, operatorId: 'negation' }] }`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Given the same setup as the previous criterion except injected `regression` returns `status: \"TEST_FAILURE\"`, when `mutationCheckOp.execute()` runs, then it returns `success: true` with an empty `survivors` list.",
+    "refined": "When `mockDeps.getChangedNonTestFiles` returns `['file.ts']`, `mockDeps.detectLanguage` returns `'typescript'`, `generateMutants` yields one mutant, and `mockDeps.regression` returns `{ status: 'TEST_FAILURE' }`, then `mutationCheckOp.execute()` returns `{ success: true, survivors: [] }`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-25",
+    "original": "Given the same setup as the survivor criterion except injected `regression` returns `status: \"TIMEOUT\"`, when `mutationCheckOp.execute()` runs, then it returns `success: true` with an empty `survivors` list.",
+    "refined": "When `mockDeps.getChangedNonTestFiles` returns `['file.ts']`, `mockDeps.detectLanguage` returns `'typescript'`, `generateMutants` yields one mutant, and `mockDeps.regression` returns `{ status: 'TIMEOUT' }`, then `mutationCheckOp.execute()` returns `{ success: true, survivors: [] }`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Given injected `detectLanguage` resolves to `\"python\"`, when `mutationCheckOp.execute()` runs, then it returns `success: true` with an empty `survivors` list and never calls injected `regression`.",
+    "refined": "When `mockDeps.detectLanguage` returns `'python'`, then `mutationCheckOp.execute()` returns `{ success: true, survivors: [] }` and `mockDeps.regression` is never invoked.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-27",
+    "original": "Given `maxMutants === 2` and a changed file whose content yields 5 candidate mutants, when `mutationCheckOp.execute()` runs, then it calls injected `regression` at most 2 times.",
+    "refined": "When `MutationCheckConfig.maxMutants === 2`, `mockDeps.getChangedNonTestFiles` returns `['file.ts']`, `mockDeps.detectLanguage` returns `'typescript'`, and `generateMutants` yields 5 mutants, then `mockDeps.regression` is invoked at most 2 times (verified via call count tracking).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-28",
+    "original": "Given a run where at least one mutant is executed, when `mutationCheckOp.execute()` calls injected `selectScopedTests`, then the input references the mutated file and the story's `storyGitRef`; and when it calls injected `regression`, then it uses the `effectiveCommand` returned by `selectScopedTests`.",
+    "refined": "When executing with a valid mutant, `selectScopedTests` is called with `storyGitRef: input.storyGitRef` and `file: mutant.file`; and `regression` is called with `command: mockSelectScopedTestsResult.effectiveCommand` where `mockSelectScopedTestsResult.effectiveCommand` is the effective test command string returned by the mocked `selectScopedTests`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-29",
+    "original": "Given an injected `regression` call throws, when `mutationCheckOp.execute()` runs, then it restores the mutated file to its original contents and returns `success: true`.",
+    "refined": "When `mockDeps.regression` throws an error after a mutant is applied, `mutationCheckOp.execute()` returns `{ success: true, survivors: [] }` and the file at `mutant.file` is restored to its original content (verified by reading file contents after execute completes).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "Given `CANONICAL_ORDER`, when it is inspected, then it contains `\"mutation-check\"` at the index immediately following `\"full-suite-gate\"`.",
+    "refined": "const idxFullSuiteGate = CANONICAL_ORDER.indexOf('full-suite-gate'); const idxMutationCheck = CANONICAL_ORDER.indexOf('mutation-check'); assert(idxMutationCheck === idxFullSuiteGate + 1, `mutation-check at ${idxMutationCheck}, expected ${idxFullSuiteGate + 1}`);",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-31",
+    "original": "Given `PHASE_KIND_TO_STATE_KEY` and `InternalBuildState`, when the mutation-check phase is registered, then `PHASE_KIND_TO_STATE_KEY[\"mutation-check\"]` equals `\"mutationCheck\"` and `InternalBuildState` accepts a `mutationCheck` phase entry.",
+    "refined": "assert(PHASE_KIND_TO_STATE_KEY['mutation-check'] === 'mutationCheck'); assertType<InternalBuildState>().hasProperty('mutationCheck');",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-32",
+    "original": "Given `STRICT_VERDICT_PHASE_NAMES`, when it is inspected, then `STRICT_VERDICT_PHASE_NAMES.has(\"mutation-check\")` is `false`.",
+    "refined": "assert(STRICT_VERDICT_PHASE_NAMES.has('mutation-check') === false);",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-33",
+    "original": "Given a plan built through the orchestrator builder with `addMutationCheck(input)`, `full-suite-gate` passing, and `mutationCheck.enabled` true, when the plan runs, then a spied `mutationCheckOp` is invoked after the `full-suite-gate` phase.",
+    "refined": "const callOrder: string[] = []; builder.addMutationCheck({enabled: true}); builder.addFullSuiteGate(); builder.addVerifier(); wireOpSpies({mutationCheckOp: () => callOrder.push('mutation-check')}); runPlan(builder.build()); assert(callOrder.join(',') === 'full-suite-gate,mutation-check,verifier');",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-34",
+    "original": "Given `PlanInputs` that include a `mutationCheck` input, when `buildPlanForStrategy()` builds the plan, then the ordered phases include a `\"mutation-check\"` phase; and given `PlanInputs` without that input, when `buildPlanForStrategy()` builds the plan, then it contains no `\"mutation-check\"` phase.",
+    "refined": "const planWith = buildPlanForStrategy({...defaultInputs, mutationCheck: {enabled: true}}); assert(planWith.phases.includes('mutation-check')); const planWithout = buildPlanForStrategy(defaultInputs); assert(planWithout.phases.includes('mutation-check') === false);",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-35",
+    "original": "Given a `mutationCheckOp` result carrying a survivor with `success: true`, when the phase loop continues, then the subsequent `verifier` phase still executes.",
+    "refined": "let verifierExecuted = false; const plan = builder.addMutationCheck({...}).addVerifier(() => { verifierExecuted = true; }).build(); executePhase('mutation-check', {success: true, survivors: [{success: true}]}); assert(verifierExecuted === true);",
+    "testable": true,
+    "storyId": "US-005"
+  }
+]
