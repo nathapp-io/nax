@@ -30,8 +30,9 @@ export interface AutoPrDeps {
   /**
    * Read a UTF-8 file from disk.
    *
-   * @param path - Absolute path to read
-   * @returns File contents, or `null` if the file does not exist
+   * @param path - Absolute filesystem path (typically a `workdir`-rooted path
+   *               constructed by callers; the plugin does not interpret it).
+   * @returns File contents, or `null` if the file does not exist.
    */
   readText(path: string): Promise<string | null>;
 }

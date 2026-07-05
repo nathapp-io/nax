@@ -8,7 +8,6 @@
  */
 
 import type { UserStory } from "../../../prd/types";
-import type { PluginLogger } from "../../types";
 
 const SECONDS_PER_MINUTE = 60;
 const MS_PER_SECOND = 1000;
@@ -19,23 +18,18 @@ export interface PrBodyContext {
   feature: string;
   /** Total spend in USD for this run. */
   totalCost: number;
-  /** Wall-clock run duration in milliseconds. */
+  /** Wall-clock run duration in milliseconds. Negative values clamp to zero. */
   totalDurationMs: number;
   /** Absolute path to the PRD file that drove this run. */
   prdPath: string;
-  /** Aggregated counts of story outcomes. */
+  /** Aggregated counts of story outcomes actually rendered by the body. */
   storySummary: {
     completed: number;
     failed: number;
     skipped: number;
-    paused: number;
   };
   /** Stories that were part of this run (drives the table). */
   stories: UserStory[];
-  /** Plugin-specific config (forwarded for completeness). */
-  pluginConfig: Record<string, unknown>;
-  /** Logger scoped to this plugin. */
-  logger: PluginLogger;
 }
 
 /**
@@ -49,7 +43,8 @@ export function buildTitle(ctx: PrBodyContext): string {
 }
 
 function formatDuration(totalMs: number): string {
-  const totalSeconds = Math.round(totalMs / MS_PER_SECOND);
+  const clampedMs = Math.max(0, Math.round(totalMs));
+  const totalSeconds = Math.floor(clampedMs / MS_PER_SECOND);
   const minutes = Math.floor(totalSeconds / SECONDS_PER_MINUTE);
   const seconds = totalSeconds % SECONDS_PER_MINUTE;
   return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
@@ -74,13 +69,26 @@ function buildSummaryLines(ctx: PrBodyContext): string[] {
   ];
 }
 
+/**
+ * Escape a string for safe inclusion in a single markdown table cell.
+ *
+ * Pipes break the column boundary and newlines create new rows. Replace both
+ * with their backslash-escaped form (`\|`, `\n` → space) so downstream
+ * renderers parse the row as a single line.
+ */
+function escapeTableCell(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+}
+
 function buildStoryTable(stories: UserStory[]): string[] {
   const lines: string[] = [];
   lines.push("| Story | Title | ACs |");
   lines.push("|-------|-------|-----|");
   for (const story of stories) {
     const acCount = story.acceptanceCriteria?.length ?? 0;
-    lines.push(`| ${story.id} | ${story.title} | ${acCount} |`);
+    const id = escapeTableCell(story.id);
+    const title = escapeTableCell(story.title);
+    lines.push(`| ${id} | ${title} | ${acCount} |`);
   }
   lines.push("");
   return lines;

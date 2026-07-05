@@ -10,6 +10,7 @@
  * swap in test fakes without touching real disk.
  */
 
+import * as path from "node:path";
 import type { AutoPrDeps, ForgeKind } from "./types";
 
 /**
@@ -27,9 +28,9 @@ const GITHUB_TEMPLATE_PATHS: readonly string[] = [
 /** Preferred single-template location for GitLab. */
 const GITLAB_DEFAULT_TEMPLATE_PATH = ".gitlab/merge_request_templates/Default.md";
 
-async function firstExisting(deps: AutoPrDeps, paths: readonly string[]): Promise<string | null> {
+async function firstExisting(workdir: string, deps: AutoPrDeps, paths: readonly string[]): Promise<string | null> {
   for (const relPath of paths) {
-    const content = await deps.readText(relPath);
+    const content = await deps.readText(path.join(workdir, relPath));
     if (content !== null) {
       return content;
     }
@@ -40,19 +41,20 @@ async function firstExisting(deps: AutoPrDeps, paths: readonly string[]): Promis
 /**
  * Locate the PR/MR template for the current repository.
  *
- * @param workdir - Absolute path to the repository root (unused here; preserved for
- *                  the contract that callers may resolve relative-to-workdir paths
- *                  inside their `deps.readText` implementation).
+ * @param workdir - Absolute path to the repository root. Each candidate template
+ *                  path is joined with `workdir` before being passed to
+ *                  `deps.readText`, so an implementation that resolves the path
+ *                  literally honours the documented contract.
  * @param forge   - Host type. Currently only `"github"` and `"gitlab"` are supported.
  * @param deps    - Injected deps. Only `deps.readText` is consulted.
  * @returns Template text verbatim, or `null` when no template resolves.
  */
-export async function findPrTemplate(_workdir: string, forge: ForgeKind, deps: AutoPrDeps): Promise<string | null> {
+export async function findPrTemplate(workdir: string, forge: ForgeKind, deps: AutoPrDeps): Promise<string | null> {
   if (forge === "github") {
-    return firstExisting(deps, GITHUB_TEMPLATE_PATHS);
+    return firstExisting(workdir, deps, GITHUB_TEMPLATE_PATHS);
   }
   if (forge === "gitlab") {
-    return firstExisting(deps, [GITLAB_DEFAULT_TEMPLATE_PATH]);
+    return firstExisting(workdir, deps, [GITLAB_DEFAULT_TEMPLATE_PATH]);
   }
   return null;
 }

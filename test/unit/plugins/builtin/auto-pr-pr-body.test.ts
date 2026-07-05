@@ -10,8 +10,6 @@ import { buildBody, buildTitle } from "../../../../src/plugins/builtin/auto-pr/p
 import type { PrBodyContext } from "../../../../src/plugins/builtin/auto-pr/pr-body";
 import type { UserStory } from "../../../../src/prd/types";
 
-const noopLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
-
 function makeStory(id: string, title: string, acceptanceCriteria: string[]): UserStory {
   return {
     id,
@@ -33,13 +31,11 @@ function makeContext(overrides: Partial<PrBodyContext> = {}): PrBodyContext {
     totalCost: 0.42,
     totalDurationMs: 192_000,
     prdPath: ".nax/features/auto-pr-plugin/prd.json",
-    storySummary: { completed: 4, failed: 0, skipped: 0, paused: 0 },
+    storySummary: { completed: 4, failed: 0, skipped: 0 },
     stories: [
       makeStory("US-001", "Config foundation", ["a", "b", "c", "d"]),
       makeStory("US-002", "Build helpers", ["x"]),
     ],
-    pluginConfig: {},
-    logger: noopLogger,
     ...overrides,
   };
 }
@@ -74,7 +70,7 @@ describe("buildBody (null template)", () => {
 
   test("AC4 — reports completed as passed and skipped count from storySummary", () => {
     const ctx = makeContext({
-      storySummary: { completed: 3, failed: 0, skipped: 1, paused: 0 },
+      storySummary: { completed: 3, failed: 0, skipped: 1 },
     });
     const body = buildBody(ctx, null);
 
@@ -117,5 +113,37 @@ describe("buildBody (with template)", () => {
 
     expect(body).toContain("| US-001 | Config foundation | 4 |");
     expect(body).toContain("| US-002 | Build helpers | 1 |");
+  });
+});
+
+describe("buildBody edge cases", () => {
+  test("clamps negative totalDurationMs to zero instead of rendering negative minutes", () => {
+    const ctx = makeContext({ totalDurationMs: -1000 });
+    const body = buildBody(ctx, null);
+
+    expect(body).not.toMatch(/-\d+m/);
+    expect(body).toContain("0m 00s");
+  });
+
+  test("escapes pipe characters in story id and title to keep table row intact", () => {
+    const ctx = makeContext({
+      stories: [makeStory("US|x", "Title|y", ["a"])],
+    });
+    const body = buildBody(ctx, null);
+
+    expect(body).toContain("US\\|x");
+    expect(body).toContain("Title\\|y");
+  });
+
+  test("flattens newlines in title to a single line per row", () => {
+    const ctx = makeContext({
+      stories: [makeStory("US-099", "Line1\nLine2", ["a"])],
+    });
+    const body = buildBody(ctx, null);
+
+    const row = body.split("\n").find((line) => line.startsWith("| US-099"));
+    expect(row).toBeDefined();
+    expect(row).not.toContain("Line1\nLine2");
+    expect(row).toContain("Line1 Line2");
   });
 });
