@@ -10,6 +10,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Command } from "commander";
 import {
   _routingCalibrateDeps,
@@ -19,6 +22,7 @@ import {
 } from "../../../src/cli/routing-calibrate";
 import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config";
+import { NaxError } from "../../../src/errors";
 import type { RunMetrics } from "../../../src/metrics";
 
 type CalibrateDeps = typeof _routingCalibrateDeps;
@@ -509,7 +513,7 @@ describe("CLI plumbing — Commander-driven parse path for --min-samples", () =>
     const result = await runRoutingCalibrateCli({ dir: WORKDIR, apply: false, json: false, minSamples: "abc" }, deps);
 
     expect(result.exitCode).toBe(1);
-    expect(stderrLines.join("\n")).toContain("--min-samples must be an integer");
+    expect(stderrLines.join("\n")).toContain("--min-samples must be a non-negative integer");
   });
 
   test("parseMinSamplesFlag throws NaxError with INVALID_MIN_SAMPLES code on non-numeric input", () => {
@@ -519,6 +523,43 @@ describe("CLI plumbing — Commander-driven parse path for --min-samples", () =>
     } catch (err) {
       expect((err as { code?: string }).code).toBe("INVALID_MIN_SAMPLES");
     }
+  });
+
+  test("parseMinSamplesFlag rejects mixed-alphanumeric tokens like '20abc'", () => {
+    expect(() => parseMinSamplesFlag("20abc")).toThrow(/non-negative integer/);
+    expect(() => parseMinSamplesFlag("20abc")).toThrow(NaxError);
+    try {
+      parseMinSamplesFlag("20abc");
+    } catch (err) {
+      expect((err as { code?: string }).code).toBe("INVALID_MIN_SAMPLES");
+    }
+  });
+
+  test("parseMinSamplesFlag rejects fractional tokens like '3.5'", () => {
+    expect(() => parseMinSamplesFlag("3.5")).toThrow(/non-negative integer/);
+    try {
+      parseMinSamplesFlag("3.5");
+    } catch (err) {
+      expect((err as { code?: string }).code).toBe("INVALID_MIN_SAMPLES");
+    }
+  });
+
+  test("parseMinSamplesFlag rejects negative values like '-1'", () => {
+    expect(() => parseMinSamplesFlag("-1")).toThrow(/non-negative integer/);
+    try {
+      parseMinSamplesFlag("-1");
+    } catch (err) {
+      expect((err as { code?: string }).code).toBe("INVALID_MIN_SAMPLES");
+    }
+  });
+
+  test("parseMinSamplesFlag rejects empty string", () => {
+    expect(() => parseMinSamplesFlag("")).toThrow(/non-negative integer/);
+  });
+
+  test("parseMinSamplesFlag rejects leading or trailing whitespace", () => {
+    expect(() => parseMinSamplesFlag(" 20")).toThrow(/non-negative integer/);
+    expect(() => parseMinSamplesFlag("20 ")).toThrow(/non-negative integer/);
   });
 
   test("parseMinSamplesFlag returns the integer for valid input", () => {
@@ -582,5 +623,25 @@ describe("routingCalibrateCommand — partial project config overlay", () => {
     expect(written?.autoMode.complexityRouting.medium).toBe("balanced");
     expect(written?.autoMode.complexityRouting.complex).toBe("powerful");
     expect(written?.autoMode.complexityRouting.expert).toBe("powerful");
+  });
+});
+
+// ─── Default readConfig delegates to the layered loadConfig ────────────────
+
+describe("_routingCalibrateDeps.readConfig — delegates to the repo's layered loadConfig", () => {
+  test("readConfig delegates to loadConfig, not the raw .nax/config.json only", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "nax-routing-test-"));
+    try {
+      mkdirSync(join(tmpDir, ".nax"), { recursive: true });
+      writeFileSync(join(tmpDir, ".nax/config.json"), JSON.stringify({ version: 1 }));
+      const result = await _routingCalibrateDeps.readConfig(tmpDir);
+      expect(result).not.toBeNull();
+      expect(result?.name).toBeDefined();
+      expect(result?.autoMode).toBeDefined();
+      expect(result?.autoMode.complexityRouting).toBeDefined();
+      expect(result?.execution).toBeDefined();
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });

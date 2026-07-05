@@ -1,13 +1,14 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
+import { loadConfig as _loadConfig } from "../config/loader";
 import { deepMergeConfig } from "../config/merger";
 import { NaxError } from "../errors";
 import { loadRunMetrics as _loadRunMetrics } from "../metrics";
 import type { RunMetrics } from "../metrics";
 import { projectInputDir, projectOutputDir } from "../runtime";
-import { loadJsonFile, saveJsonFile } from "../utils/json-file";
+import { saveJsonFile } from "../utils/json-file";
 
 import { computeBandStats, proposeAdjustments } from "../routing";
 import type { CalibrationProposal, KeywordHint, TierAdjustment } from "../routing/calibrate";
@@ -37,10 +38,11 @@ export interface RoutingCalibrateDeps {
 export const _routingCalibrateDeps: RoutingCalibrateDeps = {
   loadRunMetrics: (outputDir: string) => _loadRunMetrics(outputDir),
   readConfig: async (workdir: string): Promise<NaxConfig | null> => {
-    const candidatePath = join(projectInputDir(workdir), "config.json");
-    if (!existsSync(candidatePath)) return null;
-    const data = await loadJsonFile<NaxConfig>(candidatePath, "routing-calibrate");
-    return data ?? null;
+    try {
+      return await _loadConfig(workdir);
+    } catch {
+      return null;
+    }
   },
   writeConfig: async (workdir: string, config: NaxConfig): Promise<void> => {
     const dir = projectInputDir(workdir);
@@ -58,19 +60,23 @@ export const _routingCalibrateDeps: RoutingCalibrateDeps = {
 
 /**
  * Parse the `--min-samples` CLI flag value (delivered as a string by
- * Commander) into an integer. Returns `undefined` when the flag was not
- * provided; throws on non-numeric input so the caller can surface the
- * user-facing error.
+ * Commander) into a non-negative integer. Returns `undefined` when the
+ * flag was not provided; throws on any malformed or out-of-range input
+ * so the caller can surface the user-facing error.
+ *
+ * Strict to avoid silent misconfiguration:
+ *  - "20abc", "3.5", "-1", " 20 ", "" → reject.
+ *  - "20" → 20; "0" → 0 (a valid floor of zero disables the threshold).
  */
 export function parseMinSamplesFlag(raw: string | undefined): number | undefined {
   if (raw === undefined) return undefined;
-  const parsed = Number.parseInt(raw, 10);
-  if (Number.isNaN(parsed)) {
-    throw new NaxError(`--min-samples must be an integer (got "${raw}")`, "INVALID_MIN_SAMPLES", {
+  if (!/^(0|[1-9][0-9]*)$/.test(raw)) {
+    throw new NaxError(`--min-samples must be a non-negative integer (got "${raw}")`, "INVALID_MIN_SAMPLES", {
       stage: "routing-calibrate",
       value: raw,
     });
   }
+  const parsed = Number.parseInt(raw, 10);
   return parsed;
 }
 
