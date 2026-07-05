@@ -6,6 +6,7 @@
  * (survived), or the verification never produced a signal (errored).
  */
 
+import { NaxError } from "@/errors";
 import type { VerificationResult } from "../types";
 import type { MutantOutcome } from "./types";
 
@@ -21,7 +22,10 @@ export function classifyMutant(result: VerificationResult): MutantOutcome {
       return "errored";
     default: {
       const _exhaustive: never = result.status;
-      throw new Error(`[mutation-classify] unhandled status: ${String(_exhaustive)}`);
+      throw new NaxError(`[mutation-classify] unhandled status: ${String(_exhaustive)}`, "MUTATION_UNHANDLED_STATUS", {
+        stage: "mutation-classify",
+        status: _exhaustive as string,
+      });
     }
   }
 }
