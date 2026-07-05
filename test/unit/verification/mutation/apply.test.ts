@@ -7,20 +7,20 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { type Mutant, applyMutant, revertMutant } from "@/verification";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 describe("applyMutant", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-apply-"));
+    tempDir = makeTempDir("nax-apply-");
   });
 
   afterEach(() => {
-    rmSync(tempDir, { recursive: true, force: true });
+    cleanupTempDir(tempDir);
   });
 
   test("AC1: writing a mutant writes m.after at line m.line", async () => {
@@ -89,11 +89,11 @@ describe("revertMutant", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-revert-"));
+    tempDir = makeTempDir("nax-revert-");
   });
 
   afterEach(() => {
-    rmSync(tempDir, { recursive: true, force: true });
+    cleanupTempDir(tempDir);
   });
 
   test("AC2: applyMutant followed by revertMutant restores the file byte-for-byte", async () => {

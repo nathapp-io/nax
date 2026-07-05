@@ -7,7 +7,7 @@ import { cleanupTempDir, makeTempDir } from "@test/helpers";
 const FAKE_STORY = { id: "US-004", title: "mutation-check op" } as any;
 
 function ctxWithConfig(execution: Record<string, unknown> = {}): any {
-  const config = { execution } as any;
+  const config = { execution, quality: { commands: { test: "bun test" } } } as any;
   return {
     runtime: {},
     storyId: "US-004",
@@ -431,8 +431,8 @@ describe("mutationCheckOp — AC7: maxMutants caps regression calls", () => {
   });
 });
 
-describe("mutationCheckOp — AC8: forwards mutant + storyGitRef + effectiveCommand", () => {
-  test("selectScopedTests receives mutated file and storyGitRef; regression receives effectiveCommand", async () => {
+describe("mutationCheckOp — AC8: forwards storyGitRef + configured command; regression receives effectiveCommand", () => {
+  test("selectScopedTests receives storyGitRef and the configured base test command; regression receives effectiveCommand", async () => {
     const dir = makeTempDir("nax-mutation-test-");
     let capturedSelectInput: any = undefined;
     let capturedRegressionCommand: string | undefined;
@@ -477,8 +477,7 @@ describe("mutationCheckOp — AC8: forwards mutant + storyGitRef + effectiveComm
 
       expect(capturedSelectInput).toBeDefined();
       expect(capturedSelectInput.storyGitRef).toBe("deadbeef");
-      const referenced = JSON.stringify(capturedSelectInput);
-      expect(referenced).toContain("src/foo.ts");
+      expect(capturedSelectInput.testCommand).toBe("bun test");
       expect(capturedRegressionCommand).toBe("bun test src/foo.test.ts");
     } finally {
       cleanupTempDir(dir);

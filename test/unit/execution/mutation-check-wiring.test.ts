@@ -408,7 +408,7 @@ describe("AC6: mutation-check survivor with success:true does not halt verifier"
 
 describe("regression: assemblePlanInputsFromCtx populates mutationCheck", () => {
   test("enabled: mutationCheck input is populated from pipeline context", async () => {
-    const { assemblePlanInputsFromCtx } = await import("@/execution/plan-inputs");
+    const { assemblePlanInputsFromCtx } = await import("@/execution");
     const ctx = {
       story: makeStory({ id: "US-005", title: "Test" }),
       config: makeNaxConfig({
@@ -434,7 +434,7 @@ describe("regression: assemblePlanInputsFromCtx populates mutationCheck", () => 
   });
 
   test("disabled: mutationCheck input remains undefined", async () => {
-    const { assemblePlanInputsFromCtx } = await import("@/execution/plan-inputs");
+    const { assemblePlanInputsFromCtx } = await import("@/execution");
     const ctx = {
       story: makeStory({ id: "US-005", title: "Test" }),
       config: makeNaxConfig(),

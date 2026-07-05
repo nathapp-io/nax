@@ -12,7 +12,8 @@
  * DI collaborators (mirrors _verifyScopedDeps) so unit tests need no real git/test run.
  */
 
-import { mutationCheckConfigSelector } from "../config/selectors";
+import { isAbsolute, join } from "node:path";
+import { mutationCheckConfigSelector, qualityConfigSelector } from "../config";
 import type { MutationCheckConfig } from "../config/selectors";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
@@ -21,7 +22,6 @@ import type { ResolvedTestPatterns } from "../test-runners";
 import { selectScopedTests } from "../test-runners/scoped-selection";
 import type { SelectScopedTestsInput, SelectScopedTestsResult } from "../test-runners/scoped-selection";
 import { applyMutant, classifyMutant, generateMutants, revertMutant } from "../verification/mutation";
-import { getOperatorsForLanguage } from "../verification/mutation/operators";
 import type { Mutant, SurvivingMutant } from "../verification/mutation/types";
 import { regression } from "../verification/runners";
 import { getChangedNonTestFiles } from "../verification/smart-runner";
@@ -76,6 +76,18 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
     const logger = getLogger();
     const packageDir = input.packageDir ?? input.workdir;
     const language = await deps.detectLanguage(packageDir);
+    const quality = ctx.packageView.select(qualityConfigSelector);
+    let baseTestCommand = quality.quality?.commands?.test;
+    if (!baseTestCommand) {
+      const { resolveDefaultQualityCommands } = await import("../quality/command-defaults");
+      baseTestCommand = (await resolveDefaultQualityCommands(input.workdir)).test;
+    }
+    if (!baseTestCommand) {
+      logger.warn("mutation-check", "No test command configured — skipping mutation spot-check", {
+        storyId: input.storyId,
+      });
+      return { success: true, survivors: [] };
+    }
     const changedFiles = await deps.getChangedNonTestFiles(
       input.workdir,
       input.storyGitRef,
@@ -84,60 +96,69 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       undefined,
       input.repoRoot,
     );
+    // getChangedNonTestFiles returns paths relative to repoRoot — anchor them
+    // before any file I/O so this doesn't silently resolve against process.cwd().
+    const anchor = input.repoRoot ?? input.workdir;
+    const absoluteChangedFiles = changedFiles.map((f) => (isAbsolute(f) ? f : join(anchor, f)));
 
     const survivors: SurvivingMutant[] = [];
-    const hasOperators = getOperatorsForLanguage(language).length > 0;
     // Per-story budget cap: cfg.maxMutants applies to the total across all
     // changed files, not per-file. Accumulate mutants until we reach the cap.
     const mutants: Mutant[] = [];
-    if (hasOperators) {
-      for (const file of changedFiles) {
-        if (mutants.length >= cfg.maxMutants) break;
+    for (const file of absoluteChangedFiles) {
+      if (mutants.length >= cfg.maxMutants) break;
+      try {
         const source = await Bun.file(file).text();
         for (const m of generateMutants({ source, language, file })) {
           mutants.push(m);
           if (mutants.length >= cfg.maxMutants) break;
         }
+      } catch (err) {
+        // Fail-open: a source read failure never fails the story — skip this file.
+        logger.warn("mutation-check", "Failed to read changed file — skipping", {
+          storyId: input.storyId,
+          file,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
     for (const mutant of mutants) {
-      await applyMutant(mutant);
       try {
-        const scoped = await deps.selectScopedTests({
-          workdir: input.workdir,
-          storyId: input.storyId,
-          storyGitRef: input.storyGitRef,
-          testCommand: `bun test ${mutant.file}`,
-          smartRunnerConfig: undefined,
-          fallbackFullSuiteCommand: `bun test ${mutant.file}`,
-          repoRoot: input.repoRoot,
-          packagePrefix: input.packagePrefix,
-          resolvedTestPatterns: input.resolvedTestPatterns,
-        });
-        let result: VerificationResult;
+        await applyMutant(mutant);
         try {
-          result = await deps.regression({
+          const scoped = await deps.selectScopedTests({
+            workdir: input.workdir,
+            storyId: input.storyId,
+            storyGitRef: input.storyGitRef,
+            testCommand: baseTestCommand,
+            testScopedTemplate: quality.quality?.commands?.testScoped,
+            smartRunnerConfig: quality.execution?.smartTestRunner,
+            fallbackFullSuiteCommand: baseTestCommand,
+            repoRoot: input.repoRoot,
+            packagePrefix: input.packagePrefix,
+            resolvedTestPatterns: input.resolvedTestPatterns,
+          });
+          const result = await deps.regression({
             workdir: input.workdir,
             command: scoped.effectiveCommand,
             timeoutSeconds: cfg.timeoutSeconds,
           });
-        } catch (err) {
-          // Fail-open: a regression subprocess throw is never a gate failure.
-          // revertMutant below restores the worktree; we just skip this mutant.
-          logger.warn("mutation-check", "regression() threw — skipping mutant", {
-            storyId: input.storyId,
-            file: mutant.file,
-            line: mutant.line,
-            operatorId: mutant.operatorId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-          continue;
+          if (classifyMutant(result) === "survived") {
+            survivors.push({ ...mutant, outcome: "survived" });
+          }
+        } finally {
+          await revertMutant(mutant);
         }
-        if (classifyMutant(result) === "survived") {
-          survivors.push({ ...mutant, outcome: "survived" });
-        }
-      } finally {
-        await revertMutant(mutant);
+      } catch (err) {
+        // Fail-open: any error mutating/testing/reverting a single mutant is
+        // never a gate failure — log and move on to the next mutant.
+        logger.warn("mutation-check", "Error processing mutant — skipping", {
+          storyId: input.storyId,
+          file: mutant.file,
+          line: mutant.line,
+          operatorId: mutant.operatorId,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 

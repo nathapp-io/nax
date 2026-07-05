@@ -42,6 +42,7 @@ function makeCtx(mutationCheckOverrides: Record<string, unknown> = {}): any {
   const { mutationCheckConfigSelector } = require("../../../src/config/selectors");
   const config = parseConfig(NaxConfigSchema, {
     execution: { mutationCheck: { ...mutationCheckOverrides } },
+    quality: { commands: { test: "bun test" } },
   });
   const packageView = {
     packageDir: ".",

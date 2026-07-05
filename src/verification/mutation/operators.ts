@@ -19,11 +19,41 @@ const TS_COMPARISON_PAIRS: ReadonlyArray<PatternReplacement> = [
   [/!=/g, "=="],
   [/===/g, "!=="],
   [/!==/g, "==="],
-  [/>/g, "<"],
-  [/</g, ">"],
   [/>=/g, "<="],
   [/<=/g, ">="],
 ];
+
+// Bare >/< flips require whitespace on both sides — the shape a real
+// comparison takes (`a > b`), but neither an arrow function (`x => x`, no
+// space before `>`) nor a generic (`Array<string>`, no space before `<` and
+// none before the closing `>` either) takes. Scoping this way avoids
+// producing mutants that fail to compile — always "killed" regardless of
+// test quality.
+const COMPARISON_GT = /(?<=\s)>(?!=)(?=\s|$)/g;
+const COMPARISON_LT = /(?<=\s)<(?!=)(?=\s)/g;
+
+function applyComparisonBracketFlip(snippet: string): string[] {
+  const seen = new Set<string>();
+  const results: string[] = [];
+  if (COMPARISON_GT.test(snippet)) {
+    COMPARISON_GT.lastIndex = 0;
+    const produced = snippet.replace(COMPARISON_GT, "<");
+    if (produced !== snippet) {
+      seen.add(produced);
+      results.push(produced);
+    }
+  }
+  if (COMPARISON_LT.test(snippet)) {
+    COMPARISON_LT.lastIndex = 0;
+    const produced = snippet.replace(COMPARISON_LT, ">");
+    if (produced !== snippet && !seen.has(produced)) {
+      results.push(produced);
+    }
+  }
+  return results;
+}
+
+const TS_COMPARISON_BRACKET_FLIP_ID = "ts:cmp-bracket-flip";
 
 const TS_COMPARISON_FLIP_ID = "ts:cmp-flip";
 
@@ -71,6 +101,7 @@ const TS_ARITHMETIC_FLIP_ID = "ts:arith-flip";
 
 const TYPESCRIPT_OPERATORS: ReadonlyArray<MutationOperator> = [
   { id: TS_COMPARISON_FLIP_ID, apply: (snippet) => flipWithPairs(TS_COMPARISON_PAIRS, snippet) },
+  { id: TS_COMPARISON_BRACKET_FLIP_ID, apply: applyComparisonBracketFlip },
   { id: TS_BOOLEAN_FLIP_ID, apply: applyBooleanFlip },
   { id: TS_ARITHMETIC_FLIP_ID, apply: (snippet) => flipWithPairs(TS_ARITHMETIC_PAIRS, snippet) },
 ];
