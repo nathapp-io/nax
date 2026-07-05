@@ -2,3 +2,4 @@
 [2026-07-05T12:27:56.658Z] US-002 — PASSED — Implement pure band-stat computation — Cost: $0.6272
 [2026-07-05T12:44:33.659Z] US-003 — PASSED — Implement pure adjustment proposal logic — Cost: $0.7321
 [2026-07-05T13:38:46.031Z] US-004 — PASSED — Add the `nax routing calibrate` CLI — Cost: $6.0628
+[2026-07-05T14:03:57.177Z] US-005 — PASSED — Add the `nax-auto-route` post-run plugin — Cost: $2.2423
