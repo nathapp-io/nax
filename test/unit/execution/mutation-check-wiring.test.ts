@@ -398,3 +398,55 @@ describe("AC6: mutation-check survivor with success:true does not halt verifier"
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Regression: assemblePlanInputsFromCtx must populate mutationCheck when the
+// config flag is enabled. The plan-inputs interface was extended but the
+// pipeline-context assembly path is what actually wires the slot at runtime,
+// so an unguarded extension leaves the feature dead in the real pipeline.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("regression: assemblePlanInputsFromCtx populates mutationCheck", () => {
+  test("enabled: mutationCheck input is populated from pipeline context", async () => {
+    const { assemblePlanInputsFromCtx } = await import("@/execution/plan-inputs");
+    const ctx = {
+      story: makeStory({ id: "US-005", title: "Test" }),
+      config: makeNaxConfig({
+        execution: {
+          ...makeNaxConfig().execution,
+          mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 },
+        },
+      }),
+      workdir: "/tmp/repo",
+      routing: { testStrategy: "three-session-tdd", agent: "claude" },
+      prompt: "",
+      featureContextMarkdown: "feat",
+      constitution: { content: "" },
+      prd: { feature: "f" },
+      projectDir: "/tmp/proj",
+      storyGitRef: "abc123",
+    } as any;
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.mutationCheck).toBeDefined();
+    expect(inputs.mutationCheck?.storyId).toBe("US-005");
+    expect(inputs.mutationCheck?.storyGitRef).toBe("abc123");
+    expect(inputs.mutationCheck?.repoRoot).toBe("/tmp/proj");
+  });
+
+  test("disabled: mutationCheck input remains undefined", async () => {
+    const { assemblePlanInputsFromCtx } = await import("@/execution/plan-inputs");
+    const ctx = {
+      story: makeStory({ id: "US-005", title: "Test" }),
+      config: makeNaxConfig(),
+      workdir: "/tmp/repo",
+      routing: { testStrategy: "three-session-tdd", agent: "claude" },
+      prompt: "",
+      featureContextMarkdown: "feat",
+      constitution: { content: "" },
+      prd: { feature: "f" },
+      projectDir: "/tmp/proj",
+    } as any;
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.mutationCheck).toBeUndefined();
+  });
+});
