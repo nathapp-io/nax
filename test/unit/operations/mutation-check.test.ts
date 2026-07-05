@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { mutationCheckOp, _mutationCheckDeps } from "@/operations";
 import type { MutationCheckDeps } from "@/operations";
-import { makeTempDir, cleanupTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const FAKE_STORY = { id: "US-004", title: "mutation-check op" } as any;
 
@@ -297,6 +297,42 @@ describe("mutationCheckOp — AC6: unsupported language no-ops", () => {
       cleanupTempDir(dir);
     }
   });
+
+  test("undefined language → empty survivors, regression not called (no operators for unknown language)", async () => {
+    let regressionCalled = false;
+    const dir = makeTempDir("nax-mutation-test-");
+    try {
+      const deps = fakeDeps({
+        detectLanguage: async () => undefined as any,
+        getChangedNonTestFiles: async () => ["src/foo.unknown"],
+        regression: async () => {
+          regressionCalled = true;
+          return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" };
+        },
+      });
+      const out = await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          storyGitRef: "abc",
+          resolvedTestPatterns: {
+            globs: ["**/*.unknown"],
+            regex: [/test_.*\.unknown$/],
+            pathspec: [":!test_*.unknown"],
+            testDirs: ["tests"],
+          },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
+        deps,
+      );
+      expect(out.success).toBe(true);
+      expect(out.survivors).toEqual([]);
+      expect(regressionCalled).toBe(false);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
 });
 
 describe("mutationCheckOp — AC7: maxMutants caps regression calls", () => {
@@ -341,6 +377,54 @@ describe("mutationCheckOp — AC7: maxMutants caps regression calls", () => {
       );
       expect(out.success).toBe(true);
       expect(regressionCalls).toBeLessThanOrEqual(2);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  test("maxMutants is a per-story budget — caps total across multiple files", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    let regressionCalls = 0;
+    try {
+      const fileA = join(dir, "src", "a.ts");
+      const fileB = join(dir, "src", "b.ts");
+      // 4 candidate mutants per file, 2 files → 8 candidates total.
+      await Bun.write(fileA, ["a == b", "c == d", "e == f", "g == h"].join("\n") + "\n");
+      await Bun.write(fileB, ["i == j", "k == l", "m == n", "o == p"].join("\n") + "\n");
+
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [fileA, fileB],
+        selectScopedTests: async () => ({
+          effectiveCommand: "bun test",
+          isFullSuite: true,
+          thresholdFallback: false,
+          isMonorepoOrchestrator: false,
+        }),
+        regression: async () => {
+          regressionCalls += 1;
+          return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" };
+        },
+      });
+
+      await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          storyGitRef: "abc",
+          repoRoot: dir,
+          resolvedTestPatterns: {
+            globs: ["**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [":!*.test.ts"],
+            testDirs: ["test"],
+          },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
+        deps,
+      );
+      // Per-story budget = 3, NOT per-file. Two files × 3 max = 6 would be wrong.
+      expect(regressionCalls).toBeLessThanOrEqual(3);
     } finally {
       cleanupTempDir(dir);
     }

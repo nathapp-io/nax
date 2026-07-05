@@ -22,7 +22,7 @@ import { selectScopedTests } from "../test-runners/scoped-selection";
 import type { SelectScopedTestsInput, SelectScopedTestsResult } from "../test-runners/scoped-selection";
 import { applyMutant, classifyMutant, generateMutants, revertMutant } from "../verification/mutation";
 import { getOperatorsForLanguage } from "../verification/mutation/operators";
-import type { SurvivingMutant } from "../verification/mutation/types";
+import type { Mutant, SurvivingMutant } from "../verification/mutation/types";
 import { regression } from "../verification/runners";
 import { getChangedNonTestFiles } from "../verification/smart-runner";
 import type { VerificationGateOptions, VerificationResult } from "../verification/types";
@@ -87,54 +87,62 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
 
     const survivors: SurvivingMutant[] = [];
     const hasOperators = getOperatorsForLanguage(language).length > 0;
-    for (const file of changedFiles) {
-      if (!hasOperators) break;
-      const source = await Bun.file(file).text();
-      const mutants = generateMutants({ source, language, file, max: cfg.maxMutants });
-      for (const mutant of mutants) {
-        await applyMutant(mutant);
-        try {
-          const scoped = await deps.selectScopedTests({
-            workdir: input.workdir,
-            storyId: input.storyId,
-            storyGitRef: input.storyGitRef,
-            testCommand: `bun test ${mutant.file}`,
-            smartRunnerConfig: undefined,
-            fallbackFullSuiteCommand: `bun test ${mutant.file}`,
-            repoRoot: input.repoRoot,
-            packagePrefix: input.packagePrefix,
-            resolvedTestPatterns: input.resolvedTestPatterns,
-          });
-          let result: VerificationResult;
-          try {
-            result = await deps.regression({
-              workdir: input.workdir,
-              command: scoped.effectiveCommand,
-              timeoutSeconds: cfg.timeoutSeconds,
-            });
-          } catch (err) {
-            // Fail-open: a regression subprocess throw is never a gate failure.
-            // revertMutant below restores the worktree; we just skip this mutant.
-            logger?.warn("mutation-check", "regression() threw — skipping mutant", {
-              storyId: input.storyId,
-              file: mutant.file,
-              line: mutant.line,
-              operatorId: mutant.operatorId,
-              error: err instanceof Error ? err.message : String(err),
-            });
-            continue;
-          }
-          if (classifyMutant(result) === "survived") {
-            survivors.push({ ...mutant, outcome: "survived" });
-          }
-        } finally {
-          await revertMutant(mutant);
+    // Per-story budget cap: cfg.maxMutants applies to the total across all
+    // changed files, not per-file. Accumulate mutants until we reach the cap.
+    const mutants: Mutant[] = [];
+    if (hasOperators) {
+      for (const file of changedFiles) {
+        if (mutants.length >= cfg.maxMutants) break;
+        const source = await Bun.file(file).text();
+        for (const m of generateMutants({ source, language, file })) {
+          mutants.push(m);
+          if (mutants.length >= cfg.maxMutants) break;
         }
+      }
+    }
+    for (const mutant of mutants) {
+      await applyMutant(mutant);
+      try {
+        const scoped = await deps.selectScopedTests({
+          workdir: input.workdir,
+          storyId: input.storyId,
+          storyGitRef: input.storyGitRef,
+          testCommand: `bun test ${mutant.file}`,
+          smartRunnerConfig: undefined,
+          fallbackFullSuiteCommand: `bun test ${mutant.file}`,
+          repoRoot: input.repoRoot,
+          packagePrefix: input.packagePrefix,
+          resolvedTestPatterns: input.resolvedTestPatterns,
+        });
+        let result: VerificationResult;
+        try {
+          result = await deps.regression({
+            workdir: input.workdir,
+            command: scoped.effectiveCommand,
+            timeoutSeconds: cfg.timeoutSeconds,
+          });
+        } catch (err) {
+          // Fail-open: a regression subprocess throw is never a gate failure.
+          // revertMutant below restores the worktree; we just skip this mutant.
+          logger.warn("mutation-check", "regression() threw — skipping mutant", {
+            storyId: input.storyId,
+            file: mutant.file,
+            line: mutant.line,
+            operatorId: mutant.operatorId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          continue;
+        }
+        if (classifyMutant(result) === "survived") {
+          survivors.push({ ...mutant, outcome: "survived" });
+        }
+      } finally {
+        await revertMutant(mutant);
       }
     }
 
     for (const s of survivors) {
-      logger?.warn("mutation-check", "Test suite did not catch injected mutation", {
+      logger.warn("mutation-check", "Test suite did not catch injected mutation", {
         storyId: input.storyId,
         file: s.file,
         line: s.line,
