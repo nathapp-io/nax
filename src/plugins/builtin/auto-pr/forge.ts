@@ -7,7 +7,7 @@
  * in fakes — no `Bun.spawn` calls live in this file.
  */
 
-import type { PostRunActionResult } from "../../extensions";
+import type { PostRunActionResult } from "@/plugins/extensions";
 import type { AutoPrDeps, ForgeKind } from "./types";
 
 /** Inputs required to open a draft PR/MR. */

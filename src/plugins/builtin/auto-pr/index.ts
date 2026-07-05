@@ -11,7 +11,7 @@
  * as a non-blocking warning.
  */
 
-import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "../../types";
+import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
 import { detectForge as _detectForge, hasOpenPr as _hasOpenPr, openDraft as _openDraft } from "./forge";
 import { type PrBodyContext, buildBody, buildTitle } from "./pr-body";
 import { findPrTemplate as _findPrTemplate } from "./template";

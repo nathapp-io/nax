@@ -577,8 +577,7 @@ export interface NaxConfig {
   debate?: import("../debate/types").DebateConfig;
   /** Curator configuration */
   curator?: CuratorConfig;
-  /** autoPr root configuration */
-  autoPr: AutoPrConfig;
+  autoPr: import("./runtime-types-autopr").AutoPrConfig;
   /** Configuration profile name. For a multi-profile chain this is the composite, e.g. "a+b" (default: "default") */
   profile: string;
   /**
@@ -604,13 +603,6 @@ export interface CuratorConfig {
   rollupPath?: string;
   /** Thresholds for observation filtering */
   thresholds?: CuratorThresholds;
-}
-
-export interface AutoPrConfig {
-  /** Whether auto-PR creation is enabled (default: false) */
-  enabled: boolean;
-  /** Whether to create the PR as a draft (default: true) */
-  draft: boolean;
 }
 
 export type {

@@ -21,29 +21,14 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { PostRunContext } from "../../../../src/plugins/extensions";
-import { loadPlugins } from "../../../../src/plugins/loader";
+import type { PostRunContext } from "@/plugins/extensions";
+import { loadPlugins } from "@/plugins";
 import { autoPrPlugin, _autoPrDeps } from "../../../../src/plugins/builtin/auto-pr";
 import type { AutoPrDeps } from "../../../../src/plugins/builtin/auto-pr/types";
-import type { UserStory } from "../../../../src/prd/types";
 import { buildBody, buildTitle } from "../../../../src/plugins/builtin/auto-pr/pr-body";
+import { makeStory } from "@test/helpers";
 
 const PLUGIN_NAME = "nax-auto-pr";
-
-function makeStory(id: string, title: string): UserStory {
-  return {
-    id,
-    title,
-    description: "",
-    acceptanceCriteria: ["a"],
-    tags: [],
-    dependencies: [],
-    status: "pending",
-    passes: false,
-    escalations: [],
-    attempts: 0,
-  };
-}
 
 function makeContext(overrides: Partial<PostRunContext> = {}): PostRunContext {
   return {
@@ -55,7 +40,10 @@ function makeContext(overrides: Partial<PostRunContext> = {}): PostRunContext {
     totalDurationMs: 60_000,
     totalCost: 0.42,
     storySummary: { completed: 2, failed: 0, skipped: 0, paused: 0 },
-    stories: [makeStory("US-001", "Config"), makeStory("US-002", "Helpers")],
+    stories: [
+      makeStory({ id: "US-001", title: "Config", acceptanceCriteria: ["a"] }),
+      makeStory({ id: "US-002", title: "Helpers", acceptanceCriteria: ["a"] }),
+    ],
     version: "0.1.0",
     pluginConfig: {},
     logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },

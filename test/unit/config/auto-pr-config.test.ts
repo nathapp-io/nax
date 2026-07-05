@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { NaxConfigSchema } from "../../../src/config/schemas";
+import { NaxConfigSchema } from "@/config";
 
 describe("NaxConfigSchema — autoPr root config", () => {
   test("defaults autoPr.enabled to false when omitted", () => {

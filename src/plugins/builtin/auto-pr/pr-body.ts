@@ -7,7 +7,7 @@
  * No I/O — these functions receive a `PrBodyContext` and return strings.
  */
 
-import type { UserStory } from "../../../prd/types";
+import type { UserStory } from "@/prd/types";
 
 const SECONDS_PER_MINUTE = 60;
 const MS_PER_SECOND = 1000;

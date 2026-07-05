@@ -8,22 +8,7 @@
 import { describe, expect, test } from "bun:test";
 import { buildBody, buildTitle } from "../../../../src/plugins/builtin/auto-pr/pr-body";
 import type { PrBodyContext } from "../../../../src/plugins/builtin/auto-pr/pr-body";
-import type { UserStory } from "../../../../src/prd/types";
-
-function makeStory(id: string, title: string, acceptanceCriteria: string[]): UserStory {
-  return {
-    id,
-    title,
-    description: "",
-    acceptanceCriteria,
-    tags: [],
-    dependencies: [],
-    status: "pending",
-    passes: false,
-    escalations: [],
-    attempts: 0,
-  };
-}
+import { makeStory } from "@test/helpers";
 
 function makeContext(overrides: Partial<PrBodyContext> = {}): PrBodyContext {
   return {
@@ -33,8 +18,8 @@ function makeContext(overrides: Partial<PrBodyContext> = {}): PrBodyContext {
     prdPath: ".nax/features/auto-pr-plugin/prd.json",
     storySummary: { completed: 4, failed: 0, skipped: 0 },
     stories: [
-      makeStory("US-001", "Config foundation", ["a", "b", "c", "d"]),
-      makeStory("US-002", "Build helpers", ["x"]),
+      makeStory({ id: "US-001", title: "Config foundation", acceptanceCriteria: ["a", "b", "c", "d"] }),
+      makeStory({ id: "US-002", title: "Build helpers", acceptanceCriteria: ["x"] }),
     ],
     ...overrides,
   };
@@ -127,7 +112,7 @@ describe("buildBody edge cases", () => {
 
   test("escapes pipe characters in story id and title to keep table row intact", () => {
     const ctx = makeContext({
-      stories: [makeStory("US|x", "Title|y", ["a"])],
+      stories: [makeStory({ id: "US|x", title: "Title|y", acceptanceCriteria: ["a"] })],
     });
     const body = buildBody(ctx, null);
 
@@ -137,7 +122,7 @@ describe("buildBody edge cases", () => {
 
   test("flattens newlines in title to a single line per row", () => {
     const ctx = makeContext({
-      stories: [makeStory("US-099", "Line1\nLine2", ["a"])],
+      stories: [makeStory({ id: "US-099", title: "Line1\nLine2", acceptanceCriteria: ["a"] })],
     });
     const body = buildBody(ctx, null);
 

@@ -8,7 +8,7 @@
 import { describe, expect, test } from "bun:test";
 import { detectForge, hasOpenPr, openDraft } from "../../../../src/plugins/builtin/auto-pr/forge";
 import type { AutoPrDeps } from "../../../../src/plugins/builtin/auto-pr/types";
-import type { PostRunActionResult } from "../../../../src/plugins/extensions";
+import type { PostRunActionResult } from "@/plugins/extensions";
 
 interface CapturedRun {
   cmd: string[];
