@@ -3,7 +3,7 @@
   "feature": "empirical-routing",
   "branchName": "feat/empirical-routing",
   "createdAt": "2026-07-05T11:38:41Z",
-  "updatedAt": "2026-07-05T12:44:37.094Z",
+  "updatedAt": "2026-07-05T13:38:49.502Z",
   "userStories": [
     {
       "id": "US-001",
@@ -182,8 +182,8 @@
         "US-001",
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -251,7 +251,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/plugins/loader.ts",
@@ -267,7 +269,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "11eee58ead25a996c77416a0695ed1aaf3a07c5b"
     }
   ],
   "analysis": "Self-audit results: the draft needed tightening in five places. First, spec AC preservation: the feature spec defines 32 acceptance criteria total, split as US-001 (6), US-002 (4), US-003 (8), US-004 (7), and US-005 (7). The revised PRD keeps all 32 spec ACs in `acceptanceCriteria` and adds only narrowly scoped negative-path criteria where a story lacked one, without deleting any spec AC. There are no `[verbatim]` ACs in the spec, so no character-for-character shell or regex entries were required. Second, codebase fit: the relevant implementation seams are real and already present. `loadRunMetrics(outputDir)` is implemented in `src/metrics/tracker.ts:324`-`src/metrics/tracker.ts:329` and re-exported in `src/metrics/index.ts:7`-`src/metrics/index.ts:18`. `StoryMetrics` already exposes `complexity`, `modelTier`, `attempts`, `finalTier`, and `firstPassSuccess` in `src/metrics/types.ts:98`-`src/metrics/types.ts:126`, so the core should derive escalation from `attempts > 1` exactly as the spec says. Existing aggregate logic in `src/metrics/aggregator.ts:121`-`src/metrics/aggregator.ts:153` already treats `story.modelTier !== story.finalTier` as a mismatch signal and computes per-band mismatch rates, which is the correct semantic precedent for calibration math. The current routing SSOT is `autoMode.complexityRouting` in `src/config/schemas.ts:74`-`src/config/schemas.ts:92`, and `complexityToModelTier()` reads only that mapping in `src/routing/router.ts:97`-`src/routing/router.ts:101`; the CLI `--apply` path therefore must merge only that config subtree rather than introducing a second routing store. Third, plugin and CLI integration points are present and should not be invented. Post-run action contracts come from `src/plugins/extensions.ts:174`-`src/plugins/extensions.ts:301`, with re-exports in `src/plugins/types.ts:11`-`src/plugins/types.ts:22`. Built-in plugin registration currently happens in `src/plugins/loader.ts:115`-`src/plugins/loader.ts:145`, where `nax-curator` and `nax-auto-pr` are loaded, and `PluginRegistry.getPostRunActions()` returns plugin-derived actions followed by built-in side-channel actions in `src/plugins/registry.ts:174`-`src/plugins/registry.ts:179`. The new `nax-auto-route` plugin should follow the existing built-in pattern from `src/plugins/builtin/curator/index.ts:1`-`src/plugins/builtin/curator/index.ts:136` and `src/plugins/builtin/auto-pr/index.ts:1`-`src/plugins/builtin/auto-pr/index.ts:194`, including `_deps` injection, loose config reads from `ctx.config`, and fail-open `execute()` behavior. CLI config writing should mirror the injected write pattern in `src/cli/setup-write.ts:8`-`src/cli/setup-write.ts:39`. `bin/nax.ts` currently has a `config` group at `bin/nax.ts:1164` and no existing `routing` command group, so `nax routing calibrate` is a real addition rather than a modification of an existing command surface. Fourth, regression coverage: stories that change existing behavior need guardrails. For US-001 the partial-override parse behavior protects backward-compatible Zod default merging. For US-004 the read-only default and zero-adjustment no-op criteria protect the existing behavior that config is not rewritten unless explicitly requested. For US-005 the advisory-only artifact write criterion protects the current expectation that post-run plugins do not mutate routing config by default. Fifth, naming and test-shape alignment: the repo’s test naming strongly favors paths like `test/integration/cli/cli-*.test.ts` and `test/unit/plugins/builtin/*-acceptance.test.ts`, as shown by `test/unit/plugins/builtin/auto-pr-acceptance.test.ts:1`-`test/unit/plugins/builtin/auto-pr-acceptance.test.ts:163` and `test/unit/plugins/builtin/curator-registration.test.ts:1`-`test/unit/plugins/builtin/curator-registration.test.ts:33`. The revised PRD therefore uses those conventions instead of inventing mismatched test file names. Architecture and migration impact remain additive: no existing metrics format needs migration because `metrics.json` is already consumed as historical `RunMetrics[]`; empty or corrupt metrics already collapse safely to `[]`; the plugin stays opt-in through `autoRoute.enabled === false` by default; the CLI remains read-only unless `--apply` is passed; and the core stays pure and detached from filesystem or Zod concerns. Main risks for implementers are: nested Zod defaults for the new `autoRoute` block must preserve partial override semantics; calibration logic must clamp to the built-in `fast -> balanced -> powerful` ladder even though `ModelTier` is widened in `src/config/schema-types.ts:8`-`src/config/schema-types.ts:13`; CLI config writes must preserve unrelated config keys in `.nax/config.json`; and built-in plugin registration must avoid duplicating post-run actions or accidentally changing registration order.",
