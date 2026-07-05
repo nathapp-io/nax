@@ -58,7 +58,7 @@ function makeContext(overrides: Partial<PostRunContext> = {}): PostRunContext {
   };
 }
 
-function makeStory(input: {
+function makeStoryMetrics(input: {
   storyId: string;
   complexity: string;
   attempts: number;
@@ -91,7 +91,7 @@ function makeAdjustmentHistory(): RunMetrics[] {
   const stories: StoryMetrics[] = [];
   for (let i = 0; i < 4; i++) {
     stories.push(
-      makeStory({
+      makeStoryMetrics({
         storyId: `US-${100 + i}`,
         complexity: "medium",
         attempts: 2,
@@ -101,7 +101,7 @@ function makeAdjustmentHistory(): RunMetrics[] {
   }
   for (let i = 0; i < 4; i++) {
     stories.push(
-      makeStory({
+      makeStoryMetrics({
         storyId: `US-${200 + i}`,
         complexity: "medium",
         attempts: 1,
@@ -151,7 +151,7 @@ function makeBelowThresholdHistory(): RunMetrics[] {
   const stories: StoryMetrics[] = [];
   for (let i = 0; i < 7; i++) {
     stories.push(
-      makeStory({
+      makeStoryMetrics({
         storyId: `US-${300 + i}`,
         complexity: "medium",
         attempts: 1,
