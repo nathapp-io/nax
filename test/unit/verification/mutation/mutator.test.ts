@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { generateMutants } from "../../../../src/verification/mutation";
+import { generateMutants } from "@/verification";
 
 describe("generateMutants — TypeScript operator coverage", () => {
   test("AC1: a > b produces a comparison-flip mutant with after 'a < b'", () => {

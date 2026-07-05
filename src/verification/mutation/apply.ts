@@ -7,6 +7,7 @@
  * truth — no in-memory shadowing.
  */
 
+import { NaxError } from "@/errors";
 import type { Mutant } from "./types";
 
 async function readLines(file: string): Promise<string[]> {
@@ -22,7 +23,11 @@ async function replaceLine(file: string, line: number, value: string): Promise<v
   const lines = await readLines(file);
   const idx = line - 1;
   if (idx < 0 || idx >= lines.length) {
-    throw new Error(`[mutation-apply] line ${line} out of range for ${file}`);
+    throw new NaxError(`[mutation-apply] line ${line} out of range for ${file}`, "MUTATION_LINE_OUT_OF_RANGE", {
+      stage: "mutation-apply",
+      file,
+      line,
+    });
   }
   lines[idx] = value;
   await writeLines(file, lines);

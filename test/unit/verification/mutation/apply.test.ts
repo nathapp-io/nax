@@ -10,8 +10,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { applyMutant, revertMutant } from "../../../../src/verification/mutation/apply";
-import type { Mutant } from "../../../../src/verification/mutation/types";
+import { applyMutant, revertMutant, type Mutant } from "@/verification";
 
 describe("applyMutant", () => {
   let tempDir: string;

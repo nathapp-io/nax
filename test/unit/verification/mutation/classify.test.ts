@@ -6,8 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { classifyMutant } from "../../../../src/verification/mutation/classify";
-import type { VerificationResult } from "../../../../src/verification/types";
+import { classifyMutant, type VerificationResult } from "@/verification";
 
 function makeResult(status: VerificationResult["status"]): VerificationResult {
   return {
