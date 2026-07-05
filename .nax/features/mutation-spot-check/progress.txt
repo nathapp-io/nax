@@ -2,3 +2,4 @@
 [2026-07-05T03:54:17.781Z] US-002 — PASSED — Build deterministic mutation generation core — Cost: $0.8623
 [2026-07-05T04:08:12.172Z] US-003 — PASSED — Add mutation apply, revert, and classification helpers — Cost: $1.8468
 [2026-07-05T04:29:06.547Z] US-004 — PASSED — Implement the mutation-check deterministic operation — Cost: $2.0030
+[2026-07-05T04:41:44.730Z] US-005 — PASSED — Wire mutation-check into story-orchestrator phases and plan building — Cost: $1.3988

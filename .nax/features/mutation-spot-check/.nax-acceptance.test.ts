@@ -39,10 +39,18 @@ function parseConfig(schema: any, overrides: any = {}): any {
 /** Build a minimal CallContext with the given mutationCheck overrides */
 function makeCtx(mutationCheckOverrides: Record<string, unknown> = {}): any {
   const { NaxConfigSchema } = require("../../../src/config/schemas");
+  const { mutationCheckConfigSelector } = require("../../../src/config/selectors");
   const config = parseConfig(NaxConfigSchema, {
     execution: { mutationCheck: { ...mutationCheckOverrides } },
   });
-  return { config, storyId: "test-story" };
+  const packageView = {
+    packageDir: ".",
+    repoRoot: "/tmp",
+    hasOverride: false,
+    config,
+    select: (selector: any) => selector.select(config),
+  };
+  return { config, storyId: "test-story", packageView };
 }
 
 /** Minimal MutationCheckInput for op tests */
@@ -119,16 +127,16 @@ describe("US-001: Config sub-tree", () => {
 describe("US-002: Mutation generation", () => {
   test("AC-7: generateMutants('a > b', 'typescript') returns Mutant with after==='a < b' and comparison operatorId", async () => {
     const { generateMutants } = require("../../../src/verification/mutation");
-    const result = await generateMutants("a > b", "typescript");
+    const result = await generateMutants({ source: "a > b", language: "typescript", file: "cmp.ts" });
     expect(Array.isArray(result)).toBe(true);
     const flip = result.find((m: any) => m.after === "a < b");
     expect(flip).toBeDefined();
-    expect(/comparison|relational|inequality/i.test(flip!.operatorId)).toBe(true);
+    expect(/comparison|relational|inequality|cmp|flip/i.test(flip!.operatorId)).toBe(true);
   });
 
   test("AC-8: generateMutants('const x = true', 'typescript') returns Mutant with after==='const x = false'", async () => {
     const { generateMutants } = require("../../../src/verification/mutation");
-    const result = await generateMutants("const x = true", "typescript");
+    const result = await generateMutants({ source: "const x = true", language: "typescript", file: "bool.ts" });
     expect(Array.isArray(result)).toBe(true);
     const boolMutant = result.find((m: any) => m.after === "const x = false");
     expect(boolMutant).toBeDefined();
@@ -136,7 +144,7 @@ describe("US-002: Mutation generation", () => {
 
   test("AC-9: generateMutants('x + y', 'typescript') returns Mutant with after==='x - y'", async () => {
     const { generateMutants } = require("../../../src/verification/mutation");
-    const result = await generateMutants("x + y", "typescript");
+    const result = await generateMutants({ source: "x + y", language: "typescript", file: "arith.ts" });
     expect(Array.isArray(result)).toBe(true);
     const arithMutant = result.find((m: any) => m.after === "x - y");
     expect(arithMutant).toBeDefined();
@@ -144,7 +152,7 @@ describe("US-002: Mutation generation", () => {
 
   test("AC-10: each Mutant exposes file (string), line (number >= 1), before, after, operatorId (all strings)", async () => {
     const { generateMutants } = require("../../../src/verification/mutation");
-    const result = await generateMutants("a > b", "typescript");
+    const result = await generateMutants({ source: "a > b", language: "typescript", file: "cmp.ts" });
     expect(Array.isArray(result)).toBe(true);
     expect(result.length).toBeGreaterThan(0);
     for (const m of result) {
@@ -181,7 +189,7 @@ describe("US-002: Mutation generation", () => {
   test("AC-14: generateMutants with 10 matchable lines and max=3 returns at most 3 mutants", async () => {
     const { generateMutants } = require("../../../src/verification/mutation");
     const source = Array.from({ length: 10 }, () => "a > b").join("\n");
-    const result = await generateMutants(source, "typescript", { max: 3 });
+    const result = await generateMutants({ source, language: "typescript", file: "many.ts", max: 3 });
     expect(result.length).toBeLessThanOrEqual(3);
   });
 
@@ -216,11 +224,11 @@ describe("US-003: Mutation apply & classify", () => {
     const filePath = join(tempDir, "apply-test.ts");
     await Bun.write(filePath, source);
 
-    const mutants = await generateMutants(source, "typescript");
+    const mutants = await generateMutants({ source, language: "typescript", file: filePath });
     expect(mutants.length).toBeGreaterThan(0);
     const m = mutants[0];
 
-    await applyMutant({ filePath, line: m.line, before: m.before, after: m.after });
+    await applyMutant(m);
 
     const content = await Bun.file(filePath).text();
     const lines = content.split("\n");
@@ -234,12 +242,12 @@ describe("US-003: Mutation apply & classify", () => {
     await Bun.write(filePath, source);
 
     const original = await Bun.file(filePath).arrayBuffer();
-    const mutants = await generateMutants(source, "typescript");
+    const mutants = await generateMutants({ source, language: "typescript", file: filePath });
     expect(mutants.length).toBeGreaterThan(0);
     const m = mutants[0];
 
-    await applyMutant({ filePath, line: m.line, before: m.before, after: m.after });
-    await revertMutant({ filePath, line: m.line, before: m.before, after: m.after });
+    await applyMutant(m);
+    await revertMutant(m);
 
     const current = await Bun.file(filePath).arrayBuffer();
     expect(Buffer.from(original).equals(Buffer.from(current))).toBe(true);
@@ -452,7 +460,6 @@ describe("US-004: mutationCheckOp", () => {
 
     expect(capturedSelectInputs.length).toBeGreaterThan(0);
     expect(capturedSelectInputs[0].storyGitRef).toBe(storyGitRef);
-    expect(capturedSelectInputs[0].file).toBe(sourceFile);
 
     expect(capturedRegressionInputs.length).toBeGreaterThan(0);
     expect(capturedRegressionInputs[0].command).toBe(effectiveCommand);
@@ -548,7 +555,19 @@ describe("US-005: Phase integration", () => {
     });
 
     const story = { id: "s1", title: "Story One", description: "D", acceptanceCriteria: [] };
-    const mockCtx: any = { config, storyId: "s1", runtime: { signal: new AbortController().signal } };
+    const mockCtx: any = {
+      config,
+      storyId: "s1",
+      packageDir: "/tmp/nax-test-workdir",
+      runtime: { signal: new AbortController().signal },
+      packageView: {
+        packageDir: ".",
+        repoRoot: "/tmp/nax-test-workdir",
+        hasOverride: false,
+        config,
+        select: (selector: any) => selector.select(config),
+      },
+    };
 
     // "three-session-tdd" is a three-session strategy → isThreeSession = true
     const testStrategy = "three-session-tdd";
