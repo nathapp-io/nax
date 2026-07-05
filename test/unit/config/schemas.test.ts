@@ -496,4 +496,23 @@ describe("autoRoute config foundation (US-001)", () => {
     const result = NaxConfigSchema.safeParse({ autoRoute: { enabled: "yes" } });
     expect(result.success).toBe(false);
   });
+
+  test("minSamples rejects values < 1", () => {
+    const result = NaxConfigSchema.safeParse({ autoRoute: { minSamples: 0 } });
+    expect(result.success).toBe(false);
+  });
+
+  test("upgrade rates reject values outside [0, 1]", () => {
+    const negResult = NaxConfigSchema.safeParse({ autoRoute: { upgrade: { escalationRate: -0.1 } } });
+    expect(negResult.success).toBe(false);
+    const overResult = NaxConfigSchema.safeParse({ autoRoute: { upgrade: { mismatchRate: 1.1 } } });
+    expect(overResult.success).toBe(false);
+  });
+
+  test("downgrade rates reject values outside [0, 1]", () => {
+    const negResult = NaxConfigSchema.safeParse({ autoRoute: { downgrade: { firstPassRate: -0.01 } } });
+    expect(negResult.success).toBe(false);
+    const overResult = NaxConfigSchema.safeParse({ autoRoute: { downgrade: { escalationRate: 1.01 } } });
+    expect(overResult.success).toBe(false);
+  });
 });

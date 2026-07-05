@@ -20,6 +20,9 @@ export type {
   ConfiguredModelObject,
   ResolvedConfiguredModel,
   AutoModeConfig,
+  AutoRouteConfig,
+  AutoRouteUpgradeConfig,
+  AutoRouteDowngradeConfig,
   ExecutionConfig,
   QualityConfig,
   TddConfig,
@@ -48,7 +51,7 @@ export { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./sche
 export type { AgentRoutingProfile, AgentRoutingConfig } from "./schemas-infra";
 export { AgentRoutingProfileSchema, AgentRoutingConfigSchema } from "./schemas-infra";
 export { DebateConfigSchema } from "./schemas-debate";
-export { TddConfigSchema } from "./schemas-execution";
+export { TddConfigSchema, AutoRouteConfigSchema } from "./schemas-execution";
 export { loadConfig, loadConfigForWorkdir, loadPackageOverride, findProjectDir, globalConfigPath } from "./loader";
 export { mergePackageConfig } from "./merge";
 export { validateConfig, type ValidationResult } from "./validate"; // @deprecated: Use NaxConfigSchema.safeParse() instead
