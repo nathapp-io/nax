@@ -21,10 +21,10 @@ export interface RenderOptions {
   story?: string;
 }
 
-function totalCost(timeline: RunTimeline): number | undefined {
+function totalCost(stories: StoryTimeline[]): number | undefined {
   let sum = 0;
   let hasAny = false;
-  for (const s of timeline.stories) {
+  for (const s of stories) {
     // `typeof NaN === "number"`, so the Number.isFinite guard rejects NaN
     // and ±Infinity from malformed metrics.
     if (typeof s.cost === "number" && Number.isFinite(s.cost)) {
@@ -40,16 +40,26 @@ function formatTotalCost(cost: number | undefined): string {
   return `$${cost.toFixed(4)}`;
 }
 
-function renderHeader(timeline: RunTimeline): string[] {
+/**
+ * `shownStories` is whatever the caller will actually render below the
+ * header (e.g. `{ story: "US-002" }` filters to one) — the header's story
+ * count and cost total must reflect that same set, not the full timeline,
+ * or the two disagree on scope.
+ */
+function renderHeader(timeline: RunTimeline, shownStories: StoryTimeline[]): string[] {
   const isCrashed = timeline.status === "crashed";
   const status = isCrashed ? "CRASHED" : timeline.status;
+  const isFiltered = shownStories.length !== timeline.stories.length;
+  const storiesLine = isFiltered
+    ? `Stories: ${shownStories.length} (of ${timeline.stories.length})`
+    : `Stories: ${shownStories.length}`;
   return [
     "=== nax replay ===",
     `Run: ${timeline.runId || "n/a"}`,
     `Feature: ${timeline.feature || "n/a"}`,
     `Status: ${status}`,
-    `Stories: ${timeline.stories.length}`,
-    `Cost: ${formatTotalCost(totalCost(timeline))}`,
+    storiesLine,
+    `Cost: ${formatTotalCost(totalCost(shownStories))}`,
   ];
 }
 
@@ -89,13 +99,13 @@ function renderStoryBlock(story: StoryTimeline, expandPhases: boolean): string[]
  * color-free so it remains greppable in CI logs.
  */
 export function renderReport(timeline: RunTimeline, options: RenderOptions = {}): string {
+  const stories = options.story ? timeline.stories.filter((s) => s.storyId === options.story) : timeline.stories;
+
   const lines: string[] = [];
-  lines.push(...renderHeader(timeline));
+  lines.push(...renderHeader(timeline, stories));
   lines.push("");
   lines.push("Note: phases reconstructed from logs (best-effort).");
   lines.push("");
-
-  const stories = options.story ? timeline.stories.filter((s) => s.storyId === options.story) : timeline.stories;
 
   for (const story of stories) {
     lines.push(...renderStoryBlock(story, options.all === true));

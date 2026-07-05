@@ -255,6 +255,28 @@ describe("renderReport — AC5: story filter", () => {
     expect(out).not.toContain("US-001");
     expect(out).not.toContain("US-003");
   });
+
+  test("AC5: header's Stories/Cost lines reflect the filtered story, not the whole run", () => {
+    const tl = buildTimeline({
+      stories: [
+        buildStory({ storyId: "US-001", status: "passed", cost: 0.1 }),
+        buildStory({
+          storyId: "US-002",
+          status: "failed",
+          cost: 0.2,
+          phases: [{ name: "implementer", status: "fail" }],
+          rootCausePhaseIndex: 0,
+        }),
+        buildStory({ storyId: "US-003", status: "passed", cost: 0.3 }),
+      ],
+    });
+
+    const out = renderReport(tl, { story: "US-002" });
+
+    expect(out).toMatch(/stories:\s*1\s*\(of 3\)/i);
+    expect(out).toMatch(/cost.*0\.2000/i);
+    expect(out).not.toMatch(/0\.6000/);
+  });
 });
 
 // ---------------------------------------------------------------------------

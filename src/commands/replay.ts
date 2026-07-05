@@ -12,11 +12,15 @@
  */
 
 import { existsSync } from "node:fs";
+import { dirname } from "node:path";
 import type { Command } from "commander";
 import { NaxError } from "../errors";
 import type { NaxStatusFile } from "../execution/status-file";
 import type { LogEntry } from "../logger/types";
 import type { RunMetrics } from "../metrics/types";
+// Internal paths, not the `../replay` barrel: `../replay/index.ts` re-exports
+// `registerReplayCommand` from this file, so importing the barrel here would
+// be circular.
 import { type DiscoveredRun, discoverRun } from "../replay/discovery";
 import { toReplayJson } from "../replay/json";
 import { reconstructTimeline } from "../replay/reconstruct";
@@ -37,7 +41,7 @@ export interface ReplayCommandOptions {
 export interface ReplayCommandDeps {
   discoverRun: (query?: string) => Promise<DiscoveredRun>;
   readJsonl: (path: string) => Promise<LogEntry[]>;
-  readMetrics: (meta: { runId: string; project: string; workdir: string }) => Promise<RunMetrics | undefined>;
+  readMetrics: (meta: { runId: string; eventsDir: string }) => Promise<RunMetrics | undefined>;
   readStatus: (statusPath: string) => Promise<NaxStatusFile | undefined>;
   reconstructTimeline: typeof reconstructTimeline;
   renderReport: (timeline: RunTimeline, options?: RenderOptions) => string;
@@ -74,12 +78,13 @@ async function readJsonOrUndefined<T>(path: string): Promise<T | undefined> {
 
 async function readMetricsFromProject(meta: {
   runId: string;
-  project: string;
-  workdir: string;
+  eventsDir: string;
 }): Promise<RunMetrics | undefined> {
   const { loadRunMetrics } = await import("../metrics/tracker");
-  const { projectOutputDir } = await import("../runtime/paths");
-  const outputDir = projectOutputDir(meta.project, undefined);
+  // eventsDir = join(outputDir, "features", feature, "runs") — strip the
+  // known suffix instead of recomputing outputDir, since projectOutputDir()
+  // ignores the run's actual config.outputDir override.
+  const outputDir = dirname(dirname(dirname(meta.eventsDir)));
   const all = await loadRunMetrics(outputDir);
   return all.find((m) => m.runId === meta.runId);
 }
@@ -126,8 +131,7 @@ export async function runReplay(
   const entries = await deps.readJsonl(discovered.jsonlPath);
   const metrics = await deps.readMetrics({
     runId: discovered.meta.runId,
-    project: discovered.meta.project,
-    workdir: discovered.meta.workdir,
+    eventsDir: discovered.meta.eventsDir,
   });
   const status = await deps.readStatus(discovered.meta.statusPath);
 

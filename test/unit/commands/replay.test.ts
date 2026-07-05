@@ -19,24 +19,21 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Command } from "commander";
-import { registerReplayCommand as registerReplayCommandFromCmd, runReplay, type ReplayCommandDeps } from "@/commands";
+import {
+  _replayCmdDeps,
+  registerReplayCommand as registerReplayCommandFromCmd,
+  runReplay,
+  type ReplayCommandDeps,
+} from "@/commands";
 import { NaxError } from "@/errors";
 import { registerReplayCommand } from "@/replay";
 import type { MetaJson } from "@/pipeline/subscribers/registry";
 import type { LogEntry } from "@/logger/types";
 import type { RunTimeline } from "@/replay";
-
-const TMP_ROOT = join(tmpdir(), "nax-replay-cmd-test");
-
-function setupRunsDir(): string {
-  rmSync(TMP_ROOT, { recursive: true, force: true });
-  mkdirSync(TMP_ROOT, { recursive: true });
-  return TMP_ROOT;
-}
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function writeRunDir(
   runsDir: string,
@@ -135,14 +132,14 @@ describe("runReplay — AC3: discoverRun invocation", () => {
   let deps: ReplayCommandDeps;
 
   beforeEach(() => {
-    runsDir = setupRunsDir();
+    runsDir = makeTempDir("nax-replay-cmd-test-");
     stdoutWrites = [];
     stderrWrites = [];
     deps = makeBaseDeps(runsDir, stdoutWrites, stderrWrites);
   });
 
   afterEach(() => {
-    rmSync(runsDir, { recursive: true, force: true });
+    cleanupTempDir(runsDir);
   });
 
   test("AC3: discoverRun is invoked once with 'run-x' when runReplay('run-x', {}) is called", async () => {
@@ -164,14 +161,14 @@ describe("runReplay — AC4: renderReport with reconstructed timeline", () => {
   let deps: ReplayCommandDeps;
 
   beforeEach(() => {
-    runsDir = setupRunsDir();
+    runsDir = makeTempDir("nax-replay-cmd-test-");
     stdoutWrites = [];
     stderrWrites = [];
     deps = makeBaseDeps(runsDir, stdoutWrites, stderrWrites);
   });
 
   afterEach(() => {
-    rmSync(runsDir, { recursive: true, force: true });
+    cleanupTempDir(runsDir);
   });
 
   test("AC4: renderReport is invoked once with a timeline whose runId matches the discovered run", async () => {
@@ -194,14 +191,14 @@ describe("runReplay — AC5: json mode serializes via toReplayJson", () => {
   let deps: ReplayCommandDeps;
 
   beforeEach(() => {
-    runsDir = setupRunsDir();
+    runsDir = makeTempDir("nax-replay-cmd-test-");
     stdoutWrites = [];
     stderrWrites = [];
     deps = makeBaseDeps(runsDir, stdoutWrites, stderrWrites);
   });
 
   afterEach(() => {
-    rmSync(runsDir, { recursive: true, force: true });
+    cleanupTempDir(runsDir);
   });
 
   test("AC5: { json: true } writes toReplayJson output and does NOT call renderReport", async () => {
@@ -270,13 +267,13 @@ describe("runReplay — AC8: not-found error path", () => {
   let stderrWrites: string[];
 
   beforeEach(() => {
-    runsDir = setupRunsDir();
+    runsDir = makeTempDir("nax-replay-cmd-test-");
     stdoutWrites = [];
     stderrWrites = [];
   });
 
   afterEach(() => {
-    rmSync(runsDir, { recursive: true, force: true });
+    cleanupTempDir(runsDir);
   });
 
   test("AC8: discovers-not-found NaxError resolves to exit code 1 and writes 'missing' to error writer", async () => {
@@ -303,13 +300,13 @@ describe("runReplay — AC9: malformed-line tolerance", () => {
   let stderrWrites: string[];
 
   beforeEach(() => {
-    runsDir = setupRunsDir();
+    runsDir = makeTempDir("nax-replay-cmd-test-");
     stdoutWrites = [];
     stderrWrites = [];
   });
 
   afterEach(() => {
-    rmSync(runsDir, { recursive: true, force: true });
+    cleanupTempDir(runsDir);
   });
 
   test("AC9: JSONL with malformed lines still renders a report and resolves to exit 0", async () => {
@@ -376,13 +373,13 @@ describe("runReplay — AC10: crashed-run end-to-end", () => {
   let stderrWrites: string[];
 
   beforeEach(() => {
-    runsDir = setupRunsDir();
+    runsDir = makeTempDir("nax-replay-cmd-test-");
     stdoutWrites = [];
     stderrWrites = [];
   });
 
   afterEach(() => {
-    rmSync(runsDir, { recursive: true, force: true });
+    cleanupTempDir(runsDir);
   });
 
   test("AC10: injected registry with a crash-signal status.json and no metrics writes CRASHED and resolves to exit 0", async () => {
@@ -475,5 +472,45 @@ describe("runReplay — AC10: crashed-run end-to-end", () => {
     expect(reportArg.status).toBe("crashed");
     expect(reportArg.runId).toBe("run-crash-x");
     expect(stdoutWrites.join("")).toContain("CRASHED");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// _replayCmdDeps.readMetrics (readMetricsFromProject): derives outputDir from
+// eventsDir instead of recomputing it, so a project with a custom
+// config.outputDir still finds its metrics.json.
+// ---------------------------------------------------------------------------
+
+describe("_replayCmdDeps.readMetrics — outputDir derived from eventsDir", () => {
+  let outputDir: string;
+
+  beforeEach(() => {
+    outputDir = makeTempDir("nax-replay-metrics-test-");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(outputDir);
+  });
+
+  test("finds metrics.json under a non-default outputDir via eventsDir, not a recomputed default", async () => {
+    const runMetrics = {
+      runId: "run-custom-outputdir",
+      feature: "feat-x",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      completedAt: "2026-01-01T00:10:00.000Z",
+      totalDurationMs: 600_000,
+      stories: [],
+      storiesFailed: 0,
+    };
+    mkdirSync(outputDir, { recursive: true });
+    writeFileSync(join(outputDir, "metrics.json"), JSON.stringify([runMetrics], null, 2));
+
+    // eventsDir = join(outputDir, "features", feature, "runs") per the
+    // registry-writer contract (src/pipeline/subscribers/registry.ts).
+    const eventsDir = join(outputDir, "features", "feat-x", "runs");
+
+    const found = await _replayCmdDeps.readMetrics({ runId: "run-custom-outputdir", eventsDir });
+
+    expect(found?.runId).toBe("run-custom-outputdir");
   });
 });

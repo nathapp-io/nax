@@ -13,18 +13,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { NaxError } from "@/errors";
 import { discoverRun } from "@/replay";
-
-const TMP_ROOT = join(import.meta.dir, "../../..", "tmp", "replay-discovery-test");
-
-function setupRunsDir(): string {
-  rmSync(TMP_ROOT, { recursive: true, force: true });
-  mkdirSync(TMP_ROOT, { recursive: true });
-  return TMP_ROOT;
-}
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function writeRunDir(
   runsDir: string,
@@ -76,10 +69,10 @@ describe("discoverRun — barrel export", () => {
 describe("discoverRun — AC2: exact runId resolution", () => {
   let runsDir: string;
   beforeEach(() => {
-    runsDir = setupRunsDir();
+    runsDir = makeTempDir("replay-discovery-test-");
   });
   afterEach(() => {
-    rmSync(runsDir, { recursive: true, force: true });
+    cleanupTempDir(runsDir);
   });
 
   test("AC2: meta.feature equals registry feature for exact runId match", async () => {
@@ -122,10 +115,10 @@ describe("discoverRun — AC2: exact runId resolution", () => {
 describe("discoverRun — AC3: prefix match", () => {
   let runsDir: string;
   beforeEach(() => {
-    runsDir = setupRunsDir();
+    runsDir = makeTempDir("replay-discovery-test-");
   });
   afterEach(() => {
-    rmSync(runsDir, { recursive: true, force: true });
+    cleanupTempDir(runsDir);
   });
 
   test("AC3: resolves to the same run via prefix when runId starts with the query", async () => {
@@ -154,10 +147,10 @@ describe("discoverRun — AC3: prefix match", () => {
 describe("discoverRun — AC4: latest default (no argument)", () => {
   let runsDir: string;
   beforeEach(() => {
-    runsDir = setupRunsDir();
+    runsDir = makeTempDir("replay-discovery-test-");
   });
   afterEach(() => {
-    rmSync(runsDir, { recursive: true, force: true });
+    cleanupTempDir(runsDir);
   });
 
   test("AC4: resolves to the entry whose runId is lexicographically greatest when called with no argument", async () => {
@@ -193,10 +186,10 @@ describe("discoverRun — AC4: latest default (no argument)", () => {
 describe("discoverRun — AC5: no-match error", () => {
   let runsDir: string;
   beforeEach(() => {
-    runsDir = setupRunsDir();
+    runsDir = makeTempDir("replay-discovery-test-");
   });
   afterEach(() => {
-    rmSync(runsDir, { recursive: true, force: true });
+    cleanupTempDir(runsDir);
   });
 
   test("AC5: throws NaxError with code RUN_NOT_FOUND when no entry matches", async () => {
@@ -226,10 +219,10 @@ describe("discoverRun — AC5: no-match error", () => {
 describe("discoverRun — AC6: ambiguous-prefix error", () => {
   let runsDir: string;
   beforeEach(() => {
-    runsDir = setupRunsDir();
+    runsDir = makeTempDir("replay-discovery-test-");
   });
   afterEach(() => {
-    rmSync(runsDir, { recursive: true, force: true });
+    cleanupTempDir(runsDir);
   });
 
   test("AC6: throws NaxError with code RUN_NOT_FOUND when more than one entry matches the prefix", async () => {

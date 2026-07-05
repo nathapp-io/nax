@@ -258,6 +258,23 @@ describe("reconstructTimeline — AC9: crashed-run degradation", () => {
 
     expect(tl.status).not.toBe("crashed");
   });
+
+  test.each(["failed", "stalled", "precheck-failed"] as const)(
+    "AC9 degrade: status.json status '%s' with no metrics degrades to 'failed', not 'completed'",
+    (status) => {
+      const statusFile = crashedStatus({ status, crashedAt: undefined, crashSignal: undefined });
+      const tl = reconstructTimeline({ entries: [], status: statusFile, meta: { runId: "run-x", feature: "feat-x" } });
+
+      expect(tl.status).toBe("failed");
+    },
+  );
+
+  test("AC9 boundary: status.json status 'running' with no metrics stays 'completed' (run still in progress)", () => {
+    const statusFile = crashedStatus({ status: "running", crashedAt: undefined, crashSignal: undefined });
+    const tl = reconstructTimeline({ entries: [], status: statusFile, meta: { runId: "run-x", feature: "feat-x" } });
+
+    expect(tl.status).toBe("completed");
+  });
 });
 
 // ---------------------------------------------------------------------------
