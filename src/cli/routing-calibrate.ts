@@ -2,6 +2,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
+import { deepMergeConfig } from "../config/merger";
 import { loadRunMetrics as _loadRunMetrics } from "../metrics";
 import type { RunMetrics } from "../metrics";
 import { projectInputDir, projectOutputDir } from "../runtime";
@@ -104,7 +105,15 @@ export async function routingCalibrateCommand(
   deps: RoutingCalibrateDeps = _routingCalibrateDeps,
 ): Promise<RoutingCalibrateResult> {
   const workdir = options.workdir ?? process.cwd();
-  const priorConfig = await deps.readConfig(workdir);
+  const priorPartial = await deps.readConfig(workdir);
+  // Materialize against DEFAULT_CONFIG so partial overlays (e.g. `{ execution: ... }`)
+  // do not leave `autoMode` undefined when we read the complexity mapping or apply.
+  const priorConfig: NaxConfig = priorPartial
+    ? (deepMergeConfig(
+        structuredClone(DEFAULT_CONFIG) as unknown as Record<string, unknown>,
+        priorPartial as unknown as Record<string, unknown>,
+      ) as unknown as NaxConfig)
+    : DEFAULT_CONFIG;
 
   const outputDir = options.outputDir ?? resolveOutputDir(workdir, undefined, priorConfig);
 
@@ -126,7 +135,7 @@ export async function routingCalibrateCommand(
     return { proposal: emptyProposal, exitCode: 0 };
   }
 
-  const priorMapping = (priorConfig ?? DEFAULT_CONFIG).autoMode.complexityRouting;
+  const priorMapping = priorConfig.autoMode.complexityRouting;
   const bandStats = computeBandStats(runs, priorMapping);
 
   const thresholds: { minSamples?: number } = {};
@@ -143,13 +152,12 @@ export async function routingCalibrateCommand(
   }
 
   if (options.apply && proposal.adjustments.length > 0) {
-    const baseConfig = priorConfig ?? DEFAULT_CONFIG;
     const nextConfig: NaxConfig = {
-      ...baseConfig,
+      ...priorConfig,
       autoMode: {
-        ...baseConfig.autoMode,
+        ...priorConfig.autoMode,
         complexityRouting: mergeComplexityRouting(
-          baseConfig.autoMode.complexityRouting as unknown as Record<string, string>,
+          priorConfig.autoMode.complexityRouting as unknown as Record<string, string>,
           proposal.adjustments,
         ),
       },

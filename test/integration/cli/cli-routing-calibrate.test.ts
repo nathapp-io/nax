@@ -472,3 +472,60 @@ describe("CLI plumbing — --min-samples parses via the same path bin/nax.ts use
     expect(skipped?.minSamples).toBe(20);
   });
 });
+
+// ─── Partial project config overlay (no autoMode in .nax/config.json) ──────
+
+describe("routingCalibrateCommand — partial project config overlay", () => {
+  test("partial overlay without autoMode still computes a proposal and returns exit 0", async () => {
+    const runs = makeRunsWithEscalatingSimpleBand();
+    // Minimal overlay: project .nax/config.json containing only version + execution,
+    // matching the partial-overlay style used everywhere else in this repo.
+    const partialOverlay: NaxConfig = {
+      ...(structuredClone(DEFAULT_CONFIG) as NaxConfig),
+      autoMode: undefined as unknown as NaxConfig["autoMode"],
+      name: "fixture-project",
+    };
+    const { deps, writes } = makeCalibrateDepsFixture();
+    (deps.loadRunMetrics as ReturnType<typeof mock>).mockResolvedValueOnce(runs);
+    (deps.readConfig as ReturnType<typeof mock>).mockResolvedValueOnce(partialOverlay);
+
+    const result = await routingCalibrateCommand(
+      { apply: false, json: false, workdir: WORKDIR, outputDir: OUTPUT_DIR },
+      deps,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(writes).toHaveLength(0);
+    const adj = result.proposal.adjustments.find((a) => a.band === "simple");
+    expect(adj).toBeDefined();
+    expect(adj?.from).toBe("fast");
+    expect(adj?.to).toBe("balanced");
+  });
+
+  test("--apply with partial overlay merges against DEFAULT_CONFIG.autoMode", async () => {
+    const runs = makeRunsWithEscalatingSimpleBand();
+    const partialOverlay: NaxConfig = {
+      ...(structuredClone(DEFAULT_CONFIG) as NaxConfig),
+      autoMode: undefined as unknown as NaxConfig["autoMode"],
+      name: "fixture-project",
+    };
+    const { deps, writes } = makeCalibrateDepsFixture();
+    (deps.loadRunMetrics as ReturnType<typeof mock>).mockResolvedValueOnce(runs);
+    (deps.readConfig as ReturnType<typeof mock>).mockResolvedValueOnce(partialOverlay);
+
+    const result = await routingCalibrateCommand(
+      { apply: true, json: false, workdir: WORKDIR, outputDir: OUTPUT_DIR },
+      deps,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.wroteConfig).toBe(true);
+    expect(writes).toHaveLength(1);
+    const written = writes[0]?.config;
+    expect(written).toBeDefined();
+    expect(written?.autoMode.complexityRouting.simple).toBe("balanced");
+    expect(written?.autoMode.complexityRouting.medium).toBe("balanced");
+    expect(written?.autoMode.complexityRouting.complex).toBe("powerful");
+    expect(written?.autoMode.complexityRouting.expert).toBe("powerful");
+  });
+});
