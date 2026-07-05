@@ -96,7 +96,8 @@ export function proposeAdjustments(
     }
 
     const upgraded = stat.escalationRate >= t.escalationTrigger && stat.mismatchRate >= t.mismatchTrigger;
-    const downgraded = stat.firstPassRate >= t.firstPassFloor && stat.escalationRate <= t.escalationTrigger;
+    const downgraded =
+      stat.firstPassRate >= t.firstPassFloor && stat.escalationRate <= t.escalationTrigger && stat.mismatchRate > 0;
 
     if (upgraded) {
       const to = nextTier(currentTier, "upgrade");

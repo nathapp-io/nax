@@ -81,14 +81,18 @@ describe("proposeAdjustments - upgrade path", () => {
 // ---------------------------------------------------------------------------
 
 describe("proposeAdjustments - downgrade path", () => {
-  test("AC-2: complex/powerful band with firstPassRate=0.95, escalationRate=0.02 → downgrade to balanced", () => {
+  test("AC-2: complex/powerful band with firstPassRate=0.95, escalationRate=0.02, observed finalTiers all at or below balanced → downgrade to balanced", () => {
+    // AC-2 scenario: the band consistently lands at or below balanced even
+    // though the mapping says powerful — encoded by mismatchRate ≈ 1 (every
+    // observed run's finalTier differs from the mapped powerful tier, and the
+    // observed finalTiers sit at balanced or below).
     const stats: BandStat[] = [
       band({
         complexity: "complex",
         sampleCount: 20,
         firstPassRate: 0.95,
         escalationRate: 0.02,
-        mismatchRate: 0.95,
+        mismatchRate: 1,
       }),
     ];
 
@@ -98,6 +102,26 @@ describe("proposeAdjustments - downgrade path", () => {
     expect(adjustment).toBeDefined();
     expect(adjustment?.to).toBe("balanced");
     expect(adjustment?.direction).toBe("downgrade");
+  });
+
+  test("AC-2 negative control: complex/powerful band with observed finalTiers at powerful (mismatchRate=0) → no downgrade", () => {
+    // Same band, same firstPassRate and escalationRate as AC-2, but observed
+    // finalTiers all stayed at powerful (mismatchRate=0). The AC requires the
+    // downgrade to hinge on the observed-tier condition, so this band must NOT
+    // be downgraded even though the scalar rates alone would qualify.
+    const stats: BandStat[] = [
+      band({
+        complexity: "complex",
+        sampleCount: 20,
+        firstPassRate: 0.95,
+        escalationRate: 0.02,
+        mismatchRate: 0,
+      }),
+    ];
+
+    const proposal = proposeAdjustments(stats, MAPPING, DEFAULT_THRESHOLDS);
+
+    expect(proposal.adjustments.find((a) => a.band === "complex")).toBeUndefined();
   });
 });
 
