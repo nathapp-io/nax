@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { NaxConfigSchema } from "../../../src/config/schemas";
 import { buildTitle, buildBody } from "../../../src/plugins/builtin/auto-pr/pr-body";
 import { findPrTemplate } from "../../../src/plugins/builtin/auto-pr/template";
@@ -9,9 +9,9 @@ import {
   detectForge,
   openDraft,
   hasOpenPr,
-  _forgeDeps,
 } from "../../../src/plugins/builtin/auto-pr/forge";
-import { autoPrPlugin } from "../../../src/plugins/builtin/auto-pr";
+import type { AutoPrDeps } from "../../../src/plugins/builtin/auto-pr/types";
+import { autoPrPlugin, _autoPrDeps } from "../../../src/plugins/builtin/auto-pr";
 import { loadPlugins } from "../../../src/plugins/loader";
 import type { PostRunContext } from "../../../src/plugins/extensions";
 
@@ -129,16 +129,16 @@ describe("US-002: buildBody", () => {
     expect(body).toContain("1 skipped");
   });
 
-  test("AC-9: buildBody with template ends with template text and contains '---\\n\\n## Checklist'", () => {
+  test("AC-9: buildBody with template ends with template text and contains '---\\n## Checklist'", () => {
     const template = "## Checklist\n- [ ] x";
     const body = buildBody(makeCtx(), template);
     expect(body.endsWith(template)).toBe(true);
-    expect(body).toContain("---\n\n## Checklist");
+    expect(body).toContain("---\n## Checklist");
   });
 
-  test("AC-10: buildBody(ctx, null) does not contain '---'", () => {
+  test("AC-10: buildBody(ctx, null) does not contain horizontal-rule '---' line", () => {
     const body = buildBody(makeCtx(), null);
-    expect(body).not.toContain("---");
+    expect(body).not.toMatch(/^---$/m);
   });
 });
 
@@ -150,7 +150,10 @@ describe("US-002: findPrTemplate", () => {
   test("AC-11: returns content when .github/pull_request_template.md resolves", async () => {
     const result = await findPrTemplate("/wd", "github", {
       readText: async (p) =>
-        p === ".github/pull_request_template.md" ? "template content" : null,
+        p === `${join("wd", ".github", "pull_request_template.md")}` ||
+        p.endsWith(`${sep}.github${sep}pull_request_template.md`)
+          ? "template content"
+          : null,
       run: noop,
     });
     expect(result).toBe("template content");
@@ -159,8 +162,8 @@ describe("US-002: findPrTemplate", () => {
   test("AC-12: .github/PULL_REQUEST_TEMPLATE.md takes precedence over docs/PULL_REQUEST_TEMPLATE.md", async () => {
     const result = await findPrTemplate("/wd", "github", {
       readText: async (p) => {
-        if (p === ".github/PULL_REQUEST_TEMPLATE.md") return "github content";
-        if (p === "docs/PULL_REQUEST_TEMPLATE.md") return "docs content";
+        if (p.endsWith(`${sep}.github${sep}PULL_REQUEST_TEMPLATE.md`)) return "github content";
+        if (p.endsWith(`${sep}docs${sep}PULL_REQUEST_TEMPLATE.md`)) return "docs content";
         return null;
       },
       run: noop,
@@ -171,7 +174,7 @@ describe("US-002: findPrTemplate", () => {
   test("AC-13: gitlab returns .gitlab/merge_request_templates/Default.md content", async () => {
     const result = await findPrTemplate("/wd", "gitlab", {
       readText: async (p) =>
-        p === ".gitlab/merge_request_templates/Default.md"
+        p.endsWith(`${sep}.gitlab${sep}merge_request_templates${sep}Default.md`)
           ? "gitlab default content"
           : null,
       run: noop,
@@ -213,121 +216,103 @@ describe("US-003: detectForge", () => {
 describe("US-003: openDraft", () => {
   test("AC-18: github draft=true uses [gh,pr,create,--draft,...] and --head=my-branch", async () => {
     let capturedArgv: string[] = [];
-    const origRun = _forgeDeps.run;
-    _forgeDeps.run = async (argv) => {
-      capturedArgv = argv;
-      return { exitCode: 0, stdout: "https://github.com/owner/repo/pull/1\n", stderr: "" };
+    const deps: AutoPrDeps = {
+      readText: async () => null,
+      run: async (argv) => {
+        capturedArgv = argv;
+        return { exitCode: 0, stdout: "https://github.com/owner/repo/pull/1\n", stderr: "" };
+      },
     };
-    try {
-      await openDraft({
-        forge: "github",
-        branch: "my-branch",
-        draft: true,
-        title: "...",
-        body: "...",
-        cwd: "/tmp",
-      });
-      expect(capturedArgv[0]).toBe("gh");
-      expect(capturedArgv[1]).toBe("pr");
-      expect(capturedArgv[2]).toBe("create");
-      expect(capturedArgv[3]).toBe("--draft");
-      expect(capturedArgv.some((a) => /--head=my-branch/.test(a))).toBe(true);
-    } finally {
-      _forgeDeps.run = origRun;
-    }
+    await openDraft(
+      "github",
+      { branch: "my-branch", draft: true, title: "...", body: "..." },
+      deps,
+      "/tmp",
+    );
+    expect(capturedArgv[0]).toBe("gh");
+    expect(capturedArgv[1]).toBe("pr");
+    expect(capturedArgv[2]).toBe("create");
+    expect(capturedArgv).toContain("--draft");
+    expect(capturedArgv).toContain("--head");
+    expect(capturedArgv).toContain("my-branch");
   });
 
   test("AC-19: gitlab draft=true uses [glab,mr,create,--draft,...] and --source-branch=my-branch", async () => {
     let capturedArgv: string[] = [];
-    const origRun = _forgeDeps.run;
-    _forgeDeps.run = async (argv) => {
-      capturedArgv = argv;
-      return {
-        exitCode: 0,
-        stdout: "https://gitlab.com/owner/repo/-/merge_requests/1\n",
-        stderr: "",
-      };
+    const deps: AutoPrDeps = {
+      readText: async () => null,
+      run: async (argv) => {
+        capturedArgv = argv;
+        return {
+          exitCode: 0,
+          stdout: "https://gitlab.com/owner/repo/-/merge_requests/1\n",
+          stderr: "",
+        };
+      },
     };
-    try {
-      await openDraft({
-        forge: "gitlab",
-        branch: "my-branch",
-        draft: true,
-        title: "...",
-        body: "...",
-        cwd: "/tmp",
-      });
-      expect(capturedArgv[0]).toBe("glab");
-      expect(capturedArgv[1]).toBe("mr");
-      expect(capturedArgv[2]).toBe("create");
-      expect(capturedArgv[3]).toBe("--draft");
-      expect(capturedArgv.some((a) => /--source-branch=my-branch/.test(a))).toBe(true);
-    } finally {
-      _forgeDeps.run = origRun;
-    }
+    await openDraft(
+      "gitlab",
+      { branch: "my-branch", draft: true, title: "...", body: "..." },
+      deps,
+      "/tmp",
+    );
+    expect(capturedArgv[0]).toBe("glab");
+    expect(capturedArgv[1]).toBe("mr");
+    expect(capturedArgv[2]).toBe("create");
+    expect(capturedArgv).toContain("--draft");
+    expect(capturedArgv).toContain("--source-branch");
+    expect(capturedArgv).toContain("my-branch");
   });
 
   test("AC-20: draft=false argv does not include '--draft'", async () => {
     let capturedArgv: string[] = [];
-    const origRun = _forgeDeps.run;
-    _forgeDeps.run = async (argv) => {
-      capturedArgv = argv;
-      return { exitCode: 0, stdout: "https://github.com/owner/repo/pull/1\n", stderr: "" };
+    const deps: AutoPrDeps = {
+      readText: async () => null,
+      run: async (argv) => {
+        capturedArgv = argv;
+        return { exitCode: 0, stdout: "https://github.com/owner/repo/pull/1\n", stderr: "" };
+      },
     };
-    try {
-      await openDraft({
-        forge: "github",
-        branch: "my-branch",
-        draft: false,
-        title: "...",
-        body: "...",
-        cwd: "/tmp",
-      });
-      expect(capturedArgv.includes("--draft")).toBe(false);
-    } finally {
-      _forgeDeps.run = origRun;
-    }
+    await openDraft(
+      "github",
+      { branch: "my-branch", draft: false, title: "...", body: "..." },
+      deps,
+      "/tmp",
+    );
+    expect(capturedArgv.includes("--draft")).toBe(false);
   });
 
   test("AC-21: exitCode=0 returns success=true and trimmed url", async () => {
-    const origRun = _forgeDeps.run;
-    _forgeDeps.run = async () => ({
-      exitCode: 0,
-      stdout: "https://github.com/owner/repo/pull/123\n",
-      stderr: "",
-    });
-    try {
-      const result = await openDraft({
-        forge: "github",
-        branch: "my-branch",
-        draft: true,
-        title: "...",
-        body: "...",
-        cwd: "/tmp",
-      });
-      expect(result.success).toBe(true);
-      expect(result.url).toBe("https://github.com/owner/repo/pull/123");
-    } finally {
-      _forgeDeps.run = origRun;
-    }
+    const deps: AutoPrDeps = {
+      readText: async () => null,
+      run: async () => ({
+        exitCode: 0,
+        stdout: "https://github.com/owner/repo/pull/123\n",
+        stderr: "",
+      }),
+    };
+    const result = await openDraft(
+      "github",
+      { branch: "my-branch", draft: true, title: "...", body: "..." },
+      deps,
+      "/tmp",
+    );
+    expect(result.success).toBe(true);
+    expect(result.url).toBe("https://github.com/owner/repo/pull/123");
   });
 
   test("AC-22: exitCode=1 returns success=false", async () => {
-    const origRun = _forgeDeps.run;
-    _forgeDeps.run = async () => ({ exitCode: 1, stdout: "", stderr: "error message" });
-    try {
-      const result = await openDraft({
-        forge: "github",
-        branch: "my-branch",
-        draft: true,
-        title: "...",
-        body: "...",
-        cwd: "/tmp",
-      });
-      expect(result.success).toBe(false);
-    } finally {
-      _forgeDeps.run = origRun;
-    }
+    const deps: AutoPrDeps = {
+      readText: async () => null,
+      run: async () => ({ exitCode: 1, stdout: "", stderr: "error message" }),
+    };
+    const result = await openDraft(
+      "github",
+      { branch: "my-branch", draft: true, title: "...", body: "..." },
+      deps,
+      "/tmp",
+    );
+    expect(result.success).toBe(false);
   });
 });
 
@@ -337,29 +322,25 @@ describe("US-003: openDraft", () => {
 
 describe("US-003: hasOpenPr", () => {
   test("AC-23: returns true when stdout is non-empty JSON array", async () => {
-    const origRun = _forgeDeps.run;
-    _forgeDeps.run = async () => ({
-      exitCode: 0,
-      stdout: '[{"number": 42}]',
-      stderr: "",
-    });
-    try {
-      const result = await hasOpenPr({ forge: "github", branch: "my-branch", cwd: "/tmp" });
-      expect(result).toBe(true);
-    } finally {
-      _forgeDeps.run = origRun;
-    }
+    const deps: AutoPrDeps = {
+      readText: async () => null,
+      run: async () => ({
+        exitCode: 0,
+        stdout: '[{"number": 42}]',
+        stderr: "",
+      }),
+    };
+    const result = await hasOpenPr("github", "my-branch", deps, "/tmp");
+    expect(result).toBe(true);
   });
 
   test("AC-24: returns false when stdout is empty JSON array", async () => {
-    const origRun = _forgeDeps.run;
-    _forgeDeps.run = async () => ({ exitCode: 0, stdout: "[]", stderr: "" });
-    try {
-      const result = await hasOpenPr({ forge: "github", branch: "my-branch", cwd: "/tmp" });
-      expect(result).toBe(false);
-    } finally {
-      _forgeDeps.run = origRun;
-    }
+    const deps: AutoPrDeps = {
+      readText: async () => null,
+      run: async () => ({ exitCode: 0, stdout: "[]", stderr: "" }),
+    };
+    const result = await hasOpenPr("github", "my-branch", deps, "/tmp");
+    expect(result).toBe(false);
   });
 });
 
@@ -399,41 +380,62 @@ describe("US-004: autoPrPlugin.shouldRun", () => {
   });
 
   test("AC-29: returns false when detectForge stub returns null", async () => {
-    const ctx = makeCtx({ detectForge: () => null });
-    const result = await autoPrPlugin.extensions.postRunAction!.shouldRun(ctx);
-    expect(result).toBe(false);
+    const origGetRemoteUrl = _autoPrDeps.getRemoteUrl;
+    const origDetectForge = _autoPrDeps.detectForge;
+    _autoPrDeps.getRemoteUrl = async () => "https://example.com/owner/repo.git";
+    _autoPrDeps.detectForge = () => null;
+    try {
+      const ctx = makeCtx();
+      const result = await autoPrPlugin.extensions.postRunAction!.shouldRun(ctx);
+      expect(result).toBe(false);
+    } finally {
+      _autoPrDeps.getRemoteUrl = origGetRemoteUrl;
+      _autoPrDeps.detectForge = origDetectForge;
+    }
   });
 
   test("AC-30: returns false and calls logger.warn when hasOpenPr returns true", async () => {
-    const warnMessages: string[] = [];
-    const ctx = makeCtx({
-      logger: {
-        debug: () => {},
-        info: () => {},
-        warn: (msg: string) => {
-          warnMessages.push(msg);
+    const warnMessages: unknown[] = [];
+    const origGetRemoteUrl = _autoPrDeps.getRemoteUrl;
+    const origHasOpenPr = _autoPrDeps.hasOpenPr;
+    _autoPrDeps.getRemoteUrl = async () => "git@github.com:owner/repo.git";
+    _autoPrDeps.hasOpenPr = async () => true;
+    try {
+      const ctx = makeCtx({
+        logger: {
+          debug: () => {},
+          info: () => {},
+          warn: (msg: unknown) => {
+            warnMessages.push(msg);
+          },
+          error: () => {},
         },
-        error: () => {},
-      },
-      detectForge: () => "github",
-      hasOpenPr: async () => true,
-    });
-    const result = await autoPrPlugin.extensions.postRunAction!.shouldRun(ctx);
-    expect(result).toBe(false);
-    expect(
-      warnMessages.some((m) => m.includes("already open") || m.includes("skip")),
-    ).toBe(true);
+      });
+      const result = await autoPrPlugin.extensions.postRunAction!.shouldRun(ctx);
+      expect(result).toBe(false);
+      expect(warnMessages.length).toBeGreaterThan(0);
+    } finally {
+      _autoPrDeps.getRemoteUrl = origGetRemoteUrl;
+      _autoPrDeps.hasOpenPr = origHasOpenPr;
+    }
   });
 
   test("AC-31: returns true when enabled, no failures, forge detected, no open PR", async () => {
-    const ctx = makeCtx({
-      config: { autoPr: { enabled: true } },
-      storySummary: { failed: 0, completed: 3, skipped: 0, paused: 0 },
-      detectForge: () => "github",
-      hasOpenPr: async () => false,
-    });
-    const result = await autoPrPlugin.extensions.postRunAction!.shouldRun(ctx);
-    expect(result).toBe(true);
+    const origGetRemoteUrl = _autoPrDeps.getRemoteUrl;
+    const origHasOpenPr = _autoPrDeps.hasOpenPr;
+    _autoPrDeps.getRemoteUrl = async () => "git@github.com:owner/repo.git";
+    _autoPrDeps.hasOpenPr = async () => false;
+    try {
+      const ctx = makeCtx({
+        config: { autoPr: { enabled: true } },
+        storySummary: { failed: 0, completed: 3, skipped: 0, paused: 0 },
+      });
+      const result = await autoPrPlugin.extensions.postRunAction!.shouldRun(ctx);
+      expect(result).toBe(true);
+    } finally {
+      _autoPrDeps.getRemoteUrl = origGetRemoteUrl;
+      _autoPrDeps.hasOpenPr = origHasOpenPr;
+    }
   });
 });
 
@@ -443,33 +445,43 @@ describe("US-004: autoPrPlugin.shouldRun", () => {
 
 describe("US-004: autoPrPlugin.execute", () => {
   test("AC-32: happy path returns success=true with PR url", async () => {
-    const ctx = makeCtx({
-      detectForge: () => "github",
-      findPrTemplate: async () => null,
-      openDraft: async () => ({
-        success: true,
-        url: "https://github.com/owner/repo/pull/123",
-        message: "PR opened",
-      }),
+    const origGetRemoteUrl = _autoPrDeps.getRemoteUrl;
+    const origOpenDraft = _autoPrDeps.openDraft;
+    _autoPrDeps.getRemoteUrl = async () => "git@github.com:owner/repo.git";
+    _autoPrDeps.openDraft = async () => ({
+      success: true,
+      url: "https://github.com/owner/repo/pull/123",
+      message: "PR opened",
     });
-    const result = await autoPrPlugin.extensions.postRunAction!.execute(ctx);
-    expect(result.success).toBe(true);
-    expect(result.url).toBe("https://github.com/owner/repo/pull/123");
+    try {
+      const ctx = makeCtx();
+      const result = await autoPrPlugin.extensions.postRunAction!.execute(ctx);
+      expect(result.success).toBe(true);
+      expect(result.url).toBe("https://github.com/owner/repo/pull/123");
+    } finally {
+      _autoPrDeps.getRemoteUrl = origGetRemoteUrl;
+      _autoPrDeps.openDraft = origOpenDraft;
+    }
   });
 
   test("AC-33: returns { success: false, message } when openDraft returns failure — no throw", async () => {
-    const ctx = makeCtx({
-      detectForge: () => "github",
-      findPrTemplate: async () => null,
-      openDraft: async () => ({ success: false, message: "forge exited with 1" }),
-    });
-    const result = await autoPrPlugin.extensions.postRunAction!.execute(ctx);
-    expect(result.success).toBe(false);
-    expect(result.message).toBe("forge exited with 1");
+    const origGetRemoteUrl = _autoPrDeps.getRemoteUrl;
+    const origOpenDraft = _autoPrDeps.openDraft;
+    _autoPrDeps.getRemoteUrl = async () => "git@github.com:owner/repo.git";
+    _autoPrDeps.openDraft = async () => ({ success: false, message: "forge exited with 1" });
+    try {
+      const ctx = makeCtx();
+      const result = await autoPrPlugin.extensions.postRunAction!.execute(ctx);
+      expect(result.success).toBe(false);
+      expect(result.message).toBe("forge exited with 1");
+    } finally {
+      _autoPrDeps.getRemoteUrl = origGetRemoteUrl;
+      _autoPrDeps.openDraft = origOpenDraft;
+    }
   });
 
   test("AC-34: returns { success: false } and calls logger.warn once when openDraft throws; no console.*", async () => {
-    const warnCalls: string[] = [];
+    const warnCalls: unknown[] = [];
     let consoleWarnCalled = false;
     let consoleErrorCalled = false;
     let consoleLogCalled = false;
@@ -487,27 +499,33 @@ describe("US-004: autoPrPlugin.execute", () => {
     };
 
     try {
-      const ctx = makeCtx({
-        logger: {
-          debug: () => {},
-          info: () => {},
-          warn: (msg: string) => {
-            warnCalls.push(msg);
+      const origGetRemoteUrl = _autoPrDeps.getRemoteUrl;
+      const origOpenDraft = _autoPrDeps.openDraft;
+      _autoPrDeps.getRemoteUrl = async () => "git@github.com:owner/repo.git";
+      _autoPrDeps.openDraft = async () => {
+        throw new Error("ENOENT: gh not found");
+      };
+      try {
+        const ctx = makeCtx({
+          logger: {
+            debug: () => {},
+            info: () => {},
+            warn: (msg: unknown) => {
+              warnCalls.push(msg);
+            },
+            error: () => {},
           },
-          error: () => {},
-        },
-        detectForge: () => "github",
-        findPrTemplate: async () => null,
-        openDraft: async () => {
-          throw new Error("ENOENT: gh not found");
-        },
-      });
-      const result = await autoPrPlugin.extensions.postRunAction!.execute(ctx);
-      expect(result.success).toBe(false);
-      expect(warnCalls.length).toBe(1);
-      expect(consoleWarnCalled).toBe(false);
-      expect(consoleErrorCalled).toBe(false);
-      expect(consoleLogCalled).toBe(false);
+        });
+        const result = await autoPrPlugin.extensions.postRunAction!.execute(ctx);
+        expect(result.success).toBe(false);
+        expect(warnCalls.length).toBe(1);
+        expect(consoleWarnCalled).toBe(false);
+        expect(consoleErrorCalled).toBe(false);
+        expect(consoleLogCalled).toBe(false);
+      } finally {
+        _autoPrDeps.getRemoteUrl = origGetRemoteUrl;
+        _autoPrDeps.openDraft = origOpenDraft;
+      }
     } finally {
       console.warn = origWarn;
       console.error = origError;

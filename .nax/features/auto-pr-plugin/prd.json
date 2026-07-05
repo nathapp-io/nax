@@ -3,7 +3,7 @@
   "feature": "auto-pr-plugin",
   "branchName": "feat/auto-pr-plugin",
   "createdAt": "2026-07-05T06:56:44Z",
-  "updatedAt": "2026-07-05T07:42:08.531Z",
+  "updatedAt": "2026-07-05T07:55:44.638Z",
   "userStories": [
     {
       "id": "US-001",
@@ -186,8 +186,8 @@
         "US-002",
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

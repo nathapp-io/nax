@@ -16,7 +16,7 @@ import { autoPrPlugin } from "./builtin/auto-pr";
 import { curatorPlugin } from "./builtin/curator";
 import { createPluginLogger } from "./plugin-logger";
 import { PluginRegistry } from "./registry";
-import type { NaxPlugin, PluginConfigEntry } from "./types";
+import type { IPostRunAction, NaxPlugin, PluginConfigEntry } from "./types";
 import { validatePlugin } from "./validator";
 
 /**
@@ -106,6 +106,7 @@ export async function loadPlugins(
   isTestFileFn?: (filename: string) => boolean,
 ): Promise<PluginRegistry> {
   const loadedPlugins: LoadedPlugin[] = [];
+  const builtinPostRunActions: IPostRunAction[] = [];
   const effectiveProjectRoot = projectRoot || projectDir;
   const pluginNames = new Set<string>();
   const disabledSet = new Set(disabledPlugins ?? []);
@@ -126,16 +127,20 @@ export async function loadPlugins(
     logger?.info("plugins", `Skipping disabled plugin: '${curatorPlugin.name}' (built-in)`);
   }
 
+  // auto-pr is registered as a side-channel post-run action only — it does
+  // NOT count toward `registry.plugins` so opting-in via `config.autoPr.enabled`
+  // and plugin-count assertions stay orthogonal. The action's own `shouldRun`
+  // already gates execution on `cfg.enabled`, so side-channel registration is
+  // a no-op when the feature is off.
   if (!disabledSet.has(autoPrPlugin.name)) {
     if (autoPrPlugin.setup) {
       const pluginLogger = createPluginLogger(autoPrPlugin.name);
       await autoPrPlugin.setup({}, pluginLogger);
     }
-    loadedPlugins.push({
-      plugin: autoPrPlugin,
-      source: { type: "builtin", path: autoPrPlugin.name },
-    });
-    pluginNames.add(autoPrPlugin.name);
+    const autoPrAction = autoPrPlugin.extensions.postRunAction;
+    if (autoPrAction) {
+      builtinPostRunActions.push(autoPrAction);
+    }
   } else {
     logger?.info("plugins", `Skipping disabled plugin: '${autoPrPlugin.name}' (built-in)`);
   }
@@ -209,7 +214,7 @@ export async function loadPlugins(
     }
   }
 
-  return new PluginRegistry(loadedPlugins);
+  return new PluginRegistry(loadedPlugins, builtinPostRunActions);
 }
 
 /**

@@ -23,7 +23,22 @@ export class PluginRegistry {
   /** Plugin source information (maps plugin name to source) */
   private readonly sources: Map<string, PluginSource>;
 
-  constructor(loadedPlugins: LoadedPlugin[] | NaxPlugin[]) {
+  /**
+   * Built-in post-run actions registered by the loader for built-in plugins
+   * that contribute side-channel actions without appearing in `plugins`.
+   *
+   * Built-in plugins opt into one of two layouts:
+   *  - Full plugin in `plugins` (curator): participates in name collisions,
+   *    setup/teardown, and source tracking.
+   *  - Side-channel action only (auto-pr): registered here so callers using
+   *    `getPostRunActions()` see it, but `plugins.length` and source-collision
+   *    logic treat it as transparent — opt-in semantics live in the action's
+   *    own `shouldRun()` (e.g. `config.autoPr.enabled`).
+   */
+  private readonly builtinPostRunActions: ReadonlyArray<IPostRunAction>;
+
+  constructor(loadedPlugins: LoadedPlugin[] | NaxPlugin[], builtinPostRunActions: IPostRunAction[] = []) {
+    this.builtinPostRunActions = builtinPostRunActions;
     // Support both LoadedPlugin[] and NaxPlugin[] for backward compatibility
     if (loadedPlugins.length > 0 && "plugin" in loadedPlugins[0]) {
       // New format: LoadedPlugin[]
@@ -150,15 +165,18 @@ export class PluginRegistry {
    *
    * Post-run actions execute after a run completes (success or failure),
    * allowing plugins to emit results to external systems.
-   * All post-run actions are additive and execute in registration order.
+   * All post-run actions are additive and execute in registration order,
+   * returning plugin-derived actions first followed by side-channel
+   * built-in actions.
    *
    * @returns Array of post-run action implementations
    */
   getPostRunActions(): IPostRunAction[] {
-    return this.plugins
+    const pluginActions = this.plugins
       .filter((p) => p.provides.includes("post-run-action"))
       .map((p) => p.extensions.postRunAction)
       .filter((action): action is IPostRunAction => action !== undefined);
+    return [...pluginActions, ...this.builtinPostRunActions];
   }
 
   /**
