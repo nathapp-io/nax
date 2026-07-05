@@ -10,6 +10,7 @@ import { ContextConfigSchema } from "./schemas-context";
 import { DebateConfigSchema } from "./schemas-debate";
 import {
   AutoModeConfigSchema,
+  AutoRouteConfigSchema,
   ConstitutionConfigSchema,
   ExecutionConfigSchema,
   QualityConfigSchema,
@@ -89,6 +90,12 @@ export const NaxConfigSchema = z
         escalateEntireBatch: true,
         resetMode: "initial",
       },
+    }),
+    autoRoute: AutoRouteConfigSchema.default({
+      enabled: false,
+      minSamples: 8,
+      upgrade: { escalationRate: 0.3, mismatchRate: 0.25 },
+      downgrade: { firstPassRate: 0.9, escalationRate: 0.05 },
     }),
     routing: RoutingConfigSchema.default({
       strategy: "keyword",

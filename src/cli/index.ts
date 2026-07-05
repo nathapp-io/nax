@@ -63,3 +63,12 @@ export type {
   AcceptanceResolution,
   AcceptanceResolutionStatus,
 } from "./features-acceptance";
+export {
+  _routingCalibrateDeps,
+  parseMinSamplesFlag,
+  routingCalibrateCommand,
+  runRoutingCalibrateCli,
+  type RoutingCalibrateDeps,
+  type RoutingCalibrateOptions,
+  type RoutingCalibrateResult,
+} from "./routing-calibrate";

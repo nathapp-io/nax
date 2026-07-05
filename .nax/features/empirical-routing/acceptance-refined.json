@@ -1,0 +1,233 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "Given `NaxConfigSchema.parse({})`, when the parsed config is inspected, then `config.autoRoute.enabled === false`.",
+    "refined": "NaxConfigSchema.parse({}) returns an object with config.autoRoute.enabled === false (boolean literal false, not undefined, null, or string 'false')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "Given `NaxConfigSchema.parse({})`, when the parsed config is inspected, then `config.autoRoute.minSamples === 8`.",
+    "refined": "NaxConfigSchema.parse({}) returns an object with config.autoRoute.minSamples === 8 (number 8)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "Given `NaxConfigSchema.parse({})`, when the parsed config is inspected, then `config.autoRoute.upgrade.escalationRate === 0.3` and `config.autoRoute.upgrade.mismatchRate === 0.25`.",
+    "refined": "NaxConfigSchema.parse({}) returns an object where config.autoRoute.upgrade.escalationRate === 0.3 AND config.autoRoute.upgrade.mismatchRate === 0.25",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Given `NaxConfigSchema.parse({})`, when the parsed config is inspected, then `config.autoRoute.downgrade.firstPassRate === 0.9` and `config.autoRoute.downgrade.escalationRate === 0.05`.",
+    "refined": "NaxConfigSchema.parse({}) returns an object where config.autoRoute.downgrade.firstPassRate === 0.9 AND config.autoRoute.downgrade.escalationRate === 0.05",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "Given `NaxConfigSchema.parse({ autoRoute: { minSamples: 20 } })`, when the parsed config is inspected, then `autoRoute.minSamples === 20` and `autoRoute.enabled === false`.",
+    "refined": "NaxConfigSchema.parse({ autoRoute: { minSamples: 20 } }) returns an object where config.autoRoute.minSamples === 20 AND config.autoRoute.enabled === false (partial override of minSamples preserves enabled default)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Given `NaxConfigSchema.safeParse({ autoRoute: { enabled: \"yes\" } })`, when the parse result is inspected, then `success === false`.",
+    "refined": "NaxConfigSchema.safeParse({ autoRoute: { enabled: 'yes' } }) returns { success: false } (type error: enabled must be boolean, not string)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "Given a `RunMetrics[]` containing 10 stories of `complexity` `\"simple\"`, 4 of which have `attempts > 1`, when `computeBandStats` runs, then it returns a `BandStat` for `\"simple\"` with `sampleCount === 10` and `escalationRate === 0.4`.",
+    "refined": "When `computeBandStats(runs, mapping)` is called with `runs` containing exactly 10 RunMetrics objects where each has `complexity === \"simple\"` and exactly 4 have `attempts > 1`, then the returned array contains exactly one BandStat with `band === \"simple\"`, `sampleCount === 10`, and `escalationRate === 0.4`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "Given a `RunMetrics[]` where 9 of 10 `\"simple\"` stories have `firstPassSuccess === true`, when `computeBandStats` runs, then the returned `BandStat` for `\"simple\"` has `firstPassRate === 0.9`.",
+    "refined": "When `computeBandStats(runs, mapping)` is called with `runs` containing exactly 10 RunMetrics objects where each has `complexity === \"simple\"` and exactly 9 have `firstPassSuccess === true`, then the returned array contains exactly one BandStat with `band === \"simple\"` and `firstPassRate === 0.9`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "Given a mapping of `simple -> \"fast\"` and a `RunMetrics[]` where 3 of 10 `\"simple\"` stories have `finalTier === \"balanced\"`, when `computeBandStats` runs, then the returned `BandStat` for `\"simple\"` has `mismatchRate === 0.3`.",
+    "refined": "When `computeBandStats(runs, mapping)` is called with `mapping` where `mapping.simple === \"fast\"` and `runs` containing exactly 10 RunMetrics objects where each has `complexity === \"simple\"` and exactly 3 have `finalTier === \"balanced\"`, then the returned array contains exactly one BandStat with `band === \"simple\"` and `mismatchRate === 0.3`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "Given history that contains only some complexity values, when `computeBandStats` runs, then it returns exactly one `BandStat` per distinct `complexity` value present in history and none for complexities absent from it.",
+    "refined": "When `computeBandStats(runs, mapping)` is called with `runs` containing RunMetrics objects with distinct complexity values `[A, B, C]`, then the returned array has exactly 3 BandStats with bands equal to `A`, `B`, and `C` respectively, and no other BandStats.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given an empty `RunMetrics[]`, when `computeBandStats` runs, then it returns an empty `BandStat[]`.",
+    "refined": "When `computeBandStats([], mapping)` is called with an empty `runs` array, then the returned array has length `0`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given a `BandStat` with `escalationRate === 0.4` and `mismatchRate === 0.3` against a `simple -> \"fast\"` mapping, when `proposeAdjustments` runs, then it returns a `TierAdjustment` with `band === \"simple\"`, `from === \"fast\"`, `to === \"balanced\"`, and `direction === \"upgrade\"`.",
+    "refined": "Assert `result.adjustments` contains exactly one object where `band === \"simple\"` AND `from === \"fast\"` AND `to === \"balanced\"` AND `direction === \"upgrade\"`. Assert `result.skipped` is empty and `result.hints` is empty.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Given a `complex -> \"powerful\"` `BandStat` with `firstPassRate === 0.95`, `escalationRate === 0.02`, and observed `finalTier`s all at or below `\"balanced\"`, when `proposeAdjustments` runs, then it returns a `TierAdjustment` with `to === \"balanced\"` and `direction === \"downgrade\"`.",
+    "refined": "Assert `result.adjustments` contains exactly one object where `band === \"complex\"` AND `from === \"powerful\"` AND `to === \"balanced\"` AND `direction === \"downgrade\"`. Assert `result.skipped` is empty.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given a `BandStat` whose `sampleCount` is below `thresholds.minSamples`, when `proposeAdjustments` runs, then it returns no adjustment for that band and lists it under `skipped` with its `sampleCount` and the `minSamples` used.",
+    "refined": "Assert `result.adjustments` does not contain an entry for the low-sample band. Assert `result.skipped` contains one object where `band === \"<bandName>\"` AND `sampleCount === <actualCount>` AND `minSamples === <thresholdValue>`. Assert `result.hints` is empty.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given a band already mapped to `\"fast\"` that otherwise meets the downgrade criteria, when `proposeAdjustments` runs, then it returns no downgrade for that band.",
+    "refined": "Assert `result.adjustments` contains no entry where `direction === \"downgrade\"` AND `band === \"<bandName>\"`. Assert `result.skipped` is empty for that band.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given a band already mapped to `\"powerful\"` that otherwise meets the upgrade criteria, when `proposeAdjustments` runs, then it returns no upgrade for that band.",
+    "refined": "Assert `result.adjustments` contains no entry where `direction === \"upgrade\"` AND `band === \"<bandName>\"`. Assert `result.skipped` is empty for that band.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given a `simple -> \"fast\"` `BandStat` with `escalationRate === 0.9` and `mismatchRate === 0.9`, when `proposeAdjustments` runs, then it proposes `to === \"balanced\"` and not `\"powerful\"`.",
+    "refined": "Assert `result.adjustments` contains exactly one object where `band === \"simple\"` AND `from === \"fast\"` AND `to === \"balanced\"`. Assert no adjustment exists with `to === \"powerful\"`. Assert `result.adjustments.length === 1`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given a `BandStat` whose `escalationRate === 0.15` and whose `firstPassRate === 0.7`, when `proposeAdjustments` runs, then it returns no adjustment for that band.",
+    "refined": "Assert `result.adjustments` is empty. Assert `result.skipped` is empty. Assert `result.hints` is empty.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given a large-sample, high-mismatch `BandStat`, when `proposeAdjustments` runs, then it emits a `KeywordHint` whose `message` references `classify.ts` and the emitted hint object exposes no `from` or `to` tier field.",
+    "refined": "Assert `result.hints` contains at least one object where `message` includes the substring `\"classify.ts\"`. Assert no object in `result.hints` has a property `from` or `to`. Assert `result.hints[0]` is of type `KeywordHint` (has `message` and `band` properties but no `from`/`to`).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given `_deps.loadRunMetrics` returning a fixture `RunMetrics[]` that yields a threshold-breaching `\"simple\"` band, when the calibrate action runs, then the proposal `adjustments` include one with `band === \"simple\"`, `from === \"fast\"`, and `to === \"balanced\"`.",
+    "refined": "Given `_deps.loadRunMetrics` is stubbed to return an array containing a `RunMetrics` object whose `complexity` is 0.2 (below the `simple` band upper threshold of 0.3) and `actualTier` is `\"fast\"` while the cost-sample average for the `simple` band exceeds the `fast` tier's cost ceiling, when `calibrate()` is called, then the returned `proposal.adjustments` array has length >= 1 and includes an object where `band === \"simple\"`, `from === \"fast\"`, and `to === \"balanced\"`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Given `--json` mode, when the calibrate action runs, then it emits a JSON object exposing `adjustments`, `keywordHints`, and `skipped` arrays.",
+    "refined": "Given the CLI is invoked with `--json` flag, when `parseArgs(['--json'])` is applied and `calibrate()` is called, then `stdout` receives a single line that is valid JSON containing top-level keys `\"adjustments\"`, `\"keywordHints\"`, and `\"skipped\"`, each value being an array. The three arrays are serializable via `JSON.parse` and `adjustments` entries contain `band`, `from`, `to` fields; `skipped` entries contain `band` and `reason` fields.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Given no `--apply` flag, when the calibrate action runs, then it does not invoke `_deps.writeConfig`.",
+    "refined": "Given `_deps.writeConfig` is a jest mock/spy, when the CLI is invoked with no `--apply` argument (i.e., `parseArgs([])`) and `calibrate()` completes successfully, then `writeConfig` is never called (verified via `expect(writeConfig).not.toHaveBeenCalled()` or equivalent mock assertion).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Given `--apply` and at least one adjustment, when the calibrate action runs, then it invokes `_deps.writeConfig` once with a config whose `autoMode.complexityRouting` equals the prior mapping with only the proposed bands' tiers replaced and all other bands preserved.",
+    "refined": "Given `_deps.writeConfig` is a jest mock/spy, when the CLI is invoked with `--apply` (i.e., `parseArgs(['--apply'])`) and `calibrate()` produces at least one adjustment, then `writeConfig` is called exactly once. The config object passed to `writeConfig` has an `autoMode.complexityRouting` property that: (a) contains all original bands (e.g., `simple`, `medium`, `complex`, `reasoning`) from the input config, (b) has the tier value replaced only for bands present in `proposal.adjustments`, and (c) preserves all unchanged bands with their original tier values exactly.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Given `--apply` and zero adjustments, when the calibrate action runs, then it does not invoke `_deps.writeConfig`.",
+    "refined": "Given `_deps.writeConfig` is a jest mock/spy and `_deps.loadRunMetrics` returns a `RunMetrics[]` where no band exceeds its tier's cost ceiling (yielding zero adjustments), when the CLI is invoked with `--apply` (i.e., `parseArgs(['--apply'])`) and `calibrate()` runs to completion, then `writeConfig` is never called (verified via `expect(writeConfig).not.toHaveBeenCalled()`) and the process exits with code 0.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-25",
+    "original": "Given `--min-samples 20` and a band with `sampleCount === 10`, when the calibrate action runs, then that band is reported under `skipped`.",
+    "refined": "Given `_deps.loadRunMetrics` returns bands where a specific band (e.g., `\"medium\"`) has `sampleCount === 10`, when the CLI is invoked with `--min-samples 20` (i.e., `parseArgs(['--min-samples', '20'])`) and `calibrate()` runs, then the `proposal.skipped` array includes an entry with `band === \"medium\"` and `reason` containing the string `\"min-samples\"` or `\"20\"`. The same band is absent from `proposal.adjustments`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Given `_deps.loadRunMetrics` returns an empty array, when the calibrate action runs, then it reports insufficient history, does not invoke `_deps.writeConfig`, and completes without throwing.",
+    "refined": "Given `_deps.loadRunMetrics` resolves to `[]`, when `calibrate()` is called (with or without `--apply`), then: (a) the returned result or stderr output contains a message indicating insufficient history or zero samples, (b) `_deps.writeConfig` is never called, and (c) the function resolves without throwing an `Error` (i.e., does not reject/throw). The process exits with code 0.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-27",
+    "original": "Given `ctx.config.autoRoute.enabled === false`, when `autoRoutePlugin.shouldRun` runs, then it returns `false`.",
+    "refined": "Call `autoRoutePlugin.shouldRun({ config: { autoRoute: { enabled: false } }, ... })`. Assert the returned `Promise<boolean>` resolves to `false`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-28",
+    "original": "Given injected `_deps.loadRunMetrics` history in which no band reaches `minSamples`, when `autoRoutePlugin.shouldRun` runs, then it returns `false`.",
+    "refined": "Call `autoRoutePlugin.shouldRun(context)` where `_deps.loadRunMetrics` returns an array of bands each with `sampleCount < minSamples`. Assert the returned `Promise<boolean>` resolves to `false`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-29",
+    "original": "Given the plugin is enabled and the injected history yields at least one adjustment, when `autoRoutePlugin.shouldRun` runs, then it returns `true`.",
+    "refined": "Call `autoRoutePlugin.shouldRun(context)` where `config.autoRoute.enabled === true` and `_deps.loadRunMetrics` returns band data where `computeAdjustments()` produces a non-empty array. Assert the returned `Promise<boolean>` resolves to `true`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-30",
+    "original": "Given fixture history that produces an adjustment, when `autoRoutePlugin.execute` runs, then it invokes `_deps.writeFile` exactly once with a path ending in `routing-proposal.json` whose parsed JSON `adjustments` contain that computed adjustment.",
+    "refined": "Call `autoRoutePlugin.execute(context)` with `_deps.loadRunMetrics` fixture that produces a known adjustment `A`. Assert `_deps.writeFile` was called exactly once, with `path.endsWith('routing-proposal.json') === true`, and `JSON.parse(writtenContent).adjustments` is an array containing `A`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-31",
+    "original": "Given the plugin happy path, when `autoRoutePlugin.execute` runs, then the single `_deps.writeFile` call targets the `routing-proposal.json` path and no `autoMode.complexityRouting` write occurs.",
+    "refined": "Call `autoRoutePlugin.execute(context)` on the happy path. Assert `_deps.writeFile` was called exactly once with a path containing `'routing-proposal.json'`. Assert `_deps.writeFile` was never called with a path containing `'complexityRouting'` or `'autoMode'`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-32",
+    "original": "Given `_deps.writeFile` rejects, when `autoRoutePlugin.execute` runs, then it returns `{ success: true }`, logs the failure via `ctx.logger`, and does not throw.",
+    "refined": "Call `autoRoutePlugin.execute(context)` where `_deps.writeFile` is a function that returns `Promise.reject(new Error('write failed'))`. Assert the returned `Promise<PostRunActionResult>` resolves to `{ success: true }`. Assert `ctx.logger` (a `PluginLogger` stub) received a call with `.level === 'error'`. Assert the `execute` call did not throw.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-33",
+    "original": "Given `loadPlugins()` runs with `\"nax-auto-route\"` not in the disabled set, when `getPostRunActions()` is called on the returned registry, then it includes an action named `\"nax-auto-route\"`.",
+    "refined": "Call `loadPlugins({ disabledPlugins: [] })`. Call `getPostRunActions()` on the returned registry. Assert the resulting array contains an element where `.name === 'nax-auto-route'` and the element is an object implementing `IPostRunAction`.",
+    "testable": true,
+    "storyId": "US-005"
+  }
+]

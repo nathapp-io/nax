@@ -34,3 +34,7 @@ export { validatePlugin } from "./validator";
 export { loadPlugins } from "./loader";
 export { PluginRegistry } from "./registry";
 export { createPluginLogger } from "./plugin-logger";
+
+// Built-in auto-route plugin (US-005) — exposed for test injection (`_autoRouteDeps`)
+export { autoRoutePlugin, _autoRouteDeps } from "./builtin/auto-route";
+export type { AutoRouteDeps } from "./builtin/auto-route/types";

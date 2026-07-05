@@ -22,6 +22,7 @@ const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
   "version",
   "models",
   "autoMode",
+  "autoRoute",
   "routing",
   "execution",
   "quality",

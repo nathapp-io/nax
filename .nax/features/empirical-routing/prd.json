@@ -1,0 +1,278 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "empirical-routing",
+  "branchName": "feat/empirical-routing",
+  "createdAt": "2026-07-05T11:38:41Z",
+  "updatedAt": "2026-07-05T14:03:57.178Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add autoRoute config foundation",
+      "description": "**Goal** — Add the top-level `autoRoute` config so calibration thresholds are part of the parsed project configuration.\n\n**Motivation** — A static classifier cannot self-correct: if `simple` stories in a given repo routinely escalate to a higher tier, the mapping stays wrong until a human notices.\n\n**Approach** — Add the top-level `autoRoute` config with defaults (`enabled`, `minSamples`, `upgrade`, `downgrade`).\n\n**Scope** — In: `src/config/schemas.ts` defaults and validation for the new `autoRoute` block, and schema tests that prove partial overrides preserve defaults. Out: calibration math, CLI behavior, plugin execution, artifact writing.\n\n**Interface**\n```typescript\nautoRoute: {\n  enabled: false,\n  minSamples: 8,\n  upgrade: { escalationRate: 0.3, mismatchRate: 0.25 },\n  downgrade: { firstPassRate: 0.9, escalationRate: 0.05 }\n}\n```",
+      "acceptanceCriteria": [
+        "Given `NaxConfigSchema.parse({})`, when the parsed config is inspected, then `config.autoRoute.enabled === false`.",
+        "Given `NaxConfigSchema.parse({})`, when the parsed config is inspected, then `config.autoRoute.minSamples === 8`.",
+        "Given `NaxConfigSchema.parse({})`, when the parsed config is inspected, then `config.autoRoute.upgrade.escalationRate === 0.3` and `config.autoRoute.upgrade.mismatchRate === 0.25`.",
+        "Given `NaxConfigSchema.parse({})`, when the parsed config is inspected, then `config.autoRoute.downgrade.firstPassRate === 0.9` and `config.autoRoute.downgrade.escalationRate === 0.05`.",
+        "Given `NaxConfigSchema.parse({ autoRoute: { minSamples: 20 } })`, when the parsed config is inspected, then `autoRoute.minSamples === 20` and `autoRoute.enabled === false`.",
+        "Given `NaxConfigSchema.safeParse({ autoRoute: { enabled: \"yes\" } })`, when the parse result is inspected, then `success === false`."
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "routing"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a focused additive schema change in existing config code with direct parse-level assertions and no new runtime orchestration.",
+        "agentProfileId": "opencode-structural",
+        "agent": "opencode",
+        "profileModelTier": "fast",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-structural",
+        "initialModelTier": "fast",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
+      },
+      "contextFiles": [
+        "src/config/schemas.ts",
+        "src/config/schema-types.ts",
+        "test/integration/config/config.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1a6186975a0a3be4dc00e101a6bbe305b3ea64ed"
+    },
+    {
+      "id": "US-002",
+      "title": "Implement pure band-stat computation",
+      "description": "**Goal** — Add the pure calibration stat types and `computeBandStats(runs, mapping)` so run history can be flattened into per-band evidence.\n\n**Motivation** — Meanwhile every run already records the ground truth — did the story escalate, pass first-time, and which tier actually succeeded — in `StoryMetrics`, and `calculateAggregateMetrics` already derives a per-band `complexityAccuracy` signal. Nothing consumes that signal to close the loop.\n\n**Approach** — Pure `computeBandStats(runs, mapping)` + the shared proposal/stat types. The core is pure (no I/O): it takes `RunMetrics[]`, the current mapping, and thresholds, and returns a plain data proposal, so it unit-tests without touching disk. Module layout under `src/routing/calibrate/`: `types.ts` | `BandStat`, `TierAdjustment`, `KeywordHint`, `SkippedBand`, `CalibrationProposal`, `CalibrationThresholds` | none; `band-stats.ts` | `computeBandStats(runs, mapping)` | none (pure).\n\n**Scope** — In: shared calibration types, `RunMetrics.stories` flattening, escalation-rate, first-pass-rate, and mismatch-rate calculations, and unit tests with synthetic history. Out: threshold decisions, proposal generation, CLI output, plugin output.\n\n**Interface**\n```typescript\ncomputeBandStats(runs, mapping)\nBandStat\nTierAdjustment\nKeywordHint\nSkippedBand\nCalibrationProposal\nCalibrationThresholds\n```",
+      "acceptanceCriteria": [
+        "Given a `RunMetrics[]` containing 10 stories of `complexity` `\"simple\"`, 4 of which have `attempts > 1`, when `computeBandStats` runs, then it returns a `BandStat` for `\"simple\"` with `sampleCount === 10` and `escalationRate === 0.4`.",
+        "Given a `RunMetrics[]` where 9 of 10 `\"simple\"` stories have `firstPassSuccess === true`, when `computeBandStats` runs, then the returned `BandStat` for `\"simple\"` has `firstPassRate === 0.9`.",
+        "Given a mapping of `simple -> \"fast\"` and a `RunMetrics[]` where 3 of 10 `\"simple\"` stories have `finalTier === \"balanced\"`, when `computeBandStats` runs, then the returned `BandStat` for `\"simple\"` has `mismatchRate === 0.3`.",
+        "Given history that contains only some complexity values, when `computeBandStats` runs, then it returns exactly one `BandStat` per distinct `complexity` value present in history and none for complexities absent from it.",
+        "Given an empty `RunMetrics[]`, when `computeBandStats` runs, then it returns an empty `BandStat[]`."
+      ],
+      "tags": [
+        "feature",
+        "routing",
+        "metrics",
+        "calibration"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The work is pure and local but spans new data types plus non-trivial history aggregation logic across multiple existing metrics contracts.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/metrics/types.ts",
+        "src/metrics/tracker.ts",
+        "src/metrics/aggregator.ts",
+        "src/config/schema-types.ts",
+        "src/routing/router.ts"
+      ],
+      "expectedFiles": [
+        "src/routing/calibrate/types.ts",
+        "src/routing/calibrate/band-stats.ts",
+        "test/unit/routing/calibrate/band-stats.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b3b4d1cb6f749ede13b3c7296e01f2b18484af1e"
+    },
+    {
+      "id": "US-003",
+      "title": "Implement pure adjustment proposal logic",
+      "description": "**Goal** — Add `proposeAdjustments(bandStats, mapping, thresholds)` so the calibration core can convert band evidence into one-rung routing proposals and advisory hints.\n\n**Motivation** — This feature closes it: compare prediction (band→tier) against outcome across history and propose grounded mapping changes — both upgrades (a band that under-classifies and keeps escalating) and downgrades (a band that over-classifies and never needs its tier, wasting cost).\n\n**Approach** — Pure `proposeAdjustments(bandStats, mapping, thresholds)` (upgrade/downgrade rules, clamps, hysteresis, keyword hints, skipped bands) + the module barrel. `CalibrationThresholds` is the core's own input type (min samples + the four rule numbers), so the pure core has no dependency on the config schema. The core never proposes a tier below `fast` or above `powerful`, and never moves more than one rung per calibration.\n\n**Scope** — In: threshold evaluation, one-rung clamps, skipped-band reporting, hysteresis, keyword hints, barrel exports, and unit tests over synthetic `BandStat[]`. Out: metrics loading, config persistence, CLI formatting, post-run artifact writing.\n\n**Interface**\n```typescript\nproposeAdjustments(bandStats, mapping, thresholds)\nCalibrationThresholds\nCalibrationProposal\nTierAdjustment\nKeywordHint\nSkippedBand\n```",
+      "acceptanceCriteria": [
+        "Given a `BandStat` with `escalationRate === 0.4` and `mismatchRate === 0.3` against a `simple -> \"fast\"` mapping, when `proposeAdjustments` runs, then it returns a `TierAdjustment` with `band === \"simple\"`, `from === \"fast\"`, `to === \"balanced\"`, and `direction === \"upgrade\"`.",
+        "Given a `complex -> \"powerful\"` `BandStat` with `firstPassRate === 0.95`, `escalationRate === 0.02`, and observed `finalTier`s all at or below `\"balanced\"`, when `proposeAdjustments` runs, then it returns a `TierAdjustment` with `to === \"balanced\"` and `direction === \"downgrade\"`.",
+        "Given a `BandStat` whose `sampleCount` is below `thresholds.minSamples`, when `proposeAdjustments` runs, then it returns no adjustment for that band and lists it under `skipped` with its `sampleCount` and the `minSamples` used.",
+        "Given a band already mapped to `\"fast\"` that otherwise meets the downgrade criteria, when `proposeAdjustments` runs, then it returns no downgrade for that band.",
+        "Given a band already mapped to `\"powerful\"` that otherwise meets the upgrade criteria, when `proposeAdjustments` runs, then it returns no upgrade for that band.",
+        "Given a `simple -> \"fast\"` `BandStat` with `escalationRate === 0.9` and `mismatchRate === 0.9`, when `proposeAdjustments` runs, then it proposes `to === \"balanced\"` and not `\"powerful\"`.",
+        "Given a `BandStat` whose `escalationRate === 0.15` and whose `firstPassRate === 0.7`, when `proposeAdjustments` runs, then it returns no adjustment for that band.",
+        "Given a large-sample, high-mismatch `BandStat`, when `proposeAdjustments` runs, then it emits a `KeywordHint` whose `message` references `classify.ts` and the emitted hint object exposes no `from` or `to` tier field."
+      ],
+      "tags": [
+        "feature",
+        "routing",
+        "calibration",
+        "proposal"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The logic is still pure and bounded, but it has multiple interacting threshold rules, clamp semantics, and hint behavior that deserve deliberate test-first implementation.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/config/schema-types.ts",
+        "src/routing/router.ts",
+        "src/routing/classify.ts",
+        "src/routing/calibrate/types.ts",
+        "src/routing/calibrate/band-stats.ts"
+      ],
+      "expectedFiles": [
+        "src/routing/calibrate/propose.ts",
+        "src/routing/calibrate/index.ts",
+        "test/unit/routing/calibrate/propose.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8386129c1357eb54298d231e218e58cfd036842f"
+    },
+    {
+      "id": "US-004",
+      "title": "Add the `nax routing calibrate` CLI",
+      "description": "**Goal** — Add the on-demand CLI that composes history loading with the pure calibration core and optionally applies the proposed routing mapping.\n\n**Motivation** — It is the cheaper, grounded complement to the deferred LLM run-time routing (#1289), not a replacement, and it pairs with the shipped `--max-cost` cap by helping the routing config reflect reality.\n\n**Approach** — Command wiring `loadRunMetrics` → core → report, with `--apply` / `--json` / `--min-samples` and the injected config writer. CLI Behavior (`nax routing calibrate`): `--apply` (write the proposal into project `.nax/config.json`), `--json` (emit machine-readable proposal), `--min-samples <n>` (override the per-band sample floor for this invocation). Exit codes: `0` on success, on a clean no-op (no proposals, or `--apply` with nothing to write), and on insufficient history. Non-zero only on an unexpected failure (e.g. a config write that rejects under `--apply`). Read-only default: without `--apply`, the command never writes config.\n\n**Scope** — In: `src/cli/routing-calibrate.ts`, `bin/nax.ts` command registration, human and JSON output modes, `--min-samples` override plumbing, injected config-write behavior, and integration tests for apply, no-op, and insufficient-history paths. Out: automatic post-run execution, plugin registration, and direct mutation of any file other than project `.nax/config.json` during `--apply`.\n\n**Interface**\n```typescript\nloadRunMetrics(outputDir: string): Promise<RunMetrics[]>\ncomplexityToModelTier(complexity, config)\n```",
+      "acceptanceCriteria": [
+        "Given `_deps.loadRunMetrics` returning a fixture `RunMetrics[]` that yields a threshold-breaching `\"simple\"` band, when the calibrate action runs, then the proposal `adjustments` include one with `band === \"simple\"`, `from === \"fast\"`, and `to === \"balanced\"`.",
+        "Given `--json` mode, when the calibrate action runs, then it emits a JSON object exposing `adjustments`, `keywordHints`, and `skipped` arrays.",
+        "Given no `--apply` flag, when the calibrate action runs, then it does not invoke `_deps.writeConfig`.",
+        "Given `--apply` and at least one adjustment, when the calibrate action runs, then it invokes `_deps.writeConfig` once with a config whose `autoMode.complexityRouting` equals the prior mapping with only the proposed bands' tiers replaced and all other bands preserved.",
+        "Given `--apply` and zero adjustments, when the calibrate action runs, then it does not invoke `_deps.writeConfig`.",
+        "Given `--min-samples 20` and a band with `sampleCount === 10`, when the calibrate action runs, then that band is reported under `skipped`.",
+        "Given `_deps.loadRunMetrics` returns an empty array, when the calibrate action runs, then it reports insufficient history, does not invoke `_deps.writeConfig`, and completes without throwing."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "routing",
+        "config"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is standard multi-file CLI integration that composes existing seams without introducing new architecture or concurrency risk.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "bin/nax.ts",
+        "src/metrics/index.ts",
+        "src/cli/setup-write.ts",
+        "src/config/schemas.ts",
+        "src/routing/calibrate/index.ts"
+      ],
+      "expectedFiles": [
+        "src/cli/routing-calibrate.ts",
+        "test/integration/cli/cli-routing-calibrate.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e4d766e617f9e168e6b28f17767105dcf17049a6"
+    },
+    {
+      "id": "US-005",
+      "title": "Add the `nax-auto-route` post-run plugin",
+      "description": "**Goal** — Add the built-in post-run plugin that writes a per-run routing proposal artifact while leaving project routing config unchanged.\n\n**Motivation** — The tool is advisory by default: the CLI writes config only with `--apply`; the plugin never writes config, only emits a proposal artifact.\n\n**Approach** — `autoRoutePlugin` (`shouldRun` / `execute`) writing the proposal artifact, registered in `loader.ts`. The CLI and plugin are thin I/O shells that inject their external calls (`loadRunMetrics`, config write, artifact write) through a `_deps` object per `forbidden-patterns.md`, so their tests never read real metrics or write real config. Plugin fail-open — a failed calibration never fails the run: `execute` catches, logs via `ctx.logger` (write-only `PluginLogger`; no `console.*`, no emojis), and returns `{ success: true }`.\n\n**Scope** — In: `src/plugins/builtin/auto-route/` implementation and tests, built-in loader registration, artifact writing to `routing-proposal.json`, `shouldRun` gating from `ctx.config.autoRoute`, and fail-open logging behavior. Out: writing `.nax/config.json`, CLI presentation, and any behavior that can fail the underlying run.\n\n**Interface**\n```typescript\ninterface IPostRunAction {\n  shouldRun(context: PostRunContext): Promise<boolean>;\n  execute(context: PostRunContext): Promise<PostRunActionResult>;\n}\n```",
+      "acceptanceCriteria": [
+        "Given `ctx.config.autoRoute.enabled === false`, when `autoRoutePlugin.shouldRun` runs, then it returns `false`.",
+        "Given injected `_deps.loadRunMetrics` history in which no band reaches `minSamples`, when `autoRoutePlugin.shouldRun` runs, then it returns `false`.",
+        "Given the plugin is enabled and the injected history yields at least one adjustment, when `autoRoutePlugin.shouldRun` runs, then it returns `true`.",
+        "Given fixture history that produces an adjustment, when `autoRoutePlugin.execute` runs, then it invokes `_deps.writeFile` exactly once with a path ending in `routing-proposal.json` whose parsed JSON `adjustments` contain that computed adjustment.",
+        "Given the plugin happy path, when `autoRoutePlugin.execute` runs, then the single `_deps.writeFile` call targets the `routing-proposal.json` path and no `autoMode.complexityRouting` write occurs.",
+        "Given `_deps.writeFile` rejects, when `autoRoutePlugin.execute` runs, then it returns `{ success: true }`, logs the failure via `ctx.logger`, and does not throw.",
+        "Given `loadPlugins()` runs with `\"nax-auto-route\"` not in the disabled set, when `getPostRunActions()` is called on the returned registry, then it includes an action named `\"nax-auto-route\"`."
+      ],
+      "tags": [
+        "feature",
+        "plugins",
+        "routing",
+        "post-run"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The plugin follows existing built-in patterns and DI seams, but still spans config gating, artifact output, fail-open behavior, and loader registration.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/plugins/loader.ts",
+        "src/plugins/extensions.ts",
+        "src/plugins/builtin/auto-pr/index.ts",
+        "src/plugins/builtin/curator/index.ts",
+        "src/routing/calibrate/index.ts"
+      ],
+      "expectedFiles": [
+        "src/plugins/builtin/auto-route/types.ts",
+        "src/plugins/builtin/auto-route/index.ts",
+        "test/unit/plugins/builtin/auto-route-acceptance.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "11eee58ead25a996c77416a0695ed1aaf3a07c5b"
+    }
+  ],
+  "analysis": "Self-audit results: the draft needed tightening in five places. First, spec AC preservation: the feature spec defines 32 acceptance criteria total, split as US-001 (6), US-002 (4), US-003 (8), US-004 (7), and US-005 (7). The revised PRD keeps all 32 spec ACs in `acceptanceCriteria` and adds only narrowly scoped negative-path criteria where a story lacked one, without deleting any spec AC. There are no `[verbatim]` ACs in the spec, so no character-for-character shell or regex entries were required. Second, codebase fit: the relevant implementation seams are real and already present. `loadRunMetrics(outputDir)` is implemented in `src/metrics/tracker.ts:324`-`src/metrics/tracker.ts:329` and re-exported in `src/metrics/index.ts:7`-`src/metrics/index.ts:18`. `StoryMetrics` already exposes `complexity`, `modelTier`, `attempts`, `finalTier`, and `firstPassSuccess` in `src/metrics/types.ts:98`-`src/metrics/types.ts:126`, so the core should derive escalation from `attempts > 1` exactly as the spec says. Existing aggregate logic in `src/metrics/aggregator.ts:121`-`src/metrics/aggregator.ts:153` already treats `story.modelTier !== story.finalTier` as a mismatch signal and computes per-band mismatch rates, which is the correct semantic precedent for calibration math. The current routing SSOT is `autoMode.complexityRouting` in `src/config/schemas.ts:74`-`src/config/schemas.ts:92`, and `complexityToModelTier()` reads only that mapping in `src/routing/router.ts:97`-`src/routing/router.ts:101`; the CLI `--apply` path therefore must merge only that config subtree rather than introducing a second routing store. Third, plugin and CLI integration points are present and should not be invented. Post-run action contracts come from `src/plugins/extensions.ts:174`-`src/plugins/extensions.ts:301`, with re-exports in `src/plugins/types.ts:11`-`src/plugins/types.ts:22`. Built-in plugin registration currently happens in `src/plugins/loader.ts:115`-`src/plugins/loader.ts:145`, where `nax-curator` and `nax-auto-pr` are loaded, and `PluginRegistry.getPostRunActions()` returns plugin-derived actions followed by built-in side-channel actions in `src/plugins/registry.ts:174`-`src/plugins/registry.ts:179`. The new `nax-auto-route` plugin should follow the existing built-in pattern from `src/plugins/builtin/curator/index.ts:1`-`src/plugins/builtin/curator/index.ts:136` and `src/plugins/builtin/auto-pr/index.ts:1`-`src/plugins/builtin/auto-pr/index.ts:194`, including `_deps` injection, loose config reads from `ctx.config`, and fail-open `execute()` behavior. CLI config writing should mirror the injected write pattern in `src/cli/setup-write.ts:8`-`src/cli/setup-write.ts:39`. `bin/nax.ts` currently has a `config` group at `bin/nax.ts:1164` and no existing `routing` command group, so `nax routing calibrate` is a real addition rather than a modification of an existing command surface. Fourth, regression coverage: stories that change existing behavior need guardrails. For US-001 the partial-override parse behavior protects backward-compatible Zod default merging. For US-004 the read-only default and zero-adjustment no-op criteria protect the existing behavior that config is not rewritten unless explicitly requested. For US-005 the advisory-only artifact write criterion protects the current expectation that post-run plugins do not mutate routing config by default. Fifth, naming and test-shape alignment: the repo’s test naming strongly favors paths like `test/integration/cli/cli-*.test.ts` and `test/unit/plugins/builtin/*-acceptance.test.ts`, as shown by `test/unit/plugins/builtin/auto-pr-acceptance.test.ts:1`-`test/unit/plugins/builtin/auto-pr-acceptance.test.ts:163` and `test/unit/plugins/builtin/curator-registration.test.ts:1`-`test/unit/plugins/builtin/curator-registration.test.ts:33`. The revised PRD therefore uses those conventions instead of inventing mismatched test file names. Architecture and migration impact remain additive: no existing metrics format needs migration because `metrics.json` is already consumed as historical `RunMetrics[]`; empty or corrupt metrics already collapse safely to `[]`; the plugin stays opt-in through `autoRoute.enabled === false` by default; the CLI remains read-only unless `--apply` is passed; and the core stays pure and detached from filesystem or Zod concerns. Main risks for implementers are: nested Zod defaults for the new `autoRoute` block must preserve partial override semantics; calibration logic must clamp to the built-in `fast -> balanced -> powerful` ladder even though `ModelTier` is widened in `src/config/schema-types.ts:8`-`src/config/schema-types.ts:13`; CLI config writes must preserve unrelated config keys in `.nax/config.json`; and built-in plugin registration must avoid duplicating post-run actions or accidentally changing registration order.",
+  "routingProfile": "cross-agent-mm"
+}

@@ -81,3 +81,4 @@ export type {
   ProjectProfile,
   CuratorConfig,
 } from "./runtime-types";
+export type { AutoRouteConfig, AutoRouteDowngradeConfig, AutoRouteUpgradeConfig } from "./runtime-types-auto-route";

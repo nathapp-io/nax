@@ -58,6 +58,7 @@ import {
   rulesLintCommand,
   rulesMigrateCommand,
   runReplanLoop,
+  runRoutingCalibrateCli,
   runsListCommand,
   runsShowCommand,
 } from "../src/cli";
@@ -1252,6 +1253,32 @@ configProfileCmd
     try {
       const path = await profileCreateCommand(name, options.dir);
       console.log(`Created profile at: ${path}`);
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+// ── routing ──────────────────────────────────────────
+const routingCmd = program.command("routing").description("Routing calibration helpers");
+
+routingCmd
+  .command("calibrate")
+  .description("Propose complexity→tier mapping adjustments from run history")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("--apply", "Write the proposed mapping into .nax/config.json", false)
+  .option("--json", "Emit the proposal as JSON", false)
+  .option("--min-samples <n>", "Override the per-band sample floor for this invocation")
+  .action(async (options) => {
+    try {
+      const workdir = validateDirectory(options.dir);
+      const result = await runRoutingCalibrateCli({
+        dir: workdir,
+        apply: Boolean(options.apply),
+        json: Boolean(options.json),
+        minSamples: options.minSamples as string | undefined,
+      });
+      process.exit(result.exitCode);
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);
