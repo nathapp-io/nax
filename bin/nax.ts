@@ -54,6 +54,7 @@ import {
   promptsCommand,
   promptsInitCommand,
   resolveRunProfileOverride,
+  routingCalibrateCommand,
   rulesExportCommand,
   rulesLintCommand,
   rulesMigrateCommand,
@@ -1252,6 +1253,49 @@ configProfileCmd
     try {
       const path = await profileCreateCommand(name, options.dir);
       console.log(`Created profile at: ${path}`);
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+// ── routing ──────────────────────────────────────────
+const routingCmd = program.command("routing").description("Routing calibration helpers");
+
+routingCmd
+  .command("calibrate")
+  .description("Propose complexity→tier mapping adjustments from run history")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("--apply", "Write the proposed mapping into .nax/config.json", false)
+  .option("--json", "Emit the proposal as JSON", false)
+  .option("--min-samples <n>", "Override the per-band sample floor for this invocation")
+  .action(async (options) => {
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+      return;
+    }
+    let minSamples: number | undefined;
+    if (options.minSamples !== undefined) {
+      const parsed = Number.parseInt(options.minSamples, 10);
+      if (Number.isNaN(parsed)) {
+        console.error(chalk.red(`--min-samples must be an integer (got "${options.minSamples}")`));
+        process.exit(1);
+        return;
+      }
+      minSamples = parsed;
+    }
+    try {
+      const result = await routingCalibrateCommand({
+        workdir,
+        apply: Boolean(options.apply),
+        json: Boolean(options.json),
+        minSamples,
+      });
+      process.exit(result.exitCode);
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);
