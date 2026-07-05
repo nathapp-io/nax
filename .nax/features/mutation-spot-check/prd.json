@@ -3,7 +3,7 @@
   "feature": "mutation-spot-check",
   "branchName": "feat/mutation-spot-check",
   "createdAt": "2026-07-05T03:09:06Z",
-  "updatedAt": "2026-07-05T03:54:21.336Z",
+  "updatedAt": "2026-07-05T04:08:15.649Z",
   "userStories": [
     {
       "id": "US-001",
@@ -123,8 +123,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -193,7 +193,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/operations/greenfield-gate.ts",
@@ -207,7 +209,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b747949025fe88f785efc1c442bd4bd8af4551b6"
     },
     {
       "id": "US-005",
