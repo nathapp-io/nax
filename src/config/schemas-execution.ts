@@ -122,7 +122,7 @@ const FlakeDetectionConfigSchema = z.object({
  * after GREEN passes to verify the test suite actually catches real defects.
  * `enabled` defaults to `false` so existing runs are unaffected.
  */
-export const MutationCheckConfigSchema = z.object({
+const MutationCheckConfigSchema = z.object({
   enabled: z.boolean().default(false),
   /** Max mutants per story (budget cap for the spot-check). */
   maxMutants: z.number().int().min(1).max(50).default(3),
