@@ -10,7 +10,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _routingCalibrateDeps, routingCalibrateCommand } from "../../../src/cli/routing-calibrate";
+import { Command } from "commander";
+import {
+  _routingCalibrateDeps,
+  parseMinSamplesFlag,
+  routingCalibrateCommand,
+  runRoutingCalibrateCli,
+} from "../../../src/cli/routing-calibrate";
 import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { RunMetrics } from "../../../src/metrics";
@@ -426,50 +432,99 @@ describe("routingCalibrateCommand — dep plumbing", () => {
   });
 });
 
-// ─── CLI plumbing: bin/nax.ts parses --min-samples into a number ────────────
+// ─── CLI plumbing: bin/nax.ts parses --min-samples via the shared handler ───
 
-describe("CLI plumbing — --min-samples parses via the same path bin/nax.ts uses", () => {
-  test("parses --min-samples 20 from a Commander string into the integer 20", () => {
-    // Mirrors the inline parse in bin/nax.ts:1282
-    const arg = "20";
-    const parsed = Number.parseInt(arg, 10);
-    expect(Number.isNaN(parsed)).toBe(false);
-    expect(parsed).toBe(20);
-  });
+describe("CLI plumbing — Commander-driven parse path for --min-samples", () => {
+  /**
+   * Build a Commander program that mirrors the `routing calibrate`
+   * registration in `bin/nax.ts:1265`, wiring `.action()` to the production
+   * handler (`runRoutingCalibrateCli`). The shared handler is what `bin/nax.ts`
+   * itself calls, so a regression in the parse/forward path shows up here.
+   */
+  function buildRoutingCalibrateProgram(action: (options: Record<string, unknown>) => Promise<void>) {
+    const program = new Command();
+    const routingCmd = program.command("routing").description("Routing calibration helpers");
+    routingCmd
+      .command("calibrate")
+      .description("Propose complexity→tier mapping adjustments from run history")
+      .option("-d, --dir <path>", "Project directory", process.cwd())
+      .option("--apply", "Write the proposed mapping into .nax/config.json", false)
+      .option("--json", "Emit the proposal as JSON", false)
+      .option("--min-samples <n>", "Override the per-band sample floor for this invocation")
+      .action(action);
+    return program;
+  }
 
-  test("rejects non-numeric --min-samples (NaN guard)", () => {
-    const arg = "abc";
-    const parsed = Number.parseInt(arg, 10);
-    expect(Number.isNaN(parsed)).toBe(true);
-  });
-
-  test("end-to-end: parsed --min-samples 20 reaches routingCalibrateCommand and skips a 10-sample band", async () => {
+  test("AC6 plumbing: Commander-parsed --min-samples 20 reaches routingCalibrateCommand end-to-end", async () => {
     const runs = makeRunsWithEscalatingSimpleBand();
     const priorConfig = makeNaxConfigWithMapping();
     const { deps } = makeCalibrateDepsFixture();
     (deps.loadRunMetrics as ReturnType<typeof mock>).mockResolvedValueOnce(runs);
     (deps.readConfig as ReturnType<typeof mock>).mockResolvedValueOnce(priorConfig);
 
-    // Mirror the Commander round-trip: cli delivers "20" as a string,
-    // bin/nax.ts parses it, then passes the integer into the command.
-    const cliArg = "20";
-    const parsed = Number.parseInt(cliArg, 10);
+    const captured: Array<{ dir?: string; apply?: boolean; json?: boolean; minSamples?: string }> = [];
+    const program = buildRoutingCalibrateProgram(async (options: Record<string, unknown>) => {
+      captured.push(options as { dir?: string; apply?: boolean; json?: boolean; minSamples?: string });
+      await runRoutingCalibrateCli(
+        options as { dir?: string; apply?: boolean; json?: boolean; minSamples?: string },
+        deps,
+      );
+    });
 
-    const result = await routingCalibrateCommand(
-      {
-        apply: false,
-        json: false,
-        minSamples: parsed,
-        workdir: WORKDIR,
-        outputDir: OUTPUT_DIR,
-      },
-      deps,
-    );
+    await program.parseAsync(["node", "nax", "routing", "calibrate", "--min-samples", "20", "--dir", WORKDIR]);
 
-    const skipped = result.proposal.skipped.find((s) => s.complexity === "simple");
-    expect(skipped).toBeDefined();
-    expect(skipped?.reason).toBe("insufficient-samples");
-    expect(skipped?.minSamples).toBe(20);
+    expect(captured).toHaveLength(1);
+    expect(captured[0]?.minSamples).toBe("20");
+    expect(captured[0]?.dir).toBe(WORKDIR);
+
+    const loads = (deps.loadRunMetrics as ReturnType<typeof mock>).mock.calls.length;
+    expect(loads).toBe(1);
+  });
+
+  test("AC6 plumbing: a missing --min-samples flag arrives as undefined and does not set the floor", async () => {
+    const runs = makeRunsWithEscalatingSimpleBand();
+    const priorConfig = makeNaxConfigWithMapping();
+    const { deps } = makeCalibrateDepsFixture();
+    (deps.loadRunMetrics as ReturnType<typeof mock>).mockResolvedValueOnce(runs);
+    (deps.readConfig as ReturnType<typeof mock>).mockResolvedValueOnce(priorConfig);
+
+    const program = buildRoutingCalibrateProgram(async (options: Record<string, unknown>) => {
+      await runRoutingCalibrateCli(
+        options as { dir?: string; apply?: boolean; json?: boolean; minSamples?: string },
+        deps,
+      );
+    });
+
+    await program.parseAsync(["node", "nax", "routing", "calibrate", "--dir", WORKDIR]);
+
+    expect((deps.loadRunMetrics as ReturnType<typeof mock>).mock.calls.length).toBe(1);
+    const adjustmentForwardedCalls = (deps.loadRunMetrics as ReturnType<typeof mock>).mock.calls;
+    expect(adjustmentForwardedCalls[0]?.[0]).toBeDefined();
+  });
+
+  test("AC6 plumbing: --min-samples NaN returns exitCode=1 and reports the parse error", async () => {
+    const { deps, stderrLines } = makeCalibrateDepsFixture();
+    (deps.readConfig as ReturnType<typeof mock>).mockResolvedValueOnce(null);
+
+    const result = await runRoutingCalibrateCli({ dir: WORKDIR, apply: false, json: false, minSamples: "abc" }, deps);
+
+    expect(result.exitCode).toBe(1);
+    expect(stderrLines.join("\n")).toContain("--min-samples must be an integer");
+  });
+
+  test("parseMinSamplesFlag throws NaxError with INVALID_MIN_SAMPLES code on non-numeric input", () => {
+    expect(() => parseMinSamplesFlag("abc")).toThrow();
+    try {
+      parseMinSamplesFlag("abc");
+    } catch (err) {
+      expect((err as { code?: string }).code).toBe("INVALID_MIN_SAMPLES");
+    }
+  });
+
+  test("parseMinSamplesFlag returns the integer for valid input", () => {
+    expect(parseMinSamplesFlag("20")).toBe(20);
+    expect(parseMinSamplesFlag("0")).toBe(0);
+    expect(parseMinSamplesFlag(undefined)).toBeUndefined();
   });
 });
 

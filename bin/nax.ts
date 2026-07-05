@@ -54,11 +54,11 @@ import {
   promptsCommand,
   promptsInitCommand,
   resolveRunProfileOverride,
-  routingCalibrateCommand,
   rulesExportCommand,
   rulesLintCommand,
   rulesMigrateCommand,
   runReplanLoop,
+  runRoutingCalibrateCli,
   runsListCommand,
   runsShowCommand,
 } from "../src/cli";
@@ -1270,30 +1270,13 @@ routingCmd
   .option("--json", "Emit the proposal as JSON", false)
   .option("--min-samples <n>", "Override the per-band sample floor for this invocation")
   .action(async (options) => {
-    let workdir: string;
     try {
-      workdir = validateDirectory(options.dir);
-    } catch (err) {
-      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
-      process.exit(1);
-      return;
-    }
-    let minSamples: number | undefined;
-    if (options.minSamples !== undefined) {
-      const parsed = Number.parseInt(options.minSamples, 10);
-      if (Number.isNaN(parsed)) {
-        console.error(chalk.red(`--min-samples must be an integer (got "${options.minSamples}")`));
-        process.exit(1);
-        return;
-      }
-      minSamples = parsed;
-    }
-    try {
-      const result = await routingCalibrateCommand({
-        workdir,
+      const workdir = validateDirectory(options.dir);
+      const result = await runRoutingCalibrateCli({
+        dir: workdir,
         apply: Boolean(options.apply),
         json: Boolean(options.json),
-        minSamples,
+        minSamples: options.minSamples as string | undefined,
       });
       process.exit(result.exitCode);
     } catch (err) {

@@ -3,6 +3,7 @@ import { basename, join } from "node:path";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
 import { deepMergeConfig } from "../config/merger";
+import { NaxError } from "../errors";
 import { loadRunMetrics as _loadRunMetrics } from "../metrics";
 import type { RunMetrics } from "../metrics";
 import { projectInputDir, projectOutputDir } from "../runtime";
@@ -54,6 +55,66 @@ export const _routingCalibrateDeps: RoutingCalibrateDeps = {
     process.stderr.write(`${msg}\n`);
   },
 };
+
+/**
+ * Parse the `--min-samples` CLI flag value (delivered as a string by
+ * Commander) into an integer. Returns `undefined` when the flag was not
+ * provided; throws on non-numeric input so the caller can surface the
+ * user-facing error.
+ */
+export function parseMinSamplesFlag(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed)) {
+    throw new NaxError(`--min-samples must be an integer (got "${raw}")`, "INVALID_MIN_SAMPLES", {
+      stage: "routing-calibrate",
+      value: raw,
+    });
+  }
+  return parsed;
+}
+
+/**
+ * Action handler for the `nax routing calibrate` Commander subcommand.
+ * Accepts the post-Commander `options` object (i.e., the `options` argument
+ * Commander passes to `.action((options) => ...)`) and forwards into
+ * `routingCalibrateCommand` after validating `--min-samples`.
+ *
+ * Returns the same `{ exitCode, proposal, wroteConfig }` shape but does NOT
+ * call `process.exit`; the bin wrapper is responsible for that. Splitting this
+ * out lets tests wire the same handler into a fresh Commander program and
+ * assert end-to-end parse + forwarding without spawning `bin/nax.ts`.
+ */
+export async function runRoutingCalibrateCli(
+  options: { dir?: string; apply?: boolean; json?: boolean; minSamples?: string },
+  deps: RoutingCalibrateDeps = _routingCalibrateDeps,
+): Promise<RoutingCalibrateResult> {
+  let minSamples: number | undefined;
+  try {
+    minSamples = parseMinSamplesFlag(options.minSamples);
+  } catch (err) {
+    deps.stderr((err as Error).message);
+    return {
+      proposal: {
+        generatedAt: new Date().toISOString(),
+        bandStats: [],
+        adjustments: [],
+        hints: [],
+        skipped: [],
+      },
+      exitCode: 1,
+    };
+  }
+  return routingCalibrateCommand(
+    {
+      workdir: options.dir,
+      apply: Boolean(options.apply),
+      json: Boolean(options.json),
+      minSamples,
+    },
+    deps,
+  );
+}
 
 function resolveOutputDir(workdir: string, override: string | undefined, prior: NaxConfig | null): string {
   if (override) return override;
