@@ -54,7 +54,7 @@ async function defaultReadText(path: string): Promise<string | null> {
  * directories or remotes the caller cannot resolve.
  */
 async function defaultGetRemoteUrl(workdir: string): Promise<string | null> {
-  const result = await defaultRun([...GIT_REMOTE_CMD], { cwd: workdir });
+  const result = await _autoPrDeps.run([...GIT_REMOTE_CMD], { cwd: workdir });
   if (result.exitCode !== 0) return null;
   const trimmed = result.stdout.trim();
   return trimmed.length > 0 ? trimmed : null;
