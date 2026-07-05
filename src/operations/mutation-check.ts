@@ -97,7 +97,8 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       input.repoRoot,
     );
     // getChangedNonTestFiles returns paths relative to repoRoot — anchor them
-    // before any file I/O so this doesn't silently resolve against process.cwd().
+    // before any file I/O so resolution doesn't silently depend on the
+    // process's current working directory.
     const anchor = input.repoRoot ?? input.workdir;
     const absoluteChangedFiles = changedFiles.map((f) => (isAbsolute(f) ? f : join(anchor, f)));
 
