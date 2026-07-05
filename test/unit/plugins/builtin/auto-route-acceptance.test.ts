@@ -13,6 +13,11 @@
  *  - AC7: loadPlugins registers "nax-auto-route" when not in the disabled set
  *
  * The plugin module exposes `_autoRouteDeps` for test injection — no mock.module().
+ *
+ * Fixture strategy: every test that depends on a proposal seeds `loadRunMetrics`
+ * with real `RunMetrics` (story-level `attempts` / `finalTier`) so the
+ * `loadRunMetrics → computeBandStats → proposeAdjustments` pipeline runs
+ * through to its real output.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -23,7 +28,8 @@ import type { PostRunContext } from "@/plugins/extensions";
 import { loadPlugins } from "@/plugins";
 import { autoRoutePlugin, _autoRouteDeps } from "@/plugins/builtin/auto-route";
 import type { AutoRouteDeps } from "@/plugins/builtin/auto-route/types";
-import type { CalibrationProposal, TierAdjustment } from "@/routing/calibrate/types";
+import type { RunMetrics, StoryMetrics } from "@/metrics/types";
+import type { TierAdjustment } from "@/routing/calibrate/types";
 
 const PLUGIN_NAME = "nax-auto-route";
 
@@ -53,16 +59,77 @@ function makeContext(overrides: Partial<PostRunContext> = {}): PostRunContext {
   };
 }
 
-function makeProposal(adjustments: TierAdjustment[]): CalibrationProposal {
+function makeStory(input: {
+  storyId: string;
+  complexity: string;
+  attempts: number;
+  finalTier: string;
+}): StoryMetrics {
   return {
-    generatedAt: "2026-07-05T00:00:00.000Z",
-    bandStats: [],
-    adjustments,
-    hints: [],
-    skipped: [],
+    storyId: input.storyId,
+    complexity: input.complexity,
+    modelTier: "balanced",
+    modelUsed: "sonnet",
+    agentUsed: "claude",
+    attempts: input.attempts,
+    finalTier: input.finalTier,
+    success: true,
+    cost: 0.01,
+    durationMs: 1000,
+    firstPassSuccess: input.attempts === 1,
+    startedAt: "2026-01-01T00:00:00.000Z",
+    completedAt: "2026-01-01T00:01:00.000Z",
   };
 }
 
+/**
+ * History whose `medium` band has 8 stories with escalationRate=0.5 and
+ * mismatchRate=0.5 — matches the AC fixture (4 escalated to "powerful",
+ * 4 stayed on "balanced"). Default config thresholds (0.3/0.25) trigger
+ * an upgrade for "medium" from "balanced" to "powerful".
+ */
+function makeAdjustmentHistory(): RunMetrics[] {
+  const stories: StoryMetrics[] = [];
+  for (let i = 0; i < 4; i++) {
+    stories.push(
+      makeStory({
+        storyId: `US-${100 + i}`,
+        complexity: "medium",
+        attempts: 2,
+        finalTier: "powerful",
+      }),
+    );
+  }
+  for (let i = 0; i < 4; i++) {
+    stories.push(
+      makeStory({
+        storyId: `US-${200 + i}`,
+        complexity: "medium",
+        attempts: 1,
+        finalTier: "balanced",
+      }),
+    );
+  }
+  return [
+    {
+      runId: "run-1",
+      feature: "auto-route-plugin",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      completedAt: "2026-01-01T00:10:00.000Z",
+      totalCost: 0.08,
+      totalStories: stories.length,
+      storiesCompleted: stories.length,
+      storiesFailed: 0,
+      totalDurationMs: 600_000,
+      stories,
+    },
+  ];
+}
+
+/**
+ * Expected adjustment shape produced from `makeAdjustmentHistory()` via
+ * the real `computeBandStats` + `proposeAdjustments` pipeline.
+ */
 function makeAdjustment(): TierAdjustment {
   return {
     band: "medium",
@@ -74,6 +141,39 @@ function makeAdjustment(): TierAdjustment {
     direction: "upgrade",
     rationale: "escalationRate=0.5 ≥ 0.3, mismatchRate=0.5 ≥ 0.25",
   };
+}
+
+/**
+ * History whose `medium` band has only 7 stories — below `minSamples=8`.
+ * `proposeAdjustments` records the band as `skipped` with reason
+ * `insufficient-samples` and emits no adjustments.
+ */
+function makeBelowThresholdHistory(): RunMetrics[] {
+  const stories: StoryMetrics[] = [];
+  for (let i = 0; i < 7; i++) {
+    stories.push(
+      makeStory({
+        storyId: `US-${300 + i}`,
+        complexity: "medium",
+        attempts: 1,
+        finalTier: "balanced",
+      }),
+    );
+  }
+  return [
+    {
+      runId: "run-2",
+      feature: "auto-route-plugin",
+      startedAt: "2026-01-02T00:00:00.000Z",
+      completedAt: "2026-01-02T00:01:00.000Z",
+      totalCost: 0.07,
+      totalStories: stories.length,
+      storiesCompleted: stories.length,
+      storiesFailed: 0,
+      totalDurationMs: 60_000,
+      stories,
+    },
+  ];
 }
 
 let saved: Pick<AutoRouteDeps, "loadRunMetrics" | "writeFile"> & {
@@ -133,25 +233,13 @@ describe("autoRoutePlugin.shouldRun", () => {
   });
 
   test("AC2 — returns false when injected history yields no band reaching minSamples", async () => {
-    // Mock history with sampleCount well below minSamples (8)
-    _autoRouteDeps.loadRunMetrics = (async () => [
-      {
-        runId: "run-1",
-        feature: "x",
-        startedAt: "2026-01-01T00:00:00.000Z",
-        completedAt: "2026-01-01T00:01:00.000Z",
-        totalCost: 0,
-        totalDurationMs: 0,
-        stories: [],
-      },
-    ]) as typeof _autoRouteDeps.loadRunMetrics;
+    _autoRouteDeps.loadRunMetrics = (async () => makeBelowThresholdHistory()) as typeof _autoRouteDeps.loadRunMetrics;
     const ctx = makeContext();
     expect(await autoRoutePlugin.extensions.postRunAction!.shouldRun(ctx)).toBe(false);
   });
 
   test("AC3 — returns true when enabled and history yields at least one adjustment", async () => {
-    const adjustment = makeAdjustment();
-    _autoRouteDeps.proposeAdjustments = (() => makeProposal([adjustment])) as typeof _autoRouteDeps.proposeAdjustments;
+    _autoRouteDeps.loadRunMetrics = (async () => makeAdjustmentHistory()) as typeof _autoRouteDeps.loadRunMetrics;
     const ctx = makeContext();
     expect(await autoRoutePlugin.extensions.postRunAction!.shouldRun(ctx)).toBe(true);
   });
@@ -161,8 +249,7 @@ describe("autoRoutePlugin.shouldRun", () => {
 
 describe("autoRoutePlugin.execute", () => {
   test("AC4 — invokes _deps.writeFile exactly once with a routing-proposal.json path containing the adjustment", async () => {
-    const adjustment = makeAdjustment();
-    _autoRouteDeps.proposeAdjustments = (() => makeProposal([adjustment])) as typeof _autoRouteDeps.proposeAdjustments;
+    _autoRouteDeps.loadRunMetrics = (async () => makeAdjustmentHistory()) as typeof _autoRouteDeps.loadRunMetrics;
     const captured: Array<{ path: string; data: string }> = [];
     _autoRouteDeps.writeFile = (async (filePath, contents) => {
       captured.push({ path: filePath, data: contents });
@@ -171,18 +258,19 @@ describe("autoRoutePlugin.execute", () => {
     const ctx = makeContext();
     await autoRoutePlugin.extensions.postRunAction!.execute(ctx);
 
+    const expectedAdjustment = makeAdjustment();
+
     expect(captured.length).toBe(1);
     expect(captured[0]?.path.endsWith("routing-proposal.json")).toBe(true);
     const parsed = JSON.parse(captured[0]?.data ?? "{}") as {
       adjustments: TierAdjustment[];
     };
     expect(parsed.adjustments).toHaveLength(1);
-    expect(parsed.adjustments[0]).toEqual(adjustment);
+    expect(parsed.adjustments[0]).toEqual(expectedAdjustment);
   });
 
   test("AC5 — happy path writes only to routing-proposal.json (no autoMode.complexityRouting write)", async () => {
-    const adjustment = makeAdjustment();
-    _autoRouteDeps.proposeAdjustments = (() => makeProposal([adjustment])) as typeof _autoRouteDeps.proposeAdjustments;
+    _autoRouteDeps.loadRunMetrics = (async () => makeAdjustmentHistory()) as typeof _autoRouteDeps.loadRunMetrics;
     const captured: Array<{ path: string; data: string }> = [];
     _autoRouteDeps.writeFile = (async (filePath, contents) => {
       captured.push({ path: filePath, data: contents });
@@ -200,6 +288,7 @@ describe("autoRoutePlugin.execute", () => {
 
   test("AC6 — returns { success: true }, logs via ctx.logger, does not throw when _deps.writeFile rejects", async () => {
     let warned: { message: string; data?: Record<string, unknown> } | null = null;
+    _autoRouteDeps.loadRunMetrics = (async () => makeAdjustmentHistory()) as typeof _autoRouteDeps.loadRunMetrics;
     _autoRouteDeps.writeFile = (async () => {
       throw new Error("disk full");
     }) as typeof _autoRouteDeps.writeFile;
