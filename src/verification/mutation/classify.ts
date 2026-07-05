@@ -19,5 +19,9 @@ export function classifyMutant(result: VerificationResult): MutantOutcome {
     case "ASSET_CHECK_FAILED":
     case "TIMEOUT":
       return "errored";
+    default: {
+      const _exhaustive: never = result.status;
+      throw new Error(`[mutation-classify] unhandled status: ${String(_exhaustive)}`);
+    }
   }
 }

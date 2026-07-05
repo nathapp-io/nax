@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { applyMutant, revertMutant, type Mutant } from "@/verification";
+import { type Mutant, applyMutant, revertMutant } from "@/verification";
 
 describe("applyMutant", () => {
   let tempDir: string;
@@ -64,6 +64,24 @@ describe("applyMutant", () => {
     expect(lines[1]).toBe("line2");
     expect(lines[2]).toBe("MUTATED_LINE");
     expect(lines[3]).toBe("line4");
+  });
+
+  test("throws NaxError when m.line is past end-of-file", async () => {
+    const filePath = join(tempDir, "short.ts");
+    await Bun.write(filePath, "only-one-line\n");
+
+    const mutant: Mutant = {
+      file: filePath,
+      line: 99,
+      before: "only-one-line",
+      after: "mutated",
+      operatorId: "ts:noop",
+    };
+
+    await expect(applyMutant(mutant)).rejects.toMatchObject({
+      message: expect.stringContaining("[mutation-apply]"),
+      code: "MUTATION_LINE_OUT_OF_RANGE",
+    });
   });
 });
 
