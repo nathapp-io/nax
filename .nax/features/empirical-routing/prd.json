@@ -3,7 +3,7 @@
   "feature": "empirical-routing",
   "branchName": "feat/empirical-routing",
   "createdAt": "2026-07-05T11:38:41Z",
-  "updatedAt": "2026-07-05T12:02:31.035Z",
+  "updatedAt": "2026-07-05T12:14:57.922Z",
   "userStories": [
     {
       "id": "US-001",
@@ -23,8 +23,8 @@
         "routing"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -81,7 +81,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/metrics/types.ts",
@@ -97,7 +99,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b3b4d1cb6f749ede13b3c7296e01f2b18484af1e"
     },
     {
       "id": "US-003",
