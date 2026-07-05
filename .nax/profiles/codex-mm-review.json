@@ -1,7 +1,7 @@
 {
   "review": {
     "adversarial": {
-      "model": { "agent": "codex", "model": "balanced" }
+      "model": { "agent": "opencode", "model": "minimax/MiniMax-M3" }
     },
     "semantic": {
       "model": { "agent": "codex", "model": "fast" }
