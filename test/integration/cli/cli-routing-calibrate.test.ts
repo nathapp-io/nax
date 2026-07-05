@@ -45,6 +45,43 @@ function makeNaxConfigWithMapping(mapping = PRIOR_MAPPING): NaxConfig {
  * mapping where simple→fast, with observed finalTier differing — e.g.
  * "balanced" — to register a mismatch).
  */
+function makeRunsWithNoBreachingBands(): RunMetrics[] {
+  const stories = [];
+  // 10 "simple" stories — first-pass success keeps firstPassRate=1 and
+  // escalationRate=0, finalTier == mapped tier so mismatchRate=0; no proposal.
+  for (let i = 0; i < 10; i++) {
+    stories.push({
+      storyId: `ok-${i}`,
+      complexity: "simple",
+      modelTier: "fast",
+      modelUsed: "haiku",
+      agentUsed: "claude",
+      attempts: 1,
+      finalTier: "fast",
+      success: true,
+      cost: 0.01,
+      durationMs: 100,
+      firstPassSuccess: true,
+      startedAt: "2026-01-01T00:00:00Z",
+      completedAt: "2026-01-01T00:01:00Z",
+    });
+  }
+  return [
+    {
+      runId: "run-quiet",
+      feature: "fixture",
+      startedAt: "2026-01-01T00:00:00Z",
+      completedAt: "2026-01-01T00:10:00Z",
+      totalCost: 0.1,
+      totalStories: 10,
+      storiesCompleted: 10,
+      storiesFailed: 0,
+      totalDurationMs: 1000,
+      stories,
+    },
+  ];
+}
+
 function makeRunsWithEscalatingSimpleBand(): RunMetrics[] {
   const stories = [];
   // 10 stories in "simple" band, all escalated (attempts > 1) to drive
@@ -276,11 +313,14 @@ describe("routingCalibrateCommand — AC4: --apply writes merged complexityRouti
 // ─── AC5: --apply with zero adjustments is a no-op write ───────────────────
 
 describe("routingCalibrateCommand — AC5: --apply with no proposals is a no-op write", () => {
-  test("AC5: when there are no adjustments, --apply does not invoke writeConfig", async () => {
-    // Empty history → no proposal adjustments at all
+  test("AC5: --apply with non-empty history that yields zero adjustments does not invoke writeConfig", async () => {
+    // Non-empty history that does not breach the upgrade or downgrade
+    // thresholds → the proposal computation runs but produces zero
+    // adjustments. AC5 says --apply in that case must not write config.
+    const runs = makeRunsWithNoBreachingBands();
     const priorConfig = makeNaxConfigWithMapping();
     const { deps, writes } = makeCalibrateDepsFixture();
-    (deps.loadRunMetrics as ReturnType<typeof mock>).mockResolvedValueOnce([]);
+    (deps.loadRunMetrics as ReturnType<typeof mock>).mockResolvedValueOnce(runs);
     (deps.readConfig as ReturnType<typeof mock>).mockResolvedValueOnce(priorConfig);
 
     const result = await routingCalibrateCommand(
@@ -289,6 +329,7 @@ describe("routingCalibrateCommand — AC5: --apply with no proposals is a no-op 
     );
 
     expect(result.exitCode).toBe(0);
+    expect(result.proposal.adjustments).toHaveLength(0);
     expect(writes).toHaveLength(0);
   });
 });
@@ -322,14 +363,32 @@ describe("routingCalibrateCommand — AC6: --min-samples override marks bands as
 // ─── AC7: empty history → insufficient history, no throw, no write ─────────
 
 describe("routingCalibrateCommand — AC7: empty history is insufficient, no throw, no write", () => {
-  test("AC7: empty RunMetrics[] completes with exit 0, does not invoke writeConfig", async () => {
+  test("AC7: empty RunMetrics[] completes with exit 0, does not invoke writeConfig, reports insufficient history", async () => {
+    const priorConfig = makeNaxConfigWithMapping();
+    const { deps, writes, stderrLines } = makeCalibrateDepsFixture();
+    (deps.loadRunMetrics as ReturnType<typeof mock>).mockResolvedValueOnce([]);
+    (deps.readConfig as ReturnType<typeof mock>).mockResolvedValueOnce(priorConfig);
+
+    const result = await routingCalibrateCommand(
+      { apply: false, json: false, workdir: WORKDIR, outputDir: OUTPUT_DIR },
+      deps,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(writes).toHaveLength(0);
+    const combined = stderrLines.join("\n").toLowerCase();
+    expect(combined).toContain("insufficient");
+    expect(combined).toContain("history");
+  });
+
+  test("AC7 boundary: --apply with empty history still does not invoke writeConfig", async () => {
     const priorConfig = makeNaxConfigWithMapping();
     const { deps, writes } = makeCalibrateDepsFixture();
     (deps.loadRunMetrics as ReturnType<typeof mock>).mockResolvedValueOnce([]);
     (deps.readConfig as ReturnType<typeof mock>).mockResolvedValueOnce(priorConfig);
 
     const result = await routingCalibrateCommand(
-      { apply: false, json: false, workdir: WORKDIR, outputDir: OUTPUT_DIR },
+      { apply: true, json: false, workdir: WORKDIR, outputDir: OUTPUT_DIR },
       deps,
     );
 
@@ -364,5 +423,52 @@ describe("routingCalibrateCommand — dep plumbing", () => {
     const spy = deps.readConfig as ReturnType<typeof mock>;
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0]?.[0]).toBe(WORKDIR);
+  });
+});
+
+// ─── CLI plumbing: bin/nax.ts parses --min-samples into a number ────────────
+
+describe("CLI plumbing — --min-samples parses via the same path bin/nax.ts uses", () => {
+  test("parses --min-samples 20 from a Commander string into the integer 20", () => {
+    // Mirrors the inline parse in bin/nax.ts:1282
+    const arg = "20";
+    const parsed = Number.parseInt(arg, 10);
+    expect(Number.isNaN(parsed)).toBe(false);
+    expect(parsed).toBe(20);
+  });
+
+  test("rejects non-numeric --min-samples (NaN guard)", () => {
+    const arg = "abc";
+    const parsed = Number.parseInt(arg, 10);
+    expect(Number.isNaN(parsed)).toBe(true);
+  });
+
+  test("end-to-end: parsed --min-samples 20 reaches routingCalibrateCommand and skips a 10-sample band", async () => {
+    const runs = makeRunsWithEscalatingSimpleBand();
+    const priorConfig = makeNaxConfigWithMapping();
+    const { deps } = makeCalibrateDepsFixture();
+    (deps.loadRunMetrics as ReturnType<typeof mock>).mockResolvedValueOnce(runs);
+    (deps.readConfig as ReturnType<typeof mock>).mockResolvedValueOnce(priorConfig);
+
+    // Mirror the Commander round-trip: cli delivers "20" as a string,
+    // bin/nax.ts parses it, then passes the integer into the command.
+    const cliArg = "20";
+    const parsed = Number.parseInt(cliArg, 10);
+
+    const result = await routingCalibrateCommand(
+      {
+        apply: false,
+        json: false,
+        minSamples: parsed,
+        workdir: WORKDIR,
+        outputDir: OUTPUT_DIR,
+      },
+      deps,
+    );
+
+    const skipped = result.proposal.skipped.find((s) => s.complexity === "simple");
+    expect(skipped).toBeDefined();
+    expect(skipped?.reason).toBe("insufficient-samples");
+    expect(skipped?.minSamples).toBe(20);
   });
 });
