@@ -32,6 +32,7 @@ export function collectOrderedPhases(state: InternalBuildState): InternalPhase[]
     if (kind === "implementer" && state.implementer) return [state.implementer];
     if (kind === "test-presence-gate" && state.testPresenceGate) return [state.testPresenceGate];
     if (kind === "full-suite-gate" && state.fullSuiteGate) return [state.fullSuiteGate];
+    if (kind === "mutation-check" && state.mutationCheck) return [state.mutationCheck];
     if (kind === "verifier" && state.verifier) return [state.verifier];
     if (kind === "verify-scoped" && state.verifyScoped) return [state.verifyScoped];
     if (kind === "lint-check" && state.lintCheck) return [state.lintCheck];

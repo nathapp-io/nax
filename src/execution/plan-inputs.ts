@@ -16,6 +16,7 @@ import type {
   GreenfieldGateInput,
   ImplementerInput,
   LintCheckInput,
+  MutationCheckInput,
   SemanticReviewInput,
   TestPresenceGateInput,
   TestWriterInput,
@@ -48,6 +49,7 @@ export interface PlanInputs {
   readonly implementer?: ImplementerInput;
   readonly testPresenceGate?: TestPresenceGateInput;
   readonly fullSuiteGate?: FullSuiteGateInput;
+  readonly mutationCheck?: MutationCheckInput;
   readonly verifier?: VerifierInput;
   readonly verifyScoped?: VerifyScopedInput;
   readonly lintCheck?: LintCheckInput;

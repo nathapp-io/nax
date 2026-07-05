@@ -3,7 +3,7 @@
   "feature": "mutation-spot-check",
   "branchName": "feat/mutation-spot-check",
   "createdAt": "2026-07-05T03:09:06Z",
-  "updatedAt": "2026-07-05T04:08:15.649Z",
+  "updatedAt": "2026-07-05T04:29:10.022Z",
   "userStories": [
     {
       "id": "US-001",
@@ -180,8 +180,8 @@
         "US-002",
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -246,7 +246,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/story-orchestrator/types.ts",
@@ -257,7 +259,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "088d1175b7a90d154739dbf8146817e07bee7fbe"
     }
   ],
   "analysis": "This feature extends an existing TypeScript/Bun verification pipeline rather than adding a new subsystem. The codebase already has the exact seams the spec cites: `greenfieldGateOp` is a deterministic operation in `src/operations/greenfield-gate.ts:47`, `verifyScopedOp` is a deterministic operation with DI and regression execution in `src/operations/verify-scoped.ts:59`, `getChangedNonTestFiles()` is in `src/verification/smart-runner.ts:399`, `selectScopedTests()` is in `src/test-runners/scoped-selection.ts:94`, `regression()` is in `src/verification/runners.ts:155`, and phase ordering is owned by `src/execution/story-orchestrator/types.ts`. That means the feature should follow existing deterministic-op and builder conventions rather than inventing a new orchestration mechanism.\n\nThe execution config is additive and has a direct precedent. `ExecutionConfigSchema` in `src/config/schemas-execution.ts:120` already mounts nested execution config blocks such as `regressionGate`, `smartTestRunner`, `worktreeDependencies`, and `flakeDetection`. `FlakeDetectionConfigSchema` at `src/config/schemas-execution.ts:110` is the closest template for a new nested execution subtree with defaults. Package-override merging is handled centrally in `src/config/merge.ts:71`; that file already deep-merges `execution.regressionGate` and `execution.flakeDetection`, so `execution.mutationCheck` must get the same field-wise merge treatment or package overrides will clobber root defaults. Selector design should follow `reshapeSelector()` in `src/config/selector.ts:62` and the selector registry in `src/config/selectors.ts:13`; the spec is correct that `pickSelector(\"mutation-check\", \"execution\")` would return the wrong shape for the new op.\n\nThe mutation core is genuinely new code, but it fits the repo’s current verification layout. The repo already organizes verification utilities under `src/verification/`, with public exports managed by `src/verification/index.ts`. The spec’s proposed `src/verification/mutation/` subtree is therefore a good fit. The cleanest design boundary is the one the spec already defines: keep mutation generation pure and deterministic in `mutator.ts` and `operators.ts`, keep file-editing in `apply.ts`, and keep result-status interpretation in `classify.ts`. That separation aligns with the acceptance criteria split and avoids coupling the core mutation logic to git, test selection, or subprocess execution.\n\nThe main technical constraint is that `mutationCheckOp` combines two patterns that currently exist separately but not together. `greenfieldGateOp` shows the expected `DeterministicOperation` shape and config selection style, while `verifyScopedOp` shows the DI pattern, package config lookup, logger usage, and the `selectScopedTests()` -> `regression()` flow. `verifyScopedOp` also demonstrates that the operation should use `getLogger()` rather than expect a logger on `CallContext`, and that injected deps are the right way to make unit and integration tests run without real git or real test commands. `regression()` itself is only a thin wrapper over `runVerificationCore()` with a built-in sleep in `src/verification/runners.ts:155`, so the mutation spot-check budget is concretely bounded by `maxMutants` extra regression calls per story.\n\nPhase integration is localized and should remain advisory. `PhaseKind`, `CANONICAL_ORDER`, `PHASE_KIND_TO_STATE_KEY`, `InternalBuildState`, and `STRICT_VERDICT_PHASE_NAMES` are defined in `src/execution/story-orchestrator/types.ts:65-228`. The current canonical order places `full-suite-gate` before `verifier` and `verify-scoped`, which is exactly the seam the spec wants. Because the phase loop short-circuits on failures, placing `mutation-check` immediately after `full-suite-gate` guarantees GREEN already passed. Because `STRICT_VERDICT_PHASE_NAMES` at `src/execution/story-orchestrator/types.ts:222` only contains strict pass/fail phases, the new phase must stay out of that set so survivors remain warnings only and downstream phases still execute.\n\nBuilder and plan wiring already follow highly regular patterns. `StoryOrchestratorBuilder` in `src/execution/story-orchestrator/builder.ts:33-115` has overload pairs such as `addFullSuiteGate(...)` and `addVerifyScoped(...)` that call `setPhase(...)` with either a provided slot or the default exported op. The new `addMutationCheck(...)` should mirror that pattern rather than introducing a special-case builder API. `PlanInputs` in `src/execution/plan-inputs.ts:35` is the typed envelope for all optional slots, so it needs a `mutationCheck?: MutationCheckInput` field adjacent to the existing verification-related slots. `buildPlanForStrategy()` in `src/execution/build-plan-for-strategy.ts:83` is the SSOT for strategy-dependent plan construction, so it is the only correct place to conditionally add the mutation-check phase when the input is present.\n\nThe operation barrel is a required integration point. `src/operations/index.ts` currently exports `greenfieldGateOp`, `fullSuiteGateOp`, and `verifyScopedOp`, and `StoryOrchestratorBuilder` imports concrete operations from that barrel. If `mutationCheckOp` and its types are not exported there, the plan-wiring story cannot satisfy the spec AC that imports the op from `@/operations`.\n\nThe existing tests strongly support this feature shape. Config defaults and merge behavior are already covered by unit suites such as `test/unit/config/flake-detection-schema.test.ts`, `test/unit/config/merge.test.ts`, and `test/unit/config/selectors.test.ts`, which makes them the right pattern references for US-001. Deterministic operation behavior and DI-style operation tests are already established by `test/unit/operations/greenfield-gate.test.ts` and `test/unit/operations/verify-scoped.test.ts`. Story-orchestrator and builder/plan seams already have extensive coverage in `test/unit/execution/story-orchestrator.test.ts`, `test/unit/execution/plan-inputs.test.ts`, `test/unit/execution/builder-extensibility.test.ts`, and the `test/integration/tdd/story-orchestrator-*.test.ts` suites. The mutation feature should extend those areas rather than inventing a separate harness.\n\nBackward compatibility is simple but important. The feature is opt-in with `execution.mutationCheck.enabled` defaulting to `false`, so existing runs must behave exactly as they do today unless the setting is enabled. The critical compatibility protections are: disabled config must short-circuit without selecting scoped tests or running regression, unsupported languages must no-op rather than error, survivor results must not be treated as gate failures, and plans without a `mutationCheck` input must build without adding a new phase. There is no data migration or persisted-state migration; the implementation order should stay as the spec already lays out: config subtree first, pure mutation core second, apply/classify layer third, operation fourth, and phase wiring last.",
