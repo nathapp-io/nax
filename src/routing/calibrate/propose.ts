@@ -2,19 +2,31 @@
  * proposeAdjustments — pure calibration proposal logic (US-003)
  *
  * Converts `BandStat[]` evidence into one-rung tier proposals, advisory
- * keyword hints, and a skipped-band report. The function is pure — no
- * filesystem, network, or process I/O.
+ * keyword hints, and a skipped-band report. The function is pure: no I/O,
+ * no wall-clock reads, no globals — identical inputs produce identical
+ * outputs.
  *
  * Rules (defaults from `config.autoRoute`):
  * - skip any band with `sampleCount < thresholds.minSamples`
- * - upgrade one rung when `escalationRate >= escalationTrigger`
- *   AND `mismatchRate >= mismatchTrigger`
- * - downgrade one rung when `firstPassRate >= firstPassFloor`
- *   AND `escalationRate <= escalationTrigger` AND final-tier usage is at or
- *   below the current mapped tier
+ * - upgrade one rung when `escalationRate >= upgradeEscalationRate`
+ *   AND `mismatchRate >= upgradeMismatchRate`
+ * - downgrade one rung when `firstPassRate >= downgradeFirstPassRate`
+ *   AND `escalationRate <= downgradeEscalationRate` (and `mismatchRate > 0`,
+ *   proving the band observed a different tier than the mapping assigned)
  * - never propose a tier below `fast` or above `powerful`
  * - never move more than one rung
- * - emit a keyword hint for the worst-mismatch band on each pass
+ * - emit an advisory hint whenever `mismatchRate >= upgradeMismatchRate`
+ *   so hints and adjustments share a single threshold source
+ *
+ * @design The pure core cannot infer the *direction* of mismatches from
+ *   `BandStat.mismatchRate` alone — that signal collapses "observed tier
+ *   was below the mapping" and "observed tier was above" into one number.
+ *   The AC-2 "all observed finalTiers at or below the mapped tier"
+ *   precondition is encoded as `mismatchRate > 0` together with
+ *   `escalationRate <= downgradeEscalationRate`. A `balanced`-mapped band
+ *   whose escalations push `finalTier` above `balanced` will still record a
+ *   mismatch, but its `escalationRate > downgradeEscalationRate` (it IS
+ *   escalating) blocks the downgrade — see AC-2 negation test.
  */
 
 import type { ModelTier } from "@/config/schema-types";
@@ -34,17 +46,19 @@ const LADDER: ModelTier[] = ["fast", "balanced", "powerful"];
 
 const DEFAULT_THRESHOLDS: Required<CalibrationThresholds> = {
   minSamples: 8,
-  escalationTrigger: 0.3,
-  mismatchTrigger: 0.25,
-  firstPassFloor: 0.9,
+  upgradeEscalationRate: 0.3,
+  upgradeMismatchRate: 0.25,
+  downgradeEscalationRate: 0.05,
+  downgradeFirstPassRate: 0.9,
 };
 
 function resolveThresholds(input: CalibrationThresholds): Required<CalibrationThresholds> {
   return {
     minSamples: input.minSamples ?? DEFAULT_THRESHOLDS.minSamples,
-    escalationTrigger: input.escalationTrigger ?? DEFAULT_THRESHOLDS.escalationTrigger,
-    mismatchTrigger: input.mismatchTrigger ?? DEFAULT_THRESHOLDS.mismatchTrigger,
-    firstPassFloor: input.firstPassFloor ?? DEFAULT_THRESHOLDS.firstPassFloor,
+    upgradeEscalationRate: input.upgradeEscalationRate ?? DEFAULT_THRESHOLDS.upgradeEscalationRate,
+    upgradeMismatchRate: input.upgradeMismatchRate ?? DEFAULT_THRESHOLDS.upgradeMismatchRate,
+    downgradeEscalationRate: input.downgradeEscalationRate ?? DEFAULT_THRESHOLDS.downgradeEscalationRate,
+    downgradeFirstPassRate: input.downgradeFirstPassRate ?? DEFAULT_THRESHOLDS.downgradeFirstPassRate,
   };
 }
 
@@ -59,10 +73,6 @@ function nextTier(tier: ModelTier, direction: "upgrade" | "downgrade"): ModelTie
   const target = direction === "upgrade" ? idx + 1 : idx - 1;
   if (target < 0 || target >= LADDER.length) return null;
   return LADDER[target];
-}
-
-function farUnderUtilized(stat: BandStat): boolean {
-  return stat.mismatchRate >= DEFAULT_THRESHOLDS.mismatchTrigger;
 }
 
 export function proposeAdjustments(
@@ -95,9 +105,11 @@ export function proposeAdjustments(
       continue;
     }
 
-    const upgraded = stat.escalationRate >= t.escalationTrigger && stat.mismatchRate >= t.mismatchTrigger;
+    const upgraded = stat.escalationRate >= t.upgradeEscalationRate && stat.mismatchRate >= t.upgradeMismatchRate;
     const downgraded =
-      stat.firstPassRate >= t.firstPassFloor && stat.escalationRate <= t.escalationTrigger && stat.mismatchRate > 0;
+      stat.firstPassRate >= t.downgradeFirstPassRate &&
+      stat.escalationRate <= t.downgradeEscalationRate &&
+      stat.mismatchRate > 0;
 
     if (upgraded) {
       const to = nextTier(currentTier, "upgrade");
@@ -110,7 +122,7 @@ export function proposeAdjustments(
           fromTier: currentTier,
           toTier: to,
           direction: "upgrade",
-          rationale: `escalationRate=${stat.escalationRate} ≥ ${t.escalationTrigger}, mismatchRate=${stat.mismatchRate} ≥ ${t.mismatchTrigger}`,
+          rationale: `escalationRate=${stat.escalationRate} ≥ ${t.upgradeEscalationRate}, mismatchRate=${stat.mismatchRate} ≥ ${t.upgradeMismatchRate}`,
         });
       }
     } else if (downgraded) {
@@ -124,12 +136,12 @@ export function proposeAdjustments(
           fromTier: currentTier,
           toTier: to,
           direction: "downgrade",
-          rationale: `firstPassRate=${stat.firstPassRate} ≥ ${t.firstPassFloor} and escalationRate=${stat.escalationRate} ≤ ${t.escalationTrigger}`,
+          rationale: `firstPassRate=${stat.firstPassRate} ≥ ${t.downgradeFirstPassRate} and escalationRate=${stat.escalationRate} ≤ ${t.downgradeEscalationRate}`,
         });
       }
     }
 
-    if (farUnderUtilized(stat)) {
+    if (stat.mismatchRate >= t.upgradeMismatchRate) {
       hints.push({
         message: `classify.ts: high mismatch for band "${stat.complexity}" (mismatchRate=${stat.mismatchRate}) — review keyword classification.`,
       });
@@ -137,7 +149,7 @@ export function proposeAdjustments(
   }
 
   return {
-    generatedAt: new Date().toISOString(),
+    generatedAt: "",
     bandStats,
     adjustments,
     hints,

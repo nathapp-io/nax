@@ -2,11 +2,12 @@
  * proposeAdjustments — US-003 pure adjustment proposal logic
  *
  * Covers the 8 acceptance criteria for the calibration proposal step.
- * All thresholds default to the upstream autoRoute values:
+ * Threshold defaults mirror the upstream `config.autoRoute` schema:
  *   minSamples: 8
- *   escalationTrigger: 0.3
- *   mismatchTrigger: 0.25
- *   firstPassFloor: 0.9
+ *   upgradeEscalationRate: 0.3
+ *   upgradeMismatchRate: 0.25
+ *   downgradeEscalationRate: 0.05
+ *   downgradeFirstPassRate: 0.9
  *
  * Final-tiers must lie within the built-in ladder fast -> balanced -> powerful.
  * Only one rung may move per adjustment.
@@ -26,9 +27,10 @@ import type {
 
 const DEFAULT_THRESHOLDS: Required<CalibrationThresholds> = {
   minSamples: 8,
-  escalationTrigger: 0.3,
-  mismatchTrigger: 0.25,
-  firstPassFloor: 0.9,
+  upgradeEscalationRate: 0.3,
+  upgradeMismatchRate: 0.25,
+  downgradeEscalationRate: 0.05,
+  downgradeFirstPassRate: 0.9,
 };
 
 const MAPPING: Record<Complexity, ModelTier> = {
@@ -299,5 +301,124 @@ describe("proposeAdjustments - type surface", () => {
       bandStats: BandStat[];
     } = proposal;
     expect(_).toBe(proposal);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Adversarial-rectification regressions: pin the asymmetric threshold split
+// and the purity guarantees of the helper.
+// ---------------------------------------------------------------------------
+
+describe("proposeAdjustments - asymmetric triggers (adversarial #1)", () => {
+  test("upgrade and downgrade use distinct escalation triggers; an intermediate escalation rate that satisfies the upgrade trigger does not satisfy the downgrade ceiling", () => {
+    // At escalationRate=0.15 (between 0.05 and 0.3), a "balanced"-mapped
+    // band that is mostly first-passing (firstPassRate=0.95) and observing
+    // mismatches must NOT be downgraded — the band IS escalating enough to
+    // require its current tier. With a single shared trigger this would have
+    // been an over-downgrade.
+    const stats: BandStat[] = [
+      band({
+        complexity: "medium",
+        sampleCount: 20,
+        escalationRate: 0.15,
+        firstPassRate: 0.95,
+        mismatchRate: 0.6,
+      }),
+    ];
+
+    const proposal = proposeAdjustments(stats, MAPPING, DEFAULT_THRESHOLDS);
+
+    expect(proposal.adjustments.find((a) => a.band === "medium" && a.direction === "downgrade")).toBeUndefined();
+  });
+});
+
+describe("proposeAdjustments - direction-of-mismatches safeguard (adversarial #2)", () => {
+  test("balanced band whose escalations push finalTier above the mapping does NOT downgrade", () => {
+    // A balanced-mapped band that frequently escalates to powerful has a
+    // mismatchRate > 0 (mismatches go upward) and a high firstPassRate at the
+    // current tier — without the asymmetry gate its mismatch signal would
+    // look indistinguishable from AC-2's under-utilized band. The downgrade
+    // must be blocked by escalationRate > downgradeEscalationRate.
+    const stats: BandStat[] = [
+      band({
+        complexity: "medium",
+        sampleCount: 25,
+        escalationRate: 0.25,
+        firstPassRate: 0.95,
+        mismatchRate: 0.4,
+      }),
+    ];
+
+    const proposal = proposeAdjustments(stats, MAPPING, DEFAULT_THRESHOLDS);
+
+    expect(proposal.adjustments.find((a) => a.band === "medium" && a.direction === "downgrade")).toBeUndefined();
+  });
+});
+
+describe("proposeAdjustments - hint threshold flows from caller (adversarial #3)", () => {
+  test("a caller-supplied upgradeMismatchRate shifts the hint emission boundary", () => {
+    const stats: BandStat[] = [
+      band({
+        complexity: "simple",
+        sampleCount: 20,
+        escalationRate: 0.5,
+        firstPassRate: 0.5,
+        mismatchRate: 0.3,
+      }),
+    ];
+
+    // Default (0.25) → hint fires.
+    const atDefault = proposeAdjustments(stats, MAPPING, DEFAULT_THRESHOLDS);
+    expect(atDefault.hints.length).toBe(1);
+
+    // Raised caller threshold (0.5) → hint does NOT fire even though
+    // mismatchRate=0.3 still satisfies AC-1's upgrade (escalationRate=0.5
+    // also meets the bumped upgrade trigger). This proves the threshold is
+    // a single source of truth for both adjustments AND hints.
+    const raised: CalibrationThresholds = { upgradeMismatchRate: 0.5 };
+    const atRaised = proposeAdjustments(stats, MAPPING, raised);
+    expect(atRaised.hints.length).toBe(0);
+  });
+});
+
+describe("proposeAdjustments - purity (adversarial #4)", () => {
+  test("identical inputs produce identical outputs (no wall-clock reads)", () => {
+    const stats: BandStat[] = [
+      band({
+        complexity: "simple",
+        sampleCount: 20,
+        escalationRate: 0.4,
+        mismatchRate: 0.3,
+        firstPassRate: 0.6,
+      }),
+    ];
+
+    const a = proposeAdjustments(stats, MAPPING, DEFAULT_THRESHOLDS);
+    const b = proposeAdjustments(stats, MAPPING, DEFAULT_THRESHOLDS);
+
+    expect(a).toEqual(b);
+    expect(a.generatedAt).toBe("");
+  });
+});
+
+describe("@/routing/calibrate barrel (adversarial #5)", () => {
+  test("re-exports proposeAdjustments and the calibration types", () => {
+    // Runtime surface guard: a broken barrel can ship green otherwise.
+    const surface = require("@/routing/calibrate") as Record<string, unknown>;
+
+    expect(typeof surface.proposeAdjustments).toBe("function");
+
+    // Type-only references are checked by tsc; we still exercise them so the
+    // symbols are actually imported (no `unused import` elimination).
+    const _: {
+      proposeAdjustments: typeof proposeAdjustments;
+      BandStat: BandStat;
+      TierAdjustment: TierAdjustment;
+      KeywordHint: KeywordHint;
+      SkippedBand: SkippedBand;
+      CalibrationProposal: CalibrationProposal;
+      CalibrationThresholds: CalibrationThresholds;
+    } = {} as never;
+    expect(_).toBeDefined();
   });
 });

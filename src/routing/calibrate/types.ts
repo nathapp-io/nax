@@ -94,11 +94,20 @@ export interface CalibrationProposal {
 /**
  * Threshold inputs governing calibration decisions. Defaults to permissive
  * (no change) so the function remains pure and side-effect free when not
- * provided.
+ * provided. The four rule numbers mirror `config.autoRoute`:
+ *
+ *   - `upgradeEscalationRate`: high trigger — band keeps escalating its tier.
+ *   - `upgradeMismatchRate`:   high trigger — observed tiers deviate from mapping.
+ *   - `downgradeEscalationRate`: low ceiling — band rarely escalates.
+ *   - `downgradeFirstPassRate`: high floor — band usually first-passes.
+ *
+ * Two separate escalation rates keep the asymmetric rules in the source
+ * `autoRoute` config intact: upgrade raises the bar, downgrade lowers it.
  */
 export interface CalibrationThresholds {
   minSamples?: number;
-  escalationTrigger?: number;
-  mismatchTrigger?: number;
-  firstPassFloor?: number;
+  upgradeEscalationRate?: number;
+  upgradeMismatchRate?: number;
+  downgradeEscalationRate?: number;
+  downgradeFirstPassRate?: number;
 }
