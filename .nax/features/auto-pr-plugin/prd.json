@@ -3,7 +3,7 @@
   "feature": "auto-pr-plugin",
   "branchName": "feat/auto-pr-plugin",
   "createdAt": "2026-07-05T06:56:44Z",
-  "updatedAt": "2026-07-05T07:24:45.223Z",
+  "updatedAt": "2026-07-05T07:34:47.959Z",
   "userStories": [
     {
       "id": "US-001",
@@ -71,8 +71,8 @@
         "markdown"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -141,7 +141,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/plugins/extensions.ts",
@@ -154,7 +156,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "55bf92b94d0ce9ac9444a9bca79d05107e782276"
     },
     {
       "id": "US-004",
