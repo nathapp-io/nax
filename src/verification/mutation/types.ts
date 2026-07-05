@@ -19,7 +19,7 @@ export interface Mutant {
   operatorId: string;
 }
 
-export type MutantOutcome = "killed" | "survived" | "timeout" | "no-test";
+export type MutantOutcome = "killed" | "survived" | "timeout" | "errored" | "no-test";
 
 export interface SurvivingMutant extends Mutant {
   outcome: "survived";
