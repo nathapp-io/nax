@@ -89,6 +89,10 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
         ...root.execution.flakeDetection,
         ...packageOverride.execution?.flakeDetection,
       },
+      mutationCheck: {
+        ...root.execution.mutationCheck,
+        ...packageOverride.execution?.mutationCheck,
+      },
     },
     review: {
       ...root.review,

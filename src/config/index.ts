@@ -32,6 +32,7 @@ export type {
   ContextToolRuntimeConfig,
   PromptLoaderConfig,
   LlmRoutingConfig,
+  MutationCheckConfig,
   ExecutionGatesConfig,
 } from "./selectors";
 export {
@@ -88,6 +89,7 @@ export {
   contextToolRuntimeConfigSelector,
   promptLoaderConfigSelector,
   llmRoutingConfigSelector,
+  mutationCheckConfigSelector,
   executionGatesConfigSelector,
 } from "./selectors";
 export { createConfigLoader } from "./loader-runtime";

@@ -14,6 +14,16 @@ export interface FlakeDetectionConfig {
   probeTimeoutSeconds: number;
 }
 
+/** Mutation-check config (US-001) — opt-in mutation-testing spot-check. */
+export interface MutationCheckConfig {
+  /** Enable mutation-check spot-check after GREEN. Default false. */
+  enabled: boolean;
+  /** Max mutants generated per story (budget cap). */
+  maxMutants: number;
+  /** Per-mutant subprocess timeout in seconds. */
+  timeoutSeconds: number;
+}
+
 /** Smart test runner configuration (STR-007) */
 export interface SmartTestRunnerConfig {
   /** Enable smart test runner (default: true) */
