@@ -4,7 +4,9 @@
  * After a successful run, opens a draft PR/MR on GitHub or GitLab for the
  * feature branch. Reads `ctx.config.autoPr` for opt-in config, detects the
  * forge from the git remote URL, looks for an existing open PR/MR to skip
- * duplicates, and shells out to `gh` / `glab` to create the draft.
+ * duplicates, pushes the feature branch to `origin` (required — forges can
+ * only resolve a head ref that already exists on the remote), and shells out
+ * to `gh` / `glab` to create the draft.
  *
  * Fail-open: a failed PR open never fails the run. The post-run driver in
  * `run-cleanup.ts` already swallows thrown exceptions and logs `{ success: false }`
@@ -170,6 +172,14 @@ const autoPrAction: IPostRunAction = {
       const forge = _autoPrDeps.detectForge(remoteUrl);
       if (!forge) {
         return { success: false, message: "Remote host is not GitHub or GitLab" };
+      }
+
+      const pushResult = await _autoPrDeps.run(["git", "push", "-u", "origin", context.branch], {
+        cwd: context.workdir,
+      });
+      if (pushResult.exitCode !== 0) {
+        const message = pushResult.stderr.trim() || `git push exited with code ${pushResult.exitCode}`;
+        return { success: false, message: `Failed to push branch "${context.branch}" to origin: ${message}` };
       }
 
       const template = await _autoPrDeps.findPrTemplate(context.workdir, forge, {

@@ -227,6 +227,48 @@ describe("autoPrPlugin.execute", () => {
     expect(captured[0]?.draft).toBe(true);
   });
 
+  test("AC8b — pushes the branch to origin before calling openDraft", async () => {
+    const pushCalls: string[][] = [];
+    const openDraftCalls: string[] = [];
+    _autoPrDeps.run = (async (cmd: string[]) => {
+      pushCalls.push(cmd);
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }) as typeof _autoPrDeps.run;
+    _autoPrDeps.openDraft = (async () => {
+      openDraftCalls.push("called");
+      return { success: true, message: "ok" };
+    }) as typeof _autoPrDeps.openDraft;
+
+    const ctx = makeContext();
+    const result = await autoPrPlugin.extensions.postRunAction!.execute(ctx);
+
+    expect(result.success).toBe(true);
+    expect(pushCalls).toContainEqual(["git", "push", "-u", "origin", ctx.branch]);
+    expect(openDraftCalls).toEqual(["called"]);
+  });
+
+  test("AC8c — returns { success: false } and never calls openDraft when git push fails", async () => {
+    _autoPrDeps.run = (async (cmd: string[]) => {
+      if (cmd[0] === "git" && cmd[1] === "push") {
+        return { exitCode: 1, stdout: "", stderr: "remote: Permission denied" };
+      }
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }) as typeof _autoPrDeps.run;
+    let openDraftCalled = false;
+    _autoPrDeps.openDraft = (async () => {
+      openDraftCalled = true;
+      return { success: true, message: "ok" };
+    }) as typeof _autoPrDeps.openDraft;
+
+    const ctx = makeContext();
+    const result = await autoPrPlugin.extensions.postRunAction!.execute(ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain(ctx.branch);
+    expect(result.message).toContain("Permission denied");
+    expect(openDraftCalled).toBe(false);
+  });
+
   test("AC9 — returns { success: false } when openDraft reports forge failure and does not throw", async () => {
     _autoPrDeps.openDraft = (async () => ({
       success: false,
