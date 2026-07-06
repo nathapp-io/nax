@@ -63,6 +63,12 @@ export interface PipelineBusState {
     regression?: PostRunPhaseState;
     review?: PostRunPhaseState;
   };
+  /**
+   * Id of the most recently failed story — target for the TUI "retry last failed" (r) key.
+   * Single-slot by design: only the latest terminal failure is retryable, so in parallel
+   * mode an earlier concurrent failure is not reachable via `r`.
+   */
+  lastFailedStoryId?: string;
 }
 
 /**
@@ -97,6 +103,9 @@ export function usePipelineBusEvents(initialStories: StoryDisplayState[]): Pipel
               }
             : s,
         ),
+        // Once the last-failed story restarts, its failure is stale — clear the
+        // retry target. A fresh failure re-arms it via the story:failed handler.
+        lastFailedStoryId: prev.lastFailedStoryId === event.storyId ? undefined : prev.lastFailedStoryId,
       }));
     });
 
@@ -114,8 +123,12 @@ export function usePipelineBusEvents(initialStories: StoryDisplayState[]): Pipel
 
         const totalCost = newStories.reduce((sum, s) => sum + (s.cost ?? 0), 0);
         const { [event.storyId]: _removed, ...remainingSteps } = prev.storySteps;
+        // Mirror the status mapping above: a `passed:false` completion is a failure,
+        // so it arms the retry target too. In practice terminal failures arrive via
+        // `story:failed`; this branch keeps the two failure representations consistent.
+        const lastFailedStoryId = event.passed ? prev.lastFailedStoryId : event.storyId;
 
-        return { ...prev, stories: newStories, totalCost, storySteps: remainingSteps };
+        return { ...prev, stories: newStories, totalCost, storySteps: remainingSteps, lastFailedStoryId };
       });
     });
 
@@ -129,6 +142,7 @@ export function usePipelineBusEvents(initialStories: StoryDisplayState[]): Pipel
             s.story.id === event.storyId ? { ...s, status: "failed" as const, failureReason: event.reason } : s,
           ),
           storySteps: remainingSteps,
+          lastFailedStoryId: event.storyId,
         };
       });
     });
@@ -191,6 +205,9 @@ export function usePipelineBusEvents(initialStories: StoryDisplayState[]): Pipel
         ...prev,
         runSummary: summary,
         totalCost: event.totalCost ?? prev.totalCost,
+        // Run is over — the runner no longer polls the queue file, so a retry
+        // would be a silent no-op. Disarm the "r" key.
+        lastFailedStoryId: undefined,
       }));
     });
 

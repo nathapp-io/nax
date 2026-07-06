@@ -6,7 +6,7 @@
 
 import { Box, Text, useApp, useInput } from "ink";
 import { memo, useEffect, useRef, useState } from "react";
-import { writeQueueCommand } from "../utils/queue-writer";
+import { writeQueueCommand, writeRetryCommand } from "../utils/queue-writer";
 import { CostOverlay } from "./components/CostOverlay";
 import { HelpOverlay } from "./components/HelpOverlay";
 import { LiveActivityPanel } from "./components/LiveActivityPanel";
@@ -189,7 +189,9 @@ export function App({
         break;
 
       case "RETRY":
-        // TODO: Implement retry logic for last failed story
+        // Retry the most recently failed story. No-op when nothing has failed
+        // or no queue file is wired (helper guards both).
+        await writeRetryCommand(queueFilePath, busState.lastFailedStoryId);
         break;
 
       default:

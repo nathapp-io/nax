@@ -73,3 +73,24 @@ export async function writeQueueCommand(queueFilePath: string, command: QueueCom
   });
   await next;
 }
+
+/**
+ * Write a RETRY command for a story, or do nothing when there is nothing to retry.
+ *
+ * Convenience wrapper used by the TUI "retry last failed" (r) key: it guards on
+ * both the target story id and the queue file path so callers can pass the
+ * possibly-undefined `lastFailedStoryId` / `queueFilePath` directly without their
+ * own branching.
+ *
+ * @param queueFilePath - Path to the queue file, or undefined if none is wired
+ * @param storyId - Id of the story to retry, or undefined if none has failed
+ *
+ * @example
+ * ```typescript
+ * await writeRetryCommand(queueFilePath, busState.lastFailedStoryId);
+ * ```
+ */
+export async function writeRetryCommand(queueFilePath: string | undefined, storyId: string | undefined): Promise<void> {
+  if (!queueFilePath || !storyId) return;
+  await writeQueueCommand(queueFilePath, { type: "RETRY", storyId });
+}
