@@ -128,9 +128,9 @@ async run(options: AgentRunOptions): Promise<AgentResult> {
 
 **Fix:** Refactor `acceptance/generator.ts` and `acceptance/fix-generator.ts` to use `adapter.complete()` instead of `Bun.spawn([adapter.binary, ...])`. This is a prerequisite — must be done before ACP migration.
 
-### Category 6: `runInteractive()` — PTY/TUI (dormant)
+### Category 6: `runInteractive()` — PTY/TUI (removed)
 
-**ACP approach:** Replace PTY with ACP session streaming via `sessionUpdate` notifications.
+The interactive PTY path (`runInteractive()`, `PtyHandle`, `usePty`) was never completed and has been removed — the TUI surfaces agent activity via ACP `sessionUpdate` streaming (`agentStreamEvents`), not a spawned PTY. See the git history if an embedded interactive panel is ever revived.
 
 ### Category 7: `isInstalled()` — Precheck utility (4 call sites)
 

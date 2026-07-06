@@ -1,7 +1,7 @@
 /**
  * Extended Agent Type Definitions
  *
- * Types for plan mode, decompose mode, and interactive PTY sessions.
+ * Types for plan mode and decompose mode.
  * Separated from core types to keep each file under 400 lines.
  */
 
@@ -160,36 +160,3 @@ export interface DecomposeResult {
   /** The decomposed and classified user stories */
   stories: DecomposedStory[];
 }
-
-/**
- * PTY handle interface for managing spawned PTY process.
- *
- * Provides methods to write input, resize terminal, and kill process.
- * Returned by runInteractive() for TUI integration.
- */
-export interface PtyHandle {
-  /** Write input to PTY stdin */
-  write(data: string): void;
-  /** Resize PTY terminal */
-  resize(cols: number, rows: number): void;
-  /** Kill PTY process */
-  kill(): void;
-  /** Process ID */
-  pid: number;
-}
-
-/**
- * Configuration options for running an agent in interactive PTY mode.
- *
- * Extends AgentRunOptions with PTY-specific callbacks for output streaming
- * and exit handling. Used by TUI to embed agent sessions.
- */
-export interface InteractiveRunOptions extends AgentRunOptions {
-  /** Callback fired when PTY outputs data */
-  onOutput: (data: Buffer) => void;
-  /** Callback fired when PTY process exits */
-  onExit: (code: number) => void;
-}
-
-// Re-import for the extends clause
-import type { AgentRunOptions } from "../types";

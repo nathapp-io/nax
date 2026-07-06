@@ -17,7 +17,6 @@ import { type KeyboardAction, useKeyboard } from "./hooks/useKeyboard";
 import { COMPACT_MAX_VISIBLE_STORIES, MAX_VISIBLE_STORIES, MIN_TERMINAL_WIDTH, useLayout } from "./hooks/useLayout";
 import { usePipelineBusEvents } from "./hooks/usePipelineBusEvents";
 import { usePipelineEvents } from "./hooks/usePipelineEvents";
-import { usePty } from "./hooks/usePty";
 import { PanelFocus } from "./types";
 import type { TuiProps } from "./types";
 
@@ -73,15 +72,7 @@ function formatTokens(n: number): string {
  * );
  * ```
  */
-export function App({
-  feature,
-  version,
-  stories: initialStories,
-  events,
-  queueFilePath,
-  ptyOptions,
-  agentStreamEvents,
-}: TuiProps) {
+export function App({ feature, version, stories: initialStories, events, queueFilePath, agentStreamEvents }: TuiProps) {
   const layout = useLayout();
   const busState = usePipelineBusEvents(initialStories);
   const { currentStage, preRunPhases } = usePipelineEvents(events);
@@ -105,9 +96,6 @@ export function App({
   const [showCost, setShowCost] = useState(false);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
   const [showAbortConfirm, setShowAbortConfirm] = useState(false);
-
-  // Wire PTY hook for agent session
-  const { handle: ptyHandle } = usePty(ptyOptions ?? null);
 
   // Wire agent stream events for live call metadata and token accumulation
   const { activeCalls, inputTokens, outputTokens } = useAgentStreamEvents(agentStreamEvents);
@@ -199,8 +187,8 @@ export function App({
     }
   };
 
-  // Custom input handler for confirmation dialogs and PTY routing
-  useInput((input, key) => {
+  // Custom input handler for confirmation dialogs
+  useInput((input) => {
     // Handle confirmation dialogs
     if (showQuitConfirm || showAbortConfirm) {
       const inputKey = input.toLowerCase();
@@ -217,16 +205,6 @@ export function App({
         setShowAbortConfirm(false);
       }
       return;
-    }
-
-    // Route input to PTY when agent panel is focused
-    if (focus === PanelFocus.Agent && ptyHandle) {
-      // Ctrl+] escapes back to TUI controls (handled by useKeyboard)
-      if (key.ctrl && input === "]") {
-        return; // Let useKeyboard handle it
-      }
-      // All other input goes to PTY
-      ptyHandle.write(input);
     }
   });
 

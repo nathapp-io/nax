@@ -870,7 +870,7 @@ DebateSession.run()
 - React/Ink-based terminal UI for real-time pipeline visualization
 - `App.tsx` — main TUI component
 - `components/` — pipeline status, story progress, cost display
-- `hooks/` — `useKeyboard`, `useLayout`, `usePipelineEvents`, `usePty`
+- `hooks/` — `useKeyboard`, `useLayout`, `usePipelineEvents`
 - Toggled via CLI flag; headless mode uses `HeadlessFormatter` instead
 
 ---

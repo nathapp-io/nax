@@ -1,9 +1,17 @@
 # BUN-001: Bun PTY Migration
 
 **Version:** v0.18.5  
-**Status:** Planned  
+**Status:** Superseded — obsolete  
 **Author:** Nax Dev  
 **Date:** 2026-03-04
+
+---
+
+> **Obsolete (2026-07-06):** The TUI PTY subsystem this document plans to migrate
+> (`usePty`, `runInteractive()`, `PtyHandle`) was never completed and has since
+> been removed. Agent activity is streamed to the TUI over ACP (`agentStreamEvents`),
+> not a spawned PTY. This spec is retained only as historical context; the files and
+> APIs it references no longer exist.
 
 ---
 

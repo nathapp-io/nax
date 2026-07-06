@@ -76,7 +76,7 @@ describe("HelpOverlay", () => {
 
     expect(output).toContain("Agent Panel");
     expect(output).toContain("Escape back to Stories panel");
-    expect(output).toContain("Forwarded to agent PTY");
+    expect(output).toContain("Ignored (Ctrl+] to return)");
   });
 });
 
