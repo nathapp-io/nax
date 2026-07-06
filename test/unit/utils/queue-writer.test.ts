@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { parseQueueFile } from "@/queue";
-import { _writeChains, writeQueueCommand } from "@/utils/queue-writer";
+import { _writeChains, writeQueueCommand, writeRetryCommand } from "@/utils/queue-writer";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 describe("writeQueueCommand", () => {
@@ -61,5 +61,37 @@ describe("writeQueueCommand", () => {
     await inFlight;
     // Once settled with no newer write queued, the entry is evicted.
     expect(_writeChains.has(queueFile)).toBe(false);
+  });
+});
+
+describe("writeRetryCommand", () => {
+  let tempDir: string;
+  let queueFile: string;
+
+  beforeEach(() => {
+    tempDir = makeTempDir("nax-retry-writer-");
+    queueFile = join(tempDir, "queue.txt");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  test("writes a RETRY command for the given story id", async () => {
+    await writeRetryCommand(queueFile, "US-007");
+
+    const { commands } = parseQueueFile(await Bun.file(queueFile).text());
+    expect(commands).toEqual([{ type: "RETRY", storyId: "US-007" }]);
+  });
+
+  test("no-ops when there is no story id to retry", async () => {
+    await writeRetryCommand(queueFile, undefined);
+    expect(await Bun.file(queueFile).exists()).toBe(false);
+  });
+
+  test("no-ops when there is no queue file path", async () => {
+    // Must not throw even though no path is available.
+    await writeRetryCommand(undefined, "US-007");
+    expect(await Bun.file(queueFile).exists()).toBe(false);
   });
 });
