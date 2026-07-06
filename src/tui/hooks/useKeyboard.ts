@@ -56,7 +56,7 @@ export interface UseKeyboardProps {
  *
  * When Agent panel is focused:
  * - Ctrl+]: Escape back to TUI controls
- * - All other keys: Forwarded to PTY (handled elsewhere)
+ * - All other keys: Ignored (shortcuts resume once focus returns to Stories)
  *
  * @example
  * ```tsx
@@ -91,7 +91,8 @@ export function useKeyboard({ focus, currentStory, onAction, disabled = false }:
       if (key.ctrl && input === "]") {
         onAction({ type: "ESCAPE_AGENT" });
       }
-      // All other input is routed to PTY (handled by caller)
+      // All other keys are ignored while the Agent panel is focused; shortcuts
+      // resume once focus returns to the Stories panel.
       return;
     }
 

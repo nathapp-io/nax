@@ -688,7 +688,6 @@ program
         version: NAX_BUILD_INFO,
         stories: initialStories,
         events: eventEmitter,
-        ptyOptions: null, // TODO: Pass actual PTY spawn options when runner supports it
         agentStreamEvents,
         queueFilePath: join(workdir, ".queue.txt"),
       });

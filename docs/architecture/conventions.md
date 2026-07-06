@@ -60,7 +60,7 @@ src/
 ├── tdd/              # TDD orchestration (three-session workflow, isolation, verdict, rectification-gate)
 ├── tui/              # React/Ink terminal UI
 │   ├── components/   # TUI React components
-│   └── hooks/        # TUI React hooks (useKeyboard, useLayout, usePipelineEvents, usePty)
+│   └── hooks/        # TUI React hooks (useKeyboard, useLayout, usePipelineEvents)
 ├── utils/            # Shared utilities (git, paths, errors, processes)
 ├── test-runners/     # Test framework detection and output parsing (SSOT for test parsing)
 ├── verification/     # Test execution orchestration, rectification loop

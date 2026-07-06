@@ -36,26 +36,8 @@ export interface StoryDisplayState {
 export enum PanelFocus {
   /** Stories panel is focused (default) */
   Stories = "stories",
-  /** Agent panel is focused (input routed to PTY) */
+  /** Agent (live activity) panel is focused */
   Agent = "agent",
-}
-
-/**
- * PTY spawn options for agent integration.
- */
-export interface PtySpawnOptions {
-  /** Command to execute (e.g., "claude") */
-  command: string;
-  /** Command arguments */
-  args?: string[];
-  /** Working directory */
-  cwd: string;
-  /** Environment variables */
-  env?: Record<string, string>;
-  /** Terminal columns (default: 80) */
-  cols?: number;
-  /** Terminal rows (default: 24) */
-  rows?: number;
 }
 
 /**
@@ -72,8 +54,6 @@ export interface TuiProps {
   events: PipelineEventEmitter;
   /** Path to queue file for writing commands (optional) */
   queueFilePath?: string;
-  /** PTY spawn options — reserved for future PTY re-integration */
-  ptyOptions?: PtySpawnOptions | null;
   /** Agent stream event bus for live call metadata (optional) */
   agentStreamEvents?: IAgentStreamEventBus | null;
 }

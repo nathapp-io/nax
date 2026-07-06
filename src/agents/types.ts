@@ -19,8 +19,6 @@ export type {
   DecomposeOptions,
   DecomposeResult,
   DecomposedStory,
-  PtyHandle,
-  InteractiveRunOptions,
 } from "./shared/types-extended";
 
 /**
@@ -557,13 +555,4 @@ export interface AgentAdapter {
    * Replaces the deprecated closeSession(sessionName, workdir).
    */
   closeSession(handle: SessionHandle): Promise<void>;
-
-  /**
-   * Run the agent in interactive PTY mode for TUI embedding.
-   * This method is optional — only implemented by agents that support
-   * interactive terminal sessions (e.g., Claude Code).
-   */
-  runInteractive?(
-    options: import("./shared/types-extended").InteractiveRunOptions,
-  ): import("./shared/types-extended").PtyHandle;
 }

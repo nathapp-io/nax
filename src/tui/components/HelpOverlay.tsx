@@ -92,7 +92,7 @@ export function HelpOverlay({ visible = false }: HelpOverlayProps) {
         </Text>
         <Text>
           {" "}
-          <Text dimColor>All other keys</Text> — Forwarded to agent PTY
+          <Text dimColor>All other keys</Text> — Ignored (Ctrl+] to return)
         </Text>
       </Box>
 
