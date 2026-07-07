@@ -13,6 +13,7 @@
  * as a non-blocking warning.
  */
 
+import * as path from "node:path";
 import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
 import { detectForge as _detectForge, hasOpenPr as _hasOpenPr, openDraft as _openDraft } from "./forge";
 import { type PrBodyContext, buildBody, buildTitle } from "./pr-body";
@@ -103,6 +104,18 @@ function getStorySummary(context: PostRunContext): PostRunContext["storySummary"
   return context.storySummary;
 }
 
+/**
+ * Render the PRD path repo-relative so the PR body never leaks an absolute
+ * local filesystem path (e.g. `/Users/alice/workspace/.../prd.json`). When the
+ * PRD lives outside the workdir (`..`-relative) or `prdPath` is empty, fall back
+ * to the raw value rather than emitting a misleading relative path.
+ */
+function relativePrdPath(workdir: string, prdPath: string): string {
+  if (!prdPath) return prdPath;
+  const rel = path.relative(workdir, prdPath);
+  return rel && !rel.startsWith("..") && !path.isAbsolute(rel) ? rel : prdPath;
+}
+
 /** Sub-context handed to the pure body builders (does not include `paused`). */
 function toPrBodyContext(context: PostRunContext): PrBodyContext {
   const summary = getStorySummary(context);
@@ -110,7 +123,7 @@ function toPrBodyContext(context: PostRunContext): PrBodyContext {
     feature: context.feature,
     totalCost: context.totalCost,
     totalDurationMs: context.totalDurationMs,
-    prdPath: context.prdPath,
+    prdPath: relativePrdPath(context.workdir, context.prdPath),
     storySummary: {
       completed: summary.completed,
       failed: summary.failed,
