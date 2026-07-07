@@ -20,7 +20,11 @@ export interface PrBodyContext {
   totalCost: number;
   /** Wall-clock run duration in milliseconds. Negative values clamp to zero. */
   totalDurationMs: number;
-  /** Absolute path to the PRD file that drove this run. */
+  /**
+   * Display path to the PRD file that drove this run. Repo-relative — the
+   * caller (`toPrBodyContext`) relativizes it against the workdir so the PR
+   * body never leaks an absolute local filesystem path.
+   */
   prdPath: string;
   /** Aggregated counts of story outcomes actually rendered by the body. */
   storySummary: {

@@ -20,7 +20,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import type { PostRunContext } from "@/plugins/extensions";
 import { loadPlugins } from "@/plugins";
 import { autoPrPlugin, _autoPrDeps } from "../../../../src/plugins/builtin/auto-pr";
@@ -205,12 +205,15 @@ describe("autoPrPlugin.execute", () => {
       },
       stories: ctx.stories,
     });
+    // execute() relativizes prdPath against the workdir so the PR body never
+    // leaks an absolute local path.
+    const relPrdPath = relative(ctx.workdir, ctx.prdPath);
     const expectedBody = buildBody(
       {
         feature: ctx.feature,
         totalCost: ctx.totalCost,
         totalDurationMs: ctx.totalDurationMs,
-        prdPath: ctx.prdPath,
+        prdPath: relPrdPath,
         storySummary: {
           completed: ctx.storySummary.completed,
           failed: ctx.storySummary.failed,
@@ -225,6 +228,9 @@ describe("autoPrPlugin.execute", () => {
     expect(captured[0]?.body).toBe(expectedBody);
     expect(captured[0]?.branch).toBe(ctx.branch);
     expect(captured[0]?.draft).toBe(true);
+    // Guard against absolute-path leakage in the rendered body.
+    expect(captured[0]?.body).toContain(`- PRD: ${relPrdPath}`);
+    expect(captured[0]?.body).not.toContain(`- PRD: ${ctx.prdPath}`);
   });
 
   test("AC8b — pushes the branch to origin before calling openDraft", async () => {
