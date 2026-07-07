@@ -351,7 +351,7 @@ describe("autoPrPlugin.execute", () => {
 // ─── AC11: loader registration ──────────────────────────────────────────────
 
 describe("loadPlugins — autoPr registration", () => {
-  test("AC11 — getPostRunActions() includes 'nax-auto-pr' when not disabled", async () => {
+  test("AC11 — getPostRunActions() includes 'nax-auto-pr' exactly once when not disabled", async () => {
     const root = await mkdtemp(join(tmpdir(), "autopr-registration-"));
     const registry = await loadPlugins(
       join(root, "global"),
@@ -361,7 +361,14 @@ describe("loadPlugins — autoPr registration", () => {
       [],
     );
     const actions = registry.getPostRunActions();
-    expect(actions.some((a) => a.name === PLUGIN_NAME)).toBe(true);
+    // Regression: auto-pr must be a side-channel action only (like auto-route),
+    // never also a full plugin — otherwise getPostRunActions returns it twice
+    // and the action fires twice per run (first opens the PR, second warns
+    // "open PR/MR already exists for branch"). See registry.ts layout comment.
+    const autoPrActions = actions.filter((a) => a.name === PLUGIN_NAME);
+    expect(autoPrActions).toHaveLength(1);
+    // And it must not appear in the full plugins list (side-channel only).
+    expect(registry.plugins.some((p) => p.name === PLUGIN_NAME)).toBe(false);
   });
 
   test("autoPr is excluded from getPostRunActions() when 'nax-auto-pr' is in disabledPlugins", async () => {
