@@ -133,11 +133,12 @@ export async function loadPlugins(
       const pluginLogger = createPluginLogger(autoPrPlugin.name);
       await autoPrPlugin.setup({}, pluginLogger);
     }
-    loadedPlugins.push({
-      plugin: autoPrPlugin,
-      source: { type: "builtin", path: autoPrPlugin.name },
-    });
-    pluginNames.add(autoPrPlugin.name);
+    // Side-channel action only (see PluginRegistry layout comment) — auto-pr is
+    // NOT added to `loadedPlugins`. Registering it there as well would make
+    // getPostRunActions() return the action twice (once via the `provides`
+    // filter over `plugins`, once via `builtinPostRunActions`), firing it twice
+    // per run: the first pass opens the PR, the second warns "open PR/MR already
+    // exists for branch". auto-route follows the same side-channel layout.
     const autoPrAction = autoPrPlugin.extensions.postRunAction;
     if (autoPrAction) {
       builtinPostRunActions.push(autoPrAction);
