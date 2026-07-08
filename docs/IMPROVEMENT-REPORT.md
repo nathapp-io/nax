@@ -1,6 +1,6 @@
 # nax — Improvement & Missing Feature Report
 
-> Generated 2026-07-03 against `main` @ `fe94305e` (v0.70.8).
+> Generated 2026-07-03 against `main` @ `fe94305e` (v0.70.8). Status sections re-verified 2026-07-08 against HEAD (v0.72.2+).
 > Sources: full-source gap scan (TODO/FIXME/Phase-2 markers, ADRs 023–026, `docs/release-triage.md`, open GitHub issues) + docs-vs-code feature audit (CLI surface, plugins, queue, crash recovery, observability, cost).
 > Scoped permissions (Phase 2 stub in `src/config/permissions.ts`) is **excluded** — already tracked as GitHub #374.
 
@@ -18,12 +18,14 @@ The open-issue backlog is small and well-groomed (6 open issues), so most items 
 - **Where:** `src/agents/cost/` (pricing, calculate, token-mapper) — tracking/estimation only.
 - **Gap:** No `--max-cost` flag, no config field, no abort-on-overspend logic anywhere in `src/config/` or `src/execution/`. For a tool that autonomously loops and escalates to more expensive tiers, a spend ceiling is the most conspicuous missing safety feature.
 - **Suggestion:** `execution.maxCostUsd` (run-level) + optional per-story ceiling; enforce in the runner loop via the existing `CostAggregator` middleware; abort → `status: "aborted"` with a clear exit summary.
-- **Tracked:** No.
+- **Status:** ✅ Done — [#1291](https://github.com/nathapp-io/nax/pull/1291) (commit `51ea97ac`). `--max-cost` CLI flag / `execution.costLimit` config field (default 30.0), enforced in `src/execution/unified-executor.ts`; aborted runs surface a distinct `"cost-limit"` status via `nax status` / `nax runs --status`.
+- **Tracked:** Yes — closed by #1291.
 
 ### 1.2 No mid-session resume
 - **Where:** `src/execution/crash-*.ts`, `src/execution/story-selector.ts`.
 - **Gap:** Crash recovery is implicit — rerunning `nax run` re-scans `prd.json` and restarts incomplete stories **from scratch**; in-flight agent session work is discarded. There is no `nax resume`.
 - **Suggestion:** Persist per-story session checkpoints (last completed canonical-order step) so a rerun can skip already-green steps; or a `nax resume` that replays from the last verified state.
+- **Status:** Not started. `nax replay` shipped ([#1304](https://github.com/nathapp-io/nax/pull/1304), commit `d4f51ec2`) but it is a **read-only post-mortem timeline viewer**, not a resume mechanism — no checkpoint-skip logic, no `nax resume` command.
 - **Tracked:** No.
 
 ### 1.3 Queue mid-run controls half-exposed
@@ -37,12 +39,14 @@ The open-issue backlog is small and well-groomed (6 open issues), so most items 
 - **Where:** `src/metrics/` (rich `StoryMetrics` / `RunMetrics` / `AggregateMetrics`), output = JSONL under `~/.nax/<project>/…/runs/` + `nax status --cost`.
 - **Gap:** No OpenTelemetry / Prometheus export, no web UI. `docs/ROADMAP.md` explicitly lists "Cost tracking dashboard" as unbuilt.
 - **Suggestion:** Cheapest first step: `nax status --cost --json` stable export schema; later OTel exporter behind config.
+- **Status:** Not started. `src/cli/status-cost.ts` / `status.ts` / `status-features.ts` have no `--json` flag wired; no OTel/Prometheus exporter files exist anywhere in the repo.
 - **Tracked:** Roadmap mention only, no issue.
 
 ### 1.5 Plugin ecosystem is empty
 - **Where:** `src/plugins/` (all 6 extension points typed and wired), `examples/plugins/`.
 - **Gap:** Only one example plugin ships (`console-reporter`, an `IReporter`). README name-drops auto-PR via `IPostRunAction`, but no bundled post-run action, context provider, router, or reviewer exists. The curator is a builtin wired outside the plugin mechanism.
 - **Suggestion:** Ship 2–3 reference plugins — auto-PR `IPostRunAction` (gh/glab), a Jira/Linear `IContextProvider`, a cost-report `IReporter` — to make the extensibility claim real.
+- **Status:** 🟡 Partial. Auto-PR `IPostRunAction` shipped at `src/plugins/builtin/auto-pr` ([#1306](https://github.com/nathapp-io/nax/pull/1306), commit `7dc7df5a`; hardened by [#1311](https://github.com/nathapp-io/nax/pull/1311)–[#1314](https://github.com/nathapp-io/nax/pull/1314)) — but shipped as a **builtin**, not an `examples/plugins/` reference plugin; `examples/plugins/` still only has `console-reporter`. Jira/Linear `IContextProvider` and cost-report `IReporter` were not built. README still doesn't mention auto-pr/Jira/Linear/cost-report, so the extensibility claim via `examples/` remains unsubstantiated (1 of 3 suggested reference plugins landed).
 - **Tracked:** No.
 
 ### 1.6 LLM-driven run-time agent routing deferred
@@ -60,8 +64,8 @@ The open-issue backlog is small and well-groomed (6 open issues), so most items 
 - **Where:** review severity handling (adversarial review → fix cycle).
 - **Gap:** Off-AC bugs found by adversarial review get downgraded to warning/info; with `review.blockingThreshold: "error"` they are never surfaced to the user at all. Real findings evaporate.
 - **Suggestion:** Aggregate non-blocking findings and report them at run end (severity-graded summary) — aggregation + surfacing, not a new review pass. Related open issue #1157 (whack-a-mole within a file) touches the same subsystem.
-- **Status:** ✅ Fixed in [PR #1290](https://github.com/nathapp-io/nax/pull/1290) — `ReviewAuditor.getAdvisoryFindings()` aggregates sub-threshold findings across the run; surfaced at run end via a severity-graded headless console summary (`formatAdvisorySummary`) plus a structured `logger.warn`. Aggregation only, no new review pass, per the suggestion.
-- **Tracked:** Yes — closed by #1290 (adjacent: #1157, still open).
+- **Status:** ✅ Fixed in [PR #1290](https://github.com/nathapp-io/nax/pull/1290) — `ReviewAuditor.getAdvisoryFindings()` aggregates sub-threshold findings across the run; surfaced at run end via a severity-graded headless console summary (`formatAdvisorySummary`) plus a structured `logger.warn`. Aggregation only, no new review pass, per the suggestion. Re-verified 2026-07-08: still correctly wired at HEAD, no drift from recent commits. Note: #1290 itself briefly regressed all **bundled** runs (circular `__esm` import between `log-format/formatter.ts` and the `review` barrel crashed the implementer phase; not caught by `bun test`, bundle-only) — fixed in [#1300](https://github.com/nathapp-io/nax/pull/1300) (commit `84e3e157`, 2026-07-04) by breaking the import cycle.
+- **Tracked:** Yes — closed by #1290 (adjacent: #1157, still open, no activity since 2026-05-30).
 
 ### 2.2 `tdd.sessionTiers.implementer` is dead config
 - **Where:** `src/config/schemas-execution.ts:271-274` (intentionally not consumed — implementer follows `story.routing.modelTier` + escalation), but `src/cli/config-descriptions.ts:126` still documents it as "Model tier for implementer session".
@@ -98,10 +102,12 @@ The open-issue backlog is small and well-groomed (6 open issues), so most items 
 4. File tracking issues for §1.6 (ADR-025 Part A) and §2.2 (dead config) so they don't get lost. **✅ Done — #1289 filed for §1.6; §2.2 fixed directly rather than just tracked (#1290).**
 
 ### Remaining open items from this shortlist
-> Re-verified 2026-07-03 (post-#1290): `maxCostUsd` absent from `src/config`/`src/execution` (grep-confirmed); #391, #856, #1131 in §3 are closed and fixed in code, updated above.
+> Re-verified 2026-07-08 against HEAD (past v0.72.2, commits through #1315). §1.1 shipped since the 2026-07-03 snapshot; #1291 added `execution.costLimit`/`--max-cost` (not `maxCostUsd` as originally named, but same mechanism). §1.5 partially shipped (auto-PR plugin only). §1.2, §1.4, #1288, #1289 unchanged.
+>
+> Also landed since 2026-07-03, outside this report's original scope: `nax replay` (#1304, post-mortem timeline viewer — not a resume mechanism, see §1.2), empirical routing (`950bbb18`), and agent bake-off `--compare` mode (`61ac8daf`).
 
-- **§1.1 Cost budget cap — not started. Recommended next pick** (highest value/effort ratio: `CostAggregator` middleware already exists, needs `execution.maxCostUsd` config field + abort-on-overspend check in the runner loop).
-- §1.2 Mid-session resume — not started (second priority; larger surface, touches crash-recovery + session checkpointing).
+- ✅ **§1.1 Cost budget cap — done** (#1291).
+- **§1.2 Mid-session resume — not started. Recommended next pick** (highest remaining value/effort ratio now that §1.1 is done; larger surface, touches crash-recovery + session checkpointing; `nax replay` gives a read-only foundation to build on but does not itself resume).
 - §1.4 Dashboard / metrics export — not started (cheapest slice is `nax status --cost --json` schema stabilization).
-- §1.5 Plugin ecosystem — not started (needs 2-3 reference plugins to substantiate the extensibility claim).
+- §1.5 Plugin ecosystem — partial (auto-PR `IPostRunAction` shipped as a builtin; still needs to move to/be mirrored in `examples/plugins/` plus a Jira/Linear `IContextProvider` and cost-report `IReporter` to substantiate the extensibility claim).
 - #1288 (INJECT queue command) and #1289 (ADR-025 §7 run-time routing) — tracked, not implemented.
