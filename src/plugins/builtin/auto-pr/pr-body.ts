@@ -16,8 +16,6 @@ const MS_PER_SECOND = 1000;
 export interface PrBodyContext {
   /** Feature name — used in the title prefix and the run summary. */
   feature: string;
-  /** Total spend in USD for this run. */
-  totalCost: number;
   /** Wall-clock run duration in milliseconds. Negative values clamp to zero. */
   totalDurationMs: number;
   /**
@@ -54,10 +52,6 @@ function formatDuration(totalMs: number): string {
   return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
 }
 
-function formatCost(usd: number): string {
-  return `$${usd.toFixed(2)}`;
-}
-
 function buildSummaryLines(ctx: PrBodyContext): string[] {
   const { storySummary } = ctx;
   const passed = `${storySummary.completed} passed`;
@@ -67,7 +61,7 @@ function buildSummaryLines(ctx: PrBodyContext): string[] {
     "## Run summary",
     `- Feature: ${ctx.feature}`,
     `- Stories: ${passed} / ${failed} / ${skipped}`,
-    `- Cost: ${formatCost(ctx.totalCost)} · Duration: ${formatDuration(ctx.totalDurationMs)}`,
+    `- Duration: ${formatDuration(ctx.totalDurationMs)}`,
     `- PRD: ${ctx.prdPath}`,
     "",
   ];

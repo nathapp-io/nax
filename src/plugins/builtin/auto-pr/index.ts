@@ -121,7 +121,6 @@ function toPrBodyContext(context: PostRunContext): PrBodyContext {
   const summary = getStorySummary(context);
   return {
     feature: context.feature,
-    totalCost: context.totalCost,
     totalDurationMs: context.totalDurationMs,
     prdPath: relativePrdPath(context.workdir, context.prdPath),
     storySummary: {
