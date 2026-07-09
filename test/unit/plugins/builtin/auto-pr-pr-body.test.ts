@@ -13,7 +13,6 @@ import { makeStory } from "@test/helpers";
 function makeContext(overrides: Partial<PrBodyContext> = {}): PrBodyContext {
   return {
     feature: "auto-pr-plugin",
-    totalCost: 0.42,
     totalDurationMs: 192_000,
     prdPath: ".nax/features/auto-pr-plugin/prd.json",
     storySummary: { completed: 4, failed: 0, skipped: 0 },
@@ -70,12 +69,12 @@ describe("buildBody (null template)", () => {
     expect(body).not.toMatch(/^---\s*$/m);
   });
 
-  test("run summary includes feature, cost, duration, and PRD path", () => {
+  test("run summary includes feature, duration, and PRD path", () => {
     const ctx = makeContext();
     const body = buildBody(ctx, null);
 
     expect(body).toContain("auto-pr-plugin");
-    expect(body).toContain("$0.42");
+    expect(body).not.toContain("Cost:");
     expect(body).toContain("3m 12s");
     expect(body).toContain(".nax/features/auto-pr-plugin/prd.json");
   });

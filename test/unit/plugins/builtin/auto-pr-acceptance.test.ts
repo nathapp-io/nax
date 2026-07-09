@@ -195,7 +195,6 @@ describe("autoPrPlugin.execute", () => {
 
     const expectedTitle = buildTitle({
       feature: ctx.feature,
-      totalCost: ctx.totalCost,
       totalDurationMs: ctx.totalDurationMs,
       prdPath: ctx.prdPath,
       storySummary: {
@@ -211,7 +210,6 @@ describe("autoPrPlugin.execute", () => {
     const expectedBody = buildBody(
       {
         feature: ctx.feature,
-        totalCost: ctx.totalCost,
         totalDurationMs: ctx.totalDurationMs,
         prdPath: relPrdPath,
         storySummary: {
