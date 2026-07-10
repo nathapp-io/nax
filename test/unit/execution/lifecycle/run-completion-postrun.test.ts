@@ -418,6 +418,34 @@ describe("handleRunCompletion - AC6: sets regression failed on failure", () => {
       callOrder.indexOf("setPostRunPhase-regression-failed"),
     );
   });
+
+  test("resets story.passes to false for affected stories, not just status (issue #1292)", async () => {
+    const statusWriter = makeStatusWriter();
+
+    _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => ({
+      success: false,
+      failedTests: 1,
+      failedTestFiles: [],
+      passedTests: 5,
+      rectificationAttempts: 0,
+      affectedStories: ["US-001"],
+    }));
+
+    const prd = makePRD([
+      { id: "US-001", status: "passed" },
+      { id: "US-002", status: "passed" },
+    ]);
+    const config = makeConfig("deferred", "bun test");
+
+    await handleRunCompletion(makeOpts(config, prd, { statusWriter }));
+
+    const affectedStory = prd.userStories.find((s) => s.id === "US-001");
+    expect(affectedStory?.status).toBe("regression-failed");
+    expect(affectedStory?.passes).toBe(false);
+
+    const unaffectedStory = prd.userStories.find((s) => s.id === "US-002");
+    expect(unaffectedStory?.passes).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
