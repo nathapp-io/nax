@@ -17,6 +17,8 @@
  *       and rejects with the same error.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, mock, test } from "bun:test";
 import { emitCostReportJson, type CostReportEmitDeps } from "@/cli";
 import type { CostReportV1 } from "@/metrics";
@@ -64,12 +66,25 @@ function makeDeps(overrides: Partial<CostReportEmitDeps> = {}): CostReportEmitDe
 }
 
 // ---------------------------------------------------------------------------
-// AC-1: exported function
+// AC-1: exported function via the @/cli/status barrel
+//
+// The repo's check:alias-internals gate forbids `from "@/cli/status"` because
+// @/cli has its own barrel; importing through @/cli would not catch a
+// regression that drops the symbol from the @/cli/status re-export barrel.
+// To prove AC-1's actual contract — that the symbol is reachable through the
+// @/cli/status barrel — this test inspects src/cli/status.ts directly and
+// asserts it re-exports emitCostReportJson from ./status-cost.
 // ---------------------------------------------------------------------------
 
 describe("emitCostReportJson — AC1: export shape", () => {
-  test("AC1: emitCostReportJson imported from @/cli/status is a function", () => {
+  test("AC1: emitCostReportJson is a function and is re-exported from the @/cli/status barrel", () => {
     expect(typeof emitCostReportJson).toBe("function");
+
+    const barrelSrc = readFileSync(
+      join(import.meta.dir, "../../../src/cli/status.ts"),
+      "utf8",
+    );
+    expect(barrelSrc).toMatch(/export\s*\{[\s\S]*?\bemitCostReportJson\b[\s\S]*?\}\s*from\s+["']\.\/status-cost["']/);
   });
 });
 
