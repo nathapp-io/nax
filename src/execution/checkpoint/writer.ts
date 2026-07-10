@@ -10,8 +10,8 @@
  */
 
 import { NaxError } from "@/errors";
-import type { PhaseKind } from "@/execution";
 import { errorMessage } from "@/utils/errors";
+import type { PhaseKind } from "../story-orchestrator";
 import type { CheckpointRecord, CheckpointWriterDeps, TreeState } from "./types";
 
 export interface CheckpointWriterOptions {

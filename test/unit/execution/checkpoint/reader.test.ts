@@ -163,3 +163,83 @@ describe("loadCheckpoints invalid-line skip", () => {
     expect(result.get("US-002")?.greenPhases).toEqual(["test-writer"]);
   });
 });
+
+describe("loadCheckpoints type-validated invalid-line skip", () => {
+  test("skips a well-formed JSON line whose required field is null instead of a string", async () => {
+    const valid = record("US-001", "test-writer");
+    // All keys present, but phase is null — would slip past a `in`-only check
+    // and poison CANONICAL_ORDER.indexOf() with a -1 result.
+    const nullPhase = JSON.stringify({
+      storyId: "US-002",
+      phase: null,
+      headSha: "h",
+      dirtyDigest: "d",
+      runId: "run-1",
+      ts: 1700000000000,
+    });
+    const content = `${valid}\n${nullPhase}\n`;
+    const deps = makeReadDep(content);
+
+    const result = await loadCheckpoints("/feature", { _deps: deps });
+    expect(result.size).toBe(1);
+    expect(result.has("US-001")).toBe(true);
+    expect(result.has("US-002")).toBe(false);
+  });
+
+  test("skips a record whose phase is not a known canonical phase", async () => {
+    const valid = record("US-001", "test-writer");
+    const bogusPhase = JSON.stringify({
+      storyId: "US-002",
+      phase: "not-a-real-phase",
+      headSha: "h",
+      dirtyDigest: "d",
+      runId: "run-1",
+      ts: 1700000000000,
+    });
+    const content = `${valid}\n${bogusPhase}\n`;
+    const deps = makeReadDep(content);
+
+    const result = await loadCheckpoints("/feature", { _deps: deps });
+    expect(result.size).toBe(1);
+    expect(result.has("US-001")).toBe(true);
+    expect(result.has("US-002")).toBe(false);
+  });
+
+  test("skips a record whose ts is not a finite number", async () => {
+    const valid = record("US-001", "test-writer");
+    const badTs = JSON.stringify({
+      storyId: "US-002",
+      phase: "test-writer",
+      headSha: "h",
+      dirtyDigest: "d",
+      runId: "run-1",
+      ts: "not-a-number",
+    });
+    const content = `${valid}\n${badTs}\n`;
+    const deps = makeReadDep(content);
+
+    const result = await loadCheckpoints("/feature", { _deps: deps });
+    expect(result.size).toBe(1);
+    expect(result.has("US-001")).toBe(true);
+    expect(result.has("US-002")).toBe(false);
+  });
+
+  test("skips a record whose storyId is an empty string", async () => {
+    const valid = record("US-001", "test-writer");
+    const emptyStory = JSON.stringify({
+      storyId: "",
+      phase: "test-writer",
+      headSha: "h",
+      dirtyDigest: "d",
+      runId: "run-1",
+      ts: 1700000000000,
+    });
+    const content = `${valid}\n${emptyStory}\n`;
+    const deps = makeReadDep(content);
+
+    const result = await loadCheckpoints("/feature", { _deps: deps });
+    expect(result.size).toBe(1);
+    expect(result.has("US-001")).toBe(true);
+    expect(result.has("")).toBe(false);
+  });
+});

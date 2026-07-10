@@ -15,27 +15,25 @@
 
 import { join } from "node:path";
 import { NaxError } from "@/errors";
-import { CANONICAL_ORDER, type PhaseKind } from "@/execution";
+import { CANONICAL_ORDER, type PhaseKind } from "../story-orchestrator";
 import type { CheckpointReaderDeps, CheckpointRecord, StoryCheckpoint, TreeState } from "./types";
 
 export interface LoadCheckpointsOptions {
   _deps: CheckpointReaderDeps;
 }
 
-const REQUIRED_FIELDS: ReadonlyArray<keyof CheckpointRecord> = [
-  "storyId",
-  "phase",
-  "headSha",
-  "dirtyDigest",
-  "runId",
-  "ts",
-];
-
 function isValidRecord(value: unknown): value is CheckpointRecord {
   if (!value || typeof value !== "object") return false;
-  for (const field of REQUIRED_FIELDS) {
-    if (!(field in (value as Record<string, unknown>))) return false;
+  const obj = value as Record<string, unknown>;
+  // String fields: require non-empty strings (null / undefined / wrong type / empty → invalid).
+  for (const field of ["storyId", "phase", "headSha", "dirtyDigest", "runId"] as const) {
+    if (typeof obj[field] !== "string" || obj[field] === "") return false;
   }
+  // ts is a number (Date.now()) — reject NaN and non-numbers.
+  if (typeof obj.ts !== "number" || !Number.isFinite(obj.ts)) return false;
+  // phase must be a known canonical phase — guards against null/wrong-type slipping through
+  // and poisoning CANONICAL_ORDER.indexOf() (which returns -1) downstream.
+  if (CANONICAL_ORDER.indexOf(obj.phase as PhaseKind) === -1) return false;
   return true;
 }
 

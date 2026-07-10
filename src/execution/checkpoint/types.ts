@@ -8,7 +8,7 @@
  * orchestrator to seed its in-memory skip state.
  */
 
-import type { PhaseKind } from "@/execution";
+import type { PhaseKind } from "../story-orchestrator";
 
 /** Captured state of the working tree at the moment a phase went green. */
 export interface TreeState {
