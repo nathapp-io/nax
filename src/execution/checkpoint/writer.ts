@@ -9,6 +9,7 @@
  * or an equivalent O_APPEND-safe write).
  */
 
+import { rename } from "node:fs/promises";
 import { NaxError } from "@/errors";
 import { errorMessage } from "@/utils/errors";
 import type { PhaseKind } from "../story-orchestrator";
@@ -21,17 +22,29 @@ export interface CheckpointWriterOptions {
 }
 
 /**
- * Default on-disk append — Bun-native (no `writer()` FileSink, which opens
- * truncated: reusing it across the whole run would destroy any checkpoint
- * history from a prior run before `loadCheckpoints` ever gets to read it).
- * Reads existing content (if any) and rewrites the file with the new line
- * appended, so a fresh writer never truncates a checkpoint another story is
- * still relying on for resume.
+ * Default on-disk append — Bun-native content write (no `writer()` FileSink,
+ * which opens truncated: reusing it across the whole run would destroy any
+ * checkpoint history from a prior run before `loadCheckpoints` ever gets to
+ * read it). Reads existing content (if any) and rewrites the file with the
+ * new line appended, so a fresh writer never truncates a checkpoint another
+ * story is still relying on for resume.
+ *
+ * The rewrite itself is made atomic via write-to-`.tmp` + `rename()`: a
+ * direct `Bun.write(filePath, ...)` truncates the destination before writing
+ * the new bytes, so a crash mid-write can corrupt or shorten a file that
+ * already held durable history for prior green phases — exactly the crash
+ * this feature exists to survive. `rename()` is atomic on POSIX filesystems,
+ * so a crash during the write leaves either the old file intact or the full
+ * new file, never a partial one. `rename` has no Bun-native equivalent, so
+ * it's imported from `node:fs/promises` (same precedent as
+ * `src/execution/status-file.ts`).
  */
 async function defaultAppend(filePath: string, line: string): Promise<void> {
   const file = Bun.file(filePath);
   const existing = (await file.exists()) ? await file.text() : "";
-  await Bun.write(filePath, existing + line);
+  const tmpPath = `${filePath}.tmp`;
+  await Bun.write(tmpPath, existing + line);
+  await rename(tmpPath, filePath);
 }
 
 /** Construct a `CheckpointWriter` bound to the real Bun-native append. */
