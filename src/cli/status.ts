@@ -7,7 +7,13 @@
  */
 
 // Cost metrics
-export { displayCostMetrics, displayLastRunMetrics, displayModelEfficiency } from "./status-cost";
+export {
+  displayCostMetrics,
+  displayLastRunMetrics,
+  displayModelEfficiency,
+  emitCostReportJson,
+  type CostReportEmitDeps,
+} from "./status-cost";
 
 // Feature display
 export { displayFeatureStatus, type FeatureStatusOptions } from "./status-features";

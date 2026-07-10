@@ -7,8 +7,15 @@
 import { basename } from "node:path";
 import { loadConfig } from "../config";
 import { getLogger } from "../logger";
-import { calculateAggregateMetrics, getLastRun, loadRunMetrics } from "../metrics";
+import { calculateAggregateMetrics, getLastRun, loadRunMetrics, toCostReport } from "../metrics";
+import type { CostReportV1 } from "../metrics";
+import type { RunMetrics } from "../metrics/types";
 import { projectOutputDir } from "../runtime";
+
+async function resolveProjectKey(workdir: string): Promise<string> {
+  const config = await loadConfig(workdir).catch(() => null);
+  return config?.name?.trim() || basename(workdir);
+}
 
 async function resolveOutputDir(workdir: string): Promise<string> {
   const config = await loadConfig(workdir).catch(() => null);
@@ -174,4 +181,44 @@ export async function displayModelEfficiency(workdir: string): Promise<void> {
       mismatchRate: stats.mismatchRate,
     })),
   });
+}
+
+/**
+ * Injectable dependencies for `emitCostReportJson`.
+ *
+ * Mirrors the `ReplayCommandDeps` pattern: production callers get the
+ * filesystem-backed defaults via `_costReportEmitDeps`; tests inject spies.
+ */
+export interface CostReportEmitDeps {
+  loadRuns: (outputDir: string) => Promise<RunMetrics[]>;
+  resolveProject: (workdir: string) => Promise<string>;
+  toCostReport: (runs: RunMetrics[], reportDeps: { now: () => string; project: string }) => CostReportV1;
+  now: () => string;
+  stdout: (text: string) => void;
+}
+
+export const _costReportEmitDeps: CostReportEmitDeps = {
+  loadRuns: (outputDir: string) => loadRunMetrics(outputDir),
+  resolveProject: resolveProjectKey,
+  toCostReport,
+  now: () => new Date().toISOString(),
+  stdout: (text: string) => process.stdout.write(text),
+};
+
+/**
+ * Emit a stable pretty-printed `CostReportV1` object to stdout.
+ *
+ * I/O failures from `loadRuns` propagate unchanged so callers can surface them.
+ * The report always includes aggregate, last-run, and model-efficiency sections,
+ * which is why `--last` and `--model` are ignored when `--json` is set.
+ */
+export async function emitCostReportJson(
+  workdir: string,
+  deps: CostReportEmitDeps = _costReportEmitDeps,
+): Promise<void> {
+  const outputDir = await resolveOutputDir(workdir);
+  const runs = await deps.loadRuns(outputDir);
+  const project = await deps.resolveProject(workdir);
+  const report = deps.toCostReport(runs, { now: deps.now, project });
+  deps.stdout(`${JSON.stringify(report, null, 2)}\n`);
 }

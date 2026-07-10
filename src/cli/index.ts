@@ -12,6 +12,8 @@ export {
   displayCostMetrics,
   displayLastRunMetrics,
   displayModelEfficiency,
+  emitCostReportJson,
+  type CostReportEmitDeps,
   displayFeatureStatus,
   type FeatureStatusOptions,
 } from "./status";

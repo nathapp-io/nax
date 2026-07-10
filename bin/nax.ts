@@ -43,10 +43,6 @@ import {
   acceptCommand,
   agentsListCommand,
   contextInspectCommand,
-  displayCostMetrics,
-  displayFeatureStatus,
-  displayLastRunMetrics,
-  displayModelEfficiency,
   exportPromptCommand,
   planCommand,
   planDecomposeCommand,
@@ -72,6 +68,7 @@ import {
 } from "../src/cli/config-profile";
 import { resolveFeatureSpec } from "../src/cli/features-resolve";
 import { generateCommand } from "../src/cli/generate";
+import { dispatchStatusView } from "../src/cli/status-dispatch";
 import { detectCommand } from "../src/commands/detect";
 import { logsCommand } from "../src/commands/logs";
 import { precheckCommand } from "../src/commands/precheck";
@@ -1305,6 +1302,7 @@ program
   .option("--cost", "Show cost metrics across all runs", false)
   .option("--last", "Show last run metrics (requires --cost)", false)
   .option("--model", "Show per-model efficiency (requires --cost)", false)
+  .option("-j, --json", "Emit cost report as JSON (requires --cost)", false)
   .action(async (options) => {
     // Validate directory path
     let workdir: string;
@@ -1321,22 +1319,13 @@ program
       process.exit(1);
     }
 
-    // Handle cost metrics flags
-    if (options.cost) {
-      if (options.last) {
-        await displayLastRunMetrics(workdir);
-      } else if (options.model) {
-        await displayModelEfficiency(workdir);
-      } else {
-        await displayCostMetrics(workdir);
-      }
-      return;
-    }
-
-    // Default status: show feature progress (new implementation with active run detection)
-    await displayFeatureStatus({
-      feature: options.feature,
-      dir: options.dir,
+    await dispatchStatusView(workdir, {
+      cost: Boolean(options.cost),
+      json: Boolean(options.json),
+      last: Boolean(options.last),
+      model: Boolean(options.model),
+      feature: options.feature as string | undefined,
+      dir: options.dir as string | undefined,
     });
   });
 
