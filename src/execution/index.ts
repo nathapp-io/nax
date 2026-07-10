@@ -1,5 +1,5 @@
 export type { RunOptions, RunResult } from "./runner";
-export { run, _runnerDeps } from "./runner";
+export { run, _runnerDeps, _runnerReentrancyGuard } from "./runner";
 export type { FailureCategory } from "../tdd/types";
 export { appendProgress } from "./progress";
 export { groupStoriesIntoBatches, type StoryBatch } from "./batching";
@@ -74,6 +74,7 @@ export { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "
 export { buildPlanForStrategy } from "./build-plan-for-strategy";
 export {
   CheckpointWriter,
+  createCheckpointWriter,
   loadCheckpoints,
   buildResumePlan,
   buildCheckpointLogData,

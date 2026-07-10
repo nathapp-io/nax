@@ -64,7 +64,7 @@ export async function displayCostMetrics(workdir: string): Promise<void> {
  */
 export async function displayLastRunMetrics(workdir: string): Promise<void> {
   const logger = getLogger();
-  const { outputDir } = await resolveProject(workdir);
+  const { project, outputDir } = await resolveProject(workdir);
   const runs = await loadRunMetrics(outputDir);
 
   if (runs.length === 0) {
@@ -77,6 +77,11 @@ export async function displayLastRunMetrics(workdir: string): Promise<void> {
     return;
   }
 
+  // Reuse the report mapper's lastRun.avgCostPerStory (already zero-guarded)
+  // instead of re-deriving it here, so the human-readable path can't drift
+  // from the `--json` path — see toCostReport in src/metrics/report.ts.
+  const { lastRun: reportedLastRun } = toCostReport(runs, { now: () => new Date().toISOString(), project });
+
   logger.info("cli", `Last Run: ${lastRun.feature}`, {
     runId: lastRun.runId,
     startedAt: lastRun.startedAt,
@@ -86,7 +91,7 @@ export async function displayLastRunMetrics(workdir: string): Promise<void> {
     storiesCompleted: lastRun.storiesCompleted,
     storiesFailed: lastRun.storiesFailed,
     totalCost: lastRun.totalCost,
-    avgCostPerStory: lastRun.totalCost / lastRun.totalStories,
+    avgCostPerStory: reportedLastRun?.avgCostPerStory ?? 0,
   });
 
   // Show top 5 most expensive stories

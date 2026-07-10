@@ -19,7 +19,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { NaxConfig } from "@/config";
-import { _runnerDeps, run, type RunOptions } from "@/execution";
+import { NaxError } from "@/errors";
+import { _runnerDeps, _runnerReentrancyGuard, run, type RunOptions } from "@/execution";
 import { _storyOrchestratorDeps } from "@/execution";
 
 function makeMinimalOptions(overrides: Partial<RunOptions> = {}): RunOptions {
@@ -55,6 +56,9 @@ describe("runner.run() — resume-dep lifecycle (US-004 regression)", () => {
   afterEach(() => {
     _storyOrchestratorDeps.loadCheckpoints = origLoad;
     _runnerDeps.runSetupPhase = origRunSetupPhase;
+    // Safety net: a failing assertion mid-test must not leave the guard
+    // stuck `true` and break every subsequent test's `run()` call.
+    _runnerReentrancyGuard.inFlight = false;
   });
 
   test("setup-phase throw restores _storyOrchestratorDeps.loadCheckpoints (regression: setup-error leak)", async () => {
@@ -123,5 +127,82 @@ describe("runner.run() — resume-dep lifecycle (US-004 regression)", () => {
     const after2 = _storyOrchestratorDeps.loadCheckpoints;
     expect(after2).toBe(before2);
     expect(after2).toBe(before1);
+  });
+});
+
+/**
+ * `run()` reentrancy guard (`_runnerReentrancyGuard`).
+ *
+ * `run()` mutates the module-global `_storyOrchestratorDeps.{loadCheckpoints,
+ * recordGreen}` for its duration and restores the originals on exit. A second
+ * concurrent `run()` call would race on that global — corrupting which
+ * feature's checkpoint gets read/recorded. The guard turns that race into an
+ * immediate, explicit `NaxError` instead of silent cross-feature corruption.
+ */
+describe("runner.run() — reentrancy guard", () => {
+  let origRunSetupPhase: typeof _runnerDeps.runSetupPhase;
+
+  beforeEach(() => {
+    origRunSetupPhase = _runnerDeps.runSetupPhase;
+    _runnerReentrancyGuard.inFlight = false;
+  });
+
+  afterEach(() => {
+    _runnerDeps.runSetupPhase = origRunSetupPhase;
+    _runnerReentrancyGuard.inFlight = false;
+  });
+
+  test("run() rejects with NaxError(RUNNER_REENTRANT_CALL) when another run() is already in flight", async () => {
+    _runnerReentrancyGuard.inFlight = true;
+
+    let caught: unknown;
+    try {
+      await run(makeMinimalOptions());
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(NaxError);
+    const nax = caught as NaxError;
+    expect(nax.code).toBe("RUNNER_REENTRANT_CALL");
+    expect(nax.context?.stage).toBe("execution");
+  });
+
+  test("the guard is false before the first call and stays false after a setup-phase throw", async () => {
+    expect(_runnerReentrancyGuard.inFlight).toBe(false);
+
+    _runnerDeps.runSetupPhase = (async () => {
+      // Assert the guard is held WHILE run() is in flight, proving it is set
+      // before mutating shared state rather than only on the failure path.
+      expect(_runnerReentrancyGuard.inFlight).toBe(true);
+      throw new Error("simulated setup failure");
+    }) as typeof _runnerDeps.runSetupPhase;
+
+    await expect(run(makeMinimalOptions())).rejects.toThrow("simulated setup failure");
+
+    expect(_runnerReentrancyGuard.inFlight).toBe(false);
+  });
+
+  test("the guard is released after a successful run, allowing a subsequent run() to proceed", async () => {
+    _runnerDeps.runSetupPhase = (async () => {
+      throw new Error("first run setup failure");
+    }) as typeof _runnerDeps.runSetupPhase;
+    await expect(run(makeMinimalOptions())).rejects.toThrow("first run setup failure");
+    expect(_runnerReentrancyGuard.inFlight).toBe(false);
+
+    // A second run() call must not be rejected as reentrant — the guard was
+    // correctly released by the first run's finally/catch path.
+    _runnerDeps.runSetupPhase = (async () => {
+      throw new Error("second run setup failure");
+    }) as typeof _runnerDeps.runSetupPhase;
+    let caught: unknown;
+    try {
+      await run(makeMinimalOptions());
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe("second run setup failure");
+    expect(caught).not.toBeInstanceOf(NaxError);
   });
 });
