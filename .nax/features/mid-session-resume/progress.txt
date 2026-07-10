@@ -1,0 +1,4 @@
+[2026-07-10T04:43:47.290Z] US-001 — PASSED — Add Checkpoint Store — Cost: $2.4358
+[2026-07-10T04:51:15.643Z] US-002 — PASSED — Build Pure Resume Planner — Cost: $0.3179
+[2026-07-10T05:41:00.641Z] US-003 — PASSED — Integrate Resume Into Story Orchestrator — Cost: $4.7676
+[2026-07-10T06:13:30.450Z] US-004 — PASSED — Expose Resume Through CLI And Run Defaults — Cost: $4.4024

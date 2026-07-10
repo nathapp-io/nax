@@ -24,10 +24,12 @@ import { countStories, isComplete } from "../prd";
 import type { PRD } from "../prd/types";
 import { gitWithTimeout } from "../utils/git";
 import { NAX_VERSION } from "../version";
+import { applyRecordGreenDeps, applyResumeModeDeps } from "./checkpoint";
 import { stopHeartbeat } from "./crash-recovery";
 import { runCompletionPhase } from "./runner-completion";
 import { runExecutionPhase } from "./runner-execution";
 import { runSetupPhase } from "./runner-setup";
+import { _storyOrchestratorDeps } from "./story-orchestrator";
 
 /**
  * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
@@ -35,6 +37,7 @@ import { runSetupPhase } from "./runner-setup";
  */
 export const _runnerDeps = {
   fireHook,
+  runSetupPhase,
 };
 
 // Re-export for backward compatibility
@@ -75,6 +78,14 @@ export interface RunOptions {
   skipPrecheck?: boolean;
   /** Pre-built AgentStreamEventBus so the TUI can subscribe to live agent events. */
   agentStreamEvents?: import("../runtime").IAgentStreamEventBus;
+  /**
+   * Resume mode for checkpoint seeding. The orchestrator's
+   * `_storyOrchestratorDeps.loadCheckpoints` is overridden based on this:
+   *   - `"auto"` (default): read real checkpoint.jsonl when present.
+   *   - `"fresh"` / `"no-resume"`: always return empty Map (no skip phases).
+   * Driven by `nax run --fresh` / `--no-resume` flags.
+   */
+  resumeMode?: import("./checkpoint").ResumeMode;
 }
 
 /** Run result */
@@ -107,10 +118,25 @@ export async function run(options: RunOptions): Promise<RunResult> {
     headless = false,
     skipPrecheck = false,
     agentStreamEvents,
+    resumeMode = "auto",
   } = options;
+
   const startTime = Date.now();
   const runStartedAt = new Date().toISOString();
   const runId = `run-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+
+  // US-004 — wire the orchestrator's checkpoint deps based on the resume mode.
+  // Auto: read real checkpoint.jsonl when present. Fresh / no-resume: ignore any
+  // prior checkpoint and seed an empty skip plan. `recordGreen` is always wired
+  // to a real CheckpointWriter so green phases are durably recorded regardless
+  // of resume mode — without this, checkpoint.jsonl is never written and resume
+  // has nothing to seed from on the next run. Save the original deps so we can
+  // restore them in the outer finally — even if runSetupPhase throws before we
+  // enter the inner try block below.
+  const origLoadCheckpoints = _storyOrchestratorDeps.loadCheckpoints;
+  const origRecordGreen = _storyOrchestratorDeps.recordGreen;
+  applyResumeModeDeps(featureDir ?? "", resumeMode);
+  applyRecordGreenDeps(featureDir ?? "", runId);
   let iterations = 0;
   let storiesCompleted = 0;
   let totalCost = 0;
@@ -123,29 +149,40 @@ export async function run(options: RunOptions): Promise<RunResult> {
   let prd: PRD | undefined;
 
   // ── Phase 1: Setup ──────────────────────────────────────────────────────────
-  const setupResult = await runSetupPhase({
-    prdPath,
-    workdir,
-    config,
-    hooks,
-    feature,
-    featureDir,
-    dryRun,
-    statusFile,
-    logFilePath,
-    runId,
-    startedAt: runStartedAt,
-    startTime,
-    skipPrecheck,
-    headless,
-    formatterMode,
-    agentStreamEvents,
-    getTotalCost: () => totalCost,
-    getIterations: () => iterations,
-    // @design: BUG-017: Pass getters for run.complete event on SIGTERM
-    getStoriesCompleted: () => storiesCompleted,
-    getTotalStories: () => (prd ? countStories(prd).total : 0),
-  });
+  // Wrapped in try/catch so a setup-time throw still restores the orchestrator
+  // dep we overrode above — without this, a crash before the inner finally
+  // would leave _storyOrchestratorDeps.loadCheckpoints mutated across the
+  // entire process (test harnesses and any subsequent in-process runs).
+  let setupResult: Awaited<ReturnType<typeof _runnerDeps.runSetupPhase>>;
+  try {
+    setupResult = await _runnerDeps.runSetupPhase({
+      prdPath,
+      workdir,
+      config,
+      hooks,
+      feature,
+      featureDir,
+      dryRun,
+      statusFile,
+      logFilePath,
+      runId,
+      startedAt: runStartedAt,
+      startTime,
+      skipPrecheck,
+      headless,
+      formatterMode,
+      agentStreamEvents,
+      getTotalCost: () => totalCost,
+      getIterations: () => iterations,
+      // @design: BUG-017: Pass getters for run.complete event on SIGTERM
+      getStoriesCompleted: () => storiesCompleted,
+      getTotalStories: () => (prd ? countStories(prd).total : 0),
+    });
+  } catch (err) {
+    _storyOrchestratorDeps.loadCheckpoints = origLoadCheckpoints;
+    _storyOrchestratorDeps.recordGreen = origRecordGreen;
+    throw err;
+  }
 
   const {
     statusWriter,
@@ -262,6 +299,13 @@ export async function run(options: RunOptions): Promise<RunResult> {
     const logger = getSafeLogger();
     try {
       logger?.debug("execution", "Runner finally block — starting cleanup");
+      // US-004 — restore the orchestrator's default checkpoint dep stubs so
+      // subsequent in-process runs (or test harnesses) are not contaminated.
+      // The setup-phase error path has its own restore above; this one covers
+      // the success-and-throw-later path through runExecutionPhase /
+      // runCompletionPhase.
+      _storyOrchestratorDeps.loadCheckpoints = origLoadCheckpoints;
+      _storyOrchestratorDeps.recordGreen = origRecordGreen;
       // Stop heartbeat on any exit (US-007)
       stopHeartbeat();
       // Cleanup crash handlers (MEM-1 fix)

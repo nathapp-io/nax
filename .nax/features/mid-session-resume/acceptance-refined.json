@@ -1,0 +1,219 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "1. CheckpointWriter is importable from `src/execution/checkpoint` and is constructable with an injected `_deps` object exposing an `append` function.",
+    "refined": "Import `CheckpointWriter` from `src/execution/checkpoint` succeeds without throwing. Calling `new CheckpointWriter({ append: jest.fn() })` returns an instance with `recordGreen` as an own enumerable property function.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "2. Given a `CheckpointWriter`, when `recordGreen(storyId, phase, treeState)` is called, then it invokes `_deps.append` exactly once with a single newline-terminated line whose parsed JSON has `storyId`, `phase`, `headSha`, `dirtyDigest`, `runId`, and `ts` fields equal to the inputs.",
+    "refined": "With `_deps.append = jest.fn().mockResolvedValue(undefined)` and inputs `storyId='s1'`, `phase='implementer'`, `treeState={headSha:'abc',dirtyDigest:'xyz'}` plus a generated `runId` and `ts`, calling `writer.recordGreen('s1', 'implementer', {headSha:'abc',dirtyDigest:'xyz'})` synchronously invokes `_deps.append` exactly once. The appended string is a single line ending in `\\n`. Parsed JSON (`JSON.parse`) of the line (without trailing newline) has fields: `storyId === 's1'`, `phase === 'implementer'`, `headSha === 'abc'`, `dirtyDigest === 'xyz'`, `runId` is a non-empty string, `ts` is a positive integer.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "3. Given an injected `_deps.append` that resolves asynchronously, when `recordGreen` is awaited, then it does not resolve until that append has completed.",
+    "refined": "With `_deps.append = jest.fn().mockReturnValue(new Promise(r => setTimeout(() => r(undefined), 50)))`, awaiting `writer.recordGreen(...)` blocks until the 50ms timer fires. A second `_deps.append` call made synchronously after the first resolves is still pending when checked at t=25ms.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "4. Given a directory with no `checkpoint.jsonl`, when `loadCheckpoints(featureDir)` runs, then it returns an empty `Map` and does not throw.",
+    "refined": "With `fs.readFileSync` mocked to throw `ENOENT` for the `checkpoint.jsonl` path, `loadCheckpoints('/fake/path')` returns `instanceof Map` that is empty (`map.size === 0`) and does not throw an exception.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "5. Given a `checkpoint.jsonl` whose final line is a truncated JSON fragment, when `loadCheckpoints(featureDir)` runs, then it returns every record from the valid prefix and omits the torn line.",
+    "refined": "File content (with newlines): `{\"storyId\":\"s1\",\"phase\":\"implementer\",\"headSha\":\"a\",\"dirtyDigest\":\"d\",\"runId\":\"r1\",\"ts\":1}\\n{\"storyId\":\"s1\",\"phase\":\"verify\"`. `loadCheckpoints(featureDir)` returns a Map with exactly 1 entry; the entry has `storyId='s1'` and `greenPhases=['implementer']` (phase='verify' is omitted as it is an incomplete JSON line).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "6. Given records from two different `runId` values, when `loadCheckpoints(featureDir)` runs, then it returns only the records whose `runId` equals the newest `runId` present in the file.",
+    "refined": "File content: `{\"storyId\":\"s1\",\"phase\":\"implementer\",\"headSha\":\"a\",\"dirtyDigest\":\"d\",\"runId\":\"r1\",\"ts\":1}\\n{\"storyId\":\"s1\",\"phase\":\"verify\",\"headSha\":\"a\",\"dirtyDigest\":\"d\",\"runId\":\"r2\",\"ts\":2}`. `loadCheckpoints(featureDir)` returns a Map with exactly 1 entry for storyId='s1' whose `greenPhases` is `['verify']` (runId='r2' is newer than runId='r1').",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "7. Given valid records for multiple stories, when `loadCheckpoints(featureDir)` runs, then it groups them by `storyId` and returns a `StoryCheckpoint` per story whose `greenPhases` lists that story's recorded phases in canonical order.",
+    "refined": "File content (in order): `{\"storyId\":\"s1\",\"phase\":\"test-writer\",\"headSha\":\"a\",\"dirtyDigest\":\"d\",\"runId\":\"r1\",\"ts\":1}\\n{\"storyId\":\"s2\",\"phase\":\"implementer\",\"headSha\":\"b\",\"dirtyDigest\":\"e\",\"runId\":\"r1\",\"ts\":2}\\n{\"storyId\":\"s1\",\"phase\":\"implementer\",\"headSha\":\"a\",\"dirtyDigest\":\"d\",\"runId\":\"r1\",\"ts\":3}`. Result Map has size 2. Story 's1': `greenPhases` is `['test-writer','implementer']`, `tree.headSha === 'a'`, `tree.dirtyDigest === 'd'`. Story 's2': `greenPhases` is `['implementer']`, `tree.headSha === 'b'`, `tree.dirtyDigest === 'e'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "8. Given a well-formed JSON line missing a required field such as `phase`, when `loadCheckpoints(featureDir)` runs, then it skips that line without aborting the parse of other lines.",
+    "refined": "File content: `{\"storyId\":\"s1\",\"phase\":\"implementer\",\"headSha\":\"a\",\"dirtyDigest\":\"d\",\"runId\":\"r1\",\"ts\":1}\\n{\"storyId\":\"s1\",\"headSha\":\"a\",\"dirtyDigest\":\"d\",\"runId\":\"r1\",\"ts\":2}\\n{\"storyId\":\"s1\",\"phase\":\"verify\",\"headSha\":\"a\",\"dirtyDigest\":\"d\",\"runId\":\"r1\",\"ts\":3}`. Result Map has size 1; story 's1' has `greenPhases` equal to `['implementer','verify']`; the line missing `phase` is silently skipped.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "9. Given a checkpoint-store operation that raises a checkpoint-specific error, when that error is surfaced to callers, then it is a `NaxError` whose `stage` is `checkpoint`.",
+    "refined": "When `_deps.append` rejects with an `Error`, calling `writer.recordGreen(...)` and awaiting it throws an error that is `instanceof NaxError` (imported from `../../error`) with `error.stage === 'checkpoint'`. The error `cause` is the original append error.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "buildResumePlan is importable from src/execution/checkpoint and callable with a StoryCheckpoint and a TreeState.",
+    "refined": "Import `buildResumePlan` from `src/execution/checkpoint`. Verify it is a function of arity 2. Call it with `(checkpoint: StoryCheckpoint | null, tree: TreeState)` and confirm it returns a value matching the `ResumePlan` interface shape (object with `skipPhases: PhaseKind[]`, `revalidateGates: PhaseKind[]`, `reason: 'resume' | 'tree-moved' | 'no-checkpoint'`).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given a StoryCheckpoint whose greenPhases include implementer and verify-scoped and a matching TreeState, when buildResumePlan runs, then skipPhases contains implementer and does not contain verify-scoped.",
+    "refined": "Call `buildResumePlan({ storyId, greenPhases: ['implementer', 'verify-scoped'], tree: matchingTreeState }, matchingTreeState)`. Assert `skipPhases` is an array that includes `'implementer'` and does NOT include `'verify-scoped'`. In practice, with greenPhases=['implementer','verify-scoped'], skipPhases should be ['implementer'] since verify-scoped is a cheap gate excluded from skipPhases.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given the same matching checkpoint and tree, when buildResumePlan runs, then revalidateGates equals [\"verify-scoped\", \"lint-check\", \"typecheck-check\"] and reason equals \"resume\".",
+    "refined": "Call `buildResumePlan({ storyId, greenPhases: ['implementer', 'verify-scoped'], tree: matchingTreeState }, matchingTreeState)`. Assert `result.revalidateGates` is exactly `['verify-scoped', 'lint-check', 'typecheck-check']` (array order-insensitive but length 3, all three present). Assert `result.reason` equals `'resume'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Given a checkpoint whose tree.headSha differs from the current TreeState.headSha, when buildResumePlan runs, then it returns an empty skipPhases array and reason equals \"tree-moved\".",
+    "refined": "Call `buildResumePlan({ storyId, greenPhases: ['implementer'], tree: { headSha: 'abc', dirtyDigest: 'same' } }, { headSha: 'different', dirtyDigest: 'same' })`. Assert `result.skipPhases` is an empty array `[]`. Assert `result.reason` equals `'tree-moved'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given a checkpoint whose tree.dirtyDigest differs from the current TreeState.dirtyDigest, when buildResumePlan runs, then it returns an empty skipPhases array and reason equals \"tree-moved\".",
+    "refined": "Call `buildResumePlan({ storyId, greenPhases: ['implementer'], tree: { headSha: 'same', dirtyDigest: 'abc' } }, { headSha: 'same', dirtyDigest: 'different' })`. Assert `result.skipPhases` is an empty array `[]`. Assert `result.reason` equals `'tree-moved'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given null checkpoint input, when buildResumePlan(null, tree) runs, then it returns an empty skipPhases array and reason equals \"no-checkpoint\".",
+    "refined": "Call `buildResumePlan(null, { headSha: 'any', dirtyDigest: 'any' })`. Assert `result.skipPhases` is an empty array `[]`. Assert `result.reason` equals `'no-checkpoint'`. Assert `result.revalidateGates` contains all cheap gates (['verify-scoped', 'lint-check', 'typecheck-check']).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given a matching tree and greenPhases containing verify-scoped, lint-check, and typecheck-check, when buildResumePlan runs, then none of those three cheap gates appears in skipPhases.",
+    "refined": "Call `buildResumePlan({ storyId, greenPhases: ['verify-scoped', 'lint-check', 'typecheck-check', 'implementer'], tree: matchingTreeState }, matchingTreeState)`. Assert `result.skipPhases` is an array of length 1 containing only `'implementer'`. Assert `'verify-scoped'`, `'lint-check'`, and `'typecheck-check'` are NOT present in `result.skipPhases`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given a story run with no prior checkpoint, when a canonical phase passes, then that phase is still dispatched through `runPhase` and triggers exactly one `recordGreen` call whose `phase` argument equals that phase's op name.",
+    "refined": "Assert that for each canonical phase that passes: (1) `runPhase` was called with that phase's op name in its slot, and (2) `recordGreen` was called exactly once with `phase` argument equal to that phase's op name. Verify via call-count and argumentMatchers on mocked `recordGreen`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given a phase whose output makes `phasePassed` return false, when the orchestrator handles that phase, then it does not call `recordGreen` for that phase.",
+    "refined": "Assert that `recordGreen` is never called for a phase when `phasePassed(phase, output, storyId)` returns false. Verify via `expect(recordGreen).not.toHaveBeenCalled()` after setting phase output to a failing state.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given a resume where `buildResumePlan` yields `skipPhases: [\"test-writer\", \"implementer\"]`, when the orchestrator runs, then `test-writer` and `implementer` are not dispatched through `runPhase` while a non-skipped agent phase still is.",
+    "refined": "Assert: (1) `runPhase` is NOT called with phase name 'test-writer', (2) `runPhase` is NOT called with phase name 'implementer', (3) `runPhase` IS called with at least one non-skipped agent phase (e.g., 'implementer' is skipped but 'verifier' is not). Verify call arguments via `expect(runPhase).toHaveBeenCalledWith(expect.not.objectContaining({ name: 'test-writer' }))`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given a phase seeded from a resume plan, when `phasePassed(phase, phaseOutputs[phase], storyId)` and `extractPhaseFindings(phaseOutputs[phase])` are evaluated, then `phasePassed` returns true and `extractPhaseFindings` returns an empty array.",
+    "refined": "Assert: (1) `phasePassed(phase, { success: true }, storyId)` returns `true`, (2) `extractPhaseFindings({ success: true })` returns an array with length 0. Verify both return values directly against the function outputs.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Given a resume plan, when the orchestrator resumes, then each cheap gate in `revalidateGates` (`verify-scoped`, `lint-check`, `typecheck-check`) is dispatched through `runPhase` even though the story is resuming.",
+    "refined": "Assert that `runPhase` is called exactly once each for phases 'verify-scoped', 'lint-check', and 'typecheck-check' during a resumed story run. Verify via `expect(runPhase).toHaveBeenCalledWith(expect.objectContaining({ name: 'verify-scoped' }))` and similarly for 'lint-check' and 'typecheck-check'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Given a resume where a re-run cheap gate returns a failing output, when the orchestrator processes that gate, then it short-circuits the canonical loop at that gate and does not dispatch any later phase.",
+    "refined": "Assert that after a cheap gate phase (verify-scoped, lint-check, or typecheck-check) returns failing output, no subsequent phase names are passed to `runPhase`. Verify by checking that the last `runPhase` call before loop exit was the failing gate, and subsequent calls (if any) do not contain later canonical phases.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Given the resume path for a story, when the orchestrator starts that story, then it calls `buildResumePlan` once and seeds `phaseOutputs` from the returned `skipPhases`.",
+    "refined": "Assert: (1) `buildResumePlan` is called exactly once with the story's storyId, (2) after the call, `phaseOutputs` contains keys matching the returned `skipPhases` array, each mapped to `{ success: true }`. Verify via `expect(buildResumePlan).toHaveBeenCalledTimes(1)` and `expect(phaseOutputs).toEqual(expect.objectContaining({ 'test-writer': { success: true }, 'implementer': { success: true } }))`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Given stubbed git helpers, when the tree-state capture helper runs, then it returns a `TreeState` whose `headSha` equals the value from `captureGitRef` and whose `dirtyDigest` is derived from the `git status --porcelain` output without using real git.",
+    "refined": "Assert that `captureTreeState(stubbedGitDeps)` returns an object where `headSha` matches the stubbed `captureGitRef` return value and `dirtyDigest` equals the SHA256 hash (or equivalent deterministic digest) of the stubbed `git status --porcelain` output string. Verify both fields match expected stub values.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "Given a checkpoint log emitted during orchestrator resume handling, when the log entry includes story metadata, then the data object lists `storyId` before any other checkpoint-specific fields.",
+    "refined": "Assert that the first key in the checkpoint log entry's `data` object (when parsed as JSON) is the string 'storyId', and all other checkpoint-specific keys ('phaseName', 'treeState', 'timestamp') appear after it in the object's key order. Verify via `Object.keys(parsedEntry.data)[0] === 'storyId'`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Given a fresh commander program, when `registerResumeCommand(program)` is called, then `program.commands` includes a command named `resume`.",
+    "refined": "After calling `registerResumeCommand(program)`, assert `program.commands.some(cmd => cmd.name() === 'resume')` returns true.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-27",
+    "original": "Given a feature whose `checkpoint.jsonl` is absent, when `resume` runs for that feature, then it prints `No checkpoint found — running from scratch` to stdout and exits with code `0`.",
+    "refined": "Execute `nax resume <featureName>` where `<featureName>` has no `checkpoint.jsonl`. Assert stdout includes the string `No checkpoint found — running from scratch` and process.exitCode equals 0.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-28",
+    "original": "Given a feature with a checkpoint, when `resume` runs, then it prints a resume summary line naming the feature and the count of stories with a checkpoint before the run output.",
+    "refined": "Execute `nax resume <featureName>` where `<featureName>` has a `checkpoint.jsonl` with N stories. Assert stdout contains a line matching the regex `<featureName>.*\\d+.*stories?.*checkpoint` that appears before any run-phase output lines (e.g., before `[run]` or story execution lines).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-29",
+    "original": "Given `nax run` for a feature with an existing `checkpoint.jsonl`, when the run starts, then it calls `loadCheckpoints` with that feature's `featureDir`.",
+    "refined": "Execute `nax run <featureName>` where `<featureName>` has a `checkpoint.jsonl`. Assert that for every story in `CANONICAL_ORDER` that has a checkpoint entry, the run output shows that phase is skipped (e.g., output contains `[skip]` or `Skipping phase` for that story's checkpoint phases).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "Given `nax run` invoked with `--fresh` and an existing `checkpoint.jsonl`, when the run starts, then the checkpoint is truncated or ignored so `loadCheckpoints` or the seeding path yields no skip phases for any story.",
+    "refined": "Execute `nax run <featureName> --fresh` where `<featureName>` has a `checkpoint.jsonl`. Assert stdout contains no lines matching `/skip|skipped|\\[skip\\]/i` for any story phase, and all stories in `CANONICAL_ORDER` execute from their first phase.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "Given `nax run` invoked with `--no-resume`, when the run starts, then it behaves identically to `--fresh` for producing an empty resume plan with no phases skipped.",
+    "refined": "Execute `nax run <featureName> --no-resume` where `<featureName>` has a `checkpoint.jsonl`. Assert behavior matches `--fresh`: stdout contains no skip indicators and all stories execute from their first phase. Additionally assert `nax run <featureName> --fresh` and `nax run <featureName> --no-resume` produce equivalent skip-phase output.",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]

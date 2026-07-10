@@ -37,7 +37,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import chalk from "chalk";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 
 import {
   acceptCommand,
@@ -76,6 +76,7 @@ import { detectCommand } from "../src/commands/detect";
 import { logsCommand } from "../src/commands/logs";
 import { precheckCommand } from "../src/commands/precheck";
 import { registerReplayCommand } from "../src/commands/replay";
+import { registerResumeCommand } from "../src/commands/resume";
 import { runsCommand } from "../src/commands/runs";
 import { unlockCommand } from "../src/commands/unlock";
 import { DEFAULT_CONFIG, findProjectDir, loadConfig, validateDirectory } from "../src/config";
@@ -394,6 +395,16 @@ program
   )
   .option("--schedule <when>", "Defer run start until <when> (e.g. 30m, 1h30m, 17:00, 2026-07-02T02:00)")
   .option("--compare <agents>", "Bake-off mode: comma-separated list of contestant agents (e.g. claude,codex)")
+  .option("--fresh", "Ignore any existing checkpoint.jsonl and re-run every incomplete story from scratch", false)
+  // Sentinel default — when the user does NOT pass `--no-resume`, commander
+  // leaves `options.resume` as the string `"__UNSET__"`. When the user DOES
+  // pass `--no-resume`, commander sets `options.resume = false`. This lets
+  // the action handler below distinguish "user opted out" from "user passed
+  // nothing" — without it, the default `false` would force fresh mode for
+  // every normal `nax run` invocation (regression: see #US-004 adversarial).
+  .addOption(
+    new Option("--no-resume", "Alias for --fresh: never auto-resume from a prior checkpoint").default("__UNSET__"),
+  )
   .action(async (options) => {
     // Validate directory path
     let workdir: string;
@@ -775,6 +786,7 @@ program
       headless: useHeadless,
       skipPrecheck: options.skipPrecheck ?? false,
       agentStreamEvents,
+      resumeMode: options.fresh === true || options.resume === false ? "fresh" : "auto",
     });
 
     // Create/update latest.jsonl symlink
@@ -1484,6 +1496,9 @@ runs
 
 // ── replay ───────────────────────────────────────────
 registerReplayCommand(program);
+
+// ── resume ───────────────────────────────────────────
+registerResumeCommand(program);
 
 // ── curator ──────────────────────────────────────────
 const curator = program.command("curator").description("Inspect and manage curator proposals");

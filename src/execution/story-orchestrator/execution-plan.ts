@@ -2,6 +2,9 @@ import type { Finding } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
 import { errorMessage } from "@/utils/errors";
+import { hydrateFromResumePlan } from "../checkpoint/resume-hydrate";
+import type { ResumePlan } from "../checkpoint/resume-plan";
+import type { StoryCheckpoint } from "../checkpoint/types";
 import {
   createMeasureSourceDiff,
   nonBlockingExcludePhases,
@@ -46,6 +49,39 @@ export class ExecutionPlan {
     const startedAt = Date.now();
     const logger = getSafeLogger();
 
+    // Capture tree state and build resume plan — seed phaseOutputs from prior
+    // green phases so the main loop skips them. Cheap gates are never seeded:
+    // they always re-execute to confirm the working tree is still green.
+    const tree = (await _storyOrchestratorDeps.captureTreeState(this.ctx.packageDir)) as {
+      headSha: string;
+      dirtyDigest: string;
+    };
+    const checkpoints = (await _storyOrchestratorDeps.loadCheckpoints(
+      (this.ctx as { featureDir?: string }).featureDir ?? "",
+    )) as Map<string, unknown>;
+    const storyCp = this.ctx.storyId
+      ? ((checkpoints.get(this.ctx.storyId) as StoryCheckpoint | undefined) ?? null)
+      : null;
+    const plan = (await _storyOrchestratorDeps.buildResumePlan(storyCp, tree)) as ResumePlan;
+    hydrateFromResumePlan(plan, phaseOutputs);
+
+    // Carry forward seeded phases under the current run's `runId`. A phase
+    // skipped in the main loop below never reaches the `recordGreen` call at
+    // its old position (the skip guard's `continue` bypasses it), so it would
+    // keep only the checkpoint record from the run that originally recorded
+    // it. `loadCheckpoints` retains records from only the single newest
+    // `runId` present in the file — so a second consecutive resume (which
+    // mints its own new `runId`) would see that older record filtered out
+    // and re-run work that was already green two runs ago. Re-recording each
+    // seeded phase here, under the tree already confirmed to match by
+    // `buildResumePlan`, keeps every still-green phase alive across repeated
+    // resumes.
+    if (this.ctx.storyId) {
+      for (const skippedPhase of plan.skipPhases) {
+        await _storyOrchestratorDeps.recordGreen(this.ctx.storyId, skippedPhase, tree);
+      }
+    }
+
     // TDD RED → GREEN → handover contract: a gate failure halts the canonical
     // sequence unconditionally. Verifier and downstream review phases run only on
     // green (passing-gate) code — they must never judge a broken state.
@@ -62,6 +98,15 @@ export class ExecutionPlan {
     // deriveTddFailureCategory now handles that case instead.
     const orderedPhases = collectOrderedPhases(this.state);
     for (const [phaseIndex, phase] of orderedPhases.entries()) {
+      const name = phase.slot.op.name;
+
+      // Resume skip guard: phases seeded from a prior checkpoint (via
+      // hydrateFromResumePlan) are already green — skip them. Cheap gates are
+      // never seeded, so they always re-execute even on resume.
+      if (name in phaseOutputs && phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
+        continue;
+      }
+
       try {
         await runPhase(this.ctx, phase.slot, phaseCosts, phaseOutputs, this.isThreeSession, {
           index: phaseIndex + 1,
@@ -70,7 +115,7 @@ export class ExecutionPlan {
       } catch (error) {
         logger?.error("story-orchestrator", "Phase threw unexpected error", {
           storyId: this.ctx.storyId,
-          phase: phase.slot.op.name,
+          phase: name,
           error: errorMessage(error),
         });
         throw error;
@@ -79,12 +124,27 @@ export class ExecutionPlan {
       // Short-circuit on any phase failure (spec §2C: any phase returning success=false halts execution).
       // No exemptions — verifier and reviews must never judge broken-gate code. Gate findings are
       // captured in phaseOutputs before this check, so runRectification() still consumes them.
-      if (!phasePassed(phase.slot.op.name, phaseOutputs[phase.slot.op.name], this.ctx.storyId)) {
+      if (!phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
         logger?.warn("story-orchestrator", "Short-circuiting on phase failure", {
           storyId: this.ctx.storyId,
-          phase: phase.slot.op.name,
+          phase: name,
         });
         break;
+      }
+
+      // Record green checkpoint: only after a phase has passed and produced output.
+      // Tree state is captured fresh here (not the pre-loop `tree` used for the
+      // resume-plan comparison above) because the phase that just passed may have
+      // mutated the working tree — a stale, pre-loop digest would make every
+      // record after the first phase disagree with the tree the reader compares
+      // against on resume, forcing a spurious "tree-moved" full rerun.
+      if (!this.ctx.storyId) {
+        logger?.warn("story-orchestrator", "Skipping recordGreen — no storyId on CallContext", {
+          phase: name,
+        });
+      } else {
+        const currentTree = await _storyOrchestratorDeps.captureTreeState(this.ctx.packageDir);
+        await _storyOrchestratorDeps.recordGreen(this.ctx.storyId, name, currentTree);
       }
     }
 

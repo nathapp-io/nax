@@ -23,6 +23,15 @@ export {
   type ReplayCommandOptions,
   type ReplayCommandDeps,
 } from "./replay";
+export {
+  registerResumeCommand,
+  runResume,
+  renderResumeSummary,
+  _resumeCmdDeps,
+  type ResumeCommandOptions,
+  type ResumeCommandDeps,
+  type ResumeRunInvocation,
+} from "./resume";
 export { runsCommand, type RunsOptions } from "./runs";
 export { unlockCommand, type UnlockOptions } from "./unlock";
 export { migrateCommand, detectGeneratedContent } from "./migrate";

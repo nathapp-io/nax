@@ -1,0 +1,226 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "mid-session-resume",
+  "branchName": "feat/mid-session-resume",
+  "createdAt": "2026-07-10T04:09:01Z",
+  "updatedAt": "2026-07-10T06:13:30.450Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add Checkpoint Store",
+      "description": "**Goal** — Add a durable feature-level checkpoint store that records every green phase and can be reloaded safely after crashes or aborts.\n\n**Motivation** — a story that crashed at step 11 (`adversarial-review`) re-runs `test-writer` + `implementer` + `verifier` + all reviews from scratch, discarding hours of green agent work.\n\n**Approach** — New module `src/execution/checkpoint/`: `types.ts` (`CheckpointRecord`, `StoryCheckpoint`, `TreeState`), `writer.ts` (`CheckpointWriter.recordGreen` durable append via injected `_deps.append`), `reader.ts` (`loadCheckpoints(featureDir)` — longest-valid-prefix parse + latest-`runId` filter → `Map<storyId, StoryCheckpoint>`), barrel `index.ts`.\n\nReader contract: parse line-by-line, keep the **longest valid prefix** (a torn final line from a crash mid-append is dropped, not fatal); keep only records whose `runId` equals the newest `runId` present; group by `storyId` into `StoryCheckpoint`. A missing or fully-unparseable file yields an empty map — never throws.\n\n`checkpoint.jsonl` — append-only, one JSON object per line, at `~/.nax/<projectKey>/features/<feature>/checkpoint.jsonl`.\n\n**Scope** — In: durable per-green-phase checkpoint at the feature level; durable append writer; longest-valid-prefix + latest-`runId` reader. Out: mid-*phase* resume within a single phase; deriving checkpoints from the events JSONL; a persisted `execution.resume` config field; parallel-mode cross-story coupling.\n\n**Interface**\n```typescript\nexport interface TreeState { headSha: string; dirtyDigest: string; }\nexport interface StoryCheckpoint {\n  storyId: string;\n  greenPhases: PhaseKind[];      // phases recorded green, in canonical order\n  tree: TreeState;               // tree state captured at last green record\n}\n```\n\nwriter.ts (`CheckpointWriter.recordGreen` durable append via injected `_deps.append`), `reader.ts` (`loadCheckpoints(featureDir)` — longest-valid-prefix parse + latest-`runId` filter → `Map<storyId, StoryCheckpoint>`).",
+      "acceptanceCriteria": [
+        "CheckpointWriter is importable from `src/execution/checkpoint` and is constructable with an injected `_deps` object exposing an `append` function.",
+        "Given a `CheckpointWriter`, when `recordGreen(storyId, phase, treeState)` is called, then it invokes `_deps.append` exactly once with a single newline-terminated line whose parsed JSON has `storyId`, `phase`, `headSha`, `dirtyDigest`, `runId`, and `ts` fields equal to the inputs.",
+        "Given an injected `_deps.append` that resolves asynchronously, when `recordGreen` is awaited, then it does not resolve until that append has completed.",
+        "Given a directory with no `checkpoint.jsonl`, when `loadCheckpoints(featureDir)` runs, then it returns an empty `Map` and does not throw.",
+        "Given a `checkpoint.jsonl` whose final line is a truncated JSON fragment, when `loadCheckpoints(featureDir)` runs, then it returns every record from the valid prefix and omits the torn line.",
+        "Given records from two different `runId` values, when `loadCheckpoints(featureDir)` runs, then it returns only the records whose `runId` equals the newest `runId` present in the file.",
+        "Given valid records for multiple stories, when `loadCheckpoints(featureDir)` runs, then it groups them by `storyId` and returns a `StoryCheckpoint` per story whose `greenPhases` lists that story's recorded phases in canonical order.",
+        "Given a well-formed JSON line missing a required field such as `phase`, when `loadCheckpoints(featureDir)` runs, then it skips that line without aborting the parse of other lines.",
+        "Given a checkpoint-store operation that raises a checkpoint-specific error, when that error is surfaced to callers, then it is a `NaxError` whose `stage` is `checkpoint`."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "checkpoint",
+        "io"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This story adds a new checkpoint module with append and parse behavior, but it stays mostly isolated to a few additive files and standard dependency-injection seams.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/execution/crash-writer.ts",
+        "src/execution/story-orchestrator/types.ts",
+        "src/execution/status-writer.ts",
+        ".claude/rules/error-handling.md",
+        ".claude/rules/forbidden-patterns.md"
+      ],
+      "expectedFiles": [
+        "src/execution/checkpoint/types.ts",
+        "src/execution/checkpoint/writer.ts",
+        "src/execution/checkpoint/reader.ts",
+        "src/execution/checkpoint/index.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "439e86dae391182a71ed2636cffd0cd66d29d46b"
+    },
+    {
+      "id": "US-002",
+      "title": "Build Pure Resume Planner",
+      "description": "**Goal** — Add a pure resume planner that decides which phases can be skipped and which cheap gates must always re-run.\n\n**Motivation** — story-level resume already works implicitly (passed stories are skipped), but a story that crashed at step 11 (`adversarial-review`) re-runs `test-writer` + `implementer` + `verifier` + all reviews from scratch, discarding hours of green agent work.\n\n**Approach** — A pure planner with no existing precedent (the codebase's resume logic is inline in `execution-plan.ts`, not a standalone function). Worked skeleton:\n\n```typescript\n// src/execution/checkpoint/resume-plan.ts\nimport type { PhaseKind } from \"../story-orchestrator/types\";\n\nexport interface TreeState { headSha: string; dirtyDigest: string; }\nexport interface StoryCheckpoint {\n  storyId: string;\n  greenPhases: PhaseKind[];      // phases recorded green, in canonical order\n  tree: TreeState;               // tree state captured at last green record\n}\nexport interface ResumePlan {\n  skipPhases: PhaseKind[];       // green AGENT phases to elide (never cheap gates)\n  revalidateGates: PhaseKind[];  // cheap gates that must re-run\n  reason: \"resume\" | \"tree-moved\" | \"no-checkpoint\";\n}\n\nconst CHEAP_GATES: readonly PhaseKind[] = [\"verify-scoped\", \"lint-check\", \"typecheck-check\"];\n\nexport function buildResumePlan(cp: StoryCheckpoint | null, current: TreeState): ResumePlan {\n  if (!cp) return { skipPhases: [], revalidateGates: [...CHEAP_GATES], reason: \"no-checkpoint\" };\n  if (cp.tree.headSha !== current.headSha || cp.tree.dirtyDigest !== current.dirtyDigest) {\n    return { skipPhases: [], revalidateGates: [...CHEAP_GATES], reason: \"tree-moved\" };\n  }\n  return {\n    skipPhases: cp.greenPhases.filter((p) => !CHEAP_GATES.includes(p)),\n    revalidateGates: [...CHEAP_GATES],\n    reason: \"resume\",\n  };\n}\n```\n\n**Scope** — In: `buildResumePlan(checkpoint, currentTree) → ResumePlan`, the cheap-gate exclusion, and the git-tree guard. Out: any I/O, checkpoint persistence, or orchestrator dispatch.\n\n**Interface**\n```typescript\nexport interface ResumePlan {\n  skipPhases: PhaseKind[];       // green AGENT phases to elide (never cheap gates)\n  revalidateGates: PhaseKind[];  // cheap gates that must re-run\n  reason: \"resume\" | \"tree-moved\" | \"no-checkpoint\";\n}\n\nexport function buildResumePlan(cp: StoryCheckpoint | null, current: TreeState): ResumePlan\n```",
+      "acceptanceCriteria": [
+        "`buildResumePlan` is importable from `src/execution/checkpoint` and callable with a `StoryCheckpoint` and a `TreeState`.",
+        "Given a `StoryCheckpoint` whose `greenPhases` include `implementer` and `verify-scoped` and a matching `TreeState`, when `buildResumePlan` runs, then `skipPhases` contains `implementer` and does not contain `verify-scoped`.",
+        "Given the same matching checkpoint and tree, when `buildResumePlan` runs, then `revalidateGates` equals `[\"verify-scoped\", \"lint-check\", \"typecheck-check\"]` and `reason` equals `\"resume\"`.",
+        "Given a checkpoint whose `tree.headSha` differs from the current `TreeState.headSha`, when `buildResumePlan` runs, then it returns an empty `skipPhases` array and `reason` equals `\"tree-moved\"`.",
+        "Given a checkpoint whose `tree.dirtyDigest` differs from the current `TreeState.dirtyDigest`, when `buildResumePlan` runs, then it returns an empty `skipPhases` array and `reason` equals `\"tree-moved\"`.",
+        "Given `null` checkpoint input, when `buildResumePlan(null, tree)` runs, then it returns an empty `skipPhases` array and `reason` equals `\"no-checkpoint\"`.",
+        "Given a matching tree and `greenPhases` containing `verify-scoped`, `lint-check`, and `typecheck-check`, when `buildResumePlan` runs, then none of those three cheap gates appears in `skipPhases`."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "planner",
+        "pure"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a single pure planner file with explicit inputs and outputs, so the lightest route is enough and standard single-session TDD is realistic.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "simple",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/execution/checkpoint/types.ts",
+        "src/execution/story-orchestrator/types.ts"
+      ],
+      "expectedFiles": [
+        "src/execution/checkpoint/resume-plan.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ec4fa4219d25b78c38f528271f6712b98c4e0bc7"
+    },
+    {
+      "id": "US-003",
+      "title": "Integrate Resume Into Story Orchestrator",
+      "description": "**Goal** — Extend the story orchestrator so green phases are checkpointed, resume plans seed `phaseOutputs`, and canonical-loop dispatch skips only the phases that are safe to elide.\n\n**Motivation** — rerunning `nax run` re-scans `prd.json` and restarts every non-`passed` story from the first canonical-order phase (`test-writer` → `implementer` → … → `adversarial-review`).\n\n**Approach** — **Record on pass.** After `runPhase` populates `phaseOutputs[name]` and the phase passes (`phasePassed(...) === true`), the orchestrator calls `CheckpointWriter.recordGreen(storyId, phaseName, treeState)` — one durably-appended JSONL line, flushed to disk before `recordGreen` resolves (and therefore before the next phase begins). Records are written **only after a phase passes**; a mid-phase crash leaves no record for that phase, so it re-runs. This is the correctness invariant. (A SIGKILL mid-append tears only the final line, which the reader's longest-valid-prefix parse drops — so the interrupted phase simply re-runs.)\n\n- **Rehydrate on resume.** `buildResumePlan` returns the set of green **agent** phases to skip. Before the main loop, the orchestrator seeds `phaseOutputs[phase] = { success: true }` for each skip. `phasePassed` treats `{ success: true }` as passed (`phase-eval.ts:43`), and `extractPhaseFindings` returns `[]` for a `success: true` output (`phase-eval.ts:94-96`) — so a seeded phase carries no phantom findings and no phantom gate-failure keys.\n- **Skip guard on the main loop.** The main loop (`execution-plan.ts:64-89`) currently runs every phase unconditionally; the integration adds the same `if (name in phaseOutputs && phasePassed(...)) continue` guard the resume loops already use, so seeded phases are elided.\n- **Cheap gates always re-run.** `buildResumePlan` never lists `verify-scoped`, `lint-check`, or `typecheck-check` in its skip set — these re-execute on resume to re-confirm the working tree is still green. If a re-run gate fails, the seeded green agent work is stale; the plan is discarded and the story runs from its first non-green phase (existing short-circuit behavior).\n- **Git-tree guard.** Each record carries the HEAD sha (`captureGitRef(workdir)`, `src/utils/git.ts:90`) and a working-tree digest (from `git status --porcelain`). `buildResumePlan` returns an empty skip set (full rerun for that story) when the current tree state does not match the checkpoint's — so resume never skips over a tree that moved between attempts.\n\n**Scope** — In: `recordGreen` hook after each passing phase; seeding `phaseOutputs` from `buildResumePlan`; a canonical-loop skip guard; cheap gates always re-run; tree-state capture via `captureGitRef` + `git status --porcelain`; `resume-hydrate.ts` helper. Out: CLI command registration, replay-derived checkpointing, and mid-phase resume.\n\n**Interface**\n```typescript\nrunPhase(ctx, slot, phaseCosts, phaseOutputs, isThreeSession, opts?)\nphasePassed(opName, output, storyId?): boolean\n```\n\nBefore the main loop, seed `phaseOutputs[phase] = { success: true }` for each skip.",
+      "acceptanceCriteria": [
+        "Given a story run with no prior checkpoint, when a canonical phase passes, then that phase is still dispatched through `runPhase` and triggers exactly one `recordGreen` call whose `phase` argument equals that phase's op name.",
+        "Given a phase whose output makes `phasePassed` return false, when the orchestrator handles that phase, then it does not call `recordGreen` for that phase.",
+        "Given a resume where `buildResumePlan` yields `skipPhases: [\"test-writer\", \"implementer\"]`, when the orchestrator runs, then `test-writer` and `implementer` are not dispatched through `runPhase` while a non-skipped agent phase still is.",
+        "Given a phase seeded from a resume plan, when `phasePassed(phase, phaseOutputs[phase], storyId)` and `extractPhaseFindings(phaseOutputs[phase])` are evaluated, then `phasePassed` returns true and `extractPhaseFindings` returns an empty array.",
+        "Given a resume plan, when the orchestrator resumes, then each cheap gate in `revalidateGates` (`verify-scoped`, `lint-check`, `typecheck-check`) is dispatched through `runPhase` even though the story is resuming.",
+        "Given a resume where a re-run cheap gate returns a failing output, when the orchestrator processes that gate, then it short-circuits the canonical loop at that gate and does not dispatch any later phase.",
+        "Given the resume path for a story, when the orchestrator starts that story, then it calls `buildResumePlan` once and seeds `phaseOutputs` from the returned `skipPhases`.",
+        "Given stubbed git helpers, when the tree-state capture helper runs, then it returns a `TreeState` whose `headSha` equals the value from `captureGitRef` and whose `dirtyDigest` is derived from the `git status --porcelain` output without using real git.",
+        "Given a checkpoint log emitted during orchestrator resume handling, when the log entry includes story metadata, then the data object lists `storyId` before any other checkpoint-specific fields."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "orchestrator",
+        "git"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "This story changes a central orchestrator loop plus git-state capture and resume hydration, so it needs stronger isolation than simple TDD but does not rise to a repo-wide architectural rewrite.",
+        "agentProfileId": "opencode-balanced",
+        "agent": "opencode",
+        "profileModelTier": "powerful",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-balanced",
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/execution/story-orchestrator/execution-plan.ts",
+        "src/execution/story-orchestrator/run-phase.ts",
+        "src/execution/story-orchestrator/phase-eval.ts",
+        "src/utils/git.ts",
+        "src/execution/checkpoint/resume-plan.ts"
+      ],
+      "expectedFiles": [
+        "src/execution/checkpoint/resume-hydrate.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "99fbdf7dde6db49cd9c9d210241181005f818d01"
+    },
+    {
+      "id": "US-004",
+      "title": "Expose Resume Through CLI And Run Defaults",
+      "description": "**Goal** — Add the explicit `nax resume` command and wire auto-resume plus opt-out flags into `nax run`.\n\n**Motivation** — crash recovery in nax is implicit, but nothing sub-story is persisted, so rerunning `nax run` restarts every incomplete story from the top of the 12-phase `CANONICAL_ORDER`.\n\n**Approach** — `nax resume [-f <feature>]`:\n\n- **stdout:** a one-line resume summary — the feature, the number of stories with a checkpoint, and the phases being skipped — then the normal run output.\n- **stderr:** warnings and errors only (mirrors existing commands).\n- **Exit codes:** `0` on a run that completes green; non-zero on run failure — the same code the underlying `nax run` returns. `nax resume` for a feature with **no** `checkpoint.jsonl` is not an error: it prints \"No checkpoint found — running from scratch\" and proceeds as a full `nax run` (exit `0`).\n- **`nax run`** auto-resumes when a `checkpoint.jsonl` exists for the feature. `--fresh` / `--no-resume` truncates/ignores the checkpoint and runs every incomplete story from scratch.\n\n**Scope** — In: `registerResumeCommand(program)` in `src/commands/resume.ts`, wiring it in `bin/nax.ts`, `nax run` auto-resume detection via `loadCheckpoints`, and `--fresh` / `--no-resume` that truncate or ignore `checkpoint.jsonl`. Out: persistent config fields, alternate replay-driven resume, or changes to run exit-code semantics.\n\n**Interface**\n```typescript\nexport function registerResumeCommand(program: Command): void\n```\n\n`nax resume` follows the same pattern via an exported `registerResumeCommand(program)`.",
+      "acceptanceCriteria": [
+        "Given a fresh commander program, when `registerResumeCommand(program)` is called, then `program.commands` includes a command named `resume`.",
+        "Given a feature whose `checkpoint.jsonl` is absent, when `resume` runs for that feature, then it prints `No checkpoint found — running from scratch` to stdout and exits with code `0`.",
+        "Given a feature with a checkpoint, when `resume` runs, then it prints a resume summary line naming the feature and the count of stories with a checkpoint before the run output.",
+        "Given `nax run` for a feature with an existing `checkpoint.jsonl`, when the run starts, then it calls `loadCheckpoints` with that feature's `featureDir`.",
+        "Given `nax run` invoked with `--fresh` and an existing `checkpoint.jsonl`, when the run starts, then the checkpoint is truncated or ignored so `loadCheckpoints` or the seeding path yields no skip phases for any story.",
+        "Given `nax run` invoked with `--no-resume`, when the run starts, then it behaves identically to `--fresh` for producing an empty resume plan with no phases skipped."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "execution",
+        "resume"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This story follows existing commander registration and run-command wiring patterns across a small set of files, so medium complexity with standard TDD is the realistic fit.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/commands/replay.ts",
+        "bin/nax.ts",
+        "src/execution/checkpoint/reader.ts"
+      ],
+      "expectedFiles": [
+        "src/commands/resume.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "f929ac7e53b3f4bbdbd105f3032afad25d15d8df"
+    }
+  ],
+  "analysis": "This feature is an enhancement to the existing run/orchestrator pipeline, not a greenfield slice. The main execution seam is `ExecutionPlan.run()` in `src/execution/story-orchestrator/execution-plan.ts:43`, which initializes `phaseOutputs` at `:45`, runs the canonical loop at `:63-89`, and already contains two later resume-style loops that skip phases when `name in phaseOutputs && phasePassed(...)` at `:121-125` and `:193-195`. That existing pattern materially lowers risk for the resume integration because the feature can seed the same in-memory skip state instead of inventing a second orchestration path. `runPhase()` in `src/execution/story-orchestrator/run-phase.ts:111-216` is the correct post-phase hook point because it writes `phaseOutputs[opName] = output` at `:156` and returns control to the main loop after the phase outcome is fully known. `phasePassed()` and `extractPhaseFindings()` in `src/execution/story-orchestrator/phase-eval.ts:19-97` are compatible with resume seeding today: a sentinel `{ success: true }` passes because `phasePassed()` accepts any object with `success !== false` at `:42-44`, and `extractPhaseFindings()` returns `[]` for a successful record at `:94-96`, which avoids phantom findings. The canonical phase list and cheap-gate set are grounded in `PhaseKind` and `CANONICAL_ORDER` in `src/execution/story-orchestrator/types.ts:65-77` and `:135-148`; the phases that must always re-run are the existing `verify-scoped`, `lint-check`, and `typecheck-check` entries at `:143-145`.\n\nThe new checkpoint data should live beside existing feature-scoped runtime artifacts. Feature directory plumbing already exists in `CrashRecoveryContext.featureDir` in `src/execution/crash-recovery.ts:35-58` and in `StatusWriter.writeFeatureStatus()` which writes `join(featureDir, \"status.json\")` in `src/execution/status-writer.ts:254-280`, especially `:262`. The current durable crash path uses synchronous append only inside crash handlers in `src/execution/crash-writer.ts:5-35` and `:55-88`; those comments explicitly justify `appendFileSync` only because the event loop may be inconsistent in a fatal signal path. That means the new normal-path checkpoint writer must not copy `node:fs` sync I/O into `src/` runtime code. The repo rule in `.claude/rules/forbidden-patterns.md` bans `fs.readFileSync` / `fs.writeFileSync` in source code in favor of Bun-native I/O, so the checkpoint writer needs its own injected async append dependency and Bun-native implementation rather than reusing the crash writer literally. This is the main architecture constraint in US-001 and US-003.\n\nGit tree capture should reuse the existing Bun-native subprocess abstraction instead of adding direct `Bun.spawn` or Node child process calls. `src/utils/git.ts:14` exposes `_gitDeps = { spawn, getSafeLogger }`, `gitWithTimeout()` centralizes process handling at `:45-70`, and `captureGitRef()` already returns `HEAD` at `:90-98`. The spec’s dirty-tree digest can be built through the same `_gitDeps.spawn` path so unit tests can stub git output without real repos. That new helper is most naturally added either in `src/utils/git.ts` or a checkpoint-local helper that imports `_gitDeps`; whichever approach is chosen, it needs to preserve the repo’s dependency-injection pattern and avoid direct subprocess creation. Risk here is mostly around testability and keeping the helper pure enough for planner tests while still capturing actual working-tree state.\n\nCLI impact is concentrated in `bin/nax.ts` and the existing replay command pattern. The main `run` command resolves `featureDir` and `prdPath` in `bin/nax.ts:523-524`, computes the output directory at `:618-624`, and calls the execution entrypoint at `:761-778`. That is the likely insertion point for auto-resume detection, `--fresh`, and `--no-resume` propagation. `registerReplayCommand()` in `src/commands/replay.ts:163-184` is the exact template for `registerResumeCommand()`, and replay’s orchestrator/deps split in `src/commands/replay.ts:30-158` is a useful model for a thin, hermetic CLI surface with explicit stdout/stderr handling. The replay tests already assert commander registration and option shape in `test/unit/commands/replay.test.ts:225-252`, so the resume command should mirror that style instead of inventing a different test harness. `bin/nax.ts:1486` wires replay into the root program; resume should be registered adjacent to that. One additional risk is that `bin/nax.ts` is already large and cross-cutting, so the PRD should keep the CLI story narrowly focused on flag parsing and delegating to existing helpers rather than broad run-command refactors.\n\nExisting tests show both where to add coverage and what behavioral seams already exist. The graph trace shows `ExecutionPlan.run()` is already exercised by `test/unit/execution/story-orchestrator.test.ts`, several integration tests, and the E2E orchestrator harness. `test/helpers/e2e/orchestrator-harness.ts:1-220` records ordered phase execution by wrapping `_storyOrchestratorDeps.callOp`, which is useful for resume assertions because it can prove skipped phases were not dispatched. `test/e2e/resume.e2e.test.ts:25-84` already uses the term \"resume,\" but it covers post-rectification resume inside a single process, not the new mid-session resume across reruns; that overlap is a naming and conceptual risk because implementers must avoid regressing current rectification-resume semantics while adding process-restart resume. The new feature should add unit/integration coverage close to the current command and orchestrator suites instead of a separate broad E2E path unless a specific full-run scenario is required by the ACs.\n\nLikely files to modify: `src/execution/story-orchestrator/execution-plan.ts` for seeding and skip guards, `src/utils/git.ts` or a new checkpoint helper for dirty-tree capture, `bin/nax.ts` for flag parsing and auto-resume plumbing, and a new `src/commands/resume.ts` modeled on replay. Likely new files: `src/execution/checkpoint/types.ts`, `writer.ts`, `reader.ts`, `resume-plan.ts`, `resume-hydrate.ts`, and `index.ts`. Likely dependent/importing files: the execution barrel that re-exports orchestrator utilities if checkpoint APIs need public imports, `bin/nax.ts` for command registration, and tests under `test/unit/commands/` and `test/unit` or `test/integration/execution/` depending on seam. Backward compatibility risk is low because default behavior should remain a full rerun when no checkpoint exists, the checkpoint file is corrupt, or the tree guard fails. Migration path is also low risk: no schema migration is needed for existing features because a missing `checkpoint.jsonl` is treated as empty and `nax run` continues with today’s behavior. The main correctness risks are stale green phases being skipped after tree movement, writing checkpoints before a phase is actually green, and violating Bun-native source constraints by introducing Node sync file APIs on the normal execution path.",
+  "routingProfile": "cross-agent"
+}

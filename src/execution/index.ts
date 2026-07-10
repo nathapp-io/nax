@@ -1,5 +1,5 @@
 export type { RunOptions, RunResult } from "./runner";
-export { run } from "./runner";
+export { run, _runnerDeps } from "./runner";
 export type { FailureCategory } from "../tdd/types";
 export { appendProgress } from "./progress";
 export { groupStoriesIntoBatches, type StoryBatch } from "./batching";
@@ -56,6 +56,8 @@ export {
   gateRegressedAfterRectification,
   refreshReviewInputForDispatch,
   withIncreasingFailuresBail,
+  extractPhaseFindings,
+  phasePassed,
   type InternalBuildState,
   type OrchestratorSlot,
   type PhaseKind,
@@ -70,6 +72,25 @@ export {
 } from "./story-orchestrator-logging";
 export { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "./plan-inputs";
 export { buildPlanForStrategy } from "./build-plan-for-strategy";
+export {
+  CheckpointWriter,
+  loadCheckpoints,
+  buildResumePlan,
+  buildCheckpointLogData,
+  captureTreeState,
+  hydrateFromResumePlan,
+  applyResumeModeDeps,
+  type ResumePlan,
+  type ResumeMode,
+  type CaptureTreeStateDeps,
+  type CaptureTreeStateOptions,
+  type CheckpointRecord,
+  type CheckpointReaderDeps,
+  type CheckpointWriterDeps,
+  type CheckpointWriterOptions,
+  type StoryCheckpoint,
+  type TreeState,
+} from "./checkpoint";
 export type { StoryRunResult } from "./types";
 export {
   applyPostRunInspection,

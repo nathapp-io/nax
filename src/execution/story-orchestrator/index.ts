@@ -8,6 +8,7 @@ export {
   gateFailureKeys,
   gateRegressedAfterRectification,
   orderGateLast,
+  phasePassed,
   phasesToRevalidate,
 } from "./phase-eval";
 export { runRectification, triageGateFindings, gatherRectificationFindings, type TriageResult } from "./rectification";
