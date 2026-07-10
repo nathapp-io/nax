@@ -70,6 +70,16 @@ export {
 } from "./story-orchestrator-logging";
 export { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "./plan-inputs";
 export { buildPlanForStrategy } from "./build-plan-for-strategy";
+export {
+  CheckpointWriter,
+  loadCheckpoints,
+  type CheckpointRecord,
+  type CheckpointReaderDeps,
+  type CheckpointWriterDeps,
+  type CheckpointWriterOptions,
+  type StoryCheckpoint,
+  type TreeState,
+} from "./checkpoint";
 export type { StoryRunResult } from "./types";
 export {
   applyPostRunInspection,
