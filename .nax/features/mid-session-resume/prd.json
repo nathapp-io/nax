@@ -3,7 +3,7 @@
   "feature": "mid-session-resume",
   "branchName": "feat/mid-session-resume",
   "createdAt": "2026-07-10T04:09:01Z",
-  "updatedAt": "2026-07-10T04:43:50.822Z",
+  "updatedAt": "2026-07-10T04:51:19.101Z",
   "userStories": [
     {
       "id": "US-001",
@@ -84,8 +84,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -150,7 +150,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-balanced",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/execution/story-orchestrator/execution-plan.ts",
@@ -164,7 +166,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "99fbdf7dde6db49cd9c9d210241181005f818d01"
     },
     {
       "id": "US-004",
