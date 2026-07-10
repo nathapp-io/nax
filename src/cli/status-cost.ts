@@ -12,15 +12,11 @@ import type { CostReportV1 } from "../metrics";
 import type { RunMetrics } from "../metrics/types";
 import { projectOutputDir } from "../runtime";
 
-async function resolveProjectKey(workdir: string): Promise<string> {
+async function resolveProject(workdir: string): Promise<{ project: string; outputDir: string }> {
   const config = await loadConfig(workdir).catch(() => null);
-  return config?.name?.trim() || basename(workdir);
-}
-
-async function resolveOutputDir(workdir: string): Promise<string> {
-  const config = await loadConfig(workdir).catch(() => null);
-  const projectKey = config?.name?.trim() || basename(workdir);
-  return projectOutputDir(projectKey, config?.outputDir);
+  const project = config?.name?.trim() || basename(workdir);
+  const outputDir = projectOutputDir(project, config?.outputDir);
+  return { project, outputDir };
 }
 
 /**
@@ -35,7 +31,7 @@ async function resolveOutputDir(workdir: string): Promise<string> {
  */
 export async function displayCostMetrics(workdir: string): Promise<void> {
   const logger = getLogger();
-  const outputDir = await resolveOutputDir(workdir);
+  const { outputDir } = await resolveProject(workdir);
   const runs = await loadRunMetrics(outputDir);
 
   if (runs.length === 0) {
@@ -68,7 +64,7 @@ export async function displayCostMetrics(workdir: string): Promise<void> {
  */
 export async function displayLastRunMetrics(workdir: string): Promise<void> {
   const logger = getLogger();
-  const outputDir = await resolveOutputDir(workdir);
+  const { outputDir } = await resolveProject(workdir);
   const runs = await loadRunMetrics(outputDir);
 
   if (runs.length === 0) {
@@ -135,7 +131,7 @@ export async function displayLastRunMetrics(workdir: string): Promise<void> {
  */
 export async function displayModelEfficiency(workdir: string): Promise<void> {
   const logger = getLogger();
-  const outputDir = await resolveOutputDir(workdir);
+  const { outputDir } = await resolveProject(workdir);
   const runs = await loadRunMetrics(outputDir);
 
   if (runs.length === 0) {
@@ -188,10 +184,12 @@ export async function displayModelEfficiency(workdir: string): Promise<void> {
  *
  * Mirrors the `ReplayCommandDeps` pattern: production callers get the
  * filesystem-backed defaults via `_costReportEmitDeps`; tests inject spies.
+ * The project key and metrics directory are derived in one consistent path
+ * (see `resolveProject`) so the JSON `project` field cannot drift from the
+ * source the runs were loaded from.
  */
 export interface CostReportEmitDeps {
   loadRuns: (outputDir: string) => Promise<RunMetrics[]>;
-  resolveProject: (workdir: string) => Promise<string>;
   toCostReport: (runs: RunMetrics[], reportDeps: { now: () => string; project: string }) => CostReportV1;
   now: () => string;
   stdout: (text: string) => void;
@@ -199,7 +197,6 @@ export interface CostReportEmitDeps {
 
 export const _costReportEmitDeps: CostReportEmitDeps = {
   loadRuns: (outputDir: string) => loadRunMetrics(outputDir),
-  resolveProject: resolveProjectKey,
   toCostReport,
   now: () => new Date().toISOString(),
   stdout: (text: string) => process.stdout.write(text),
@@ -216,9 +213,8 @@ export async function emitCostReportJson(
   workdir: string,
   deps: CostReportEmitDeps = _costReportEmitDeps,
 ): Promise<void> {
-  const outputDir = await resolveOutputDir(workdir);
+  const { project, outputDir } = await resolveProject(workdir);
   const runs = await deps.loadRuns(outputDir);
-  const project = await deps.resolveProject(workdir);
   const report = deps.toCostReport(runs, { now: deps.now, project });
   deps.stdout(`${JSON.stringify(report, null, 2)}\n`);
 }

@@ -9,6 +9,9 @@
  * the exact call shape without touching the filesystem or stdout.
  */
 
+import chalk from "chalk";
+import type { Command } from "commander";
+import { findProjectDir, validateDirectory } from "../config";
 import type { FeatureStatusOptions } from "./status-features";
 
 /** CLI options parsed from commander for `nax status`. */
@@ -84,4 +87,92 @@ export async function dispatchStatusView(
     ...(options.dir !== undefined ? { dir: options.dir } : {}),
   };
   await deps.displayFeatureStatus(featureOpts);
+}
+
+/**
+ * Status command action dependencies. The action calls into the dispatcher
+ * with a stable `StatusViewOptions` shape and forwards failures to stderr +
+ * exit(1). The action is injectable so commander-level tests can assert the
+ * exact dispatch behavior without touching the filesystem or `process.exit`.
+ */
+export interface StatusCommandActionDeps {
+  validateDirectory: (dir: string) => string;
+  findProjectDir: (workdir: string) => string | null;
+  dispatchStatusView: typeof dispatchStatusView;
+}
+
+export const _statusCommandActionDeps: StatusCommandActionDeps = {
+  validateDirectory,
+  findProjectDir,
+  dispatchStatusView,
+};
+
+/**
+ * Run the `status` subcommand action against the dispatcher. Extracted so
+ * commander-level tests can exercise the real bin/nax.ts wiring (including
+ * the new `--json` option) without spinning up a child process.
+ */
+export async function runStatusAction(
+  options: {
+    cost?: boolean;
+    json?: boolean;
+    last?: boolean;
+    model?: boolean;
+    feature?: string;
+    dir?: string;
+  },
+  deps: StatusCommandActionDeps = _statusCommandActionDeps,
+): Promise<void> {
+  const workdir = deps.validateDirectory(options.dir ?? process.cwd());
+  const naxDir = deps.findProjectDir(workdir);
+  if (!naxDir) {
+    process.stderr.write(`${chalk.red("nax not initialized.")}\n`);
+    process.exit(1);
+  }
+  await deps.dispatchStatusView(workdir, {
+    cost: options.cost === true,
+    json: options.json === true,
+    last: options.last === true,
+    model: options.model === true,
+    ...(options.feature !== undefined ? { feature: options.feature } : {}),
+    ...(options.dir !== undefined ? { dir: options.dir } : {}),
+  });
+}
+
+/**
+ * Register the `status` subcommand on a commander `Command` instance.
+ *
+ * The option surface mirrors what `bin/nax.ts` exposes; the action delegates
+ * to `runStatusAction` so the routing logic is independently testable.
+ */
+export function registerStatusCommand(
+  program: Command,
+  deps: StatusCommandActionDeps = _statusCommandActionDeps,
+): void {
+  program
+    .command("status")
+    .description("Show current run status")
+    .option("-f, --feature <name>", "Feature name")
+    .option("-d, --dir <path>", "Project directory", process.cwd())
+    .option("--cost", "Show cost metrics across all runs", false)
+    .option("--last", "Show last run metrics (requires --cost)", false)
+    .option("--model", "Show per-model efficiency (requires --cost)", false)
+    .option("-j, --json", "Emit cost report as JSON (requires --cost)", false)
+    .action(
+      async (options: {
+        cost?: boolean;
+        json?: boolean;
+        last?: boolean;
+        model?: boolean;
+        feature?: string;
+        dir?: string;
+      }) => {
+        try {
+          await runStatusAction(options, deps);
+        } catch (err) {
+          process.stderr.write(`${chalk.red(`Error: ${(err as Error).message}`)}\n`);
+          process.exit(1);
+        }
+      },
+    );
 }

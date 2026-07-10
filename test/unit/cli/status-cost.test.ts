@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { describe, expect, mock, test } from "bun:test";
 import { emitCostReportJson, type CostReportEmitDeps } from "@/cli";
 import type { CostReportV1 } from "@/metrics";
+import { projectOutputDir } from "@/runtime";
 
 const FIXED_REPORT: CostReportV1 = {
   schemaVersion: "1.0",
@@ -57,7 +58,6 @@ const FIXED_REPORT: CostReportV1 = {
 function makeDeps(overrides: Partial<CostReportEmitDeps> = {}): CostReportEmitDeps {
   return {
     loadRuns: mock(async () => []),
-    resolveProject: mock(async () => "myproj"),
     toCostReport: mock(() => FIXED_REPORT),
     now: () => "2026-01-01T00:00:00.000Z",
     stdout: mock(() => {}),
@@ -95,13 +95,20 @@ describe("emitCostReportJson — AC1: export shape", () => {
 describe("emitCostReportJson — AC2: stdout payload schemaVersion", () => {
   test("AC2: with non-empty runs and stdout spy, stdout is called once with a string whose JSON.parse has schemaVersion === '1.0'", async () => {
     const stdout = mock(() => {});
+    const loadRuns = mock(async () => [{ runId: "r1", feature: "f1" }] as never);
     const deps = makeDeps({
-      loadRuns: mock(async () => [{ runId: "r1", feature: "f1" }] as never),
+      loadRuns,
       stdout,
     });
 
     await emitCostReportJson("/tmp/workdir", deps);
 
+    // loadRuns must be invoked exactly once with the metrics dir derived
+    // from the same workdir that drives the project field — guards against
+    // a regression that splits the project/outputDir resolution.
+    expect(loadRuns.mock.calls).toHaveLength(1);
+    const loadRunsArg = loadRuns.mock.calls[0]?.[0];
+    expect(loadRunsArg).toBe(projectOutputDir("workdir"));
     expect(stdout.mock.calls).toHaveLength(1);
     const out = stdout.mock.calls[0]?.[0];
     expect(typeof out).toBe("string");
@@ -111,22 +118,28 @@ describe("emitCostReportJson — AC2: stdout payload schemaVersion", () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC-3: toCostReport receives runs array from loadRuns
+// AC-3: toCostReport receives runs array from loadRuns and project/now from seams
 // ---------------------------------------------------------------------------
 
-describe("emitCostReportJson — AC3: toCostReport receives injected runs", () => {
-  test("AC3: toCostReport is invoked exactly once with the runs array returned by loadRuns", async () => {
+describe("emitCostReportJson — AC3: toCostReport receives injected runs + seam wiring", () => {
+  test("AC3: toCostReport is invoked exactly once with the runs array returned by loadRuns, plus { now, project } where now is from deps.now and project is derived from the workdir via the canonical resolveProject path", async () => {
     const injectedRuns = [{ runId: "r1", feature: "f1" }, { runId: "r2", feature: "f2" }] as never;
     const toCostReport = mock(() => FIXED_REPORT);
     const deps = makeDeps({
       loadRuns: mock(async () => injectedRuns),
       toCostReport,
+      now: () => "2026-01-01T12:34:56.000Z",
     });
 
-    await emitCostReportJson("/tmp/workdir", deps);
+    await emitCostReportJson("/tmp/proj-x", deps);
 
     expect(toCostReport.mock.calls).toHaveLength(1);
     expect(toCostReport.mock.calls[0]?.[0]).toBe(injectedRuns);
+    const reportDeps = toCostReport.mock.calls[0]?.[1] as { now: () => string; project: string };
+    expect(reportDeps.now()).toBe("2026-01-01T12:34:56.000Z");
+    // project is derived from the workdir via the same resolveProject path
+    // used to compute outputDir — no separate seam to override.
+    expect(reportDeps.project).toBe("proj-x");
   });
 });
 
