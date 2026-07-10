@@ -9,21 +9,62 @@ export interface CaptureTreeStateOptions {
   _deps: CaptureTreeStateDeps;
 }
 
+/** Per-git-call timeout — mirrors the intent of `gitWithTimeout` (GIT_TIMEOUT_MS). */
+/**
+ * Tree-state capture uses a short per-git-call deadline. git rev-parse HEAD
+ * and git status --porcelain are sub-30ms operations on typical repos. A hung
+ * process is caught quickly rather than blocking the orchestrator startup.
+ * Mirrors the intent of gitWithTimeout (GIT_TIMEOUT_MS) but with a tighter
+ * bound appropriate for git sub-second commands.
+ */
+const TREE_CAPTURE_TIMEOUT_MS = 75;
+
+interface SpawnedProc {
+  exited: Promise<number>;
+  stdout: ReadableStream<Uint8Array>;
+  stderr: ReadableStream<Uint8Array>;
+  kill(signal?: unknown): void;
+}
+
+function spawnGit(deps: CaptureTreeStateDeps, args: string[], workdir: string): SpawnedProc {
+  return deps.spawn(["git", ...args], {
+    cwd: workdir,
+    stdout: "pipe",
+    stderr: "pipe",
+  }) as SpawnedProc;
+}
+
+async function spawnWithTimeout(proc: SpawnedProc, timeoutMs: number): Promise<{ stdout: string; exitCode: number }> {
+  const result = await Promise.race([
+    (async () => {
+      const [exitCode, stdout] = await Promise.all([
+        proc.exited,
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      return { stdout, exitCode };
+    })(),
+    new Promise<{ stdout: string; exitCode: number }>((resolve) =>
+      setTimeout(() => {
+        try {
+          proc.kill("SIGKILL");
+        } catch {
+          // ignore kill failure
+        }
+        resolve({ stdout: "", exitCode: 1 });
+      }, timeoutMs),
+    ),
+  ]);
+  return result;
+}
+
 export async function captureTreeState(workdir: string, options: CaptureTreeStateOptions): Promise<TreeState> {
   let headSha = "";
   let dirtyDigest = "";
 
   try {
-    const proc = options._deps.spawn(["git", "rev-parse", "HEAD"], {
-      cwd: workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    }) as { exited: Promise<number>; stdout: ReadableStream<Uint8Array>; stderr: ReadableStream<Uint8Array> };
-    const [exitCode, stdout] = await Promise.all([
-      proc.exited,
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
+    const proc = spawnGit(options._deps, ["rev-parse", "HEAD"], workdir);
+    const { stdout, exitCode } = await spawnWithTimeout(proc, TREE_CAPTURE_TIMEOUT_MS);
     if (exitCode === 0) {
       headSha = stdout.trim();
     }
@@ -32,16 +73,8 @@ export async function captureTreeState(workdir: string, options: CaptureTreeStat
   }
 
   try {
-    const proc = options._deps.spawn(["git", "status", "--porcelain"], {
-      cwd: workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    }) as { exited: Promise<number>; stdout: ReadableStream<Uint8Array>; stderr: ReadableStream<Uint8Array> };
-    const [exitCode, stdout] = await Promise.all([
-      proc.exited,
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
+    const proc = spawnGit(options._deps, ["status", "--porcelain"], workdir);
+    const { stdout, exitCode } = await spawnWithTimeout(proc, TREE_CAPTURE_TIMEOUT_MS);
     if (exitCode === 0) {
       const trimmed = stdout.trim();
       if (trimmed) {
