@@ -191,6 +191,10 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
         const story = prd.userStories.find((s) => s.id === storyId);
         if (story) {
           story.status = "regression-failed";
+          // isComplete() checks `s.passes || s.status === "passed" || ...` — the `passes`
+          // clause short-circuits before status, so it must be reset here too or a
+          // regression-failed story still reads as complete (issue #1292).
+          story.passes = false;
         }
       }
       // Reflect regression gate failure in run status (RL-004)
