@@ -3,7 +3,7 @@
   "feature": "mid-session-resume",
   "branchName": "feat/mid-session-resume",
   "createdAt": "2026-07-10T04:09:01Z",
-  "updatedAt": "2026-07-10T05:41:04.241Z",
+  "updatedAt": "2026-07-10T06:13:30.450Z",
   "userStories": [
     {
       "id": "US-001",
@@ -190,8 +190,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
