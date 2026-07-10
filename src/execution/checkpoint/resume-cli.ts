@@ -41,6 +41,11 @@ export type ResumeMode = "auto" | "fresh" | "no-resume";
  * and resume mode. Callers must restore the original dep afterwards when
  * running multiple in-process runs (the runner handles this in its `finally`
  * block).
+ *
+ * `featureDir` is bound into the closure in `auto` mode so the orchestrator
+ * reads the feature's own `checkpoint.jsonl`. In `fresh` / `no-resume` mode
+ * the feature dir is intentionally ignored — the override returns an empty
+ * Map regardless.
  */
 export function applyResumeModeDeps(featureDir: string, mode: ResumeMode = "auto"): void {
   if (mode === "fresh" || mode === "no-resume") {
@@ -48,6 +53,9 @@ export function applyResumeModeDeps(featureDir: string, mode: ResumeMode = "auto
     return;
   }
   // mode === "auto" — wire to the real reader so the orchestrator can seed
-  // its in-memory skip state from any existing `checkpoint.jsonl`.
-  _storyOrchestratorDeps.loadCheckpoints = async (fd: string): Promise<unknown> => loadCheckpoints(fd);
+  // its in-memory skip state from any existing `checkpoint.jsonl`. We bind
+  // `featureDir` from the closure (the parameter is the single source of
+  // truth for which feature's checkpoint to read).
+  const target = featureDir;
+  _storyOrchestratorDeps.loadCheckpoints = async (_fd: string): Promise<unknown> => loadCheckpoints(target);
 }

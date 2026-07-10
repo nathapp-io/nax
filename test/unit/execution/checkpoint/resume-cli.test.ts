@@ -16,7 +16,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { _storyOrchestratorDeps, applyResumeModeDeps } from "@/execution";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";

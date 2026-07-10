@@ -37,6 +37,7 @@ import { _storyOrchestratorDeps } from "./story-orchestrator";
  */
 export const _runnerDeps = {
   fireHook,
+  runSetupPhase,
 };
 
 // Re-export for backward compatibility
@@ -122,8 +123,9 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
   // US-004 — wire the orchestrator's checkpoint dep based on the resume mode.
   // Auto: read real checkpoint.jsonl when present. Fresh / no-resume: ignore any
-  // prior checkpoint and seed an empty skip plan. Restore the stub default in
-  // the finally block so subsequent in-process runs are not contaminated.
+  // prior checkpoint and seed an empty skip plan. Save the original dep so we
+  // can restore it in the outer finally — even if runSetupPhase throws before
+  // we enter the inner try block below.
   const origLoadCheckpoints = _storyOrchestratorDeps.loadCheckpoints;
   applyResumeModeDeps(featureDir ?? "", resumeMode);
 
@@ -142,29 +144,39 @@ export async function run(options: RunOptions): Promise<RunResult> {
   let prd: PRD | undefined;
 
   // ── Phase 1: Setup ──────────────────────────────────────────────────────────
-  const setupResult = await runSetupPhase({
-    prdPath,
-    workdir,
-    config,
-    hooks,
-    feature,
-    featureDir,
-    dryRun,
-    statusFile,
-    logFilePath,
-    runId,
-    startedAt: runStartedAt,
-    startTime,
-    skipPrecheck,
-    headless,
-    formatterMode,
-    agentStreamEvents,
-    getTotalCost: () => totalCost,
-    getIterations: () => iterations,
-    // @design: BUG-017: Pass getters for run.complete event on SIGTERM
-    getStoriesCompleted: () => storiesCompleted,
-    getTotalStories: () => (prd ? countStories(prd).total : 0),
-  });
+  // Wrapped in try/catch so a setup-time throw still restores the orchestrator
+  // dep we overrode above — without this, a crash before the inner finally
+  // would leave _storyOrchestratorDeps.loadCheckpoints mutated across the
+  // entire process (test harnesses and any subsequent in-process runs).
+  let setupResult: Awaited<ReturnType<typeof _runnerDeps.runSetupPhase>>;
+  try {
+    setupResult = await _runnerDeps.runSetupPhase({
+      prdPath,
+      workdir,
+      config,
+      hooks,
+      feature,
+      featureDir,
+      dryRun,
+      statusFile,
+      logFilePath,
+      runId,
+      startedAt: runStartedAt,
+      startTime,
+      skipPrecheck,
+      headless,
+      formatterMode,
+      agentStreamEvents,
+      getTotalCost: () => totalCost,
+      getIterations: () => iterations,
+      // @design: BUG-017: Pass getters for run.complete event on SIGTERM
+      getStoriesCompleted: () => storiesCompleted,
+      getTotalStories: () => (prd ? countStories(prd).total : 0),
+    });
+  } catch (err) {
+    _storyOrchestratorDeps.loadCheckpoints = origLoadCheckpoints;
+    throw err;
+  }
 
   const {
     statusWriter,
@@ -283,6 +295,9 @@ export async function run(options: RunOptions): Promise<RunResult> {
       logger?.debug("execution", "Runner finally block — starting cleanup");
       // US-004 — restore the orchestrator's default loadCheckpoints stub so
       // subsequent in-process runs (or test harnesses) are not contaminated.
+      // The setup-phase error path has its own restore above; this one covers
+      // the success-and-throw-later path through runExecutionPhase /
+      // runCompletionPhase.
       _storyOrchestratorDeps.loadCheckpoints = origLoadCheckpoints;
       // Stop heartbeat on any exit (US-007)
       stopHeartbeat();

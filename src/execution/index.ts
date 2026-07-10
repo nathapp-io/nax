@@ -1,5 +1,5 @@
 export type { RunOptions, RunResult } from "./runner";
-export { run } from "./runner";
+export { run, _runnerDeps } from "./runner";
 export type { FailureCategory } from "../tdd/types";
 export { appendProgress } from "./progress";
 export { groupStoriesIntoBatches, type StoryBatch } from "./batching";
