@@ -17,7 +17,8 @@
 
 import { describe, expect, test } from "bun:test";
 import type { StoryCheckpoint, TreeState } from "@/execution";
-import { buildResumePlan, type ResumePlan } from "@/execution/checkpoint";
+import { buildResumePlan, type ResumePlan } from "@/execution";
+import * as checkpointBarrel from "@/execution/checkpoint";
 
 const TREE: TreeState = { headSha: "abc123", dirtyDigest: "deadbeef" };
 
@@ -27,9 +28,13 @@ function cp(greenPhases: StoryCheckpoint["greenPhases"], tree: TreeState = TREE)
 
 describe("buildResumePlan importability (AC1)", () => {
   test("is exported from @/execution/checkpoint with callable signature", () => {
+    // AC1 requires the function to be importable from src/execution/checkpoint
+    // specifically — the local re-export from the parent barrel is incidental.
+    expect(typeof checkpointBarrel.buildResumePlan).toBe("function");
     expect(typeof buildResumePlan).toBe("function");
     const plan: ResumePlan = buildResumePlan(null, TREE);
-    expect(plan).toBeDefined();
+    expect(plan.reason).toBe("no-checkpoint");
+    expect(plan.skipPhases).toEqual([]);
   });
 });
 
