@@ -73,6 +73,8 @@ export { buildPlanForStrategy } from "./build-plan-for-strategy";
 export {
   CheckpointWriter,
   loadCheckpoints,
+  buildResumePlan,
+  type ResumePlan,
   type CheckpointRecord,
   type CheckpointReaderDeps,
   type CheckpointWriterDeps,
