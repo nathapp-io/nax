@@ -2,14 +2,14 @@ import type { Finding } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
 import { errorMessage } from "@/utils/errors";
+import { hydrateFromResumePlan } from "../checkpoint/resume-hydrate";
+import type { ResumePlan } from "../checkpoint/resume-plan";
 import {
   createMeasureSourceDiff,
   nonBlockingExcludePhases,
   nonBlockingExtraPhases,
   shouldRunNonBlockingFix,
 } from "../non-blocking-fix";
-import { hydrateFromResumePlan } from "../checkpoint/resume-hydrate";
-import type { ResumePlan } from "../checkpoint/resume-plan";
 import { gateFailureKeys, gateRegressedAfterRectification, phaseExplicitlyPassed, phasePassed } from "./phase-eval";
 import { collectOrderedPhases } from "./phase-state";
 import { runRectification } from "./rectification";
