@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { calculateAggregateMetrics, getLastRun, toCostReport } from "../../../src/metrics";
-import { dispatchStatusView, emitCostReportJson } from "../../../src/cli/status";
+import { dispatchStatusView } from "../../../src/cli/status-dispatch";
+import { emitCostReportJson } from "../../../src/cli/status";
 import type { RunMetrics, StoryMetrics } from "../../../src/metrics/types";
 
 // ---------------------------------------------------------------------------
@@ -259,6 +260,8 @@ describe("AC-13: emitCostReportJson emits JSON with schemaVersion '1.0' to stdou
     const stdoutSpy = mock((_s: string) => {});
     const deps = {
       loadRuns: mock(async (_outputDir: string) => runs),
+      toCostReport,
+      now: () => "2026-01-01T00:00:00.000Z",
       stdout: stdoutSpy,
     };
     await emitCostReportJson(WORKDIR, deps);
@@ -288,11 +291,16 @@ describe("AC-14: emitCostReportJson calls injected toCostReport with loaded runs
     const deps = {
       loadRuns: mock(async (_outputDir: string) => loadRunsResult),
       toCostReport: toCostReportSpy,
+      now: () => "2026-01-01T00:00:00.000Z",
       stdout: mock((_s: string) => {}),
     };
     await emitCostReportJson(WORKDIR, deps);
     expect(toCostReportSpy).toHaveBeenCalledTimes(1);
-    expect(toCostReportSpy).toHaveBeenCalledWith(loadRunsResult);
+    expect(toCostReportSpy.mock.calls[0][0]).toEqual(loadRunsResult);
+    expect(toCostReportSpy.mock.calls[0][1]).toMatchObject({
+      now: deps.now,
+      project: expect.any(String),
+    });
   });
 });
 
@@ -305,6 +313,8 @@ describe("AC-15: emitCostReportJson with empty loadRuns resolves and emits aggre
     const stdoutSpy = mock((_s: string) => {});
     const deps = {
       loadRuns: mock(async (_outputDir: string) => [] as RunMetrics[]),
+      toCostReport,
+      now: () => "2026-01-01T00:00:00.000Z",
       stdout: stdoutSpy,
     };
     await expect(emitCostReportJson(WORKDIR, deps)).resolves.toBeUndefined();
@@ -332,7 +342,8 @@ describe("AC-16: emitCostReportJson stdout round-trips and ends with newline", (
     const stdoutSpy = mock((_s: string) => {});
     const deps = {
       loadRuns: mock(async (_outputDir: string) => [] as RunMetrics[]),
-      toCostReport: mock(async (_r: RunMetrics[]) => fixedReport),
+      toCostReport: mock((_r: RunMetrics[], _d: { now: () => string; project: string }) => fixedReport),
+      now: () => "2026-01-01T00:00:00.000Z",
       stdout: stdoutSpy,
     };
     await emitCostReportJson(WORKDIR, deps);
