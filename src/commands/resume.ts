@@ -16,9 +16,7 @@ import { basename, join } from "node:path";
 import type { Command } from "commander";
 import { globalConfigDir } from "../config/paths";
 import { NaxError } from "../errors";
-import { buildResumePlan } from "../execution/checkpoint";
-import { loadCheckpoints } from "../execution/checkpoint/reader";
-import type { StoryCheckpoint } from "../execution/checkpoint/types";
+import { type StoryCheckpoint, buildResumePlan, loadCheckpoints } from "../execution/checkpoint";
 import { projectOutputDir } from "../runtime";
 
 /** Options accepted by the `nax resume` command. */
