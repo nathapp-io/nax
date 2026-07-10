@@ -3,8 +3,6 @@ import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
 import { errorMessage } from "@/utils/errors";
 import { hydrateFromResumePlan } from "../checkpoint/resume-hydrate";
-import type { ResumePlan } from "../checkpoint/resume-plan";
-import type { StoryCheckpoint } from "../checkpoint/types";
 import {
   createMeasureSourceDiff,
   nonBlockingExcludePhases,
@@ -52,17 +50,10 @@ export class ExecutionPlan {
     // Capture tree state and build resume plan — seed phaseOutputs from prior
     // green phases so the main loop skips them. Cheap gates are never seeded:
     // they always re-execute to confirm the working tree is still green.
-    const tree = (await _storyOrchestratorDeps.captureTreeState(this.ctx.packageDir)) as {
-      headSha: string;
-      dirtyDigest: string;
-    };
-    const checkpoints = (await _storyOrchestratorDeps.loadCheckpoints(
-      (this.ctx as { featureDir?: string }).featureDir ?? "",
-    )) as Map<string, unknown>;
-    const storyCp = this.ctx.storyId
-      ? ((checkpoints.get(this.ctx.storyId) as StoryCheckpoint | undefined) ?? null)
-      : null;
-    const plan = (await _storyOrchestratorDeps.buildResumePlan(storyCp, tree)) as ResumePlan;
+    const tree = await _storyOrchestratorDeps.captureTreeState(this.ctx.packageDir);
+    const checkpoints = await _storyOrchestratorDeps.loadCheckpoints(this.ctx.featureDir ?? "");
+    const storyCp = this.ctx.storyId ? (checkpoints.get(this.ctx.storyId) ?? null) : null;
+    const plan = await _storyOrchestratorDeps.buildResumePlan(storyCp, tree);
     hydrateFromResumePlan(plan, phaseOutputs);
 
     // Carry forward seeded phases under the current run's `runId`. A phase

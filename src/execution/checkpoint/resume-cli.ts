@@ -25,7 +25,7 @@ import { join } from "node:path";
 import type { PhaseKind } from "../story-orchestrator";
 import { _storyOrchestratorDeps } from "../story-orchestrator";
 import { loadCheckpoints } from "./reader";
-import type { TreeState } from "./types";
+import type { StoryCheckpoint, TreeState } from "./types";
 import { createCheckpointWriter } from "./writer";
 
 /**
@@ -53,7 +53,7 @@ export type ResumeMode = "auto" | "fresh" | "no-resume";
  */
 export function applyResumeModeDeps(featureDir: string, mode: ResumeMode = "auto"): void {
   if (mode === "fresh" || mode === "no-resume") {
-    _storyOrchestratorDeps.loadCheckpoints = async (_fd: string): Promise<unknown> => new Map();
+    _storyOrchestratorDeps.loadCheckpoints = async (_fd: string): Promise<Map<string, StoryCheckpoint>> => new Map();
     return;
   }
   // mode === "auto" — wire to the real reader so the orchestrator can seed
@@ -61,7 +61,8 @@ export function applyResumeModeDeps(featureDir: string, mode: ResumeMode = "auto
   // `featureDir` from the closure (the parameter is the single source of
   // truth for which feature's checkpoint to read).
   const target = featureDir;
-  _storyOrchestratorDeps.loadCheckpoints = async (_fd: string): Promise<unknown> => loadCheckpoints(target);
+  _storyOrchestratorDeps.loadCheckpoints = async (_fd: string): Promise<Map<string, StoryCheckpoint>> =>
+    loadCheckpoints(target);
 }
 
 /**
@@ -75,6 +76,6 @@ export function applyResumeModeDeps(featureDir: string, mode: ResumeMode = "auto
  */
 export function applyRecordGreenDeps(featureDir: string, runId: string): void {
   const writer = createCheckpointWriter(join(featureDir, "checkpoint.jsonl"), runId);
-  _storyOrchestratorDeps.recordGreen = (storyId: string, phase: string, tree: unknown): Promise<void> =>
-    writer.recordGreen(storyId, phase as PhaseKind, tree as TreeState);
+  _storyOrchestratorDeps.recordGreen = (storyId: string, phase: string, tree: TreeState): Promise<void> =>
+    writer.recordGreen(storyId, phase as PhaseKind, tree);
 }

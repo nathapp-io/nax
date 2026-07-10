@@ -9,6 +9,7 @@ import { errorMessage } from "@/utils/errors";
 import { _gitDeps, captureGitRef } from "@/utils/git";
 import { captureTreeState as realCaptureTreeState } from "../checkpoint/resume-hydrate";
 import { buildResumePlan as realBuildResumePlan } from "../checkpoint/resume-plan";
+import type { ResumePlan } from "../checkpoint/resume-plan";
 import type { StoryCheckpoint, TreeState } from "../checkpoint/types";
 import { runNonBlockingFix } from "../non-blocking-fix";
 import { logDeterministicPhaseOutcome } from "../story-orchestrator-logging";
@@ -35,19 +36,19 @@ export const _storyOrchestratorDeps = {
    * implementations so the resume system works out of the box. Tests
    * override these to capture dispatch without hitting disk or git.
    */
-  recordGreen: async (_storyId: string, _phase: string, _tree: unknown): Promise<void> => {
+  recordGreen: async (_storyId: string, _phase: string, _tree: TreeState): Promise<void> => {
     // Stub — requires filePath + runId from the CLI layer to instantiate
     // CheckpointWriter. The CLI/runner layer overrides this with a real
     // writer when a featureDir is available.
   },
-  buildResumePlan: async (checkpoint: unknown, current: unknown): Promise<unknown> =>
-    realBuildResumePlan(checkpoint as StoryCheckpoint | null, current as TreeState),
-  captureTreeState: async (workdir: string): Promise<unknown> => {
+  buildResumePlan: async (checkpoint: StoryCheckpoint | null, current: TreeState): Promise<ResumePlan> =>
+    realBuildResumePlan(checkpoint, current),
+  captureTreeState: async (workdir: string): Promise<TreeState> => {
     const spawnWrapper = (cmd: string[], opts: unknown): unknown =>
       _gitDeps.spawn(cmd, opts as Parameters<typeof _gitDeps.spawn>[1]);
     return realCaptureTreeState(workdir, { _deps: { spawn: spawnWrapper } });
   },
-  loadCheckpoints: async (_featureDir: string): Promise<unknown> => new Map(),
+  loadCheckpoints: async (_featureDir: string): Promise<Map<string, StoryCheckpoint>> => new Map(),
 };
 
 /**

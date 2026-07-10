@@ -15,6 +15,7 @@
 
 import type { NaxConfig } from "../config";
 import { PluginProviderCache } from "../context/engine";
+import { NaxError } from "../errors";
 import type { LoadedHooksConfig } from "../hooks";
 import { fireHook } from "../hooks";
 import { getSafeLogger } from "../logger";
@@ -42,6 +43,22 @@ export const _runnerDeps = {
 
 // Re-export for backward compatibility
 export { resolveMaxAttemptsOutcome } from "./escalation";
+
+/**
+ * Guards `run()` against reentrant/concurrent invocation in the same process.
+ * `run()` saves and mutates the module-global `_storyOrchestratorDeps`
+ * (`loadCheckpoints` / `recordGreen`) for its own duration and restores the
+ * originals in its `finally`. A second `run()` starting while one is still
+ * in flight would race on that global: the second call's save/restore would
+ * clobber the first call's checkpoint deps mid-run, corrupting which
+ * feature's `checkpoint.jsonl` phases get read/recorded. There is currently
+ * no legitimate concurrent-`run()` caller (parallel execution fans out
+ * within a single `run()`, not across separate `run()` calls) — this guard
+ * turns a silent, hard-to-diagnose cross-feature corruption into an
+ * immediate, explicit failure if that assumption is ever violated.
+ * @internal - test use only.
+ */
+export const _runnerReentrancyGuard = { inFlight: false };
 
 /** Run options */
 
@@ -121,6 +138,19 @@ export async function run(options: RunOptions): Promise<RunResult> {
     resumeMode = "auto",
   } = options;
 
+  // Reentrant/concurrent `run()` would race on the module-global
+  // `_storyOrchestratorDeps` mutation below — see `_runnerReentrancyGuard`'s
+  // docstring. Fail fast instead of silently corrupting checkpoint state.
+  if (_runnerReentrancyGuard.inFlight) {
+    throw new NaxError(
+      "run() called while another run() is already in flight in this process — " +
+        "concurrent runs would race on the shared checkpoint dep seam",
+      "RUNNER_REENTRANT_CALL",
+      { stage: "execution", feature },
+    );
+  }
+  _runnerReentrancyGuard.inFlight = true;
+
   const startTime = Date.now();
   const runStartedAt = new Date().toISOString();
   const runId = `run-${new Date().toISOString().replace(/[:.]/g, "-")}`;
@@ -181,6 +211,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
   } catch (err) {
     _storyOrchestratorDeps.loadCheckpoints = origLoadCheckpoints;
     _storyOrchestratorDeps.recordGreen = origRecordGreen;
+    _runnerReentrancyGuard.inFlight = false;
     throw err;
   }
 
@@ -306,6 +337,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       // runCompletionPhase.
       _storyOrchestratorDeps.loadCheckpoints = origLoadCheckpoints;
       _storyOrchestratorDeps.recordGreen = origRecordGreen;
+      _runnerReentrancyGuard.inFlight = false;
       // Stop heartbeat on any exit (US-007)
       stopHeartbeat();
       // Cleanup crash handlers (MEM-1 fix)

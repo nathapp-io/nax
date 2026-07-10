@@ -94,6 +94,7 @@ export const executionStage: PipelineStage = {
       storyId: ctx.story.id,
       featureName: ctx.prd.feature,
       story: ctx.story,
+      ...(ctx.featureDir ? { featureDir: ctx.featureDir } : {}),
       ...(interactionBridge ? { interactionBridge } : {}),
     };
 

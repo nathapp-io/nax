@@ -18,6 +18,14 @@ export interface CallContext {
   readonly packageDir: string;
   readonly storyId?: string;
   readonly featureName?: string;
+  /**
+   * Absolute path to the feature directory (`.nax/features/<name>/`), when
+   * known. Input-side: consumed by the checkpoint/resume seam
+   * (`_storyOrchestratorDeps.loadCheckpoints`) to locate `checkpoint.jsonl`
+   * for the current feature. Absent for ad-hoc CLI calls with no feature
+   * context.
+   */
+  readonly featureDir?: string;
   readonly agentName: string;
   readonly sessionOverride?: {
     readonly role?: SessionRole;
