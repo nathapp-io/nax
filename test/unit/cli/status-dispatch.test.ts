@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import { dispatchStatusView, type StatusViewDeps } from "@/cli/status-dispatch";
+import { dispatchStatusView, type StatusViewDeps } from "@/cli";
 
 function makeDeps(): StatusViewDeps {
   return {

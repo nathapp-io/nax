@@ -17,6 +17,7 @@ export {
   displayFeatureStatus,
   type FeatureStatusOptions,
 } from "./status";
+export { dispatchStatusView, _statusViewDeps, type StatusViewDeps, type StatusViewOptions } from "./status-dispatch";
 export {
   runsListCommand,
   runsShowCommand,

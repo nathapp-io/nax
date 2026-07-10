@@ -18,7 +18,7 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import { emitCostReportJson, type CostReportEmitDeps } from "@/cli/status";
+import { emitCostReportJson, type CostReportEmitDeps } from "@/cli";
 import type { CostReportV1 } from "@/metrics";
 
 const FIXED_REPORT: CostReportV1 = {
@@ -124,7 +124,7 @@ describe("emitCostReportJson — AC4: empty runs safety", () => {
     const stdout = mock(() => {});
     // Real toCostReport — the orchestrator must let the mapper handle empty
     // runs without swallowing them into a fake non-null aggregate.
-    const { toCostReport: realToCostReport } = await import("@/metrics/report");
+    const { toCostReport: realToCostReport } = await import("@/metrics");
     const deps = makeDeps({
       loadRuns: mock(async () => []),
       toCostReport: realToCostReport as CostReportEmitDeps["toCostReport"],
