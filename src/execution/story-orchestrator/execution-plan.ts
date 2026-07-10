@@ -109,7 +109,7 @@ export class ExecutionPlan {
       }
 
       // Record green checkpoint: only after a phase has passed and produced output.
-      await _storyOrchestratorDeps.recordGreen(this.ctx.storyId, name, tree);
+      await _storyOrchestratorDeps.recordGreen(this.ctx.storyId ?? "unknown", name, tree);
     }
 
     // Baseline of gate failures the verifier implicitly blessed. The main loop
