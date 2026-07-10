@@ -18,6 +18,7 @@ import { describe, expect, test } from "bun:test";
 import { toCostReport } from "@/metrics";
 import type { CostReportDeps, CostReportV1 } from "@/metrics";
 import type { RunMetrics, StoryMetrics } from "@/metrics";
+import { calculateAggregateMetrics, getLastRun } from "@/metrics";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -133,7 +134,7 @@ describe("toCostReport — empty runs", () => {
 // ---------------------------------------------------------------------------
 
 describe("toCostReport — aggregate mirrors calculateAggregateMetrics", () => {
-  test("AC6: aggregate.totalRuns, totalCost, avgCostPerStory match calculateAggregateMetrics", () => {
+  test("AC6: aggregate.totalRuns, totalCost, avgCostPerStory equal calculateAggregateMetrics(runs)", () => {
     const stories = [
       makeStoryMetrics({ storyId: "US-001", cost: 0.4 }),
       makeStoryMetrics({ storyId: "US-002", cost: 0.6, modelUsed: "claude-opus-4-5" }),
@@ -141,11 +142,12 @@ describe("toCostReport — aggregate mirrors calculateAggregateMetrics", () => {
     const runs = [makeRun(stories, { runId: "run-a" })];
 
     const result = toCostReport(runs, fixedDeps);
+    const expected = calculateAggregateMetrics(runs);
 
     expect(result.aggregate).not.toBeNull();
-    expect(result.aggregate?.totalRuns).toBe(1);
-    expect(result.aggregate?.totalCost).toBeCloseTo(1.0, 6);
-    expect(result.aggregate?.avgCostPerStory).toBeCloseTo(0.5, 6);
+    expect(result.aggregate?.totalRuns).toBe(expected.totalRuns);
+    expect(result.aggregate?.totalCost).toBeCloseTo(expected.totalCost, 10);
+    expect(result.aggregate?.avgCostPerStory).toBeCloseTo(expected.avgCostPerStory, 10);
   });
 });
 
@@ -154,7 +156,7 @@ describe("toCostReport — aggregate mirrors calculateAggregateMetrics", () => {
 // ---------------------------------------------------------------------------
 
 describe("toCostReport — lastRun mirrors getLastRun", () => {
-  test("AC7: lastRun.runId and lastRun.feature equal getLastRun(runs).runId/feature", () => {
+  test("AC7: lastRun.runId and lastRun.feature equal getLastRun(runs)", () => {
     const older = makeRun([makeStoryMetrics({ storyId: "US-OLD" })], {
       runId: "run-old",
       feature: "feat-old",
@@ -167,10 +169,12 @@ describe("toCostReport — lastRun mirrors getLastRun", () => {
     });
 
     const result = toCostReport([older, newer], fixedDeps);
+    const last = getLastRun([older, newer]);
 
+    expect(last).not.toBeNull();
     expect(result.lastRun).not.toBeNull();
-    expect(result.lastRun?.runId).toBe("run-new");
-    expect(result.lastRun?.feature).toBe("feat-new");
+    expect(result.lastRun?.runId).toBe(last?.runId);
+    expect(result.lastRun?.feature).toBe(last?.feature);
   });
 });
 
