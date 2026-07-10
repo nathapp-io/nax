@@ -24,10 +24,12 @@ import { countStories, isComplete } from "../prd";
 import type { PRD } from "../prd/types";
 import { gitWithTimeout } from "../utils/git";
 import { NAX_VERSION } from "../version";
+import { applyResumeModeDeps } from "./checkpoint";
 import { stopHeartbeat } from "./crash-recovery";
 import { runCompletionPhase } from "./runner-completion";
 import { runExecutionPhase } from "./runner-execution";
 import { runSetupPhase } from "./runner-setup";
+import { _storyOrchestratorDeps } from "./story-orchestrator";
 
 /**
  * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
@@ -75,6 +77,14 @@ export interface RunOptions {
   skipPrecheck?: boolean;
   /** Pre-built AgentStreamEventBus so the TUI can subscribe to live agent events. */
   agentStreamEvents?: import("../runtime").IAgentStreamEventBus;
+  /**
+   * Resume mode for checkpoint seeding. The orchestrator's
+   * `_storyOrchestratorDeps.loadCheckpoints` is overridden based on this:
+   *   - `"auto"` (default): read real checkpoint.jsonl when present.
+   *   - `"fresh"` / `"no-resume"`: always return empty Map (no skip phases).
+   * Driven by `nax run --fresh` / `--no-resume` flags.
+   */
+  resumeMode?: import("./checkpoint").ResumeMode;
 }
 
 /** Run result */
@@ -107,7 +117,16 @@ export async function run(options: RunOptions): Promise<RunResult> {
     headless = false,
     skipPrecheck = false,
     agentStreamEvents,
+    resumeMode = "auto",
   } = options;
+
+  // US-004 — wire the orchestrator's checkpoint dep based on the resume mode.
+  // Auto: read real checkpoint.jsonl when present. Fresh / no-resume: ignore any
+  // prior checkpoint and seed an empty skip plan. Restore the stub default in
+  // the finally block so subsequent in-process runs are not contaminated.
+  const origLoadCheckpoints = _storyOrchestratorDeps.loadCheckpoints;
+  applyResumeModeDeps(featureDir ?? "", resumeMode);
+
   const startTime = Date.now();
   const runStartedAt = new Date().toISOString();
   const runId = `run-${new Date().toISOString().replace(/[:.]/g, "-")}`;
@@ -262,6 +281,9 @@ export async function run(options: RunOptions): Promise<RunResult> {
     const logger = getSafeLogger();
     try {
       logger?.debug("execution", "Runner finally block — starting cleanup");
+      // US-004 — restore the orchestrator's default loadCheckpoints stub so
+      // subsequent in-process runs (or test harnesses) are not contaminated.
+      _storyOrchestratorDeps.loadCheckpoints = origLoadCheckpoints;
       // Stop heartbeat on any exit (US-007)
       stopHeartbeat();
       // Cleanup crash handlers (MEM-1 fix)

@@ -15,6 +15,7 @@ export type { CheckpointWriterOptions } from "./writer";
 export { loadCheckpoints } from "./reader";
 export { buildResumePlan } from "./resume-plan";
 export type { ResumePlan } from "./resume-plan";
+export { applyResumeModeDeps, type ResumeMode } from "./resume-cli";
 export {
   buildCheckpointLogData,
   captureTreeState,

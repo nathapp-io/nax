@@ -76,6 +76,7 @@ import { detectCommand } from "../src/commands/detect";
 import { logsCommand } from "../src/commands/logs";
 import { precheckCommand } from "../src/commands/precheck";
 import { registerReplayCommand } from "../src/commands/replay";
+import { registerResumeCommand } from "../src/commands/resume";
 import { runsCommand } from "../src/commands/runs";
 import { unlockCommand } from "../src/commands/unlock";
 import { DEFAULT_CONFIG, findProjectDir, loadConfig, validateDirectory } from "../src/config";
@@ -394,6 +395,8 @@ program
   )
   .option("--schedule <when>", "Defer run start until <when> (e.g. 30m, 1h30m, 17:00, 2026-07-02T02:00)")
   .option("--compare <agents>", "Bake-off mode: comma-separated list of contestant agents (e.g. claude,codex)")
+  .option("--fresh", "Ignore any existing checkpoint.jsonl and re-run every incomplete story from scratch", false)
+  .option("--no-resume", "Alias for --fresh: never auto-resume from a prior checkpoint", false)
   .action(async (options) => {
     // Validate directory path
     let workdir: string;
@@ -775,6 +778,7 @@ program
       headless: useHeadless,
       skipPrecheck: options.skipPrecheck ?? false,
       agentStreamEvents,
+      resumeMode: options.fresh === true || options.resume === false ? "fresh" : "auto",
     });
 
     // Create/update latest.jsonl symlink
@@ -1484,6 +1488,9 @@ runs
 
 // ── replay ───────────────────────────────────────────
 registerReplayCommand(program);
+
+// ── resume ───────────────────────────────────────────
+registerResumeCommand(program);
 
 // ── curator ──────────────────────────────────────────
 const curator = program.command("curator").description("Inspect and manage curator proposals");
