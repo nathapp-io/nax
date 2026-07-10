@@ -1,0 +1,142 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "Given `toCostReport` imported from `@/metrics`, when it is called as `toCostReport([], deps)`, then it returns an object and does not throw.",
+    "refined": "Assert that calling `toCostReport([], deps)` returns a value where `typeof result === 'object' && result !== null` and does not throw any error.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "Given any deps object, when `toCostReport([], deps)` returns, then `schemaVersion` equals the string `\"1.0\"`.",
+    "refined": "Assert that `typeof result.schemaVersion === 'string'` and `result.schemaVersion === '1.0'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "Given `deps.now` returning `\"2026-01-01T00:00:00.000Z\"`, when `toCostReport([], deps)` returns, then `generatedAt` equals `\"2026-01-01T00:00:00.000Z\"`.",
+    "refined": "Assert that `result.generatedAt === '2026-01-01T00:00:00.000Z'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Given `deps.project` equal to `\"myproj\"`, when `toCostReport(runs, deps)` returns, then `project` equals `\"myproj\"`.",
+    "refined": "Assert that `result.project === 'myproj'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "Given an empty runs array, when `toCostReport([], deps)` returns, then `aggregate === null`, `lastRun === null`, and `modelEfficiency` deep-equals `[]`.",
+    "refined": "Assert that `result.aggregate === null && result.lastRun === null && Array.isArray(result.modelEfficiency) && result.modelEfficiency.length === 0`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Given a non-empty `runs` array, when `toCostReport(runs, deps)` returns, then `aggregate.totalRuns`, `aggregate.totalCost`, and `aggregate.avgCostPerStory` equal the corresponding fields from `calculateAggregateMetrics(runs)`.",
+    "refined": "Assert that `result.aggregate` is not null and `result.aggregate.totalRuns === calculateAggregateMetrics(runs).totalRuns && result.aggregate.totalCost === calculateAggregateMetrics(runs).totalCost && result.aggregate.avgCostPerStory === calculateAggregateMetrics(runs).avgCostPerStory`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "Given a non-empty `runs` array, when `toCostReport(runs, deps)` returns, then `lastRun.runId` and `lastRun.feature` equal the fields on `getLastRun(runs)`.",
+    "refined": "Assert that `result.lastRun` is not null and `result.lastRun.runId === getLastRun(runs).runId && result.lastRun.feature === getLastRun(runs).feature`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "Given the last run contains two stories with costs `0.2` and `0.9`, when `toCostReport(runs, deps)` returns, then `lastRun.stories` is ordered by `cost` descending as `[0.9, 0.2]` and each entry exposes exactly `storyId`, `cost`, `model`, and `attempts`.",
+    "refined": "Assert that `result.lastRun.stories.length === 2 && result.lastRun.stories[0].cost === 0.9 && result.lastRun.stories[1].cost === 0.2 && Object.keys(result.lastRun.stories[0]).sort() === ['attempts','cost','model','storyId'].sort() && Object.keys(result.lastRun.stories[1]).sort() === ['attempts','cost','model','storyId'].sort()`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "Given the aggregate contains two models with `totalCost` values `1.0` and `3.0`, when `toCostReport(runs, deps)` returns, then `modelEfficiency` is ordered by `totalCost` descending as `[3.0, 1.0]` and each entry exposes exactly `model`, `attempts`, `passRate`, `avgCost`, and `totalCost`.",
+    "refined": "Assert that `result.modelEfficiency.length === 2 && result.modelEfficiency[0].totalCost === 3.0 && result.modelEfficiency[1].totalCost === 1.0 && Object.keys(result.modelEfficiency[0]).sort() === ['avgCost','attempts','model','passRate','totalCost'].sort() && Object.keys(result.modelEfficiency[1]).sort() === ['avgCost','attempts','model','passRate','totalCost'].sort()`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "Given the selected last run has `totalStories` equal to `0`, when `toCostReport(runs, deps)` returns, then `lastRun.avgCostPerStory` equals `0` and is not `NaN`.",
+    "refined": "Assert that `result.lastRun.avgCostPerStory === 0 && Number.isNaN(result.lastRun.avgCostPerStory) === false`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given a populated `runs` array, when `toCostReport(runs, deps)` returns, then `aggregate`, `lastRun`, and every `lastRun.stories` entry contain none of the keys `totalTokens`, `context`, `pollution`, `complexityAccuracy`, or `fallback`.",
+    "refined": "Assert that `!('totalTokens' in result.aggregate) && !('context' in result.aggregate) && !('pollution' in result.aggregate) && !('complexityAccuracy' in result.aggregate) && !('fallback' in result.aggregate) && !('totalTokens' in result.lastRun) && !('context' in result.lastRun) && !('pollution' in result.lastRun) && !('complexityAccuracy' in result.lastRun) && !('fallback' in result.lastRun) && result.lastRun.stories.every(s => !('totalTokens' in s) && !('context' in s) && !('pollution' in s) && !('complexityAccuracy' in s) && !('fallback' in s))`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given `emitCostReportJson` imported from `@/cli/status`, when `typeof emitCostReportJson` is evaluated, then it equals `\"function\"`.",
+    "refined": "const { emitCostReportJson } = await import('@/cli/status'); expect(typeof emitCostReportJson).toBe('function');",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Given injected deps where `loadRuns` resolves to a non-empty runs array and `stdout` is a spy, when `emitCostReportJson(workdir, deps)` resolves, then `stdout` is called exactly once with a string whose `JSON.parse` result has `schemaVersion === \"1.0\"`.",
+    "refined": "const stdoutSpy = _deps.stdout as jest.Mock; await emitCostReportJson(workdir, _deps); expect(stdoutSpy).toHaveBeenCalledTimes(1); const output = stdoutSpy.mock.calls[0][0] as string; expect(typeof output).toBe('string'); const parsed = JSON.parse(output); expect(parsed.schemaVersion).toBe('1.0');",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given injected deps where `toCostReport` is a spy returning a fixed report, when `emitCostReportJson(workdir, deps)` resolves, then `toCostReport` is invoked exactly once with the runs array returned by the injected `loadRuns`.",
+    "refined": "const loadRunsResult = [{ id: 'run-1', cost: 100 }]; _deps.loadRuns = async () => loadRunsResult; const toCostReportSpy = _deps.toCostReport as jest.Mock; await emitCostReportJson(workdir, _deps); expect(toCostReportSpy).toHaveBeenCalledTimes(1); expect(toCostReportSpy).toHaveBeenCalledWith(loadRunsResult);",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given injected deps where `loadRuns` resolves to `[]`, when `emitCostReportJson(workdir, deps)` resolves, then it does not throw and the single `stdout` string parses to an object with `aggregate === null` and `modelEfficiency` deep-equal to `[]`.",
+    "refined": "_deps.loadRuns = async () => []; const stdoutSpy = _deps.stdout as jest.Mock; await expect(emitCostReportJson(workdir, _deps)).resolves.toBeUndefined(); expect(stdoutSpy).toHaveBeenCalledTimes(1); const parsed = JSON.parse(stdoutSpy.mock.calls[0][0]); expect(parsed.aggregate).toBeNull(); expect(parsed.modelEfficiency).toEqual([]);",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given injected deps where `toCostReport` returns a report object, when `emitCostReportJson(workdir, deps)` resolves, then `JSON.parse` of the single `stdout` string deep-equals that report object and the string contains a newline.",
+    "refined": "const fixedReport = { schemaVersion: '1.0', project: 'test', aggregate: null, lastRun: null, modelEfficiency: [] }; _deps.toCostReport = async () => fixedReport; const stdoutSpy = _deps.stdout as jest.Mock; await emitCostReportJson(workdir, _deps); const output = stdoutSpy.mock.calls[0][0] as string; expect(JSON.parse(output)).toEqual(fixedReport); expect(output.endsWith('\\n')).toBe(true);",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given `dispatchStatusView` deps with spies for every view function and `options = { cost: true, json: true, last: true }`, when `dispatchStatusView(workdir, options, deps)` runs, then it invokes `deps.emitCostReportJson` and does not invoke `deps.displayLastRunMetrics` (JSON mode wins over --last).",
+    "refined": "const emitSpy = _deps.emitCostReportJson as jest.Mock; const displaySpy = _deps.displayLastRunMetrics as jest.Mock; dispatchStatusView(workdir, { cost: true, json: true, last: true }, _deps); expect(emitSpy).toHaveBeenCalledTimes(1); expect(displaySpy).not.toHaveBeenCalled();",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given `dispatchStatusView` deps with spies for every view function and `options = { cost: true, json: true, model: true }`, when `dispatchStatusView(workdir, options, deps)` runs, then it invokes `deps.emitCostReportJson` and does not invoke `deps.displayModelEfficiency` (JSON mode wins over --model).",
+    "refined": "const emitSpy = _deps.emitCostReportJson as jest.Mock; const displaySpy = _deps.displayModelEfficiency as jest.Mock; dispatchStatusView(workdir, { cost: true, json: true, model: true }, _deps); expect(emitSpy).toHaveBeenCalledTimes(1); expect(displaySpy).not.toHaveBeenCalled();",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given `dispatchStatusView` deps with spies for every view function and `options = { cost: false, json: true }`, when `dispatchStatusView(workdir, options, deps)` runs, then it invokes `deps.displayFeatureStatus` with the feature-status options and does not invoke `deps.emitCostReportJson`.",
+    "refined": "const emitSpy = _deps.emitCostReportJson as jest.Mock; const displaySpy = _deps.displayFeatureStatus as jest.Mock; dispatchStatusView(workdir, { cost: false, json: true }, _deps); expect(displaySpy).toHaveBeenCalledTimes(1); expect(emitSpy).not.toHaveBeenCalled();",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given injected deps where `loadRuns` rejects with an I/O error, when `emitCostReportJson(workdir, deps)` is awaited, then it rejects with the same error instead of swallowing or replacing it.",
+    "refined": "const ioError = new Error('ENOENT: run archive not found'); _deps.loadRuns = async () => { throw ioError; }; await expect(emitCostReportJson(workdir, _deps)).rejects.toThrow(ioError);",
+    "testable": true,
+    "storyId": "US-002"
+  }
+]

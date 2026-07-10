@@ -43,10 +43,6 @@ import {
   acceptCommand,
   agentsListCommand,
   contextInspectCommand,
-  displayCostMetrics,
-  displayFeatureStatus,
-  displayLastRunMetrics,
-  displayModelEfficiency,
   exportPromptCommand,
   planCommand,
   planDecomposeCommand,
@@ -72,6 +68,7 @@ import {
 } from "../src/cli/config-profile";
 import { resolveFeatureSpec } from "../src/cli/features-resolve";
 import { generateCommand } from "../src/cli/generate";
+import { registerStatusCommand } from "../src/cli/status-dispatch";
 import { detectCommand } from "../src/commands/detect";
 import { logsCommand } from "../src/commands/logs";
 import { precheckCommand } from "../src/commands/precheck";
@@ -1297,48 +1294,7 @@ routingCmd
   });
 
 // ── status ───────────────────────────────────────────
-program
-  .command("status")
-  .description("Show current run status")
-  .option("-f, --feature <name>", "Feature name")
-  .option("-d, --dir <path>", "Project directory", process.cwd())
-  .option("--cost", "Show cost metrics across all runs", false)
-  .option("--last", "Show last run metrics (requires --cost)", false)
-  .option("--model", "Show per-model efficiency (requires --cost)", false)
-  .action(async (options) => {
-    // Validate directory path
-    let workdir: string;
-    try {
-      workdir = validateDirectory(options.dir);
-    } catch (err) {
-      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
-      process.exit(1);
-    }
-
-    const naxDir = findProjectDir(workdir);
-    if (!naxDir) {
-      console.error(chalk.red("nax not initialized."));
-      process.exit(1);
-    }
-
-    // Handle cost metrics flags
-    if (options.cost) {
-      if (options.last) {
-        await displayLastRunMetrics(workdir);
-      } else if (options.model) {
-        await displayModelEfficiency(workdir);
-      } else {
-        await displayCostMetrics(workdir);
-      }
-      return;
-    }
-
-    // Default status: show feature progress (new implementation with active run detection)
-    await displayFeatureStatus({
-      feature: options.feature,
-      dir: options.dir,
-    });
-  });
+registerStatusCommand(program);
 
 // ── logs ─────────────────────────────────────────────
 program

@@ -12,9 +12,21 @@ export {
   displayCostMetrics,
   displayLastRunMetrics,
   displayModelEfficiency,
+  emitCostReportJson,
+  type CostReportEmitDeps,
   displayFeatureStatus,
   type FeatureStatusOptions,
 } from "./status";
+export {
+  dispatchStatusView,
+  registerStatusCommand,
+  runStatusAction,
+  _statusViewDeps,
+  _statusCommandActionDeps,
+  type StatusCommandActionDeps,
+  type StatusViewDeps,
+  type StatusViewOptions,
+} from "./status-dispatch";
 export {
   runsListCommand,
   runsShowCommand,

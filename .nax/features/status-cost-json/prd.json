@@ -1,0 +1,126 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "status-cost-json",
+  "branchName": "feat/status-cost-json",
+  "createdAt": "2026-07-10T08:49:26Z",
+  "updatedAt": "2026-07-10T10:40:35.614Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Cost Report Schema And Pure Mapper",
+      "description": "**Goal** — Introduce the stable public `CostReportV1` contract and a pure `toCostReport` mapper that converts internal run metrics into a curated JSON-safe export.\n\n**Motivation** — Internal types would leak if exposed naively. `AggregateMetrics` / `RunMetrics` / `StoryMetrics` are internal shapes that evolve. Exporting them directly would couple every internal refactor to the public contract — the exact coupling §1.4 exists to remove. A curated `CostReportV1` behind a mapper is the seam.\n\n**Approach** — Introduce the public `CostReportV1` contract and the pure `toCostReport` mapper in a new `src/metrics/report.ts`, exported from the `src/metrics` barrel. Pure, no I/O, no logger; composes the existing `calculateAggregateMetrics` and `getLastRun` helpers.\n\n**Scope** — In: `src/metrics/report.ts`, `src/metrics/index.ts`, and mapper-focused unit coverage for the stable export shape. Out: CLI flag wiring, stdout emission, logger behavior, and any changes to the existing human cost views.\n\n**Interface**\n```typescript\ninterface CostReportV1 {\n  schemaVersion: \"1.0\";\n  project: string;        // resolved projectKey (config.name || basename(workdir))\n  generatedAt: string;    // ISO timestamp, injected via deps.now\n  aggregate: CostAggregate | null;      // null when there are no runs\n  lastRun: CostRunSummary | null;       // null when there are no runs\n  modelEfficiency: CostModelStat[];     // sorted desc by totalCost; [] when none\n}\n\ninterface CostAggregate {\n  totalRuns: number;\n  totalStories: number;\n  totalCost: number;\n  avgCostPerStory: number;\n  avgCostPerFeature: number;\n  firstPassRate: number;\n  escalationRate: number;\n}\n\ninterface CostRunSummary {\n  runId: string;\n  feature: string;\n  startedAt: string;\n  completedAt: string;\n  durationMs: number;         // from RunMetrics.totalDurationMs\n  totalStories: number;\n  storiesCompleted: number;\n  storiesFailed: number;\n  totalCost: number;\n  avgCostPerStory: number;    // totalCost / totalStories, 0 when totalStories === 0\n  stories: CostStory[];       // every story in the last run, sorted desc by cost\n}\n\ninterface CostStory {\n  storyId: string;\n  cost: number;\n  model: string;              // from StoryMetrics.modelUsed\n  attempts: number;\n}\n\ninterface CostModelStat {\n  model: string;              // the modelEfficiency record key\n  attempts: number;\n  passRate: number;\n  avgCost: number;\n  totalCost: number;\n}\n```",
+      "acceptanceCriteria": [
+        "Given `toCostReport` imported from `@/metrics`, when it is called as `toCostReport([], deps)`, then it returns an object and does not throw.",
+        "Given any deps object, when `toCostReport([], deps)` returns, then `schemaVersion` equals the string `\"1.0\"`.",
+        "Given `deps.now` returning `\"2026-01-01T00:00:00.000Z\"`, when `toCostReport([], deps)` returns, then `generatedAt` equals `\"2026-01-01T00:00:00.000Z\"`.",
+        "Given `deps.project` equal to `\"myproj\"`, when `toCostReport(runs, deps)` returns, then `project` equals `\"myproj\"`.",
+        "Given an empty runs array, when `toCostReport([], deps)` returns, then `aggregate === null`, `lastRun === null`, and `modelEfficiency` deep-equals `[]`.",
+        "Given a non-empty `runs` array, when `toCostReport(runs, deps)` returns, then `aggregate.totalRuns`, `aggregate.totalCost`, and `aggregate.avgCostPerStory` equal the corresponding fields from `calculateAggregateMetrics(runs)`.",
+        "Given a non-empty `runs` array, when `toCostReport(runs, deps)` returns, then `lastRun.runId` and `lastRun.feature` equal the fields on `getLastRun(runs)`.",
+        "Given the last run contains two stories with costs `0.2` and `0.9`, when `toCostReport(runs, deps)` returns, then `lastRun.stories` is ordered by `cost` descending as `[0.9, 0.2]` and each entry exposes exactly `storyId`, `cost`, `model`, and `attempts`.",
+        "Given the aggregate contains two models with `totalCost` values `1.0` and `3.0`, when `toCostReport(runs, deps)` returns, then `modelEfficiency` is ordered by `totalCost` descending as `[3.0, 1.0]` and each entry exposes exactly `model`, `attempts`, `passRate`, `avgCost`, and `totalCost`.",
+        "Given the selected last run has `totalStories` equal to `0`, when `toCostReport(runs, deps)` returns, then `lastRun.avgCostPerStory` equals `0` and is not `NaN`.",
+        "Given a populated `runs` array, when `toCostReport(runs, deps)` returns, then `aggregate`, `lastRun`, and every `lastRun.stories` entry contain none of the keys `totalTokens`, `context`, `pollution`, `complexityAccuracy`, or `fallback`."
+      ],
+      "tags": [
+        "feature",
+        "metrics",
+        "json",
+        "cli"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Adds a new mapper module, public types, barrel exports, and focused unit coverage while reusing existing aggregate helpers without changing runtime CLI wiring.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/metrics/types.ts",
+        "src/metrics/aggregator.ts",
+        "src/metrics/index.ts",
+        "src/commands/replay.ts",
+        "test/unit/replay/json.test.ts"
+      ],
+      "expectedFiles": [
+        "src/metrics/report.ts",
+        "test/unit/metrics/report.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "518ea8af9d42071b0cb169f32fcc7c49176f7eec"
+    },
+    {
+      "id": "US-002",
+      "title": "CLI JSON Emit And Status Flag Wiring",
+      "description": "**Goal** — Add `nax status --cost --json` so the CLI emits one stable pretty-printed `CostReportV1` object to stdout through an injected output seam.\n\n**Motivation** — No machine-readable cost surface. `src/cli/status-cost.ts` emits via `logger.info`; there is no `--json` flag on `status`. A dashboard, CI spend gate, or spend-report script must parse formatted log output.\n\n**Approach** — Add `emitCostReportJson(workdir, deps?)` to `src/cli/status-cost.ts` (re-exported from `src/cli/status.ts`) that loads run metrics, resolves the project key, maps via the injected `toCostReport`, and writes pretty JSON through the injected `stdout`. Wire the `--json` option and its route into the `bin/nax.ts` `status` command.\n\n**Scope** — In: JSON emit orchestration in `src/cli/status-cost.ts`, barrel re-export wiring, status command option/branch wiring in `bin/nax.ts`, and CLI-deps tests for the emit seam. Out: changes to the human logger-based `displayCostMetrics`, `displayLastRunMetrics`, and `displayModelEfficiency` behavior beyond leaving them untouched.\n\n**Interface**\n```typescript\ninterface CostReportV1 {\n  schemaVersion: \"1.0\";\n  project: string;        // resolved projectKey (config.name || basename(workdir))\n  generatedAt: string;    // ISO timestamp, injected via deps.now\n  aggregate: CostAggregate | null;      // null when there are no runs\n  lastRun: CostRunSummary | null;       // null when there are no runs\n  modelEfficiency: CostModelStat[];     // sorted desc by totalCost; [] when none\n}\n```\n\n**Design Notes** — `stdout` must receive exactly `JSON.stringify(report, null, 2)` plus a trailing newline. In JSON mode `--last` and `--model` are ignored because the report always includes aggregate, last-run, and model-efficiency sections. `emitCostReportJson` should follow the `ReplayCommandDeps` pattern from `src/commands/replay.ts`, inject `loadRuns`, `toCostReport`, `now`, and `stdout`, and let I/O failures from `loadRunMetrics` propagate unchanged.",
+      "acceptanceCriteria": [
+        "Given `emitCostReportJson` imported from `@/cli/status`, when `typeof emitCostReportJson` is evaluated, then it equals `\"function\"`.",
+        "Given injected deps where `loadRuns` resolves to a non-empty runs array and `stdout` is a spy, when `emitCostReportJson(workdir, deps)` resolves, then `stdout` is called exactly once with a string whose `JSON.parse` result has `schemaVersion === \"1.0\"`.",
+        "Given injected deps where `toCostReport` is a spy returning a fixed report, when `emitCostReportJson(workdir, deps)` resolves, then `toCostReport` is invoked exactly once with the runs array returned by the injected `loadRuns`.",
+        "Given injected deps where `loadRuns` resolves to `[]`, when `emitCostReportJson(workdir, deps)` resolves, then it does not throw and the single `stdout` string parses to an object with `aggregate === null` and `modelEfficiency` deep-equal to `[]`.",
+        "Given injected deps where `toCostReport` returns a report object, when `emitCostReportJson(workdir, deps)` resolves, then `JSON.parse` of the single `stdout` string deep-equals that report object and the string contains a newline.",
+        "Given `dispatchStatusView` deps with spies for every view function and `options = { cost: true, json: true, last: true }`, when `dispatchStatusView(workdir, options, deps)` runs, then it invokes `deps.emitCostReportJson` and does not invoke `deps.displayLastRunMetrics` (JSON mode wins over --last).",
+        "Given `dispatchStatusView` deps with spies for every view function and `options = { cost: true, json: true, model: true }`, when `dispatchStatusView(workdir, options, deps)` runs, then it invokes `deps.emitCostReportJson` and does not invoke `deps.displayModelEfficiency` (JSON mode wins over --model).",
+        "Given `dispatchStatusView` deps with spies for every view function and `options = { cost: false, json: true }`, when `dispatchStatusView(workdir, options, deps)` runs, then it invokes `deps.displayFeatureStatus` with the feature-status options and does not invoke `deps.emitCostReportJson`.",
+        "Given injected deps where `loadRuns` rejects with an I/O error, when `emitCostReportJson(workdir, deps)` is awaited, then it rejects with the same error instead of swallowing or replacing it."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "metrics",
+        "json"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Extends existing CLI modules and commander wiring, introduces injected emit dependencies, and likely creates a new CLI test file because no existing status-cost test file is present.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/cli/status-cost.ts",
+        "src/cli/status.ts",
+        "bin/nax.ts",
+        "src/commands/replay.ts",
+        "src/metrics/report.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/cli/status-cost.test.ts",
+        "src/cli/status-dispatch.ts",
+        "test/unit/cli/status-dispatch.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "38be1d518fea73b74e663905b20c6e0bcab15033"
+    }
+  ],
+  "analysis": "This feature extends the existing `status` CLI cost-reporting path with a stable machine-readable surface instead of changing the current human logger views. The current cost views live in `src/cli/status-cost.ts:13-177`; `resolveOutputDir()` derives `projectKey` from `config?.name?.trim() || basename(workdir)` and resolves the metrics directory via `projectOutputDir()` (`src/cli/status-cost.ts:13-17`). `displayCostMetrics()` loads runs and logs aggregate human fields only (`src/cli/status-cost.ts:29-50`), `displayLastRunMetrics()` logs the most recent run plus top stories and currently computes `avgCostPerStory` as `lastRun.totalCost / lastRun.totalStories` without a zero guard (`src/cli/status-cost.ts:77-101`), and `displayModelEfficiency()` logs sorted model stats plus complexity accuracy (`src/cli/status-cost.ts:129-177`). There is no JSON emit path in this module today, and the barrel `src/cli/status.ts:1-13` only re-exports the three human cost functions. The top-level CLI wiring in `bin/nax.ts:1300-1334` exposes `--cost`, `--last`, and `--model`, and routes directly to those human functions; there is no `--json` option on `status` yet. `bin/nax.ts:42-60` imports those functions through the broader CLI barrel, so the new export must remain reachable through `src/cli/status.ts` and then `src/cli/index.ts:11-17`.\n\nThe internal metrics seam already exists and should be reused rather than recomputed. `RunMetrics` and `AggregateMetrics` are defined in `src/metrics/types.ts:235-311`; `RunMetrics` contains the run-level fields the spec wants (`runId`, `feature`, `startedAt`, `completedAt`, `totalCost`, `totalStories`, `storiesCompleted`, `storiesFailed`, `totalDurationMs`, `stories`) plus internal-only `totalTokens` and optional `fallback` that must not leak into the public contract. `StoryMetrics` includes `modelUsed`, `attempts`, optional `context`, and optional `fallback` (`src/metrics/types.ts:98-201`), which is why the mapper has to curate fields instead of exporting internal objects directly. `calculateAggregateMetrics()` already returns the aggregate and per-model stats, including `modelEfficiency` and internal-only `complexityAccuracy` (`src/metrics/aggregator.ts:29-167`), and `getLastRun()` already encapsulates the last-run selection (`src/metrics/aggregator.ts:184-191`). The public metrics barrel at `src/metrics/index.ts:7-21` currently exports types plus `loadRunMetrics`, `calculateAggregateMetrics`, `deriveRunFallbackAggregates`, and `getLastRun`; adding `CostReportV1` and `toCostReport` here preserves the repo’s barrel-import convention and keeps consumers on `@/metrics` rather than leaf imports.\n\nThe strongest implementation precedent is the existing replay JSON design. `ReplayCommandDeps` in `src/commands/replay.ts:41-51` exposes swappable `stdout`, `stderr`, and mapper dependencies; `_replayCmdDeps` wires defaults with `process.stdout.write` and `toReplayJson` (`src/commands/replay.ts:95-105`); and `runReplay()` switches between human and JSON output by serializing a pure mapper result with `JSON.stringify(..., null, 2)` and a trailing newline (`src/commands/replay.ts:115-158`). The replay tests show the project’s preferred testing pattern for this seam: pure mapper tests in `test/unit/replay/json.test.ts:1-103`, and orchestrator/CLI-deps tests in `test/unit/commands/replay.test.ts:102-258` that inject spies for `toReplayJson` and `stdout` and assert the exact wiring behavior. That precedent should be mirrored for `toCostReport` and `emitCostReportJson`.\n\nExisting tests cover the underlying metrics helpers but not the new public report surface. `test/unit/metrics/metrics.test.ts:1-276` already verifies empty aggregates, aggregate math, model efficiency, and `getLastRun()`, and `test/unit/metrics/aggregator.test.ts:1-164` covers `complexityAccuracy` behavior. These tests reduce risk when the mapper composes existing helpers instead of reimplementing them. There does not appear to be an existing `status-cost` unit test file in `test/unit/cli`; searches for `displayCostMetrics`, `displayLastRunMetrics`, `displayModelEfficiency`, and `status-cost` returned no matches in tests, while `test/unit/cli` currently contains feature-status and project-level status tests only. That means US-002 likely needs to create a new CLI-focused test file even though the spec text says it extends an existing one. This is a spec/codebase mismatch to note for implementers, not a reason to change scope.\n\nImpact area summary: `src/metrics/index.ts` must gain the new public exports; a new pure mapper module should live under `src/metrics/report.ts`; `src/cli/status-cost.ts` must gain the JSON emitter while leaving the human `display*` functions behaviorally unchanged; `src/cli/status.ts` must re-export the emitter; and `bin/nax.ts` must register `--json` on the `status` command and route `options.cost && options.json` before `--last` or `--model`. Because `bin/nax.ts` imports from the broader CLI barrel, no separate import path should bypass the `src/cli/status.ts` seam. The likely new tests are `test/unit/metrics/report.test.ts` for the pure mapper and a new `test/unit/cli/status-cost.test.ts` for injected deps around `emitCostReportJson`, alongside possible small import/export assertions through `@/metrics` and `@/cli/status`.\n\nPrimary risks: exposing internal metrics types directly would freeze internal structure and leak fields the spec explicitly excludes (`totalTokens`, `context`, `pollution`, `complexityAccuracy`, `fallback`), so the mapper must construct fresh plain objects rather than pass through `RunMetrics` or `StoryMetrics`; JSON mode must not accidentally emit logger lines because the existing cost code is logger-driven and downstream consumers require stdout to contain only parseable JSON; the last-run average must explicitly guard `totalStories === 0` to avoid `NaN`; model and story ordering must be deterministic (`totalCost` desc for models, `cost` desc for stories); and project naming must reuse the exact `resolveOutputDir` project-key logic so the exported `project` field matches the metrics directory resolution. Backward compatibility is favorable: this is additive CLI functionality gated behind `--cost --json`, existing human `--cost`, `--cost --last`, and `--cost --model` output stays intact, and the public contract is versioned as `schemaVersion: \"1.0\"` to preserve future migration space. Migration path is therefore minimal: downstream scripts can opt into `nax status --cost --json` immediately, while existing human consumers continue unchanged. Error-handling expectations are also explicit from the spec and current design: empty metrics should still return valid JSON with null/empty sections, and I/O failures from `loadRunMetrics` should continue to propagate rather than being swallowed.",
+  "routingProfile": "cross-agent"
+}
