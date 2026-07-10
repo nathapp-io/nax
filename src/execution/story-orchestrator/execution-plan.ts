@@ -4,6 +4,7 @@ import type { CallContext } from "@/operations";
 import { errorMessage } from "@/utils/errors";
 import { hydrateFromResumePlan } from "../checkpoint/resume-hydrate";
 import type { ResumePlan } from "../checkpoint/resume-plan";
+import type { StoryCheckpoint } from "../checkpoint/types";
 import {
   createMeasureSourceDiff,
   nonBlockingExcludePhases,
@@ -55,7 +56,13 @@ export class ExecutionPlan {
       headSha: string;
       dirtyDigest: string;
     };
-    const plan = (await _storyOrchestratorDeps.buildResumePlan(null, tree)) as ResumePlan;
+    const checkpoints = (await _storyOrchestratorDeps.loadCheckpoints(
+      (this.ctx as { featureDir?: string }).featureDir ?? "",
+    )) as Map<string, unknown>;
+    const storyCp = this.ctx.storyId
+      ? ((checkpoints.get(this.ctx.storyId) as StoryCheckpoint | undefined) ?? null)
+      : null;
+    const plan = (await _storyOrchestratorDeps.buildResumePlan(storyCp, tree)) as ResumePlan;
     hydrateFromResumePlan(plan, phaseOutputs);
 
     // TDD RED → GREEN → handover contract: a gate failure halts the canonical
@@ -109,7 +116,13 @@ export class ExecutionPlan {
       }
 
       // Record green checkpoint: only after a phase has passed and produced output.
-      await _storyOrchestratorDeps.recordGreen(this.ctx.storyId ?? "unknown", name, tree);
+      if (!this.ctx.storyId) {
+        logger?.warn("story-orchestrator", "Skipping recordGreen — no storyId on CallContext", {
+          phase: name,
+        });
+      } else {
+        await _storyOrchestratorDeps.recordGreen(this.ctx.storyId, name, tree);
+      }
     }
 
     // Baseline of gate failures the verifier implicitly blessed. The main loop
