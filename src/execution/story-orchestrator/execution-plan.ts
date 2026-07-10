@@ -8,6 +8,8 @@ import {
   nonBlockingExtraPhases,
   shouldRunNonBlockingFix,
 } from "../non-blocking-fix";
+import { hydrateFromResumePlan } from "../checkpoint/resume-hydrate";
+import type { ResumePlan } from "../checkpoint/resume-plan";
 import { gateFailureKeys, gateRegressedAfterRectification, phaseExplicitlyPassed, phasePassed } from "./phase-eval";
 import { collectOrderedPhases } from "./phase-state";
 import { runRectification } from "./rectification";
@@ -46,6 +48,16 @@ export class ExecutionPlan {
     const startedAt = Date.now();
     const logger = getSafeLogger();
 
+    // Capture tree state and build resume plan — seed phaseOutputs from prior
+    // green phases so the main loop skips them. Cheap gates are never seeded:
+    // they always re-execute to confirm the working tree is still green.
+    const tree = (await _storyOrchestratorDeps.captureTreeState(this.ctx.packageDir)) as {
+      headSha: string;
+      dirtyDigest: string;
+    };
+    const plan = (await _storyOrchestratorDeps.buildResumePlan(null, tree)) as ResumePlan;
+    hydrateFromResumePlan(plan, phaseOutputs);
+
     // TDD RED → GREEN → handover contract: a gate failure halts the canonical
     // sequence unconditionally. Verifier and downstream review phases run only on
     // green (passing-gate) code — they must never judge a broken state.
@@ -62,6 +74,15 @@ export class ExecutionPlan {
     // deriveTddFailureCategory now handles that case instead.
     const orderedPhases = collectOrderedPhases(this.state);
     for (const [phaseIndex, phase] of orderedPhases.entries()) {
+      const name = phase.slot.op.name;
+
+      // Resume skip guard: phases seeded from a prior checkpoint (via
+      // hydrateFromResumePlan) are already green — skip them. Cheap gates are
+      // never seeded, so they always re-execute even on resume.
+      if (name in phaseOutputs && phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
+        continue;
+      }
+
       try {
         await runPhase(this.ctx, phase.slot, phaseCosts, phaseOutputs, this.isThreeSession, {
           index: phaseIndex + 1,
@@ -70,7 +91,7 @@ export class ExecutionPlan {
       } catch (error) {
         logger?.error("story-orchestrator", "Phase threw unexpected error", {
           storyId: this.ctx.storyId,
-          phase: phase.slot.op.name,
+          phase: name,
           error: errorMessage(error),
         });
         throw error;
@@ -79,13 +100,16 @@ export class ExecutionPlan {
       // Short-circuit on any phase failure (spec §2C: any phase returning success=false halts execution).
       // No exemptions — verifier and reviews must never judge broken-gate code. Gate findings are
       // captured in phaseOutputs before this check, so runRectification() still consumes them.
-      if (!phasePassed(phase.slot.op.name, phaseOutputs[phase.slot.op.name], this.ctx.storyId)) {
+      if (!phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
         logger?.warn("story-orchestrator", "Short-circuiting on phase failure", {
           storyId: this.ctx.storyId,
-          phase: phase.slot.op.name,
+          phase: name,
         });
         break;
       }
+
+      // Record green checkpoint: only after a phase has passed and produced output.
+      await _storyOrchestratorDeps.recordGreen(this.ctx.storyId, name, tree);
     }
 
     // Baseline of gate failures the verifier implicitly blessed. The main loop

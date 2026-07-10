@@ -38,6 +38,7 @@ export const _storyOrchestratorDeps = {
     revalidateGates: ["verify-scoped", "lint-check", "typecheck-check"],
     reason: "no-checkpoint",
   }),
+  captureTreeState: async (_workdir: string): Promise<unknown> => ({ headSha: "", dirtyDigest: "" }),
 };
 
 /**
