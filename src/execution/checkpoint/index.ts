@@ -6,6 +6,8 @@
  *   - `types.ts`  — CheckpointRecord, StoryCheckpoint, TreeState
  *   - `writer.ts` — CheckpointWriter.recordGreen (durable append)
  *   - `reader.ts` — loadCheckpoints (longest-valid-prefix + latest-runId filter)
+ *   - `resume-hydrate.ts` — captureTreeState / hydrateFromResumePlan /
+ *     buildCheckpointLogData (US-003 resume-integration helpers)
  */
 
 export { CheckpointWriter } from "./writer";
@@ -13,6 +15,12 @@ export type { CheckpointWriterOptions } from "./writer";
 export { loadCheckpoints } from "./reader";
 export { buildResumePlan } from "./resume-plan";
 export type { ResumePlan } from "./resume-plan";
+export {
+  buildCheckpointLogData,
+  captureTreeState,
+  hydrateFromResumePlan,
+} from "./resume-hydrate";
+export type { CaptureTreeStateDeps, CaptureTreeStateOptions } from "./resume-hydrate";
 export type {
   CheckpointRecord,
   CheckpointReaderDeps,

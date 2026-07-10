@@ -27,6 +27,17 @@ export const _storyOrchestratorDeps = {
    * tests via `_storyOrchestratorDeps.triage`.
    */
   triage: productionTriageSeam,
+  /**
+   * US-003 resume-integration STUB seam — placeholder for the implementer
+   * to bind to `CheckpointWriter.recordGreen` and `buildResumePlan`. Tests
+   * override these to capture dispatch without hitting disk.
+   */
+  recordGreen: async (_storyId: string, _phase: string, _tree: unknown): Promise<void> => {},
+  buildResumePlan: async (_checkpoint: unknown, _current: unknown): Promise<unknown> => ({
+    skipPhases: [],
+    revalidateGates: ["verify-scoped", "lint-check", "typecheck-check"],
+    reason: "no-checkpoint",
+  }),
 };
 
 /**
