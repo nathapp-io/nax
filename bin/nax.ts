@@ -69,7 +69,6 @@ import {
 import { resolveFeatureSpec } from "../src/cli/features-resolve";
 import { generateCommand } from "../src/cli/generate";
 import { registerStatusCommand } from "../src/cli/status-dispatch";
-import { dispatchStatusView } from "../src/cli/status-dispatch";
 import { detectCommand } from "../src/commands/detect";
 import { logsCommand } from "../src/commands/logs";
 import { precheckCommand } from "../src/commands/precheck";

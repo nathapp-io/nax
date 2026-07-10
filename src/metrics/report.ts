@@ -11,7 +11,7 @@
 
 import { NaxError } from "../errors";
 import { calculateAggregateMetrics, getLastRun } from "./aggregator";
-import type { RunMetrics } from "./types";
+import type { AggregateMetrics, RunMetrics } from "./types";
 
 /**
  * Public stable report shape. Versioned via `schemaVersion` so downstream
@@ -85,9 +85,10 @@ const FORBIDDEN_INTERNAL_KEYS = ["totalTokens", "context", "pollution", "complex
  * internal fields never leak into the contract.
  */
 export function toCostReport(runs: RunMetrics[], deps: CostReportDeps): CostReportV1 {
-  const aggregate = buildAggregate(runs);
+  const metrics = runs.length === 0 ? null : calculateAggregateMetrics(runs);
+  const aggregate = buildAggregate(metrics);
   const lastRun = buildLastRun(runs);
-  const modelEfficiency = buildModelEfficiency(runs);
+  const modelEfficiency = buildModelEfficiency(metrics);
 
   const report: CostReportV1 = {
     schemaVersion: SCHEMA_VERSION,
@@ -101,17 +102,16 @@ export function toCostReport(runs: RunMetrics[], deps: CostReportDeps): CostRepo
   return stripInternalFields(report);
 }
 
-function buildAggregate(runs: RunMetrics[]): CostAggregate | null {
-  if (runs.length === 0) return null;
-  const a = calculateAggregateMetrics(runs);
+function buildAggregate(metrics: AggregateMetrics | null): CostAggregate | null {
+  if (!metrics) return null;
   return {
-    totalRuns: a.totalRuns,
-    totalStories: a.totalStories,
-    totalCost: a.totalCost,
-    avgCostPerStory: a.avgCostPerStory,
-    avgCostPerFeature: a.avgCostPerFeature,
-    firstPassRate: a.firstPassRate,
-    escalationRate: a.escalationRate,
+    totalRuns: metrics.totalRuns,
+    totalStories: metrics.totalStories,
+    totalCost: metrics.totalCost,
+    avgCostPerStory: metrics.avgCostPerStory,
+    avgCostPerFeature: metrics.avgCostPerFeature,
+    firstPassRate: metrics.firstPassRate,
+    escalationRate: metrics.escalationRate,
   };
 }
 
@@ -147,10 +147,9 @@ function buildLastRun(runs: RunMetrics[]): CostRunSummary | null {
   };
 }
 
-function buildModelEfficiency(runs: RunMetrics[]): CostModelStat[] {
-  if (runs.length === 0) return [];
-  const a = calculateAggregateMetrics(runs);
-  return Object.entries(a.modelEfficiency)
+function buildModelEfficiency(metrics: AggregateMetrics | null): CostModelStat[] {
+  if (!metrics) return [];
+  return Object.entries(metrics.modelEfficiency)
     .map(([model, stat]) => ({
       model,
       attempts: stat.attempts,
