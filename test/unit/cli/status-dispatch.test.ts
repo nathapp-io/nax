@@ -64,11 +64,14 @@ describe("dispatchStatusView — AC7: --cost --json --model", () => {
 describe("dispatchStatusView — AC8: --json without --cost", () => {
   test("AC8: with { cost: false, json: true }, invokes displayFeatureStatus with the feature-status options and does NOT invoke emitCostReportJson", async () => {
     const deps = makeDeps();
-    const options = { cost: false, json: true };
+    const options = { cost: false, json: true, feature: "feat-x", dir: "/tmp/workdir" };
 
     await dispatchStatusView("/tmp/workdir", options, deps);
 
     expect((deps.displayFeatureStatus as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
     expect((deps.emitCostReportJson as ReturnType<typeof mock>).mock.calls).toHaveLength(0);
+    const forwarded = (deps.displayFeatureStatus as ReturnType<typeof mock>).mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(forwarded.feature).toBe("feat-x");
+    expect(forwarded.dir).toBe("/tmp/workdir");
   });
 });
