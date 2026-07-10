@@ -58,13 +58,23 @@ Verified integration points (signatures confirmed against HEAD):
   untouched. `emitCostReportJson` resolves the same `projectKey` `resolveOutputDir`
   derives and passes it to `toCostReport`.
 - **`src/cli/status.ts`** barrel — re-exports `displayCostMetrics` etc.;
-  `emitCostReportJson` is added to this re-export so `bin/nax.ts` imports it from
-  `./status` like its siblings.
-- **`bin/nax.ts`** `status` command (currently `.option("--cost")` / `--last` / `--model`
-  with an inline `if (options.cost) { ... }` router) — gains
-  `.option("--json", "Emit machine-readable cost JSON to stdout (requires --cost)", false)`
-  and, as the first branch inside `if (options.cost)`, `if (options.json) { await
-  emitCostReportJson(workdir); return; }` so JSON mode runs before any human view.
+  `emitCostReportJson` and the new `dispatchStatusView` are added to this re-export so
+  `bin/nax.ts` imports them from `./status` like its siblings.
+- **`src/cli/status-dispatch.ts`** (new) — exports `dispatchStatusView(workdir, options,
+  deps?)`, the status-command routing extracted from the `bin/nax.ts` `.action()` closure
+  so the dispatch decisions become unit-testable. `deps` (injectable, real defaults)
+  carries `emitCostReportJson`, `displayCostMetrics`, `displayLastRunMetrics`,
+  `displayModelEfficiency`, `displayFeatureStatus`. Routing: when `options.cost` — JSON
+  mode (`options.json`) wins first (→ `emitCostReportJson`), else `--last` →
+  `displayLastRunMetrics`, `--model` → `displayModelEfficiency`, otherwise
+  `displayCostMetrics`; when `!options.cost` → `displayFeatureStatus` (JSON without
+  `--cost` falls through to the human feature-status view). Mirrors the existing inline
+  router's precedence, with `--json` inserted as the first cost branch.
+- **`bin/nax.ts`** `status` command — gains `.option("--json", "Emit machine-readable
+  cost JSON to stdout (requires --cost)", false)`; its `.action()` keeps the directory
+  validation / `findProjectDir` guard (CLI entry) and then delegates all view selection
+  to `await dispatchStatusView(workdir, options)`, replacing the inline
+  `if (options.cost) { ... }` block.
 
 ### CLI Behavior
 
@@ -75,9 +85,11 @@ Verified integration points (signatures confirmed against HEAD):
 - **Exit code:** `0` on success, including the empty-metrics case.
 - **Flag precedence:** in JSON mode `--last` and `--model` are ignored — the report
   always carries all three sections, so consumers never juggle which flag produced which
-  shape.
-- **`--json` without `--cost`:** out of scope; falls through to the existing human
-  feature-status view unchanged (a future feature-status JSON export is a separate spec).
+  shape. `dispatchStatusView` enforces this by checking `options.json` as the first cost
+  branch.
+- **`--json` without `--cost`:** out of scope; `dispatchStatusView` falls through to the
+  existing human feature-status view unchanged (a future feature-status JSON export is a
+  separate spec).
 
 ### File Format — `CostReportV1`
 
@@ -210,18 +222,22 @@ logger; composes the existing `calculateAggregateMetrics` and `getLastRun` helpe
 - **Also modifies:** `src/metrics/index.ts` (barrel export of `CostReportV1` +
   `toCostReport`).
 
-### US-002 — CLI JSON emit and `--json` wiring
+### US-002 — CLI JSON emit, testable dispatch, and `--json` wiring
 
 Add `emitCostReportJson(workdir, deps?)` to `src/cli/status-cost.ts` (re-exported from
 `src/cli/status.ts`) that loads run metrics, resolves the project key, maps via the
-injected `toCostReport`, and writes pretty JSON through the injected `stdout`. Wire the
-`--json` option and its route into the `bin/nax.ts` `status` command.
+injected `toCostReport`, and writes pretty JSON through the injected `stdout`. Extract
+the status-command view selection into a new exported `dispatchStatusView(workdir,
+options, deps?)` (`src/cli/status-dispatch.ts`) so routing is unit-testable, register the
+`--json` option on the `bin/nax.ts` `status` command, and make its `.action()` delegate
+to `dispatchStatusView`.
 
 - **Depends on:** US-001 (`toCostReport` / `CostReportV1` from `@/metrics`).
-- **Context Files (reads):** `src/cli/status-cost.ts`, `src/cli/status.ts`,
+- **Context Files (reads):** `src/cli/status-cost.ts`, `src/cli/status.ts`, `bin/nax.ts`,
   `src/commands/replay.ts` (deps pattern), `src/metrics/report.ts` — created by US-001,
   consumed here.
-- **Creates:** (none — extends existing files and the existing `status-cost` unit test).
+- **Creates:** `src/cli/status-dispatch.ts`, `test/unit/cli/status-cost.test.ts`,
+  `test/unit/cli/status-dispatch.test.ts`.
 
 ### Seams
 
@@ -230,6 +246,11 @@ injected `toCostReport`, and writes pretty JSON through the injected `stdout`. W
   that injects a spy `toCostReport` via `emitCostReportJson`'s deps, triggers the emit
   path, and asserts the spy was invoked with the loaded runs array — proving the call
   site exists and is wired, not merely that the name appears.
+- **`emitCostReportJson` (US-002 internal seam).** `dispatchStatusView` routes to
+  `emitCostReportJson` in JSON mode. US-002 declares seam ACs that inject spies for the
+  view functions via `dispatchStatusView`'s deps and assert, for each flag combination,
+  that the correct view (`emitCostReportJson` / `displayFeatureStatus`) is invoked and the
+  others are not — proving the dispatch wiring, not just that the functions exist.
 
 ## Acceptance Criteria
 
@@ -283,10 +304,23 @@ injected `toCostReport`, and writes pretty JSON through the injected `stdout`. W
 5. `[integration]` The string passed to `stdout` by `emitCostReportJson` round-trips:
    `JSON.parse` of it deep-equals the report object returned by the injected
    `toCostReport`, and the string contains a newline (pretty-printed, not minified).
+6. `[unit]` Given `dispatchStatusView` deps with spies for every view function and
+   `options = { cost: true, json: true, last: true }`, `dispatchStatusView(workdir,
+   options, deps)` invokes `deps.emitCostReportJson` and does not invoke
+   `deps.displayLastRunMetrics` (JSON mode wins over `--last`).
+7. `[unit]` Given the same spied deps and `options = { cost: true, json: true, model:
+   true }`, `dispatchStatusView(workdir, options, deps)` invokes `deps.emitCostReportJson`
+   and does not invoke `deps.displayModelEfficiency` (JSON mode wins over `--model`).
+8. `[unit]` Given the same spied deps and `options = { cost: false, json: true }`,
+   `dispatchStatusView(workdir, options, deps)` invokes `deps.displayFeatureStatus` with
+   the feature-status options and does not invoke `deps.emitCostReportJson` (`--json`
+   without `--cost` falls through to feature status).
+9. `[integration]` Given `emitCostReportJson` deps whose `loadRuns` rejects with an I/O
+   error, awaiting `emitCostReportJson(workdir, deps)` rejects with that same error
+   (the error is propagated, not swallowed or replaced).
 
-**Verification note (US-002 wiring):** the `bin/nax.ts` `--json` option registration and
-the `if (options.cost && options.json) { await emitCostReportJson(workdir); return; }`
-route are thin CLI wiring over the behaviour covered by ACs above; they are verified by
-the build/typecheck gate (`bun run build` / `bun run typecheck`) and manual
-`nax status --cost --json`, not by a runtime AC (commander action handlers are not unit
--tested in this repo).
+**Verification note (US-002 wiring):** the only untested residue is `bin/nax.ts`
+registering the `--json` option and its `.action()` delegating to `dispatchStatusView`
+— thin CLI wiring verified by the build/typecheck gate (`bun run build` /
+`bun run typecheck`) and manual `nax status --cost --json`. All view-selection behaviour
+now lives in the unit-tested `dispatchStatusView` (ACs 6-8).
