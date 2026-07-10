@@ -3,7 +3,7 @@
   "feature": "mid-session-resume",
   "branchName": "feat/mid-session-resume",
   "createdAt": "2026-07-10T04:09:01Z",
-  "updatedAt": "2026-07-10T04:51:19.101Z",
+  "updatedAt": "2026-07-10T05:41:04.241Z",
   "userStories": [
     {
       "id": "US-001",
@@ -137,8 +137,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -203,7 +203,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/commands/replay.ts",
@@ -215,7 +217,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f929ac7e53b3f4bbdbd105f3032afad25d15d8df"
     }
   ],
   "analysis": "This feature is an enhancement to the existing run/orchestrator pipeline, not a greenfield slice. The main execution seam is `ExecutionPlan.run()` in `src/execution/story-orchestrator/execution-plan.ts:43`, which initializes `phaseOutputs` at `:45`, runs the canonical loop at `:63-89`, and already contains two later resume-style loops that skip phases when `name in phaseOutputs && phasePassed(...)` at `:121-125` and `:193-195`. That existing pattern materially lowers risk for the resume integration because the feature can seed the same in-memory skip state instead of inventing a second orchestration path. `runPhase()` in `src/execution/story-orchestrator/run-phase.ts:111-216` is the correct post-phase hook point because it writes `phaseOutputs[opName] = output` at `:156` and returns control to the main loop after the phase outcome is fully known. `phasePassed()` and `extractPhaseFindings()` in `src/execution/story-orchestrator/phase-eval.ts:19-97` are compatible with resume seeding today: a sentinel `{ success: true }` passes because `phasePassed()` accepts any object with `success !== false` at `:42-44`, and `extractPhaseFindings()` returns `[]` for a successful record at `:94-96`, which avoids phantom findings. The canonical phase list and cheap-gate set are grounded in `PhaseKind` and `CANONICAL_ORDER` in `src/execution/story-orchestrator/types.ts:65-77` and `:135-148`; the phases that must always re-run are the existing `verify-scoped`, `lint-check`, and `typecheck-check` entries at `:143-145`.\n\nThe new checkpoint data should live beside existing feature-scoped runtime artifacts. Feature directory plumbing already exists in `CrashRecoveryContext.featureDir` in `src/execution/crash-recovery.ts:35-58` and in `StatusWriter.writeFeatureStatus()` which writes `join(featureDir, \"status.json\")` in `src/execution/status-writer.ts:254-280`, especially `:262`. The current durable crash path uses synchronous append only inside crash handlers in `src/execution/crash-writer.ts:5-35` and `:55-88`; those comments explicitly justify `appendFileSync` only because the event loop may be inconsistent in a fatal signal path. That means the new normal-path checkpoint writer must not copy `node:fs` sync I/O into `src/` runtime code. The repo rule in `.claude/rules/forbidden-patterns.md` bans `fs.readFileSync` / `fs.writeFileSync` in source code in favor of Bun-native I/O, so the checkpoint writer needs its own injected async append dependency and Bun-native implementation rather than reusing the crash writer literally. This is the main architecture constraint in US-001 and US-003.\n\nGit tree capture should reuse the existing Bun-native subprocess abstraction instead of adding direct `Bun.spawn` or Node child process calls. `src/utils/git.ts:14` exposes `_gitDeps = { spawn, getSafeLogger }`, `gitWithTimeout()` centralizes process handling at `:45-70`, and `captureGitRef()` already returns `HEAD` at `:90-98`. The spec’s dirty-tree digest can be built through the same `_gitDeps.spawn` path so unit tests can stub git output without real repos. That new helper is most naturally added either in `src/utils/git.ts` or a checkpoint-local helper that imports `_gitDeps`; whichever approach is chosen, it needs to preserve the repo’s dependency-injection pattern and avoid direct subprocess creation. Risk here is mostly around testability and keeping the helper pure enough for planner tests while still capturing actual working-tree state.\n\nCLI impact is concentrated in `bin/nax.ts` and the existing replay command pattern. The main `run` command resolves `featureDir` and `prdPath` in `bin/nax.ts:523-524`, computes the output directory at `:618-624`, and calls the execution entrypoint at `:761-778`. That is the likely insertion point for auto-resume detection, `--fresh`, and `--no-resume` propagation. `registerReplayCommand()` in `src/commands/replay.ts:163-184` is the exact template for `registerResumeCommand()`, and replay’s orchestrator/deps split in `src/commands/replay.ts:30-158` is a useful model for a thin, hermetic CLI surface with explicit stdout/stderr handling. The replay tests already assert commander registration and option shape in `test/unit/commands/replay.test.ts:225-252`, so the resume command should mirror that style instead of inventing a different test harness. `bin/nax.ts:1486` wires replay into the root program; resume should be registered adjacent to that. One additional risk is that `bin/nax.ts` is already large and cross-cutting, so the PRD should keep the CLI story narrowly focused on flag parsing and delegating to existing helpers rather than broad run-command refactors.\n\nExisting tests show both where to add coverage and what behavioral seams already exist. The graph trace shows `ExecutionPlan.run()` is already exercised by `test/unit/execution/story-orchestrator.test.ts`, several integration tests, and the E2E orchestrator harness. `test/helpers/e2e/orchestrator-harness.ts:1-220` records ordered phase execution by wrapping `_storyOrchestratorDeps.callOp`, which is useful for resume assertions because it can prove skipped phases were not dispatched. `test/e2e/resume.e2e.test.ts:25-84` already uses the term \"resume,\" but it covers post-rectification resume inside a single process, not the new mid-session resume across reruns; that overlap is a naming and conceptual risk because implementers must avoid regressing current rectification-resume semantics while adding process-restart resume. The new feature should add unit/integration coverage close to the current command and orchestrator suites instead of a separate broad E2E path unless a specific full-run scenario is required by the ACs.\n\nLikely files to modify: `src/execution/story-orchestrator/execution-plan.ts` for seeding and skip guards, `src/utils/git.ts` or a new checkpoint helper for dirty-tree capture, `bin/nax.ts` for flag parsing and auto-resume plumbing, and a new `src/commands/resume.ts` modeled on replay. Likely new files: `src/execution/checkpoint/types.ts`, `writer.ts`, `reader.ts`, `resume-plan.ts`, `resume-hydrate.ts`, and `index.ts`. Likely dependent/importing files: the execution barrel that re-exports orchestrator utilities if checkpoint APIs need public imports, `bin/nax.ts` for command registration, and tests under `test/unit/commands/` and `test/unit` or `test/integration/execution/` depending on seam. Backward compatibility risk is low because default behavior should remain a full rerun when no checkpoint exists, the checkpoint file is corrupt, or the tree guard fails. Migration path is also low risk: no schema migration is needed for existing features because a missing `checkpoint.jsonl` is treated as empty and `nax run` continues with today’s behavior. The main correctness risks are stale green phases being skipped after tree movement, writing checkpoints before a phase is actually green, and violating Bun-native source constraints by introducing Node sync file APIs on the normal execution path.",
