@@ -58,6 +58,19 @@ async function spawnWithTimeout(proc: SpawnedProc, timeoutMs: number): Promise<{
   return result;
 }
 
+/**
+ * A capture failure (timeout, non-zero exit, thrown error) must never compare
+ * equal to a genuinely clean tree's empty-string field, nor to another
+ * failed capture — `buildResumePlan`'s tree-guard treats equal `headSha` +
+ * `dirtyDigest` as "nothing moved" and allows a resume skip. Without a
+ * distinct-every-time sentinel, two independent timeouts (e.g. one at
+ * checkpoint-record time, one at resume-decision time) would both fall back
+ * to `""` and be silently treated as a matching, trustworthy tree.
+ */
+function captureFailureSentinel(): string {
+  return `__capture_failed__:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+}
+
 export async function captureTreeState(workdir: string, options: CaptureTreeStateOptions): Promise<TreeState> {
   let headSha = "";
   let dirtyDigest = "";
@@ -65,11 +78,9 @@ export async function captureTreeState(workdir: string, options: CaptureTreeStat
   try {
     const proc = spawnGit(options._deps, ["rev-parse", "HEAD"], workdir);
     const { stdout, exitCode } = await spawnWithTimeout(proc, TREE_CAPTURE_TIMEOUT_MS);
-    if (exitCode === 0) {
-      headSha = stdout.trim();
-    }
+    headSha = exitCode === 0 ? stdout.trim() : captureFailureSentinel();
   } catch {
-    // keep empty
+    headSha = captureFailureSentinel();
   }
 
   try {
@@ -82,9 +93,11 @@ export async function captureTreeState(workdir: string, options: CaptureTreeStat
         hasher.update(trimmed);
         dirtyDigest = hasher.digest("hex") as string;
       }
+    } else {
+      dirtyDigest = captureFailureSentinel();
     }
   } catch {
-    // keep empty
+    dirtyDigest = captureFailureSentinel();
   }
 
   return { headSha, dirtyDigest };

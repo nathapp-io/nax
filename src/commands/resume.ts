@@ -12,12 +12,14 @@
  */
 
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { Command } from "commander";
 import { globalConfigDir } from "../config/paths";
 import { NaxError } from "../errors";
+import { buildResumePlan } from "../execution/checkpoint";
 import { loadCheckpoints } from "../execution/checkpoint/reader";
 import type { StoryCheckpoint } from "../execution/checkpoint/types";
+import { projectOutputDir } from "../runtime";
 
 /** Options accepted by the `nax resume` command. */
 export interface ResumeCommandOptions {
@@ -69,12 +71,31 @@ export const _resumeCmdDeps: ResumeCommandDeps = {
 };
 
 /**
- * Build a one-line resume summary that names the feature and the count of
- * stories with a checkpoint (AC-3).
+ * Aggregate the phases that will be elided across every loaded checkpoint.
+ * Compares each `StoryCheckpoint` against its own recorded tree state (not a
+ * freshly captured one) — the orchestrator's real git-tree guard runs later,
+ * per story, against the tree at that point in the run. This aggregate is an
+ * upper bound: the phases available to skip if the tree has not moved since
+ * the checkpoint was written, keeping the resume command's deps hermetic
+ * (no real git calls) for the informational summary line.
  */
-export function renderResumeSummary(feature: string, storyCount: number): string {
+function aggregateSkipPhases(checkpoints: Map<string, StoryCheckpoint>): string[] {
+  const skip = new Set<string>();
+  for (const cp of checkpoints.values()) {
+    const plan = buildResumePlan(cp, cp.tree);
+    for (const phase of plan.skipPhases) skip.add(phase);
+  }
+  return [...skip];
+}
+
+/**
+ * Build a one-line resume summary that names the feature, the count of
+ * stories with a checkpoint, and the phases being skipped (AC-3).
+ */
+export function renderResumeSummary(feature: string, storyCount: number, skipPhases: readonly string[]): string {
   const noun = storyCount === 1 ? "story" : "stories";
-  return `Resume: feature="${feature}" — ${storyCount} ${noun} with checkpoint (phases being skipped)\n`;
+  const phasesText = skipPhases.length > 0 ? skipPhases.join(", ") : "none";
+  return `Resume: feature="${feature}" — ${storyCount} ${noun} with checkpoint (skipping: ${phasesText})\n`;
 }
 
 /**
@@ -97,7 +118,7 @@ export async function runResume(
     deps.stdout("No checkpoint found — running from scratch\n");
   } else {
     const map = await deps.loadCheckpoints(featureDir);
-    deps.stdout(renderResumeSummary(feature, map.size));
+    deps.stdout(renderResumeSummary(feature, map.size, aggregateSkipPhases(map)));
   }
 
   return deps.runInvocation(feature, {
@@ -153,6 +174,14 @@ export function registerResumeCommand(program: Command): void {
           // here makes the intent explicit and avoids any chance of a stale dep.
           applyResumeModeDeps(opts.featureDir ?? "", "auto");
 
+          // Mirror `bin/nax.ts`'s `nax run` status-file resolution — an empty
+          // path resolves to `process.cwd()` inside `StatusWriter`, so every
+          // write fails silently and consumers of status.json (TUI, `nax
+          // status`) see nothing for the whole resumed run.
+          const projectKey = config.name?.trim() || basename(cmdOpts.dir);
+          const outputDir = projectOutputDir(projectKey, config.outputDir);
+          const statusFilePath = join(outputDir, "status.json");
+
           const result = await run({
             prdPath,
             workdir: cmdOpts.dir,
@@ -162,7 +191,7 @@ export function registerResumeCommand(program: Command): void {
             ...(opts.featureDir !== undefined ? { featureDir: opts.featureDir } : {}),
             dryRun: false,
             useBatch: true,
-            statusFile: "",
+            statusFile: statusFilePath,
             logFilePath: undefined,
             formatterMode: "normal",
             headless: true,

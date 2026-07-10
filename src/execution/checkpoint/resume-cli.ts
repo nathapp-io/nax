@@ -21,8 +21,12 @@
  * dispatching to the orchestrator.
  */
 
+import { join } from "node:path";
+import type { PhaseKind } from "../story-orchestrator";
 import { _storyOrchestratorDeps } from "../story-orchestrator";
 import { loadCheckpoints } from "./reader";
+import type { TreeState } from "./types";
+import { createCheckpointWriter } from "./writer";
 
 /**
  * Resume mode selected by the user (via `--fresh` / `--no-resume` or
@@ -58,4 +62,19 @@ export function applyResumeModeDeps(featureDir: string, mode: ResumeMode = "auto
   // truth for which feature's checkpoint to read).
   const target = featureDir;
   _storyOrchestratorDeps.loadCheckpoints = async (_fd: string): Promise<unknown> => loadCheckpoints(target);
+}
+
+/**
+ * Install the orchestrator's `recordGreen` dep with a real `CheckpointWriter`
+ * bound to the given feature's `checkpoint.jsonl` and the current run's
+ * `runId`. Without this, `_storyOrchestratorDeps.recordGreen` stays the
+ * default no-op stub and no phase is ever durably recorded — resume never
+ * has anything to seed from. Callers must restore the original dep afterwards
+ * (the runner handles this in its `finally` block, mirroring
+ * `applyResumeModeDeps`).
+ */
+export function applyRecordGreenDeps(featureDir: string, runId: string): void {
+  const writer = createCheckpointWriter(join(featureDir, "checkpoint.jsonl"), runId);
+  _storyOrchestratorDeps.recordGreen = (storyId: string, phase: string, tree: unknown): Promise<void> =>
+    writer.recordGreen(storyId, phase as PhaseKind, tree as TreeState);
 }
