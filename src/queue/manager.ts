@@ -206,6 +206,7 @@ export class QueueManager {
  * - SKIP US-XXX: Skip a specific story
  * - RETRY US-XXX: Reset a failed/skipped story back to pending
  * - PRIORITY US-XXX <n>: Set a story's scheduling priority
+ * - INJECT <path>: Add a new story from a JSON file (path relative to workdir)
  *
  * Everything else after "--- PENDING ---" is treated as guidance text.
  */
@@ -272,6 +273,17 @@ export function parseQueueFile(content: string): QueueFileResult {
       }
     } else if (upper === "PRIORITY") {
       // PRIORITY with no arguments, treat as guidance
+      guidance.push(trimmed);
+    } else if (upper.startsWith("INJECT ")) {
+      // Extract file path after "INJECT" — take the full remainder (paths may contain spaces)
+      const storyFile = trimmed.substring(7).trim();
+      if (storyFile) {
+        commands.push({ type: "INJECT", storyFile });
+      } else {
+        guidance.push(trimmed);
+      }
+    } else if (upper === "INJECT") {
+      // INJECT with no file path, treat as guidance
       guidance.push(trimmed);
     } else {
       // Not a command, treat as guidance if in pending section

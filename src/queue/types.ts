@@ -48,7 +48,8 @@ export type QueueCommand =
   | { type: "ABORT" }
   | { type: "SKIP"; storyId: string }
   | { type: "RETRY"; storyId: string }
-  | { type: "PRIORITY"; storyId: string; value: number };
+  | { type: "PRIORITY"; storyId: string; value: number }
+  | { type: "INJECT"; storyFile: string };
 
 /** Result of parsing a queue file */
 export interface QueueFileResult {

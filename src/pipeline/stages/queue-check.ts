@@ -5,9 +5,18 @@
  * Processes commands atomically and updates PRD accordingly.
  */
 
+import path from "node:path";
 import { clearQueueFile, readQueueFile } from "../../execution/queue-handler";
 import { getLogger } from "../../logger";
-import { markStorySkipped, resetStoryToPending, savePRD, setStoryPriority } from "../../prd";
+import {
+  injectStory,
+  markStorySkipped,
+  resetStoryToPending,
+  savePRD,
+  setStoryPriority,
+  validateInjectedStory,
+} from "../../prd";
+import { errorMessage } from "../../utils/errors";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /**
@@ -83,6 +92,35 @@ export const queueCheckStage: PipelineStage = {
 
         const prdPath = ctx.featureDir ? `${ctx.featureDir}/prd.json` : `${ctx.workdir}/nax/features/unknown/prd.json`;
         await savePRD(ctx.prd, prdPath);
+        continue;
+      }
+
+      if (cmd.type === "INJECT") {
+        const storyFilePath = path.isAbsolute(cmd.storyFile) ? cmd.storyFile : path.join(ctx.workdir, cmd.storyFile);
+
+        try {
+          const raw: unknown = await Bun.file(storyFilePath).json();
+          const existingIds = new Set(ctx.prd.userStories.map((s) => s.id));
+          const story = validateInjectedStory(raw, existingIds);
+          injectStory(ctx.prd, story);
+
+          logger.warn("queue", "Injected new story via user request", {
+            storyId: ctx.story?.id ?? "unknown",
+            injectedStoryId: story.id,
+            storyFile: cmd.storyFile,
+          });
+
+          const prdPath = ctx.featureDir
+            ? `${ctx.featureDir}/prd.json`
+            : `${ctx.workdir}/nax/features/unknown/prd.json`;
+          await savePRD(ctx.prd, prdPath);
+        } catch (err) {
+          logger.error("queue", "Failed to inject story — skipping INJECT command", {
+            storyId: ctx.story?.id ?? "unknown",
+            storyFile: cmd.storyFile,
+            error: errorMessage(err),
+          });
+        }
         continue;
       }
 

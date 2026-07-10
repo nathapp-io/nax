@@ -48,6 +48,9 @@ export async function writeQueueCommand(queueFilePath: string, command: QueueCom
     case "PRIORITY":
       commandLine = `PRIORITY ${command.storyId} ${command.value}`;
       break;
+    case "INJECT":
+      commandLine = `INJECT ${command.storyFile}`;
+      break;
     default: {
       const _exhaustive: never = command;
       throw new Error(`Unhandled queue command: ${_exhaustive}`);

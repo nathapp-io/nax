@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { getNextStory, resetStoryToPending, setStoryPriority } from "@/prd";
+import { getNextStory, injectStory, resetStoryToPending, setStoryPriority } from "@/prd";
 import { makePRD, makeStory } from "@test/helpers";
 
 // ── resetStoryToPending() ───────────────────────────────────────────────────────
@@ -81,6 +81,25 @@ describe("setStoryPriority()", () => {
     const prd = makePRD({ userStories: [makeStory({ id: "US-001", priority: 3 })] });
     setStoryPriority(prd, "US-001", -1);
     expect(prd.userStories[0].priority).toBe(-1);
+  });
+});
+
+// ── injectStory() ────────────────────────────────────────────────────────────────
+
+describe("injectStory()", () => {
+  test("appends a new story to the PRD", () => {
+    const prd = makePRD({ userStories: [makeStory({ id: "US-001" })] });
+    injectStory(prd, makeStory({ id: "US-002", title: "Injected story" }));
+
+    expect(prd.userStories).toHaveLength(2);
+    expect(prd.userStories[1].id).toBe("US-002");
+    expect(prd.userStories[1].title).toBe("Injected story");
+  });
+
+  test("throws when the story id already exists in the PRD", () => {
+    const prd = makePRD({ userStories: [makeStory({ id: "US-001" })] });
+    expect(() => injectStory(prd, makeStory({ id: "US-001" }))).toThrow(/already exists/);
+    expect(prd.userStories).toHaveLength(1);
   });
 });
 

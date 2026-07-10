@@ -106,3 +106,80 @@ describe("queueCheckStage — RETRY / PRIORITY", () => {
     expect(result.action).toBe("continue");
   });
 });
+
+describe("queueCheckStage — INJECT", () => {
+  let workdir: string;
+
+  beforeEach(() => {
+    initLogger({ level: "silent" });
+    workdir = makeTempDir("nax-queue-check-inject-");
+  });
+
+  afterEach(() => {
+    resetLogger();
+    cleanupTempDir(workdir);
+  });
+
+  test("INJECT adds a validated story to the PRD and continues", async () => {
+    const ctx = makeCtx(workdir);
+    await Bun.write(
+      join(workdir, "new-story.json"),
+      JSON.stringify({
+        title: "Add caching layer",
+        description: "Cache expensive lookups behind a TTL.",
+        acceptanceCriteria: ["Cache hits avoid the DB call"],
+      }),
+    );
+    await Bun.write(join(workdir, ".queue.txt"), "INJECT new-story.json\n");
+
+    const result = await queueCheckStage.execute(ctx);
+
+    expect(result.action).toBe("continue");
+    expect(ctx.prd.userStories).toHaveLength(2);
+    const injected = ctx.prd.userStories[1];
+    expect(injected.title).toBe("Add caching layer");
+    expect(injected.status).toBe("pending");
+    // Injected story is not added to the current batch — only future iterations pick it up.
+    expect(ctx.stories.map((s) => s.id)).toEqual(["US-001"]);
+  });
+
+  test("INJECT with a missing file logs and continues without crashing", async () => {
+    const ctx = makeCtx(workdir);
+    await Bun.write(join(workdir, ".queue.txt"), "INJECT does-not-exist.json\n");
+
+    const result = await queueCheckStage.execute(ctx);
+
+    expect(result.action).toBe("continue");
+    expect(ctx.prd.userStories).toHaveLength(1);
+  });
+
+  test("INJECT with invalid story content logs and continues without crashing", async () => {
+    const ctx = makeCtx(workdir);
+    await Bun.write(join(workdir, "bad-story.json"), JSON.stringify({ title: "Missing fields" }));
+    await Bun.write(join(workdir, ".queue.txt"), "INJECT bad-story.json\n");
+
+    const result = await queueCheckStage.execute(ctx);
+
+    expect(result.action).toBe("continue");
+    expect(ctx.prd.userStories).toHaveLength(1);
+  });
+
+  test("INJECT rejects a duplicate id and leaves the PRD unchanged", async () => {
+    const ctx = makeCtx(workdir);
+    await Bun.write(
+      join(workdir, "dup-story.json"),
+      JSON.stringify({
+        id: "US-001",
+        title: "Duplicate",
+        description: "Should be rejected.",
+        acceptanceCriteria: ["n/a"],
+      }),
+    );
+    await Bun.write(join(workdir, ".queue.txt"), "INJECT dup-story.json\n");
+
+    const result = await queueCheckStage.execute(ctx);
+
+    expect(result.action).toBe("continue");
+    expect(ctx.prd.userStories).toHaveLength(1);
+  });
+});

@@ -298,4 +298,28 @@ ABORT
     expect(result.commands).toHaveLength(0);
     expect(result.guidance).toHaveLength(1);
   });
+
+  test("parses INJECT command with a story file path", () => {
+    const content = "INJECT .nax/inject/new-story.json\n";
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0]).toEqual({ type: "INJECT", storyFile: ".nax/inject/new-story.json" });
+  });
+
+  test("parses INJECT command case-insensitive and trims path", () => {
+    const content = "inject   ./story.json   \n";
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0]).toEqual({ type: "INJECT", storyFile: "./story.json" });
+  });
+
+  test("handles INJECT without a file path gracefully", () => {
+    const content = "INJECT\n";
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(0);
+    expect(result.guidance).toHaveLength(1);
+  });
 });

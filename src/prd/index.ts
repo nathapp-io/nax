@@ -3,6 +3,7 @@
  */
 
 import { existsSync, statSync } from "node:fs";
+import { NaxError } from "../errors";
 import type { FailureCategory } from "../tdd/types";
 import { saveJsonFile } from "../utils/json-file";
 import type { PRD, UserStory } from "./types";
@@ -22,6 +23,7 @@ export { extractVerbatimAcs, findMissingVerbatimAcs } from "./verbatim-fidelity"
 export { findSpecDriftViolations } from "./spec-drift";
 export type { SpecDriftViolation } from "./spec-drift";
 export type { FailureCategory } from "../tdd/types";
+export { validateInjectedStory, deriveNextStoryId } from "./inject";
 
 /** Maximum PRD file size (5MB) - reject larger PRDs to prevent memory issues */
 export const PRD_MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -334,6 +336,26 @@ export function resetStoryToPending(prd: PRD, storyId: string): void {
     };
   }
   story.escalations = [];
+}
+
+/**
+ * Add a newly validated story to the PRD (INJECT queue command).
+ * Caller must validate the story first (see {@link validateInjectedStory}).
+ * The story only becomes eligible for the next batch-selection pass — it
+ * does not join the batch currently being executed.
+ */
+export function injectStory(prd: PRD, story: UserStory): void {
+  if (prd.userStories.some((s) => s.id === story.id)) {
+    throw new NaxError(
+      `[queue] Cannot inject story: id "${story.id}" already exists in the PRD`,
+      "SCHEMA_VALIDATION_FAILED",
+      {
+        stage: "queue",
+        storyId: story.id,
+      },
+    );
+  }
+  prd.userStories.push(story);
 }
 
 /** Set a story's scheduling priority (PRIORITY queue command). Higher = more urgent. */
