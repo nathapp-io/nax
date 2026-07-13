@@ -9,7 +9,13 @@
  * or an equivalent O_APPEND-safe write).
  */
 
-import { rename } from "node:fs/promises";
+// node:fs/promises exception: Bun has no native atomic-append equivalent —
+// Bun.write() truncates, and reusing a `writer()` FileSink across the whole
+// run would destroy checkpoint history from a prior run before
+// `loadCheckpoints` ever gets to read it. `appendFile` uses O_APPEND, which
+// the POSIX write(2) syscall guarantees is atomic for writes up to PIPE_BUF
+// (same precedent as `src/session/scratch-writer.ts`, `src/logger/logger.ts`).
+import { appendFile } from "node:fs/promises";
 import { NaxError } from "@/errors";
 import { errorMessage } from "@/utils/errors";
 import type { PhaseKind } from "../story-orchestrator";
@@ -22,29 +28,15 @@ export interface CheckpointWriterOptions {
 }
 
 /**
- * Default on-disk append — Bun-native content write (no `writer()` FileSink,
- * which opens truncated: reusing it across the whole run would destroy any
- * checkpoint history from a prior run before `loadCheckpoints` ever gets to
- * read it). Reads existing content (if any) and rewrites the file with the
- * new line appended, so a fresh writer never truncates a checkpoint another
- * story is still relying on for resume.
- *
- * The rewrite itself is made atomic via write-to-`.tmp` + `rename()`: a
- * direct `Bun.write(filePath, ...)` truncates the destination before writing
- * the new bytes, so a crash mid-write can corrupt or shorten a file that
- * already held durable history for prior green phases — exactly the crash
- * this feature exists to survive. `rename()` is atomic on POSIX filesystems,
- * so a crash during the write leaves either the old file intact or the full
- * new file, never a partial one. `rename` has no Bun-native equivalent, so
- * it's imported from `node:fs/promises` (same precedent as
- * `src/execution/status-file.ts`).
+ * Default on-disk append. A prior implementation read the complete file,
+ * concatenated the new line, and rewrote it via write-to-`.tmp` + `rename()`
+ * for every single record — O(records²) total disk I/O and repeatedly
+ * allocating increasingly large strings over a long run. `appendFile` with
+ * O_APPEND writes only the new line and is atomic at the syscall level, so
+ * a crash mid-write can never corrupt or shorten prior durable history.
  */
 async function defaultAppend(filePath: string, line: string): Promise<void> {
-  const file = Bun.file(filePath);
-  const existing = (await file.exists()) ? await file.text() : "";
-  const tmpPath = `${filePath}.tmp`;
-  await Bun.write(tmpPath, existing + line);
-  await rename(tmpPath, filePath);
+  await appendFile(filePath, line, "utf8");
 }
 
 /** Construct a `CheckpointWriter` bound to the real Bun-native append. */
@@ -57,15 +49,16 @@ export class CheckpointWriter {
   private readonly runId: string;
   private readonly deps: CheckpointWriterDeps;
   /**
-   * Serializes `_deps.append` calls. `defaultAppend` is a read-modify-write
-   * (no true O_APPEND primitive is exposed for `Bun.file`), so two concurrent
-   * `recordGreen` calls — from two stories running in parallel mode via the
-   * same shared writer — could each read the file before either writes back,
-   * silently losing one story's record. Chaining every append onto this
-   * promise forces them to run one at a time regardless of caller concurrency.
-   * Always resolves (errors are swallowed here) so one failed write does not
-   * permanently wedge the queue for subsequent calls; the failure is still
-   * propagated to that call's own caller below.
+   * Serializes `_deps.append` calls. O_APPEND writes are atomic at the
+   * syscall level for a single write, but two concurrent `recordGreen`
+   * calls — from two stories running in parallel mode via the same shared
+   * writer — could still interleave their underlying `write()` calls out of
+   * program order or (for injected test `_deps`) use a non-atomic append.
+   * Chaining every append onto this promise forces them to run one at a
+   * time regardless of caller concurrency. Always resolves (errors are
+   * swallowed here) so one failed write does not permanently wedge the
+   * queue for subsequent calls; the failure is still propagated to that
+   * call's own caller below.
    */
   private queue: Promise<void> = Promise.resolve();
 

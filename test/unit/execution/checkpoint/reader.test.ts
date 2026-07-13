@@ -84,8 +84,13 @@ describe("loadCheckpoints latest-runId filter", () => {
     expect(result.get("US-002")?.greenPhases).toEqual(["test-writer"]);
   });
 
-  test("determines the newest runId by lexical string comparison", async () => {
-    // Lexical newest: "run-2" > "run-1"
+  test("determines the newest runId by lexical string comparison, per story", async () => {
+    // Lexical newest: "run-2" > "run-1". US-001 advanced to run-2; US-002 has
+    // not been touched since run-1. The runId filter is per-story (see
+    // module docstring in reader.ts), so US-002's run-1 records must survive
+    // even though a newer runId exists elsewhere in the file — a resume
+    // involving multiple incomplete stories must resume all of them, not
+    // just the one that happens to touch the file first.
     const a = record("US-001", "test-writer", { runId: "run-1" });
     const b = record("US-001", "implementer", { runId: "run-2" });
     const c = record("US-002", "test-writer", { runId: "run-1" });
@@ -95,7 +100,24 @@ describe("loadCheckpoints latest-runId filter", () => {
     const result = await loadCheckpoints("/feature", { _deps: deps });
     const us001 = result.get("US-001");
     expect(us001?.greenPhases).toEqual(["implementer"]);
-    expect(result.has("US-002")).toBe(false);
+    expect(result.has("US-002")).toBe(true);
+    expect(result.get("US-002")?.greenPhases).toEqual(["test-writer"]);
+  });
+
+  test("does not let one story's newer runId discard another story's older-runId checkpoints", async () => {
+    // Regression for the P1 finding: a resume that re-records US-001's
+    // skipped phases under the current run must not cause US-002's
+    // still-valid prior-run checkpoints to be dropped when the reader is
+    // consulted again for US-002.
+    const resumedRunOld = record("US-001", "implementer", { runId: "run-1" });
+    const resumedRunReRecorded = record("US-001", "implementer", { runId: "run-2" });
+    const otherStoryOld = record("US-002", "test-writer", { runId: "run-1" });
+    const content = `${resumedRunOld}\n${otherStoryOld}\n${resumedRunReRecorded}\n`;
+    const deps = makeReadDep(content);
+
+    const result = await loadCheckpoints("/feature", { _deps: deps });
+    expect(result.get("US-001")?.greenPhases).toEqual(["implementer"]);
+    expect(result.get("US-002")?.greenPhases).toEqual(["test-writer"]);
   });
 });
 
