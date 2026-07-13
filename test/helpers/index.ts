@@ -36,3 +36,4 @@ export { makeMockPlanInputs } from "./plan-inputs";
 export { verbatimWarn, withWarnSpy } from "./verbatim-warn-spy";
 export { makeScriptedAgent, runOrchestratorE2E } from "./e2e";
 export type { ScriptedAgentSpec, ScriptedTurn, E2EOptions, E2EResult, E2EGates } from "./e2e";
+export { DEFAULT_TEST_ROUTING, makeTestContext, makeTestPRD, makeTestStory } from "./pipeline-context";

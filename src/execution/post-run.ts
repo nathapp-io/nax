@@ -19,6 +19,9 @@ import { fullSuiteGateOp, implementerOp, testWriterOp, verifierOp, verifyScopedO
 import { routeTddFailure } from "../pipeline/stages/execution-helpers";
 import type { PipelineContext, StageResult } from "../pipeline/types";
 import { parseSelfVerificationMarker } from "../quality";
+// Leaf import (not the `review` barrel) — the barrel pulls formatter.ts which
+// triggers a circular ESM init crash at construction time (see BUG v0.71.0).
+import { isBlockingSeverity } from "../review/severity";
 import { appendScratchEntry } from "../session/scratch-writer";
 import { rollbackToRef } from "../tdd/rollback";
 import { errorMessage } from "../utils/errors";
@@ -353,6 +356,33 @@ export async function decideStageAction(
   // unfixed — see story-orchestrator.ts mechanicalOnlyExhausted), proceed rather than
   // escalating. Reviews absent from phaseOutputs means they were not configured (OK).
   if (planResult.rectificationExhausted && planResult.unfixedFindings && planResult.unfixedFindings.length > 0) {
+    // Advisory-only escape: if NONE of the remaining unfixed findings meet the
+    // run's blocking threshold, the story is functionally green — do not fail it
+    // on sub-blocking leftovers. This covers findings that no fix strategy can
+    // claim (e.g. `source:"autofix"` declaration diagnostics) which would
+    // otherwise force a `no-strategy` cycle exit into a hard story failure even
+    // though every gate (tests/lint/typecheck/semantic/adversarial) passed.
+    // Missing severity is treated as "error" (blocking) so a real defect is
+    // never silently swallowed. Mirrors the severity-based blocking/advisory
+    // partition used by the review layer (isBlockingSeverity).
+    const blockingThreshold = ctx.config?.review?.blockingThreshold ?? "error";
+    const blockingUnfixed = planResult.unfixedFindings.filter((f) =>
+      isBlockingSeverity((f as { severity?: string }).severity ?? "error", blockingThreshold),
+    );
+    if (blockingUnfixed.length === 0) {
+      logger.warn(
+        "execution",
+        "Rectification exhausted but all unfixed findings are advisory (below blocking threshold) — proceeding",
+        {
+          storyId: ctx.story.id,
+          blockingThreshold,
+          unfixedCount: planResult.unfixedFindings.length,
+          unfixedSources: [...new Set(planResult.unfixedFindings.map((f) => (f as { source?: string }).source))],
+        },
+      );
+      return { action: "continue" };
+    }
+
     const sources = new Set(planResult.unfixedFindings.map((f) => (f as { source?: string }).source));
     const allMechanical = [...sources].every((s) => s === "lint" || s === "typecheck");
     if (allMechanical) {
