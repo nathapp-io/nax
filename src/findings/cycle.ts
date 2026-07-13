@@ -167,12 +167,18 @@ export async function runFixCycle<F extends Finding>(
     // ── Select active strategies ──────────────────────────────────────────────
     const active = selectActiveStrategies(cycle.strategies, cycle.findings, cycle.verdict);
     if (active.length === 0) {
-      logger?.info("findings.cycle", "cycle exited — no matching strategy", {
+      // Orphaned findings: at least one finding remains but no strategy's
+      // `appliesTo` claims it (e.g. an unhandled `source`). Surface the sources
+      // at warn level — without this the orphaned source is invisible, turning
+      // a routing gap into an un-diagnosable "story failed for no reason".
+      const orphanSources = [...new Set(cycle.findings.map((f) => f.source))];
+      logger?.warn("findings.cycle", "cycle exited — no matching strategy (orphaned findings)", {
         storyId,
         packageDir,
         cycleName,
         reason: "no-strategy",
         findingsCount: cycle.findings.length,
+        orphanSources,
       });
       return {
         iterations: cycle.iterations,
