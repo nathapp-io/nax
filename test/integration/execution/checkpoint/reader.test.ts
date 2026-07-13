@@ -75,7 +75,8 @@ describe("loadCheckpoints integration", () => {
     await writer.recordGreen("US-001", "implementer", { headSha: "h2", dirtyDigest: "d2" });
     await writer.recordGreen("US-002", "test-writer", { headSha: "h3", dirtyDigest: "d3" });
 
-    // The atomic write's `.tmp` sidecar must never survive a successful write.
+    // defaultAppend uses O_APPEND (node:fs/promises.appendFile) directly —
+    // no temp-file + rename dance, so no `.tmp` sidecar is ever created.
     expect(existsSync(`${filePath}.tmp`)).toBe(false);
 
     const raw = readFileSync(filePath, "utf8");
@@ -103,11 +104,18 @@ describe("loadCheckpoints integration", () => {
     const lines = raw.split("\n").filter((l) => l !== "");
     expect(lines).toHaveLength(2);
 
-    // loadCheckpoints only honors the latest runId — this asserts the older
-    // run's bytes are still physically present on disk (not truncated away),
-    // even though the reader intentionally filters them out.
+    // The older run's bytes are physically present on disk (not truncated
+    // away by the fresh writer instance).
     const parsedFirst = JSON.parse(lines[0] as string) as { runId: string; storyId: string };
     expect(parsedFirst.runId).toBe("run-1");
     expect(parsedFirst.storyId).toBe("US-001");
+
+    // loadCheckpoints filters per-story (see reader.ts), not by a single
+    // file-wide newest runId — US-001's own newest (and only) runId is
+    // "run-1", so its checkpoint survives even though a newer runId
+    // ("run-2") exists elsewhere in the file for a different story.
+    const result = await loadCheckpoints(tmpDir);
+    expect(result.get("US-001")?.greenPhases).toEqual(["test-writer"]);
+    expect(result.get("US-002")?.greenPhases).toEqual(["test-writer"]);
   });
 });

@@ -5,7 +5,7 @@
  * orchestrator skip-state after a crash or abort. See:
  *   - `types.ts`  — CheckpointRecord, StoryCheckpoint, TreeState
  *   - `writer.ts` — CheckpointWriter.recordGreen (durable append)
- *   - `reader.ts` — loadCheckpoints (longest-valid-prefix + latest-runId filter)
+ *   - `reader.ts` — loadCheckpoints (longest-valid-prefix + per-story latest-runId filter)
  *   - `resume-hydrate.ts` — captureTreeState / hydrateFromResumePlan /
  *     buildCheckpointLogData (US-003 resume-integration helpers)
  */

@@ -60,13 +60,14 @@ export class ExecutionPlan {
     // skipped in the main loop below never reaches the `recordGreen` call at
     // its old position (the skip guard's `continue` bypasses it), so it would
     // keep only the checkpoint record from the run that originally recorded
-    // it. `loadCheckpoints` retains records from only the single newest
-    // `runId` present in the file — so a second consecutive resume (which
-    // mints its own new `runId`) would see that older record filtered out
-    // and re-run work that was already green two runs ago. Re-recording each
-    // seeded phase here, under the tree already confirmed to match by
-    // `buildResumePlan`, keeps every still-green phase alive across repeated
-    // resumes.
+    // it. `loadCheckpoints` now filters per-story (see `reader.ts`), so an
+    // untouched story's older-run records already survive repeated resumes
+    // on their own — this re-recording is a cheap consolidation, not a
+    // correctness requirement: it advances this story's own checkpoint
+    // history to the current `runId` under the tree state already confirmed
+    // to match by `buildResumePlan`, so every still-green phase for THIS
+    // story shares one consistent runId rather than accumulating one stale
+    // record per resume.
     if (this.ctx.storyId) {
       for (const skippedPhase of plan.skipPhases) {
         await _storyOrchestratorDeps.recordGreen(this.ctx.storyId, skippedPhase, tree);

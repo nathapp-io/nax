@@ -182,4 +182,82 @@ describe("queueCheckStage — INJECT", () => {
     expect(result.action).toBe("continue");
     expect(ctx.prd.userStories).toHaveLength(1);
   });
+
+  test("INJECT rejects an absolute path outside the workspace and leaves the PRD unchanged", async () => {
+    const ctx = makeCtx(workdir);
+    const outsideDir = makeTempDir("nax-queue-check-outside-");
+    try {
+      const outsidePath = join(outsideDir, "outside-story.json");
+      await Bun.write(
+        outsidePath,
+        JSON.stringify({
+          title: "Escaped story",
+          description: "Should never be read.",
+          acceptanceCriteria: ["n/a"],
+        }),
+      );
+      await Bun.write(join(workdir, ".queue.txt"), `INJECT ${outsidePath}\n`);
+
+      const result = await queueCheckStage.execute(ctx);
+
+      expect(result.action).toBe("continue");
+      expect(ctx.prd.userStories).toHaveLength(1);
+    } finally {
+      cleanupTempDir(outsideDir);
+    }
+  });
+
+  test("INJECT rejects a relative path that traverses outside the workspace via ..", async () => {
+    const ctx = makeCtx(workdir);
+    const outsideDir = makeTempDir("nax-queue-check-outside-");
+    try {
+      await Bun.write(
+        join(outsideDir, "traversal-story.json"),
+        JSON.stringify({
+          title: "Escaped via traversal",
+          description: "Should never be read.",
+          acceptanceCriteria: ["n/a"],
+        }),
+      );
+      // relative(workdir, outsideDir) yields a `..`-prefixed path that resolves
+      // outside workdir once joined back onto it — the traversal shape validateFilePath must reject.
+      const { relative } = await import("node:path");
+      const traversalPath = join(relative(workdir, outsideDir), "traversal-story.json");
+      await Bun.write(join(workdir, ".queue.txt"), `INJECT ${traversalPath}\n`);
+
+      const result = await queueCheckStage.execute(ctx);
+
+      expect(result.action).toBe("continue");
+      expect(ctx.prd.userStories).toHaveLength(1);
+    } finally {
+      cleanupTempDir(outsideDir);
+    }
+  });
+
+  test("INJECT rejects a symlink that resolves outside the workspace", async () => {
+    const ctx = makeCtx(workdir);
+    const outsideDir = makeTempDir("nax-queue-check-outside-");
+    try {
+      const realTarget = join(outsideDir, "symlink-target.json");
+      await Bun.write(
+        realTarget,
+        JSON.stringify({
+          title: "Escaped via symlink",
+          description: "Should never be read.",
+          acceptanceCriteria: ["n/a"],
+        }),
+      );
+      const { symlinkSync } = await import("node:fs");
+      const linkPath = join(workdir, "link.json");
+      symlinkSync(realTarget, linkPath);
+      await Bun.write(join(workdir, ".queue.txt"), "INJECT link.json\n");
+
+      const result = await queueCheckStage.execute(ctx);
+
+      expect(result.action).toBe("continue");
+      expect(ctx.prd.userStories).toHaveLength(1);
+    } finally {
+      cleanupTempDir(outsideDir);
+    }
+  });
 });

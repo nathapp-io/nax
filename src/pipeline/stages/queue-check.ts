@@ -6,6 +6,9 @@
  */
 
 import path from "node:path";
+import { validateFilePath } from "@/config";
+import { NaxError } from "@/errors";
+import { errorMessage } from "@/utils/errors";
 import { clearQueueFile, readQueueFile } from "../../execution/queue-handler";
 import { getLogger } from "../../logger";
 import {
@@ -16,7 +19,6 @@ import {
   setStoryPriority,
   validateInjectedStory,
 } from "../../prd";
-import { errorMessage } from "../../utils/errors";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /**
@@ -96,9 +98,15 @@ export const queueCheckStage: PipelineStage = {
       }
 
       if (cmd.type === "INJECT") {
-        const storyFilePath = path.isAbsolute(cmd.storyFile) ? cmd.storyFile : path.join(ctx.workdir, cmd.storyFile);
-
         try {
+          if (path.isAbsolute(cmd.storyFile)) {
+            throw new NaxError(
+              `INJECT storyFile must be a relative path within the workspace: ${cmd.storyFile}`,
+              "INJECT_PATH_ABSOLUTE",
+              { stage: "queue-check", storyId: ctx.story?.id ?? "unknown", storyFile: cmd.storyFile },
+            );
+          }
+          const storyFilePath = validateFilePath(path.join(ctx.workdir, cmd.storyFile), ctx.workdir);
           const raw: unknown = await Bun.file(storyFilePath).json();
           const existingIds = new Set(ctx.prd.userStories.map((s) => s.id));
           const story = validateInjectedStory(raw, existingIds);

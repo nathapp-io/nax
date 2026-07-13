@@ -4,10 +4,16 @@
  * Recovery semantics:
  * - Parse line-by-line and keep the LONGEST VALID PREFIX: a torn final line
  *   from a crash mid-append is dropped silently (it is not fatal).
- * - Keep only records whose `runId` equals the newest `runId` present in the
- *   file. Records from earlier runs are ignored — a fresh run starts clean.
- * - Group remaining records by `storyId` and order each story's `greenPhases`
- *   by canonical phase index so callers can compare against `CANONICAL_ORDER`.
+ * - Group records by `storyId` first, then keep only the records whose
+ *   `runId` equals the newest `runId` present **for that story** (not the
+ *   newest runId in the whole file). Filtering globally by file-wide newest
+ *   runId discards other stories' checkpoints the moment any single story
+ *   re-records a phase under the current run's id — on a resume involving
+ *   multiple incomplete stories, only the first story to touch the file
+ *   would resume correctly. Per-story filtering keeps a story's checkpoints
+ *   until that same story records something under a newer run.
+ * - Order each story's `greenPhases` by canonical phase index so callers can
+ *   compare against `CANONICAL_ORDER`.
  * - Skip lines that fail JSON.parse or that are missing a required field; a
  *   single bad line must not abort the parse of the rest.
  * - A missing or unreadable file yields an empty `Map` rather than throwing.
@@ -93,25 +99,29 @@ export async function loadCheckpoints(
     }
   }
 
-  // Newest runId (lexical max — same shape used everywhere else in the project).
-  let latestRunId: string | undefined;
-  for (const r of validRecords) {
-    latestRunId = maxRunId(latestRunId, r.runId);
-  }
-  if (latestRunId === undefined) return new Map();
-
-  // Keep only records from the latest runId.
-  const latest = validRecords.filter((r) => r.runId === latestRunId);
-
-  // Group by storyId, preserving insertion order on first-seen.
+  // Group by storyId first, preserving insertion order on first-seen.
   const grouped = new Map<string, CheckpointRecord[]>();
-  for (const r of latest) {
+  for (const r of validRecords) {
     const list = grouped.get(r.storyId);
     if (list) {
       list.push(r);
     } else {
       grouped.set(r.storyId, [r]);
     }
+  }
+
+  // Within each story, keep only records from that story's own newest runId
+  // (lexical max — same shape used everywhere else in the project). This is
+  // deliberately per-story, not file-wide: see module docstring.
+  for (const [storyId, records] of grouped) {
+    let latestRunId: string | undefined;
+    for (const r of records) {
+      latestRunId = maxRunId(latestRunId, r.runId);
+    }
+    grouped.set(
+      storyId,
+      records.filter((r) => r.runId === latestRunId),
+    );
   }
 
   const result = new Map<string, StoryCheckpoint>();
