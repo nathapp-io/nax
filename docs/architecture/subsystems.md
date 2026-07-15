@@ -610,8 +610,14 @@ fresh findings: each declaration whose `PRD_QUOTE` is verbatim-present in the
 story description or AC text causes a finding on the declared file to be
 re-tagged from `fixTarget: "source"` to `"test"`. The test-writer strategy
 claims the re-tagged finding on the next iteration. Declarations with fabricated
-PRD quotes inject a `prd_quote_mismatch` advisory finding (severity=warning) and
-do not re-tag.
+PRD quotes do not re-tag, and are reported as a `prd_quote_mismatch`
+`DeclarationDiagnostic` that the `postValidate` caller logs at warn — never as a
+finding. The non-re-tag *is* the enforcement; a diagnostic carries no fix, and
+the findings stream is the cycle's work queue, so every entry in it must be
+claimable by some strategy's `appliesTo`. An unclaimable finding makes
+`selectActiveStrategies` return `[]` and the cycle exit `no-strategy`, failing a
+story whose gates all passed (#1327). The same rule applies to invalid
+`mock_structure` handoffs.
 
 The test-writer strategy's `maxAttempts` is set to `2` to allow exactly one
 re-fire after the initial source-bug-error attempt.

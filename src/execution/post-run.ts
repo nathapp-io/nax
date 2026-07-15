@@ -359,9 +359,12 @@ export async function decideStageAction(
     // Advisory-only escape: if NONE of the remaining unfixed findings meet the
     // run's blocking threshold, the story is functionally green — do not fail it
     // on sub-blocking leftovers. This covers findings that no fix strategy can
-    // claim (e.g. `source:"autofix"` declaration diagnostics) which would
+    // claim (e.g. `source:"plugin"`, which no `appliesTo` matches) which would
     // otherwise force a `no-strategy` cycle exit into a hard story failure even
     // though every gate (tests/lint/typecheck/semantic/adversarial) passed.
+    // Note this escape is threshold-relative: it does not fire when a project
+    // sets `review.blockingThreshold` at or below the leftover's severity, so it
+    // is a backstop — not a licence to mint findings no strategy can claim.
     // Missing severity is treated as "error" (blocking) so a real defect is
     // never silently swallowed. Mirrors the severity-based blocking/advisory
     // partition used by the review layer (isBlockingSeverity).

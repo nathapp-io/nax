@@ -23,6 +23,7 @@ import type { TestStrategy } from "../config/schema-types";
 import type { FixCycleContext } from "../findings/cycle-types";
 import type { FixStrategy } from "../findings/cycle-types";
 import type { Finding } from "../findings/types";
+import { getSafeLogger } from "../logger";
 import {
   applyTestEditDeclarations,
   makeAutofixImplementerStrategy,
@@ -32,7 +33,7 @@ import {
   makeMechanicalLintFixStrategy,
   validateMockStructureFiles,
 } from "../operations";
-import type { TestEditDeclaration } from "../operations";
+import type { DeclarationDiagnostic, TestEditDeclaration } from "../operations";
 import { shouldRunRectification } from "../operations/execution-gates";
 import { makeFullSuiteRectifyStrategy } from "../operations/full-suite-rectify";
 import type { CallContext } from "../operations/types";
@@ -51,6 +52,29 @@ import { type ExecutionPlan, type RectificationPhaseOptions, StoryOrchestratorBu
  */
 export function requiresInitialRefCapture(strategy: TestStrategy): boolean {
   return isThreeSessionStrategy(strategy);
+}
+
+/**
+ * Warn about test-edit declarations the implementer made that failed validation.
+ *
+ * These are deliberately not findings: the fix cycle's findings stream is a work
+ * queue, and a rejected declaration has no fix to apply — its enforcement already
+ * happened (see apply-test-edit-declarations.ts). Injecting them as findings made
+ * green stories exit the cycle "no-strategy" (#1327). Logging keeps the signal
+ * greppable without gating the story.
+ */
+function logRejectedDeclarations(diagnostics: DeclarationDiagnostic[], ctx: FixCycleContext): void {
+  if (diagnostics.length === 0) return;
+  const logger = getSafeLogger();
+  for (const d of diagnostics) {
+    logger?.warn("findings.cycle", "test-edit declaration rejected — ignoring declaration", {
+      storyId: ctx.storyId,
+      packageDir: ctx.packageDir,
+      reason: d.reason,
+      file: d.file,
+      detail: d.detail,
+    });
+  }
 }
 
 /**
@@ -213,7 +237,7 @@ export async function buildPlanForStrategy(
       }
     }
 
-    const postValidate = async (findings: Finding[], _validateCtx: FixCycleContext): Promise<Finding[]> => {
+    const postValidate = async (findings: Finding[], validateCtx: FixCycleContext): Promise<Finding[]> => {
       if (sink.testEdits.length === 0 && sink.mockHandoffs.length === 0) return findings;
 
       // Wrap mock handoffs as TestEditDeclaration shape for validateMockStructureFiles.
@@ -232,7 +256,9 @@ export async function buildPlanForStrategy(
       const allDeclarations = [...sink.testEdits, ...valid];
       sink.testEdits = []; // consumed
 
-      return applyTestEditDeclarations(findings, allDeclarations, story, invalid);
+      const applied = applyTestEditDeclarations(findings, allDeclarations, story, invalid);
+      logRejectedDeclarations(applied.diagnostics, validateCtx);
+      return applied.findings;
     };
 
     const rectOpts: RectificationPhaseOptions = {
@@ -317,7 +343,7 @@ export async function buildPlanForStrategy(
     );
 
     // Mirror the main rectification postValidate but bound to nbSink (#1227).
-    const nbPostValidate = async (findings: Finding[], _validateCtx: FixCycleContext): Promise<Finding[]> => {
+    const nbPostValidate = async (findings: Finding[], validateCtx: FixCycleContext): Promise<Finding[]> => {
       if (nbSink.testEdits.length === 0 && nbSink.mockHandoffs.length === 0) return findings;
 
       const pendingMock: TestEditDeclaration[] = nbSink.mockHandoffs.map((h) => ({
@@ -334,7 +360,9 @@ export async function buildPlanForStrategy(
       const allDeclarations = [...nbSink.testEdits, ...valid];
       nbSink.testEdits = [];
 
-      return applyTestEditDeclarations(findings, allDeclarations, story, invalid);
+      const applied = applyTestEditDeclarations(findings, allDeclarations, story, invalid);
+      logRejectedDeclarations(applied.diagnostics, validateCtx);
+      return applied.findings;
     };
 
     builder.addNonBlockingFix(nbf, nbStrategies, nbPostValidate);

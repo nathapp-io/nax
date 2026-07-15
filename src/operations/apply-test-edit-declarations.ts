@@ -1,14 +1,47 @@
 /**
  * Apply test-edit declarations emitted by the implementer rectification agent
  * to findings, re-tagging source→test on valid prd_contract declarations and
- * appending advisory findings for invalid quotes or invalid mock-structure refs.
+ * reporting rejected declarations as diagnostics.
  *
- * Pure function — never mutates inputs.
+ * Rejected declarations are NOT injected into the findings stream. The findings
+ * stream is the fix cycle's work queue: every entry must be claimable by some
+ * FixStrategy's `appliesTo`, or the cycle exits "no-strategy" and fails an
+ * otherwise-green story (#1327). A rejected declaration carries no work — the
+ * enforcement has already happened by the time it is reported (an invalid quote
+ * means the finding was not re-tagged; invalid mock files are stripped from the
+ * handoff before the test-writer sees them). Callers log these instead.
+ *
+ * Pure function — never mutates inputs, never logs.
  */
 import type { Finding } from "@/findings";
 import type { UserStory } from "@/prd";
 import { validatePrdQuote } from "./test-edit-declaration";
 import type { TestEditDeclaration } from "./test-edit-declaration";
+
+/** Why a declaration was rejected. */
+export type DeclarationDiagnosticReason = "prd_quote_mismatch" | "mock_structure_invalid_files";
+
+/**
+ * A rejected declaration, reported for logging rather than fixing.
+ *
+ * Diagnostics describe a *declaration* the implementer made, not a defect in
+ * the code — there is nothing for a fix strategy to act on.
+ */
+export interface DeclarationDiagnostic {
+  reason: DeclarationDiagnosticReason;
+  /** The declaration's primary file. */
+  file: string;
+  /** Human-readable explanation, suitable as a log message. */
+  detail: string;
+}
+
+/** Result of applying declarations: re-tagged findings plus rejection diagnostics. */
+export interface TestEditDeclarationResult {
+  /** The findings, with valid prd_contract re-tags applied. Never appended to. */
+  findings: Finding[];
+  /** Declarations that failed validation. Empty when everything validated. */
+  diagnostics: DeclarationDiagnostic[];
+}
 
 /**
  * Apply declarations to the findings array.
@@ -17,16 +50,16 @@ import type { TestEditDeclaration } from "./test-edit-declaration";
  * @param declarations - Parsed TEST_EDIT_REASON declarations from the implementer.
  * @param story - The user story (used to validate prd_contract quotes).
  * @param invalidMockStructure - Mock-structure declarations that failed file/pattern validation.
- * @returns New findings array with re-tags and advisory findings applied.
+ * @returns Re-tagged findings and diagnostics for any rejected declaration.
  */
 export function applyTestEditDeclarations(
   findings: Finding[],
   declarations: TestEditDeclaration[],
   story: UserStory,
   invalidMockStructure?: TestEditDeclaration[],
-): Finding[] {
+): TestEditDeclarationResult {
   let result: Finding[] = [...findings];
-  const advisories: Finding[] = [];
+  const diagnostics: DeclarationDiagnostic[] = [];
 
   for (const d of declarations) {
     if (d.reason === "prd_contract") {
@@ -53,32 +86,28 @@ export function applyTestEditDeclarations(
           return f;
         });
       } else {
-        advisories.push({
-          source: "autofix",
-          severity: "warning",
-          category: "prd_quote_mismatch",
-          message: `PRD quote not found verbatim in story text for file: ${d.file}`,
+        // Rejection is already enforced above: without a valid quote the
+        // findings for this file keep their original fixTarget.
+        diagnostics.push({
+          reason: "prd_quote_mismatch",
           file: d.file,
-          fixTarget: "source",
+          detail: `PRD quote not found verbatim in story text for file: ${d.file}`,
         });
       }
     }
     // lint_only and sibling_scope: passthrough — no changes to findings
   }
 
-  // Advisory findings for invalid mock_structure declarations
-  if (invalidMockStructure && invalidMockStructure.length > 0) {
-    for (const d of invalidMockStructure) {
-      const fileList = (d.files ?? [d.file]).join(", ");
-      advisories.push({
-        source: "autofix",
-        severity: "warning",
-        category: "mock_structure_invalid_files",
-        message: `Mock structure handoff references file that does not exist or is not a test file: ${fileList}`,
-        fixTarget: "source",
-      });
-    }
+  // Invalid mock_structure declarations are stripped from the handoff by the
+  // caller before the test-writer consumes it; report them for visibility.
+  for (const d of invalidMockStructure ?? []) {
+    const fileList = (d.files ?? [d.file]).join(", ");
+    diagnostics.push({
+      reason: "mock_structure_invalid_files",
+      file: d.file,
+      detail: `Mock structure handoff references file that does not exist or is not a test file: ${fileList}`,
+    });
   }
 
-  return [...result, ...advisories];
+  return { findings: result, diagnostics };
 }

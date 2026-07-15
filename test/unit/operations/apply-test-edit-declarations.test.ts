@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { applyTestEditDeclarations } from "@/operations";
+import { applyTestEditDeclarations, makeAutofixImplementerStrategy, makeDeclarationSink } from "@/operations";
 import type { Finding } from "@/findings";
 import type { TestEditDeclaration } from "@/operations";
-import { makeStory } from "@test/helpers";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 
 // Helper to create a basic source-targeted finding
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
@@ -32,7 +32,7 @@ describe("applyTestEditDeclarations", () => {
         testAfter: "new line",
       };
 
-      const result = applyTestEditDeclarations(findings, [decl], story);
+      const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
       expect(result).toHaveLength(1);
       expect(result[0]!.fixTarget).toBe("test");
@@ -51,7 +51,7 @@ describe("applyTestEditDeclarations", () => {
         testAfter: "after",
       };
 
-      const result = applyTestEditDeclarations(findings, [decl], story);
+      const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
       expect(result[0]!.meta?.prdContractDeclaration).toEqual(decl);
     });
@@ -73,7 +73,7 @@ describe("applyTestEditDeclarations", () => {
         testAfter: "new",
       };
 
-      const result = applyTestEditDeclarations(findings, [decl], story);
+      const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
       expect(result[0]!.meta?.existingKey).toBe("existingValue");
       expect(result[0]!.meta?.prdContractDeclaration).toEqual(decl);
@@ -92,7 +92,7 @@ describe("applyTestEditDeclarations", () => {
         testAfter: "new",
       };
 
-      const result = applyTestEditDeclarations(findings, [decl], story);
+      const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
       expect(result[0]!.fixTarget).toBe("source");
       expect(result[0]!.meta?.prdContractDeclaration).toBeUndefined();
@@ -111,7 +111,7 @@ describe("applyTestEditDeclarations", () => {
         testAfter: "new",
       };
 
-      const result = applyTestEditDeclarations(findings, [decl], story);
+      const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
       // fixTarget was already "test", meta should still be set
       expect(result[0]!.fixTarget).toBe("test");
@@ -119,7 +119,7 @@ describe("applyTestEditDeclarations", () => {
   });
 
   describe("prd_contract — invalid quote", () => {
-    test("appends advisory finding when quote not found in story", () => {
+    test("reports a diagnostic without adding a finding when quote not found in story", () => {
       const story = makeStory({ description: "This is a story about widgets" });
       const findings: Finding[] = [
         makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" }),
@@ -132,18 +132,37 @@ describe("applyTestEditDeclarations", () => {
         testAfter: "new",
       };
 
-      const result = applyTestEditDeclarations(findings, [decl], story);
+      const { findings: result, diagnostics } = applyTestEditDeclarations(findings, [decl], story);
 
-      // Original finding unchanged
+      // Original finding unchanged, and nothing appended: a rejected declaration
+      // is not a defect, and an unclaimable finding dead-ends the cycle (#1327).
+      expect(result).toHaveLength(1);
       expect(result[0]!.fixTarget).toBe("source");
-      // Advisory appended
-      expect(result).toHaveLength(2);
-      const advisory = result[1]!;
-      expect(advisory.source).toBe("autofix");
-      expect(advisory.severity).toBe("warning");
-      expect(advisory.category).toBe("prd_quote_mismatch");
-      expect(advisory.message).toContain("test/unit/foo.test.ts");
-      expect(advisory.fixTarget).toBe("source");
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]!.reason).toBe("prd_quote_mismatch");
+      expect(diagnostics[0]!.file).toBe("test/unit/foo.test.ts");
+      expect(diagnostics[0]!.detail).toContain("test/unit/foo.test.ts");
+    });
+
+    test("rejected quote leaves the finding claimable by autofix-implementer", () => {
+      // The rejection IS the enforcement: fixTarget stays "source", so the
+      // implementer still claims the finding. Asserted against the real strategy
+      // predicate rather than restating the field, so a change to either side of
+      // the contract fails here.
+      const story = makeStory({ description: "This is a story about widgets" });
+      const findings: Finding[] = [makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" })];
+      const decl: TestEditDeclaration = {
+        reason: "prd_contract",
+        file: "test/unit/foo.test.ts",
+        prdQuote: "nonExistentFunction()",
+        testBefore: "old",
+        testAfter: "new",
+      };
+
+      const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
+
+      const implementer = makeAutofixImplementerStrategy(story, makeNaxConfig(), makeDeclarationSink());
+      expect(result.map((f) => implementer.appliesTo(f))).toEqual([true]);
     });
 
     test("does not re-tag finding when quote is invalid", () => {
@@ -159,7 +178,7 @@ describe("applyTestEditDeclarations", () => {
         testAfter: "new",
       };
 
-      const result = applyTestEditDeclarations(findings, [decl], story);
+      const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
       expect(result[0]!.fixTarget).toBe("source");
     });
@@ -177,7 +196,7 @@ describe("applyTestEditDeclarations", () => {
         finding: "no-non-null-assertion",
       };
 
-      const result = applyTestEditDeclarations(findings, [decl], story);
+      const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
       expect(result).toHaveLength(1);
       expect(result[0]!.fixTarget).toBe("source");
@@ -196,7 +215,7 @@ describe("applyTestEditDeclarations", () => {
         finding: "TS2304",
       };
 
-      const result = applyTestEditDeclarations(findings, [decl], story);
+      const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
       expect(result).toHaveLength(1);
       expect(result[0]!.fixTarget).toBe("source");
@@ -204,7 +223,7 @@ describe("applyTestEditDeclarations", () => {
   });
 
   describe("invalidMockStructure", () => {
-    test("appends advisory finding with category mock_structure_invalid_files", () => {
+    test("reports a diagnostic without adding a finding", () => {
       const story = makeStory();
       const findings: Finding[] = [makeFinding()];
       const invalidDecl: TestEditDeclaration = {
@@ -214,19 +233,17 @@ describe("applyTestEditDeclarations", () => {
         reasonDetail: "Mock setup is wrong",
       };
 
-      const result = applyTestEditDeclarations(findings, [], story, [invalidDecl]);
+      const { findings: result, diagnostics } = applyTestEditDeclarations(findings, [], story, [invalidDecl]);
 
-      expect(result).toHaveLength(2);
-      const advisory = result[1]!;
-      expect(advisory.source).toBe("autofix");
-      expect(advisory.severity).toBe("warning");
-      expect(advisory.category).toBe("mock_structure_invalid_files");
-      expect(advisory.message).toContain("test/unit/mock.test.ts");
-      expect(advisory.message).toContain("test/unit/other.test.ts");
-      expect(advisory.fixTarget).toBe("source");
+      // The invalid handoff is already stripped by the caller before the
+      // test-writer sees it — there is no fix to queue here (#1327).
+      expect(result).toEqual(findings);
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]!.reason).toBe("mock_structure_invalid_files");
+      expect(diagnostics[0]!.file).toBe("test/unit/mock.test.ts");
     });
 
-    test("includes file names in advisory message", () => {
+    test("includes every declared file name in the diagnostic detail", () => {
       const story = makeStory();
       const invalidDecl: TestEditDeclaration = {
         reason: "mock_structure",
@@ -235,10 +252,10 @@ describe("applyTestEditDeclarations", () => {
         reasonDetail: "needs mock",
       };
 
-      const result = applyTestEditDeclarations([], [], story, [invalidDecl]);
+      const { diagnostics } = applyTestEditDeclarations([], [], story, [invalidDecl]);
 
-      expect(result[0]!.message).toContain("test/unit/a.test.ts");
-      expect(result[0]!.message).toContain("test/unit/b.test.ts");
+      expect(diagnostics[0]!.detail).toContain("test/unit/a.test.ts");
+      expect(diagnostics[0]!.detail).toContain("test/unit/b.test.ts");
     });
 
     test("uses d.file when d.files is absent", () => {
@@ -249,9 +266,48 @@ describe("applyTestEditDeclarations", () => {
         reasonDetail: "only file",
       };
 
-      const result = applyTestEditDeclarations([], [], story, [invalidDecl]);
+      const { diagnostics } = applyTestEditDeclarations([], [], story, [invalidDecl]);
 
-      expect(result[0]!.message).toContain("test/unit/only.test.ts");
+      expect(diagnostics[0]!.detail).toContain("test/unit/only.test.ts");
+    });
+
+    test("emits one diagnostic per invalid declaration", () => {
+      const story = makeStory();
+      const invalid: TestEditDeclaration[] = [
+        { reason: "mock_structure", file: "test/unit/a.test.ts", reasonDetail: "a" },
+        { reason: "mock_structure", file: "test/unit/b.test.ts", reasonDetail: "b" },
+      ];
+
+      const { findings: result, diagnostics } = applyTestEditDeclarations([], [], story, invalid);
+
+      expect(result).toHaveLength(0);
+      expect(diagnostics.map((d) => d.file)).toEqual(["test/unit/a.test.ts", "test/unit/b.test.ts"]);
+    });
+  });
+
+  describe("no unclaimable findings are ever minted (#1327)", () => {
+    test("returns an empty findings array when the only input is a rejected declaration", () => {
+      // The regression: a green story (validate returned []) had an advisory
+      // appended here, so classifyOutcome saw a new source, the cycle looped,
+      // no strategy claimed it, and the story failed "no-strategy".
+      const story = makeStory({ description: "A story that does not mention the function" });
+      const decl: TestEditDeclaration = {
+        reason: "prd_contract",
+        file: "test/unit/foo.test.ts",
+        prdQuote: "nonExistentFunction()",
+        testBefore: "old",
+        testAfter: "new",
+      };
+      const invalidDecl: TestEditDeclaration = {
+        reason: "mock_structure",
+        file: "test/unit/mock.test.ts",
+        reasonDetail: "bad handoff",
+      };
+
+      const { findings: result, diagnostics } = applyTestEditDeclarations([], [decl], story, [invalidDecl]);
+
+      expect(result).toHaveLength(0);
+      expect(diagnostics).toHaveLength(2);
     });
   });
 
@@ -278,7 +334,7 @@ describe("applyTestEditDeclarations", () => {
         testAfter: "expect(mock).toBeCalled()",
       };
 
-      const result = applyTestEditDeclarations(findings, [decl], story);
+      const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
       expect(result[0]?.fixTarget).toBe("test");
     });
@@ -303,12 +359,12 @@ describe("applyTestEditDeclarations", () => {
         testAfter: "new",
       };
 
-      const result = applyTestEditDeclarations(findings, [decl], story);
+      const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
       expect(result[0]?.fixTarget).toBeUndefined();
     });
 
-    test("AC10: test-runner finding with no fixTarget + invalid prd_quote → advisory appended", () => {
+    test("AC10: test-runner finding with no fixTarget + invalid prd_quote → diagnostic, no appended finding", () => {
       const story = makeStory({ description: "A story that does not mention the function" });
       const findings: Finding[] = [
         {
@@ -327,10 +383,10 @@ describe("applyTestEditDeclarations", () => {
         testAfter: "new",
       };
 
-      const result = applyTestEditDeclarations(findings, [decl], story);
+      const { findings: result, diagnostics } = applyTestEditDeclarations(findings, [decl], story);
 
-      expect(result).toHaveLength(2);
-      expect(result[1]?.category).toBe("prd_quote_mismatch");
+      expect(result).toHaveLength(1);
+      expect(diagnostics[0]?.reason).toBe("prd_quote_mismatch");
     });
 
     test("AC10: original test-runner finding retains no fixTarget after invalid prd_quote", () => {
@@ -352,7 +408,7 @@ describe("applyTestEditDeclarations", () => {
         testAfter: "new",
       };
 
-      const result = applyTestEditDeclarations(findings, [decl], story);
+      const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
       expect(result[0]?.fixTarget).toBeUndefined();
     });
@@ -373,7 +429,7 @@ describe("applyTestEditDeclarations", () => {
         testAfter: "new",
       };
 
-      const result = applyTestEditDeclarations(original, [decl], story);
+      const { findings: result } = applyTestEditDeclarations(original, [decl], story);
 
       // Input array not mutated
       expect(original).toHaveLength(1);
