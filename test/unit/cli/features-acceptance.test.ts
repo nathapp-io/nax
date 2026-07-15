@@ -144,6 +144,7 @@ describe("single-package", () => {
     expect(group.testPath).toBe(".nax/features/feat/.nax-acceptance.test.ts");
     expect(group.exists).toBe(false);
     expect(group.command).toBeUndefined();
+    expect(group.cwd).toBe("");
   });
 
   test("exists=true when the acceptance test file is present on disk", async () => {
@@ -194,6 +195,8 @@ describe("monorepo", () => {
     expect(Object.keys(byPkg).sort()).toEqual(["packages/api", "packages/core"]);
     expect(byPkg["packages/core"].testPath).toBe("packages/core/.nax/features/feat/.nax-acceptance.test.ts");
     expect(byPkg["packages/api"].testPath).toBe("packages/api/.nax/features/feat/.nax-acceptance.test.ts");
+    expect(byPkg["packages/core"].cwd).toBe("packages/core");
+    expect(byPkg["packages/api"].cwd).toBe("packages/api");
   });
 
   test("per-package acceptance.command override beats the root command", async () => {

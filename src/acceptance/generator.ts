@@ -48,12 +48,18 @@ export function buildAcceptanceRunCommand(
   packageDir?: string,
 ): string[] {
   if (commandOverride) {
-    // Support {{files}}, {{file}}, {{FILE}} — all resolve to the single acceptance test path
-    const resolved = commandOverride
-      .replace(/\{\{files\}\}/g, testPath)
-      .replace(/\{\{file\}\}/g, testPath)
-      .replace(/\{\{FILE\}\}/g, testPath);
-    return resolved.trim().split(/\s+/);
+    // Split on whitespace BEFORE substitution so a testPath containing spaces stays
+    // a single argv element instead of being torn apart by the split below.
+    // Support {{files}}, {{file}}, {{FILE}} — all resolve to the single acceptance test path.
+    return commandOverride
+      .trim()
+      .split(/\s+/)
+      .map((part) =>
+        part
+          .replace(/\{\{files\}\}/g, testPath)
+          .replace(/\{\{file\}\}/g, testPath)
+          .replace(/\{\{FILE\}\}/g, testPath),
+      );
   }
 
   switch (testFramework?.toLowerCase()) {
