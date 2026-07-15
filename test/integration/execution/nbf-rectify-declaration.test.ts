@@ -5,7 +5,8 @@
  *          applied via nbPostValidate — autofix-test-writer picks up the handoff.
  * AC-NBF2: nbSink is drained by nbPostValidate; the main sink (empty at this point)
  *          is not double-drained.
- * AC-NBF3: invalid mock_structure files in the nbf cycle → advisory finding appended.
+ * AC-NBF3: invalid mock_structure files in the nbf cycle → reported as a log diagnostic,
+ *          never as a finding; nbPostValidate's output stays claimable (#1327).
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -288,12 +289,12 @@ describe("AC-NBF2: nbf cycle validate uses nbPostValidate bound to nbSink", () =
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC-NBF3: invalid mock_structure in nbf cycle → advisory finding appended
+// AC-NBF3: invalid mock_structure in nbf cycle → no unclaimable finding minted (#1327)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("AC-NBF3: invalid mock_structure in nbf cycle → advisory with category mock_structure_invalid_files", () => {
+describe("AC-NBF3: invalid mock_structure in nbf cycle → diagnostic only, no unclaimable finding", () => {
   test(
-    "AC-NBF3: nbPostValidate appends advisory when declared test file does not exist",
+    "AC-NBF3: nbPostValidate mints no finding when declared test file does not exist",
     async () => {
       const packageDir = "/tmp/nax-test-nbf-ac3-nonexistent";
       const story = makeStory({ id: "US-nbf3", attempts: 1 });
@@ -344,6 +345,16 @@ describe("AC-NBF3: invalid mock_structure in nbf cycle → advisory with categor
       const mockInput: FullSuiteRectifyInput = { story, findings: [] };
       await fullSuiteStrategy!.extractApplied!(invalidOutput as any, mockInput as any);
 
+      const testWriterStrategy = capturedCycle!.strategies.find((s) => s.name === "autofix-test-writer");
+      expect(testWriterStrategy).toBeDefined();
+      const dummyFinding: Finding = { source: "lint", severity: "error", category: "style", message: "dummy" };
+
+      // Precondition: extractApplied populated nbSink, so the test-writer claims
+      // via its `sink.mockHandoffs.length > 0` clause. This also proves the
+      // captured cycle is the nbf one (it shares nbSink). Without it, the
+      // assertions below would also hold on nbPostValidate's early-return path.
+      expect(testWriterStrategy!.appliesTo(dummyFinding)).toBe(true);
+
       _storyOrchestratorDeps.callOp = mock(async () => ({ success: true })) as typeof _storyOrchestratorDeps.callOp;
 
       const validateResult = await capturedCycle!.validate(capturedCycleCtx!, {
@@ -352,8 +363,15 @@ describe("AC-NBF3: invalid mock_structure in nbf cycle → advisory with categor
       });
 
       const findings = Array.isArray(validateResult) ? validateResult : validateResult.findings;
-      const hasAdvisory = (findings as Finding[]).some((f) => f.category === "mock_structure_invalid_files");
-      expect(hasAdvisory).toBe(true);
+
+      // nbPostValidate reached the validation branch and rejected the handoff:
+      // nbSink is drained, so the test-writer no longer claims.
+      expect(testWriterStrategy!.appliesTo(dummyFinding)).toBe(false);
+
+      // AC-NBF3 (#1327): the rejected handoff is reported as a log diagnostic, not
+      // appended as a finding. An appended advisory is claimed by no nbf strategy,
+      // so the cycle would exit "no-strategy" on a story whose every phase passed.
+      expect(findings).toEqual([]);
     },
   );
 });

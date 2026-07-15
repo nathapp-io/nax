@@ -55,14 +55,17 @@ export const SEMANTIC_REVIEW_FINDING: Finding = {
   category: "ac-coverage",
   fixTarget: "source",
 };
-// Advisory leftover that no fix strategy's `appliesTo` claims (source "autofix",
-// severity below the default "error" blocking threshold). Regression fixture for
-// the advisory-only exhaustion escape — see the event-bus-idempotency-dlq US-004
-// no-strategy failure where a green story was failed on exactly this shape.
-export const AUTOFIX_ADVISORY_FINDING: Finding = {
-  source: "autofix",
+// Advisory leftover that no fix strategy's `appliesTo` claims — "plugin" is
+// claimed by no strategy, and the severity is below the default "error" blocking
+// threshold. Regression fixture for the advisory-only exhaustion escape: see the
+// event-bus-idempotency-dlq US-004 no-strategy failure where a green story was
+// failed on exactly this shape. That case was a `source:"autofix"` declaration
+// diagnostic; #1327 removed those at the mint site, but sources like "plugin"
+// can still orphan, so the escape stays.
+export const ADVISORY_LEFTOVER_FINDING: Finding = {
+  source: "plugin",
   severity: "warning",
-  message: "mock structure handoff references file that is not a test file",
-  category: "mock_structure_invalid_files",
+  message: "plugin check reported a non-blocking issue",
+  category: "plugin-advisory",
   fixTarget: "source",
 };

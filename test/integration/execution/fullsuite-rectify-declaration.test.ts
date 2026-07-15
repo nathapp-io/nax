@@ -4,7 +4,8 @@
  * AC8: full-suite-rectify strategy (with sink) pushes mock_structure declarations to
  *      sink.mockHandoffs; after postValidate validates the files, autofix-test-writer
  *      picks up the handoff.
- * AC9: invalid mock_structure files → advisory finding with category mock_structure_invalid_files.
+ * AC9: invalid mock_structure files → reported as a log diagnostic, never as a finding;
+ *      postValidate's output stays fully claimable by the cycle's strategies (#1327).
  * AC11: single-session story with mock_structure output → cycle completes without throwing,
  *       no autofix-test-writer strategy dispatched.
  */
@@ -187,12 +188,12 @@ describe("AC8: full-suite-rectify sink integration — test-writer receives mock
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC9: invalid mock_structure files → advisory finding appended
+// AC9: invalid mock_structure files → no unclaimable finding minted (#1327)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("AC9: invalid mock_structure files → advisory with category mock_structure_invalid_files", () => {
+describe("AC9: invalid mock_structure files → diagnostic only, no unclaimable finding", () => {
   test(
-    "AC9: postValidate appends advisory when mock_structure files do not exist or do not match test patterns",
+    "AC9: postValidate mints no finding when mock_structure files do not exist or do not match test patterns",
     async () => {
       // Use a packageDir where the declared test file does not exist.
       const packageDir = "/tmp/nax-test-ac9-nonexistent-dir";
@@ -247,6 +248,16 @@ describe("AC9: invalid mock_structure files → advisory with category mock_stru
       const mockInput: FullSuiteRectifyInput = { story, findings: [] };
       await fullSuiteStrategy!.extractApplied!(invalidMockOutput as any, mockInput as any);
 
+      const testWriterStrategy = capturedCycle!.strategies.find((s) => s.name === "autofix-test-writer");
+      expect(testWriterStrategy).toBeDefined();
+      const dummyFinding: Finding = { source: "lint", severity: "error", category: "style", message: "dummy" };
+
+      // Precondition: extractApplied populated the sink, so the test-writer's
+      // `sink.mockHandoffs.length > 0` clause claims. Without this, the
+      // assertions below would also hold on the `postValidate` early-return
+      // path (empty sink → returns findings untouched) and prove nothing.
+      expect(testWriterStrategy!.appliesTo(dummyFinding)).toBe(true);
+
       // Set up callOp for validate re-run.
       _storyOrchestratorDeps.callOp = mock(async () => ({ success: true })) as typeof _storyOrchestratorDeps.callOp;
 
@@ -258,11 +269,16 @@ describe("AC9: invalid mock_structure files → advisory with category mock_stru
 
       const findings = Array.isArray(validateResult) ? validateResult : validateResult.findings;
 
-      // AC9: postValidate appends advisory finding for invalid mock_structure files.
-      const hasAdvisory = (findings as Finding[]).some(
-        (f) => f.category === "mock_structure_invalid_files",
-      );
-      expect(hasAdvisory).toBe(true);
+      // postValidate reached the validation branch and rejected the handoff: the
+      // sink is now drained, so the test-writer no longer claims. This is the
+      // positive artifact that the invalid-declaration path actually ran.
+      expect(testWriterStrategy!.appliesTo(dummyFinding)).toBe(false);
+
+      // AC9 (#1327): every phase passed, so validate yields no findings — and the
+      // rejected handoff must not add one. It is reported as a log diagnostic
+      // instead. An appended advisory here is claimed by no strategy's appliesTo,
+      // so the cycle would exit "no-strategy" and fail this green story.
+      expect(findings).toEqual([]);
     },
   );
 });

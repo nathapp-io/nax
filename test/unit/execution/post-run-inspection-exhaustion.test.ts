@@ -13,7 +13,7 @@ import type { Finding } from "@/findings/types";
 import { fullSuiteGateOp, implementerOp, testWriterOp, verifierOp } from "@/operations";
 import { makeTestContext } from "@test/helpers";
 import {
-  AUTOFIX_ADVISORY_FINDING,
+  ADVISORY_LEFTOVER_FINDING,
   LINT_FINDING,
   SEMANTIC_REVIEW_FINDING,
   TEST_RUNNER_FINDING,
@@ -267,9 +267,11 @@ describe("AC8: mechanicalFailedOnly — non-mechanical source present → escala
 // ─────────────────────────────────────────────────────────────────────────────
 // Advisory-only rectification exhaustion → continue (not escalate/fail).
 // A green story (all gates passed) must not be failed on leftover findings that
-// are below the run's blocking threshold — e.g. `source:"autofix"` declaration
-// diagnostics that no fix strategy can claim, which drive a `no-strategy` cycle
-// exit. Regression guard for the event-bus-idempotency-dlq US-004 failure.
+// are below the run's blocking threshold — e.g. a `source:"plugin"` advisory that
+// no fix strategy can claim, which drives a `no-strategy` cycle exit. Regression
+// guard for the event-bus-idempotency-dlq US-004 failure (that one was a
+// `source:"autofix"` declaration diagnostic; #1327 removed those at the mint
+// site, but other unclaimed sources keep this escape necessary).
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("advisory-only rectification exhaustion → continue", () => {
@@ -292,12 +294,12 @@ describe("advisory-only rectification exhaustion → continue", () => {
     _postRunDeps.failAndClose = origFailClose;
   });
 
-  test("rectificationExhausted + only advisory autofix finding → continue", async () => {
+  test("rectificationExhausted + only advisory unclaimed finding → continue", async () => {
     const ctx = makeTestContext();
     const planResult = makePlanResult({
       success: false,
       rectificationExhausted: true,
-      unfixedFindings: [AUTOFIX_ADVISORY_FINDING],
+      unfixedFindings: [ADVISORY_LEFTOVER_FINDING],
     });
     const opts = makeInspectionOpts();
     const inspection = await applyPostRunInspection(ctx, planResult, opts);
@@ -305,12 +307,12 @@ describe("advisory-only rectification exhaustion → continue", () => {
     expect(result.action).toBe("continue");
   });
 
-  test("rectificationExhausted + advisory autofix + blocking semantic finding → escalate", async () => {
+  test("rectificationExhausted + advisory unclaimed + blocking semantic finding → escalate", async () => {
     const ctx = makeTestContext();
     const planResult = makePlanResult({
       success: false,
       rectificationExhausted: true,
-      unfixedFindings: [AUTOFIX_ADVISORY_FINDING, SEMANTIC_REVIEW_FINDING],
+      unfixedFindings: [ADVISORY_LEFTOVER_FINDING, SEMANTIC_REVIEW_FINDING],
     });
     const opts = makeInspectionOpts();
     const inspection = await applyPostRunInspection(ctx, planResult, opts);
@@ -323,7 +325,7 @@ describe("advisory-only rectification exhaustion → continue", () => {
     // No `severity` field: must default to "error" (blocking) so a real defect is
     // never silently swallowed by the advisory-only escape.
     const noSeverityFinding = {
-      source: "autofix",
+      source: "plugin",
       message: "unknown-severity finding",
       category: "unknown",
       fixTarget: "source",
@@ -341,7 +343,7 @@ describe("advisory-only rectification exhaustion → continue", () => {
 
   test("advisory-only escape respects a stricter blockingThreshold:'info'", async () => {
     // Under blockingThreshold "info" every finding blocks (info < warning < error),
-    // so a "warning" autofix advisory is now blocking → escalate, not continue.
+    // so a "warning" advisory is now blocking → escalate, not continue.
     const ctx = makeTestContext();
     ctx.config = {
       ...ctx.config,
@@ -350,7 +352,7 @@ describe("advisory-only rectification exhaustion → continue", () => {
     const planResult = makePlanResult({
       success: false,
       rectificationExhausted: true,
-      unfixedFindings: [AUTOFIX_ADVISORY_FINDING],
+      unfixedFindings: [ADVISORY_LEFTOVER_FINDING],
     });
     const opts = makeInspectionOpts();
     const inspection = await applyPostRunInspection(ctx, planResult, opts);
