@@ -56,6 +56,11 @@ describe("buildAcceptanceRunCommand", () => {
     const cmd = buildAcceptanceRunCommand("/pkg/.nax-acceptance.test.ts", undefined, override);
     expect(cmd).toEqual(["bun", "test", "/pkg/.nax-acceptance.test.ts"]);
   });
+
+  test("keeps a substituted path containing spaces as a single argv element", () => {
+    const cmd = buildAcceptanceRunCommand("/pkg with spaces/.nax-acceptance.test.ts", undefined, "bun test {{FILE}}");
+    expect(cmd).toEqual(["bun", "test", "/pkg with spaces/.nax-acceptance.test.ts"]);
+  });
 });
 
 describe("parseAcceptanceCriteria", () => {

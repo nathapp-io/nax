@@ -6,7 +6,16 @@ import { getSafeLogger } from "../logger";
 import { loadPRD } from "../prd";
 import { errorMessage } from "../utils/errors";
 
-/** One resolved acceptance test target — a single package the feature touches. */
+/**
+ * One resolved acceptance test target — a single package the feature touches.
+ *
+ * Reproducing the runtime invocation: spawn `command` with `cwd` as the working
+ * directory, substituting any `{{FILE}}` placeholder in `command` with `testPath`
+ * made relative to `cwd` (both are repo-root-relative, so a plain `path.relative(cwd,
+ * testPath)` suffices). Do NOT spawn from repo root with the repo-root-relative
+ * `testPath` substituted verbatim — `command` is resolved per-package and is only
+ * valid when run from `cwd`.
+ */
 export interface AcceptanceGroupResult {
   /** Package directory relative to repo root; "" for the root package. */
   packageDir: string;
@@ -16,6 +25,11 @@ export interface AcceptanceGroupResult {
   exists: boolean;
   /** Resolved acceptance command (per-package override else root); may contain a {{FILE}} placeholder. */
   command?: string;
+  /**
+   * Working directory `command` must be spawned from, relative to repo root
+   * (equal to `packageDir` — see the interface doc for the full reconstruction contract).
+   */
+  cwd: string;
   /** Per-package detected language (drives the test-file extension). */
   language?: string;
 }
@@ -83,6 +97,7 @@ export async function resolveFeatureAcceptance(featureName: string, workdir: str
           testPath: relative(repoRoot, g.testPath),
           exists: await Bun.file(g.testPath).exists(),
           command,
+          cwd: packageDir,
           language: g.language,
         };
       }),
