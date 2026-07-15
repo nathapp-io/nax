@@ -93,6 +93,7 @@ export { makeAutofixImplementerStrategy } from "./autofix-implementer-strategy";
 export { makeAutofixTestWriterStrategy } from "./autofix-test-writer-strategy";
 export { applyTestEditDeclarations } from "./apply-test-edit-declarations";
 export type {
+  ApplyTestEditDeclarationsOptions,
   DeclarationDiagnostic,
   DeclarationDiagnosticReason,
   TestEditDeclarationResult,

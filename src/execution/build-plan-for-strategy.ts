@@ -256,7 +256,13 @@ export async function buildPlanForStrategy(
       const allDeclarations = [...sink.testEdits, ...valid];
       sink.testEdits = []; // consumed
 
-      const applied = applyTestEditDeclarations(findings, allDeclarations, story, invalid);
+      const applied = applyTestEditDeclarations(findings, allDeclarations, story, {
+        invalidMockStructure: invalid,
+        // Only three-session registers autofix-test-writer (the sole claimer of
+        // fixTarget "test") — see the gate above. Re-tagging in single-session
+        // would strand the finding with no claimer (#1330).
+        allowTestRetag: isThreeSession,
+      });
       logRejectedDeclarations(applied.diagnostics, validateCtx);
       return applied.findings;
     };
@@ -360,7 +366,13 @@ export async function buildPlanForStrategy(
       const allDeclarations = [...nbSink.testEdits, ...valid];
       nbSink.testEdits = [];
 
-      const applied = applyTestEditDeclarations(findings, allDeclarations, story, invalid);
+      const applied = applyTestEditDeclarations(findings, allDeclarations, story, {
+        invalidMockStructure: invalid,
+        // Mirrors the main cycle: the nbf strategy set only registers
+        // autofix-test-writer under isThreeSession (see the !isThreeSession
+        // carve-out above, which routes everything to the implementer).
+        allowTestRetag: isThreeSession,
+      });
       logRejectedDeclarations(applied.diagnostics, validateCtx);
       return applied.findings;
     };

@@ -233,7 +233,7 @@ describe("applyTestEditDeclarations", () => {
         reasonDetail: "Mock setup is wrong",
       };
 
-      const { findings: result, diagnostics } = applyTestEditDeclarations(findings, [], story, [invalidDecl]);
+      const { findings: result, diagnostics } = applyTestEditDeclarations(findings, [], story, { invalidMockStructure: [invalidDecl] });
 
       // The invalid handoff is already stripped by the caller before the
       // test-writer sees it — there is no fix to queue here (#1327).
@@ -252,7 +252,7 @@ describe("applyTestEditDeclarations", () => {
         reasonDetail: "needs mock",
       };
 
-      const { diagnostics } = applyTestEditDeclarations([], [], story, [invalidDecl]);
+      const { diagnostics } = applyTestEditDeclarations([], [], story, { invalidMockStructure: [invalidDecl] });
 
       expect(diagnostics[0]!.detail).toContain("test/unit/a.test.ts");
       expect(diagnostics[0]!.detail).toContain("test/unit/b.test.ts");
@@ -266,7 +266,7 @@ describe("applyTestEditDeclarations", () => {
         reasonDetail: "only file",
       };
 
-      const { diagnostics } = applyTestEditDeclarations([], [], story, [invalidDecl]);
+      const { diagnostics } = applyTestEditDeclarations([], [], story, { invalidMockStructure: [invalidDecl] });
 
       expect(diagnostics[0]!.detail).toContain("test/unit/only.test.ts");
     });
@@ -278,10 +278,76 @@ describe("applyTestEditDeclarations", () => {
         { reason: "mock_structure", file: "test/unit/b.test.ts", reasonDetail: "b" },
       ];
 
-      const { findings: result, diagnostics } = applyTestEditDeclarations([], [], story, invalid);
+      const { findings: result, diagnostics } = applyTestEditDeclarations([], [], story, { invalidMockStructure: invalid });
 
       expect(result).toHaveLength(0);
       expect(diagnostics.map((d) => d.file)).toEqual(["test/unit/a.test.ts", "test/unit/b.test.ts"]);
+    });
+  });
+
+  describe("allowTestRetag — single-session gate (#1330)", () => {
+    // fixTarget "test" hands a finding to the test-writer, and only three-session
+    // registers one. A single-session implementer edits both source and tests, so
+    // the declaration is informational and the finding must stay claimable by it.
+    const story = () => makeStory({ description: "The function getThing() must return a Thing" });
+    const decl: TestEditDeclaration = {
+      reason: "prd_contract",
+      file: "test/unit/foo.test.ts",
+      prdQuote: "getThing()",
+      testBefore: "old",
+      testAfter: "new",
+    };
+
+    test("allowTestRetag: false → valid quote does NOT re-tag to test", () => {
+      const findings: Finding[] = [makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" })];
+
+      const { findings: result } = applyTestEditDeclarations(findings, [decl], story(), {
+        allowTestRetag: false,
+      });
+
+      expect(result[0]!.fixTarget).toBe("source");
+      expect(result[0]!.meta?.prdContractDeclaration).toBeUndefined();
+    });
+
+    test("allowTestRetag: false → a valid quote is NOT reported as a quote mismatch", () => {
+      // The quote is genuine; only the handoff is unavailable. Emitting a
+      // prd_quote_mismatch here would accuse the agent of fabricating it.
+      const findings: Finding[] = [makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" })];
+
+      const { diagnostics } = applyTestEditDeclarations(findings, [decl], story(), { allowTestRetag: false });
+
+      expect(diagnostics).toEqual([]);
+    });
+
+    test("allowTestRetag: false → finding stays claimable by autofix-implementer", () => {
+      const findings: Finding[] = [makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" })];
+
+      const { findings: result } = applyTestEditDeclarations(findings, [decl], story(), {
+        allowTestRetag: false,
+      });
+
+      const implementer = makeAutofixImplementerStrategy(story(), makeNaxConfig(), makeDeclarationSink());
+      expect(result.map((f) => implementer.appliesTo(f))).toEqual([true]);
+    });
+
+    test("allowTestRetag: false → an invalid quote still reports a diagnostic", () => {
+      const findings: Finding[] = [makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" })];
+      const badDecl: TestEditDeclaration = { ...decl, prdQuote: "nonExistentFunction()" };
+
+      const { findings: result, diagnostics } = applyTestEditDeclarations(findings, [badDecl], story(), {
+        allowTestRetag: false,
+      });
+
+      expect(result[0]!.fixTarget).toBe("source");
+      expect(diagnostics.map((d) => d.reason)).toEqual(["prd_quote_mismatch"]);
+    });
+
+    test("allowTestRetag defaults to true → valid quote re-tags", () => {
+      const findings: Finding[] = [makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" })];
+
+      const { findings: result } = applyTestEditDeclarations(findings, [decl], story());
+
+      expect(result[0]!.fixTarget).toBe("test");
     });
   });
 
@@ -304,7 +370,7 @@ describe("applyTestEditDeclarations", () => {
         reasonDetail: "bad handoff",
       };
 
-      const { findings: result, diagnostics } = applyTestEditDeclarations([], [decl], story, [invalidDecl]);
+      const { findings: result, diagnostics } = applyTestEditDeclarations([], [decl], story, { invalidMockStructure: [invalidDecl] });
 
       expect(result).toHaveLength(0);
       expect(diagnostics).toHaveLength(2);

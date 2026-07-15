@@ -11,6 +11,9 @@
  * means the finding was not re-tagged; invalid mock files are stripped from the
  * handoff before the test-writer sees them). Callers log these instead.
  *
+ * The same invariant governs the re-tag: `fixTarget: "test"` is only claimable
+ * where a test-writer exists, so it is gated behind `allowTestRetag` (#1330).
+ *
  * Pure function — never mutates inputs, never logs.
  */
 import type { Finding } from "@/findings";
@@ -43,21 +46,45 @@ export interface TestEditDeclarationResult {
   diagnostics: DeclarationDiagnostic[];
 }
 
+/** Options for {@link applyTestEditDeclarations}. */
+export interface ApplyTestEditDeclarationsOptions {
+  /** Mock-structure declarations that failed file/pattern validation. */
+  invalidMockStructure?: TestEditDeclaration[];
+  /**
+   * Whether a valid prd_contract declaration may re-tag a finding to
+   * `fixTarget: "test"`. Pass `isThreeSession`.
+   *
+   * `fixTarget: "test"` exists to hand a finding from the implementer to the
+   * test-writer, and only three-session strategies have a test-writer session
+   * (`autofix-test-writer` is the sole claimer of that fixTarget and registers
+   * only under `isThreeSession`). A single-session implementer owns both source
+   * and tests, so there is no handoff to make: the declaration is informational
+   * and the finding stays `fixTarget: "source"` for the implementer to claim.
+   * Re-tagging anyway strands the finding with no claimer, exiting the cycle
+   * "no-strategy" (#1330).
+   *
+   * (default: true — preserves the three-session behavior for callers that
+   * cannot produce a single-session cycle)
+   */
+  allowTestRetag?: boolean;
+}
+
 /**
  * Apply declarations to the findings array.
  *
  * @param findings - Current findings from the fix cycle.
  * @param declarations - Parsed TEST_EDIT_REASON declarations from the implementer.
  * @param story - The user story (used to validate prd_contract quotes).
- * @param invalidMockStructure - Mock-structure declarations that failed file/pattern validation.
+ * @param opts - See {@link ApplyTestEditDeclarationsOptions}.
  * @returns Re-tagged findings and diagnostics for any rejected declaration.
  */
 export function applyTestEditDeclarations(
   findings: Finding[],
   declarations: TestEditDeclaration[],
   story: UserStory,
-  invalidMockStructure?: TestEditDeclaration[],
+  opts: ApplyTestEditDeclarationsOptions = {},
 ): TestEditDeclarationResult {
+  const { invalidMockStructure, allowTestRetag = true } = opts;
   let result: Finding[] = [...findings];
   const diagnostics: DeclarationDiagnostic[] = [];
 
@@ -66,7 +93,15 @@ export function applyTestEditDeclarations(
       const prdQuote = d.prdQuote ?? "";
       const valid = validatePrdQuote(prdQuote, story);
 
-      if (valid) {
+      if (!valid) {
+        // Rejection is already enforced by not re-tagging: the findings for this
+        // file keep their original fixTarget.
+        diagnostics.push({
+          reason: "prd_quote_mismatch",
+          file: d.file,
+          detail: `PRD quote not found verbatim in story text for file: ${d.file}`,
+        });
+      } else if (allowTestRetag) {
         // Re-tag matching findings: same file, fixTarget was "source" OR finding
         // is a test-runner failed-test with no fixTarget (AC4: failing-test findings
         // carry no fixTarget but are re-tag-eligible when source === "test-runner").
@@ -85,15 +120,10 @@ export function applyTestEditDeclarations(
           }
           return f;
         });
-      } else {
-        // Rejection is already enforced above: without a valid quote the
-        // findings for this file keep their original fixTarget.
-        diagnostics.push({
-          reason: "prd_quote_mismatch",
-          file: d.file,
-          detail: `PRD quote not found verbatim in story text for file: ${d.file}`,
-        });
       }
+      // valid && !allowTestRetag: single-session. The quote is fine, but there is
+      // no test-writer to hand off to — the implementer edits the test itself, so
+      // the declaration is informational and the finding keeps fixTarget "source".
     }
     // lint_only and sibling_scope: passthrough — no changes to findings
   }
