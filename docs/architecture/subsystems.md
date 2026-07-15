@@ -609,7 +609,17 @@ and stashed on `ctx.testEditDeclarations` by the implementer strategy's
 fresh findings: each declaration whose `PRD_QUOTE` is verbatim-present in the
 story description or AC text causes a finding on the declared file to be
 re-tagged from `fixTarget: "source"` to `"test"`. The test-writer strategy
-claims the re-tagged finding on the next iteration. Declarations with fabricated
+claims the re-tagged finding on the next iteration.
+
+The re-tag is gated on `isThreeSession` (`allowTestRetag`). `fixTarget: "test"`
+exists to hand a finding to the test-writer, and `autofix-test-writer` — its only
+claimer — is registered only for three-session strategies. A single-session
+implementer (`tdd-simple` / `test-after` / `no-test`) owns both source and tests,
+so there is no handoff to make: the declaration is informational and the finding
+stays `fixTarget: "source"` for the implementer to claim and edit the test
+itself. Re-tagging there would strand it with no claimer (#1330).
+
+Declarations with fabricated
 PRD quotes do not re-tag, and are reported as a `prd_quote_mismatch`
 `DeclarationDiagnostic` that the `postValidate` caller logs at warn — never as a
 finding. The non-re-tag *is* the enforcement; a diagnostic carries no fix, and
