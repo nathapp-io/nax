@@ -318,13 +318,17 @@ describe("single-session adversarial-review routing", () => {
   let origCaptureGitRef: typeof _storyOrchestratorDeps.captureGitRef;
   let runtime: NaxRuntime;
 
+  // A blocking adversarial finding as the real adversarialReviewOp would emit it:
+  // normalized with a concrete fixTarget (category error-path ∈ BLOCKING_CATEGORIES
+  // → fixTarget "source"). See #1333.
   const adversarialFinding: Finding = {
     source: "adversarial-review",
     severity: "error",
-    category: "",
+    category: "error-path",
     message: "AC11 not propagated",
     file: "src/foo.ts",
     line: 1,
+    fixTarget: "source",
   };
 
   beforeEach(() => {
@@ -404,7 +408,7 @@ describe("single-session adversarial-review routing", () => {
     expect(matching.map((s) => s.name)).toEqual(["autofix-implementer"]);
   });
 
-  test("three-session-tdd: adversarial-review still routes to autofix-test-writer (unchanged)", async () => {
+  test("three-session-tdd: source-targeted adversarial finding routes to autofix-implementer, not test-writer (#1333)", async () => {
     const story = makeStory({ attempts: 1 });
     const config = makeNaxConfig({
       quality: { autofix: { enabled: true } },
@@ -414,11 +418,21 @@ describe("single-session adversarial-review routing", () => {
     const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     await plan.run();
 
+    // Both strategies are assembled in three-session mode...
     const names = (capturedCycle?.strategies ?? []).map((s) => s.name);
+    expect(names).toContain("autofix-implementer");
     expect(names).toContain("autofix-test-writer");
 
+    // ...but a SOURCE-targeted adversarial finding is claimed only by the
+    // implementer (which can edit source), not the test-writer. Prior to #1333
+    // the test-writer's blanket clause claimed it and it could never be fixed.
     const matching = (capturedCycle?.strategies ?? []).filter((s) => s.appliesTo(adversarialFinding));
-    expect(matching.map((s) => s.name)).toEqual(["autofix-test-writer"]);
+    expect(matching.map((s) => s.name)).toEqual(["autofix-implementer"]);
+
+    // A TEST-targeted adversarial finding still routes to the test-writer.
+    const testFinding: Finding = { ...adversarialFinding, category: "convention", fixTarget: "test" };
+    const matchingTest = (capturedCycle?.strategies ?? []).filter((s) => s.appliesTo(testFinding));
+    expect(matchingTest.map((s) => s.name)).toEqual(["autofix-test-writer"]);
   });
 });
 

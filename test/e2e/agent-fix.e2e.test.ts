@@ -204,4 +204,82 @@ describe("E2E: agent-fix", () => {
       "adversarial-review",
     ]);
   });
+
+  test("adversarial(error-path=source) -> autofix-implementer, NOT autofix-test-writer (#1333)", async () => {
+    // Regression lock for #1333: in three-session TDD, a SOURCE-targeted adversarial
+    // finding (category error-path ∈ BLOCKING_CATEGORIES → fixTarget "source" after the
+    // real adversarialReviewOp normalizes it) must be claimed by autofix-implementer,
+    // which can edit source — NOT autofix-test-writer, which is forbidden from touching
+    // source. Prior to #1333 the test-writer's blanket clause claimed it, so the source
+    // bug could never be fixed and rectification exhausted (repro: rs-stock
+    // tier3-analytics-tools US-002). This test would fire autofix-test-writer on the old
+    // code. Compare with the test-gap (fixTarget=test) sibling above.
+    const tw = () => ({ output: JSON.stringify({ filesChanged: ["test/a.test.ts"] }) });
+    const verifier = () => ({ output: PASSING_VERDICT });
+    let advAttempt = 0;
+
+    // Mirrors the test-gap sibling exactly (same severity/threshold/evidence path so
+    // substantiation keeps the finding blocking) — the ONLY change is the category,
+    // which flips fixTarget test→source and therefore the fix lane test-writer→implementer.
+    const failingAdversarial = JSON.stringify({
+      passed: false,
+      findings: [{
+        severity: "warning",
+        category: "error-path",
+        file: "src/a.ts",
+        line: 1,
+        issue: "unaligned variance check bypasses the near-zero guard on shared dates",
+        suggestion: "compute variance on the aligned window before applying the threshold",
+        verifiedBy: { file: "src/a.ts", observed: "bm_var = benchmark_returns.var()" },
+      }],
+    });
+    const passingAdversarial = JSON.stringify({ passed: true, findings: [] });
+
+    const { result, phaseLog, strategiesFired } = await runOrchestratorE2E({
+      strategy: "three-session-tdd",
+      config: { review: { blockingThreshold: "warning" } } as unknown as Partial<NaxConfig>,
+      agent: {
+        "test-writer": tw,
+        implementer: impl,
+        verifier,
+        "reviewer-semantic": PASS_REVIEW,
+        // attempt 0 → failing source-category finding; attempt 1+ → passing.
+        "reviewer-adversarial": () => ({ output: advAttempt++ === 0 ? failingAdversarial : passingAdversarial }),
+      },
+    });
+
+    expect(result.success).toBe(true);
+    // #1333 lock: the SOURCE finding routes to the implementer, never the test-writer.
+    expect(strategiesFired).toContain("autofix-implementer");
+    expect(strategiesFired).not.toContain("autofix-test-writer");
+
+    // adversarial-review runs twice (fail → fix → pass).
+    expect(phaseLog.filter((p) => p === "adversarial-review").length).toBe(2);
+    // Orthogonal routing signal: autofix-implementer's revalidation set INCLUDES
+    // semantic-review (runs twice), whereas autofix-test-writer EXCLUDES it (would run
+    // once). Two semantic-review phases prove the implementer lane handled the finding.
+    expect(phaseLog.filter((p) => p === "semantic-review").length).toBe(2);
+    // verifier is a once-per-story phase, not in either revalidation set.
+    expect(phaseLog.filter((p) => p === "verifier").length).toBe(1);
+
+    // Full observed sequence: main loop fails at adversarial-review → autofix-implementer
+    // fires → revalidation in canonical order (full-suite-gate, lint, typecheck,
+    // semantic, adversarial).
+    expect(phaseLog).toEqual([
+      "test-writer",
+      "greenfield-gate",
+      "implementer",
+      "full-suite-gate",
+      "verifier",
+      "lint-check",
+      "typecheck-check",
+      "semantic-review",
+      "adversarial-review",
+      "full-suite-gate",
+      "lint-check",
+      "typecheck-check",
+      "semantic-review",
+      "adversarial-review",
+    ]);
+  });
 });
