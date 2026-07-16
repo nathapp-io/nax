@@ -208,7 +208,7 @@ describe("buildPlanForStrategy — AC5/AC6: default-preserving factory options +
     expect(testWriter.appliesTo(finding)).toBe(true);
   });
 
-  test("AC6: blocking three-session set → test-writer.appliesTo=true and implementer.appliesTo=false for adversarial source finding (driven through plan)", async () => {
+  test("AC6 (#1333): blocking three-session set → implementer claims adversarial SOURCE finding, test-writer claims adversarial TEST finding (driven through plan)", async () => {
     const capturedStrategySets: Array<Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>>> = [];
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
     const origCallOp = _storyOrchestratorDeps.callOp;
@@ -260,15 +260,29 @@ describe("buildPlanForStrategy — AC5/AC6: default-preserving factory options +
       const testWriter = mainRectSet.find((strategy) => strategy.name === "autofix-test-writer");
       expect(implementer).toBeDefined();
       expect(testWriter).toBeDefined();
-      const finding: import("@/findings").Finding = {
+      // Source-targeted adversarial finding (category ∈ BLOCKING_CATEGORIES) must
+      // go to the implementer, which can edit source — NOT the test-writer, which
+      // is forbidden from touching source. Prior to #1333 this was inverted and
+      // such findings could never be fixed.
+      const sourceFinding: import("@/findings").Finding = {
         source: "adversarial-review",
-        severity: "warning",
-        category: "input",
-        message: "advisory finding",
+        severity: "error",
+        category: "error-path",
+        message: "source correctness bug",
         fixTarget: "source",
       };
-      expect(testWriter!.appliesTo(finding)).toBe(true);
-      expect(implementer!.appliesTo(finding)).toBe(false);
+      expect(implementer!.appliesTo(sourceFinding)).toBe(true);
+      expect(testWriter!.appliesTo(sourceFinding)).toBe(false);
+      // Test-targeted adversarial finding still goes to the test-writer.
+      const testFinding: import("@/findings").Finding = {
+        source: "adversarial-review",
+        severity: "warning",
+        category: "convention",
+        message: "missing coverage",
+        fixTarget: "test",
+      };
+      expect(testWriter!.appliesTo(testFinding)).toBe(true);
+      expect(implementer!.appliesTo(testFinding)).toBe(false);
     } finally {
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
       _storyOrchestratorDeps.callOp = origCallOp;

@@ -216,7 +216,18 @@ export async function buildPlanForStrategy(
       // Single-session strategies (tdd-simple / test-after / no-test) have no
       // separate test-writer session — the one warm implementer session authored
       // both source and tests. Route adversarial-review findings to that
-      // implementer instead of spinning up a fresh, context-less test-writer.
+      // implementer (blanket) instead of spinning up a fresh, context-less
+      // test-writer.
+      //
+      // Three-session TDD DOES have a test-writer session, so split adversarial
+      // findings by fixTarget instead of handing them all to the test-writer: the
+      // implementer owns SOURCE-targeted adversarial findings (category ∈
+      // BLOCKING_CATEGORIES → fixTarget "source", e.g. error-path), the test-writer
+      // owns test-targeted ones. Without this, a source-correctness adversarial
+      // finding was claimed ONLY by the test-writer — which is forbidden from
+      // editing source — so it could never be fixed and burned the entire
+      // rectification budget before failing the story. Mirrors the `triage`
+      // non-blocking scope below. See #1333.
       //
       // Note: AC-HOOK / AC-ERROR sentinel findings (test-runner, fixTarget=test)
       // are intentionally NOT re-routed here — they are owned by the acceptance
@@ -225,14 +236,19 @@ export async function buildPlanForStrategy(
       strategies.push(
         makeAutofixImplementerStrategy(story, config, sink, {
           includeAdversarialReview: !isThreeSession,
+          ...(isThreeSession ? { adversarialReviewByFixTarget: "source" as const } : {}),
         }) as FixStrategy<Finding, unknown, unknown, unknown>,
       );
-      // The autofix-test-writer strategy only belongs to three-session TDD,
-      // where the test-writer phase itself exists (see gating above where
-      // addTestWriter is conditioned on isThreeSession).
+      // The autofix-test-writer strategy only belongs to three-session TDD, where
+      // the test-writer phase itself exists (see gating above where addTestWriter
+      // is conditioned on isThreeSession). Disable its blanket adversarial clause
+      // so it claims ONLY test-targeted adversarial findings — source-targeted
+      // findings now go to the implementer above (#1333).
       if (isThreeSession) {
         strategies.push(
-          makeAutofixTestWriterStrategy(story, config, sink) as FixStrategy<Finding, unknown, unknown, unknown>,
+          makeAutofixTestWriterStrategy(story, config, sink, {
+            includeAdversarialReview: false,
+          }) as FixStrategy<Finding, unknown, unknown, unknown>,
         );
       }
     }
