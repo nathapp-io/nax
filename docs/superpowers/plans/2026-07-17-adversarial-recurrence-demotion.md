@@ -823,6 +823,173 @@ git commit -m "test(e2e): adversarial recurrence demotion convergence + disabled
 
 ---
 
+## Task 9: Adversarial iteration accumulation wiring (makes the feature live)
+
+**Context:** `priorAdversarialIterations` is threaded into the adversarial op but never populated — `ctx.priorAdversarialIterations` is never assigned, there is no `ReviewOrchestrator`/`AdversarialFindingsCache`. So `classifyRecurrence` (Tasks 4/5) always sees `[]` → `n===1` → demotion never fires in production, and the ADR-022 carry-forward prompt (`buildPriorIterationsBlock`) is inert too. This task adds a run-scoped per-story `Iteration[]` store on `NaxRuntime`, records each adversarial round's findings into it, and injects it into every dispatch — fixing BOTH consumers at once.
+
+**Files:**
+- Modify: `src/runtime/index.ts` (add `adversarialIterations` to `NaxRuntime` interface + `createRuntime`)
+- Create: `src/review/adversarial-iteration-store.ts` (pure store helpers)
+- Modify: `src/review/index.ts` (barrel export the helpers)
+- Create: `test/unit/review/adversarial-iteration-store.test.ts`
+- Modify: `src/execution/story-orchestrator/run-phase.ts` (inject before dispatch + record after `callOp`)
+
+**Interfaces:**
+- Produces: `getAdversarialIterations(store, storyId): Iteration[]`; `recordAdversarialIteration(store, storyId, roundFindings): void`; `NaxRuntime.adversarialIterations: Map<string, Iteration[]>`.
+- Consumes: `classifyOutcome` (barrel `@/findings`), `Finding`/`Iteration` types; `countPriorAppearances`/`fingerprintFor` (Task 1) in the test.
+
+- [ ] **Step 1: Store helpers — write the failing test**
+
+Create `test/unit/review/adversarial-iteration-store.test.ts`:
+
+```typescript
+import { describe, expect, test } from "bun:test";
+import {
+  getAdversarialIterations,
+  recordAdversarialIteration,
+  countPriorAppearances,
+  fingerprintFor,
+} from "@/review";
+import type { Finding, Iteration } from "@/findings";
+
+function advFinding(message: string): Finding {
+  return { source: "adversarial-review", severity: "error", category: "assumption", file: "lib/store.ts", message } as Finding;
+}
+
+describe("adversarial iteration store", () => {
+  test("records rounds; getAdversarialIterations returns them; count reflects recurrence", () => {
+    const store = new Map<string, Iteration[]>();
+    recordAdversarialIteration(store, "US-1", [advFinding("window expiry non-atomic")]);
+    recordAdversarialIteration(store, "US-1", [advFinding("window expiry non-atomic")]);
+    const iters = getAdversarialIterations(store, "US-1");
+    expect(iters.length).toBe(2);
+    expect(iters[1].iterationNum).toBe(2);
+    expect(iters[1].fixesApplied).toEqual([]);
+    const fp = fingerprintFor("lib/store.ts", "assumption", "window expiry non-atomic");
+    expect(countPriorAppearances(iters).get(fp)?.count).toBe(2);
+  });
+
+  test("is scoped by storyId; unknown story returns empty", () => {
+    const store = new Map<string, Iteration[]>();
+    recordAdversarialIteration(store, "US-1", [advFinding("x padded padded padded")]);
+    expect(getAdversarialIterations(store, "US-2")).toEqual([]);
+  });
+});
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `timeout 30 bun test test/unit/review/adversarial-iteration-store.test.ts --timeout=5000`
+Expected: FAIL — `getAdversarialIterations` not exported from `@/review`.
+
+- [ ] **Step 3: Implement the store helpers**
+
+Create `src/review/adversarial-iteration-store.ts`:
+
+```typescript
+import type { Finding, Iteration } from "../findings";
+import { classifyOutcome } from "../findings";
+
+/** Run-scoped, per-story adversarial-review round history. Keyed by storyId. */
+export function getAdversarialIterations(store: Map<string, Iteration[]>, storyId: string): Iteration[] {
+  return store.get(storyId) ?? [];
+}
+
+/**
+ * Append one adversarial round to the per-story history. `fixesApplied` is `[]`
+ * because the fix ran in the implementation session outside the FixCycle (see
+ * the ADR-022 note on `Iteration.fixesApplied`). `findingsAfter` is this round's
+ * adversarial findings (source "adversarial-review"), which recurrence-demotion
+ * (`countPriorAppearances`) and the carry-forward prompt both read.
+ */
+export function recordAdversarialIteration(
+  store: Map<string, Iteration[]>,
+  storyId: string,
+  roundFindings: readonly Finding[],
+): void {
+  const prior = store.get(storyId) ?? [];
+  const findingsBefore = prior.length > 0 ? prior[prior.length - 1].findingsAfter : [];
+  const findingsAfter = [...roundFindings];
+  const now = new Date().toISOString();
+  const iteration: Iteration = {
+    iterationNum: prior.length + 1,
+    findingsBefore,
+    fixesApplied: [],
+    findingsAfter,
+    outcome: classifyOutcome(findingsBefore, findingsAfter),
+    startedAt: now,
+    finishedAt: now,
+  };
+  store.set(storyId, [...prior, iteration]);
+}
+```
+
+Add to `src/review/index.ts` barrel: `export * from "./adversarial-iteration-store";`
+
+- [ ] **Step 4: Run it to verify it passes**
+
+Run: `timeout 30 bun test test/unit/review/adversarial-iteration-store.test.ts --timeout=5000`
+Expected: PASS (both tests).
+
+- [ ] **Step 5: Add the run-scoped store to `NaxRuntime`**
+
+In `src/runtime/index.ts`: add `import type { Iteration } from "../findings";` (with the other type imports). In the `NaxRuntime` interface, after `readonly quarantineMemo: QuarantineMemo;`, add:
+
+```typescript
+  /** Run-scoped per-story adversarial-review round history (ADR-022 carry-forward + recurrence-demotion). Keyed by storyId. */
+  readonly adversarialIterations: Map<string, Iteration[]>;
+```
+
+In `createRuntime`, next to `const quarantineMemo = createQuarantineMemo();` (~line 250), add `const adversarialIterations = new Map<string, Iteration[]>();`, and add `adversarialIterations,` to the returned object (next to `quarantineMemo,`).
+
+- [ ] **Step 6: Wire inject + record in `run-phase.ts`**
+
+In `src/execution/story-orchestrator/run-phase.ts`, add imports (prefer the `@/` barrel to avoid deep-relative lint):
+
+```typescript
+import { getAdversarialIterations, recordAdversarialIteration } from "@/review";
+import type { Finding } from "@/findings";
+```
+
+**Inject** — immediately AFTER the existing line `dispatchInput = await refreshReviewInputForDispatch(opName, dispatchInput);`:
+
+```typescript
+  if (opName === "adversarial-review" && ctx.storyId) {
+    dispatchInput = {
+      ...(dispatchInput as Record<string, unknown>),
+      priorAdversarialIterations: getAdversarialIterations(ctx.runtime.adversarialIterations, ctx.storyId),
+    };
+  }
+```
+
+**Record** — immediately AFTER the existing line `emitReviewDecision(ctx, opName, output);`:
+
+```typescript
+    if (opName === "adversarial-review" && ctx.storyId) {
+      const advOut = output as { normalizedFindings?: Finding[]; advisoryFindings?: Finding[] };
+      recordAdversarialIteration(ctx.runtime.adversarialIterations, ctx.storyId, [
+        ...(advOut.normalizedFindings ?? []),
+        ...(advOut.advisoryFindings ?? []),
+      ]);
+    }
+```
+
+Rationale: injecting at the call site (which has `ctx`) — rather than inside `refreshReviewInputForDispatch` — means every dispatch (initial + each rectification revalidation via `rectification.ts` → `runPhase`) re-reads the latest store, so within-attempt round-over-round accumulation works. Recording after `callOp` captures the round's findings (source "adversarial-review") for the next round.
+
+- [ ] **Step 7: Verify build + existing suites**
+
+Run: `timeout 30 bun test test/unit/review/adversarial-iteration-store.test.ts --timeout=5000` (still green), then `timeout 120 bun test test/unit/execution/ test/unit/review/ --timeout=5000`, then `timeout 60 bun run typecheck`, then `timeout 60 bun run lint` (confirm `check:deep-relatives` and `check:alias-internals` pass — the new imports use `@/` barrels).
+Expected: all green.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add src/runtime/index.ts src/review/adversarial-iteration-store.ts src/review/index.ts test/unit/review/adversarial-iteration-store.test.ts src/execution/story-orchestrator/run-phase.ts
+git commit -m "feat(review): accumulate adversarial iterations per-story on NaxRuntime (wire recurrence-demotion + ADR-022 carry-forward)"
+```
+
+---
+
 ## Task 8: Full-suite gate + audit-shape sweep
 
 **Files:** none new — this task runs the suite and fixes fallout.
