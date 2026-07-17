@@ -96,6 +96,18 @@ export const AdversarialReviewConfigSchema = z.object({
    */
   acRegroundOnDrop: z.boolean().default(true),
   /**
+   * Phase 0 recurrence-demotion (docs/superpowers/specs/2026-07-17-adversarial-recurrence-demotion-design.md).
+   * A non-test-gap error finding blocks for at most `maxBlockingRounds` rounds; once its
+   * fingerprint recurs beyond that it auto-demotes to advisory (coverage-gap). An entry
+   * guard suppresses severity flip-flops. `enabled: false` restores legacy severity-only blocking.
+   */
+  recurrenceDemotion: z
+    .object({
+      enabled: z.boolean().default(true),
+      maxBlockingRounds: z.number().int().min(1).default(2),
+    })
+    .default({ enabled: true, maxBlockingRounds: 2 }),
+  /**
    * When true (default), in ref mode an empty-findings `passed:true` verdict that
    * reports no inspected files (`inspectedFiles` absent/empty) triggers exactly one
    * same-session re-prompt demanding the reviewer actually open the changed code

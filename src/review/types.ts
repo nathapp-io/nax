@@ -213,6 +213,12 @@ export interface AdversarialReviewConfig {
    */
   acRegroundOnDrop?: boolean;
   /**
+   * Phase 0 recurrence-demotion. Non-test-gap error findings demote to advisory
+   * after recurring beyond `maxBlockingRounds` rounds; entry guard suppresses
+   * flip-flops. Default `{ enabled: true, maxBlockingRounds: 2 }`.
+   */
+  recurrenceDemotion?: { enabled: boolean; maxBlockingRounds: number };
+  /**
    * When true (default), a ref-mode empty-findings `passed:true` verdict with no
    * declared `inspectedFiles` triggers one same-session re-prompt demanding the
    * reviewer actually open the code before passing (#3A inspection-trail guard).
