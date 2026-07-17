@@ -138,7 +138,16 @@ Create `src/review/recurrence-demotion.ts`:
 import type { Finding } from "../findings";
 import type { Iteration } from "../findings";
 
+/** General normalizer safety cap. */
 const MAX_ISSUE_PREFIX = 160;
+/**
+ * Shorter "topic" prefix used ONLY for fingerprints. Deliberately smaller than
+ * MAX_ISSUE_PREFIX so a tail rephrase (the reviewer appending/altering wording
+ * after the core claim) still fingerprints identically across rounds. Chosen so
+ * the leading claim ("window expiry is non-atomic because …") is captured while
+ * trailing elaboration is ignored.
+ */
+const FP_ISSUE_PREFIX = 48;
 
 /** Backticks stripped, whitespace collapsed, lowercased, truncated to a bounded prefix. */
 export function normalizeIssueText(s: string): string {
@@ -146,13 +155,15 @@ export function normalizeIssueText(s: string): string {
 }
 
 /**
- * Fingerprint = file + category + normalized issue text. Excludes line number
- * (shifts as code changes) and acIndex (only in Finding.meta on prior rounds,
- * which is not load-bearing-branchable). Used as a plain Map key.
+ * Fingerprint = file + category + normalized issue TOPIC PREFIX. Excludes line
+ * number (shifts as code changes) and acIndex (only in Finding.meta on prior
+ * rounds, which is not load-bearing-branchable). The issue text is truncated to
+ * FP_ISSUE_PREFIX so tail rephrasing does not create a new fingerprint. Used as
+ * a plain Map key.
  */
 export function fingerprintFor(file: string | undefined, category: string | undefined, text: string): string {
   const normFile = (file ?? "").replace(/\\/g, "/");
-  return `${normFile}|${category ?? ""}|${normalizeIssueText(text)}`;
+  return `${normFile}|${category ?? ""}|${normalizeIssueText(text).slice(0, FP_ISSUE_PREFIX)}`;
 }
 
 export type PriorAppearance = { count: number; lastSeverity: string };
