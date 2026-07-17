@@ -105,6 +105,8 @@ export interface AdvisoryFindingSummaryEntry {
   file?: string;
   line?: number;
   issue: string;
+  /** True when this advisory finding was recurrence-demoted (tagged `meta.coverageGap`). */
+  coverageGap?: boolean;
 }
 
 export interface IReviewAuditor {
@@ -202,7 +204,14 @@ export function createNoOpReviewAuditor(): IReviewAuditor {
 function toAdvisorySummaryEntries(entry: ReviewAuditDecision): AdvisoryFindingSummaryEntry[] {
   if (!entry.advisoryFindings || entry.advisoryFindings.length === 0) return [];
   return entry.advisoryFindings.map((raw) => {
-    const f = raw as { severity?: string; category?: string; file?: string; line?: number; issue?: string };
+    const f = raw as {
+      severity?: string;
+      category?: string;
+      file?: string;
+      line?: number;
+      issue?: string;
+      meta?: { coverageGap?: boolean };
+    };
     return {
       storyId: entry.storyId,
       featureName: entry.featureName,
@@ -212,6 +221,7 @@ function toAdvisorySummaryEntries(entry: ReviewAuditDecision): AdvisoryFindingSu
       file: f.file,
       line: f.line,
       issue: f.issue ?? "(no description)",
+      coverageGap: f.meta?.coverageGap === true ? true : undefined,
     };
   });
 }

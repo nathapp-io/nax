@@ -452,13 +452,25 @@ export function formatAdvisorySummary(
   lines.push("");
   lines.push(c.yellow("─".repeat(60)));
   lines.push(c.bold(c.yellow(`  ${EMOJI.warning} NON-BLOCKING REVIEW FINDINGS (${findings.length})`)));
+  const coverageGapCount = findings.filter((f) => f.coverageGap).length;
+  if (coverageGapCount > 0) {
+    lines.push(
+      c.gray(
+        `  ${coverageGapCount} of ${findings.length} were coverage-gap demotions (recurred past the block limit — candidate for spec/AC review)`,
+      ),
+    );
+  }
   lines.push(c.yellow("─".repeat(60)));
 
   for (const f of sorted) {
     const location = f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : undefined;
-    const parts = [`[${f.severity}]`, f.storyId ?? "unknown", location, f.category].filter(
-      (v): v is string => typeof v === "string" && v.length > 0,
-    );
+    const parts = [
+      `[${f.severity}]`,
+      f.storyId ?? "unknown",
+      location,
+      f.category,
+      f.coverageGap ? "coverage-gap" : undefined,
+    ].filter((v): v is string => typeof v === "string" && v.length > 0);
     lines.push(`  ${c.gray(parts.join(" · "))}`);
     lines.push(`    ${f.issue}`);
   }

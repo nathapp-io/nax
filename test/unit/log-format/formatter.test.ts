@@ -202,6 +202,21 @@ describe("formatAdvisorySummary", () => {
     expect(JSON.parse(output)).toEqual(findings);
   });
 
+  test("surfaces the coverage-gap demotion count and tags demoted findings", () => {
+    const findings = [
+      advisoryFinding({ storyId: "US-001", coverageGap: true, issue: "recurred out-of-scope" }),
+      advisoryFinding({ storyId: "US-002", issue: "ordinary advisory" }),
+    ];
+    const output = plain(formatAdvisorySummary(findings, { mode: "normal", useColor: false }));
+    expect(output).toContain("1 of 2 were coverage-gap demotions");
+    expect(output).toContain("coverage-gap");
+  });
+
+  test("omits the coverage-gap line when no finding was demoted", () => {
+    const output = plain(formatAdvisorySummary([advisoryFinding()], { mode: "normal", useColor: false }));
+    expect(output).not.toContain("coverage-gap demotions");
+  });
+
   test("includes every finding's story ID, severity, and issue text", () => {
     const findings = [
       advisoryFinding({ storyId: "US-001", severity: "warning", issue: "issue A" }),

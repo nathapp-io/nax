@@ -326,6 +326,32 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
     });
   });
 
+  test("preserves meta.coverageGap as a coverageGap flag on the summary entry", async () => {
+    const { deps } = makeDeps();
+    Object.assign(_reviewAuditDeps, deps);
+    const auditor = new ReviewAuditor("run-cg", "/tmp/workdir");
+
+    auditor.recordDecision({
+      reviewer: "adversarial",
+      storyId: "US-004",
+      featureName: "f",
+      parsed: true,
+      passed: true,
+      blockingThreshold: "error",
+      result: { passed: true, findings: [] },
+      advisoryFindings: [
+        { severity: "error", category: "assumption", file: "lib/s.ts", issue: "demoted", meta: { coverageGap: true } },
+        { severity: "warning", category: "correctness", file: "lib/s.ts", issue: "ordinary" },
+      ],
+    });
+    await auditor.flush();
+    Object.assign(_reviewAuditDeps, saved);
+
+    const summary = auditor.getAdvisoryFindings();
+    expect(summary.find((s) => s.issue === "demoted")?.coverageGap).toBe(true);
+    expect(summary.find((s) => s.issue === "ordinary")?.coverageGap).toBeUndefined();
+  });
+
   test("decisions with no advisory findings contribute nothing", async () => {
     const { deps } = makeDeps();
     Object.assign(_reviewAuditDeps, deps);
