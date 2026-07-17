@@ -295,6 +295,9 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
     expect(out.passed).toBe(true);
     expect(out.normalizedFindings.length).toBe(0);
     expect((out.advisoryFindings ?? []).length).toBe(1);
+    // Fix (design §7): recurrence-demoted findings are tagged so the run-end
+    // summary / review-audit JSON can distinguish them from ordinary advisories.
+    expect(out.advisoryFindings?.[0]?.meta?.coverageGap).toBe(true);
   });
 
   test("oscillation: an error finding whose prior sighting was a warning is suppressed to advisory and the story passes", async () => {
@@ -346,6 +349,9 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
     expect(out.passed).toBe(true);
     expect(out.normalizedFindings.length).toBe(0);
     expect((out.advisoryFindings ?? []).length).toBe(1);
+    // A plain (non-demoted) advisory must NOT carry the coverage-gap tag —
+    // only recurrence-demoted findings do (see the recurrence test above).
+    expect(out.advisoryFindings?.[0]?.meta?.coverageGap).not.toBe(true);
   });
 
   test("dropped findings are tracked in acDropped on output", async () => {

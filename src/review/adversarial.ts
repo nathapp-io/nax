@@ -33,7 +33,7 @@ import { type AdversarialLLMFinding, formatFindings, toAdversarialReviewFindings
 import { collectDiffFileList as _collectDiffFileList } from "./diff-utils";
 import { llmFindingsToReviewFindings } from "./finding-projection";
 import { prepareAdversarialReviewInput } from "./prepare-inputs";
-import { classifyRecurrence } from "./recurrence-demotion";
+import { classifyRecurrence, tagCoverageGap } from "./recurrence-demotion";
 import { writeReviewAudit } from "./review-audit";
 import type { AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
 
@@ -327,6 +327,18 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     demoted,
   } = classifyRecurrence(allFindings, priorAdversarialIterations ?? [], recurrenceCfg, testFileMatch, threshold);
   const advisoryFindings = [...advisoryOnly, ...demoted];
+  // Precomputed conversions so every downstream `advisoryFindings` projection
+  // (ReviewFinding for review-audit persistence, Finding for the pipeline
+  // result) tags the recurrence-demoted subset with `meta.coverageGap: true`
+  // (Fix design §7) without re-deriving the split at each call site.
+  const advisoryReviewFindings = [
+    ...llmFindingsToReviewFindings(advisoryOnly, { source: "adversarial-review" }),
+    ...tagCoverageGap(llmFindingsToReviewFindings(demoted, { source: "adversarial-review" })),
+  ];
+  const advisoryFindingsAsFindings = [
+    ...toAdversarialReviewFindings(advisoryOnly),
+    ...tagCoverageGap(toAdversarialReviewFindings(demoted)),
+  ];
   const acDropped = opResult.acDropped ?? [];
 
   // Issue #986 — build diff file set for structural counterfactual telemetry.
@@ -431,10 +443,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
         passed: false,
         findings: llmFindingsToReviewFindings(allFindings, { source: "adversarial-review" }),
       },
-      advisoryFindings:
-        advisoryFindings.length > 0
-          ? llmFindingsToReviewFindings(advisoryFindings, { source: "adversarial-review" })
-          : undefined,
+      advisoryFindings: advisoryFindings.length > 0 ? advisoryReviewFindings : undefined,
       diffAvailable,
       adversarialDropAnalysis,
       adversarialAcceptAnalysis,
@@ -451,7 +460,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       output,
       durationMs,
       findings: blockingFindings.length > 0 ? toAdversarialReviewFindings(blockingFindings) : undefined,
-      advisoryFindings: advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : undefined,
+      advisoryFindings: advisoryFindings.length > 0 ? advisoryFindingsAsFindings : undefined,
       cost: llmCost,
     };
   }
@@ -466,7 +475,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       const demotedFindings = toAdversarialReviewFindings(
         acDropped.map((d) => ({ ...d.finding, severity: "warning" as const, acQuote: undefined, acIndex: undefined })),
       );
-      const existingAdvisory = advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : [];
+      const existingAdvisory = advisoryFindings.length > 0 ? advisoryFindingsAsFindings : [];
       const allAdvisory = [...existingAdvisory, ...demotedFindings];
 
       logger?.warn("review", "Adversarial review passed: all blocking findings discarded as hallucinated AC quotes", {
@@ -527,10 +536,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       passed: false,
       blockingThreshold: threshold,
       result: { passed: false, findings: [] },
-      advisoryFindings:
-        advisoryFindings.length > 0
-          ? llmFindingsToReviewFindings(advisoryFindings, { source: "adversarial-review" })
-          : undefined,
+      advisoryFindings: advisoryFindings.length > 0 ? advisoryReviewFindings : undefined,
       diffAvailable,
       adversarialDropAnalysis,
       adversarialAcceptAnalysis: [],
@@ -542,7 +548,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       exitCode: 1,
       output: `Adversarial review failed: ${acDropped.length} blocking finding(s) dropped as ungrounded — the model emitted "passed: false" with concerns it could not ground in any acceptance criterion. Drops:\n\n${dropSummary}`,
       durationMs,
-      advisoryFindings: advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : undefined,
+      advisoryFindings: advisoryFindings.length > 0 ? advisoryFindingsAsFindings : undefined,
       cost: llmCost,
     };
   }
@@ -564,10 +570,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       passed: true,
       findings: llmFindingsToReviewFindings(allFindings, { source: "adversarial-review" }),
     },
-    advisoryFindings:
-      advisoryFindings.length > 0
-        ? llmFindingsToReviewFindings(advisoryFindings, { source: "adversarial-review" })
-        : undefined,
+    advisoryFindings: advisoryFindings.length > 0 ? advisoryReviewFindings : undefined,
     diffAvailable,
     adversarialDropAnalysis,
     adversarialAcceptAnalysis: [],
@@ -582,7 +585,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
         ? "Adversarial review passed"
         : "Adversarial review passed (all findings were advisory — below blocking threshold)",
     durationMs,
-    advisoryFindings: advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : undefined,
+    advisoryFindings: advisoryFindings.length > 0 ? advisoryFindingsAsFindings : undefined,
     cost: llmCost,
   };
 }

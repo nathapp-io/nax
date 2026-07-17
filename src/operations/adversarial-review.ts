@@ -20,7 +20,7 @@ import {
   substantiateAdversarialFindings,
 } from "../review/finding-filters";
 import type { AcDroppedEntry, AcQuoteRejectionCode } from "../review/finding-filters";
-import { classifyRecurrence } from "../review/recurrence-demotion";
+import { classifyRecurrence, tagCoverageGap } from "../review/recurrence-demotion";
 import { parseRequoteResponse } from "../review/requote-response";
 import type { AdversarialReviewConfig, SemanticStory } from "../review/types";
 import type { ResolvedTestPatterns } from "../test-runners";
@@ -526,7 +526,10 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
       passed,
       findings: accepted,
       normalizedFindings: toAdversarialReviewFindings(blocking),
-      advisoryFindings: toAdversarialReviewFindings([...advisory, ...demoted]),
+      advisoryFindings: [
+        ...toAdversarialReviewFindings(advisory),
+        ...tagCoverageGap(toAdversarialReviewFindings(demoted)),
+      ],
       acDropped: dropped,
     };
   },

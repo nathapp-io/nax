@@ -54,6 +54,11 @@ export function countPriorAppearances(priorIterations: Iteration[]): Map<string,
   return counts;
 }
 
+/** Mark recurrence-demoted findings so the run-end summary + review-audit JSON can distinguish them from ordinary advisories. */
+export function tagCoverageGap<T extends { meta?: Record<string, unknown> }>(findings: readonly T[]): T[] {
+  return findings.map((f) => ({ ...f, meta: { ...(f.meta ?? {}), coverageGap: true } }));
+}
+
 export type RecurrenceConfig = { enabled: boolean; maxBlockingRounds: number };
 export type RecurrenceResult = {
   blocking: AdversarialLLMFinding[];

@@ -4,6 +4,7 @@ import {
   normalizeIssueText,
   countPriorAppearances,
   classifyRecurrence,
+  tagCoverageGap,
 } from "@/review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import type { Iteration } from "@/findings";
@@ -129,5 +130,38 @@ describe("classifyRecurrence", () => {
     expect(r.blocking.length).toBe(1);
     expect(r.advisory.length).toBe(1);
     expect(r.demoted.length).toBe(0);
+  });
+});
+
+describe("tagCoverageGap", () => {
+  test("stamps meta.coverageGap: true on every finding", () => {
+    const findings = [
+      { file: "a.ts", meta: { issue: "x" } },
+      { file: "b.ts" },
+    ];
+    const tagged = tagCoverageGap(findings);
+    expect(tagged[0]?.meta).toEqual({ issue: "x", coverageGap: true });
+    expect(tagged[1]?.meta).toEqual({ coverageGap: true });
+  });
+
+  test("leaves untouched findings alone — caller merges tagged + untagged", () => {
+    const untouched = [{ file: "c.ts", meta: { note: "plain advisory" } }];
+    expect(untouched[0]?.meta).toEqual({ note: "plain advisory" });
+    expect(untouched[0]?.meta?.coverageGap).toBeUndefined();
+  });
+
+  test("is immutable — does not mutate the input array or its elements", () => {
+    const original = [{ file: "a.ts", meta: { issue: "x" } }];
+    const originalMetaRef = original[0]?.meta;
+    const tagged = tagCoverageGap(original);
+    expect(original[0]?.meta).toBe(originalMetaRef);
+    expect(original[0]?.meta).toEqual({ issue: "x" });
+    expect(tagged).not.toBe(original);
+    expect(tagged[0]).not.toBe(original[0]);
+    expect(tagged[0]?.meta).not.toBe(original[0]?.meta);
+  });
+
+  test("empty input returns empty array", () => {
+    expect(tagCoverageGap([])).toEqual([]);
   });
 });
