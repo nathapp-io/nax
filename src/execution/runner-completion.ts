@@ -284,9 +284,11 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   // per-story debug log line and the on-disk `.nax/review-audit/` trail.
   const advisoryFindings = options.runtime?.reviewAuditor?.getAdvisoryFindings() ?? [];
   if (advisoryFindings.length > 0) {
+    const coverageGapCount = advisoryFindings.filter((f) => f.coverageGap).length;
     logger?.warn("review", `${advisoryFindings.length} non-blocking review finding(s) surfaced at run end`, {
       storyId: "_run",
       count: advisoryFindings.length,
+      coverageGapCount,
       findings: advisoryFindings,
     });
   }
