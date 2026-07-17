@@ -28,15 +28,11 @@ import {
   type AdversarialDropAnalysis,
   analyzeStructuralCounterfactual,
 } from "./ac-structural-counterfactual";
-import {
-  type AdversarialLLMFinding,
-  formatFindings,
-  isBlockingSeverity,
-  toAdversarialReviewFindings,
-} from "./adversarial-helpers";
+import { type AdversarialLLMFinding, formatFindings, toAdversarialReviewFindings } from "./adversarial-helpers";
 import { collectDiffFileList as _collectDiffFileList } from "./diff-utils";
 import { llmFindingsToReviewFindings } from "./finding-projection";
 import { prepareAdversarialReviewInput } from "./prepare-inputs";
+import { classifyRecurrence } from "./recurrence-demotion";
 import { writeReviewAudit } from "./review-audit";
 import type { AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
 
@@ -104,6 +100,7 @@ export interface RunAdversarialReviewOptions {
   naxIgnoreIndex?: NaxIgnoreIndex;
   runtime?: import("../runtime").NaxRuntime;
   priorAdversarialIterations?: Iteration[];
+  resolvedTestPatterns?: import("../test-runners").ResolvedTestPatterns;
 }
 
 /**
@@ -126,6 +123,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     naxIgnoreIndex,
     runtime,
     priorAdversarialIterations,
+    resolvedTestPatterns,
   } = opts;
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -262,6 +260,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       priorAdversarialIterations,
       blockingThreshold,
       refExcludePatterns: effectiveRefExcludePatterns,
+      resolvedTestPatterns,
     });
   } catch (err) {
     logger?.warn("adversarial", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
@@ -359,8 +358,15 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   // still fail-closed when passed:false survives without remaining blockers.
   const threshold = blockingThreshold ?? "error";
   const allFindings = opResult.findings as AdversarialLLMFinding[];
-  const blockingFindings = allFindings.filter((f) => isBlockingSeverity(f.severity, threshold));
-  const advisoryFindings = allFindings.filter((f) => !isBlockingSeverity(f.severity, threshold));
+  const patterns = resolvedTestPatterns?.regex ?? [];
+  const testFileMatch = (file: string): boolean => patterns.some((re) => re.test(file));
+  const recurrenceCfg = adversarialConfig.recurrenceDemotion ?? { enabled: true, maxBlockingRounds: 2 };
+  const {
+    blocking: blockingFindings,
+    advisory: advisoryOnly,
+    demoted,
+  } = classifyRecurrence(allFindings, priorAdversarialIterations ?? [], recurrenceCfg, testFileMatch, threshold);
+  const advisoryFindings = [...advisoryOnly, ...demoted];
   const acDropped = opResult.acDropped ?? [];
 
   // Issue #986 — build diff file set for structural counterfactual telemetry.
