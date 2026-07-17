@@ -436,7 +436,7 @@ export async function decideStageAction(
           } catch (notifyErr) {
             logger.warn("execution", "Failed to send oscillation pause notification", {
               storyId: ctx.story.id,
-              error: String(notifyErr),
+              error: errorMessage(notifyErr),
             });
           }
         }
