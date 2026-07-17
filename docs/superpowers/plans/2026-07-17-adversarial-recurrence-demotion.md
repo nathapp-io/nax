@@ -496,6 +496,21 @@ test("recurrence: an error finding recurring beyond maxBlockingRounds demotes to
   expect(out.normalizedFindings.length).toBe(0);
   expect((out.advisoryFindings ?? []).length).toBe(1);
 });
+
+test("oscillation: an error finding whose prior sighting was a warning is suppressed to advisory and the story passes", async () => {
+  const finding = { severity: "error", category: "assumption", file: "lib/store.ts", line: 1, issue: "window expiry non-atomic", suggestion: "x", acQuote: AC_TEXT, acIndex: 1, verifiedBy: { file: "lib/store.ts", observed: OBSERVED } };
+  // exactly ONE prior round, where the same fingerprint appeared as a WARNING
+  const priors = [{
+    iterationNum: 1, findingsBefore: [], fixesApplied: [], outcome: "fixes-applied",
+    startedAt: "2026-07-17T00:00:00.000Z", finishedAt: "2026-07-17T00:00:01.000Z",
+    findingsAfter: [{ source: "adversarial-review", severity: "warning", category: "assumption", file: "lib/store.ts", message: "window expiry non-atomic" }],
+  }];
+  const input = makeVerifyInput({ findings: [finding], priorAdversarialIterations: priors as any, resolvedTestPatterns: { regex: [/\.spec\.ts$/] } as any });
+  const out = await adversarialReviewOp.verify({ passed: false, findings: [finding], normalizedFindings: [], acDropped: [] } as any, input, {} as any);
+  expect(out.passed).toBe(true);            // n=2, prev=warning → entry guard suppresses → advisory, not blocking
+  expect(out.normalizedFindings.length).toBe(0);
+  expect((out.advisoryFindings ?? []).length).toBe(1);
+});
 ```
 
 (`makeVerifyInput`, `AC_TEXT`, `OBSERVED` follow the helpers already in this test file; if `makeVerifyInput` does not exist, construct `input` inline exactly as the file's other `verify` tests do, adding `priorAdversarialIterations` and `resolvedTestPatterns`.)
@@ -543,7 +558,15 @@ import type { ResolvedTestPatterns } from "../test-runners";
       });
     }
 
-    const passed = parsed.passed && blocking.length === 0;
+    // Pass when nothing blocks AND either the model itself passed, or the
+    // classifier reclassified a blocking-severity finding to non-blocking
+    // (recurrence-demoted OR oscillation-suppressed to advisory). Keying on
+    // "was there a blocking-severity accepted finding" covers BOTH the demoted
+    // set and the entry-guard-suppressed set (which lands in `advisory`, not
+    // `demoted`). Preserves fail-closed when the model fails with no
+    // blocking-severity findings at all (the pre-existing behavior).
+    const hadBlockingSeverity = accepted.some((f) => isBlockingSeverity(f.severity, threshold));
+    const passed = blocking.length === 0 && (parsed.passed || hadBlockingSeverity);
 
     return {
       ...parsed,
