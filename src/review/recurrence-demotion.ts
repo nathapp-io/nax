@@ -52,3 +52,70 @@ export function countPriorAppearances(priorIterations: Iteration[]): Map<string,
   }
   return counts;
 }
+
+import type { AdversarialLLMFinding } from "./adversarial-helpers";
+import { isBlockingSeverity } from "./adversarial-helpers";
+
+export type RecurrenceConfig = { enabled: boolean; maxBlockingRounds: number };
+export type RecurrenceResult = {
+  blocking: AdversarialLLMFinding[];
+  advisory: AdversarialLLMFinding[];
+  demoted: AdversarialLLMFinding[];
+};
+
+/**
+ * Partition accepted adversarial findings into block / advisory / demoted.
+ *
+ * - test-gap (file matches a test-file pattern) → block (carve-out preserved).
+ * - non-error severity → advisory.
+ * - error, count n ≥ maxBlockingRounds+1 → demoted (recurrence coverage-gap).
+ * - error, (n==1 OR prev sighting was error) → block (entry guard).
+ * - error, else (n==2, prev not error) → advisory (oscillation suppressed).
+ *
+ * `demoted` is a subset reported separately for coverage-gap logging; callers
+ * surface it through advisoryFindings.
+ */
+export function classifyRecurrence(
+  accepted: AdversarialLLMFinding[],
+  priorIterations: Iteration[],
+  cfg: RecurrenceConfig,
+  testFileMatch: (file: string) => boolean,
+  threshold: "error" | "warning" | "info",
+): RecurrenceResult {
+  const blocking: AdversarialLLMFinding[] = [];
+  const advisory: AdversarialLLMFinding[] = [];
+  const demoted: AdversarialLLMFinding[] = [];
+
+  if (!cfg.enabled) {
+    for (const f of accepted) (isBlockingSeverity(f.severity, threshold) ? blocking : advisory).push(f);
+    return { blocking, advisory, demoted };
+  }
+
+  const priorCounts = countPriorAppearances(priorIterations);
+
+  for (const f of accepted) {
+    // test-gap carve-out applies only to blocking severities (mirrors the
+    // upstream BLOCKING_SEVERITIES gate in ac-quote-validator.ts) — a warning/
+    // info test-gap must never block.
+    if (f.category === "test-gap" && testFileMatch(f.file) && isBlockingSeverity(f.severity, threshold)) {
+      blocking.push(f);
+      continue;
+    }
+    if (!isBlockingSeverity(f.severity, threshold)) {
+      advisory.push(f);
+      continue;
+    }
+    const prior = priorCounts.get(fingerprintFor(f.file, f.category, f.issue));
+    const n = (prior?.count ?? 0) + 1;
+    const prevWasBlocking = prior !== undefined && isBlockingSeverity(prior.lastSeverity, threshold);
+
+    if (n >= cfg.maxBlockingRounds + 1) {
+      demoted.push(f);
+    } else if (n === 1 || prevWasBlocking) {
+      blocking.push(f);
+    } else {
+      advisory.push(f);
+    }
+  }
+  return { blocking, advisory, demoted };
+}
