@@ -206,4 +206,10 @@ export const ReviewConfigSchema = z.object({
   pluginMode: z.enum(["observational", "gating"]).default("observational"),
   semantic: SemanticReviewConfigSchema.optional(),
   adversarial: AdversarialReviewConfigSchema.optional(),
+  conflictDetection: z
+    .object({
+      enabled: z.boolean().default(true),
+      maxOscillations: z.number().int().min(1).default(2),
+    })
+    .default({ enabled: true, maxOscillations: 2 }),
 });

@@ -1,0 +1,163 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `recordOscillations` and `getOscillations` are imported from the `src/execution` barrel, then both values are callable functions.",
+    "refined": "typeof recordOscillations === 'function' && typeof getOscillations === 'function'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `getOscillations(store, \"US-9\")` is called with a fresh `Map`, then it returns `0`.",
+    "refined": "getOscillations(new Map(), 'US-9') === 0",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `recordOscillations(store, \"US-1\", 2)` is called, then it returns `2`.",
+    "refined": "const store = new Map(); const result = recordOscillations(store, 'US-1', 2); result === 2",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `recordOscillations(store, \"US-1\", 2)` has run, then `getOscillations(store, \"US-1\")` returns `2`.",
+    "refined": "const store = new Map(); recordOscillations(store, 'US-1', 2); getOscillations(store, 'US-1') === 2",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "Given `recordOscillations(store, \"US-1\", 1)` has run, when `recordOscillations(store, \"US-1\", 2)` is called, then it returns `3`.",
+    "refined": "const store = new Map(); recordOscillations(store, 'US-1', 1); const result = recordOscillations(store, 'US-1', 2); result === 3",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Given `recordOscillations(store, \"A\", 2)`, `recordOscillations(store, \"B\", 5)`, and `recordOscillations(store, \"A\", 1)` run in that order, then `getOscillations(store, \"A\")` returns `3`.",
+    "refined": "const store = new Map(); recordOscillations(store, 'A', 2); recordOscillations(store, 'B', 5); recordOscillations(store, 'A', 1); getOscillations(store, 'A') === 3",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "Given `recordOscillations(store, \"A\", 2)`, `recordOscillations(store, \"B\", 5)`, and `recordOscillations(store, \"A\", 1)` run in that order, then `getOscillations(store, \"B\")` returns `5`.",
+    "refined": "const store = new Map(); recordOscillations(store, 'A', 2); recordOscillations(store, 'B', 5); recordOscillations(store, 'A', 1); getOscillations(store, 'B') === 5",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When `createRuntime` creates a fresh `NaxRuntime`, then `rectificationOscillations` is a `Map` with size `0`.",
+    "refined": "const runtime = createRuntime(...); runtime.rectificationOscillations instanceof Map && runtime.rectificationOscillations.size === 0",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When a config omits `review.conflictDetection`, then parsed `config.review.conflictDetection.enabled` is `true`.",
+    "refined": "const config = parseReviewConfig({}); config.conflictDetection.enabled === true",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When a config omits `review.conflictDetection`, then parsed `config.review.conflictDetection.maxOscillations` is `2`.",
+    "refined": "const config = parseReviewConfig({}); config.conflictDetection.maxOscillations === 2",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When a config sets `review.conflictDetection.maxOscillations` to `4`, then parsed `config.review.conflictDetection.maxOscillations` is `4`.",
+    "refined": "const config = parseReviewConfig({ review: { conflictDetection: { maxOscillations: 4 } } }); config.conflictDetection.maxOscillations === 4",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When the outcome-count helper receives `iterations` with outcomes `[\"regressed-different-source\", \"partial\", \"regressed-different-source\"]`, then it returns `2`.",
+    "refined": "Given a helper function `countRegressedDifferentSource(iterations: Array<{outcome: string}>)` that filters and counts iterations where `outcome === \"regressed-different-source\"`, when passed `[{outcome: \"regressed-different-source\"}, {outcome: \"partial\"}, {outcome: \"regressed-different-source\"}]`, then it returns the number `2`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When the outcome-count helper receives `iterations` with no `\"regressed-different-source\"` outcome, then it returns `0`.",
+    "refined": "Given `countRegressedDifferentSource(iterations)` as described above, when passed `[{outcome: \"fixed\"}, {outcome: \"partial\"}, {outcome: \"regressed-same-source\"}]`, then it returns the number `0`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When a rectification cycle result contains one `regressed-different-source` iteration, then `getOscillations(ctx.runtime.rectificationOscillations, ctx.storyId)` increases by exactly `1` after the rectification increment site runs.",
+    "refined": "Given a `PipelineContext` `ctx` where `ctx.runtime.rectificationOscillations` is a `Map<string, number>` initially empty for storyId \"story-1\", and `ctx.storyId === \"story-1\"`, when `recordOscillations(ctx.runtime.rectificationOscillations, ctx.storyId, 1)` is called (simulating one regressed-different-source outcome), then `getOscillations(ctx.runtime.rectificationOscillations, ctx.storyId)` returns `1`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given rectification is exhausted with unfixed blocking findings, `review.conflictDetection.enabled` is `true`, `maxOscillations` is `2`, and the accumulated count is `2`, when `decideStageAction` runs, then it returns `action === \"pause\"`.",
+    "refined": "Given a `PipelineContext` `ctx` with `ctx.storyId === \"story-1\"`, `ctx.runtime.rectificationOscillations` containing `[[\"story-1\", 2]]`, `ctx.config.review.conflictDetection.enabled === true`, `ctx.config.review.conflictDetection.maxOscillations === 2`, and a `PostRunContext` where `decideStageAction` receives `exhaustedRectification` status with blocking unfixed findings, when `decideStageAction(exhaustedRectification, ctx)` is called, then its returned `StageAction` object has `action === \"pause\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given the circuit-breaker pause result at count `2`, when `decideStageAction` returns it, then its `reason` contains `2`.",
+    "refined": "Given the same setup as criterion 4, when `decideStageAction` returns `{ action: \"pause\", reason: <string> }`, then the `reason` string includes the character or substring `\"2\"` (e.g., \"Rectification oscillation threshold reached: 2 >= 2\").",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given the circuit-breaker pause result at count `2`, when `decideStageAction` returns it, then its `reason` contains a case-insensitive `oscillat` substring.",
+    "refined": "Given the same setup as criterion 4, when `decideStageAction` returns `{ action: \"pause\", reason: <string> }`, then `reason.toLowerCase()` includes the substring `\"oscillat\"` (e.g., \"oscillation\", \"OSCILLATION\", \"Oscillation\").",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given rectification is exhausted with the same blocking findings and count `1` below `maxOscillations` `2`, when `decideStageAction` runs, then it returns `action === \"escalate\"`.",
+    "refined": "Given a `PipelineContext` `ctx` with `ctx.storyId === \"story-1\"`, `ctx.runtime.rectificationOscillations` containing `[[\"story-1\", 1]]`, `ctx.config.review.conflictDetection.enabled === true`, `ctx.config.review.conflictDetection.maxOscillations === 2`, and `decideStageAction` receives `exhaustedRectification` status with blocking unfixed findings, when `decideStageAction(exhaustedRectification, ctx)` is called, then its returned `StageAction` object has `action === \"escalate\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given rectification is exhausted with the same blocking findings and count `2`, when `review.conflictDetection.enabled` is `false` and `decideStageAction` runs, then it returns `action === \"escalate\"`.",
+    "refined": "Given a `PipelineContext` `ctx` with `ctx.storyId === \"story-1\"`, `ctx.runtime.rectificationOscillations` containing `[[\"story-1\", 2]]`, `ctx.config.review.conflictDetection.enabled === false`, `ctx.config.review.conflictDetection.maxOscillations === 2`, and `decideStageAction` receives `exhaustedRectification` status, when `decideStageAction(exhaustedRectification, ctx)` is called, then its returned `StageAction` object has `action === \"escalate\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given rectification is exhausted with blocking findings and `ctx.runtime.rectificationOscillations` is absent, when `decideStageAction` runs, then it returns `action === \"escalate\"`.",
+    "refined": "Given a `PipelineContext` `ctx` with `ctx.storyId === \"story-1\"`, `ctx.runtime.rectificationOscillations === undefined` (or absent), `ctx.config.review.conflictDetection.enabled === true`, `ctx.config.review.conflictDetection.maxOscillations === 2`, and `decideStageAction` receives `exhaustedRectification` status, when `decideStageAction(exhaustedRectification, ctx)` is called, then its returned `StageAction` object has `action === \"escalate\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Given rectification is exhausted with a normal single-source unfixable finding and oscillation count `0`, when `decideStageAction` runs, then it returns `action === \"escalate\"`.",
+    "refined": "Given a `PipelineContext` `ctx` with `ctx.storyId === \"story-1\"`, `ctx.runtime.rectificationOscillations` containing `[[\"story-1\", 0]]`, `ctx.config.review.conflictDetection.enabled === true`, `ctx.config.review.conflictDetection.maxOscillations === 2`, and `decideStageAction` receives `exhaustedRectification` status with a normal single-source unfixable finding, when `decideStageAction(exhaustedRectification, ctx)` is called, then its returned `StageAction` object has `action === \"escalate\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Given the breaker returns `action === \"pause\"` and an injected interaction channel, when `decideStageAction` runs, then the interaction channel receives a request with `type === \"notify\"`.",
+    "refined": "Given a mock `InteractionContext` `ctx.interaction` where `send` is a spy that records calls, `ctx.interaction.send` is called with `decideStageAction` returning `pause` (threshold met), when `decideStageAction` executes with the breaker triggered, then `ctx.interaction.send` was called with an object containing `type: \"notify\"` (i.e., the first argument's `type` property equals `\"notify\"`).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Given the breaker threshold is met and the injected interaction channel throws, when `decideStageAction` runs, then it still returns `action === \"pause\"`.",
+    "refined": "Given a mock `InteractionContext` `ctx.interaction` where `send` is a spy that throws an error when called, and all breaker conditions are met (count >= maxOscillations, enabled, oscillations present), when `decideStageAction(exhaustedRectification, ctx)` is called, then it returns an object with `action === \"pause\"` and the throw from `ctx.interaction.send` is caught and logged (not propagated).",
+    "testable": true,
+    "storyId": "US-002"
+  }
+]

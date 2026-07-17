@@ -1,4 +1,6 @@
 export type { RunOptions, RunResult } from "./runner";
+export { recordOscillations, getOscillations, countOscillationOutcomes } from "./oscillation-store";
+export { inspectOscillationBreaker, type BreakerDecision } from "./oscillation-breaker";
 export { run, _runnerDeps, _runnerReentrancyGuard } from "./runner";
 export type { FailureCategory } from "../tdd/types";
 export { appendProgress } from "./progress";

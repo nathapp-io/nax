@@ -26,6 +26,7 @@ import { appendScratchEntry } from "../session/scratch-writer";
 import { rollbackToRef } from "../tdd/rollback";
 import { errorMessage } from "../utils/errors";
 import { autoCommitIfDirty, detectMergeConflict } from "../utils/git";
+import { inspectOscillationBreaker } from "./oscillation-breaker";
 import { failAndClose } from "./session-manager-runtime";
 import type { StoryOrchestratorResult } from "./story-orchestrator";
 import { deriveTddFailureCategory } from "./tdd-failure-category";
@@ -404,6 +405,43 @@ export async function decideStageAction(
         ...(planResult.unresolvedDetail ? { unresolvedDetail: planResult.unresolvedDetail } : {}),
       });
       await cleanupSessionOnFailure(ctx);
+      // US-002 rectification oscillation circuit-breaker. When the same story
+      // re-runs the orchestration and the fix cycle keeps hopping between
+      // different finding sources (regressed-different-source), the operator
+      // would otherwise see only a silent money-drain as the breaker-less
+      // escalator re-runs the same story tier-after-tier. The runtime Map is
+      // accumulated by the increment site in runRectification; reading it
+      // here is fail-open — if the runtime or config is missing, we escalate
+      // exactly as before.
+      const breaker = inspectOscillationBreaker(ctx);
+      if (breaker.trip) {
+        logger.warn("execution", "Rectification oscillation circuit-breaker paused story", {
+          storyId: ctx.story.id,
+          oscillationCount: breaker.count,
+          maxOscillations: breaker.maxOscillations,
+        });
+        if (ctx.interaction) {
+          try {
+            await ctx.interaction.send({
+              id: `oscillation-${ctx.story.id}-${Date.now()}`,
+              type: "notify",
+              featureName: ctx.featureDir ? (ctx.featureDir.split("/").pop() ?? "unknown") : "unknown",
+              storyId: ctx.story.id,
+              stage: "execution",
+              summary: `Oscillation paused: ${ctx.story.id}`,
+              detail: `Story: ${ctx.story.title}\nReason: ${breaker.reason}`,
+              fallback: "continue",
+              createdAt: Date.now(),
+            });
+          } catch (notifyErr) {
+            logger.warn("execution", "Failed to send oscillation pause notification", {
+              storyId: ctx.story.id,
+              error: errorMessage(notifyErr),
+            });
+          }
+        }
+        return { action: "pause", reason: breaker.reason };
+      }
       const exhaustedReason = planResult.unresolvedDetail
         ? `Rectification exhausted: ${planResult.unresolvedDetail}`
         : "Rectification exhausted with unfixed findings";

@@ -1,12 +1,12 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-07-10T09-19-51-819Z",
-    "feature": "status-cost-json",
-    "startedAt": "2026-07-10T09:19:51.819Z",
+    "id": "run-2026-07-17T10-32-22-977Z",
+    "feature": "rectification-oscillation-circuit-breaker",
+    "startedAt": "2026-07-17T10:32:22.977Z",
     "status": "completed",
     "dryRun": false,
-    "pid": 64473
+    "pid": 54647
   },
   "progress": {
     "total": 2,
@@ -17,21 +17,21 @@
     "pending": 0
   },
   "cost": {
-    "spent": 5.30355488,
+    "spent": 5.616620775,
     "limit": 50
   },
   "current": null,
   "iterations": 3,
-  "updatedAt": "2026-07-10T10:42:44.494Z",
-  "durationMs": 4972675,
+  "updatedAt": "2026-07-17T11:53:43.952Z",
+  "durationMs": 4880975,
   "postRun": {
     "acceptance": {
       "status": "passed",
-      "lastRunAt": "2026-07-10T10:42:12.511Z"
+      "lastRunAt": "2026-07-17T11:53:07.261Z"
     },
     "regression": {
       "status": "passed",
-      "lastRunAt": "2026-07-10T10:42:43.288Z"
+      "lastRunAt": "2026-07-17T11:53:42.727Z"
     }
   }
 }

@@ -1,6 +1,7 @@
 import type { Finding, FixCycle, FixCycleContext } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { CallContext, Operation, RunOperation } from "@/operations";
+import { countOscillationOutcomes, recordOscillations } from "../oscillation-store";
 import { extractPhaseFindings, orderGateLast, phasesToRevalidate } from "./phase-eval";
 import { phaseExplicitlyPassed, phasePassed } from "./phase-eval";
 import { _storyOrchestratorDeps, runPhase, withIncreasingFailuresBail } from "./run-phase";
@@ -322,6 +323,15 @@ export async function runRectification(
     "story-orchestrator-rectification",
     { callOp: wrappedCallOp },
   );
+
+  // Source-agnostic oscillation counter (US-002). The runtime Map is the
+  // stable run-scoped instance threaded across every per-attempt
+  // PipelineContext rebuild, so the count accumulates across escalation
+  // attempts and feeds the post-run circuit-breaker.
+  const oscillationCount = countOscillationOutcomes(cycleResult.iterations);
+  if (oscillationCount > 0) {
+    recordOscillations(ctx.runtime.rectificationOscillations, ctx.storyId, oscillationCount);
+  }
 
   phaseOutputs.rectification = {
     success: cycleResult.exitReason === "resolved",
