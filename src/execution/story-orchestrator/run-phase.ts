@@ -4,7 +4,12 @@ import { getSafeLogger } from "@/logger";
 import type { AdversarialReviewInput, CallContext, SemanticReviewInput } from "@/operations";
 import { callOp } from "@/operations";
 import { pipelineEventBus } from "@/pipeline";
-import { prepareAdversarialReviewInput, prepareSemanticReviewInput } from "@/review";
+import {
+  getAdversarialIterations,
+  prepareAdversarialReviewInput,
+  prepareSemanticReviewInput,
+  recordAdversarialIteration,
+} from "@/review";
 import { errorMessage } from "@/utils/errors";
 import { _gitDeps, captureGitRef } from "@/utils/git";
 import { captureTreeState as realCaptureTreeState } from "../checkpoint/resume-hydrate";
@@ -156,6 +161,12 @@ export async function runPhase(
   let dispatchInput = isTddPhase && beforeRef ? { ...(slot.input as Record<string, unknown>), beforeRef } : slot.input;
   // Refresh stat/diff/etc for review phases — plan-build's snapshot is stale.
   dispatchInput = await refreshReviewInputForDispatch(opName, dispatchInput);
+  if (opName === "adversarial-review" && ctx.storyId) {
+    dispatchInput = {
+      ...(dispatchInput as Record<string, unknown>),
+      priorAdversarialIterations: getAdversarialIterations(ctx.runtime.adversarialIterations, ctx.storyId),
+    };
+  }
 
   if (isTddPhase) {
     logger?.info("tdd", `-> Session: ${opName}`, { storyId: ctx.storyId, role: opName, ...progressData });
@@ -178,6 +189,13 @@ export async function runPhase(
     const output = await _storyOrchestratorDeps.callOp({ ...ctx, scopeId: scope.scopeId }, slot.op, dispatchInput);
     phaseOutputs[opName] = output;
     emitReviewDecision(ctx, opName, output);
+    if (opName === "adversarial-review" && ctx.storyId) {
+      const advOut = output as { normalizedFindings?: Finding[]; advisoryFindings?: Finding[] };
+      recordAdversarialIteration(ctx.runtime.adversarialIterations, ctx.storyId, [
+        ...(advOut.normalizedFindings ?? []),
+        ...(advOut.advisoryFindings ?? []),
+      ]);
+    }
     logUnifiedReviewPhaseResult(ctx.storyId, opName, output);
     logDeterministicPhaseOutcome(
       ctx.storyId,

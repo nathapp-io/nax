@@ -76,6 +76,7 @@ import { createConfigLoader } from "../config";
 import type { ConfigLoader } from "../config";
 import { NaxError } from "../errors";
 import { PidRegistry } from "../execution/pid-registry";
+import type { Iteration } from "../findings";
 import { getLogger } from "../logger";
 import type { Logger } from "../logger";
 import { ReviewAuditor, createNoOpReviewAuditor } from "../review/review-audit";
@@ -128,6 +129,8 @@ export interface NaxRuntime {
   readonly signal: AbortSignal;
   /** Run-scoped flaky-test quarantine memo — shared between the per-story full-suite gate and the deferred regression gate. */
   readonly quarantineMemo: QuarantineMemo;
+  /** Run-scoped per-story adversarial-review round history (ADR-022 carry-forward + recurrence-demotion). Keyed by storyId. */
+  readonly adversarialIterations: Map<string, Iteration[]>;
   close(): Promise<void>;
 }
 
@@ -248,6 +251,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const packages = createPackageRegistry(configLoader, workdir);
   const logger = getLogger();
   const quarantineMemo = createQuarantineMemo();
+  const adversarialIterations = new Map<string, Iteration[]>();
 
   let closed = false;
 
@@ -271,6 +275,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     pidRegistry,
     logger,
     quarantineMemo,
+    adversarialIterations,
     get signal() {
       return controller.signal;
     },
