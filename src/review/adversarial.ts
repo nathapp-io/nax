@@ -28,15 +28,12 @@ import {
   type AdversarialDropAnalysis,
   analyzeStructuralCounterfactual,
 } from "./ac-structural-counterfactual";
-import {
-  type AdversarialLLMFinding,
-  formatFindings,
-  isBlockingSeverity,
-  toAdversarialReviewFindings,
-} from "./adversarial-helpers";
+import { recordAdversarialAudit } from "./adversarial-audit-event";
+import { type AdversarialLLMFinding, formatFindings, toAdversarialReviewFindings } from "./adversarial-helpers";
 import { collectDiffFileList as _collectDiffFileList } from "./diff-utils";
 import { llmFindingsToReviewFindings } from "./finding-projection";
 import { prepareAdversarialReviewInput } from "./prepare-inputs";
+import { classifyRecurrence, tagCoverageGap } from "./recurrence-demotion";
 import { writeReviewAudit } from "./review-audit";
 import type { AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
 
@@ -46,47 +43,6 @@ export const _adversarialDeps = {
   callOp: _callOp,
   collectDiffFileList: _collectDiffFileList,
 };
-
-function recordAdversarialAudit(opts: {
-  runtime?: import("../runtime").NaxRuntime;
-  workdir: string;
-  projectDir?: string;
-  storyId: string;
-  featureName?: string;
-  parsed: boolean;
-  looksLikeFail?: boolean;
-  failOpen?: boolean;
-  passed?: boolean;
-  passReason?: string;
-  blockingThreshold?: "error" | "warning" | "info";
-  result: { passed: boolean; findings: unknown[] } | null;
-  advisoryFindings?: unknown[];
-  // Issue #986 — adversarial-only structural counterfactual telemetry.
-  diffAvailable?: boolean;
-  adversarialDropAnalysis?: AdversarialDropAnalysis[];
-  adversarialAcceptAnalysis?: AdversarialAcceptAnalysis[];
-}): void {
-  opts.runtime?.dispatchEvents.emitReviewDecision({
-    kind: "review-decision",
-    reviewer: "adversarial",
-    workdir: opts.workdir,
-    projectDir: opts.projectDir,
-    storyId: opts.storyId,
-    featureName: opts.featureName,
-    timestamp: Date.now(),
-    parsed: opts.parsed,
-    looksLikeFail: opts.looksLikeFail,
-    failOpen: opts.failOpen,
-    passed: opts.passed,
-    passReason: opts.passReason,
-    blockingThreshold: opts.blockingThreshold,
-    result: opts.result,
-    advisoryFindings: opts.advisoryFindings,
-    diffAvailable: opts.diffAvailable,
-    adversarialDropAnalysis: opts.adversarialDropAnalysis,
-    adversarialAcceptAnalysis: opts.adversarialAcceptAnalysis,
-  });
-}
 
 export interface RunAdversarialReviewOptions {
   workdir: string;
@@ -104,6 +60,7 @@ export interface RunAdversarialReviewOptions {
   naxIgnoreIndex?: NaxIgnoreIndex;
   runtime?: import("../runtime").NaxRuntime;
   priorAdversarialIterations?: Iteration[];
+  resolvedTestPatterns?: import("../test-runners").ResolvedTestPatterns;
 }
 
 /**
@@ -126,6 +83,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     naxIgnoreIndex,
     runtime,
     priorAdversarialIterations,
+    resolvedTestPatterns,
   } = opts;
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -262,6 +220,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       priorAdversarialIterations,
       blockingThreshold,
       refExcludePatterns: effectiveRefExcludePatterns,
+      resolvedTestPatterns,
     });
   } catch (err) {
     logger?.warn("adversarial", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
@@ -359,8 +318,27 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   // still fail-closed when passed:false survives without remaining blockers.
   const threshold = blockingThreshold ?? "error";
   const allFindings = opResult.findings as AdversarialLLMFinding[];
-  const blockingFindings = allFindings.filter((f) => isBlockingSeverity(f.severity, threshold));
-  const advisoryFindings = allFindings.filter((f) => !isBlockingSeverity(f.severity, threshold));
+  const patterns = resolvedTestPatterns?.regex ?? [];
+  const testFileMatch = (file: string): boolean => patterns.some((re) => re.test(file));
+  const recurrenceCfg = adversarialConfig.recurrenceDemotion ?? { enabled: true, maxBlockingRounds: 2 };
+  const {
+    blocking: blockingFindings,
+    advisory: advisoryOnly,
+    demoted,
+  } = classifyRecurrence(allFindings, priorAdversarialIterations ?? [], recurrenceCfg, testFileMatch, threshold);
+  const advisoryFindings = [...advisoryOnly, ...demoted];
+  // Precomputed conversions so every downstream `advisoryFindings` projection
+  // (ReviewFinding for review-audit persistence, Finding for the pipeline
+  // result) tags the recurrence-demoted subset with `meta.coverageGap: true`
+  // (Fix design §7) without re-deriving the split at each call site.
+  const advisoryReviewFindings = [
+    ...llmFindingsToReviewFindings(advisoryOnly, { source: "adversarial-review" }),
+    ...tagCoverageGap(llmFindingsToReviewFindings(demoted, { source: "adversarial-review" })),
+  ];
+  const advisoryFindingsAsFindings = [
+    ...toAdversarialReviewFindings(advisoryOnly),
+    ...tagCoverageGap(toAdversarialReviewFindings(demoted)),
+  ];
   const acDropped = opResult.acDropped ?? [];
 
   // Issue #986 — build diff file set for structural counterfactual telemetry.
@@ -465,10 +443,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
         passed: false,
         findings: llmFindingsToReviewFindings(allFindings, { source: "adversarial-review" }),
       },
-      advisoryFindings:
-        advisoryFindings.length > 0
-          ? llmFindingsToReviewFindings(advisoryFindings, { source: "adversarial-review" })
-          : undefined,
+      advisoryFindings: advisoryFindings.length > 0 ? advisoryReviewFindings : undefined,
       diffAvailable,
       adversarialDropAnalysis,
       adversarialAcceptAnalysis,
@@ -485,7 +460,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       output,
       durationMs,
       findings: blockingFindings.length > 0 ? toAdversarialReviewFindings(blockingFindings) : undefined,
-      advisoryFindings: advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : undefined,
+      advisoryFindings: advisoryFindings.length > 0 ? advisoryFindingsAsFindings : undefined,
       cost: llmCost,
     };
   }
@@ -500,7 +475,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       const demotedFindings = toAdversarialReviewFindings(
         acDropped.map((d) => ({ ...d.finding, severity: "warning" as const, acQuote: undefined, acIndex: undefined })),
       );
-      const existingAdvisory = advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : [];
+      const existingAdvisory = advisoryFindings.length > 0 ? advisoryFindingsAsFindings : [];
       const allAdvisory = [...existingAdvisory, ...demotedFindings];
 
       logger?.warn("review", "Adversarial review passed: all blocking findings discarded as hallucinated AC quotes", {
@@ -561,10 +536,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       passed: false,
       blockingThreshold: threshold,
       result: { passed: false, findings: [] },
-      advisoryFindings:
-        advisoryFindings.length > 0
-          ? llmFindingsToReviewFindings(advisoryFindings, { source: "adversarial-review" })
-          : undefined,
+      advisoryFindings: advisoryFindings.length > 0 ? advisoryReviewFindings : undefined,
       diffAvailable,
       adversarialDropAnalysis,
       adversarialAcceptAnalysis: [],
@@ -576,7 +548,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       exitCode: 1,
       output: `Adversarial review failed: ${acDropped.length} blocking finding(s) dropped as ungrounded — the model emitted "passed: false" with concerns it could not ground in any acceptance criterion. Drops:\n\n${dropSummary}`,
       durationMs,
-      advisoryFindings: advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : undefined,
+      advisoryFindings: advisoryFindings.length > 0 ? advisoryFindingsAsFindings : undefined,
       cost: llmCost,
     };
   }
@@ -598,10 +570,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       passed: true,
       findings: llmFindingsToReviewFindings(allFindings, { source: "adversarial-review" }),
     },
-    advisoryFindings:
-      advisoryFindings.length > 0
-        ? llmFindingsToReviewFindings(advisoryFindings, { source: "adversarial-review" })
-        : undefined,
+    advisoryFindings: advisoryFindings.length > 0 ? advisoryReviewFindings : undefined,
     diffAvailable,
     adversarialDropAnalysis,
     adversarialAcceptAnalysis: [],
@@ -616,7 +585,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
         ? "Adversarial review passed"
         : "Adversarial review passed (all findings were advisory — below blocking threshold)",
     durationMs,
-    advisoryFindings: advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : undefined,
+    advisoryFindings: advisoryFindings.length > 0 ? advisoryFindingsAsFindings : undefined,
     cost: llmCost,
   };
 }

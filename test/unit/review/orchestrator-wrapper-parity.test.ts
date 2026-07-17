@@ -10,14 +10,17 @@
  * US-001 (semantic) is covered in the first describe block.
  * US-002 (adversarial) is covered in the second describe block (Task 13).
  */
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { semanticReviewOp } from "../../../src/operations/semantic-review";
 import type { SemanticReviewInput } from "../../../src/operations/semantic-review";
 import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
 import type { AdversarialReviewInput } from "../../../src/operations/adversarial-review";
-import { makeTestRuntime, withTempDir } from "../../helpers";
+import { _adversarialDeps, _diffUtilsDeps, runAdversarialReview } from "@/review";
+import type { AdversarialReviewConfig, SemanticStory } from "@/review";
+import type { IAgentManager } from "@/agents";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeTestRuntime, withTempDir } from "../../helpers";
 import type { NaxRuntime } from "../../../src/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -383,5 +386,192 @@ describe("Adversarial op verify() parity with wrapper consumer (AC10, AC11 adver
       // The drop is tracked in acDropped for counterfactual telemetry.
       expect((result as import("../../../src/operations/adversarial-review").AdversarialReviewOutput).acDropped).toHaveLength(1);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Recurrence-demotion parity: adversarialReviewOp.verify() and the wrapper
+// (runAdversarialReview()) each call classifyRecurrence independently — the
+// op inside verify(), the wrapper again over opResult.findings (see
+// src/review/adversarial.ts). This guards against those two call sites
+// drifting apart, and against the coverage-gap tag (Fix: tagCoverageGap)
+// being applied inconsistently between them.
+//
+// This is a full both-paths test: the SAME accepted finding + prior
+// iterations + recurrenceDemotion config are run through (a) the op's own
+// verify() directly and (b) the wrapper's real end-to-end dispatch (via
+// runAdversarialReview() -> callOp -> adversarialReviewOp), using the same
+// harness as test/unit/review/adversarial-pass-fail.test.ts (mocked agent
+// response + mocked git diff/stat spawn calls, no LLM/network I/O).
+// ---------------------------------------------------------------------------
+
+describe("Recurrence-demotion parity: op verify() vs wrapper recomputation", () => {
+  const RECURRENCE_STORY: SemanticStory = {
+    id: "STORY-PARITY-RECUR",
+    title: "Recurrence parity story",
+    description: "op/wrapper classifyRecurrence parity",
+    acceptanceCriteria: ["Users can log in"],
+  };
+
+  const RECURRENCE_CONFIG: AdversarialReviewConfig = {
+    model: "balanced",
+    diffMode: "ref",
+    rules: [],
+    timeoutMs: 180_000,
+    excludePatterns: [],
+    parallel: false,
+    maxConcurrentSessions: 2,
+  };
+
+  const RECURRING_FINDING = {
+    severity: "error",
+    category: "error-path",
+    file: "src/log.ts",
+    line: 10,
+    issue: "No error handling on login",
+    suggestion: "Add try/catch",
+    acQuote: "can log in",
+    acIndex: 1,
+    verifiedBy: { file: "src/log.ts", observed: "login handler stub" },
+  };
+
+  // Two prior iterations under the same fingerprint (file + category + issue
+  // prefix), both "error" — with default maxBlockingRounds=2, the third
+  // sighting (n=3 >= maxBlockingRounds+1) demotes to advisory + coverage-gap.
+  const PRIOR_ITERATIONS = Array.from({ length: 2 }, (_v, i) => ({
+    iterationNum: i + 1,
+    findingsBefore: [],
+    fixesApplied: [],
+    outcome: "fixes-applied",
+    startedAt: "2026-07-17T00:00:00.000Z",
+    finishedAt: "2026-07-17T00:00:01.000Z",
+    findingsAfter: [
+      {
+        source: "adversarial-review",
+        severity: "error",
+        category: "error-path",
+        file: "src/log.ts",
+        message: "No error handling on login",
+      },
+    ],
+    // biome-ignore lint/suspicious/noExplicitAny: minimal Iteration/Finding shape for fingerprint matching
+  })) as any;
+
+  const STAT_OUTPUT = "src/log.ts | 5 +++++\n 1 file changed, 5 insertions(+)";
+
+  function makeSpawnMock(stdout: string) {
+    return mock((_opts: unknown) => ({
+      exited: Promise.resolve(0),
+      stdout: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(stdout));
+          controller.close();
+        },
+      }),
+      stderr: new ReadableStream({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      kill: () => {},
+      // biome-ignore lint/suspicious/noExplicitAny: minimal Bun.spawn-shaped mock
+    })) as any;
+  }
+
+  function makeAgentManager(llmResponse: string): IAgentManager {
+    return makeMockAgentManager({
+      getDefaultAgent: "claude",
+      completeFn: async () => ({ output: llmResponse, costUsd: 0.001, source: "mock" as const }),
+      runWithFallbackFn: async (req) => {
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: llmResponse,
+        tokenUsage: { inputTokens: 10, outputTokens: 20 },
+        estimatedCostUsd: 0.001,
+        internalRoundTrips: 0,
+      }),
+      completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: 0.001, source: "mock" }, fallbacks: [] }),
+      completeAsFn: async () => ({ output: llmResponse, costUsd: 0.001, source: "mock" }),
+      getAgentFn: () => makeAgentAdapter(),
+    });
+  }
+
+  let origSpawn: typeof _diffUtilsDeps.spawn;
+  let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
+  let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
+  let origWriteReviewAudit: typeof _adversarialDeps.writeReviewAudit;
+
+  beforeEach(() => {
+    origSpawn = _diffUtilsDeps.spawn;
+    origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
+    origGetMergeBase = _diffUtilsDeps.getMergeBase;
+    origWriteReviewAudit = _adversarialDeps.writeReviewAudit;
+    _diffUtilsDeps.isGitRefValid = mock(async () => true);
+    _diffUtilsDeps.getMergeBase = mock(async () => undefined);
+    _diffUtilsDeps.spawn = makeSpawnMock(STAT_OUTPUT);
+  });
+
+  afterEach(() => {
+    _diffUtilsDeps.spawn = origSpawn;
+    _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
+    _diffUtilsDeps.getMergeBase = origGetMergeBase;
+    _adversarialDeps.writeReviewAudit = origWriteReviewAudit;
+  });
+
+  test("op verify() and wrapper agree on blocking/advisory/demoted partition and coverage-gap tagging", async () => {
+    const llmResponse = JSON.stringify({ passed: false, findings: [RECURRING_FINDING] });
+
+    // --- Path A: op.verify() called directly with the same accepted finding + priors. ---
+    const opCtx = makeAdversarialVerifyCtx();
+    const opInput: AdversarialReviewInput = {
+      workdir: "/tmp/wd",
+      repoRoot: "/tmp/wd",
+      story: RECURRENCE_STORY,
+      adversarialConfig: RECURRENCE_CONFIG,
+      mode: "ref",
+      storyGitRef: "abc123",
+      blockingThreshold: "error",
+      priorAdversarialIterations: PRIOR_ITERATIONS,
+    };
+    const opParsed = {
+      passed: false,
+      findings: [RECURRING_FINDING],
+      normalizedFindings: [],
+      acDropped: [],
+      // biome-ignore lint/suspicious/noExplicitAny: minimal AdversarialLLMFinding shape
+    } as any;
+    const opResult = await adversarialReviewOp.verify!(opParsed, opInput, opCtx);
+
+    // --- Path B: full wrapper dispatch — runAdversarialReview() -> callOp -> adversarialReviewOp. ---
+    const agentManager = makeAgentManager(llmResponse);
+    const runtime = makeMockRuntime({ agentManager });
+    const wrapperResult = await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: RECURRENCE_STORY,
+      adversarialConfig: RECURRENCE_CONFIG,
+      agentManager,
+      runtime,
+      priorAdversarialIterations: PRIOR_ITERATIONS,
+    });
+
+    // Both paths classify the sole finding as demoted (n=3 >= maxBlockingRounds+1):
+    // nothing blocks, and the demoted finding surfaces as advisory.
+    expect(opResult.passed).toBe(true);
+    expect(opResult.normalizedFindings).toHaveLength(0);
+    expect(opResult.advisoryFindings).toHaveLength(1);
+
+    expect(wrapperResult.success).toBe(opResult.passed);
+    expect(wrapperResult.findings).toBeUndefined();
+    expect(wrapperResult.advisoryFindings).toHaveLength(opResult.advisoryFindings?.length ?? -1);
+
+    // Both paths tag the demoted finding with the coverage-gap marker (Fix: tagCoverageGap).
+    expect(opResult.advisoryFindings?.[0]?.meta?.coverageGap).toBe(true);
+    expect(wrapperResult.advisoryFindings?.[0]?.meta?.coverageGap).toBe(true);
+
+    // Same underlying finding identity in both paths.
+    expect(wrapperResult.advisoryFindings?.[0]?.message).toBe(opResult.advisoryFindings?.[0]?.message);
   });
 });

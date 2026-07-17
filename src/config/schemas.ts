@@ -267,6 +267,10 @@ export const NaxConfigSchema = z
         parallel: false,
         maxConcurrentSessions: 2,
         acRegroundOnDrop: true,
+        recurrenceDemotion: {
+          enabled: true,
+          maxBlockingRounds: 2,
+        },
         demandInspectionTrail: true,
         substantiation: {
           requote: true,

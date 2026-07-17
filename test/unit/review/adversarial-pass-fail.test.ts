@@ -460,6 +460,62 @@ describe("runAdversarialReview — all drops ac_quote_not_substring flips to pas
 });
 
 // ---------------------------------------------------------------------------
+// Recurrence demotion parity (Task 5): the wrapper must demote a blocking
+// finding that has recurred beyond maxBlockingRounds to advisory, mirroring
+// adversarialReviewOp.verify()'s classifyRecurrence behavior (Task 4).
+// ---------------------------------------------------------------------------
+
+describe("runAdversarialReview — recurrence demotion (parity with op verify())", () => {
+  beforeEach(() => {
+    saveAllDeps();
+    setupHappyPathDeps();
+  });
+
+  afterEach(restoreAllDeps);
+
+  test("recurring blocking finding beyond maxBlockingRounds demotes to advisory and the story passes", async () => {
+    const agentManager = makeAgentManager(FAILING_ERROR_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+    // Same fingerprint (file + category + issue prefix) appeared as an "error"
+    // in two prior iterations. With default maxBlockingRounds=2, the third
+    // sighting (n=3 >= maxBlockingRounds+1) demotes to advisory.
+    const priorAdversarialIterations = Array.from({ length: 2 }, (_v, i) => ({
+      iterationNum: i + 1,
+      findingsBefore: [],
+      fixesApplied: [],
+      outcome: "fixes-applied",
+      startedAt: "2026-07-17T00:00:00.000Z",
+      finishedAt: "2026-07-17T00:00:01.000Z",
+      findingsAfter: [
+        {
+          source: "adversarial-review",
+          severity: "error",
+          category: "error-path",
+          file: "src/log.ts",
+          message: "No error handling on login",
+        },
+      ],
+      // biome-ignore lint/suspicious/noExplicitAny: minimal Iteration/Finding shape for fingerprint matching
+    })) as any;
+
+    const result = await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
+      agentManager,
+      runtime,
+      priorAdversarialIterations,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.findings).toBeUndefined();
+    expect(result.advisoryFindings).toBeDefined();
+    expect(result.advisoryFindings!.some((f) => f.message === "No error handling on login")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // AC-5: Skip when no git ref
 // ---------------------------------------------------------------------------
 

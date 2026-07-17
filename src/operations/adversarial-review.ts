@@ -20,8 +20,10 @@ import {
   substantiateAdversarialFindings,
 } from "../review/finding-filters";
 import type { AcDroppedEntry, AcQuoteRejectionCode } from "../review/finding-filters";
+import { classifyRecurrence, tagCoverageGap } from "../review/recurrence-demotion";
 import { parseRequoteResponse } from "../review/requote-response";
 import type { AdversarialReviewConfig, SemanticStory } from "../review/types";
+import type { ResolvedTestPatterns } from "../test-runners";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { HopBodyContext, RunOperation } from "./types";
 
@@ -47,6 +49,8 @@ export interface AdversarialReviewInput {
   featureCtxBlock?: string;
   /** Prior adversarial review iterations to carry forward into this round (ADR-022 phase 5). */
   priorAdversarialIterations?: Iteration[];
+  /** Resolved test-file patterns (ADR-009) for the test-gap structural guard. */
+  resolvedTestPatterns?: ResolvedTestPatterns;
   /** Severity threshold from review config — drives the JSON-retry condensation prompt. */
   blockingThreshold?: "error" | "warning" | "info";
   /**
@@ -489,16 +493,43 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
 
     const { accepted, dropped } = filterByAcQuote(substantiated, input.story.acceptanceCriteria);
 
-    const blocking = accepted.filter((f) => isBlockingSeverity(f.severity, threshold));
-    const advisory = accepted.filter((f) => !isBlockingSeverity(f.severity, threshold));
-    const passed = parsed.passed && blocking.length === 0;
+    const recurrenceCfg = input.adversarialConfig.recurrenceDemotion ?? { enabled: true, maxBlockingRounds: 2 };
+    const patterns = input.resolvedTestPatterns?.regex ?? [];
+    const testFileMatch = (file: string): boolean => patterns.some((re) => re.test(file));
+
+    const { blocking, advisory, demoted } = classifyRecurrence(
+      accepted,
+      input.priorAdversarialIterations ?? [],
+      recurrenceCfg,
+      testFileMatch,
+      threshold,
+    );
+
+    for (const f of demoted) {
+      getSafeLogger()?.info("review", "Adversarial finding demoted to advisory (recurrence coverage-gap)", {
+        storyId: input.story.id,
+        event: "review.adversarial.recurrence_demoted",
+        file: f.file,
+        category: f.category,
+      });
+    }
+
+    // Pass when nothing blocks AND either the model passed, or the classifier
+    // reclassified a blocking-severity finding to non-blocking (recurrence-demoted
+    // OR oscillation-suppressed to advisory). Preserves fail-closed when the model
+    // fails with no blocking-severity findings at all.
+    const hadBlockingSeverity = accepted.some((f) => isBlockingSeverity(f.severity, threshold));
+    const passed = blocking.length === 0 && (parsed.passed || hadBlockingSeverity);
 
     return {
       ...parsed,
       passed,
       findings: accepted,
       normalizedFindings: toAdversarialReviewFindings(blocking),
-      advisoryFindings: toAdversarialReviewFindings(advisory),
+      advisoryFindings: [
+        ...toAdversarialReviewFindings(advisory),
+        ...tagCoverageGap(toAdversarialReviewFindings(demoted)),
+      ],
       acDropped: dropped,
     };
   },

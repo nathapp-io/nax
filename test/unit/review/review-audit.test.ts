@@ -1,6 +1,13 @@
 import { describe, expect, test, beforeEach } from "bun:test";
-import { ReviewAuditor, createNoOpReviewAuditor, writeReviewAudit, _reviewAuditDeps } from "../../../src/review/review-audit";
+import {
+  ReviewAuditor,
+  createNoOpReviewAuditor,
+  writeReviewAudit,
+  toPersistedEntry,
+  _reviewAuditDeps,
+} from "../../../src/review/review-audit";
 import type { ReviewAuditEntry } from "../../../src/review/review-audit";
+import { NAX_VERSION, NAX_COMMIT } from "@/version";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -369,5 +376,31 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
   test("no-op auditor returns an empty advisory findings list", () => {
     const auditor = createNoOpReviewAuditor();
     expect(auditor.getAdvisoryFindings()).toEqual([]);
+  });
+});
+
+describe("toPersistedEntry", () => {
+  const base: ReviewAuditEntry = {
+    reviewer: "adversarial",
+    sessionName: "s",
+    workdir: "/tmp/workdir",
+    parsed: true,
+    result: { passed: false, findings: [] },
+  };
+
+  test("stamps naxVersion and naxCommit", () => {
+    const json = JSON.parse(toPersistedEntry(base, 1_700_000_000_000));
+    expect(json.naxVersion).toBe(NAX_VERSION);
+    expect(json.naxCommit).toBe(NAX_COMMIT);
+  });
+
+  test("resolves blockingThreshold to 'error' when unset (never null)", () => {
+    const json = JSON.parse(toPersistedEntry(base, 1_700_000_000_000));
+    expect(json.blockingThreshold).toBe("error");
+  });
+
+  test("preserves an explicit blockingThreshold", () => {
+    const json = JSON.parse(toPersistedEntry({ ...base, blockingThreshold: "warning" }, 1_700_000_000_000));
+    expect(json.blockingThreshold).toBe("warning");
   });
 });
