@@ -251,64 +251,56 @@ describe("AC3: runRectification increments rectificationOscillations on regresse
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. decideStageAction — circuit-breaker pause routing (AC4-AC12)
+//
+// The breaker is read by `decideStageAction` and written by
+// `runRectification`. Tests in this section drive the count through the
+// real increment site (mocking `_storyOrchestratorDeps.runFixCycle` to
+// return N `regressed-different-source` iterations, then running the
+// orchestrator plan) so the seam between the writer and reader is
+// exercised end-to-end. The runtime map returned by `createRuntime` is
+// the same instance the increment site writes to and `decideStageAction`
+// reads from — a wiring regression (e.g. one of them substituting a
+// different store) would turn these tests red.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeBreakerCtx(overrides: {
-  storyId?: string;
-  enabled?: boolean;
-  maxOscillations?: number;
-  interaction?: { send: (req: { type: string }) => Promise<void> };
-  includeRuntime?: boolean;
-  omitOscillations?: boolean;
-} = {}): PipelineContext {
+/**
+ * AC9-specific factory: a runtime whose `rectificationOscillations`
+ * property is absent (mimics the post-run.ts fail-open path when the
+ * runtime doesn't carry the map).
+ */
+function buildRuntimeWithoutOscillations(): PipelineContext {
+  const sharedRuntime = makeTestRuntime();
   const ctx = makeTestContext({
-    story: { id: overrides.storyId ?? "US-cb-1", title: "CB test" } as never,
+    story: { id: "US-cb-9", title: "CB test" } as never,
   });
-  // Inject a runtime with the oscillation store — production creates one
-  // via createRuntime; tests bypass it so we set the minimum surface needed.
-  if (overrides.includeRuntime !== false) {
-    const store = overrides.omitOscillations
-      ? undefined
-      : new Map<string, number>([[overrides.storyId ?? "US-cb-1", 2]]);
-    Object.defineProperty(ctx, "runtime", {
-      value: {
-        rectificationOscillations: store,
-        agentManager: ctx.agentManager,
-      } as never,
-      configurable: true,
-    });
-  } else {
-    Object.defineProperty(ctx, "runtime", {
-      value: { rectificationOscillations: undefined } as never,
-      configurable: true,
-    });
-  }
-
-  // Inject the conflictDetection config the breaker reads.
+  Object.defineProperty(ctx, "runtime", {
+    value: sharedRuntime,
+    configurable: true,
+  });
+  // Strip the property the runtime would normally expose.
+  Object.defineProperty(sharedRuntime, "rectificationOscillations", {
+    value: undefined,
+    configurable: true,
+  });
   ctx.config = {
     ...ctx.config,
     review: {
       ...ctx.config.review,
-      conflictDetection: {
-        enabled: overrides.enabled ?? true,
-        maxOscillations: overrides.maxOscillations ?? 2,
-      },
+      conflictDetection: { enabled: true, maxOscillations: 2 },
     },
   } as typeof ctx.config;
-
-  if (overrides.interaction) {
-    Object.defineProperty(ctx, "interaction", {
-      value: overrides.interaction,
-      configurable: true,
-    });
-  }
-
   return ctx;
 }
 
 let origAutoCommit: typeof _postRunDeps.autoCommitIfDirty;
 let origDetect: typeof _postRunDeps.detectMergeConflict;
 let origFailClose: typeof _postRunDeps.failAndClose;
+const createdRuntimes: NaxRuntime[] = [];
+
+function trackRuntime(r: NaxRuntime): NaxRuntime {
+  createdRuntimes.push(r);
+  return r;
+}
 
 beforeEach(() => {
   origAutoCommit = _postRunDeps.autoCommitIfDirty;
@@ -319,15 +311,58 @@ beforeEach(() => {
   _postRunDeps.failAndClose = mock(async () => undefined) as typeof _postRunDeps.failAndClose;
 });
 
-afterEach(() => {
+afterEach(async () => {
   _postRunDeps.autoCommitIfDirty = origAutoCommit;
   _postRunDeps.detectMergeConflict = origDetect;
   _postRunDeps.failAndClose = origFailClose;
+  // Close any runtimes created via `trackRuntime` /
+  // `buildRuntimeWithoutOscillations` so the test-helper's existing
+  // close-tracking doesn't try to close a runtime we already replaced
+  // (or vice versa).
+  const toClose = createdRuntimes.splice(0, createdRuntimes.length);
+  await Promise.allSettled(toClose.map((r) => r.close()));
 });
 
 describe("AC4: decideStageAction returns action === 'pause' when the breaker threshold is met", () => {
   test("enabled, maxOscillations=2, count=2 → pause", async () => {
-    const ctx = makeBreakerCtx({ enabled: true, maxOscillations: 2, storyId: "US-cb-1" });
+    const sharedRuntime = makeTestRuntime();
+    trackRuntime(sharedRuntime);
+    const callCtx: CallContext = {
+      runtime: sharedRuntime,
+      packageView: sharedRuntime.packages.repo(),
+      packageDir: "/tmp",
+      agentName: "claude",
+      storyId: "US-cb-1",
+    } as CallContext;
+    const iterations: Iteration[] = [
+      makeIteration(1, "regressed-different-source"),
+      makeIteration(2, "regressed-different-source"),
+    ];
+    _storyOrchestratorDeps.runFixCycle = mock(
+      async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
+        iterations,
+        finalFindings: [LINT_FINDING],
+        exitReason: "max-attempts-total" as FixCycleExitReason,
+        costUsd: 0,
+      }),
+    ) as typeof _storyOrchestratorDeps.runFixCycle;
+    await buildRectificationPlan(callCtx).run();
+
+    const ctx = makeTestContext({
+      story: { id: "US-cb-1", title: "CB test" } as never,
+    });
+    Object.defineProperty(ctx, "runtime", {
+      value: sharedRuntime,
+      configurable: true,
+    });
+    ctx.config = {
+      ...ctx.config,
+      review: {
+        ...ctx.config.review,
+        conflictDetection: { enabled: true, maxOscillations: 2 },
+      },
+    } as typeof ctx.config;
+
     const planResult = makePlanResult({
       success: false,
       rectificationExhausted: true,
@@ -342,7 +377,44 @@ describe("AC4: decideStageAction returns action === 'pause' when the breaker thr
 
 describe("AC5/AC6: pause reason includes the count and an oscillation substring", () => {
   test("reason contains the count '2' and a case-insensitive 'oscillat' substring", async () => {
-    const ctx = makeBreakerCtx({ enabled: true, maxOscillations: 2, storyId: "US-cb-2" });
+    const sharedRuntime = makeTestRuntime();
+    trackRuntime(sharedRuntime);
+    const callCtx: CallContext = {
+      runtime: sharedRuntime,
+      packageView: sharedRuntime.packages.repo(),
+      packageDir: "/tmp",
+      agentName: "claude",
+      storyId: "US-cb-2",
+    } as CallContext;
+    const iterations: Iteration[] = [
+      makeIteration(1, "regressed-different-source"),
+      makeIteration(2, "regressed-different-source"),
+    ];
+    _storyOrchestratorDeps.runFixCycle = mock(
+      async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
+        iterations,
+        finalFindings: [LINT_FINDING],
+        exitReason: "max-attempts-total" as FixCycleExitReason,
+        costUsd: 0,
+      }),
+    ) as typeof _storyOrchestratorDeps.runFixCycle;
+    await buildRectificationPlan(callCtx).run();
+
+    const ctx = makeTestContext({
+      story: { id: "US-cb-2", title: "CB test" } as never,
+    });
+    Object.defineProperty(ctx, "runtime", {
+      value: sharedRuntime,
+      configurable: true,
+    });
+    ctx.config = {
+      ...ctx.config,
+      review: {
+        ...ctx.config.review,
+        conflictDetection: { enabled: true, maxOscillations: 2 },
+      },
+    } as typeof ctx.config;
+
     const planResult = makePlanResult({
       success: false,
       rectificationExhausted: true,
@@ -362,12 +434,43 @@ describe("AC5/AC6: pause reason includes the count and an oscillation substring"
 
 describe("AC7: count below maxOscillations escalates", () => {
   test("count=1, maxOscillations=2 → escalate (not pause)", async () => {
-    const storyId = "US-cb-3";
-    const ctx = makeBreakerCtx({ enabled: true, maxOscillations: 2, storyId });
-    (ctx.runtime as { rectificationOscillations: Map<string, number> }).rectificationOscillations.set(
-      storyId,
-      1,
-    );
+    const sharedRuntime = makeTestRuntime();
+    trackRuntime(sharedRuntime);
+    const callCtx: CallContext = {
+      runtime: sharedRuntime,
+      packageView: sharedRuntime.packages.repo(),
+      packageDir: "/tmp",
+      agentName: "claude",
+      storyId: "US-cb-3",
+    } as CallContext;
+    // One regressed-different-source iteration produces a count of 1.
+    const iterations: Iteration[] = [makeIteration(1, "regressed-different-source")];
+    _storyOrchestratorDeps.runFixCycle = mock(
+      async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
+        iterations,
+        finalFindings: [LINT_FINDING],
+        exitReason: "max-attempts-total" as FixCycleExitReason,
+        costUsd: 0,
+      }),
+    ) as typeof _storyOrchestratorDeps.runFixCycle;
+    await buildRectificationPlan(callCtx).run();
+    expect(getOscillations(sharedRuntime.rectificationOscillations, "US-cb-3")).toBe(1);
+
+    const ctx = makeTestContext({
+      story: { id: "US-cb-3", title: "CB test" } as never,
+    });
+    Object.defineProperty(ctx, "runtime", {
+      value: sharedRuntime,
+      configurable: true,
+    });
+    ctx.config = {
+      ...ctx.config,
+      review: {
+        ...ctx.config.review,
+        conflictDetection: { enabled: true, maxOscillations: 2 },
+      },
+    } as typeof ctx.config;
+
     const planResult = makePlanResult({
       success: false,
       rectificationExhausted: true,
@@ -382,7 +485,44 @@ describe("AC7: count below maxOscillations escalates", () => {
 
 describe("AC8: conflictDetection.enabled === false escalates even when count >= maxOscillations", () => {
   test("count=2, maxOscillations=2, enabled=false → escalate", async () => {
-    const ctx = makeBreakerCtx({ enabled: false, maxOscillations: 2, storyId: "US-cb-4" });
+    const sharedRuntime = makeTestRuntime();
+    trackRuntime(sharedRuntime);
+    const callCtx: CallContext = {
+      runtime: sharedRuntime,
+      packageView: sharedRuntime.packages.repo(),
+      packageDir: "/tmp",
+      agentName: "claude",
+      storyId: "US-cb-4",
+    } as CallContext;
+    const iterations: Iteration[] = [
+      makeIteration(1, "regressed-different-source"),
+      makeIteration(2, "regressed-different-source"),
+    ];
+    _storyOrchestratorDeps.runFixCycle = mock(
+      async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
+        iterations,
+        finalFindings: [LINT_FINDING],
+        exitReason: "max-attempts-total" as FixCycleExitReason,
+        costUsd: 0,
+      }),
+    ) as typeof _storyOrchestratorDeps.runFixCycle;
+    await buildRectificationPlan(callCtx).run();
+
+    const ctx = makeTestContext({
+      story: { id: "US-cb-4", title: "CB test" } as never,
+    });
+    Object.defineProperty(ctx, "runtime", {
+      value: sharedRuntime,
+      configurable: true,
+    });
+    ctx.config = {
+      ...ctx.config,
+      review: {
+        ...ctx.config.review,
+        conflictDetection: { enabled: false, maxOscillations: 2 },
+      },
+    } as typeof ctx.config;
+
     const planResult = makePlanResult({
       success: false,
       rectificationExhausted: true,
@@ -397,7 +537,9 @@ describe("AC8: conflictDetection.enabled === false escalates even when count >= 
 
 describe("AC9: missing runtime.rectificationOscillations → escalate", () => {
   test("rectificationOscillations absent on ctx.runtime → escalate", async () => {
-    const ctx = makeBreakerCtx({ enabled: true, maxOscillations: 2, storyId: "US-cb-5", omitOscillations: true });
+    const ctx = buildRuntimeWithoutOscillations();
+    trackRuntime(ctx.runtime as NaxRuntime);
+
     const planResult = makePlanResult({
       success: false,
       rectificationExhausted: true,
@@ -412,12 +554,46 @@ describe("AC9: missing runtime.rectificationOscillations → escalate", () => {
 
 describe("AC10: count=0 on a normal single-source unfixable finding escalates", () => {
   test("count=0 → escalate (not pause)", async () => {
-    const storyId = "US-cb-6";
-    const ctx = makeBreakerCtx({ enabled: true, maxOscillations: 2, storyId });
-    (ctx.runtime as { rectificationOscillations: Map<string, number> }).rectificationOscillations.set(
-      storyId,
-      0,
-    );
+    // No oscillation iterations run, so the count stays at 0. The runtime
+    // map is present but empty for this story — a "normal" non-oscillating
+    // failure.
+    const sharedRuntime = makeTestRuntime();
+    trackRuntime(sharedRuntime);
+    const callCtx: CallContext = {
+      runtime: sharedRuntime,
+      packageView: sharedRuntime.packages.repo(),
+      packageDir: "/tmp",
+      agentName: "claude",
+      storyId: "US-cb-6",
+    } as CallContext;
+    // No regressed-different-source — only `unchanged` and `partial`.
+    const iterations: Iteration[] = [makeIteration(1, "unchanged"), makeIteration(2, "partial")];
+    _storyOrchestratorDeps.runFixCycle = mock(
+      async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
+        iterations,
+        finalFindings: [LINT_FINDING],
+        exitReason: "max-attempts-total" as FixCycleExitReason,
+        costUsd: 0,
+      }),
+    ) as typeof _storyOrchestratorDeps.runFixCycle;
+    await buildRectificationPlan(callCtx).run();
+    expect(getOscillations(sharedRuntime.rectificationOscillations, "US-cb-6")).toBe(0);
+
+    const ctx = makeTestContext({
+      story: { id: "US-cb-6", title: "CB test" } as never,
+    });
+    Object.defineProperty(ctx, "runtime", {
+      value: sharedRuntime,
+      configurable: true,
+    });
+    ctx.config = {
+      ...ctx.config,
+      review: {
+        ...ctx.config.review,
+        conflictDetection: { enabled: true, maxOscillations: 2 },
+      },
+    } as typeof ctx.config;
+
     const planResult = makePlanResult({
       success: false,
       rectificationExhausted: true,
@@ -432,13 +608,49 @@ describe("AC10: count=0 on a normal single-source unfixable finding escalates", 
 
 describe("AC11: pause emits a notify through the injected interaction channel", () => {
   test("the injected interaction channel receives a request with type === 'notify'", async () => {
-    const sent: Array<{ type: string }> = [];
-    const ctx = makeBreakerCtx({
-      enabled: true,
-      maxOscillations: 2,
+    const sharedRuntime = makeTestRuntime();
+    trackRuntime(sharedRuntime);
+    const callCtx: CallContext = {
+      runtime: sharedRuntime,
+      packageView: sharedRuntime.packages.repo(),
+      packageDir: "/tmp",
+      agentName: "claude",
       storyId: "US-cb-7",
-      interaction: { send: async (req) => { sent.push({ type: req.type }); } },
+    } as CallContext;
+    const iterations: Iteration[] = [
+      makeIteration(1, "regressed-different-source"),
+      makeIteration(2, "regressed-different-source"),
+    ];
+    _storyOrchestratorDeps.runFixCycle = mock(
+      async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
+        iterations,
+        finalFindings: [LINT_FINDING],
+        exitReason: "max-attempts-total" as FixCycleExitReason,
+        costUsd: 0,
+      }),
+    ) as typeof _storyOrchestratorDeps.runFixCycle;
+    await buildRectificationPlan(callCtx).run();
+
+    const sent: Array<{ type: string }> = [];
+    const ctx = makeTestContext({
+      story: { id: "US-cb-7", title: "CB test" } as never,
     });
+    Object.defineProperty(ctx, "runtime", {
+      value: sharedRuntime,
+      configurable: true,
+    });
+    Object.defineProperty(ctx, "interaction", {
+      value: { send: async (req: { type: string }) => { sent.push({ type: req.type }); } },
+      configurable: true,
+    });
+    ctx.config = {
+      ...ctx.config,
+      review: {
+        ...ctx.config.review,
+        conflictDetection: { enabled: true, maxOscillations: 2 },
+      },
+    } as typeof ctx.config;
+
     const planResult = makePlanResult({
       success: false,
       rectificationExhausted: true,
@@ -455,16 +667,52 @@ describe("AC11: pause emits a notify through the injected interaction channel", 
 
 describe("AC12: interaction.send() throwing does not abort the pause", () => {
   test("interaction throws → still returns action === 'pause'", async () => {
-    const ctx = makeBreakerCtx({
-      enabled: true,
-      maxOscillations: 2,
+    const sharedRuntime = makeTestRuntime();
+    trackRuntime(sharedRuntime);
+    const callCtx: CallContext = {
+      runtime: sharedRuntime,
+      packageView: sharedRuntime.packages.repo(),
+      packageDir: "/tmp",
+      agentName: "claude",
       storyId: "US-cb-8",
-      interaction: {
+    } as CallContext;
+    const iterations: Iteration[] = [
+      makeIteration(1, "regressed-different-source"),
+      makeIteration(2, "regressed-different-source"),
+    ];
+    _storyOrchestratorDeps.runFixCycle = mock(
+      async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
+        iterations,
+        finalFindings: [LINT_FINDING],
+        exitReason: "max-attempts-total" as FixCycleExitReason,
+        costUsd: 0,
+      }),
+    ) as typeof _storyOrchestratorDeps.runFixCycle;
+    await buildRectificationPlan(callCtx).run();
+
+    const ctx = makeTestContext({
+      story: { id: "US-cb-8", title: "CB test" } as never,
+    });
+    Object.defineProperty(ctx, "runtime", {
+      value: sharedRuntime,
+      configurable: true,
+    });
+    Object.defineProperty(ctx, "interaction", {
+      value: {
         send: async () => {
           throw new Error("interaction unavailable");
         },
       },
+      configurable: true,
     });
+    ctx.config = {
+      ...ctx.config,
+      review: {
+        ...ctx.config.review,
+        conflictDetection: { enabled: true, maxOscillations: 2 },
+      },
+    } as typeof ctx.config;
+
     const planResult = makePlanResult({
       success: false,
       rectificationExhausted: true,
