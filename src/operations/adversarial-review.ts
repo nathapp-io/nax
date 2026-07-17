@@ -514,11 +514,12 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
       });
     }
 
-    // Fail-closed by default (parsed.passed preserves the model's raw verdict),
-    // but a recurrence demotion is an explicit nax-side override of that verdict
-    // for this specific finding — if demotion cleared out everything that would
-    // otherwise block, the phase passes even though the model itself said false.
-    const passed = blocking.length === 0 && (parsed.passed || demoted.length > 0);
+    // Pass when nothing blocks AND either the model passed, or the classifier
+    // reclassified a blocking-severity finding to non-blocking (recurrence-demoted
+    // OR oscillation-suppressed to advisory). Preserves fail-closed when the model
+    // fails with no blocking-severity findings at all.
+    const hadBlockingSeverity = accepted.some((f) => isBlockingSeverity(f.severity, threshold));
+    const passed = blocking.length === 0 && (parsed.passed || hadBlockingSeverity);
 
     return {
       ...parsed,
