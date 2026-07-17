@@ -3,7 +3,7 @@
   "feature": "rectification-oscillation-circuit-breaker",
   "branchName": "feat/rectification-oscillation-circuit-breaker",
   "createdAt": "2026-07-17T10:06:12Z",
-  "updatedAt": "2026-07-17T10:10:13.425Z",
+  "updatedAt": "2026-07-17T10:50:26.521Z",
   "userStories": [
     {
       "id": "US-001",
@@ -29,8 +29,8 @@
         "config"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -42,7 +42,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/runtime/index.ts",
@@ -54,7 +56,11 @@
       "expectedFiles": [
         "src/execution/oscillation-store.ts",
         "test/unit/execution/oscillation-store.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0d67c845153b6afe187af577904c61bfe8fd84e3"
     },
     {
       "id": "US-002",
@@ -97,7 +103,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/oscillation-store.ts",
@@ -108,7 +116,11 @@
       ],
       "expectedFiles": [
         "test/unit/execution/rectification-oscillation-circuit-breaker.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3b2335fa29ad2248e6937c8be80c40ce6adcb772"
     }
   ],
   "analysis": "This is an enhancement to the existing TypeScript/Bun execution pipeline, not a greenfield build. The rectification signal already exists: `classifyOutcome` records `Iteration.outcome`, and `runRectification` receives the completed `FixCycleResult` immediately after `runFixCycle` at `src/execution/story-orchestrator/rectification.ts:319`. The increment belongs there so one stable `ctx.runtime` Map survives reconstructed per-attempt pipeline contexts and therefore accumulates across tier escalations. The live `runRectification` signature receives `CallContext`, which exposes `ctx.storyId`; despite the prose spec’s `ctx.story.id` shorthand, implementation and tests must use `ctx.storyId`. The halt seam is `decideStageAction` at `src/execution/post-run.ts:336`: its rectification-exhausted branch first preserves the existing advisory-only and mechanical-only continue exits, then currently cleans up and returns `escalate` for blocking, non-mechanical findings. The breaker must run only in that latter branch, preserving TDD rollback routing and all non-oscillating behavior. Its pause must reuse the existing best-effort notify shape used by `pauseReason` and `needsHumanReview`, because `StageAction.pause` already propagates through the pipeline result handler to paused-story state, events, TUI/reporters, and resume prompts.\n\n`NaxRuntime` already owns comparable run-scoped per-story state via `adversarialIterations` in `src/runtime/index.ts:133`, initialized beside `quarantineMemo` at `src/runtime/index.ts:254`; add the new Map there with no special close teardown. `src/review/adversarial-iteration-store.ts` demonstrates the small synchronous Map-store convention. The new execution-owned store must be barrel-exported from `src/execution/index.ts`; it has no I/O or await boundary, so JS event-loop mutation is sufficient and story IDs isolate parallel workers. `ReviewConfigSchema` in `src/config/schemas-review.ts:181` already places `review.adversarial` after shared review settings, and `AdversarialReviewConfigSchema.recurrenceDemotion` at `src/config/schemas-review.ts:101` is the exact nested-default pattern to mirror for the new sibling `review.conflictDetection`. Schema-derived `DEFAULT_CONFIG` means no hand-maintained defaults migration is required.\n\nPrimary existing tests to extend are `test/unit/runtime/runtime.test.ts` for freshly-created runtime state, `test/unit/config/schemas-review.test.ts` for default/override parsing, `test/unit/execution/rectification-overrides.test.ts` for a focused `runRectification` seam, and `test/unit/execution/post-run-inspection-exhaustion.test.ts` for the blocking exhaustion routing. Use the project’s existing dependency seams (`_storyOrchestratorDeps.runFixCycle`, `makeTestContext`, and `_postRunDeps`) rather than real agent sessions. Compatibility risk is accidentally pausing advisory, mechanical-only, disabled, sub-threshold, missing-runtime, or TDD-isolation outcomes; order the new check after the existing blocking/mechanical gates and make it fail open when config/runtime state is unavailable. No persisted data, external API, StoryStatus, FailureCategory, migration, or cleanup is needed; disabling `review.conflictDetection` restores the present escalation path.",
