@@ -276,4 +276,6 @@ export interface ReviewConfig {
   semantic?: SemanticReviewConfig;
   /** Adversarial review configuration (when 'adversarial' is in checks) */
   adversarial?: AdversarialReviewConfig;
+  /** Parsed oscillation circuit-breaker configuration. */
+  conflictDetection: { enabled: boolean; maxOscillations: number };
 }

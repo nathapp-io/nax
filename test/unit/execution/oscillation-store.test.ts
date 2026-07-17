@@ -23,6 +23,18 @@ describe("oscillation store", () => {
     expect(recordOscillations(store, "US-1", 2)).toBe(3);
   });
 
+  test.each([
+    [0, "zero"],
+    [-1, "negative"],
+    [Number.NaN, "NaN"],
+    [Number.POSITIVE_INFINITY, "infinity"],
+    [Number.MAX_SAFE_INTEGER + 1, "unsafe integer"],
+  ])("rejects %s %s delta", (delta) => {
+    const store = new Map<string, number>();
+    expect(() => recordOscillations(store, "US-1", delta)).toThrow();
+    expect(store.has("US-1")).toBe(false);
+  });
+
   test("keeps totals isolated by story", () => {
     const store = new Map<string, number>();
     recordOscillations(store, "A", 2);
