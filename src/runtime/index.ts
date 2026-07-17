@@ -131,6 +131,8 @@ export interface NaxRuntime {
   readonly quarantineMemo: QuarantineMemo;
   /** Run-scoped per-story adversarial-review round history (ADR-022 carry-forward + recurrence-demotion). Keyed by storyId. */
   readonly adversarialIterations: Map<string, Iteration[]>;
+  /** Run-scoped per-story rectification oscillation totals. */
+  readonly rectificationOscillations: Map<string, number>;
   close(): Promise<void>;
 }
 
@@ -252,6 +254,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const logger = getLogger();
   const quarantineMemo = createQuarantineMemo();
   const adversarialIterations = new Map<string, Iteration[]>();
+  const rectificationOscillations = new Map<string, number>();
 
   let closed = false;
 
@@ -276,6 +279,8 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     logger,
     quarantineMemo,
     adversarialIterations,
+    rectificationOscillations,
+
     get signal() {
       return controller.signal;
     },

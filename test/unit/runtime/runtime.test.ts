@@ -35,6 +35,12 @@ describe("createRuntime", () => {
     expect(rt.pidRegistry).toBeDefined();
   });
 
+  test("runtime initializes an empty rectification oscillation store", () => {
+    const rt = makeRuntime(DEFAULT_CONFIG, "/tmp/test");
+    expect(rt.rectificationOscillations).toBeInstanceOf(Map);
+    expect(rt.rectificationOscillations.size).toBe(0);
+  });
+
   test("packages.repo() returns root-equivalent view", () => {
     const rt = makeRuntime(DEFAULT_CONFIG, "/tmp/test");
     const view = rt.packages.repo();

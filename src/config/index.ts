@@ -52,7 +52,7 @@ export type { AgentRoutingProfile, AgentRoutingConfig } from "./schemas-infra";
 export { AgentRoutingProfileSchema, AgentRoutingConfigSchema } from "./schemas-infra";
 export { DebateConfigSchema } from "./schemas-debate";
 export { TddConfigSchema, AutoRouteConfigSchema } from "./schemas-execution";
-export { AdversarialReviewConfigSchema } from "./schemas-review";
+export { AdversarialReviewConfigSchema, ReviewConfigSchema } from "./schemas-review";
 export { loadConfig, loadConfigForWorkdir, loadPackageOverride, findProjectDir, globalConfigPath } from "./loader";
 export { mergePackageConfig } from "./merge";
 export { validateConfig, type ValidationResult } from "./validate"; // @deprecated: Use NaxConfigSchema.safeParse() instead
