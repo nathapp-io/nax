@@ -21,6 +21,7 @@ import {
   applyPostRunInspection,
   countOscillationOutcomes,
   decideStageAction,
+  getOscillations,
   StoryOrchestratorBuilder,
 } from "@/execution";
 import type { FixCycle, FixCycleContext, FixCycleExitReason, Iteration } from "@/findings/cycle-types";
@@ -181,7 +182,7 @@ describe("AC3: runRectification increments rectificationOscillations on regresse
     const ctx = makeCallCtx(storyId);
     const store = ctx.runtime.rectificationOscillations;
     expect(store).toBeInstanceOf(Map);
-    expect(store.get(storyId) ?? 0).toBe(0);
+    expect(getOscillations(store, storyId)).toBe(0);
 
     _storyOrchestratorDeps.runFixCycle = mock(
       async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => {
@@ -197,7 +198,7 @@ describe("AC3: runRectification increments rectificationOscillations on regresse
     const plan = buildRectificationPlan(ctx);
     await plan.run();
 
-    expect(store.get(storyId)).toBe(1);
+    expect(getOscillations(store, storyId)).toBe(1);
   });
 
   test("two regressed-different-source iterations in a single cycle increase the count by 2", async () => {
@@ -222,7 +223,7 @@ describe("AC3: runRectification increments rectificationOscillations on regresse
     const plan = buildRectificationPlan(ctx);
     await plan.run();
 
-    expect(store.get(storyId)).toBe(2);
+    expect(getOscillations(store, storyId)).toBe(2);
   });
 
   test("non-oscillating outcomes do not increase the per-story count", async () => {
@@ -244,7 +245,7 @@ describe("AC3: runRectification increments rectificationOscillations on regresse
     const plan = buildRectificationPlan(ctx);
     await plan.run();
 
-    expect(store.get(storyId) ?? 0).toBe(0);
+    expect(getOscillations(store, storyId)).toBe(0);
   });
 });
 
