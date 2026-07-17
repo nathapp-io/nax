@@ -16,6 +16,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { getSafeLogger } from "../logger";
 import { findNaxProjectRoot } from "../utils/nax-project-root";
+import { NAX_VERSION, NAX_COMMIT } from "../version";
 import type { AdversarialAcceptAnalysis, AdversarialDropAnalysis } from "./ac-structural-counterfactual";
 
 export interface ReviewAuditEntry {
@@ -64,6 +65,9 @@ export interface ReviewAuditEntry {
   adversarialDropAnalysis?: AdversarialDropAnalysis[];
   /** Issue #986 — per-accept counterfactual analysis (blocking findings only). Adversarial only. */
   adversarialAcceptAnalysis?: AdversarialAcceptAnalysis[];
+  /** nax version + short commit that produced this record (audit provenance). */
+  naxVersion?: string;
+  naxCommit?: string;
 }
 
 export interface ReviewAuditDispatch {
@@ -136,7 +140,7 @@ function fallbackSessionName(entry: ReviewAuditDecision): string {
   return `review-${entry.reviewer}-${entry.storyId ?? "unknown"}`;
 }
 
-function toPersistedEntry(entry: ReviewAuditEntry, epochMs: number): string {
+export function toPersistedEntry(entry: ReviewAuditEntry, epochMs: number): string {
   return JSON.stringify(
     {
       timestamp: new Date(epochMs).toISOString(),
@@ -152,7 +156,9 @@ function toPersistedEntry(entry: ReviewAuditEntry, epochMs: number): string {
       ...(entry.parsed ? {} : { looksLikeFail: entry.looksLikeFail ?? false }),
       failOpen: entry.failOpen ?? false,
       passed: entry.passed ?? entry.result?.passed ?? null,
-      blockingThreshold: entry.blockingThreshold ?? null,
+      naxVersion: entry.naxVersion ?? NAX_VERSION,
+      naxCommit: entry.naxCommit ?? NAX_COMMIT,
+      blockingThreshold: entry.blockingThreshold ?? "error",
       result: entry.result,
       advisoryFindings: entry.advisoryFindings ?? null,
       // Issue #986 — adversarial-only structural counterfactual telemetry.
