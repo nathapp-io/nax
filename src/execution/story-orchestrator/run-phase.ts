@@ -115,6 +115,7 @@ export async function refreshReviewInputForDispatch(opName: string, input: unkno
       testGlobs: fresh.testGlobs,
       refExcludePatterns: fresh.refExcludePatterns,
       storyGitRef: fresh.effectiveRef ?? advInput.storyGitRef,
+      resolvedTestPatterns: _refresh.resolvedTestPatterns,
     };
   } catch (err) {
     getSafeLogger()?.warn("story-orchestrator", "review input refresh failed — dispatching with stale input", {

@@ -250,6 +250,53 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
     });
   });
 
+  test("recurrence: an error finding recurring beyond maxBlockingRounds demotes to advisory (passes)", async () => {
+    // acQuote must be a substring of the indexed AC and contain a locus keyword
+    // (file basename or an issue token) per validateAcQuote's locus check.
+    const AC_TEXT = "store window expiry must be handled atomically";
+    const OBSERVED = "db.rawQuery";
+    const finding = {
+      severity: "error",
+      category: "assumption",
+      file: "lib/store.ts",
+      line: 1,
+      issue: "window expiry non-atomic",
+      suggestion: "x",
+      acQuote: AC_TEXT,
+      acIndex: 1,
+      verifiedBy: { file: "lib/store.ts", observed: OBSERVED },
+    };
+    const priors = Array.from({ length: 2 }, (_v, i) => ({
+      iterationNum: i + 1,
+      findingsBefore: [],
+      fixesApplied: [],
+      outcome: "fixes-applied",
+      startedAt: "2026-07-17T00:00:00.000Z",
+      finishedAt: "2026-07-17T00:00:01.000Z",
+      findingsAfter: [
+        {
+          source: "adversarial-review",
+          severity: "error",
+          category: "assumption",
+          file: "lib/store.ts",
+          message: "window expiry non-atomic",
+        },
+      ],
+    }));
+    const ctx = makeVerifyCtx();
+    const input: AdversarialReviewInput = {
+      ...BASE_INPUT,
+      story: { ...STORY, acceptanceCriteria: [AC_TEXT] },
+      priorAdversarialIterations: priors as any,
+      resolvedTestPatterns: { regex: [/\.spec\.ts$/] } as any,
+    };
+    const parsed = makeOutput({ passed: false, findings: [finding], normalizedFindings: [], acDropped: [] });
+    const out = await adversarialReviewOp.verify!(parsed, input, ctx);
+    expect(out.passed).toBe(true);
+    expect(out.normalizedFindings.length).toBe(0);
+    expect((out.advisoryFindings ?? []).length).toBe(1);
+  });
+
   test("dropped findings are tracked in acDropped on output", async () => {
     return withTempDir(async (workdir) => {
       const FILE_CONTENT = "function login(u, p) { return db.rawQuery(u + p); }\n";

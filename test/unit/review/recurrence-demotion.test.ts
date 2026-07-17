@@ -4,7 +4,7 @@ import {
   normalizeIssueText,
   countPriorAppearances,
   classifyRecurrence,
-} from "@/review/recurrence-demotion";
+} from "@/review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import type { Iteration } from "@/findings";
 

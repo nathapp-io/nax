@@ -1,5 +1,6 @@
-import type { Finding } from "../findings";
-import type { Iteration } from "../findings";
+import type { Finding, Iteration } from "../findings";
+import type { AdversarialLLMFinding } from "./adversarial-helpers";
+import { isBlockingSeverity } from "./adversarial-helpers";
 
 /** General normalizer safety cap. */
 const MAX_ISSUE_PREFIX = 160;
@@ -52,9 +53,6 @@ export function countPriorAppearances(priorIterations: Iteration[]): Map<string,
   }
   return counts;
 }
-
-import type { AdversarialLLMFinding } from "./adversarial-helpers";
-import { isBlockingSeverity } from "./adversarial-helpers";
 
 export type RecurrenceConfig = { enabled: boolean; maxBlockingRounds: number };
 export type RecurrenceResult = {
