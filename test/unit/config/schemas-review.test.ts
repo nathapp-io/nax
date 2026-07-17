@@ -1,6 +1,6 @@
 // test/unit/config/schemas-review.test.ts
 import { describe, expect, test } from "bun:test";
-import { AdversarialReviewConfigSchema } from "@/config/schemas-review";
+import { AdversarialReviewConfigSchema } from "@/config";
 
 describe("AdversarialReviewConfigSchema.recurrenceDemotion", () => {
   test("defaults to enabled with maxBlockingRounds 2", () => {

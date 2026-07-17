@@ -16,7 +16,12 @@ describe("adversarial verify() advisoryFindings", () => {
       normalizedFindings: [],
       acDropped: [],
     };
-    const input = { workdir: process.cwd(), story, blockingThreshold: "error" } as unknown as AdversarialReviewInput;
+    const input = {
+      workdir: process.cwd(),
+      story,
+      blockingThreshold: "error",
+      adversarialConfig: { recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 } },
+    } as unknown as AdversarialReviewInput;
     // biome-ignore lint/suspicious/noExplicitAny: exercising op.verify directly
     const out = await (adversarialReviewOp as any).verify(parsed, input, {});
     expect(out.normalizedFindings).toHaveLength(0); // none are blocking at threshold "error"

@@ -16,7 +16,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { getSafeLogger } from "../logger";
 import { findNaxProjectRoot } from "../utils/nax-project-root";
-import { NAX_VERSION, NAX_COMMIT } from "../version";
+import { NAX_COMMIT, NAX_VERSION } from "../version";
 import type { AdversarialAcceptAnalysis, AdversarialDropAnalysis } from "./ac-structural-counterfactual";
 
 export interface ReviewAuditEntry {

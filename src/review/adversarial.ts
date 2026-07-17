@@ -28,6 +28,7 @@ import {
   type AdversarialDropAnalysis,
   analyzeStructuralCounterfactual,
 } from "./ac-structural-counterfactual";
+import { recordAdversarialAudit } from "./adversarial-audit-event";
 import { type AdversarialLLMFinding, formatFindings, toAdversarialReviewFindings } from "./adversarial-helpers";
 import { collectDiffFileList as _collectDiffFileList } from "./diff-utils";
 import { llmFindingsToReviewFindings } from "./finding-projection";
@@ -42,47 +43,6 @@ export const _adversarialDeps = {
   callOp: _callOp,
   collectDiffFileList: _collectDiffFileList,
 };
-
-function recordAdversarialAudit(opts: {
-  runtime?: import("../runtime").NaxRuntime;
-  workdir: string;
-  projectDir?: string;
-  storyId: string;
-  featureName?: string;
-  parsed: boolean;
-  looksLikeFail?: boolean;
-  failOpen?: boolean;
-  passed?: boolean;
-  passReason?: string;
-  blockingThreshold?: "error" | "warning" | "info";
-  result: { passed: boolean; findings: unknown[] } | null;
-  advisoryFindings?: unknown[];
-  // Issue #986 — adversarial-only structural counterfactual telemetry.
-  diffAvailable?: boolean;
-  adversarialDropAnalysis?: AdversarialDropAnalysis[];
-  adversarialAcceptAnalysis?: AdversarialAcceptAnalysis[];
-}): void {
-  opts.runtime?.dispatchEvents.emitReviewDecision({
-    kind: "review-decision",
-    reviewer: "adversarial",
-    workdir: opts.workdir,
-    projectDir: opts.projectDir,
-    storyId: opts.storyId,
-    featureName: opts.featureName,
-    timestamp: Date.now(),
-    parsed: opts.parsed,
-    looksLikeFail: opts.looksLikeFail,
-    failOpen: opts.failOpen,
-    passed: opts.passed,
-    passReason: opts.passReason,
-    blockingThreshold: opts.blockingThreshold,
-    result: opts.result,
-    advisoryFindings: opts.advisoryFindings,
-    diffAvailable: opts.diffAvailable,
-    adversarialDropAnalysis: opts.adversarialDropAnalysis,
-    adversarialAcceptAnalysis: opts.adversarialAcceptAnalysis,
-  });
-}
 
 export interface RunAdversarialReviewOptions {
   workdir: string;
