@@ -1,5 +1,5 @@
 export type { RunOptions, RunResult } from "./runner";
-export { recordOscillations, getOscillations } from "./oscillation-store";
+export { recordOscillations, getOscillations, countOscillationOutcomes } from "./oscillation-store";
 export { run, _runnerDeps, _runnerReentrancyGuard } from "./runner";
 export type { FailureCategory } from "../tdd/types";
 export { appendProgress } from "./progress";
