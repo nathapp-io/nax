@@ -7,7 +7,7 @@ import {
   _reviewAuditDeps,
 } from "../../../src/review/review-audit";
 import type { ReviewAuditEntry } from "../../../src/review/review-audit";
-import { NAX_VERSION, NAX_COMMIT } from "../../../src/version";
+import { NAX_VERSION, NAX_COMMIT } from "@/version";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
