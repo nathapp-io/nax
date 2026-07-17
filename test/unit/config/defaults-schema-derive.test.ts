@@ -10,6 +10,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { AdversarialReviewConfigSchema } from "@/config";
 import { loadConfig } from "../../../src/config/loader";
 import { DEFAULT_CONFIG, NaxConfigSchema } from "../../../src/config/schema";
 import type { NaxConfig } from "../../../src/config/schema";
@@ -75,6 +76,24 @@ describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
       const typed = parsed as NaxConfig;
       expect(typed.execution).toBeDefined();
       expect(typed.quality).toBeDefined();
+    });
+  });
+
+  describe("issue #1338: review.adversarial default is schema-derived (no hand-copied drift)", () => {
+    test("DEFAULT_CONFIG.review.adversarial equals the schema default (aside from schema-optional substantiation)", () => {
+      const schemaDefault = AdversarialReviewConfigSchema.parse({});
+      const adv = DEFAULT_CONFIG.review?.adversarial;
+      expect(adv).toBeDefined();
+      const { substantiation, ...derived } = adv as Record<string, unknown>;
+      expect(derived).toEqual(schemaDefault);
+      // substantiation is schema-optional (no `.default()`), spread in explicitly to keep the shape.
+      expect(substantiation).toEqual({ requote: true, maxRequotes: 5 });
+    });
+
+    test("new schema defaults flow into DEFAULT_CONFIG automatically (recurrenceDemotion, not a hand-copied literal)", () => {
+      expect(DEFAULT_CONFIG.review?.adversarial?.recurrenceDemotion).toEqual(
+        AdversarialReviewConfigSchema.parse({}).recurrenceDemotion,
+      );
     });
   });
 

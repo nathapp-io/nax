@@ -33,7 +33,7 @@ import {
   RoutingConfigSchema,
 } from "./schemas-infra";
 import { ModelMapSchema } from "./schemas-model";
-import { ReviewConfigSchema } from "./schemas-review";
+import { AdversarialReviewConfigSchema, ReviewConfigSchema } from "./schemas-review";
 
 // Re-export named schemas consumed by other modules (via config/schema.ts barrel)
 export { AcceptanceConfigSchema, PlanConfigSchema } from "./schemas-infra";
@@ -259,19 +259,13 @@ export const NaxConfigSchema = z
           ":!.nax-pids",
         ],
       },
+      // Derived from the schema's own defaults (SSOT, issue #1338) so new
+      // AdversarialReviewConfigSchema fields flow in automatically instead of
+      // being hand-copied here. `substantiation` is schema-optional (no
+      // `.default()`), so it is spread in explicitly to keep the default shape
+      // identical; consumers treat an absent value the same via `?? true` / `?? 5`.
       adversarial: {
-        model: "balanced",
-        diffMode: "ref",
-        rules: [],
-        timeoutMs: 600_000,
-        parallel: false,
-        maxConcurrentSessions: 2,
-        acRegroundOnDrop: true,
-        recurrenceDemotion: {
-          enabled: true,
-          maxBlockingRounds: 2,
-        },
-        demandInspectionTrail: true,
+        ...AdversarialReviewConfigSchema.parse({}),
         substantiation: {
           requote: true,
           maxRequotes: 5,
