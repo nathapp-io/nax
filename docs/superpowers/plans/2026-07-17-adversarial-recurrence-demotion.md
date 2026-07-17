@@ -30,7 +30,8 @@
 - **Modify** `src/config/schemas-review.ts` — add `recurrenceDemotion` to `AdversarialReviewConfigSchema`.
 - **Modify** `src/review/types.ts` — mirror the field on `AdversarialReviewConfig`.
 - **Modify** `src/operations/adversarial-review.ts` — call the helper in `verify()`; add a top-level `resolvedTestPatterns?` input field.
-- **Modify** `src/review/adversarial.ts` — call the helper in the wrapper's block/advisory split (parity).
+- **Modify** `src/execution/story-orchestrator/run-phase.ts` — surface `resolvedTestPatterns` on the refreshed adversarial input (so the test-gap guard actually receives patterns — Finding A).
+- **Modify** `src/review/adversarial.ts` — call the helper in the wrapper's block/advisory split (parity); add optional `resolvedTestPatterns` to `RunAdversarialReviewOptions`.
 - **Modify** `src/review/review-audit.ts` — `ReviewAuditEntry` + `toPersistedEntry`: add `naxVersion`/`naxCommit`, resolve `blockingThreshold`.
 - **Modify** `test/unit/review/review-audit*.test.ts` (whichever asserts persisted shape) — expect the new fields.
 
@@ -254,6 +255,13 @@ describe("classifyRecurrence", () => {
     expect(r.blocking.length).toBe(1);
   });
 
+  test("non-blocking (warning) test-gap on a test-file path does NOT block", () => {
+    const f = adv("warning", { category: "test-gap", file: "test/store.spec.ts" });
+    const r = classifyRecurrence([f], [], CFG, isTest, "error");
+    expect(r.blocking.length).toBe(0);
+    expect(r.advisory.length).toBe(1);
+  });
+
   test("test-gap on a source path is reclassified → subject to recurrence demotion", () => {
     const f = adv("error", { category: "test-gap", file: "lib/store.ts" });
     // n=3 via priors under the SAME fingerprint (category test-gap)
@@ -323,7 +331,10 @@ export function classifyRecurrence(
   const priorCounts = countPriorAppearances(priorIterations);
 
   for (const f of accepted) {
-    if (f.category === "test-gap" && testFileMatch(f.file)) {
+    // test-gap carve-out applies only to blocking severities (mirrors the
+    // upstream BLOCKING_SEVERITIES gate in ac-quote-validator.ts) — a warning/
+    // info test-gap must never block.
+    if (f.category === "test-gap" && testFileMatch(f.file) && isBlockingSeverity(f.severity, threshold)) {
       blocking.push(f);
       continue;
     }
@@ -447,7 +458,10 @@ git commit -m "feat(config): recurrenceDemotion adversarial config (default on, 
 
 **Files:**
 - Modify: `src/operations/adversarial-review.ts` (add `resolvedTestPatterns?` to `AdversarialReviewInput`; rewrite the block/advisory split in `verify()` at :490-503)
+- Modify: `src/execution/story-orchestrator/run-phase.ts` (surface `resolvedTestPatterns` on the refreshed adversarial input so it reaches `verify()`)
 - Test: `test/unit/operations/adversarial-review-verify.test.ts`
+
+**Wiring note (Finding A):** at `verify()` time `input._refresh` has already been stripped by the refresh step, and neither construction site currently carries `resolvedTestPatterns` forward. The op reads `input.resolvedTestPatterns` (top-level), which this task populates in the orchestrator path; the wrapper path is handled in Task 5. Where the field is absent, `testFileMatch` returns `false` and `test-gap` findings degrade to the recurrence path (block ≤ maxBlockingRounds, then demote) rather than the unlimited carve-out — safe, documented degradation.
 
 **Interfaces:**
 - Consumes: `classifyRecurrence`, `RecurrenceConfig` (Task 2); `ResolvedTestPatterns` from `src/test-runners`.
@@ -504,7 +518,7 @@ import type { ResolvedTestPatterns } from "../test-runners";
     const { accepted, dropped } = filterByAcQuote(substantiated, input.story.acceptanceCriteria);
 
     const recurrenceCfg = input.adversarialConfig.recurrenceDemotion ?? { enabled: true, maxBlockingRounds: 2 };
-    const patterns = input.resolvedTestPatterns?.regex ?? input._refresh?.resolvedTestPatterns?.regex ?? [];
+    const patterns = input.resolvedTestPatterns?.regex ?? [];
     const testFileMatch = (file: string): boolean => patterns.some((re) => re.test(file));
 
     const { blocking, advisory, demoted } = classifyRecurrence(accepted, input.priorAdversarialIterations ?? [], recurrenceCfg, testFileMatch, threshold);
@@ -530,6 +544,21 @@ import type { ResolvedTestPatterns } from "../test-runners";
     };
 ```
 
+(d) Surface `resolvedTestPatterns` on the refreshed orchestrator input. In `src/execution/story-orchestrator/run-phase.ts`, the adversarial refresh (~:98-110) spreads `{ ...advInput, stat, diff, excludePatterns, storyGitRef }` but drops `_refresh` (and with it `resolvedTestPatterns`). Add the field to that return object:
+
+```typescript
+    return {
+      ...advInput,
+      stat: fresh.stat,
+      diff: fresh.diff,
+      excludePatterns: fresh.excludePatterns,
+      storyGitRef: fresh.effectiveRef ?? advInput.storyGitRef,
+      resolvedTestPatterns: _refresh.resolvedTestPatterns,
+    };
+```
+
+(This is the only orchestrator-path site — `_refresh.resolvedTestPatterns` is populated upstream by the context stage. Confirm the exact surrounding keys against the file before editing; add only the `resolvedTestPatterns` line.)
+
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `timeout 60 bun test test/unit/operations/adversarial-review-verify.test.ts test/unit/operations/adversarial-review.test.ts --timeout=5000`
@@ -538,8 +567,8 @@ Expected: PASS. Fix any pre-existing assertion that assumed severity-only blocki
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/operations/adversarial-review.ts test/unit/operations/adversarial-review-verify.test.ts
-git commit -m "feat(review): apply recurrence demotion in adversarial verify()"
+git add src/operations/adversarial-review.ts src/execution/story-orchestrator/run-phase.ts test/unit/operations/adversarial-review-verify.test.ts
+git commit -m "feat(review): apply recurrence demotion in adversarial verify() + thread test patterns"
 ```
 
 ---
@@ -578,7 +607,13 @@ In `src/review/adversarial.ts`, replace the re-filter at :360-363:
   const advisoryFindings = [...advisoryOnly, ...demoted];
 ```
 
-Add the import at the top: `import { classifyRecurrence } from "./recurrence-demotion";`. If `opts.resolvedTestPatterns` is not already on `RunAdversarialReviewOptions`, add `resolvedTestPatterns?: import("../test-runners").ResolvedTestPatterns;` to that interface and thread it from the caller that already resolves patterns for `excludePatterns`; if unavailable at the call site, pass `undefined` (guard falls back to reclassifying test-gap findings conservatively — same as the op path).
+Add the import at the top: `import { classifyRecurrence } from "./recurrence-demotion";`. Add `resolvedTestPatterns?: import("../test-runners").ResolvedTestPatterns;` to `RunAdversarialReviewOptions` and pass it into the `callOp(... adversarialReviewOp, { ... })` input at `adversarial.ts:249` (add `resolvedTestPatterns: opts.resolvedTestPatterns,`).
+
+**Caller (Finding A, wrapper path):** the sole caller is `src/review/runner.ts:405`, which holds only a `ReviewConfig` (not the `NaxConfig` that `resolveTestFilePatterns` requires), so it cannot resolve patterns itself. Two acceptable options — pick per what the runner already receives:
+- If the review runner's entry already receives a resolved `ResolvedTestPatterns` from the pipeline context, thread it through to `runAdversarialReview({ ..., resolvedTestPatterns })`.
+- Otherwise pass nothing: `resolvedTestPatterns` stays `undefined`, `testFileMatch` returns `false`, and `test-gap` findings degrade to the recurrence path (block ≤ maxBlockingRounds then demote) instead of the unlimited carve-out. This is safe and is the documented Phase-0 degradation — the wrapper/review-runner path is not the live story path that produced US-004 (that path is the orchestrator, fixed in Task 4).
+
+Do NOT block this task on deep pattern-threading into the runner; the orchestrator path (Task 4) is the correctness-critical one.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -786,6 +821,7 @@ git commit -m "test(review): align adversarial + audit-shape tests with recurren
 
 ## Self-Review (completed during authoring)
 
-- **Spec coverage:** §3 core rule → Tasks 2,4,5. §4 fingerprint → Task 1. §5 test-gap guard → Task 2 (`testFileMatch`) + Task 4/5 (pattern threading). §6 config → Task 3. §7 shared helper + parity → Tasks 2,4,5. §8 audit fidelity → Task 6. §11 testing → Tasks 1-8. §3 worked cases → Task 2 tests. No spec section left without a task.
+- **Spec coverage:** §3 core rule → Tasks 2,4,5. §4 fingerprint → Task 1. §5 test-gap guard → Task 2 (`testFileMatch`, blocking-severity-gated) + Task 4 orchestrator pattern threading (`run-phase.ts`) + Task 5 wrapper threading. §6 config → Task 3. §7 shared helper + parity → Tasks 2,4,5. §8 audit fidelity → Task 6. §11 testing → Tasks 1-8. §3 worked cases → Task 2 tests. No spec section left without a task.
+- **Review fixes applied (2026-07-17):** Finding A — `resolvedTestPatterns` is now explicitly threaded to `verify()` via `run-phase.ts` (orchestrator) and `RunAdversarialReviewOptions` (wrapper); the dead `_refresh` fallback removed; graceful degradation documented. Finding B — the `test-gap` guard now also requires blocking severity, with a regression test. Finding C — the load-bearing `?? { enabled: true, maxBlockingRounds: 2 }` consumer fallback is retained by design (`review.adversarial` is `.optional()`).
 - **Placeholder scan:** every code step carries real code; the only `<...>` are e2e fixture values (verbatim AC substring / observed code line) that are workdir-specific by nature and flagged as such.
 - **Type consistency:** `classifyRecurrence`, `RecurrenceConfig`, `RecurrenceResult`, `fingerprintFor`, `countPriorAppearances`, `PriorAppearance` are named identically across Tasks 1,2,4,5. `AdversarialReviewInput.resolvedTestPatterns` added in Task 4 and consumed by the same op; wrapper `resolvedTestPatterns` added in Task 5. `recurrenceDemotion` shape identical in schema (Task 3), types (Task 3), and both consumers (Tasks 4,5).
