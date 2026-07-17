@@ -1,6 +1,6 @@
 # nax Adversarial Review — Goalpost-Moving / Non-Convergence Root-Cause Report
 
-**Status:** Investigation complete. Second review (Fable) complete — see §8. Diagnosis verified against `main`; proposed fix revised (Phase 0 hardened, Phase 1 mechanic replaced, finding ledger added). Not yet implemented.
+**Status:** Investigation complete; second review (Fable) in §8; **Phase 0 implemented — see §9** (PR #1337). Phase 1 deferred.
 **Purpose:** Hand-off to a second reviewer (Fable). The proposed fix below is one option — **please challenge it and propose better solutions.** The problem statement, evidence, and constraints are the durable part; the fix is deliberately open for redesign.
 **Repo:** `nax` (Bun + TypeScript AI coding-agent orchestrator). Subject files are under `src/`.
 **Date:** 2026-07-17.
@@ -245,3 +245,28 @@ Finding 3 (audit records showing `blockingThreshold: null`) remains the report's
 | Finding→strategy routing | `autofix-implementer-strategy.ts:11,60-72`, `autofix-test-writer-strategy.ts:50-53`, `category-fix-target.ts:11-13` |
 | Two verdict paths + parity | `review/runner.ts:389-499`, `phase-eval.ts:13-97`, `test/unit/review/orchestrator-wrapper-parity.test.ts` |
 | Related issues | GitHub #1157 (convergence/carry-forward), #1033 (acQuote grounding) |
+
+---
+
+## 9. Implementation outcome (Phase 0 shipped — 2026-07-17)
+
+Phase 0 (§8.6 item 1) was implemented and opened as **PR #1337** (`feat/adversarial-recurrence-demotion`). Full suite green (9745+1090+21, 0 fail); an orchestrator e2e proves convergence in exactly 3 adversarial rounds (block, block, demote) and continued blocking with the flag off.
+
+### What shipped
+- **Recurrence-demotion classifier** (`src/review/recurrence-demotion.ts`): fingerprint (file + category + normalized-issue-prefix; deliberately **no** line/`acIndex` — `acIndex` lives only in `Finding.meta`, which is not load-bearing-branchable) + cumulative in-run appearance counter. An error finding blocks while count ≤ `maxBlockingRounds` (default 2), demotes at n≥3; a one-clause **entry guard** (block iff `n==1` OR prior sighting was blocking-severity) eliminates the flip-flop. One counter subsumes Fable's proposed hysteresis + demotion.
+- **test-gap laundering guard** (§8.2): carve-out kept only when the finding cites a real test file (`resolveTestFilePatterns`) AND is blocking-severity.
+- **Config** `review.adversarial.recurrenceDemotion` (default on), applied identically in the op `verify()` and wrapper `runAdversarialReview` (both-paths parity test).
+- **coverage-gap tag** (`meta.coverageGap`) on demoted findings + a structured `review.adversarial.recurrence_demoted` log event — the Phase-0 telemetry.
+- **Audit fidelity (Finding 3 / §8.8 resolved):** review-audit records now stamp `naxVersion`/`naxCommit` and a **resolved** `blockingThreshold` (never `null`).
+
+### Correction to §8.1 (important)
+Building the e2e revealed a gap **neither this report nor the §8 second review predicted**: **`priorAdversarialIterations` was never populated in the live orchestrator.** `ctx.priorAdversarialIterations` was never assigned; there is no `ReviewOrchestrator` class and `AdversarialFindingsCache` was deleted — ADR-022 Phase 5 removed the old cache but never wired the new `Iteration[]` accumulation. So recurrence-demotion **and the ADR-022 carry-forward prompt (`buildPriorIterationsBlock`) were both inert** — the adversarial reviewer had no memory across rounds. This directly refines §8.1's claim that carry-forward "renders aggregated counts": it rendered an **empty** list every round. This amnesia plausibly contributed to US-004's original non-convergence and undercuts #1157's "carry-forward makes runs converge" premise.
+
+The fix (PR #1337): a run-scoped per-story `adversarialIterations: Map<storyId, Iteration[]>` on `NaxRuntime` (same lifetime as `quarantineMemo`; survives per-attempt `PipelineContext` rebuilds), recorded after each adversarial round and injected before each dispatch in `run-phase.ts`. This **revives ADR-022 carry-forward** as a side-effect of making recurrence-demotion fire.
+
+### Deferred (Phase 1, unchanged from §8.6)
+Cross-run finding ledger, commit-the-failing-test materialization, pause-for-human disposition. Gated on Phase-0 coverage-gap telemetry.
+
+### Follow-up issues
+- **#1338** — `schemas.ts:262` adversarial default literal SSOT drift (backlog).
+- **#1339** — surface the coverage-gap count in the run-end advisory summary (the Phase-0 telemetry gate; tag/field now exist).
