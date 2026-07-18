@@ -252,7 +252,11 @@ describe("semanticReviewOp.verify() — filter pipeline (AC1 semantic)", () => {
     });
   });
 
-  test("blocking/advisory split preserves passed:false when only advisory findings remain", async () => {
+  test("#1347: advisory-only findings pass the verdict even when the model reports passed:false", async () => {
+    // Regression for nax#1347. When the model emits only sub-threshold (advisory)
+    // findings but sets passed:false, the verdict must honour blockingThreshold —
+    // there are no blocking findings, so the review passes. The advisory findings
+    // are still surfaced (they are not silently dropped), just non-blocking.
     return withTempDir(async (workdir) => {
       const ctx = makeVerifyCtx();
       const input: SemanticReviewInput = {
@@ -263,7 +267,6 @@ describe("semanticReviewOp.verify() — filter pipeline (AC1 semantic)", () => {
       const parsed = makeOutput({
         passed: false,
         findings: [
-          // Only advisory finding — no blocking findings survive
           {
             severity: "warning",
             file: "src/auth.ts",
@@ -277,8 +280,41 @@ describe("semanticReviewOp.verify() — filter pipeline (AC1 semantic)", () => {
       });
       const result = await semanticReviewOp.verify!(parsed, input, ctx);
       expect(result).not.toBeNull();
-      expect(result!.passed).toBe(false);
-      expect(result!.normalizedFindings).toHaveLength(0);
+      expect(result!.passed).toBe(true); // no blocking findings → pass
+      expect(result!.findings).toHaveLength(1); // advisory finding still surfaced
+      expect(result!.normalizedFindings).toHaveLength(0); // but not blocking
+    });
+  });
+
+  test("#1347: fail-closed guard preserved — model passed:false with all findings dropped stays failing", async () => {
+    // The advisory-pass fix must NOT weaken the fail-closed guard: when the model
+    // claims failure but every finding is dropped as ungrounded (accepted empty),
+    // the verdict stays false so an ungrounded-but-real blocker can't slip through.
+    return withTempDir(async (workdir) => {
+      const ctx = makeVerifyCtx();
+      const input: SemanticReviewInput = {
+        ...BASE_INPUT,
+        workdir,
+        mode: "embedded",
+      };
+      const parsed = makeOutput({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "Ungrounded blocker",
+            suggestion: "Fix it",
+            acIndex: 99, // out of range → dropped from accepted
+          },
+        ],
+        normalizedFindings: [],
+      });
+      const result = await semanticReviewOp.verify!(parsed, input, ctx);
+      expect(result).not.toBeNull();
+      expect(result!.findings).toHaveLength(0); // all dropped
+      expect(result!.passed).toBe(false); // fail-closed preserved
     });
   });
 
