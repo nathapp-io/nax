@@ -439,6 +439,10 @@ loadPlugins() → plugin.setup(config, logger)
   → plugin.teardown()
 ```
 
+**Built-in reporters:** `webhook-reporter` and `otel-reporter` (`src/plugins/builtin/`) ship as
+opt-in built-ins, gated by `config.reporters.webhook.enabled` / `config.reporters.otel.enabled`
+— see `docs/superpowers/specs/2026-07-18-builtin-reporter-design.md` for the config surface.
+
 **Reference:** `src/plugins/registry.ts`, `src/plugins/loader.ts`
 
 ---

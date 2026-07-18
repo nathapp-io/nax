@@ -9,12 +9,15 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import type { ReportersConfig } from "../config/schemas-reporters";
 import { getSafeLogger as _getSafeLoggerFromModule } from "../logger";
 import { errorMessage } from "../utils/errors";
 import { validateModulePath } from "../utils/path-security";
 import { autoPrPlugin } from "./builtin/auto-pr";
 import { autoRoutePlugin } from "./builtin/auto-route";
 import { curatorPlugin } from "./builtin/curator";
+import { createOtelReporterPlugin } from "./builtin/otel-reporter";
+import { createWebhookReporterPlugin } from "./builtin/webhook-reporter";
 import { createPluginLogger } from "./plugin-logger";
 import { PluginRegistry } from "./registry";
 import type { IPostRunAction, NaxPlugin, PluginConfigEntry } from "./types";
@@ -96,6 +99,8 @@ export interface LoadedPlugin {
  * @param projectRoot - Project root directory for resolving relative paths in config
  * @param disabledPlugins - List of plugin names to disable (auto-discovered plugins only)
  * @param isTestFileFn - Optional classifier from resolveTestFilePatterns; falls back to hardcoded defaults
+ * @param reporters - Resolved `config.reporters`; each built-in reporter is registered only when its
+ *   `enabled` flag is true (and `disabledPlugins` doesn't also name it)
  * @returns PluginRegistry with all loaded plugins and their sources
  */
 export async function loadPlugins(
@@ -105,6 +110,7 @@ export async function loadPlugins(
   projectRoot?: string,
   disabledPlugins?: string[],
   isTestFileFn?: (filename: string) => boolean,
+  reporters?: ReportersConfig,
 ): Promise<PluginRegistry> {
   const loadedPlugins: LoadedPlugin[] = [];
   const builtinPostRunActions: IPostRunAction[] = [];
@@ -158,6 +164,37 @@ export async function loadPlugins(
     }
   } else {
     logger?.info("plugins", `Skipping disabled plugin: '${autoRoutePlugin.name}' (built-in)`);
+  }
+
+  // Built-in reporters — opt-in via config.reporters.<name>.enabled. Registered
+  // as full reporter-providing plugins (surface through getReporters()), not
+  // side-channel actions. `disabledPlugins` still wins.
+  const reporterFactories: Array<{ name: string; enabled: boolean; make: () => NaxPlugin }> = reporters
+    ? [
+        {
+          name: "webhook-reporter",
+          enabled: reporters.webhook.enabled,
+          make: () => createWebhookReporterPlugin(reporters.webhook),
+        },
+        {
+          name: "otel-reporter",
+          enabled: reporters.otel.enabled,
+          make: () => createOtelReporterPlugin(reporters.otel),
+        },
+      ]
+    : [];
+  for (const { name, enabled: reporterEnabled, make } of reporterFactories) {
+    if (!reporterEnabled) continue;
+    if (disabledSet.has(name)) {
+      logger?.info("plugins", `Skipping disabled plugin: '${name}' (built-in)`);
+      continue;
+    }
+    const plugin = make();
+    if (plugin.setup) {
+      await plugin.setup({}, createPluginLogger(plugin.name));
+    }
+    loadedPlugins.push({ plugin, source: { type: "builtin", path: plugin.name } });
+    pluginNames.add(plugin.name);
   }
 
   // 1. Load plugins from global directory

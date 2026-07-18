@@ -417,6 +417,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       workdir,
       config.disabledPlugins,
       isTestFileFn,
+      config.reporters,
     );
 
     // Clear LLM routing cache at run start — prevents cross-run pollution
