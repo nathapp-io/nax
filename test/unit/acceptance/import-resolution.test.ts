@@ -2,10 +2,9 @@
  * Tests for src/acceptance/import-resolution.ts — polyglot import resolution.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { clearLanguageCache } from "../../../src/project";
 import {
-  languageFromExtension,
   MAX_FILE_LINES,
+  languageFromExtension,
   parseGoImports,
   parsePythonImports,
   parseRustUses,
@@ -14,6 +13,7 @@ import {
   resolveLanguage,
   resolveSourceFiles,
 } from "../../../src/acceptance/import-resolution";
+import { clearLanguageCache } from "../../../src/project";
 import { withTempDir } from "../../helpers";
 
 afterEach(() => clearLanguageCache());
@@ -144,7 +144,7 @@ describe("resolveSourceFiles — python", () => {
     await withTempDir(async (dir) => {
       await Bun.write(`${dir}/foo/bar.py`, "def baz():\n    return 1\n");
       const files = await resolveSourceFiles({
-        testFileContent: `from foo.bar import baz`,
+        testFileContent: "from foo.bar import baz",
         packageDir: dir,
         language: "python",
       });
@@ -157,7 +157,7 @@ describe("resolveSourceFiles — python", () => {
     await withTempDir(async (dir) => {
       await Bun.write(`${dir}/pkg/__init__.py`, "VALUE = 1\n");
       const files = await resolveSourceFiles({
-        testFileContent: `import pkg`,
+        testFileContent: "import pkg",
         packageDir: dir,
         language: "python",
       });
@@ -184,7 +184,7 @@ describe("resolveSourceFiles — rust", () => {
     await withTempDir(async (dir) => {
       await Bun.write(`${dir}/src/math.rs`, "pub fn add(a: i32, b: i32) -> i32 { a + b }");
       const files = await resolveSourceFiles({
-        testFileContent: `use crate::math::add;`,
+        testFileContent: "use crate::math::add;",
         packageDir: dir,
         language: "rust",
       });
@@ -197,7 +197,7 @@ describe("resolveSourceFiles — rust", () => {
     await withTempDir(async (dir) => {
       await Bun.write(`${dir}/src/util/mod.rs`, "pub fn a() {}");
       const files = await resolveSourceFiles({
-        testFileContent: `use crate::util::{a, b};`,
+        testFileContent: "use crate::util::{a, b};",
         packageDir: dir,
         language: "rust",
       });
@@ -216,11 +216,7 @@ import (
   "example.com/proj/pkg/util"
 )
 `;
-    expect(parseGoImports(content)).toEqual([
-      "example.com/proj/pkg/math",
-      "fmt",
-      "example.com/proj/pkg/util",
-    ]);
+    expect(parseGoImports(content)).toEqual(["example.com/proj/pkg/math", "fmt", "example.com/proj/pkg/util"]);
   });
 });
 
