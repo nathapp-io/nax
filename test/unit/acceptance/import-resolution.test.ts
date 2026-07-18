@@ -7,6 +7,7 @@ import {
   languageFromExtension,
   MAX_FILE_LINES,
   parsePythonImports,
+  parseRustUses,
   parseTsImports,
   readCapped,
   resolveLanguage,
@@ -161,6 +162,46 @@ describe("resolveSourceFiles — python", () => {
       });
       expect(files).toHaveLength(1);
       expect(files[0].path).toBe("pkg/__init__.py");
+    });
+  });
+});
+
+describe("parseRustUses", () => {
+  test("captures crate/super/self paths, skips external crates", () => {
+    const content = `
+use crate::math::add;
+use crate::util::{a, b};
+use super::helpers::x;
+use std::collections::HashMap;
+`;
+    expect(parseRustUses(content)).toEqual(["crate::math::add", "crate::util", "super::helpers"]);
+  });
+});
+
+describe("resolveSourceFiles — rust", () => {
+  test("resolves crate path to src/<path>.rs", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(`${dir}/src/math.rs`, "pub fn add(a: i32, b: i32) -> i32 { a + b }");
+      const files = await resolveSourceFiles({
+        testFileContent: `use crate::math::add;`,
+        packageDir: dir,
+        language: "rust",
+      });
+      expect(files).toHaveLength(1);
+      expect(files[0].path).toBe("src/math.rs");
+    });
+  });
+
+  test("resolves a module directory to mod.rs", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(`${dir}/src/util/mod.rs`, "pub fn a() {}");
+      const files = await resolveSourceFiles({
+        testFileContent: `use crate::util::{a, b};`,
+        packageDir: dir,
+        language: "rust",
+      });
+      expect(files).toHaveLength(1);
+      expect(files[0].path).toBe("src/util/mod.rs");
     });
   });
 });

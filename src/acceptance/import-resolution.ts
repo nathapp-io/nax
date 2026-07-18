@@ -117,6 +117,36 @@ export function pythonCandidates(module: string): string[] {
   return [`${base}.py`, `${base}/__init__.py`];
 }
 
+// Rust: only crate-local `use` (crate/super/self roots). External crates skipped.
+// Captures the path prefix before any `{group}`. `crate::` paths are absolute from
+// the crate root so the full segment chain is kept (candidate generation drops the
+// trailing item/module split later). `super::`/`self::` are relative and handled
+// best-effort — no parent-dir traversal — so only one segment past the root is
+// captured to avoid resolving to the wrong file.
+const RUST_USE_RE = /^\s*use\s+(crate(?:::\w+)*|(?:super|self)(?:::\w+)?)/gm;
+
+export function parseRustUses(content: string): string[] {
+  const paths: string[] = [];
+  for (const m of content.matchAll(RUST_USE_RE)) paths.push(m[1]);
+  return paths;
+}
+
+export function rustCandidates(usePath: string): string[] {
+  const rest = usePath.split("::").slice(1); // drop crate/super/self
+  if (rest.length === 0) return [];
+  const base = `src/${rest.join("/")}`;
+  const candidates = [`${base}.rs`, `${base}/mod.rs`];
+  // The trailing segment may be an item (fn/struct) rather than a module, so also
+  // try the path one level up as both a file-style and dir-style module.
+  if (rest.length > 1) {
+    const parent = `src/${rest.slice(0, -1).join("/")}`;
+    candidates.push(`${parent}.rs`, `${parent}/mod.rs`);
+  } else {
+    candidates.push("src/lib.rs");
+  }
+  return candidates;
+}
+
 async function collectCandidates(lang: ResolvedLanguage, opts: ResolveSourceFilesOptions): Promise<string[]> {
   switch (lang) {
     case "typescript":
@@ -124,6 +154,8 @@ async function collectCandidates(lang: ResolvedLanguage, opts: ResolveSourceFile
       return parseTsImports(opts.testFileContent).flatMap(tsCandidates);
     case "python":
       return parsePythonImports(opts.testFileContent).flatMap(pythonCandidates);
+    case "rust":
+      return parseRustUses(opts.testFileContent).flatMap(rustCandidates);
     default:
       return [];
   }
