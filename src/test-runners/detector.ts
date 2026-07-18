@@ -68,16 +68,22 @@ export function buildTestFrameworkHint(testCommand: string): string {
 }
 
 /**
- * Strip ANSI color/style escape sequences (e.g. `\x1b[32m`, `\x1b[0m`) from output.
+ * Strip ANSI CSI escape sequences (e.g. `\x1b[32m` SGR color, `\x1b[0m` reset,
+ * `\x1b[2K` erase-line, cursor-movement codes) from output.
  *
- * Real-world test-runner output (Mocha, Cypress, cargo) is frequently colorized.
- * An ANSI escape sitting between a line-start anchor (`^\s*`) and the digits it
- * expects defeats every anchored summary regex in this module and in the
+ * Real-world test-runner output (Mocha, Cypress, cargo, vitest's live reporter)
+ * is frequently colorized and/or interleaved with cursor/erase control codes.
+ * An escape sequence sitting between a line-start anchor (`^\s*`) and the digits
+ * it expects defeats every anchored summary regex in this module and in the
  * per-framework parsers — so callers strip once, up front, before matching.
+ *
+ * Deliberately broad (any CSI final byte, not just `m`): this is the single
+ * shared ANSI-stripping helper for `src/test-runners/` — see
+ * `.claude/rules/monorepo-awareness.md` §C "one source of truth per concept".
  */
 export function stripAnsi(output: string): string {
   // biome-ignore lint/suspicious/noControlCharactersInRegex: matching the ESC (0x1b) control byte is the point of this function
-  return output.replace(/\x1b\[[0-9;]*m/g, "");
+  return output.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
 }
 
 /**
