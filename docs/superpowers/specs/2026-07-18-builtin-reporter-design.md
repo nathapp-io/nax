@@ -202,6 +202,27 @@ their config. The reporter config must therefore reach plugin load time.
 - `disabledPlugins` still wins: a name in `disabledPlugins` skips registration
   even when `enabled === true`.
 
+## Event delivery guarantees
+
+Verified against `unified-executor.ts`, `reporters.ts`, `run-completion.ts`, and
+`run-cleanup.ts`:
+
+- `wireReporters` subscribes **once per run** (via the `_prevRunUnsubscribers`
+  teardown in `unified-executor.ts`), so `onRunStart` and `onRunEnd` each fire at
+  most once per run. Reporter instances are stable across a run's events, so the
+  OTel `Map<runId, RunState>` is sound.
+- `onRunEnd` has **two mutually exclusive delivery paths**: the success path emits
+  `run:completed`, which the `reporters.ts` subscriber turns into `onRunEnd`;
+  abnormal exits (failure / abort / SIGTERM) call `onRunEnd` directly from
+  `run-cleanup.ts`, guarded by `!runCompleted` to prevent duplicates. Net effect:
+  `onRunEnd` fires exactly once.
+- **Edge case:** on an early abort, `onRunEnd` can arrive with **no preceding
+  `onRunStart`** (no buffered `RunState`). The OTel reporter must handle this
+  gracefully — emit metrics from the `onRunEnd` payload and either skip the trace
+  or emit a best-effort root span whose start is back-computed as
+  `endUnixNano - totalDurationMs * 1e6`. It must never throw. The webhook reporter
+  is stateless and unaffected.
+
 ## Error handling
 
 Fire-and-forget end to end:
