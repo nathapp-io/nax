@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { buildTestFrameworkHint, detectFramework } from "../../../src/test-runners/detector";
+import { buildTestFrameworkHint, detectFramework, stripAnsi } from "../../../src/test-runners/detector";
 
 describe("buildTestFrameworkHint", () => {
   test("returns neutral hint for empty command (#543)", () => {
@@ -82,5 +82,30 @@ describe("detectFramework — rust & mocha", () => {
       at Context.eval (cypress/e2e/login.cy.js:12:10)
 `.trim();
     expect(detectFramework(output)).toBe("mocha");
+  });
+
+  test("detects ANSI-colored mocha output as mocha, not bun (#bug)", () => {
+    const ESC = "\x1b[32m";
+    const R = "\x1b[0m";
+    const output = `
+  MySuite
+    ${ESC}✓${R} passes
+
+  ${ESC}  1 passing${R}
+  ${"\x1b[31m"}  1 failing${R}
+`.trim();
+    expect(detectFramework(output)).toBe("mocha");
+  });
+});
+
+describe("stripAnsi", () => {
+  test("strips ANSI color escape sequences", () => {
+    const input = "\x1b[32m  1 passing\x1b[0m\n\x1b[31m  1 failing\x1b[0m";
+    expect(stripAnsi(input)).toBe("  1 passing\n  1 failing");
+  });
+
+  test("leaves plain text untouched", () => {
+    const input = "  1 passing\n  1 failing";
+    expect(stripAnsi(input)).toBe(input);
   });
 });

@@ -12,7 +12,7 @@
  *   - Unknown       (common-parser fallback via broad regexes)
  */
 
-import { detectFramework } from "./detector";
+import { detectFramework, stripAnsi } from "./detector";
 import { parseMochaOutput } from "./parse-mocha";
 import { parseRustTestOutput } from "./parse-rust";
 import type { TestFailure, TestOutputAnalysis, TestSummary } from "./types";
@@ -29,23 +29,24 @@ import type { TestFailure, TestOutputAnalysis, TestSummary } from "./types";
  * unknown or unsupported formats.
  */
 export function parseTestOutput(output: string): TestSummary {
-  const framework = detectFramework(output);
+  const clean = stripAnsi(output);
+  const framework = detectFramework(clean);
   switch (framework) {
     case "bun":
-      return parseBunOutput(output);
+      return parseBunOutput(clean);
     case "jest":
     case "vitest":
-      return parseJestOutput(output);
+      return parseJestOutput(clean);
     case "pytest":
-      return parsePytestOutput(output);
+      return parsePytestOutput(clean);
     case "go":
-      return parseGoTestOutput(output);
+      return parseGoTestOutput(clean);
     case "rust":
-      return parseRustTestOutput(output);
+      return parseRustTestOutput(clean);
     case "mocha":
-      return parseMochaOutput(output);
+      return parseMochaOutput(clean);
     default:
-      return parseCommonOutput(output);
+      return parseCommonOutput(clean);
   }
 }
 
