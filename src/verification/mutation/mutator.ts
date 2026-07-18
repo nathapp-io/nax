@@ -39,7 +39,8 @@ export function generateMutants(input: GenerateMutantsInput): Mutant[] {
     const lineNumber = i + 1;
 
     const trimmed = line.trim();
-    if (trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*")) continue;
+    const commentPrefixes = language === "python" ? ["#"] : ["//", "/*", "*"];
+    if (commentPrefixes.some((prefix) => trimmed.startsWith(prefix))) continue;
 
     for (const operator of operators) {
       for (const replacement of applyOperator(operator, line)) {
