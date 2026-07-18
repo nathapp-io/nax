@@ -147,3 +147,22 @@ describe("generateMutants — deduplication", () => {
     expect(mutants[0].after).toBe("if (a !== b) {}");
   });
 });
+
+describe("generateMutants — language-aware comment skipping", () => {
+  test("Python '#' comment line is not mutated", () => {
+    const mutants = generateMutants({ source: "# a == b\n", language: "python", file: "f.py" });
+    expect(mutants).toEqual([]);
+  });
+
+  test("non-Python '//' comment line is still skipped", () => {
+    const mutants = generateMutants({ source: "// a == b\n", language: "rust", file: "f.rs" });
+    expect(mutants).toEqual([]);
+  });
+
+  test("Python leading '#' line is skipped but a real code line still mutates", () => {
+    const source = "# comment == here\nx = a == b\n";
+    const mutants = generateMutants({ source, language: "python", file: "f.py" });
+    expect(mutants.every((m) => m.line !== 1)).toBe(true);
+    expect(mutants.some((m) => m.operatorId === "py:cmp-flip" && m.line === 2)).toBe(true);
+  });
+});
