@@ -361,7 +361,13 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
     const { accepted, dropped } = filterByAcGroundingMinimal(substantiated, input.story.acceptanceCriteria);
 
     const blocking = accepted.filter((f) => isBlockingSeverity(f.severity, threshold));
-    const passed = parsed.passed && blocking.length === 0;
+    // Honour blockingThreshold: the verdict fails only when a blocking finding
+    // survives. The model's raw `passed:false` must NOT fail the review when every
+    // surviving finding is advisory (sub-threshold) — that was nax#1347. The
+    // `accepted.length > 0` clause preserves the fail-closed guard for the distinct
+    // case where the model claims failure but all findings were dropped as
+    // ungrounded (accepted empty): there we still respect the model's `passed` flag.
+    const passed = blocking.length === 0 && (parsed.passed || accepted.length > 0);
 
     return {
       ...parsed,

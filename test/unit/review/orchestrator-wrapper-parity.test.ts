@@ -135,7 +135,7 @@ describe("Semantic op verify() parity with wrapper consumer (AC10, AC11)", () =>
     });
   });
 
-  test("advisory-only run: passed:false is preserved and normalizedFindings is empty", async () => {
+  test("advisory-only run: verdict passes (nax#1347) with empty normalizedFindings", async () => {
     return withTempDir(async (workdir) => {
       const ctx = makeVerifyCtx();
       const input: SemanticReviewInput = {
@@ -171,8 +171,11 @@ describe("Semantic op verify() parity with wrapper consumer (AC10, AC11)", () =>
       const result = await semanticReviewOp.verify!(parsed, input, ctx);
       expect(result).not.toBeNull();
 
-      // verify() preserves the LLM's passed:false even when only advisory findings remain.
-      expect(result!.passed).toBe(false);
+      // nax#1347: with only advisory (sub-threshold) findings surviving, the verdict
+      // honours blockingThreshold and passes — the LLM's raw passed:false no longer
+      // fails the review when nothing is blocking. The advisory finding is still surfaced.
+      expect(result!.passed).toBe(true);
+      expect(result!.findings).toHaveLength(1);
       expect(result!.normalizedFindings).toHaveLength(0);
     });
   });
