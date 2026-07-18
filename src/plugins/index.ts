@@ -42,3 +42,6 @@ export type { AutoRouteDeps } from "./builtin/auto-route/types";
 // Built-in reporter helpers (Task 2)
 export { interpolateHeaders, postJson, _postJsonDeps } from "./builtin/reporter-shared";
 export type { PostJsonDeps } from "./builtin/reporter-shared";
+
+// Built-in webhook-reporter plugin (Task 3)
+export { createWebhookReporterPlugin } from "./builtin/webhook-reporter";
