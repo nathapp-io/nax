@@ -33,6 +33,8 @@ export {
 } from "./resolver";
 export type { ResolvedTestPatterns } from "./resolver";
 export { analyzeTestExitCode, formatFailureSummary, parseBunTestOutput, parseTestOutput } from "./parser";
+export { parseMochaOutput } from "./parse-mocha";
+export { parseRustTestOutput } from "./parse-rust";
 export { discoverWorkspacePackages } from "./detect/workspace";
 export { parseTestFailures } from "./ac-parser";
 export type { TestFailure, TestOutputAnalysis, TestSummary } from "./types";

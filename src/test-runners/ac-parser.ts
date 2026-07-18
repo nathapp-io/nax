@@ -10,16 +10,7 @@
  * acceptance-domain question: "which acceptance criteria failed?"
  */
 
-import { detectFramework } from "./detector";
-
-/**
- * Strips ANSI escape sequences (CSI: SGR color codes plus cursor/erase codes such
- * as the `\x1b[2K` vitest's live reporter prefixes lines with) so failure markers
- * and AC tokens match on plain text — including the line-leading FAIL badge.
- * Built via RegExp() so the ESC byte (0x1b) is not a control character in the source
- * regex literal (which Biome's noControlCharactersInRegex rightly forbids).
- */
-const ANSI_ESCAPE_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, "g");
+import { detectFramework, stripAnsi } from "./detector";
 
 /**
  * Parse test runner output to extract failed AC IDs.
@@ -44,7 +35,7 @@ export function parseTestFailures(output: string): string[] {
   // Strip ANSI escapes first: vitest/jest colorize the "FAIL" marker and test titles,
   // and the live reporter prefixes lines with cursor/erase codes — both would otherwise
   // sit between tokens and break matching (and defeat the line-start FAIL anchor below).
-  const clean = output.replace(ANSI_ESCAPE_PATTERN, "");
+  const clean = stripAnsi(output);
   const framework = detectFramework(clean);
   const failedACs: string[] = [];
   const lines = clean.split("\n");

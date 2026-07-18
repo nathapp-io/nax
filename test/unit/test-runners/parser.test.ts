@@ -97,6 +97,33 @@ FAILED tests/test_foo.py::test_bar - AssertionError: assert 1 == 2
   });
 });
 
+describe("mocha output with ANSI color escapes (#bug)", () => {
+  test("strips ANSI so summary + structured failure survive framework detection", () => {
+    const ESC = "\x1b[32m";
+    const FAIL_ESC = "\x1b[31m";
+    const R = "\x1b[0m";
+    const output = `
+  MySuite
+    ${ESC}✓${R} passes
+    ${FAIL_ESC}1) fails${R}
+
+  ${ESC}  1 passing${R} (12ms)
+  ${FAIL_ESC}  1 failing${R}
+
+  1) MySuite fails:
+     AssertionError: expected 1 to equal 2
+      at Context.<anonymous> (test/foo.test.js:8:20)
+`.trim();
+
+    const result = parseTestOutput(output);
+
+    expect(result.failed).toBe(1);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0].file).toBe("test/foo.test.js");
+    expect(result.failures[0].testName).toBe("MySuite fails");
+  });
+});
+
 describe("pytest output — collection/import errors count as failures", () => {
   test("counts pytest 'errors' category in the summary line as failed", () => {
     const output = `
@@ -279,5 +306,34 @@ FAIL
     expect(result.failures[0].file).toBe("unknown");
     expect(result.failures[0].error).toBe("Unknown error");
     expect(result.failures[0].stackTrace).toHaveLength(0);
+  });
+});
+
+describe("parseTestOutput — rust & mocha dispatch", () => {
+  test("routes cargo output through the rust parser", () => {
+    const output = `
+---- tests::t stdout ----
+thread 'tests::t' panicked at src/x.rs:2:3:
+boom
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.0s
+`.trim();
+    const s = parseTestOutput(output);
+    expect(s.failed).toBe(1);
+    expect(s.failures[0].file).toBe("src/x.rs");
+  });
+
+  test("routes mocha output through the mocha parser", () => {
+    const output = `
+  1 passing (1ms)
+  1 failing
+
+  1) suite t:
+     Error: nope
+      at Context.<anonymous> (test/a.test.js:1:1)
+`.trim();
+    const s = parseTestOutput(output);
+    expect(s.failed).toBe(1);
+    expect(s.failures[0].file).toBe("test/a.test.js");
   });
 });
