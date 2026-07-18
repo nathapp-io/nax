@@ -1,0 +1,40 @@
+import { describe, expect, test } from "bun:test";
+import { ReportersConfigSchema } from "../../../src/config/schemas-reporters";
+
+describe("ReportersConfigSchema", () => {
+  test("defaults both reporters to disabled with 5000ms timeout", () => {
+    const parsed = ReportersConfigSchema.parse({});
+    expect(parsed.webhook.enabled).toBe(false);
+    expect(parsed.otel.enabled).toBe(false);
+    expect(parsed.webhook.timeoutMs).toBe(5000);
+    expect(parsed.otel.timeoutMs).toBe(5000);
+    expect(parsed.otel.serviceName).toBe("nax");
+    expect(parsed.webhook.headers).toEqual({});
+  });
+
+  test("accepts webhook config with url, headers, and event filter", () => {
+    const parsed = ReportersConfigSchema.parse({
+      webhook: {
+        enabled: true,
+        url: "https://example.com/hook",
+        headers: { Authorization: "Bearer ${TOKEN}" },
+        events: ["onRunEnd"],
+      },
+    });
+    expect(parsed.webhook.enabled).toBe(true);
+    expect(parsed.webhook.url).toBe("https://example.com/hook");
+    expect(parsed.webhook.events).toEqual(["onRunEnd"]);
+  });
+
+  test("rejects an unknown event name", () => {
+    const res = ReportersConfigSchema.safeParse({
+      webhook: { events: ["onSomething"] },
+    });
+    expect(res.success).toBe(false);
+  });
+
+  test("rejects a non-URL webhook url", () => {
+    const res = ReportersConfigSchema.safeParse({ webhook: { url: "not-a-url" } });
+    expect(res.success).toBe(false);
+  });
+});
