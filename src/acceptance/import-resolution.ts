@@ -104,7 +104,10 @@ export function parsePythonImports(content: string): string[] {
       if (fromModule) modules.push(fromModule); // empty for `from . import x` — skipped (ambiguous)
     } else if (importList) {
       for (const part of importList.split(",")) {
-        const mod = part.trim().split(/\s+as\s+/)[0].trim();
+        const mod = part
+          .trim()
+          .split(/\s+as\s+/)[0]
+          .trim();
         if (mod) modules.push(mod);
       }
     }
