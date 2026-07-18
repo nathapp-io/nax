@@ -33,6 +33,7 @@ import {
   RoutingConfigSchema,
 } from "./schemas-infra";
 import { ModelMapSchema } from "./schemas-model";
+import { ReportersConfigSchema } from "./schemas-reporters";
 import { AdversarialReviewConfigSchema, ReviewConfigSchema } from "./schemas-review";
 
 // Re-export named schemas consumed by other modules (via config/schema.ts barrel)
@@ -425,6 +426,7 @@ export const NaxConfigSchema = z
       })
       .optional()
       .default({ enabled: false, draft: true }),
+    reporters: ReportersConfigSchema,
     profile: z.string().default("default"),
     profileChain: z.array(z.string()).default([]),
   })

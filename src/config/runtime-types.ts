@@ -556,6 +556,8 @@ export interface NaxConfig {
   plugins?: PluginConfigEntry[];
   /** Disabled plugin names (v0.38.2) */
   disabledPlugins?: string[];
+  /** Built-in reporter plugin settings (webhook / OTel) */
+  reporters?: import("./schemas-reporters").ReportersConfig;
   /** Hooks configuration (v0.10) */
   hooks?: RawHooksConfig;
   /** Interaction settings (v0.15.0) */
