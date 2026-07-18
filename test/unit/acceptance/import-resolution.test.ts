@@ -6,6 +6,7 @@ import { clearLanguageCache } from "../../../src/project";
 import {
   languageFromExtension,
   MAX_FILE_LINES,
+  parsePythonImports,
   parseTsImports,
   readCapped,
   resolveLanguage,
@@ -120,6 +121,46 @@ describe("resolveSourceFiles — typescript", () => {
         language: "typescript",
       });
       expect(files).toEqual([]);
+    });
+  });
+});
+
+describe("parsePythonImports", () => {
+  test("captures from/import/as/relative forms", () => {
+    const content = `
+from foo.bar import baz
+import pkg.mod
+import other as o
+from .local import thing
+`;
+    expect(parsePythonImports(content)).toEqual(["foo.bar", "pkg.mod", "other", "local"]);
+  });
+});
+
+describe("resolveSourceFiles — python", () => {
+  test("resolves dotted module to a .py file", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(`${dir}/foo/bar.py`, "def baz():\n    return 1\n");
+      const files = await resolveSourceFiles({
+        testFileContent: `from foo.bar import baz`,
+        packageDir: dir,
+        language: "python",
+      });
+      expect(files).toHaveLength(1);
+      expect(files[0].path).toBe("foo/bar.py");
+    });
+  });
+
+  test("resolves a package __init__.py", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(`${dir}/pkg/__init__.py`, "VALUE = 1\n");
+      const files = await resolveSourceFiles({
+        testFileContent: `import pkg`,
+        packageDir: dir,
+        language: "python",
+      });
+      expect(files).toHaveLength(1);
+      expect(files[0].path).toBe("pkg/__init__.py");
     });
   });
 });

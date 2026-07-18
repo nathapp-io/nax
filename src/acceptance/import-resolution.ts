@@ -89,11 +89,41 @@ export function tsCandidates(spec: string): string[] {
   return out;
 }
 
+// Python: `from a.b import x` and `import a.b`. Leading dots (relative imports)
+// are best-effort — stripped and mapped relative to packageDir. Matched as a
+// single alternation pass so results preserve source order (from/import lines
+// can be interleaved in the file).
+const PY_IMPORT_LINE_RE = /^\s*(?:from\s+\.*([\w.]*)\s+import\s+|import\s+([\w.]+(?:\s*,\s*[\w.]+)*))/gm;
+
+export function parsePythonImports(content: string): string[] {
+  const modules: string[] = [];
+  for (const m of content.matchAll(PY_IMPORT_LINE_RE)) {
+    const fromModule = m[1];
+    const importList = m[2];
+    if (fromModule !== undefined) {
+      if (fromModule) modules.push(fromModule); // empty for `from . import x` — skipped (ambiguous)
+    } else if (importList) {
+      for (const part of importList.split(",")) {
+        const mod = part.trim().split(/\s+as\s+/)[0].trim();
+        if (mod) modules.push(mod);
+      }
+    }
+  }
+  return modules;
+}
+
+export function pythonCandidates(module: string): string[] {
+  const base = module.replace(/\./g, "/");
+  return [`${base}.py`, `${base}/__init__.py`];
+}
+
 async function collectCandidates(lang: ResolvedLanguage, opts: ResolveSourceFilesOptions): Promise<string[]> {
   switch (lang) {
     case "typescript":
     case "javascript":
       return parseTsImports(opts.testFileContent).flatMap(tsCandidates);
+    case "python":
+      return parsePythonImports(opts.testFileContent).flatMap(pythonCandidates);
     default:
       return [];
   }
