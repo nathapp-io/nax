@@ -45,3 +45,6 @@ export type { PostJsonDeps } from "./builtin/reporter-shared";
 
 // Built-in webhook-reporter plugin (Task 3)
 export { createWebhookReporterPlugin } from "./builtin/webhook-reporter";
+
+// Built-in otel-reporter plugin (Task 5)
+export { createOtelReporterPlugin } from "./builtin/otel-reporter";
