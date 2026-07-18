@@ -38,3 +38,7 @@ export { createPluginLogger } from "./plugin-logger";
 // Built-in auto-route plugin (US-005) — exposed for test injection (`_autoRouteDeps`)
 export { autoRoutePlugin, _autoRouteDeps } from "./builtin/auto-route";
 export type { AutoRouteDeps } from "./builtin/auto-route/types";
+
+// Built-in reporter helpers (Task 2)
+export { interpolateHeaders, postJson, _postJsonDeps } from "./builtin/reporter-shared";
+export type { PostJsonDeps } from "./builtin/reporter-shared";
