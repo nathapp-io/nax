@@ -6,8 +6,10 @@ import { clearLanguageCache } from "../../../src/project";
 import {
   languageFromExtension,
   MAX_FILE_LINES,
+  parseTsImports,
   readCapped,
   resolveLanguage,
+  resolveSourceFiles,
 } from "../../../src/acceptance/import-resolution";
 import { withTempDir } from "../../helpers";
 
@@ -69,6 +71,55 @@ describe("readCapped", () => {
   test("returns null for a missing file", async () => {
     await withTempDir(async (dir) => {
       expect(await readCapped("nope.ts", dir)).toBeNull();
+    });
+  });
+});
+
+describe("parseTsImports", () => {
+  test("keeps relative imports, drops bare specifiers", () => {
+    const content = `
+import { add } from "./math";
+import { z } from "zod";
+import { b } from "../lib/b.ts";
+`;
+    expect(parseTsImports(content)).toEqual(["./math", "../lib/b.ts"]);
+  });
+});
+
+describe("resolveSourceFiles — typescript", () => {
+  test("resolves an extensionless relative import", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(`${dir}/math.ts`, "export const add = (a: number, b: number) => a + b;");
+      const files = await resolveSourceFiles({
+        testFileContent: `import { add } from "./math";`,
+        packageDir: dir,
+        language: "typescript",
+      });
+      expect(files).toHaveLength(1);
+      expect(files[0].path).toBe("./math.ts");
+    });
+  });
+
+  test("caps at 5 files even when 6 resolve", async () => {
+    await withTempDir(async (dir) => {
+      let content = "";
+      for (let i = 1; i <= 6; i++) {
+        await Bun.write(`${dir}/f${i}.ts`, `export const v${i} = ${i};`);
+        content += `import { v${i} } from "./f${i}.ts";\n`;
+      }
+      const files = await resolveSourceFiles({ testFileContent: content, packageDir: dir, language: "typescript" });
+      expect(files).toHaveLength(5);
+    });
+  });
+
+  test("degrades to [] when nothing resolves", async () => {
+    await withTempDir(async (dir) => {
+      const files = await resolveSourceFiles({
+        testFileContent: `import { x } from "./missing";`,
+        packageDir: dir,
+        language: "typescript",
+      });
+      expect(files).toEqual([]);
     });
   });
 });

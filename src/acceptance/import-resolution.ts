@@ -62,3 +62,63 @@ export async function readCapped(
     return null;
   }
 }
+
+export interface ResolveSourceFilesOptions {
+  testFileContent: string;
+  packageDir: string;
+  testFilePath?: string;
+  language?: ProjectProfile["language"];
+}
+
+const TS_IMPORT_RE = /import\s+(?:{[^}]+}|[^;'"]+)\s+from\s+["']([^"']+)["']/g;
+const TS_EXTS = [".ts", ".tsx", ".js", ".jsx"] as const;
+
+export function parseTsImports(content: string): string[] {
+  const specs: string[] = [];
+  for (const m of content.matchAll(TS_IMPORT_RE)) {
+    if (m[1].startsWith(".")) specs.push(m[1]);
+  }
+  return specs;
+}
+
+export function tsCandidates(spec: string): string[] {
+  if (TS_EXTS.some((e) => spec.endsWith(e))) return [spec];
+  const out: string[] = [];
+  for (const e of TS_EXTS) out.push(`${spec}${e}`);
+  for (const e of TS_EXTS) out.push(`${spec}/index${e}`);
+  return out;
+}
+
+async function collectCandidates(lang: ResolvedLanguage, opts: ResolveSourceFilesOptions): Promise<string[]> {
+  switch (lang) {
+    case "typescript":
+    case "javascript":
+      return parseTsImports(opts.testFileContent).flatMap(tsCandidates);
+    default:
+      return [];
+  }
+}
+
+async function readCandidates(
+  candidates: string[],
+  packageDir: string,
+): Promise<Array<{ path: string; content: string }>> {
+  const seen = new Set<string>();
+  const results: Array<{ path: string; content: string }> = [];
+  for (const rel of candidates) {
+    if (results.length >= MAX_SOURCE_FILES) break;
+    if (seen.has(rel)) continue;
+    seen.add(rel);
+    const file = await readCapped(rel, packageDir);
+    if (file) results.push(file);
+  }
+  return results;
+}
+
+export async function resolveSourceFiles(
+  opts: ResolveSourceFilesOptions,
+): Promise<Array<{ path: string; content: string }>> {
+  const lang = await resolveLanguage(opts);
+  const candidates = await collectCandidates(lang, opts);
+  return readCandidates(candidates, opts.packageDir);
+}
