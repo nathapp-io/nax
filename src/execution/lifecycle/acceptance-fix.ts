@@ -114,7 +114,11 @@ export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosi
   }
 
   // Slow path: full LLM diagnosis via callOp
-  const sourceFiles = await loadSourceFilesForDiagnosis(diagnosisOpts.testFileContent, diagnosisOpts.workdir);
+  const sourceFiles = await loadSourceFilesForDiagnosis({
+    testFileContent: diagnosisOpts.testFileContent,
+    packageDir: diagnosisOpts.workdir,
+    testFilePath: diagnosisOpts.acceptanceTestPath,
+  });
   return await _diagnosisDeps.callOp(fixCallCtx(ctx), acceptanceDiagnoseOp, {
     testOutput: diagnosisOpts.testOutput,
     testFileContent: diagnosisOpts.testFileContent,

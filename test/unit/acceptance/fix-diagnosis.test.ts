@@ -16,7 +16,11 @@ import type { DiagnosisResult } from "../../../src/acceptance/types";
 
 describe("loadSourceFilesForDiagnosis", () => {
   test("returns empty array when test file has no imports", async () => {
-    const result = await loadSourceFilesForDiagnosis('test("x", () => {});', "/tmp");
+    const result = await loadSourceFilesForDiagnosis({
+      testFileContent: 'test("x", () => {});',
+      packageDir: "/tmp",
+      language: "typescript",
+    });
     expect(result).toEqual([]);
   });
 
@@ -27,7 +31,11 @@ import { multiply } from "./src/utils.ts";
 test("AC-1", () => { expect(add(1,2)).toBe(3); });
 `;
     // Files don't exist on disk — function gracefully returns null for missing files
-    const result = await loadSourceFilesForDiagnosis(testContent, "/tmp");
+    const result = await loadSourceFilesForDiagnosis({
+      testFileContent: testContent,
+      packageDir: "/tmp",
+      language: "typescript",
+    });
     expect(result).toEqual([]);
   });
 
@@ -42,7 +50,11 @@ import { f } from "./src/file6.ts";
 test("AC-1", () => { expect(a()).toBe(1); });
 `;
     // No files exist on disk
-    const result = await loadSourceFilesForDiagnosis(testContent, "/tmp");
+    const result = await loadSourceFilesForDiagnosis({
+      testFileContent: testContent,
+      packageDir: "/tmp",
+      language: "typescript",
+    });
     expect(result).toEqual([]);
   });
 });
