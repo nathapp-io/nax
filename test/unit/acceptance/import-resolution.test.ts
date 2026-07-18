@@ -6,6 +6,7 @@ import { clearLanguageCache } from "../../../src/project";
 import {
   languageFromExtension,
   MAX_FILE_LINES,
+  parseGoImports,
   parsePythonImports,
   parseRustUses,
   parseTsImports,
@@ -202,6 +203,52 @@ describe("resolveSourceFiles — rust", () => {
       });
       expect(files).toHaveLength(1);
       expect(files[0].path).toBe("src/util/mod.rs");
+    });
+  });
+});
+
+describe("parseGoImports", () => {
+  test("captures single and grouped imports", () => {
+    const content = `
+import "example.com/proj/pkg/math"
+import (
+  "fmt"
+  "example.com/proj/pkg/util"
+)
+`;
+    expect(parseGoImports(content)).toEqual([
+      "example.com/proj/pkg/math",
+      "fmt",
+      "example.com/proj/pkg/util",
+    ]);
+  });
+});
+
+describe("resolveSourceFiles — go", () => {
+  test("loads local package .go files, excludes _test.go and external imports", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(`${dir}/go.mod`, "module example.com/proj\n\ngo 1.22\n");
+      await Bun.write(`${dir}/pkg/math/add.go`, "package math\n\nfunc Add(a, b int) int { return a + b }");
+      await Bun.write(`${dir}/pkg/math/add_test.go`, "package math\n\n// test file");
+      const files = await resolveSourceFiles({
+        testFileContent: `import (\n  "fmt"\n  "example.com/proj/pkg/math"\n)`,
+        packageDir: dir,
+        language: "go",
+      });
+      expect(files).toHaveLength(1);
+      expect(files[0].path).toBe("pkg/math/add.go");
+    });
+  });
+
+  test("returns [] when go.mod is absent", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(`${dir}/pkg/math/add.go`, "package math");
+      const files = await resolveSourceFiles({
+        testFileContent: `import "example.com/proj/pkg/math"`,
+        packageDir: dir,
+        language: "go",
+      });
+      expect(files).toEqual([]);
     });
   });
 });

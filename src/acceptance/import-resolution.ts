@@ -147,6 +147,50 @@ export function rustCandidates(usePath: string): string[] {
   return candidates;
 }
 
+// Go: an import is a package path; resolving to files needs the go.mod module
+// prefix stripped, then the local directory's non-test .go files.
+const GO_SINGLE_IMPORT_RE = /^\s*import\s+"([^"]+)"/gm;
+const GO_IMPORT_BLOCK_RE = /import\s*\(([\s\S]*?)\)/g;
+const GO_BLOCK_LINE_RE = /"([^"]+)"/g;
+
+export function parseGoImports(content: string): string[] {
+  const paths: string[] = [];
+  for (const m of content.matchAll(GO_SINGLE_IMPORT_RE)) paths.push(m[1]);
+  for (const block of content.matchAll(GO_IMPORT_BLOCK_RE)) {
+    for (const line of block[1].matchAll(GO_BLOCK_LINE_RE)) paths.push(line[1]);
+  }
+  return paths;
+}
+
+async function readGoModulePrefix(packageDir: string): Promise<string | null> {
+  try {
+    const text = await Bun.file(`${packageDir}/go.mod`).text();
+    const m = text.match(/^\s*module\s+(\S+)/m);
+    return m ? m[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function resolveGoCandidates(content: string, packageDir: string): Promise<string[]> {
+  const prefix = await readGoModulePrefix(packageDir);
+  if (!prefix) return [];
+  const candidates: string[] = [];
+  for (const imp of parseGoImports(content)) {
+    if (imp !== prefix && !imp.startsWith(`${prefix}/`)) continue;
+    const relDir = imp === prefix ? "." : imp.slice(prefix.length + 1);
+    try {
+      for (const file of new Bun.Glob("*.go").scanSync({ cwd: `${packageDir}/${relDir}`, absolute: false })) {
+        if (file.endsWith("_test.go")) continue;
+        candidates.push(relDir === "." ? file : `${relDir}/${file}`);
+      }
+    } catch {
+      // directory missing — skip this import
+    }
+  }
+  return candidates;
+}
+
 async function collectCandidates(lang: ResolvedLanguage, opts: ResolveSourceFilesOptions): Promise<string[]> {
   switch (lang) {
     case "typescript":
@@ -156,6 +200,8 @@ async function collectCandidates(lang: ResolvedLanguage, opts: ResolveSourceFile
       return parsePythonImports(opts.testFileContent).flatMap(pythonCandidates);
     case "rust":
       return parseRustUses(opts.testFileContent).flatMap(rustCandidates);
+    case "go":
+      return resolveGoCandidates(opts.testFileContent, opts.packageDir);
     default:
       return [];
   }
