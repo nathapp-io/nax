@@ -54,6 +54,7 @@ describe("otel-reporter", () => {
     // startMs (epoch 0, from onRunStart's startTime) + runElapsedMs(100) -> 100ms -> 100_000_000 ns
     expect(span.events[0].timeUnixNano).toBe("100000000");
     expect(span.status.code).toBe(2); // one failed
+    expect(span.attributes).toContainEqual({ key: "feature", value: { stringValue: "f" } });
   });
 
   test("emits no story events before onRunStart is dropped (no state)", async () => {

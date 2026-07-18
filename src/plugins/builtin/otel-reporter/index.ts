@@ -11,6 +11,7 @@ interface RunState {
   traceId: string;
   spanId: string;
   startMs: number;
+  feature: string;
   events: SpanEvent[];
 }
 
@@ -41,7 +42,7 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
       spanId: st.spanId,
       startUnixNano,
       endUnixNano,
-      feature: "",
+      feature: st.feature,
       runId: e.runId,
       storySummary: e.storySummary,
       totalCost: e.totalCost,
@@ -67,6 +68,7 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
         traceId: newTraceId(),
         spanId: newSpanId(),
         startMs: Date.parse(event.startTime),
+        feature: event.feature,
         events: [],
       });
     },
@@ -94,6 +96,7 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
         traceId: newTraceId(),
         spanId: newSpanId(),
         startMs,
+        feature: "",
         events: [],
       };
       states.delete(event.runId);
