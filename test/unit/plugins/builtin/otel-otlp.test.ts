@@ -1,13 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { newSpanId, newTraceId } from "../../../../src/plugins/builtin/otel-reporter/ids";
 import {
   type SpanEvent,
   attr,
   buildMetricsPayload,
   buildTracesPayload,
   msToUnixNano,
-  newSpanId,
-  newTraceId,
-} from "../../../../src/plugins/builtin/otel-reporter";
+} from "../../../../src/plugins/builtin/otel-reporter/otlp";
 
 describe("ids", () => {
   test("newTraceId is 32 lowercase hex chars", () => {

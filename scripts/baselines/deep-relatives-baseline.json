@@ -1,6 +1,6 @@
 {
-  "count": 2846,
-  "updatedAt": "2026-07-18T08:26:15.934Z",
+  "count": 2847,
+  "updatedAt": "2026-07-18T08:28:39.440Z",
   "byFile": {
     "src/pipeline/stages/acceptance-setup.ts": 1,
     "src/pipeline/stages/prompt.ts": 5,
@@ -262,7 +262,7 @@
     "test/unit/plugins/builtin/auto-pr-template.test.ts": 2,
     "test/unit/plugins/builtin/curator-acceptance.test.ts": 3,
     "test/unit/plugins/builtin/auto-pr-pr-body.test.ts": 2,
-    "test/unit/plugins/builtin/otel-otlp.test.ts": 1,
+    "test/unit/plugins/builtin/otel-otlp.test.ts": 2,
     "test/unit/plugins/builtin/auto-pr-acceptance.test.ts": 3,
     "test/unit/plugins/builtin/curator-types.test.ts": 1,
     "test/unit/plugins/builtin/curator-integration.test.ts": 2,
