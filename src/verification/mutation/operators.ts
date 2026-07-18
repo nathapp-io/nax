@@ -11,14 +11,25 @@ import type { MutationOperator } from "./types";
 type PatternReplacement = readonly [RegExp, string];
 
 /**
- * Comparison-operator flips. Patterns are module-local so they are
- * reused across calls without leaking `lastIndex` state.
+ * TypeScript/JavaScript comparison flips — includes the JS-only strict-equality
+ * operators (`===` / `!==`).
  */
 const TS_COMPARISON_PAIRS: ReadonlyArray<PatternReplacement> = [
   [/==/g, "!="],
   [/!=/g, "=="],
   [/===/g, "!=="],
   [/!==/g, "==="],
+  [/>=/g, "<="],
+  [/<=/g, ">="],
+];
+
+/**
+ * Comparison flips shared by all languages — the TS subset minus the JS-only
+ * strict-equality operators (`===` / `!==`), which Python/Go/Rust do not have.
+ */
+const UNIVERSAL_COMPARISON_PAIRS: ReadonlyArray<PatternReplacement> = [
+  [/==/g, "!="],
+  [/!=/g, "=="],
   [/>=/g, "<="],
   [/<=/g, ">="],
 ];
@@ -53,10 +64,6 @@ function applyComparisonBracketFlip(snippet: string): string[] {
   return results;
 }
 
-const TS_COMPARISON_BRACKET_FLIP_ID = "ts:cmp-bracket-flip";
-
-const TS_COMPARISON_FLIP_ID = "ts:cmp-flip";
-
 function flipWithPairs(pairs: ReadonlyArray<PatternReplacement>, snippet: string): string[] {
   const seen = new Set<string>();
   const results: string[] = [];
@@ -73,47 +80,66 @@ function flipWithPairs(pairs: ReadonlyArray<PatternReplacement>, snippet: string
   return results;
 }
 
-const TS_BOOLEAN_FLIP_ID = "ts:bool-flip";
-
-function applyBooleanFlip(snippet: string): string[] {
-  const seen = new Set<string>();
-  const results: string[] = [];
-  if (/\btrue\b/.test(snippet)) {
-    const produced = snippet.replace(/\btrue\b/g, "false");
-    seen.add(produced);
-    results.push(produced);
-  }
-  if (/\bfalse\b/.test(snippet)) {
-    const produced = snippet.replace(/\bfalse\b/g, "true");
-    if (!seen.has(produced)) results.push(produced);
-  }
-  return results;
+/**
+ * Build a boolean-literal flip for a language's spelling of true/false
+ * (`true`/`false` for TS/Go/Rust, `True`/`False` for Python). Fresh regexes
+ * per call keep the shared `lastIndex` hazard out.
+ */
+function makeBooleanFlip(trueLit: string, falseLit: string): (snippet: string) => string[] {
+  return (snippet: string) => {
+    const seen = new Set<string>();
+    const results: string[] = [];
+    if (new RegExp(`\\b${trueLit}\\b`).test(snippet)) {
+      const produced = snippet.replace(new RegExp(`\\b${trueLit}\\b`, "g"), falseLit);
+      seen.add(produced);
+      results.push(produced);
+    }
+    if (new RegExp(`\\b${falseLit}\\b`).test(snippet)) {
+      const produced = snippet.replace(new RegExp(`\\b${falseLit}\\b`, "g"), trueLit);
+      if (!seen.has(produced)) results.push(produced);
+    }
+    return results;
+  };
 }
 
-const TS_ARITHMETIC_PAIRS: ReadonlyArray<PatternReplacement> = [
+const ARITHMETIC_PAIRS: ReadonlyArray<PatternReplacement> = [
   [/\+/g, "-"],
   [/-/g, "+"],
   [/\*/g, "/"],
   [/\//g, "*"],
 ];
 
-const TS_ARITHMETIC_FLIP_ID = "ts:arith-flip";
-
 const TYPESCRIPT_OPERATORS: ReadonlyArray<MutationOperator> = [
-  { id: TS_COMPARISON_FLIP_ID, apply: (snippet) => flipWithPairs(TS_COMPARISON_PAIRS, snippet) },
-  { id: TS_COMPARISON_BRACKET_FLIP_ID, apply: applyComparisonBracketFlip },
-  { id: TS_BOOLEAN_FLIP_ID, apply: applyBooleanFlip },
-  { id: TS_ARITHMETIC_FLIP_ID, apply: (snippet) => flipWithPairs(TS_ARITHMETIC_PAIRS, snippet) },
+  { id: "ts:cmp-flip", apply: (snippet) => flipWithPairs(TS_COMPARISON_PAIRS, snippet) },
+  { id: "ts:cmp-bracket-flip", apply: applyComparisonBracketFlip },
+  { id: "ts:bool-flip", apply: makeBooleanFlip("true", "false") },
+  { id: "ts:arith-flip", apply: (snippet) => flipWithPairs(ARITHMETIC_PAIRS, snippet) },
 ];
 
-const PYTHON_OPERATORS: ReadonlyArray<MutationOperator> = [];
-const GO_OPERATORS: ReadonlyArray<MutationOperator> = [];
+/**
+ * Build the standard four-operator table for a language, scoped by an id
+ * prefix and its boolean-literal spelling. Comparison / bracket / arithmetic
+ * flips are language-neutral; only the boolean spelling differs.
+ */
+function makeOperators(prefix: string, trueLit: string, falseLit: string): ReadonlyArray<MutationOperator> {
+  return [
+    { id: `${prefix}:cmp-flip`, apply: (snippet) => flipWithPairs(UNIVERSAL_COMPARISON_PAIRS, snippet) },
+    { id: `${prefix}:cmp-bracket-flip`, apply: applyComparisonBracketFlip },
+    { id: `${prefix}:bool-flip`, apply: makeBooleanFlip(trueLit, falseLit) },
+    { id: `${prefix}:arith-flip`, apply: (snippet) => flipWithPairs(ARITHMETIC_PAIRS, snippet) },
+  ];
+}
+
+const PYTHON_OPERATORS = makeOperators("py", "True", "False");
+const GO_OPERATORS = makeOperators("go", "true", "false");
+const RUST_OPERATORS = makeOperators("rust", "true", "false");
 
 const SUPPORTED_LANGUAGES: ReadonlyMap<string, ReadonlyArray<MutationOperator>> = new Map([
   ["typescript", TYPESCRIPT_OPERATORS],
   ["javascript", TYPESCRIPT_OPERATORS],
   ["python", PYTHON_OPERATORS],
   ["go", GO_OPERATORS],
+  ["rust", RUST_OPERATORS],
 ]);
 
 export function getOperatorsForLanguage(language: string | undefined): ReadonlyArray<MutationOperator> {

@@ -56,16 +56,53 @@ describe("generateMutants — Mutant shape", () => {
 });
 
 describe("generateMutants — unsupported languages", () => {
-  test("AC5: language 'python' returns empty array", () => {
-    expect(generateMutants({ source: "a > b\n", language: "python", file: "x.py" })).toEqual([]);
-  });
-
-  test("AC6: language 'go' returns empty array", () => {
-    expect(generateMutants({ source: "a > b\n", language: "go", file: "x.go" })).toEqual([]);
-  });
-
-  test("AC7: undefined language returns empty array", () => {
+  test("undefined language returns empty array", () => {
     expect(generateMutants({ source: "a > b\n", language: undefined, file: "x.ts" })).toEqual([]);
+  });
+
+  test("unknown language returns empty array", () => {
+    expect(generateMutants({ source: "a > b\n", language: "ruby", file: "x.rb" })).toEqual([]);
+  });
+});
+
+describe("generateMutants — Python operator coverage", () => {
+  test("bool-flip: True -> False", () => {
+    const mutants = generateMutants({ source: "flag = True\n", language: "python", file: "f.py" });
+    expect(mutants.some((m) => m.after === "flag = False" && m.operatorId === "py:bool-flip")).toBe(true);
+  });
+
+  test("cmp-flip: == -> !=", () => {
+    const mutants = generateMutants({ source: "x = a == b\n", language: "python", file: "f.py" });
+    expect(mutants.some((m) => m.after === "x = a != b" && m.operatorId === "py:cmp-flip")).toBe(true);
+  });
+
+  test("arith-flip: + -> -", () => {
+    const mutants = generateMutants({ source: "y = a + b\n", language: "python", file: "f.py" });
+    expect(mutants.some((m) => m.after === "y = a - b" && m.operatorId === "py:arith-flip")).toBe(true);
+  });
+});
+
+describe("generateMutants — Go operator coverage", () => {
+  test("bool-flip: true -> false", () => {
+    const mutants = generateMutants({ source: "ok := true\n", language: "go", file: "f.go" });
+    expect(mutants.some((m) => m.after === "ok := false" && m.operatorId === "go:bool-flip")).toBe(true);
+  });
+
+  test("bracket-flip: > -> <", () => {
+    const mutants = generateMutants({ source: "if a > b {\n", language: "go", file: "f.go" });
+    expect(mutants.some((m) => m.after === "if a < b {" && m.operatorId === "go:cmp-bracket-flip")).toBe(true);
+  });
+});
+
+describe("generateMutants — Rust operator coverage", () => {
+  test("bool-flip: true -> false", () => {
+    const mutants = generateMutants({ source: "let ok = true;\n", language: "rust", file: "f.rs" });
+    expect(mutants.some((m) => m.after === "let ok = false;" && m.operatorId === "rust:bool-flip")).toBe(true);
+  });
+
+  test("cmp-flip: == -> !=", () => {
+    const mutants = generateMutants({ source: "let e = a == b;\n", language: "rust", file: "f.rs" });
+    expect(mutants.some((m) => m.after === "let e = a != b;" && m.operatorId === "rust:cmp-flip")).toBe(true);
   });
 });
 
