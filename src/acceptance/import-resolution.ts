@@ -7,6 +7,7 @@
  * first-level LOCAL imports only; language-specific parsing is gated by
  * detected language per monorepo-awareness.md §B.
  */
+import { resolve, sep } from "node:path";
 import type { ProjectProfile } from "../config";
 import { detectLanguage } from "../project";
 
@@ -15,7 +16,7 @@ export const MAX_FILE_LINES = 500;
 
 export type ResolvedLanguage = "typescript" | "javascript" | "python" | "go" | "rust";
 
-const SUPPORTED = new Set<string>(["typescript", "javascript", "python", "go", "rust"]);
+const SUPPORTED = new Set<ResolvedLanguage>(["typescript", "javascript", "python", "go", "rust"]);
 
 const EXT_LANGUAGE = new Map<string, ProjectProfile["language"]>([
   [".ts", "typescript"],
@@ -38,15 +39,19 @@ export function languageFromExtension(testFilePath: string | undefined): Project
   return EXT_LANGUAGE.get(testFilePath.slice(dot).toLowerCase());
 }
 
+function isResolvedLanguage(lang: ProjectProfile["language"] | undefined): lang is ResolvedLanguage {
+  return lang !== undefined && SUPPORTED.has(lang as ResolvedLanguage);
+}
+
 export async function resolveLanguage(opts: {
   testFilePath?: string;
   packageDir: string;
   language?: ProjectProfile["language"];
 }): Promise<ResolvedLanguage> {
   const explicit = opts.language ?? languageFromExtension(opts.testFilePath);
-  if (explicit && SUPPORTED.has(explicit)) return explicit as ResolvedLanguage;
+  if (isResolvedLanguage(explicit)) return explicit;
   const detected = await detectLanguage(opts.packageDir);
-  if (detected && SUPPORTED.has(detected)) return detected as ResolvedLanguage;
+  if (isResolvedLanguage(detected)) return detected;
   return "typescript"; // historical default — preserves pre-polyglot behavior
 }
 
@@ -54,8 +59,13 @@ export async function readCapped(
   relPath: string,
   packageDir: string,
 ): Promise<{ path: string; content: string } | null> {
+  const resolvedPackageDir = resolve(packageDir);
+  const fullPath = resolve(resolvedPackageDir, relPath);
+  if (fullPath !== resolvedPackageDir && !fullPath.startsWith(resolvedPackageDir + sep)) {
+    return null; // escapes packageDir — not a local file, refuse to read
+  }
   try {
-    const text = await Bun.file(`${packageDir}/${relPath}`).text();
+    const text = await Bun.file(fullPath).text();
     const content = text.split("\n").slice(0, MAX_FILE_LINES).join("\n");
     return { path: relPath, content };
   } catch {
@@ -71,7 +81,10 @@ export interface ResolveSourceFilesOptions {
 }
 
 const TS_IMPORT_RE = /import\s+(?:{[^}]+}|[^;'"]+)\s+from\s+["']([^"']+)["']/g;
-const TS_EXTS = [".ts", ".tsx", ".js", ".jsx"] as const;
+// Mirrors EXT_LANGUAGE's typescript/javascript extensions so detection and
+// extensionless-import resolution stay in sync (a .mts test file must be able
+// to resolve an extensionless import to a sibling .mts source file).
+const TS_EXTS = [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"] as const;
 
 export function parseTsImports(content: string): string[] {
   const specs: string[] = [];

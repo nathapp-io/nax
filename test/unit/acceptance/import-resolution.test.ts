@@ -76,6 +76,22 @@ describe("readCapped", () => {
       expect(await readCapped("nope.ts", dir)).toBeNull();
     });
   });
+
+  test("refuses to read a path that escapes packageDir via ../ traversal", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(`${dir}/secret.ts`, "export const SECRET = 1;");
+      const result = await readCapped("../secret.ts", `${dir}/pkg`);
+      expect(result).toBeNull();
+    });
+  });
+
+  test("still reads a path that stays within packageDir despite internal ..", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(`${dir}/pkg/a.ts`, "export const a = 1;");
+      const result = await readCapped("sub/../a.ts", `${dir}/pkg`);
+      expect(result).toEqual({ path: "sub/../a.ts", content: "export const a = 1;" });
+    });
+  });
 });
 
 describe("parseTsImports", () => {
@@ -125,6 +141,19 @@ describe("resolveSourceFiles — typescript", () => {
       expect(files).toEqual([]);
     });
   });
+
+  test("resolves an extensionless import to a .mts source file", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(`${dir}/math.mts`, "export const add = (a: number, b: number) => a + b;");
+      const files = await resolveSourceFiles({
+        testFileContent: `import { add } from "./math";`,
+        packageDir: dir,
+        language: "typescript",
+      });
+      expect(files).toHaveLength(1);
+      expect(files[0].path).toBe("./math.mts");
+    });
+  });
 });
 
 describe("parsePythonImports", () => {
@@ -136,6 +165,14 @@ import other as o
 from .local import thing
 `;
     expect(parsePythonImports(content)).toEqual(["foo.bar", "pkg.mod", "other", "local"]);
+  });
+
+  test("skips the ambiguous `from . import x` form (no module name)", () => {
+    const content = `
+from . import thing
+from foo import bar
+`;
+    expect(parsePythonImports(content)).toEqual(["foo"]);
   });
 });
 
@@ -176,6 +213,13 @@ use super::helpers::x;
 use std::collections::HashMap;
 `;
     expect(parseRustUses(content)).toEqual(["crate::math::add", "crate::util", "super::helpers"]);
+  });
+
+  test("caps super/self at one segment past the root for deeper paths", () => {
+    const content = `use super::a::b::c;`;
+    // Best-effort, no parent-dir traversal: only the first segment is kept,
+    // unlike crate:: which keeps the full chain.
+    expect(parseRustUses(content)).toEqual(["super::a"]);
   });
 });
 
@@ -245,6 +289,20 @@ describe("resolveSourceFiles — go", () => {
         language: "go",
       });
       expect(files).toEqual([]);
+    });
+  });
+
+  test("resolves a bare single-line import through the full pipeline", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(`${dir}/go.mod`, "module example.com/proj\n\ngo 1.22\n");
+      await Bun.write(`${dir}/pkg/math/add.go`, "package math\n\nfunc Add(a, b int) int { return a + b }");
+      const files = await resolveSourceFiles({
+        testFileContent: `import "example.com/proj/pkg/math"`,
+        packageDir: dir,
+        language: "go",
+      });
+      expect(files).toHaveLength(1);
+      expect(files[0].path).toBe("pkg/math/add.go");
     });
   });
 });
