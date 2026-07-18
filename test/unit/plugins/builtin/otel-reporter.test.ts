@@ -23,7 +23,7 @@ function capturing() {
 
 async function runOnce(plugin: ReturnType<typeof createOtelReporterPlugin>) {
   const r = plugin.extensions.reporter!;
-  await r.onRunStart?.({ runId: "r1", feature: "f", totalStories: 2, startTime: "2026-07-18T00:00:00.000Z" });
+  await r.onRunStart?.({ runId: "r1", feature: "f", totalStories: 2, startTime: "1970-01-01T00:00:00.000Z" });
   await r.onStoryComplete?.({ runId: "r1", storyId: "s1", status: "completed", runElapsedMs: 100, cost: 0.1, tier: "fast", testStrategy: "tdd-simple" });
   await r.onStoryComplete?.({ runId: "r1", storyId: "s2", status: "failed", runElapsedMs: 200, cost: 0.2, tier: "balanced", testStrategy: "tdd-simple" });
   await r.onRunEnd?.({ runId: "r1", totalDurationMs: 300, totalCost: 0.3, storySummary: { completed: 1, failed: 1, skipped: 0, paused: 0 } });
@@ -51,7 +51,7 @@ describe("otel-reporter", () => {
     const span = posts[0].body.resourceSpans[0].scopeSpans[0].spans[0];
     expect(span.events).toHaveLength(2);
     expect(span.events[0].name).toBe("story.complete");
-    // startMs(0) + runElapsedMs(100) -> 100ms -> 100_000_000 ns
+    // startMs (epoch 0, from onRunStart's startTime) + runElapsedMs(100) -> 100ms -> 100_000_000 ns
     expect(span.events[0].timeUnixNano).toBe("100000000");
     expect(span.status.code).toBe(2); // one failed
   });

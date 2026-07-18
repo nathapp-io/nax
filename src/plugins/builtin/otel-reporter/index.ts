@@ -74,7 +74,7 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
       const st = states.get(event.runId);
       if (!st) return;
       st.events.push({
-        timeUnixNano: msToUnixNano(event.runElapsedMs),
+        timeUnixNano: msToUnixNano(st.startMs + event.runElapsedMs),
         name: "story.complete",
         attributes: [
           attr("storyId", event.storyId),
