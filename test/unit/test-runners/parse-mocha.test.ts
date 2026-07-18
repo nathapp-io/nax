@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseMochaOutput } from "@/test-runners/parse-mocha";
+import { parseMochaOutput } from "@/test-runners";
 
 describe("parseMochaOutput", () => {
   test("extracts counts and structured failure from spec reporter", () => {

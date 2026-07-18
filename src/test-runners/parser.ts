@@ -13,6 +13,8 @@
  */
 
 import { detectFramework } from "./detector";
+import { parseMochaOutput } from "./parse-mocha";
+import { parseRustTestOutput } from "./parse-rust";
 import type { TestFailure, TestOutputAnalysis, TestSummary } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -38,6 +40,10 @@ export function parseTestOutput(output: string): TestSummary {
       return parsePytestOutput(output);
     case "go":
       return parseGoTestOutput(output);
+    case "rust":
+      return parseRustTestOutput(output);
+    case "mocha":
+      return parseMochaOutput(output);
     default:
       return parseCommonOutput(output);
   }

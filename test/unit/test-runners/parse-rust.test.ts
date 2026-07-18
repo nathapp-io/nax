@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseRustTestOutput } from "@/test-runners/parse-rust";
+import { parseRustTestOutput } from "@/test-runners";
 
 describe("parseRustTestOutput", () => {
   test("extracts count + panic file:line from a single-binary failure", () => {

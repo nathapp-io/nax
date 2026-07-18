@@ -10,7 +10,7 @@
 
 import { isTestFileByPatterns } from "./conventions";
 
-export type Framework = "bun" | "jest" | "vitest" | "pytest" | "go" | "unknown";
+export type Framework = "bun" | "jest" | "vitest" | "pytest" | "go" | "rust" | "mocha" | "unknown";
 
 /**
  * Language-agnostic patterns that identify test files. Covers:
@@ -83,6 +83,11 @@ export function detectFramework(output: string): Framework {
   if (/={3,}\s+\d+\s+(?:failed|passed).*in\s+[\d.]+s\s*={3,}/m.test(output)) return "pytest";
   // go test: "--- FAIL:" or "ok  \t" or "FAIL\t"
   if (/^--- (?:FAIL|PASS):/m.test(output) || /^(?:ok|FAIL)\s+\t/m.test(output)) return "go";
+  // Rust cargo test: "test result:" summary or a panic line — unique anchors.
+  if (/^test result:\s+(?:ok|FAILED)\./m.test(output) || /panicked at /.test(output)) return "rust";
+  // Mocha (and Cypress) spec reporter: "N passing". MUST precede the bun check —
+  // mocha's spec reporter also prints the ✓/✗ glyphs the bun branch matches.
+  if (/^\s*\d+\s+passing\b/m.test(output)) return "mocha";
   // Bun: "(fail)" marker, bun test header, or bun's Unicode checkmarks (✓ ✔ ✗ ✘)
   if (/^\(fail\)\s/m.test(output) || /^bun test/m.test(output) || /[✓✔✗✘]/m.test(output)) return "bun";
   return "unknown";

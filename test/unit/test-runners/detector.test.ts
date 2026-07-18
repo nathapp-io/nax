@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { buildTestFrameworkHint } from "../../../src/test-runners/detector";
+import { buildTestFrameworkHint, detectFramework } from "../../../src/test-runners/detector";
 
 describe("buildTestFrameworkHint", () => {
   test("returns neutral hint for empty command (#543)", () => {
@@ -48,5 +48,39 @@ describe("buildTestFrameworkHint", () => {
   test("trims leading/trailing whitespace before matching", () => {
     expect(buildTestFrameworkHint("  pytest -v  ")).toBe("Use pytest");
     expect(buildTestFrameworkHint("  go test ./...  ")).toBe("Use Go's testing package");
+  });
+});
+
+describe("detectFramework — rust & mocha", () => {
+  test("detects cargo test result line as rust", () => {
+    const output = `test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s`;
+    expect(detectFramework(output)).toBe("rust");
+  });
+
+  test("detects a rust panic line as rust", () => {
+    expect(detectFramework("thread 'x' panicked at src/lib.rs:1:1:")).toBe("rust");
+  });
+
+  test("detects mocha output as mocha, not bun (despite the check glyph)", () => {
+    const output = `
+  MySuite
+    ✓ passes
+
+  1 passing (12ms)
+  1 failing
+`.trim();
+    expect(detectFramework(output)).toBe("mocha");
+  });
+
+  test("cypress-style mocha output detects as mocha", () => {
+    const output = `
+  2 passing (1s)
+  1 failing
+
+  1) login flow works:
+     AssertionError: expected true to be false
+      at Context.eval (cypress/e2e/login.cy.js:12:10)
+`.trim();
+    expect(detectFramework(output)).toBe("mocha");
   });
 });

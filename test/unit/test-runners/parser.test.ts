@@ -281,3 +281,32 @@ FAIL
     expect(result.failures[0].stackTrace).toHaveLength(0);
   });
 });
+
+describe("parseTestOutput — rust & mocha dispatch", () => {
+  test("routes cargo output through the rust parser", () => {
+    const output = `
+---- tests::t stdout ----
+thread 'tests::t' panicked at src/x.rs:2:3:
+boom
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.0s
+`.trim();
+    const s = parseTestOutput(output);
+    expect(s.failed).toBe(1);
+    expect(s.failures[0].file).toBe("src/x.rs");
+  });
+
+  test("routes mocha output through the mocha parser", () => {
+    const output = `
+  1 passing (1ms)
+  1 failing
+
+  1) suite t:
+     Error: nope
+      at Context.<anonymous> (test/a.test.js:1:1)
+`.trim();
+    const s = parseTestOutput(output);
+    expect(s.failed).toBe(1);
+    expect(s.failures[0].file).toBe("test/a.test.js");
+  });
+});
