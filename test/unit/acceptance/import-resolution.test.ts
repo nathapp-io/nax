@@ -13,8 +13,8 @@ import {
   resolveLanguage,
   resolveSourceFiles,
 } from "../../../src/acceptance/import-resolution";
-import { clearLanguageCache } from "../../../src/project";
-import { withTempDir } from "../../helpers";
+import { clearLanguageCache } from "@/project";
+import { withTempDir } from "@test/helpers";
 
 afterEach(() => clearLanguageCache());
 
