@@ -224,3 +224,62 @@ describe("makeFullSuiteRectifyStrategy — with DeclarationSink", () => {
     expect(result.summary).toBe("Fixed failing tests");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #1352: mock_structure handoff short-circuit — the exclusive implementer must
+// stop claiming failing-test findings while a handoff is pending SO the co-run
+// autofix-test-writer is selected, but only when a test-writer drainer exists.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("makeFullSuiteRectifyStrategy — mock_structure handoff short-circuit (#1352)", () => {
+  const pushHandoff = (sink: ReturnType<typeof makeDeclarationSink>) =>
+    sink.mockHandoffs.push({ files: ["test/unit/foo.test.ts"], reasonDetail: "mock cache reuse" });
+
+  test("drainer + pending handoff → appliesTo false (hands selection to test-writer)", () => {
+    const sink = makeDeclarationSink();
+    const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig(), sink, true);
+    pushHandoff(sink);
+    expect(strategy.appliesTo(makeTestFinding())).toBe(false);
+  });
+
+  test("drainer + no pending handoff → appliesTo true (claims normally)", () => {
+    const sink = makeDeclarationSink();
+    const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig(), sink, true);
+    expect(strategy.appliesTo(makeTestFinding())).toBe(true);
+  });
+
+  test("no drainer + pending handoff → appliesTo STAYS true (no orphan when no test-writer registered)", () => {
+    // Single-session verify-scoped and three-session nbf scope:"source" register
+    // full-suite-rectify without an autofix-test-writer. Suppressing there would
+    // strand the finding (exitReason "no-strategy" — #1330/#1327).
+    const sink = makeDeclarationSink();
+    const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig(), sink, false);
+    pushHandoff(sink);
+    expect(strategy.appliesTo(makeTestFinding())).toBe(true);
+  });
+
+  test("drainer default (omitted) → treated as no drainer → appliesTo stays true with pending handoff", () => {
+    const sink = makeDeclarationSink();
+    const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig(), sink);
+    pushHandoff(sink);
+    expect(strategy.appliesTo(makeTestFinding())).toBe(true);
+  });
+
+  test("self-correcting window: suppressed while pending, reclaims after test-writer drains the sink", () => {
+    const sink = makeDeclarationSink();
+    const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig(), sink, true);
+    pushHandoff(sink);
+    expect(strategy.appliesTo(makeTestFinding())).toBe(false);
+    // autofix-test-writer.buildInput drains via splice(0); a later regression re-selects us.
+    sink.mockHandoffs.splice(0);
+    expect(strategy.appliesTo(makeTestFinding())).toBe(true);
+  });
+
+  test("suppression only relaxes claiming — non-failing-test findings are still not claimed", () => {
+    const sink = makeDeclarationSink();
+    const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig(), sink, true);
+    pushHandoff(sink);
+    // A lint finding never matched regardless of handoff state.
+    expect(strategy.appliesTo(makeTestFinding({ source: "lint" }))).toBe(false);
+  });
+});
