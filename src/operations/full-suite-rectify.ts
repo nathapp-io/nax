@@ -21,11 +21,23 @@ import { implementerOp } from "./implement";
  * When `sink` is provided the strategy switches to `fullSuiteRectifyOp` and
  * `extractApplied` pushes parsed declarations into the shared sink for downstream
  * processing (mock_structure → mockHandoffs, others → testEdits).
+ *
+ * `hasTestWriterDrainer` (sink variant only) gates the mock-structure handoff
+ * short-circuit. When `true`, this exclusive strategy stops claiming failing-test
+ * findings while a mock_structure handoff is pending (`sink.mockHandoffs.length > 0`),
+ * so `selectExecutionGroup` falls through to the co-run `autofix-test-writer` that
+ * drains the handoff — instead of re-invoking the implementer up to its per-strategy
+ * cap to re-declare the identical handoff (#1352). The suppression is self-limiting:
+ * the test-writer drains `sink.mockHandoffs` in one iteration, after which this
+ * strategy reclaims normally. Pass `true` ONLY where an `autofix-test-writer` is
+ * registered on the same sink; otherwise suppressing here orphans the finding
+ * (`exitReason: "no-strategy"` — #1330/#1327).
  */
 export function makeFullSuiteRectifyStrategy(
   story: UserStory,
   config: NaxConfig,
   sink: DeclarationSink,
+  hasTestWriterDrainer?: boolean,
 ): FixStrategy<Finding, FullSuiteRectifyInput, FullSuiteRectifyOutput, AutofixConfig>;
 export function makeFullSuiteRectifyStrategy(
   story: UserStory,
@@ -35,13 +47,20 @@ export function makeFullSuiteRectifyStrategy(
   story: UserStory,
   config: NaxConfig,
   sink?: DeclarationSink,
+  hasTestWriterDrainer?: boolean,
 ):
   | FixStrategy<Finding, FullSuiteRectifyInput, FullSuiteRectifyOutput, AutofixConfig>
   | FixStrategy<Finding, ImplementerInput, ImplementerOutput, TddConfig> {
-  const appliesTo = (finding: Finding): boolean =>
+  const claimsFailingTest = (finding: Finding): boolean =>
     finding.source === "test-runner" && (finding.category === "failed-test" || finding.category === "execution-failed");
 
   if (sink) {
+    // While a mock_structure handoff is pending AND a test-writer is registered to
+    // drain it, stop claiming — hand selection to the co-run `autofix-test-writer`
+    // this iteration instead of re-running the implementer (#1352).
+    const appliesTo = (finding: Finding): boolean =>
+      claimsFailingTest(finding) && !(hasTestWriterDrainer === true && sink.mockHandoffs.length > 0);
+
     return {
       name: "full-suite-rectify",
       appliesTo,
@@ -76,7 +95,7 @@ export function makeFullSuiteRectifyStrategy(
 
   return {
     name: "full-suite-rectify",
-    appliesTo,
+    appliesTo: claimsFailingTest,
     fixOp: implementerOp,
     buildInput: (findings) => ({
       story,

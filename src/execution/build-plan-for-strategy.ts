@@ -208,8 +208,16 @@ export async function buildPlanForStrategy(
       Boolean(inputs.fullSuiteGate) && (isThreeSession || regressionMode === "per-story");
     const verifyScopedPhasePresent = !isThreeSession && Boolean(inputs.verifyScoped);
     if (fullSuiteGatePhasePresent || verifyScopedPhasePresent) {
+      // `isThreeSession` doubles as "an autofix-test-writer will be registered on
+      // this sink" (see the isThreeSession gate below) — the drainer that lets the
+      // mock_structure handoff short-circuit (#1352).
       strategies.push(
-        makeFullSuiteRectifyStrategy(story, config, sink) as FixStrategy<Finding, unknown, unknown, unknown>,
+        makeFullSuiteRectifyStrategy(story, config, sink, isThreeSession) as FixStrategy<
+          Finding,
+          unknown,
+          unknown,
+          unknown
+        >,
       );
     }
     if (config.quality.autofix?.enabled !== false) {
@@ -360,8 +368,20 @@ export async function buildPlanForStrategy(
     // `source: "test-runner"` regression findings (never advisory adversarial
     // findings), and its prompt renders failing tests without a severity filter,
     // so a floor would be inert.
+    //
+    // The mock_structure short-circuit (#1352) is enabled only when an
+    // autofix-test-writer is registered on nbSink to drain the handoff: three-session
+    // "triage" and "both" scopes above register one; single-session and the
+    // three-session "source" scope do NOT — suppressing there would orphan the
+    // finding (no-strategy). Mirrors the drainer gate on the main cycle.
+    const nbHasTestWriterDrainer = isThreeSession && nbf.scope !== "source";
     nbStrategies.push(
-      makeFullSuiteRectifyStrategy(story, config, nbSink) as FixStrategy<Finding, unknown, unknown, unknown>,
+      makeFullSuiteRectifyStrategy(story, config, nbSink, nbHasTestWriterDrainer) as FixStrategy<
+        Finding,
+        unknown,
+        unknown,
+        unknown
+      >,
     );
 
     // Mirror the main rectification postValidate but bound to nbSink (#1227).
