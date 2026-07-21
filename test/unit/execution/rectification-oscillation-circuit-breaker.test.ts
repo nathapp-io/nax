@@ -3,8 +3,11 @@
  *
  * Three concerns:
  *
- * 1. Pure outcome-count helper (AC1, AC2).
- * 2. `runRectification` records `regressed-different-source` iterations into
+ * 1. Pure source-reappearance counter (AC1, AC2). Post-#1355 the counter
+ *    counts genuine ping-pong (a resolved finding source reappearing), NOT
+ *    every `regressed-different-source` outcome — a forward reviewer-reveal
+ *    chain no longer trips the breaker.
+ * 2. `runRectification` records source-reappearance reversals into
  *    `ctx.runtime.rectificationOscillations` (AC3).
  * 3. `decideStageAction` reads the accumulated count, the
  *    `review.conflictDetection.{enabled,maxOscillations}` config, and the
@@ -16,58 +19,76 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import {
+  StoryOrchestratorBuilder,
   _postRunDeps,
   _storyOrchestratorDeps,
   applyPostRunInspection,
   countOscillationOutcomes,
   decideStageAction,
   getOscillations,
-  StoryOrchestratorBuilder,
 } from "@/execution";
 import type { FixCycle, FixCycleContext, FixCycleExitReason, Iteration } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
 import type { CallContext, RunOperation } from "@/operations";
 import type { NaxRuntime, PipelineContext } from "@/runtime";
 import { makeTestContext, makeTestRuntime } from "@test/helpers";
-import { LINT_FINDING, makeInspectionOpts, makePlanResult, TEST_RUNNER_FINDING } from "./_post-run-fixtures";
+import { LINT_FINDING, TEST_RUNNER_FINDING, makeInspectionOpts, makePlanResult } from "./_post-run-fixtures";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. Pure outcome-count helper (AC1, AC2)
+// 1. Pure source-reappearance counter (AC1, AC2)
+//
+// Post-#1355: a "reversal" is a finding source that was resolved (present in an
+// earlier findingsBefore, absent from that iteration's findingsAfter) then
+// reappears in a later findingsAfter. A strictly-forward reveal chain
+// (typecheck → semantic → adversarial, each once) counts zero.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("AC1: countOscillationOutcomes counts regressed-different-source outcomes", () => {
-  test("returns 2 for [regressed-different-source, partial, regressed-different-source]", () => {
-    expect(
-      countOscillationOutcomes([
-        { outcome: "regressed-different-source" },
-        { outcome: "partial" },
-        { outcome: "regressed-different-source" },
-      ]),
-    ).toBe(2);
+/** One iteration built from before/after finding sources. */
+function iterFromSources(n: number, before: Finding["source"][], after: Finding["source"][]): Iteration {
+  const f = (source: Finding["source"]): Finding => ({ source, severity: "error", category: "test", message: source });
+  return {
+    iterationNum: n,
+    findingsBefore: before.map(f),
+    fixesApplied: [],
+    findingsAfter: after.map(f),
+    outcome: "partial",
+    startedAt: new Date(0).toISOString(),
+    finishedAt: new Date(0).toISOString(),
+  };
+}
+
+/**
+ * A minimal iteration sequence producing exactly `count` genuine reversals by
+ * alternating lint ↔ test-runner. Reversals = number of swaps after the first
+ * (the first swap only resolves a source; subsequent swaps make a resolved
+ * source reappear). `reversalIterations(0)` is a single non-reversing swap.
+ */
+function reversalIterations(count: number): Iteration[] {
+  const sources: Finding["source"][] = ["lint", "test-runner"];
+  const iters: Iteration[] = [];
+  for (let i = 0; i <= count; i++) {
+    iters.push(iterFromSources(i + 1, [sources[i % 2]], [sources[(i + 1) % 2]]));
+  }
+  return iters;
+}
+
+describe("AC1: countOscillationOutcomes counts resolved-source reappearances (ping-pong)", () => {
+  test("two lint↔test-runner round-trips count 2 reversals", () => {
+    expect(countOscillationOutcomes(reversalIterations(2))).toBe(2);
   });
 
-  test("counts every regressed-different-source outcome in a longer mixed list", () => {
-    expect(
-      countOscillationOutcomes([
-        { outcome: "resolved" },
-        { outcome: "regressed-different-source" },
-        { outcome: "regressed" },
-        { outcome: "regressed-different-source" },
-        { outcome: "partial" },
-        { outcome: "regressed-different-source" },
-      ]),
-    ).toBe(3);
+  test("a single resolved source reappearing counts 1", () => {
+    expect(countOscillationOutcomes(reversalIterations(1))).toBe(1);
   });
 });
 
-describe("AC2: countOscillationOutcomes returns 0 when no regressed-different-source outcomes are present", () => {
-  test("returns 0 for [resolved, partial, regressed, unchanged]", () => {
+describe("AC2: countOscillationOutcomes returns 0 without a resolved-source reappearance", () => {
+  test("forward reveal chain (typecheck → semantic → adversarial) counts 0", () => {
     expect(
       countOscillationOutcomes([
-        { outcome: "resolved" },
-        { outcome: "partial" },
-        { outcome: "regressed" },
-        { outcome: "unchanged" },
+        iterFromSources(1, ["typecheck"], ["semantic-review"]),
+        iterFromSources(2, ["semantic-review"], ["semantic-review"]),
+        iterFromSources(3, ["semantic-review"], ["adversarial-review"]),
       ]),
     ).toBe(0);
   });
@@ -129,16 +150,9 @@ function makeCallCtx(storyId: string): CallContext {
   } as CallContext;
 }
 
-function makeIteration(n: number, outcome: Iteration["outcome"]): Iteration {
-  return {
-    iterationNum: n,
-    findingsBefore: [LINT_FINDING],
-    fixesApplied: [],
-    findingsAfter: [LINT_FINDING],
-    outcome,
-    startedAt: new Date(0).toISOString(),
-    finishedAt: new Date(0).toISOString(),
-  };
+/** A monotonic single-source sequence — no source ever reappears (count 0). */
+function monotonicIterations(): Iteration[] {
+  return [iterFromSources(1, ["lint"], ["lint"]), iterFromSources(2, ["lint"], [])];
 }
 
 function buildRectificationPlan(ctx: CallContext) {
@@ -176,24 +190,22 @@ afterEach(async () => {
   runtime = undefined as unknown as NaxRuntime;
 });
 
-describe("AC3: runRectification increments rectificationOscillations on regressed-different-source", () => {
-  test("one regressed-different-source iteration increases the per-story count by exactly 1", async () => {
+describe("AC3: runRectification increments rectificationOscillations on source reappearance", () => {
+  test("one resolved-source reappearance increases the per-story count by exactly 1", async () => {
     const storyId = "US-osc-inc-1";
     const ctx = makeCallCtx(storyId);
     const store = ctx.runtime.rectificationOscillations;
     expect(store).toBeInstanceOf(Map);
     expect(getOscillations(store, storyId)).toBe(0);
 
-    _storyOrchestratorDeps.runFixCycle = mock(
-      async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => {
-        return {
-          iterations: [makeIteration(1, "regressed-different-source")],
-          finalFindings: [LINT_FINDING],
-          exitReason: "max-attempts-total" as FixCycleExitReason,
-          costUsd: 0,
-        };
-      },
-    ) as typeof _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.runFixCycle = mock(async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => {
+      return {
+        iterations: reversalIterations(1),
+        finalFindings: [LINT_FINDING],
+        exitReason: "max-attempts-total" as FixCycleExitReason,
+        costUsd: 0,
+      };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
 
     const plan = buildRectificationPlan(ctx);
     await plan.run();
@@ -201,24 +213,19 @@ describe("AC3: runRectification increments rectificationOscillations on regresse
     expect(getOscillations(store, storyId)).toBe(1);
   });
 
-  test("two regressed-different-source iterations in a single cycle increase the count by 2", async () => {
+  test("two source reappearances in a single cycle increase the count by 2", async () => {
     const storyId = "US-osc-inc-2";
     const ctx = makeCallCtx(storyId);
     const store = ctx.runtime.rectificationOscillations;
 
-    _storyOrchestratorDeps.runFixCycle = mock(
-      async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => {
-        return {
-          iterations: [
-            makeIteration(1, "regressed-different-source"),
-            makeIteration(2, "regressed-different-source"),
-          ],
-          finalFindings: [LINT_FINDING],
-          exitReason: "max-attempts-total" as FixCycleExitReason,
-          costUsd: 0,
-        };
-      },
-    ) as typeof _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.runFixCycle = mock(async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => {
+      return {
+        iterations: reversalIterations(2),
+        finalFindings: [LINT_FINDING],
+        exitReason: "max-attempts-total" as FixCycleExitReason,
+        costUsd: 0,
+      };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
 
     const plan = buildRectificationPlan(ctx);
     await plan.run();
@@ -226,21 +233,19 @@ describe("AC3: runRectification increments rectificationOscillations on regresse
     expect(getOscillations(store, storyId)).toBe(2);
   });
 
-  test("non-oscillating outcomes do not increase the per-story count", async () => {
+  test("a forward reveal chain (no reappearance) does not increase the per-story count", async () => {
     const storyId = "US-osc-inc-3";
     const ctx = makeCallCtx(storyId);
     const store = ctx.runtime.rectificationOscillations;
 
-    _storyOrchestratorDeps.runFixCycle = mock(
-      async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => {
-        return {
-          iterations: [makeIteration(1, "unchanged"), makeIteration(2, "partial")],
-          finalFindings: [LINT_FINDING],
-          exitReason: "max-attempts-total" as FixCycleExitReason,
-          costUsd: 0,
-        };
-      },
-    ) as typeof _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.runFixCycle = mock(async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => {
+      return {
+        iterations: monotonicIterations(),
+        finalFindings: [LINT_FINDING],
+        exitReason: "max-attempts-total" as FixCycleExitReason,
+        costUsd: 0,
+      };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
 
     const plan = buildRectificationPlan(ctx);
     await plan.run();
@@ -334,18 +339,13 @@ describe("AC4: decideStageAction returns action === 'pause' when the breaker thr
       agentName: "claude",
       storyId: "US-cb-1",
     } as CallContext;
-    const iterations: Iteration[] = [
-      makeIteration(1, "regressed-different-source"),
-      makeIteration(2, "regressed-different-source"),
-    ];
-    _storyOrchestratorDeps.runFixCycle = mock(
-      async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
-        iterations,
-        finalFindings: [LINT_FINDING],
-        exitReason: "max-attempts-total" as FixCycleExitReason,
-        costUsd: 0,
-      }),
-    ) as typeof _storyOrchestratorDeps.runFixCycle;
+    const iterations: Iteration[] = reversalIterations(2);
+    _storyOrchestratorDeps.runFixCycle = mock(async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
+      iterations,
+      finalFindings: [LINT_FINDING],
+      exitReason: "max-attempts-total" as FixCycleExitReason,
+      costUsd: 0,
+    })) as typeof _storyOrchestratorDeps.runFixCycle;
     await buildRectificationPlan(callCtx).run();
 
     const ctx = makeTestContext({
@@ -386,18 +386,13 @@ describe("AC5/AC6: pause reason includes the count and an oscillation substring"
       agentName: "claude",
       storyId: "US-cb-2",
     } as CallContext;
-    const iterations: Iteration[] = [
-      makeIteration(1, "regressed-different-source"),
-      makeIteration(2, "regressed-different-source"),
-    ];
-    _storyOrchestratorDeps.runFixCycle = mock(
-      async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
-        iterations,
-        finalFindings: [LINT_FINDING],
-        exitReason: "max-attempts-total" as FixCycleExitReason,
-        costUsd: 0,
-      }),
-    ) as typeof _storyOrchestratorDeps.runFixCycle;
+    const iterations: Iteration[] = reversalIterations(2);
+    _storyOrchestratorDeps.runFixCycle = mock(async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
+      iterations,
+      finalFindings: [LINT_FINDING],
+      exitReason: "max-attempts-total" as FixCycleExitReason,
+      costUsd: 0,
+    })) as typeof _storyOrchestratorDeps.runFixCycle;
     await buildRectificationPlan(callCtx).run();
 
     const ctx = makeTestContext({
@@ -443,16 +438,14 @@ describe("AC7: count below maxOscillations escalates", () => {
       agentName: "claude",
       storyId: "US-cb-3",
     } as CallContext;
-    // One regressed-different-source iteration produces a count of 1.
-    const iterations: Iteration[] = [makeIteration(1, "regressed-different-source")];
-    _storyOrchestratorDeps.runFixCycle = mock(
-      async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
-        iterations,
-        finalFindings: [LINT_FINDING],
-        exitReason: "max-attempts-total" as FixCycleExitReason,
-        costUsd: 0,
-      }),
-    ) as typeof _storyOrchestratorDeps.runFixCycle;
+    // One resolved-source reappearance produces a count of 1.
+    const iterations: Iteration[] = reversalIterations(1);
+    _storyOrchestratorDeps.runFixCycle = mock(async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
+      iterations,
+      finalFindings: [LINT_FINDING],
+      exitReason: "max-attempts-total" as FixCycleExitReason,
+      costUsd: 0,
+    })) as typeof _storyOrchestratorDeps.runFixCycle;
     await buildRectificationPlan(callCtx).run();
     expect(getOscillations(sharedRuntime.rectificationOscillations, "US-cb-3")).toBe(1);
 
@@ -494,18 +487,13 @@ describe("AC8: conflictDetection.enabled === false escalates even when count >= 
       agentName: "claude",
       storyId: "US-cb-4",
     } as CallContext;
-    const iterations: Iteration[] = [
-      makeIteration(1, "regressed-different-source"),
-      makeIteration(2, "regressed-different-source"),
-    ];
-    _storyOrchestratorDeps.runFixCycle = mock(
-      async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
-        iterations,
-        finalFindings: [LINT_FINDING],
-        exitReason: "max-attempts-total" as FixCycleExitReason,
-        costUsd: 0,
-      }),
-    ) as typeof _storyOrchestratorDeps.runFixCycle;
+    const iterations: Iteration[] = reversalIterations(2);
+    _storyOrchestratorDeps.runFixCycle = mock(async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
+      iterations,
+      finalFindings: [LINT_FINDING],
+      exitReason: "max-attempts-total" as FixCycleExitReason,
+      costUsd: 0,
+    })) as typeof _storyOrchestratorDeps.runFixCycle;
     await buildRectificationPlan(callCtx).run();
 
     const ctx = makeTestContext({
@@ -566,16 +554,14 @@ describe("AC10: count=0 on a normal single-source unfixable finding escalates", 
       agentName: "claude",
       storyId: "US-cb-6",
     } as CallContext;
-    // No regressed-different-source — only `unchanged` and `partial`.
-    const iterations: Iteration[] = [makeIteration(1, "unchanged"), makeIteration(2, "partial")];
-    _storyOrchestratorDeps.runFixCycle = mock(
-      async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
-        iterations,
-        finalFindings: [LINT_FINDING],
-        exitReason: "max-attempts-total" as FixCycleExitReason,
-        costUsd: 0,
-      }),
-    ) as typeof _storyOrchestratorDeps.runFixCycle;
+    // No source reappears — monotonic single-source progress.
+    const iterations: Iteration[] = monotonicIterations();
+    _storyOrchestratorDeps.runFixCycle = mock(async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
+      iterations,
+      finalFindings: [LINT_FINDING],
+      exitReason: "max-attempts-total" as FixCycleExitReason,
+      costUsd: 0,
+    })) as typeof _storyOrchestratorDeps.runFixCycle;
     await buildRectificationPlan(callCtx).run();
     expect(getOscillations(sharedRuntime.rectificationOscillations, "US-cb-6")).toBe(0);
 
@@ -617,18 +603,13 @@ describe("AC11: pause emits a notify through the injected interaction channel", 
       agentName: "claude",
       storyId: "US-cb-7",
     } as CallContext;
-    const iterations: Iteration[] = [
-      makeIteration(1, "regressed-different-source"),
-      makeIteration(2, "regressed-different-source"),
-    ];
-    _storyOrchestratorDeps.runFixCycle = mock(
-      async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
-        iterations,
-        finalFindings: [LINT_FINDING],
-        exitReason: "max-attempts-total" as FixCycleExitReason,
-        costUsd: 0,
-      }),
-    ) as typeof _storyOrchestratorDeps.runFixCycle;
+    const iterations: Iteration[] = reversalIterations(2);
+    _storyOrchestratorDeps.runFixCycle = mock(async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
+      iterations,
+      finalFindings: [LINT_FINDING],
+      exitReason: "max-attempts-total" as FixCycleExitReason,
+      costUsd: 0,
+    })) as typeof _storyOrchestratorDeps.runFixCycle;
     await buildRectificationPlan(callCtx).run();
 
     const sent: Array<{ type: string }> = [];
@@ -640,7 +621,11 @@ describe("AC11: pause emits a notify through the injected interaction channel", 
       configurable: true,
     });
     Object.defineProperty(ctx, "interaction", {
-      value: { send: async (req: { type: string }) => { sent.push({ type: req.type }); } },
+      value: {
+        send: async (req: { type: string }) => {
+          sent.push({ type: req.type });
+        },
+      },
       configurable: true,
     });
     ctx.config = {
@@ -676,18 +661,13 @@ describe("AC12: interaction.send() throwing does not abort the pause", () => {
       agentName: "claude",
       storyId: "US-cb-8",
     } as CallContext;
-    const iterations: Iteration[] = [
-      makeIteration(1, "regressed-different-source"),
-      makeIteration(2, "regressed-different-source"),
-    ];
-    _storyOrchestratorDeps.runFixCycle = mock(
-      async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
-        iterations,
-        finalFindings: [LINT_FINDING],
-        exitReason: "max-attempts-total" as FixCycleExitReason,
-        costUsd: 0,
-      }),
-    ) as typeof _storyOrchestratorDeps.runFixCycle;
+    const iterations: Iteration[] = reversalIterations(2);
+    _storyOrchestratorDeps.runFixCycle = mock(async (_cycle: FixCycle<Finding>, _cycleCtx: FixCycleContext) => ({
+      iterations,
+      finalFindings: [LINT_FINDING],
+      exitReason: "max-attempts-total" as FixCycleExitReason,
+      costUsd: 0,
+    })) as typeof _storyOrchestratorDeps.runFixCycle;
     await buildRectificationPlan(callCtx).run();
 
     const ctx = makeTestContext({
