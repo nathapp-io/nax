@@ -24,6 +24,79 @@
 
 ---
 
+## Corrections (READ FIRST — these supersede the tasks below)
+
+A plan review found 6 defects (2 blocking). Where a correction conflicts with a task, **the correction wins.**
+
+**C1 (blocking) — add a `@flows/*` alias; never import `flows/` into `src/`.**
+- `tsconfig.json` `paths`: add `"@flows/*": ["./flows/*"]` beside `@/*` and `@test/*`. nax's existing bunfig/tsconfig resolution covers the new alias the same way it covers `@/`/`@test/`; confirm with `bun run typecheck`. (Fold into Task 9.)
+- **Deep relative imports fail `bun run lint`** (`scripts/check-deep-relatives.ts` scans `src`, `test`, `bin`, `scripts` and only knows `@/`/`@test/`). So:
+  - Every **test** imports flow modules via the alias, e.g. `import { runAcceptanceGate } from "@flows/nax-finish/steps/acceptance";` — replacing every `../../../../…/flows/…` path shown in Tasks 2–7.
+  - The **plugin never imports from `flows/`.** In Task 8 declare the contract locally in `src/plugins/builtin/nax-finish/index.ts`:
+    ```ts
+    interface FinishResult { feature: string; status: "opened"|"promoted"|"already-ready"|"escalated"|"nothing-to-finish"; url?: string; escalationReason?: string; }
+    type RunFn = (cmd: string[], opts: { cwd: string }) => Promise<{ exitCode: number; stdout: string; stderr: string }>;
+    ```
+
+**C2 (blocking) — acceptance failures need their own fix node.** As written, `acceptance —fix→ fix_spec` jumps into the spec-review fixer and never re-verifies acceptance. In Task 7 add:
+```ts
+fix_acceptance: { nodeType: "acp", prompt: (ctx) => fixPrompt("acceptance", ctx), parse: (t) => extractJsonObject(t) },
+```
+and replace the acceptance edge with:
+```ts
+{ from: "acceptance", switch: { on: "$.route", cases: { proceed: "review_spec", fix: "fix_acceptance" } } },
+{ from: "fix_acceptance", to: "acceptance" },
+```
+Add `"fix_acceptance"` to the node-existence assertions in `flow-graph.test.ts`.
+
+**C3 — move logic out of the flow file so it's covered.** The flow file must be declarative (its closures don't run in unit tests).
+- Move `loadQualityCommands` into `flows/nax-finish/steps/quality.ts` (Task 5), export it, inject the file read via `_qualityDeps.readText`, and test both a `.nax/config.json` with `quality.commands` and a missing file (`{}`).
+- Move `fixPrompt` into `flows/nax-finish/review-prompts.ts` (Task 2), export it, add a marker test.
+- The flow file imports both; defines neither.
+
+**C4 — re-verify acceptance after every code-mutating fix.** `fixPrompt` (now in review-prompts.ts) instructs the fixer to re-run the feature's acceptance tests after fixing and return proceed only when green (mirrors pr-triage's "rerun the earlier validation before returning"):
+```ts
+export function fixPrompt(phase: "acceptance"|"spec"|"quality"|"gate", ctx: { outputs: Record<string, unknown> }): string {
+  const outs = ctx.outputs as Record<string, { findings?: unknown; output?: string }>;
+  const detail = phase === "gate" ? (outs.quality_gates?.output ?? "")
+    : phase === "acceptance" ? (outs.acceptance?.output ?? "")
+    : JSON.stringify(outs[`review_${phase}`]?.findings ?? []);
+  return [
+    `Apply the recommended fixes for the ${phase} phase, directly in the repo. Do not open PRs.`,
+    `Context:\n${detail}`,
+    "After fixing, re-run the feature's acceptance tests and the relevant checks; only proceed when they pass.",
+    'Return exactly {"route":"proceed"} when done and green.',
+  ].join("\n\n");
+}
+```
+
+**C5 — Telegram detection must include env vars + the real config path.** Task 8 `config.ts` — creds come from the interaction-plugin config **or** env (per `src/interaction/plugins/telegram.ts`):
+```ts
+export function telegramCreds(config: unknown): { token: string; chatId: string } | null {
+  const tg = ((config as { interaction?: { plugins?: { telegram?: { botToken?: string; chatId?: string } } } })
+    ?.interaction?.plugins?.telegram) ?? {};
+  const token = tg.botToken ?? process.env.NAX_TELEGRAM_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN ?? null;
+  const chatId = tg.chatId ?? process.env.NAX_TELEGRAM_CHAT_ID ?? null;
+  return token && chatId ? { token, chatId } : null;
+}
+export function isTelegramConfigured(config: unknown): boolean { return telegramCreds(config) !== null; }
+```
+Verify the `interaction.plugins.telegram` key path against `src/interaction/init.ts` before finalizing.
+
+**C6 — one reviewer profile in v1 (no dead knob).** Replace config `reviewers: { spec, quality }` with a single `reviewer.profile`. Task 1 schema:
+```ts
+reviewer: z.object({ profile: z.string().nullable().default(null) }).default({ profile: null }),
+```
+Task 1 test asserts `c.finish.autoFlow.reviewer.profile === null`. `FinishInput.reviewer = { profile: string | null }`. The plugin passes it as `--default-agent <profile>` when set (both review nodes share it — acpx's `profile` is a static field, so distinct spec/quality reviewers are a tracked follow-up needing an acpx-flows change to accept `profile` as a function of input).
+
+**C7 — tests use `makeTempDir()` from `@test/helpers`, not literal `/tmp`** (Task 9 loader test especially).
+
+**C8 — ensure `.nax/` is gitignored** so `.nax/nax-finish-result.json` never blocks the PR push (`git status --porcelain`).
+
+**Non-blocking, executor's discretion:** `route:"done"` on `open_pr`/`escalate` are intentional terminal nodes (no outgoing edge) — do not add a `finalize` node. A clean review (empty findings) still routes `proceed` and burns one `fix_*` turn; optionally add a `clean` route straight to the next phase.
+
+---
+
 ## File Structure
 
 **Create:**
