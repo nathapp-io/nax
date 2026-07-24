@@ -447,8 +447,7 @@ export const NaxConfigSchema = z
             defaultAgent: null,
             reviewers: { spec: null, quality: null },
             escalate: { telegram: true },
-            // biome-ignore lint/suspicious/noExplicitAny: Zod needs full structure for nested defaults
-          } as any),
+          }),
       })
       .default({
         autoFlow: {
@@ -458,8 +457,7 @@ export const NaxConfigSchema = z
           reviewers: { spec: null, quality: null },
           escalate: { telegram: true },
         },
-        // biome-ignore lint/suspicious/noExplicitAny: Zod needs full structure for nested defaults
-      } as any),
+      }),
     reporters: ReportersConfigSchema,
     profile: z.string().default("default"),
     profileChain: z.array(z.string()).default([]),
