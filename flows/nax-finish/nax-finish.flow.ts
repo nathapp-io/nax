@@ -118,6 +118,11 @@ export default defineFlow({
       nodeType: "action",
       async run(ctx) {
         const i = inputOf(ctx);
+        const outs = ctx.outputs as Record<string, { route?: string } | undefined>;
+        if (outs.load_ctx?.route === "nothing-to-finish") {
+          await writeResult(i.workdir, { feature: i.feature, status: "nothing-to-finish" });
+          return { route: "done", status: "nothing-to-finish" };
+        }
         const r = await openOrPromotePr(
           i.workdir,
           i.branch,
