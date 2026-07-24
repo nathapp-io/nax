@@ -83,9 +83,50 @@ Flows currently live in the **acpx-fork**, not released acpx. For nax's `execute
 - Replacing the interactive `nax-finish` skill — the skill stays for manual, approval-gated finishes; this flow is the autonomous, opt-in path.
 - Any change to the acpx flows runtime/API (fork stays as-is).
 
-## Open questions for the plan
+## Resolved open questions
 
-- Config shape/name for the opt-in flag and per-phase reviewer agent/model pins (fit into the existing `NaxConfig` Zod schema).
-- Exact escalate-vs-proceed classification prompt for the `review_*` acp nodes (how "recommended fix" vs "judgment call" is decided in-prompt).
-- Where the flow file physically lives and how it's resolved/pathed from the plugin's `execute()`.
-- Test strategy for a flow + plugin under nax's 80% coverage floor and `_deps`/no-`mock.module` rules.
+### 1. Config shape
+
+Add a `finish.autoFlow` block to the `NaxConfig` Zod schema (`src/config/schemas.ts`), defaults via `.default()`, read through a new selector in `src/config/selectors.ts` (never raw JSON). Model tiers use nax's existing vocabulary (`fast` / `balanced` / `powerful`); agent defaults resolve via `resolveDefaultAgent(config)` when unset.
+
+```jsonc
+finish: {
+  autoFlow: {
+    enabled: false,                       // opt-in gate — OFF by default
+    flowPath: "flows/nax-finish.flow.ts", // optional override; resolved from nax root
+    reviewers: {
+      spec:    { agent: null, model: "powerful" },  // adversarial spec lens
+      quality: { agent: null, model: "balanced" }
+    },
+    escalate: { telegram: true }          // prefer Telegram when configured; else PR/MR comment
+  }
+}
+```
+
+Per nax's per-package rule, `finish.autoFlow` is overridable via `.nax/mono/<pkg>/config.json` if it ever needs to differ per package (unlikely, but the layering comes free).
+
+### 2. Review prompts — copied verbatim from `post-impl-review`
+
+The two review `acp` nodes embed the skill's own dimension text, not a paraphrase:
+
+- **`review_spec`** carries `references/spec-review.md` verbatim: the *"map external touchpoints first (read the unchanged collaborators)"* procedure, then **Compliance / Drift / Integration / Convention Compliance**, at the **≥80%** spec-relative confidence threshold.
+- **`review_quality`** carries `references/code-quality.md` verbatim: the *"enumerate every changed function"* forcing function, the full defect checklist (test isolation, dead code, leaks, error handling, concurrency, performance, a11y, security, type-safety, design & maintainability), at the **≥60%** confidence threshold.
+- Both carry `references/worker-protocol.md`'s **diff acquisition** (`git diff origin/<base>...HEAD`), **noise filter** (lockfiles, generated, `**/.nax/**`, binaries), **severity table** (CRITICAL/HIGH/MEDIUM/LOW), and **finding block format** (`[SEVERITY] title / Problem / Fix`).
+
+Layered on top is the **escalate-vs-proceed classifier** (the only net-new prompt logic): each node returns findings **plus** a route:
+- A finding with a clear *recommended fix* (CRITICAL/HIGH, or MEDIUM whose fix is clear and low-risk) → route `proceed` → the `fix_*` node applies it and loops.
+- A finding that is a **spec conflict, contradiction, or design/judgment concern** (no safe mechanical fix) → route `escalate`.
+- Node returns strict JSON: `{ route: "proceed" | "escalate", findings: [{severity,title,problem,fix}], escalationReason? }`.
+
+**Placement:** the flow lives outside `src/` (see Q3), so nax's src-scoped Prompt-Builder convention doesn't bind it; the copied review text is held in a shared module the flow imports (single source, so it can't drift from the skill by hand-copy). If the flow ever moves under `src/`, the prompt text must move into a `src/prompts/builders/` builder to satisfy `forbidden-patterns.md`.
+
+### 3. Flow-file location & resolution
+
+Top-level **`flows/nax-finish.flow.ts`** (mirrors acpx's own `examples/flows/` convention). Living outside `src/` keeps it clear of nax's src-scoped lint (prompt-builder, file-size ratchet, barrel rules) and gives the plugin a stable path. The plugin's `execute()` resolves it against the nax package root and passes the absolute path to `acpx flow run <abs>`, with `config.finish.autoFlow.flowPath` as the override.
+
+### 4. Test strategy (under the 80% floor, `_deps`, no `mock.module`)
+
+- **Plugin (`IPostRunAction`)** — unit-test `shouldRun` across the branch/success/flag matrix; unit-test `execute` with the spawn boundary injected via `_deps` (fake spawn): assert it builds the correct `acpx flow run` argv from `PostRunContext` and maps the flow result → `{ success, message, url }`. No real `acpx`.
+- **Flow** — test the deterministic parts as plain units: `compute` nodes (`load_ctx`, `preflight`, `finalize`) and every `switch`/edge routing function (proceed vs escalate, all-green vs can't-get-green). `action` node bodies take their shell calls via injected deps (fake `nax` / `gh` / `glab` / git). `acp` nodes: snapshot-test the **prompt builder** output (that the copied review text + severity table + classifier instructions are present) rather than invoking a model.
+- **Out of the unit floor:** live end-to-end flow execution against a real `acpx flow run` is an e2e concern, gated behind the acpx-flows dependency landing; not counted toward the 80% unit coverage.
+- Respect nax rules throughout: `_deps` injection only, no `mock.module()`, no spawning real `nax`/`acpx`/`gh`, temp-dir helpers for any fs, `storyId`-free (this is post-run, not per-story) structured logging.
