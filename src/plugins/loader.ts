@@ -16,6 +16,7 @@ import { validateModulePath } from "../utils/path-security";
 import { autoPrPlugin } from "./builtin/auto-pr";
 import { autoRoutePlugin } from "./builtin/auto-route";
 import { curatorPlugin } from "./builtin/curator";
+import { naxFinishPlugin } from "./builtin/nax-finish";
 import { createOtelReporterPlugin } from "./builtin/otel-reporter";
 import { createWebhookReporterPlugin } from "./builtin/webhook-reporter";
 import { createPluginLogger } from "./plugin-logger";
@@ -151,6 +152,18 @@ export async function loadPlugins(
     }
   } else {
     logger?.info("plugins", `Skipping disabled plugin: '${autoPrPlugin.name}' (built-in)`);
+  }
+
+  if (!disabledSet.has(naxFinishPlugin.name)) {
+    if (naxFinishPlugin.setup) {
+      const pluginLogger = createPluginLogger(naxFinishPlugin.name);
+      await naxFinishPlugin.setup({}, pluginLogger);
+    }
+    // Side-channel action only (same layout as auto-pr) — not added to loadedPlugins.
+    const action = naxFinishPlugin.extensions.postRunAction;
+    if (action) builtinPostRunActions.push(action);
+  } else {
+    logger?.info("plugins", `Skipping disabled plugin: '${naxFinishPlugin.name}' (built-in)`);
   }
 
   if (!disabledSet.has(autoRoutePlugin.name)) {
