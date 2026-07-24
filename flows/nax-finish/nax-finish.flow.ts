@@ -30,6 +30,20 @@ import type { FinishInput, ReviewVerdict } from "./types";
 
 const inputOf = (ctx: { input: unknown }) => ctx.input as FinishInput;
 
+/**
+ * Cap on acceptance/quality-gate fix-and-reverify iterations before
+ * escalating instead of looping forever. acpx's flow engine has no built-in
+ * cycle guard, so without this cap a stubborn failure (LLM can't fix it, or
+ * fixes something else each time) hangs `acpx flow run` — and the post-run
+ * plugin awaits that subprocess with no timeout, hanging the whole run's
+ * completion phase indefinitely.
+ */
+const MAX_FIX_ATTEMPTS = 3;
+
+function fixAttemptCount(ctx: { state: { steps: { nodeId: string }[] } }, fixNodeId: string): number {
+  return ctx.state.steps.filter((s) => s.nodeId === fixNodeId).length;
+}
+
 export default defineFlow({
   name: "nax-finish",
   permissions: {
@@ -56,7 +70,16 @@ export default defineFlow({
         const res = await _contextDeps.run(["nax", "features", "resolve", i.feature, "--json"], { cwd: i.workdir });
         const { groups } = parseAcceptanceGroups(res.stdout);
         const r = await runAcceptanceGate(i.workdir, groups);
-        return { route: r.passed ? "proceed" : "fix", output: r.output };
+        if (r.passed) return { route: "proceed", output: r.output };
+        const attempts = fixAttemptCount(ctx, "fix_acceptance");
+        if (attempts >= MAX_FIX_ATTEMPTS) {
+          return {
+            route: "escalate",
+            reason: `Acceptance tests still failing after ${attempts} fix attempts.`,
+            output: r.output,
+          };
+        }
+        return { route: "fix", output: r.output };
       },
     },
     fix_acceptance: {
@@ -111,7 +134,17 @@ export default defineFlow({
         const i = inputOf(ctx);
         const cmds = await loadQualityCommands(i.workdir);
         const r = await runQualityGates(i.workdir, cmds);
-        return { route: r.passed ? "green" : "fix", failing: r.failing, output: r.output };
+        if (r.passed) return { route: "green", failing: r.failing, output: r.output };
+        const attempts = fixAttemptCount(ctx, "fix_gate");
+        if (attempts >= MAX_FIX_ATTEMPTS) {
+          return {
+            route: "escalate",
+            reason: `Quality gates still failing after ${attempts} fix attempts (${r.failing.join(", ")}).`,
+            failing: r.failing,
+            output: r.output,
+          };
+        }
+        return { route: "fix", failing: r.failing, output: r.output };
       },
     },
     open_pr: {
@@ -137,9 +170,22 @@ export default defineFlow({
       nodeType: "action",
       async run(ctx) {
         const i = inputOf(ctx);
-        const outs = ctx.outputs as Record<string, ReviewVerdict | undefined>;
-        const verdict = outs.review_spec?.route === "escalate" ? outs.review_spec : outs.review_quality;
-        const reason = verdict?.escalationReason ?? "nax-finish could not reach a green, shippable state";
+        const reviewOuts = ctx.outputs as Record<string, ReviewVerdict | undefined>;
+        const loopOuts = ctx.outputs as Record<string, { route?: string; reason?: string } | undefined>;
+        const verdict =
+          reviewOuts.review_spec?.route === "escalate"
+            ? reviewOuts.review_spec
+            : reviewOuts.review_quality?.route === "escalate"
+              ? reviewOuts.review_quality
+              : undefined;
+        const loopExhausted =
+          loopOuts.acceptance?.route === "escalate"
+            ? loopOuts.acceptance
+            : loopOuts.quality_gates?.route === "escalate"
+              ? loopOuts.quality_gates
+              : undefined;
+        const reason =
+          verdict?.escalationReason ?? loopExhausted?.reason ?? "nax-finish could not reach a green, shippable state";
         const comment = buildEscalationComment(i.feature, reason, verdict?.findings ?? []);
         const { url } = await postEscalation(i.workdir, i.branch, comment);
         await writeResult(i.workdir, { feature: i.feature, status: "escalated", url, escalationReason: reason });
@@ -149,13 +195,19 @@ export default defineFlow({
   },
   edges: [
     { from: "load_ctx", switch: { on: "$.route", cases: { proceed: "acceptance", "nothing-to-finish": "open_pr" } } },
-    { from: "acceptance", switch: { on: "$.route", cases: { proceed: "review_spec", fix: "fix_acceptance" } } },
+    {
+      from: "acceptance",
+      switch: { on: "$.route", cases: { proceed: "review_spec", fix: "fix_acceptance", escalate: "escalate" } },
+    },
     { from: "fix_acceptance", to: "acceptance" },
     { from: "review_spec", switch: { on: "$.route", cases: { proceed: "fix_spec", escalate: "escalate" } } },
     { from: "fix_spec", to: "review_quality" },
     { from: "review_quality", switch: { on: "$.route", cases: { proceed: "fix_quality", escalate: "escalate" } } },
     { from: "fix_quality", to: "quality_gates" },
-    { from: "quality_gates", switch: { on: "$.route", cases: { green: "open_pr", fix: "fix_gate" } } },
+    {
+      from: "quality_gates",
+      switch: { on: "$.route", cases: { green: "open_pr", fix: "fix_gate", escalate: "escalate" } },
+    },
     { from: "fix_gate", to: "quality_gates" },
   ],
 });
