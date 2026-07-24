@@ -21,8 +21,9 @@ We want the same pipeline to run **automatically after a `nax run`, without a hu
 
 ### Safe defaults (chosen, changeable)
 
-- **Draft-only, never auto-merge.** The flow opens (or reuses nax autoPR's) **draft** PR. "All green, nothing escalated" → promote draft → **ready**. "Escalated" → leave draft + comment naming what needs judgment, then exit. The flow never lands code; a human still merges. This softens the departure from the standing "never auto-open/merge" discipline — the branch is made review-ready, not shipped.
-- **Opt-in, off by default.** A new config flag gates the trigger, so the flow never fires unless enabled per-repo. Reconciles with nax's existing autoPR (reuse its draft rather than double-open).
+- **All green → open a ready PR; never auto-merge.** When acceptance + both review phases + quality gates are green and **nothing escalated**, the flow opens (or promotes nax autoPR's existing draft to) a **ready** PR/MR. It never lands/merges code — a human still merges. This is the departure from the standing "never auto-open" discipline, bounded by opt-in + escalate-on-judgment; the flow makes the branch review-ready, not shipped.
+- **Escalate via Telegram when configured, else PR/MR comment.** On escalation the flow prefers nax's **Telegram interaction plugin** (`src/interaction/plugins/telegram.ts`, `notify` type) when it is configured, sending the "needs judgment" summary there. When Telegram is not configured, it **falls back to a PR/MR comment** on the branch's existing (autoPR) PR — opening a draft to hold the comment only if none exists. It does **not** open a ready PR when escalating.
+- **Opt-in, off by default.** A new config flag gates the trigger, so the flow never fires unless enabled per-repo. Reconciles with nax's existing autoPR (reuse/promote its PR rather than double-open).
 
 ## Architecture
 
@@ -45,8 +46,9 @@ load_ctx (compute)         ← PostRunContext: feature, workdir, prdPath, branch
   → quality_gates (action: quality.commands, mechanical)
       ├─ red → fix_gate (acp loop) → re-run quality_gates
       └─ can't get green → escalate
-  → open_or_promote_pr (action)   ← draft; promote → ready only if nothing escalated
-  → escalate (acp+action)         ← compose + post PR/MR comment, exit
+  → open_or_promote_pr (action)   ← nothing escalated → open/promote to READY PR
+  → escalate (acp+action)         ← compose summary; notify Telegram if configured,
+                                     else PR/MR comment; exit (no ready PR)
 ```
 
 - **Node-type mapping** mirrors `pr-triage.flow.ts`:
@@ -54,7 +56,7 @@ load_ctx (compute)         ← PostRunContext: feature, workdir, prdPath, branch
   - `action` — runtime-owned shell/CLI, no model (`resolve_spec`, `acceptance`, `quality_gates`, PR/MR git+`gh`/`glab`).
   - `acp` — a model turn returning strict JSON (`{ route, findings[], ... }`); `switch` edges route `escalate` vs `proceed`, exactly like pr-triage's judgment nodes.
 - **Ordering rationale carried over from the skill:** cheap deterministic acceptance gate **before** expensive review; review **phased** (spec → fix → quality on the stabilized diff); repo-root quality gate **last**, once.
-- **Escalation target:** the draft PR/MR for the branch (reuse nax autoPR's if present, else open a draft to hold the comment). The comment names what needs judgment — the same escalation contract as pr-triage's handoff comments.
+- **Escalation target:** Telegram interaction plugin (`notify`) when configured; else a PR/MR comment on the branch's existing autoPR PR (open a draft only if none exists). The message names what needs judgment — the same escalation contract as pr-triage's handoff comments.
 
 ### 2. `nax-finish` post-run plugin — the trigger
 
