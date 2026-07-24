@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { _contextDeps, detectBaseBranch, resolveSpec, preflight } from "@flows/nax-finish/steps/context";
+import { _contextDeps, detectBaseBranch, preflight, resolveSpec } from "@flows/nax-finish/steps/context";
 import type { RunResult } from "@flows/nax-finish/types";
 
 const ok = (stdout: string): RunResult => ({ exitCode: 0, stdout, stderr: "" });
 const originalRun = _contextDeps.run;
-afterEach(() => { _contextDeps.run = originalRun; });
+afterEach(() => {
+  _contextDeps.run = originalRun;
+});
 
 describe("context steps", () => {
   test("detectBaseBranch parses 'HEAD branch'", async () => {
@@ -25,7 +27,14 @@ describe("context steps", () => {
   });
 
   test("resolveSpec reads specSource from nax features resolve --json", async () => {
-    _contextDeps.run = async () => ok(JSON.stringify({ status: "ok", featureName: "x", specSource: { kind: "prd", path: ".nax/features/x/prd.json" } }));
+    _contextDeps.run = async () =>
+      ok(
+        JSON.stringify({
+          status: "ok",
+          featureName: "x",
+          specSource: { kind: "prd", path: ".nax/features/x/prd.json" },
+        }),
+      );
     expect(await resolveSpec("x", "/w")).toEqual({ specPath: ".nax/features/x/prd.json", specKind: "prd" });
   });
 

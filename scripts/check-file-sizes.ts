@@ -40,6 +40,7 @@ interface Scope {
 
 const SCOPES: Scope[] = [
   { scanDir: "src", pattern: "**/*.ts", limit: SRC_LIMIT },
+  { scanDir: "flows", pattern: "**/*.ts", limit: SRC_LIMIT },
   { scanDir: "test", pattern: "**/*.test.ts", limit: TEST_LIMIT },
 ];
 

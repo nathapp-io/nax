@@ -17,7 +17,11 @@ describe("quality gates", () => {
   });
 
   test("collects failing gates by name", async () => {
-    _qualityDeps.run = async (cmd) => ({ exitCode: cmd.join(" ").includes("lint") ? 1 : 0, stdout: "", stderr: "lint bad" });
+    _qualityDeps.run = async (cmd) => ({
+      exitCode: cmd.join(" ").includes("lint") ? 1 : 0,
+      stdout: "",
+      stderr: "lint bad",
+    });
     const r = await runQualityGates("/repo", { lint: "bun run lint", test: "bun run test" });
     expect(r.passed).toBe(false);
     expect(r.failing).toEqual(["lint"]);

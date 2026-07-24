@@ -1,10 +1,20 @@
 import type { RunFn } from "../types";
 
-export interface QualityCommands { build?: string; typecheck?: string; lint?: string; test?: string; format?: string; }
+export interface QualityCommands {
+  build?: string;
+  typecheck?: string;
+  lint?: string;
+  test?: string;
+  format?: string;
+}
 
 async function defaultRun(cmd: string[], opts: { cwd: string }) {
   const proc = Bun.spawn(cmd, { cwd: opts.cwd, stdout: "pipe", stderr: "pipe" });
-  const [exitCode, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  const [exitCode, stdout, stderr] = await Promise.all([
+    proc.exited,
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
   return { exitCode, stdout, stderr };
 }
 export const _qualityDeps: { run: RunFn; readText: (path: string) => Promise<string | null> } = {
@@ -17,7 +27,10 @@ export const _qualityDeps: { run: RunFn; readText: (path: string) => Promise<str
 
 const GATE_ORDER: (keyof QualityCommands)[] = ["build", "typecheck", "lint", "test", "format"];
 
-export async function runQualityGates(repoRoot: string, commands: QualityCommands): Promise<{ passed: boolean; failing: string[]; output: string }> {
+export async function runQualityGates(
+  repoRoot: string,
+  commands: QualityCommands,
+): Promise<{ passed: boolean; failing: string[]; output: string }> {
   const failing: string[] = [];
   const chunks: string[] = [];
   for (const gate of GATE_ORDER) {

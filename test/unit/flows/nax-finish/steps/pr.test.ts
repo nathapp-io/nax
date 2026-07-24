@@ -13,8 +13,10 @@ describe("openOrPromotePr", () => {
     const calls: string[][] = [];
     _prDeps.run = async (cmd) => {
       calls.push(cmd);
-      if (cmd.join(" ").includes("remote get-url")) return { exitCode: 0, stdout: "git@github.com:o/r.git", stderr: "" };
-      if (cmd.includes("view")) return { exitCode: 0, stdout: JSON.stringify({ isDraft: true, url: "https://gh/pr/1" }), stderr: "" };
+      if (cmd.join(" ").includes("remote get-url"))
+        return { exitCode: 0, stdout: "git@github.com:o/r.git", stderr: "" };
+      if (cmd.includes("view"))
+        return { exitCode: 0, stdout: JSON.stringify({ isDraft: true, url: "https://gh/pr/1" }), stderr: "" };
       return { exitCode: 0, stdout: "", stderr: "" };
     };
     const r = await openOrPromotePr("/repo", "feat/x", "t", "b");

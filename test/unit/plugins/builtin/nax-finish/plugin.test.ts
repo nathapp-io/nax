@@ -26,9 +26,9 @@ const baseCtx = (over: Partial<PostRunContext> = {}): PostRunContext =>
 
 describe("nax-finish post-run action", () => {
   test("shouldRun=false when disabled", async () => {
-    expect(
-      await action.shouldRun(baseCtx({ config: { finish: { autoFlow: { enabled: false } } } } as never)),
-    ).toBe(false);
+    expect(await action.shouldRun(baseCtx({ config: { finish: { autoFlow: { enabled: false } } } } as never))).toBe(
+      false,
+    );
   });
 
   test("shouldRun=false on main branch", async () => {
@@ -36,9 +36,9 @@ describe("nax-finish post-run action", () => {
   });
 
   test("shouldRun=false when a story failed", async () => {
-    expect(
-      await action.shouldRun(baseCtx({ storySummary: { completed: 1, failed: 1, skipped: 0, paused: 0 } })),
-    ).toBe(false);
+    expect(await action.shouldRun(baseCtx({ storySummary: { completed: 1, failed: 1, skipped: 0, paused: 0 } }))).toBe(
+      false,
+    );
   });
 
   test("shouldRun=true when enabled + clean + feature branch", async () => {

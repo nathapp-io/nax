@@ -78,10 +78,14 @@ export async function openOrPromotePr(
         : ["glab", "mr", "create", "--title", title, "--description", body, "--source-branch", branch];
     const create = await _prDeps.run(createCmd, { cwd: repoRoot });
     if (create.exitCode !== 0) {
-      throw new NaxError(`Failed to create PR/MR for "${branch}": ${create.stderr.trim() || `exit ${create.exitCode}`}`, "FINISH_PR_CREATE_FAILED", {
-        stage: "finish-pr",
-        branch,
-      });
+      throw new NaxError(
+        `Failed to create PR/MR for "${branch}": ${create.stderr.trim() || `exit ${create.exitCode}`}`,
+        "FINISH_PR_CREATE_FAILED",
+        {
+          stage: "finish-pr",
+          branch,
+        },
+      );
     }
     return { status: "opened", url: extractUrl(create.stdout) };
   }
@@ -91,10 +95,14 @@ export async function openOrPromotePr(
     const readyCmd = forge === "github" ? ["gh", "pr", "ready", branch] : ["glab", "mr", "update", branch, "--ready"];
     const ready = await _prDeps.run(readyCmd, { cwd: repoRoot });
     if (ready.exitCode !== 0) {
-      throw new NaxError(`Failed to promote PR/MR "${branch}" to ready: ${ready.stderr.trim() || `exit ${ready.exitCode}`}`, "FINISH_PR_PROMOTE_FAILED", {
-        stage: "finish-pr",
-        branch,
-      });
+      throw new NaxError(
+        `Failed to promote PR/MR "${branch}" to ready: ${ready.stderr.trim() || `exit ${ready.exitCode}`}`,
+        "FINISH_PR_PROMOTE_FAILED",
+        {
+          stage: "finish-pr",
+          branch,
+        },
+      );
     }
     return { status: "promoted", url };
   }

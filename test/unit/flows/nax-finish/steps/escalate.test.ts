@@ -11,7 +11,12 @@ afterEach(() => {
 describe("buildEscalationComment", () => {
   test("names the reason and lists findings", () => {
     const c = buildEscalationComment("my-feat", "AC-3 contradicts the response shape", [
-      { severity: "HIGH", title: "wrong status code", problem: "returns 200 not 201", fix: "note intentional deviation" },
+      {
+        severity: "HIGH",
+        title: "wrong status code",
+        problem: "returns 200 not 201",
+        fix: "note intentional deviation",
+      },
     ]);
     expect(c).toContain("nax-finish escalation");
     expect(c).toContain("AC-3 contradicts the response shape");
