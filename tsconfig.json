@@ -18,11 +18,12 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@test/*": ["./test/*"]
+      "@test/*": ["./test/*"],
+      "@flows/*": ["./flows/*"]
     },
     "jsx": "react-jsx",
     "jsxImportSource": "react"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "bin/**/*.ts"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "bin/**/*.ts", "flows/**/*.ts"],
   "exclude": ["node_modules", "dist", "test", "scripts"]
 }
