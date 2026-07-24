@@ -1,3 +1,4 @@
+import { NaxError } from "@/errors";
 import type { RunFn } from "../types";
 
 async function defaultRun(cmd: string[], opts: { cwd: string }) {
@@ -19,7 +20,12 @@ export async function detectBaseBranch(workdir: string): Promise<string> {
 export async function resolveSpec(feature: string, workdir: string): Promise<{ specPath: string; specKind: "markdown" | "prd" }> {
   const res = await _contextDeps.run(["nax", "features", "resolve", feature, "--json"], { cwd: workdir });
   const parsed = JSON.parse(res.stdout) as { specSource?: { kind: "markdown" | "prd"; path: string } };
-  if (!parsed.specSource) throw new Error(`nax features resolve returned no specSource for "${feature}"`);
+  if (!parsed.specSource) {
+    throw new NaxError(`nax features resolve returned no specSource for "${feature}"`, "FINISH_SPEC_NOT_FOUND", {
+      stage: "finish-context",
+      feature,
+    });
+  }
   return { specPath: parsed.specSource.path, specKind: parsed.specSource.kind };
 }
 
