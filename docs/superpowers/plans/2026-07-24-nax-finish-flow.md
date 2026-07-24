@@ -83,11 +83,37 @@ export function isTelegramConfigured(config: unknown): boolean { return telegram
 ```
 Verify the `interaction.plugins.telegram` key path against `src/interaction/init.ts` before finalizing.
 
-**C6 — one reviewer profile in v1 (no dead knob).** Replace config `reviewers: { spec, quality }` with a single `reviewer.profile`. Task 1 schema:
-```ts
-reviewer: z.object({ profile: z.string().nullable().default(null) }).default({ profile: null }),
-```
-Task 1 test asserts `c.finish.autoFlow.reviewer.profile === null`. `FinishInput.reviewer = { profile: string | null }`. The plugin passes it as `--default-agent <profile>` when set (both review nodes share it — acpx's `profile` is a static field, so distinct spec/quality reviewers are a tracked follow-up needing an acpx-flows change to accept `profile` as a function of input).
+**C6 — distinct spec/quality reviewers ARE supported (no acpx-fork); the two-profile config knob is real.** acpx resolves an `acp` node's `profile` string per-node at runtime against the `agents` map in `~/.acpx/config.json` (`resolveAgentInvocation` → `resolveAgentCommandFromRegistry`), falling back to `--default-agent`. **The model is encoded in that agent's `args`.** Because the flow module loads fresh per `acpx flow run`, each review node reads its profile from an env var at module load — which the plugin sets from nax config, making the two reviewers config-driven with no fork.
+
+- **Task 1 schema — keep two profiles:**
+  ```ts
+  reviewer: z.object({
+    spec: z.string().nullable().default(null),
+    quality: z.string().nullable().default(null),
+  }).default({ spec: null, quality: null }),
+  ```
+  Task 1 test asserts `c.finish.autoFlow.reviewer.spec === null` and `.quality === null`.
+- **Task 7 flow — review nodes read profile from env** (undefined → `--default-agent`, the safe zero-config default):
+  ```ts
+  review_spec:    { nodeType: "acp", session: { isolated: true }, profile: process.env.NAX_FINISH_SPEC_PROFILE || undefined, /* prompt, parse */ },
+  review_quality: { nodeType: "acp", session: { isolated: true }, profile: process.env.NAX_FINISH_QUALITY_PROFILE || undefined, /* prompt, parse */ },
+  ```
+- **`FinishInput` no longer carries reviewer** — profiles flow via env vars, not flow input. Drop the `reviewers`/`reviewer` field from `FinishInput` (Task 2 types + File Structure block).
+- **Task 8 plugin — set the env when spawning** (the plugin's local `run` takes `{ cwd, env? }` and forwards `env` to `Bun.spawn`):
+  ```ts
+  const env = { ...process.env } as Record<string, string>;
+  if (cfg.reviewer.spec) env.NAX_FINISH_SPEC_PROFILE = cfg.reviewer.spec;
+  if (cfg.reviewer.quality) env.NAX_FINISH_QUALITY_PROFILE = cfg.reviewer.quality;
+  const res = await _naxFinishDeps.run(cmd, { cwd: ctx.workdir, env });
+  ```
+  Plugin test asserts `NAX_FINISH_SPEC_PROFILE`/`NAX_FINISH_QUALITY_PROFILE` are set on the spawn when config profiles are present, and absent when null.
+- **User setup (document in the flow header + a README note):** to use distinct reviewers, define the names in `~/.acpx/config.json` `agents` and point nax config at them:
+  ```json
+  { "agents": {
+      "nax-spec-reviewer":    { "command": "codex",  "args": ["acp", "--model", "<powerful>"] },
+      "nax-quality-reviewer": { "command": "claude", "args": ["acp", "--model", "<balanced>"] } } }
+  ```
+  then `finish.autoFlow.reviewer = { "spec": "nax-spec-reviewer", "quality": "nax-quality-reviewer" }`. Unset (null) → both use `--default-agent`. No acpx-fork required.
 
 **C7 — tests use `makeTempDir()` from `@test/helpers`, not literal `/tmp`** (Task 9 loader test especially).
 
