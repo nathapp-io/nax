@@ -426,6 +426,40 @@ export const NaxConfigSchema = z
       })
       .optional()
       .default({ enabled: false, draft: true }),
+    finish: z
+      .object({
+        autoFlow: z
+          .object({
+            enabled: z.boolean().default(false),
+            flowPath: z.string().default("flows/nax-finish/nax-finish.flow.ts"),
+            defaultAgent: z.string().nullable().default(null),
+            reviewers: z
+              .object({
+                spec: z.string().nullable().default(null),
+                quality: z.string().nullable().default(null),
+              })
+              .default({ spec: null, quality: null }),
+            escalate: z.object({ telegram: z.boolean().default(true) }).default({ telegram: true }),
+          })
+          .default({
+            enabled: false,
+            flowPath: "flows/nax-finish/nax-finish.flow.ts",
+            defaultAgent: null,
+            reviewers: { spec: null, quality: null },
+            escalate: { telegram: true },
+            // biome-ignore lint/suspicious/noExplicitAny: Zod needs full structure for nested defaults
+          } as any),
+      })
+      .default({
+        autoFlow: {
+          enabled: false,
+          flowPath: "flows/nax-finish/nax-finish.flow.ts",
+          defaultAgent: null,
+          reviewers: { spec: null, quality: null },
+          escalate: { telegram: true },
+        },
+        // biome-ignore lint/suspicious/noExplicitAny: Zod needs full structure for nested defaults
+      } as any),
     reporters: ReportersConfigSchema,
     profile: z.string().default("default"),
     profileChain: z.array(z.string()).default([]),
