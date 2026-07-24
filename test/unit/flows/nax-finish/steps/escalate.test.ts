@@ -53,4 +53,24 @@ describe("postEscalation", () => {
     _escalateDeps.run = async () => ok("git@bitbucket.org:o/r.git");
     await expect(postEscalation("/repo", "feat/x", "comment")).rejects.toThrow();
   });
+
+  test("throws when posting the comment fails", async () => {
+    _escalateDeps.run = async (cmd) => {
+      if (cmd.join(" ").includes("remote get-url")) return ok("git@github.com:o/r.git");
+      if (cmd.includes("view")) return ok(JSON.stringify({ url: "https://github.com/o/r/pull/1" }));
+      if (cmd.includes("comment")) return { exitCode: 1, stdout: "", stderr: "not authorized" };
+      return ok("");
+    };
+    await expect(postEscalation("/repo", "feat/x", "comment")).rejects.toThrow(/not authorized/);
+  });
+
+  test("throws when opening the draft fails", async () => {
+    _escalateDeps.run = async (cmd) => {
+      if (cmd.join(" ").includes("remote get-url")) return ok("git@github.com:o/r.git");
+      if (cmd.includes("view")) return { exitCode: 1, stdout: "", stderr: "no pr found" };
+      if (cmd.includes("create")) return { exitCode: 1, stdout: "", stderr: "rate limited" };
+      return ok("");
+    };
+    await expect(postEscalation("/repo", "feat/x", "comment")).rejects.toThrow(/rate limited/);
+  });
 });

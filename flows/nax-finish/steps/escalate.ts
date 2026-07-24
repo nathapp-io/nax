@@ -55,7 +55,14 @@ export async function postEscalation(repoRoot: string, branch: string, comment: 
       forge === "github"
         ? ["gh", "pr", "comment", branch, "--body", comment]
         : ["glab", "mr", "note", branch, "--message", comment];
-    await _escalateDeps.run(commentCmd, { cwd: repoRoot });
+    const commented = await _escalateDeps.run(commentCmd, { cwd: repoRoot });
+    if (commented.exitCode !== 0) {
+      throw new NaxError(
+        `Failed to post escalation comment on "${branch}": ${commented.stderr.trim() || `exit ${commented.exitCode}`}`,
+        "FINISH_ESCALATION_COMMENT_FAILED",
+        { stage: "finish-escalate", branch },
+      );
+    }
     return { url: extractUrl(view.stdout) };
   }
 
@@ -75,6 +82,13 @@ export async function postEscalation(repoRoot: string, branch: string, comment: 
           branch,
         ];
   const create = await _escalateDeps.run(createCmd, { cwd: repoRoot });
+  if (create.exitCode !== 0) {
+    throw new NaxError(
+      `Failed to open a draft to hold the escalation for "${branch}": ${create.stderr.trim() || `exit ${create.exitCode}`}`,
+      "FINISH_ESCALATION_DRAFT_FAILED",
+      { stage: "finish-escalate", branch },
+    );
+  }
   return { url: extractUrl(create.stdout) };
 }
 

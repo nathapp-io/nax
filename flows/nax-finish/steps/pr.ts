@@ -77,13 +77,25 @@ export async function openOrPromotePr(
         ? ["gh", "pr", "create", "--fill", "--head", branch]
         : ["glab", "mr", "create", "--title", title, "--description", body, "--source-branch", branch];
     const create = await _prDeps.run(createCmd, { cwd: repoRoot });
+    if (create.exitCode !== 0) {
+      throw new NaxError(`Failed to create PR/MR for "${branch}": ${create.stderr.trim() || `exit ${create.exitCode}`}`, "FINISH_PR_CREATE_FAILED", {
+        stage: "finish-pr",
+        branch,
+      });
+    }
     return { status: "opened", url: extractUrl(create.stdout) };
   }
 
   const { isDraft, url } = parseView(view.stdout, forge);
   if (isDraft) {
     const readyCmd = forge === "github" ? ["gh", "pr", "ready", branch] : ["glab", "mr", "update", branch, "--ready"];
-    await _prDeps.run(readyCmd, { cwd: repoRoot });
+    const ready = await _prDeps.run(readyCmd, { cwd: repoRoot });
+    if (ready.exitCode !== 0) {
+      throw new NaxError(`Failed to promote PR/MR "${branch}" to ready: ${ready.stderr.trim() || `exit ${ready.exitCode}`}`, "FINISH_PR_PROMOTE_FAILED", {
+        stage: "finish-pr",
+        branch,
+      });
+    }
     return { status: "promoted", url };
   }
 

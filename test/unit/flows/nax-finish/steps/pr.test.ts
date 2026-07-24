@@ -57,4 +57,24 @@ describe("openOrPromotePr", () => {
     _prDeps.run = async () => ok("git@bitbucket.org:o/r.git");
     await expect(openOrPromotePr("/repo", "feat/x", "t", "b")).rejects.toThrow();
   });
+
+  test("throws when creating the PR fails", async () => {
+    _prDeps.run = async (cmd) => {
+      if (cmd.join(" ").includes("remote get-url")) return ok("git@github.com:o/r.git");
+      if (cmd.includes("view")) return { exitCode: 1, stdout: "", stderr: "no pr found" };
+      if (cmd.includes("create")) return { exitCode: 1, stdout: "", stderr: "auth required" };
+      return ok("");
+    };
+    await expect(openOrPromotePr("/repo", "feat/x", "t", "b")).rejects.toThrow(/auth required/);
+  });
+
+  test("throws when promoting the draft fails", async () => {
+    _prDeps.run = async (cmd) => {
+      if (cmd.join(" ").includes("remote get-url")) return ok("git@github.com:o/r.git");
+      if (cmd.includes("view")) return ok(JSON.stringify({ isDraft: true, url: "https://gh/pr/1" }));
+      if (cmd.includes("ready")) return { exitCode: 1, stdout: "", stderr: "conflict" };
+      return ok("");
+    };
+    await expect(openOrPromotePr("/repo", "feat/x", "t", "b")).rejects.toThrow(/conflict/);
+  });
 });

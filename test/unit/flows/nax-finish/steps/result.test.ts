@@ -1,5 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { _resultDeps, resultPath, writeResult } from "@flows/nax-finish/steps/result";
+
+const originalWriteText = _resultDeps.writeText;
+afterEach(() => {
+  _resultDeps.writeText = originalWriteText;
+});
 
 describe("writeResult", () => {
   test("writes the result JSON to .nax/nax-finish-result.json", async () => {
