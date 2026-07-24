@@ -1,7 +1,7 @@
 # nax-finish as an acpx Flow + Post-Run Plugin — Design
 
 **Date:** 2026-07-24
-**Status:** Design (pre-implementation)
+**Status:** Implemented — see [docs/superpowers/plans/2026-07-24-nax-finish-flow.md](../plans/2026-07-24-nax-finish-flow.md) for the task-by-task implementation plan and its corrections (C1-C8). Distinct spec/quality reviewer profiles (decision 3 below) are supported via `NAX_FINISH_SPEC_PROFILE`/`NAX_FINISH_QUALITY_PROFILE` env vars set by the post-run plugin from `finish.autoFlow.reviewers.{spec,quality}` config, not the single-profile `--default-agent` limitation this design doc's decisions section may still describe.
 **Author:** brainstormed with William Khoo
 
 ## Problem
