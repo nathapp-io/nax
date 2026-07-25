@@ -426,3 +426,60 @@ describe("planInteractiveOp.recover — disk-recovery escape hatch (#993)", () =
     expect(result).toBeNull();
   });
 });
+
+describe("planInteractiveOp.verify — out-of-scope backfill (single mode)", () => {
+  const SPEC = "## Out of Scope\n\n- An interactive Ink TUI\n- Per-story checkpoints\n";
+
+  function makeVerifyCtx() {
+    const runtime = makeTestRuntime();
+    createdRuntimes.push(runtime);
+    const view = runtime.packages.repo();
+    return {
+      packageView: view,
+      config: view.select(planInteractiveOp.config),
+      readFile: async (_p: string) => null,
+      fileExists: async (_p: string) => false,
+    };
+  }
+
+  function prdWith(outOfScope?: string[]) {
+    return {
+      project: "p", feature: "test-feature", branchName: "feat/test",
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      ...(outOfScope ? { outOfScope } : {}),
+      userStories: [{
+        id: "US-001", title: "Story", description: "desc", acceptanceCriteria: ["When x, then y"],
+        contextFiles: [], tags: [], dependencies: [], status: "pending", passes: false,
+        routing: { complexity: "simple", testStrategy: "no-test", noTestJustification: "t", reasoning: "t" },
+        escalations: [], attempts: 0,
+      }],
+    };
+  }
+
+  const input = { specContent: SPEC, codebaseContext: "", featureName: "test-feature", branchName: "feat/test", outputPath: "/tmp/prd.json" };
+
+  test("backfills every spec exclusion the planner omitted, and warns", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      const result = await planInteractiveOp.verify!(prdWith() as any, input as any, makeVerifyCtx() as any);
+      expect(result?.outOfScope).toEqual(["An interactive Ink TUI", "Per-story checkpoints"]);
+      const warn = warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("out-of-scope"));
+      expect(warn).toBeDefined();
+      expect((warn?.[2] as Record<string, unknown>).missingCount).toBe(2);
+    });
+  });
+
+  test("keeps the planner's own wording and appends only what it dropped", async () => {
+    const prd = prdWith(["An interactive Ink TUI — deferred to arc 3"]);
+    const result = await planInteractiveOp.verify!(prd as any, input as any, makeVerifyCtx() as any);
+    expect(result?.outOfScope).toEqual(["An interactive Ink TUI — deferred to arc 3", "Per-story checkpoints"]);
+  });
+
+  test("does not warn or add a field when the spec declares no exclusions", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      const noScopeInput = { ...input, specContent: "# Feature\n\n## Design\n- build it\n" };
+      const result = await planInteractiveOp.verify!(prdWith() as any, noScopeInput as any, makeVerifyCtx() as any);
+      expect(result?.outOfScope).toBeUndefined();
+      expect(warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("out-of-scope"))).toBeUndefined();
+    });
+  });
+});

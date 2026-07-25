@@ -1,5 +1,10 @@
 import { getSafeLogger } from "../logger";
-import { findMissingVerbatimAcs, findSpecDriftViolations } from "../prd";
+import {
+  applyOutOfScopeFallback,
+  findMissingOutOfScope,
+  findMissingVerbatimAcs,
+  findSpecDriftViolations,
+} from "../prd";
 import type { PRD } from "../prd/types";
 
 /**
@@ -22,6 +27,29 @@ export function warnOnDroppedVerbatimAcs(prd: PRD, specContent: string, featureN
       { featureName, missingCount: missing.length, missing },
     );
   }
+}
+
+/**
+ * Scope-fidelity backfill shared by the plan ops (single + refine).
+ *
+ * Unlike the `[verbatim]` gate — which can only warn, because restoring an AC
+ * requires knowing which story owns it — feature-level exclusions have exactly
+ * one home (`prd.outOfScope`), so a dropped item can be repaired
+ * deterministically. The prompt asks the planner for its own wording; whatever
+ * it drops is appended verbatim from the spec here, and the warning records
+ * that the planner needed the safety net.
+ *
+ * Returns the backfilled PRD (the input reference when nothing was missing).
+ */
+export function backfillOutOfScope(prd: PRD, specContent: string, featureName: string): PRD {
+  const missing = findMissingOutOfScope(specContent, prd);
+  if (missing.length === 0) return prd;
+  getSafeLogger()?.warn("plan", "Spec out-of-scope statements dropped from PRD — backfilled verbatim from the spec", {
+    featureName,
+    missingCount: missing.length,
+    missing,
+  });
+  return applyOutOfScopeFallback(prd, specContent);
 }
 
 /**
