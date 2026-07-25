@@ -164,6 +164,16 @@ describe("extractSpecOutOfScope", () => {
     ]);
   });
 
+  test("drops empty sentinels and list lead-ins", () => {
+    // "None." would otherwise be rendered to every implementer as a hard
+    // boundary and become a citable scopeIndex target.
+    expect(extractSpecOutOfScope("## Out of Scope\n\nNone.\n")).toEqual([]);
+    expect(extractSpecOutOfScope("## Out of Scope\n\nN/A\n")).toEqual([]);
+    expect(extractSpecOutOfScope("## Out of Scope\n\nThe following are deferred:\n\n- No Ink TUI\n")).toEqual([
+      "No Ink TUI",
+    ]);
+  });
+
   test("does not treat prose merely mentioning out of scope as a declaration", () => {
     const spec = "The diff rendering is out of scope for this story because nothing persists it.\n";
     expect(extractSpecOutOfScope(spec)).toEqual([]);

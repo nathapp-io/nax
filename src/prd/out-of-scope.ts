@@ -292,12 +292,24 @@ function itemsFromInlineMarkers(lines: string[], fenced: Set<number>): string[] 
   return items;
 }
 
+/** Sentinels meaning "nothing deferred" — never a real exclusion. */
+const EMPTY_SENTINELS = new Set(["none", "none.", "n/a", "na", "nothing", "nothing.", "tbd", "-"]);
+
+/** A label introducing a list ("The following are deferred:"), not an exclusion itself. */
+function isListLeadIn(item: string): boolean {
+  return item.trimEnd().endsWith(":");
+}
+
 /** Deduplicate on canonical form, keeping first-seen (spec) wording, then cap. */
 function dedupeAndCap(items: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const item of items) {
     const key = canonical(item);
+    // A sentinel or a trailing-colon lead-in would otherwise be rendered to every
+    // implementer as a hard boundary ("do NOT implement these: None.") and become
+    // a citable `scopeIndex` target.
+    if (EMPTY_SENTINELS.has(key) || isListLeadIn(item)) continue;
     if (key.length === 0 || seen.has(key)) continue;
     seen.add(key);
     out.push(item);
@@ -324,6 +336,13 @@ export function normalizeOutOfScopeList(raw: unknown): string[] | undefined {
  * Every feature-level out-of-scope statement declared by the spec, in document
  * order: bullets (or paragraphs) under an `## Out of Scope` / `## Non-Goals`
  * heading, plus any inline `**Out of scope …:**` lead-in.
+ *
+ * Known limitation — no story ancestry. A heading or inline marker is matched
+ * wherever it appears, so a per-story `### Out of scope` / `**Out of scope:**`
+ * block (which spec-writing recommends for deferred risk properties) is hoisted
+ * to feature level and propagated to EVERY story. Keep per-story deferrals in the
+ * story's `Scope — Out:` bullet until this models story boundaries; see the
+ * spec-to-prd-pipeline doc.
  *
  * Scope / assumptions (deliberate — the downstream gate warns, never fails):
  * - A sub-heading inside the section is treated as a label, not an item; its

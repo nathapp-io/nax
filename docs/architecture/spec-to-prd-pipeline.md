@@ -205,6 +205,18 @@ invisible to them. `savePRD` strips the mirrored copies again
 Story-specific entries survive the strip; only exact feature-level mirrors are
 removed.
 
+### Known limitation: no story ancestry
+
+`extractSpecOutOfScope` matches a heading or inline marker **wherever it appears**,
+with no notion of which story section contains it. So a per-story
+`### Out of scope` / `**Out of scope:**` block — which spec-writing recommends for
+deferred risk properties — is hoisted to feature level and propagated to *every*
+story. US-002's deferral then reaches US-001's implementer as a hard boundary.
+
+Until the extractor models story boundaries, keep per-story deferrals in that
+story's `**Scope** — Out:` bullet, and reserve `## Out of Scope` / inline markers
+for genuinely feature-wide exclusions.
+
 ### Reviewers: visible and citable, but advisory
 
 Both reviewers render the list **numbered**, because a scope finding cites
