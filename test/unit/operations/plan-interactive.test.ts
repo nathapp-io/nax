@@ -15,6 +15,7 @@ import { ParseValidationError } from "@/agents";
 import type { RetryStrategy } from "@/agents";
 import { planInteractiveOp } from "@/operations";
 import { validatePlanOutput } from "@/prd";
+import { makePRD, makeStory } from "@test/helpers";
 import { makeTestRuntime, verbatimWarn, withWarnSpy } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
 
@@ -23,6 +24,19 @@ afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
+
+/** Shared verify-context factory — the op's verify() only touches these four fields. */
+function makeInteractiveVerifyCtx() {
+  const runtime = makeTestRuntime();
+  createdRuntimes.push(runtime);
+  const view = runtime.packages.repo();
+  return {
+    packageView: view,
+    config: view.select(planInteractiveOp.config),
+    readFile: async (_p: string) => null as string | null,
+    fileExists: async (_p: string) => false,
+  };
+}
 
 // We'll define minimal imports to test the op shape.
 // The actual implementation will provide these.
@@ -249,18 +263,6 @@ describe("planInteractiveOp.verify", () => {
 describe("planInteractiveOp.verify — [verbatim] residual-drift warning (single mode)", () => {
   const SPEC_WITH_VERBATIM = '## Acceptance Criteria\n- [verbatim] `grep -rn "oldSym" src/` returns zero matches';
 
-  function makeVerifyCtx() {
-    const runtime = makeTestRuntime();
-    createdRuntimes.push(runtime);
-    const view = runtime.packages.repo();
-    return {
-      packageView: view,
-      config: view.select(planInteractiveOp.config),
-      readFile: async (_p: string) => null,
-      fileExists: async (_p: string) => false,
-    };
-  }
-
   function storyWith(acs: string[]) {
     return {
       id: "US-001", title: "Story", description: "desc", acceptanceCriteria: acs,
@@ -283,7 +285,7 @@ describe("planInteractiveOp.verify — [verbatim] residual-drift warning (single
   test("warns and still returns the PRD when a [verbatim] spec AC is dropped", async () => {
     await withWarnSpy(async (warnSpy) => {
       const prd = prdWith(["unrelated AC that does not contain the grep"]);
-      const result = await planInteractiveOp.verify!(prd as any, input as any, makeVerifyCtx() as any);
+      const result = await planInteractiveOp.verify!(prd as any, input as any, makeInteractiveVerifyCtx() as any);
       expect(result).not.toBeNull();
       const warn = verbatimWarn(warnSpy);
       expect(warn).toBeDefined();
@@ -294,7 +296,7 @@ describe("planInteractiveOp.verify — [verbatim] residual-drift warning (single
   test("does not warn when the [verbatim] command survives in a PRD AC", async () => {
     await withWarnSpy(async (warnSpy) => {
       const prd = prdWith(['When cleanup completes, grep -rn "oldSym" src/ returns zero matches.']);
-      const result = await planInteractiveOp.verify!(prd as any, input as any, makeVerifyCtx() as any);
+      const result = await planInteractiveOp.verify!(prd as any, input as any, makeInteractiveVerifyCtx() as any);
       expect(result).not.toBeNull();
       expect(verbatimWarn(warnSpy)).toBeUndefined();
     });
@@ -430,37 +432,25 @@ describe("planInteractiveOp.recover — disk-recovery escape hatch (#993)", () =
 describe("planInteractiveOp.verify — out-of-scope backfill (single mode)", () => {
   const SPEC = "## Out of Scope\n\n- An interactive Ink TUI\n- Per-story checkpoints\n";
 
-  function makeVerifyCtx() {
-    const runtime = makeTestRuntime();
-    createdRuntimes.push(runtime);
-    const view = runtime.packages.repo();
-    return {
-      packageView: view,
-      config: view.select(planInteractiveOp.config),
-      readFile: async (_p: string) => null,
-      fileExists: async (_p: string) => false,
-    };
-  }
-
   function prdWith(outOfScope?: string[]) {
-    return {
-      project: "p", feature: "test-feature", branchName: "feat/test",
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    return makePRD({
+      feature: "test-feature",
+      branchName: "feat/test",
       ...(outOfScope ? { outOfScope } : {}),
-      userStories: [{
-        id: "US-001", title: "Story", description: "desc", acceptanceCriteria: ["When x, then y"],
-        contextFiles: [], tags: [], dependencies: [], status: "pending", passes: false,
-        routing: { complexity: "simple", testStrategy: "no-test", noTestJustification: "t", reasoning: "t" },
-        escalations: [], attempts: 0,
-      }],
-    };
+      userStories: [
+        makeStory({
+          acceptanceCriteria: ["When x, then y"],
+          routing: { complexity: "simple", testStrategy: "no-test", noTestJustification: "t", reasoning: "t" },
+        }),
+      ],
+    });
   }
 
   const input = { specContent: SPEC, codebaseContext: "", featureName: "test-feature", branchName: "feat/test", outputPath: "/tmp/prd.json" };
 
   test("backfills every spec exclusion the planner omitted, and warns", async () => {
     await withWarnSpy(async (warnSpy) => {
-      const result = await planInteractiveOp.verify!(prdWith() as any, input as any, makeVerifyCtx() as any);
+      const result = await planInteractiveOp.verify!(prdWith(), input as never, makeInteractiveVerifyCtx() as never);
       expect(result?.outOfScope).toEqual(["An interactive Ink TUI", "Per-story checkpoints"]);
       const warn = warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("out-of-scope"));
       expect(warn).toBeDefined();
@@ -470,14 +460,14 @@ describe("planInteractiveOp.verify — out-of-scope backfill (single mode)", () 
 
   test("keeps the planner's own wording and appends only what it dropped", async () => {
     const prd = prdWith(["An interactive Ink TUI — deferred to arc 3"]);
-    const result = await planInteractiveOp.verify!(prd as any, input as any, makeVerifyCtx() as any);
+    const result = await planInteractiveOp.verify!(prd, input as never, makeInteractiveVerifyCtx() as never);
     expect(result?.outOfScope).toEqual(["An interactive Ink TUI — deferred to arc 3", "Per-story checkpoints"]);
   });
 
   test("does not warn or add a field when the spec declares no exclusions", async () => {
     await withWarnSpy(async (warnSpy) => {
       const noScopeInput = { ...input, specContent: "# Feature\n\n## Design\n- build it\n" };
-      const result = await planInteractiveOp.verify!(prdWith() as any, noScopeInput as any, makeVerifyCtx() as any);
+      const result = await planInteractiveOp.verify!(prdWith(), noScopeInput as never, makeInteractiveVerifyCtx() as never);
       expect(result?.outOfScope).toBeUndefined();
       expect(warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("out-of-scope"))).toBeUndefined();
     });

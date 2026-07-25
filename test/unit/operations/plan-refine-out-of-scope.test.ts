@@ -13,7 +13,7 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { _planRefineDeps, planRefineOp } from "@/operations";
 import { PlanPromptBuilder } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
-import { makeTestRuntime, withWarnSpy } from "@test/helpers";
+import { makePRD, makeStory, makeTestRuntime, withWarnSpy } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 const origReadFile = _planRefineDeps.readFile;
@@ -28,30 +28,17 @@ afterEach(async () => {
 const SPEC = "## Out of Scope\n\n- An interactive Ink TUI\n- Per-story checkpoints\n";
 
 function makePrd(outOfScope?: string[]) {
-  return {
-    project: "test-project",
+  return makePRD({
     feature: "f",
     branchName: "feat/f",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
     ...(outOfScope ? { outOfScope } : {}),
     userStories: [
-      {
-        id: "US-001",
-        title: "Test story",
-        description: "Test description",
+      makeStory({
         acceptanceCriteria: ["When run with no args, then exit_code == 2 and stderr contains 'invalid config'"],
-        contextFiles: [],
-        tags: [],
-        dependencies: [],
-        status: "pending",
-        passes: false,
         routing: { complexity: "simple", testStrategy: "no-test", noTestJustification: "t", reasoning: "t" },
-        escalations: [],
-        attempts: 0,
-      },
+      }),
     ],
-  };
+  });
 }
 
 describe("planRefineOp.hopBody — out-of-scope self-heal turn", () => {
@@ -142,7 +129,7 @@ describe("planRefineOp.verify — out-of-scope backfill", () => {
 
   test("restores exclusions the repair turn still missed, and warns", async () => {
     await withWarnSpy(async (warnSpy) => {
-      const result = await planRefineOp.verify!(makePrd() as never, input as never, makeVerifyCtx() as never);
+      const result = await planRefineOp.verify!(makePrd(), input as never, makeVerifyCtx() as never);
 
       expect(result?.outOfScope).toEqual(["An interactive Ink TUI", "Per-story checkpoints"]);
       const warn = warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("out-of-scope"));
@@ -154,7 +141,7 @@ describe("planRefineOp.verify — out-of-scope backfill", () => {
   test("leaves a fully preserved list untouched and does not warn", async () => {
     await withWarnSpy(async (warnSpy) => {
       const preserved = ["An interactive Ink TUI", "Per-story checkpoints"];
-      const result = await planRefineOp.verify!(makePrd(preserved) as never, input as never, makeVerifyCtx() as never);
+      const result = await planRefineOp.verify!(makePrd(preserved), input as never, makeVerifyCtx() as never);
 
       expect(result?.outOfScope).toEqual(preserved);
       expect(warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("out-of-scope"))).toBeUndefined();

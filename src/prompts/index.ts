@@ -18,7 +18,7 @@ export { DebatePromptBuilder } from "./builders/debate-builder";
 export type { StageContext, PromptBuilderOptions, ReviewStoryContext } from "./builders/debate-builder";
 
 // Out-of-scope section — shared by the story sections and both reviewer prompts.
-export { buildOutOfScopeLines, buildReviewOutOfScopeBlock } from "./sections/out-of-scope";
+export { buildOutOfScopeLines, buildReviewOutOfScopeBlock } from "./sections";
 
 // Review prompt builder — semantic review prompt construction.
 export { ReviewPromptBuilder } from "./builders/review-builder";

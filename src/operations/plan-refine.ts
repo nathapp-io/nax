@@ -14,6 +14,7 @@ import type { UserStory } from "../prd/types";
 import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
 import type { SessionRole } from "../session/types";
+import { errorMessage } from "../utils/errors";
 import { type SelfHealStep, makeSelfHealStep, runSelfHealChain } from "./self-heal";
 import type { RunOperation } from "./types";
 import { backfillOutOfScope, warnOnDroppedVerbatimAcs, warnOnSpecDrift } from "./verbatim-warn";
@@ -325,9 +326,10 @@ async function readMissingOutOfScope(input: PlanRefineInput): Promise<string[]> 
   try {
     const prd = validatePlanOutput(content, input.featureName, input.branchName);
     return findMissingOutOfScope(input.specContent, prd);
-  } catch {
+  } catch (err) {
     getSafeLogger()?.debug("plan", "Skipped out-of-scope self-heal — draft PRD not yet parseable", {
       featureName: input.featureName,
+      error: errorMessage(err),
     });
     return [];
   }

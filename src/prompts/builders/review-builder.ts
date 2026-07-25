@@ -14,7 +14,7 @@ import type { AcDroppedEntry, AcGroundingMinimalRejection } from "../../review/a
 import type { LLMFinding } from "../../review/semantic-helpers";
 import type { SemanticReviewConfig, SemanticStory } from "../../review/types";
 import { wrapJsonPrompt } from "../../utils/llm-json";
-import { buildReviewOutOfScopeBlock } from "../sections/out-of-scope";
+import { buildReviewOutOfScopeBlock } from "../sections";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";
 
 // ─── Constants ────────────────────────────────────────────────────────────────

@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
 import type { AdversarialReviewInput, AdversarialReviewOutput } from "../../../src/operations/adversarial-review";
+import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import { makeTestRuntime, withTempDir } from "../../helpers";
 import type { NaxRuntime } from "../../../src/runtime";
 
@@ -398,7 +399,7 @@ describe("adversarialReviewOp.verify() — scope grounding", () => {
   };
   const inputWithScope: AdversarialReviewInput = { ...BASE_INPUT, story: storyWithScope };
 
-  function scopeFinding(overrides: Record<string, unknown> = {}) {
+  function scopeFinding(overrides: Partial<AdversarialLLMFinding> = {}): AdversarialLLMFinding {
     return {
       severity: "warning",
       category: "out-of-scope",
@@ -414,18 +415,19 @@ describe("adversarialReviewOp.verify() — scope grounding", () => {
 
   test("keeps a scope finding whose scopeQuote is grounded in story.outOfScope", async () => {
     const ctx = makeVerifyCtx();
-    const parsed = makeOutput({ passed: false, findings: [scopeFinding()] as never, normalizedFindings: [] });
+    const parsed = makeOutput({ passed: false, findings: [scopeFinding()], normalizedFindings: [] });
 
     const result = await adversarialReviewOp.verify!(parsed, inputWithScope, ctx);
 
     expect(result?.findings).toHaveLength(1);
+    expect((result?.findings[0] as AdversarialLLMFinding).scopeQuote).toBe("An interactive Ink TUI");
   });
 
   test("drops a scope finding citing a boundary the story never declared", async () => {
     const ctx = makeVerifyCtx();
     const parsed = makeOutput({
       passed: false,
-      findings: [scopeFinding({ scopeQuote: "a REST API nobody deferred" })] as never,
+      findings: [scopeFinding({ scopeQuote: "a REST API nobody deferred" })],
       normalizedFindings: [],
     });
 
@@ -436,7 +438,7 @@ describe("adversarialReviewOp.verify() — scope grounding", () => {
 
   test("drops a scope citation when the story declares no exclusions at all", async () => {
     const ctx = makeVerifyCtx();
-    const parsed = makeOutput({ passed: false, findings: [scopeFinding()] as never, normalizedFindings: [] });
+    const parsed = makeOutput({ passed: false, findings: [scopeFinding()], normalizedFindings: [] });
 
     const result = await adversarialReviewOp.verify!(parsed, BASE_INPUT, ctx);
 
@@ -457,7 +459,7 @@ describe("adversarialReviewOp.verify() — scope grounding", () => {
       const ctx = makeVerifyCtx();
       const parsed = makeOutput({
         passed: false,
-        findings: [scopeFinding(), scopeFinding({ scopeQuote: undefined, scopeIndex: undefined })] as never,
+        findings: [scopeFinding(), scopeFinding({ scopeQuote: undefined, scopeIndex: undefined })],
         normalizedFindings: [],
       });
 
@@ -476,10 +478,12 @@ describe("adversarialReviewOp.verify() — scope grounding", () => {
   test("keeps a scope finding that offers no citation (description-level Scope bullet)", async () => {
     const ctx = makeVerifyCtx();
     const finding = scopeFinding({ scopeQuote: undefined, scopeIndex: undefined });
-    const parsed = makeOutput({ passed: false, findings: [finding] as never, normalizedFindings: [] });
+    const parsed = makeOutput({ passed: false, findings: [finding], normalizedFindings: [] });
 
     const result = await adversarialReviewOp.verify!(parsed, inputWithScope, ctx);
 
     expect(result?.findings).toHaveLength(1);
+    expect((result?.findings[0] as AdversarialLLMFinding).scopeQuote).toBeUndefined();
+    expect((result?.findings[0] as AdversarialLLMFinding).issue).toBe("Story added an Ink TUI");
   });
 });

@@ -7,35 +7,7 @@ import {
   propagateOutOfScopeToStories,
   stripPropagatedOutOfScope,
 } from "@/prd";
-import type { PRD, UserStory } from "@/prd/types";
-
-function makeStory(overrides: Partial<UserStory> = {}): UserStory {
-  return {
-    id: "US-001",
-    title: "Story",
-    description: "desc",
-    acceptanceCriteria: ["does a thing"],
-    tags: [],
-    dependencies: [],
-    status: "pending",
-    passes: false,
-    escalations: [],
-    attempts: 0,
-    ...overrides,
-  };
-}
-
-function makePrd(overrides: Partial<PRD> = {}): PRD {
-  return {
-    project: "p",
-    feature: "f",
-    branchName: "feat/f",
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-    userStories: [makeStory()],
-    ...overrides,
-  };
-}
+import { makePRD, makeStory } from "@test/helpers";
 
 describe("extractSpecOutOfScope", () => {
   test("extracts bullets from an `## Out of Scope` heading section", () => {
@@ -124,6 +96,41 @@ describe("extractSpecOutOfScope", () => {
     expect(extractSpecOutOfScope("")).toEqual([]);
   });
 
+  test("recognises a heading wrapped in emphasis", () => {
+    // `## **Out of Scope**` is the same heading; not matching it silently dropped
+    // the whole section — the exact failure this module exists to prevent.
+    expect(extractSpecOutOfScope("## **Out of Scope**\n\n- item\n")).toEqual(["item"]);
+    expect(extractSpecOutOfScope("## `Non-Goals`\n\n- item\n")).toEqual(["item"]);
+    expect(extractSpecOutOfScope("## Out of Scope:\n\n- item\n")).toEqual(["item"]);
+  });
+
+  test("recognises a setext-underlined heading", () => {
+    expect(extractSpecOutOfScope("Out of Scope\n------------\n\n- a\n- b\n\nDesign\n------\n\n- in scope\n")).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  test("an H1 section ends at the next heading of any depth", () => {
+    // Every other section nests under an H1, so folding them in would push the
+    // whole document into every story prompt.
+    expect(extractSpecOutOfScope("Out of Scope\n============\n\n- a\n\n## Design\n\n- in scope\n")).toEqual(["a"]);
+  });
+
+  test("skips fenced code blocks instead of folding them into an item", () => {
+    const spec = "## Out of Scope\n\n- no `foo()` support\n\n```ts\nconst x = 1;\n```\n\n## Design\n- in scope\n";
+    expect(extractSpecOutOfScope(spec)).toEqual(["no `foo()` support"]);
+  });
+
+  test("reads a table as one item per data row, skipping the header", () => {
+    const spec = "## Out of Scope\n\n| Deferred | Reason |\n|---|---|\n| Ink TUI | later arc |\n| Checkpoints | no data |\n";
+    expect(extractSpecOutOfScope(spec)).toEqual(["Ink TUI — later arc", "Checkpoints — no data"]);
+  });
+
+  test("handles CRLF line endings", () => {
+    expect(extractSpecOutOfScope("## Out of Scope\r\n\r\n- item a\r\n- item b\r\n")).toEqual(["item a", "item b"]);
+  });
+
   test("does not treat prose merely mentioning out of scope as a declaration", () => {
     const spec = "The diff rendering is out of scope for this story because nothing persists it.\n";
     expect(extractSpecOutOfScope(spec)).toEqual([]);
@@ -133,46 +140,46 @@ describe("extractSpecOutOfScope", () => {
 describe("findMissingOutOfScope", () => {
   test("returns spec items absent from the PRD", () => {
     const spec = "## Out of Scope\n\n- An interactive Ink TUI\n- Per-story checkpoints\n";
-    const prd = makePrd({ outOfScope: ["An interactive Ink TUI"] });
+    const prd = makePRD({ outOfScope: ["An interactive Ink TUI"] });
 
     expect(findMissingOutOfScope(spec, prd)).toEqual(["Per-story checkpoints"]);
   });
 
   test("returns an empty array when every item is preserved", () => {
     const spec = "## Out of Scope\n\n- An interactive Ink TUI\n";
-    const prd = makePrd({ outOfScope: ["An interactive Ink TUI (deferred to a later arc)"] });
+    const prd = makePRD({ outOfScope: ["An interactive Ink TUI (deferred to a later arc)"] });
 
     expect(findMissingOutOfScope(spec, prd)).toEqual([]);
   });
 
   test("matches case-insensitively and ignores backtick/whitespace formatting", () => {
     const spec = "## Out of Scope\n\n- changes to `src/replay/report.ts`\n";
-    const prd = makePrd({ outOfScope: ["Changes to    src/replay/report.ts"] });
+    const prd = makePRD({ outOfScope: ["Changes to    src/replay/report.ts"] });
 
     expect(findMissingOutOfScope(spec, prd)).toEqual([]);
   });
 
   test("reports every item when the PRD has no outOfScope field at all", () => {
     const spec = "## Out of Scope\n\n- a\n- b\n";
-    expect(findMissingOutOfScope(spec, makePrd())).toEqual(["a", "b"]);
+    expect(findMissingOutOfScope(spec, makePRD())).toEqual(["a", "b"]);
   });
 
   test("returns an empty array when the spec declares nothing", () => {
-    expect(findMissingOutOfScope("# Feature\n", makePrd())).toEqual([]);
+    expect(findMissingOutOfScope("# Feature\n", makePRD())).toEqual([]);
   });
 });
 
 describe("applyOutOfScopeFallback", () => {
   test("backfills the root field when the planner omitted it", () => {
     const spec = "## Out of Scope\n\n- An interactive Ink TUI\n";
-    const result = applyOutOfScopeFallback(makePrd(), spec);
+    const result = applyOutOfScopeFallback(makePRD(), spec);
 
     expect(result.outOfScope).toEqual(["An interactive Ink TUI"]);
   });
 
   test("appends only the items the planner dropped, keeping its own wording first", () => {
     const spec = "## Out of Scope\n\n- item a\n- item b\n";
-    const prd = makePrd({ outOfScope: ["item a — deferred to arc 2"] });
+    const prd = makePRD({ outOfScope: ["item a — deferred to arc 2"] });
     const result = applyOutOfScopeFallback(prd, spec);
 
     expect(result.outOfScope).toEqual(["item a — deferred to arc 2", "item b"]);
@@ -180,18 +187,18 @@ describe("applyOutOfScopeFallback", () => {
 
   test("returns the same PRD reference when nothing is missing", () => {
     const spec = "## Out of Scope\n\n- item a\n";
-    const prd = makePrd({ outOfScope: ["item a"] });
+    const prd = makePRD({ outOfScope: ["item a"] });
 
     expect(applyOutOfScopeFallback(prd, spec)).toBe(prd);
   });
 
   test("returns the same PRD reference when the spec declares nothing", () => {
-    const prd = makePrd();
+    const prd = makePRD();
     expect(applyOutOfScopeFallback(prd, "# Feature\n")).toBe(prd);
   });
 
   test("does not mutate the input PRD", () => {
-    const prd = makePrd();
+    const prd = makePRD();
     applyOutOfScopeFallback(prd, "## Out of Scope\n\n- item a\n");
     expect(prd.outOfScope).toBeUndefined();
   });
@@ -199,7 +206,7 @@ describe("applyOutOfScopeFallback", () => {
 
 describe("propagateOutOfScopeToStories", () => {
   test("copies the feature-level list onto every story", () => {
-    const prd = makePrd({
+    const prd = makePRD({
       outOfScope: ["no Ink TUI"],
       userStories: [makeStory({ id: "US-001" }), makeStory({ id: "US-002" })],
     });
@@ -209,7 +216,7 @@ describe("propagateOutOfScopeToStories", () => {
   });
 
   test("merges feature-level items after story-level ones without duplicating", () => {
-    const prd = makePrd({
+    const prd = makePRD({
       outOfScope: ["no Ink TUI", "no checkpoints"],
       userStories: [makeStory({ outOfScope: ["no checkpoints", "no CLI wiring"] })],
     });
@@ -219,12 +226,12 @@ describe("propagateOutOfScopeToStories", () => {
   });
 
   test("returns the same PRD reference when there is nothing to propagate", () => {
-    const prd = makePrd();
+    const prd = makePRD();
     expect(propagateOutOfScopeToStories(prd)).toBe(prd);
   });
 
   test("does not mutate the input stories", () => {
-    const prd = makePrd({ outOfScope: ["no Ink TUI"] });
+    const prd = makePRD({ outOfScope: ["no Ink TUI"] });
     propagateOutOfScopeToStories(prd);
     expect(prd.userStories[0].outOfScope).toBeUndefined();
   });
@@ -232,7 +239,7 @@ describe("propagateOutOfScopeToStories", () => {
 
 describe("stripPropagatedOutOfScope", () => {
   test("round-trips with propagateOutOfScopeToStories", () => {
-    const prd = makePrd({
+    const prd = makePRD({
       outOfScope: ["no Ink TUI"],
       userStories: [makeStory({ id: "US-001" }), makeStory({ id: "US-002" })],
     });
@@ -241,7 +248,7 @@ describe("stripPropagatedOutOfScope", () => {
   });
 
   test("keeps story-specific entries and drops only the mirrored feature-level ones", () => {
-    const prd = makePrd({
+    const prd = makePRD({
       outOfScope: ["no Ink TUI"],
       userStories: [makeStory({ outOfScope: ["no CLI wiring", "no Ink TUI"] })],
     });
@@ -250,15 +257,15 @@ describe("stripPropagatedOutOfScope", () => {
   });
 
   test("omits the story key entirely when nothing story-specific remains", () => {
-    const prd = makePrd({ outOfScope: ["no Ink TUI"], userStories: [makeStory({ outOfScope: ["no Ink TUI"] })] });
+    const prd = makePRD({ outOfScope: ["no Ink TUI"], userStories: [makeStory({ outOfScope: ["no Ink TUI"] })] });
 
     expect("outOfScope" in stripPropagatedOutOfScope(prd).userStories[0]).toBe(false);
   });
 
   test("returns the same PRD reference when there is nothing to strip", () => {
-    const prd = makePrd({ outOfScope: ["no Ink TUI"] });
+    const prd = makePRD({ outOfScope: ["no Ink TUI"] });
     expect(stripPropagatedOutOfScope(prd)).toBe(prd);
-    const noFeatureLevel = makePrd({ userStories: [makeStory({ outOfScope: ["no CLI wiring"] })] });
+    const noFeatureLevel = makePRD({ userStories: [makeStory({ outOfScope: ["no CLI wiring"] })] });
     expect(stripPropagatedOutOfScope(noFeatureLevel)).toBe(noFeatureLevel);
   });
 });

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { MAX_OUT_OF_SCOPE_ITEMS } from "@/prd";
 import { extractJsonFromMarkdown, validatePlanOutput } from "../../../src/prd/schema";
 
 // ---------------------------------------------------------------------------
@@ -481,4 +482,53 @@ describe("validatePlanOutput — Phase 2 citation fields (AC4-AC6)", () => {
     expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(/verifiedBy.*kind/i);
   });
 
+});
+
+describe("validatePlanOutput — outOfScope normalization", () => {
+  const base = {
+    userStories: [
+      {
+        id: "US-001",
+        title: "t",
+        description: "d",
+        acceptanceCriteria: ["a"],
+        routing: { complexity: "simple", testStrategy: "no-test", noTestJustification: "j", reasoning: "r" },
+      },
+    ],
+  };
+
+  test("keeps a well-formed feature-level list", () => {
+    const prd = validatePlanOutput({ ...base, outOfScope: ["no Ink TUI", "no checkpoints"] }, "f", "b");
+    expect(prd.outOfScope).toEqual(["no Ink TUI", "no checkpoints"]);
+  });
+
+  test("omits the key entirely for a non-array value", () => {
+    expect(validatePlanOutput({ ...base, outOfScope: "a string" }, "f", "b").outOfScope).toBeUndefined();
+    expect(validatePlanOutput({ ...base, outOfScope: 42 }, "f", "b").outOfScope).toBeUndefined();
+    expect(validatePlanOutput({ ...base, outOfScope: {} }, "f", "b").outOfScope).toBeUndefined();
+  });
+
+  test("drops non-string and blank entries instead of failing the plan", () => {
+    const prd = validatePlanOutput({ ...base, outOfScope: ["keep", 7, null, "  ", { a: 1 }, "also keep"] }, "f", "b");
+    expect(prd.outOfScope).toEqual(["keep", "also keep"]);
+  });
+
+  test("omits the key when every entry is dropped", () => {
+    expect(validatePlanOutput({ ...base, outOfScope: [1, 2, "  "] }, "f", "b").outOfScope).toBeUndefined();
+    expect(validatePlanOutput({ ...base, outOfScope: [] }, "f", "b").outOfScope).toBeUndefined();
+  });
+
+  test("deduplicates and caps at MAX_OUT_OF_SCOPE_ITEMS", () => {
+    const many = Array.from({ length: MAX_OUT_OF_SCOPE_ITEMS + 10 }, (_, i) => `item ${i}`);
+    expect(validatePlanOutput({ ...base, outOfScope: many }, "f", "b").outOfScope).toHaveLength(
+      MAX_OUT_OF_SCOPE_ITEMS,
+    );
+    expect(validatePlanOutput({ ...base, outOfScope: ["dup", "dup", "DUP"] }, "f", "b").outOfScope).toEqual(["dup"]);
+  });
+
+  test("normalizes a story-level list the same way", () => {
+    const story = { ...base.userStories[0], outOfScope: ["story-specific", 9] };
+    const prd = validatePlanOutput({ userStories: [story] }, "f", "b");
+    expect(prd.userStories[0].outOfScope).toEqual(["story-specific"]);
+  });
 });
