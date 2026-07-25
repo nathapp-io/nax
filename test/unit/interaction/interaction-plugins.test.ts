@@ -218,8 +218,14 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
 
     globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
-      const body = JSON.parse((init?.body as string) ?? "{}");
-      calls.push({ url: urlStr, body });
+      // Only track sendMessage calls — init() also calls getUpdates() to drain any backlog.
+      if (urlStr.includes("sendMessage")) {
+        const body = JSON.parse((init?.body as string) ?? "{}");
+        calls.push({ url: urlStr, body });
+      }
+      if (urlStr.includes("getUpdates")) {
+        return new Response(JSON.stringify({ ok: true, result: [] }), { status: 200 });
+      }
       return new Response(
         JSON.stringify({ ok: true, result: { message_id: 42, chat: { id: 12345 } } }),
         { status: 200, headers: { "Content-Type": "application/json" } },
@@ -444,6 +450,148 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
     expect(response.action).toBe("approve");
     expect(answeredCallbackIds).toContain("cq-other");
     expect(answeredCallbackIds).toContain("cq-current");
+  });
+
+  test("send() drains stale backlog so receive() does not misattribute it as the answer", async () => {
+    // Regression: paused-story prompts reuse a deterministic requestId
+    // (`ix-<storyId>-paused-resume`) across runs. If a prior run posted the same
+    // prompt and crashed/exited before the human tapped a button, that stale
+    // callback_query sits in Telegram's queue. A fresh plugin instance starts at
+    // lastUpdateId=0, so without draining, the very first receive() poll for the
+    // *new* run's identically-named request would replay that old tap and resolve
+    // instantly — exactly the reported symptom (resolved before the human replied).
+    // Using a callback_query here (not text) means this test exercises the backlog
+    // drain specifically, independent of the type==="input" text-gating fix below.
+    const staleUpdate = {
+      update_id: 1,
+      callback_query: {
+        id: "cq-stale",
+        data: "ix-US-002-paused-resume:resume",
+        message: { message_id: 999, chat: { id: 99999 } },
+      },
+    };
+
+    globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+
+      if (urlStr.includes("sendMessage")) {
+        return new Response(
+          JSON.stringify({ ok: true, result: { message_id: 20, chat: { id: 99999 } } }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (urlStr.includes("getUpdates")) {
+        const body = JSON.parse((init?.body as string) ?? "{}") as { offset?: number };
+        const offset = body.offset ?? 0;
+        // Real Telegram semantics: only updates with update_id >= offset are returned.
+        const pending = staleUpdate.update_id >= offset ? [staleUpdate] : [];
+        return new Response(JSON.stringify({ ok: true, result: pending }), { status: 200 });
+      }
+
+      if (urlStr.includes("answerCallbackQuery") || urlStr.includes("editMessageReplyMarkup")) {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+
+      return new Response("not found", { status: 404 });
+    }) as typeof fetch;
+
+    const plugin = new TelegramInteractionPlugin();
+    await plugin.init({ botToken: "bot-abc123", chatId: "99999" }); // no network call — nothing drained here
+
+    const chooseRequest: InteractionRequest = {
+      id: "ix-US-002-paused-resume",
+      type: "choose",
+      featureName: "my-feature",
+      stage: "pre-flight",
+      summary: "Story is paused — how to proceed?",
+      fallback: "continue",
+      createdAt: Date.now(),
+      options: [
+        { key: "resume", label: "Resume" },
+        { key: "skip", label: "Skip" },
+        { key: "keep", label: "Keep paused" },
+      ],
+    };
+
+    // send() drains the backlog immediately before posting — the stale tap above
+    // is consumed and discarded here, before pendingMessages is even populated.
+    await plugin.send(chooseRequest);
+
+    // No new update arrives after send() — the stale tap must not be replayed as
+    // the answer. receive() should time out instead of resolving instantly.
+    const response = await plugin.receive("ix-US-002-paused-resume", 150);
+
+    expect(response.respondedBy).toBe("timeout");
+  });
+
+  test("receive() ignores a plain-text reply to a button-only (choose) prompt", async () => {
+    // Regression (C2): the proximate cause of the reported incident. A `choose`
+    // request is only ever answerable via the inline keyboard buttons nax posts
+    // for it (see buildKeyboard()) — a stray or misdirected plain-text message must
+    // never be treated as its answer, even when it *is* a direct reply to the
+    // prompt message. Only `type: "input"` requests accept free text.
+    //
+    // getUpdatesCallCount gates when the reply becomes visible: call #1 is send()'s
+    // own pre-post backlog drain (must see nothing — the reply doesn't exist yet),
+    // calls #2+ are receive()'s polls, simulating the human replying only after the
+    // prompt was actually posted.
+    let getUpdatesCallCount = 0;
+
+    globalThis.fetch = mock(async (url: string | URL | Request) => {
+      const urlStr = url.toString();
+
+      if (urlStr.includes("sendMessage")) {
+        return new Response(
+          JSON.stringify({ ok: true, result: { message_id: 30, chat: { id: 99999 } } }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (urlStr.includes("getUpdates")) {
+        getUpdatesCallCount++;
+        if (getUpdatesCallCount === 1) {
+          return new Response(JSON.stringify({ ok: true, result: [] }), { status: 200 });
+        }
+        const textReply = {
+          update_id: 1,
+          message: {
+            message_id: 31,
+            chat: { id: 99999 },
+            text: "resume",
+            reply_to_message: { message_id: 30, chat: { id: 99999 } },
+          },
+        };
+        return new Response(JSON.stringify({ ok: true, result: [textReply] }), { status: 200 });
+      }
+
+      return new Response("not found", { status: 404 });
+    }) as typeof fetch;
+
+    const plugin = new TelegramInteractionPlugin();
+    await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
+
+    const chooseRequest: InteractionRequest = {
+      id: "tg-choose-text-reply-1",
+      type: "choose",
+      featureName: "my-feature",
+      stage: "pre-flight",
+      summary: "Story is paused — how to proceed?",
+      fallback: "continue",
+      createdAt: Date.now(),
+      options: [
+        { key: "resume", label: "Resume" },
+        { key: "skip", label: "Skip" },
+      ],
+    };
+
+    await plugin.send(chooseRequest);
+
+    // The text reply is a direct reply to the correct message and matches an
+    // option key, yet must still be rejected — buttons are the only valid answer.
+    const response = await plugin.receive("tg-choose-text-reply-1", 150);
+
+    expect(response.respondedBy).toBe("timeout");
   });
 
   test("receive() clears inline keyboard on successful callback response", async () => {
