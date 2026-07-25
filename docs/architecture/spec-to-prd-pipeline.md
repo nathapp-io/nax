@@ -2,8 +2,9 @@
 
 > **Audience:** anyone touching the spec-kit skills (`spec-writing`, `spec-review`)
 > or the nax planner (`src/operations/plan-refine.ts`, `src/prompts/builders/plan-builder.ts`).
-> **Status:** SSOT for the three-component contract around per-story **file roles**
-> (`contextFiles` vs `expectedFiles`) and the **cross-story produced-file** rule.
+> **Status:** SSOT for the three-component contracts around per-story **file roles**
+> (`contextFiles` vs `expectedFiles`), the **cross-story produced-file** rule, and
+> the **feature-level scope** contract (`## Out of Scope` → `prd.outOfScope`).
 
 ## The four-stage workflow
 
@@ -161,6 +162,79 @@ keeping a file as a read hint, never toward a wrong move. Not implemented becaus
 the guarded scenario is a double violation the upstream rules already prevent;
 revisit if a real PRD exhibits the producer-mis-files-own-output pattern.
 
+## The scope contract: `## Out of Scope` → `prd.outOfScope`
+
+File roles answer "which files does this story touch?". A second contract, added
+later, answers "which work must no story do at all?" — and it binds the same three
+components.
+
+A spec's `## Out of Scope` / `## Non-Goals` section states what the feature
+deliberately defers. It is **not** the same thing as a story description's
+`**Scope** — Out:` bullet, which states an *inter-story* boundary ("that file
+belongs to US-003"). Before this contract existed the feature-level statement was
+dropped entirely at the spec→PRD boundary: the PRD had no field for it and the
+plan prompt never asked. Since the implementer only ever receives a `UserStory`,
+nothing stopped a story from building a deferred arc.
+
+| Component | Responsibility |
+|---|---|
+| **spec-writing** | Emits a machine-extractable section: recognised heading, one self-contained bullet per exclusion, ≤25 items, never phrased as an AC |
+| **nax plan** | Extracts it into `prd.outOfScope`; backfills verbatim whatever the planner dropped; propagates onto every story |
+| **spec-review** | Phase 5 Step 8b audits extractability; Phase 9 audits `prd.outOfScope` fidelity against the spec |
+
+### Extraction is deterministic, not model-trusted
+
+`src/prd/out-of-scope.ts` is the SSOT. The plan prompt *asks* the planner to emit
+`outOfScope` (its wording is usually better, and only it can echo an item into the
+relevant story's `Scope — Out:` bullet), but `applyOutOfScopeFallback` guarantees
+the field regardless — `plan.verify` and `plan-refine.verify` restore any dropped
+item verbatim from the spec. Refine additionally gets one same-session repair turn
+before that backstop, mirroring the `[verbatim]` self-heal.
+
+This differs from the `[verbatim]` AC gate, which can only *warn*: restoring an AC
+requires knowing which story owns it, whereas a feature-level exclusion has exactly
+one home. A drop is therefore repairable, not merely reportable.
+
+### Storage: root is SSOT, stories carry a denormalized copy
+
+`prd.outOfScope` is the on-disk source of truth. `loadPRD` denormalizes it onto
+every story (`propagateOutOfScopeToStories`) because the implementer, rectifier,
+and both reviewers only ever receive a `UserStory` — a root-only field would be
+invisible to them. `savePRD` strips the mirrored copies again
+(`stripPropagatedOutOfScope`) so `prd.json` does not repeat the same list N times.
+Story-specific entries survive the strip; only exact feature-level mirrors are
+removed.
+
+### Known limitation: no story ancestry
+
+`extractSpecOutOfScope` matches a heading or inline marker **wherever it appears**,
+with no notion of which story section contains it. So a per-story
+`### Out of scope` / `**Out of scope:**` block — which spec-writing recommends for
+deferred risk properties — is hoisted to feature level and propagated to *every*
+story. US-002's deferral then reaches US-001's implementer as a hard boundary.
+
+Until the extractor models story boundaries, keep per-story deferrals in that
+story's `**Scope** — Out:` bullet, and reserve `## Out of Scope` / inline markers
+for genuinely feature-wide exclusions.
+
+### Reviewers: visible and citable, but advisory
+
+Both reviewers render the list **numbered**, because a scope finding cites
+`scopeIndex` (1-based) into it. An exclusion is not an AC, so such a finding has no
+`acQuote` to offer; it cites `scopeQuote` instead, validated by `validateScopeQuote`
+against the indexed entry. That validation runs at **every** severity — scope
+findings are capped at `"warning"` by the prompt, so a blocking-only gate would
+never fire, yet an ungrounded one still reaches the story report and the next
+tier's escalation context.
+
+Scope findings do **not** block a story: `warning` is below the default
+`review.blockingThreshold` of `"error"`. They land in the sub-threshold advisory
+bucket, which `review.nonBlockingFix` seeds from — so with that opt-in enabled they
+are best-effort auto-fixed without ever failing the story. Whether a grounded scope
+finding should be allowed to block is deliberately unresolved and gated on
+Phase-0 telemetry (`review.adversarial.scope_finding_accepted` /
+`scope_quote_dropped`) — see [#1359](https://github.com/nathapp-io/nax/issues/1359).
+
 ## Quick reference
 
 | Situation | `contextFiles`? | `expectedFiles`? | spec-review verdict |
@@ -169,3 +243,10 @@ revisit if a real PRD exhibits the producer-mis-files-own-output pattern.
 | File this story creates | ❌ | ✅ | in `contextFiles` = blocker |
 | File an upstream dep creates, read/modified here | ✅ (annotated) | ❌ | kept = correct; dropped or mis-moved to `expectedFiles` = major |
 | Absent, produced by no story | ❌ | ✅ (best-effort) | move is correct |
+
+| Scope situation | Where it belongs | spec-review verdict |
+|---|---|---|
+| Feature defers an arc entirely | spec `## Out of Scope` → `prd.outOfScope` | missing from PRD = blocker (extraction failed) |
+| Work belongs to a different story | story description `**Scope** — Out:` | inconsistent with the story's own ACs = major |
+| Deferral stated only in Design prose | nowhere — never extracted | major (implementer never sees it) |
+| Exclusion written as an acceptance criterion | wrong — it is work NOT to do | blocker |

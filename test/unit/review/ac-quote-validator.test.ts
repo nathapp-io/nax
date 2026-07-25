@@ -7,8 +7,10 @@ import {
   type AcQuotable,
   filterByAcGroundingMinimal,
   filterByAcQuote,
+  filterByScopeQuote,
   validateAcGroundingMinimal,
   validateAcQuote,
+  validateScopeQuote,
 } from "../../../src/review/ac-quote-validator";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -392,5 +394,158 @@ describe("filterByAcGroundingMinimal", () => {
     const result = filterByAcGroundingMinimal([finding], ACS);
     expect(result.accepted).toHaveLength(1);
     expect((result.accepted[0] as AdversarialShape).category).toBe("convention");
+  });
+});
+
+// ─── Scope grounding ──────────────────────────────────────────────────────────
+
+describe("validateScopeQuote", () => {
+  const OUT_OF_SCOPE = ["An interactive Ink TUI", "Per-story diffs or `checkpoints`"];
+
+  function scopeFinding(overrides: Partial<AcQuotable> = {}): AcQuotable {
+    return {
+      severity: "warning",
+      category: "out-of-scope",
+      file: "src/replay/tui.ts",
+      issue: "Story added an Ink TUI",
+      scopeQuote: "An interactive Ink TUI",
+      scopeIndex: 1,
+      ...overrides,
+    };
+  }
+
+  test("accepts a verbatim quote of the indexed exclusion", () => {
+    expect(validateScopeQuote(scopeFinding(), OUT_OF_SCOPE)).toEqual({ valid: true });
+  });
+
+  test("accepts a partial substring of the indexed exclusion", () => {
+    expect(validateScopeQuote(scopeFinding({ scopeQuote: "Ink TUI" }), OUT_OF_SCOPE).valid).toBe(true);
+  });
+
+  test("ignores backtick and whitespace formatting differences", () => {
+    const f = scopeFinding({ scopeQuote: "Per-story   diffs or checkpoints", scopeIndex: 2 });
+    expect(validateScopeQuote(f, OUT_OF_SCOPE).valid).toBe(true);
+  });
+
+  test("rejects a quote that is not a substring of the indexed exclusion", () => {
+    const f = scopeFinding({ scopeQuote: "a REST API nobody deferred" });
+    expect(validateScopeQuote(f, OUT_OF_SCOPE)).toEqual({ valid: false, code: "scope_quote_not_substring" });
+  });
+
+  test("rejects a quote pointing at the wrong exclusion", () => {
+    const f = scopeFinding({ scopeQuote: "An interactive Ink TUI", scopeIndex: 2 });
+    expect(validateScopeQuote(f, OUT_OF_SCOPE).code).toBe("scope_quote_not_substring");
+  });
+
+  test("rejects an out-of-range or 0-based scopeIndex", () => {
+    expect(validateScopeQuote(scopeFinding({ scopeIndex: 0 }), OUT_OF_SCOPE).code).toBe("scope_index_out_of_range");
+    expect(validateScopeQuote(scopeFinding({ scopeIndex: 9 }), OUT_OF_SCOPE).code).toBe("scope_index_out_of_range");
+    expect(validateScopeQuote(scopeFinding({ scopeIndex: undefined }), OUT_OF_SCOPE).code).toBe(
+      "scope_index_out_of_range",
+    );
+  });
+
+  test("rejects a citation when the story declares no exclusions", () => {
+    expect(validateScopeQuote(scopeFinding(), []).code).toBe("no_out_of_scope_declared");
+  });
+
+  test("rejects an empty scopeQuote", () => {
+    expect(validateScopeQuote(scopeFinding({ scopeQuote: "   " }), OUT_OF_SCOPE).code).toBe("missing_scope_quote");
+  });
+
+  test("accepts a scope finding with no citation (description-level Scope bullet)", () => {
+    const f = scopeFinding({ scopeQuote: undefined, scopeIndex: undefined });
+    expect(validateScopeQuote(f, OUT_OF_SCOPE)).toEqual({ valid: true });
+    expect(validateScopeQuote(f, []).valid).toBe(true);
+  });
+
+  test("validates at every severity, unlike the blocking-only AC gate", () => {
+    for (const severity of ["error", "warning", "info", "unverifiable"]) {
+      const f = scopeFinding({ severity, scopeQuote: "never declared anywhere" });
+      expect(validateScopeQuote(f, OUT_OF_SCOPE).valid).toBe(false);
+    }
+  });
+
+  test("ignores findings that make no scope claim", () => {
+    const acFinding: AcQuotable = { severity: "error", category: "input", issue: "x", acQuote: "y", acIndex: 1 };
+    expect(validateScopeQuote(acFinding, OUT_OF_SCOPE)).toEqual({ valid: true });
+    expect(validateScopeQuote(acFinding, [])).toEqual({ valid: true });
+  });
+});
+
+describe("filterByScopeQuote", () => {
+  const OUT_OF_SCOPE = ["An interactive Ink TUI"];
+
+  test("drops ungrounded scope findings and keeps the rest", () => {
+    const findings: AcQuotable[] = [
+      { severity: "warning", category: "out-of-scope", issue: "a", scopeQuote: "An interactive Ink TUI", scopeIndex: 1 },
+      { severity: "warning", category: "out-of-scope", issue: "b", scopeQuote: "a boundary nobody wrote", scopeIndex: 1 },
+      { severity: "error", category: "input", issue: "c", acQuote: "x", acIndex: 1 },
+    ];
+
+    const { accepted, dropped } = filterByScopeQuote(findings, OUT_OF_SCOPE);
+
+    expect(accepted.map((f) => f.issue)).toEqual(["a", "c"]);
+    expect(dropped).toHaveLength(1);
+    expect(dropped[0].code).toBe("scope_quote_not_substring");
+  });
+
+  test("passes everything through when no finding claims a scope violation", () => {
+    const findings: AcQuotable[] = [{ severity: "error", category: "input", issue: "c", acQuote: "x", acIndex: 1 }];
+    const { accepted, dropped } = filterByScopeQuote(findings, []);
+    expect(accepted).toHaveLength(1);
+    expect(dropped).toHaveLength(0);
+  });
+});
+
+describe("filterByScopeQuote — non-scope findings are never collateral", () => {
+  const OUT_OF_SCOPE = ["No Ink TUI — deferred to arc 3"];
+
+  test("keeps an AC-grounded blocking finding that volunteered a bad scopeQuote", () => {
+    // Regression: `scopeQuote` is advertised top-level in the output schema, so
+    // models volunteer it on unrelated findings. Treating that as a scope claim
+    // deleted genuine blocking findings and silently passed the story.
+    const finding: AcQuotable = {
+      severity: "error",
+      category: "input",
+      file: "src/timeout.ts",
+      issue: "parseTimeout accepts NaN",
+      acQuote: "parseTimeout must reject NaN",
+      acIndex: 1,
+      scopeQuote: "the Ink TUI is deferred", // paraphrased, ungroundable
+      scopeIndex: 1,
+    };
+
+    const { accepted, dropped } = filterByScopeQuote([finding], OUT_OF_SCOPE);
+
+    expect(dropped).toHaveLength(0);
+    expect(accepted).toHaveLength(1);
+    expect(accepted[0].severity).toBe("error");
+    expect(accepted[0].acQuote).toBe("parseTimeout must reject NaN");
+  });
+
+  test("strips the unverified citation so nothing downstream reads it as grounding", () => {
+    const finding: AcQuotable = {
+      severity: "warning",
+      category: "convention",
+      issue: "i",
+      scopeQuote: "invented",
+      scopeIndex: 4,
+    };
+
+    const { accepted } = filterByScopeQuote([finding], OUT_OF_SCOPE);
+
+    expect(accepted[0].scopeQuote).toBeUndefined();
+    expect(accepted[0].scopeIndex).toBeUndefined();
+  });
+
+  test("leaves a clean non-scope finding untouched (same reference)", () => {
+    const finding: AcQuotable = { severity: "error", category: "input", issue: "i", acQuote: "q", acIndex: 1 };
+    expect(filterByScopeQuote([finding], OUT_OF_SCOPE).accepted[0]).toBe(finding);
+  });
+
+  test("rejects a quote too short to ground anything", () => {
+    const finding: AcQuotable = { severity: "warning", category: "out-of-scope", issue: "i", scopeQuote: "No", scopeIndex: 1 };
+    expect(validateScopeQuote(finding, ["No telemetry"]).code).toBe("missing_scope_quote");
   });
 });

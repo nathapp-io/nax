@@ -5,6 +5,16 @@
  */
 
 import type { UserStory } from "../../prd/types";
+import { buildOutOfScopeLines } from "./out-of-scope";
+
+/**
+ * Feature-level exclusions carried down from the spec's "Out of Scope" section
+ * (see src/prd/out-of-scope.ts). Rendered as its own labelled block rather than
+ * folded into the description so the implementer cannot read it as work to do.
+ */
+function outOfScopeLines(story: UserStory): string[] {
+  return buildOutOfScopeLines(story.outOfScope);
+}
 
 export function buildBatchStorySection(stories: UserStory[]): string {
   const storyBlocks = stories.map((story, i) => {
@@ -16,6 +26,7 @@ export function buildBatchStorySection(stories: UserStory[]): string {
       "",
       "**Acceptance Criteria:**",
       criteria,
+      ...outOfScopeLines(story),
     ].join("\n");
   });
 
@@ -53,6 +64,7 @@ export function buildStoryReminderSection(story: UserStory): string {
     "",
     "**Acceptance Criteria:**",
     criteria,
+    ...outOfScopeLines(story),
     "",
     "<!-- END USER-SUPPLIED DATA -->",
   ].join("\n");
@@ -75,6 +87,7 @@ export function buildStorySection(story: UserStory): string {
     "",
     "**Acceptance Criteria:**",
     criteria,
+    ...outOfScopeLines(story),
     "",
     "<!-- END USER-SUPPLIED DATA -->",
   ].join("\n");

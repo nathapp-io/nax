@@ -27,8 +27,13 @@ export {
   checkFindingEvidence,
   downgradeUnsubstantiatedFinding,
 } from "./semantic-evidence";
-export { filterByAcGroundingMinimal, filterByAcQuote } from "./ac-quote-validator";
-export type { AcQuoteRejectionCode, AcDroppedEntry, AcGroundingMinimalRejection } from "./ac-quote-validator";
+export { filterByAcGroundingMinimal, filterByAcQuote, filterByScopeQuote } from "./ac-quote-validator";
+export type {
+  AcQuoteRejectionCode,
+  AcDroppedEntry,
+  AcGroundingMinimalRejection,
+  ScopeQuoteRejectionCode,
+} from "./ac-quote-validator";
 
 /**
  * True when the reviewer's raw response declares a non-empty `inspectedFiles`

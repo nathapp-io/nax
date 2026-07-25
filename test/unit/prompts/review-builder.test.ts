@@ -235,3 +235,48 @@ describe("ReviewPromptBuilder.requoteVerbatim()", () => {
     expect(result).toMatch(/quote from memory/i);
   });
 });
+
+// ─── Feature-level out-of-scope rendering ─────────────────────────────────────
+// Reviewers hand-render their own story block (not via buildStorySection), so
+// this is the only path by which the propagated story.outOfScope list reaches
+// them. The numbering is load-bearing: scopeIndex is a 1-based index into it.
+
+const OUT_OF_SCOPE = ["An interactive Ink TUI", "Per-story diffs or checkpoints"];
+
+function makeScopeStory(outOfScope?: string[]): SemanticStory {
+  return {
+    id: "US-001",
+    title: "Reconstruct the run timeline",
+    description: "Build the replay core.",
+    acceptanceCriteria: ["When a run id is given, then a RunTimeline is returned"],
+    ...(outOfScope ? { outOfScope } : {}),
+  };
+}
+
+function semanticPrompt(story: SemanticStory): string {
+  return new ReviewPromptBuilder().buildSemanticReviewPrompt(
+    story,
+    { model: "balanced", diffMode: "ref", rules: [] } as unknown as SemanticReviewConfig,
+    { mode: "ref", storyGitRef: "abc123", stat: " src/a.ts | 2 +-" },
+  );
+}
+
+describe("semantic review prompt", () => {
+  test("includes the numbered out-of-scope list", () => {
+    const prompt = semanticPrompt(makeScopeStory(OUT_OF_SCOPE));
+    expect(prompt).toContain("Out of Scope (feature-level — NOT acceptance criteria)");
+    expect(prompt).toContain("1. An interactive Ink TUI");
+  });
+
+  test("keeps exclusions out of the acceptance-criteria list", () => {
+    const prompt = semanticPrompt(makeScopeStory(OUT_OF_SCOPE));
+    const acIndex = prompt.indexOf("### Acceptance Criteria");
+    const oosIndex = prompt.indexOf("Out of Scope (feature-level");
+    expect(acIndex).toBeGreaterThan(-1);
+    expect(oosIndex).toBeGreaterThan(acIndex);
+  });
+
+  test("omits the block when the story declares no exclusions", () => {
+    expect(semanticPrompt(makeScopeStory())).not.toContain("Out of Scope (feature-level");
+  });
+});

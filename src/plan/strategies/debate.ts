@@ -1,6 +1,6 @@
 import type { DebateStageConfig } from "@/debate/types";
 import { NaxError } from "@/errors";
-import { callOp, planInteractiveOp, warnOnDroppedVerbatimAcs } from "@/operations";
+import { backfillOutOfScope, callOp, planInteractiveOp, warnOnDroppedVerbatimAcs } from "@/operations";
 import type { CallContext, PlanInteractiveInput } from "@/operations";
 import { validatePlanOutput } from "@/prd";
 import type { PRD } from "@/prd/types";
@@ -85,7 +85,10 @@ export class DebatePlanStrategy implements IPlanStrategy {
         // via its verify hook; the synthesis path has no op verify, so warn here for
         // parity with refine/single. Warn-and-continue — spec-review --prd is the gate.
         warnOnDroppedVerbatimAcs(prd, ctx.specContent, ctx.options.feature);
-        const withProject = { ...prd, project: ctx.projectName } satisfies PRD;
+        // Same hazard for feature-level exclusions, but repairable rather than
+        // merely reportable — an exclusion has exactly one home, so restore it.
+        const scoped = backfillOutOfScope(prd, ctx.specContent, ctx.options.feature);
+        const withProject = { ...scoped, project: ctx.projectName } satisfies PRD;
         return _debatePlanDeps.writeOrRecoverPrd(ctx, withProject);
       }
 

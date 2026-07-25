@@ -1,7 +1,7 @@
 import { renderManifestSection } from "@/debate";
 import type { FactsManifest } from "@/debate/facts-manifest";
 import { NaxError } from "@/errors";
-import { callOp, groundOp, planDraftOp } from "@/operations";
+import { backfillOutOfScope, callOp, groundOp, planDraftOp } from "@/operations";
 import type { CallContext, PlanDraftInput } from "@/operations";
 import { runPlanCritic } from "../critic";
 import { finalizePrdRouting } from "./finalize-routing";
@@ -85,8 +85,11 @@ export class PipelinePlanStrategy implements IPlanStrategy {
         );
       }
 
+      // The critic can drop feature-level exclusions the draft carried; this path
+      // has no op verify, so restore them here for parity with single/refine.
+      const scoped = backfillOutOfScope(verdict.prd, ctx.specContent, ctx.options.feature);
       const prdToWrite = finalizePrdRouting(
-        { ...verdict.prd, project: ctx.projectName },
+        { ...scoped, project: ctx.projectName },
         ctx.config.routing?.agents,
         ctx.profileName,
       );

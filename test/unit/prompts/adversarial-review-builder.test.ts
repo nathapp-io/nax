@@ -393,3 +393,53 @@ describe("AdversarialReviewPromptBuilder — AC-grounding explicit prohibition",
     expect(prompt).toContain("never approximate, paraphrase, or synthesise a quote");
   });
 });
+
+// ─── Feature-level out-of-scope rendering ─────────────────────────────────────
+// Reviewers hand-render their own story block (not via buildStorySection), so
+// this is the only path by which the propagated story.outOfScope list reaches
+// them. The numbering is load-bearing: scopeIndex is a 1-based index into it.
+
+const OUT_OF_SCOPE = ["An interactive Ink TUI", "Per-story diffs or checkpoints"];
+
+function makeScopeStory(outOfScope?: string[]): SemanticStory {
+  return {
+    id: "US-001",
+    title: "Reconstruct the run timeline",
+    description: "Build the replay core.",
+    acceptanceCriteria: ["When a run id is given, then a RunTimeline is returned"],
+    ...(outOfScope ? { outOfScope } : {}),
+  };
+}
+
+function adversarialPrompt(story: SemanticStory): string {
+  return new AdversarialReviewPromptBuilder().buildAdversarialReviewPrompt(
+    story,
+    { model: "balanced", diffMode: "ref", rules: [] } as unknown as AdversarialReviewConfig,
+    { mode: "ref", storyGitRef: "abc123", stat: " src/a.ts | 2 +-" },
+  );
+}
+
+describe("adversarial review prompt", () => {
+  test("includes the numbered out-of-scope list", () => {
+    const prompt = adversarialPrompt(makeScopeStory(OUT_OF_SCOPE));
+    expect(prompt).toContain("Out of Scope (feature-level — NOT acceptance criteria)");
+    expect(prompt).toContain("2. Per-story diffs or checkpoints");
+  });
+
+  test("instructs scope findings to cite scopeQuote and stay at warning severity", () => {
+    const prompt = adversarialPrompt(makeScopeStory(OUT_OF_SCOPE));
+    expect(prompt).toContain('"out-of-scope"');
+    expect(prompt).toContain("scopeQuote");
+    expect(prompt).toContain('Emit scope-violation findings as `"warning"` — never `"error"`');
+  });
+
+  test("advertises scopeQuote / scopeIndex in the output schema", () => {
+    const prompt = adversarialPrompt(makeScopeStory(OUT_OF_SCOPE));
+    expect(prompt).toContain('"scopeQuote"');
+    expect(prompt).toContain('"scopeIndex"');
+  });
+
+  test("omits the block when the story declares no exclusions", () => {
+    expect(adversarialPrompt(makeScopeStory())).not.toContain("Out of Scope (feature-level");
+  });
+});

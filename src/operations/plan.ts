@@ -7,7 +7,7 @@ import type { PRD } from "../prd/types";
 import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
 import type { RunOperation } from "./types";
-import { warnOnDroppedVerbatimAcs } from "./verbatim-warn";
+import { backfillOutOfScope, warnOnDroppedVerbatimAcs } from "./verbatim-warn";
 
 export interface PlanInteractiveInput {
   specContent: string;
@@ -77,7 +77,9 @@ export const planInteractiveOp: RunOperation<PlanInteractiveInput, PRD, PlanConf
     // Single mode is one-shot (no self-heal turn) — warn on residual [verbatim]
     // drift and continue. Shared with refine via warnOnDroppedVerbatimAcs.
     warnOnDroppedVerbatimAcs(parsed, input.specContent, input.featureName);
-    return parsed;
+    // Feature-level exclusions have one home, so a drop is repairable rather
+    // than merely reportable — backfill instead of warning-and-continuing.
+    return backfillOutOfScope(parsed, input.specContent, input.featureName);
   },
   recover: async (input, ctx) => {
     const content = await ctx.readFile(input.outputPath);

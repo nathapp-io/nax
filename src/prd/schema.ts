@@ -9,6 +9,7 @@ import { resolveTestStrategy } from "../config/test-strategy";
 import { NaxError } from "../errors";
 import { extractJsonFromMarkdown, extractJsonObject, stripTrailingCommas } from "../utils/llm-json";
 export { extractJsonFromMarkdown };
+import { normalizeOutOfScopeList } from "./out-of-scope";
 import type { ContextFileEntry, PRD, UserStory } from "./types";
 import { validateStoryId } from "./validate";
 
@@ -154,6 +155,9 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
     }
     // empty array → stripped to undefined
   }
+
+  // outOfScope — optional advisory exclusions; malformed entries are dropped, never fatal
+  const storyOutOfScope = normalizeOutOfScopeList(s.outOfScope);
 
   // complexity — accept from routing.complexity (PRD format) or top-level complexity (legacy)
   const routing = typeof s.routing === "object" && s.routing !== null ? (s.routing as Record<string, unknown>) : {};
@@ -383,6 +387,7 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
     ...(contextFiles.length > 0 ? { contextFiles } : {}),
     ...(expectedFiles.length > 0 ? { expectedFiles } : {}),
     ...(suggestedCriteria !== undefined ? { suggestedCriteria } : {}),
+    ...(storyOutOfScope !== undefined ? { outOfScope: storyOutOfScope } : {}),
     ...(verifiedBy !== undefined ? { verifiedBy } : {}),
     ...(intent !== undefined ? { intent } : {}),
   };
@@ -500,6 +505,7 @@ export function validatePlanOutput(raw: unknown, feature: string, branch: string
   const userStories: UserStory[] = rawStories.map((story, index) => validateStory(story, index, allIds));
 
   const now = new Date().toISOString();
+  const featureOutOfScope = normalizeOutOfScopeList(obj.outOfScope);
 
   return {
     project: typeof obj.project === "string" && obj.project !== "" ? obj.project : feature,
@@ -509,5 +515,6 @@ export function validatePlanOutput(raw: unknown, feature: string, branch: string
     updatedAt: now,
     userStories,
     ...(typeof obj.analysis === "string" && obj.analysis.trim() !== "" ? { analysis: obj.analysis.trim() } : {}),
+    ...(featureOutOfScope !== undefined ? { outOfScope: featureOutOfScope } : {}),
   };
 }

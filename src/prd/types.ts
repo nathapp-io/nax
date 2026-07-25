@@ -125,6 +125,14 @@ export interface UserStory {
   acceptanceCriteria: string[];
   /** Debater-suggested criteria beyond the spec — tested in hardening pass, never blocks pipeline. */
   suggestedCriteria?: string[];
+  /**
+   * Exclusions this story must not implement — the feature-level `PRD.outOfScope`
+   * denormalized down by `propagateOutOfScopeToStories`, plus any story-specific
+   * entries the planner added. Denormalized (rather than read from the PRD
+   * envelope) because the implementer, rectifier, and reviewers only ever
+   * receive a `UserStory`.
+   */
+  outOfScope?: string[];
   /** Tags for routing (e.g., ["security", "public-api"]) */
   tags: string[];
   /** Dependencies (story IDs that must complete first) */
@@ -322,6 +330,17 @@ export interface PRD {
   updatedAt: string;
   /** All user stories */
   userStories: UserStory[];
+  /**
+   * Feature-level exclusions carried verbatim from the spec's "Out of Scope" /
+   * "Non-Goals" section — work this feature deliberately does NOT do.
+   *
+   * Distinct from a story description's `Scope — In: … Out: …` block, which
+   * states *inter-story* boundaries ("that file belongs to US-003"). Guaranteed
+   * present by `applyOutOfScopeFallback` whenever the spec declares any, and
+   * denormalized onto every story by `propagateOutOfScopeToStories` so the
+   * implementer (which only ever receives a `UserStory`) can see it.
+   */
+  outOfScope?: string[];
   /** Configuration used during analyze phase */
   analyzeConfig?: {
     /** nax version that generated this PRD */

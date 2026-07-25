@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
 import type { AdversarialReviewInput, AdversarialReviewOutput } from "../../../src/operations/adversarial-review";
+import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import { makeTestRuntime, withTempDir } from "../../helpers";
 import type { NaxRuntime } from "../../../src/runtime";
 
@@ -388,5 +389,101 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
       // acDropped should have the dropped finding
       expect((result as AdversarialReviewOutput).acDropped).toHaveLength(1);
     });
+  });
+});
+
+describe("adversarialReviewOp.verify() — scope grounding", () => {
+  const storyWithScope = {
+    ...STORY,
+    outOfScope: ["An interactive Ink TUI", "Per-story checkpoints"],
+  };
+  const inputWithScope: AdversarialReviewInput = { ...BASE_INPUT, story: storyWithScope };
+
+  function scopeFinding(overrides: Partial<AdversarialLLMFinding> = {}): AdversarialLLMFinding {
+    return {
+      severity: "warning",
+      category: "out-of-scope",
+      file: "src/auth.ts",
+      line: 10,
+      issue: "Story added an Ink TUI",
+      suggestion: "Remove the TUI",
+      scopeQuote: "An interactive Ink TUI",
+      scopeIndex: 1,
+      ...overrides,
+    };
+  }
+
+  test("keeps a scope finding whose scopeQuote is grounded in story.outOfScope", async () => {
+    const ctx = makeVerifyCtx();
+    const parsed = makeOutput({ passed: false, findings: [scopeFinding()], normalizedFindings: [] });
+
+    const result = await adversarialReviewOp.verify!(parsed, inputWithScope, ctx);
+
+    expect(result?.findings).toHaveLength(1);
+    expect((result?.findings[0] as AdversarialLLMFinding).scopeQuote).toBe("An interactive Ink TUI");
+  });
+
+  test("drops a scope finding citing a boundary the story never declared", async () => {
+    const ctx = makeVerifyCtx();
+    const parsed = makeOutput({
+      passed: false,
+      findings: [scopeFinding({ scopeQuote: "a REST API nobody deferred" })],
+      normalizedFindings: [],
+    });
+
+    const result = await adversarialReviewOp.verify!(parsed, inputWithScope, ctx);
+
+    expect(result?.findings).toHaveLength(0);
+  });
+
+  test("drops a scope citation when the story declares no exclusions at all", async () => {
+    const ctx = makeVerifyCtx();
+    const parsed = makeOutput({ passed: false, findings: [scopeFinding()], normalizedFindings: [] });
+
+    const result = await adversarialReviewOp.verify!(parsed, BASE_INPUT, ctx);
+
+    expect(result?.findings).toHaveLength(0);
+  });
+
+  test("distinguishes grounded from ungrounded-but-kept scope findings in telemetry", async () => {
+    const { resetLogger, initLogger } = await import("@/logger");
+    resetLogger();
+    const logger = initLogger({ level: "silent" });
+    const calls: Array<[string, string, Record<string, unknown>?]> = [];
+    const origInfo = logger.info.bind(logger);
+    logger.info = ((...a: unknown[]) => {
+      calls.push(a as never);
+    }) as typeof logger.info;
+
+    try {
+      const ctx = makeVerifyCtx();
+      const parsed = makeOutput({
+        passed: false,
+        findings: [scopeFinding(), scopeFinding({ scopeQuote: undefined, scopeIndex: undefined })],
+        normalizedFindings: [],
+      });
+
+      await adversarialReviewOp.verify!(parsed, inputWithScope, ctx);
+
+      const events = calls.filter((c) => c[2]?.event === "review.adversarial.scope_finding_accepted");
+      expect(events).toHaveLength(2);
+      expect(events.map((e) => e[2]?.grounded).sort()).toEqual([false, true]);
+      expect(events[0][2]?.declaredExclusions).toBe(2);
+    } finally {
+      logger.info = origInfo;
+      resetLogger();
+    }
+  });
+
+  test("keeps a scope finding that offers no citation (description-level Scope bullet)", async () => {
+    const ctx = makeVerifyCtx();
+    const finding = scopeFinding({ scopeQuote: undefined, scopeIndex: undefined });
+    const parsed = makeOutput({ passed: false, findings: [finding], normalizedFindings: [] });
+
+    const result = await adversarialReviewOp.verify!(parsed, inputWithScope, ctx);
+
+    expect(result?.findings).toHaveLength(1);
+    expect((result?.findings[0] as AdversarialLLMFinding).scopeQuote).toBeUndefined();
+    expect((result?.findings[0] as AdversarialLLMFinding).issue).toBe("Story added an Ink TUI");
   });
 });

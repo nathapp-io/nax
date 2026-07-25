@@ -60,6 +60,17 @@ const CONTEXT_VS_EXPECTED_FILES_RULE = `**\`contextFiles\` rule — files readab
 /** Output-schema line for the `expectedFiles` field, shared by both prompts. */
 const EXPECTED_FILES_SCHEMA_FIELD = `"expectedFiles": ["string — NEW files this story creates (relative paths, omit if none)"],`;
 
+/**
+ * Top-level `outOfScope` field. Carries the spec's "Out of Scope" / "Non-Goals"
+ * statements to the implementer, which never sees the spec itself. Backfilled
+ * deterministically by `applyOutOfScopeFallback` when the planner drops items —
+ * this field asks for the planner's own (usually better-worded) version first.
+ */
+const OUT_OF_SCOPE_SCHEMA_FIELD = `"outOfScope": ["string — verbatim from the spec's Out of Scope / Non-Goals section: what this feature deliberately does NOT do. Omit if the spec declares none."],`;
+
+/** Per-story exclusions, distinct from the feature-level list above. */
+const STORY_OUT_OF_SCOPE_SCHEMA_FIELD = `"outOfScope": ["string — optional, exclusions specific to THIS story beyond the feature-level list. Omit if none."],`;
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /** Revision finding from a verifier — passed to buildDraft when revising a rejected draft. */
@@ -218,6 +229,9 @@ Re-check routing.complexity and routing.testStrategy against the current codebas
 #### regression-coverage
 If a story changes existing behavior, extracts a shared helper, extends an existing function signature, or replaces a warning/stub path with real behavior, ensure there is at least one acceptance criterion protecting backward compatibility or proving the old placeholder behavior is gone.
 
+#### out-of-scope-preservation
+If the spec has an "Out of Scope", "Non-Goals", or "Not in scope" section — or an inline \`**Out of scope …:**\` lead-in — enumerate every item it states and confirm each appears in the top-level \`outOfScope\` array. Restore any that are missing, verbatim. Never convert one into an acceptance criterion, and never delete one because it looks obvious. Where a story sits close to one of these boundaries, echo the item into that story's \`**Scope** — Out:\` bullet too.
+
 #### scope-consistency
 Check each story's title, description, scope, contextFiles, and acceptance criteria for internal consistency. If the story says a file or command is in scope anywhere else, do not list it as out of scope. If the title or acceptance criteria clearly include CLI, output, tests, or helper extraction work, the Scope section must reflect that accurately.${specGuardItems}
 
@@ -275,6 +289,33 @@ For each one:
 - Add it to the \`acceptanceCriteria\` array of the single most relevant user story.
 - Preserve every backtick-quoted command, file path, regex, and count exactly as written in the spec. Do not paraphrase, retag, split, or move them into a description.
 - Do not remove or weaken any acceptance criteria that are already correct.
+
+Write the corrected PRD to this file path: ${outputFilePath}
+Do not output the PRD in chat. After writing the file, reply with a brief text confirmation only.`;
+  }
+
+  /**
+   * Out-of-scope repair prompt — conditional turn in refine mode.
+   *
+   * Fired when the deterministic out-of-scope check finds spec exclusions the
+   * rewritten PRD dropped. The `applyOutOfScopeFallback` backfill guarantees the
+   * items survive regardless, but this turn gives the model a chance to restore
+   * them in its own wording and echo them into the affected stories' Scope
+   * bullets — which the deterministic backfill cannot do.
+   */
+  buildOutOfScopeRepair(missing: readonly string[], outputFilePath: string): string {
+    const list = missing.map((item) => `- ${item}`).join("\n");
+    return `Your revised PRD dropped feature-level exclusions the spec declared out of scope. These are the only channel by which a deferred arc reaches the implementer — the implementer never sees the spec, so a dropped exclusion means nothing stops it from building work this feature deliberately defers.
+
+The following out-of-scope statements are missing from the top-level \`outOfScope\` array:
+
+${list}
+
+For each one:
+- Add it to the top-level \`outOfScope\` array, preserving the spec's wording. You may append a short clarifier, but never drop or merge an item.
+- Never convert an out-of-scope statement into an acceptance criterion — it describes work NOT to do.
+- Where a story sits close enough to the boundary that an implementer might stray across it, also echo the item into that story's \`**Scope** — Out:\` bullet.
+- Do not remove or weaken anything already correct.
 
 Write the corrected PRD to this file path: ${outputFilePath}
 Do not output the PRD in chat. After writing the file, reply with a brief text confirmation only.`;
@@ -368,6 +409,7 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
   "branchName": "string — git branch (e.g. feat/my-feature)",
   "createdAt": "ISO 8601 timestamp",
   "updatedAt": "ISO 8601 timestamp",
+  ${OUT_OF_SCOPE_SCHEMA_FIELD}
   "userStories": [
     {
       "id": "string — e.g. US-001",
@@ -376,6 +418,7 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
       "acceptanceCriteria": ["string — behavioral, testable criteria. Format: 'When [X], then [Y]'. One assertion per AC. Never include quality gates."],${suggestedCriteriaField}
       "contextFiles": ["string — EXISTING source files the agent should read (max 5, relative paths)"],
       ${EXPECTED_FILES_SCHEMA_FIELD}
+      ${STORY_OUT_OF_SCOPE_SCHEMA_FIELD}
       "tags": ["string — routing tags, e.g. feature, security, api"],
       "dependencies": ["string — story IDs this story depends on"],${workdirField}
       "status": "pending",
@@ -478,6 +521,7 @@ Produce a JSON object with this exact structure. Field names are mandatory — d
   "project": "string — project name",
   "feature": "string — feature name (copy from above)",
   "branchName": "string — git branch name",
+  ${OUT_OF_SCOPE_SCHEMA_FIELD}
   "userStories": [
     {
       "id": "string — e.g. US-001",
@@ -486,6 +530,7 @@ Produce a JSON object with this exact structure. Field names are mandatory — d
       "acceptanceCriteria": ["string — behavioral criterion, format: 'When [X], then [Y]'. One assertion per item."],${suggestedCriteriaField}
       "contextFiles": ["string — EXISTING relative paths the implementer should read (max 5)"],
       ${EXPECTED_FILES_SCHEMA_FIELD}
+      ${STORY_OUT_OF_SCOPE_SCHEMA_FIELD}
       "tags": ["string"],
       "dependencies": ["string — story IDs this story depends on"],${workdirField}
       "routing": {

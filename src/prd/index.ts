@@ -6,6 +6,7 @@ import { existsSync, statSync } from "node:fs";
 import { NaxError } from "../errors";
 import type { FailureCategory } from "../tdd/types";
 import { saveJsonFile } from "../utils/json-file";
+import { propagateOutOfScopeToStories, stripPropagatedOutOfScope } from "./out-of-scope";
 import type { PRD, UserStory } from "./types";
 
 export type {
@@ -22,6 +23,15 @@ export { isStalled, markStoryAsBlocked, generateHumanHaltSummary, getContextFile
 export { extractVerbatimAcs, findMissingVerbatimAcs } from "./verbatim-fidelity";
 export { findSpecDriftViolations } from "./spec-drift";
 export type { SpecDriftViolation } from "./spec-drift";
+export {
+  MAX_OUT_OF_SCOPE_ITEMS,
+  applyOutOfScopeFallback,
+  extractSpecOutOfScope,
+  findMissingOutOfScope,
+  normalizeOutOfScopeList,
+  propagateOutOfScopeToStories,
+  stripPropagatedOutOfScope,
+} from "./out-of-scope";
 export type { FailureCategory } from "../tdd/types";
 export { validateInjectedStory, deriveNextStoryId } from "./inject";
 
@@ -67,13 +77,17 @@ export async function loadPRD(path: string): Promise<PRD> {
     story.storyPoints = story.storyPoints ?? 1;
   }
 
-  return prd;
+  // Denormalize feature-level exclusions onto every story. The implementer,
+  // rectifier, and reviewers only ever receive a UserStory, so a root-only field
+  // would be invisible to them. savePRD strips the mirrored copies back out so
+  // the root field stays the single source of truth on disk.
+  return propagateOutOfScopeToStories(prd);
 }
 
 /** Save PRD to file */
 export async function savePRD(prd: PRD, path: string): Promise<void> {
   prd.updatedAt = new Date().toISOString();
-  await saveJsonFile(path, prd, "prd");
+  await saveJsonFile(path, stripPropagatedOutOfScope(prd), "prd");
 }
 
 function hasSatisfiedDependencies(story: UserStory, storyIds: Set<string>, completedIds: Set<string>): boolean {

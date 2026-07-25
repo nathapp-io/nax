@@ -141,3 +141,45 @@ describe("buildBatchStorySection", () => {
     expect(result).toContain("## Story 1: BP-001 - First Batch Story");
   });
 });
+
+describe("out-of-scope rendering", () => {
+  const withExclusions = (): UserStory =>
+    makeStory({
+      id: "STORY-001",
+      title: "Test Story",
+      description: "This is a test story",
+      acceptanceCriteria: ["Criterion 1"],
+      outOfScope: ["An interactive Ink TUI", "Per-story checkpoints"],
+    });
+
+  test("buildStorySection renders a labelled out-of-scope block", () => {
+    const result = buildStorySection(withExclusions());
+    expect(result).toContain("**Out of Scope — do NOT implement these:**");
+    expect(result).toContain("- An interactive Ink TUI");
+    expect(result).toContain("- Per-story checkpoints");
+  });
+
+  test("buildStoryReminderSection repeats the out-of-scope block", () => {
+    expect(buildStoryReminderSection(withExclusions())).toContain("- An interactive Ink TUI");
+  });
+
+  test("buildBatchStorySection renders each story's own exclusions", () => {
+    const result = buildBatchStorySection([withExclusions(), makeStory({ id: "STORY-002", outOfScope: ["No caching"] })]);
+    expect(result).toContain("- An interactive Ink TUI");
+    expect(result).toContain("- No caching");
+  });
+
+  test("omits the block entirely when the story declares no exclusions", () => {
+    const result = buildStorySection(makeStory({ id: "STORY-003", acceptanceCriteria: ["Criterion 1"] }));
+    expect(result).not.toContain("Out of Scope");
+  });
+
+  test("keeps exclusions outside the acceptance-criteria list", () => {
+    const result = buildStorySection(withExclusions());
+    const acIndex = result.indexOf("**Acceptance Criteria:**");
+    const oosIndex = result.indexOf("**Out of Scope");
+    expect(acIndex).toBeGreaterThan(-1);
+    expect(oosIndex).toBeGreaterThan(acIndex);
+    expect(result).not.toContain("2. An interactive Ink TUI");
+  });
+});

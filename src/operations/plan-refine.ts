@@ -6,7 +6,7 @@ import type { ProjectProfile } from "../config/runtime-types";
 import type { PlanConfig } from "../config/selectors";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
-import { findMissingVerbatimAcs, findSpecDriftViolations, getExpectedFiles } from "../prd";
+import { findMissingOutOfScope, findMissingVerbatimAcs, findSpecDriftViolations, getExpectedFiles } from "../prd";
 import { validatePlanOutput } from "../prd/schema";
 import type { SpecDriftViolation } from "../prd/spec-drift";
 import type { ContextFileEntry, PRD } from "../prd/types";
@@ -14,9 +14,10 @@ import type { UserStory } from "../prd/types";
 import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
 import type { SessionRole } from "../session/types";
+import { errorMessage } from "../utils/errors";
 import { type SelfHealStep, makeSelfHealStep, runSelfHealChain } from "./self-heal";
 import type { RunOperation } from "./types";
-import { warnOnDroppedVerbatimAcs, warnOnSpecDrift } from "./verbatim-warn";
+import { backfillOutOfScope, warnOnDroppedVerbatimAcs, warnOnSpecDrift } from "./verbatim-warn";
 
 /** Injectable I/O for the hopBody self-heal step (testable without disk). */
 export const _planRefineDeps = {
@@ -314,6 +315,44 @@ function verbatimSelfHealStep(builder: PlanPromptBuilder): SelfHealStep<PlanRefi
   });
 }
 
+/**
+ * Read the PRD the refine turn wrote to disk and return the spec's out-of-scope
+ * statements it dropped. Returns `[]` when the file is absent or unparseable —
+ * those cases are handled by the normal parse / recover / verify path.
+ */
+async function readMissingOutOfScope(input: PlanRefineInput): Promise<string[]> {
+  const content = await _planRefineDeps.readFile(input.outputPath);
+  if (!content) return [];
+  try {
+    const prd = validatePlanOutput(content, input.featureName, input.branchName);
+    return findMissingOutOfScope(input.specContent, prd);
+  } catch (err) {
+    getSafeLogger()?.debug("plan", "Skipped out-of-scope self-heal — draft PRD not yet parseable", {
+      featureName: input.featureName,
+      error: errorMessage(err),
+    });
+    return [];
+  }
+}
+
+/**
+ * Out-of-scope self-heal — restores feature-level exclusions the refine turn
+ * dropped. `verify` backfills anything still missing afterwards, so this turn is
+ * about wording quality and per-story Scope echo, not about guaranteeing the
+ * field exists.
+ */
+function outOfScopeSelfHealStep(builder: PlanPromptBuilder): SelfHealStep<PlanRefineInput> {
+  return makeSelfHealStep<PlanRefineInput, string>({
+    detect: (input) => readMissingOutOfScope(input),
+    buildRepair: (missing, input) => builder.buildOutOfScopeRepair(missing, input.outputPath),
+    log: {
+      kind: "plan",
+      message: "Refine dropped spec out-of-scope statements — issuing one repair turn",
+      meta: (input, missing) => ({ featureName: input.featureName, missingCount: missing.length }),
+    },
+  });
+}
+
 /** Spec-drift self-heal (specGuard only) — rewrites ACs with deprecated tags / shell patterns. */
 function specDriftSelfHealStep(builder: PlanPromptBuilder): SelfHealStep<PlanRefineInput> {
   return makeSelfHealStep<PlanRefineInput, SpecDriftViolation>({
@@ -390,6 +429,7 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
     // re-runs the same checks and warns if a repair still misses (the plan continues).
     const steps: SelfHealStep<PlanRefineInput>[] = [
       verbatimSelfHealStep(builder),
+      outOfScopeSelfHealStep(builder),
       ...(specGuard ? [specDriftSelfHealStep(builder)] : []),
     ];
     return runSelfHealChain(ctx, seed, steps);
@@ -403,7 +443,10 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
     if (ctx.config.plan.specGuard) {
       warnOnSpecDrift(validated, input.featureName);
     }
-    return await normalizeCreatedContextFiles(validated, input.workdir, ctx.fileExists);
+    // Last line of defence after the out-of-scope self-heal turn: anything the
+    // repair turn still missed is restored verbatim from the spec.
+    const scoped = backfillOutOfScope(validated, input.specContent, input.featureName);
+    return await normalizeCreatedContextFiles(scoped, input.workdir, ctx.fileExists);
   },
   recover: async (input, ctx) => {
     const content = await ctx.readFile(input.outputPath);

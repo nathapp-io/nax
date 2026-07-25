@@ -11,6 +11,7 @@ import type { Iteration } from "../../findings";
 import type { AcDroppedEntry, AcQuoteRejectionCode } from "../../review/ac-quote-validator";
 import type { AdversarialLLMFinding } from "../../review/adversarial-helpers";
 import type { AdversarialReviewConfig, SemanticStory } from "../../review/types";
+import { buildReviewOutOfScopeBlock } from "../sections";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";
 
 export interface TestInventory {
@@ -132,13 +133,15 @@ Respond with ONLY a JSON object — no preamble, no explanation outside the JSON
   "findings": [
     {
       "severity": "error" | "warning" | "info" | "unverifiable",
-      "category": "input" | "error-path" | "abandonment" | "test-gap" | "convention" | "assumption",
+      "category": "input" | "error-path" | "abandonment" | "test-gap" | "convention" | "assumption" | "out-of-scope",
       "file": "relative/path/to/file.ts",
       "line": 42,
       "issue": "Precise description of the weakness",
       "suggestion": "Concrete fix or mitigation",
       "acQuote": "<verbatim substring of one AC bullet constraining this locus — required for 'error'>",
       "acIndex": 2,
+      "scopeQuote": "<out-of-scope findings ONLY: verbatim substring of one Out of Scope entry>",
+      "scopeIndex": 1,
       "verifiedBy": {
         "command": "command used to inspect the current codebase",
         "file": "relative/path/to/file.ts",
@@ -184,7 +187,15 @@ Worked example:
 **Exception — the trap does NOT apply to \`category:"test-gap"\` findings.** A fake/placeholder/missing test is the *absence* of verification for an AC's behaviour; it cannot name a symbol that is present in the (worthless) test file, because the defect is precisely that the symbol-under-test is never exercised. A \`test-gap\` finding is grounded by the AC whose behaviour goes unverified — cite that AC's \`acIndex\` and a verbatim \`acQuote\` substring from it, and keep severity \`"error"\`. The symbol-naming requirement is waived for this category.
 
 **Scope constraints are not Acceptance Criteria:**
-The story description may contain a "Scope" section with "In:" and "Out:" bullets. These are implementation guidelines, not ACs. A finding about code changed outside the stated scope (e.g., a file listed under "Out:") cannot cite a scope constraint as its \`acQuote\`/\`acIndex\` because scope text is not in the numbered AC list. Emit scope-violation findings as \`"warning"\` — never \`"error"\`. Never use \`acIndex: 0\`; \`acIndex\` is 1-based (first AC bullet = 1).
+Scope boundaries reach you two ways: the story description may contain a "Scope" section with "In:" and "Out:" bullets (inter-story boundaries), and the story may carry a numbered **Out of Scope** list (feature-level exclusions the spec declared). Neither is an AC.
+
+A finding about code that crossed one of these boundaries must NOT cite an AC — \`acQuote\`/\`acIndex\` are for acceptance criteria only, and scope text is not in the numbered AC list. Instead:
+- Set \`category\` to \`"out-of-scope"\`.
+- When the boundary comes from the numbered **Out of Scope** list, set \`scopeQuote\` to a verbatim substring of that entry and \`scopeIndex\` to its 1-based number. A \`scopeQuote\` that is not a verbatim substring of the entry you indexed is discarded.
+- When the boundary is only a description "Out:" bullet, quote it in \`issue\` and leave \`scopeQuote\`/\`scopeIndex\` unset.
+- Emit scope-violation findings as \`"warning"\` — never \`"error"\`. Reporting the boundary is the goal; it does not block the story.
+
+Never use \`acIndex: 0\`; \`acIndex\` is 1-based (first AC bullet = 1). The same applies to \`scopeIndex\`.
 
 If you cannot find an AC that names the **specific symbol** in your finding, downgrade to \`"info"\` or \`"warning"\`. A finding dropped by the validator is worse than one correctly classified as advisory.`;
 
@@ -323,7 +334,7 @@ export class AdversarialReviewPromptBuilder {
 **Description:** ${story.description || "(none)"}
 
 **Acceptance Criteria:**
-${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
+${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}${buildReviewOutOfScopeBlock(story.outOfScope, { citable: true })}
 
 `;
 

@@ -34,6 +34,16 @@ export interface SemanticStory {
   title: string;
   description: string;
   acceptanceCriteria: string[];
+  /**
+   * Feature-level exclusions the spec declared out of scope, propagated onto
+   * every story by `propagateOutOfScopeToStories` (src/prd/out-of-scope.ts).
+   *
+   * Structurally satisfied by `UserStory`, so callers keep passing the story
+   * unchanged. Reviewers render this as its own list — it is NOT an acceptance
+   * criterion and must never be quoted as one; a finding about excluded work
+   * cites `scopeQuote`/`scopeIndex` against this array instead.
+   */
+  outOfScope?: string[];
 }
 
 /** Semantic review configuration */
