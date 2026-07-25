@@ -371,8 +371,10 @@ export function normalizeOutOfScopeList(raw: unknown): string[] | undefined {
  * Scope / assumptions (deliberate — the downstream gate warns, never fails):
  * - A sub-heading inside the section is treated as a label, not an item; its
  *   bullets are still collected.
- * - Fenced code blocks inside the section are folded as prose. Out-of-scope
- *   sections holding code are vanishingly rare; write them as bullets.
+ * - Fenced code blocks are skipped entirely, not folded — so a spec that
+ *   documents markdown by example cannot inject a fabricated exclusion. The
+ *   corollary: text written *inside* a fence is silently dropped, so exclusions
+ *   must be bullets, table rows, or prose, never fenced.
  */
 export function extractSpecOutOfScope(specContent: string): string[] {
   if (!specContent.trim()) return [];
