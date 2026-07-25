@@ -45,10 +45,14 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   private readonly logger = getSafeLogger();
   private botToken: string | null = null;
   private chatId: string | null = null;
-  private pendingMessages = new Map<string, number[]>(); // requestId -> messageId[]
+  // requestId -> { type of the request (gates which update kinds count as an answer), sent message ids }
+  private pendingMessages = new Map<string, { type: InteractionRequest["type"]; ids: number[] }>();
   private lastUpdateId = 0;
   private backoffMs = 1000; // Exponential backoff for getUpdates (starts at 1s)
   private readonly maxBackoffMs = 30000; // Max 30 seconds between retries
+
+  /** Bound on how many getUpdates() pages drainBacklog() will consume before giving up. */
+  private static readonly MAX_DRAIN_PAGES = 10;
 
   private static readonly INTERACTIVE_REQUEST_TYPES = new Set<InteractionRequest["type"]>([
     "confirm",
@@ -67,6 +71,32 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
         "Telegram plugin requires botToken and chatId (env: NAX_TELEGRAM_TOKEN or TELEGRAM_BOT_TOKEN, NAX_TELEGRAM_CHAT_ID)",
       );
     }
+    // No network call here — the backlog is drained immediately before each prompt is
+    // posted (see send()), not at startup. Interactions can fire minutes into a run,
+    // so draining once at init() would still leave a wide window for stale updates to
+    // accumulate; draining right before send() shrinks that window to one round-trip
+    // and avoids paying a Telegram round-trip on every run that never prompts at all.
+  }
+
+  /**
+   * Advance lastUpdateId past any updates already queued, without processing them.
+   * Pages through getUpdates() (bounded by MAX_DRAIN_PAGES) since a single call only
+   * returns one page (Telegram default limit: 100) and a larger backlog would
+   * otherwise leave older updates unconsumed. Prevents stale/unrelated updates from
+   * being misread as the response to the next interaction request.
+   */
+  private async drainBacklog(): Promise<void> {
+    for (let page = 0; page < TelegramInteractionPlugin.MAX_DRAIN_PAGES; page++) {
+      const result = await this.fetchUpdates();
+      if (!result.ok) {
+        this.logger?.warn("interaction", "Telegram backlog drain failed — stale updates may be misread as a response");
+        return;
+      }
+      if (result.updates.length === 0) return;
+    }
+    this.logger?.warn("interaction", "Telegram backlog drain hit page cap — stale updates may remain", {
+      pages: TelegramInteractionPlugin.MAX_DRAIN_PAGES,
+    });
   }
 
   async destroy(): Promise<void> {
@@ -77,6 +107,14 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   async send(request: InteractionRequest): Promise<void> {
     if (!this.botToken || !this.chatId) {
       throw new Error("Telegram plugin not initialized");
+    }
+
+    // Drain any backlog immediately before posting this prompt so an update that
+    // predates it (stray chat message, old button tap) can never be picked up by
+    // receive() as the answer. Only interactive types ever wait for a response, so
+    // fire-and-forget notify/webhook sends skip the round-trip.
+    if (TelegramInteractionPlugin.INTERACTIVE_REQUEST_TYPES.has(request.type)) {
+      await this.drainBacklog();
     }
 
     const header = this.buildHeader(request);
@@ -120,7 +158,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
 
       // Store sent message IDs only for interactive requests that can receive a reply/callback.
       if (TelegramInteractionPlugin.INTERACTIVE_REQUEST_TYPES.has(request.type)) {
-        this.pendingMessages.set(request.id, sentIds);
+        this.pendingMessages.set(request.id, { type: request.type, ids: sentIds });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -359,10 +397,22 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   }
 
   /**
-   * Get updates from Telegram Bot API with exponential backoff on failure
+   * Get updates from Telegram Bot API with exponential backoff on failure.
+   * Failures are swallowed (returns []) so the receive() poll loop can retry —
+   * callers that need to distinguish "no updates" from "the fetch failed" use
+   * fetchUpdates() directly (e.g. drainBacklog(), to avoid silently no-op'ing).
    */
   private async getUpdates(): Promise<TelegramUpdate[]> {
-    if (!this.botToken) return [];
+    const result = await this.fetchUpdates();
+    return result.updates;
+  }
+
+  /**
+   * Core getUpdates() implementation reporting success/failure explicitly.
+   * Mutates lastUpdateId/backoffMs the same way regardless of caller.
+   */
+  private async fetchUpdates(): Promise<{ ok: boolean; updates: TelegramUpdate[] }> {
+    if (!this.botToken) return { ok: true, updates: [] };
 
     try {
       // Client-side timeout guards against network hangs (no OS TCP timeout = 75s+ stall)
@@ -378,6 +428,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
           body: JSON.stringify({
             offset: this.lastUpdateId + 1,
             timeout: 1, // Short polling — server holds connection up to 1s
+            limit: 100, // Explicit: matches Telegram's default page size, made visible at the call site
           }),
           signal: controller.signal,
         });
@@ -402,12 +453,12 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
 
       // Reset backoff on success
       this.backoffMs = 1000;
-      return updates;
+      return { ok: true, updates };
     } catch (err) {
       // Apply exponential backoff on network error
       this.backoffMs = Math.min(this.backoffMs * 2, this.maxBackoffMs);
-      // Return empty updates and retry with backoff (logged for debugging, not exposed to user)
-      return [];
+      // Swallow the error (logged for debugging, not exposed to user) — callers retry with backoff
+      return { ok: false, updates: [] };
     }
   }
 
@@ -435,15 +486,17 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       };
     }
 
-    // Check text message (for input type) — match any of our sent message IDs
+    // Check text message — only "input" requests are ever answerable by free text.
+    // confirm/choose/review are button-only in the keyboard nax posts for them (see
+    // buildKeyboard()), so a plain-text message can never legitimately be their answer.
     if (update.message?.text) {
-      const messageIds = this.pendingMessages.get(requestId);
-      if (!messageIds) return null;
+      const pending = this.pendingMessages.get(requestId);
+      if (!pending || pending.type !== "input") return null;
 
       const replyToId = update.message.reply_to_message?.message_id;
       // Accept if user replied directly to one of our messages, OR if it's the first text response
       // (handles case where user sends a plain message without explicit reply)
-      if (replyToId !== undefined && !messageIds.includes(replyToId)) return null;
+      if (replyToId !== undefined && !pending.ids.includes(replyToId)) return null;
 
       return {
         requestId,
@@ -515,14 +568,14 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
    * Edit message to show timeout/expired
    */
   private async sendTimeoutMessage(requestId: string): Promise<void> {
-    const messageIds = this.pendingMessages.get(requestId);
-    if (!messageIds || !this.botToken || !this.chatId) {
+    const pending = this.pendingMessages.get(requestId);
+    if (!pending || !this.botToken || !this.chatId) {
       this.pendingMessages.delete(requestId);
       return;
     }
 
     // Edit only the last message to avoid redundant notifications
-    const lastId = messageIds[messageIds.length - 1];
+    const lastId = pending.ids[pending.ids.length - 1];
     try {
       await fetch(`https://api.telegram.org/bot${this.botToken}/editMessageText`, {
         method: "POST",
