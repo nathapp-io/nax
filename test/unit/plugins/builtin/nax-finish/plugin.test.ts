@@ -3,6 +3,13 @@ import { _naxFinishDeps, isTelegramConfigured, naxFinishPlugin, telegramCreds } 
 import type { PostRunContext } from "@/plugins/types";
 
 const action = naxFinishPlugin.extensions.postRunAction!;
+
+// _naxFinishDeps is module-level state shared across every test file in this
+// process — restore it after each test so a stub cannot leak sideways.
+const origDeps = { ...(_naxFinishDeps as Record<string, unknown>) };
+afterEach(() => {
+  Object.assign(_naxFinishDeps, origDeps);
+});
 const baseCtx = (over: Partial<PostRunContext> = {}): PostRunContext =>
   ({
     runId: "r",
@@ -52,12 +59,71 @@ describe("nax-finish post-run action", () => {
       return { exitCode: 0, stdout: "", stderr: "" };
     };
     _naxFinishDeps.readResult = async () => ({ feature: "x", status: "escalated", escalationReason: "design call" });
+    // Without this stub an escalated status reaches the real Bot API whenever the
+    // developer running the suite has Telegram env vars exported.
+    _naxFinishDeps.notify = async () => true;
     const r = await action.execute(baseCtx());
     expect(calls[0].join(" ")).toContain("acpx");
     expect(calls[0].join(" ")).toContain("flow run");
     expect(calls[0].join(" ")).toContain("--input-json");
     expect(r.success).toBe(true);
     expect(r.message).toContain("escalated");
+  });
+
+  describe("escalation notification", () => {
+    const CONFIG_WITH_TELEGRAM = {
+      finish: { autoFlow: { enabled: true } },
+      interaction: { plugin: "telegram", config: { botToken: "t", chatId: "c" } },
+    };
+
+    function stubRun(result: { feature: string; status: string; escalationReason?: string }) {
+      const sent: Array<{ creds: { token: string; chatId: string }; text: string }> = [];
+      _naxFinishDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+      _naxFinishDeps.readResult = async () => result as never;
+      _naxFinishDeps.notify = async (creds, text) => {
+        sent.push({ creds, text });
+        return true;
+      };
+      return sent;
+    }
+
+    test("notifies with the feature and escalation reason when the flow escalates", async () => {
+      const sent = stubRun({ feature: "x", status: "escalated", escalationReason: "design call" });
+
+      await action.execute(baseCtx({ config: CONFIG_WITH_TELEGRAM } as never));
+
+      expect(sent).toHaveLength(1);
+      expect(sent[0].text).toBe("nax-finish escalated *x*: design call");
+      expect(sent[0].creds).toEqual({ token: "t", chatId: "c" });
+    });
+
+    test("does not notify for a non-escalated status", async () => {
+      const sent = stubRun({ feature: "x", status: "opened" });
+
+      await action.execute(baseCtx({ config: CONFIG_WITH_TELEGRAM } as never));
+
+      expect(sent).toHaveLength(0);
+    });
+
+    test("does not notify when escalate.telegram is disabled", async () => {
+      const sent = stubRun({ feature: "x", status: "escalated", escalationReason: "design call" });
+      const config = {
+        finish: { autoFlow: { enabled: true, escalate: { telegram: false } } },
+        interaction: CONFIG_WITH_TELEGRAM.interaction,
+      };
+
+      await action.execute(baseCtx({ config } as never));
+
+      expect(sent).toHaveLength(0);
+    });
+
+    test("does not notify when no credentials resolve", async () => {
+      const sent = stubRun({ feature: "x", status: "escalated", escalationReason: "design call" });
+
+      await action.execute(baseCtx());
+
+      expect(sent).toHaveLength(0);
+    });
   });
 
   test("execute sets reviewer profile env vars from config.finish.autoFlow.reviewers", async () => {

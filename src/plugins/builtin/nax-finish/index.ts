@@ -68,9 +68,21 @@ async function defaultReadResult(workdir: string): Promise<FinishResult | null> 
  * Production callers read through these references; tests mutate fields on the
  * exported object to inject fakes without `mock.module()`.
  */
-export const _naxFinishDeps: { run: RunFn; readResult: (workdir: string) => Promise<FinishResult | null> } = {
+export const _naxFinishDeps: {
+  run: RunFn;
+  readResult: (workdir: string) => Promise<FinishResult | null>;
+  /**
+   * Escalation notifier. Routed through `_deps` (rather than called as a direct
+   * import) because `telegramCreds` falls back to ambient `TELEGRAM_BOT_TOKEN` /
+   * `NAX_TELEGRAM_CHAT_ID` env vars — so a test that stubs only `run`/`readResult`
+   * and returns an "escalated" status would otherwise send a REAL Telegram
+   * message to whoever is running the suite. Tests must override this.
+   */
+  notify: typeof sendTelegramNotify;
+} = {
   run: defaultRun,
   readResult: defaultReadResult,
+  notify: sendTelegramNotify,
 };
 
 function isFeatureBranch(b: string): boolean {
@@ -130,7 +142,10 @@ const naxFinishAction: IPostRunAction = {
 
       const creds = telegramCreds(ctx.config);
       if (result.status === "escalated" && cfg.escalate.telegram && creds) {
-        await sendTelegramNotify(creds, `nax-finish escalated *${result.feature}*: ${result.escalationReason ?? ""}`);
+        await _naxFinishDeps.notify(
+          creds,
+          `nax-finish escalated *${result.feature}*: ${result.escalationReason ?? ""}`,
+        );
       }
 
       return { success: true, message: `nax-finish: ${result.status}`, url: result.url };
