@@ -509,7 +509,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
       });
     }
 
-    // Phase-0 telemetry (issue: scope-violation blocking policy). Scope findings
+    // Phase-0 telemetry (issue #1359 — scope-violation blocking policy). Scope findings
     // are advisory today, so nothing downstream records that one fired. Without a
     // numerator to pair with scope_quote_dropped above, there is no basis to
     // decide whether they should ever block — mirrors the recurrence-demotion
