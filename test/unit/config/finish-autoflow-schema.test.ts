@@ -18,9 +18,16 @@ describe("finish.autoFlow schema", () => {
   test("accepts timeout overrides and rejects non-positive budgets", () => {
     const c = NaxConfigSchema.parse({
       version: 1,
-      finish: { autoFlow: { timeouts: { acceptanceMs: 1000, gateMs: 2000, flowMs: 3000 } } },
+      finish: { autoFlow: { timeouts: { acceptanceMs: 1000, gateMs: 2000, flowMs: 3000, stepMs: 4000 } } },
     });
-    expect(c.finish.autoFlow.timeouts).toEqual({ acceptanceMs: 1000, gateMs: 2000, flowMs: 3000 });
+    expect(c.finish.autoFlow.timeouts).toEqual({
+      acceptanceMs: 1000,
+      gateMs: 2000,
+      flowMs: 3000,
+      stepMs: 4000,
+    });
+    // stepMs is nullable — null means "leave acpx's own step default alone"
+    expect(NaxConfigSchema.parse({ version: 1 }).finish.autoFlow.timeouts.stepMs).toBeNull();
     expect(NaxConfigSchema.safeParse({ version: 1, finish: { autoFlow: { timeouts: { gateMs: 0 } } } }).success).toBe(
       false,
     );

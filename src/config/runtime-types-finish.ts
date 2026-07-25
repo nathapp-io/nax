@@ -9,6 +9,8 @@ export interface FinishTimeoutsConfig {
   acceptanceMs: number;
   gateMs: number;
   flowMs: number;
+  /** Per flow step, forwarded to acpx as `--timeout`; null keeps acpx's own default */
+  stepMs: number | null;
 }
 
 /** `finish.autoFlow` — the autonomous post-run finish flow (opt-in, off by default) */

@@ -451,8 +451,14 @@ export const NaxConfigSchema = z
                 gateMs: z.number().int().positive().default(900_000),
                 /** Whole `acpx flow run` subprocess. */
                 flowMs: z.number().int().positive().default(5_400_000),
+                /**
+                 * Per flow *step* (one review or fix agent turn), passed to acpx as
+                 * `--timeout`. null keeps acpx's own 15-minute default, which a
+                 * large-diff review can exceed.
+                 */
+                stepMs: z.number().int().positive().nullable().default(null),
               })
-              .default({ acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000 }),
+              .default({ acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null }),
           })
           .default({
             enabled: false,
@@ -460,7 +466,7 @@ export const NaxConfigSchema = z
             defaultAgent: null,
             reviewers: { spec: null, quality: null },
             escalate: { telegram: true },
-            timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000 },
+            timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },
           }),
       })
       .default({
@@ -470,7 +476,7 @@ export const NaxConfigSchema = z
           defaultAgent: null,
           reviewers: { spec: null, quality: null },
           escalate: { telegram: true },
-          timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000 },
+          timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },
         },
       }),
     reporters: ReportersConfigSchema,

@@ -447,6 +447,9 @@ exclude: ["**/.nax-acceptance*"]
 
 ### Autonomous Finish Flow (`finish.autoFlow`)
 
+> Full walkthrough, including how to configure the acpx reviewer agent profiles:
+> [nax-finish-autoflow.md](./nax-finish-autoflow.md).
+
 After a **successful** run on a feature branch, nax can drive the whole finish
 ritual — acceptance gate, spec review, quality review, repo-root quality gates,
 PR — without a human in the terminal, as an [acpx flow](https://www.npmjs.com/package/acpx).
@@ -478,6 +481,7 @@ escalates** instead of guessing. It never merges.
 | `timeouts.acceptanceMs` | 10 min | Cap per acceptance-test group. |
 | `timeouts.gateMs` | 15 min | Cap per quality gate. |
 | `timeouts.flowMs` | 90 min | Cap on the whole `acpx flow run` subprocess. |
+| `timeouts.stepMs` | `null` | Cap per flow step (one agent turn), passed to acpx as `--timeout`. `null` keeps acpx's own 15-minute default. |
 
 **It runs only when** the run succeeded (no failed or paused stories, at least
 one completed), HEAD is not `main`/`master`, and `enabled` is true.

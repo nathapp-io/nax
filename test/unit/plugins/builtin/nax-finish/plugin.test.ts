@@ -258,6 +258,17 @@ describe("buildFlowArgv", () => {
   test("omits --default-agent entirely when unset", () => {
     expect(buildFlowArgv("/f.ts", "{}", null)).not.toContain("--default-agent");
   });
+
+  test("puts --timeout (seconds) BEFORE `flow` — it is a top-level flag", () => {
+    const argv = buildFlowArgv("/f.ts", "{}", null, 1_800_000);
+    expect(argv.slice(0, 4)).toEqual(["acpx", "--approve-all", "--timeout", "1800"]);
+    expect(argv.indexOf("--timeout")).toBeLessThan(argv.indexOf("flow"));
+  });
+
+  test("omits --timeout when stepMs is unset, leaving acpx's own default", () => {
+    expect(buildFlowArgv("/f.ts", "{}", null, null)).not.toContain("--timeout");
+    expect(buildFlowArgv("/f.ts", "{}", null)).not.toContain("--timeout");
+  });
 });
 
 describe("resolveFlowPath", () => {

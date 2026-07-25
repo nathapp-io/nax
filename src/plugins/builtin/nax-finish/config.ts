@@ -18,7 +18,7 @@ export interface FinishAutoFlowSettings {
   defaultAgent: string | null;
   reviewers: { spec: string | null; quality: string | null };
   escalate: { telegram: boolean };
-  timeouts: { acceptanceMs: number; gateMs: number; flowMs: number };
+  timeouts: { acceptanceMs: number; gateMs: number; flowMs: number; stepMs: number | null };
 }
 
 /**
@@ -32,7 +32,7 @@ const DEFAULT_FINISH_AUTO_FLOW_CONFIG: FinishAutoFlowSettings = {
   defaultAgent: null,
   reviewers: { spec: null, quality: null },
   escalate: { telegram: true },
-  timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000 },
+  timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },
 };
 
 function selectFinish(config: unknown): { autoFlow?: Partial<FinishAutoFlowSettings> } | undefined {
@@ -60,6 +60,7 @@ export function getFinishAutoFlowConfig(ctx: { config?: unknown }): FinishAutoFl
       acceptanceMs: autoFlow.timeouts?.acceptanceMs ?? defaults.timeouts.acceptanceMs,
       gateMs: autoFlow.timeouts?.gateMs ?? defaults.timeouts.gateMs,
       flowMs: autoFlow.timeouts?.flowMs ?? defaults.timeouts.flowMs,
+      stepMs: autoFlow.timeouts?.stepMs ?? defaults.timeouts.stepMs,
     },
   };
 }

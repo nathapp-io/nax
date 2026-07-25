@@ -154,14 +154,25 @@ export async function resolveFlowPath(
 /**
  * Build the `acpx flow run` argv.
  *
- * `--default-agent` is an option of the `flow run` subcommand, so it must come
- * *after* the flow file; placing it before `flow` makes acpx exit with
- * "unknown option '--default-agent'". `--approve-all` is a top-level flag.
+ * Flag placement is not interchangeable:
+ * - `--approve-all` and `--timeout` are **top-level** flags and must precede
+ *   `flow`. The flow declares `requireExplicitGrant`, so acpx rejects the run
+ *   unless the grant is an explicit CLI flag (config alone does not satisfy it).
+ * - `--default-agent` is an option of the `flow run` **subcommand**, so it must
+ *   come after the flow file; placing it before `flow` makes acpx exit with
+ *   "unknown option '--default-agent'".
  */
-export function buildFlowArgv(flowPath: string, inputJson: string, defaultAgent: string | null): string[] {
+export function buildFlowArgv(
+  flowPath: string,
+  inputJson: string,
+  defaultAgent: string | null,
+  stepMs?: number | null,
+): string[] {
+  const stepTimeout = stepMs && stepMs > 0 ? ["--timeout", String(Math.ceil(stepMs / 1000))] : [];
   return [
     "acpx",
     "--approve-all",
+    ...stepTimeout,
     "flow",
     "run",
     flowPath,
@@ -221,7 +232,7 @@ const naxFinishAction: IPostRunAction = {
         timeouts: { acceptanceMs: cfg.timeouts.acceptanceMs, gateMs: cfg.timeouts.gateMs },
       };
 
-      const cmd = buildFlowArgv(flowPath, JSON.stringify(input), cfg.defaultAgent);
+      const cmd = buildFlowArgv(flowPath, JSON.stringify(input), cfg.defaultAgent, cfg.timeouts.stepMs);
       const res = await _naxFinishDeps.run(cmd, {
         cwd: ctx.workdir,
         env: buildFlowEnv(cfg),
