@@ -274,6 +274,9 @@ export function filterByAcGroundingMinimal<T extends AcQuotable>(
 
 // ─── Scope-grounding validator ────────────────────────────────────────────────
 
+/** Shortest quote that can meaningfully ground a scope finding. */
+const MIN_SCOPE_QUOTE_LENGTH = 3;
+
 export type ScopeQuoteRejectionCode =
   | "missing_scope_quote"
   | "scope_index_out_of_range"
@@ -285,9 +288,19 @@ export interface ScopeQuoteValidationResult {
   code?: ScopeQuoteRejectionCode;
 }
 
-/** A finding claims a scope boundary when it says so, or when it cites one. */
+/**
+ * A finding claims a scope boundary only when its category says so.
+ *
+ * Deliberately NOT keyed on `scopeQuote !== undefined`: the field is advertised
+ * at the top level of the output schema, so models volunteer it opportunistically
+ * on unrelated findings. Treating a stray paraphrased `scopeQuote` as a scope
+ * claim would drop an otherwise valid, AC-grounded, evidence-substantiated
+ * blocking finding — the story would pass with the only trace a log line about a
+ * scope quote. A stray citation on a non-scope finding is stripped instead
+ * (see {@link filterByScopeQuote}).
+ */
 function claimsScopeViolation(finding: AcQuotable): boolean {
-  return finding.category === "out-of-scope" || finding.scopeQuote !== undefined;
+  return finding.category === "out-of-scope";
 }
 
 /**
@@ -312,7 +325,9 @@ export function validateScopeQuote(finding: AcQuotable, outOfScope: readonly str
   // No citation offered → a description-level scope bullet. Nothing to verify.
   if (scopeQuote === undefined) return { valid: true };
 
-  if (typeof scopeQuote !== "string" || scopeQuote.trim() === "") {
+  // Minimum length mirrors the >=3-char locus rule in validateAcQuote: a 1-2
+  // char quote is a substring of almost any entry and grounds nothing.
+  if (typeof scopeQuote !== "string" || scopeQuote.trim().length < MIN_SCOPE_QUOTE_LENGTH) {
     return { valid: false, code: "missing_scope_quote" };
   }
   if (outOfScope.length === 0) {
@@ -351,6 +366,17 @@ export function filterByScopeQuote<T extends AcQuotable>(
   const dropped: AcDroppedEntry<T, ScopeQuoteRejectionCode>[] = [];
 
   for (const finding of findings) {
+    if (!claimsScopeViolation(finding)) {
+      // Not a scope finding. If it volunteered a scope citation anyway, strip the
+      // unverified fields so nothing downstream treats them as grounding — but
+      // never drop the finding over them; its own AC grounding is what counts.
+      accepted.push(
+        finding.scopeQuote === undefined && finding.scopeIndex === undefined
+          ? finding
+          : { ...finding, scopeQuote: undefined, scopeIndex: undefined },
+      );
+      continue;
+    }
     const result = validateScopeQuote(finding, outOfScope);
     if (result.valid) {
       accepted.push(finding);

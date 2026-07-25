@@ -334,7 +334,7 @@ export class AdversarialReviewPromptBuilder {
 **Description:** ${story.description || "(none)"}
 
 **Acceptance Criteria:**
-${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}${buildReviewOutOfScopeBlock(story.outOfScope)}
+${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}${buildReviewOutOfScopeBlock(story.outOfScope, { citable: true })}
 
 `;
 

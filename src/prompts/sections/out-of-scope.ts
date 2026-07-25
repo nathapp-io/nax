@@ -40,15 +40,37 @@ export function buildOutOfScopeLines(items: readonly string[] | undefined): stri
  * The numbering is load-bearing: `scopeIndex` on a finding is a 1-based index
  * into this list (see `validateScopeQuote` in src/review/ac-quote-validator.ts).
  */
-export function buildReviewOutOfScopeBlock(items: readonly string[] | undefined): string {
+export function buildReviewOutOfScopeBlock(
+  items: readonly string[] | undefined,
+  opts: { citable?: boolean } = {},
+): string {
   if (!items || items.length === 0) return "";
-  return [
+
+  const header = [
     "",
     "**Out of Scope (feature-level — NOT acceptance criteria):**",
     ...items.map((item, i) => `${i + 1}. ${item}`),
     "",
-    "These state what the feature deliberately does not do. They are not ACs: never cite one as",
-    "`acQuote`/`acIndex`. To report work that crossed one of these boundaries, set `category` to",
-    '`"out-of-scope"`, quote the entry verbatim in `scopeQuote`, and set `scopeIndex` to its number above.',
+    "These state what the feature deliberately does not do. They are not acceptance criteria:",
+    "never cite one as `acQuote`/`acIndex`, and never treat the absence of this work as a defect.",
+  ];
+
+  // Only the adversarial path can carry a scope finding: it owns the
+  // `scopeQuote`/`scopeIndex` schema fields and the `filterByScopeQuote`
+  // validator. Telling the semantic reviewer to emit one would produce a finding
+  // its own schema cannot express and its AC-grounding filter then drops —
+  // failing the story with an empty findings list (the #1347 shape).
+  if (!opts.citable) {
+    return [...header, "Report nothing against this list; it is context so you do not demand excluded work."].join(
+      "\n",
+    );
+  }
+
+  return [
+    ...header,
+    'To report work that crossed one of these boundaries, set `category` to `"out-of-scope"`, quote the',
+    "entry verbatim in `scopeQuote`, and set `scopeIndex` to its number above. Emit these as",
+    '`severity: "warning"` — never `"error"`. Set `scopeQuote`/`scopeIndex` ONLY on an `"out-of-scope"`',
+    "finding; on any other finding they are ignored.",
   ].join("\n");
 }

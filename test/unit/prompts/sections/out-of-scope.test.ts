@@ -17,16 +17,38 @@ describe("buildReviewOutOfScopeBlock", () => {
     expect(block).not.toContain("0. ");
   });
 
-  test("states that entries are not acceptance criteria", () => {
-    const block = buildReviewOutOfScopeBlock(OUT_OF_SCOPE);
-    expect(block).toContain("NOT acceptance criteria");
-    expect(block).toContain("scopeQuote");
-    expect(block).toContain("scopeIndex");
+  test("states that entries are not acceptance criteria in both modes", () => {
+    for (const block of [
+      buildReviewOutOfScopeBlock(OUT_OF_SCOPE),
+      buildReviewOutOfScopeBlock(OUT_OF_SCOPE, { citable: true }),
+    ]) {
+      expect(block).toContain("NOT acceptance criteria");
+      expect(block).toContain("never cite one as `acQuote`/`acIndex`");
+    }
+  });
+
+  test("only the citable variant asks for a scopeQuote citation", () => {
+    // The semantic path has no scopeQuote/scopeIndex schema fields and no
+    // filterByScopeQuote — a finding it cannot express is dropped by its own
+    // AC-grounding filter, failing the story with an empty findings list.
+    const semantic = buildReviewOutOfScopeBlock(OUT_OF_SCOPE);
+    expect(semantic).not.toContain("scopeQuote");
+    expect(semantic).not.toContain("scopeIndex");
+    expect(semantic).toContain("Report nothing against this list");
+
+    const adversarial = buildReviewOutOfScopeBlock(OUT_OF_SCOPE, { citable: true });
+    expect(adversarial).toContain("scopeQuote");
+    expect(adversarial).toContain("scopeIndex");
+  });
+
+  test("the citable variant caps scope findings at warning severity", () => {
+    expect(buildReviewOutOfScopeBlock(OUT_OF_SCOPE, { citable: true })).toContain('never `"error"`');
   });
 
   test("renders nothing when there are no exclusions", () => {
     expect(buildReviewOutOfScopeBlock([])).toBe("");
     expect(buildReviewOutOfScopeBlock(undefined)).toBe("");
+    expect(buildReviewOutOfScopeBlock([], { citable: true })).toBe("");
   });
 });
 

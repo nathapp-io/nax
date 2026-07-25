@@ -131,6 +131,39 @@ describe("extractSpecOutOfScope", () => {
     expect(extractSpecOutOfScope("## Out of Scope\r\n\r\n- item a\r\n- item b\r\n")).toEqual(["item a", "item b"]);
   });
 
+  test("ignores an out-of-scope section inside a fenced code block", () => {
+    // A spec that documents markdown by example (spec-kit specs do) would
+    // otherwise inject a fabricated hard boundary into every story prompt.
+    const spec = "# Spec\n\n```markdown\n## Out of Scope\n\n- FABRICATED\n```\n\n## Requirements\n- real\n";
+    expect(extractSpecOutOfScope(spec)).toEqual([]);
+    expect(extractSpecOutOfScope("```md\n**Out of scope:** FABRICATED\n```\n")).toEqual([]);
+  });
+
+  test("reads a bare inline marker followed by a bullet list", () => {
+    // The most common idiom; previously extracted nothing at all, so no backfill,
+    // no warning, and no self-heal turn fired.
+    expect(extractSpecOutOfScope("**Out of scope:**\n- No Ink TUI\n- No telemetry\n")).toEqual([
+      "No Ink TUI",
+      "No telemetry",
+    ]);
+  });
+
+  test("keeps prose exclusions under adjacent sub-headings separate", () => {
+    const spec = "## Out of Scope\n### Arc 3\nMid-phase resume\n### Arc 4\nCross-shard writes\n";
+    expect(extractSpecOutOfScope(spec)).toEqual(["Mid-phase resume", "Cross-shard writes"]);
+  });
+
+  test("accepts `+` and unicode bullet markers", () => {
+    expect(extractSpecOutOfScope("## Out of Scope\n\n+ No Ink TUI\n+ No telemetry\n")).toEqual([
+      "No Ink TUI",
+      "No telemetry",
+    ]);
+    expect(extractSpecOutOfScope("## Out of Scope\n\n\u2022 No Ink TUI\n\u2022 No telemetry\n")).toEqual([
+      "No Ink TUI",
+      "No telemetry",
+    ]);
+  });
+
   test("does not treat prose merely mentioning out of scope as a declaration", () => {
     const spec = "The diff rendering is out of scope for this story because nothing persists it.\n";
     expect(extractSpecOutOfScope(spec)).toEqual([]);
@@ -177,12 +210,14 @@ describe("applyOutOfScopeFallback", () => {
     expect(result.outOfScope).toEqual(["An interactive Ink TUI"]);
   });
 
-  test("appends only the items the planner dropped, keeping its own wording first", () => {
+  test("restores only the items the planner dropped, keeping its wording for the rest", () => {
     const spec = "## Out of Scope\n\n- item a\n- item b\n";
     const prd = makePRD({ outOfScope: ["item a — deferred to arc 2"] });
     const result = applyOutOfScopeFallback(prd, spec);
 
-    expect(result.outOfScope).toEqual(["item a — deferred to arc 2", "item b"]);
+    // Restored items lead so the cap can never truncate them away; the planner's
+    // richer wording for item a is preserved rather than duplicated.
+    expect(result.outOfScope).toEqual(["item b", "item a — deferred to arc 2"]);
   });
 
   test("returns the same PRD reference when nothing is missing", () => {
@@ -195,6 +230,17 @@ describe("applyOutOfScopeFallback", () => {
   test("returns the same PRD reference when the spec declares nothing", () => {
     const prd = makePRD();
     expect(applyOutOfScopeFallback(prd, "# Feature\n")).toBe(prd);
+  });
+
+  test("restored spec items win the cap over the planner's own entries", () => {
+    // With the planner's list first, a planner that emitted MAX entries pushed
+    // every restored item off the end — the backfill no-opped while its caller
+    // logged that it had fired.
+    const planner = Array.from({ length: MAX_OUT_OF_SCOPE_ITEMS }, (_, i) => `planner-${i}`);
+    const result = applyOutOfScopeFallback(makePRD({ outOfScope: planner }), "## Out of Scope\n\n- no Ink TUI\n");
+
+    expect(result.outOfScope).toHaveLength(MAX_OUT_OF_SCOPE_ITEMS);
+    expect(result.outOfScope?.[0]).toBe("no Ink TUI");
   });
 
   test("does not mutate the input PRD", () => {
@@ -215,14 +261,29 @@ describe("propagateOutOfScopeToStories", () => {
     expect(result.userStories.map((s) => s.outOfScope)).toEqual([["no Ink TUI"], ["no Ink TUI"]]);
   });
 
-  test("merges feature-level items after story-level ones without duplicating", () => {
+  test("merges story-level items after feature-level ones without duplicating", () => {
     const prd = makePRD({
       outOfScope: ["no Ink TUI", "no checkpoints"],
       userStories: [makeStory({ outOfScope: ["no checkpoints", "no CLI wiring"] })],
     });
     const result = propagateOutOfScopeToStories(prd);
 
-    expect(result.userStories[0].outOfScope).toEqual(["no checkpoints", "no CLI wiring", "no Ink TUI"]);
+    expect(result.userStories[0].outOfScope).toEqual(["no Ink TUI", "no checkpoints", "no CLI wiring"]);
+  });
+
+  test("feature-level items outrank story-level ones when the cap truncates", () => {
+    // The spec author's declared boundary must survive; planner-invented
+    // story-specific entries are what gets dropped at the cap.
+    const storySpecific = Array.from({ length: MAX_OUT_OF_SCOPE_ITEMS }, (_, i) => `story-item-${i}`);
+    const prd = makePRD({
+      outOfScope: ["FEATURE-LEVEL-CRITICAL"],
+      userStories: [makeStory({ outOfScope: storySpecific })],
+    });
+
+    const merged = propagateOutOfScopeToStories(prd).userStories[0].outOfScope;
+
+    expect(merged).toHaveLength(MAX_OUT_OF_SCOPE_ITEMS);
+    expect(merged?.[0]).toBe("FEATURE-LEVEL-CRITICAL");
   });
 
   test("returns the same PRD reference when there is nothing to propagate", () => {

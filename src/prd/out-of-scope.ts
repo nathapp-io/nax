@@ -101,7 +101,7 @@ function isSetextUnderline(lines: string[], index: number): boolean {
 const INLINE_MARKER = /^\s*(?:[-*]\s*)?\*\*\s*(?:out[\s-]?of[\s-]?scope|non[\s-]?goals?)[^*]*\*\*\s*:?\s*/i;
 
 /** A list item — used both to split bullets and to bound folded prose. */
-const LIST_ITEM_START = /^\s*(?:[-*]|\d+\.)\s+/;
+const LIST_ITEM_START = /^\s*(?:[-*+\u2022\u2023\u25E6\u2043\u2219]|\d+\.)\s+/;
 
 /** Collapse whitespace, strip backticks, lowercase — the comparison form. */
 function canonical(text: string): string {
@@ -143,7 +143,13 @@ function sectionLines(lines: string[], startIndex: number, level: number): strin
     // direction here, so an H1 section ends at the first heading of any depth.
     const heading = line.match(ANY_HEADING);
     if (heading && (heading[1].length <= level || level === 1)) break;
-    if (heading) continue;
+    // A deeper sub-heading is a label, but it still separates the items around
+    // it — without this blank line two prose exclusions under adjacent
+    // sub-headings would fold into one entry (and one `scopeIndex`).
+    if (heading) {
+      collected.push("");
+      continue;
+    }
 
     // A setext underline ends the section when it belongs to a following title
     // (that title is the next section's heading, and the title line itself was
@@ -216,15 +222,62 @@ function itemsFromSection(body: string[]): string[] {
   return items;
 }
 
-/** One item per inline `**Out of scope …:**` lead-in, folded across wrapped lines. */
-function itemsFromInlineMarkers(lines: string[]): string[] {
+/**
+ * Indices of every line inside a fenced code block.
+ *
+ * Fenced content is illustrative — a spec documenting markdown (which spec-kit
+ * specs routinely do) contains a literal `## Out of Scope` example. Treating it
+ * as a real declaration fabricates an exclusion that is then backfilled into the
+ * PRD, pushed onto every story, and rendered to the implementer as a hard
+ * boundary. Every scan over raw lines must consult this.
+ */
+function fencedLineIndices(lines: string[]): Set<number> {
+  const fenced = new Set<number>();
+  let inFence = false;
+  for (const [i, line] of lines.entries()) {
+    if (FENCE.test(line)) {
+      fenced.add(i);
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) fenced.add(i);
+  }
+  return fenced;
+}
+
+/**
+ * One item per inline `**Out of scope …:**` lead-in.
+ *
+ * Two shapes, both common:
+ * - Text on the same line, folded across wrapped prose lines.
+ * - A bare marker followed by a bullet list — the single most common idiom.
+ *   Handled explicitly because the prose fold stops at the first list item,
+ *   which previously left the marker empty and the bullets claimed by nobody.
+ */
+function itemsFromInlineMarkers(lines: string[], fenced: Set<number>): string[] {
   const items: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    if (!INLINE_MARKER.test(lines[i])) continue;
-    const parts = [lines[i].replace(INLINE_MARKER, "").trim()];
+    if (fenced.has(i) || !INLINE_MARKER.test(lines[i])) continue;
+
+    const remainder = lines[i].replace(INLINE_MARKER, "").trim();
     let j = i + 1;
+
+    if (remainder.length === 0) {
+      // Bare marker — consume the bullet list (or prose block) beneath it.
+      const body: string[] = [];
+      while (j < lines.length && !fenced.has(j) && lines[j].trim().length > 0 && !ANY_HEADING.test(lines[j])) {
+        body.push(lines[j]);
+        j += 1;
+      }
+      items.push(...itemsFromSection(body));
+      i = j - 1;
+      continue;
+    }
+
+    const parts = [remainder];
     while (
       j < lines.length &&
+      !fenced.has(j) &&
       lines[j].trim().length > 0 &&
       !ANY_HEADING.test(lines[j]) &&
       !LIST_ITEM_START.test(lines[j])
@@ -282,15 +335,17 @@ export function extractSpecOutOfScope(specContent: string): string[] {
   if (!specContent.trim()) return [];
   const lines = specContent.split("\n");
 
+  const fenced = fencedLineIndices(lines);
   const items: string[] = [];
   for (let i = 0; i < lines.length; i++) {
+    if (fenced.has(i)) continue;
     const level = outOfScopeHeadingLevel(lines[i], lines[i + 1]);
     if (level === null) continue;
     // Setext consumes its underline; ATX does not.
     const bodyStart = SETEXT_UNDERLINE.test(lines[i + 1] ?? "") ? i + 1 : i;
     items.push(...itemsFromSection(sectionLines(lines, bodyStart, level)));
   }
-  items.push(...itemsFromInlineMarkers(lines));
+  items.push(...itemsFromInlineMarkers(lines, fenced));
 
   return dedupeAndCap(items);
 }
@@ -318,7 +373,11 @@ export function findMissingOutOfScope(specContent: string, prd: Pick<PRD, "outOf
 export function applyOutOfScopeFallback(prd: PRD, specContent: string): PRD {
   const missing = findMissingOutOfScope(specContent, prd);
   if (missing.length === 0) return prd;
-  return { ...prd, outOfScope: dedupeAndCap([...(prd.outOfScope ?? []), ...missing]) };
+  // Restored spec items lead: `dedupeAndCap` truncates the tail, and with the
+  // planner's list first a planner that emitted MAX entries would push every
+  // restored item off the end — the backfill would silently no-op while
+  // reporting success.
+  return { ...prd, outOfScope: dedupeAndCap([...missing, ...(prd.outOfScope ?? [])]) };
 }
 
 /**
@@ -334,9 +393,15 @@ export function propagateOutOfScopeToStories(prd: PRD): PRD {
   const featureLevel = prd.outOfScope ?? [];
   if (featureLevel.length === 0) return prd;
 
+  // Feature-level entries come FIRST. `dedupeAndCap` truncates the tail, so
+  // ordering decides who survives a story that already carries many exclusions:
+  // the spec author's declared boundary must outrank planner-invented
+  // story-specific ones. With story entries first, a story holding
+  // MAX_OUT_OF_SCOPE_ITEMS of its own silently dropped every feature-level item —
+  // exactly the statement this whole path exists to deliver.
   const userStories: UserStory[] = prd.userStories.map((story) => ({
     ...story,
-    outOfScope: dedupeAndCap([...(story.outOfScope ?? []), ...featureLevel]),
+    outOfScope: dedupeAndCap([...featureLevel, ...(story.outOfScope ?? [])]),
   }));
   return { ...prd, userStories };
 }
@@ -346,7 +411,12 @@ export function propagateOutOfScopeToStories(prd: PRD): PRD {
  * entries that merely mirror the feature-level list, keeping story-specific
  * ones. Applied before writing `prd.json` so the root field stays the single
  * source of truth on disk and the file does not repeat the same list N times.
- * Propagate-then-strip round-trips to the original PRD.
+ *
+ * Propagate-then-strip is idempotent and preserves each story's *effective* set,
+ * but is not byte-identical in one case: a story entry that duplicates a
+ * feature-level one is absorbed into the root and not written back to the story.
+ * That is intentional — the next `loadPRD` re-propagates it, so the story's
+ * effective exclusions are unchanged and the file avoids a redundant copy.
  */
 export function stripPropagatedOutOfScope(prd: PRD): PRD {
   const featureLevel = new Set((prd.outOfScope ?? []).map(canonical));

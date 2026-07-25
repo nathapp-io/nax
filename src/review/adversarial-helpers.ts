@@ -111,6 +111,11 @@ export function toAdversarialReviewFindings(findings: AdversarialLLMFinding[]): 
     if (f.acQuote) metaExtras.acQuote = f.acQuote;
     if (f.acIndex != null) metaExtras.acIndex = f.acIndex;
     if (f.verifiedBy) metaExtras.verifiedBy = f.verifiedBy;
+    // Scope grounding travels with the finding: the story report and the next
+    // tier's escalation context are exactly where a reader needs to tell a
+    // grounded scope finding from an unverifiable one.
+    if (f.scopeQuote) metaExtras.scopeQuote = f.scopeQuote;
+    if (f.scopeIndex != null) metaExtras.scopeIndex = f.scopeIndex;
     return {
       source: "adversarial-review",
       severity: normalizeSeverity(f.severity),

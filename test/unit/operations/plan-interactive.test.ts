@@ -458,10 +458,11 @@ describe("planInteractiveOp.verify — out-of-scope backfill (single mode)", () 
     });
   });
 
-  test("keeps the planner's own wording and appends only what it dropped", async () => {
+  test("keeps the planner's own wording and restores only what it dropped", async () => {
     const prd = prdWith(["An interactive Ink TUI — deferred to arc 3"]);
     const result = await planInteractiveOp.verify!(prd, input as never, makeInteractiveVerifyCtx() as never);
-    expect(result?.outOfScope).toEqual(["An interactive Ink TUI — deferred to arc 3", "Per-story checkpoints"]);
+    // Restored items lead so the cap can never truncate them away.
+    expect(result?.outOfScope).toEqual(["Per-story checkpoints", "An interactive Ink TUI — deferred to arc 3"]);
   });
 
   test("does not warn or add a field when the spec declares no exclusions", async () => {

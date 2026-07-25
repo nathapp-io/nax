@@ -497,3 +497,55 @@ describe("filterByScopeQuote", () => {
     expect(dropped).toHaveLength(0);
   });
 });
+
+describe("filterByScopeQuote — non-scope findings are never collateral", () => {
+  const OUT_OF_SCOPE = ["No Ink TUI — deferred to arc 3"];
+
+  test("keeps an AC-grounded blocking finding that volunteered a bad scopeQuote", () => {
+    // Regression: `scopeQuote` is advertised top-level in the output schema, so
+    // models volunteer it on unrelated findings. Treating that as a scope claim
+    // deleted genuine blocking findings and silently passed the story.
+    const finding: AcQuotable = {
+      severity: "error",
+      category: "input",
+      file: "src/timeout.ts",
+      issue: "parseTimeout accepts NaN",
+      acQuote: "parseTimeout must reject NaN",
+      acIndex: 1,
+      scopeQuote: "the Ink TUI is deferred", // paraphrased, ungroundable
+      scopeIndex: 1,
+    };
+
+    const { accepted, dropped } = filterByScopeQuote([finding], OUT_OF_SCOPE);
+
+    expect(dropped).toHaveLength(0);
+    expect(accepted).toHaveLength(1);
+    expect(accepted[0].severity).toBe("error");
+    expect(accepted[0].acQuote).toBe("parseTimeout must reject NaN");
+  });
+
+  test("strips the unverified citation so nothing downstream reads it as grounding", () => {
+    const finding: AcQuotable = {
+      severity: "warning",
+      category: "convention",
+      issue: "i",
+      scopeQuote: "invented",
+      scopeIndex: 4,
+    };
+
+    const { accepted } = filterByScopeQuote([finding], OUT_OF_SCOPE);
+
+    expect(accepted[0].scopeQuote).toBeUndefined();
+    expect(accepted[0].scopeIndex).toBeUndefined();
+  });
+
+  test("leaves a clean non-scope finding untouched (same reference)", () => {
+    const finding: AcQuotable = { severity: "error", category: "input", issue: "i", acQuote: "q", acIndex: 1 };
+    expect(filterByScopeQuote([finding], OUT_OF_SCOPE).accepted[0]).toBe(finding);
+  });
+
+  test("rejects a quote too short to ground anything", () => {
+    const finding: AcQuotable = { severity: "warning", category: "out-of-scope", issue: "i", scopeQuote: "No", scopeIndex: 1 };
+    expect(validateScopeQuote(finding, ["No telemetry"]).code).toBe("missing_scope_quote");
+  });
+});

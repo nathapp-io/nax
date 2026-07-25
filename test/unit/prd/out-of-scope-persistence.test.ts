@@ -62,7 +62,7 @@ describe("loadPRD / savePRD — outOfScope persistence", () => {
         }),
       );
 
-      expect(loaded.userStories[0].outOfScope).toEqual(["no CLI wiring", ...OUT_OF_SCOPE]);
+      expect(loaded.userStories[0].outOfScope).toEqual([...OUT_OF_SCOPE, "no CLI wiring"]);
 
       await savePRD(loaded, path);
       const onDisk = JSON.parse(await Bun.file(path).text());
@@ -88,6 +88,27 @@ describe("loadPRD / savePRD — outOfScope persistence", () => {
       const onDisk = JSON.parse(await Bun.file(path).text());
       expect(onDisk.outOfScope).toEqual(OUT_OF_SCOPE);
       expect(onDisk.userStories[0].outOfScope).toEqual(["no CLI wiring"]);
+    });
+  });
+
+  test("a story entry duplicating a feature-level one is absorbed into the root", async () => {
+    // Not byte-identical, but the story's *effective* set is unchanged: the next
+    // load re-propagates it. Documented on stripPropagatedOutOfScope.
+    await withTempDir(async (dir) => {
+      const { path, loaded } = await writeAndLoad(
+        dir,
+        makePRD({
+          outOfScope: OUT_OF_SCOPE,
+          userStories: [makeStory({ id: "US-001", outOfScope: [OUT_OF_SCOPE[0]] })],
+        }),
+      );
+
+      await savePRD(loaded, path);
+      const onDisk = JSON.parse(await Bun.file(path).text());
+      expect(onDisk.userStories[0].outOfScope).toBeUndefined();
+
+      const reloaded = await loadPRD(path);
+      expect(reloaded.userStories[0].outOfScope).toEqual(OUT_OF_SCOPE);
     });
   });
 
