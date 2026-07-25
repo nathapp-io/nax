@@ -8,6 +8,7 @@ export { buildHermeticSection } from "./hermetic";
 export { buildIsolationSection } from "./isolation";
 export { buildRoleTaskSection } from "./role-task";
 export { buildBatchStorySection, buildStoryReminderSection, buildStorySection } from "./story";
+export { buildOutOfScopeLines, buildReviewOutOfScopeBlock } from "./out-of-scope";
 export { buildVerdictSection } from "./verdict";
 export { buildConventionsSection } from "./conventions";
 export { buildTddLanguageSection } from "./tdd-conventions";

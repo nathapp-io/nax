@@ -5,25 +5,15 @@
  */
 
 import type { UserStory } from "../../prd/types";
+import { buildOutOfScopeLines } from "./out-of-scope";
 
 /**
  * Feature-level exclusions carried down from the spec's "Out of Scope" section
  * (see src/prd/out-of-scope.ts). Rendered as its own labelled block rather than
  * folded into the description so the implementer cannot read it as work to do.
- * Returns `[]` when the story declares none, so callers can spread it inline.
  */
 function outOfScopeLines(story: UserStory): string[] {
-  const items = story.outOfScope ?? [];
-  if (items.length === 0) return [];
-  return [
-    "",
-    "**Out of Scope — do NOT implement these:**",
-    ...items.map((item) => `- ${item}`),
-    "",
-    "Treat the list above as a hard boundary. If satisfying an acceptance criterion appears to require",
-    "one of these, implement only what the criterion states and note the tension in your final message —",
-    "do not expand into the excluded work.",
-  ];
+  return buildOutOfScopeLines(story.outOfScope);
 }
 
 export function buildBatchStorySection(stories: UserStory[]): string {

@@ -390,3 +390,66 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
     });
   });
 });
+
+describe("adversarialReviewOp.verify() — scope grounding", () => {
+  const storyWithScope = {
+    ...STORY,
+    outOfScope: ["An interactive Ink TUI", "Per-story checkpoints"],
+  };
+  const inputWithScope: AdversarialReviewInput = { ...BASE_INPUT, story: storyWithScope };
+
+  function scopeFinding(overrides: Record<string, unknown> = {}) {
+    return {
+      severity: "warning",
+      category: "out-of-scope",
+      file: "src/auth.ts",
+      line: 10,
+      issue: "Story added an Ink TUI",
+      suggestion: "Remove the TUI",
+      scopeQuote: "An interactive Ink TUI",
+      scopeIndex: 1,
+      ...overrides,
+    };
+  }
+
+  test("keeps a scope finding whose scopeQuote is grounded in story.outOfScope", async () => {
+    const ctx = makeVerifyCtx();
+    const parsed = makeOutput({ passed: false, findings: [scopeFinding()] as never, normalizedFindings: [] });
+
+    const result = await adversarialReviewOp.verify!(parsed, inputWithScope, ctx);
+
+    expect(result?.findings).toHaveLength(1);
+  });
+
+  test("drops a scope finding citing a boundary the story never declared", async () => {
+    const ctx = makeVerifyCtx();
+    const parsed = makeOutput({
+      passed: false,
+      findings: [scopeFinding({ scopeQuote: "a REST API nobody deferred" })] as never,
+      normalizedFindings: [],
+    });
+
+    const result = await adversarialReviewOp.verify!(parsed, inputWithScope, ctx);
+
+    expect(result?.findings).toHaveLength(0);
+  });
+
+  test("drops a scope citation when the story declares no exclusions at all", async () => {
+    const ctx = makeVerifyCtx();
+    const parsed = makeOutput({ passed: false, findings: [scopeFinding()] as never, normalizedFindings: [] });
+
+    const result = await adversarialReviewOp.verify!(parsed, BASE_INPUT, ctx);
+
+    expect(result?.findings).toHaveLength(0);
+  });
+
+  test("keeps a scope finding that offers no citation (description-level Scope bullet)", async () => {
+    const ctx = makeVerifyCtx();
+    const finding = scopeFinding({ scopeQuote: undefined, scopeIndex: undefined });
+    const parsed = makeOutput({ passed: false, findings: [finding] as never, normalizedFindings: [] });
+
+    const result = await adversarialReviewOp.verify!(parsed, inputWithScope, ctx);
+
+    expect(result?.findings).toHaveLength(1);
+  });
+});

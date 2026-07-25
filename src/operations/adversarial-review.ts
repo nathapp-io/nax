@@ -16,6 +16,7 @@ import {
   checkFindingEvidence,
   downgradeUnsubstantiatedFinding,
   filterByAcQuote,
+  filterByScopeQuote,
   hasInspectionTrail,
   substantiateAdversarialFindings,
 } from "../review/finding-filters";
@@ -491,7 +492,24 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
       blockingThreshold: threshold,
     });
 
-    const { accepted, dropped } = filterByAcQuote(substantiated, input.story.acceptanceCriteria);
+    // Scope-grounding runs first and at every severity: a scope finding is capped
+    // at "warning" by the prompt, so filterByAcQuote (blocking-only) never
+    // inspects it, yet an ungrounded one still reaches the story report and the
+    // next tier's escalation context. Findings making no scope claim pass through.
+    const { accepted: scopeGrounded, dropped: scopeDropped } = filterByScopeQuote(
+      substantiated,
+      input.story.outOfScope ?? [],
+    );
+    for (const entry of scopeDropped) {
+      getSafeLogger()?.info("review", "Adversarial scope finding dropped (ungrounded scopeQuote)", {
+        storyId: input.story.id,
+        event: "review.adversarial.scope_quote_dropped",
+        file: entry.finding.file,
+        code: entry.code,
+      });
+    }
+
+    const { accepted, dropped } = filterByAcQuote(scopeGrounded, input.story.acceptanceCriteria);
 
     const recurrenceCfg = input.adversarialConfig.recurrenceDemotion ?? { enabled: true, maxBlockingRounds: 2 };
     const patterns = input.resolvedTestPatterns?.regex ?? [];

@@ -27,6 +27,19 @@ export interface AdversarialLLMFinding {
   /** 1-based index into story.acceptanceCriteria corresponding to acQuote. */
   acIndex?: number;
   /**
+   * Scope-grounding counterpart to `acQuote`, for findings about work that
+   * crossed a feature-level exclusion: a verbatim substring of the
+   * `story.outOfScope` entry indexed by `scopeIndex`.
+   *
+   * An exclusion is not an AC, so such a finding has no `acQuote` to offer and
+   * would otherwise be ungrounded. Validated by filterByScopeQuote() so a
+   * fabricated boundary is dropped instead of reaching the story report and the
+   * next tier's escalation context.
+   */
+  scopeQuote?: string;
+  /** 1-based index into story.outOfScope corresponding to scopeQuote. */
+  scopeIndex?: number;
+  /**
    * Required for severity "error" / "critical" (Issue #987): evidence anchoring
    * the finding to real source. `observed` is a verbatim 1–3 line code excerpt
    * from `verifiedBy.file` (defaulting to `file`). Substring-checked against
