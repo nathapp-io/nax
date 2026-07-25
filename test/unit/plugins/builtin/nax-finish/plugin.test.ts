@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _naxFinishDeps, isTelegramConfigured, naxFinishPlugin, telegramCreds } from "@/plugins";
+import {
+  _naxFinishDeps,
+  buildFlowArgv,
+  isTelegramConfigured,
+  naxFinishPlugin,
+  resolveFlowPath,
+  telegramCreds,
+} from "@/plugins";
 import type { PostRunContext } from "@/plugins/types";
 
 const action = naxFinishPlugin.extensions.postRunAction!;
@@ -151,6 +158,69 @@ describe("nax-finish post-run action", () => {
     expect(capturedEnv?.NAX_FINISH_QUALITY_PROFILE).toBe("quality-profile");
   });
 
+  test("execute forwards the acceptance/gate budgets in the flow input and caps the flow itself", async () => {
+    let capturedCmd: string[] = [];
+    let capturedTimeout: number | undefined;
+    _naxFinishDeps.run = async (cmd, opts) => {
+      capturedCmd = cmd;
+      capturedTimeout = opts.timeoutMs;
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    _naxFinishDeps.readResult = async () => ({ feature: "x", status: "opened" });
+
+    await action.execute(
+      baseCtx({
+        config: {
+          finish: {
+            autoFlow: { enabled: true, timeouts: { acceptanceMs: 111, gateMs: 222, flowMs: 333 } },
+          },
+        },
+      } as never),
+    );
+
+    expect(capturedTimeout).toBe(333);
+    const input = JSON.parse(capturedCmd[capturedCmd.indexOf("--input-json") + 1]);
+    expect(input.timeouts).toEqual({ acceptanceMs: 111, gateMs: 222 });
+  });
+
+  test("execute tells the flow to prefer Telegram only when it is enabled AND credentialed", async () => {
+    const inputsFor = async (config: Record<string, unknown>) => {
+      let cmd: string[] = [];
+      _naxFinishDeps.run = async (c) => {
+        cmd = c;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      };
+      _naxFinishDeps.readResult = async () => ({ feature: "x", status: "opened" });
+      await action.execute(baseCtx({ config } as never));
+      return JSON.parse(cmd[cmd.indexOf("--input-json") + 1]);
+    };
+
+    const credentialed = await inputsFor({
+      finish: { autoFlow: { enabled: true } },
+      interaction: { plugin: "telegram", config: { botToken: "t", chatId: "c" } },
+    });
+    expect(credentialed.escalateTelegram).toBe(true);
+
+    // Enabled but with no credentials → the flow must fall back to a PR comment.
+    const uncredentialed = await inputsFor({ finish: { autoFlow: { enabled: true } }, interaction: { plugin: "cli" } });
+    expect(uncredentialed.escalateTelegram).toBe(false);
+  });
+
+  test("execute reports a clear failure when the flow module cannot be found", async () => {
+    let ran = false;
+    _naxFinishDeps.exists = async () => false;
+    _naxFinishDeps.run = async () => {
+      ran = true;
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+
+    const r = await action.execute(baseCtx());
+
+    expect(ran).toBe(false);
+    expect(r.success).toBe(false);
+    expect(r.message).toContain("not found");
+  });
+
   test("execute omits reviewer profile env vars when reviewers are null", async () => {
     let capturedEnv: Record<string, string> | undefined;
     _naxFinishDeps.run = async (_cmd, opts) => {
@@ -163,6 +233,80 @@ describe("nax-finish post-run action", () => {
 
     expect(capturedEnv?.NAX_FINISH_SPEC_PROFILE).toBeUndefined();
     expect(capturedEnv?.NAX_FINISH_QUALITY_PROFILE).toBeUndefined();
+  });
+});
+
+describe("buildFlowArgv", () => {
+  test("puts --default-agent AFTER the flow file — acpx defines it on `flow run`, not the root", () => {
+    const argv = buildFlowArgv("/pkg/flows/nax-finish/nax-finish.flow.ts", "{}", "claude");
+    expect(argv).toEqual([
+      "acpx",
+      "--approve-all",
+      "flow",
+      "run",
+      "/pkg/flows/nax-finish/nax-finish.flow.ts",
+      "--input-json",
+      "{}",
+      "--default-agent",
+      "claude",
+    ]);
+    // Regression guard: `acpx --approve-all --default-agent x flow run …` exits
+    // with "unknown option '--default-agent'".
+    expect(argv.indexOf("--default-agent")).toBeGreaterThan(argv.indexOf("run"));
+  });
+
+  test("omits --default-agent entirely when unset", () => {
+    expect(buildFlowArgv("/f.ts", "{}", null)).not.toContain("--default-agent");
+  });
+});
+
+describe("resolveFlowPath", () => {
+  const deps = (existing: string[], moduleDir: string) => ({
+    moduleDir,
+    exists: async (p: string) => existing.includes(p),
+  });
+
+  test("resolves a relative path against the nax install, not the user's repo", async () => {
+    const resolved = await resolveFlowPath(
+      "/user/repo",
+      "flows/nax-finish/nax-finish.flow.ts",
+      deps(
+        ["/nax/package.json", "/nax/flows/nax-finish/nax-finish.flow.ts"],
+        "/nax/src/plugins/builtin/nax-finish",
+      ),
+    );
+    expect(resolved).toBe("/nax/flows/nax-finish/nax-finish.flow.ts");
+  });
+
+  test("works from a bundled dist/ layout", async () => {
+    const resolved = await resolveFlowPath(
+      "/user/repo",
+      "flows/nax-finish/nax-finish.flow.ts",
+      deps(["/nax/package.json", "/nax/flows/nax-finish/nax-finish.flow.ts"], "/nax/dist"),
+    );
+    expect(resolved).toBe("/nax/flows/nax-finish/nax-finish.flow.ts");
+  });
+
+  test("falls back to a repo-vendored flow when the install has none", async () => {
+    const resolved = await resolveFlowPath(
+      "/user/repo",
+      "flows/nax-finish/nax-finish.flow.ts",
+      deps(["/nax/package.json", "/user/repo/flows/nax-finish/nax-finish.flow.ts"], "/nax/dist"),
+    );
+    expect(resolved).toBe("/user/repo/flows/nax-finish/nax-finish.flow.ts");
+  });
+
+  test("honours an absolute override, and reports null when it is missing", async () => {
+    expect(await resolveFlowPath("/user/repo", "/custom/my.flow.ts", deps(["/custom/my.flow.ts"], "/nax/dist"))).toBe(
+      "/custom/my.flow.ts",
+    );
+    expect(await resolveFlowPath("/user/repo", "/custom/my.flow.ts", deps([], "/nax/dist"))).toBeNull();
+  });
+
+  test("returns null when the flow exists nowhere", async () => {
+    expect(
+      await resolveFlowPath("/user/repo", "flows/nax-finish/nax-finish.flow.ts", deps(["/nax/package.json"], "/nax/dist")),
+    ).toBeNull();
   });
 });
 

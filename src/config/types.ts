@@ -55,6 +55,8 @@ export type {
   EscalationEntry,
   ExecutionConfig,
   FeatureContextEngineConfig,
+  FinishAutoFlowConfig,
+  FinishTimeoutsConfig,
   RawHooksConfig,
   InteractionConfig,
   LlmRoutingConfig,

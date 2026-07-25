@@ -1,17 +1,8 @@
-import { NaxError } from "@/errors";
-import type { RunFn } from "../types";
+import { FinishError } from "../errors";
+import { runArgv } from "../exec";
+import type { AcceptanceGroup, RunFn } from "../types";
 
-async function defaultRun(cmd: string[], opts: { cwd: string }) {
-  const proc = Bun.spawn(cmd, { cwd: opts.cwd, stdout: "pipe", stderr: "pipe" });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    proc.exited,
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-  return { exitCode, stdout, stderr };
-}
-
-export const _contextDeps: { run: RunFn } = { run: defaultRun };
+export const _contextDeps: { run: RunFn } = { run: runArgv };
 
 export async function detectBaseBranch(workdir: string): Promise<string> {
   const res = await _contextDeps.run(["git", "remote", "show", "origin"], { cwd: workdir });
@@ -21,19 +12,46 @@ export async function detectBaseBranch(workdir: string): Promise<string> {
   return main.exitCode === 0 ? "origin/main" : "origin/master";
 }
 
-export async function resolveSpec(
-  feature: string,
-  workdir: string,
-): Promise<{ specPath: string; specKind: "markdown" | "prd" }> {
+export interface FeatureResolution {
+  specPath: string;
+  specKind: "markdown" | "prd";
+  acceptanceStatus: string;
+  groups: AcceptanceGroup[];
+}
+
+/**
+ * One `nax features resolve` call for the whole flow — it yields both the spec
+ * source (for the review prompts) and the acceptance groups (for the gate), so
+ * `load_ctx` resolves once and the acceptance node reads the groups off
+ * `ctx.outputs.load_ctx` instead of shelling out a second time.
+ */
+export async function resolveFeature(feature: string, workdir: string): Promise<FeatureResolution> {
   const res = await _contextDeps.run(["nax", "features", "resolve", feature, "--json"], { cwd: workdir });
-  const parsed = JSON.parse(res.stdout) as { specSource?: { kind: "markdown" | "prd"; path: string } };
+  let parsed: {
+    specSource?: { kind: "markdown" | "prd"; path: string };
+    acceptance?: { status?: string; groups?: AcceptanceGroup[] };
+  };
+  try {
+    parsed = JSON.parse(res.stdout);
+  } catch (cause) {
+    throw new FinishError(
+      `nax features resolve returned unparseable JSON for "${feature}"`,
+      "FINISH_RESOLVE_UNPARSEABLE",
+      { stage: "finish-context", feature, exitCode: res.exitCode, cause },
+    );
+  }
   if (!parsed.specSource) {
-    throw new NaxError(`nax features resolve returned no specSource for "${feature}"`, "FINISH_SPEC_NOT_FOUND", {
+    throw new FinishError(`nax features resolve returned no specSource for "${feature}"`, "FINISH_SPEC_NOT_FOUND", {
       stage: "finish-context",
       feature,
     });
   }
-  return { specPath: parsed.specSource.path, specKind: parsed.specSource.kind };
+  return {
+    specPath: parsed.specSource.path,
+    specKind: parsed.specSource.kind,
+    acceptanceStatus: parsed.acceptance?.status ?? "no-prd",
+    groups: parsed.acceptance?.groups ?? [],
+  };
 }
 
 export async function preflight(

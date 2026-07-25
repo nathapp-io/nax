@@ -20,7 +20,7 @@
 
 import * as path from "node:path";
 import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
-import { getFinishAutoFlowConfig, telegramCreds } from "./config";
+import { type FinishAutoFlowSettings, getFinishAutoFlowConfig, telegramCreds } from "./config";
 import { sendTelegramNotify } from "./telegram";
 
 interface FinishResult {
@@ -32,27 +32,52 @@ interface FinishResult {
 
 type RunFn = (
   cmd: string[],
-  opts: { cwd: string; env?: Record<string, string> },
+  opts: { cwd: string; env?: Record<string, string>; timeoutMs?: number },
 ) => Promise<{ exitCode: number; stdout: string; stderr: string }>;
 
 const PLUGIN_NAME = "nax-finish";
 const PLUGIN_VERSION = "0.1.0";
 
+/** How far up from this module to look for the nax package root (`src/…` in dev, `dist/` when built). */
+const PACKAGE_ROOT_SEARCH_DEPTH = 6;
+
 /**
  * Default subprocess runner — wraps Bun.spawn with concurrent stdout/stderr
- * reads so non-trivial output does not deadlock. Tests override `_naxFinishDeps.run`.
+ * reads so non-trivial output does not deadlock, under a wall-clock cap so a
+ * wedged flow cannot hang the run's completion phase forever.
+ * Tests override `_naxFinishDeps.run`.
  */
 async function defaultRun(
   cmd: string[],
-  opts: { cwd: string; env?: Record<string, string> },
+  opts: { cwd: string; env?: Record<string, string>; timeoutMs?: number },
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(cmd, { cwd: opts.cwd, env: opts.env, stdout: "pipe", stderr: "pipe" });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    proc.exited,
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-  return { exitCode, stdout, stderr };
+  let timedOut = false;
+  // setTimeout (not Bun.sleep) because the handle must be cancelled the moment
+  // the process exits — the documented exception in forbidden-patterns.md.
+  const timer =
+    opts.timeoutMs && opts.timeoutMs > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          proc.kill();
+        }, opts.timeoutMs)
+      : undefined;
+  try {
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    return timedOut
+      ? {
+          exitCode: exitCode === 0 ? 124 : exitCode,
+          stdout,
+          stderr: `${stderr}\n[nax-finish] flow killed after ${opts.timeoutMs}ms timeout`,
+        }
+      : { exitCode, stdout, stderr };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 /** Default result reader — reads the flow's terminal result off disk. */
@@ -71,6 +96,10 @@ async function defaultReadResult(workdir: string): Promise<FinishResult | null> 
 export const _naxFinishDeps: {
   run: RunFn;
   readResult: (workdir: string) => Promise<FinishResult | null>;
+  /** Path-existence probe — used to resolve the flow module and the nax package root. */
+  exists: (p: string) => Promise<boolean>;
+  /** Directory this module was loaded from; overridable so package-root walking is testable. */
+  moduleDir: string;
   /**
    * Escalation notifier. Routed through `_deps` (rather than called as a direct
    * import) because `telegramCreds` falls back to ambient `TELEGRAM_BOT_TOKEN` /
@@ -82,11 +111,71 @@ export const _naxFinishDeps: {
 } = {
   run: defaultRun,
   readResult: defaultReadResult,
+  exists: (p) => Bun.file(p).exists(),
+  moduleDir: import.meta.dir,
   notify: sendTelegramNotify,
 };
 
 function isFeatureBranch(b: string): boolean {
   return b !== "main" && b !== "master" && b.length > 0;
+}
+
+/**
+ * Resolve the flow module.
+ *
+ * `flows/` ships with nax, not with the user's repo, so a relative `flowPath`
+ * resolves against the **nax package root** first (walking up from this module:
+ * `src/plugins/builtin/nax-finish` in dev, `dist/` when bundled) and only then
+ * against the repo, which lets a repo vendor its own variant. Absolute paths
+ * are taken as-is. Returns null when nothing exists — the caller reports that
+ * rather than handing acpx a path it will fail to open.
+ */
+export async function resolveFlowPath(
+  workdir: string,
+  flowPath: string,
+  deps: Pick<typeof _naxFinishDeps, "exists" | "moduleDir"> = _naxFinishDeps,
+): Promise<string | null> {
+  if (path.isAbsolute(flowPath)) {
+    return (await deps.exists(flowPath)) ? flowPath : null;
+  }
+  const candidates: string[] = [];
+  let dir = deps.moduleDir;
+  for (let i = 0; i < PACKAGE_ROOT_SEARCH_DEPTH; i += 1) {
+    dir = path.dirname(dir);
+    if (await deps.exists(path.join(dir, "package.json"))) candidates.push(path.resolve(dir, flowPath));
+  }
+  candidates.push(path.resolve(workdir, flowPath));
+  for (const candidate of candidates) {
+    if (await deps.exists(candidate)) return candidate;
+  }
+  return null;
+}
+
+/**
+ * Build the `acpx flow run` argv.
+ *
+ * `--default-agent` is an option of the `flow run` subcommand, so it must come
+ * *after* the flow file; placing it before `flow` makes acpx exit with
+ * "unknown option '--default-agent'". `--approve-all` is a top-level flag.
+ */
+export function buildFlowArgv(flowPath: string, inputJson: string, defaultAgent: string | null): string[] {
+  return [
+    "acpx",
+    "--approve-all",
+    "flow",
+    "run",
+    flowPath,
+    "--input-json",
+    inputJson,
+    ...(defaultAgent ? ["--default-agent", defaultAgent] : []),
+  ];
+}
+
+function buildFlowEnv(cfg: FinishAutoFlowSettings): Record<string, string> {
+  const env: Record<string, string> = { ...process.env } as Record<string, string>;
+  if (cfg.reviewers.spec) env.NAX_FINISH_SPEC_PROFILE = cfg.reviewers.spec;
+  if (cfg.reviewers.quality) env.NAX_FINISH_QUALITY_PROFILE = cfg.reviewers.quality;
+  return env;
 }
 
 const naxFinishAction: IPostRunAction = {
@@ -107,41 +196,43 @@ const naxFinishAction: IPostRunAction = {
   async execute(ctx: PostRunContext): Promise<PostRunActionResult> {
     try {
       const cfg = getFinishAutoFlowConfig(ctx);
-      const flowPath = path.resolve(ctx.workdir, cfg.flowPath);
+      const flowPath = await resolveFlowPath(ctx.workdir, cfg.flowPath);
+      if (!flowPath) {
+        return {
+          success: false,
+          message: `nax-finish: flow module "${cfg.flowPath}" not found in the nax install or ${ctx.workdir}`,
+        };
+      }
 
-      // No `reviewers` field on the flow input — it was removed; profiles flow
-      // to the flow module via env vars instead (see module header comment).
+      const creds = telegramCreds(ctx.config);
+      // Telegram is the escalation channel only when it is both enabled AND
+      // credentialed; otherwise the flow falls back to a PR/MR comment. It has
+      // to know which, so it doesn't do both (or open a draft it won't need).
+      const escalateTelegram = cfg.escalate.telegram && creds !== null;
+
+      // No `reviewers` field on the flow input — profiles flow to the flow
+      // module via env vars instead (see module header comment).
       const input = {
         feature: ctx.feature,
         workdir: ctx.workdir,
         branch: ctx.branch,
         prdPath: ctx.prdPath,
-        escalateTelegram: cfg.escalate.telegram,
+        escalateTelegram,
+        timeouts: { acceptanceMs: cfg.timeouts.acceptanceMs, gateMs: cfg.timeouts.gateMs },
       };
 
-      const env: Record<string, string> = { ...process.env } as Record<string, string>;
-      if (cfg.reviewers.spec) env.NAX_FINISH_SPEC_PROFILE = cfg.reviewers.spec;
-      if (cfg.reviewers.quality) env.NAX_FINISH_QUALITY_PROFILE = cfg.reviewers.quality;
-
-      const cmd = [
-        "acpx",
-        "--approve-all",
-        ...(cfg.defaultAgent ? ["--default-agent", cfg.defaultAgent] : []),
-        "flow",
-        "run",
-        flowPath,
-        "--input-json",
-        JSON.stringify(input),
-      ];
-
-      const res = await _naxFinishDeps.run(cmd, { cwd: ctx.workdir, env });
+      const cmd = buildFlowArgv(flowPath, JSON.stringify(input), cfg.defaultAgent);
+      const res = await _naxFinishDeps.run(cmd, {
+        cwd: ctx.workdir,
+        env: buildFlowEnv(cfg),
+        timeoutMs: cfg.timeouts.flowMs,
+      });
       const result = await _naxFinishDeps.readResult(ctx.workdir);
       if (!result) {
         return { success: res.exitCode === 0, message: `nax-finish flow exited ${res.exitCode} (no result file)` };
       }
 
-      const creds = telegramCreds(ctx.config);
-      if (result.status === "escalated" && cfg.escalate.telegram && creds) {
+      if (result.status === "escalated" && escalateTelegram && creds) {
         await _naxFinishDeps.notify(
           creds,
           `nax-finish escalated *${result.feature}*: ${result.escalationReason ?? ""}`,

@@ -50,5 +50,5 @@ export { createWebhookReporterPlugin } from "./builtin/webhook-reporter";
 export { createOtelReporterPlugin } from "./builtin/otel-reporter";
 
 // Built-in nax-finish post-run action (Task 8) — exposed for test injection (`_naxFinishDeps`)
-export { naxFinishPlugin, _naxFinishDeps } from "./builtin/nax-finish";
+export { naxFinishPlugin, _naxFinishDeps, buildFlowArgv, resolveFlowPath } from "./builtin/nax-finish";
 export { getFinishAutoFlowConfig, isTelegramConfigured, telegramCreds } from "./builtin/nax-finish/config";

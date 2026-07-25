@@ -1,20 +1,9 @@
-import { NaxError } from "@/errors";
+import { FinishError } from "../errors";
+import { runArgv } from "../exec";
 import type { Finding, RunFn } from "../types";
+import { detectForge, extractUrl, viewArgv } from "./forge";
 
-/** Matches the first http(s) URL on a line — `gh`/`glab` print the URL on stdout. */
-const URL_REGEX = /https?:\/\/\S+/;
-
-async function defaultRun(cmd: string[], opts: { cwd: string }) {
-  const proc = Bun.spawn(cmd, { cwd: opts.cwd, stdout: "pipe", stderr: "pipe" });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    proc.exited,
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-  return { exitCode, stdout, stderr };
-}
-
-export const _escalateDeps: { run: RunFn } = { run: defaultRun };
+export const _escalateDeps: { run: RunFn } = { run: runArgv };
 
 export function buildEscalationComment(feature: string, escalationReason: string, findings: Finding[]): string {
   const lines = [
@@ -30,25 +19,36 @@ export function buildEscalationComment(feature: string, escalationReason: string
   return lines.join("\n");
 }
 
-async function detectForge(repoRoot: string, stage: string): Promise<"github" | "gitlab"> {
-  const remote = await _escalateDeps.run(["git", "remote", "get-url", "origin"], { cwd: repoRoot });
-  const remoteUrl = remote.stdout.trim();
-  if (remoteUrl.includes("github.com")) return "github";
-  if (remoteUrl.includes("gitlab.com")) return "gitlab";
-  throw new NaxError(`Unable to determine forge from remote URL "${remoteUrl}"`, "FINISH_UNKNOWN_FORGE", {
-    stage,
-    remoteUrl,
-  });
+export interface EscalationOutcome {
+  url?: string;
+  /** Where the "needs judgment" message was delivered. */
+  channel: "telegram" | "pr-comment";
 }
 
-export async function postEscalation(repoRoot: string, branch: string, comment: string): Promise<{ url?: string }> {
-  const forge = await detectForge(repoRoot, "finish-escalate");
+/**
+ * Deliver an escalation.
+ *
+ * `preferTelegram` (set by the plugin only when Telegram is both enabled and
+ * credentialed) makes Telegram the sole channel: the flow posts no comment and
+ * — critically — opens no draft PR to hold one, matching the design's
+ * "prefer Telegram when configured, else fall back to a PR/MR comment". The
+ * plugin sends the message itself after reading the result file. It still reads
+ * any existing PR/MR so the notification can carry a link, which is a read-only
+ * lookup with no side effect.
+ */
+export async function postEscalation(
+  repoRoot: string,
+  branch: string,
+  comment: string,
+  opts: { preferTelegram?: boolean } = {},
+): Promise<EscalationOutcome> {
+  const forge = await detectForge(_escalateDeps.run, repoRoot, "finish-escalate");
+  const view = await _escalateDeps.run(viewArgv(forge, branch, "url"), { cwd: repoRoot });
+  const existingUrl = view.exitCode === 0 ? extractUrl(view.stdout) : undefined;
 
-  const viewCmd =
-    forge === "github"
-      ? ["gh", "pr", "view", branch, "--json", "url"]
-      : ["glab", "mr", "view", branch, "--output", "json"];
-  const view = await _escalateDeps.run(viewCmd, { cwd: repoRoot });
+  if (opts.preferTelegram) {
+    return { url: existingUrl, channel: "telegram" };
+  }
 
   if (view.exitCode === 0) {
     const commentCmd =
@@ -57,13 +57,13 @@ export async function postEscalation(repoRoot: string, branch: string, comment: 
         : ["glab", "mr", "note", branch, "--message", comment];
     const commented = await _escalateDeps.run(commentCmd, { cwd: repoRoot });
     if (commented.exitCode !== 0) {
-      throw new NaxError(
+      throw new FinishError(
         `Failed to post escalation comment on "${branch}": ${commented.stderr.trim() || `exit ${commented.exitCode}`}`,
         "FINISH_ESCALATION_COMMENT_FAILED",
         { stage: "finish-escalate", branch },
       );
     }
-    return { url: extractUrl(view.stdout) };
+    return { url: existingUrl, channel: "pr-comment" };
   }
 
   const createCmd =
@@ -83,23 +83,11 @@ export async function postEscalation(repoRoot: string, branch: string, comment: 
         ];
   const create = await _escalateDeps.run(createCmd, { cwd: repoRoot });
   if (create.exitCode !== 0) {
-    throw new NaxError(
+    throw new FinishError(
       `Failed to open a draft to hold the escalation for "${branch}": ${create.stderr.trim() || `exit ${create.exitCode}`}`,
       "FINISH_ESCALATION_DRAFT_FAILED",
       { stage: "finish-escalate", branch },
     );
   }
-  return { url: extractUrl(create.stdout) };
-}
-
-/** Best-effort URL extraction: try `{url}` JSON first, fall back to a raw URL regex on stdout. */
-function extractUrl(stdout: string): string | undefined {
-  try {
-    const parsed = JSON.parse(stdout) as { url?: string };
-    if (parsed.url) return parsed.url;
-  } catch {
-    // fall through to regex extraction
-  }
-  const match = stdout.match(URL_REGEX);
-  return match ? match[0] : undefined;
+  return { url: extractUrl(create.stdout), channel: "pr-comment" };
 }

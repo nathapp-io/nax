@@ -500,13 +500,7 @@ export interface TestingConfig {
   mockGuidance?: string;
 }
 
-/** Project profile — language and tooling metadata for language-aware features (US-001) */
-export interface ProjectProfile {
-  language?: "typescript" | "javascript" | "go" | "rust" | "python" | "ruby" | "java" | "kotlin" | "php";
-  type?: string;
-  testFramework?: string;
-  lintTool?: string;
-}
+export type { ProjectProfile } from "./runtime-types-project";
 
 // Re-exported from debate/types.ts to maintain single source of truth
 export type {
@@ -518,6 +512,8 @@ export type {
   ResolverType,
   SessionMode,
 } from "../debate/types";
+
+export type { FinishAutoFlowConfig, FinishConfig, FinishTimeoutsConfig } from "./runtime-types-finish";
 
 /** Full nax configuration */
 export interface NaxConfig {
@@ -558,6 +554,8 @@ export interface NaxConfig {
   disabledPlugins?: string[];
   /** Built-in reporter plugin settings (webhook / OTel) */
   reporters?: import("./schemas-reporters").ReportersConfig;
+  /** nax-finish autonomous finish flow settings */
+  finish?: import("./runtime-types-finish").FinishConfig;
   /** Hooks configuration (v0.10) */
   hooks?: RawHooksConfig;
   /** Interaction settings (v0.15.0) */
@@ -571,7 +569,7 @@ export interface NaxConfig {
   /** Generate settings */
   generate?: GenerateConfig;
   /** Project profile — language and tooling metadata (US-001) */
-  project?: ProjectProfile;
+  project?: import("./runtime-types-project").ProjectProfile;
   /** Multi-agent debate settings */
   debate?: import("../debate/types").DebateConfig;
   /** Curator configuration */

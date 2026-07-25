@@ -54,7 +54,42 @@ describe("postEscalation", () => {
     expect(calls.some((c) => c.join(" ").includes("pr comment"))).toBe(false);
   });
 
-  test("throws NaxError when the remote is neither github nor gitlab", async () => {
+  test("prefers Telegram: no comment, and no draft PR opened to hold one", async () => {
+    const calls: string[][] = [];
+    _escalateDeps.run = async (cmd) => {
+      calls.push(cmd);
+      if (cmd.join(" ").includes("remote get-url")) return ok("git@github.com:o/r.git");
+      if (cmd.includes("view")) return { exitCode: 1, stdout: "", stderr: "no pr found" };
+      return ok("");
+    };
+    const r = await postEscalation("/repo", "feat/x", "comment", { preferTelegram: true });
+    expect(r.channel).toBe("telegram");
+    expect(r.url).toBeUndefined();
+    expect(calls.some((c) => c.join(" ").includes("pr create"))).toBe(false);
+    expect(calls.some((c) => c.join(" ").includes("pr comment"))).toBe(false);
+  });
+
+  test("prefers Telegram but still reports an existing PR URL for the notification", async () => {
+    _escalateDeps.run = async (cmd) => {
+      if (cmd.join(" ").includes("remote get-url")) return ok("git@github.com:o/r.git");
+      if (cmd.includes("view")) return ok(JSON.stringify({ url: "https://github.com/o/r/pull/7" }));
+      return ok("");
+    };
+    const r = await postEscalation("/repo", "feat/x", "comment", { preferTelegram: true });
+    expect(r).toEqual({ channel: "telegram", url: "https://github.com/o/r/pull/7" });
+  });
+
+  test("falls back to the PR comment channel when Telegram is not preferred", async () => {
+    _escalateDeps.run = async (cmd) => {
+      if (cmd.join(" ").includes("remote get-url")) return ok("git@github.com:o/r.git");
+      if (cmd.includes("view")) return ok(JSON.stringify({ url: "https://github.com/o/r/pull/1" }));
+      return ok("");
+    };
+    const r = await postEscalation("/repo", "feat/x", "comment", { preferTelegram: false });
+    expect(r.channel).toBe("pr-comment");
+  });
+
+  test("throws when the remote is neither github nor gitlab", async () => {
     _escalateDeps.run = async () => ok("git@bitbucket.org:o/r.git");
     await expect(postEscalation("/repo", "feat/x", "comment")).rejects.toThrow();
   });

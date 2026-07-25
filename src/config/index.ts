@@ -95,6 +95,7 @@ export {
   llmRoutingConfigSelector,
   mutationCheckConfigSelector,
   executionGatesConfigSelector,
+  finishConfigSelector,
 } from "./selectors";
 export { createConfigLoader } from "./loader-runtime";
 export type { ConfigLoader } from "./loader-runtime";

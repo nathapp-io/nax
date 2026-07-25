@@ -1,48 +1,44 @@
-import type { RunFn } from "../types";
+import { DEFAULT_ACCEPTANCE_TIMEOUT_MS, runShell } from "../exec";
+import type { AcceptanceGroup, ShellRunFn } from "../types";
 
-export interface AcceptanceGroup {
-  packageDir: string;
-  testPath: string;
-  exists: boolean;
-  command?: string;
-  language: string;
+export const _acceptanceDeps: { runShell: ShellRunFn } = { runShell };
+
+/** Single-quote a path for `/bin/sh -c`, so spaces in a repo path can't split the command. */
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-async function defaultRun(cmd: string[], opts: { cwd: string }) {
-  const proc = Bun.spawn(cmd, { cwd: opts.cwd, stdout: "pipe", stderr: "pipe" });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    proc.exited,
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-  return { exitCode, stdout, stderr };
-}
-export const _acceptanceDeps: { run: RunFn } = { run: defaultRun };
-
-export function parseAcceptanceGroups(resolveJson: string): { status: string; groups: AcceptanceGroup[] } {
-  const parsed = JSON.parse(resolveJson) as { acceptance?: { status?: string; groups?: AcceptanceGroup[] } };
-  return { status: parsed.acceptance?.status ?? "no-prd", groups: parsed.acceptance?.groups ?? [] };
+/**
+ * Build the acceptance command for one group, mirroring nax's own execution:
+ * the configured `command` template (any `{{FILE}}` / `{{file}}` / `{{files}}`
+ * placeholder replaced by the **absolute** test path) run from the group's
+ * package dir. The command is a string, run through `/bin/sh -c`, because
+ * configured commands legitimately contain `&&`, quotes and flags.
+ */
+export function buildAcceptanceCommand(repoRoot: string, group: AcceptanceGroup): string {
+  const absFile = shellQuote(`${repoRoot}/${group.testPath}`);
+  const template = group.command ?? `${languageRunner(group.language)} {{FILE}}`;
+  return template.replace(/\{\{FILE\}\}|\{\{file\}\}|\{\{files\}\}/g, absFile);
 }
 
 export async function runAcceptanceGate(
   repoRoot: string,
   groups: AcceptanceGroup[],
-): Promise<{ passed: boolean; output: string }> {
+  opts: { timeoutMs?: number } = {},
+): Promise<{ passed: boolean; ran: number; output: string }> {
   const chunks: string[] = [];
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_ACCEPTANCE_TIMEOUT_MS;
+  let ran = 0;
   for (const g of groups) {
     if (!g.exists) continue;
     const cwd = g.packageDir ? `${repoRoot}/${g.packageDir}` : repoRoot;
-    const absFile = `${repoRoot}/${g.testPath}`;
-    const template = g.command ?? `${languageRunner(g.language)} {{FILE}}`;
-    const cmd = template
-      .replace(/\{\{FILE\}\}|\{\{file\}\}|\{\{files\}\}/g, absFile)
-      .split(/\s+/)
-      .filter(Boolean);
-    const res = await _acceptanceDeps.run(cmd, { cwd });
+    ran += 1;
+    const res = await _acceptanceDeps.runShell(buildAcceptanceCommand(repoRoot, g), { cwd, timeoutMs });
     chunks.push(`[${g.packageDir || "root"}] exit=${res.exitCode}\n${res.stdout}\n${res.stderr}`);
-    if (res.exitCode !== 0) return { passed: false, output: chunks.join("\n\n") };
+    if (res.exitCode !== 0) return { passed: false, ran, output: chunks.join("\n\n") };
   }
-  return { passed: true, output: chunks.join("\n\n") };
+  if (ran === 0) chunks.push("[acceptance] no acceptance test files present — nothing to run");
+  return { passed: true, ran, output: chunks.join("\n\n") };
 }
 
 function languageRunner(language: string): string {
