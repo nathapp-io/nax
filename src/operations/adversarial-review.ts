@@ -509,6 +509,26 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
       });
     }
 
+    // Phase-0 telemetry (issue: scope-violation blocking policy). Scope findings
+    // are advisory today, so nothing downstream records that one fired. Without a
+    // numerator to pair with scope_quote_dropped above, there is no basis to
+    // decide whether they should ever block — mirrors the recurrence-demotion
+    // Phase-0 counters that gate its Phase 1.
+    for (const finding of scopeGrounded) {
+      if (finding.category !== "out-of-scope" && finding.scopeQuote === undefined) continue;
+      getSafeLogger()?.info("review", "Adversarial scope finding accepted (advisory)", {
+        storyId: input.story.id,
+        event: "review.adversarial.scope_finding_accepted",
+        file: finding.file,
+        severity: finding.severity,
+        // Distinguishes a finding citing the numbered outOfScope list from one
+        // reporting a description-level "Scope — Out:" bullet, which cannot be
+        // machine-verified. Only the former is candidate evidence for a gate.
+        grounded: finding.scopeQuote !== undefined,
+        declaredExclusions: (input.story.outOfScope ?? []).length,
+      });
+    }
+
     const { accepted, dropped } = filterByAcQuote(scopeGrounded, input.story.acceptanceCriteria);
 
     const recurrenceCfg = input.adversarialConfig.recurrenceDemotion ?? { enabled: true, maxBlockingRounds: 2 };

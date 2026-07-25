@@ -443,6 +443,36 @@ describe("adversarialReviewOp.verify() — scope grounding", () => {
     expect(result?.findings).toHaveLength(0);
   });
 
+  test("distinguishes grounded from ungrounded-but-kept scope findings in telemetry", async () => {
+    const { resetLogger, initLogger } = await import("@/logger");
+    resetLogger();
+    const logger = initLogger({ level: "silent" });
+    const calls: Array<[string, string, Record<string, unknown>?]> = [];
+    const origInfo = logger.info.bind(logger);
+    logger.info = ((...a: unknown[]) => {
+      calls.push(a as never);
+    }) as typeof logger.info;
+
+    try {
+      const ctx = makeVerifyCtx();
+      const parsed = makeOutput({
+        passed: false,
+        findings: [scopeFinding(), scopeFinding({ scopeQuote: undefined, scopeIndex: undefined })] as never,
+        normalizedFindings: [],
+      });
+
+      await adversarialReviewOp.verify!(parsed, inputWithScope, ctx);
+
+      const events = calls.filter((c) => c[2]?.event === "review.adversarial.scope_finding_accepted");
+      expect(events).toHaveLength(2);
+      expect(events.map((e) => e[2]?.grounded).sort()).toEqual([false, true]);
+      expect(events[0][2]?.declaredExclusions).toBe(2);
+    } finally {
+      logger.info = origInfo;
+      resetLogger();
+    }
+  });
+
   test("keeps a scope finding that offers no citation (description-level Scope bullet)", async () => {
     const ctx = makeVerifyCtx();
     const finding = scopeFinding({ scopeQuote: undefined, scopeIndex: undefined });
