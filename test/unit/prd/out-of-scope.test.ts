@@ -174,6 +174,37 @@ describe("extractSpecOutOfScope", () => {
     ]);
   });
 
+  test("ignores per-story deferrals under the Acceptance Criteria section", () => {
+    // spec-writing tells authors to give risk-sensitive stories their own
+    // `**Out of scope:**` list under the story AC block. Hoisting those to
+    // feature level propagated one story's deferral onto every other story.
+    const spec = [
+      "## Acceptance Criteria",
+      "",
+      "### US-001: Rate limiter",
+      "- [unit] increments the counter",
+      "",
+      "**Out of scope:** tenant scoping (US-003 owns it)",
+      "",
+      "### US-002: Replay store",
+      "- [unit] rejects reuse within window",
+      "",
+      "**Out of scope:** eviction policy",
+    ].join("\n");
+
+    expect(extractSpecOutOfScope(spec)).toEqual([]);
+  });
+
+  test("keeps a feature-level marker that precedes the story sections", () => {
+    const spec = "## Design\n\nstuff\n\n**Out of scope (deferred):** an Ink TUI\n\n## Stories\n\n- US-001\n";
+    expect(extractSpecOutOfScope(spec)).toEqual(["an Ink TUI"]);
+  });
+
+  test("keeps a top-level Out of Scope section placed after the story sections", () => {
+    const spec = "## Stories\n\n- US-001\n\n## Out of Scope\n\n- no Ink TUI\n";
+    expect(extractSpecOutOfScope(spec)).toEqual(["no Ink TUI"]);
+  });
+
   test("does not treat prose merely mentioning out of scope as a declaration", () => {
     const spec = "The diff rendering is out of scope for this story because nothing persists it.\n";
     expect(extractSpecOutOfScope(spec)).toEqual([]);

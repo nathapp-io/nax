@@ -205,17 +205,26 @@ invisible to them. `savePRD` strips the mirrored copies again
 Story-specific entries survive the strip; only exact feature-level mirrors are
 removed.
 
-### Known limitation: no story ancestry
+### Feature-level vs story-level: the extraction boundary
 
-`extractSpecOutOfScope` matches a heading or inline marker **wherever it appears**,
-with no notion of which story section contains it. So a per-story
-`### Out of scope` / `**Out of scope:**` block — which spec-writing recommends for
-deferred risk properties — is hoisted to feature level and propagated to *every*
-story. US-002's deferral then reaches US-001's implementer as a hard boundary.
+spec-writing tells authors to give risk-sensitive stories their own
+`**Out of scope:**` list under the story's AC block (guide Rule 10, for deferred
+risk properties). Those are **story**-scoped and must not become feature-level —
+hoisting them would propagate US-002's deferral onto US-001 as a hard boundary.
 
-Until the extractor models story boundaries, keep per-story deferrals in that
-story's `**Scope** — Out:` bullet, and reserve `## Out of Scope` / inline markers
-for genuinely feature-wide exclusions.
+The extractor draws the line at the first `## Stories` / `## Acceptance Criteria`
+heading:
+
+| Declaration | Feature-level? |
+|---|---|
+| `## Out of Scope` section (top-level `#`/`##`), anywhere in the document | ✅ yes |
+| `**Out of scope …:**` inline marker **before** the story sections (Summary/Design) | ✅ yes |
+| `**Out of scope:**` under a story's AC block | ❌ no — story-scoped |
+| `### Out of scope` sub-heading after the story sections begin | ❌ no — story-scoped |
+
+Story-scoped deferrals still do their job: spec-review Phase 4's adversarial-scope
+check reads them per-story, and they belong in that story's `**Scope** — Out:`
+bullet in the PRD.
 
 ### Reviewers: visible and citable, but advisory
 
