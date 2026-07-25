@@ -53,6 +53,12 @@ const TABLE_SEPARATOR = /^\s*\|?[\s:|-]+\|[\s:|-]*$/;
 /** A markdown table row. */
 const TABLE_ROW = /^\s*\|.*\|\s*$/;
 
+/**
+ * The heading that begins per-story decomposition. Everything after it is
+ * story-scoped territory (see {@link storyScopeBoundary}).
+ */
+const STORY_SECTION_HEADING = /^#{1,3}\s*(?:stories|acceptance\s+criteria|user\s+stories)\b/i;
+
 /** A setext underline — `===` (H1) or `---` (H2) beneath a title line. */
 const SETEXT_UNDERLINE = /^\s*(?:=+|-+)\s*$/;
 
@@ -254,9 +260,9 @@ function fencedLineIndices(lines: string[]): Set<number> {
  *   Handled explicitly because the prose fold stops at the first list item,
  *   which previously left the marker empty and the bullets claimed by nobody.
  */
-function itemsFromInlineMarkers(lines: string[], fenced: Set<number>): string[] {
+function itemsFromInlineMarkers(lines: string[], fenced: Set<number>, boundary: number): string[] {
   const items: string[] = [];
-  for (let i = 0; i < lines.length; i++) {
+  for (let i = 0; i < boundary; i++) {
     if (fenced.has(i) || !INLINE_MARKER.test(lines[i])) continue;
 
     const remainder = lines[i].replace(INLINE_MARKER, "").trim();
@@ -319,6 +325,25 @@ function dedupeAndCap(items: string[]): string[] {
 }
 
 /**
+ * Index of the first `## Stories` / `## Acceptance Criteria` heading, or
+ * `lines.length` when the spec has none.
+ *
+ * Declarations after this point belong to a *story*, not the feature.
+ * spec-writing tells authors to give risk-sensitive stories their own
+ * `**Out of scope:**` list under the story's AC block; hoisting those to feature
+ * level propagated one story's deferral onto every other story — US-001's
+ * implementer would be told US-002's deferred work is a hard boundary.
+ *
+ * A top-level (`#`/`##`) heading is exempt: a document section named
+ * `## Out of Scope` is feature-level wherever the author placed it, including
+ * after the story sections.
+ */
+function storyScopeBoundary(lines: string[]): number {
+  const index = lines.findIndex((line) => STORY_SECTION_HEADING.test(stripEmphasis(line)));
+  return index === -1 ? lines.length : index;
+}
+
+/**
  * Coerce a raw `outOfScope` value from LLM output into a clean string list.
  *
  * Tolerant by design — this field is advisory guidance, never a gate, so a
@@ -337,34 +362,39 @@ export function normalizeOutOfScopeList(raw: unknown): string[] | undefined {
  * order: bullets (or paragraphs) under an `## Out of Scope` / `## Non-Goals`
  * heading, plus any inline `**Out of scope …:**` lead-in.
  *
- * Known limitation — no story ancestry. A heading or inline marker is matched
- * wherever it appears, so a per-story `### Out of scope` / `**Out of scope:**`
- * block (which spec-writing recommends for deferred risk properties) is hoisted
- * to feature level and propagated to EVERY story. Keep per-story deferrals in the
- * story's `Scope — Out:` bullet until this models story boundaries; see the
- * spec-to-prd-pipeline doc.
+ * Story-scoped declarations are excluded. spec-writing tells authors to give
+ * risk-sensitive stories their own `**Out of scope:**` list under the story's AC
+ * block; only declarations before the first `## Stories` / `## Acceptance
+ * Criteria` heading — or in a top-level `##` section anywhere — are feature-level
+ * (see {@link storyScopeBoundary}).
  *
  * Scope / assumptions (deliberate — the downstream gate warns, never fails):
  * - A sub-heading inside the section is treated as a label, not an item; its
  *   bullets are still collected.
- * - Fenced code blocks inside the section are folded as prose. Out-of-scope
- *   sections holding code are vanishingly rare; write them as bullets.
+ * - Fenced code blocks are skipped entirely, not folded — so a spec that
+ *   documents markdown by example cannot inject a fabricated exclusion. The
+ *   corollary: text written *inside* a fence is silently dropped, so exclusions
+ *   must be bullets, table rows, or prose, never fenced.
  */
 export function extractSpecOutOfScope(specContent: string): string[] {
   if (!specContent.trim()) return [];
   const lines = specContent.split("\n");
 
   const fenced = fencedLineIndices(lines);
+  const boundary = storyScopeBoundary(lines);
   const items: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     if (fenced.has(i)) continue;
     const level = outOfScopeHeadingLevel(lines[i], lines[i + 1]);
     if (level === null) continue;
+    // A sub-heading after story decomposition begins is that story's own
+    // deferral, not the feature's. Top-level sections stay feature-level.
+    if (level > 2 && i > boundary) continue;
     // Setext consumes its underline; ATX does not.
     const bodyStart = SETEXT_UNDERLINE.test(lines[i + 1] ?? "") ? i + 1 : i;
     items.push(...itemsFromSection(sectionLines(lines, bodyStart, level)));
   }
-  items.push(...itemsFromInlineMarkers(lines, fenced));
+  items.push(...itemsFromInlineMarkers(lines, fenced, boundary));
 
   return dedupeAndCap(items);
 }
