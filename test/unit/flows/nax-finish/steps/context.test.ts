@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { _contextDeps, detectBaseBranch, preflight, resolveSpec } from "@flows/nax-finish/steps/context";
+import { _contextDeps, detectBaseBranch, preflight, resolveFeature } from "@flows/nax-finish/steps/context";
 import type { RunResult } from "@flows/nax-finish/types";
 
 const ok = (stdout: string): RunResult => ({ exitCode: 0, stdout, stderr: "" });
@@ -26,21 +26,53 @@ describe("context steps", () => {
     expect(await detectBaseBranch("/w")).toBe("origin/master");
   });
 
-  test("resolveSpec reads specSource from nax features resolve --json", async () => {
-    _contextDeps.run = async () =>
-      ok(
+  test("resolveFeature returns the spec source and the acceptance groups from one resolve call", async () => {
+    let calls = 0;
+    _contextDeps.run = async () => {
+      calls += 1;
+      return ok(
         JSON.stringify({
           status: "ok",
           featureName: "x",
           specSource: { kind: "prd", path: ".nax/features/x/prd.json" },
+          acceptance: {
+            status: "ok",
+            groups: [
+              {
+                packageDir: "apps/web",
+                testPath: "apps/web/.nax/features/x/a.test.tsx",
+                exists: true,
+                language: "typescript",
+              },
+            ],
+          },
         }),
       );
-    expect(await resolveSpec("x", "/w")).toEqual({ specPath: ".nax/features/x/prd.json", specKind: "prd" });
+    };
+    const r = await resolveFeature("x", "/w");
+    expect(calls).toBe(1);
+    expect(r.specPath).toBe(".nax/features/x/prd.json");
+    expect(r.specKind).toBe("prd");
+    expect(r.acceptanceStatus).toBe("ok");
+    expect(r.groups[0].packageDir).toBe("apps/web");
   });
 
-  test("resolveSpec throws NaxError when specSource is missing", async () => {
+  test("resolveFeature defaults acceptance to no-prd with no groups when absent", async () => {
+    _contextDeps.run = async () =>
+      ok(JSON.stringify({ status: "ok", specSource: { kind: "markdown", path: ".nax/features/x/spec.md" } }));
+    const r = await resolveFeature("x", "/w");
+    expect(r.acceptanceStatus).toBe("no-prd");
+    expect(r.groups).toEqual([]);
+  });
+
+  test("resolveFeature throws when specSource is missing", async () => {
     _contextDeps.run = async () => ok(JSON.stringify({ status: "no-prd", featureName: "x" }));
-    await expect(resolveSpec("x", "/w")).rejects.toThrow('no specSource for "x"');
+    await expect(resolveFeature("x", "/w")).rejects.toThrow('no specSource for "x"');
+  });
+
+  test("resolveFeature throws a coded error on unparseable stdout instead of a raw SyntaxError", async () => {
+    _contextDeps.run = async () => ({ exitCode: 1, stdout: "command not found", stderr: "" });
+    await expect(resolveFeature("x", "/w")).rejects.toThrow(/unparseable JSON/);
   });
 
   test("preflight routes nothing-to-finish at 0 commits ahead", async () => {

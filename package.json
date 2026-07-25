@@ -76,6 +76,7 @@
   ],
   "files": [
     "dist/",
+    "flows/",
     "README.md",
     "CHANGELOG.md"
   ],

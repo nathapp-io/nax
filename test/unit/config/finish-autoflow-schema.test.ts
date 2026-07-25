@@ -9,6 +9,28 @@ describe("finish.autoFlow schema", () => {
     expect(c.finish.autoFlow.defaultAgent).toBeNull();
     expect(c.finish.autoFlow.reviewers).toEqual({ spec: null, quality: null });
     expect(c.finish.autoFlow.escalate.telegram).toBe(true);
+    // Every subprocess the flow awaits is capped — nothing defaults to unbounded.
+    expect(c.finish.autoFlow.timeouts.acceptanceMs).toBeGreaterThan(0);
+    expect(c.finish.autoFlow.timeouts.gateMs).toBeGreaterThan(0);
+    expect(c.finish.autoFlow.timeouts.flowMs).toBeGreaterThan(0);
+  });
+
+  test("accepts timeout overrides and rejects non-positive budgets", () => {
+    const c = NaxConfigSchema.parse({
+      version: 1,
+      finish: { autoFlow: { timeouts: { acceptanceMs: 1000, gateMs: 2000, flowMs: 3000, stepMs: 4000 } } },
+    });
+    expect(c.finish.autoFlow.timeouts).toEqual({
+      acceptanceMs: 1000,
+      gateMs: 2000,
+      flowMs: 3000,
+      stepMs: 4000,
+    });
+    // stepMs is nullable — null means "leave acpx's own step default alone"
+    expect(NaxConfigSchema.parse({ version: 1 }).finish.autoFlow.timeouts.stepMs).toBeNull();
+    expect(NaxConfigSchema.safeParse({ version: 1, finish: { autoFlow: { timeouts: { gateMs: 0 } } } }).success).toBe(
+      false,
+    );
   });
 
   test("accepts overrides", () => {

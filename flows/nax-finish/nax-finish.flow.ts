@@ -9,39 +9,122 @@
  * `finish.autoFlow.reviewers.{spec,quality}` config before spawning, since
  * this flow module reloads fresh on every `acpx flow run` invocation.
  * Unset → both fall back to acpx's `--default-agent`.
+ *
+ * This module is loaded by acpx, from wherever `flows/` is installed, with the
+ * user's repo as cwd — so it never imports from nax's `src/` (see ./errors.ts).
+ *
+ * Graph shape (deviations from the design doc are deliberate and noted):
+ * - `load_ctx` is an `action`, not a `compute`: it shells git + `nax features
+ *   resolve` once, and its output feeds both the review prompts (specPath) and
+ *   the acceptance gate (groups), so nothing resolves the feature twice.
+ * - Review fixes loop: `review_* → route_* → fix_* → (re-run acceptance |
+ *   re-review) → review_*` until the reviewer comes back clean or the fix cap
+ *   trips. A single-shot fix left the fixed diff unverified.
+ * - `route_*` compute nodes hold the escalate/clean/fix decision so the cap is
+ *   enforced deterministically rather than trusting the model's own route.
  */
 import { defineFlow, extractJsonObject } from "acpx/flows";
 import { buildReviewPrompt, fixPrompt } from "./review-prompts";
 import {
   _contextDeps,
   buildEscalationComment,
+  commitAndPush,
   detectBaseBranch,
   loadQualityCommands,
   openOrPromotePr,
-  parseAcceptanceGroups,
   postEscalation,
   preflight,
-  resolveSpec,
+  resolveFeature,
   runAcceptanceGate,
   runQualityGates,
   writeResult,
 } from "./steps";
-import type { FinishInput, ReviewVerdict } from "./types";
+import type { AcceptanceGroup, FinishInput, ReviewVerdict } from "./types";
 
 const inputOf = (ctx: { input: unknown }) => ctx.input as FinishInput;
 
 /**
- * Cap on acceptance/quality-gate fix-and-reverify iterations before
- * escalating instead of looping forever. acpx's flow engine has no built-in
- * cycle guard, so without this cap a stubborn failure (LLM can't fix it, or
- * fixes something else each time) hangs `acpx flow run` — and the post-run
- * plugin awaits that subprocess with no timeout, hanging the whole run's
- * completion phase indefinitely.
+ * Cap on fix-and-reverify iterations, per phase, before escalating instead of
+ * looping forever. acpx's flow engine has no built-in cycle guard, so without
+ * this cap a stubborn failure (LLM can't fix it, or fixes something else each
+ * time) hangs `acpx flow run` — and the post-run plugin awaits that subprocess.
  */
 const MAX_FIX_ATTEMPTS = 3;
 
+interface LoadCtxOutput {
+  base?: string;
+  specPath?: string;
+  groups?: AcceptanceGroup[];
+  route?: string;
+}
+
 function fixAttemptCount(ctx: { state: { steps: { nodeId: string }[] } }, fixNodeId: string): number {
-  return ctx.state.steps.filter((s) => s.nodeId === fixNodeId).length;
+  return (ctx.state.steps ?? []).filter((s) => s.nodeId === fixNodeId).length;
+}
+
+function loadCtxOf(ctx: { outputs: unknown }): LoadCtxOutput {
+  return ((ctx.outputs as Record<string, LoadCtxOutput | undefined>).load_ctx ?? {}) as LoadCtxOutput;
+}
+
+/** Re-run the acceptance gate, routing on the shared fix-cap rules. */
+async function acceptanceGateNode(ctx: {
+  input: unknown;
+  outputs: unknown;
+  state: { steps: { nodeId: string }[] };
+}): Promise<{ route: string; reason?: string; output: string }> {
+  const i = inputOf(ctx);
+  const groups = loadCtxOf(ctx).groups ?? [];
+  const r = await runAcceptanceGate(i.workdir, groups, { timeoutMs: i.timeouts?.acceptanceMs });
+  if (r.passed) return { route: "proceed", output: r.output };
+  const attempts = fixAttemptCount(ctx, "fix_acceptance");
+  if (attempts >= MAX_FIX_ATTEMPTS) {
+    return {
+      route: "escalate",
+      reason: `Acceptance tests still failing after ${attempts} fix attempts.`,
+      output: r.output,
+    };
+  }
+  return { route: "fix", output: r.output };
+}
+
+/**
+ * Turn a reviewer verdict into a deterministic route.
+ *
+ * `clean` (no findings) skips the fix node entirely — prompting an agent to
+ * "apply the recommended fixes" for an empty finding list burns a turn and
+ * invites unrequested edits.
+ */
+function routeReview(
+  ctx: { outputs: unknown; state: { steps: { nodeId: string }[] } },
+  phase: "spec" | "quality",
+): { route: string; escalationReason?: string; findings: ReviewVerdict["findings"] } {
+  const verdict = (ctx.outputs as Record<string, ReviewVerdict | undefined>)[`review_${phase}`];
+  const findings = verdict?.findings ?? [];
+  if (verdict?.route === "escalate") {
+    return {
+      route: "escalate",
+      escalationReason: verdict.escalationReason ?? `${phase} review raised a finding needing human judgment`,
+      findings,
+    };
+  }
+  if (findings.length === 0) return { route: "clean", findings };
+  const attempts = fixAttemptCount(ctx, `fix_${phase}`);
+  if (attempts >= MAX_FIX_ATTEMPTS) {
+    return {
+      route: "escalate",
+      escalationReason: `${phase} review still reporting ${findings.length} finding(s) after ${attempts} fix attempts.`,
+      findings,
+    };
+  }
+  return { route: "fix", findings };
+}
+
+/** Normalise a reviewer's JSON, rewriting a findings-free `proceed` to `clean`. */
+function parseVerdict(text: string): ReviewVerdict {
+  const raw = extractJsonObject(text) as Partial<ReviewVerdict>;
+  const findings = Array.isArray(raw.findings) ? raw.findings : [];
+  const route = raw.route === "escalate" ? "escalate" : findings.length === 0 ? "clean" : "proceed";
+  return { route, findings, escalationReason: raw.escalationReason };
 }
 
 export default defineFlow({
@@ -54,108 +137,117 @@ export default defineFlow({
   startAt: "load_ctx",
   nodes: {
     load_ctx: {
-      nodeType: "compute",
+      nodeType: "action",
       async run(ctx) {
         const i = inputOf(ctx);
         const base = await detectBaseBranch(i.workdir);
-        const { specPath } = await resolveSpec(i.feature, i.workdir);
+        const resolution = await resolveFeature(i.feature, i.workdir);
         const pf = await preflight(i.workdir, base);
-        return { base, specPath, route: pf.route };
+        return {
+          base,
+          specPath: resolution.specPath,
+          acceptanceStatus: resolution.acceptanceStatus,
+          groups: resolution.groups,
+          commitsAhead: pf.commitsAhead,
+          route: pf.route,
+        };
       },
     },
     acceptance: {
       nodeType: "action",
-      async run(ctx) {
-        const i = inputOf(ctx);
-        const res = await _contextDeps.run(["nax", "features", "resolve", i.feature, "--json"], { cwd: i.workdir });
-        const { groups } = parseAcceptanceGroups(res.stdout);
-        const r = await runAcceptanceGate(i.workdir, groups);
-        if (r.passed) return { route: "proceed", output: r.output };
-        const attempts = fixAttemptCount(ctx, "fix_acceptance");
-        if (attempts >= MAX_FIX_ATTEMPTS) {
-          return {
-            route: "escalate",
-            reason: `Acceptance tests still failing after ${attempts} fix attempts.`,
-            output: r.output,
-          };
-        }
-        return { route: "fix", output: r.output };
-      },
+      run: acceptanceGateNode,
     },
     fix_acceptance: {
       nodeType: "acp",
       prompt: (ctx) => fixPrompt("acceptance", ctx),
-      parse: (t) => extractJsonObject(t) as ReviewVerdict,
+      parse: parseVerdict,
     },
     review_spec: {
       nodeType: "acp",
       session: { isolated: true },
       profile: process.env.NAX_FINISH_SPEC_PROFILE || undefined,
       prompt(ctx) {
-        const outs = ctx.outputs as Record<string, { base?: string; specPath?: string }>;
-        return buildReviewPrompt("spec", {
-          base: outs.load_ctx?.base ?? "origin/main",
-          specPath: outs.load_ctx?.specPath ?? "",
-        });
+        const outs = loadCtxOf(ctx);
+        return buildReviewPrompt("spec", { base: outs.base ?? "origin/main", specPath: outs.specPath ?? "" });
       },
-      parse: (text) => extractJsonObject(text) as ReviewVerdict,
+      parse: parseVerdict,
+    },
+    route_spec: {
+      nodeType: "compute",
+      run: (ctx) => routeReview(ctx, "spec"),
+    },
+    fix_spec: {
+      nodeType: "acp",
+      prompt: (ctx) => fixPrompt("spec", ctx),
+      parse: parseVerdict,
     },
     review_quality: {
       nodeType: "acp",
       session: { isolated: true },
       profile: process.env.NAX_FINISH_QUALITY_PROFILE || undefined,
       prompt(ctx) {
-        const outs = ctx.outputs as Record<string, { base?: string; specPath?: string }>;
-        return buildReviewPrompt("quality", {
-          base: outs.load_ctx?.base ?? "origin/main",
-          specPath: outs.load_ctx?.specPath ?? "",
-        });
+        const outs = loadCtxOf(ctx);
+        return buildReviewPrompt("quality", { base: outs.base ?? "origin/main", specPath: outs.specPath ?? "" });
       },
-      parse: (text) => extractJsonObject(text) as ReviewVerdict,
+      parse: parseVerdict,
     },
-    fix_spec: {
-      nodeType: "acp",
-      prompt: (ctx) => fixPrompt("spec", ctx),
-      parse: (t) => extractJsonObject(t) as ReviewVerdict,
+    route_quality: {
+      nodeType: "compute",
+      run: (ctx) => routeReview(ctx, "quality"),
     },
     fix_quality: {
       nodeType: "acp",
       prompt: (ctx) => fixPrompt("quality", ctx),
-      parse: (t) => extractJsonObject(t) as ReviewVerdict,
+      parse: parseVerdict,
     },
     fix_gate: {
       nodeType: "acp",
       prompt: (ctx) => fixPrompt("gate", ctx),
-      parse: (t) => extractJsonObject(t) as ReviewVerdict,
+      parse: parseVerdict,
     },
     quality_gates: {
       nodeType: "action",
       async run(ctx) {
         const i = inputOf(ctx);
         const cmds = await loadQualityCommands(i.workdir);
-        const r = await runQualityGates(i.workdir, cmds);
-        if (r.passed) return { route: "green", failing: r.failing, output: r.output };
+        const r = await runQualityGates(i.workdir, cmds, { timeoutMs: i.timeouts?.gateMs });
+        if (r.passed) return { route: "green", ran: r.ran, failing: r.failing, output: r.output };
+        // Nothing configured is not a pass — escalate immediately rather than
+        // open a "ready" PR having verified nothing. An LLM fix node cannot
+        // invent the repo's build/test commands.
+        if (r.ran.length === 0) {
+          return {
+            route: "escalate",
+            reason: "No quality.commands configured in .nax/config.json — nax-finish verified nothing.",
+            ran: r.ran,
+            failing: r.failing,
+            output: r.output,
+          };
+        }
         const attempts = fixAttemptCount(ctx, "fix_gate");
         if (attempts >= MAX_FIX_ATTEMPTS) {
           return {
             route: "escalate",
             reason: `Quality gates still failing after ${attempts} fix attempts (${r.failing.join(", ")}).`,
+            ran: r.ran,
             failing: r.failing,
             output: r.output,
           };
         }
-        return { route: "fix", failing: r.failing, output: r.output };
+        return { route: "fix", ran: r.ran, failing: r.failing, output: r.output };
       },
     },
     open_pr: {
       nodeType: "action",
       async run(ctx) {
         const i = inputOf(ctx);
-        const outs = ctx.outputs as Record<string, { route?: string } | undefined>;
-        if (outs.load_ctx?.route === "nothing-to-finish") {
+        if (loadCtxOf(ctx).route === "nothing-to-finish") {
           await writeResult(i.workdir, { feature: i.feature, status: "nothing-to-finish" });
           return { route: "done", status: "nothing-to-finish" };
         }
+        // Every fix node edited the working tree; without this the PR would be
+        // opened from a remote branch missing all of them.
+        const sync = await commitAndPush(i.workdir, i.branch, `fix(${i.feature}): nax-finish automated fixes`);
         const r = await openOrPromotePr(
           i.workdir,
           i.branch,
@@ -163,33 +255,46 @@ export default defineFlow({
           `Automated finish of \`${i.feature}\`.`,
         );
         await writeResult(i.workdir, { feature: i.feature, status: r.status, url: r.url });
-        return { route: "done", ...r };
+        return { route: "done", committed: sync.committed, ...r };
       },
     },
     escalate: {
       nodeType: "action",
       async run(ctx) {
         const i = inputOf(ctx);
-        const reviewOuts = ctx.outputs as Record<string, ReviewVerdict | undefined>;
-        const loopOuts = ctx.outputs as Record<string, { route?: string; reason?: string } | undefined>;
+        const outs = ctx.outputs as Record<string, { route?: string; reason?: string } | undefined>;
+        const routed = ctx.outputs as Record<string, ReviewVerdict | undefined>;
         const verdict =
-          reviewOuts.review_spec?.route === "escalate"
-            ? reviewOuts.review_spec
-            : reviewOuts.review_quality?.route === "escalate"
-              ? reviewOuts.review_quality
+          routed.route_spec?.route === "escalate"
+            ? routed.route_spec
+            : routed.route_quality?.route === "escalate"
+              ? routed.route_quality
               : undefined;
         const loopExhausted =
-          loopOuts.acceptance?.route === "escalate"
-            ? loopOuts.acceptance
-            : loopOuts.quality_gates?.route === "escalate"
-              ? loopOuts.quality_gates
+          outs.acceptance?.route === "escalate"
+            ? outs.acceptance
+            : outs.quality_gates?.route === "escalate"
+              ? outs.quality_gates
               : undefined;
         const reason =
           verdict?.escalationReason ?? loopExhausted?.reason ?? "nax-finish could not reach a green, shippable state";
-        const comment = buildEscalationComment(i.feature, reason, verdict?.findings ?? []);
-        const { url } = await postEscalation(i.workdir, i.branch, comment);
+
+        // Push what was fixed so the escalation describes state a human can see.
+        // A push failure must not swallow the escalation itself, so it is
+        // reported in the message rather than thrown.
+        let syncNote = "";
+        try {
+          await commitAndPush(i.workdir, i.branch, `wip(${i.feature}): nax-finish partial fixes before escalation`);
+        } catch (err) {
+          syncNote = `\n\n> Note: nax-finish could not push its partial fixes — ${String(err)}`;
+        }
+
+        const comment = buildEscalationComment(i.feature, reason, verdict?.findings ?? []) + syncNote;
+        const { url, channel } = await postEscalation(i.workdir, i.branch, comment, {
+          preferTelegram: i.escalateTelegram,
+        });
         await writeResult(i.workdir, { feature: i.feature, status: "escalated", url, escalationReason: reason });
-        return { route: "done", url, escalationReason: reason };
+        return { route: "done", url, channel, escalationReason: reason };
       },
     },
   },
@@ -200,10 +305,22 @@ export default defineFlow({
       switch: { on: "$.route", cases: { proceed: "review_spec", fix: "fix_acceptance", escalate: "escalate" } },
     },
     { from: "fix_acceptance", to: "acceptance" },
-    { from: "review_spec", switch: { on: "$.route", cases: { proceed: "fix_spec", escalate: "escalate" } } },
-    { from: "fix_spec", to: "review_quality" },
-    { from: "review_quality", switch: { on: "$.route", cases: { proceed: "fix_quality", escalate: "escalate" } } },
-    { from: "fix_quality", to: "quality_gates" },
+    { from: "review_spec", to: "route_spec" },
+    {
+      from: "route_spec",
+      switch: { on: "$.route", cases: { clean: "review_quality", fix: "fix_spec", escalate: "escalate" } },
+    },
+    // Spec fixes re-run the acceptance gate first (they can break it), and the
+    // acceptance node's `proceed` edge leads back into review_spec for re-review.
+    { from: "fix_spec", to: "acceptance" },
+    { from: "review_quality", to: "route_quality" },
+    {
+      from: "route_quality",
+      switch: { on: "$.route", cases: { clean: "quality_gates", fix: "fix_quality", escalate: "escalate" } },
+    },
+    // Quality fixes are re-reviewed by the same lens; the repo-root gates that
+    // follow catch anything the fix broke mechanically.
+    { from: "fix_quality", to: "review_quality" },
     {
       from: "quality_gates",
       switch: { on: "$.route", cases: { green: "open_pr", fix: "fix_gate", escalate: "escalate" } },

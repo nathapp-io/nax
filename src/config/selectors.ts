@@ -122,6 +122,11 @@ export const llmRoutingConfigSelector = pickSelector(
   "precheck",
 );
 
+// nax-finish autonomous flow — needs its own `finish` block plus `interaction`
+// (Telegram escalation credentials) and `quality` (the gate commands the flow
+// re-runs at the repo root).
+export const finishConfigSelector = pickSelector("finish", "finish", "interaction", "quality");
+
 // Derived config-slice types — co-located with each selector so consumers
 // import the type instead of re-deriving `ReturnType<typeof xSelector.select>`
 // in every operation file.
@@ -151,3 +156,4 @@ export type MutationCheckConfig = ReturnType<typeof mutationCheckConfigSelector.
 export type AutofixConfig = ReturnType<typeof autofixConfigSelector.select>;
 export type ExecutionGatesConfig = ReturnType<typeof executionGatesConfigSelector.select>;
 export type NonBlockingFixConfig = NonNullable<z.infer<typeof AdversarialReviewConfigSchema>["nonBlockingFix"]>;
+export type FinishConfig = ReturnType<typeof finishConfigSelector.select>;

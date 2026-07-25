@@ -18,6 +18,7 @@ description: User guides, architecture references, and specs for nax
 |:------|:------------|
 | [CLI Reference](guides/cli-reference.md) | Complete `nax` CLI command reference |
 | [Configuration](guides/configuration.md) | Config file locations, key options, shell operator limitations |
+| [Autonomous Finish Flow](guides/nax-finish-autoflow.md) | `finish.autoFlow` — review, verify and open a PR after a run, incl. acpx reviewer profiles |
 | [Hooks](guides/hooks.md) | Lifecycle hooks for notifications and CI triggers |
 | [Interaction Triggers](guides/triggers.md) | Interactive pause-and-prompt configuration |
 | [Troubleshooting](guides/troubleshooting.md) | Common issues and resolutions |

@@ -335,7 +335,8 @@ export function fixPrompt(
         ? (outs.acceptance?.output ?? "")
         : JSON.stringify(outs[`review_${phase}`]?.findings ?? []);
   return [
-    `Apply the recommended fixes for the ${phase} phase, directly in the repo. Do not open PRs.`,
+    `Apply the recommended fixes for the ${phase} phase, directly in the repo.`,
+    "Do not commit, push, or open PRs — nax-finish commits and pushes your edits itself.",
     `Context:\n${detail}`,
     "After fixing, re-run the feature's acceptance tests and the relevant checks; only proceed when they pass.",
     'Return exactly {"route":"proceed"} when done and green.',

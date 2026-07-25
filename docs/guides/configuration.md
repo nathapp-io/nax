@@ -444,3 +444,66 @@ exclude: ["**/.nax-acceptance*"]
 ```
 
 **Why this matters:** the acceptance test files import production code with relative paths (e.g. `./src/utils/detect-provider.ts`). They run correctly from their package directory under nax control, but should be excluded from the normal test pipeline to avoid unexpected failures or duplicate runs.
+
+### Autonomous Finish Flow (`finish.autoFlow`)
+
+> Full walkthrough, including how to configure the acpx reviewer agent profiles:
+> [nax-finish-autoflow.md](./nax-finish-autoflow.md).
+
+After a **successful** run on a feature branch, nax can drive the whole finish
+ritual — acceptance gate, spec review, quality review, repo-root quality gates,
+PR — without a human in the terminal, as an [acpx flow](https://www.npmjs.com/package/acpx).
+It auto-fixes what it can, and on anything needing human judgment it **stops and
+escalates** instead of guessing. It never merges.
+
+**Opt-in — off by default:**
+
+```json
+{
+  "finish": {
+    "autoFlow": {
+      "enabled": true,
+      "reviewers": { "spec": "nax-spec-reviewer", "quality": "nax-quality-reviewer" },
+      "escalate": { "telegram": true },
+      "timeouts": { "acceptanceMs": 600000, "gateMs": 900000, "flowMs": 5400000 }
+    }
+  }
+}
+```
+
+| Key | Default | Meaning |
+|:---|:---|:---|
+| `enabled` | `false` | Master gate. The flow never fires unless this is true. |
+| `flowPath` | `flows/nax-finish/nax-finish.flow.ts` | Relative paths resolve against the **nax install** first, then your repo (so you can vendor a variant). Absolute paths are used as-is. |
+| `defaultAgent` | `null` | acpx `--default-agent` for nodes with no pinned profile. |
+| `reviewers.spec` / `reviewers.quality` | `null` | acpx agent profiles (from `~/.acpx/config.json`) for the two review phases — each runs in its own isolated session, so they can be different agents/models. Unset → `defaultAgent`. |
+| `escalate.telegram` | `true` | Prefer Telegram for escalations when `interaction.plugin` is `telegram` (or `NAX_TELEGRAM_TOKEN` + `NAX_TELEGRAM_CHAT_ID` are set). With no credentials it falls back to a PR/MR comment. |
+| `timeouts.acceptanceMs` | 10 min | Cap per acceptance-test group. |
+| `timeouts.gateMs` | 15 min | Cap per quality gate. |
+| `timeouts.flowMs` | 90 min | Cap on the whole `acpx flow run` subprocess. |
+| `timeouts.stepMs` | `null` | Cap per flow step (one agent turn), passed to acpx as `--timeout`. `null` keeps acpx's own 15-minute default. |
+
+**It runs only when** the run succeeded (no failed or paused stories, at least
+one completed), HEAD is not `main`/`master`, and `enabled` is true.
+
+**Requirements:**
+
+- `acpx` on `PATH` with flows support (`acpx flow run`), and `gh` or `glab`
+  authenticated for the PR/MR step.
+- **`quality.commands` must be configured** — the flow runs those commands at the
+  repo root as its final gate. With none configured it escalates rather than
+  opening a PR, because a green gate that verified nothing is worse than no gate.
+
+**What it does with what it finds:**
+
+| Outcome | Action |
+|:---|:---|
+| Everything green | Opens a **ready** PR/MR, or promotes the draft `autoPR` already opened. Never merges. |
+| Findings with a clear recommended fix | Applies them, re-runs acceptance / re-reviews, up to 3 attempts per phase. |
+| Spec conflicts, contradictions, design calls, or anything it can't get green | Commits and pushes what it fixed, then escalates via Telegram or a PR/MR comment. No ready PR. |
+| Branch has no commits ahead of base | Reports `nothing-to-finish` and stops. |
+
+The flow's terminal state is written to `.nax/nax-finish-result.json` (gitignored).
+
+The interactive, approval-gated `nax-finish` skill still exists for manual
+finishes — this is the autonomous path, not a replacement.
