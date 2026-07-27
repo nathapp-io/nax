@@ -351,6 +351,10 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
           excludePatterns: prepared.excludePatterns,
           featureCtxBlock: buildFeatureCtxBlock(ctx, "reviewer-semantic"),
           priorSemanticIterations: ctx.priorSemanticIterations,
+          // Also set at the top level (not only inside `_refresh`) so the fix-lane
+          // override (#1368) still applies when the dispatch-time refresh fails and
+          // run-phase falls back to this stale input.
+          resolvedTestPatterns,
           // biome-ignore lint/style/noNonNullAssertion: semanticEnabled guards presence
           blockingThreshold: ctx.config.review!.blockingThreshold,
           _refresh: {
@@ -400,6 +404,8 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
           refExcludePatterns: prepared.refExcludePatterns,
           featureCtxBlock: buildFeatureCtxBlock(ctx, "reviewer-adversarial"),
           priorAdversarialIterations: ctx.priorAdversarialIterations,
+          // See the semantic input above — survives a failed dispatch-time refresh.
+          resolvedTestPatterns,
           // biome-ignore lint/style/noNonNullAssertion: adversarialEnabled guards presence
           blockingThreshold: ctx.config.review!.blockingThreshold,
           _refresh: {

@@ -13,10 +13,10 @@
  * dashboards) only deal with the canonical shape.
  */
 
-import type { Finding } from "../findings";
+import type { Finding, FixTarget } from "../findings";
 import type { ReviewFinding } from "../plugins/extensions";
 import type { AdversarialLLMFinding } from "./adversarial-helpers";
-import { categoryToFixTarget } from "./category-fix-target";
+import { categoryToFixTarget, resolveFixTarget } from "./category-fix-target";
 import type { LLMFinding } from "./semantic-helpers";
 
 type AnyLLMFinding = LLMFinding | AdversarialLLMFinding;
@@ -24,6 +24,13 @@ type AnyLLMFinding = LLMFinding | AdversarialLLMFinding;
 export interface ProjectionOptions {
   /** Producer label for `ReviewFinding.source` (e.g. "semantic-review"). */
   source?: string;
+  /**
+   * Test-file classifier from `resolveTestFilePatterns` (ADR-009 SSOT). Supplied
+   * so the persisted audit records the SAME `fixTarget` the cycle routed on
+   * (#1368) — without it the audit would claim `source` for a finding that
+   * actually went to the test-writer.
+   */
+  isTestFile?: (path: string) => boolean;
 }
 
 const SEVERITY_MAP: Record<string, ReviewFinding["severity"]> = {
@@ -102,11 +109,15 @@ function findingCategory(f: AnyLLMFinding): string | undefined {
   return "category" in f && f.category ? f.category : undefined;
 }
 
-function deriveFixTargetForReviewFinding(category: string | undefined, source: string | undefined) {
-  if (source === "semantic-review" || source === "semantic-debate-review") {
-    return "source";
-  }
-  return categoryToFixTarget(category);
+function deriveFixTargetForReviewFinding(
+  category: string | undefined,
+  source: string | undefined,
+  file: string | undefined,
+  isTestFile: ((path: string) => boolean) | undefined,
+): FixTarget {
+  const base: FixTarget =
+    source === "semantic-review" || source === "semantic-debate-review" ? "source" : categoryToFixTarget(category);
+  return resolveFixTarget({ base, file, isTestFile });
 }
 
 export function llmFindingToReviewFinding(f: AnyLLMFinding, opts: ProjectionOptions = {}): ReviewFinding {
@@ -122,7 +133,7 @@ export function llmFindingToReviewFinding(f: AnyLLMFinding, opts: ProjectionOpti
   };
   if (category) result.category = category;
   if (source) result.source = source;
-  result.fixTarget = deriveFixTargetForReviewFinding(category, source);
+  result.fixTarget = deriveFixTargetForReviewFinding(category, source, f.file, opts.isTestFile);
   const meta = buildMeta(f, f.severity !== narrowed ? f.severity : undefined);
   if (meta) result.meta = meta;
   return result;

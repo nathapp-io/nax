@@ -159,18 +159,45 @@ export async function runFixCycle<F extends Finding>(
   const packageDir = ctx.packageDir;
   let totalCostUsd = 0;
 
+  // Strategies that answered UNRESOLVED. The signal is per-strategy — the agent
+  // said "I cannot fix this", not "nobody can" — so the strategy is retired for
+  // the rest of the cycle instead of being re-dispatched to reach the same
+  // answer. Retiring it can only shrink the selectable set, so the cycle still
+  // terminates. (#1369)
+  const spentStrategies = new Set<string>();
+  let unresolvedDetail: string | undefined;
+
+  /**
+   * Attach the UNRESOLVED reason to whatever failing exit the cycle reaches.
+   * Once a strategy has given up, that text is the most useful diagnostic
+   * available no matter which exit fires afterwards — without this the detail is
+   * lost as soon as the cycle exits via `no-strategy` or a cap instead of
+   * `agent-gave-up`.
+   *
+   * Deliberately NOT applied to the two `resolved` exits: a sibling cleared the
+   * findings, so reporting "the agent could not fix this" alongside a success
+   * would misread as a partial failure.
+   */
+  const finish = (result: FixCycleResult<F>): FixCycleResult<F> =>
+    unresolvedDetail !== undefined && result.unresolvedDetail === undefined ? { ...result, unresolvedDetail } : result;
+
   for (;;) {
     if (cycle.findings.length === 0 && cycle.verdict === undefined) {
       return { iterations: cycle.iterations, finalFindings: [], exitReason: "resolved", costUsd: totalCostUsd };
     }
 
     // ── Select active strategies ──────────────────────────────────────────────
-    const active = selectActiveStrategies(cycle.strategies, cycle.findings, cycle.verdict);
+    // Strategies retired by an UNRESOLVED verdict are excluded (#1369).
+    const selectable = cycle.strategies.filter((s) => !spentStrategies.has(s.name));
+    const active = selectActiveStrategies(selectable, cycle.findings, cycle.verdict);
     if (active.length === 0) {
-      // Orphaned findings: at least one finding remains but no strategy's
-      // `appliesTo` claims it (e.g. an unhandled `source`). Surface the sources
-      // at warn level — without this the orphaned source is invisible, turning
-      // a routing gap into an un-diagnosable "story failed for no reason".
+      // Orphaned findings: at least one finding remains but no selectable
+      // strategy's `appliesTo` claims it. Two distinct causes, and the log must
+      // separate them or a reader chases the wrong one: either the `source` is
+      // genuinely unhandled (a routing gap), or the only strategy that claimed
+      // it was retired after answering UNRESOLVED (#1369). Surface both at warn
+      // level — without this the cause is invisible, turning either into an
+      // un-diagnosable "story failed for no reason".
       const orphanSources = [...new Set(cycle.findings.map((f) => f.source))];
       logger?.warn("findings.cycle", "cycle exited — no matching strategy (orphaned findings)", {
         storyId,
@@ -179,13 +206,14 @@ export async function runFixCycle<F extends Finding>(
         reason: "no-strategy",
         findingsCount: cycle.findings.length,
         orphanSources,
+        ...(spentStrategies.size > 0 ? { retiredStrategies: [...spentStrategies] } : {}),
       });
-      return {
+      return finish({
         iterations: cycle.iterations,
         finalFindings: cycle.findings,
         exitReason: "no-strategy",
         costUsd: totalCostUsd,
-      };
+      });
     }
 
     // ── Filter exhausted strategies ───────────────────────────────────────────
@@ -202,13 +230,13 @@ export async function runFixCycle<F extends Finding>(
         reason: "max-attempts-per-strategy",
         exhaustedStrategy: exhaustedStrategy?.name,
       });
-      return {
+      return finish({
         iterations: cycle.iterations,
         finalFindings: cycle.findings,
         exitReason: "max-attempts-per-strategy",
         exhaustedStrategy: exhaustedStrategy?.name,
         costUsd: totalCostUsd,
-      };
+      });
     }
 
     // ── Total attempt cap ─────────────────────────────────────────────────────
@@ -222,12 +250,12 @@ export async function runFixCycle<F extends Finding>(
         totalAttempts,
         maxAttemptsTotal: cycle.config.maxAttemptsTotal,
       });
-      return {
+      return finish({
         iterations: cycle.iterations,
         finalFindings: cycle.findings,
         exitReason: "max-attempts-total",
         costUsd: totalCostUsd,
-      };
+      });
     }
 
     // ── bailWhen predicates ───────────────────────────────────────────────────
@@ -242,13 +270,13 @@ export async function runFixCycle<F extends Finding>(
           strategyName: strategy.name,
           bailDetail: bailReason,
         });
-        return {
+        return finish({
           iterations: cycle.iterations,
           finalFindings: cycle.findings,
           exitReason: "bail-when",
           bailDetail: bailReason,
           costUsd: totalCostUsd,
-        };
+        });
       }
     }
 
@@ -273,37 +301,69 @@ export async function runFixCycle<F extends Finding>(
       });
     }
 
-    // ── Bail on agent-gave-up ─────────────────────────────────────────────────
+    // ── Handle agent-gave-up ──────────────────────────────────────────────────
     // Must run before the cap-exhausted skip-validate check: if the agent signals
     // UNRESOLVED on its final attempt, agent-gave-up takes priority so the
     // unresolvedDetail is surfaced rather than silently folded into a cap-exit.
-    const unresolvedFa = fixesApplied.find((fa) => fa.unresolved);
-    if (unresolvedFa) {
-      const finishedAt = now();
-      cycle.iterations.push({
-        iterationNum: cycle.iterations.length + 1,
-        findingsBefore,
-        fixesApplied,
-        findingsAfter: cycle.findings,
-        outcome: "unchanged",
-        startedAt,
-        finishedAt,
-      });
-      logger?.info("findings.cycle", "cycle exited — agent gave up", {
+    //
+    // UNRESOLVED is per-strategy, so the response depends on whether anyone else
+    // in the group still ran (#1369):
+    //
+    //   - EVERY strategy that ran gave up  -> nothing was attempted that could
+    //     have changed the tree, so revalidating would burn a full suite run to
+    //     learn nothing. Exit immediately, as before.
+    //   - SOME strategy ran without giving up -> its work may have resolved the
+    //     findings. Retire only the strategies that gave up and fall through to
+    //     validate, so the sibling's progress is measured instead of discarded.
+    //     Previously the whole group was abandoned here with `finalFindings` still
+    //     equal to `findingsBefore`, which reported the sibling's fix as no
+    //     progress and (via rectificationExhausted) rolled the working tree back.
+    const unresolvedFas = fixesApplied.filter((fa) => fa.unresolved);
+    if (unresolvedFas.length > 0) {
+      const firstUnresolved = unresolvedFas[0] as FixApplied;
+      unresolvedDetail = firstUnresolved.unresolved;
+      for (const fa of unresolvedFas) spentStrategies.add(fa.strategyName);
+
+      const allGaveUp = unresolvedFas.length === fixesApplied.length;
+      if (allGaveUp) {
+        const finishedAt = now();
+        cycle.iterations.push({
+          iterationNum: cycle.iterations.length + 1,
+          findingsBefore,
+          fixesApplied,
+          findingsAfter: cycle.findings,
+          outcome: "unchanged",
+          startedAt,
+          finishedAt,
+        });
+        // Every other exit accumulates the iteration's spend; this one used to
+        // return before doing so, reporting costUsd: 0 for real spend (#1369).
+        totalCostUsd += fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0);
+        logger?.info("findings.cycle", "cycle exited — agent gave up", {
+          storyId,
+          packageDir,
+          cycleName,
+          reason: "agent-gave-up",
+          strategyName: firstUnresolved.strategyName,
+          unresolvedDetail: firstUnresolved.unresolved,
+        });
+        return finish({
+          iterations: cycle.iterations,
+          finalFindings: cycle.findings,
+          exitReason: "agent-gave-up",
+          unresolvedDetail: firstUnresolved.unresolved,
+          costUsd: totalCostUsd,
+        });
+      }
+
+      logger?.info("findings.cycle", "strategy gave up — retired, continuing with co-run siblings", {
         storyId,
         packageDir,
         cycleName,
-        reason: "agent-gave-up",
-        strategyName: unresolvedFa.strategyName,
-        unresolvedDetail: unresolvedFa.unresolved,
+        strategyName: firstUnresolved.strategyName,
+        unresolvedDetail: firstUnresolved.unresolved,
+        ranWithoutGivingUp: fixesApplied.filter((fa) => !fa.unresolved).map((fa) => fa.strategyName),
       });
-      return {
-        iterations: cycle.iterations,
-        finalFindings: cycle.findings,
-        exitReason: "agent-gave-up",
-        unresolvedDetail: unresolvedFa.unresolved,
-        costUsd: totalCostUsd,
-      };
     }
 
     // ── Lite-validate on terminal exhausted iteration ─────────────────────────
@@ -315,6 +375,11 @@ export async function runFixCycle<F extends Finding>(
       return prior + current >= s.maxAttempts;
     });
     if (allExhausted) {
+      // Accumulate once, up front, so every exit below reports this iteration's
+      // spend. Previously only the `continue` path did, so the four terminal
+      // exits in this branch under-reported cost the same way the agent-gave-up
+      // exit did (#1369).
+      totalCostUsd += fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0);
       let liteFindingsAfter: F[];
       let liteShortCircuited = false;
       try {
@@ -339,13 +404,13 @@ export async function runFixCycle<F extends Finding>(
           cycleName,
           error: errorMessage(err),
         });
-        return {
+        return finish({
           iterations: cycle.iterations,
           finalFindings: cycle.findings,
           exitReason: "max-attempts-per-strategy",
           exhaustedStrategy: group[0]?.name,
           costUsd: totalCostUsd,
-        };
+        });
       }
 
       const outcome = classifyOutcome(findingsBefore, liteFindingsAfter);
@@ -368,12 +433,12 @@ export async function runFixCycle<F extends Finding>(
           cycleName,
           reason: "resolved",
         });
-        return {
+        return finish({
           iterations: cycle.iterations,
           finalFindings: [],
           exitReason: "resolved",
           costUsd: totalCostUsd,
-        };
+        });
       }
 
       if (liteShortCircuited) {
@@ -383,8 +448,7 @@ export async function runFixCycle<F extends Finding>(
         // mechanical-lintfix) may still be able to resolve the findings.
         const companions = uncappedActive.filter((s) => !group.includes(s));
         if (companions.length > 0) {
-          const iterCostUsd = fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0);
-          totalCostUsd += iterCostUsd;
+          // Cost already accumulated at the top of this branch.
           logger?.info("findings.cycle", "exclusive strategy exhausted — continuing to companion strategies", {
             storyId,
             packageDir,
@@ -401,12 +465,12 @@ export async function runFixCycle<F extends Finding>(
           reason: "validate-short-circuit",
           liteFindingsAfterCount: liteFindingsAfter.length,
         });
-        return {
+        return finish({
           iterations: cycle.iterations,
           finalFindings: liteFindingsAfter,
           exitReason: "validate-short-circuit",
           costUsd: totalCostUsd,
-        };
+        });
       }
 
       logger?.info("findings.cycle", "cycle exited — strategy attempt cap reached (lite validate)", {
@@ -417,13 +481,13 @@ export async function runFixCycle<F extends Finding>(
         exhaustedStrategy: group[0]?.name,
         liteFindingsAfterCount: liteFindingsAfter.length,
       });
-      return {
+      return finish({
         iterations: cycle.iterations,
         finalFindings: liteFindingsAfter,
         exitReason: "max-attempts-per-strategy",
         exhaustedStrategy: group[0]?.name,
         costUsd: totalCostUsd,
-      };
+      });
     }
 
     // ── Validate ──────────────────────────────────────────────────────────────
@@ -443,12 +507,12 @@ export async function runFixCycle<F extends Finding>(
             reason: "validator-error",
             error: errorMessage(err),
           });
-          return {
+          return finish({
             iterations: cycle.iterations,
             finalFindings: cycle.findings,
             exitReason: "validator-error",
             costUsd: totalCostUsd,
-          };
+          });
         }
         logger?.warn("findings.cycle", "validator retry", {
           storyId,

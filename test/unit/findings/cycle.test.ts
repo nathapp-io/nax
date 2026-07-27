@@ -271,6 +271,47 @@ callOp: makeCallOpMock() as unknown as CallOpFn});
     expect(validateCalls2[0]).toMatchObject({ mode: "lite", strategiesRun: ["fix-a", "fix-b"] });
     expect(r2.exitReason).toBe("max-attempts-per-strategy");
   });
+
+  test("reports the terminal iteration's cost on the lite-validate exits (#1369)", async () => {
+    // Only the `continue`-to-companions path used to accumulate, so every
+    // terminal exit in this branch under-reported spend as 0.
+    const s = makeStrategy({
+      name: "lint-fix",
+      maxAttempts: 1,
+      extractApplied: () => ({ summary: "", costUsd: 0.25 }),
+    });
+    const r = await runFixCycle(makeCycle([lintA], [s], async () => [lintA]), makeCtx(), "test-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn,
+    });
+    expect(r.exitReason).toBe("max-attempts-per-strategy");
+    expect(r.costUsd).toBeCloseTo(0.25, 5);
+  });
+
+  test("does not double-count cost when continuing to companion strategies (#1369)", async () => {
+    // The exclusive strategy exhausts and short-circuits, handing off to an
+    // uncapped companion. Its cost must be counted exactly once.
+    const exclusive = makeStrategy({
+      name: "mechanical-lintfix",
+      maxAttempts: 1,
+      coRun: "exclusive",
+      appliesTo: (f) => f.source === "lint",
+      extractApplied: () => ({ summary: "", costUsd: 1 }),
+    });
+    const companion = makeStrategy({
+      name: "implementer",
+      maxAttempts: 1,
+      coRun: "co-run-sequential",
+      appliesTo: (f) => f.source === "lint",
+      extractApplied: () => ({ summary: "", costUsd: 1 }),
+    });
+    const cycle = makeCycle([lintA], [exclusive, companion], async () => ({ findings: [lintA], shortCircuited: true }));
+    const r = await runFixCycle(cycle, makeCtx(), "test-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn,
+    });
+    // One attempt each, $1 apiece — never 3 (which is what double-counting the
+    // first iteration would produce).
+    expect(r.costUsd).toBeCloseTo(2, 5);
+  });
 });
 
 // ─── runFixCycle — bail: agent-gave-up (#897) ────────────────────────────────
@@ -295,6 +336,110 @@ callOp: makeCallOpMock() as unknown as CallOpFn});
     expect(r2.exitReason).toBe("agent-gave-up");
     expect(r2.unresolvedDetail).toBe("conflicting spec");
     expect(validateCalled2).toBe(false);
+  });
+
+  test("accumulates the iteration's cost when every strategy gives up (#1369)", async () => {
+    const s1 = makeStrategy({
+      name: "source-fix",
+      extractApplied: () => ({ summary: "", unresolved: "cannot fix", costUsd: 0.42 }),
+    });
+    const r = await runFixCycle(makeCycle([lintA], [s1], async () => []), makeCtx(), "test-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn,
+    });
+    expect(r.exitReason).toBe("agent-gave-up");
+    expect(r.costUsd).toBeCloseTo(0.42, 5);
+  });
+});
+
+// ─── runFixCycle — partial give-up in a co-run group (#1369) ─────────────────
+
+describe("runFixCycle — one strategy gives up, a co-run sibling does not", () => {
+  /** Strategy that reports UNRESOLVED; stands in for autofix-implementer. */
+  const givesUp = (name: string) =>
+    makeStrategy({
+      name,
+      coRun: "co-run-sequential",
+      maxAttempts: 3,
+      extractApplied: () => ({ summary: "", unresolved: "cannot edit test files" }),
+    });
+  /** Strategy that completes normally; stands in for autofix-test-writer. */
+  const succeeds = (name: string) => makeStrategy({ name, coRun: "co-run-sequential", maxAttempts: 3 });
+
+  test("validates instead of abandoning the group, so the sibling's fix is measured", async () => {
+    let validateCalled = false;
+    const cycle = makeCycle([lintA], [givesUp("implementer"), succeeds("test-writer")], async () => {
+      validateCalled = true;
+      return []; // the sibling's fix resolved the finding
+    });
+    const r = await runFixCycle(cycle, makeCtx(), "test-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn,
+    });
+    expect(validateCalled).toBe(true);
+    expect(r.exitReason).toBe("resolved");
+    expect(r.finalFindings).toEqual([]);
+  });
+
+  test("carries the UNRESOLVED reason onto the later exit the cycle actually reaches", async () => {
+    // Each strategy owns a different finding. The implementer gives up on its
+    // one; the test-writer clears its own. Validation leaves only the abandoned
+    // finding, and its sole claimer is now retired — so the cycle exits
+    // `no-strategy` rather than `agent-gave-up`, and the diagnostic text has to
+    // survive that switch or the give-up becomes invisible.
+    const implementer = makeStrategy({
+      name: "implementer",
+      coRun: "co-run-sequential",
+      appliesTo: (f) => f.source === "lint",
+      extractApplied: () => ({ summary: "", unresolved: "cannot edit test files" }),
+    });
+    const testWriter = makeStrategy({
+      name: "test-writer",
+      coRun: "co-run-sequential",
+      appliesTo: (f) => f.source === "typecheck",
+    });
+    const cycle = makeCycle([lintA, typecheckC], [implementer, testWriter], async () => [lintA]);
+    const r = await runFixCycle(cycle, makeCtx(), "test-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn,
+    });
+    expect(r.exitReason).toBe("no-strategy");
+    expect(r.unresolvedDetail).toBe("cannot edit test files");
+    expect(r.finalFindings).toEqual([lintA]);
+  });
+
+  test("does not re-dispatch a strategy that already gave up while a sibling keeps working", async () => {
+    const dispatched: string[] = [];
+    const track = (name: string, unresolved?: string) =>
+      makeStrategy({
+        name,
+        coRun: "co-run-sequential",
+        maxAttempts: 3,
+        extractApplied: () => {
+          dispatched.push(name);
+          return { summary: "", ...(unresolved ? { unresolved } : {}) };
+        },
+      });
+    // Findings never clear, so the cycle keeps iterating until the caps bind.
+    // The sibling must be retried; the strategy that gave up must not be.
+    const cycle = makeCycle(
+      [lintA],
+      [track("implementer", "cannot edit test files"), track("test-writer")],
+      async () => [lintA],
+    );
+    await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: makeCallOpMock() as unknown as CallOpFn });
+    expect(dispatched.filter((n) => n === "implementer")).toHaveLength(1);
+    expect(dispatched.filter((n) => n === "test-writer").length).toBeGreaterThan(1);
+  });
+
+  test("exits agent-gave-up without validating when every strategy in the group gives up", async () => {
+    let validateCalled = false;
+    const cycle = makeCycle([lintA], [givesUp("implementer"), givesUp("test-writer")], async () => {
+      validateCalled = true;
+      return [];
+    });
+    const r = await runFixCycle(cycle, makeCtx(), "test-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn,
+    });
+    expect(validateCalled).toBe(false);
+    expect(r.exitReason).toBe("agent-gave-up");
   });
 });
 

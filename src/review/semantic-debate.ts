@@ -68,6 +68,12 @@ export interface SemanticDebateOptions {
   productionExcludePatterns: readonly string[];
   blockingThreshold: "error" | "warning" | "info" | undefined;
   createDebateRunner: (opts: DebateRunnerOptions) => DebateRunner;
+  /**
+   * Test-file classifier from the caller's resolved patterns. Keeps a debate
+   * finding about a test file in the test lane (#1368) — debate findings, like
+   * plain semantic ones, otherwise default to `fixTarget: "source"`.
+   */
+  isTestFile?: (path: string) => boolean;
 }
 
 export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<ReviewCheckResult> {
@@ -88,6 +94,7 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
     productionExcludePatterns,
     blockingThreshold,
     createDebateRunner,
+    isTestFile,
   } = opts;
   const logger = getSafeLogger();
   // Safe: reviewDebateEnabled guard (in caller) confirms naxConfig.debate.stages.review is defined
@@ -181,11 +188,11 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
         blockingThreshold: debateThreshold,
         result: {
           passed: false,
-          findings: llmFindingsToReviewFindings(debateFindings, { source: "semantic-debate-review" }),
+          findings: llmFindingsToReviewFindings(debateFindings, { source: "semantic-debate-review", isTestFile }),
         },
         advisoryFindings:
           debateAdvisory.length > 0
-            ? llmFindingsToReviewFindings(debateAdvisory, { source: "semantic-debate-review" })
+            ? llmFindingsToReviewFindings(debateAdvisory, { source: "semantic-debate-review", isTestFile })
             : undefined,
       });
       return {
@@ -195,8 +202,8 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
         exitCode: 1,
         output: `Semantic review failed:\n\n${formatFindings(debateBlocking)}`,
         durationMs,
-        findings: toReviewFindings(debateBlocking),
-        advisoryFindings: debateAdvisory.length > 0 ? toReviewFindings(debateAdvisory) : undefined,
+        findings: toReviewFindings(debateBlocking, { isTestFile }),
+        advisoryFindings: debateAdvisory.length > 0 ? toReviewFindings(debateAdvisory, { isTestFile }) : undefined,
         cost: debateCost,
       };
     }
@@ -215,11 +222,11 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
       blockingThreshold: debateThreshold,
       result: {
         passed: true,
-        findings: llmFindingsToReviewFindings(debateFindings, { source: "semantic-debate-review" }),
+        findings: llmFindingsToReviewFindings(debateFindings, { source: "semantic-debate-review", isTestFile }),
       },
       advisoryFindings:
         debateAdvisory.length > 0
-          ? llmFindingsToReviewFindings(debateAdvisory, { source: "semantic-debate-review" })
+          ? llmFindingsToReviewFindings(debateAdvisory, { source: "semantic-debate-review", isTestFile })
           : undefined,
     });
     return {
@@ -229,7 +236,7 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
       exitCode: 0,
       output: "Semantic review passed (debate, all findings were advisory — below blocking threshold)",
       durationMs,
-      advisoryFindings: debateAdvisory.length > 0 ? toReviewFindings(debateAdvisory) : undefined,
+      advisoryFindings: debateAdvisory.length > 0 ? toReviewFindings(debateAdvisory, { isTestFile }) : undefined,
       cost: debateCost,
     };
   }
@@ -244,11 +251,11 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
     blockingThreshold: debateThreshold,
     result: {
       passed: true,
-      findings: llmFindingsToReviewFindings(debateFindings, { source: "semantic-debate-review" }),
+      findings: llmFindingsToReviewFindings(debateFindings, { source: "semantic-debate-review", isTestFile }),
     },
     advisoryFindings:
       debateAdvisory.length > 0
-        ? llmFindingsToReviewFindings(debateAdvisory, { source: "semantic-debate-review" })
+        ? llmFindingsToReviewFindings(debateAdvisory, { source: "semantic-debate-review", isTestFile })
         : undefined,
   });
   return {
@@ -258,7 +265,7 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
     exitCode: 0,
     output: "Semantic review passed",
     durationMs,
-    advisoryFindings: debateAdvisory.length > 0 ? toReviewFindings(debateAdvisory) : undefined,
+    advisoryFindings: debateAdvisory.length > 0 ? toReviewFindings(debateAdvisory, { isTestFile }) : undefined,
     cost: debateCost,
   };
 }

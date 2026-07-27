@@ -14,6 +14,9 @@ import type { ReviewAuditEntry } from "@/runtime";
 
 const { writeReviewAudit } = _adversarialDeps;
 
+/** Stand-in for a `resolveTestFilePatterns`-derived classifier (ADR-009 SSOT). */
+const isTestFile = (path: string) => /\.(test|spec)\.tsx?$/.test(path);
+
 function makeAdversarialFinding(overrides: Partial<AdversarialLLMFinding> = {}): AdversarialLLMFinding {
   return {
     severity: "error",
@@ -67,6 +70,42 @@ describe("converter parity for fixTarget", () => {
     const audit = llmFindingsToReviewFindings([finding], { source: "adversarial-review" });
     expect(cycle[0].fixTarget).toBe(audit[0].fixTarget);
     expect(cycle[0].fixTarget).toBe("source");
+  });
+
+  test("both converters apply the test-path override identically (#1368)", () => {
+    const finding = makeAdversarialFinding({ category: "abandonment", file: "test/app.module.spec.ts" });
+    const cycle = toAdversarialReviewFindings([finding], { isTestFile });
+    const audit = llmFindingsToReviewFindings([finding], { source: "adversarial-review", isTestFile });
+    expect(cycle[0].fixTarget).toBe(audit[0].fixTarget);
+    expect(cycle[0].fixTarget).toBe("test");
+  });
+});
+
+describe("test-path override — a blocking category in a test file goes to the test lane (#1368)", () => {
+  test("toAdversarialReviewFindings routes a test-file abandonment finding to the test lane", () => {
+    // The redis-seams US-002 regression: a TestingModule-leak finding in a spec
+    // file was tagged `source` and handed to the implementer, which cannot edit
+    // tests and answered UNRESOLVED.
+    const result = toAdversarialReviewFindings(
+      [makeAdversarialFinding({ category: "abandonment", file: "test/app.module.redis-seams.spec.ts" })],
+      { isTestFile },
+    );
+    expect(result[0].fixTarget).toBe("test");
+  });
+
+  test("a source-file abandonment finding still routes to the implementer", () => {
+    const result = toAdversarialReviewFindings(
+      [makeAdversarialFinding({ category: "abandonment", file: "src/app.module.ts" })],
+      { isTestFile },
+    );
+    expect(result[0].fixTarget).toBe("source");
+  });
+
+  test("without a classifier the pre-#1368 category-only behaviour is preserved", () => {
+    const result = toAdversarialReviewFindings([
+      makeAdversarialFinding({ category: "abandonment", file: "test/app.module.spec.ts" }),
+    ]);
+    expect(result[0].fixTarget).toBe("source");
   });
 });
 

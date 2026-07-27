@@ -19,6 +19,7 @@ export * from "./runner";
 export * from "./requote-response";
 export * from "./severity";
 export { validateLLMShape } from "./semantic-helpers";
-export { categoryToFixTarget } from "./category-fix-target";
+export { categoryToFixTarget, resolveFixTarget } from "./category-fix-target";
+export type { ResolveFixTargetArgs } from "./category-fix-target";
 // Promoted from finding-filters: not re-exported by adversarial.ts (verify if that changes)
 export { hasInspectionTrail, substantiateAdversarialFindings } from "./finding-filters";

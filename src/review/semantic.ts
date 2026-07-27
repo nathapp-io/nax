@@ -83,6 +83,11 @@ export interface RunSemanticReviewOptions {
   projectDir?: string;
   naxIgnoreIndex?: NaxIgnoreIndex;
   runtime?: import("../runtime").NaxRuntime;
+  /**
+   * Resolved test-file patterns (ADR-009 SSOT) — keeps a finding about a test
+   * file in the test lane (#1368). Mirrors `runAdversarialReview`.
+   */
+  resolvedTestPatterns?: import("../test-runners").ResolvedTestPatterns;
 }
 
 /**
@@ -104,9 +109,16 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     projectDir,
     naxIgnoreIndex,
     runtime,
+    resolvedTestPatterns,
   } = opts;
   const startTime = Date.now();
   const logger = getSafeLogger();
+  // #1368 — a semantic finding about a test file stays in the test lane. Semantic
+  // findings otherwise default to `fixTarget: "source"`, which hands them to an
+  // implementer that may not edit test files. Matches nothing when patterns are
+  // absent, preserving the pre-#1368 lane.
+  const testFilePatterns = resolvedTestPatterns?.regex ?? [];
+  const testFileMatch = (file: string): boolean => testFilePatterns.some((re) => re.test(file));
 
   if (featureName === undefined) {
     logger?.debug("semantic", "featureName missing — semantic session name will not include feature", {
@@ -260,6 +272,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       prompt,
       productionExcludePatterns: excludePatterns,
       blockingThreshold,
+      isTestFile: testFileMatch,
       createDebateRunner: _semanticDeps.createDebateRunner,
     });
   }
@@ -444,11 +457,11 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       blockingThreshold: threshold,
       result: {
         passed: false,
-        findings: llmFindingsToReviewFindings(allFindings, { source: "semantic-review" }),
+        findings: llmFindingsToReviewFindings(allFindings, { source: "semantic-review", isTestFile: testFileMatch }),
       },
       advisoryFindings:
         advisoryFindings.length > 0
-          ? llmFindingsToReviewFindings(advisoryFindings, { source: "semantic-review" })
+          ? llmFindingsToReviewFindings(advisoryFindings, { source: "semantic-review", isTestFile: testFileMatch })
           : undefined,
     });
     return {
@@ -458,8 +471,9 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       exitCode: 1,
       output,
       durationMs,
-      findings: toReviewFindings(blockingFindings),
-      advisoryFindings: advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings) : undefined,
+      findings: toReviewFindings(blockingFindings, { isTestFile: testFileMatch }),
+      advisoryFindings:
+        advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings, { isTestFile: testFileMatch }) : undefined,
       cost: llmCost,
     };
   }
@@ -482,7 +496,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       result: { passed: false, findings: [] },
       advisoryFindings:
         advisoryFindings.length > 0
-          ? llmFindingsToReviewFindings(advisoryFindings, { source: "semantic-review" })
+          ? llmFindingsToReviewFindings(advisoryFindings, { source: "semantic-review", isTestFile: testFileMatch })
           : undefined,
     });
     return {
@@ -493,7 +507,8 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       output:
         'Semantic review failed: blocking finding(s) were dropped — acIndex was missing or out of range. The model emitted "passed: false" without valid AC attribution.',
       durationMs,
-      advisoryFindings: advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings) : undefined,
+      advisoryFindings:
+        advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings, { isTestFile: testFileMatch }) : undefined,
       cost: llmCost,
     };
   }
@@ -512,11 +527,11 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     blockingThreshold: threshold,
     result: {
       passed: true,
-      findings: llmFindingsToReviewFindings(allFindings, { source: "semantic-review" }),
+      findings: llmFindingsToReviewFindings(allFindings, { source: "semantic-review", isTestFile: testFileMatch }),
     },
     advisoryFindings:
       advisoryFindings.length > 0
-        ? llmFindingsToReviewFindings(advisoryFindings, { source: "semantic-review" })
+        ? llmFindingsToReviewFindings(advisoryFindings, { source: "semantic-review", isTestFile: testFileMatch })
         : undefined,
   });
   return {
@@ -529,7 +544,8 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
         ? "Semantic review passed"
         : "Semantic review passed (all findings were advisory — below blocking threshold)",
     durationMs,
-    advisoryFindings: advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings) : undefined,
+    advisoryFindings:
+      advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings, { isTestFile: testFileMatch }) : undefined,
     cost: llmCost,
   };
 }

@@ -98,6 +98,9 @@ export async function refreshReviewInputForDispatch(opName: string, input: unkno
         diff: fresh.diff,
         excludePatterns: fresh.excludePatterns,
         storyGitRef: fresh.effectiveRef ?? semInput.storyGitRef,
+        // Mirrors the adversarial branch below — the op needs the patterns to keep
+        // findings about test files in the test lane (#1368).
+        resolvedTestPatterns: _refresh.resolvedTestPatterns,
       };
     }
     const { _refresh: __, ...advInput } = input as AdversarialReviewInput;
