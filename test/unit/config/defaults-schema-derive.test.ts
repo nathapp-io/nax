@@ -50,9 +50,6 @@ describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
       expect(DEFAULT_CONFIG.execution.rectification.maxAttemptsPerStrategy).toBe(3);
     });
 
-    test("DEFAULT_CONFIG.quality.requireTypecheck === true", () => {
-      expect(DEFAULT_CONFIG.quality.requireTypecheck).toBe(true);
-    });
   });
 
   describe("NaxConfigSchema.parse({}) produces DEFAULT_CONFIG", () => {
@@ -66,10 +63,6 @@ describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
       expect(parsed.execution.rectification.maxAttemptsTotal).toBe(12);
     });
 
-    test("schema parse returns object with same requireTypecheck", () => {
-      const parsed = NaxConfigSchema.parse({});
-      expect(parsed.quality.requireTypecheck).toBe(true);
-    });
 
     test("schema parse produces NaxConfig type", () => {
       const parsed = NaxConfigSchema.parse({});

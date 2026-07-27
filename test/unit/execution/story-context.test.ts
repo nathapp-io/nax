@@ -42,7 +42,7 @@ function makeConfig() {
     autoMode: { defaultAgent: "claude" },
     execution: { sessionTimeoutSeconds: 30, verificationTimeoutSeconds: 60 },
     models: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
-    quality: { requireTests: false, commands: {} },
+    quality: { commands: {} },
     context: { testCoverage: { enabled: false } },
   });
 }

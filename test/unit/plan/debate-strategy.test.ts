@@ -8,7 +8,7 @@ import type { InteractionBridge } from "@/interaction/bridge-builder";
 import type { NaxRuntime } from "@/runtime";
 import type { PRD } from "@/prd/types";
 import { PlanPromptBuilder } from "@/prompts";
-import { makeMockAgentManager, verbatimWarn, withWarnSpy } from "@test/helpers";
+import { makeMockAgentManager } from "@test/helpers";
 
 const MOCK_FULL_CONFIG = {} as never;
 
@@ -199,35 +199,6 @@ describe("DebatePlanStrategy", () => {
   });
 
   // Debate parity (#1160 follow-up): the synthesis path has no op verify, so the
-  // strategy must warn directly when synthesis drops a [verbatim] spec AC.
-  test("warns when the synthesis PRD drops a [verbatim] spec AC", async () => {
-    const runPlanMock = mock(async () => ({ outcome: "passed", output: JSON.stringify(SAMPLE_PRD) }));
-    const ctx = makeContext({
-      specContent: '- [verbatim] `grep -rn "gone" src/` returns zero matches',
-      deps: makeDeps({ createDebateRunner: mock(() => ({ runPlan: runPlanMock })) }),
-    });
-
-    await withWarnSpy(async (warnSpy) => {
-      await new DebatePlanStrategy().execute(ctx);
-      const warn = verbatimWarn(warnSpy);
-      expect(warn).toBeDefined();
-      expect((warn?.[2] as { missingCount: number }).missingCount).toBe(1);
-    });
-  });
-
-  test("does not warn when the synthesis PRD preserves the [verbatim] spec AC", async () => {
-    const runPlanMock = mock(async () => ({ outcome: "passed", output: JSON.stringify(SAMPLE_PRD) }));
-    const ctx = makeContext({
-      // SAMPLE_PRD's only AC is "The plan is produced" — match it verbatim.
-      specContent: "- [verbatim] The plan is produced",
-      deps: makeDeps({ createDebateRunner: mock(() => ({ runPlan: runPlanMock })) }),
-    });
-
-    await withWarnSpy(async (warnSpy) => {
-      await new DebatePlanStrategy().execute(ctx);
-      expect(verbatimWarn(warnSpy)).toBeUndefined();
-    });
-  });
 
   test("falls back to callOp with planInteractiveOp and persists via writeOrRecoverPrd when runPlan fails", async () => {
     const fallbackPrd = SAMPLE_PRD;

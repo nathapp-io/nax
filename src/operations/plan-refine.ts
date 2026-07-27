@@ -6,7 +6,7 @@ import type { ProjectProfile } from "../config/runtime-types";
 import type { PlanConfig } from "../config/selectors";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
-import { findMissingOutOfScope, findMissingVerbatimAcs, findSpecDriftViolations, getExpectedFiles } from "../prd";
+import { findMissingOutOfScope, findSpecDriftViolations, getExpectedFiles } from "../prd";
 import { validatePlanOutput } from "../prd/schema";
 import type { SpecDriftViolation } from "../prd/spec-drift";
 import type { ContextFileEntry, PRD } from "../prd/types";
@@ -15,9 +15,9 @@ import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
 import type { SessionRole } from "../session/types";
 import { errorMessage } from "../utils/errors";
+import { backfillOutOfScope, warnOnSpecDrift } from "./plan-fidelity";
 import { type SelfHealStep, makeSelfHealStep, runSelfHealChain } from "./self-heal";
 import type { RunOperation } from "./types";
-import { backfillOutOfScope, warnOnDroppedVerbatimAcs, warnOnSpecDrift } from "./verbatim-warn";
 
 /** Injectable I/O for the hopBody self-heal step (testable without disk). */
 export const _planRefineDeps = {
@@ -125,29 +125,6 @@ function validateRefinedPrd(prd: PRD): PRD {
   }
   for (const story of prd.userStories) validateRefinedStory(story);
   return prd;
-}
-
-/**
- * Read the PRD the refine turn wrote to disk and return the `[verbatim]` spec
- * ACs it dropped. Returns `[]` when the file is absent or unparseable — those
- * cases are handled by the normal parse / recover / verify path, not the
- * self-heal turn.
- */
-async function readMissingVerbatimAcs(input: PlanRefineInput): Promise<string[]> {
-  const content = await _planRefineDeps.readFile(input.outputPath);
-  if (!content) return [];
-  try {
-    const prd = validatePlanOutput(content, input.featureName, input.branchName);
-    return findMissingVerbatimAcs(input.specContent, prd);
-  } catch {
-    // Draft unparseable here — let the normal parse / recover / verify path own
-    // it. Skipping the self-heal turn just means `verify` will emit the residual
-    // warning later instead of this turn fixing it.
-    getSafeLogger()?.debug("plan", "Skipped [verbatim] self-heal — draft PRD not yet parseable", {
-      featureName: input.featureName,
-    });
-    return [];
-  }
 }
 
 /**
@@ -302,19 +279,6 @@ export async function normalizeCreatedContextFiles(
   return { ...prd, userStories: results.map((r) => r.story) };
 }
 
-/** `[verbatim]` fidelity self-heal — restores spec ACs the refine turn dropped. */
-function verbatimSelfHealStep(builder: PlanPromptBuilder): SelfHealStep<PlanRefineInput> {
-  return makeSelfHealStep<PlanRefineInput, string>({
-    detect: (input) => readMissingVerbatimAcs(input),
-    buildRepair: (missing, input) => builder.buildVerbatimRepair(missing, input.outputPath),
-    log: {
-      kind: "plan",
-      message: "Refine dropped [verbatim] spec ACs — issuing one repair turn",
-      meta: (input, missing) => ({ featureName: input.featureName, missingCount: missing.length }),
-    },
-  });
-}
-
 /**
  * Read the PRD the refine turn wrote to disk and return the spec's out-of-scope
  * statements it dropped. Returns `[]` when the file is absent or unparseable —
@@ -424,11 +388,10 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
       estimatedCostUsd: (turn1.estimatedCostUsd ?? 0) + (turn2.estimatedCostUsd ?? 0),
     };
 
-    // Deterministic same-session self-heal: [verbatim] fidelity always; spec-drift
-    // only under specGuard. Each step issues at most one corrective turn; `verify`
+    // Deterministic same-session self-heal: out-of-scope always; spec-drift only
+    // under specGuard. Each step issues at most one corrective turn; `verify`
     // re-runs the same checks and warns if a repair still misses (the plan continues).
     const steps: SelfHealStep<PlanRefineInput>[] = [
-      verbatimSelfHealStep(builder),
       outOfScopeSelfHealStep(builder),
       ...(specGuard ? [specDriftSelfHealStep(builder)] : []),
     ];
@@ -439,7 +402,6 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
   },
   verify: async (parsed, input, ctx) => {
     const validated = validateRefinedPrd(parsed);
-    warnOnDroppedVerbatimAcs(validated, input.specContent, input.featureName);
     if (ctx.config.plan.specGuard) {
       warnOnSpecDrift(validated, input.featureName);
     }

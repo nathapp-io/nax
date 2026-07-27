@@ -44,8 +44,6 @@ const createMockConfig = (cwd: string, overrides: Partial<ExecutionConfig> = {})
   },
   quality: {
     minTestCoverage: 80,
-    requireTypecheck: true,
-    requireLint: true,
   },
   tdd: {
     strategy: "auto",

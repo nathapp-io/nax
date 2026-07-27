@@ -28,7 +28,6 @@ function makeBaseConfig(overrides?: Partial<NaxConfig>): NaxConfig {
     ...DEFAULT_CONFIG,
     quality: {
       ...DEFAULT_CONFIG.quality,
-      requireTests: true,
       commands: { test: "bun test" },
     },
     ...overrides,
@@ -126,14 +125,14 @@ describe("mergePackageConfig integration", () => {
     expect(result.execution.regressionGate.enabled).toBe(true); // preserved
   });
 
-  test("package override with quality.requireTests=false → requireTests changed", () => {
+  test("package override with quality.commands.test → command changed", () => {
     const root = makeBaseConfig();
     const result = mergePackageConfig(root, {
-      quality: { requireTests: false } as Partial<NaxConfig["quality"]>,
+      quality: { commands: { test: "go test ./..." } } as Partial<NaxConfig["quality"]>,
     } as Partial<NaxConfig>);
 
-    expect(result.quality.requireTests).toBe(false);
-    expect(root.quality.requireTests).toBe(true); // root unchanged
+    expect(result.quality.commands.test).toBe("go test ./...");
+    expect(root.quality.commands.test).toBe("bun test"); // root unchanged
   });
 });
 

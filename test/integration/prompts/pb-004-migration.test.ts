@@ -75,9 +75,6 @@ function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
       contextProviderTokenBudget: 2000,
     },
     quality: {
-      requireTypecheck: true,
-      requireLint: true,
-      requireTests: true,
       commands: {},
       forceExit: false,
       detectOpenHandles: true,

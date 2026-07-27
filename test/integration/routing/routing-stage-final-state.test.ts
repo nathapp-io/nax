@@ -105,9 +105,6 @@ function createTestContext(workdir: string, overrides?: Partial<PipelineContext>
       },
     },
     quality: {
-      requireTypecheck: false,
-      requireLint: false,
-      requireTests: true,
       commands: {},
       forceExit: false,
       detectOpenHandles: true,

@@ -155,9 +155,6 @@ export const NaxConfigSchema = z
       },
     } as unknown as Parameters<typeof ExecutionConfigSchema.default>[0]),
     quality: QualityConfigSchema.default({
-      requireTypecheck: true,
-      requireLint: true,
-      requireTests: true,
       scopeTestThreshold: 10,
       commands: {},
       lintOutput: {

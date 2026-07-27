@@ -118,9 +118,6 @@ function createTestContext(
       },
     },
     quality: {
-      requireTypecheck: false,
-      requireLint: false,
-      requireTests: true,
       commands: {},
       forceExit: false,
       detectOpenHandles: true,

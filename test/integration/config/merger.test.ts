@@ -314,9 +314,6 @@ describe("config/merger", () => {
     test("handles removal of nested config keys", () => {
       const base = {
         quality: {
-          requireTypecheck: true,
-          requireLint: true,
-          requireTests: true,
           commands: {
             typecheck: "tsc --noEmit",
             lint: "biome check",

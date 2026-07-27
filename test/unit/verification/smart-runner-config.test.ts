@@ -45,9 +45,6 @@ describe("SmartTestRunner config coercion", () => {
         smartTestRunner,
       },
       quality: {
-        requireTypecheck: false,
-        requireLint: false,
-        requireTests: false,
         commands: {},
         forceExit: false,
         detectOpenHandles: false,

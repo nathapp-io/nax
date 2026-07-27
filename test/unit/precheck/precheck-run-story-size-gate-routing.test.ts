@@ -92,9 +92,6 @@ function makeConfig(action: "block" | "warn" | "skip") {
       contextProviderTokenBudget: 2000,
     },
     quality: {
-      requireTypecheck: false,
-      requireLint: false,
-      requireTests: false,
       commands: {},
       forceExit: false,
       detectOpenHandles: false,

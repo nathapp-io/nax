@@ -104,9 +104,6 @@
     }
   },
   "quality": {
-    "requireTypecheck": true,
-    "requireLint": true,
-    "requireTests": true,
     "commands": {
       "test": "bun run test",
       "typecheck": "bun run typecheck",

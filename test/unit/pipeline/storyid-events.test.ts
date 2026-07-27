@@ -63,12 +63,11 @@ const mockStory: UserStory = {
  * Build a minimal PipelineContext with configurable quality overrides.
  */
 function makeCtx(
-  qualityOverrides: Partial<{ requireTests: boolean; testCommand: string | undefined }> = {},
+  qualityOverrides: Partial<{ testCommand: string | undefined }> = {},
 ): PipelineContext {
-  const { requireTests = false, testCommand = undefined } = qualityOverrides;
+  const { testCommand = undefined } = qualityOverrides;
   const config = makeNaxConfig({
       quality: {
-        requireTests,
         commands: { test: testCommand },
       },
       review: undefined,

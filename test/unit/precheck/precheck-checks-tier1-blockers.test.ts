@@ -56,8 +56,6 @@ const createMockConfig = (overrides: Partial<ExecutionConfig> = {}): NaxConfig =
   },
   quality: {
     minTestCoverage: 80,
-    requireTypecheck: true,
-    requireLint: true,
   },
   tdd: {
     strategy: "auto",

@@ -1,17 +1,17 @@
 /**
- * Shared spy helpers for the `[verbatim]` spec-AC drift warning emitted by
- * `warnOnDroppedVerbatimAcs` (src/operations/verbatim-warn.ts). All three plan
- * modes (single / refine / debate) emit the same `logger.warn("plan", "[verbatim] …")`
- * signal, so their tests assert against it identically.
+ * Shared spy helper for drift warnings emitted by the plan ops
+ * (src/operations/plan-fidelity.ts). All three plan modes
+ * (single / refine / debate) emit theirs through `logger.warn("plan", …)`, so
+ * their tests assert against it identically.
  *
  * Usage:
  *
  * ```ts
- * import { withWarnSpy, verbatimWarn } from "../../helpers";
+ * import { withWarnSpy } from "../../helpers";
  *
  * await withWarnSpy(async (warnSpy) => {
  *   await runThePlanPath();
- *   const warn = verbatimWarn(warnSpy);
+ *   const warn = warnSpy.mock.calls.find((c) => c[0] === "plan");
  *   expect(warn).toBeDefined();
  *   expect((warn?.[2] as { missingCount: number }).missingCount).toBe(1);
  * });
@@ -39,11 +39,3 @@ export async function withWarnSpy<T>(fn: (warnSpy: WarnSpy) => Promise<T>): Prom
   }
 }
 
-/**
- * The first `logger.warn` call on the `"plan"` channel whose message mentions
- * `[verbatim]`, or `undefined` if none fired. The returned tuple is
- * `[channel, message, data]`.
- */
-export function verbatimWarn(warnSpy: WarnSpy) {
-  return warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("[verbatim]"));
-}

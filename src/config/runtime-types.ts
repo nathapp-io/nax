@@ -163,12 +163,6 @@ export type { FlakeDetectionConfig, MutationCheckConfig } from "./runtime-types-
 
 /** Quality gate config */
 export interface QualityConfig {
-  /** Require typecheck to pass */
-  requireTypecheck: boolean;
-  /** Require lint to pass */
-  requireLint: boolean;
-  /** Require tests to pass */
-  requireTests: boolean;
   /** Threshold for scoped test strategy — when changed source files exceed this count, fall back to full suite */
   scopeTestThreshold?: number;
   /** Custom quality commands */

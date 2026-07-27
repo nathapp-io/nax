@@ -18,8 +18,8 @@
  *
  * ## Matching semantics
  *
- * Out-of-scope items are prose, not executable assertions, so — unlike
- * `[verbatim]` ACs — a planner is allowed to expand an item ("no Ink TUI" →
+ * Out-of-scope items are prose, not executable assertions, so a planner is
+ * allowed to expand an item ("no Ink TUI" →
  * "no Ink TUI; deferred to arc 3"). An item counts as preserved when its
  * canonical form (whitespace collapsed, backticks stripped, lowercased) is a
  * contiguous substring of a single PRD entry. Anything else is treated as

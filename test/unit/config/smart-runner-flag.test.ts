@@ -76,9 +76,6 @@ describe("execution.smartTestRunner config flag", () => {
         // smartTestRunner intentionally omitted
       },
       quality: {
-        requireTypecheck: true,
-        requireLint: true,
-        requireTests: true,
         commands: {},
         forceExit: false,
         detectOpenHandles: true,
@@ -224,9 +221,6 @@ function buildMinimalConfig() {
       contextProviderTokenBudget: 100,
     },
     quality: {
-      requireTypecheck: true,
-      requireLint: true,
-      requireTests: true,
       commands: {},
       forceExit: false,
       detectOpenHandles: true,
