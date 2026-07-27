@@ -298,10 +298,13 @@ describe("AC5 — fail-timeout retry emits { kind: 'timeout-retry', attempt: N }
     expect(hopKinds[1]).toEqual({ kind: "timeout-retry", attempt: 1 });
   });
 
-  test("boundary: timeout-retry attempts increment by 1 on each retry", async () => {
-    // With maxAttempts=2, a single primary timeout yields a 1st timeout-retry
-    // (attempt=1). The test terminates without dispatching further retries so
-    // we don't need a 3rd stub call. This is the "attempt counter" lock-in.
+  test("boundary: timeout-retry attempts increment by 1 on each retry (maxAttempts=2)", async () => {
+    // With maxAttempts=2, a primary fail-timeout dispatches a 1st timeout-retry
+    // (attempt=1); when that retry also fails, a 2nd timeout-retry fires
+    // (attempt=2); when that retry also fails, runWithFallback returns the
+    // terminal failure. The test must assert each retry is tagged with its
+    // own monotonic attempt — a regression that mis-tagged every retry with
+    // attempt=1 must NOT pass.
     const config = makeNaxConfig({
       agent: {
         default: "claude",
@@ -311,23 +314,24 @@ describe("AC5 — fail-timeout retry emits { kind: 'timeout-retry', attempt: N }
     });
     const manager = new AgentManager(config);
 
-    const seenAttempts: number[] = [];
+    const seenTimeoutRetry: HopKind[] = [];
     let calls = 0;
     await manager.runWithFallback({
       runOptions: { ...STUB_RUN_OPTIONS, timeoutSeconds: 60 },
       bundle: STUB_BUNDLE,
       executeHop: async (_agent, _bundle, hopKind) => {
         calls++;
-        if (hopKind.kind === "timeout-retry") seenAttempts.push(hopKind.attempt);
+        if (hopKind.kind === "timeout-retry") seenTimeoutRetry.push(hopKind);
         return { result: makeFailResult(failTimeoutRetryable), bundle: _bundle };
       },
     });
 
-    // Primary failed → 1st timeout-retry fires (attempt=1) → that retry also
-    // times out → 2nd timeout-retry would fire (attempt=2) but `calls` is
-    // bounded by maxAttempts+1=3. We capture at least the first attempt=1.
+    // 1 primary + 2 timeout-retries = 3 hops total.
     expect(calls).toBe(3);
-    expect(seenAttempts[0]).toBe(1);
+    // Both retries must be present, with distinct attempt counters.
+    expect(seenTimeoutRetry).toHaveLength(2);
+    expect(seenTimeoutRetry[0]).toEqual({ kind: "timeout-retry", attempt: 1 });
+    expect(seenTimeoutRetry[1]).toEqual({ kind: "timeout-retry", attempt: 2 });
   });
 });
 
