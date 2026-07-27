@@ -50,9 +50,6 @@ const baseConfig = {
     },
   },
   quality: {
-    requireTypecheck: false,
-    requireLint: false,
-    requireTests: false,
     commands: {},
   },
   tdd: { maxRetries: 1, autoVerifyIsolation: false, autoApproveVerifier: false },

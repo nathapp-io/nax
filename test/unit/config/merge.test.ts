@@ -301,22 +301,6 @@ describe("mergePackageConfig", () => {
     });
   });
 
-  describe("quality boolean flag overrides", () => {
-    test.each(["requireTests", "requireTypecheck", "requireLint"] as const)(
-      "overrides quality.%s per package",
-      (field) => {
-        const root: NaxConfig = {
-          ...makeRoot(),
-          quality: { ...DEFAULT_CONFIG.quality, [field]: true, commands: {} as NaxConfig["quality"]["commands"] },
-        };
-        const result = mergePackageConfig(root, {
-          quality: { [field]: false } as Partial<NaxConfig["quality"]>,
-        } as Partial<NaxConfig>);
-        expect(result.quality[field]).toBe(false);
-      },
-    );
-  });
-
   describe("context.testCoverage deep merge", () => {
     test("deep merges per package; preserves when not overridden", () => {
       const tcConfig = { enabled: true, detail: "names-and-counts" as const, maxTokens: 500, testPattern: "**/*.test.ts", scopeToStory: true };
@@ -372,11 +356,11 @@ describe("mergePackageConfig — project field (US-001)", () => {
   // AC-6: no project in packageOverride → root.project unchanged; immutability
   test("AC-6: returns unchanged root.project when no override; undefined when neither; does not mutate", () => {
     const rootWithProject = makeRootWithProject();
-    const result = mergePackageConfig(rootWithProject, { quality: { requireTests: false } as Partial<NaxConfig["quality"]> } as Partial<NaxConfig>);
+    const result = mergePackageConfig(rootWithProject, { quality: { scopeTestThreshold: 99 } as Partial<NaxConfig["quality"]> } as Partial<NaxConfig>);
     expect(result.project).toEqual(rootWithProject.project);
 
     const rootNoProject = makeRoot();
-    const resultNoProject = mergePackageConfig(rootNoProject, { quality: { requireTests: false } as Partial<NaxConfig["quality"]> } as Partial<NaxConfig>);
+    const resultNoProject = mergePackageConfig(rootNoProject, { quality: { scopeTestThreshold: 99 } as Partial<NaxConfig["quality"]> } as Partial<NaxConfig>);
     expect(resultNoProject.project).toBeUndefined();
 
     const rootMut = makeRootWithProject();
@@ -393,7 +377,7 @@ describe("mergePackageConfig — project field (US-001)", () => {
 describe("mergePackageConfig — AC-59 context.v2.stages budget overrides", () => {
   test("root context.v2.stages preserved when no override; package override sets a stage budget; does not mutate", () => {
     const root = makeRoot();
-    expect(mergePackageConfig(root, { quality: { requireTests: false } } as Partial<NaxConfig>).context.v2.stages).toEqual({});
+    expect(mergePackageConfig(root, { quality: { scopeTestThreshold: 99 } } as Partial<NaxConfig>).context.v2.stages).toEqual({});
     const result = mergePackageConfig(root, {
       context: { v2: { stages: { execution: { budgetTokens: 15_000 } } } } as unknown as Partial<NaxConfig["context"]>,
     } as Partial<NaxConfig>);

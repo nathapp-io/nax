@@ -205,9 +205,6 @@ export const ExecutionConfigSchema = z.object({
 });
 
 export const QualityConfigSchema = z.object({
-  requireTypecheck: z.boolean().default(true),
-  requireLint: z.boolean().default(true),
-  requireTests: z.boolean().default(true),
   scopeTestThreshold: z.number().int().min(0).default(10),
   commands: z
     .object({

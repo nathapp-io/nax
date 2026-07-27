@@ -95,9 +95,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
 
   // Quality
   quality: "Quality gate configuration",
-  "quality.requireTypecheck": "Require typecheck to pass",
-  "quality.requireLint": "Require lint to pass",
-  "quality.requireTests": "Require tests to pass",
   "quality.commands": "Custom quality commands",
   "quality.commands.typecheck": "Custom typecheck command",
   "quality.commands.lint": "Custom lint command",

@@ -49,7 +49,7 @@ const createConfig = (workdir: string): NaxConfig =>
       complexityRouting: {},
       escalation: { enabled: false, tierOrder: [] },
     },
-    quality: { minTestCoverage: 80, requireTypecheck: true, requireLint: true },
+    quality: { minTestCoverage: 80 },
     tdd: { strategy: "auto", skipGeneratedVerificationTests: false },
     models: {},
     rectification: {

@@ -48,9 +48,6 @@ const mockConfig: NaxConfig = {
     strategy: "keyword" as const,
   },
   quality: {
-    requireTypecheck: false,
-    requireLint: false,
-    requireTests: false,
     commands: {},
   },
   tdd: {

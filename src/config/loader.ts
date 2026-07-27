@@ -9,6 +9,12 @@ import { basename, dirname, join, resolve } from "node:path";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { loadJsonFile } from "../utils/json-file";
+import {
+  rejectDeadQualityFlags,
+  rejectLegacyAgentKeys,
+  rejectLegacyRectificationKeys,
+  rejectUnimplementedScopedProfile,
+} from "./config-guards";
 import { mergePackageConfig } from "./merge";
 import { deepMergeConfig } from "./merger";
 import { migrateLegacyReviewModelKey, migrateLegacyTestPattern } from "./migrations";
@@ -60,139 +66,6 @@ function applyRemovedStrategyCompat(conf: Record<string, unknown>): Record<strin
     return { ...conf, routing: { ...routing, strategy: "keyword" } };
   }
   return conf;
-}
-
-/**
- * @internal ADR-012 Phase 6 — reject pre-migration agent keys with a migration pointer.
- *
- * Zod's default `.strip()` mode silently drops unknown keys, so pre-migration
- * configs containing `autoMode.defaultAgent`, `autoMode.fallbackOrder`, or
- * `context.v2.fallback` would otherwise run with the wrong default agent and
- * no fallback chain — the exact "T16.3 silent no-op" failure mode ADR-012 was
- * designed to prevent. Throw a NaxError that tells the user what to change.
- *
- * Called on the merged raw config at a single point (after defaults + global +
- * project + profile + CLI merge) so one check catches keys from any source.
- */
-function rejectLegacyAgentKeys(conf: Record<string, unknown>): void {
-  const legacyKeys: string[] = [];
-  const migrationHints: string[] = [];
-
-  const autoMode = conf.autoMode as Record<string, unknown> | undefined;
-  if (autoMode && typeof autoMode === "object") {
-    if ("defaultAgent" in autoMode) {
-      legacyKeys.push("autoMode.defaultAgent");
-      migrationHints.push("- Move `autoMode.defaultAgent` → `agent.default`");
-    }
-    if ("fallbackOrder" in autoMode) {
-      legacyKeys.push("autoMode.fallbackOrder");
-      migrationHints.push(
-        "- Move `autoMode.fallbackOrder: [primary, ...]` → `agent.fallback.map: { <primary>: [<rest>] }` and `agent.fallback.enabled: true`",
-      );
-    }
-  }
-
-  const context = conf.context as Record<string, unknown> | undefined;
-  const contextV2 = context?.v2 as Record<string, unknown> | undefined;
-  if (contextV2 && typeof contextV2 === "object" && "fallback" in contextV2) {
-    legacyKeys.push("context.v2.fallback");
-    migrationHints.push("- Move `context.v2.fallback` → `agent.fallback` (see ADR-012 Phase 6)");
-  }
-
-  if (legacyKeys.length === 0) return;
-
-  const message = [
-    `Invalid configuration — legacy agent keys detected: ${legacyKeys.join(", ")}.`,
-    "These were removed in ADR-012 Phase 6. Migrate to the canonical `agent.*` shape:",
-    ...migrationHints,
-    "See docs/adr/ADR-012-agent-manager-ownership.md for the full migration guide.",
-  ].join("\n");
-  throw new NaxError(message, "CONFIG_LEGACY_AGENT_KEYS", { stage: "config", legacyKeys });
-}
-
-/**
- * Reject the four legacy rectification-cap keys that were split across
- * `quality.autofix` and `execution.rectification` before the cycle unification.
- * Silent .strip() would mask the change and leave the cycle running with the
- * new defaults despite the user's explicit (now-orphaned) overrides.
- *
- * Migration map:
- *   quality.autofix.maxTotalAttempts           → execution.rectification.maxAttemptsTotal
- *   quality.autofix.rethinkAtAttempt           → execution.rectification.rethinkAtAttempt
- *   quality.autofix.urgencyAtAttempt           → execution.rectification.urgencyAtAttempt
- *   execution.rectification.maxRetries         → execution.rectification.maxAttemptsTotal
- *   execution.regressionGate.maxRectificationAttempts → execution.rectification.maxAttemptsTotal
- */
-function rejectLegacyRectificationKeys(conf: Record<string, unknown>): void {
-  const legacyKeys: string[] = [];
-  const migrationHints: string[] = [];
-
-  const quality = conf.quality as Record<string, unknown> | undefined;
-  const autofix = quality?.autofix as Record<string, unknown> | undefined;
-  if (autofix && typeof autofix === "object") {
-    if ("maxTotalAttempts" in autofix) {
-      legacyKeys.push("quality.autofix.maxTotalAttempts");
-      migrationHints.push("- Move `quality.autofix.maxTotalAttempts` → `execution.rectification.maxAttemptsTotal`");
-    }
-    if ("rethinkAtAttempt" in autofix) {
-      legacyKeys.push("quality.autofix.rethinkAtAttempt");
-      migrationHints.push("- Move `quality.autofix.rethinkAtAttempt` → `execution.rectification.rethinkAtAttempt`");
-    }
-    if ("urgencyAtAttempt" in autofix) {
-      legacyKeys.push("quality.autofix.urgencyAtAttempt");
-      migrationHints.push("- Move `quality.autofix.urgencyAtAttempt` → `execution.rectification.urgencyAtAttempt`");
-    }
-  }
-
-  const execution = conf.execution as Record<string, unknown> | undefined;
-  const rectification = execution?.rectification as Record<string, unknown> | undefined;
-  if (rectification && typeof rectification === "object" && "maxRetries" in rectification) {
-    legacyKeys.push("execution.rectification.maxRetries");
-    migrationHints.push(
-      "- Rename `execution.rectification.maxRetries` → `execution.rectification.maxAttemptsTotal` (default changed from 2 to 12)",
-    );
-  }
-  const regressionGate = execution?.regressionGate as Record<string, unknown> | undefined;
-  if (regressionGate && typeof regressionGate === "object" && "maxRectificationAttempts" in regressionGate) {
-    legacyKeys.push("execution.regressionGate.maxRectificationAttempts");
-    migrationHints.push(
-      "- Remove `execution.regressionGate.maxRectificationAttempts` — the regression cycle now shares `execution.rectification.maxAttemptsTotal`",
-    );
-  }
-
-  if (legacyKeys.length === 0) return;
-
-  const message = [
-    `Invalid configuration — legacy rectification-cap keys detected: ${legacyKeys.join(", ")}.`,
-    "These were consolidated under `execution.rectification.*` so one config controls the unified",
-    "fix cycle (semantic + adversarial + mechanical + regression). Migrate as follows:",
-    ...migrationHints,
-  ].join("\n");
-  throw new NaxError(message, "CONFIG_LEGACY_RECTIFICATION_KEYS", { stage: "config", legacyKeys });
-}
-
-/**
- * @internal Reject `execution.permissionProfile: "scoped"` until Phase 2 lands.
- *
- * The scoped profile is a valid enum value (Zod accepts it), but its resolver
- * (`resolveScopedPermissions`) is still a stub that silently returns "safe"
- * defaults. A user who sets `"scoped"` would believe they have per-stage tool
- * allowlists while actually running in the weaker `safe` mode — a silent
- * downgrade. Fail fast with a pointer to the tracking issue instead.
- *
- * Remove this guard when scoped permissions are implemented (GitHub #374).
- */
-function rejectUnimplementedScopedProfile(conf: Record<string, unknown>): void {
-  const execution = conf.execution as Record<string, unknown> | undefined;
-  if (execution?.permissionProfile !== "scoped") return;
-
-  const message = [
-    'Invalid configuration — execution.permissionProfile: "scoped" is not yet implemented.',
-    "The scoped (per-stage tool allowlist) profile is tracked by GitHub #374 and would",
-    'otherwise silently run as "safe", giving you weaker permissions than intended.',
-    'Use "unrestricted" or "safe" for now.',
-  ].join("\n");
-  throw new NaxError(message, "CONFIG_SCOPED_PROFILE_UNIMPLEMENTED", { stage: "config" });
 }
 
 /** @internal Backward compat: map deprecated routing.llm.batchMode to routing.llm.mode.
@@ -442,6 +315,7 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   // that were split across quality.autofix and execution.rectification before
   // unification. Same Zod-strip rationale.
   rejectLegacyRectificationKeys(rawConfig);
+  rejectDeadQualityFlags(rawConfig);
   // Fail fast on the not-yet-implemented scoped permission profile (GitHub #374)
   // rather than letting it silently degrade to "safe".
   rejectUnimplementedScopedProfile(rawConfig);
@@ -571,6 +445,7 @@ export async function loadConfigForWorkdir(
     // ADR-012 Phase 6 — legacy-key guard applies to per-package overlays too.
     rejectLegacyAgentKeys(rawMerged);
     rejectLegacyRectificationKeys(rawMerged);
+    rejectDeadQualityFlags(rawMerged);
     rejectUnimplementedScopedProfile(rawMerged);
     const result = NaxConfigSchema.safeParse(rawMerged);
     if (!result.success) {

@@ -20,7 +20,7 @@ import type { NaxConfig } from "./schema";
  *   mutationCheck (deep), verificationTimeoutSeconds
  * - review: enabled, checks, commands (deep), semantic (deep)
  * - acceptance: enabled, generateTests, testPath
- * - quality: requireTests, requireTypecheck, requireLint, commands (deep), testing (deep)
+ * - quality: commands (deep), testing (deep)
  * - context: testCoverage (deep)
  * - project: type, language, frameworks
  *
@@ -147,9 +147,6 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
     },
     quality: {
       ...root.quality,
-      requireTests: packageOverride.quality?.requireTests ?? root.quality.requireTests,
-      requireTypecheck: packageOverride.quality?.requireTypecheck ?? root.quality.requireTypecheck,
-      requireLint: packageOverride.quality?.requireLint ?? root.quality.requireLint,
       commands: {
         ...root.quality.commands,
         ...packageOverride.quality?.commands,
