@@ -1,16 +1,14 @@
 /**
- * Hop-level retry policy stubs for fail-timeout bounded retry (US-002).
+ * Hop-level retry policy for fail-timeout bounded retry (US-002).
  *
- * The implementer will populate these with the real policy:
  * - `extractTimeoutRetryConfig(config)` reads `agent.timeoutRetry.{maxAttempts,budgetMultiplier}`
  *   and fills in defaults (1, 0.5) when keys are absent.
- * - `resolveTimeoutRetryOptions(prev, config)` returns a new AgentRunOptions
- *   with `timeoutSeconds` reduced by the configured multiplier.
+ * - `resolveTimeoutRetryOptions(prev, timeoutConfig, executionConfig)` returns a new
+ *   AgentRunOptions with `timeoutSeconds` reduced by the configured multiplier. Falls back
+ *   to `execution.sessionTimeoutSeconds` when the prior hop's timeoutSeconds is unset.
  * - `timeoutRetryShouldRetry(attempts, config)` returns whether another hop may run.
- *
- * Until then, the stubs return placeholder values that fail the assertions in
- * `test/unit/agents/retry/hop-retry-policy.test.ts`, so the tests compile and
- * fail with assertion failures (not import or compile errors).
+ * - `trySameAgentRetry(result, state, deps)` consolidates fail-stale, fail-timeout,
+ *   and fail-adapter-error retry decisions into a single function.
  */
 
 import type { AgentManagerConfig } from "@/config";
@@ -104,7 +102,7 @@ export function trySameAgentRetry(
         outcome: "timeout-retry",
         timeoutRetryAttempts: newAttempts,
         kind: { kind: "timeout-retry", attempt: newAttempts },
-        currentRunOptions: resolveTimeoutRetryOptions(currentRunOptions, timeoutConfig),
+        currentRunOptions: resolveTimeoutRetryOptions(currentRunOptions, timeoutConfig, config.execution),
         fallbackRecord: {
           outcome: result.adapterFailure?.outcome ?? "fail-timeout",
           category: result.adapterFailure?.category ?? "quality",
@@ -148,9 +146,13 @@ export function extractTimeoutRetryConfig(config: Record<string, any>): TimeoutR
   };
 }
 
-export function resolveTimeoutRetryOptions(prev: AgentRunOptions, config: TimeoutRetryConfig): AgentRunOptions {
-  const budget = prev.timeoutSeconds ?? 60;
-  return { ...prev, timeoutSeconds: budget * config.budgetMultiplier };
+export function resolveTimeoutRetryOptions(
+  prev: AgentRunOptions,
+  timeoutConfig: TimeoutRetryConfig,
+  executionConfig?: { sessionTimeoutSeconds?: number },
+): AgentRunOptions {
+  const budget = prev.timeoutSeconds ?? executionConfig?.sessionTimeoutSeconds ?? 60;
+  return { ...prev, timeoutSeconds: budget * timeoutConfig.budgetMultiplier };
 }
 
 export function timeoutRetryShouldRetry(attempts: number, config: TimeoutRetryConfig): boolean {
