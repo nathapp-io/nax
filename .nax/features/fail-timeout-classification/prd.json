@@ -3,7 +3,7 @@
   "feature": "fail-timeout-classification",
   "branchName": "feat/fail-timeout-classification",
   "createdAt": "2026-07-27T00:00:00.000Z",
-  "updatedAt": "2026-07-27T10:42:15.305Z",
+  "updatedAt": "2026-07-27T11:36:27.539Z",
   "userStories": [
     {
       "id": "US-001",
@@ -85,8 +85,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -153,7 +153,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/operations/build-hop-callback.ts",
@@ -164,7 +166,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6f44123a89cb3a07d6c2542c9265e4a02c490132"
     }
   ],
   "analysis": "This is an enhancement to the ACP run-kind operation path, not a greenfield feature. `AcpAgentAdapter.sendTurn` records `timedOut` locally after `runSessionPrompt` but currently returns only extracted empty output, so the transport fact is lost (src/agents/acp/adapter.ts:435-626). `TurnResult` already carries transport output, cost, interactions, and an optional policy-level `adapterFailure` (src/agents/types.ts:444-472); add optional `timedOut` there without putting policy terminology in the adapter. `callOp` owns the run-hop body and currently synthesizes retriable availability `fail-stale` for empty effective output when no adapter failure exists (src/operations/call.ts:304-334); extract this classification into `src/operations/turn-failure-classification.ts`, preserve the fail-stale branch verbatim, and map only empty timed-out results to retriable quality `fail-timeout`. `AdapterFailure` already declares `fail-timeout` as a quality outcome (src/context/engine/types.ts:22-65).\n\n`AgentManager.runWithFallback` controls same-agent stale retries, swaps, fallback records, and terminal outcomes (src/agents/manager.ts:222-464). Its existing fail-stale branch performs immediate same-agent retries governed by `agent.idleWatchdog.maxRetryAttempts`; move that block verbatim into a focused retry-policy module before adding independent timeout attempts. The timeout retry must pass a copied per-hop `AgentRunOptions` whose `timeoutSeconds` is the preceding hop budget times `agent.timeoutRetry.budgetMultiplier`, default 0.5, and must not mark the agent unavailable: `shouldSwap` only swaps quality failures when `fallback.onQualityFailure` is opted in. Add `timeoutRetry` defaults to the Zod agent schema and its root default object (src/config/schemas-infra.ts:227-260; src/config/schemas.ts:343-355). `HopKind` currently distinguishes `primary`, session-reusing `stale-retry`, and `swap` (src/agents/manager-types.ts:13-18); add `timeout-retry` so the callback can open a fresh session.\n\n`buildHopCallback` builds prompts and opens sessions per hop (src/operations/build-hop-callback.ts:85-298). It intentionally reuses `getLiveHandle` only for `stale-retry`; timeout-retry must follow the fresh-session path, receive the reduced resolved options, and invoke an injected `timeoutRetry` prompt helper exactly once. Capture the git ref before the timed-out primary attempt, compare the working tree against it after timeout, and degrade safely if ref capture fails. Keep prompt authoring in `src/prompts/builders/rectifier-builder-helpers.ts` and re-export from `src/prompts/index.ts`; `captureGitRef` already returns `undefined` rather than throwing on git failures (src/utils/git.ts:90-98).\n\nExisting tests establish the primary seams: ACP timeout behavior is covered in `test/unit/agents/acp/adapter-phase-a.test.ts:176-190`; empty-output operation behavior is in `test/unit/operations/call.test.ts`; stale manager semantics are comprehensively covered by `test/unit/agents/fail-stale-agent-manager.test.ts`; live-session reuse is integration-tested in `test/integration/agents/stale-retry-session-reuse.test.ts:1-115`; and callback dependency substitution is covered by `test/unit/operations/build-hop-callback.test.ts`. Add or extend focused unit and integration tests in these neighborhoods. Main risks are accidentally changing fail-stale retry count/category/reason, making timeout invoke the availability swap path and poisoning the agent pool, reusing a dead session, misapplying the timeout multiplier to the original rather than next hop, and violating the file-size ratchet. Migration is additive and configuration-compatible: absent timeoutRetry settings resolve to one retry at half budget; existing idleWatchdog configuration remains the sole control for fail-stale. No baseline bump is permitted: extract net-negative code from adapter.ts, call.ts, and manager.ts into the named helpers/modules.",
