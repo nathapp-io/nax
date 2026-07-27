@@ -214,6 +214,39 @@ describe("captureWorkingTreeChanges", () => {
       expect(args).toContain("apps/api/");
     }
   });
+
+  test("does not stall when git subprocess hangs (SIGKILL after timeout)", async () => {
+    // Adversarial review: a hung git must not stall timeout-retry recovery.
+    // gitWithTimeout SIGKILLs after GIT_TIMEOUT_MS (10s). The mock simulates
+    // real Bun.spawn behaviour: proc.kill() resolves the exited promise so the
+    // await unblocks and the function returns the empty-on-failure contract.
+    let killCount = 0;
+    _gitDeps.spawn = mock((_args: unknown[], _opts: unknown) => {
+      let resolveExited: (code: number) => void = () => {};
+      const proc = {
+        stdout: new ReadableStream({ start(c) { /* never closes */ } }),
+        stderr: new ReadableStream({ start(c) { /* never closes */ } }),
+        exited: new Promise<number>((r) => {
+          resolveExited = r;
+        }),
+        kill: () => {
+          killCount++;
+          resolveExited(137); // 128 + SIGKILL(9)
+        },
+      };
+      return proc;
+    });
+
+    const start = Date.now();
+    const result = await captureWorkingTreeChanges("/tmp/repo", "abc123");
+    const elapsed = Date.now() - start;
+    // Allow generous slack for CI; GIT_TIMEOUT_MS is 10s.
+    expect(elapsed).toBeLessThan(15_000);
+    // All three git subprocesses must be killed on timeout (one per diff call).
+    expect(killCount).toBe(3);
+    // Best-effort contract: hangs degrade to empty array.
+    expect(result).toEqual([]);
+  });
 });
 
 

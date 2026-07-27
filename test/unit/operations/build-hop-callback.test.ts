@@ -546,4 +546,60 @@ describe("buildHopCallback — timeoutRetry wiring (AC6/AC7)", () => {
       _buildHopCallbackDeps.captureWorkingTreeChanges = origCaptureWorkingTreeChanges;
     }
   });
+
+  test("AC8 wiring: timeout-retry hop resolves to generic preamble when pre-attempt git ref is unavailable", async () => {
+    // Adversarial review (US-003): the pure prompt builder's degraded form is
+    // already covered in timeout-retry-builder.test.ts. This test closes the
+    // wiring-layer gap — when captureGitRef returns undefined (ref unavailable),
+    // executeHop MUST:
+    //   (a) NOT call captureWorkingTreeChanges (no diff against an absent ref)
+    //   (b) call timeoutRetry exactly once with changedFiles: []
+    //   (c) forward the composed prompt to runAsSession without throwing
+    const origCaptureGitRef = _buildHopCallbackDeps.captureGitRef;
+    const origCaptureWorkingTreeChanges = _buildHopCallbackDeps.captureWorkingTreeChanges;
+    const captureGitRefMock = mock(async (_workdir: string) => undefined as string | undefined);
+    const captureWorkingTreeChangesMock = mock(async (_workdir: string, _ref: string) => [
+      "should-not-appear.ts",
+    ]);
+    _buildHopCallbackDeps.captureGitRef = captureGitRefMock as typeof _buildHopCallbackDeps.captureGitRef;
+    _buildHopCallbackDeps.captureWorkingTreeChanges =
+      captureWorkingTreeChangesMock as typeof _buildHopCallbackDeps.captureWorkingTreeChanges;
+
+    try {
+      const agentManager = makeAgentManagerStub();
+      const sessionManager = makeSessionManager();
+      const ctx = makeCtx({ agentManager, sessionManager });
+      const baseOptions = makeBaseOptions("original prompt", ctx.config);
+      const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
+
+      // Primary hop: captureGitRef returns undefined (ref unavailable).
+      await cb("claude", makeBundle(), { kind: "primary" } satisfies HopKind, baseOptions);
+      expect(captureGitRefMock).toHaveBeenCalledTimes(1);
+
+      // Timeout-retry hop: must NOT call captureWorkingTreeChanges because
+      // the pre-attempt ref is unavailable.
+      await cb("claude", makeBundle(), { kind: "timeout-retry", attempt: 1 } satisfies HopKind, baseOptions);
+      expect(captureWorkingTreeChangesMock).not.toHaveBeenCalled();
+
+      // timeoutRetry must still be called exactly once with changedFiles: [].
+      expect(timeoutRetryMock).toHaveBeenCalledTimes(1);
+      const callArgs = (timeoutRetryMock as ReturnType<typeof mock>).mock.calls[0] as unknown as [
+        { prompt: string; changedFiles: string[]; elapsedMs: number },
+      ];
+      expect(callArgs[0].prompt).toBe("original prompt");
+      expect(callArgs[0].changedFiles).toEqual([]);
+
+      // The composed prompt is forwarded to the agent without throwing.
+      // runAsSession was called for BOTH the primary AND the timeout-retry
+      // hops (the primary openSession'd then closed; the timeout-retry did too).
+      // We need to inspect the timeout-retry hop's prompt, which is the LAST call.
+      const runAsSessionCalls = (agentManager.runAsSession as ReturnType<typeof mock>).mock.calls;
+      const lastRunCall = runAsSessionCalls[runAsSessionCalls.length - 1];
+      const promptArg = lastRunCall?.[2] as string;
+      expect(promptArg).toBe("RETRY-PROMPT-MOCK");
+    } finally {
+      _buildHopCallbackDeps.captureGitRef = origCaptureGitRef;
+      _buildHopCallbackDeps.captureWorkingTreeChanges = origCaptureWorkingTreeChanges;
+    }
+  });
 });

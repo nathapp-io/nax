@@ -316,15 +316,13 @@ export async function captureOutputFiles(
 
 /**
  * Capture ALL working-tree changes vs a pre-attempt git ref (US-003).
- *
- * Unlike captureOutputFiles (which only diffs baseRef..HEAD, i.e. committed
- * changes), this helper also picks up:
- *   - Uncommitted tracked modifications vs HEAD (`git diff --name-only HEAD`)
- *   - New untracked files (`git ls-files --others --exclude-standard`)
- *
- * Returns the deduped union of all three sources. Scopes to scopePrefix when
- * provided (same as captureOutputFiles). Returns empty array when baseRef is
- * falsy or any git subprocess fails (non-fatal).
+ * Unlike captureOutputFiles (committed range only), unions three sources:
+ *   - baseRef..HEAD committed range
+ *   - uncommitted tracked modifications vs HEAD
+ *   - untracked files via ls-files --others --exclude-standard
+ * All subprocesses run through gitWithTimeout so a hung git cannot stall
+ * timeout-retry recovery (the agent has already timed out).
+ * Returns empty array when baseRef is falsy or any subprocess fails.
  */
 export async function captureWorkingTreeChanges(
   workdir: string,
@@ -335,10 +333,9 @@ export async function captureWorkingTreeChanges(
 
   const runDiff = async (args: string[]): Promise<string[]> => {
     const fullArgs = scopePrefix ? [...args, "--", `${scopePrefix}/`] : args;
-    const proc = _gitDeps.spawn(["git", ...fullArgs], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
-    const output = await new Response(proc.stdout).text();
-    await proc.exited;
-    return output.trim().split("\n").filter(Boolean);
+    const { stdout, exitCode } = await gitWithTimeout(fullArgs, workdir);
+    if (exitCode !== 0) return [];
+    return stdout.trim().split("\n").filter(Boolean);
   };
 
   try {
