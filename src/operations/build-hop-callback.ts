@@ -16,8 +16,10 @@ import type { AdapterFailure, ContextBundle, RunCallCounter } from "../context/e
 import { writeRebuildManifest } from "../context/engine/manifest-store";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
-import { RectifierPromptBuilder } from "../prompts";
+import { RectifierPromptBuilder, timeoutRetry as defaultTimeoutRetry } from "../prompts";
+import type { TimeoutRetryInput } from "../prompts";
 import type { ISessionManager } from "../session";
+import { captureGitRef, captureOutputFiles } from "../utils/git";
 
 export const _buildHopCallbackDeps = {
   rebuildForAgent: (
@@ -28,6 +30,9 @@ export const _buildHopCallbackDeps = {
   ): ContextBundle => new ContextOrchestrator([]).rebuildForAgent(prior, { newAgentId, failure, storyId }),
   writeRebuildManifest,
   createContextToolRuntime,
+  captureGitRef,
+  captureOutputFiles,
+  timeoutRetry: (input: TimeoutRetryInput): string => defaultTimeoutRetry(input),
 };
 
 export interface BuildHopCallbackContext {
@@ -107,6 +112,14 @@ export function buildHopCallback(
 
   const stage = pipelineStage ?? "run";
 
+  // US-003: closure-scoped memoization of the pre-attempt git ref + start time.
+  // Capture is fire-and-forget on the FIRST primary hop (no `await` so the hot
+  // path stays synchronous) and awaited only when the subsequent timeout-retry
+  // hop needs the result. Best-effort — absence falls through to the generic
+  // preamble path inside _buildHopCallbackDeps.timeoutRetry (AC8).
+  let preAttemptGitRefPromise: Promise<string | undefined> | undefined;
+  let preAttemptStartedAt: number | undefined;
+
   return async (
     agentName,
     hopBundle,
@@ -116,6 +129,13 @@ export function buildHopCallback(
     const logger = getLogger();
     let workingBundle = hopBundle;
     let prompt: string = resolvedRunOptions.prompt;
+
+    // US-003: start pre-attempt git ref capture once on the first primary hop,
+    // without awaiting. The promise is awaited later on the timeout-retry hop.
+    if (hopKind.kind === "primary" && !preAttemptGitRefPromise) {
+      preAttemptGitRefPromise = _buildHopCallbackDeps.captureGitRef(workdir);
+      preAttemptStartedAt = Date.now();
+    }
 
     // SWAP only: rebuild bundle for the new agent, rewrite the prompt, and record the handoff.
     // Stale-retry reuses the same agent and session — no rebuild, no prompt rewrite.
@@ -147,6 +167,22 @@ export function buildHopCallback(
     // Record descriptor handoff for any swap, regardless of whether a bundle was rebuilt.
     if (hopKind.kind === "swap" && sessionId) {
       sessionManager.handoff?.(sessionId, agentName, hopKind.failure.outcome);
+    }
+
+    // US-003: compose the timeout-retry prompt with the pre-attempt ref + elapsed time.
+    // Called exactly once on the timeout-retry hop; absent a captured ref the helper
+    // degrades to the generic preamble (AC8) and never throws.
+    if (hopKind.kind === "timeout-retry") {
+      const preAttemptGitRef = preAttemptGitRefPromise ? await preAttemptGitRefPromise : undefined;
+      const changedFiles = preAttemptGitRef
+        ? await _buildHopCallbackDeps.captureOutputFiles(workdir, preAttemptGitRef)
+        : [];
+      const elapsedMs = preAttemptStartedAt ? Date.now() - preAttemptStartedAt : 0;
+      prompt = _buildHopCallbackDeps.timeoutRetry({
+        prompt: resolvedRunOptions.prompt,
+        changedFiles,
+        elapsedMs,
+      });
     }
 
     const contextToolRuntime = workingBundle
