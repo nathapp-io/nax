@@ -5,6 +5,7 @@
 
 import type { Finding, FindingSeverity } from "../findings";
 import { tryParseLLMJson } from "../utils/llm-json";
+import { resolveFixTarget } from "./category-fix-target";
 import { SEVERITY_RANK, isBlockingSeverity } from "./severity";
 export { isBlockingSeverity };
 import type { SemanticReviewConfig } from "./types";
@@ -121,8 +122,19 @@ function downgradeToUnverifiable(finding: LLMFinding): LLMFinding {
   };
 }
 
+/** Options shared by the semantic Finding converters. */
+export interface SemanticFindingOptions {
+  /**
+   * Test-file classifier from `resolveTestFilePatterns` (ADR-009 SSOT). Semantic
+   * findings default to the source lane, but a finding *about a test file* can
+   * only be fixed by the test-writer — routing it to the implementer, which may
+   * not edit tests, deadlocks the fix cycle (#1368).
+   */
+  isTestFile?: (path: string) => boolean;
+}
+
 /** Convert a single LLMFinding to the unified Finding wire format. */
-export function llmFindingToFinding(f: LLMFinding): Finding {
+export function llmFindingToFinding(f: LLMFinding, opts: SemanticFindingOptions = {}): Finding {
   const metaExtras: Record<string, unknown> = {};
   if (f.verifiedBy) metaExtras.verifiedBy = f.verifiedBy;
   if (f.acQuote) metaExtras.acQuote = f.acQuote;
@@ -135,12 +147,12 @@ export function llmFindingToFinding(f: LLMFinding): Finding {
     line: f.line,
     message: f.issue,
     suggestion: f.suggestion ?? undefined,
-    fixTarget: "source",
+    fixTarget: resolveFixTarget({ base: "source", file: f.file, isTestFile: opts.isTestFile }),
     meta: Object.keys(metaExtras).length > 0 ? metaExtras : undefined,
   };
 }
 
 /** Convert LLMFinding[] to Finding[] with semantic-review source. */
-export function toReviewFindings(findings: LLMFinding[]): Finding[] {
-  return findings.map(llmFindingToFinding);
+export function toReviewFindings(findings: LLMFinding[], opts: SemanticFindingOptions = {}): Finding[] {
+  return findings.map((f) => llmFindingToFinding(f, opts));
 }

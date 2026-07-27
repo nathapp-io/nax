@@ -40,6 +40,13 @@ export interface SemanticReviewInput {
   featureCtxBlock?: string;
   blockingThreshold?: "error" | "warning" | "info";
   /**
+   * Resolved test-file patterns (ADR-009 SSOT). Used to keep a finding about a
+   * test file in the test lane (#1368) — semantic findings otherwise default to
+   * `fixTarget: "source"`, which hands them to an implementer that may not edit
+   * test files. Populated by the orchestrator's dispatch-time refresh.
+   */
+  resolvedTestPatterns?: import("../test-runners").ResolvedTestPatterns;
+  /**
    * Optional refresh payload — when present, the orchestrator re-runs
    * `prepareSemanticReviewInput` at dispatch time and overlays the fresh
    * `stat`/`diff`/`excludePatterns`/`effectiveRef` onto this input.
@@ -69,6 +76,16 @@ function withRepromptMarker(output: string, info: RepromptInfo): string {
   const parsed = tryParseLLMJson<Record<string, unknown>>(output);
   if (!parsed || typeof parsed !== "object") return output;
   return JSON.stringify({ ...parsed, _repromptInfo: info });
+}
+
+/**
+ * Test-file classifier for the fix-lane override (#1368). Mirrors the adversarial
+ * op's `testFileMatch`. Matches nothing when patterns are absent, so the lane
+ * falls back to the semantic default of `"source"`.
+ */
+function semanticTestFileMatch(input: SemanticReviewInput): (file: string) => boolean {
+  const patterns = input.resolvedTestPatterns?.regex ?? [];
+  return (file: string): boolean => patterns.some((re) => re.test(file));
 }
 
 function extractRepromptInfo(raw: Record<string, unknown> | null | undefined): RepromptInfo | undefined {
@@ -373,7 +390,7 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
       ...parsed,
       passed,
       findings: accepted,
-      normalizedFindings: toReviewFindings(blocking),
+      normalizedFindings: toReviewFindings(blocking, { isTestFile: semanticTestFileMatch(input) }),
       acDropped: dropped,
     };
   },

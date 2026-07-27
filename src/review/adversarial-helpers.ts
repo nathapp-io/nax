@@ -7,7 +7,7 @@
 
 import type { Finding, FindingSeverity } from "../findings";
 import { tryParseLLMJson } from "../utils/llm-json";
-import { categoryToFixTarget } from "./category-fix-target";
+import { categoryToFixTarget, resolveFixTarget } from "./category-fix-target";
 import { isBlockingSeverity } from "./severity";
 export { isBlockingSeverity };
 
@@ -105,7 +105,10 @@ export function normalizeSeverity(sev: string): FindingSeverity {
 }
 
 /** Convert AdversarialLLMFinding[] to Finding[] with adversarial-review source. */
-export function toAdversarialReviewFindings(findings: AdversarialLLMFinding[]): Finding[] {
+export function toAdversarialReviewFindings(
+  findings: AdversarialLLMFinding[],
+  opts: { isTestFile?: (path: string) => boolean } = {},
+): Finding[] {
   return findings.map((f) => {
     const metaExtras: Record<string, unknown> = {};
     if (f.acQuote) metaExtras.acQuote = f.acQuote;
@@ -124,7 +127,7 @@ export function toAdversarialReviewFindings(findings: AdversarialLLMFinding[]): 
       line: f.line,
       message: f.issue,
       suggestion: f.suggestion,
-      fixTarget: categoryToFixTarget(f.category),
+      fixTarget: resolveFixTarget({ base: categoryToFixTarget(f.category), file: f.file, isTestFile: opts.isTestFile }),
       meta: Object.keys(metaExtras).length > 0 ? metaExtras : undefined,
     };
   });

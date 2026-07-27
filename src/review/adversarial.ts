@@ -331,13 +331,18 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   // (ReviewFinding for review-audit persistence, Finding for the pipeline
   // result) tags the recurrence-demoted subset with `meta.coverageGap: true`
   // (Fix design §7) without re-deriving the split at each call site.
+  // #1368 — `testFileMatch` also decides the fix lane: a finding located in a test
+  // file goes to the test-writer whatever its category says, because the implementer
+  // may not edit test files and would answer UNRESOLVED.
   const advisoryReviewFindings = [
-    ...llmFindingsToReviewFindings(advisoryOnly, { source: "adversarial-review" }),
-    ...tagCoverageGap(llmFindingsToReviewFindings(demoted, { source: "adversarial-review" })),
+    ...llmFindingsToReviewFindings(advisoryOnly, { source: "adversarial-review", isTestFile: testFileMatch }),
+    ...tagCoverageGap(
+      llmFindingsToReviewFindings(demoted, { source: "adversarial-review", isTestFile: testFileMatch }),
+    ),
   ];
   const advisoryFindingsAsFindings = [
-    ...toAdversarialReviewFindings(advisoryOnly),
-    ...tagCoverageGap(toAdversarialReviewFindings(demoted)),
+    ...toAdversarialReviewFindings(advisoryOnly, { isTestFile: testFileMatch }),
+    ...tagCoverageGap(toAdversarialReviewFindings(demoted, { isTestFile: testFileMatch })),
   ];
   const acDropped = opResult.acDropped ?? [];
 
@@ -441,7 +446,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       blockingThreshold: threshold,
       result: {
         passed: false,
-        findings: llmFindingsToReviewFindings(allFindings, { source: "adversarial-review" }),
+        findings: llmFindingsToReviewFindings(allFindings, { source: "adversarial-review", isTestFile: testFileMatch }),
       },
       advisoryFindings: advisoryFindings.length > 0 ? advisoryReviewFindings : undefined,
       diffAvailable,
@@ -459,7 +464,10 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       exitCode: 1,
       output,
       durationMs,
-      findings: blockingFindings.length > 0 ? toAdversarialReviewFindings(blockingFindings) : undefined,
+      findings:
+        blockingFindings.length > 0
+          ? toAdversarialReviewFindings(blockingFindings, { isTestFile: testFileMatch })
+          : undefined,
       advisoryFindings: advisoryFindings.length > 0 ? advisoryFindingsAsFindings : undefined,
       cost: llmCost,
     };
@@ -474,6 +482,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       // to "warning" and surface as advisory so it remains auditable.
       const demotedFindings = toAdversarialReviewFindings(
         acDropped.map((d) => ({ ...d.finding, severity: "warning" as const, acQuote: undefined, acIndex: undefined })),
+        { isTestFile: testFileMatch },
       );
       const existingAdvisory = advisoryFindings.length > 0 ? advisoryFindingsAsFindings : [];
       const allAdvisory = [...existingAdvisory, ...demotedFindings];
@@ -568,7 +577,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     blockingThreshold: threshold,
     result: {
       passed: true,
-      findings: llmFindingsToReviewFindings(allFindings, { source: "adversarial-review" }),
+      findings: llmFindingsToReviewFindings(allFindings, { source: "adversarial-review", isTestFile: testFileMatch }),
     },
     advisoryFindings: advisoryFindings.length > 0 ? advisoryReviewFindings : undefined,
     diffAvailable,

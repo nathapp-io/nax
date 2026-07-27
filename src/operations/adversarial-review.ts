@@ -563,10 +563,13 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
       ...parsed,
       passed,
       findings: accepted,
-      normalizedFindings: toAdversarialReviewFindings(blocking),
+      // #1368 — `testFileMatch` also decides the fix lane: a finding located in a
+      // test file goes to the test-writer whatever its category says, because the
+      // implementer may not edit test files and would answer UNRESOLVED.
+      normalizedFindings: toAdversarialReviewFindings(blocking, { isTestFile: testFileMatch }),
       advisoryFindings: [
-        ...toAdversarialReviewFindings(advisory),
-        ...tagCoverageGap(toAdversarialReviewFindings(demoted)),
+        ...toAdversarialReviewFindings(advisory, { isTestFile: testFileMatch }),
+        ...tagCoverageGap(toAdversarialReviewFindings(demoted, { isTestFile: testFileMatch })),
       ],
       acDropped: dropped,
     };
