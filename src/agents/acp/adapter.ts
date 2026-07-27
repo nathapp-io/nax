@@ -44,7 +44,7 @@ import {
   runSessionPrompt,
   throwIfAborted,
 } from "./adapter-lifecycle";
-import { extractContextToolCall, extractOutput, extractQuestion } from "./adapter-output";
+import { buildTurnResult, extractContextToolCall, extractOutput, extractQuestion } from "./adapter-output";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Backward-compat re-exports (consumers import from this file via barrel)
@@ -60,7 +60,8 @@ export {
   ensureAcpSession,
   runSessionPrompt,
 } from "./adapter-lifecycle";
-export { buildContextToolPreamble, buildRunInteractionHandler } from "./adapter-output";
+export { buildContextToolPreamble, buildRunInteractionHandler, buildTurnResult } from "./adapter-output";
+export type { BuildTurnResultInput } from "./adapter-output";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -606,23 +607,15 @@ export class AcpAgentAdapter implements AgentAdapter {
       );
     }
 
-    const output = extractOutput(lastResponse);
-    const tokenUsage = totalTokenUsage;
-
-    const estimatedCostUsd =
-      totalTokenUsage.inputTokens > 0 || totalTokenUsage.outputTokens > 0
-        ? estimateCostFromTokenUsage(totalTokenUsage, modelDef.model)
-        : 0;
-    const exactCostUsd = totalExactCostUsd; // undefined if wire never reported
-
-    return {
-      output,
-      tokenUsage,
-      estimatedCostUsd,
-      exactCostUsd,
-      internalRoundTrips: turnCount,
-      ...(interactions.length > 0 ? { interactions } : {}),
-    };
+    return buildTurnResult({
+      lastResponse,
+      totalTokenUsage,
+      totalExactCostUsd,
+      turnCount,
+      interactions,
+      timedOut,
+      modelDef,
+    });
   }
 
   async closeSession(handle: SessionHandle): Promise<void> {

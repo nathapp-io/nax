@@ -469,6 +469,14 @@ export interface TurnResult {
    * outcome (e.g. `fail-stale` on empty output).
    */
   adapterFailure?: AdapterFailure;
+  /**
+   * Transport fact: `sendTurn()` returned because its wall-clock timeout
+   * elapsed. The adapter never classifies _why_ — the wiring layer (callOp
+   * via turn-failure-classification) maps empty timed-out output to the
+   * `fail-timeout` policy outcome. Absent or false when the turn completed
+   * normally or was aborted.
+   */
+  timedOut?: boolean;
 }
 
 /**

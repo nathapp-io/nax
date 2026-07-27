@@ -15,6 +15,7 @@ export {
   SpawnAcpClient,
   _acpAdapterDeps,
   _spawnClientDeps,
+  buildTurnResult,
   computeAcpHandle,
   createParseState,
   createSpawnAcpClient,
@@ -22,6 +23,7 @@ export {
   parseAcpxJsonLine,
   parseAcpxJsonOutput,
 } from "./acp";
+export type { BuildTurnResultInput } from "./acp";
 export type {
   AcpClient,
   AcpClientOptions,

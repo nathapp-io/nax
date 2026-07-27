@@ -3,8 +3,12 @@
  * interaction handler wiring. Extracted from adapter.ts.
  */
 
+import type { ModelDef } from "@/config/schema";
+import type { TokenUsage } from "../cost";
+import { estimateCostFromTokenUsage } from "../cost";
 import type { InteractionHandler } from "../interaction-handler";
-import type { AgentRunOptions } from "../types";
+import type { AgentRunOptions, InteractionExchange, TurnResult } from "../types";
+import type { AcpSessionResponse } from "./adapter-session-types";
 
 const CONTEXT_TOOL_CALL_PATTERN = /<nax_tool_call\s+name="([^"]+)">\s*([\s\S]*?)\s*<\/nax_tool_call>/i;
 
@@ -145,5 +149,56 @@ export function buildRunInteractionHandler(options: AgentRunOptions): Interactio
       }
       return null;
     },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Turn result assembly (US-001)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface BuildTurnResultInput {
+  /** Final ACP response from the last turn — null when the turn timed out or aborted. */
+  lastResponse: AcpSessionResponse | null;
+  /** Accumulated token usage across all turns. */
+  totalTokenUsage: TokenUsage;
+  /** Accumulated exact cost from `exactCostUsd` events (undefined when wire never reported). */
+  totalExactCostUsd: number | undefined;
+  /** Number of `session.prompt()` calls made. */
+  turnCount: number;
+  /** Mid-turn human-in-the-loop exchanges (issue #1226). */
+  interactions: readonly InteractionExchange[];
+  /** True when sendTurn returned because the wall-clock timeout elapsed (US-001). */
+  timedOut: boolean;
+  /** Resolved model definition — used for token-based cost estimation. */
+  modelDef: ModelDef;
+}
+
+/**
+ * Build a `TurnResult` from the accumulated session-turn bookkeeping.
+ * Extracted from `AcpAgentAdapter.sendTurn()` so the timeout transport fact
+ * (`timedOut`) is set in exactly one place (US-001 AC1/AC2/AC3).
+ *
+ * When `timedOut` is true, output is forced to "" regardless of any leftover
+ * lastResponse — the wall-clock timeout must not leak partial agent output
+ * into the policy layer.
+ */
+export function buildTurnResult(input: BuildTurnResultInput): TurnResult {
+  const { lastResponse, totalTokenUsage, totalExactCostUsd, turnCount, interactions, timedOut, modelDef } = input;
+
+  const output = timedOut ? "" : extractOutput(lastResponse);
+
+  const estimatedCostUsd =
+    totalTokenUsage.inputTokens > 0 || totalTokenUsage.outputTokens > 0
+      ? estimateCostFromTokenUsage(totalTokenUsage, modelDef.model)
+      : 0;
+
+  return {
+    output,
+    tokenUsage: totalTokenUsage,
+    estimatedCostUsd,
+    exactCostUsd: totalExactCostUsd,
+    internalRoundTrips: turnCount,
+    ...(interactions.length > 0 ? { interactions } : {}),
+    timedOut,
   };
 }
