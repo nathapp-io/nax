@@ -231,6 +231,8 @@ export function buildHopCallback(
       });
     }
 
+    let timedOut = false;
+
     try {
       // Bound `send` closure: each call dispatches one turn through AgentManager
       // (so middleware fires) against the current hop's handle. Reused by both
@@ -259,6 +261,7 @@ export function buildHopCallback(
       // swap policy sees the real outcome (rate-limit, auth, quota) instead of
       // a generic "fail-adapter-error" reclassification. Mirrors session-run-hop.ts.
       const sessionFailure = err instanceof SessionFailureError ? err.adapterFailure : undefined;
+      timedOut = sessionFailure?.outcome === "fail-timeout";
       const turnError = err instanceof SessionTurnError ? err : undefined;
       const errMessage = err instanceof Error ? err.message : String(err);
       return {
@@ -290,7 +293,9 @@ export function buildHopCallback(
       // execution.ts with review/rectification enabled, or warm-lifetime callOp ops
       // like implementerRectifyOp) set this flag so downstream stages can reuse the
       // same ACP session via sessionManager.getLiveHandle().
-      if (hopKind.kind !== "stale-retry" && !resolvedRunOptions.keepOpen) {
+      // Timeout overrides keepOpen: a wall-clock-timed-out session is dead —
+      // leaving it cached would hand the retry a non-functional handle.
+      if (hopKind.kind !== "stale-retry" && (!resolvedRunOptions.keepOpen || timedOut)) {
         await sessionManager.closeSession(handle);
       }
     }

@@ -150,7 +150,7 @@ export function extractTimeoutRetryConfig(config: Record<string, any>): TimeoutR
 
 export function resolveTimeoutRetryOptions(prev: AgentRunOptions, config: TimeoutRetryConfig): AgentRunOptions {
   const budget = prev.timeoutSeconds ?? 60;
-  return { ...prev, timeoutSeconds: Math.round(budget * config.budgetMultiplier) };
+  return { ...prev, timeoutSeconds: budget * config.budgetMultiplier };
 }
 
 export function timeoutRetryShouldRetry(attempts: number, config: TimeoutRetryConfig): boolean {
