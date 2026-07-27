@@ -1,10 +1,10 @@
 {
-  "updatedAt": "2026-07-25T06:34:42.526Z",
+  "updatedAt": "2026-07-27T05:31:41.520Z",
   "byFile": {
     "src/agents/acp/adapter.ts": 636,
     "src/agents/acp/spawn-client.ts": 737,
     "src/agents/manager.ts": 820,
-    "src/config/runtime-types.ts": 612,
+    "src/config/runtime-types.ts": 606,
     "src/context/engine/providers/code-neighbor.ts": 613,
     "src/execution/unified-executor.ts": 689,
     "src/operations/call.ts": 631,
@@ -13,7 +13,6 @@
     "test/unit/cli/plan.test.ts": 1087,
     "test/unit/debate/runner-plan.test.ts": 1048,
     "test/unit/execution/escalation/tier-escalation.test.ts": 943,
-    "test/unit/execution/story-orchestrator.test.ts": 1734,
-    "test/unit/operations/plan-refine.test.ts": 818
+    "test/unit/execution/story-orchestrator.test.ts": 1734
   }
 }
