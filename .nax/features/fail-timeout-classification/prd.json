@@ -1,0 +1,169 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "fail-timeout-classification",
+  "branchName": "feat/fail-timeout-classification",
+  "createdAt": "2026-07-27T00:00:00.000Z",
+  "updatedAt": "2026-07-27T07:27:41.682Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Classify wall-clock timeouts as fail-timeout",
+      "description": "**Goal** \u2014 Surface a wall-clock timeout as a transport fact and classify empty timed-out run output as `fail-timeout` without changing idle-agent behavior.\n\n**Motivation** \u2014 A wall-clock timeout on an agent turn currently returns empty output, which the hop body synthesises into `fail-stale` \u2014 the outcome reserved for an *idle* agent.\n\n**Approach** \u2014 Surface the timeout as a transport fact on `TurnResult` and map it to a policy outcome at the wiring layer, leaving the adapter free of policy naming (the convention `SessionTurnError` already documents). With only this story landed, a timeout produces a single hop and a terminal failure.\n\n**Scope** \u2014 In: `TurnResult.timedOut`, ACP result assembly extraction, empty-output failure classification extraction, and fail-timeout mapping. Out: timeout retry policy and timeout retry prompting; No change to `fail-stale` semantics, its retry count, its category, its reason field, or the idle-watchdog path that produces it.\n\n**Design notes** \u2014 `category: \"quality\", not \"availability\".` `shouldSwap` returns `true` for `availability`, and the swap path calls `markUnavailable(currentAgent, \u2026)`, which prunes that agent for the remainder of the run. A single slow story would poison the agent pool for every subsequent story. `quality` routes to `fallback.onQualityFailure ?? false`, leaving swap opt-in. Move `sendTurn`'s result assembly into the existing `src/agents/acp/adapter-output.ts` as `buildTurnResult`, which then carries `timedOut`; move the existing empty-output synthesis verbatim into `src/operations/turn-failure-classification.ts`, then add the timeout branch. Each extraction must be net-negative.\n\n**Interface**\n```typescript\nexport interface TurnResult {\n  timedOut?: boolean;\n}\n```",
+      "acceptanceCriteria": [
+        "When `sendTurn` returns because its wall-clock timeout elapsed, then its returned `TurnResult.timedOut` equals `true`.",
+        "When `sendTurn` returns because its wall-clock timeout elapsed, then its returned `TurnResult.output` equals the empty string.",
+        "When `sendTurn` returns normally within its budget, then `TurnResult.timedOut` is absent or `false`.",
+        "Given a turn result with empty output and `timedOut: true`, when failure classification runs, then `adapterFailure.outcome` equals `\"fail-timeout\"`.",
+        "Given a turn result with empty output and `timedOut: true`, when failure classification runs, then `adapterFailure.category` equals `\"quality\"`.",
+        "Given a turn result with empty output and `timedOut: true`, when failure classification runs, then `adapterFailure.retriable` equals `true`.",
+        "Given a turn result with empty output and `timedOut` false or absent, when failure classification runs, then `adapterFailure.outcome` equals `\"fail-stale\"`.",
+        "Given a turn result with empty output and `timedOut` false or absent, when failure classification runs, then `adapterFailure.reason` equals `\"empty-output\"`.",
+        "Given a turn result that already carries an `adapterFailure`, when `timedOut` is true, then failure classification preserves the existing failure.",
+        "When `shouldSwap` receives an `AdapterFailure` with outcome `\"fail-timeout\"`, category `\"quality\"`, and unset `agent.fallback.onQualityFailure`, then it returns `false`.",
+        "When `runWithFallback` receives a hop result whose `adapterFailure.outcome` is `\"fail-timeout\"`, then the dispatched agent is not recorded as unavailable for subsequent calls."
+      ],
+      "tags": [
+        "feature",
+        "acp",
+        "failure-classification"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a bounded transport-to-policy change across existing adapters and operation wiring, with focused unit and manager integration coverage for the retained stale path.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/agents/types.ts",
+        "src/agents/acp/adapter.ts",
+        "src/agents/acp/adapter-output.ts",
+        "src/operations/call.ts",
+        "src/context/engine/types.ts"
+      ],
+      "expectedFiles": [
+        "src/operations/turn-failure-classification.ts"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Retry fail-timeout once with a reduced fresh-session budget",
+      "description": "**Goal** \u2014 Add a bounded, per-story `fail-timeout` retry that gets half the prior hop budget and always opens a fresh session.\n\n**Motivation** \u2014 The manager then restarts the same agent up to three times, each with a full fresh timeout budget, so every timeout costs roughly four times its configured budget before reaching a terminal story failure.\n\n**Approach** \u2014 Add a `fail-timeout` branch to `runWithFallback` with its own attempt counter, passing a reduced `timeoutSeconds` on the retry hop and opening a fresh session.\n\n**Scope** \u2014 In: timeout retry config defaults, retry policy extraction, timeout retry accounting, reduced resolved run options, and fresh-session dispatch. Out: retry prompt progress guidance; Making wall-clock timeouts trigger tier escalation is out of scope. A timeout that exhausts its retry remains a terminal story failure via `runner.ts:87`, exactly as today.; and No change to `fail-stale` semantics, its retry count, its category, its reason field, or the idle-watchdog path that produces it.\n\n**Design notes** \u2014 `A new timeout-retry hop kind, not a reuse of stale-retry.` `build-hop-callback.ts:182` resolves `stale-retry` by reusing the live session handle via `getLiveHandle`. A wall-clock timeout *terminated* the session, so reusing that variant would hand the retry a dead handle. `retriable: true.` The pre-existing contract test at `test/unit/agents/fail-stale-complete.test.ts:64` specifies `retriable: false` for a wall-clock timeout. That test constructs an object literal and asserts on it \u2014 it never exercises production code \u2014 so nothing breaks. This spec deliberately overrides that earlier intent on the grounds of cumulative on-disk progress, which the original design did not account for. Move the existing fail-stale retry block **verbatim** into a new `src/agents/retry/hop-retry-policy.ts`, then add the fail-timeout branch there. Net must leave `manager.ts` below its baseline entry.\n\n**Interface**\n```typescript\n| { kind: \"timeout-retry\"; attempt: number }\n\nagent.timeoutRetry.maxAttempts // default 1\nagent.timeoutRetry.budgetMultiplier // default 0.5\n```",
+      "acceptanceCriteria": [
+        "When the first `runWithFallback` hop returns `fail-timeout`, then exactly one additional hop is dispatched by default.",
+        "When the first `runWithFallback` hop returns `fail-timeout`, then the additional hop receives `timeoutSeconds` equal to half the first hop's `timeoutSeconds`.",
+        "When the timeout-retry hop also returns `fail-timeout`, then no third hop is dispatched and `runWithFallback` returns a failing outcome.",
+        "When comparing `{ kind: \"timeout-retry\", attempt: 1 }` and `{ kind: \"stale-retry\", attempt: 1 }`, then their `kind` fields are distinguishable.",
+        "When `executeHop` is invoked with `{ kind: \"timeout-retry\" }`, then it opens a new session rather than reusing the cached live handle used by `stale-retry`.",
+        "When configuration is constructed with `agent.timeoutRetry.maxAttempts` unset, then the resolved value equals `1`.",
+        "When configuration is constructed with `agent.timeoutRetry.budgetMultiplier` unset, then the resolved value equals `0.5`.",
+        "When `agent.timeoutRetry.maxAttempts` is `0` and a hop returns `fail-timeout`, then exactly one hop is dispatched and no retry occurs.",
+        "When the first hop returns `fail-stale`, then same-agent retries dispatched equal `agent.idleWatchdog.maxRetryAttempts`.",
+        "When a `fail-timeout` outcome exhausts its retry budget, then the calling operation surfaces no output and follows the same terminal failure path as exhausted `fail-stale`."
+      ],
+      "tags": [
+        "feature",
+        "retry",
+        "session",
+        "config"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "The retry loop changes stateful fallback control flow, per-hop option propagation, and session reuse rules while preserving the independent stale retry policy.",
+        "agentProfileId": "opencode-balanced",
+        "agent": "opencode",
+        "profileModelTier": "powerful",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-balanced",
+        "initialModelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/agents/manager.ts",
+        "src/agents/manager-types.ts",
+        "src/operations/build-hop-callback.ts",
+        "src/config/schemas.ts",
+        "src/config/schemas-infra.ts"
+      ],
+      "expectedFiles": [
+        "src/agents/retry/hop-retry-policy.ts"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Give timeout retries an informed progress prompt",
+      "description": "**Goal** \u2014 Rewrite only timeout-retry prompts with a generic timeout preamble plus git-derived guidance about work left on disk.\n\n**Motivation** \u2014 Attempt 2 does not redo attempt 1, it continues from whatever landed on disk.\n\n**Approach** \u2014 Compose the retry prompt from a generic timeout preamble plus guidance conditioned on whether the working tree changed during the timed-out attempt.\n\n**Scope** \u2014 In: `timeoutRetry` prompt builder helper and barrel export, pre-attempt git reference capture, working-tree changed-file detection against that ref, elapsed-duration text, and callback dependency injection. Out: Permanent changes to the test-writer's standing prompt are deferred; the only prompt change is the retry-time injection defined here.; Preserving an agent's partial message output across a timeout is deferred; `extractOutput` continues to yield `\"\"` when the turn timed out.; Disk-based recovery of an op's deliverable is deferred; no op gains an `op.recover` hook, and artifact presence is never treated as completion.; and any prompt rewrite for `primary` or `stale-retry`.\n\n**Design notes** \u2014 Prompt authoring stays inside `src/prompts/builders/` as `forbidden-patterns.md` requires; `rectifier-builder-helpers.ts` is the established sibling pattern for helper functions in that directory, and `timeoutRetry` is re-exported from the `src/prompts` barrel. Use the pre-attempt ref with a working-tree diff so uncommitted edits from the timed-out session are included. Pre-attempt git ref unavailable or capture fails: Retry prompt degrades to the generic preamble; no throw.",
+      "acceptanceCriteria": [
+        "When `timeoutRetry` is imported from the `src/prompts` barrel and called, then its returned string includes the original prompt text.",
+        "Given a non-empty list of changed file paths, when `timeoutRetry` builds a prompt, then the returned prompt names each path and instructs the agent to continue from the existing state rather than restart.",
+        "Given an empty list of changed file paths, when `timeoutRetry` builds a prompt, then the returned prompt states that the previous attempt produced no file changes and instructs the agent to change its approach.",
+        "Given an empty list of changed file paths, when `timeoutRetry` builds a prompt, then the returned prompt does not instruct the agent to continue from existing work.",
+        "When `timeoutRetry` builds a prompt, then the returned prompt states the elapsed duration of the timed-out attempt.",
+        "When the `executeHop` closure is invoked with a `timeout-retry` hop kind, then the `timeoutRetry` entry substituted on `_buildHopCallbackDeps` is called exactly once with the original prompt and the list of changed file paths.",
+        "When the `executeHop` closure is invoked with a `primary` or `stale-retry` hop kind, then the `timeoutRetry` entry on `_buildHopCallbackDeps` is not called.",
+        "When the pre-attempt git reference is unavailable, then timeout retry prompt construction resolves to a prompt containing the generic timeout preamble without throwing."
+      ],
+      "tags": [
+        "feature",
+        "prompts",
+        "git",
+        "retry"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This extends an existing callback seam and pure prompt-helper pattern with a bounded git-state observation and focused primary/stale non-regression checks.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/operations/build-hop-callback.ts",
+        "src/prompts/builders/rectifier-builder-helpers.ts",
+        "src/prompts/index.ts",
+        "src/utils/git.ts",
+        "src/agents/manager-types.ts"
+      ]
+    }
+  ],
+  "analysis": "This is an enhancement to the ACP run-kind operation path, not a greenfield feature. `AcpAgentAdapter.sendTurn` records `timedOut` locally after `runSessionPrompt` but currently returns only extracted empty output, so the transport fact is lost (src/agents/acp/adapter.ts:435-626). `TurnResult` already carries transport output, cost, interactions, and an optional policy-level `adapterFailure` (src/agents/types.ts:444-472); add optional `timedOut` there without putting policy terminology in the adapter. `callOp` owns the run-hop body and currently synthesizes retriable availability `fail-stale` for empty effective output when no adapter failure exists (src/operations/call.ts:304-334); extract this classification into `src/operations/turn-failure-classification.ts`, preserve the fail-stale branch verbatim, and map only empty timed-out results to retriable quality `fail-timeout`. `AdapterFailure` already declares `fail-timeout` as a quality outcome (src/context/engine/types.ts:22-65).\n\n`AgentManager.runWithFallback` controls same-agent stale retries, swaps, fallback records, and terminal outcomes (src/agents/manager.ts:222-464). Its existing fail-stale branch performs immediate same-agent retries governed by `agent.idleWatchdog.maxRetryAttempts`; move that block verbatim into a focused retry-policy module before adding independent timeout attempts. The timeout retry must pass a copied per-hop `AgentRunOptions` whose `timeoutSeconds` is the preceding hop budget times `agent.timeoutRetry.budgetMultiplier`, default 0.5, and must not mark the agent unavailable: `shouldSwap` only swaps quality failures when `fallback.onQualityFailure` is opted in. Add `timeoutRetry` defaults to the Zod agent schema and its root default object (src/config/schemas-infra.ts:227-260; src/config/schemas.ts:343-355). `HopKind` currently distinguishes `primary`, session-reusing `stale-retry`, and `swap` (src/agents/manager-types.ts:13-18); add `timeout-retry` so the callback can open a fresh session.\n\n`buildHopCallback` builds prompts and opens sessions per hop (src/operations/build-hop-callback.ts:85-298). It intentionally reuses `getLiveHandle` only for `stale-retry`; timeout-retry must follow the fresh-session path, receive the reduced resolved options, and invoke an injected `timeoutRetry` prompt helper exactly once. Capture the git ref before the timed-out primary attempt, compare the working tree against it after timeout, and degrade safely if ref capture fails. Keep prompt authoring in `src/prompts/builders/rectifier-builder-helpers.ts` and re-export from `src/prompts/index.ts`; `captureGitRef` already returns `undefined` rather than throwing on git failures (src/utils/git.ts:90-98).\n\nExisting tests establish the primary seams: ACP timeout behavior is covered in `test/unit/agents/acp/adapter-phase-a.test.ts:176-190`; empty-output operation behavior is in `test/unit/operations/call.test.ts`; stale manager semantics are comprehensively covered by `test/unit/agents/fail-stale-agent-manager.test.ts`; live-session reuse is integration-tested in `test/integration/agents/stale-retry-session-reuse.test.ts:1-115`; and callback dependency substitution is covered by `test/unit/operations/build-hop-callback.test.ts`. Add or extend focused unit and integration tests in these neighborhoods. Main risks are accidentally changing fail-stale retry count/category/reason, making timeout invoke the availability swap path and poisoning the agent pool, reusing a dead session, misapplying the timeout multiplier to the original rather than next hop, and violating the file-size ratchet. Migration is additive and configuration-compatible: absent timeoutRetry settings resolve to one retry at half budget; existing idleWatchdog configuration remains the sole control for fail-stale. No baseline bump is permitted: extract net-negative code from adapter.ts, call.ts, and manager.ts into the named helpers/modules.",
+  "outOfScope": [
+    "Repetition or tool-call-loop detection (signature hashing of repeated tool calls) is deferred; this spec does not detect that an agent is looping, only that it exceeded its budget.",
+    "A per-turn tool-call ceiling is deferred; the number of tool calls within a single turn remains unbounded.",
+    "Disk-based recovery of an op's deliverable is deferred; no op gains an `op.recover` hook, and artifact presence is never treated as completion.",
+    "Preserving an agent's partial message output across a timeout is deferred; `extractOutput` continues to yield `\"\"` when the turn timed out.",
+    "Permanent changes to the test-writer's standing prompt are deferred; the only prompt change is the retry-time injection defined here.",
+    "Making wall-clock timeouts trigger tier escalation is out of scope. A timeout that exhausts its retry remains a terminal story failure via `runner.ts:87`, exactly as today.",
+    "The `complete`-kind timeout path is out of scope; `adapter.complete` throws `AGENT_TIMEOUT` (`adapter.ts:190`) and never entered the fail-stale ladder.",
+    "The `_runHop` / `session-run-hop` dispatch path is out of scope. It constructs results with `success: true` unconditionally (`session-run-hop.ts:74`) and so reports a timeout as success \u2014 a separate latent defect requiring its own spec.",
+    "No change to `fail-stale` semantics, its retry count, its category, its reason field, or the idle-watchdog path that produces it.",
+    "US-003 only: concurrent timeout retries across parallel stories share no counter state; each `runWithFallback` call owns its own attempt count, and cross-story rate limiting of timeouts is deferred."
+  ],
+  "routingProfile": "cross-agent"
+}
