@@ -255,6 +255,11 @@ export function buildHopCallback(
         });
 
       const turnResult = hopBody ? await hopBody(prompt, { send, input: hopBodyInput }) : await send(prompt);
+      // Capture timedOut from the TurnResult so the finally block can force-close
+      // the session when keepOpen is true. classifyEmptyOutputFailure (called by
+      // sendWithFileOutput → hopBody) synthesises a fail-timeout adapterFailure for
+      // timedOut turns but the hop returns normally — the catch block never executes.
+      if (turnResult.timedOut) timedOut = true;
       return { result: turnResultToAgentResult(turnResult), bundle: workingBundle, prompt };
     } catch (err) {
       // Preserve typed adapter failure on SessionFailureError so runWithFallback's
