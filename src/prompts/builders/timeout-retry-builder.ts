@@ -16,6 +16,8 @@ export interface TimeoutRetryInput {
   prompt: string;
   changedFiles: string[];
   elapsedMs: number;
+  /** 1-based retry attempt number (the hop's `attempt` field is the retry count, so the story is on attempt + 1). */
+  attempt: number;
 }
 
 function formatDuration(ms: number): string {
@@ -27,12 +29,13 @@ function formatDuration(ms: number): string {
 }
 
 export function timeoutRetry(input: TimeoutRetryInput): string {
-  const { prompt, changedFiles, elapsedMs } = input;
+  const { prompt, changedFiles, elapsedMs, attempt } = input;
   const duration = formatDuration(elapsedMs);
+  const attemptNumber = attempt + 1;
 
   if (changedFiles.length === 0) {
     return `The previous attempt hit a timeout after ${elapsedMs}ms (${duration}) with no file changes on disk.
-This is attempt 2 of the same story — the previous attempt left nothing behind, so the approach was wrong.
+This is attempt ${attemptNumber} of the same story — the previous attempt left nothing behind, so the approach was wrong.
 Change your approach: pick a narrower scope, fewer file edits, or a different angle on the acceptance criteria.
 
 ---
@@ -45,7 +48,7 @@ ${prompt}`;
 
 ${fileList}
 
-This is attempt 2 of the same story — continue from the existing state above.
+This is attempt ${attemptNumber} of the same story — continue from the existing state above.
 Read the files listed, pick up where the previous attempt stopped, and finish the story.
 Do NOT delete or revert the existing work; treat the working tree as the starting point.
 

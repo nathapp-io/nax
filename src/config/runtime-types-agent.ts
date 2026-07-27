@@ -64,6 +64,14 @@ export interface AgentAcpConfig {
   promptRetries?: number;
 }
 
+/** Bounded same-agent retry after a wall-clock timeout (US-002) */
+export interface AgentTimeoutRetryConfig {
+  /** Maximum timeout-retry attempts (default: 1) */
+  maxAttempts?: number;
+  /** Fraction of the prior hop's timeoutSeconds granted to the retry (default: 0.5) */
+  budgetMultiplier?: number;
+}
+
 /** Agent protocol configuration (ACP-003) */
 export interface AgentConfig {
   /** Protocol to use for agent communication (always 'acp') */
@@ -80,4 +88,6 @@ export interface AgentConfig {
   acp?: AgentAcpConfig;
   /** Idle watchdog configuration */
   idleWatchdog?: IdleWatchdogConfig;
+  /** Bounded same-agent retry after a wall-clock timeout */
+  timeoutRetry?: AgentTimeoutRetryConfig;
 }

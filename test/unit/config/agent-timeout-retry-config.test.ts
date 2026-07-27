@@ -50,14 +50,13 @@ describe("AC7 — agent.timeoutRetry.budgetMultiplier default is 0.5", () => {
     expect(result.agent?.timeoutRetry?.budgetMultiplier).toBe(0.25);
   });
 
-  test("boundary: budgetMultiplier=0 is accepted (no time on retry)", () => {
-    const result = NaxConfigSchema.parse({
-      agent: { timeoutRetry: { budgetMultiplier: 0 } },
-    });
-    expect(result.agent?.timeoutRetry?.budgetMultiplier).toBe(0);
+  test("boundary: budgetMultiplier=0 is rejected (would produce an instant re-timeout)", () => {
+    // maxAttempts: 0 is the sanctioned way to disable retry — a 0-length budget
+    // wastes a session open/close on a guaranteed instant timeout instead.
+    expect(() => NaxConfigSchema.parse({ agent: { timeoutRetry: { budgetMultiplier: 0 } } })).toThrow();
   });
 
-  test("boundary: schema rejects budgetMultiplier outside [0, 1]", () => {
+  test("boundary: schema rejects budgetMultiplier outside (0, 1]", () => {
     expect(() => NaxConfigSchema.parse({ agent: { timeoutRetry: { budgetMultiplier: -0.1 } } })).toThrow();
     expect(() => NaxConfigSchema.parse({ agent: { timeoutRetry: { budgetMultiplier: 1.5 } } })).toThrow();
   });

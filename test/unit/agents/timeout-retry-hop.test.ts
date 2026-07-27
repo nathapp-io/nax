@@ -99,6 +99,8 @@ describe("AC1 — fail-timeout dispatches exactly one retry by default", () => {
 
     expect(outcome.result.success).toBe(true);
     expect(calls).toBe(2);
+    expect(hopKinds[0]).toEqual({ kind: "primary" });
+    expect(hopKinds[1]).toEqual({ kind: "timeout-retry", attempt: 1 });
   });
 
   test("boundary: when noFallback is set, fail-timeout still retries once before terminal failure", async () => {

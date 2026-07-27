@@ -40,7 +40,7 @@ import type {
 import { createAgentRegistry } from "./registry";
 import type { AgentRegistry } from "./registry";
 import { defaultRetryStrategy } from "./retry/default-strategy";
-import { type SameAgentRetryState, trySameAgentRetry } from "./retry/hop-retry-policy";
+import { type SameAgentRetryState, describeRetryLogEvent, trySameAgentRetry } from "./retry/hop-retry-policy";
 import type { RetryContext, RetryStrategy } from "./retry/types";
 import type { AgentResult, AgentRunOptions, CompleteOptions, CompleteResult, ResolvedCompleteOptions } from "./types";
 
@@ -305,11 +305,6 @@ export class AgentManager implements IAgentManager {
           currentRunOptions =
             retryDecision.outcome === "timeout-retry" ? retryDecision.currentRunOptions : currentRunOptions;
 
-          const logMsgs: Record<string, string> = {
-            "stale-retry": "fail-stale: immediate same-agent retry",
-            "timeout-retry": "fail-timeout: same-agent retry with reduced budget",
-            "adapter-error": "fail-adapter-error: same-agent retry with fresh session",
-          };
           const retryHop: AgentFallbackRecord = {
             storyId: request.runOptions.storyId,
             priorAgent: currentAgent,
@@ -320,14 +315,16 @@ export class AgentManager implements IAgentManager {
             timestamp: new Date().toISOString(),
             costUsd: retryDecision.fallbackRecord.costUsd,
           };
-          fallbacks.push(retryHop);
-          this._emitter.emit("onSwapAttempt", retryHop);
-          const outcome = retryDecision.outcome === "adapter-error" ? "fail-adapter-error" : retryDecision.outcome;
-          logger?.info("agent-manager", logMsgs[outcome] ?? outcome, {
-            storyId: request.runOptions.storyId,
-            attempt: retryHop.hop,
-            agent: currentAgent,
-          });
+          const logEvent = describeRetryLogEvent(retryDecision, request.runOptions.storyId, currentAgent);
+          if (logEvent.recordFallback) {
+            fallbacks.push(retryHop);
+            this._emitter.emit("onSwapAttempt", retryHop);
+          }
+          if (logEvent.level === "warn") {
+            logger?.warn("agent-manager", logEvent.message, logEvent.fields);
+          } else {
+            logger?.info("agent-manager", logEvent.message, logEvent.fields);
+          }
           currentHopKind = retryDecision.kind;
           continue;
         }

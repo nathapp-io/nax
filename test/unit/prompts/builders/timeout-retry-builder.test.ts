@@ -23,6 +23,7 @@ describe("timeoutRetry (barrel export AC1)", () => {
       prompt,
       changedFiles: [],
       elapsedMs: 30_000,
+      attempt: 1,
     });
     expect(typeof result).toBe("string");
     expect(result).toContain(prompt);
@@ -35,6 +36,7 @@ describe("timeoutRetry — non-empty changed file list (AC2)", () => {
       prompt: "original prompt",
       changedFiles: ["src/foo.ts", "src/bar.ts"],
       elapsedMs: 45_000,
+      attempt: 1,
     });
     expect(result).toContain("src/foo.ts");
     expect(result).toContain("src/bar.ts");
@@ -54,6 +56,7 @@ describe("timeoutRetry — empty changed file list (AC3/AC4)", () => {
       prompt: "original prompt",
       changedFiles: [],
       elapsedMs: 45_000,
+      attempt: 1,
     });
     const lower = result.toLowerCase();
     // Generic preamble: previous attempt produced no file changes on disk.
@@ -66,6 +69,7 @@ describe("timeoutRetry — empty changed file list (AC3/AC4)", () => {
       prompt: "original prompt",
       changedFiles: [],
       elapsedMs: 45_000,
+      attempt: 1,
     });
     const lower = result.toLowerCase();
     expect(lower).not.toMatch(/continue from (the )?existing (state|work|files)/);
@@ -78,10 +82,24 @@ describe("timeoutRetry — elapsed duration (AC5)", () => {
       prompt: "p",
       changedFiles: [],
       elapsedMs: 92_000,
+      attempt: 1,
     });
     // Format is implementation-defined; we just require a human-readable form
     // that includes both minutes and seconds (92s = 1m 32s).
     expect(result).toMatch(/1\s*m(in(ute)?s?)?\s*32\s*s(ec(ond)?s?)?/i);
+  });
+});
+
+describe("timeoutRetry — attempt number reflects the actual retry count", () => {
+  test("attempt: 1 states 'attempt 2'", () => {
+    const result = timeoutRetry({ prompt: "p", changedFiles: [], elapsedMs: 1_000, attempt: 1 });
+    expect(result).toContain("attempt 2");
+  });
+
+  test("attempt: 2 (a second configured retry) states 'attempt 3', not 'attempt 2'", () => {
+    const result = timeoutRetry({ prompt: "p", changedFiles: [], elapsedMs: 1_000, attempt: 2 });
+    expect(result).toContain("attempt 3");
+    expect(result).not.toContain("attempt 2");
   });
 });
 
@@ -95,6 +113,7 @@ describe("timeoutRetry — generic preamble fallback (AC8)", () => {
         prompt: "p",
         changedFiles: [],
         elapsedMs: 1_000,
+        attempt: 1,
       }),
     ).not.toThrow();
   });
@@ -104,6 +123,7 @@ describe("timeoutRetry — generic preamble fallback (AC8)", () => {
       prompt: "p",
       changedFiles: [],
       elapsedMs: 1_000,
+      attempt: 1,
     });
     // Generic preamble — phrases common to retry prompts about a wall-clock
     // timeout. We just require a timeout preamble without changed-file guidance.

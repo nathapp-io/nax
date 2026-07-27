@@ -11,6 +11,7 @@
  *   and fail-adapter-error retry decisions into a single function.
  */
 
+import { DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG, DEFAULT_CONFIG } from "@/config";
 import type { AgentManagerConfig } from "@/config";
 import type { AdapterFailure } from "@/context";
 import type { AgentResult, AgentRunOptions } from "../types";
@@ -36,6 +37,7 @@ export type SameAgentRetryResult =
         outcome: AdapterFailure["outcome"];
         category: AdapterFailure["category"];
         costUsd: number;
+        reason?: string;
       };
     }
   | {
@@ -47,6 +49,7 @@ export type SameAgentRetryResult =
         outcome: AdapterFailure["outcome"];
         category: AdapterFailure["category"];
         costUsd: number;
+        reason?: string;
       };
     }
   | {
@@ -57,6 +60,8 @@ export type SameAgentRetryResult =
         outcome: AdapterFailure["outcome"];
         category: AdapterFailure["category"];
         costUsd: number;
+        retriable: boolean;
+        maxAttempts: number;
       };
     }
   | null;
@@ -88,6 +93,7 @@ export function trySameAgentRetry(
         outcome: result.adapterFailure?.outcome ?? "fail-stale",
         category: result.adapterFailure?.category ?? "availability",
         costUsd: result.estimatedCostUsd ?? 0,
+        reason: result.adapterFailure?.reason,
       },
     };
   }
@@ -107,6 +113,7 @@ export function trySameAgentRetry(
           outcome: result.adapterFailure?.outcome ?? "fail-timeout",
           category: result.adapterFailure?.category ?? "quality",
           costUsd: result.estimatedCostUsd ?? 0,
+          reason: result.adapterFailure?.reason,
         },
       };
     }
@@ -129,6 +136,8 @@ export function trySameAgentRetry(
           outcome: result.adapterFailure?.outcome ?? "fail-adapter-error",
           category: result.adapterFailure?.category ?? "availability",
           costUsd: result.estimatedCostUsd ?? 0,
+          retriable: result.adapterFailure?.retriable ?? false,
+          maxAttempts: maxAdapterRetries,
         },
       };
     }
@@ -137,12 +146,11 @@ export function trySameAgentRetry(
   return null;
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: config shape varies (AgentManagerConfig vs test objects)
-export function extractTimeoutRetryConfig(config: Record<string, any>): TimeoutRetryConfig {
+export function extractTimeoutRetryConfig(config: AgentManagerConfig): TimeoutRetryConfig {
   const fromConfig = config.agent?.timeoutRetry;
   return {
-    maxAttempts: fromConfig?.maxAttempts ?? 1,
-    budgetMultiplier: fromConfig?.budgetMultiplier ?? 0.5,
+    maxAttempts: fromConfig?.maxAttempts ?? DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG.maxAttempts,
+    budgetMultiplier: fromConfig?.budgetMultiplier ?? DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG.budgetMultiplier,
   };
 }
 
@@ -151,10 +159,51 @@ export function resolveTimeoutRetryOptions(
   timeoutConfig: TimeoutRetryConfig,
   executionConfig?: { sessionTimeoutSeconds?: number },
 ): AgentRunOptions {
-  const budget = prev.timeoutSeconds ?? executionConfig?.sessionTimeoutSeconds ?? 60;
+  const budget =
+    prev.timeoutSeconds ?? executionConfig?.sessionTimeoutSeconds ?? DEFAULT_CONFIG.execution.sessionTimeoutSeconds;
   return { ...prev, timeoutSeconds: budget * timeoutConfig.budgetMultiplier };
 }
 
 export function timeoutRetryShouldRetry(attempts: number, config: TimeoutRetryConfig): boolean {
   return attempts < config.maxAttempts;
+}
+
+export interface RetryLogEvent {
+  /** adapter-error retries are same-agent reconnects, not swaps — never recorded as fallback hops. */
+  recordFallback: boolean;
+  level: "warn" | "info";
+  message: string;
+  fields: Record<string, unknown>;
+}
+
+/** Describes how to log a same-agent retry decision, without performing the logging itself. */
+export function describeRetryLogEvent(
+  retryDecision: Exclude<SameAgentRetryResult, null>,
+  storyId: string | undefined,
+  agent: string,
+): RetryLogEvent {
+  const attempt = retryDecision.kind.attempt;
+  if (retryDecision.outcome === "adapter-error") {
+    return {
+      recordFallback: false,
+      level: "warn",
+      message: "fail-adapter-error: same-agent retry with fresh session",
+      fields: {
+        storyId,
+        attempt,
+        maxAttempts: retryDecision.fallbackRecord.maxAttempts,
+        retriable: retryDecision.fallbackRecord.retriable,
+        agent,
+      },
+    };
+  }
+  return {
+    recordFallback: true,
+    level: "info",
+    message:
+      retryDecision.outcome === "stale-retry"
+        ? "fail-stale: immediate same-agent retry"
+        : "fail-timeout: same-agent retry with reduced budget",
+    fields: { storyId, attempt, agent, reason: retryDecision.fallbackRecord.reason },
+  };
 }

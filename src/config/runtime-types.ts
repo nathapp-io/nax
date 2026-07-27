@@ -595,12 +595,12 @@ export interface CuratorConfig {
   /** Thresholds for observation filtering */
   thresholds?: CuratorThresholds;
 }
-
 export type {
   GenerateConfig,
   PromptAuditConfig,
   AgentFallbackConfig,
   AgentAcpConfig,
   AgentConfig,
+  AgentTimeoutRetryConfig,
   IdleWatchdogConfig,
 } from "./runtime-types-agent";

@@ -244,11 +244,11 @@ const AgentAcpConfigSchema = z.object({
   promptRetries: z.number().int().min(0).max(5).default(0),
 });
 
-// Stub schema for fail-timeout bounded retry policy (US-002).
-// The implementer extends `hop-retry-policy.ts` to honour these fields.
+// Bounded same-agent retry after a wall-clock timeout (US-002). `budgetMultiplier`
+// scales the prior hop's `timeoutSeconds` for the retry's fresh session.
 const AgentTimeoutRetryConfigSchema = z.object({
   maxAttempts: z.number().int().nonnegative().default(1),
-  budgetMultiplier: z.number().min(0).max(1).default(0.5),
+  budgetMultiplier: z.number().gt(0).max(1).default(0.5),
 });
 
 export const DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG: {

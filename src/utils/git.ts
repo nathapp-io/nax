@@ -16,11 +16,16 @@ export const _gitDeps = { spawn, getSafeLogger };
 /**
  * Default timeout for git subprocess calls.
  * Prevents git from hanging indefinitely on locked repos or network mounts.
- * Local git operations (status, diff, ls-files) complete in well under 1s on
- * typical repos; 3s is a generous upper bound that still bounds timeout-retry
- * recovery within the bun:test global timeout window.
  */
-const GIT_TIMEOUT_MS = 3_000;
+const GIT_TIMEOUT_MS = 10_000;
+
+/**
+ * Timeout for the git subprocesses captureWorkingTreeChanges spawns during
+ * timeout-retry recovery. Scoped separately from GIT_TIMEOUT_MS so it doesn't
+ * shrink the timeout for unrelated callers (captureOutputFiles, findMergeBase,
+ * etc.) — a hung git here must not stall the already-timed-out agent turn.
+ */
+const TIMEOUT_RETRY_GIT_TIMEOUT_MS = 3_000;
 
 /**
  * Return the absolute path of the git repository root for the given workdir.
@@ -45,7 +50,11 @@ export async function getGitRoot(workdir: string): Promise<string | null> {
  *
  * @internal
  */
-export async function gitWithTimeout(args: string[], workdir: string): Promise<{ stdout: string; exitCode: number }> {
+export async function gitWithTimeout(
+  args: string[],
+  workdir: string,
+  timeoutMs: number = GIT_TIMEOUT_MS,
+): Promise<{ stdout: string; exitCode: number }> {
   const proc = _gitDeps.spawn(["git", ...args], {
     cwd: workdir,
     stdout: "pipe",
@@ -60,7 +69,7 @@ export async function gitWithTimeout(args: string[], workdir: string): Promise<{
     } catch {
       // Process may have already exited
     }
-  }, GIT_TIMEOUT_MS);
+  }, timeoutMs);
 
   const exitCode = await proc.exited;
   clearTimeout(timerId);
@@ -323,8 +332,9 @@ export async function captureOutputFiles(
  *   - baseRef..HEAD committed range
  *   - uncommitted tracked modifications vs HEAD
  *   - untracked files via ls-files --others --exclude-standard
- * All subprocesses run through gitWithTimeout so a hung git cannot stall
- * timeout-retry recovery (the agent has already timed out).
+ * All subprocesses run through gitWithTimeout at TIMEOUT_RETRY_GIT_TIMEOUT_MS
+ * so a hung git cannot stall timeout-retry recovery (the agent has already
+ * timed out), without shrinking the timeout for unrelated gitWithTimeout callers.
  * Returns empty array when baseRef is falsy or any subprocess fails.
  */
 export async function captureWorkingTreeChanges(
@@ -336,7 +346,7 @@ export async function captureWorkingTreeChanges(
 
   const runDiff = async (args: string[]): Promise<string[]> => {
     const fullArgs = scopePrefix ? [...args, "--", `${scopePrefix}/`] : args;
-    const { stdout, exitCode } = await gitWithTimeout(fullArgs, workdir);
+    const { stdout, exitCode } = await gitWithTimeout(fullArgs, workdir, TIMEOUT_RETRY_GIT_TIMEOUT_MS);
     if (exitCode !== 0) return [];
     return stdout.trim().split("\n").filter(Boolean);
   };

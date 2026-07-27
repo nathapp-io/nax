@@ -118,7 +118,13 @@ export function buildHopCallback(
   // hop needs the result. Best-effort — absence falls through to the generic
   // preamble path inside _buildHopCallbackDeps.timeoutRetry (AC8).
   let preAttemptGitRefPromise: Promise<string | undefined> | undefined;
-  let preAttemptStartedAt: number | undefined;
+  // Tracks when the PRECEDING hop started (unlike preAttemptGitRefPromise,
+  // which stays pinned to the first primary hop so captureWorkingTreeChanges
+  // sees the full cumulative diff). elapsedMs must report the timed-out
+  // attempt's own duration, not time spent in any stale-retry hops that
+  // happened to precede it (AC5), so it is read before being overwritten with
+  // this hop's own start time.
+  let priorHopStartedAt: number | undefined;
 
   return async (
     agentName,
@@ -129,12 +135,13 @@ export function buildHopCallback(
     const logger = getLogger();
     let workingBundle = hopBundle;
     let prompt: string = resolvedRunOptions.prompt;
+    const elapsedSincePriorHop = priorHopStartedAt ? Date.now() - priorHopStartedAt : 0;
+    priorHopStartedAt = Date.now();
 
     // US-003: start pre-attempt git ref capture once on the first primary hop,
     // without awaiting. The promise is awaited later on the timeout-retry hop.
     if (hopKind.kind === "primary" && !preAttemptGitRefPromise) {
       preAttemptGitRefPromise = _buildHopCallbackDeps.captureGitRef(workdir);
-      preAttemptStartedAt = Date.now();
     }
 
     // SWAP only: rebuild bundle for the new agent, rewrite the prompt, and record the handoff.
@@ -177,11 +184,12 @@ export function buildHopCallback(
       const changedFiles = preAttemptGitRef
         ? await _buildHopCallbackDeps.captureWorkingTreeChanges(workdir, preAttemptGitRef)
         : [];
-      const elapsedMs = preAttemptStartedAt ? Date.now() - preAttemptStartedAt : 0;
+      const elapsedMs = elapsedSincePriorHop;
       prompt = _buildHopCallbackDeps.timeoutRetry({
         prompt: resolvedRunOptions.prompt,
         changedFiles,
         elapsedMs,
+        attempt: hopKind.attempt,
       });
     }
 
