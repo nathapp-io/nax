@@ -40,8 +40,9 @@ import type {
 import { createAgentRegistry } from "./registry";
 import type { AgentRegistry } from "./registry";
 import { defaultRetryStrategy } from "./retry/default-strategy";
+import { type SameAgentRetryState, trySameAgentRetry } from "./retry/hop-retry-policy";
 import type { RetryContext, RetryStrategy } from "./retry/types";
-import type { AgentResult, CompleteOptions, CompleteResult, ResolvedCompleteOptions } from "./types";
+import type { AgentResult, AgentRunOptions, CompleteOptions, CompleteResult, ResolvedCompleteOptions } from "./types";
 
 type LoggerLike = {
   warn: (scope: string, msg: string, data?: Record<string, unknown>) => void;
@@ -226,8 +227,10 @@ export class AgentManager implements IAgentManager {
     let hopsSoFar = 0;
     let rateLimitRetry = 0;
     let staleRetryAttempts = 0;
+    let timeoutRetryAttempts = 0;
     let adapterErrorRetries = 0;
     let currentBundle = request.bundle;
+    let currentRunOptions: AgentRunOptions = request.runOptions;
     let currentHopKind: import("./manager-types").HopKind = { kind: "primary" };
     let finalPrompt: string | undefined;
 
@@ -242,7 +245,7 @@ export class AgentManager implements IAgentManager {
         let updatedBundle = currentBundle;
 
         if (request.executeHop) {
-          const hopOut = await request.executeHop(currentAgent, currentBundle, currentHopKind, request.runOptions);
+          const hopOut = await request.executeHop(currentAgent, currentBundle, currentHopKind, currentRunOptions);
           result = hopOut.result;
           updatedBundle = hopOut.bundle ?? currentBundle;
           finalPrompt = hopOut.prompt ?? finalPrompt;
@@ -259,7 +262,7 @@ export class AgentManager implements IAgentManager {
             _finalStatus = "error";
             return { result: unboundResult, fallbacks, finalBundle: currentBundle, finalPrompt };
           }
-          const rawHopOut = await this._runHop(currentAgent, request.runOptions);
+          const rawHopOut = await this._runHop(currentAgent, currentRunOptions);
           // Normalize: support both wrapped SessionRunHopResult and flat AgentResult (test injection)
           const hopOut =
             "result" in rawHopOut && rawHopOut.result != null
@@ -278,66 +281,64 @@ export class AgentManager implements IAgentManager {
 
         const bundleForSwapCheck = updatedBundle ?? request.bundle;
 
-        // Op-level opt-out (TDD ops per ADR-018 §5.2). Returns the primary-agent
-        // result without entering the swap branch. Rate-limit backoff inside
-        // shouldSwap is also skipped — single-agent ops should fail fast.
-        if (request.noFallback) {
-          _finalStatus = "error";
-          return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
-        }
-
-        // fail-stale: same-agent retries up to maxRetryAttempts before swap or terminal failure.
-        // Session idle timeouts warrant fast retries (no backoff) — the session was
-        // cancelled due to inactivity, not server load, so the next attempt may succeed.
         const isFailStale = result.adapterFailure?.outcome === "fail-stale";
-        const maxStaleRetries = this._config.agent?.idleWatchdog?.maxRetryAttempts ?? 3;
-        if (isFailStale && result.adapterFailure?.retriable && staleRetryAttempts < maxStaleRetries) {
-          staleRetryAttempts++;
+
+        const retryState: SameAgentRetryState = {
+          staleRetryAttempts,
+          timeoutRetryAttempts,
+          adapterErrorRetries,
+          currentRunOptions,
+        };
+        const retryDecision = trySameAgentRetry(result, retryState, {
+          config: this._config,
+          requestRunOptions: request.runOptions,
+          signal: request.signal,
+        });
+
+        if (retryDecision) {
+          staleRetryAttempts =
+            retryDecision.outcome === "stale-retry" ? retryDecision.staleRetryAttempts : staleRetryAttempts;
+          timeoutRetryAttempts =
+            retryDecision.outcome === "timeout-retry" ? retryDecision.timeoutRetryAttempts : timeoutRetryAttempts;
+          adapterErrorRetries =
+            retryDecision.outcome === "adapter-error" ? retryDecision.adapterErrorRetries : adapterErrorRetries;
+          currentRunOptions =
+            retryDecision.outcome === "timeout-retry" ? retryDecision.currentRunOptions : currentRunOptions;
+
+          const logMsgs: Record<string, string> = {
+            "stale-retry": "fail-stale: immediate same-agent retry",
+            "timeout-retry": "fail-timeout: same-agent retry with reduced budget",
+            "adapter-error": "fail-adapter-error: same-agent retry with fresh session",
+          };
           const retryHop: AgentFallbackRecord = {
             storyId: request.runOptions.storyId,
             priorAgent: currentAgent,
             newAgent: currentAgent,
-            hop: staleRetryAttempts,
-            outcome: result.adapterFailure?.outcome ?? "fail-stale",
-            category: result.adapterFailure?.category ?? "availability",
+            hop: retryDecision.kind.attempt,
+            outcome: retryDecision.fallbackRecord.outcome,
+            category: retryDecision.fallbackRecord.category,
             timestamp: new Date().toISOString(),
-            costUsd: result.estimatedCostUsd ?? 0,
+            costUsd: retryDecision.fallbackRecord.costUsd,
           };
           fallbacks.push(retryHop);
           this._emitter.emit("onSwapAttempt", retryHop);
-          logger?.info("agent-manager", "fail-stale: immediate same-agent retry", {
+          const outcome = retryDecision.outcome === "adapter-error" ? "fail-adapter-error" : retryDecision.outcome;
+          logger?.info("agent-manager", logMsgs[outcome] ?? outcome, {
             storyId: request.runOptions.storyId,
-            attempt: staleRetryAttempts,
+            attempt: retryHop.hop,
             agent: currentAgent,
-            reason: result.adapterFailure?.reason,
           });
-          currentHopKind = { kind: "stale-retry", attempt: staleRetryAttempts };
+          currentHopKind = retryDecision.kind;
           continue;
         }
 
-        // fail-adapter-error: same-agent retry when acpx signals retryable (e.g.
-        // QUEUE_DISCONNECTED_BEFORE_COMPLETION). Uses sessionErrorRetryableMaxRetries
-        // for retryable errors and sessionErrorMaxRetries for non-retryable ones.
-        // Uses stale-retry kind so the retry hop reuses the live handle if still cached,
-        // or reconnects via openSession(resume:true) on cache miss — same as fail-stale.
-        const isFailAdapterError = result.adapterFailure?.outcome === "fail-adapter-error";
-        if (isFailAdapterError && !request.signal?.aborted) {
-          const runConfig = request.runOptions.config ?? this._config;
-          const maxAdapterRetries = result.adapterFailure?.retriable
-            ? (runConfig.execution?.sessionErrorRetryableMaxRetries ?? 3)
-            : (runConfig.execution?.sessionErrorMaxRetries ?? 1);
-          if (adapterErrorRetries < maxAdapterRetries) {
-            adapterErrorRetries++;
-            logger?.warn("agent-manager", "fail-adapter-error: same-agent retry with fresh session", {
-              storyId: request.runOptions.storyId,
-              attempt: adapterErrorRetries,
-              maxAttempts: maxAdapterRetries,
-              retriable: result.adapterFailure?.retriable ?? false,
-              agent: currentAgent,
-            });
-            currentHopKind = { kind: "stale-retry", attempt: adapterErrorRetries };
-            continue;
-          }
+        // Op-level opt-out (TDD ops per ADR-018 §5.2). Returns the primary-agent
+        // result without entering the swap branch. Same-agent retries (fail-stale,
+        // fail-timeout, fail-adapter-error) fire before this gate so single-agent
+        // ops still benefit from bounded retry; only the swap path is suppressed.
+        if (request.noFallback) {
+          _finalStatus = "error";
+          return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
         }
 
         // For fail-stale, treat hasBundle as true: session restarts don't require

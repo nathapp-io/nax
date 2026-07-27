@@ -37,6 +37,7 @@ export type {
   LlmRoutingConfig,
   MutationCheckConfig,
   ExecutionGatesConfig,
+  AgentManagerConfig,
 } from "./selectors";
 export {
   DEFAULT_CONFIG,

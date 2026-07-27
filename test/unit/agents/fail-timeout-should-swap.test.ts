@@ -81,6 +81,7 @@ describe("AgentManager.runWithFallback with fail-timeout (US-001 AC11)", () => {
         ...DEFAULT_CONFIG,
         agent: {
           ...DEFAULT_CONFIG.agent,
+          timeoutRetry: { maxAttempts: 0, budgetMultiplier: 0.5 },
           fallback: {
             // Swap is disabled — fail-timeout must terminate the hop but
             // never poison the agent pool (AC11).
@@ -126,6 +127,7 @@ describe("AgentManager.runWithFallback with fail-timeout (US-001 AC11)", () => {
         ...DEFAULT_CONFIG,
         agent: {
           ...DEFAULT_CONFIG.agent,
+          timeoutRetry: { maxAttempts: 0, budgetMultiplier: 0.5 },
           fallback: {
             // Swap IS enabled but onQualityFailure defaults to false — the
             // fail-timeout quality failure must not trigger markUnavailable
@@ -182,6 +184,7 @@ describe("AgentManager.runWithFallback with fail-timeout (US-001 AC11)", () => {
         ...DEFAULT_CONFIG,
         agent: {
           ...DEFAULT_CONFIG.agent,
+          timeoutRetry: { maxAttempts: 0, budgetMultiplier: 0.5 },
           fallback: {
             enabled: true,
             map: { claude: ["codex"] },

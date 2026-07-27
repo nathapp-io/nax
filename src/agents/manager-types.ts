@@ -15,6 +15,7 @@ import type { SessionRole } from "../runtime/session-role";
 export type HopKind =
   | { kind: "primary" }
   | { kind: "stale-retry"; attempt: number } // same agent, reuse existing session
+  | { kind: "timeout-retry"; attempt: number } // same agent, fresh session after fail-timeout
   | { kind: "swap"; failure: AdapterFailure }; // new agent, fresh session
 import type { SessionRunHopFn } from "../runtime/session-run-hop";
 import type {

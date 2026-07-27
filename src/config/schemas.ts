@@ -21,6 +21,7 @@ import {
   AgentConfigSchema,
   CuratorConfigSchema,
   DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG,
+  DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
   GenerateConfigSchema,
   HooksConfigSchema,
   InteractionConfigSchema,
@@ -348,6 +349,7 @@ export const NaxConfigSchema = z
       fallback: { enabled: false, map: {}, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true },
       acp: { promptRetries: 0 },
       idleWatchdog: DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG,
+      timeoutRetry: DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
     }),
     precheck: PrecheckConfigSchema.optional().default({
       storySizeGate: {
