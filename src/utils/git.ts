@@ -315,6 +315,55 @@ export async function captureOutputFiles(
 }
 
 /**
+ * Capture ALL working-tree changes vs a pre-attempt git ref (US-003).
+ *
+ * Unlike captureOutputFiles (which only diffs baseRef..HEAD, i.e. committed
+ * changes), this helper also picks up:
+ *   - Uncommitted tracked modifications vs HEAD (`git diff --name-only HEAD`)
+ *   - New untracked files (`git ls-files --others --exclude-standard`)
+ *
+ * Returns the deduped union of all three sources. Scopes to scopePrefix when
+ * provided (same as captureOutputFiles). Returns empty array when baseRef is
+ * falsy or any git subprocess fails (non-fatal).
+ */
+export async function captureWorkingTreeChanges(
+  workdir: string,
+  baseRef: string | undefined,
+  scopePrefix?: string,
+): Promise<string[]> {
+  if (!baseRef) return [];
+
+  const runDiff = async (args: string[]): Promise<string[]> => {
+    const fullArgs = scopePrefix ? [...args, "--", `${scopePrefix}/`] : args;
+    const proc = _gitDeps.spawn(["git", ...fullArgs], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
+    const output = await new Response(proc.stdout).text();
+    await proc.exited;
+    return output.trim().split("\n").filter(Boolean);
+  };
+
+  try {
+    const [committed, uncommitted, untracked] = await Promise.all([
+      runDiff(["diff", "--name-only", `${baseRef}..HEAD`]),
+      runDiff(["diff", "--name-only", "HEAD"]),
+      runDiff(["ls-files", "--others", "--exclude-standard"]),
+    ]);
+    const seen = new Set<string>();
+    const merged: string[] = [];
+    for (const list of [committed, uncommitted, untracked]) {
+      for (const file of list) {
+        if (!seen.has(file)) {
+          seen.add(file);
+          merged.push(file);
+        }
+      }
+    }
+    return merged;
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Capture a concise git diff stat summary for a completed story.
  *
  * Returns a formatted string like:

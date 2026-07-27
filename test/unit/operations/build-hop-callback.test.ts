@@ -503,18 +503,19 @@ describe("buildHopCallback — timeoutRetry wiring (AC6/AC7)", () => {
 
   test("timeout-retry hop forwards the working-tree diff captured against the pre-attempt ref", async () => {
     // Exercises the git-ref capture path: stub _buildHopCallbackDeps.captureGitRef
-    // to return a fake ref, and stub captureOutputFiles to return the diff. The
-    // timeout-retry hop must call captureOutputFiles with that ref and forward
-    // the result to timeoutRetry.
+    // to return a fake ref, and stub captureWorkingTreeChanges to return the diff.
+    // The timeout-retry hop must call captureWorkingTreeChanges with that ref and
+    // forward the result to timeoutRetry.
     const origCaptureGitRef = _buildHopCallbackDeps.captureGitRef;
-    const origCaptureOutputFiles = _buildHopCallbackDeps.captureOutputFiles;
+    const origCaptureWorkingTreeChanges = _buildHopCallbackDeps.captureWorkingTreeChanges;
     const captureGitRefMock = mock(async (_workdir: string) => "deadbeef");
-    const captureOutputFilesMock = mock(async (_workdir: string, _ref: string) => [
+    const captureWorkingTreeChangesMock = mock(async (_workdir: string, _ref: string) => [
       "src/foo.ts",
       "src/bar.ts",
     ]);
     _buildHopCallbackDeps.captureGitRef = captureGitRefMock as typeof _buildHopCallbackDeps.captureGitRef;
-    _buildHopCallbackDeps.captureOutputFiles = captureOutputFilesMock as typeof _buildHopCallbackDeps.captureOutputFiles;
+    _buildHopCallbackDeps.captureWorkingTreeChanges =
+      captureWorkingTreeChangesMock as typeof _buildHopCallbackDeps.captureWorkingTreeChanges;
 
     try {
       const agentManager = makeAgentManagerStub();
@@ -529,8 +530,8 @@ describe("buildHopCallback — timeoutRetry wiring (AC6/AC7)", () => {
 
       // Timeout-retry hop diffs the working tree against the captured ref.
       await cb("claude", makeBundle(), { kind: "timeout-retry", attempt: 1 } satisfies HopKind, baseOptions);
-      expect(captureOutputFilesMock).toHaveBeenCalledTimes(1);
-      const diffArgs = (captureOutputFilesMock as ReturnType<typeof mock>).mock.calls[0] as unknown as [
+      expect(captureWorkingTreeChangesMock).toHaveBeenCalledTimes(1);
+      const diffArgs = (captureWorkingTreeChangesMock as ReturnType<typeof mock>).mock.calls[0] as unknown as [
         string,
         string,
       ];
@@ -542,7 +543,7 @@ describe("buildHopCallback — timeoutRetry wiring (AC6/AC7)", () => {
       expect(callArgs[0].changedFiles).toEqual(["src/foo.ts", "src/bar.ts"]);
     } finally {
       _buildHopCallbackDeps.captureGitRef = origCaptureGitRef;
-      _buildHopCallbackDeps.captureOutputFiles = origCaptureOutputFiles;
+      _buildHopCallbackDeps.captureWorkingTreeChanges = origCaptureWorkingTreeChanges;
     }
   });
 });

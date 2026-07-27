@@ -19,7 +19,7 @@ import type { UserStory } from "../prd";
 import { RectifierPromptBuilder, timeoutRetry as defaultTimeoutRetry } from "../prompts";
 import type { TimeoutRetryInput } from "../prompts";
 import type { ISessionManager } from "../session";
-import { captureGitRef, captureOutputFiles } from "../utils/git";
+import { captureGitRef, captureWorkingTreeChanges } from "../utils/git";
 
 export const _buildHopCallbackDeps = {
   rebuildForAgent: (
@@ -31,7 +31,7 @@ export const _buildHopCallbackDeps = {
   writeRebuildManifest,
   createContextToolRuntime,
   captureGitRef,
-  captureOutputFiles,
+  captureWorkingTreeChanges,
   timeoutRetry: (input: TimeoutRetryInput): string => defaultTimeoutRetry(input),
 };
 
@@ -175,7 +175,7 @@ export function buildHopCallback(
     if (hopKind.kind === "timeout-retry") {
       const preAttemptGitRef = preAttemptGitRefPromise ? await preAttemptGitRefPromise : undefined;
       const changedFiles = preAttemptGitRef
-        ? await _buildHopCallbackDeps.captureOutputFiles(workdir, preAttemptGitRef)
+        ? await _buildHopCallbackDeps.captureWorkingTreeChanges(workdir, preAttemptGitRef)
         : [];
       const elapsedMs = preAttemptStartedAt ? Date.now() - preAttemptStartedAt : 0;
       prompt = _buildHopCallbackDeps.timeoutRetry({
