@@ -3,7 +3,7 @@
   "feature": "fail-timeout-classification",
   "branchName": "feat/fail-timeout-classification",
   "createdAt": "2026-07-27T00:00:00.000Z",
-  "updatedAt": "2026-07-27T10:13:48.111Z",
+  "updatedAt": "2026-07-27T10:42:15.305Z",
   "userStories": [
     {
       "id": "US-001",
@@ -28,8 +28,8 @@
         "failure-classification"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -98,7 +98,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-balanced",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/agents/manager.ts",
@@ -112,7 +114,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4aaa06dc0aeb055d86dd2ed5566830cfcd02245d"
     },
     {
       "id": "US-003",
