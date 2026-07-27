@@ -272,6 +272,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       prompt,
       productionExcludePatterns: excludePatterns,
       blockingThreshold,
+      isTestFile: testFileMatch,
       createDebateRunner: _semanticDeps.createDebateRunner,
     });
   }

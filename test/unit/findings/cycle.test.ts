@@ -271,6 +271,47 @@ callOp: makeCallOpMock() as unknown as CallOpFn});
     expect(validateCalls2[0]).toMatchObject({ mode: "lite", strategiesRun: ["fix-a", "fix-b"] });
     expect(r2.exitReason).toBe("max-attempts-per-strategy");
   });
+
+  test("reports the terminal iteration's cost on the lite-validate exits (#1369)", async () => {
+    // Only the `continue`-to-companions path used to accumulate, so every
+    // terminal exit in this branch under-reported spend as 0.
+    const s = makeStrategy({
+      name: "lint-fix",
+      maxAttempts: 1,
+      extractApplied: () => ({ summary: "", costUsd: 0.25 }),
+    });
+    const r = await runFixCycle(makeCycle([lintA], [s], async () => [lintA]), makeCtx(), "test-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn,
+    });
+    expect(r.exitReason).toBe("max-attempts-per-strategy");
+    expect(r.costUsd).toBeCloseTo(0.25, 5);
+  });
+
+  test("does not double-count cost when continuing to companion strategies (#1369)", async () => {
+    // The exclusive strategy exhausts and short-circuits, handing off to an
+    // uncapped companion. Its cost must be counted exactly once.
+    const exclusive = makeStrategy({
+      name: "mechanical-lintfix",
+      maxAttempts: 1,
+      coRun: "exclusive",
+      appliesTo: (f) => f.source === "lint",
+      extractApplied: () => ({ summary: "", costUsd: 1 }),
+    });
+    const companion = makeStrategy({
+      name: "implementer",
+      maxAttempts: 1,
+      coRun: "co-run-sequential",
+      appliesTo: (f) => f.source === "lint",
+      extractApplied: () => ({ summary: "", costUsd: 1 }),
+    });
+    const cycle = makeCycle([lintA], [exclusive, companion], async () => ({ findings: [lintA], shortCircuited: true }));
+    const r = await runFixCycle(cycle, makeCtx(), "test-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn,
+    });
+    // One attempt each, $1 apiece — never 3 (which is what double-counting the
+    // first iteration would produce).
+    expect(r.costUsd).toBeCloseTo(2, 5);
+  });
 });
 
 // ─── runFixCycle — bail: agent-gave-up (#897) ────────────────────────────────

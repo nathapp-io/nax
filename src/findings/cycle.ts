@@ -168,10 +168,15 @@ export async function runFixCycle<F extends Finding>(
   let unresolvedDetail: string | undefined;
 
   /**
-   * Attach the UNRESOLVED reason to whatever exit the cycle reaches. Once a
-   * strategy has given up, that text is the most useful diagnostic available no
-   * matter which exit fires afterwards — without this the detail is lost as soon
-   * as the cycle exits via `no-strategy` or a cap instead of `agent-gave-up`.
+   * Attach the UNRESOLVED reason to whatever failing exit the cycle reaches.
+   * Once a strategy has given up, that text is the most useful diagnostic
+   * available no matter which exit fires afterwards — without this the detail is
+   * lost as soon as the cycle exits via `no-strategy` or a cap instead of
+   * `agent-gave-up`.
+   *
+   * Deliberately NOT applied to the two `resolved` exits: a sibling cleared the
+   * findings, so reporting "the agent could not fix this" alongside a success
+   * would misread as a partial failure.
    */
   const finish = (result: FixCycleResult<F>): FixCycleResult<F> =>
     unresolvedDetail !== undefined && result.unresolvedDetail === undefined ? { ...result, unresolvedDetail } : result;
@@ -186,10 +191,13 @@ export async function runFixCycle<F extends Finding>(
     const selectable = cycle.strategies.filter((s) => !spentStrategies.has(s.name));
     const active = selectActiveStrategies(selectable, cycle.findings, cycle.verdict);
     if (active.length === 0) {
-      // Orphaned findings: at least one finding remains but no strategy's
-      // `appliesTo` claims it (e.g. an unhandled `source`). Surface the sources
-      // at warn level — without this the orphaned source is invisible, turning
-      // a routing gap into an un-diagnosable "story failed for no reason".
+      // Orphaned findings: at least one finding remains but no selectable
+      // strategy's `appliesTo` claims it. Two distinct causes, and the log must
+      // separate them or a reader chases the wrong one: either the `source` is
+      // genuinely unhandled (a routing gap), or the only strategy that claimed
+      // it was retired after answering UNRESOLVED (#1369). Surface both at warn
+      // level — without this the cause is invisible, turning either into an
+      // un-diagnosable "story failed for no reason".
       const orphanSources = [...new Set(cycle.findings.map((f) => f.source))];
       logger?.warn("findings.cycle", "cycle exited — no matching strategy (orphaned findings)", {
         storyId,
@@ -198,6 +206,7 @@ export async function runFixCycle<F extends Finding>(
         reason: "no-strategy",
         findingsCount: cycle.findings.length,
         orphanSources,
+        ...(spentStrategies.size > 0 ? { retiredStrategies: [...spentStrategies] } : {}),
       });
       return finish({
         iterations: cycle.iterations,
@@ -366,6 +375,11 @@ export async function runFixCycle<F extends Finding>(
       return prior + current >= s.maxAttempts;
     });
     if (allExhausted) {
+      // Accumulate once, up front, so every exit below reports this iteration's
+      // spend. Previously only the `continue` path did, so the four terminal
+      // exits in this branch under-reported cost the same way the agent-gave-up
+      // exit did (#1369).
+      totalCostUsd += fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0);
       let liteFindingsAfter: F[];
       let liteShortCircuited = false;
       try {
@@ -434,8 +448,7 @@ export async function runFixCycle<F extends Finding>(
         // mechanical-lintfix) may still be able to resolve the findings.
         const companions = uncappedActive.filter((s) => !group.includes(s));
         if (companions.length > 0) {
-          const iterCostUsd = fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0);
-          totalCostUsd += iterCostUsd;
+          // Cost already accumulated at the top of this branch.
           logger?.info("findings.cycle", "exclusive strategy exhausted — continuing to companion strategies", {
             storyId,
             packageDir,
