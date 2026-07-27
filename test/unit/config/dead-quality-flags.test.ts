@@ -87,4 +87,25 @@ describe("dead quality flags — removal guard", () => {
     const root = await writeProjectConfig({ quality: { requireTests: true } });
     expect(loadConfig(root)).rejects.toThrow(NaxError);
   });
+
+  test("names the real command key — requireTests governs commands.test, not commands.tests", async () => {
+    const root = await writeProjectConfig({ quality: { requireTests: false } });
+    const err = (await loadConfig(root).catch((e: unknown) => e)) as NaxError;
+    expect(err.message).toContain("quality.commands.test`");
+    expect(err.message).not.toContain("quality.commands.tests");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Every guard in config-guards.ts rejects a key this repo might still be
+// carrying. Temp-dir fixtures cannot catch that: they never load the real file.
+// This test does, so a guard that would break `nax` in its own repo fails here
+// instead of at the next invocation.
+// ---------------------------------------------------------------------------
+describe("this repo's own .nax/config.json", () => {
+  test("loads without tripping any config guard", async () => {
+    const repoRoot = join(import.meta.dir, "..", "..", "..");
+    const config = await loadConfig(repoRoot);
+    expect(config.quality?.commands?.test).toBeDefined();
+  });
 });

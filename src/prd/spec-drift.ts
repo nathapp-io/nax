@@ -32,7 +32,7 @@ export interface SpecDriftViolation {
   reason: "deprecated-tag" | "shell-pattern";
 }
 
-/** Leading tag group on an AC bullet — mirrors verbatim-fidelity.ts */
+/** Leading tag group on an AC bullet. */
 const LEADING_TAG_GROUP = /^\s*(?:[-*]|\d+\.)?\s*((?:\[[a-z][a-z-]*\]\s*)+)/i;
 
 /** Tags that are banned as leading tags on PRD ACs. */
@@ -71,7 +71,7 @@ function hasShellPattern(ac: string): boolean {
  * violations were detected.
  *
  * Accepts `Pick<PRD, "userStories">` so callers can pass a partial draft
- * without the full PRD envelope (same pattern as verbatim-fidelity.ts).
+ * without the full PRD envelope.
  */
 export function findSpecDriftViolations(prd: Pick<PRD, "userStories">): SpecDriftViolation[] {
   const violations: SpecDriftViolation[] = [];

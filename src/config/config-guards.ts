@@ -119,8 +119,17 @@ export function rejectLegacyRectificationKeys(conf: Record<string, unknown>): vo
   ].join("\n");
   throw new NaxError(message, "CONFIG_LEGACY_RECTIFICATION_KEYS", { stage: "config", legacyKeys });
 }
-/** Quality flags that were declared but read at no gate site. */
-const DEAD_QUALITY_FLAGS = ["requireTypecheck", "requireLint", "requireTests"] as const;
+
+/**
+ * Quality flags that were declared but read at no gate site, mapped to the
+ * `quality.commands` key that actually controls each gate. Derived spelling is
+ * deliberately avoided: `requireTests` governs `commands.test`, not `.tests`.
+ */
+const DEAD_QUALITY_FLAGS = {
+  requireTypecheck: "typecheck",
+  requireLint: "lint",
+  requireTests: "test",
+} as const;
 
 /**
  * Reject the three `quality.require*` flags.
@@ -142,8 +151,9 @@ export function rejectDeadQualityFlags(conf: Record<string, unknown>): void {
   const quality = conf.quality as Record<string, unknown> | undefined;
   if (!quality || typeof quality !== "object") return;
 
-  const deadKeys = DEAD_QUALITY_FLAGS.filter((flag) => flag in quality).map((flag) => `quality.${flag}`);
-  if (deadKeys.length === 0) return;
+  const dead = Object.entries(DEAD_QUALITY_FLAGS).filter(([flag]) => flag in quality);
+  if (dead.length === 0) return;
+  const deadKeys = dead.map(([flag]) => `quality.${flag}`);
 
   const message = [
     `Invalid configuration — removed quality flags detected: ${deadKeys.join(", ")}.`,
@@ -151,13 +161,13 @@ export function rejectDeadQualityFlags(conf: Record<string, unknown>): void {
     "whenever a command resolves, so setting one to `false` never skipped its gate.",
     "",
     "To skip a gate, remove its command from `quality.commands` instead:",
-    ...deadKeys.map((key) => {
-      const gate = key.replace("quality.require", "").toLowerCase();
-      return `- Delete \`quality.${key.split(".")[1]}\`; to disable that gate, unset \`quality.commands.${gate}\``;
-    }),
+    ...dead.map(
+      ([flag, command]) => `- Delete \`quality.${flag}\`; to disable that gate, unset \`quality.commands.${command}\``,
+    ),
   ].join("\n");
   throw new NaxError(message, "CONFIG_DEAD_QUALITY_FLAGS", { stage: "config", deadKeys });
 }
+
 /**
  * @internal Reject `execution.permissionProfile: "scoped"` until Phase 2 lands.
  *
