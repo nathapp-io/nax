@@ -46,10 +46,12 @@ describe("AgentManager.shouldSwap with fail-timeout (US-001 AC10)", () => {
     expect(manager.shouldSwap(failTimeoutRetryable, 0, true)).toBe(false);
   });
 
-  test("returns true only when onQualityFailure is explicitly enabled", () => {
-    // Documents the opt-in: a project that explicitly opts into quality-failure
-    // swaps can still treat wall-clock timeouts as swap-worthy. The default
-    // story acceptance criterion targets the unset case (false).
+  test("returns false even when onQualityFailure is explicitly enabled (US-001 invariant)", () => {
+    // Adversarial review (US-001): even when a project explicitly opts into
+    // quality-failure swaps, a wall-clock timeout must never trigger a swap —
+    // the swap branch would call markUnavailable and prune the timed-out
+    // agent for the remainder of the run (poisoning the pool). Fail-timeout
+    // is per-turn, not per-agent. This invariant overrides onQualityFailure.
     const manager = new AgentManager({
       ...DEFAULT_CONFIG,
       agent: {
@@ -63,7 +65,7 @@ describe("AgentManager.shouldSwap with fail-timeout (US-001 AC10)", () => {
         },
       },
     } as never);
-    expect(manager.shouldSwap(failTimeoutRetryable, 0, true)).toBe(true);
+    expect(manager.shouldSwap(failTimeoutRetryable, 0, true)).toBe(false);
   });
 });
 
@@ -233,5 +235,63 @@ describe("AgentManager.runWithFallback with fail-timeout (US-001 AC11)", () => {
     expect(firstStoryAgents).toEqual(["claude"]);
     expect(secondStoryAgents).toEqual(["claude"]); // Same agent — pool not poisoned
     expect(secondOutcome.result.success).toBe(true);
+  });
+
+  test("does NOT mark the dispatched agent unavailable even when onQualityFailure=true (adversarial review)", async () => {
+    // Adversarial review found: when fallback.onQualityFailure is explicitly
+    // enabled, shouldSwap returns true for the fail-timeout quality failure
+    // and runWithFallback then calls markUnavailable — pruning the timed-out
+    // agent for the remainder of the run. This contradicts AC11 ("the
+    // dispatched agent is not recorded as unavailable for subsequent calls").
+    // The fail-timeout guarantee must hold regardless of onQualityFailure.
+    let dispatchedAgents: string[] = [];
+
+    const manager = new AgentManager(
+      {
+        ...DEFAULT_CONFIG,
+        agent: {
+          ...DEFAULT_CONFIG.agent,
+          fallback: {
+            enabled: true,
+            map: { claude: ["codex"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: true, // explicit opt-in — must still not poison the pool
+            rebuildContext: true,
+          },
+        },
+      } as never,
+      undefined,
+      {
+        runHop: async (agent) => {
+          dispatchedAgents.push(agent);
+          return {
+            result: {
+              success: false,
+              exitCode: 1,
+              output: "",
+              rateLimited: false,
+              durationMs: 100,
+              estimatedCostUsd: 0,
+              adapterFailure: failTimeoutRetryable,
+            },
+            prompt: "test prompt",
+          };
+        },
+      },
+    );
+
+    // hasBundle=true simulates a real runHop invocation through callOp
+    // (which always passes a context bundle); without this guard the swap
+    // branch is bypassed regardless of shouldSwap.
+    await manager.runWithFallback(
+      {
+        runOptions: RUN_OPTIONS,
+        bundle: { pushMarkdown: "ctx", pullTools: [], digest: "", manifest: {} as never, chunks: [] },
+      },
+    );
+
+    // AC11: dispatched agent must NOT be recorded as unavailable, even when
+    // the project has explicitly opted into quality-failure swaps.
+    expect(manager.isUnavailable("claude")).toBe(false);
   });
 });
