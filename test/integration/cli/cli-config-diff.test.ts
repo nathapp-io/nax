@@ -260,7 +260,7 @@ describe("Config Command --diff", () => {
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         quality: {
-          scopeTestThreshold: 99, // Different from default/global (10)
+          autofix: { enabled: false }, // Different from default/global (true)
         },
       };
       writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
@@ -272,7 +272,7 @@ describe("Config Command --diff", () => {
 
       const output = consoleOutput.join("\n");
 
-      expect(output).toContain("quality.scopeTestThreshold");
+      expect(output).toContain("quality.autofix.enabled");
       expect(output).toContain("false");
       expect(output).toContain("true");
     });

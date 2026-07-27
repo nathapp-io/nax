@@ -201,7 +201,7 @@ No acceptance criterion may use a deprecated verification tag (\`[grep]\`, \`[fi
 Review the draft with a strict self-audit mindset. Re-read the codebase context and compare the PRD against it. Focus only on the issues below, then rewrite the PRD if needed.
 
 #### spec-ac-preservation
-Enumerate every acceptance criterion the spec states. Confirm each one appears in some story's acceptanceCriteria — never drop a spec AC during this audit. If an AC looks unsupported by the current codebase, keep it: the story may be adding that capability. Any AC the spec tags \`[verbatim]\` MUST appear character-for-character in an acceptanceCriteria entry — preserve every backtick-quoted command, file path, regex, and count exactly. If a \`[verbatim]\` AC is missing or altered, restore it verbatim.
+Enumerate every acceptance criterion the spec states. Confirm each one appears in some story's acceptanceCriteria — never drop a spec AC during this audit. If an AC looks unsupported by the current codebase, keep it: the story may be adding that capability. An AC carrying a deprecated \`[grep]\`/\`[file]\`/\`[verbatim]\` tag is a file-content check, not a runtime behaviour — rewrite it as the behaviour it was meant to prove and drop the tag; that rewrite is required, not a dropped AC.
 
 #### ac-testable
 For each acceptance criterion, ask whether the assertion is observable through a return value, exception, log output, file content, or state change. If any AC is not directly testable, rewrite it so it is observable.
@@ -263,32 +263,6 @@ For each one:
 - Remove any deprecated tags (\`[grep]\`, \`[file]\`, \`[verbatim]\`) from the leading tag group. Replace with \`[unit]\`, \`[integration]\`, or \`[cli]\` as appropriate.
 - Remove any shell-command patterns (\`grep -\`, \`wc\`, pipe \`|\` inside backticks). Express the same invariant as an assertion on the runtime value.
 - Do not remove or weaken acceptance criteria that are already correct.
-
-Write the corrected PRD to this file path: ${outputFilePath}
-Do not output the PRD in chat. After writing the file, reply with a brief text confirmation only.`;
-  }
-
-  /**
-   * Verbatim-repair prompt — conditional third turn in refine mode.
-   *
-   * Fired only when the deterministic `[verbatim]` fidelity check finds spec ACs
-   * the rewritten PRD dropped or altered. Instructs the model to restore each
-   * one character-for-character into the most relevant story's acceptance
-   * criteria. This is the same-session self-heal; `planRefineOp.verify` emits the
-   * residual-drift warning if the repair still misses (the plan still continues).
-   */
-  buildVerbatimRepair(missingAcs: readonly string[], outputFilePath: string): string {
-    const list = missingAcs.map((ac) => `- ${ac}`).join("\n");
-    return `Your revised PRD dropped or altered acceptance criteria the spec marked \`[verbatim]\`. These are load-bearing executable checks (greps, file-existence checks, regex/count assertions, or architectural invariants) and MUST survive character-for-character — paraphrasing destroys the verification mechanism.
-
-The following \`[verbatim]\` spec acceptance criteria are missing or altered in the PRD:
-
-${list}
-
-For each one:
-- Add it to the \`acceptanceCriteria\` array of the single most relevant user story.
-- Preserve every backtick-quoted command, file path, regex, and count exactly as written in the spec. Do not paraphrase, retag, split, or move them into a description.
-- Do not remove or weaken any acceptance criteria that are already correct.
 
 Write the corrected PRD to this file path: ${outputFilePath}
 Do not output the PRD in chat. After writing the file, reply with a brief text confirmation only.`;

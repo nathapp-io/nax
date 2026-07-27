@@ -20,7 +20,6 @@ export type {
   VerificationStage,
 } from "./types";
 export { isStalled, markStoryAsBlocked, generateHumanHaltSummary, getContextFiles, getExpectedFiles } from "./types";
-export { extractVerbatimAcs, findMissingVerbatimAcs } from "./verbatim-fidelity";
 export { findSpecDriftViolations } from "./spec-drift";
 export type { SpecDriftViolation } from "./spec-drift";
 export {

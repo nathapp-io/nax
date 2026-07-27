@@ -16,7 +16,7 @@ import type { RetryStrategy } from "@/agents";
 import { planInteractiveOp } from "@/operations";
 import { validatePlanOutput } from "@/prd";
 import { makePRD, makeStory } from "@test/helpers";
-import { makeTestRuntime, verbatimWarn, withWarnSpy } from "@test/helpers";
+import { makeTestRuntime, withWarnSpy } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -260,48 +260,6 @@ describe("planInteractiveOp.verify", () => {
   });
 });
 
-describe("planInteractiveOp.verify — [verbatim] residual-drift warning (single mode)", () => {
-  const SPEC_WITH_VERBATIM = '## Acceptance Criteria\n- [verbatim] `grep -rn "oldSym" src/` returns zero matches';
-
-  function storyWith(acs: string[]) {
-    return {
-      id: "US-001", title: "Story", description: "desc", acceptanceCriteria: acs,
-      contextFiles: [], tags: [], dependencies: [], status: "pending", passes: false,
-      routing: { complexity: "simple", testStrategy: "no-test", noTestJustification: "t", reasoning: "t" },
-      escalations: [], attempts: 0,
-    };
-  }
-
-  function prdWith(acs: string[]) {
-    return {
-      project: "p", feature: "test-feature", analysis: "a", branchName: "feat/test",
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      userStories: [storyWith(acs)],
-    };
-  }
-
-  const input = { specContent: SPEC_WITH_VERBATIM, codebaseContext: "", featureName: "test-feature", branchName: "feat/test", outputPath: "/tmp/prd.json" };
-
-  test("warns and still returns the PRD when a [verbatim] spec AC is dropped", async () => {
-    await withWarnSpy(async (warnSpy) => {
-      const prd = prdWith(["unrelated AC that does not contain the grep"]);
-      const result = await planInteractiveOp.verify!(prd as any, input as any, makeInteractiveVerifyCtx() as any);
-      expect(result).not.toBeNull();
-      const warn = verbatimWarn(warnSpy);
-      expect(warn).toBeDefined();
-      expect((warn?.[2] as Record<string, unknown>).missingCount).toBe(1);
-    });
-  });
-
-  test("does not warn when the [verbatim] command survives in a PRD AC", async () => {
-    await withWarnSpy(async (warnSpy) => {
-      const prd = prdWith(['When cleanup completes, grep -rn "oldSym" src/ returns zero matches.']);
-      const result = await planInteractiveOp.verify!(prd as any, input as any, makeInteractiveVerifyCtx() as any);
-      expect(result).not.toBeNull();
-      expect(verbatimWarn(warnSpy)).toBeUndefined();
-    });
-  });
-});
 
 // ─── Adversarial: retry validate / parse consistency ─────────────────────────
 
