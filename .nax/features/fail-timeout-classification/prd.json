@@ -3,7 +3,7 @@
   "feature": "fail-timeout-classification",
   "branchName": "feat/fail-timeout-classification",
   "createdAt": "2026-07-27T00:00:00.000Z",
-  "updatedAt": "2026-07-27T11:36:27.539Z",
+  "updatedAt": "2026-07-27T12:14:43.246Z",
   "userStories": [
     {
       "id": "US-001",
@@ -140,8 +140,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

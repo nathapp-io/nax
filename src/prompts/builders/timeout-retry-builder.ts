@@ -4,7 +4,7 @@
  * Composes the retry prompt from a generic timeout preamble plus git-derived
  * guidance about what landed on disk during the timed-out attempt:
  *   - Non-empty `changedFiles` → names each path and instructs the agent to
- *     continue from the existing state rather than restart.
+ *     continue from the existing state.
  *   - Empty `changedFiles` → states the previous attempt produced no file
  *     changes and instructs the agent to change its approach.
  * Always includes the elapsed duration of the timed-out attempt and the
@@ -31,7 +31,7 @@ export function timeoutRetry(input: TimeoutRetryInput): string {
   const duration = formatDuration(elapsedMs);
 
   if (changedFiles.length === 0) {
-    return `The previous attempt timed out after ${duration} with no file changes on disk.
+    return `The previous attempt hit a timeout after ${elapsedMs}ms (${duration}) with no file changes on disk.
 This is attempt 2 of the same story — the previous attempt left nothing behind, so the approach was wrong.
 Change your approach: pick a narrower scope, fewer file edits, or a different angle on the acceptance criteria.
 
@@ -41,11 +41,11 @@ ${prompt}`;
   }
 
   const fileList = changedFiles.map((p) => `- ${p}`).join("\n");
-  return `The previous attempt timed out after ${duration}, but left these files on disk:
+  return `The previous attempt hit a timeout after ${elapsedMs}ms (${duration}), but left these files on disk:
 
 ${fileList}
 
-This is attempt 2 of the same story — continue from the existing state above rather than restart.
+This is attempt 2 of the same story — continue from the existing state above.
 Read the files listed, pick up where the previous attempt stopped, and finish the story.
 Do NOT delete or revert the existing work; treat the working tree as the starting point.
 

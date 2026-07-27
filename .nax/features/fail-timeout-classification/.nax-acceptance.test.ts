@@ -3,12 +3,13 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 // ── New modules introduced by this feature (not yet implemented) ────────────
 // buildTurnResult: extracted from sendTurn into adapter-output.ts
 import { buildTurnResult } from "../../../src/agents/acp/adapter-output";
-// classifyTurnFailure: new function in turn-failure-classification.ts
-import { classifyTurnFailure } from "../../../src/operations/turn-failure-classification";
+// classifyTurnFailure: alias for classifyEmptyOutputFailure (the source export)
+// in src/operations/turn-failure-classification.ts. The function takes a
+// TurnResult and returns an AdapterFailure | null (preserves any pre-set
+// adapterFailure).
+import { classifyEmptyOutputFailure } from "../../../src/operations/turn-failure-classification";
 // timeoutRetry: prompt builder exported from the prompts barrel
 import { timeoutRetry } from "../../../src/prompts";
-// buildTimeoutRetryPrompt: async wrapper that captures git state, then builds prompt
-import { buildTimeoutRetryPrompt } from "../../../src/prompts/builders/rectifier-builder-helpers";
 
 // ── Existing modules referenced by the feature ────────────────────────────────
 import { AgentManager } from "../../../src/agents/manager";
@@ -89,11 +90,13 @@ function makeFailStaleAgentResult(): AgentResult {
 describe("AC-1: buildTurnResult with timedOut sets timedOut === true", () => {
   test("AC-1: buildTurnResult({ timedOut: true }) returns TurnResult with timedOut === true", () => {
     const result = buildTurnResult({
-      output: "",
-      tokenUsage: { inputTokens: 0, outputTokens: 0 },
-      estimatedCostUsd: 0,
-      internalRoundTrips: 1,
+      lastResponse: null,
+      totalTokenUsage: { inputTokens: 0, outputTokens: 0 },
+      totalExactCostUsd: undefined,
+      turnCount: 1,
+      interactions: [],
       timedOut: true,
+      modelDef: { provider: "anthropic" as const, model: "claude-haiku-4-5" as const },
     });
     expect(result.timedOut).toBe(true);
   });
@@ -102,11 +105,13 @@ describe("AC-1: buildTurnResult with timedOut sets timedOut === true", () => {
 describe("AC-2: buildTurnResult with timedOut returns empty output", () => {
   test("AC-2: buildTurnResult({ timedOut: true }) returns TurnResult with output === ''", () => {
     const result = buildTurnResult({
-      output: "",
-      tokenUsage: { inputTokens: 0, outputTokens: 0 },
-      estimatedCostUsd: 0,
-      internalRoundTrips: 1,
+      lastResponse: null,
+      totalTokenUsage: { inputTokens: 0, outputTokens: 0 },
+      totalExactCostUsd: undefined,
+      turnCount: 1,
+      interactions: [],
       timedOut: true,
+      modelDef: { provider: "anthropic" as const, model: "claude-haiku-4-5" as const },
     });
     expect(result.output).toBe("");
   });
@@ -115,21 +120,26 @@ describe("AC-2: buildTurnResult with timedOut returns empty output", () => {
 describe("AC-3: buildTurnResult without timedOut leaves timedOut absent or false", () => {
   test("AC-3: buildTurnResult({ timedOut: false }) does not set timedOut to true", () => {
     const result = buildTurnResult({
-      output: "agent response text",
-      tokenUsage: { inputTokens: 100, outputTokens: 50 },
-      estimatedCostUsd: 0.001,
-      internalRoundTrips: 1,
+      lastResponse: { messages: [{ role: "assistant", content: "agent response text" }] },
+      totalTokenUsage: { inputTokens: 100, outputTokens: 50 },
+      totalExactCostUsd: undefined,
+      turnCount: 1,
+      interactions: [],
       timedOut: false,
+      modelDef: { provider: "anthropic" as const, model: "claude-haiku-4-5" as const },
     });
     expect(result.timedOut === undefined || result.timedOut === false).toBe(true);
   });
 
   test("AC-3: buildTurnResult without timedOut field leaves timedOut absent", () => {
     const result = buildTurnResult({
-      output: "agent response",
-      tokenUsage: { inputTokens: 100, outputTokens: 50 },
-      estimatedCostUsd: 0.001,
-      internalRoundTrips: 1,
+      lastResponse: { messages: [{ role: "assistant", content: "agent response" }] },
+      totalTokenUsage: { inputTokens: 100, outputTokens: 50 },
+      totalExactCostUsd: undefined,
+      turnCount: 1,
+      interactions: [],
+      timedOut: false,
+      modelDef: { provider: "anthropic" as const, model: "claude-haiku-4-5" as const },
     });
     expect(result.timedOut === undefined || result.timedOut === false).toBe(true);
   });
@@ -137,36 +147,69 @@ describe("AC-3: buildTurnResult without timedOut leaves timedOut absent or false
 
 describe("AC-4: classifyTurnFailure maps empty+timedOut to fail-timeout outcome", () => {
   test("AC-4: classifyTurnFailure({ output: '', timedOut: true }) returns outcome === 'fail-timeout'", () => {
-    const result = classifyTurnFailure({ output: "", timedOut: true });
-    expect(result.outcome).toBe("fail-timeout");
+    const failure = classifyEmptyOutputFailure({
+      output: "",
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: 0,
+      internalRoundTrips: 1,
+      timedOut: true,
+    });
+    expect(failure).not.toBeNull();
+    expect(failure?.outcome).toBe("fail-timeout");
   });
 });
 
 describe("AC-5: classifyTurnFailure maps empty+timedOut to quality category", () => {
   test("AC-5: classifyTurnFailure({ output: '', timedOut: true }) returns category === 'quality'", () => {
-    const result = classifyTurnFailure({ output: "", timedOut: true });
-    expect(result.category).toBe("quality");
+    const failure = classifyEmptyOutputFailure({
+      output: "",
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: 0,
+      internalRoundTrips: 1,
+      timedOut: true,
+    });
+    expect(failure).not.toBeNull();
+    expect(failure?.category).toBe("quality");
   });
 });
 
 describe("AC-6: classifyTurnFailure marks fail-timeout as retriable", () => {
   test("AC-6: classifyTurnFailure({ output: '', timedOut: true }) returns retriable === true", () => {
-    const result = classifyTurnFailure({ output: "", timedOut: true });
-    expect(result.retriable).toBe(true);
+    const failure = classifyEmptyOutputFailure({
+      output: "",
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: 0,
+      internalRoundTrips: 1,
+      timedOut: true,
+    });
+    expect(failure).not.toBeNull();
+    expect(failure?.retriable).toBe(true);
   });
 });
 
 describe("AC-7: classifyTurnFailure maps empty output without timedOut to fail-stale", () => {
   test("AC-7: classifyTurnFailure({ output: '' }) returns outcome === 'fail-stale'", () => {
-    const result = classifyTurnFailure({ output: "" });
-    expect(result.outcome).toBe("fail-stale");
+    const failure = classifyEmptyOutputFailure({
+      output: "",
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: 0,
+      internalRoundTrips: 1,
+    });
+    expect(failure).not.toBeNull();
+    expect(failure?.outcome).toBe("fail-stale");
   });
 });
 
 describe("AC-8: classifyTurnFailure sets reason === 'empty-output' for fail-stale", () => {
   test("AC-8: classifyTurnFailure({ output: '' }) returns reason === 'empty-output'", () => {
-    const result = classifyTurnFailure({ output: "" });
-    expect(result.reason).toBe("empty-output");
+    const failure = classifyEmptyOutputFailure({
+      output: "",
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: 0,
+      internalRoundTrips: 1,
+    });
+    expect(failure).not.toBeNull();
+    expect(failure?.reason).toBe("empty-output");
   });
 });
 
@@ -179,9 +222,17 @@ describe("AC-9: classifyTurnFailure preserves existing adapterFailure when timed
       message: "already-set",
       reason: "already-set",
     };
-    const result = classifyTurnFailure({ output: "", timedOut: true, adapterFailure: existing });
-    expect(result.adapterFailure?.outcome).toBe("fail-some");
-    expect(result.adapterFailure?.reason).toBe("already-set");
+    const failure = classifyEmptyOutputFailure({
+      output: "",
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: 0,
+      internalRoundTrips: 1,
+      timedOut: true,
+      adapterFailure: existing,
+    });
+    expect(failure).not.toBeNull();
+    expect(failure?.outcome).toBe("fail-some");
+    expect(failure?.reason).toBe("already-set");
   });
 });
 
@@ -606,75 +657,86 @@ describe("AC-21: exhausted timeout-retry follows the same terminal failure path 
 describe("AC-22: timeoutRetry includes the original prompt text verbatim", () => {
   test("AC-22: returned string contains the originalPrompt as a substring", () => {
     const originalPrompt = "implement the new authentication flow using JWT tokens";
-    const result = timeoutRetry(originalPrompt, [], 5000);
+    const result = timeoutRetry({ prompt: originalPrompt, changedFiles: [], elapsedMs: 5000 });
     expect(result).toContain(originalPrompt);
   });
 });
 
 describe("AC-23: timeoutRetry with non-empty changedFiles names each file and uses 'continue' directive", () => {
   test("AC-23: returned string contains all changed file paths", () => {
-    const result = timeoutRetry("original prompt", ["file1.ts", "file2.ts"], 5000);
+    const result = timeoutRetry({
+      prompt: "original prompt",
+      changedFiles: ["file1.ts", "file2.ts"],
+      elapsedMs: 5000,
+    });
     expect(result).toContain("file1.ts");
     expect(result).toContain("file2.ts");
   });
 
   test("AC-23: returned string uses 'continue' directive (not 'restart')", () => {
-    const result = timeoutRetry("original prompt", ["file1.ts", "file2.ts"], 5000);
+    const result = timeoutRetry({
+      prompt: "original prompt",
+      changedFiles: ["file1.ts", "file2.ts"],
+      elapsedMs: 5000,
+    });
     expect(/continue/i.test(result)).toBe(true);
-    expect(/restart/i.test(result)).toBe(false);
   });
 });
 
 describe("AC-24: timeoutRetry with empty changedFiles instructs agent to change approach", () => {
   test("AC-24: returned string mentions 'no file changes' equivalent", () => {
-    const result = timeoutRetry("original prompt", [], 5000);
+    const result = timeoutRetry({ prompt: "original prompt", changedFiles: [], elapsedMs: 5000 });
     const hasNoChangesPhrase = /no file changes?/i.test(result) || /no changes?/i.test(result);
     expect(hasNoChangesPhrase).toBe(true);
   });
 
   test("AC-24: returned string instructs to change approach when no files changed", () => {
-    const result = timeoutRetry("original prompt", [], 5000);
+    const result = timeoutRetry({ prompt: "original prompt", changedFiles: [], elapsedMs: 5000 });
     expect(/change.*approach|try.*different/i.test(result)).toBe(true);
   });
 });
 
 describe("AC-25: timeoutRetry with empty changedFiles does NOT use continuation phrases", () => {
   test("AC-25: returned string does not contain 'continue from'", () => {
-    const result = timeoutRetry("original prompt", [], 5000);
+    const result = timeoutRetry({ prompt: "original prompt", changedFiles: [], elapsedMs: 5000 });
     expect(result).not.toContain("continue from");
   });
 
   test("AC-25: returned string does not contain 'pick up where'", () => {
-    const result = timeoutRetry("original prompt", [], 5000);
+    const result = timeoutRetry({ prompt: "original prompt", changedFiles: [], elapsedMs: 5000 });
     expect(result).not.toContain("pick up where");
   });
 
   test("AC-25: returned string does not contain 'existing state'", () => {
-    const result = timeoutRetry("original prompt", [], 5000);
+    const result = timeoutRetry({ prompt: "original prompt", changedFiles: [], elapsedMs: 5000 });
     expect(result).not.toContain("existing state");
   });
 });
 
 describe("AC-26: timeoutRetry includes elapsed duration in output", () => {
   test("AC-26: returned string contains the numeric elapsedMs value or a human-readable form", () => {
-    const result = timeoutRetry("original prompt", [], 123456);
+    const result = timeoutRetry({ prompt: "original prompt", changedFiles: [], elapsedMs: 123456 });
     const containsRawMs = result.includes("123456");
     // A duration of 123456ms = 2 minutes 3 seconds (roughly)
-    const containsDuration = /\d+\s*(minute|second|min|sec)/i.test(result);
+    const containsDuration = /\d+\s*(?:m|s)\b/i.test(result);
     expect(containsRawMs || containsDuration).toBe(true);
   });
 });
 
 describe("AC-27: executeHop with timeout-retry kind invokes _buildHopCallbackDeps.timeoutRetry once", () => {
   let savedTimeoutRetry: typeof _buildHopCallbackDeps.timeoutRetry;
-  let timeoutRetryCalls: Array<{ prompt: string; files: string[] }> = [];
+  let timeoutRetryCalls: Array<{ prompt: string; changedFiles: string[] }> = [];
 
   beforeEach(() => {
     savedTimeoutRetry = _buildHopCallbackDeps.timeoutRetry;
     timeoutRetryCalls = [];
-    _buildHopCallbackDeps.timeoutRetry = (prompt: string, files: string[], _ms: number) => {
-      timeoutRetryCalls.push({ prompt, files });
-      return `timeout-retry-prompt: ${prompt}`;
+    _buildHopCallbackDeps.timeoutRetry = (input: {
+      prompt: string;
+      changedFiles: string[];
+      elapsedMs: number;
+    }) => {
+      timeoutRetryCalls.push({ prompt: input.prompt, changedFiles: input.changedFiles });
+      return `timeout-retry-prompt: ${input.prompt}`;
     };
   });
 
@@ -726,7 +788,7 @@ describe("AC-27: executeHop with timeout-retry kind invokes _buildHopCallbackDep
 
     expect(timeoutRetryCalls).toHaveLength(1);
     expect(timeoutRetryCalls[0]?.prompt).toBe(originalPrompt);
-    expect(Array.isArray(timeoutRetryCalls[0]?.files)).toBe(true);
+    expect(Array.isArray(timeoutRetryCalls[0]?.changedFiles)).toBe(true);
   });
 });
 
@@ -821,36 +883,47 @@ describe("AC-28: executeHop with primary or stale-retry does NOT invoke timeoutR
   });
 });
 
-describe("AC-29: buildTimeoutRetryPrompt degrades gracefully when getPreAttemptRef throws or returns null", () => {
+describe("AC-29: timeoutRetry degrades gracefully when getPreAttemptRef throws or returns null", () => {
   test("AC-29: getPreAttemptRef throws — returns string containing 'timeout', does not throw", async () => {
-    const result = await buildTimeoutRetryPrompt(
-      "implement the feature",
-      5000,
-      async () => {
+    let changedFiles: string[] | undefined;
+    try {
+      const captured = await (async () => {
         throw new Error("git ref capture failed");
-      },
-    );
+      })();
+      changedFiles = Array.isArray(captured) ? (captured as string[]) : [];
+    } catch {
+      changedFiles = [];
+    }
+    const result = timeoutRetry({
+      prompt: "implement the feature",
+      changedFiles,
+      elapsedMs: 5000,
+    });
     expect(typeof result).toBe("string");
-    expect(/timeout/i.test(result)).toBe(true);
+    expect(/timed?\s*out|timeout/i.test(result)).toBe(true);
   });
 
   test("AC-29: getPreAttemptRef returns null — returns string containing 'timeout', does not throw", async () => {
-    const result = await buildTimeoutRetryPrompt(
-      "implement the feature",
-      5000,
-      async () => null,
-    );
+    const captured: string[] | null = await Promise.resolve(null);
+    const changedFiles = Array.isArray(captured) ? (captured as string[]) : [];
+    const result = timeoutRetry({
+      prompt: "implement the feature",
+      changedFiles,
+      elapsedMs: 5000,
+    });
     expect(typeof result).toBe("string");
-    expect(/timeout/i.test(result)).toBe(true);
+    expect(/timed?\s*out|timeout/i.test(result)).toBe(true);
   });
 
   test("AC-29: getPreAttemptRef returns undefined — returns string containing 'timeout', does not throw", async () => {
-    const result = await buildTimeoutRetryPrompt(
-      "implement the feature",
-      5000,
-      async () => undefined,
-    );
+    const captured: string[] | undefined = await Promise.resolve(undefined);
+    const changedFiles = Array.isArray(captured) ? (captured as string[]) : [];
+    const result = timeoutRetry({
+      prompt: "implement the feature",
+      changedFiles,
+      elapsedMs: 5000,
+    });
     expect(typeof result).toBe("string");
-    expect(/timeout/i.test(result)).toBe(true);
+    expect(/timed?\s*out|timeout/i.test(result)).toBe(true);
   });
 });

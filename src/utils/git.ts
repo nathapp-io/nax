@@ -16,8 +16,11 @@ export const _gitDeps = { spawn, getSafeLogger };
 /**
  * Default timeout for git subprocess calls.
  * Prevents git from hanging indefinitely on locked repos or network mounts.
+ * Local git operations (status, diff, ls-files) complete in well under 1s on
+ * typical repos; 3s is a generous upper bound that still bounds timeout-retry
+ * recovery within the bun:test global timeout window.
  */
-const GIT_TIMEOUT_MS = 10_000;
+const GIT_TIMEOUT_MS = 3_000;
 
 /**
  * Return the absolute path of the git repository root for the given workdir.
