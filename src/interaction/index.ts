@@ -38,6 +38,16 @@ export type { RunState } from "./state";
 // Plugins
 export { CLIInteractionPlugin } from "./plugins/cli";
 export { TelegramInteractionPlugin } from "./plugins/telegram";
+export {
+  MAX_MESSAGE_CHARS,
+  buildBody,
+  buildHeader,
+  buildKeyboard,
+  getStageEmoji,
+  sanitizeMarkdown,
+  splitText,
+  type InlineKeyboard,
+} from "./plugins/telegram-format";
 export { WebhookInteractionPlugin } from "./plugins/webhook";
 export { AutoInteractionPlugin } from "./plugins/auto";
 

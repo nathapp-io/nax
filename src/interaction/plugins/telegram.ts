@@ -8,9 +8,17 @@
 import { z } from "zod";
 import { getSafeLogger } from "../../logger";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
+import { MAX_MESSAGE_CHARS, buildBody, buildHeader, buildKeyboard, splitText } from "./telegram-format";
 
-/** Telegram message length limit (4096 max, keep buffer) */
-const MAX_MESSAGE_CHARS = 4000;
+/**
+ * Injectable dependencies for testing.
+ * Mirrors _webhookPluginDeps in the sibling webhook plugin — tests stub this
+ * rather than monkey-patching globalThis.fetch, which leaks across test files.
+ */
+export const _telegramPluginDeps = {
+  fetch: globalThis.fetch.bind(globalThis) as typeof fetch,
+};
+
 const CALLBACK_API_TIMEOUT_MS = 4000;
 
 /** Zod schema for validating telegram plugin config */
@@ -117,13 +125,13 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       await this.drainBacklog();
     }
 
-    const header = this.buildHeader(request);
-    const keyboard = this.buildKeyboard(request);
-    const body = this.buildBody(request);
+    const header = buildHeader(request);
+    const keyboard = buildKeyboard(request);
+    const body = buildBody(request);
 
     // Split body into chunks that fit within Telegram's 4000-char limit.
     // Header is prepended to the first chunk; subsequent chunks get a part label.
-    const chunks = this.splitText(body, MAX_MESSAGE_CHARS - header.length - 10); // 10 = buffer for part label
+    const chunks = splitText(body, MAX_MESSAGE_CHARS - header.length - 10); // 10 = buffer for part label
 
     try {
       const sentIds: number[] = [];
@@ -132,7 +140,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
         const partLabel = chunks.length > 1 ? `[${i + 1}/${chunks.length}] ` : "";
         const text = `${header}\n${partLabel}${chunks[i]}`;
 
-        const response = await fetch(`https://api.telegram.org/bot${this.botToken}/sendMessage`, {
+        const response = await _telegramPluginDeps.fetch(`https://api.telegram.org/bot${this.botToken}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -237,166 +245,6 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   }
 
   /**
-   * Build the fixed header portion of an interaction message (stage, feature, story).
-   * Uses Markdown bold for visual clarity; safe characters only.
-   * This is prepended to the first chunk when splitting long content.
-   */
-  private buildHeader(request: InteractionRequest): string {
-    const emoji = this.getStageEmoji(request.stage);
-    let text = `${emoji} *${request.stage.toUpperCase()}*\n`;
-    text += `*Feature:* ${request.featureName}\n`;
-    if (request.storyId) {
-      text += `*Story:* ${request.storyId}\n`;
-    }
-    text += "\n";
-    return text;
-  }
-
-  /**
-   * Build the variable body portion (summary, detail, options, timeout).
-   * Content is sanitized to prevent Telegram Markdown parser errors from
-   * unclosed/ambiguous formatting characters in agent-generated output.
-   * This is the part that gets split when content exceeds the Telegram limit.
-   */
-  private buildBody(request: InteractionRequest): string {
-    let text = `${this.sanitizeMarkdown(request.summary)}\n`;
-
-    if (request.detail) {
-      text += `\n${this.sanitizeMarkdown(request.detail)}\n`;
-    }
-
-    if (request.options && request.options.length > 0) {
-      text += "\n*Options:*\n";
-      for (const opt of request.options) {
-        const desc = opt.description ? ` - ${this.sanitizeMarkdown(opt.description)}` : "";
-        text += `  - ${opt.label}${desc}\n`;
-      }
-    }
-
-    if (request.timeout) {
-      const timeoutSec = Math.floor(request.timeout / 1000);
-      text += `\n⏱ Timeout: ${timeoutSec}s | Fallback: ${request.fallback}`;
-    }
-
-    return text;
-  }
-
-  /**
-   * Escape Telegram Markdown special characters that would cause "can't parse entities" errors.
-   * Telegram's Markdown parser is strict: unclosed `_`, `` ` ``, `*`, `[`, `\` all cause parse failures.
-   * We escape the opening delimiter of ambiguous pairs so Telegram displays them literally.
-   * Already-balanced pairs like `__bold__` are left intact (both delimiters are escaped harmlessly).
-   */
-  private sanitizeMarkdown(text: string): string {
-    // Order matters: escape backslashes first (they're escape chars), then other delimiters.
-    // We escape the LEADING delimiter of Markdown pairs: Telegram will display \_, \`, \* literally.
-    // Safe pairs: the escape is redundant but harmless; unbalanced: the escape prevents parse error.
-    return text
-      .replace(/\\(?=[_*`\[])/g, "\\\\") // escape existing backslashes before these chars
-      .replace(/_/g, "\\_") // escape underscores (used for italic in Telegram Markdown)
-      .replace(/`/g, "\\`") // escape backticks (code fences / inline code)
-      .replace(/\*/g, "\\*") // escape asterisks (bold)
-      .replace(/\[/g, "\\["); // escape brackets (links)
-  }
-
-  /**
-   * Split text into chunks that fit within maxChars, preferring line breaks as split points.
-   */
-  private splitText(text: string, maxChars: number): string[] {
-    if (text.length <= maxChars) return [text];
-
-    const chunks: string[] = [];
-    let remaining = text;
-
-    while (remaining.length > maxChars) {
-      // Try to split at a newline near the limit
-      const slice = remaining.slice(0, maxChars);
-      const lastNewline = slice.lastIndexOf("\n");
-
-      if (lastNewline > maxChars * 0.5) {
-        // Good split point found — break at newline
-        chunks.push(remaining.slice(0, lastNewline));
-        remaining = remaining.slice(lastNewline + 1);
-      } else {
-        // No good newline — hard break at maxChars
-        chunks.push(slice);
-        remaining = remaining.slice(maxChars);
-      }
-    }
-
-    if (remaining.length > 0) chunks.push(remaining);
-    return chunks;
-  }
-
-  /**
-   * Build inline keyboard for interaction type
-   */
-  private buildKeyboard(request: InteractionRequest): Array<Array<{ text: string; callback_data: string }>> | null {
-    switch (request.type) {
-      case "confirm":
-        return [
-          [
-            { text: "✅ Approve", callback_data: `${request.id}:approve` },
-            { text: "❌ Reject", callback_data: `${request.id}:reject` },
-          ],
-          [
-            { text: "⏭ Skip", callback_data: `${request.id}:skip` },
-            { text: "🛑 Abort", callback_data: `${request.id}:abort` },
-          ],
-        ];
-
-      case "choose": {
-        if (!request.options || request.options.length === 0) return null;
-        const rows: Array<Array<{ text: string; callback_data: string }>> = [];
-        for (const opt of request.options) {
-          rows.push([{ text: opt.label, callback_data: `${request.id}:choose:${opt.key}` }]);
-        }
-        rows.push([
-          { text: "⏭ Skip", callback_data: `${request.id}:skip` },
-          { text: "🛑 Abort", callback_data: `${request.id}:abort` },
-        ]);
-        return rows;
-      }
-
-      case "review":
-        return [
-          [
-            { text: "✅ Approve", callback_data: `${request.id}:approve` },
-            { text: "❌ Reject", callback_data: `${request.id}:reject` },
-          ],
-          [
-            { text: "⏭ Skip", callback_data: `${request.id}:skip` },
-            { text: "🛑 Abort", callback_data: `${request.id}:abort` },
-          ],
-        ];
-
-      default:
-        // input, notify, webhook don't use buttons
-        return null;
-    }
-  }
-
-  /**
-   * Get emoji for stage
-   */
-  private getStageEmoji(stage: string): string {
-    switch (stage) {
-      case "pre-flight":
-        return "🚀";
-      case "execution":
-        return "⚙️";
-      case "review":
-        return "🔍";
-      case "merge":
-        return "🔀";
-      case "cost":
-        return "💰";
-      default:
-        return "📌";
-    }
-  }
-
-  /**
    * Get updates from Telegram Bot API with exponential backoff on failure.
    * Failures are swallowed (returns []) so the receive() poll loop can retry —
    * callers that need to distinguish "no updates" from "the fetch failed" use
@@ -422,7 +270,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
 
       let response: Response;
       try {
-        response = await fetch(`https://api.telegram.org/bot${this.botToken}/getUpdates`, {
+        response = await _telegramPluginDeps.fetch(`https://api.telegram.org/bot${this.botToken}/getUpdates`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -446,9 +294,18 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
         throw new Error("Telegram API returned ok=false or missing result");
       }
 
-      const updates = data.result;
-      if (updates.length > 0) {
-        this.lastUpdateId = Math.max(...updates.map((u: TelegramUpdate) => u.update_id));
+      const raw = data.result;
+      // Advance the offset from the RAW result, before filtering. Foreign updates
+      // must still be consumed -- filtering first would park the offset behind them
+      // and Telegram would re-serve the same updates on every poll forever.
+      if (raw.length > 0) {
+        this.lastUpdateId = Math.max(...raw.map((u: TelegramUpdate) => u.update_id));
+      }
+      const updates = raw.filter((u: TelegramUpdate) => this.isFromConfiguredChat(u));
+      if (updates.length !== raw.length) {
+        this.logger?.debug("interaction", "Telegram updates rejected -- not from the configured chat", {
+          rejected: raw.length - updates.length,
+        });
       }
 
       // Reset backoff on success
@@ -460,6 +317,24 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       // Swallow the error (logged for debugging, not exposed to user) — callers retry with backoff
       return { ok: false, updates: [] };
     }
+  }
+
+  /**
+   * True when an update originates from the configured chat.
+   *
+   * getUpdates returns updates from EVERY chat the bot participates in, so
+   * without this any third party who can message the bot could answer an input
+   * prompt (injected straight into the agent's turn by the ACP interaction
+   * bridge) or forge a callback_query to approve, reject, or abort a run.
+   * Request ids are deterministic and guessable for some flows. See #1365.
+   *
+   * An update carrying neither a callback_query message nor a message has no
+   * chat (edited_message, poll, my_chat_member, ...) and is rejected; parseUpdate
+   * already returned null for those, so this is not a behaviour change.
+   */
+  private isFromConfiguredChat(update: TelegramUpdate): boolean {
+    const chatId = update.callback_query?.message?.chat?.id ?? update.message?.chat?.id;
+    return chatId !== undefined && String(chatId) === this.chatId;
   }
 
   /**
@@ -520,7 +395,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), CALLBACK_API_TIMEOUT_MS);
       try {
-        await fetch(`https://api.telegram.org/bot${this.botToken}/answerCallbackQuery`, {
+        await _telegramPluginDeps.fetch(`https://api.telegram.org/bot${this.botToken}/answerCallbackQuery`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -546,7 +421,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), CALLBACK_API_TIMEOUT_MS);
       try {
-        await fetch(`https://api.telegram.org/bot${this.botToken}/editMessageReplyMarkup`, {
+        await _telegramPluginDeps.fetch(`https://api.telegram.org/bot${this.botToken}/editMessageReplyMarkup`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -577,7 +452,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     // Edit only the last message to avoid redundant notifications
     const lastId = pending.ids[pending.ids.length - 1];
     try {
-      await fetch(`https://api.telegram.org/bot${this.botToken}/editMessageText`, {
+      await _telegramPluginDeps.fetch(`https://api.telegram.org/bot${this.botToken}/editMessageText`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
