@@ -294,9 +294,18 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
         throw new Error("Telegram API returned ok=false or missing result");
       }
 
-      const updates = data.result;
-      if (updates.length > 0) {
-        this.lastUpdateId = Math.max(...updates.map((u: TelegramUpdate) => u.update_id));
+      const raw = data.result;
+      // Advance the offset from the RAW result, before filtering. Foreign updates
+      // must still be consumed -- filtering first would park the offset behind them
+      // and Telegram would re-serve the same updates on every poll forever.
+      if (raw.length > 0) {
+        this.lastUpdateId = Math.max(...raw.map((u: TelegramUpdate) => u.update_id));
+      }
+      const updates = raw.filter((u: TelegramUpdate) => this.isFromConfiguredChat(u));
+      if (updates.length !== raw.length) {
+        this.logger?.debug("interaction", "Telegram updates rejected -- not from the configured chat", {
+          rejected: raw.length - updates.length,
+        });
       }
 
       // Reset backoff on success
@@ -308,6 +317,24 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       // Swallow the error (logged for debugging, not exposed to user) — callers retry with backoff
       return { ok: false, updates: [] };
     }
+  }
+
+  /**
+   * True when an update originates from the configured chat.
+   *
+   * getUpdates returns updates from EVERY chat the bot participates in, so
+   * without this any third party who can message the bot could answer an input
+   * prompt (injected straight into the agent's turn by the ACP interaction
+   * bridge) or forge a callback_query to approve, reject, or abort a run.
+   * Request ids are deterministic and guessable for some flows. See #1365.
+   *
+   * An update carrying neither a callback_query message nor a message has no
+   * chat (edited_message, poll, my_chat_member, ...) and is rejected; parseUpdate
+   * already returned null for those, so this is not a behaviour change.
+   */
+  private isFromConfiguredChat(update: TelegramUpdate): boolean {
+    const chatId = update.callback_query?.message?.chat?.id ?? update.message?.chat?.id;
+    return chatId !== undefined && String(chatId) === this.chatId;
   }
 
   /**
