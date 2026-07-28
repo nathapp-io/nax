@@ -225,3 +225,111 @@ describe("TelegramInteractionPlugin - inbound chat authorization", () => {
     expect(response.value).toBe("ship it");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Backlog drain vs. the authorization filter
+//
+// drainBacklog() advances lastUpdateId past everything already queued so a stale
+// update can never be misread as the answer to the next prompt. Once ingestion
+// filtering landed, the drain's "this page was empty, we're done" signal had to
+// keep meaning "Telegram has nothing left" -- not "nothing on this page was
+// ours". A page filled entirely with foreign traffic is the case that separates
+// the two.
+// ---------------------------------------------------------------------------
+
+describe("TelegramInteractionPlugin - backlog drain with foreign traffic", () => {
+  const originalFetch = _telegramPluginDeps.fetch;
+
+  afterEach(() => {
+    mock.restore();
+    _telegramPluginDeps.fetch = originalFetch;
+  });
+
+  /**
+   * Stubs Telegram with a ONE-UPDATE-PER-PAGE getUpdates.
+   *
+   * The page size is the whole point. Telegram serves getUpdates in pages, and
+   * the bug only appears when a page contains foreign updates and nothing else
+   * -- with every update crammed into a single page the filter always leaves
+   * something behind and the drain keeps going for the wrong reason.
+   */
+  function stubPagedTelegram(updates: Array<Record<string, unknown>>) {
+    const getUpdatesCalls: number[] = [];
+
+    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+      const body = JSON.parse((init?.body as string) ?? "{}");
+
+      if (urlStr.includes("sendMessage")) {
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 10, chat: { id: 99999 } } }), {
+          status: 200,
+        });
+      }
+      if (urlStr.includes("getUpdates")) {
+        const offset = body.offset as number;
+        getUpdatesCalls.push(offset);
+        const next = updates.find((u) => (u.update_id as number) >= offset);
+        return new Response(JSON.stringify({ ok: true, result: next ? [next] : [] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }) as typeof fetch;
+
+    return { getUpdatesCalls };
+  }
+
+  test("a page of purely foreign updates does not end the drain early", async () => {
+    // Update 1 is foreign and fills its whole page; update 2 is a stale message
+    // from the configured chat that predates the prompt. The drain must get past
+    // the foreign page and consume BOTH.
+    //
+    // Exactly one foreign update, deliberately: the stale update then sits on the
+    // very first page receive() would poll, so the bug shows up on the first poll
+    // and the test needs no backoff cycles to expose it.
+    stubPagedTelegram([
+      { update_id: 1, message: { message_id: 71, chat: { id: 424242 }, text: "noise" } },
+      { update_id: 2, message: { message_id: 74, chat: { id: 99999 }, text: "yes do it" } },
+    ]);
+
+    const plugin = new TelegramInteractionPlugin();
+    await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
+    await plugin.send({
+      id: "drain-1",
+      type: "input",
+      featureName: "my-feature",
+      stage: "review",
+      summary: "What should I do?",
+      fallback: "abort",
+      createdAt: Date.now(),
+    } as InteractionRequest);
+
+    const response = await plugin.receive("drain-1", 300);
+
+    // "yes do it" was sitting in the queue BEFORE the prompt was posted, so it
+    // cannot be the answer to it. If the drain stopped at update 1 -- the first
+    // page holding only foreign traffic -- this comes back as a real answer.
+    expect(response.respondedBy).toBe("timeout");
+    expect(response.value).toBeUndefined();
+  });
+
+  test("the drain still stops once Telegram reports an empty page", async () => {
+    const { getUpdatesCalls } = stubPagedTelegram([
+      { update_id: 1, message: { message_id: 71, chat: { id: 424242 }, text: "noise" } },
+    ]);
+
+    const plugin = new TelegramInteractionPlugin();
+    await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
+    await plugin.send({
+      id: "drain-2",
+      type: "confirm",
+      featureName: "my-feature",
+      stage: "review",
+      summary: "Proceed?",
+      fallback: "abort",
+      createdAt: Date.now(),
+    } as InteractionRequest);
+
+    // One page holding update 1, then one empty page. Anything more means the
+    // drain is burning its full MAX_DRAIN_PAGES budget on every single send().
+    expect(getUpdatesCalls).toEqual([1, 2]);
+  });
+});

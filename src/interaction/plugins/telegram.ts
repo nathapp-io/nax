@@ -79,6 +79,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
         "Telegram plugin requires botToken and chatId (env: NAX_TELEGRAM_TOKEN or TELEGRAM_BOT_TOKEN, NAX_TELEGRAM_CHAT_ID)",
       );
     }
+
     // No network call here — the backlog is drained immediately before each prompt is
     // posted (see send()), not at startup. Interactions can fire minutes into a run,
     // so draining once at init() would still leave a wide window for stale updates to
@@ -100,7 +101,12 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
         this.logger?.warn("interaction", "Telegram backlog drain failed — stale updates may be misread as a response");
         return;
       }
-      if (result.updates.length === 0) return;
+      // Terminate on the RAW page size, not the authorized one. A page filled
+      // entirely with foreign traffic filters down to nothing while Telegram
+      // still has pages left; stopping there would leave genuine stale updates
+      // from the configured chat unconsumed, which is exactly what the drain
+      // exists to prevent.
+      if (result.rawCount === 0) return;
     }
     this.logger?.warn("interaction", "Telegram backlog drain hit page cap — stale updates may remain", {
       pages: TelegramInteractionPlugin.MAX_DRAIN_PAGES,
@@ -258,9 +264,12 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   /**
    * Core getUpdates() implementation reporting success/failure explicitly.
    * Mutates lastUpdateId/backoffMs the same way regardless of caller.
+   *
+   * `rawCount` is the page size BEFORE chat-id filtering. drainBacklog() needs it
+   * to tell "Telegram has nothing left" apart from "nothing on this page was ours".
    */
-  private async fetchUpdates(): Promise<{ ok: boolean; updates: TelegramUpdate[] }> {
-    if (!this.botToken) return { ok: true, updates: [] };
+  private async fetchUpdates(): Promise<{ ok: boolean; updates: TelegramUpdate[]; rawCount: number }> {
+    if (!this.botToken) return { ok: true, updates: [], rawCount: 0 };
 
     try {
       // Client-side timeout guards against network hangs (no OS TCP timeout = 75s+ stall)
@@ -310,12 +319,17 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
 
       // Reset backoff on success
       this.backoffMs = 1000;
-      return { ok: true, updates };
+      return { ok: true, updates, rawCount: raw.length };
     } catch (err) {
       // Apply exponential backoff on network error
       this.backoffMs = Math.min(this.backoffMs * 2, this.maxBackoffMs);
-      // Swallow the error (logged for debugging, not exposed to user) — callers retry with backoff
-      return { ok: false, updates: [] };
+      // Swallow the error — callers retry with backoff. Logged at debug so a
+      // persistently failing poll is diagnosable rather than silent.
+      this.logger?.debug("interaction", "Telegram getUpdates failed — retrying with backoff", {
+        error: err instanceof Error ? err.message : String(err),
+        backoffMs: this.backoffMs,
+      });
+      return { ok: false, updates: [], rawCount: 0 };
     }
   }
 
