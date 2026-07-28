@@ -16,8 +16,10 @@ import type { AdapterFailure, ContextBundle, RunCallCounter } from "../context/e
 import { writeRebuildManifest } from "../context/engine/manifest-store";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
-import { RectifierPromptBuilder } from "../prompts";
+import { RectifierPromptBuilder, timeoutRetry as defaultTimeoutRetry } from "../prompts";
+import type { TimeoutRetryInput } from "../prompts";
 import type { ISessionManager } from "../session";
+import { captureGitRef, captureWorkingTreeChanges } from "../utils/git";
 
 export const _buildHopCallbackDeps = {
   rebuildForAgent: (
@@ -28,6 +30,9 @@ export const _buildHopCallbackDeps = {
   ): ContextBundle => new ContextOrchestrator([]).rebuildForAgent(prior, { newAgentId, failure, storyId }),
   writeRebuildManifest,
   createContextToolRuntime,
+  captureGitRef,
+  captureWorkingTreeChanges,
+  timeoutRetry: (input: TimeoutRetryInput): string => defaultTimeoutRetry(input),
 };
 
 export interface BuildHopCallbackContext {
@@ -107,6 +112,20 @@ export function buildHopCallback(
 
   const stage = pipelineStage ?? "run";
 
+  // US-003: closure-scoped memoization of the pre-attempt git ref + start time.
+  // Capture is fire-and-forget on the FIRST primary hop (no `await` so the hot
+  // path stays synchronous) and awaited only when the subsequent timeout-retry
+  // hop needs the result. Best-effort — absence falls through to the generic
+  // preamble path inside _buildHopCallbackDeps.timeoutRetry (AC8).
+  let preAttemptGitRefPromise: Promise<string | undefined> | undefined;
+  // Tracks when the PRECEDING hop started (unlike preAttemptGitRefPromise,
+  // which stays pinned to the first primary hop so captureWorkingTreeChanges
+  // sees the full cumulative diff). elapsedMs must report the timed-out
+  // attempt's own duration, not time spent in any stale-retry hops that
+  // happened to precede it (AC5), so it is read before being overwritten with
+  // this hop's own start time.
+  let priorHopStartedAt: number | undefined;
+
   return async (
     agentName,
     hopBundle,
@@ -116,6 +135,14 @@ export function buildHopCallback(
     const logger = getLogger();
     let workingBundle = hopBundle;
     let prompt: string = resolvedRunOptions.prompt;
+    const elapsedSincePriorHop = priorHopStartedAt ? Date.now() - priorHopStartedAt : 0;
+    priorHopStartedAt = Date.now();
+
+    // US-003: start pre-attempt git ref capture once on the first primary hop,
+    // without awaiting. The promise is awaited later on the timeout-retry hop.
+    if (hopKind.kind === "primary" && !preAttemptGitRefPromise) {
+      preAttemptGitRefPromise = _buildHopCallbackDeps.captureGitRef(workdir);
+    }
 
     // SWAP only: rebuild bundle for the new agent, rewrite the prompt, and record the handoff.
     // Stale-retry reuses the same agent and session — no rebuild, no prompt rewrite.
@@ -147,6 +174,23 @@ export function buildHopCallback(
     // Record descriptor handoff for any swap, regardless of whether a bundle was rebuilt.
     if (hopKind.kind === "swap" && sessionId) {
       sessionManager.handoff?.(sessionId, agentName, hopKind.failure.outcome);
+    }
+
+    // US-003: compose the timeout-retry prompt with the pre-attempt ref + elapsed time.
+    // Called exactly once on the timeout-retry hop; absent a captured ref the helper
+    // degrades to the generic preamble (AC8) and never throws.
+    if (hopKind.kind === "timeout-retry") {
+      const preAttemptGitRef = preAttemptGitRefPromise ? await preAttemptGitRefPromise : undefined;
+      const changedFiles = preAttemptGitRef
+        ? await _buildHopCallbackDeps.captureWorkingTreeChanges(workdir, preAttemptGitRef)
+        : [];
+      const elapsedMs = elapsedSincePriorHop;
+      prompt = _buildHopCallbackDeps.timeoutRetry({
+        prompt: resolvedRunOptions.prompt,
+        changedFiles,
+        elapsedMs,
+        attempt: hopKind.attempt,
+      });
     }
 
     const contextToolRuntime = workingBundle
@@ -231,6 +275,8 @@ export function buildHopCallback(
       });
     }
 
+    let timedOut = false;
+
     try {
       // Bound `send` closure: each call dispatches one turn through AgentManager
       // (so middleware fires) against the current hop's handle. Reused by both
@@ -253,12 +299,18 @@ export function buildHopCallback(
         });
 
       const turnResult = hopBody ? await hopBody(prompt, { send, input: hopBodyInput }) : await send(prompt);
+      // Capture timedOut from the TurnResult so the finally block can force-close
+      // the session when keepOpen is true. classifyEmptyOutputFailure (called by
+      // sendWithFileOutput → hopBody) synthesises a fail-timeout adapterFailure for
+      // timedOut turns but the hop returns normally — the catch block never executes.
+      if (turnResult.timedOut) timedOut = true;
       return { result: turnResultToAgentResult(turnResult), bundle: workingBundle, prompt };
     } catch (err) {
       // Preserve typed adapter failure on SessionFailureError so runWithFallback's
       // swap policy sees the real outcome (rate-limit, auth, quota) instead of
       // a generic "fail-adapter-error" reclassification. Mirrors session-run-hop.ts.
       const sessionFailure = err instanceof SessionFailureError ? err.adapterFailure : undefined;
+      timedOut = sessionFailure?.outcome === "fail-timeout";
       const turnError = err instanceof SessionTurnError ? err : undefined;
       const errMessage = err instanceof Error ? err.message : String(err);
       return {
@@ -290,7 +342,9 @@ export function buildHopCallback(
       // execution.ts with review/rectification enabled, or warm-lifetime callOp ops
       // like implementerRectifyOp) set this flag so downstream stages can reuse the
       // same ACP session via sessionManager.getLiveHandle().
-      if (hopKind.kind !== "stale-retry" && !resolvedRunOptions.keepOpen) {
+      // Timeout overrides keepOpen: a wall-clock-timed-out session is dead —
+      // leaving it cached would hand the retry a non-functional handle.
+      if (hopKind.kind !== "stale-retry" && (!resolvedRunOptions.keepOpen || timedOut)) {
         await sessionManager.closeSession(handle);
       }
     }

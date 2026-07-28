@@ -1,0 +1,205 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `sendTurn` returns because its wall-clock timeout elapsed, then its returned `TurnResult.timedOut` equals `true`.",
+    "refined": "Call `sendTurn(agent, prompt, { wallClockMs: 1 })` where the agent intentionally stalls beyond 1ms; assert `result.timedOut === true`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `sendTurn` returns because its wall-clock timeout elapsed, then its returned `TurnResult.output` equals the empty string.",
+    "refined": "Call `sendTurn(agent, prompt, { wallClockMs: 1 })` where the agent intentionally stalls beyond 1ms; assert `result.output === \"\"`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `sendTurn` returns normally within its budget, then `TurnResult.timedOut` is absent or `false`.",
+    "refined": "Call `sendTurn(agent, prompt, { wallClockMs: 5000 })` where the agent responds within 5s; assert `result.timedOut === undefined || result.timedOut === false`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Given a turn result with empty output and `timedOut: true`, when failure classification runs, then `adapterFailure.outcome` equals `\"fail-timeout\"`.",
+    "refined": "Call `classifyTurnFailure({ output: \"\", timedOut: true })`; assert `result.outcome === \"fail-timeout\"`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "Given a turn result with empty output and `timedOut: true`, when failure classification runs, then `adapterFailure.category` equals `\"quality\"`.",
+    "refined": "Call `classifyTurnFailure({ output: \"\", timedOut: true })`; assert `result.category === \"quality\"`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Given a turn result with empty output and `timedOut: true`, when failure classification runs, then `adapterFailure.retriable` equals `true`.",
+    "refined": "Call `classifyTurnFailure({ output: \"\", timedOut: true })`; assert `result.retriable === true`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "Given a turn result with empty output and `timedOut` false or absent, when failure classification runs, then `adapterFailure.outcome` equals `\"fail-stale\"`.",
+    "refined": "Call `classifyTurnFailure({ output: \"\" })`; assert `result.outcome === \"fail-stale\"`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "Given a turn result with empty output and `timedOut` false or absent, when failure classification runs, then `adapterFailure.reason` equals `\"empty-output\"`.",
+    "refined": "Call `classifyTurnFailure({ output: \"\" })`; assert `result.reason === \"empty-output\"`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "Given a turn result that already carries an `adapterFailure`, when `timedOut` is true, then failure classification preserves the existing failure.",
+    "refined": "Call `classifyTurnFailure({ output: \"\", timedOut: true, adapterFailure: { outcome: \"fail-some\", reason: \"already-set\" } })`; assert `result.adapterFailure.outcome === \"fail-some\"` and `result.adapterFailure.reason === \"already-set\"`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `shouldSwap` receives an `AdapterFailure` with outcome `\"fail-timeout\"`, category `\"quality\"`, and unset `agent.fallback.onQualityFailure`, then it returns `false`.",
+    "refined": "Call `shouldSwap({ outcome: \"fail-timeout\", category: \"quality\", retriable: true }, { fallback: {} })`; assert return value is `false`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When `runWithFallback` receives a hop result whose `adapterFailure.outcome` is `\"fail-timeout\"`, then the dispatched agent is not recorded as unavailable for subsequent calls.",
+    "refined": "After calling `runWithFallback({ adapterFailure: { outcome: \"fail-timeout\", category: \"quality\" } })`, assert `getAvailableAgents()` includes the current agent (agent was not marked unavailable).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When the first `runWithFallback` hop returns `fail-timeout`, then exactly one additional hop is dispatched by default.",
+    "refined": "Given `agent.timeoutRetry.maxAttempts === 1` (default), when the first hop returns `{ category: 'fail-timeout' }`, then `dispatchedHops.length` equals `2` and the second hop has `kind: 'timeout-retry'` with `attempt: 1`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When the first `runWithFallback` hop returns `fail-timeout`, then the additional hop receives `timeoutSeconds` equal to half the first hop's `timeoutSeconds`.",
+    "refined": "Given `agent.timeoutRetry.budgetMultiplier === 0.5` (default), when the first hop has `timeoutSeconds: 300` and returns `{ category: 'fail-timeout' }`, then the second dispatched hop is constructed with `timeoutSeconds === 150`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When the timeout-retry hop also returns `fail-timeout`, then no third hop is dispatched and `runWithFallback` returns a failing outcome.",
+    "refined": "Given `agent.timeoutRetry.maxAttempts === 1`, when the first hop returns `{ category: 'fail-timeout' }` (dispatching timeout-retry hop) and that retry hop also returns `{ category: 'fail-timeout' }`, then `dispatchedHops.length === 2` and the returned outcome has `category: 'fail-timeout'` with `exhausted: true`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When comparing `{ kind: \"timeout-retry\", attempt: 1 }` and `{ kind: \"stale-retry\", attempt: 1 }`, then their `kind` fields are distinguishable.",
+    "refined": "Assert `timeout-retry !== stale-retry` as string values; a switch statement with cases for each kind dispatches to different handlers without falling through.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When `executeHop` is invoked with `{ kind: \"timeout-retry\" }`, then it opens a new session rather than reusing the cached live handle used by `stale-retry`.",
+    "refined": "When `executeHop({ kind: 'timeout-retry', attempt: 1 })` is called, the session factory is invoked (openNewSession path) and `getLiveHandle` is not called. When `executeHop({ kind: 'stale-retry', attempt: 1 })` is called, `getLiveHandle` is invoked instead.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When configuration is constructed with `agent.timeoutRetry.maxAttempts` unset, then the resolved value equals `1`.",
+    "refined": "Given an agent config where `agent.timeoutRetry` is `undefined`, the resolved `timeoutRetry.maxAttempts` equals `1`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When configuration is constructed with `agent.timeoutRetry.budgetMultiplier` unset, then the resolved value equals `0.5`.",
+    "refined": "Given an agent config where `agent.timeoutRetry` is `undefined`, the resolved `timeoutRetry.budgetMultiplier` equals `0.5`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When `agent.timeoutRetry.maxAttempts` is `0` and a hop returns `fail-timeout`, then exactly one hop is dispatched and no retry occurs.",
+    "refined": "Given `agent.timeoutRetry.maxAttempts === 0`, when the first hop returns `{ category: 'fail-timeout' }`, then `dispatchedHops.length === 1` and no hop with `kind: 'timeout-retry'` is dispatched.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When the first hop returns `fail-stale`, then same-agent retries dispatched equal `agent.idleWatchdog.maxRetryAttempts`.",
+    "refined": "Given `agent.idleWatchdog.maxRetryAttempts === 3`, when the first hop returns `{ category: 'fail-stale' }`, then `dispatchedHops` contains exactly `3` hops with `kind: 'stale-retry'` (or the configured maxRetryAttempts value).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When a `fail-timeout` outcome exhausts its retry budget, then the calling operation surfaces no output and follows the same terminal failure path as exhausted `fail-stale`.",
+    "refined": "When `runWithFallback` returns due to exhausted timeout-retry budget, the returned object has `category: 'fail-timeout'`, `exhausted: true`, and `output` is `undefined`. The thrown error type matches the error thrown for exhausted `fail-stale`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When `timeoutRetry` is imported from the `src/prompts` barrel and called, then its returned string includes the original prompt text.",
+    "refined": "Calling `timeoutRetry(originalPrompt: string, changedFiles: string[], elapsedMs: number): string` returns a string where `originalPrompt` appears as a substring verbatim.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Given a non-empty list of changed file paths, when `timeoutRetry` builds a prompt, then the returned prompt names each path and instructs the agent to continue from the existing state rather than restart.",
+    "refined": "Calling `timeoutRetry(prompt, ['file1.ts', 'file2.ts'], 5000)` returns a string that contains \"file1.ts\" and \"file2.ts\" as substrings, and contains a directive matching /continue/i (not /restart/i).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Given an empty list of changed file paths, when `timeoutRetry` builds a prompt, then the returned prompt states that the previous attempt produced no file changes and instructs the agent to change its approach.",
+    "refined": "Calling `timeoutRetry(prompt, [], 5000)` returns a string that contains \"no file changes\" (case-insensitive) or equivalent, and contains a directive matching /change.*approach|try.*different/i.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "Given an empty list of changed file paths, when `timeoutRetry` builds a prompt, then the returned prompt does not instruct the agent to continue from existing work.",
+    "refined": "Calling `timeoutRetry(prompt, [], 5000)` returns a string that does NOT contain substrings \"continue from\", \"pick up where\", or \"existing state\".",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When `timeoutRetry` builds a prompt, then the returned prompt states the elapsed duration of the timed-out attempt.",
+    "refined": "Calling `timeoutRetry(prompt, files, 123456)` returns a string that contains \"123456\" as a numeric substring, or converts it to a human-readable duration (e.g., \"2 minutes 3 seconds\") that is present in the output.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When the `executeHop` closure is invoked with a `timeout-retry` hop kind, then the `timeoutRetry` entry substituted on `_buildHopCallbackDeps` is called exactly once with the original prompt and the list of changed file paths.",
+    "refined": "Spying on `timeoutRetry` in `_buildHopCallbackDeps`, when `executeHop({ kind: 'timeout-retry', originalPrompt: 'orig', changedFiles: ['a.ts'] }, deps)` is called, the spy is invoked exactly once and was called with arguments matching ['orig', ['a.ts']].",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When the `executeHop` closure is invoked with a `primary` or `stale-retry` hop kind, then the `timeoutRetry` entry on `_buildHopCallbackDeps` is not called.",
+    "refined": "Spying on `timeoutRetry` in `_buildHopCallbackDeps`, when `executeHop({ kind: 'primary', ... }, deps)` and `executeHop({ kind: 'stale-retry', ... }, deps)` are called, the spy has callCount equal to 0 after both invocations.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When the pre-attempt git reference is unavailable, then timeout retry prompt construction resolves to a prompt containing the generic timeout preamble without throwing.",
+    "refined": "When `getPreAttemptRef()` throws or returns null/undefined, calling `buildTimeoutRetryPrompt(prompt, elapsedMs, getPreAttemptRef)` returns a string containing \"timeout\" (case-insensitive) and does not throw an error.",
+    "testable": true,
+    "storyId": "US-003"
+  }
+]

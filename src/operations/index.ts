@@ -1,4 +1,5 @@
 export { callOp, newCorrelationId, _callOpDeps, _runPostParseForTest } from "./call";
+export { classifyEmptyOutputFailure } from "./turn-failure-classification";
 export { planInteractiveOp } from "./plan";
 export type { PlanInteractiveInput } from "./plan";
 export { planRefineOp, _planRefineDeps, normalizeCreatedContextFiles } from "./plan-refine";

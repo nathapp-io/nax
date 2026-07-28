@@ -1,11 +1,12 @@
 /**
  * Unit tests for git utility functions (TC-003)
  *
- * Covers: detectMergeConflict helper, captureOutputFiles helper (ENH-005)
+ * Covers: detectMergeConflict helper, captureOutputFiles helper (ENH-005),
+ * captureWorkingTreeChanges helper (US-003).
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _gitDeps, captureOutputFiles, detectMergeConflict } from "@/utils/git";
+import { _gitDeps, captureOutputFiles, captureWorkingTreeChanges, detectMergeConflict } from "@/utils/git";
 
 describe("detectMergeConflict", () => {
   // True positives — real git conflict signals
@@ -123,6 +124,130 @@ describe("captureOutputFiles", () => {
   test("returns empty array when git diff produces no output", async () => {
     _gitDeps.spawn = mockSpawnOutput("");
     const result = await captureOutputFiles("/tmp/repo", "abc123");
+    expect(result).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// captureWorkingTreeChanges (US-003 — timeout-retry working-tree diff)
+// ---------------------------------------------------------------------------
+//
+// Unlike captureOutputFiles (which only diffs baseRef..HEAD, i.e. committed
+// changes), this helper must include uncommitted working-tree state so the
+// timeout-retry prompt can name files the timed-out agent edited without
+// committing. Covers: tracked modifications vs HEAD, untracked files, and the
+// pre-attempt ref→HEAD committed range.
+
+function mockSequentialSpawn(outputs: string[]): typeof _gitDeps.spawn {
+  let callIdx = 0;
+  return mock((_args: unknown[], _opts: unknown) => {
+    const out = outputs[callIdx++] ?? "";
+    const bytes = new TextEncoder().encode(out);
+    return {
+      stdout: new ReadableStream({ start(c) { c.enqueue(bytes); c.close(); } }),
+      stderr: new ReadableStream({ start(c) { c.close(); } }),
+      exited: Promise.resolve(0),
+      kill: mock(() => {}),
+    };
+  });
+}
+
+describe("captureWorkingTreeChanges", () => {
+  test("returns empty array when baseRef is undefined", async () => {
+    const result = await captureWorkingTreeChanges("/tmp/repo", undefined);
+    expect(result).toEqual([]);
+  });
+
+  test("includes uncommitted tracked modifications against HEAD", async () => {
+    // First call: diff baseRef..HEAD (committed range) — empty.
+    // Second call: diff HEAD (uncommitted tracked) — includes modified tracked files.
+    _gitDeps.spawn = mockSequentialSpawn(["", "src/modified.ts\n"]);
+    const result = await captureWorkingTreeChanges("/tmp/repo", "abc123");
+    expect(result).toEqual(["src/modified.ts"]);
+  });
+
+  test("includes untracked files via ls-files --others --exclude-standard", async () => {
+    // First call: diff baseRef..HEAD — empty.
+    // Second call: diff HEAD — empty.
+    // Third call: ls-files --others --exclude-standard — new untracked files.
+    _gitDeps.spawn = mockSequentialSpawn(["", "", "src/new.ts\n"]);
+    const result = await captureWorkingTreeChanges("/tmp/repo", "abc123");
+    expect(result).toEqual(["src/new.ts"]);
+  });
+
+  test("merges committed, uncommitted tracked, and untracked file lists (deduped)", async () => {
+    // Committed: src/committed.ts
+    // Uncommitted tracked: src/modified.ts (also in committed — dup)
+    // Untracked: src/new.ts
+    _gitDeps.spawn = mockSequentialSpawn([
+      "src/committed.ts\nsrc/modified.ts\n",
+      "src/modified.ts\n",
+      "src/new.ts\n",
+    ]);
+    const result = await captureWorkingTreeChanges("/tmp/repo", "abc123");
+    expect(result).toEqual(["src/committed.ts", "src/modified.ts", "src/new.ts"]);
+  });
+
+  test("returns empty array on git spawn failure (non-fatal)", async () => {
+    _gitDeps.spawn = mock(() => {
+      throw new Error("git not found");
+    });
+    const result = await captureWorkingTreeChanges("/tmp/repo", "abc123");
+    expect(result).toEqual([]);
+  });
+
+  test("scopes to scopePrefix when provided", async () => {
+    let capturedArgs: string[][] = [];
+    _gitDeps.spawn = mock((args: string[], _opts: unknown) => {
+      capturedArgs.push(args as string[]);
+      return {
+        stdout: new ReadableStream({ start(c) { c.close(); } }),
+        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        exited: Promise.resolve(0),
+        kill: mock(() => {}),
+      };
+    });
+    await captureWorkingTreeChanges("/tmp/repo", "abc123", "apps/api");
+    // All three git calls must scope to apps/api.
+    for (const args of capturedArgs) {
+      expect(args).toContain("--");
+      expect(args).toContain("apps/api/");
+    }
+  });
+
+  test("does not stall when git subprocess hangs (SIGKILL after timeout)", async () => {
+    // Adversarial review: a hung git must not stall timeout-retry recovery.
+    // captureWorkingTreeChanges passes TIMEOUT_RETRY_GIT_TIMEOUT_MS (3s) to
+    // gitWithTimeout, scoped separately from the general-purpose GIT_TIMEOUT_MS
+    // (10s) so a slow retry-recovery capture can't shrink the timeout for other
+    // gitWithTimeout callers. The mock simulates real Bun.spawn behaviour:
+    // proc.kill() resolves the exited promise so the await unblocks and the
+    // function returns the empty-on-failure contract.
+    let killCount = 0;
+    _gitDeps.spawn = mock((_args: unknown[], _opts: unknown) => {
+      let resolveExited: (code: number) => void = () => {};
+      const proc = {
+        stdout: new ReadableStream({ start(c) { /* never closes */ } }),
+        stderr: new ReadableStream({ start(c) { /* never closes */ } }),
+        exited: new Promise<number>((r) => {
+          resolveExited = r;
+        }),
+        kill: () => {
+          killCount++;
+          resolveExited(137); // 128 + SIGKILL(9)
+        },
+      };
+      return proc;
+    });
+
+    const start = Date.now();
+    const result = await captureWorkingTreeChanges("/tmp/repo", "abc123");
+    const elapsed = Date.now() - start;
+    // Allow generous slack for CI; the scoped TIMEOUT_RETRY_GIT_TIMEOUT_MS is 3s.
+    expect(elapsed).toBeLessThan(15_000);
+    // All three git subprocesses must be killed on timeout (one per diff call).
+    expect(killCount).toBe(3);
+    // Best-effort contract: hangs degrade to empty array.
     expect(result).toEqual([]);
   });
 });

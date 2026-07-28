@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-07-27T15-02-07-312Z",
+    "feature": "fail-timeout-classification",
+    "startedAt": "2026-07-27T15:02:07.312Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 7889
+  },
+  "progress": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 0.29031457499999996,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 0,
+  "updatedAt": "2026-07-27T15:14:51.581Z",
+  "durationMs": 764269,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-07-27T15:07:56.408Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-07-27T15:14:50.080Z"
+    }
+  }
+}

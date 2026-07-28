@@ -37,6 +37,7 @@ export type {
   LlmRoutingConfig,
   MutationCheckConfig,
   ExecutionGatesConfig,
+  AgentManagerConfig,
 } from "./selectors";
 export {
   DEFAULT_CONFIG,
@@ -49,7 +50,11 @@ export {
 } from "./schema";
 export { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
 export type { AgentRoutingProfile, AgentRoutingConfig } from "./schemas-infra";
-export { AgentRoutingProfileSchema, AgentRoutingConfigSchema } from "./schemas-infra";
+export {
+  AgentRoutingProfileSchema,
+  AgentRoutingConfigSchema,
+  DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
+} from "./schemas-infra";
 export { DebateConfigSchema } from "./schemas-debate";
 export { TddConfigSchema, AutoRouteConfigSchema } from "./schemas-execution";
 export { AdversarialReviewConfigSchema, ReviewConfigSchema } from "./schemas-review";

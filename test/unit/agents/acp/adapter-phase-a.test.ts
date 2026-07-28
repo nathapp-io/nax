@@ -188,6 +188,7 @@ describe("sendTurn()", () => {
 
     expect(result.output).toBe("");
     expect(result.internalRoundTrips).toBe(1);
+    expect(result.timedOut).toBe(true);
   });
 
   test("pre-aborted signal: skips prompt and returns zero round-trips", async () => {

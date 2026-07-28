@@ -244,6 +244,21 @@ const AgentAcpConfigSchema = z.object({
   promptRetries: z.number().int().min(0).max(5).default(0),
 });
 
+// Bounded same-agent retry after a wall-clock timeout (US-002). `budgetMultiplier`
+// scales the prior hop's `timeoutSeconds` for the retry's fresh session.
+const AgentTimeoutRetryConfigSchema = z.object({
+  maxAttempts: z.number().int().nonnegative().default(1),
+  budgetMultiplier: z.number().gt(0).max(1).default(0.5),
+});
+
+export const DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG: {
+  maxAttempts: number;
+  budgetMultiplier: number;
+} = {
+  maxAttempts: 1,
+  budgetMultiplier: 0.5,
+};
+
 export const AgentConfigSchema = z.object({
   protocol: z.literal("acp").default("acp"),
   default: z.string().trim().min(1, "agent.default must be non-empty").default("claude"),
@@ -258,6 +273,7 @@ export const AgentConfigSchema = z.object({
   }),
   acp: AgentAcpConfigSchema.default({ promptRetries: 0 }),
   idleWatchdog: AgentIdleWatchdogConfigSchema.default(DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG),
+  timeoutRetry: AgentTimeoutRetryConfigSchema.default(DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG),
 });
 
 export const PrecheckConfigSchema = z.object({

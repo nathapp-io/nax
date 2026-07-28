@@ -15,6 +15,7 @@ export {
   SpawnAcpClient,
   _acpAdapterDeps,
   _spawnClientDeps,
+  buildTurnResult,
   computeAcpHandle,
   createParseState,
   createSpawnAcpClient,
@@ -22,6 +23,7 @@ export {
   parseAcpxJsonLine,
   parseAcpxJsonOutput,
 } from "./acp";
+export type { BuildTurnResultInput } from "./acp";
 export type {
   AcpClient,
   AcpClientOptions,
@@ -58,5 +60,24 @@ export type {
 export { resolveDefaultAgent } from "./utils";
 export { resolveAgentAssignment } from "./shared";
 export type { ResolvedAgentAssignment } from "./shared";
-export { ParseValidationError, makeParseRetryStrategy, makeTieredParseRetryStrategy } from "./retry";
-export type { RetryStrategy, RetryPreset, RetryContext, RetryDecision, TieredInspection } from "./retry";
+export {
+  ParseValidationError,
+  makeParseRetryStrategy,
+  makeTieredParseRetryStrategy,
+  extractTimeoutRetryConfig,
+  resolveTimeoutRetryOptions,
+  timeoutRetryShouldRetry,
+  trySameAgentRetry,
+} from "./retry";
+
+export type {
+  RetryStrategy,
+  RetryPreset,
+  RetryContext,
+  RetryDecision,
+  TieredInspection,
+  TimeoutRetryConfig,
+  SameAgentRetryState,
+  SameAgentRetryResult,
+  TrySameAgentRetryDeps,
+} from "./retry";

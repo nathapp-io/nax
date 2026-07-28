@@ -9,7 +9,9 @@ export {
   _acpAdapterDeps,
   _fallbackDeps,
   MAX_AGENT_OUTPUT_CHARS,
+  buildTurnResult,
 } from "./adapter";
+export type { BuildTurnResultInput } from "./adapter";
 export type { AcpClient, AcpSession, AcpSessionResponse } from "./adapter-session-types";
 export type { AcpClientOptions } from "./adapter-session-types";
 export {

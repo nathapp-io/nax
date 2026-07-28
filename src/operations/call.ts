@@ -13,6 +13,7 @@ import { composeSections, join } from "../prompts/compose";
 import { cancellableDelay } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
 import { buildHopCallback } from "./build-hop-callback";
+import { classifyEmptyOutputFailure } from "./turn-failure-classification";
 import type {
   BuildContext,
   CallContext,
@@ -313,22 +314,17 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
         effective = { ...turn, output: fileContent };
       }
     }
-    // Synthesize fail-stale for empty or whitespace-only output so the manager-tier
+    // Synthesize an AdapterFailure for empty output so the manager-tier
     // retry/swap logic handles transient agent stalls uniformly (spec §B1).
-    // Note: the outer `if (!rawOutput)` guard in callOp uses a falsy check, so
-    // whitespace-only output ("  ") reaches op.parse at exhaustion rather than
-    // throwing CALL_OP_NO_OUTPUT — op.parse is expected to handle or reject it.
-    if (!effective.output?.trim() && !effective.adapterFailure) {
-      return {
-        ...effective,
-        adapterFailure: {
-          outcome: "fail-stale",
-          category: "availability",
-          retriable: true,
-          message: `[${op.name}] agent returned no output`,
-          reason: "empty-output",
-        },
-      };
+    // The outer `if (!rawOutput)` guard in callOp uses a falsy check, so
+    // whitespace-only output ("  ") reaches op.parse at exhaustion rather
+    // than throwing CALL_OP_NO_OUTPUT — op.parse is expected to handle or
+    // reject it. Classification is delegated to turn-failure-classification
+    // (US-001), which preserves the legacy empty/whitespace handling and
+    // adds the wall-clock timeout branch (fail-timeout quality outcome).
+    if (!effective.output?.trim()) {
+      const failure = classifyEmptyOutputFailure(effective);
+      if (failure) return { ...effective, adapterFailure: failure };
     }
     return effective;
   };

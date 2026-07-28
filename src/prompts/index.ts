@@ -43,6 +43,11 @@ export { fenceLangFor, formatTestOutputForFix } from "./builders/acceptance-buil
 export { RectifierPromptBuilder, CONTRADICTION_ESCAPE_HATCH } from "./builders/rectifier-builder";
 export type { RectifierTrigger, FailureRecord, ReviewFinding } from "./builders/rectifier-builder";
 
+// Timeout-retry prompt builder — informed retry prompt conditioned on whether the
+// working tree changed during the timed-out attempt (US-003).
+export { timeoutRetry } from "./builders/timeout-retry-builder";
+export type { TimeoutRetryInput } from "./builders/timeout-retry-builder";
+
 // One-shot prompt builder — escape hatch for structurally trivial prompts.
 // Used by router, decomposer, and auto-approver.
 export { OneShotPromptBuilder } from "./builders/one-shot-builder";
