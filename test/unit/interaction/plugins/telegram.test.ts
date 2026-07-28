@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { InteractionRequest } from "@/interaction";
 import { TelegramInteractionPlugin } from "@/interaction";
+import { _telegramPluginDeps } from "../../../../src/interaction/plugins/telegram";
 
 describe("TelegramInteractionPlugin", () => {
   let savedToken: string | undefined;
@@ -71,11 +72,11 @@ describe("TelegramInteractionPlugin", () => {
 // ---------------------------------------------------------------------------
 
 describe("TelegramInteractionPlugin - send() and poll()", () => {
-  const originalFetch = globalThis.fetch;
+  const originalFetch = _telegramPluginDeps.fetch;
 
   afterEach(() => {
     mock.restore();
-    globalThis.fetch = originalFetch;
+    _telegramPluginDeps.fetch = originalFetch;
   });
 
   function makeConfirmRequest(id: string): InteractionRequest {
@@ -93,7 +94,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
   test("send() POSTs to correct Telegram API URL with message text and inline keyboard", async () => {
     const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
 
-    globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
       // Only track sendMessage calls — init() also calls getUpdates() to drain any backlog.
       if (urlStr.includes("sendMessage")) {
@@ -139,7 +140,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
   });
 
   test("receive() parses callback_query correctly", async () => {
-    globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
@@ -189,7 +190,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
   });
 
   test("receive() handles choose callback_query with value", async () => {
-    globalThis.fetch = mock(async (url: string | URL | Request) => {
+    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request) => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
@@ -260,7 +261,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       resolveCurrentAck = resolve;
     });
 
-    globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
@@ -348,7 +349,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       },
     };
 
-    globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
@@ -415,7 +416,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
     // prompt was actually posted.
     let getUpdatesCallCount = 0;
 
-    globalThis.fetch = mock(async (url: string | URL | Request) => {
+    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request) => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
@@ -478,7 +479,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       resolveMarkupClear = resolve;
     });
 
-    globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
@@ -532,5 +533,47 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
     expect(replyMarkupBodies).toHaveLength(1);
     expect(replyMarkupBodies[0].message_id).toBe(13);
     expect((replyMarkupBodies[0].reply_markup as { inline_keyboard: unknown[] }).inline_keyboard).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// _telegramPluginDeps.fetch seam (closes #1366)
+// ---------------------------------------------------------------------------
+
+describe("TelegramInteractionPlugin - fetch deps seam", () => {
+  const originalFetch = _telegramPluginDeps.fetch;
+
+  afterEach(() => {
+    mock.restore();
+    _telegramPluginDeps.fetch = originalFetch;
+  });
+
+  test("send() routes through _telegramPluginDeps.fetch, not the global", async () => {
+    const urls: string[] = [];
+    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request) => {
+      const urlStr = url.toString();
+      urls.push(urlStr);
+      if (urlStr.includes("getUpdates")) {
+        return new Response(JSON.stringify({ ok: true, result: [] }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({ ok: true, result: { message_id: 1, chat: { id: 99999 } } }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+
+    const plugin = new TelegramInteractionPlugin();
+    await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
+    await plugin.send({
+      id: "deps-1",
+      type: "confirm",
+      featureName: "f",
+      stage: "review",
+      summary: "s",
+      fallback: "abort",
+      createdAt: Date.now(),
+    } as InteractionRequest);
+
+    expect(urls.some((u) => u.includes("sendMessage"))).toBe(true);
   });
 });

@@ -10,6 +10,15 @@ import { getSafeLogger } from "../../logger";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 import { MAX_MESSAGE_CHARS, buildBody, buildHeader, buildKeyboard, splitText } from "./telegram-format";
 
+/**
+ * Injectable dependencies for testing.
+ * Mirrors _webhookPluginDeps in the sibling webhook plugin — tests stub this
+ * rather than monkey-patching globalThis.fetch, which leaks across test files.
+ */
+export const _telegramPluginDeps = {
+  fetch: globalThis.fetch.bind(globalThis) as typeof fetch,
+};
+
 const CALLBACK_API_TIMEOUT_MS = 4000;
 
 /** Zod schema for validating telegram plugin config */
@@ -131,7 +140,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
         const partLabel = chunks.length > 1 ? `[${i + 1}/${chunks.length}] ` : "";
         const text = `${header}\n${partLabel}${chunks[i]}`;
 
-        const response = await fetch(`https://api.telegram.org/bot${this.botToken}/sendMessage`, {
+        const response = await _telegramPluginDeps.fetch(`https://api.telegram.org/bot${this.botToken}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -261,7 +270,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
 
       let response: Response;
       try {
-        response = await fetch(`https://api.telegram.org/bot${this.botToken}/getUpdates`, {
+        response = await _telegramPluginDeps.fetch(`https://api.telegram.org/bot${this.botToken}/getUpdates`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -359,7 +368,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), CALLBACK_API_TIMEOUT_MS);
       try {
-        await fetch(`https://api.telegram.org/bot${this.botToken}/answerCallbackQuery`, {
+        await _telegramPluginDeps.fetch(`https://api.telegram.org/bot${this.botToken}/answerCallbackQuery`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -385,7 +394,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), CALLBACK_API_TIMEOUT_MS);
       try {
-        await fetch(`https://api.telegram.org/bot${this.botToken}/editMessageReplyMarkup`, {
+        await _telegramPluginDeps.fetch(`https://api.telegram.org/bot${this.botToken}/editMessageReplyMarkup`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -416,7 +425,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     // Edit only the last message to avoid redundant notifications
     const lastId = pending.ids[pending.ids.length - 1];
     try {
-      await fetch(`https://api.telegram.org/bot${this.botToken}/editMessageText`, {
+      await _telegramPluginDeps.fetch(`https://api.telegram.org/bot${this.botToken}/editMessageText`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

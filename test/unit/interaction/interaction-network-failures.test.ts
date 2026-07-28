@@ -7,7 +7,7 @@
 
 import { afterAll, describe, expect, test } from "bun:test";
 import type { InteractionRequest } from "../../../src/interaction";
-import { TelegramInteractionPlugin } from "../../../src/interaction/plugins/telegram";
+import { _telegramPluginDeps, TelegramInteractionPlugin } from "../../../src/interaction/plugins/telegram";
 import { WebhookInteractionPlugin, _webhookPluginDeps } from "../../../src/interaction/plugins/webhook";
 
 function timeoutResult<T>(value: T, delayMs = 0): Promise<T> {
@@ -30,8 +30,8 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
     await plugin.init({ botToken: "test-token", chatId: "12345" });
 
     // Mock fetch to throw network error
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () => {
+    const originalFetch = _telegramPluginDeps.fetch;
+    _telegramPluginDeps.fetch = async () => {
       throw new Error("ECONNREFUSED");
     };
 
@@ -48,7 +48,7 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
     await expect(plugin.send(request)).rejects.toThrow("Failed to send Telegram message");
 
     // Restore
-    globalThis.fetch = originalFetch;
+    _telegramPluginDeps.fetch = originalFetch;
   });
 
   test("should handle malformed API response in send()", async () => {
@@ -56,8 +56,8 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
     await plugin.init({ botToken: "test-token", chatId: "12345" });
 
     // Mock fetch to return invalid JSON
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () => {
+    const originalFetch = _telegramPluginDeps.fetch;
+    _telegramPluginDeps.fetch = async () => {
       return new Response("not json", { status: 200 });
     };
 
@@ -74,7 +74,7 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
     await expect(plugin.send(request)).rejects.toThrow("Failed to send Telegram message");
 
     // Restore
-    globalThis.fetch = originalFetch;
+    _telegramPluginDeps.fetch = originalFetch;
   });
 
   test("should handle HTTP error status in send()", async () => {
@@ -82,8 +82,8 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
     await plugin.init({ botToken: "test-token", chatId: "12345" });
 
     // Mock fetch to return 500 error
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () => {
+    const originalFetch = _telegramPluginDeps.fetch;
+    _telegramPluginDeps.fetch = async () => {
       return new Response("Internal Server Error", { status: 500 });
     };
 
@@ -100,7 +100,7 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
     await expect(plugin.send(request)).rejects.toThrow("Telegram API error (500)");
 
     // Restore
-    globalThis.fetch = originalFetch;
+    _telegramPluginDeps.fetch = originalFetch;
   });
 
   test("should return empty updates on getUpdates() network failure", async () => {
@@ -108,8 +108,8 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
     await plugin.init({ botToken: "test-token", chatId: "12345" });
 
     // Mock fetch to throw network error
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () => {
+    const originalFetch = _telegramPluginDeps.fetch;
+    _telegramPluginDeps.fetch = async () => {
       throw new Error("Network timeout");
     };
 
@@ -120,17 +120,17 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
     expect(updates).toEqual([]);
 
     // Restore
-    globalThis.fetch = originalFetch;
+    _telegramPluginDeps.fetch = originalFetch;
   });
 
   test("should apply exponential backoff on consecutive getUpdates() failures", async () => {
     const plugin = new TelegramInteractionPlugin();
     await plugin.init({ botToken: "test-token", chatId: "12345" });
 
-    const originalFetch = globalThis.fetch;
+    const originalFetch = _telegramPluginDeps.fetch;
     let fetchCallCount = 0;
 
-    globalThis.fetch = async () => {
+    _telegramPluginDeps.fetch = async () => {
       fetchCallCount++;
       throw new Error("Network error");
     };
@@ -148,17 +148,17 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
     expect(backoffMs).toBeGreaterThan(1000); // Should have increased from initial 1000ms
 
     // Restore
-    globalThis.fetch = originalFetch;
+    _telegramPluginDeps.fetch = originalFetch;
   });
 
   test("should reset backoff on successful getUpdates()", async () => {
     const plugin = new TelegramInteractionPlugin();
     await plugin.init({ botToken: "test-token", chatId: "12345" });
 
-    const originalFetch = globalThis.fetch;
+    const originalFetch = _telegramPluginDeps.fetch;
     let callCount = 0;
 
-    globalThis.fetch = async () => {
+    _telegramPluginDeps.fetch = async () => {
       callCount++;
       if (callCount === 1) {
         // First call fails
@@ -181,7 +181,7 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
     expect(backoffAfterSuccess).toBe(1000); // Reset to initial value
 
     // Restore
-    globalThis.fetch = originalFetch;
+    _telegramPluginDeps.fetch = originalFetch;
   });
 });
 

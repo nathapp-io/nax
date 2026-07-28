@@ -7,26 +7,26 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { TelegramInteractionPlugin } from "../../../src/interaction/plugins/telegram";
+import { _telegramPluginDeps, TelegramInteractionPlugin } from "../../../src/interaction/plugins/telegram";
 import type { InteractionRequest } from "../../../src/interaction/types";
 
 describe("TelegramInteractionPlugin - Regression BUG-116", () => {
-  let savedFetch: typeof globalThis.fetch;
+  let savedFetch: typeof _telegramPluginDeps.fetch;
 
   beforeEach(() => {
-    savedFetch = globalThis.fetch;
+    savedFetch = _telegramPluginDeps.fetch;
   });
 
   afterEach(() => {
     mock.restore();
-    globalThis.fetch = savedFetch;
+    _telegramPluginDeps.fetch = savedFetch;
   });
 
   test("receive() returns respondedBy: 'timeout' on timeout", async () => {
     let editCalled = false;
     let editBody: Record<string, unknown> | null = null;
 
-    globalThis.fetch = mock(async (url: string | URL | Request) => {
+    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request) => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
@@ -76,7 +76,7 @@ describe("TelegramInteractionPlugin - Regression BUG-116", () => {
   test("sendTimeoutMessage clears inline keyboard (reply_markup empty)", async () => {
     let editBody: Record<string, unknown> | null = null;
 
-    globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
