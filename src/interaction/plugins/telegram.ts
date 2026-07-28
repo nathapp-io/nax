@@ -21,6 +21,30 @@ export const _telegramPluginDeps = {
 
 const CALLBACK_API_TIMEOUT_MS = 4000;
 
+/** Telegram numeric chat ids; negative for groups and supergroups. */
+const NUMERIC_CHAT_ID = /^-?\d+$/;
+
+/**
+ * Normalize a configured chat id and report whether it can ever match an
+ * inbound update.
+ *
+ * The ingestion filter compares `String(update.chat.id)` against the configured
+ * value, and getUpdates only ever reports NUMERIC chat ids. An `@channelusername`
+ * is accepted by sendMessage — which is precisely why a mismatch here is silent:
+ * outbound posting keeps working, so nothing looks broken until an answer never
+ * arrives and every interactive prompt quietly falls through to its timeout
+ * fallback. Same for a chat id that picked up whitespace from a .env file.
+ *
+ * Whitespace is stripped (unambiguously a typo). A non-numeric id is reported
+ * as `unmatchable` rather than rejected, because send-only usage — `notify`
+ * requests, which never wait for a response — is legitimate against an
+ * `@channelusername`.
+ */
+export function normalizeChatId(raw: string): { chatId: string; unmatchable: boolean } {
+  const chatId = raw.trim();
+  return { chatId, unmatchable: !NUMERIC_CHAT_ID.test(chatId) };
+}
+
 /** Zod schema for validating telegram plugin config */
 const TelegramConfigSchema = z.object({
   botToken: z.string().optional(),
@@ -72,11 +96,26 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   async init(config: Record<string, unknown>): Promise<void> {
     const cfg = TelegramConfigSchema.parse(config);
     this.botToken = cfg.botToken ?? process.env.NAX_TELEGRAM_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN ?? null;
-    this.chatId = cfg.chatId ?? process.env.NAX_TELEGRAM_CHAT_ID ?? null;
+    const rawChatId = cfg.chatId ?? process.env.NAX_TELEGRAM_CHAT_ID ?? null;
+    // Normalize before the emptiness check so an all-whitespace chatId is
+    // treated as absent rather than as a configured value that matches nothing.
+    const normalized = rawChatId === null ? null : normalizeChatId(rawChatId);
+    this.chatId = normalized?.chatId || null;
 
     if (!this.botToken || !this.chatId) {
       throw new Error(
         "Telegram plugin requires botToken and chatId (env: NAX_TELEGRAM_TOKEN or TELEGRAM_BOT_TOKEN, NAX_TELEGRAM_CHAT_ID)",
+      );
+    }
+
+    // Loud at startup beats silent at prompt time: with an unmatchable chatId the
+    // prompt still posts and simply never accepts an answer. Warn rather than
+    // throw — notify-only usage against an @channelusername never needs a reply.
+    if (normalized?.unmatchable) {
+      this.logger?.warn(
+        "interaction",
+        "Telegram chatId is not numeric — inbound updates cannot be matched, so interactive prompts will always fall back to their timeout. Use the numeric chat id (see getUpdates or @userinfobot).",
+        { chatId: this.chatId },
       );
     }
     // No network call here — the backlog is drained immediately before each prompt is
@@ -100,7 +139,12 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
         this.logger?.warn("interaction", "Telegram backlog drain failed — stale updates may be misread as a response");
         return;
       }
-      if (result.updates.length === 0) return;
+      // Terminate on the RAW page size, not the authorized one. A page filled
+      // entirely with foreign traffic filters down to nothing while Telegram
+      // still has pages left; stopping there would leave genuine stale updates
+      // from the configured chat unconsumed, which is exactly what the drain
+      // exists to prevent.
+      if (result.rawCount === 0) return;
     }
     this.logger?.warn("interaction", "Telegram backlog drain hit page cap — stale updates may remain", {
       pages: TelegramInteractionPlugin.MAX_DRAIN_PAGES,
@@ -258,9 +302,12 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   /**
    * Core getUpdates() implementation reporting success/failure explicitly.
    * Mutates lastUpdateId/backoffMs the same way regardless of caller.
+   *
+   * `rawCount` is the page size BEFORE chat-id filtering. drainBacklog() needs it
+   * to tell "Telegram has nothing left" apart from "nothing on this page was ours".
    */
-  private async fetchUpdates(): Promise<{ ok: boolean; updates: TelegramUpdate[] }> {
-    if (!this.botToken) return { ok: true, updates: [] };
+  private async fetchUpdates(): Promise<{ ok: boolean; updates: TelegramUpdate[]; rawCount: number }> {
+    if (!this.botToken) return { ok: true, updates: [], rawCount: 0 };
 
     try {
       // Client-side timeout guards against network hangs (no OS TCP timeout = 75s+ stall)
@@ -310,12 +357,17 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
 
       // Reset backoff on success
       this.backoffMs = 1000;
-      return { ok: true, updates };
+      return { ok: true, updates, rawCount: raw.length };
     } catch (err) {
       // Apply exponential backoff on network error
       this.backoffMs = Math.min(this.backoffMs * 2, this.maxBackoffMs);
-      // Swallow the error (logged for debugging, not exposed to user) — callers retry with backoff
-      return { ok: false, updates: [] };
+      // Swallow the error — callers retry with backoff. Logged at debug so a
+      // persistently failing poll is diagnosable rather than silent.
+      this.logger?.debug("interaction", "Telegram getUpdates failed — retrying with backoff", {
+        error: err instanceof Error ? err.message : String(err),
+        backoffMs: this.backoffMs,
+      });
+      return { ok: false, updates: [], rawCount: 0 };
     }
   }
 

@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { CLIInteractionPlugin } from "../../../../src/interaction/plugins/cli";
 
 const makeRequest = (id = "req-1") => ({

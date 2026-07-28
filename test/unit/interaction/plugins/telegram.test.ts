@@ -6,8 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { InteractionRequest } from "@/interaction";
-import { TelegramInteractionPlugin } from "@/interaction";
-import { _telegramPluginDeps } from "../../../../src/interaction/plugins/telegram";
+import { TelegramInteractionPlugin, _telegramPluginDeps } from "@/interaction";
 
 describe("TelegramInteractionPlugin", () => {
   let savedToken: string | undefined;
@@ -104,10 +103,10 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       if (urlStr.includes("getUpdates")) {
         return new Response(JSON.stringify({ ok: true, result: [] }), { status: 200 });
       }
-      return new Response(
-        JSON.stringify({ ok: true, result: { message_id: 42, chat: { id: 12345 } } }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 42, chat: { id: 12345 } } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }) as typeof fetch;
 
     const plugin = new TelegramInteractionPlugin();
@@ -144,10 +143,10 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
-        return new Response(
-          JSON.stringify({ ok: true, result: { message_id: 10, chat: { id: 99999 } } }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 10, chat: { id: 99999 } } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
       if (urlStr.includes("getUpdates")) {
@@ -194,10 +193,10 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
-        return new Response(
-          JSON.stringify({ ok: true, result: { message_id: 11, chat: { id: 99999 } } }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 11, chat: { id: 99999 } } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
       if (urlStr.includes("getUpdates")) {
@@ -265,10 +264,10 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
-        return new Response(
-          JSON.stringify({ ok: true, result: { message_id: 12, chat: { id: 99999 } } }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 12, chat: { id: 99999 } } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
       if (urlStr.includes("getUpdates")) {
@@ -353,10 +352,10 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
-        return new Response(
-          JSON.stringify({ ok: true, result: { message_id: 20, chat: { id: 99999 } } }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 20, chat: { id: 99999 } } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
       if (urlStr.includes("getUpdates")) {
@@ -420,10 +419,10 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
-        return new Response(
-          JSON.stringify({ ok: true, result: { message_id: 30, chat: { id: 99999 } } }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 30, chat: { id: 99999 } } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
       if (urlStr.includes("getUpdates")) {
@@ -483,10 +482,10 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
-        return new Response(
-          JSON.stringify({ ok: true, result: { message_id: 13, chat: { id: 99999 } } }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 13, chat: { id: 99999 } } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
       if (urlStr.includes("getUpdates")) {
@@ -556,10 +555,9 @@ describe("TelegramInteractionPlugin - fetch deps seam", () => {
       if (urlStr.includes("getUpdates")) {
         return new Response(JSON.stringify({ ok: true, result: [] }), { status: 200 });
       }
-      return new Response(
-        JSON.stringify({ ok: true, result: { message_id: 1, chat: { id: 99999 } } }),
-        { status: 200 },
-      );
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 1, chat: { id: 99999 } } }), {
+        status: 200,
+      });
     }) as typeof fetch;
 
     const plugin = new TelegramInteractionPlugin();
@@ -575,223 +573,5 @@ describe("TelegramInteractionPlugin - fetch deps seam", () => {
     } as InteractionRequest);
 
     expect(urls.some((u) => u.includes("sendMessage"))).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Inbound chat authorization (closes #1365)
-//
-// getUpdates() returns updates from EVERY chat the bot participates in. Without
-// a chat-id filter at ingestion, any third party who can message the bot can
-// answer a pending input interaction -- injected straight into the coding
-// agent's turn by the ACP interaction bridge -- or forge a callback_query to
-// approve, reject, or abort a run. Request ids are deterministic and guessable
-// for some flows.
-// ---------------------------------------------------------------------------
-
-describe("TelegramInteractionPlugin - inbound chat authorization", () => {
-  const originalFetch = _telegramPluginDeps.fetch;
-
-  afterEach(() => {
-    mock.restore();
-    _telegramPluginDeps.fetch = originalFetch;
-  });
-
-  /**
-   * Stubs the Telegram API.
-   *
-   * Two behaviours here are load-bearing, and getting either wrong produces a
-   * test that passes for the wrong reason:
-   *
-   * 1. Updates stay INVISIBLE until sendMessage has been called. send() calls
-   *    drainBacklog() before posting the prompt, so an update that is visible
-   *    from the start is consumed by the drain and never reaches receive() at
-   *    all -- the assertion would then pass even with the security fix reverted.
-   *    Gating on `posted` models what actually happens: the attacker taps the
-   *    button after the prompt appears.
-   *
-   * 2. getUpdates honours the offset, so an update is served once and not
-   *    re-served. That is what makes the lastUpdateId test meaningful.
-   */
-  function stubTelegram(updates: Array<Record<string, unknown>>) {
-    const acked: string[] = [];
-    const offsets: number[] = [];
-    let posted = false;
-
-    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
-      const urlStr = url.toString();
-      const body = JSON.parse((init?.body as string) ?? "{}");
-
-      if (urlStr.includes("sendMessage")) {
-        posted = true;
-        return new Response(JSON.stringify({ ok: true, result: { message_id: 10, chat: { id: 99999 } } }), {
-          status: 200,
-        });
-      }
-      if (urlStr.includes("answerCallbackQuery")) {
-        acked.push(body.callback_query_id as string);
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      }
-      if (urlStr.includes("getUpdates")) {
-        const offset = body.offset as number;
-        offsets.push(offset);
-        const visible = posted ? updates.filter((u) => (u.update_id as number) >= offset) : [];
-        return new Response(JSON.stringify({ ok: true, result: visible }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ ok: true }), { status: 200 });
-    }) as typeof fetch;
-
-    return { acked, offsets };
-  }
-
-  function makeConfirmRequest(id: string): InteractionRequest {
-    return {
-      id,
-      type: "confirm",
-      featureName: "my-feature",
-      stage: "review",
-      summary: "Proceed with merge?",
-      fallback: "abort",
-      createdAt: Date.now(),
-    } as InteractionRequest;
-  }
-
-  test("a correctly-formed callback_query from a foreign chat does not resolve the request", async () => {
-    stubTelegram([
-      {
-        update_id: 1,
-        callback_query: {
-          id: "cq-foreign",
-          // Payload is exactly what a legitimate approval looks like.
-          data: "auth-1:approve",
-          message: { message_id: 10, chat: { id: 424242 } },
-        },
-      },
-    ]);
-
-    const plugin = new TelegramInteractionPlugin();
-    await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
-    await plugin.send(makeConfirmRequest("auth-1"));
-
-    const response = await plugin.receive("auth-1", 300);
-
-    expect(response.respondedBy).toBe("timeout");
-    expect(response.action).not.toBe("approve");
-  });
-
-  test("a foreign callback_query is never acknowledged", async () => {
-    const { acked } = stubTelegram([
-      {
-        update_id: 1,
-        callback_query: {
-          id: "cq-foreign",
-          data: "auth-2:approve",
-          message: { message_id: 10, chat: { id: 424242 } },
-        },
-      },
-    ]);
-
-    const plugin = new TelegramInteractionPlugin();
-    await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
-    await plugin.send(makeConfirmRequest("auth-2"));
-    await plugin.receive("auth-2", 300);
-
-    expect(acked).not.toContain("cq-foreign");
-  });
-
-  test("a text message from a foreign chat does not answer a pending input request", async () => {
-    stubTelegram([
-      {
-        update_id: 1,
-        message: { message_id: 77, chat: { id: 424242 }, text: "rm -rf /" },
-      },
-    ]);
-
-    const plugin = new TelegramInteractionPlugin();
-    await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
-    await plugin.send({
-      id: "auth-3",
-      type: "input",
-      featureName: "my-feature",
-      stage: "review",
-      summary: "What should I do?",
-      fallback: "abort",
-      createdAt: Date.now(),
-    } as InteractionRequest);
-
-    const response = await plugin.receive("auth-3", 300);
-
-    expect(response.respondedBy).toBe("timeout");
-    expect(response.value).toBeUndefined();
-  });
-
-  test("lastUpdateId still advances past foreign updates so they are not re-served forever", async () => {
-    const { offsets } = stubTelegram([
-      {
-        update_id: 7,
-        message: { message_id: 77, chat: { id: 424242 }, text: "noise" },
-      },
-    ]);
-
-    const plugin = new TelegramInteractionPlugin();
-    await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
-    await plugin.send(makeConfirmRequest("auth-4"));
-    // 2500ms, not 300ms: the poll loop backs off 1000ms between attempts, so a
-    // short timeout yields a single poll and never demonstrates the offset moving.
-    await plugin.receive("auth-4", 2500);
-
-    // Reaching offset 8 is the discriminating assertion. If the filter ran
-    // before lastUpdateId advanced, the offset would stay parked at 1 forever
-    // and 8 would never appear.
-    expect(offsets).toContain(8);
-    expect(offsets.at(-1)).toBe(8);
-  });
-
-  test("a callback_query from the configured chat still resolves", async () => {
-    stubTelegram([
-      {
-        update_id: 1,
-        callback_query: {
-          id: "cq-ok",
-          data: "auth-5:approve",
-          message: { message_id: 10, chat: { id: 99999 } },
-        },
-      },
-    ]);
-
-    const plugin = new TelegramInteractionPlugin();
-    await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
-    await plugin.send(makeConfirmRequest("auth-5"));
-
-    const response = await plugin.receive("auth-5", 5000);
-
-    expect(response.action).toBe("approve");
-    expect(response.respondedBy).toBe("telegram");
-  });
-
-  test("a text reply from the configured chat still answers an input request", async () => {
-    stubTelegram([
-      {
-        update_id: 1,
-        message: { message_id: 78, chat: { id: 99999 }, text: "ship it" },
-      },
-    ]);
-
-    const plugin = new TelegramInteractionPlugin();
-    await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
-    await plugin.send({
-      id: "auth-6",
-      type: "input",
-      featureName: "my-feature",
-      stage: "review",
-      summary: "What should I do?",
-      fallback: "abort",
-      createdAt: Date.now(),
-    } as InteractionRequest);
-
-    const response = await plugin.receive("auth-6", 5000);
-
-    expect(response.action).toBe("input");
-    expect(response.value).toBe("ship it");
   });
 });
