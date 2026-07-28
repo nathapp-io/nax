@@ -37,7 +37,7 @@ export type { RunState } from "./state";
 
 // Plugins
 export { CLIInteractionPlugin } from "./plugins/cli";
-export { TelegramInteractionPlugin } from "./plugins/telegram";
+export { TelegramInteractionPlugin, _telegramPluginDeps } from "./plugins/telegram";
 export {
   MAX_MESSAGE_CHARS,
   buildBody,
