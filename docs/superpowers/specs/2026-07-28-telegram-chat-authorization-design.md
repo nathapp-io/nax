@@ -89,10 +89,15 @@ inputs explicitly and uses no `this`:
 | `splitText` | `(text: string, maxChars: number) => string[]` |
 | `getStageEmoji` | `(stage: string) => string` |
 
-Bodies move verbatim, so the existing formatting tests pass unchanged and prove
-the relocation was faithful. `MAX_MESSAGE_CHARS` moves with them; the inline
-keyboard row type is named and exported so `telegram.ts` can still type the
+Bodies move verbatim. `MAX_MESSAGE_CHARS` moves with them; the inline keyboard
+row type is named and exported so `telegram.ts` can still type the
 `reply_markup` payload it sends.
+
+These helpers have **no direct test coverage today** — they are private methods,
+exercised only indirectly through `send()`'s assertions on message text and
+keyboard contents. `sanitizeMarkdown` and `splitText` are barely covered even
+incidentally. Direct unit tests are therefore written *before* the move, so the
+relocation is verified rather than assumed.
 
 The deps seam is a module-level object in `telegram.ts`, mirroring
 `_webhookPluginDeps`:
@@ -177,13 +182,19 @@ the Webhook and Auto blocks. `telegram-timeout.test.ts` (128 lines) stays as is.
 
 ## Sequencing
 
-Two commits:
+Four commits, each independently reviewable and each leaving the suite green:
 
-1. **`refactor:`** — the split plus `_telegramPluginDeps`, tests migrated to the
-   seam. No behaviour change. Closes #1366.
-2. **`fix:`** — `isFromConfiguredChat` plus its regression tests. Closes #1365.
+1. **`refactor:`** — extract `telegram-format.ts` plus its new unit tests. Makes
+   source headroom.
+2. **`test:`** — move the Telegram suites to
+   `test/unit/interaction/plugins/telegram.test.ts`. Makes test headroom.
+3. **`refactor:`** — `_telegramPluginDeps` and the five call sites, tests
+   migrated to the seam. No behaviour change. Closes #1366.
+4. **`fix:`** — `isFromConfiguredChat` plus its regression tests. Closes #1365.
 
-Splitting this way keeps the security commit's diff to the guard and its tests:
+The two headroom commits come first because the 600-line source limit and the
+800-line test limit both bite before any functional line can be added. Ordering
+this way keeps the security commit's diff to the guard and its tests:
 reviewable in isolation, and revertable without losing the refactor.
 
 ## Out of scope
