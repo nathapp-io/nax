@@ -6,7 +6,7 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { InteractionRequest } from "@/interaction";
-import { TelegramInteractionPlugin, _telegramPluginDeps } from "@/interaction";
+import { TelegramInteractionPlugin, _telegramPluginDeps, normalizeChatId } from "@/interaction";
 
 // ---------------------------------------------------------------------------
 // Inbound chat authorization (closes #1365)
@@ -331,5 +331,91 @@ describe("TelegramInteractionPlugin - backlog drain with foreign traffic", () =>
     // One page holding update 1, then one empty page. Anything more means the
     // drain is burning its full MAX_DRAIN_PAGES budget on every single send().
     expect(getUpdatesCalls).toEqual([1, 2]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Configured chat id normalization
+//
+// The filter compares the inbound chat.id against the configured one as a
+// string. An id that cannot match anything Telegram will ever send makes every
+// inbound update fail the filter -- send() still works, so the prompt appears
+// and simply never accepts an answer. That has to be loud, not silent.
+// ---------------------------------------------------------------------------
+
+describe("normalizeChatId", () => {
+  test("strips surrounding whitespace", () => {
+    expect(normalizeChatId("  99999  ").chatId).toBe("99999");
+  });
+
+  test("accepts negative ids used by groups and supergroups", () => {
+    const result = normalizeChatId("-1001234567890");
+    expect(result.chatId).toBe("-1001234567890");
+    expect(result.unmatchable).toBe(false);
+  });
+
+  test("accepts a plain numeric id", () => {
+    expect(normalizeChatId("99999").unmatchable).toBe(false);
+  });
+
+  test("flags an @username id as unmatchable against inbound updates", () => {
+    // Valid for sendMessage, which is exactly why this fails silently today:
+    // outbound works, so nothing looks broken until an answer never arrives.
+    expect(normalizeChatId("@mychannel").unmatchable).toBe(true);
+  });
+
+  test("flags a non-numeric id as unmatchable", () => {
+    expect(normalizeChatId("not-an-id").unmatchable).toBe(true);
+  });
+});
+
+describe("TelegramInteractionPlugin - configured chat id normalization", () => {
+  const originalFetch = _telegramPluginDeps.fetch;
+
+  afterEach(() => {
+    mock.restore();
+    _telegramPluginDeps.fetch = originalFetch;
+  });
+
+  test("a whitespace-padded chatId still accepts a callback from that chat", async () => {
+    let posted = false;
+    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+      const body = JSON.parse((init?.body as string) ?? "{}");
+      if (urlStr.includes("sendMessage")) {
+        posted = true;
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 10, chat: { id: 99999 } } }), {
+          status: 200,
+        });
+      }
+      if (urlStr.includes("getUpdates")) {
+        const offset = body.offset as number;
+        const update = {
+          update_id: 1,
+          callback_query: { id: "cq-ok", data: "norm-1:approve", message: { message_id: 10, chat: { id: 99999 } } },
+        };
+        const visible = posted && offset <= 1 ? [update] : [];
+        return new Response(JSON.stringify({ ok: true, result: visible }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }) as typeof fetch;
+
+    const plugin = new TelegramInteractionPlugin();
+    // Trailing whitespace is easy to pick up from a .env file or a copy-paste.
+    await plugin.init({ botToken: "bot-abc123", chatId: " 99999\n" });
+    await plugin.send({
+      id: "norm-1",
+      type: "confirm",
+      featureName: "my-feature",
+      stage: "review",
+      summary: "Proceed?",
+      fallback: "abort",
+      createdAt: Date.now(),
+    } as InteractionRequest);
+
+    const response = await plugin.receive("norm-1", 5000);
+
+    expect(response.action).toBe("approve");
+    expect(response.respondedBy).toBe("telegram");
   });
 });

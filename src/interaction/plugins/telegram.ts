@@ -21,6 +21,30 @@ export const _telegramPluginDeps = {
 
 const CALLBACK_API_TIMEOUT_MS = 4000;
 
+/** Telegram numeric chat ids; negative for groups and supergroups. */
+const NUMERIC_CHAT_ID = /^-?\d+$/;
+
+/**
+ * Normalize a configured chat id and report whether it can ever match an
+ * inbound update.
+ *
+ * The ingestion filter compares `String(update.chat.id)` against the configured
+ * value, and getUpdates only ever reports NUMERIC chat ids. An `@channelusername`
+ * is accepted by sendMessage — which is precisely why a mismatch here is silent:
+ * outbound posting keeps working, so nothing looks broken until an answer never
+ * arrives and every interactive prompt quietly falls through to its timeout
+ * fallback. Same for a chat id that picked up whitespace from a .env file.
+ *
+ * Whitespace is stripped (unambiguously a typo). A non-numeric id is reported
+ * as `unmatchable` rather than rejected, because send-only usage — `notify`
+ * requests, which never wait for a response — is legitimate against an
+ * `@channelusername`.
+ */
+export function normalizeChatId(raw: string): { chatId: string; unmatchable: boolean } {
+  const chatId = raw.trim();
+  return { chatId, unmatchable: !NUMERIC_CHAT_ID.test(chatId) };
+}
+
 /** Zod schema for validating telegram plugin config */
 const TelegramConfigSchema = z.object({
   botToken: z.string().optional(),
@@ -72,7 +96,11 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   async init(config: Record<string, unknown>): Promise<void> {
     const cfg = TelegramConfigSchema.parse(config);
     this.botToken = cfg.botToken ?? process.env.NAX_TELEGRAM_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN ?? null;
-    this.chatId = cfg.chatId ?? process.env.NAX_TELEGRAM_CHAT_ID ?? null;
+    const rawChatId = cfg.chatId ?? process.env.NAX_TELEGRAM_CHAT_ID ?? null;
+    // Normalize before the emptiness check so an all-whitespace chatId is
+    // treated as absent rather than as a configured value that matches nothing.
+    const normalized = rawChatId === null ? null : normalizeChatId(rawChatId);
+    this.chatId = normalized?.chatId || null;
 
     if (!this.botToken || !this.chatId) {
       throw new Error(
@@ -80,6 +108,16 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       );
     }
 
+    // Loud at startup beats silent at prompt time: with an unmatchable chatId the
+    // prompt still posts and simply never accepts an answer. Warn rather than
+    // throw — notify-only usage against an @channelusername never needs a reply.
+    if (normalized?.unmatchable) {
+      this.logger?.warn(
+        "interaction",
+        "Telegram chatId is not numeric — inbound updates cannot be matched, so interactive prompts will always fall back to their timeout. Use the numeric chat id (see getUpdates or @userinfobot).",
+        { chatId: this.chatId },
+      );
+    }
     // No network call here — the backlog is drained immediately before each prompt is
     // posted (see send()), not at startup. Interactions can fire minutes into a run,
     // so draining once at init() would still leave a wide window for stale updates to
