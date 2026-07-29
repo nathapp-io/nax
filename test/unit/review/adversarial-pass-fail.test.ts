@@ -225,6 +225,10 @@ const ALL_MISSING_AC_QUOTE_RESPONSE = JSON.stringify({
       // no acQuote → missing_ac_quote drop
       verifiedBy: { file: "src/log.ts", observed: "login handler stub" },
     },
+    // #1378 — a surviving sub-threshold finding must NOT rescue the run. The verdict
+    // honours blockingThreshold so the op now passes; the wrapper must still fail closed
+    // off the model's own claim, or an ungroundable blocker rides in on an advisory nit.
+    { severity: "info", category: "quality", file: "src/log.ts", line: 2, issue: "Nit", suggestion: "Tidy" },
   ],
 });
 

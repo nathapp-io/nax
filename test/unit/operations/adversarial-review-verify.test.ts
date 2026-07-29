@@ -182,7 +182,10 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
     });
   });
 
-  test("blocking/advisory split preserves passed:false when only advisory findings remain", async () => {
+  // Previously asserted `passed:false` here, encoding nax#1378 as intended behaviour.
+  // The verdict must honour blockingThreshold: an advisory-only result passes while the
+  // finding is still surfaced in `findings` and kept out of `normalizedFindings`.
+  test("blocking/advisory split keeps advisory findings out of normalizedFindings", async () => {
     return withTempDir(async (workdir) => {
       const ctx = makeVerifyCtx();
       const input: AdversarialReviewInput = {
@@ -207,7 +210,8 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
       });
       const result = await adversarialReviewOp.verify!(parsed, input, ctx);
       expect(result).not.toBeNull();
-      expect(result!.passed).toBe(false);
+      expect(result!.passed).toBe(true);
+      expect(result!.findings).toHaveLength(1);
       expect(result!.normalizedFindings).toHaveLength(0);
     });
   });
@@ -485,5 +489,152 @@ describe("adversarialReviewOp.verify() — scope grounding", () => {
     expect(result?.findings).toHaveLength(1);
     expect((result?.findings[0] as AdversarialLLMFinding).scopeQuote).toBeUndefined();
     expect((result?.findings[0] as AdversarialLLMFinding).issue).toBe("Story added an Ink TUI");
+  });
+});
+
+describe("adversarialReviewOp.verify() — sub-threshold verdict (#1378)", () => {
+  test("#1378: advisory-only findings pass the verdict even when the model reports passed:false", async () => {
+    // Regression for nax#1378 — the adversarial half of nax#1347. When the model
+    // emits only sub-threshold findings but sets passed:false, the verdict must
+    // honour blockingThreshold. Failing here deadlocks the story: normalizedFindings
+    // carries blocking findings only, so the rectification cycle receives nothing
+    // routable, exits "resolved", and the story pauses on findings no fix strategy
+    // was ever handed.
+    return withTempDir(async (workdir) => {
+      const ctx = makeVerifyCtx();
+      const input: AdversarialReviewInput = { ...BASE_INPUT, workdir, mode: "ref" };
+      const parsed = makeOutput({
+        passed: false,
+        findings: [
+          {
+            severity: "warning",
+            category: "quality",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "Logging missing",
+            suggestion: "Add logging",
+          },
+          {
+            severity: "info",
+            category: "quality",
+            file: "src/auth.ts",
+            line: 2,
+            issue: "Naming could be clearer",
+            suggestion: "Rename",
+          },
+        ],
+        normalizedFindings: [],
+      });
+
+      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
+
+      expect(result).not.toBeNull();
+      expect(result!.passed).toBe(true); // no blocking findings -> pass
+      expect(result!.findings).toHaveLength(2); // advisory findings still surfaced
+      expect(result!.normalizedFindings).toHaveLength(0); // but not blocking
+    });
+  });
+
+  test("#1378: fail-closed guard preserved — model passed:false with all findings dropped stays failing", async () => {
+    // The advisory-pass fix must NOT weaken the fail-closed guard: when the model
+    // claims failure but every finding is dropped as ungrounded (accepted empty),
+    // the verdict stays false so an ungrounded-but-real blocker cannot slip through.
+    return withTempDir(async (workdir) => {
+      const FILE_CONTENT = "function login(u, p) { return db.rawQuery(u + p); }\n";
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src", "auth.ts"), FILE_CONTENT);
+
+      const ctx = makeVerifyCtx();
+      const input: AdversarialReviewInput = { ...BASE_INPUT, workdir, mode: "ref" };
+      const parsed = makeOutput({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            category: "security",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "Ungrounded blocker",
+            suggestion: "Fix it",
+            acIndex: 1,
+            // substantiation passes, but no acQuote -> filterByAcQuote drops it
+            verifiedBy: { file: "src/auth.ts", line: 1, observed: "db.rawQuery" },
+          },
+        ],
+        normalizedFindings: [],
+      });
+
+      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
+
+      expect(result).not.toBeNull();
+      expect(result!.findings).toHaveLength(0); // dropped as ungrounded
+      expect(result!.passed).toBe(false); // fail closed
+    });
+  });
+
+  test("#1378: a blocking finding still fails the verdict", async () => {
+    return withTempDir(async (workdir) => {
+      const FILE_CONTENT = "function login(u, p) { return db.rawQuery(u + p); }\n";
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src", "auth.ts"), FILE_CONTENT);
+
+      const ctx = makeVerifyCtx();
+      const input: AdversarialReviewInput = { ...BASE_INPUT, workdir, mode: "ref" };
+      const parsed = makeOutput({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            category: "security",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "SQL injection",
+            suggestion: "Use parameterized queries",
+            acIndex: 1,
+            acQuote: "auth login security must not allow SQL injection",
+            verifiedBy: { file: "src/auth.ts", line: 1, observed: "db.rawQuery" },
+          },
+        ],
+        normalizedFindings: [],
+      });
+
+      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
+
+      expect(result).not.toBeNull();
+      expect(result!.passed).toBe(false);
+      expect(result!.normalizedFindings.length).toBeGreaterThan(0); // routable for rectification
+    });
+  });
+
+  test("#1378: modelPassed preserves the raw model verdict independently of blockingThreshold", async () => {
+    // The wrapper's ungrounded-drop branches (src/review/adversarial.ts Case A / Case B)
+    // key off the model's claim, not the threshold-adjusted verdict. Without this field
+    // they would read `passed`, which now flips to true whenever any sub-threshold finding
+    // survives — skipping the Case B fail-closed path and waving through blocking concerns
+    // the model raised but could not ground.
+    return withTempDir(async (workdir) => {
+      const ctx = makeVerifyCtx();
+      const input: AdversarialReviewInput = { ...BASE_INPUT, workdir, mode: "ref" };
+      const parsed = makeOutput({
+        passed: false,
+        findings: [
+          {
+            severity: "warning",
+            category: "quality",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "Advisory only",
+            suggestion: "Consider X",
+          },
+        ],
+        normalizedFindings: [],
+      });
+
+      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
+
+      expect(result).not.toBeNull();
+      expect(result!.passed).toBe(true); // threshold-adjusted: nothing blocks
+      expect(result!.modelPassed).toBe(false); // raw model claim preserved
+    });
   });
 });
