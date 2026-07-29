@@ -71,14 +71,24 @@ type PhaseDetails =
       bySeverity: Record<FindingSeverity, number>;
       blockingCount: number; advisoryCount: number;
       items?: ReviewFindingSummary[] }
-  | { kind: "fix"; strategy: string; findingsBefore: number; findingsAfter: number };
+  | { kind: "fix"; strategy: string; findingsBefore: number };
 ```
+
+**The `fix` arm carries no `findingsAfter`.** `findingsAfter` is only known after the cycle
+re-validates, which happens *after* the fixing op has already completed and its phase event has been
+emitted. It is an iteration-level outcome, not an op-level one, so putting it on a per-op payload
+would guarantee a stale or absent value. The cycle already logs the before/after pair itself
+(`findings.cycle | iteration completed`); telemetry does not duplicate it here.
 
 `isolationPassed` is set only when `sessionModel === "three-session"` — under single-session, `runPhase` captures no `beforeRef` and no isolation boundary exists.
 
 **Severity keys come from the real enum.** `FindingSeverity` (`src/findings/types.ts:50`) is `"critical" | "error" | "warning" | "info" | "low" | "unverifiable"` — there is no `high` and no `medium`. `bySeverity` is keyed by those six members. `blockingCount` counts findings for which `isBlockingSeverity(finding.severity, threshold)` (`src/review/severity.ts:15`) is true, and `advisoryCount` counts the rest; both use that predicate rather than re-ranking severities, since `SEVERITY_RANK` (`severity.ts:6-13`) is the SSOT.
 
+**`blockingCount` needs the real threshold, which the op output does not carry today.** `buildPhaseDetails` currently reads `adv?.blockingThreshold ?? "error"` from a cast of the op output, but `AdversarialReviewOutput` has no `blockingThreshold` field — so the value is *always* `undefined` and *always* falls back to `"error"`. Whenever `review.blockingThreshold` is configured as `"warning"` or `"info"`, the emitted `blockingCount` is wrong. US-003 must persist the resolved threshold onto `AdversarialReviewOutput` from `verify()`'s `input.blockingThreshold` so the count is computed at the configured threshold rather than the default.
+
 **`items` is the only per-finding payload and is gated.** It is populated exclusively when `detail` is `"verbose"`, and carries `Finding.message` — `Finding` has no `title` field. Under the default `"counts"` it is absent entirely.
+
+**Why `items` is gated at emission rather than at export.** `story:phase:completed` is fanned out to *every* registered reporter, not just the OTel one — including the webhook reporter, which POSTs to an operator-supplied URL. Dropping `items` only inside the OTel exporter would still let finding text leave the network via webhook. Gating at emission means the payload is never built under the default `"counts"`, so no reporter can leak it. The consequence is that `reporters.otel.detail` acts as a **telemetry-wide** switch despite its reporter-scoped name; renaming it is deferred (see Out of Scope). `buildPhaseDetails` therefore takes `ctx.config` as a fourth argument — it is a pure 3-arg function today.
 
 **Per-phase cost is the invocation's own scope total.** `runPhase`'s `finally` writes `phaseCosts[opName] = (phaseCosts[opName] ?? 0) + scope.snapshot().totalCostUsd` — that map **accumulates** across repeat invocations of the same op (every fix-cycle re-run). The emitted `costUsd` is `scope.snapshot().totalCostUsd` for that single invocation, never the accumulated `phaseCosts` entry.
 
@@ -106,6 +116,26 @@ Every `runPhase` call site inherits it through `ctx`, so correctness does not de
 
 `rectification.ts:236` dispatches via `wrappedCallOp(cycleCtx: FixCycleContext, …)`; the slice must survive that hop.
 
+#### `fixStrategy` — the same pattern, for the `fix` arm
+
+The `fix` arm needs the strategy's name and the iteration's starting finding count. Neither is
+reachable from `buildPhaseDetails`: `FixCycleContext` is `CallContext & { readonly storyId: string }`
+(`src/findings/cycle-types.ts:94-96`) and carries no strategy information, while `strategy.name` and
+`findingsBefore` exist only inside the strategy loop in `src/findings/cycle.ts:286-291`.
+
+Resolution — a second readonly input-side slice, populated per strategy immediately before
+`doCallOp` in that loop:
+
+```ts
+readonly fixStrategy?: {
+  readonly name: string;
+  readonly findingsBefore: number;
+};
+```
+
+`runPhase` builds the `fix` arm when this slice is present. This mirrors `phaseTelemetry` exactly and
+keeps the emission point in `runPhase` rather than adding a second one in the cycle.
+
 #### Outcome derivation
 
 `buildPhaseOutcomeLogData` already answers "did this phase pass?" for arbitrary op output (`success = r.success === true || r.passed === true`, plus `findingsCount`, `status`, `failureCategory`). The phase event **reuses it** rather than introducing a second derivation — two independent verdicts for the same phase would eventually disagree, and telemetry contradicting the run's own logs is worse than neither.
@@ -122,7 +152,7 @@ Every `runPhase` call site inherits it through `ctx`, so correctness does not de
 |:---|:---|
 | `acceptance-setup` | `totalCriteria`, `testableCount`, `redFailCount`, `regenerated` |
 | `acceptance` | `retries`, `failedACCount`, `fixStoriesCreated` |
-| `regression` | `mode: "deferred" \| "per-story"`, `failedTests`, `quarantined` |
+| `regression` | `mode: "deferred" \| "per-story" \| "disabled"` (the full `RegressionGateConfig["mode"]` union, `src/config/runtime-types.ts:93`), `failedTests` |
 | `review` | `findingCount`, `anyFailed` |
 
 #### `IReporter`
@@ -167,7 +197,7 @@ Span attributes: `nax.phase`, `nax.outcome`, `nax.cost_usd`, `nax.tier`, `nax.te
 | `nax.fix.iterations` | counter | strategy, phase |
 | `nax.escalations` | counter | from_tier, to_tier |
 
-`run_id` and `story_id` are excluded from every dimension above — unbounded cardinality. Fixed histogram boundaries: duration `[100, 500, 1000, 5000, 15000, 60000, 300000, 900000]` ms; cost `[0.001, 0.01, 0.05, 0.1, 0.5, 1, 5]` USD. `buildHistogramPoint` in `otlp.ts` emits `explicitBounds` + `bucketCounts` + `count` + `sum`.
+`run_id` and `story_id` are excluded from every dimension above — unbounded cardinality. Fixed histogram boundaries: duration `[100, 500, 1000, 5000, 15000, 60000, 300000, 900000]` ms; cost `[0.001, 0.01, 0.05, 0.1, 0.5, 1, 5]` USD. A **new** `buildHistogramPoint` export, added by US-007 to the existing `otlp.ts` (which today exports only `attr`, `msToUnixNano`, `buildTracesPayload`, `buildMetricsPayload`), emits `explicitBounds` + `bucketCounts` + `count` + `sum`.
 
 **Heartbeat.** Every `heartbeatIntervalMs` (default 10000; `0` disables) the run emits gauges `nax.run.active` (=1), `nax.run.phase_elapsed_ms`, and `nax.run.cost_usd`, with attributes `{run_id, feature, project, story_id, phase, tier, test_strategy}`. These carry high-cardinality ids deliberately and sit behind distinct metric names so a collector filter can drop them without touching the aggregates above.
 
@@ -217,6 +247,9 @@ Unresolved `${ENV}` header variables keep their existing behaviour — `interpol
 - Adopting `@opentelemetry/*` SDK packages is rejected; OTLP payloads stay hand-built and dependency-free.
 - Changes to cost accounting are excluded; costs are read from the existing `CostAggregator` scopes.
 - Exporting agent prompts, agent output, diffs, or source-code excerpts is excluded at every detail level.
+- US-003 only: renaming `reporters.otel.detail` to a reporter-neutral key is deferred. It gates the bus payload for every reporter, so its name understates its reach; a rename needs a config migration shim and is not worth coupling to this feature.
+- US-004 only: populating `costUsd` on `postrun:phase:completed` is deferred. The field is declared on the event by US-001 but no post-run phase has a cost scope to read from; producers leave it absent.
+- US-004 only: a real `quarantined` count on the regression completion is deferred. `QuarantineMemo` (`src/verification/flake-triage.ts`) exposes only `has()` and `add()` — no count accessor — and adding one is out of scope for this feature; the field is omitted rather than reported as a false `0`.
 - US-006 only: de-duplicating spans when two processes export under the same run id is deferred.
 - US-008 only: persisting heartbeat state across a process restart is deferred; a restarted run emits a new series.
 
@@ -270,9 +303,13 @@ Add the `phaseTelemetry` slice to `CallContext`, populate it in the execution st
 **Context Files**
 - `src/pipeline/stages/execution.ts` — where `callCtx` is built and `ctx.routing` is in scope
 - `src/execution/story-orchestrator/rectification.ts` — the `FixCycleContext` hop the slice must survive
+- `src/findings/cycle.ts` — the strategy loop (lines 286-291) that populates the `fixStrategy` slice
+- `src/findings/cycle-types.ts` — `FixCycleContext`, which the slice rides on
+- `src/review/adversarial.ts` — where the resolved `blockingThreshold` must be persisted onto `AdversarialReviewOutput`
 - `src/execution/story-orchestrator/run-phase.ts` — reads the slice; extended by US-002
 - `src/operations/types.ts` — `CallContext`, extended by US-001
-- `src/config/schema-types.ts` — `TestStrategy` union and `isThreeSessionStrategy`
+- `src/config/schema-types.ts` — `TestStrategy` union (line 9)
+- `src/config/test-strategy.ts` — `isThreeSessionStrategy` (line 66), the session-model SSOT
 
 ### US-004: Run-level phase events and enrichment
 
@@ -294,6 +331,11 @@ Map the four phase bus events onto the two new `IReporter` hooks with correct `s
 - `src/plugins/builtin/webhook-reporter/index.ts` — event-filter behaviour to extend
 - `src/plugins/extensions.ts` — hooks declared by US-001, invoked here
 - `test/unit/pipeline/subscribers/reporters.test.ts` — existing fan-out test patterns
+
+**Verification note:** extracting the repeated per-reporter fan-out block into a local helper is a
+pure refactor with no behavioural signature, so it carries no acceptance criterion. It is verified by
+`bun run typecheck && bun run lint` plus the existing fan-out tests, which must stay green across the
+extraction. Treat its absence as a code-review comment, not a story failure.
 
 ### US-006: Batch queue and traceparent
 
@@ -324,6 +366,11 @@ Build the run/story/phase span tree, and emit the aggregate phase metrics — in
 
 **Creates**
 - `src/plugins/builtin/otel-reporter/span-tree.ts` — run/story/phase span parenting
+
+**New exports in existing files**
+- `buildHistogramPoint` in `src/plugins/builtin/otel-reporter/otlp.ts` — emits `explicitBounds` +
+  `bucketCounts` + `count` + `sum`. It does not exist today; `otlp.ts` currently exports only `attr`,
+  `msToUnixNano`, `buildTracesPayload`, and `buildMetricsPayload`.
 
 ### US-008: Heartbeat, redaction, and flush lifecycle
 
@@ -381,12 +428,17 @@ Add the periodic heartbeat that makes in-flight runs visible, the detail-level r
 - [integration] Running the execution stage for a story routed with `testStrategy` `"no-test"` emits phase events whose `sessionModel` is `"single-session"`.
 - [integration] Emitted phase events carry a `tier` equal to the model tier the execution stage resolved after its supported-tier clamp.
 - [integration] A phase dispatched through `runFixCycle` during a story routed as `"three-session-tdd"` emits `sessionModel` equal to `"three-session"`.
-- [unit] An `adversarial-review` operation emits `details` whose `kind` is `"review"`.
+- [unit] An `adversarial-review` operation emits `details` whose `kind` is `"review"` and whose `iteration` equals the number of times that operation has already completed for the same story.
 - [unit] An `adversarial-review` operation emits `details.bySeverity` counts keyed by the members of `FindingSeverity`, matching its normalized findings.
-- [unit] An `adversarial-review` operation emits a `details.blockingCount` equal to the number of its findings for which `isBlockingSeverity` returns true at the configured threshold.
+- [unit] An `adversarial-review` operation configured with a `blockingThreshold` of `"warning"` emits a `details.blockingCount` equal to the number of its findings for which `isBlockingSeverity` returns true at `"warning"`, not at the `"error"` default.
 - [unit] An `implementer` operation in a three-session context emits `details.isolationPassed` equal to the operation's isolation result.
 - [unit] An `implementer` operation in a single-session context emits `details` with no `isolationPassed` field.
-- [unit] A `full-suite-gate` operation emits `details` whose `kind` is `"gate"`.
+- [unit] An `implementer` operation emits `details.filesChanged` equal to the number of files its output reports as changed.
+- [unit] A `test-writer` operation emits `details` whose `kind` is `"authoring"` and whose `role` is `"test-writer"`.
+- [unit] A `full-suite-gate` operation emits `details` whose `kind` is `"gate"` and whose `failureCount` equals the number of failures its output reports.
+- [unit] A `verifier` operation emits `details` whose `kind` is `"verdict"` and whose `passed` equals the operation's verdict.
+- [unit] An operation dispatched while the `fixStrategy` context slice is populated emits `details` whose `kind` is `"fix"`, whose `strategy` equals the slice's `name`, and whose `findingsBefore` equals the slice's `findingsBefore`.
+- [unit] With `detail` set to `"verbose"`, an `adversarial-review` operation emits `details.items` carrying each finding's `message`.
 
 ### US-004: Run-level phase events and enrichment
 
@@ -396,14 +448,16 @@ Add the periodic heartbeat that makes in-flight runs visible, the detail-level r
 - [integration] When every acceptance test already passes and the stage returns a skip result, the `"acceptance-setup"` completion event is still emitted.
 - [integration] The `"acceptance"` completion event's `details.retries` equals the retry count returned by the acceptance loop.
 - [integration] The `"acceptance"` completion event's `details.failedACCount` equals the number of failed acceptance criteria returned by the acceptance loop.
+- [integration] The `"acceptance"` completion event's `details.fixStoriesCreated` equals the number of fix stories the acceptance loop created.
 - [integration] The `"regression"` completion event's `details.mode` equals the configured regression gate mode.
-- [integration] The `"review"` completion event's `details.findingCount` equals the number of findings the deferred review produced.
+- [integration] The `"regression"` completion event's `details.failedTests` equals the number of failing tests the regression gate reported.
+- [integration] The `"review"` completion event's `details.findingCount` equals the number of deferred reviewers that reported a failure.
 - [unit] Every `postrun:phase:completed` event carries a `durationMs` measured from its matching `postrun:phase:started` event.
 - [unit] The TUI pipeline-bus subscriber handles a `postrun:phase:started` event with `phase` `"acceptance-setup"` without throwing and records it as a running phase.
 
 ### US-005: Reporter fan-out for phase hooks
 
-- [unit] After `wireReporters`, emitting `story:step` invokes the registered reporter's `onPhaseStart` with `scope` `"story"`.
+- [unit] After `wireReporters`, emitting `story:step` invokes the registered reporter's `onPhaseStart` with `scope` `"story"` and a `storyId` equal to the event's `storyId`.
 - [unit] The `onPhaseStart` invocation triggered by `story:step` carries a `phase` equal to the event's `step`.
 - [unit] After `wireReporters`, emitting `story:phase:completed` invokes `onPhaseComplete` with `scope` `"story"`.
 - [unit] The `onPhaseComplete` invocation triggered by `story:phase:completed` carries an `outcome` equal to the event's `outcome`.
@@ -447,8 +501,9 @@ Add the periodic heartbeat that makes in-flight runs visible, the detail-level r
 - [integration] Emitting a `story:phase:completed` event produces an exported `nax.phase.cost_usd` data point whose recorded value equals the event's `costUsd`.
 - [unit] A histogram data point's bucket-count list has exactly one more entry than its explicit-bounds list.
 - [unit] A histogram data point's `sum` equals the total of the values recorded into it.
-- [unit] A phase-duration metric data point carries no attribute named `run_id`.
-- [unit] A phase-duration metric data point carries no attribute named `story_id`.
+- [unit] A phase-duration metric data point carries no attribute named `run_id` and none named `story_id`.
+- [unit] A phase-duration metric data point's attribute names are exactly `phase`, `outcome`, `tier`, `test_strategy`, and `session_model`.
+- [unit] A phase-duration histogram data point's explicit bounds are `[100, 500, 1000, 5000, 15000, 60000, 300000, 900000]`, and a phase-cost histogram data point's are `[0.001, 0.01, 0.05, 0.1, 0.5, 1, 5]`.
 - [unit] A phase span carries a `nax.test_strategy` attribute equal to the event's `testStrategy`.
 - [integration] An `adversarial-review` phase event produces an exported `nax.review.findings` counter data point carrying a `severity` attribute.
 - [integration] A rectification phase event produces an exported `nax.fix.iterations` counter data point carrying a `strategy` attribute.
@@ -464,6 +519,7 @@ Add the periodic heartbeat that makes in-flight runs visible, the detail-level r
 - [unit] A heartbeat export request contains a `nax.run.phase_elapsed_ms` gauge whose value is the elapsed time since the most recent phase event.
 - [unit] A heartbeat export request contains a `nax.run.cost_usd` gauge whose value equals the run's accumulated cost.
 - [unit] A heartbeat gauge carries a `phase` attribute equal to the most recently completed phase's name.
+- [unit] A heartbeat gauge carries `run_id`, `feature`, `project`, `story_id`, `tier`, and `test_strategy` attributes alongside `phase`.
 - [unit] With `heartbeatIntervalMs` set to 0, no heartbeat export request is issued regardless of elapsed time.
 - [unit] After `onRunEnd`, no further heartbeat export request is issued.
 - [unit] With `detail` set to `"counts"`, an emitted review phase's `details` carries no `items` array.
