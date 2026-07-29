@@ -54,9 +54,11 @@ describe("executeWithTimeout", () => {
   // wall-clock assertion needs a nested runtime and is hostage to CI scheduling.
   test("clears every timer it arms on the kill path", async () => {
     const { result, leaked } = await withTimerSpy(() =>
-      // A long grace period would dominate the test if the timer were leaked;
-      // it is only ever reached when the child ignores SIGTERM, which sleep does not.
-      executeWithTimeout("sleep 30", 1, undefined, { gracePeriodMs: 30_000, drainTimeoutMs: 30_000 }),
+      // Short grace/drain deliberately: the leak is structural (a timer that is
+      // never passed to clearTimeout), not durational, so the assertion does not
+      // need a long window — and CI cannot be relied on to make SIGTERM reap the
+      // child, which would otherwise stall the test for the full grace period.
+      executeWithTimeout("sleep 30", 1, undefined, { gracePeriodMs: 200, drainTimeoutMs: 500 }),
     );
 
     expect(result.timeout).toBe(true);
