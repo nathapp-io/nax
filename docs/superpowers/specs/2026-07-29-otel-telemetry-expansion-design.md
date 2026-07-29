@@ -63,12 +63,39 @@ export interface StoryPhaseCompletedEvent {
   durationMs: number;
   costUsd: number;               // from the phase's own CostAggregator scope
   tier?: string;
-  attempt?: number;              // fix-cycle iteration
   testStrategy: TestStrategy;
   sessionModel: "single-session" | "three-session";
   details?: PhaseDetails;
 }
 ```
+
+**No `attempt` field.** The fix-cycle iteration counter lives on `cycle.iterations` inside `runFixCycle` and is not reachable at the emission point. It is also unnecessary: the *N*th `story:phase:completed` for a given `(storyId, phase)` pair **is** attempt *N*. Consumers count; nothing is plumbed.
+
+#### Reachability — why these fields need a context slice
+
+Three of the fields above are **not reachable** from `runPhase` as it stands, and the naive fixes are wrong:
+
+| field | where it actually lives | why the naive read fails |
+|:---|:---|:---|
+| `sessionModel` | `isThreeSession`, already a `runPhase` **positional parameter** | **Two of the four call sites omit it.** `rectification.ts:240` and `:297` call `runPhase` without the argument, so it defaults to `false`. Reading the parameter would label **every fix-cycle phase in a three-session run as `single-session`** — the exact discriminator this design exists to provide, silently inverted on the rectification path |
+| `testStrategy` | `ctx.routing.testStrategy` on the **`PipelineContext`** (`execution.ts:113,127`) | `CallContext` has no `routing`. And it must be the **routing** value, not `story.testStrategy`: `buildPlanForStrategy` is called with `ctx.routing.testStrategy`, so routing is what determined the op set. Reading the PRD field would mislabel precisely the runs where routing overrode it |
+| `tier` | `ctx.routing.modelTier` (`execution.ts:67-70`, post-clamp) | Same — absent from `CallContext`. The clamped `effectiveTier` is the one actually used |
+
+**Resolution — one input-side context slice, not four positional parameters.** `execution.ts` builds `callCtx` at `execution.ts:89-99` with `ctx.routing` and `ctx.story` both in scope. Add a readonly `phaseTelemetry` slice there:
+
+```ts
+readonly phaseTelemetry?: {
+  readonly testStrategy: TestStrategy;
+  readonly sessionModel: "single-session" | "three-session";
+  readonly tier: string;
+};
+```
+
+Every `runPhase` call site inherits it through `ctx` — including the two rectification sites and any future one — so correctness does not depend on remembering an argument. `sessionModel` is set from `isThreeSessionStrategy(ctx.routing.testStrategy)`, the existing SSOT.
+
+This is compliant with `adapter-wiring.md` Rule 6 ("`CallContext` fields — input only, no result-side data"): strategy, tier, and session model are **input-side** metadata describing how the phase was dispatched, not result data flowing back to a caller.
+
+**Implementation note.** `rectification.ts:236` dispatches through `wrappedCallOp(cycleCtx: FixCycleContext, ...)`. The slice reaches `runPhase` only if `cycleCtx` carries the field through — verify `FixCycleContext` construction preserves it, and cover it with the rectification test in §7.
 
 `story:step` is left untouched and serves as the *start* half. This avoids a duplicate start event and keeps the TUI's existing subscription working unchanged.
 
@@ -87,7 +114,19 @@ The orchestrator schedules different op sets per `testStrategy`:
 
 `implementer` is therefore the same phase *name* denoting different work. Under single-session it is one warm session that also authored the tests; under three-session it is source-only and carries isolation semantics. Aggregating "implementer duration" across both without a discriminator produces a meaningless number.
 
-`sessionModel` is derived from `isThreeSessionStrategy(strategy)` — the existing SSOT in `src/config` — never re-derived by string matching.
+`sessionModel` is derived from `isThreeSessionStrategy(ctx.routing.testStrategy)` — the existing SSOT in `src/config` — never re-derived by string matching, and never read from the `isThreeSession` positional parameter (see the reachability table in §4.1).
+
+### 4.2a Outcome derivation reuses the existing SSOT
+
+`buildPhaseOutcomeLogData()` in `src/execution/story-orchestrator-logging.ts:18-42` already answers "did this phase pass?" for an arbitrary op output: `success = r.success === true || r.passed === true`, plus `findingsCount` (from `normalizedFindings` or `findings`), `status`, and `failureCategory`. `runPhase` already calls it via `logDeterministicPhaseOutcome` at line 203.
+
+The phase event **reuses this function** rather than introducing a parallel derivation. Two independent answers to "did this phase pass" would eventually disagree, and a telemetry backend contradicting the run's own logs about the same phase is worse than having neither.
+
+Consequences:
+
+- `outcome` maps from its result: `success === true` -> `"passed"`; `status === "skipped"` -> `"skipped"` (a real value — `formatPhaseResultMessage` handles it at line 9); a throw -> `"error"`; otherwise `"failed"`.
+- The function returns `null` when the output is not an object. That is not an error: emit `outcome: "passed"` with no `details`, since ops returning non-objects have no verdict to report.
+- `logDeterministicPhaseOutcome` deliberately returns early for TDD phases and for `semantic-review` / `adversarial-review` (lines 53-54). That early return is about **log noise**, not verdict availability — the phase event must call `buildPhaseOutcomeLogData` directly so those phases still get an outcome.
 
 ### 4.3 `PhaseDetails`
 
@@ -136,7 +175,6 @@ interface PhaseEventBase {
   scope: "story" | "run";
   phase: string;
   storyId?: string;   // present iff scope === "story"
-  attempt?: number;
 }
 
 interface PhaseStartEvent extends PhaseEventBase { startTime: string }
@@ -180,7 +218,7 @@ nax.run                              root; parent = W3C TRACEPARENT from env whe
 
 Incremental export falls out of the tree shape: a phase span is already ended when its event fires, so it is enqueued and exported immediately. Story spans flush at story end; the run span flushes last. No partial-span or span-update mechanism is needed.
 
-**Span attributes:** `nax.phase`, `nax.outcome`, `nax.cost_usd`, `nax.tier`, `nax.attempt`, `nax.test_strategy`, `nax.session_model`, plus the scalar fields of `details`.
+**Span attributes:** `nax.phase`, `nax.outcome`, `nax.cost_usd`, `nax.tier`, `nax.test_strategy`, `nax.session_model`, plus the scalar fields of `details`.
 
 **Resource attributes:** `service.name`, `nax.version`, `nax.run_id`, `nax.feature`, `nax.project`, `host.name`, `nax.git.branch`, `nax.git.sha`, `process.pid`.
 
@@ -286,7 +324,10 @@ The `webhook-reporter` `ReporterEventSchema` enum widens to include `onPhaseStar
 **Modified**
 
 - `src/pipeline/event-bus.ts` — `StoryPhaseCompletedEvent`; widen and enrich the post-run phase events
-- `src/execution/story-orchestrator/run-phase.ts` — emit from the existing `finally`
+- `src/execution/story-orchestrator/run-phase.ts` — emit from the existing `finally`; read telemetry from `ctx.phaseTelemetry`, reuse `buildPhaseOutcomeLogData`
+- `src/operations/types.ts` — add the readonly `phaseTelemetry` slice to `CallContext`
+- `src/pipeline/stages/execution.ts` — populate `phaseTelemetry` on `callCtx` from `ctx.routing` (line 89-99)
+- `src/execution/story-orchestrator/rectification.ts` — ensure `FixCycleContext` preserves `phaseTelemetry` across the `wrappedCallOp` hop
 - `src/pipeline/stages/acceptance-setup.ts` — emit `acceptance-setup` started/completed
 - `src/execution/runner-completion.ts` — enrich the `acceptance` completed event
 - `src/execution/lifecycle/run-completion.ts` — enrich the `regression` and `review` completed events
@@ -312,11 +353,15 @@ Unit tests under `test/unit/` mirroring source layout, using `_deps` injection �
 - **abnormal-exit flush** — `onRunEnd` reached via the `run-cleanup.ts` direct path (no `run:completed` on the bus) still flushes every queued span and stops the heartbeat; `teardown()` after a normal `onRunEnd` does not double-POST; `onRunEnd` with no preceding `onRunStart` synthesizes a root span instead of throwing.
 - **histogram payload** — `buildHistogramPoint` emits `bucketCounts.length === explicitBounds.length + 1`, and `sum`/`count` agree with the recorded values.
 - **strategy discrimination** — a `no-test` story's `implementer` event carries `sessionModel: "single-session"` and no `isolationPassed`; a `three-session-tdd` story's carries `"three-session"` and populates it.
+- **rectification telemetry inheritance** — a phase dispatched through `runFixCycle` during a `three-session-tdd` story emits `sessionModel: "three-session"`, proving the context slice survives the `FixCycleContext` hop and that the value is not read from the defaulted `isThreeSession` parameter. This is the regression test for the §4.1 reachability defect.
+- **outcome SSOT agreement** — for the same op output, the phase event's `outcome` agrees with `buildPhaseOutcomeLogData`'s `success`; a non-object output yields `"passed"` with no `details` rather than throwing; a `semantic-review` output still produces an outcome despite `logDeterministicPhaseOutcome`'s early return.
 
 ## 8. Risks
 
 | risk | mitigation |
 |:---|:---|
+| `sessionModel` silently wrong on the rectification path | Carried on an input-side `ctx.phaseTelemetry` slice, never the defaulted `isThreeSession` parameter; regression test in §7 |
+| Telemetry and logs disagree about a phase's verdict | Both derive from `buildPhaseOutcomeLogData`; agreement asserted in §7 |
 | `runPhase` is the hot path | Emission is synchronous, allocation-light, and wrapped so it cannot throw |
 | Slow or dead collector stalls runs | Bounded queue, fire-and-forget POST, single retry, drop-on-overflow |
 | Metric cardinality explosion | `run_id`/`story_id` excluded from aggregate metrics; heartbeat isolated behind its own metric names |
