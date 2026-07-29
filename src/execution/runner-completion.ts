@@ -201,7 +201,15 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
       const lastRunAt = new Date().toISOString();
       if (acceptanceResult.success) {
         options.statusWriter.setPostRunPhase("acceptance", { status: "passed", lastRunAt });
-        pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "acceptance", passed: true });
+        pipelineEventBus.emit({
+          type: "postrun:phase:completed",
+          phase: "acceptance",
+          passed: true,
+          details: {
+            retries: acceptanceResult.retries ?? 0,
+            failedACCount: acceptanceResult.failedACs?.length ?? 0,
+          },
+        });
       } else {
         acceptancePassed = false;
         options.statusWriter.setPostRunPhase("acceptance", {
@@ -210,7 +218,15 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
           retries: acceptanceResult.retries ?? 0,
           lastRunAt,
         });
-        pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "acceptance", passed: false });
+        pipelineEventBus.emit({
+          type: "postrun:phase:completed",
+          phase: "acceptance",
+          passed: false,
+          details: {
+            retries: acceptanceResult.retries ?? 0,
+            failedACCount: acceptanceResult.failedACs?.length ?? 0,
+          },
+        });
       }
 
       Object.assign(options, {

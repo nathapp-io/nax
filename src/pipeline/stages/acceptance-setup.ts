@@ -30,6 +30,7 @@ import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { callOp as _callOp, acceptanceGenerateOp, acceptanceRefineOp } from "@/operations";
 import { autoCommitIfDirty as _autoCommitIfDirty } from "@/utils/git";
+import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 // ─── Local helpers ──────────────────────────────────────────────────────────
@@ -185,6 +186,9 @@ export const acceptanceSetupStage: PipelineStage = {
       return { action: "fail", reason: "[acceptance-setup] featureDir is not set" };
     }
 
+    const phaseStartTime = Date.now();
+    pipelineEventBus.emit({ type: "postrun:phase:started", phase: "acceptance-setup" });
+
     const language = ctx.config.project?.language;
     const testPathConfig = ctx.config.acceptance.testPath;
     const metaPath = path.join(ctx.featureDir, "acceptance-meta.json");
@@ -220,6 +224,7 @@ export const acceptanceSetupStage: PipelineStage = {
     });
 
     let shouldGenerate = false;
+    let regenerated = false;
     if (!meta || meta.acFingerprint !== fingerprint) {
       if (!meta) {
         getSafeLogger()?.info("acceptance-setup", "No acceptance meta — generating acceptance tests");
@@ -240,6 +245,7 @@ export const acceptanceSetupStage: PipelineStage = {
       // Clear semantic verdicts so stale results don't influence the acceptance loop
       await _acceptanceSetupDeps.deleteSemanticVerdicts(ctx.featureDir);
       shouldGenerate = true;
+      regenerated = true;
     } else {
       // Fingerprint matches — reuse existing tests. If the file is missing (e.g.,
       // overwritten by TDD cycle then deleted in a crash), the existing tests are
@@ -439,6 +445,13 @@ export const acceptanceSetupStage: PipelineStage = {
 
     if (ctx.config.acceptance.redGate === false) {
       ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount: 0 };
+      pipelineEventBus.emit({
+        type: "postrun:phase:completed",
+        phase: "acceptance-setup",
+        passed: true,
+        durationMs: Date.now() - phaseStartTime,
+        details: { totalCriteria, testableCount, redFailCount: 0, regenerated },
+      });
       return { action: "continue" };
     }
 
@@ -461,6 +474,13 @@ export const acceptanceSetupStage: PipelineStage = {
     // All tests passing means they are not testing new behavior — skip acceptance gate
     if (redFailCount === 0) {
       ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount: 0 };
+      pipelineEventBus.emit({
+        type: "postrun:phase:completed",
+        phase: "acceptance-setup",
+        passed: true,
+        durationMs: Date.now() - phaseStartTime,
+        details: { totalCriteria, testableCount, redFailCount: 0, regenerated },
+      });
       return {
         action: "skip",
         reason:
@@ -469,6 +489,13 @@ export const acceptanceSetupStage: PipelineStage = {
     }
 
     ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount };
+    pipelineEventBus.emit({
+      type: "postrun:phase:completed",
+      phase: "acceptance-setup",
+      passed: true,
+      durationMs: Date.now() - phaseStartTime,
+      details: { totalCriteria, testableCount, redFailCount, regenerated },
+    });
     return { action: "continue" };
   },
 };

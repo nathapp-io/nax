@@ -134,6 +134,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     config.quality.commands.test
   ) {
     statusWriter.setPostRunPhase("regression", { status: "running" });
+    const regressionStartTime = Date.now();
     pipelineEventBus.emit({ type: "postrun:phase:started", phase: "regression" });
 
     const regressionResult = await _runCompletionDeps.runDeferredRegression({
@@ -169,9 +170,16 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
       affectedStories: regressionResult.affectedStories,
     });
 
+    const regressionDurationMs = Date.now() - regressionStartTime;
     if (regressionResult.success) {
       statusWriter.setPostRunPhase("regression", { status: "passed", lastRunAt });
-      pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "regression", passed: true });
+      pipelineEventBus.emit({
+        type: "postrun:phase:completed",
+        phase: "regression",
+        passed: true,
+        durationMs: regressionDurationMs,
+        details: { mode: regressionMode, failedTests: 0, quarantined: 0 },
+      });
     } else {
       statusWriter.setPostRunPhase("regression", {
         status: "failed",
@@ -179,7 +187,17 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
         affectedStories: regressionResult.affectedStories,
         lastRunAt,
       });
-      pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "regression", passed: false });
+      pipelineEventBus.emit({
+        type: "postrun:phase:completed",
+        phase: "regression",
+        passed: false,
+        durationMs: regressionDurationMs,
+        details: {
+          mode: regressionMode,
+          failedTests: regressionResult.failedTests,
+          quarantined: 0,
+        },
+      });
 
       // Mark affected stories as regression-failed in-memory for current-run event counts (RL-004).
       // Intentionally NOT saved to prd.json — rerun resume is driven by status.json via
@@ -282,9 +300,17 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   // returned pluginGateFailed flag, which runner-completion.ts folds into finalStatus.
   let pluginGateFailed = false;
   const deferredReview = options.deferredReview;
+  const reviewStartTime = Date.now();
   if (deferredReview !== undefined) {
+    const findingCount = deferredReview.reviewerResults.filter((r) => !r.passed).length;
     // postrun:phase:started was already emitted in unified-executor.ts before the review ran.
-    pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "review", passed: !deferredReview.anyFailed });
+    pipelineEventBus.emit({
+      type: "postrun:phase:completed",
+      phase: "review",
+      passed: !deferredReview.anyFailed,
+      durationMs: Date.now() - reviewStartTime,
+      details: { findingCount, anyFailed: deferredReview.anyFailed },
+    });
   }
   if (deferredReview?.anyFailed) {
     const failedReviewers = deferredReview.reviewerResults.filter((r) => !r.passed).map((r) => r.name);
