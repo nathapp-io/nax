@@ -130,6 +130,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
       logger?.info("execution", "Acceptance already passed — skipping acceptance phase");
     } else if (options.config.acceptance.enabled && isComplete(options.prd)) {
       options.statusWriter.setPostRunPhase("acceptance", { status: "running" });
+      const acceptanceStartTime = Date.now();
       pipelineEventBus.emit({ type: "postrun:phase:started", phase: "acceptance" });
 
       // Compute per-package acceptance test paths from PRD story workdirs.
@@ -199,12 +200,14 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
       });
 
       const lastRunAt = new Date().toISOString();
+      const acceptanceDurationMs = Date.now() - acceptanceStartTime;
       if (acceptanceResult.success) {
         options.statusWriter.setPostRunPhase("acceptance", { status: "passed", lastRunAt });
         pipelineEventBus.emit({
           type: "postrun:phase:completed",
           phase: "acceptance",
           passed: true,
+          durationMs: acceptanceDurationMs,
           details: {
             retries: acceptanceResult.retries ?? 0,
             failedACCount: acceptanceResult.failedACs?.length ?? 0,
@@ -222,6 +225,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
           type: "postrun:phase:completed",
           phase: "acceptance",
           passed: false,
+          durationMs: acceptanceDurationMs,
           details: {
             retries: acceptanceResult.retries ?? 0,
             failedACCount: acceptanceResult.failedACs?.length ?? 0,
