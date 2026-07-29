@@ -74,6 +74,12 @@ export interface RunCompletionOptions extends DispatchContext {
    * the run only when config.review.pluginMode === "gating".
    */
   deferredReview?: DeferredReviewResult;
+  /**
+   * Timestamp (from Date.now()) when postrun:phase:started was emitted for the review phase.
+   * Emitted in unified-executor.ts before the review ran; threaded here so handleRunCompletion
+   * can compute accurate durationMs for the postrun:phase:completed event (AC9).
+   */
+  deferredReviewStartedAt?: number;
   /** Why the execution phase stopped — used to distinguish a cost-limit stop from a normal completion. */
   exitReason?: ExitReason;
 }
@@ -300,15 +306,17 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   // returned pluginGateFailed flag, which runner-completion.ts folds into finalStatus.
   let pluginGateFailed = false;
   const deferredReview = options.deferredReview;
-  const reviewStartTime = Date.now();
   if (deferredReview !== undefined) {
     const findingCount = deferredReview.reviewerResults.filter((r) => !r.passed).length;
     // postrun:phase:started was already emitted in unified-executor.ts before the review ran.
+    // Use deferredReviewStartedAt (threaded from the call site) so durationMs reflects the
+    // actual review execution time, not the trivial overhead of this emit call.
+    const reviewDurationMs = Date.now() - (options.deferredReviewStartedAt ?? Date.now());
     pipelineEventBus.emit({
       type: "postrun:phase:completed",
       phase: "review",
       passed: !deferredReview.anyFailed,
-      durationMs: Date.now() - reviewStartTime,
+      durationMs: reviewDurationMs,
       details: { findingCount, anyFailed: deferredReview.anyFailed },
     });
   }
