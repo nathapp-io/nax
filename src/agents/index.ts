@@ -23,6 +23,7 @@ export {
   parseAcpxJsonLine,
   parseAcpxJsonOutput,
   parseModelSpec,
+  parseSessionIds,
 } from "./acp";
 export type { BuildTurnResultInput, ModelSpec } from "./acp";
 export type {
