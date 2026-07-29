@@ -34,3 +34,6 @@ export { computeAcpHandle } from "./adapter-lifecycle";
 export type { AgentRegistryEntry } from "./types";
 export type { SessionTokenUsage } from "./wire-types";
 export { AcpTokenUsageMapper, defaultAcpTokenUsageMapper } from "./token-mapper";
+export { parseModelSpec } from "./model-spec";
+export type { ModelSpec } from "./model-spec";
+export { parseSessionIds } from "./session-ids";
