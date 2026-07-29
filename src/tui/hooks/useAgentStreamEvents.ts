@@ -45,7 +45,11 @@ export function useAgentStreamEvents(bus?: IAgentStreamEventBus | null): {
     if (!bus) return;
 
     const unsubscribe = bus.onAgentStream((event: AgentStreamEvent) => {
-      const next = new Map(activeCallsRef.current);
+      // Mutate the ref's Map directly — the render-facing snapshot is taken
+      // separately in the drain effect below, so copying per event (at token
+      // rate) bought nothing. Values are still replaced rather than mutated,
+      // so memoized consumers keyed on a call object still see changes.
+      const next = activeCallsRef.current;
 
       switch (event.kind) {
         case "agent.call_started": {
@@ -130,11 +134,16 @@ export function useAgentStreamEvents(bus?: IAgentStreamEventBus | null): {
           break;
       }
 
-      activeCallsRef.current = next;
       dirtyRef.current = true;
     });
 
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      // Drop per-call state so a torn-down bus cannot strand entries whose
+      // agent.call_ended never arrived.
+      activeCallsRef.current.clear();
+      lastTokensRef.current.clear();
+    };
   }, [bus]);
 
   // Drain refs into state at a fixed interval — decouples render rate from event rate.

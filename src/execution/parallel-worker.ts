@@ -199,6 +199,17 @@ export async function executeParallelBatch(
           });
         }
       })
+      // executeStoryInWorktree catches internally, but the dep is injectable and
+      // the .then() body can throw. Without this catch a rejection propagates out
+      // of Promise.race/Promise.all below, abandoning sibling stories that are
+      // still running in their worktrees and discarding their results.
+      .catch((error) => {
+        results.failed.push({ story, error: errorMessage(error) });
+        logger?.error("parallel", "Story execution threw", {
+          storyId: story.id,
+          error: errorMessage(error),
+        });
+      })
       .finally(() => {
         executing.delete(executePromise);
       });
@@ -214,8 +225,9 @@ export async function executeParallelBatch(
     }
   }
 
-  // Wait for all remaining executions
-  await Promise.all(executing);
+  // Wait for all remaining executions. allSettled (not all) so a late rejection
+  // cannot skip the cleanup of the stories that did finish.
+  await Promise.allSettled(executing);
 
   return results;
 }

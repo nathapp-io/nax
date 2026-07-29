@@ -124,9 +124,14 @@ export async function runQualityCommand(opts: QualityCommandOptions): Promise<Qu
     let sigkillTimer: ReturnType<typeof setTimeout> | undefined;
 
     // Track process exit so SIGKILL is skipped if the process already died during the grace period.
-    proc.exited.then(() => {
-      exitedBeforeSigkill = true;
-    });
+    proc.exited
+      .then(() => {
+        exitedBeforeSigkill = true;
+      })
+      // Floating by design (the flag defaults to the safe value); .catch keeps a
+      // rejected proc.exited from surfacing as an unhandled rejection, which the
+      // crash handler would escalate to a full teardown.
+      .catch(() => {});
 
     const killTimer = setTimeout(() => {
       timedOut = true;

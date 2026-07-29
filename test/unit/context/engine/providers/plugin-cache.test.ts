@@ -6,7 +6,8 @@
  *   - Different config hashes produce different instances
  *   - disposeAll() calls dispose() on every InitialisableProvider that has it
  *   - A throwing dispose() does not block other teardowns
- *   - A hanging dispose() is bounded by the 5 s timeout (Bun.sleep race)
+ *   - A hanging dispose() is bounded by the injectable dispose timeout
+ *   - Providers are disposed concurrently, and a fast dispose leaves no armed timer
  *   - disposeAll() is idempotent (second call is a no-op)
  *   - loadOrGet() after disposeAll() throws PLUGIN_CACHE_DISPOSED
  *   - Empty / disabled configs return [] without touching the loader
@@ -22,6 +23,7 @@ import {
 import type { IContextProvider, ContextProviderResult } from "../../../../../src/context/engine";
 import type { ContextPluginProviderConfig } from "../../../../../src/config/runtime-types";
 import type { InitialisableProvider } from "../../../../../src/context/engine/providers/plugin-loader";
+import { withTimerSpy } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -60,11 +62,14 @@ function makeConfig(
 // ─────────────────────────────────────────────────────────────────────────────
 
 let origLoadProviders: typeof _pluginCacheDeps.loadProviders;
+let origDisposeTimeoutMs: number;
 beforeEach(() => {
   origLoadProviders = _pluginCacheDeps.loadProviders;
+  origDisposeTimeoutMs = _pluginCacheDeps.disposeTimeoutMs;
 });
 afterEach(() => {
   _pluginCacheDeps.loadProviders = origLoadProviders;
+  _pluginCacheDeps.disposeTimeoutMs = origDisposeTimeoutMs;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -229,6 +234,60 @@ describe("PluginProviderCache.disposeAll", () => {
     await cache.disposeAll();
 
     expect(disposeCount).toBe(1);
+  });
+
+  test("disposes providers concurrently, not one-after-another", async () => {
+    const DISPOSE_MS = 150;
+    const providers = ["a", "b", "c"].map((id) =>
+      makeDisposableProvider(id, async () => {
+        await new Promise((r) => setTimeout(r, DISPOSE_MS));
+      }),
+    );
+
+    let call = 0;
+    _pluginCacheDeps.loadProviders = async () => [providers[call++]];
+
+    const cache = new PluginProviderCache();
+    await cache.loadOrGet([makeConfig("@a")], "/w");
+    await cache.loadOrGet([makeConfig("@b")], "/w");
+    await cache.loadOrGet([makeConfig("@c")], "/w");
+
+    const t0 = Date.now();
+    await cache.disposeAll();
+    const elapsed = Date.now() - t0;
+
+    // Sequential teardown would cost 3 x DISPOSE_MS; concurrent costs ~1 x.
+    expect(elapsed).toBeLessThan(DISPOSE_MS * 2);
+  });
+
+  test("a hanging dispose() is bounded by the dispose timeout", async () => {
+    _pluginCacheDeps.disposeTimeoutMs = 100;
+    const pHang = makeDisposableProvider("pHang", () => new Promise<void>(() => {}));
+    _pluginCacheDeps.loadProviders = async () => [pHang];
+
+    const cache = new PluginProviderCache();
+    await cache.loadOrGet([makeConfig("@hang")], "/w");
+
+    const t0 = Date.now();
+    await expect(cache.disposeAll()).resolves.toBeUndefined();
+    const elapsed = Date.now() - t0;
+
+    expect(elapsed).toBeGreaterThanOrEqual(90);
+    expect(elapsed).toBeLessThan(1_000);
+  });
+
+  test("a fast dispose() does not leave the timeout timer armed", async () => {
+    // Regression: Bun.sleep() cannot be cancelled, so an instant dispose still
+    // left a 5s timer holding the event loop past teardown.
+    _pluginCacheDeps.disposeTimeoutMs = 30_000;
+    _pluginCacheDeps.loadProviders = async () => [makeDisposableProvider("fast", async () => {})];
+
+    const cache = new PluginProviderCache();
+    await cache.loadOrGet([makeConfig("@fast")], "/w");
+
+    const { leaked } = await withTimerSpy(() => cache.disposeAll());
+
+    expect(leaked).toEqual([]);
   });
 
   test("loadOrGet() after disposeAll() throws PLUGIN_CACHE_DISPOSED", async () => {

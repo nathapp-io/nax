@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { type FormatterOptions, type VerbosityMode, formatLogEntry } from "../log-format/index.js";
 import { formatConsole, formatJsonl } from "./formatters.js";
-import { redactSecrets } from "./redact.js";
+import { redactEntry } from "./redact.js";
 import type { LogEntry, LogLevel, LoggerOptions, StoryLogger } from "./types.js";
 
 /**
@@ -15,6 +15,14 @@ const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
   info: 2,
   debug: 3,
 };
+
+/**
+ * Upper bound on bytes per batched appendFile call.
+ *
+ * Bounded so a batch stays a small write: crash handlers appendFileSync() fatal
+ * entries to the same JSONL file, and a very large append is not atomic.
+ */
+const MAX_BATCH_BYTES = 64 * 1024;
 
 /**
  * Singleton logger instance
@@ -46,6 +54,8 @@ export class Logger {
   private readonly suppressConsole: boolean;
   /** Tail of the async write chain — await this to know all writes have landed */
   private writeQueueTail: Promise<void> = Promise.resolve();
+  /** Lines buffered since the last flush task ran — drained as one batched append */
+  private readonly pendingLines: string[] = [];
 
   constructor(options: LoggerOptions) {
     this.level = options.level;
@@ -97,7 +107,7 @@ export class Logger {
       strippedData = Object.keys(rest).length > 0 ? rest : undefined;
     }
 
-    const entry: LogEntry = {
+    const rawEntry: LogEntry = {
       timestamp: new Date().toISOString(),
       level,
       stage,
@@ -107,8 +117,16 @@ export class Logger {
       ...(strippedData && { data: strippedData }),
     };
 
+    const consoleEnabled = this.shouldLog(level) && !this.suppressConsole;
+    if (!consoleEnabled && !this.filePath) return;
+
+    // Redact once, up front, so BOTH sinks see the sanitized entry. Redacting
+    // only on the file path (and only `data`) let secrets interpolated into
+    // `message` reach the JSONL log and the terminal in cleartext.
+    const entry = redactEntry(rawEntry);
+
     // Console output (level-gated, suppressed in TUI mode to avoid corrupting Ink's terminal)
-    if (this.shouldLog(level) && !this.suppressConsole) {
+    if (consoleEnabled) {
       let consoleOutput: string | null = null;
 
       if (this.formatterMode) {
@@ -156,19 +174,37 @@ export class Logger {
 
   /**
    * Append a JSONL line to the log file asynchronously.
-   * Writes are chained so ordering is preserved and callers can await flush().
-   * Avoids blocking the event loop during parallel execution and high-frequency logging.
+   *
+   * Lines are buffered and coalesced: a burst of synchronous log() calls enqueues
+   * one task each, but the first task to run drains the whole buffer in a single
+   * appendFile, and the rest no-op. This collapses N open/write/close syscall
+   * triples into one per burst while preserving both write ordering and the
+   * flush() contract (callers can await every pending line).
+   *
+   * The entry is expected to be pre-redacted by log().
    */
   private writeToFile(entry: LogEntry): void {
     if (!this.filePath) return;
-    const safeEntry = entry.data ? { ...entry, data: redactSecrets(entry.data) as Record<string, unknown> } : entry;
-    const line = `${formatJsonl(safeEntry)}\n`;
     const filePath = this.filePath;
-    this.writeQueueTail = this.writeQueueTail.then(() =>
-      appendFile(filePath, line).catch((error) => {
-        process.stderr.write(`[logger] Failed to write to log file: ${error}\n`);
-      }),
-    );
+    this.pendingLines.push(`${formatJsonl(entry)}\n`);
+    this.writeQueueTail = this.writeQueueTail.then(async () => {
+      // Loop, not a single join: crash-writer.ts appendFileSync()s fatal entries to
+      // this same file, and a multi-hundred-KB append is not an atomic write — a
+      // fatal line could land mid-batch and corrupt the post-mortem log. Capping
+      // each append keeps writes small while still collapsing the syscall count.
+      while (this.pendingLines.length > 0) {
+        let bytes = 0;
+        let count = 0;
+        while (count < this.pendingLines.length && bytes < MAX_BATCH_BYTES) {
+          bytes += this.pendingLines[count].length;
+          count++;
+        }
+        const batch = this.pendingLines.splice(0, count).join("");
+        await appendFile(filePath, batch).catch((error) => {
+          process.stderr.write(`[logger] Failed to write to log file: ${error}\n`);
+        });
+      }
+    });
   }
 
   /**
