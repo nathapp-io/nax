@@ -4,15 +4,13 @@
  * Covers the timeout/kill path of executeWithTimeout, in particular that the
  * SIGTERM grace period does not leave an armed timer behind. An uncancelled
  * grace timer keeps Bun's event loop alive for the full grace period after the
- * function has already returned, so the regression is asserted on the *process
- * exit time* of a child that does nothing else — the only place the leak is
- * observable.
+ * function has already returned; the leak is asserted by spying on the global
+ * timer pair, which is deterministic and independent of CI scheduling.
  */
 
 import { describe, expect, test } from "bun:test";
+import { withTimerSpy } from "@test/helpers";
 import { executeWithTimeout, normalizeEnvironment } from "@/verification";
-
-const REPO_ROOT = new URL("../../..", import.meta.url).pathname;
 
 describe("normalizeEnvironment", () => {
   test("strips AI-optimized env vars by default", () => {
@@ -49,29 +47,19 @@ describe("executeWithTimeout", () => {
 
   // Regression: the grace-period timer used to be created without capturing its
   // handle, so it was never cleared. When the child dies promptly on SIGTERM the
-  // race settles immediately, but the timer stayed armed and pinned the event
+  // race settles immediately, but the timer stayed armed and pinned Bun's event
   // loop for the full grace period — a hard delay on CLI exit.
-  test("does not keep the event loop alive after the grace period race settles", async () => {
-    const gracePeriodMs = 4000;
-    const child = `
-      const { executeWithTimeout } = await import(${JSON.stringify(`${REPO_ROOT}src/verification/executor.ts`)});
-      const t0 = Date.now();
-      await executeWithTimeout("sleep 30", 1, undefined, { gracePeriodMs: ${gracePeriodMs} });
-      const returned = Date.now() - t0;
-      process.on("exit", () => {
-        process.stdout.write(JSON.stringify({ returned, exited: Date.now() - t0 }));
-      });
-    `;
+  //
+  // Asserted on the timers themselves rather than on process exit time: a
+  // wall-clock assertion needs a nested runtime and is hostage to CI scheduling.
+  test("clears every timer it arms on the kill path", async () => {
+    const { result, leaked } = await withTimerSpy(() =>
+      // A long grace period would dominate the test if the timer were leaked;
+      // it is only ever reached when the child ignores SIGTERM, which sleep does not.
+      executeWithTimeout("sleep 30", 1, undefined, { gracePeriodMs: 30_000, drainTimeoutMs: 30_000 }),
+    );
 
-    const proc = Bun.spawn(["bun", "-e", child], { stdout: "pipe", stderr: "pipe", cwd: REPO_ROOT });
-    const stdout = await new Response(proc.stdout).text();
-    await proc.exited;
-
-    const { returned, exited } = JSON.parse(stdout) as { returned: number; exited: number };
-    const linger = exited - returned;
-
-    // "sleep 30" dies immediately on SIGTERM, so the grace race settles at once.
-    // With the leak, linger === gracePeriodMs. Allow generous slack for CI noise.
-    expect(linger).toBeLessThan(gracePeriodMs / 2);
-  }, 30_000);
+    expect(result.timeout).toBe(true);
+    expect(leaked).toEqual([]);
+  }, 20_000);
 });

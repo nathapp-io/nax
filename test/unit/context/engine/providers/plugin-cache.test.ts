@@ -6,7 +6,8 @@
  *   - Different config hashes produce different instances
  *   - disposeAll() calls dispose() on every InitialisableProvider that has it
  *   - A throwing dispose() does not block other teardowns
- *   - A hanging dispose() is bounded by the 5 s timeout (Bun.sleep race)
+ *   - A hanging dispose() is bounded by the injectable dispose timeout
+ *   - Providers are disposed concurrently, and a fast dispose leaves no armed timer
  *   - disposeAll() is idempotent (second call is a no-op)
  *   - loadOrGet() after disposeAll() throws PLUGIN_CACHE_DISPOSED
  *   - Empty / disabled configs return [] without touching the loader
@@ -22,6 +23,7 @@ import {
 import type { IContextProvider, ContextProviderResult } from "../../../../../src/context/engine";
 import type { ContextPluginProviderConfig } from "../../../../../src/config/runtime-types";
 import type { InitialisableProvider } from "../../../../../src/context/engine/providers/plugin-loader";
+import { withTimerSpy } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -275,30 +277,18 @@ describe("PluginProviderCache.disposeAll", () => {
   });
 
   test("a fast dispose() does not leave the timeout timer armed", async () => {
-    const repoRoot = new URL("../../../../..", import.meta.url).pathname;
-    const child = `
-      const { PluginProviderCache, _pluginCacheDeps } = await import(${JSON.stringify(
-        `${repoRoot}src/context/engine/providers/plugin-cache.ts`,
-      )});
-      _pluginCacheDeps.disposeTimeoutMs = 4000;
-      _pluginCacheDeps.loadProviders = async () => [
-        { id: "p", kind: "rag", fetch: async () => ({ chunks: [] }), init: async () => {}, dispose: async () => {} },
-      ];
-      const cache = new PluginProviderCache();
-      await cache.loadOrGet([{ module: "@m", enabled: true }], "/w");
-      const t0 = Date.now();
-      await cache.disposeAll();
-      const returned = Date.now() - t0;
-      process.on("exit", () => process.stdout.write(JSON.stringify({ returned, exited: Date.now() - t0 })));
-    `;
+    // Regression: Bun.sleep() cannot be cancelled, so an instant dispose still
+    // left a 5s timer holding the event loop past teardown.
+    _pluginCacheDeps.disposeTimeoutMs = 30_000;
+    _pluginCacheDeps.loadProviders = async () => [makeDisposableProvider("fast", async () => {})];
 
-    const proc = Bun.spawn(["bun", "-e", child], { stdout: "pipe", stderr: "pipe", cwd: repoRoot });
-    const stdout = await new Response(proc.stdout).text();
-    await proc.exited;
+    const cache = new PluginProviderCache();
+    await cache.loadOrGet([makeConfig("@fast")], "/w");
 
-    const { returned, exited } = JSON.parse(stdout) as { returned: number; exited: number };
-    expect(exited - returned).toBeLessThan(2_000);
-  }, 30_000);
+    const { leaked } = await withTimerSpy(() => cache.disposeAll());
+
+    expect(leaked).toEqual([]);
+  });
 
   test("loadOrGet() after disposeAll() throws PLUGIN_CACHE_DISPOSED", async () => {
     _pluginCacheDeps.loadProviders = async () => [];
