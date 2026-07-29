@@ -1,7 +1,7 @@
 import type { RetryPreset, RetryStrategy } from "../agents/retry";
 import type { TurnResult } from "../agents/types";
 import type { ConfigSelector, ConfiguredModel } from "../config";
-import type { NaxConfig } from "../config";
+import type { NaxConfig, TestStrategy } from "../config";
 import type { PipelineStage } from "../config/permissions";
 import type { ComposeInput } from "../prompts/compose";
 import type { NaxRuntime, PackageView } from "../runtime";
@@ -59,6 +59,11 @@ export interface CallContext {
   readonly scopeId?: string;
   /** Optional pinned callId. callOp generates a fresh one when absent. */
   readonly callId?: string;
+  readonly phaseTelemetry?: {
+    readonly testStrategy: TestStrategy;
+    readonly sessionModel: "single-session" | "three-session";
+    readonly tier: string;
+  };
 }
 
 interface OperationBase<I, O, C> {

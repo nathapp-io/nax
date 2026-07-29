@@ -4,6 +4,7 @@
  * Defines interfaces for specific plugin extensions that can be provided.
  */
 
+import type { TestStrategy } from "../config";
 import type { FixTarget } from "../findings/types";
 import type { UserStory } from "../prd/types";
 import type { PluginLogger } from "./types";
@@ -343,6 +344,30 @@ export interface RunEndEvent {
   };
 }
 
+interface PhaseEventBase {
+  runId: string;
+  scope: "story" | "run";
+  phase: string;
+  storyId?: string;
+}
+
+export type PhaseDetails = Record<string, unknown>;
+export type RunPhaseDetails = Record<string, unknown>;
+
+export interface PhaseStartEvent extends PhaseEventBase {
+  startTime: string;
+}
+
+export interface PhaseCompleteEvent extends PhaseEventBase {
+  outcome: "passed" | "failed" | "skipped" | "error";
+  durationMs: number;
+  costUsd: number;
+  tier?: string;
+  testStrategy?: TestStrategy;
+  sessionModel?: "single-session" | "three-session";
+  details?: PhaseDetails | RunPhaseDetails;
+}
+
 /**
  * Reporter interface.
  *
@@ -380,4 +405,10 @@ export interface IReporter {
 
   /** Called when a run ends */
   onRunEnd?(event: RunEndEvent): Promise<void>;
+
+  /** Called when a story or run phase starts */
+  onPhaseStart?(event: PhaseStartEvent): Promise<void>;
+
+  /** Called when a story or run phase completes */
+  onPhaseComplete?(event: PhaseCompleteEvent): Promise<void>;
 }

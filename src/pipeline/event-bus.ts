@@ -17,6 +17,7 @@
  * - Zero dependencies on pipeline internals
  */
 
+import type { TestStrategy } from "../config/schema-types";
 import { getLogger } from "../logger";
 // ---------------------------------------------------------------------------
 // Event types
@@ -156,15 +157,32 @@ export interface StoryStepEvent {
   step: string;
 }
 
+export type PhaseDetails = Record<string, unknown>;
+export type RunPhaseDetails = Record<string, unknown>;
+
+export interface StoryPhaseCompletedEvent {
+  type: "story:phase:completed";
+  storyId: string;
+  phase: string;
+  outcome: "passed" | "failed" | "skipped" | "error";
+  durationMs: number;
+  costUsd: number;
+  tier?: string;
+  testStrategy?: TestStrategy;
+  sessionModel?: "single-session" | "three-session";
+  details?: PhaseDetails;
+}
+
 export interface PostRunPhaseStartedEvent {
   type: "postrun:phase:started";
-  phase: "regression" | "acceptance" | "review";
+  phase: string;
 }
 
 export interface PostRunPhaseCompletedEvent {
   type: "postrun:phase:completed";
-  phase: "regression" | "acceptance" | "review";
+  phase: string;
   passed: boolean;
+  details?: RunPhaseDetails;
 }
 
 /** Discriminated union of all pipeline events. */
@@ -183,6 +201,7 @@ export type PipelineEvent =
   | RunResumedEvent
   | RunErroredEvent
   | StoryStepEvent
+  | StoryPhaseCompletedEvent
   | PostRunPhaseStartedEvent
   | PostRunPhaseCompletedEvent;
 
