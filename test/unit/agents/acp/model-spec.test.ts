@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { parseModelSpec } from "@/agents";
+import { parseModelSpec } from "@/agents/acp/model-spec";
 
 describe("parseModelSpec", () => {
   test("splits a trailing effort suffix", () => {

@@ -22,10 +22,8 @@ export {
   finalizeParseState,
   parseAcpxJsonLine,
   parseAcpxJsonOutput,
-  parseModelSpec,
-  parseSessionIds,
 } from "./acp";
-export type { BuildTurnResultInput, ModelSpec } from "./acp";
+export type { BuildTurnResultInput } from "./acp";
 export type {
   AcpClient,
   AcpClientOptions,

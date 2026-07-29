@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { parseSessionIds } from "@/agents";
+import { parseSessionIds } from "@/agents/acp/session-ids";
 
 describe("parseSessionIds", () => {
   test("reads both ids from the ensure line", () => {
