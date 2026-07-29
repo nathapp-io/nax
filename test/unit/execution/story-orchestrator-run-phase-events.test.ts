@@ -201,6 +201,28 @@ describe("runPhase — story:phase:completed event emission", () => {
     unsub();
   });
 
+  test("gate-op skip envelope { success: true, status: 'skipped' } emits 'passed' (buildPhaseOutcomeLogData reports success)", async () => {
+    // Real-world gate-ops (lint-check, typecheck-check, full-suite-gate, verify-scoped)
+    // return { success: true, status: 'skipped' } when skipping. buildPhaseOutcomeLogData
+    // reports success for this envelope, so AC10 mandates the outcome be 'passed'.
+    _storyOrchestratorDeps.callOp = (async () => ({
+      success: true,
+      passed: true,
+      status: "skipped",
+      findings: [],
+    })) as typeof _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
+
+    const received: StoryPhaseCompletedEvent[] = [];
+    const unsub = pipelineEventBus.on("story:phase:completed", (e) => received.push(e));
+
+    const ctx = makeCallCtx();
+    await runPhase(ctx, makeSlot("full-suite-gate"), {}, {});
+
+    expect(received[0].outcome).toBe("passed");
+    unsub();
+  });
+
   test("AC11: semantic-review emits an outcome even though deterministic logging returns early", async () => {
     _storyOrchestratorDeps.callOp = (async () => ({ passed: false, findings: [] })) as typeof _storyOrchestratorDeps.callOp;
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";

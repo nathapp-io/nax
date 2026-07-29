@@ -285,8 +285,8 @@ export async function runPhase(
 function derivePhaseOutcome(output: unknown): "passed" | "failed" | "skipped" {
   if (output === null || output === undefined || typeof output !== "object") return "passed";
   const r = output as Record<string, unknown>;
-  if (typeof r.status === "string" && r.status === "skipped") return "skipped";
   if (r.success === true || r.passed === true) return "passed";
+  if (typeof r.status === "string" && r.status === "skipped") return "skipped";
   return "failed";
 }
 
