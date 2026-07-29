@@ -26,8 +26,9 @@ export const OtelReporterConfigSchema = z
     headers: HeadersSchema,
     serviceName: z.string().default("nax"),
     timeoutMs: z.number().int().positive().default(5000),
-    detail: z.enum(["counts", "summary", "full"]).default("counts"),
-    heartbeatIntervalMs: z.number().int().positive().default(10_000),
+    detail: z.enum(["counts", "verbose"]).default("counts"),
+    /** 0 disables the heartbeat entirely; positive values are the emit cadence in ms. */
+    heartbeatIntervalMs: z.number().int().nonnegative().default(10_000),
     maxBatchSize: z.number().int().positive().default(64),
     flushIntervalMs: z.number().int().positive().default(5_000),
     maxQueueSize: z.number().int().positive().default(2_048),
