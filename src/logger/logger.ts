@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { type FormatterOptions, type VerbosityMode, formatLogEntry } from "../log-format/index.js";
 import { formatConsole, formatJsonl } from "./formatters.js";
-import { redactSecrets } from "./redact.js";
+import { redactEntry } from "./redact.js";
 import type { LogEntry, LogLevel, LoggerOptions, StoryLogger } from "./types.js";
 
 /**
@@ -46,6 +46,8 @@ export class Logger {
   private readonly suppressConsole: boolean;
   /** Tail of the async write chain — await this to know all writes have landed */
   private writeQueueTail: Promise<void> = Promise.resolve();
+  /** Lines buffered since the last flush task ran — drained as one batched append */
+  private readonly pendingLines: string[] = [];
 
   constructor(options: LoggerOptions) {
     this.level = options.level;
@@ -97,7 +99,7 @@ export class Logger {
       strippedData = Object.keys(rest).length > 0 ? rest : undefined;
     }
 
-    const entry: LogEntry = {
+    const rawEntry: LogEntry = {
       timestamp: new Date().toISOString(),
       level,
       stage,
@@ -107,8 +109,16 @@ export class Logger {
       ...(strippedData && { data: strippedData }),
     };
 
+    const consoleEnabled = this.shouldLog(level) && !this.suppressConsole;
+    if (!consoleEnabled && !this.filePath) return;
+
+    // Redact once, up front, so BOTH sinks see the sanitized entry. Redacting
+    // only on the file path (and only `data`) let secrets interpolated into
+    // `message` reach the JSONL log and the terminal in cleartext.
+    const entry = redactEntry(rawEntry);
+
     // Console output (level-gated, suppressed in TUI mode to avoid corrupting Ink's terminal)
-    if (this.shouldLog(level) && !this.suppressConsole) {
+    if (consoleEnabled) {
       let consoleOutput: string | null = null;
 
       if (this.formatterMode) {
@@ -156,19 +166,27 @@ export class Logger {
 
   /**
    * Append a JSONL line to the log file asynchronously.
-   * Writes are chained so ordering is preserved and callers can await flush().
-   * Avoids blocking the event loop during parallel execution and high-frequency logging.
+   *
+   * Lines are buffered and coalesced: a burst of synchronous log() calls enqueues
+   * one task each, but the first task to run drains the whole buffer in a single
+   * appendFile, and the rest no-op. This collapses N open/write/close syscall
+   * triples into one per burst while preserving both write ordering and the
+   * flush() contract (callers can await every pending line).
+   *
+   * The entry is expected to be pre-redacted by log().
    */
   private writeToFile(entry: LogEntry): void {
     if (!this.filePath) return;
-    const safeEntry = entry.data ? { ...entry, data: redactSecrets(entry.data) as Record<string, unknown> } : entry;
-    const line = `${formatJsonl(safeEntry)}\n`;
     const filePath = this.filePath;
-    this.writeQueueTail = this.writeQueueTail.then(() =>
-      appendFile(filePath, line).catch((error) => {
+    this.pendingLines.push(`${formatJsonl(entry)}\n`);
+    this.writeQueueTail = this.writeQueueTail.then(async () => {
+      if (this.pendingLines.length === 0) return; // drained by an earlier task in this burst
+      const batch = this.pendingLines.join("");
+      this.pendingLines.length = 0;
+      await appendFile(filePath, batch).catch((error) => {
         process.stderr.write(`[logger] Failed to write to log file: ${error}\n`);
-      }),
-    );
+      });
+    });
   }
 
   /**

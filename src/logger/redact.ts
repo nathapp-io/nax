@@ -48,12 +48,32 @@ function redactString(value: string): string {
  * - Arrays and nested objects are walked recursively.
  */
 export function redactSecrets(input: unknown): unknown {
+  return redactValue(input);
+}
+
+/**
+ * Redact a whole log entry — both the free-text `message` and the structured
+ * `data` payload.
+ *
+ * `message` matters as much as `data`: callers routinely interpolate shell
+ * commands, agent stderr, and error text into it, any of which can carry a
+ * credential. Redacting only `data` left those in cleartext.
+ */
+export function redactEntry<T extends { message: string; data?: Record<string, unknown> }>(entry: T): T {
+  return {
+    ...entry,
+    message: redactString(entry.message),
+    ...(entry.data ? { data: redactValue(entry.data) as Record<string, unknown> } : {}),
+  };
+}
+
+function redactValue(input: unknown): unknown {
   if (typeof input === "string") return redactString(input);
-  if (Array.isArray(input)) return input.map(redactSecrets);
+  if (Array.isArray(input)) return input.map(redactValue);
   if (input !== null && typeof input === "object") {
     const out: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-      out[key] = SECRET_KEY_PATTERN.test(key) ? REDACTED : redactSecrets(value);
+      out[key] = SECRET_KEY_PATTERN.test(key) ? REDACTED : redactValue(value);
     }
     return out;
   }
