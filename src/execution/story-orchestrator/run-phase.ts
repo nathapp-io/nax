@@ -18,7 +18,7 @@ import { buildResumePlan as realBuildResumePlan } from "../checkpoint/resume-pla
 import type { ResumePlan } from "../checkpoint/resume-plan";
 import type { StoryCheckpoint, TreeState } from "../checkpoint/types";
 import { runNonBlockingFix } from "../non-blocking-fix";
-import { logDeterministicPhaseOutcome } from "../story-orchestrator-logging";
+import { buildPhaseOutcomeLogData, logDeterministicPhaseOutcome } from "../story-orchestrator-logging";
 import { productionTriageSeam } from "./flake-triage-seam";
 import { emitReviewDecision, logUnifiedReviewPhaseResult, logUnifiedReviewPhaseStart } from "./review-decision";
 import type { AnySlot } from "./types";
@@ -283,10 +283,10 @@ export async function runPhase(
  * lockstep. Non-object outputs are treated as `passed` (no `details`).
  */
 function derivePhaseOutcome(output: unknown): "passed" | "failed" | "skipped" {
-  if (output === null || output === undefined || typeof output !== "object") return "passed";
-  const r = output as Record<string, unknown>;
-  if (r.success === true || r.passed === true) return "passed";
-  if (typeof r.status === "string" && r.status === "skipped") return "skipped";
+  const built = buildPhaseOutcomeLogData(undefined, "", output, 0);
+  if (!built) return "passed";
+  if (built.success) return "passed";
+  if (built.data.status === "skipped") return "skipped";
   return "failed";
 }
 
