@@ -11,12 +11,12 @@ import { randomUUID } from "node:crypto";
 import {
   _runCompletionDeps,
   handleRunCompletion,
-  type RunCompletionOptions,
-} from "@/execution/lifecycle/run-completion";
+} from "@/execution";
+import type { RunCompletionOptions } from "@/execution";
 import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
 import type { DeferredReviewResult } from "@/execution/deferred-review";
-import { pipelineEventBus } from "@/pipeline/event-bus";
-import type { PostRunPhaseCompletedEvent, PostRunPhaseStartedEvent } from "@/pipeline/event-bus";
+import { pipelineEventBus } from "@/pipeline";
+import type { PostRunPhaseCompletedEvent, PostRunPhaseStartedEvent } from "@/pipeline";
 import type { NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd";
 import { makeNaxConfig, makeMockRuntime, makeMockAgentManager, makeSessionManager } from "@test/helpers";
@@ -288,8 +288,17 @@ describe("handleRunCompletion — AC9: durationMs in completed events", () => {
     expect(regressionCompleted?.durationMs).toBeGreaterThanOrEqual(0);
   });
 
-  test("AC9: review completed event has durationMs >= 0", async () => {
+  test("AC9: review durationMs reflects elapsed from postrun:phase:started, not from inside the completion call", async () => {
+    // postrun:phase:started for review fires in unified-executor.ts BEFORE the review runs.
+    // handleRunCompletion only receives the already-completed deferredReview result.
+    // durationMs must reflect elapsed time from that started event — NOT the trivial
+    // overhead of Date.now()-Date.now() measured inside handleRunCompletion itself.
+    //
+    // The implementer threads deferredReviewStartedAt through RunCompletionOptions so
+    // handleRunCompletion can compute durationMs = Date.now() - deferredReviewStartedAt.
+    const started: PostRunPhaseStartedEvent[] = [];
     const completed: PostRunPhaseCompletedEvent[] = [];
+    pipelineEventBus.on("postrun:phase:started", (e) => { started.push(e); });
     pipelineEventBus.on("postrun:phase:completed", (e) => { completed.push(e); });
 
     const deferredReview: DeferredReviewResult = {
@@ -305,12 +314,26 @@ describe("handleRunCompletion — AC9: durationMs in completed events", () => {
       review: { pluginMode: "observational" },
     });
 
-    await handleRunCompletion(makeOpts(config, prd, { deferredReview }));
+    // Simulate: postrun:phase:started (review) was emitted 200ms before this call.
+    // The implementer stores this as deferredReviewStartedAt on RunCompletionOptions.
+    const deferredReviewStartedAt = Date.now() - 200;
+    await handleRunCompletion(
+      makeOpts(config, prd, {
+        deferredReview,
+        deferredReviewStartedAt,
+      } as Partial<RunCompletionOptions>),
+    );
+
+    // handleRunCompletion must NOT emit postrun:phase:started for review —
+    // that event already fired in unified-executor.ts before the review ran.
+    expect(started.find((e) => e.phase === "review")).toBeUndefined();
 
     const reviewCompleted = completed.find((e) => e.phase === "review");
     expect(reviewCompleted).toBeDefined();
     expect(typeof reviewCompleted?.durationMs).toBe("number");
-    expect(reviewCompleted?.durationMs).toBeGreaterThanOrEqual(0);
+    // Wrong impl: durationMs ≈ 0 (Date.now()-Date.now() inside handleRunCompletion)
+    // Correct impl: durationMs ≈ 200 (Date.now() - deferredReviewStartedAt)
+    expect(reviewCompleted?.durationMs).toBeGreaterThanOrEqual(150);
   });
 
   test("AC9 boundary: durationMs is a finite non-negative integer", async () => {
