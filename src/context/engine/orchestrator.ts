@@ -104,7 +104,7 @@ export async function fetchWithTimeout(
     (result) => result,
     (err) => {
       if (timedOut) {
-        // The abort we fired — suppress by never settling, letting timeout win.
+        // @design Never-settling so the timeout rejection wins; do not retain the race result.
         return new Promise<ContextProviderResult>(() => {});
       }
       throw err;
