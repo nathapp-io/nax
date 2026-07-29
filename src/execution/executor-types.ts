@@ -61,6 +61,8 @@ export interface SequentialExecutionResult {
   allStoryMetrics: StoryMetrics[];
   exitReason: ExitReason;
   deferredReview?: DeferredReviewResult;
+  /** Date.now() captured immediately before postrun:phase:started for review was emitted. */
+  deferredReviewStartedAt?: number;
 }
 
 /**

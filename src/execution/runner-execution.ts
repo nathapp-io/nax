@@ -69,6 +69,8 @@ export interface RunnerExecutionResult {
   durationMs?: number;
   /** End-of-run deferred plugin review result (#1146 G2). Forwarded to the completion phase. */
   deferredReview?: DeferredReviewResult;
+  /** Date.now() captured before postrun:phase:started for review was emitted. Forwarded for accurate durationMs (AC9). */
+  deferredReviewStartedAt?: number;
   /** Why the unified executor's loop stopped — forwarded to the completion phase for status reporting. */
   exitReason: ExitReason;
 }
@@ -225,6 +227,7 @@ export async function runExecutionPhase(
     totalCost,
     allStoryMetrics,
     deferredReview: unifiedResult.deferredReview,
+    deferredReviewStartedAt: unifiedResult.deferredReviewStartedAt,
     exitReason: unifiedResult.exitReason,
   };
 }

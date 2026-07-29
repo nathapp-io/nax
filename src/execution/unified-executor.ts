@@ -63,6 +63,7 @@ export async function executeUnified(
   const allStoryMetrics: StoryMetrics[] = [];
   let warningSent = false;
   let deferredReview: DeferredReviewResult | undefined;
+  let deferredReviewStartedAt: number | undefined;
 
   const runStartRef = await captureRunStartRef(ctx.workdir);
   let cachedNaxIgnoreKey: string | undefined;
@@ -83,9 +84,7 @@ export async function executeUnified(
     return nextIndex;
   };
 
-  // Tear down previous run's internal subscribers before wiring fresh ones.
-  // Calling stored unsubscribers instead of pipelineEventBus.clear() preserves
-  // external subscribers (e.g. TUI's usePipelineBusEvents) across run boundaries.
+  // Tear down previous run's subscribers; preserves external subscribers (e.g. TUI) across run boundaries.
   for (const fn of _prevRunUnsubscribers) fn();
   _prevRunUnsubscribers = [];
   const thisRunUnsubscribers = [
@@ -95,11 +94,9 @@ export async function executeUnified(
     wireEventsWriter(pipelineEventBus, ctx.feature, ctx.runId, ctx.workdir),
     wireRegistry(pipelineEventBus, ctx.feature, ctx.runId, ctx.workdir, ctx.runtime.outputDir),
   ];
-  // Store for next run's cleanup; also ensures teardown on throw via the finally block.
   _prevRunUnsubscribers = thisRunUnsubscribers;
 
-  // Emit run:started once — subscribers (hooks.ts, reporters.ts) own the fan-out.
-  // Direct fireHook("on-start") and reporter.onRunStart() calls have been removed.
+  // Emit run:started once — subscribers own the fan-out.
   pipelineEventBus.emit({
     type: "run:started",
     feature: ctx.feature,
@@ -115,6 +112,7 @@ export async function executeUnified(
     allStoryMetrics,
     exitReason,
     deferredReview,
+    deferredReviewStartedAt,
   });
 
   startHeartbeat(
@@ -129,6 +127,7 @@ export async function executeUnified(
     if (isComplete(prd)) {
       logger?.info("execution", "All stories already complete — skipping pre-run pipeline");
       const naxIgnoreIndex = await getRunNaxIgnoreIndex(prd);
+      deferredReviewStartedAt = Date.now();
       pipelineEventBus.emit({ type: "postrun:phase:started", phase: "review" });
       deferredReview = await runDeferredReview(
         ctx.workdir,
@@ -195,6 +194,7 @@ export async function executeUnified(
           if (!shouldProceed) return buildResult("pre-merge-aborted");
         }
         logger?.debug("execution", "Running deferred review");
+        deferredReviewStartedAt = Date.now();
         pipelineEventBus.emit({ type: "postrun:phase:started", phase: "review" });
         deferredReview = await runDeferredReview(
           ctx.workdir,

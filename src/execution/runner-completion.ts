@@ -62,6 +62,8 @@ export interface RunnerCompletionOptions extends DispatchContext {
   pluginProviderCache?: import("../context/engine").PluginProviderCache;
   /** End-of-run deferred plugin review result (#1146 G2). Forwarded to handleRunCompletion. */
   deferredReview?: DeferredReviewResult;
+  /** Date.now() captured before postrun:phase:started for review was emitted. Forwarded to handleRunCompletion for accurate durationMs (AC9). */
+  deferredReviewStartedAt?: number;
   /** Why the execution phase stopped — used to distinguish a cost-limit stop from a normal completion. */
   exitReason?: ExitReason;
 }
@@ -271,6 +273,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     sessionManager: options.sessionManager,
     pluginProviderCache: options.pluginProviderCache,
     deferredReview: options.deferredReview,
+    deferredReviewStartedAt: options.deferredReviewStartedAt,
     exitReason: options.exitReason,
     runtime: options.runtime,
     abortSignal: options.abortSignal,
