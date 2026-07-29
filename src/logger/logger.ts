@@ -17,6 +17,14 @@ const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
 };
 
 /**
+ * Upper bound on bytes per batched appendFile call.
+ *
+ * Bounded so a batch stays a small write: crash handlers appendFileSync() fatal
+ * entries to the same JSONL file, and a very large append is not atomic.
+ */
+const MAX_BATCH_BYTES = 64 * 1024;
+
+/**
  * Singleton logger instance
  */
 let instance: Logger | null = null;
@@ -180,12 +188,22 @@ export class Logger {
     const filePath = this.filePath;
     this.pendingLines.push(`${formatJsonl(entry)}\n`);
     this.writeQueueTail = this.writeQueueTail.then(async () => {
-      if (this.pendingLines.length === 0) return; // drained by an earlier task in this burst
-      const batch = this.pendingLines.join("");
-      this.pendingLines.length = 0;
-      await appendFile(filePath, batch).catch((error) => {
-        process.stderr.write(`[logger] Failed to write to log file: ${error}\n`);
-      });
+      // Loop, not a single join: crash-writer.ts appendFileSync()s fatal entries to
+      // this same file, and a multi-hundred-KB append is not an atomic write — a
+      // fatal line could land mid-batch and corrupt the post-mortem log. Capping
+      // each append keeps writes small while still collapsing the syscall count.
+      while (this.pendingLines.length > 0) {
+        let bytes = 0;
+        let count = 0;
+        while (count < this.pendingLines.length && bytes < MAX_BATCH_BYTES) {
+          bytes += this.pendingLines[count].length;
+          count++;
+        }
+        const batch = this.pendingLines.splice(0, count).join("");
+        await appendFile(filePath, batch).catch((error) => {
+          process.stderr.write(`[logger] Failed to write to log file: ${error}\n`);
+        });
+      }
     });
   }
 

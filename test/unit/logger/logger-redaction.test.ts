@@ -139,6 +139,28 @@ describe("logger redaction in JSONL output", () => {
     );
   });
 
+  // Batched appends must stay small writes: crash-writer.ts appendFileSync()s
+  // fatal entries to this same file, and a very large append is not atomic.
+  test("keeps every batched append bounded while preserving order", async () => {
+    const logPath = join(tempDir, "run.jsonl");
+    const logger = new Logger({ level: "info", filePath: logPath });
+
+    // ~1 KB per entry x 400 entries = ~400 KB, well past the 64 KB cap.
+    const filler = "y".repeat(1024);
+    for (let i = 0; i < 400; i++) {
+      logger.info("bulk", `entry-${i}`, { storyId: "story-009", filler });
+    }
+    await logger.flush();
+
+    const lines = readFileSync(logPath, "utf8").trim().split("\n");
+    expect(lines).toHaveLength(400);
+    expect(lines.map((l) => JSON.parse(l).message)).toEqual(
+      Array.from({ length: 400 }, (_, i) => `entry-${i}`),
+    );
+    // Every line must be complete JSON — a split batch would leave a torn line.
+    expect(() => lines.forEach((l) => JSON.parse(l))).not.toThrow();
+  });
+
   test("redacts nested secret keys", async () => {
     const logPath = join(tempDir, "run.jsonl");
     const logger = new Logger({ level: "info", filePath: logPath });
