@@ -552,12 +552,24 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
       });
     }
 
-    // Pass when nothing blocks AND either the model passed, or the classifier
-    // reclassified a blocking-severity finding to non-blocking (recurrence-demoted
-    // OR oscillation-suppressed to advisory). Preserves fail-closed when the model
-    // fails with no blocking-severity findings at all.
-    const hadBlockingSeverity = accepted.some((f) => isBlockingSeverity(f.severity, threshold));
-    const passed = blocking.length === 0 && (parsed.passed || hadBlockingSeverity);
+    // Honour blockingThreshold: the verdict fails only when a blocking finding
+    // survives. The model's raw `passed:false` must NOT fail the review when every
+    // surviving finding is sub-threshold — that was nax#1347 for semantic, and
+    // nax#1378 here. This clause was previously `accepted.some(isBlockingSeverity)`,
+    // which can only be true when `blocking` is non-empty *unless* classifyRecurrence
+    // moved a blocking-severity finding out (demotion / oscillation-suppression);
+    // for ordinary sub-threshold findings it collapsed to `parsed.passed` alone.
+    //
+    // That collapse deadlocks the story rather than merely pausing it: `normalizedFindings`
+    // carries `blocking` only, so a sub-threshold-only failure hands the rectification
+    // cycle nothing routable — it exits "resolved" without dispatching a fix strategy,
+    // and the story terminates with no derivable failure category.
+    //
+    // `accepted.length > 0` preserves the fail-closed guard for the distinct case where
+    // the model claims failure but every finding was dropped as ungrounded (accepted
+    // empty): there we still respect the model's `passed` flag. `accepted` is a superset
+    // of what the old clause tested, so demotion/oscillation pass-through is unchanged.
+    const passed = blocking.length === 0 && (parsed.passed || accepted.length > 0);
 
     return {
       ...parsed,
