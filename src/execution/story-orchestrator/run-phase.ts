@@ -265,6 +265,7 @@ export async function runPhase(
     phaseCosts[opName] = (phaseCosts[opName] ?? 0) + snapshot.totalCostUsd;
     scope.close();
     if (ctx.storyId) {
+      const phaseDetails = buildPhaseDetails(opName, phaseOutputs[opName], isThreeSession);
       const event: StoryPhaseCompletedEvent = {
         type: "story:phase:completed",
         storyId: ctx.storyId,
@@ -279,7 +280,7 @@ export async function runPhase(
               sessionModel: ctx.phaseTelemetry.sessionModel,
             }
           : {}),
-        details: buildPhaseDetails(opName, phaseOutputs[opName], isThreeSession),
+        ...(phaseDetails !== undefined ? { details: phaseDetails } : {}),
       };
       pipelineEventBus.emit(event);
     }
