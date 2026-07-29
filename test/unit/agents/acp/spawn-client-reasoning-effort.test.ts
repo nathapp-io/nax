@@ -138,4 +138,61 @@ describe("SpawnAcpClient - effort suffix", () => {
     const started = events.find((e) => e.kind === "agent.call_started");
     expect((started as { model: string }).model).toBe("opus");
   });
+
+  test("issues set reasoning_effort exactly once when the session is created", async () => {
+    const client = new SpawnAcpClient("acpx --model gpt-5.6-luna[high] codex", "/tmp/wd");
+    await client.createSession({ agentName: "codex", permissionMode: "approve-all", sessionName: "s1" });
+
+    const sets = calls.filter((c) => c.includes("set"));
+    expect(sets).toHaveLength(1);
+    expect(sets[0]).toEqual(["acpx", "--cwd", "/tmp/wd", "codex", "set", "reasoning_effort", "high", "-s", "s1"]);
+  });
+
+  test("issues set reasoning_effort when a session is loaded", async () => {
+    const client = new SpawnAcpClient("acpx --model gpt-5.6-luna[medium] codex", "/tmp/wd");
+    await client.loadSession("s1", "codex", "approve-all");
+
+    const sets = calls.filter((c) => c.includes("set"));
+    expect(sets).toHaveLength(1);
+    expect(sets[0]?.[6]).toBe("medium");
+  });
+
+  test("issues no set call when the model carries no suffix", async () => {
+    const client = new SpawnAcpClient("acpx --model opus claude", "/tmp/wd");
+    await client.createSession({ agentName: "claude", permissionMode: "approve-all", sessionName: "s1" });
+
+    expect(calls.filter((c) => c.includes("set"))).toHaveLength(0);
+  });
+
+  test("does not re-issue set on every prompt", async () => {
+    const client = new SpawnAcpClient("acpx --model gpt-5.6-luna[high] codex", "/tmp/wd");
+    const session = await client.createSession({
+      agentName: "codex",
+      permissionMode: "approve-all",
+      sessionName: "s1",
+    });
+    expect(calls.filter((c) => c.includes("set"))).toHaveLength(1);
+
+    installSpawn(TURN_JSON);
+    await session.prompt("one");
+    await session.prompt("two");
+
+    // Still exactly the one from session creation - prompts must not re-issue it.
+    expect(calls.filter((c) => c.includes("set"))).toHaveLength(1);
+  });
+
+  test("session creation survives a failing set call", async () => {
+    _spawnClientDeps.spawn = mock((cmd: string[]) => {
+      calls.push(cmd);
+      return cmd.includes("set") ? makeSpawnResult(1, "boom") : makeSpawnResult(0, ENSURE_JSON);
+    }) as unknown as typeof _spawnClientDeps.spawn;
+
+    const client = new SpawnAcpClient("acpx --model gpt-5.6-luna[high] codex", "/tmp/wd");
+    const session = await client.createSession({
+      agentName: "codex",
+      permissionMode: "approve-all",
+      sessionName: "s1",
+    });
+    expect(session).toBeDefined();
+  });
 });

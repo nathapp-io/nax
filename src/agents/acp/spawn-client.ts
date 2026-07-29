@@ -29,6 +29,7 @@ import type { AgentStreamEvent } from "@/runtime";
 import { typedSpawn } from "@/utils/bun-deps";
 import { buildAllowedEnv } from "../shared/env";
 import { parseModelSpec } from "./model-spec";
+import { applyReasoningEffort } from "./reasoning-effort";
 import { parseSessionIds } from "./session-ids";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -621,6 +622,14 @@ export class SpawnAcpClient implements AcpClient {
     }
 
     const { sessionId, recordId } = parseSessionIds(stdout);
+    await applyReasoningEffort({
+      effort: this.reasoningEffort,
+      agentName: opts.agentName,
+      sessionName,
+      cwd: this.cwd,
+      storyId: this.storyId,
+      spawn: (c) => this.trackedSpawn(c),
+    });
     return new SpawnAcpSession({
       agentName: opts.agentName,
       sessionName,
@@ -656,6 +665,14 @@ export class SpawnAcpClient implements AcpClient {
     }
 
     const { sessionId, recordId } = parseSessionIds(stdout);
+    await applyReasoningEffort({
+      effort: this.reasoningEffort,
+      agentName,
+      sessionName,
+      cwd: this.cwd,
+      storyId: this.storyId,
+      spawn: (c) => this.trackedSpawn(c),
+    });
     return new SpawnAcpSession({
       agentName,
       sessionName,
