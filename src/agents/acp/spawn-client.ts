@@ -28,6 +28,7 @@ import { getSafeLogger } from "@/logger";
 import type { AgentStreamEvent } from "@/runtime";
 import { typedSpawn } from "@/utils/bun-deps";
 import { buildAllowedEnv } from "../shared/env";
+import { parseModelSpec } from "./model-spec";
 import { parseSessionIds } from "./session-ids";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,6 +119,8 @@ export class SpawnAcpSession implements AcpSession {
   private readonly sessionName: string;
   private readonly cwd: string;
   private readonly model: string;
+  /** Original profile model string, including any [effort] suffix. Display only. */
+  private readonly modelLabel: string;
   private readonly timeoutSeconds: number;
   private readonly promptRetries: number;
   private readonly permissionMode: string;
@@ -147,6 +150,7 @@ export class SpawnAcpSession implements AcpSession {
     sessionName: string;
     cwd: string;
     model: string;
+    modelLabel?: string;
     timeoutSeconds: number;
     promptRetries: number;
     permissionMode: string;
@@ -165,6 +169,7 @@ export class SpawnAcpSession implements AcpSession {
     this.sessionName = opts.sessionName;
     this.cwd = opts.cwd;
     this.model = opts.model;
+    this.modelLabel = opts.modelLabel ?? opts.model;
     this.timeoutSeconds = opts.timeoutSeconds;
     this.promptRetries = opts.promptRetries;
     this.permissionMode = opts.permissionMode;
@@ -250,7 +255,7 @@ export class SpawnAcpSession implements AcpSession {
     emit?.({
       ...baseEvent,
       kind: "agent.call_started",
-      model: this.model,
+      model: this.modelLabel,
       timeoutSeconds: this.timeoutSeconds,
       timestamp: now(),
     });
@@ -507,6 +512,10 @@ export class SpawnAcpSession implements AcpSession {
  */
 export class SpawnAcpClient implements AcpClient {
   private readonly model: string;
+  /** Original --model string, including any [effort] suffix. Display only. */
+  private readonly rawModel: string;
+  /** Reasoning effort split off the profile's model suffix, applied once per session. */
+  private readonly reasoningEffort?: string;
   readonly cwd: string;
   private readonly timeoutSeconds: number;
   private readonly promptRetries: number;
@@ -531,7 +540,11 @@ export class SpawnAcpClient implements AcpClient {
     // Parse: "acpx --model <model> <agentName>"
     const parts = cmdStr.split(/\s+/);
     const modelIdx = parts.indexOf("--model");
-    this.model = modelIdx >= 0 && parts[modelIdx + 1] ? parts[modelIdx + 1] : "default";
+    const rawModel = modelIdx >= 0 && parts[modelIdx + 1] ? parts[modelIdx + 1] : "default";
+    const spec = parseModelSpec(rawModel);
+    this.rawModel = rawModel;
+    this.model = spec.model;
+    this.reasoningEffort = spec.effort;
     // Agent name is the last non-flag token — must be present and not a flag
     const lastToken = parts[parts.length - 1];
     if (!lastToken || lastToken.startsWith("-")) {
@@ -613,6 +626,7 @@ export class SpawnAcpClient implements AcpClient {
       sessionName,
       cwd: this.cwd,
       model: this.model,
+      modelLabel: this.rawModel,
       timeoutSeconds: this.timeoutSeconds,
       promptRetries: this.promptRetries,
       permissionMode: opts.permissionMode,
@@ -647,6 +661,7 @@ export class SpawnAcpClient implements AcpClient {
       sessionName,
       cwd: this.cwd,
       model: this.model,
+      modelLabel: this.rawModel,
       timeoutSeconds: this.timeoutSeconds,
       promptRetries: this.promptRetries,
       permissionMode,
