@@ -27,12 +27,34 @@ import { loadPluginProviders } from "./plugin-loader";
 // Injectable deps (for testing)
 // ─────────────────────────────────────────────────────────────────────────────
 
+const DISPOSE_TIMEOUT_MS = 5_000;
+
 export const _pluginCacheDeps = {
   /**
    * Underlying loader — replaced in tests with a stub so no real I/O occurs.
    */
   loadProviders: loadPluginProviders,
+  /**
+   * Per-provider dispose() deadline. Injectable so tests can assert the bound
+   * without waiting the full production timeout.
+   */
+  disposeTimeoutMs: DISPOSE_TIMEOUT_MS,
 };
+
+/**
+ * Race a promise against a cancellable deadline.
+ *
+ * setTimeout (not Bun.sleep) because the handle must be cleared once dispose()
+ * settles — an uncancelled timer keeps Bun's event loop alive for the full
+ * timeout after teardown has logically finished.
+ */
+function withDisposeDeadline(p: Promise<void>, deadlineMs: number): Promise<void> {
+  let handle: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<void>((resolve) => {
+    handle = setTimeout(resolve, deadlineMs);
+  });
+  return Promise.race([p, deadline]).finally(() => clearTimeout(handle));
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stable cache key
@@ -50,9 +72,6 @@ function stableCacheKey(configs: ContextPluginProviderConfig[], workdir: string)
 // ─────────────────────────────────────────────────────────────────────────────
 // PluginProviderCache
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Bounded timeout applied to each provider's dispose() call (ms). */
-const DISPOSE_TIMEOUT_MS = 5_000;
 
 /**
  * Per-run cache for plugin-provider instances.
@@ -96,8 +115,9 @@ export class PluginProviderCache {
 
   /**
    * Dispose every cached provider that implements InitialisableProvider.dispose().
-   * Each dispose() call is bounded by DISPOSE_TIMEOUT_MS; a hang or throw is
-   * logged and skipped so teardown of remaining providers continues.
+   * Providers are disposed concurrently and each dispose() call is bounded by
+   * _pluginCacheDeps.disposeTimeoutMs; a hang or throw is logged and skipped so
+   * teardown of the remaining providers continues.
    *
    * Safe to call multiple times — subsequent calls are no-ops.
    */
@@ -107,21 +127,30 @@ export class PluginProviderCache {
 
     const logger = getLogger();
 
+    // Dispose concurrently: a single hanging provider must not serialize the
+    // whole teardown behind its own deadline.
+    const disposals: Promise<void>[] = [];
     for (const providers of this.cache.values()) {
       for (const provider of providers) {
         const initialisable = provider as InitialisableProvider;
         if (typeof initialisable.dispose !== "function") continue;
 
-        try {
-          await Promise.race([initialisable.dispose(), Bun.sleep(DISPOSE_TIMEOUT_MS)]);
-        } catch (err) {
-          logger.warn("context-engine", "Plugin provider dispose() threw — continuing teardown", {
-            providerId: provider.id,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
+        disposals.push(
+          withDisposeDeadline(
+            Promise.resolve()
+              .then(() => initialisable.dispose?.())
+              .then(() => {}),
+            _pluginCacheDeps.disposeTimeoutMs,
+          ).catch((err) => {
+            logger.warn("context-engine", "Plugin provider dispose() threw — continuing teardown", {
+              providerId: provider.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }),
+        );
       }
     }
+    await Promise.all(disposals);
 
     this.cache.clear();
   }

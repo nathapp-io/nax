@@ -60,11 +60,14 @@ function makeConfig(
 // ─────────────────────────────────────────────────────────────────────────────
 
 let origLoadProviders: typeof _pluginCacheDeps.loadProviders;
+let origDisposeTimeoutMs: number;
 beforeEach(() => {
   origLoadProviders = _pluginCacheDeps.loadProviders;
+  origDisposeTimeoutMs = _pluginCacheDeps.disposeTimeoutMs;
 });
 afterEach(() => {
   _pluginCacheDeps.loadProviders = origLoadProviders;
+  _pluginCacheDeps.disposeTimeoutMs = origDisposeTimeoutMs;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -230,6 +233,72 @@ describe("PluginProviderCache.disposeAll", () => {
 
     expect(disposeCount).toBe(1);
   });
+
+  test("disposes providers concurrently, not one-after-another", async () => {
+    const DISPOSE_MS = 150;
+    const providers = ["a", "b", "c"].map((id) =>
+      makeDisposableProvider(id, async () => {
+        await new Promise((r) => setTimeout(r, DISPOSE_MS));
+      }),
+    );
+
+    let call = 0;
+    _pluginCacheDeps.loadProviders = async () => [providers[call++]];
+
+    const cache = new PluginProviderCache();
+    await cache.loadOrGet([makeConfig("@a")], "/w");
+    await cache.loadOrGet([makeConfig("@b")], "/w");
+    await cache.loadOrGet([makeConfig("@c")], "/w");
+
+    const t0 = Date.now();
+    await cache.disposeAll();
+    const elapsed = Date.now() - t0;
+
+    // Sequential teardown would cost 3 x DISPOSE_MS; concurrent costs ~1 x.
+    expect(elapsed).toBeLessThan(DISPOSE_MS * 2);
+  });
+
+  test("a hanging dispose() is bounded by the dispose timeout", async () => {
+    _pluginCacheDeps.disposeTimeoutMs = 100;
+    const pHang = makeDisposableProvider("pHang", () => new Promise<void>(() => {}));
+    _pluginCacheDeps.loadProviders = async () => [pHang];
+
+    const cache = new PluginProviderCache();
+    await cache.loadOrGet([makeConfig("@hang")], "/w");
+
+    const t0 = Date.now();
+    await expect(cache.disposeAll()).resolves.toBeUndefined();
+    const elapsed = Date.now() - t0;
+
+    expect(elapsed).toBeGreaterThanOrEqual(90);
+    expect(elapsed).toBeLessThan(1_000);
+  });
+
+  test("a fast dispose() does not leave the timeout timer armed", async () => {
+    const repoRoot = new URL("../../../../..", import.meta.url).pathname;
+    const child = `
+      const { PluginProviderCache, _pluginCacheDeps } = await import(${JSON.stringify(
+        `${repoRoot}src/context/engine/providers/plugin-cache.ts`,
+      )});
+      _pluginCacheDeps.disposeTimeoutMs = 4000;
+      _pluginCacheDeps.loadProviders = async () => [
+        { id: "p", kind: "rag", fetch: async () => ({ chunks: [] }), init: async () => {}, dispose: async () => {} },
+      ];
+      const cache = new PluginProviderCache();
+      await cache.loadOrGet([{ module: "@m", enabled: true }], "/w");
+      const t0 = Date.now();
+      await cache.disposeAll();
+      const returned = Date.now() - t0;
+      process.on("exit", () => process.stdout.write(JSON.stringify({ returned, exited: Date.now() - t0 })));
+    `;
+
+    const proc = Bun.spawn(["bun", "-e", child], { stdout: "pipe", stderr: "pipe", cwd: repoRoot });
+    const stdout = await new Response(proc.stdout).text();
+    await proc.exited;
+
+    const { returned, exited } = JSON.parse(stdout) as { returned: number; exited: number };
+    expect(exited - returned).toBeLessThan(2_000);
+  }, 30_000);
 
   test("loadOrGet() after disposeAll() throws PLUGIN_CACHE_DISPOSED", async () => {
     _pluginCacheDeps.loadProviders = async () => [];
