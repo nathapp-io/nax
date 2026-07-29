@@ -3,7 +3,7 @@
   "feature": "otel-telemetry-expansion",
   "branchName": "feat/otel-telemetry-expansion",
   "createdAt": "2026-07-29T00:00:00.000Z",
-  "updatedAt": "2026-07-29T11:43:48.555Z",
+  "updatedAt": "2026-07-29T13:35:01.610Z",
   "userStories": [
     {
       "id": "US-001",
@@ -43,7 +43,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/pipeline/event-bus.ts",
@@ -51,7 +53,11 @@
         "src/plugins/extensions.ts",
         "src/operations/types.ts",
         "test/unit/config/reporters-schema.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "468a8e9155ee37d99cbad799e1f86e81ef474ba7"
     },
     {
       "id": "US-002",
@@ -101,7 +107,10 @@
         "src/execution/story-orchestrator-logging.ts",
         "src/pipeline/event-bus.ts",
         "test/unit/execution/story-orchestrator-logs.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -149,7 +158,10 @@
         "src/execution/story-orchestrator/run-phase.ts",
         "src/operations/types.ts",
         "src/config/schema-types.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -196,7 +208,10 @@
         "src/execution/lifecycle/run-completion.ts",
         "src/tui/hooks/usePipelineBusEvents.ts",
         "src/pipeline/event-bus.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -249,7 +264,10 @@
         "src/plugins/extensions.ts",
         "src/pipeline/event-bus.ts",
         "test/unit/pipeline/subscribers/reporters.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -304,9 +322,9 @@
         "src/plugins/builtin/otel-reporter/batch-queue.ts",
         "src/plugins/builtin/otel-reporter/traceparent.ts"
       ],
-      "outOfScope": [
-        "US-006 only: de-duplicating spans when two processes export under the same run id is deferred."
-      ]
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -361,7 +379,10 @@
       ],
       "expectedFiles": [
         "src/plugins/builtin/otel-reporter/span-tree.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-008",
@@ -419,9 +440,9 @@
       "expectedFiles": [
         "src/plugins/builtin/otel-reporter/heartbeat.ts"
       ],
-      "outOfScope": [
-        "US-008 only: persisting heartbeat state across a process restart is deferred; a restarted run emits a new series."
-      ]
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "This is a cross-cutting enhancement to an existing Bun/TypeScript pipeline, not a greenfield change. `src/pipeline/event-bus.ts:149-187` already emits `story:step` starts and three typed post-run phases, but has no story completion event and no duration/cost/details on post-run completions. `src/plugins/extensions.ts:371-386` defines IReporter with only run-start, story-complete, and run-end hooks; `src/pipeline/subscribers/reporters.ts:28-176` maps those bus events with per-reporter try/catch, so new hooks must retain optional-hook compatibility and per-reporter failure isolation. `src/execution/story-orchestrator/run-phase.ts:142-258` is the canonical per-op dispatcher: it emits `story:step`, opens a CostAggregator scope, and in finally accumulates the invocation cost; it is the correct fail-open emission seam, but must emit the single scope snapshot rather than accumulated `phaseCosts`. `src/execution/story-orchestrator-logging.ts:18-50` contains the outcome SSOT and must be reused. `src/pipeline/stages/execution.ts:67-99` owns the post-clamp model tier and routed test strategy needed to populate the readonly CallContext slice; rectification calls `runPhase` through FixCycleContext (`src/execution/story-orchestrator/rectification.ts:236-297`), so the slice must survive structural context reuse. `src/pipeline/stages/acceptance-setup.ts`, `src/execution/runner-completion.ts:133-213`, and `src/execution/lifecycle/run-completion.ts:137-287` own run-level phase emission; the TUI subscriber at `src/tui/hooks/usePipelineBusEvents.ts:227-246` narrows its accepted phase union. Reporter configuration is centralized in `src/config/schemas-reporters.ts:6-63`, and webhook filtering in `src/plugins/builtin/webhook-reporter/index.ts:14-44` follows ReporterEventSchema. The current OTel reporter (`src/plugins/builtin/otel-reporter/index.ts:26-109`) buffers story-complete events and posts only during onRunEnd; `otlp.ts:1-119` has hand-built trace/metric payload helpers and reporter-shared postJson dependency injection. The redesign must preserve hand-built OTLP and injectable I/O while introducing bounded, serialized incremental delivery and W3C traceparent parsing. `src/execution/lifecycle/run-cleanup.ts:116-140` directly invokes reporter.onRunEnd on abnormal exits, whereas normal completion is bus-delivered; flushing and heartbeat shutdown must be owned by onRunEnd and teardown must be idempotent. Existing focused tests are at `test/unit/pipeline/subscribers/reporters.test.ts`, `test/unit/execution/story-orchestrator-logging.test.ts`, acceptance-setup test files under `test/unit/pipeline/stages/`, and `test/unit/plugins/builtin/otel-reporter.test.ts`. Main compatibility risks are public plugin contracts/config defaults, cardinality-sensitive OTLP dimensions, timer cleanup, abort-path delivery, and finding-data redaction. Migration is additive through optional hooks and defaults; existing reporters remain valid, webhook configuration accepts new event names, and the old end-of-run export is replaced only after the queue preserves the root-span behavior.",
