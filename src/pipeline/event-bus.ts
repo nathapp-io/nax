@@ -17,8 +17,9 @@
  * - Zero dependencies on pipeline internals
  */
 
-import type { TestStrategy } from "../config/schema-types";
+import type { TestStrategy } from "../config";
 import { getLogger } from "../logger";
+import type { PhaseDetails, RunPhaseDetails } from "../plugins/extensions";
 // ---------------------------------------------------------------------------
 // Event types
 // ---------------------------------------------------------------------------
@@ -156,9 +157,6 @@ export interface StoryStepEvent {
    *  "lint-check", "typecheck-check", "full-suite-gate", "greenfield-gate" */
   step: string;
 }
-
-export type PhaseDetails = Record<string, unknown>;
-export type RunPhaseDetails = Record<string, unknown>;
 
 export interface StoryPhaseCompletedEvent {
   type: "story:phase:completed";

@@ -31,6 +31,7 @@ export type {
   StoryEscalatedEvent,
   StoryStartedEvent,
   StoryFailedEvent,
+  StoryPhaseCompletedEvent,
   StoryStepEvent,
   PostRunPhaseStartedEvent,
   PostRunPhaseCompletedEvent,
