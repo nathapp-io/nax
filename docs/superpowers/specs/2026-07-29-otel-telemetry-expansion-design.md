@@ -1,7 +1,9 @@
-# SPEC — OTel Telemetry Expansion (Phase Events + Fleet Monitoring)
+# OTel Telemetry Expansion — Phase Events + Fleet Monitoring
 
-**Status:** Design approved, not implemented
 **Date:** 2026-07-29
+**Status:** Design approved, pending nax spec
+**Branch:** `feat/otel-telemetry-expansion`
+**Supersedes parts of:** `2026-07-18-builtin-reporter-design.md` (see §2a)
 **Scope:** `src/plugins/builtin/otel-reporter/`, `src/pipeline/event-bus.ts`, `src/pipeline/subscribers/reporters.ts`, `src/plugins/extensions.ts`, `src/config/schemas-reporters.ts`, `src/execution/story-orchestrator/run-phase.ts`, post-run lifecycle emitters
 
 ---
@@ -24,11 +26,24 @@ The shared root: there is no per-phase event on the pipeline bus, and no increme
 4. Export traces and metrics **incrementally** so a live fleet view across concurrent runs is possible.
 5. Keep the exporter Bun-native and dependency-free, consistent with the repo's `_deps` injection conventions.
 
+## 2a. Relationship to the 2026-07-18 built-in reporter design
+
+This design **supersedes three declared non-goals** of `2026-07-18-builtin-reporter-design.md`:
+
+| Prior non-goal | Now in scope | Why the constraint lifted |
+|:---|:---|:---|
+| Batching or queuing telemetry | §5.4 batch queue | Incremental export is the whole point of a live fleet view; a single end-of-run POST cannot provide it |
+| Retry / backoff on delivery failure | §5.4 single retry | With a long-lived queue, one transient collector blip would otherwise drop a whole run's spans |
+| Synthetic per-story child spans with reconstructed timing | §5.1 real story and phase spans | The prior doc's blocker was explicit: "there is no `onStoryStart` and no per-story duration — only `runElapsedMs`". That is no longer true. `story:started` exists on the bus, and §4.1 adds real per-phase `durationMs` measured at the source. The spans are **measured, not reconstructed** — the objection does not carry over |
+
+Two prior non-goals still stand and are restated in §3: OTel Logs, and histogram **bucket configuration** (see §5.2).
+
 ## 3. Non-Goals
 
 - OTLP **logs** export (`/v1/logs`). The structured JSONL logger stays as it is.
 - A nax-side aggregator daemon. Each run exports directly to the collector.
 - Sampling, gRPC OTLP, or alerting rules. These belong to the collector/backend.
+- **Configurable histogram buckets.** §5.2 uses fixed boundaries (see §5.2).
 - Any change to cost accounting. Costs are read from the existing `CostAggregator` scopes.
 
 ---
@@ -181,6 +196,13 @@ Incremental export falls out of the tree shape: a phase span is already ended wh
 | `nax.fix.iterations` | counter | strategy, phase |
 | `nax.escalations` | counter | from_tier, to_tier |
 
+The existing `otlp.ts` builds only Sum and Gauge points — the prior design listed histogram bucket configuration as a non-goal. Histograms are retained here because duration and cost distributions are the point of the exercise (a mean phase duration hides exactly the tail you are hunting), but the non-goal is honoured by making the boundaries **fixed and non-configurable**, so no new config surface appears:
+
+- `nax.phase.duration` (ms): `[100, 500, 1000, 5000, 15000, 60000, 300000, 900000]`
+- `nax.phase.cost_usd`: `[0.001, 0.01, 0.05, 0.1, 0.5, 1, 5]`
+
+This requires a new `buildHistogramPoint` helper in `otlp.ts` emitting `explicitBounds` + `bucketCounts` + `count` + `sum` per OTLP JSON.
+
 `run_id` and `story_id` are **deliberately excluded** from every metric dimension above — they are unbounded over time and would produce runaway series counts in any Prometheus-backed store. Per-run identity belongs on spans.
 
 ### 5.3 Heartbeat — the live fleet signal
@@ -208,6 +230,23 @@ A bounded FIFO of ended spans and metric points:
 - **Failure:** one retry at a fixed delay, then drop the batch. A slow or dead collector must never block, stall, or fail a run.
 - **Timer:** re-armed `setTimeout` + `clearTimeout`, cancelled on teardown. `setInterval` is banned by `.claude/rules/forbidden-patterns.md`; the `setTimeout` exception for cancellable handles applies and is documented at the call site.
 - **I/O:** through the existing `PostJsonDeps` injection in `reporter-shared`, so every path is unit-testable without network.
+
+### 5.4a Flush lifecycle — the abnormal-exit path
+
+`2026-07-18-builtin-reporter-design.md` §"Event delivery guarantees" documents two mutually exclusive `onRunEnd` delivery paths, verified again here against `src/execution/lifecycle/run-cleanup.ts:116-140`:
+
+1. **Success** — `run:completed` on the bus -> the `reporters.ts` subscriber calls `onRunEnd`.
+2. **Abnormal exit** (failure / abort / SIGTERM) — `run-cleanup.ts` calls `reporter.onRunEnd(...)` **directly**, guarded by `!options.runCompleted` so it fires exactly once.
+
+A queue that flushes only on path 1 would **silently discard every buffered span on abort or SIGTERM** — precisely the runs a fleet view exists to catch. Three requirements follow:
+
+- `flushNow()` must run on **both** paths. Since both terminate in `onRunEnd`, flushing from the reporter's own `onRunEnd` covers both — but the implementation must not move that flush into a bus-only subscriber.
+- The heartbeat timer must be **stopped on both paths**, or an aborted run leaks a re-arming `setTimeout` past teardown.
+- `NaxPlugin.teardown()` (`src/plugins/types.ts:95`) is the belt-and-braces stop: it must stop the heartbeat and attempt a final flush, and must be idempotent with `onRunEnd` so a normal exit does not double-POST.
+
+The final flush is bounded by the existing `timeoutMs` so a dead collector cannot stall run teardown.
+
+**Early abort with no preceding `onRunStart`.** The prior design already documents that `onRunEnd` can arrive with no buffered `RunState`, and the current `otel-reporter/index.ts:90-103` handles it by back-computing the start. The span tree inherits this requirement: a story span, phase span, or final flush arriving with no run span must synthesize a best-effort root rather than throw or drop.
 
 ### 5.5 Detail level and redaction
 
@@ -270,6 +309,8 @@ Unit tests under `test/unit/` mirroring source layout, using `_deps` injection �
 - **detail redaction** — under `"counts"`, no finding title or file path appears anywhere in the serialized payload; under `"verbose"`, titles and relative paths appear and absolute paths do not.
 - **reporters subscriber** — all four bus events fan out to the right hook with the right `scope`; one throwing reporter does not prevent the others from being called.
 - **run-phase emission** — success path emits `outcome: "passed"` with the scope cost; throw path emits `outcome: "error"` and rethrows the original error; a throwing event bus does not fail the phase.
+- **abnormal-exit flush** — `onRunEnd` reached via the `run-cleanup.ts` direct path (no `run:completed` on the bus) still flushes every queued span and stops the heartbeat; `teardown()` after a normal `onRunEnd` does not double-POST; `onRunEnd` with no preceding `onRunStart` synthesizes a root span instead of throwing.
+- **histogram payload** — `buildHistogramPoint` emits `bucketCounts.length === explicitBounds.length + 1`, and `sum`/`count` agree with the recorded values.
 - **strategy discrimination** — a `no-test` story's `implementer` event carries `sessionModel: "single-session"` and no `isolationPassed`; a `three-session-tdd` story's carries `"three-session"` and populates it.
 
 ## 8. Risks
@@ -280,6 +321,8 @@ Unit tests under `test/unit/` mirroring source layout, using `_deps` injection �
 | Slow or dead collector stalls runs | Bounded queue, fire-and-forget POST, single retry, drop-on-overflow |
 | Metric cardinality explosion | `run_id`/`story_id` excluded from aggregate metrics; heartbeat isolated behind its own metric names |
 | Leaking source content to a third-party backend | `"counts"` default; excerpts and prompts never exported at any level |
+| Queued spans lost on abort/SIGTERM | Flush driven from `onRunEnd` (both delivery paths) plus an idempotent `teardown()`; see §5.4a |
+| Heartbeat timer leaks past an aborted run | Stopped on both `onRunEnd` paths and in `teardown()` |
 | Post-run phase union widening breaks the TUI | `usePipelineBusEvents.ts` updated in the same change; covered by a test |
 
 ## 9. Open Items
