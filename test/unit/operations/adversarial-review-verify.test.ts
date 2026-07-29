@@ -605,4 +605,36 @@ describe("adversarialReviewOp.verify() — sub-threshold verdict (#1378)", () =>
       expect(result!.normalizedFindings.length).toBeGreaterThan(0); // routable for rectification
     });
   });
+
+  test("#1378: modelPassed preserves the raw model verdict independently of blockingThreshold", async () => {
+    // The wrapper's ungrounded-drop branches (src/review/adversarial.ts Case A / Case B)
+    // key off the model's claim, not the threshold-adjusted verdict. Without this field
+    // they would read `passed`, which now flips to true whenever any sub-threshold finding
+    // survives — skipping the Case B fail-closed path and waving through blocking concerns
+    // the model raised but could not ground.
+    return withTempDir(async (workdir) => {
+      const ctx = makeVerifyCtx();
+      const input: AdversarialReviewInput = { ...BASE_INPUT, workdir, mode: "ref" };
+      const parsed = makeOutput({
+        passed: false,
+        findings: [
+          {
+            severity: "warning",
+            category: "quality",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "Advisory only",
+            suggestion: "Consider X",
+          },
+        ],
+        normalizedFindings: [],
+      });
+
+      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
+
+      expect(result).not.toBeNull();
+      expect(result!.passed).toBe(true); // threshold-adjusted: nothing blocks
+      expect(result!.modelPassed).toBe(false); // raw model claim preserved
+    });
+  });
 });

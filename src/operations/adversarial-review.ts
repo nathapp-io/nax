@@ -103,6 +103,15 @@ function extractRepromptInfo(raw: Record<string, unknown> | null | undefined): R
 
 export interface AdversarialReviewOutput {
   passed: boolean;
+  /**
+   * The model's raw `passed` flag, before `verify()` applies blockingThreshold (#1378).
+   * `passed` answers "does this block the story?"; `modelPassed` answers "did the model
+   * claim failure?". The wrapper's ungrounded-drop branches key off the latter — they
+   * must fail closed when the model raised concerns it could not ground, regardless of
+   * whether an unrelated sub-threshold finding happened to survive filtering.
+   * Undefined on the fail-open / looksLikeFail short-circuits, which set no drops.
+   */
+  modelPassed?: boolean;
   /** Raw AdversarialLLMFinding[]. Consumed by `src/review/adversarial.ts`. */
   findings: unknown[];
   /**
@@ -574,6 +583,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
     return {
       ...parsed,
       passed,
+      modelPassed: parsed.passed,
       findings: accepted,
       // #1368 — `testFileMatch` also decides the fix lane: a finding located in a
       // test file goes to the test-writer whatever its category says, because the
