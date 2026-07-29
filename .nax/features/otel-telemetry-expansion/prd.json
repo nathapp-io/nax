@@ -1,0 +1,440 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "otel-telemetry-expansion",
+  "branchName": "feat/otel-telemetry-expansion",
+  "createdAt": "2026-07-29T00:00:00.000Z",
+  "updatedAt": "2026-07-29T11:43:48.555Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Telemetry event types and reporter config schema",
+      "description": "**Goal** — Extend the pipeline event union, reporter contract, CallContext, and configuration with the typed phase-telemetry foundation.\n\n**Motivation** — `IReporter` exposes exactly three hooks — `onRunStart`, `onStoryComplete`, `onRunEnd`; everything inside a story is invisible to reporters.\n\n**Approach** — Telemetry is emitted from the **pipeline event bus**, not from the runtime dispatch-event channel (`src/runtime/dispatch-events.ts`), because reporters are wired to the pipeline bus by existing convention (`wireReporters`).\n\n**Scope** — In: additive event and extension types plus validated reporter defaults. Out: event emitters, reporter fan-out, and exporter behavior belong to US-002 through US-008.\n\n**Interface** — verbatim from the design:\n```ts\nexport interface StoryPhaseCompletedEvent {\n  type: \"story:phase:completed\";\n  storyId: string;\n  phase: string;                 // op name — same vocabulary as story:step\n  outcome: \"passed\" | \"failed\" | \"skipped\" | \"error\";\n  durationMs: number;\n  costUsd: number;\n  tier?: string;\n  testStrategy?: TestStrategy;\n  sessionModel?: \"single-session\" | \"three-session\";\n  details?: PhaseDetails;\n}\n```\n```ts\nreadonly phaseTelemetry?: {\n  readonly testStrategy: TestStrategy;\n  readonly sessionModel: \"single-session\" | \"three-session\";\n  readonly tier: string;\n};\n```\n```ts\ninterface PhaseEventBase { runId: string; scope: \"story\" | \"run\"; phase: string; storyId?: string; }\ninterface PhaseStartEvent extends PhaseEventBase { startTime: string }\ninterface PhaseCompleteEvent extends PhaseEventBase { outcome: \"passed\" | \"failed\" | \"skipped\" | \"error\"; durationMs: number; costUsd: number; tier?: string; testStrategy?: TestStrategy; sessionModel?: \"single-session\" | \"three-session\"; details?: PhaseDetails | RunPhaseDetails; }\n```\nBoth hooks optional; existing reporters are unaffected.",
+      "acceptanceCriteria": [
+        "When a subscriber registered via `bus.on(\"story:phase:completed\", fn)` receives an emitted event, then its `phase` equals the emitted phase.",
+        "When a subscriber registered for `story:phase:completed` receives an emitted event, then its `costUsd` equals the emitted value.",
+        "When `postrun:phase:started` is emitted with phase `acceptance-setup`, then its subscriber receives `acceptance-setup` unchanged.",
+        "When `postrun:phase:completed` is emitted with a `details` payload, then its subscriber receives that payload unmodified.",
+        "When `story:phase:completed` is emitted, then `bus.onAll` receives it.",
+        "When an empty configuration is parsed, then `reporters.otel.detail` is `counts`.",
+        "When an empty configuration is parsed, then `reporters.otel.heartbeatIntervalMs` is `10000`.",
+        "When an empty configuration is parsed, then `reporters.otel.maxBatchSize` is `64`.",
+        "When an empty configuration is parsed, then `reporters.otel.flushIntervalMs` is `5000`.",
+        "When an empty configuration is parsed, then `reporters.otel.maxQueueSize` is `2048`.",
+        "When an empty configuration is parsed, then `reporters.otel.phases` is absent.",
+        "When `reporters.otel.detail` is `trace`, then configuration validation rejects it.",
+        "When `reporters.webhook.events` contains `onPhaseComplete`, then the parsed configuration retains that entry."
+      ],
+      "tags": [
+        "feature",
+        "telemetry",
+        "config"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is an additive type-and-schema change across established extension points with no runtime dispatch yet.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/pipeline/event-bus.ts",
+        "src/config/schemas-reporters.ts",
+        "src/plugins/extensions.ts",
+        "src/operations/types.ts",
+        "test/unit/config/reporters-schema.test.ts"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Story-phase event emission and outcome derivation",
+      "description": "**Goal** — Emit one fail-open completion event for every `runPhase` invocation.\n\n**Motivation** — There is no way to answer which phase consumed time and money.\n\n**Approach** — `runPhase`'s existing `finally` block already computes the phase's exact cost via `scope.snapshot().totalCostUsd`. The phase event reuses `buildPhaseOutcomeLogData` rather than introducing a second derivation. `success === true` -> `passed`; `status === \"skipped\"` -> `skipped`; a thrown error -> `error`; otherwise `failed`. The function returns `null` for non-object output — emit `passed` with no `details`.\n\n**Scope** — In: event emission, outcome/cost/duration semantics, subscriber fail-open behavior. Out: routing metadata and detail arms belong to US-003; reporter consumption belongs to US-005.\n\n**Interface** — `story:step` is unchanged and serves as the start half. There is no `attempt` field: the *N*th `story:phase:completed` for a given `(storyId, phase)` pair is attempt *N*. Per-phase cost is the invocation's own scope total; never the accumulated `phaseCosts` entry.",
+      "acceptanceCriteria": [
+        "When `runPhase` dispatches an operation returning `{ passed: true }`, then it emits exactly one `story:phase:completed` event.",
+        "When `runPhase` dispatches an operation, then the emitted event phase equals the operation name.",
+        "When an operation returns `{ passed: true }`, then the emitted outcome is `passed`.",
+        "When an operation returns `{ passed: false }`, then the emitted outcome is `failed`.",
+        "When an operation returns `{ status: \"skipped\" }`, then the emitted outcome is `skipped`.",
+        "When a dispatched operation throws, then the emitted outcome is `error`.",
+        "When a dispatched operation throws, then `runPhase` rethrows the original error unchanged.",
+        "When an operation returns a non-object value, then its emitted outcome is `passed`.",
+        "When an operation returns a non-object value, then its emitted event has no `details` field.",
+        "When an operation output makes `buildPhaseOutcomeLogData` report success, then the emitted outcome is `passed`.",
+        "When a `semantic-review` operation runs, then it emits an outcome even though deterministic outcome logging returns early.",
+        "When a phase completes, then its emitted `costUsd` equals that invocation scope snapshot total.",
+        "When a phase completes, then its emitted `durationMs` equals elapsed operation-dispatch time.",
+        "When a `story:phase:completed` subscriber throws, then `runPhase` returns the operation output normally."
+      ],
+      "tags": [
+        "feature",
+        "telemetry",
+        "execution"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One established dispatcher and its existing outcome helper need a localized event emission and exception-preservation tests.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/execution/story-orchestrator/run-phase.ts",
+        "src/execution/story-orchestrator-logging.ts",
+        "src/pipeline/event-bus.ts",
+        "test/unit/execution/story-orchestrator-logs.test.ts"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Phase telemetry context and detail payloads",
+      "description": "**Goal** — Propagate routed metadata to every phase and construct typed authoring, verdict, gate, review, and fix detail payloads.\n\n**Motivation** — `sessionModel`, `testStrategy`, and `tier` are not reachable from `runPhase` as it stands.\n\n**Approach** — Resolution — one readonly input-side slice on `CallContext`, populated where `ctx.routing` is in scope (`execution.ts:89-99`). Every `runPhase` call site inherits it through `ctx`, so correctness does not depend on remembering an argument. `sessionModel` comes from `isThreeSessionStrategy(ctx.routing.testStrategy)` — the existing SSOT. `rectification.ts:236` dispatches via `wrappedCallOp(cycleCtx: FixCycleContext, …)`; the slice must survive that hop.\n\n**Scope** — In: post-clamp tier, routed strategy/session metadata, and all PhaseDetails arms. Out: base event/outcome emission is US-002; reporter mapping/export is US-005 onward.\n\n**Interface** — verbatim:\n```ts\ntype PhaseDetails =\n  | { kind: \"authoring\"; role: \"test-writer\" | \"implementer\"; filesChanged: number; isolationPassed?: boolean }\n  | { kind: \"verdict\"; role: \"verifier\" | \"verify-scoped\"; passed: boolean; failureCount: number }\n  | { kind: \"gate\"; gate: \"greenfield\" | \"full-suite\" | \"test-presence\" | \"lint\" | \"typecheck\"; failureCount: number }\n  | { kind: \"review\"; reviewer: \"semantic\" | \"adversarial\"; iteration: number; bySeverity: Record<FindingSeverity, number>; blockingCount: number; advisoryCount: number; items?: ReviewFindingSummary[] }\n  | { kind: \"fix\"; strategy: string; findingsBefore: number; findingsAfter: number };\n```\n`isolationPassed` is set only when `sessionModel === \"three-session\"`. Severity keys are `critical`, `error`, `warning`, `info`, `low`, and `unverifiable`; use `isBlockingSeverity(finding.severity, threshold)` for blocking/advisory counts. `items` is populated exclusively when `detail` is `verbose`.",
+      "acceptanceCriteria": [
+        "When the execution stage runs a story routed as `three-session-tdd`, then emitted phase events have `sessionModel` `three-session`.",
+        "When the execution stage runs a story routed as `three-session-tdd`, then emitted phase events have `testStrategy` `three-session-tdd`.",
+        "When the execution stage runs a story routed as `no-test`, then emitted phase events have `sessionModel` `single-session`.",
+        "When execution clamps a model tier, then emitted phase events carry the post-clamp tier.",
+        "When `runFixCycle` dispatches a phase for `three-session-tdd`, then its event has `sessionModel` `three-session`.",
+        "When an `adversarial-review` operation emits details, then details kind is `review`.",
+        "When an `adversarial-review` operation emits details, then `bySeverity` has FindingSeverity-keyed counts matching normalized findings.",
+        "When an `adversarial-review` operation emits details, then `blockingCount` equals findings for which `isBlockingSeverity` is true at the configured threshold.",
+        "When an implementer runs in a three-session context, then its details `isolationPassed` equals its isolation result.",
+        "When an implementer runs in a single-session context, then its details omit `isolationPassed`.",
+        "When a `full-suite-gate` operation emits details, then details kind is `gate`."
+      ],
+      "tags": [
+        "feature",
+        "telemetry",
+        "execution"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Routing metadata crosses execution, rectification, and dispatcher contexts and must agree with existing finding severity semantics.",
+        "agentProfileId": "claude-final",
+        "agent": "claude",
+        "profileModelTier": "balanced",
+        "initialAgent": "claude",
+        "initialProfileId": "claude-final",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/execution.ts",
+        "src/execution/story-orchestrator/rectification.ts",
+        "src/execution/story-orchestrator/run-phase.ts",
+        "src/operations/types.ts",
+        "src/config/schema-types.ts"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Run-level phase events and enrichment",
+      "description": "**Goal** — Emit acceptance setup and enrich every run-level phase completion with duration, cost, and specific details.\n\n**Motivation** — The pre-run `acceptance-setup` stage emits no bus event; final acceptance, deferred regression, and deferred review carry only a boolean `passed`.\n\n**Approach** — `acceptance-setup` is newly emitted from `src/pipeline/stages/acceptance-setup.ts`. `acceptance`, `regression`, and `review` already emit and are enriched.\n\n**Scope** — In: start/completion lifecycle events, details, elapsed duration correlation, and TUI fourth-phase tolerance. Out: reporter fan-out is US-005.\n\n**Interface** — Widen `PostRunPhaseStartedEvent[\"phase\"]` and `PostRunPhaseCompletedEvent[\"phase\"]` to include `\"acceptance-setup\"`, and add `durationMs` / `costUsd` / `details` to completed events. Details are: `acceptance-setup`: `totalCriteria`, `testableCount`, `redFailCount`, `regenerated`; `acceptance`: `retries`, `failedACCount`, `fixStoriesCreated`; `regression`: `mode: \"deferred\" | \"per-story\"`, `failedTests`, `quarantined`; `review`: `findingCount`, `anyFailed`.",
+      "acceptanceCriteria": [
+        "When acceptance-setup runs, then it emits `postrun:phase:started` with phase `acceptance-setup` before acceptance-test generation.",
+        "When acceptance-setup runs with a failing RED gate, then it emits completed `acceptance-setup` with `passed` true.",
+        "When acceptance-setup completes, then its details `totalCriteria`, `testableCount`, and `redFailCount` equal the recorded stage values.",
+        "When every acceptance test already passes and the stage skips, then it still emits completed `acceptance-setup`.",
+        "When acceptance completes, then details `retries` equals the acceptance-loop retry count.",
+        "When acceptance completes, then details `failedACCount` equals the returned failed-criteria count.",
+        "When regression completes, then details `mode` equals configured regression gate mode.",
+        "When deferred review completes, then details `findingCount` equals produced finding count.",
+        "When any postrun phase completes, then `durationMs` equals elapsed time from its matching started event.",
+        "When the TUI subscriber receives started `acceptance-setup`, then it records the phase as running without throwing."
+      ],
+      "tags": [
+        "feature",
+        "telemetry",
+        "lifecycle"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Several independent lifecycle owners and UI compatibility must be coordinated.",
+        "agentProfileId": "claude-final",
+        "agent": "claude",
+        "profileModelTier": "balanced",
+        "initialAgent": "claude",
+        "initialProfileId": "claude-final",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/acceptance-setup.ts",
+        "src/execution/runner-completion.ts",
+        "src/execution/lifecycle/run-completion.ts",
+        "src/tui/hooks/usePipelineBusEvents.ts",
+        "src/pipeline/event-bus.ts"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Reporter fan-out for phase hooks",
+      "description": "**Goal** — Map story and run phase bus events into optional reporter hooks and webhook event filtering.\n\n**Motivation** — Reporters are wired to the pipeline bus by existing convention, but have no per-phase visibility.\n\n**Approach** — Add fan-out for four bus events. The file's repeated per-reporter fan-out block is extracted into a local helper as part of this wiring rather than copy-pasted four more times; this is an implementation detail of the same change, not separate refactoring.\n\n**Scope** — In: `story:step`, story completion, post-run start, and post-run completion mapping; hook isolation; webhook event support. Out: OTel exporter queue/tree behavior belongs to US-006 through US-008.\n\n**Interface** — `PhaseStartEvent` and `PhaseCompleteEvent` use `scope: \"story\" | \"run\"`; `storyId` is present iff `scope === \"story\"`. Both hooks optional; existing reporters are unaffected.",
+      "acceptanceCriteria": [
+        "After `wireReporters`, when `story:step` is emitted, then `onPhaseStart` receives scope `story`.",
+        "When `story:step` triggers `onPhaseStart`, then its phase equals event step.",
+        "After `wireReporters`, when `story:phase:completed` is emitted, then `onPhaseComplete` receives scope `story`.",
+        "When `story:phase:completed` triggers `onPhaseComplete`, then outcome equals event outcome.",
+        "When `story:phase:completed` triggers `onPhaseComplete`, then `costUsd` equals event `costUsd`.",
+        "After `wireReporters`, when `postrun:phase:started` is emitted, then `onPhaseStart` receives scope `run`.",
+        "When `postrun:phase:started` triggers `onPhaseStart`, then it omits `storyId`.",
+        "After `wireReporters`, when `postrun:phase:completed` is emitted, then `onPhaseComplete` receives scope `run`.",
+        "When any phase event is delivered, then it carries wireReporters' runId.",
+        "When a reporter omits `onPhaseComplete`, then story phase completion skips it.",
+        "When the first of two reporters throws from `onPhaseComplete`, then the second reporter is still invoked.",
+        "When `run:started` is emitted after phase wiring, then `onRunStart` is still invoked.",
+        "When wireReporters' unsubscribe is invoked, then later story phase completion invokes no `onPhaseComplete` hook.",
+        "When webhook events contain only `onPhaseComplete` and that hook fires, then it posts an envelope type `onPhaseComplete`.",
+        "When webhook events contain only `onPhaseComplete` and `onPhaseStart` fires, then it performs no request."
+      ],
+      "tags": [
+        "feature",
+        "telemetry",
+        "plugins"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This extends one existing subscriber and one existing webhook factory using already-established optional-hook isolation.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/pipeline/subscribers/reporters.ts",
+        "src/plugins/builtin/webhook-reporter/index.ts",
+        "src/plugins/extensions.ts",
+        "src/pipeline/event-bus.ts",
+        "test/unit/pipeline/subscribers/reporters.test.ts"
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "Batch queue and traceparent",
+      "description": "**Goal** — Replace end-of-run-only export with bounded incremental batches and W3C trace parent adoption.\n\n**Motivation** — Nothing is visible while a run is in flight, so a run that hangs mid-phase emits nothing.\n\n**Approach** — Bounded FIFO queue. Flush on `maxBatchSize` (64), on `flushIntervalMs` (5000) via a re-armed `setTimeout` + `clearTimeout` (`setInterval` is banned; the cancellable-handle exception applies and is documented at the call site), or on `flushNow()`. Overflow at `maxQueueSize` (2048) drops oldest and counts drops. One retry per failed batch, then drop. All I/O through the existing `PostJsonDeps` injection.\n\n**Scope** — In: queue, time/size/explicit flush, retry/drop reporting, teardown, and traceparent parsing. Out: span parenting/aggregate metrics are US-007 and heartbeat/redaction/lifecycle is US-008; de-duplication is deferred.\n\n**Interface** — Root span parent is `W3C TRACEPARENT` env when valid, else root. Traceparent malformed or all-zero is ignored.",
+      "acceptanceCriteria": [
+        "When all stories complete, then export includes a run span carrying total run cost.",
+        "When `maxBatchSize` spans are enqueued, then exactly one export request carries every span.",
+        "When fewer than `maxBatchSize` spans are enqueued, then export occurs after `flushIntervalMs`.",
+        "When `flushNow` is called before `flushIntervalMs`, then it exports pending spans.",
+        "When enqueues exceed `maxQueueSize`, then the oldest entries are discarded.",
+        "When overflow occurs, then reported drop count equals discarded-entry count.",
+        "When overflow crosses a threshold, then it logs one warning for that crossing rather than each entry.",
+        "When an export fails, then it retries exactly once.",
+        "When the retry budget is exhausted, then `flushNow` completes without throwing.",
+        "When a span is enqueued during an export, then it is included in a subsequent export.",
+        "When the queue is torn down, then no delayed export request is issued.",
+        "When TRACEPARENT is valid, then the run span parent id equals its span id.",
+        "When TRACEPARENT is malformed, then the run span has no parent span id.",
+        "When TRACEPARENT has an all-zero trace id, then the run span has no parent span id."
+      ],
+      "tags": [
+        "feature",
+        "otel",
+        "queue"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "expert",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Concurrent bounded delivery, timer ownership, retry, and trace-context parsing are high-risk.",
+        "agentProfileId": "claude-final",
+        "agent": "claude",
+        "profileModelTier": "balanced",
+        "initialAgent": "claude",
+        "initialProfileId": "claude-final",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/plugins/builtin/otel-reporter/index.ts",
+        "src/plugins/builtin/reporter-shared/post-json.ts",
+        "src/plugins/builtin/otel-reporter/ids.ts",
+        "test/unit/plugins/builtin/otel-reporter.test.ts"
+      ],
+      "expectedFiles": [
+        "src/plugins/builtin/otel-reporter/batch-queue.ts",
+        "src/plugins/builtin/otel-reporter/traceparent.ts"
+      ],
+      "outOfScope": [
+        "US-006 only: de-duplicating spans when two processes export under the same run id is deferred."
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Span tree and phase metrics",
+      "description": "**Goal** — Export completed work as run/story/phase spans and bounded-cardinality aggregate metrics.\n\n**Motivation** — There is no way to answer how often adversarial review rejects or how many rectification iterations a story needs.\n\n**Approach** — OTLP payloads stay hand-built — no `@opentelemetry/*` dependency. `nax.run` is root, `nax.story` is one per story, and `nax.phase` is one per completion. Run-scope phases parent directly to run. `buildHistogramPoint` emits `explicitBounds` + `bucketCounts` + `count` + `sum`.\n\n**Scope** — In: span-tree module, phase spans, histograms/counters/resource attributes. Out: heartbeat/detail redaction and final flush are US-008.\n\n**Interface** — Fixed duration boundaries `[100, 500, 1000, 5000, 15000, 60000, 300000, 900000]`; cost `[0.001, 0.01, 0.05, 0.1, 0.5, 1, 5]`. Aggregate metric dimensions are phase, outcome, tier, test_strategy, session_model; `run_id` and `story_id` are excluded. Export `nax.phase.duration`, `nax.phase.cost_usd`, `nax.review.findings`, `nax.fix.iterations`, and `nax.escalations`.",
+      "acceptanceCriteria": [
+        "When a story phase completes, then its span parent id equals its story span id.",
+        "When a story span is exported, then its parent id equals run span id.",
+        "When a run-scope phase completes, then its span parent id equals run span id.",
+        "When a story phase completion is emitted, then exported `nax.phase.duration` value equals event `durationMs`.",
+        "When a story phase completion is emitted, then exported `nax.phase.cost_usd` value equals event `costUsd`.",
+        "When a histogram point is built, then bucket counts has exactly one more element than explicit bounds.",
+        "When a histogram point is built, then `sum` equals total recorded values.",
+        "When phase-duration data is exported, then it has no `run_id` attribute.",
+        "When phase-duration data is exported, then it has no `story_id` attribute.",
+        "When a phase span is exported, then `nax.test_strategy` equals event testStrategy.",
+        "When an adversarial-review event is emitted, then `nax.review.findings` has a `severity` attribute.",
+        "When a rectification event is emitted, then `nax.fix.iterations` has a `strategy` attribute.",
+        "When `story:escalated` is emitted, then `nax.escalations` has a `to_tier` attribute.",
+        "When any payload is exported, then its `service.name` resource attribute equals configured service name.",
+        "When any payload is exported, then its `nax.run_id` resource attribute equals current run id."
+      ],
+      "tags": [
+        "feature",
+        "otel",
+        "metrics"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Existing hand-built OTLP helpers are extended across the reporter and queue with a new parentage helper and bounded metrics surface.",
+        "agentProfileId": "claude-final",
+        "agent": "claude",
+        "profileModelTier": "balanced",
+        "initialAgent": "claude",
+        "initialProfileId": "claude-final",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/plugins/builtin/otel-reporter/otlp.ts",
+        "src/plugins/builtin/otel-reporter/batch-queue.ts",
+        "src/plugins/builtin/otel-reporter/index.ts",
+        "src/pipeline/event-bus.ts",
+        "test/unit/plugins/builtin/otel-reporter.test.ts"
+      ],
+      "expectedFiles": [
+        "src/plugins/builtin/otel-reporter/span-tree.ts"
+      ]
+    },
+    {
+      "id": "US-008",
+      "title": "Heartbeat, redaction, and flush lifecycle",
+      "description": "**Goal** — Make active runs observable, enforce detail redaction, and flush safely on normal and abnormal exit.\n\n**Motivation** — A run that hangs mid-phase emits nothing at all.\n\n**Approach** — Every `heartbeatIntervalMs` (default 10000; `0` disables) emit gauges `nax.run.active` (=1), `nax.run.phase_elapsed_ms`, and `nax.run.cost_usd`, with attributes `{run_id, feature, project, story_id, phase, tier, test_strategy}`. The flush and heartbeat stop are driven from the reporter's own `onRunEnd`, with `NaxPlugin.teardown()` as an idempotent backstop.\n\n**Scope** — In: heartbeat cadence, counts/verbose redaction boundary, onRunEnd and teardown delivery. Out: `US-008 only: persisting heartbeat state across a process restart is deferred; a restarted run emits a new series.` Agent prompts, agent output, diffs, and source-code excerpts remain excluded at every detail level.\n\n**Interface** — `items` is the only per-finding payload and is gated. It is populated exclusively when `detail` is `verbose`, and carries `Finding.message`. Under default `counts` it is absent entirely. Agent prompts, agent output, diffs, and source excerpts are never exported. `onRunEnd` with no preceding onRunStart exports a best-effort root span whose start is back-computed from duration.",
+      "acceptanceCriteria": [
+        "When heartbeatIntervalMs is positive and elapsed, then export contains `nax.run.active` gauge value 1.",
+        "When heartbeat runs, then `nax.run.phase_elapsed_ms` equals elapsed time since most recent phase event.",
+        "When heartbeat runs, then `nax.run.cost_usd` equals accumulated run cost.",
+        "When heartbeat runs, then its phase attribute equals most recently completed phase name.",
+        "When heartbeatIntervalMs is 0, then no heartbeat export occurs.",
+        "When `onRunEnd` completes, then no further heartbeat export occurs.",
+        "When detail is `counts`, then review details omit `items`.",
+        "When detail is `counts`, then exported payload has no finding message text.",
+        "When detail is `verbose`, then exported payload has a span event carrying a finding message.",
+        "When detail is `verbose`, then each exported file path is repository-relative.",
+        "When export logging occurs, then no log record contains a resolved header value.",
+        "When configured OTLP headers contain an unresolved environment variable, then export is skipped and a warning identifies the missing variable names without logging a resolved header value.",
+        "When `onRunEnd` is invoked without `run:completed`, then it exports every queued span.",
+        "When `onRunEnd` is invoked without `run:completed`, then it stops heartbeat.",
+        "When teardown follows completed `onRunEnd`, then it issues no additional export.",
+        "When `onRunEnd` has no preceding `onRunStart`, then it exports a run span with start time back-computed from reported duration."
+      ],
+      "tags": [
+        "feature",
+        "otel",
+        "lifecycle",
+        "privacy"
+      ],
+      "dependencies": [
+        "US-007"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Timer cleanup, abnormal-exit delivery, and sensitive-detail filtering cross the reporter lifecycle and cleanup seam.",
+        "agentProfileId": "claude-final",
+        "agent": "claude",
+        "profileModelTier": "balanced",
+        "initialAgent": "claude",
+        "initialProfileId": "claude-final",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/plugins/builtin/otel-reporter/index.ts",
+        "src/plugins/builtin/otel-reporter/batch-queue.ts",
+        "src/execution/lifecycle/run-cleanup.ts",
+        "src/plugins/types.ts",
+        "src/findings/types.ts"
+      ],
+      "expectedFiles": [
+        "src/plugins/builtin/otel-reporter/heartbeat.ts"
+      ],
+      "outOfScope": [
+        "US-008 only: persisting heartbeat state across a process restart is deferred; a restarted run emits a new series."
+      ]
+    }
+  ],
+  "analysis": "This is a cross-cutting enhancement to an existing Bun/TypeScript pipeline, not a greenfield change. `src/pipeline/event-bus.ts:149-187` already emits `story:step` starts and three typed post-run phases, but has no story completion event and no duration/cost/details on post-run completions. `src/plugins/extensions.ts:371-386` defines IReporter with only run-start, story-complete, and run-end hooks; `src/pipeline/subscribers/reporters.ts:28-176` maps those bus events with per-reporter try/catch, so new hooks must retain optional-hook compatibility and per-reporter failure isolation. `src/execution/story-orchestrator/run-phase.ts:142-258` is the canonical per-op dispatcher: it emits `story:step`, opens a CostAggregator scope, and in finally accumulates the invocation cost; it is the correct fail-open emission seam, but must emit the single scope snapshot rather than accumulated `phaseCosts`. `src/execution/story-orchestrator-logging.ts:18-50` contains the outcome SSOT and must be reused. `src/pipeline/stages/execution.ts:67-99` owns the post-clamp model tier and routed test strategy needed to populate the readonly CallContext slice; rectification calls `runPhase` through FixCycleContext (`src/execution/story-orchestrator/rectification.ts:236-297`), so the slice must survive structural context reuse. `src/pipeline/stages/acceptance-setup.ts`, `src/execution/runner-completion.ts:133-213`, and `src/execution/lifecycle/run-completion.ts:137-287` own run-level phase emission; the TUI subscriber at `src/tui/hooks/usePipelineBusEvents.ts:227-246` narrows its accepted phase union. Reporter configuration is centralized in `src/config/schemas-reporters.ts:6-63`, and webhook filtering in `src/plugins/builtin/webhook-reporter/index.ts:14-44` follows ReporterEventSchema. The current OTel reporter (`src/plugins/builtin/otel-reporter/index.ts:26-109`) buffers story-complete events and posts only during onRunEnd; `otlp.ts:1-119` has hand-built trace/metric payload helpers and reporter-shared postJson dependency injection. The redesign must preserve hand-built OTLP and injectable I/O while introducing bounded, serialized incremental delivery and W3C traceparent parsing. `src/execution/lifecycle/run-cleanup.ts:116-140` directly invokes reporter.onRunEnd on abnormal exits, whereas normal completion is bus-delivered; flushing and heartbeat shutdown must be owned by onRunEnd and teardown must be idempotent. Existing focused tests are at `test/unit/pipeline/subscribers/reporters.test.ts`, `test/unit/execution/story-orchestrator-logging.test.ts`, acceptance-setup test files under `test/unit/pipeline/stages/`, and `test/unit/plugins/builtin/otel-reporter.test.ts`. Main compatibility risks are public plugin contracts/config defaults, cardinality-sensitive OTLP dimensions, timer cleanup, abort-path delivery, and finding-data redaction. Migration is additive through optional hooks and defaults; existing reporters remain valid, webhook configuration accepts new event names, and the old end-of-run export is replaced only after the queue preserves the root-span behavior.",
+  "outOfScope": [
+    "OTLP logs export (`/v1/logs`) is deferred; the existing structured JSONL logger is unchanged.",
+    "A nax-side aggregator daemon (a `nax monitor` process) is not built; each run exports directly to its configured collector.",
+    "Trace sampling, gRPC OTLP transport, and alerting rules are delegated to the OTel collector and backend, not implemented in nax.",
+    "Histogram bucket boundaries are fixed constants and are deliberately not configurable.",
+    "Adopting `@opentelemetry/*` SDK packages is rejected; OTLP payloads stay hand-built and dependency-free.",
+    "Changes to cost accounting are excluded; costs are read from the existing `CostAggregator` scopes.",
+    "Exporting agent prompts, agent output, diffs, or source-code excerpts is excluded at every detail level.",
+    "US-006 only: de-duplicating spans when two processes export under the same run id is deferred.",
+    "US-008 only: persisting heartbeat state across a process restart is deferred; a restarted run emits a new series."
+  ],
+  "routingProfile": "cross-agent"
+}
