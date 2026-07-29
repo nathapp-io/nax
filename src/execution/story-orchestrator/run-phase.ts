@@ -1,4 +1,4 @@
-import type { Finding, FixStrategy, Iteration } from "@/findings";
+import type { Finding, FindingSeverity, FixStrategy, Iteration } from "@/findings";
 import { runFixCycle } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { AdversarialReviewInput, CallContext, SemanticReviewInput } from "@/operations";
@@ -7,6 +7,7 @@ import { pipelineEventBus } from "@/pipeline";
 import type { StoryPhaseCompletedEvent } from "@/pipeline/event-bus";
 import {
   getAdversarialIterations,
+  isBlockingSeverity,
   prepareAdversarialReviewInput,
   prepareSemanticReviewInput,
   recordAdversarialIteration,
@@ -271,10 +272,56 @@ export async function runPhase(
         outcome,
         durationMs: Date.now() - phaseStartedAt,
         costUsd: snapshot.totalCostUsd,
+        ...(ctx.phaseTelemetry
+          ? {
+              tier: ctx.phaseTelemetry.tier,
+              testStrategy: ctx.phaseTelemetry.testStrategy,
+              sessionModel: ctx.phaseTelemetry.sessionModel,
+            }
+          : {}),
+        details: buildPhaseDetails(opName, phaseOutputs[opName], isThreeSession),
       };
       pipelineEventBus.emit(event);
     }
   }
+}
+
+const ALL_FINDING_SEVERITIES: readonly FindingSeverity[] = [
+  "critical",
+  "error",
+  "warning",
+  "info",
+  "low",
+  "unverifiable",
+];
+
+function buildPhaseDetails(
+  opName: string,
+  output: unknown,
+  isThreeSession: boolean,
+): Record<string, unknown> | undefined {
+  if (opName === "adversarial-review") {
+    const adv = output as { normalizedFindings?: Array<{ severity: string }>; blockingThreshold?: string } | undefined;
+    const findings = adv?.normalizedFindings ?? [];
+    const threshold = (adv?.blockingThreshold ?? "error") as "error" | "warning" | "info";
+    const bySeverity = Object.fromEntries(
+      ALL_FINDING_SEVERITIES.map((sev) => [sev, findings.filter((f) => f.severity === sev).length]),
+    ) as Record<FindingSeverity, number>;
+    const blockingCount = findings.filter((f) => isBlockingSeverity(f.severity, threshold)).length;
+    const advisoryCount = findings.length - blockingCount;
+    return { kind: "review", reviewer: "adversarial", bySeverity, blockingCount, advisoryCount };
+  }
+
+  if (opName === "implementer" && isThreeSession) {
+    const impl = output as { isolation?: { passed: boolean } } | undefined;
+    return { kind: "authoring", role: "implementer", isolationPassed: impl?.isolation?.passed };
+  }
+
+  if (opName === "full-suite-gate") {
+    return { kind: "gate", gate: "full-suite" };
+  }
+
+  return undefined;
 }
 
 /**

@@ -96,6 +96,11 @@ export const executionStage: PipelineStage = {
       story: ctx.story,
       ...(ctx.featureDir ? { featureDir: ctx.featureDir } : {}),
       ...(interactionBridge ? { interactionBridge } : {}),
+      phaseTelemetry: {
+        testStrategy: ctx.routing.testStrategy,
+        sessionModel: isThreeSessionStrategy(ctx.routing.testStrategy) ? "three-session" : "single-session",
+        tier: effectiveTier,
+      },
     };
 
     // Capture dispatch events for cost/output/tokenUsage
