@@ -4,6 +4,7 @@ import { getSafeLogger } from "@/logger";
 import type { AdversarialReviewInput, CallContext, SemanticReviewInput } from "@/operations";
 import { callOp } from "@/operations";
 import { pipelineEventBus } from "@/pipeline";
+import type { StoryPhaseCompletedEvent } from "@/pipeline/event-bus";
 import {
   getAdversarialIterations,
   prepareAdversarialReviewInput,
@@ -188,6 +189,7 @@ export async function runPhase(
 
   const phaseStartedAt = Date.now();
   const scope = ctx.runtime.costAggregator.openScope();
+  let outcome: "passed" | "failed" | "skipped" | "error" = "passed";
   try {
     const output = await _storyOrchestratorDeps.callOp({ ...ctx, scopeId: scope.scopeId }, slot.op, dispatchInput);
     phaseOutputs[opName] = output;
@@ -209,6 +211,7 @@ export async function runPhase(
       slot.op.stage,
       progressData,
     );
+    outcome = derivePhaseOutcome(output);
 
     // Post-phase logs (TDD phases only).
     if (isTddPhase) {
@@ -253,10 +256,38 @@ export async function runPhase(
     }
 
     return output;
+  } catch (err) {
+    outcome = "error";
+    throw err;
   } finally {
-    phaseCosts[opName] = (phaseCosts[opName] ?? 0) + scope.snapshot().totalCostUsd;
+    const snapshot = scope.snapshot();
+    phaseCosts[opName] = (phaseCosts[opName] ?? 0) + snapshot.totalCostUsd;
     scope.close();
+    if (ctx.storyId) {
+      const event: StoryPhaseCompletedEvent = {
+        type: "story:phase:completed",
+        storyId: ctx.storyId,
+        phase: opName,
+        outcome,
+        durationMs: Date.now() - phaseStartedAt,
+        costUsd: snapshot.totalCostUsd,
+      };
+      pipelineEventBus.emit(event);
+    }
   }
+}
+
+/**
+ * Derive the phase-completion outcome from an operation's output, reusing
+ * `buildPhaseOutcomeLogData` so the per-phase log and the bus event stay in
+ * lockstep. Non-object outputs are treated as `passed` (no `details`).
+ */
+function derivePhaseOutcome(output: unknown): "passed" | "failed" | "skipped" {
+  if (output === null || output === undefined || typeof output !== "object") return "passed";
+  const r = output as Record<string, unknown>;
+  if (typeof r.status === "string" && r.status === "skipped") return "skipped";
+  if (r.success === true || r.passed === true) return "passed";
+  return "failed";
 }
 
 /**

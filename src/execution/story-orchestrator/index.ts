@@ -12,7 +12,12 @@ export {
   phasesToRevalidate,
 } from "./phase-eval";
 export { runRectification, triageGateFindings, gatherRectificationFindings, type TriageResult } from "./rectification";
-export { _storyOrchestratorDeps, refreshReviewInputForDispatch, withIncreasingFailuresBail } from "./run-phase";
+export {
+  _storyOrchestratorDeps,
+  refreshReviewInputForDispatch,
+  runPhase,
+  withIncreasingFailuresBail,
+} from "./run-phase";
 export {
   EXHAUSTED_EXIT_REASONS,
   CANONICAL_ORDER,
