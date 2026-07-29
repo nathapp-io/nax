@@ -82,4 +82,43 @@ describe("executeParallelBatch", () => {
     expect(executeStoryMock).toHaveBeenCalled();
     expect(result.pipelinePassed).toEqual([story]);
   });
+
+  // Regression: the scheduler chained .then().finally() with no .catch(), so a
+  // rejecting execution propagated out of Promise.race/Promise.all and abandoned
+  // sibling stories still running in their worktrees — their results were lost
+  // and the rejection surfaced as an unhandled rejection.
+  test("records a rejected story as failed instead of aborting the batch", async () => {
+    const stories = ["US-001", "US-002", "US-003"].map(makeStory);
+    const config = DEFAULT_CONFIG as NaxConfig;
+
+    _parallelWorkerDeps.routeTask = mock(() => ({
+      complexity: "simple",
+      modelTier: "fast",
+      testStrategy: "test-after",
+    })) as typeof _parallelWorkerDeps.routeTask;
+
+    _parallelWorkerDeps.executeStoryInWorktree = mock(async (story: UserStory) => {
+      if (story.id === "US-001") throw new Error("worktree exploded");
+      await new Promise((r) => setTimeout(r, 20));
+      return { success: true, cost: 0.5 };
+    }) as unknown as typeof _parallelWorkerDeps.executeStoryInWorktree;
+
+    const result = await executeParallelBatch(
+      stories,
+      "/repo",
+      config,
+      makeContext(config),
+      new Map(stories.map((s) => [s.id, `/repo/.nax-wt/${s.id}`])),
+      new Map(stories.map((s) => [s.id, { cwd: `/repo/.nax-wt/${s.id}` }])),
+      3,
+    );
+
+    // The thrower is recorded, not swallowed and not fatal.
+    expect(result.failed.map((f) => f.story.id)).toEqual(["US-001"]);
+    expect(result.failed[0].error).toContain("worktree exploded");
+
+    // Crucially, the siblings still completed and their results were kept.
+    expect(result.pipelinePassed.map((s) => s.id).sort()).toEqual(["US-002", "US-003"]);
+    expect(result.totalCost).toBeCloseTo(1.0, 5);
+  });
 });
