@@ -180,6 +180,10 @@ export interface PostRunPhaseCompletedEvent {
   type: "postrun:phase:completed";
   phase: string;
   passed: boolean;
+  /** Elapsed milliseconds from the matching postrun:phase:started event. */
+  durationMs?: number;
+  /** Phase cost in USD. */
+  costUsd?: number;
   details?: RunPhaseDetails;
 }
 
