@@ -1,3 +1,4 @@
+import type { NaxConfig } from "@/config";
 import type { Finding, FindingSeverity, FixStrategy, Iteration } from "@/findings";
 import { runFixCycle } from "@/findings";
 import { getSafeLogger } from "@/logger";
@@ -166,10 +167,13 @@ export async function runPhase(
   let dispatchInput = isTddPhase && beforeRef ? { ...(slot.input as Record<string, unknown>), beforeRef } : slot.input;
   // Refresh stat/diff/etc for review phases — plan-build's snapshot is stale.
   dispatchInput = await refreshReviewInputForDispatch(opName, dispatchInput);
+  let advIterationBefore = 0;
   if (opName === "adversarial-review" && ctx.storyId) {
+    const priorIterations = getAdversarialIterations(ctx.runtime.adversarialIterations, ctx.storyId);
+    advIterationBefore = priorIterations.length;
     dispatchInput = {
       ...(dispatchInput as Record<string, unknown>),
-      priorAdversarialIterations: getAdversarialIterations(ctx.runtime.adversarialIterations, ctx.storyId),
+      priorAdversarialIterations: priorIterations,
     };
   }
 
@@ -265,7 +269,14 @@ export async function runPhase(
     phaseCosts[opName] = (phaseCosts[opName] ?? 0) + snapshot.totalCostUsd;
     scope.close();
     if (ctx.storyId) {
-      const phaseDetails = buildPhaseDetails(opName, phaseOutputs[opName], isThreeSession);
+      const phaseDetails = buildPhaseDetails(
+        opName,
+        phaseOutputs[opName],
+        isThreeSession,
+        ctx.packageView.config,
+        advIterationBefore,
+        ctx.fixStrategy,
+      );
       const event: StoryPhaseCompletedEvent = {
         type: "story:phase:completed",
         storyId: ctx.storyId,
@@ -300,9 +311,18 @@ function buildPhaseDetails(
   opName: string,
   output: unknown,
   isThreeSession: boolean,
+  config: NaxConfig,
+  advIterationBefore: number,
+  fixStrategy?: { name: string; findingsBefore: number },
 ): Record<string, unknown> | undefined {
+  if (fixStrategy) {
+    return { kind: "fix", strategy: fixStrategy.name, findingsBefore: fixStrategy.findingsBefore };
+  }
+
   if (opName === "adversarial-review") {
-    const adv = output as { normalizedFindings?: Array<{ severity: string }>; blockingThreshold?: string } | undefined;
+    const adv = output as
+      | { normalizedFindings?: Array<{ severity: string; message: string }>; blockingThreshold?: string }
+      | undefined;
     const findings = adv?.normalizedFindings ?? [];
     const threshold = (adv?.blockingThreshold ?? "error") as "error" | "warning" | "info";
     const bySeverity = Object.fromEntries(
@@ -310,16 +330,43 @@ function buildPhaseDetails(
     ) as Record<FindingSeverity, number>;
     const blockingCount = findings.filter((f) => isBlockingSeverity(f.severity, threshold)).length;
     const advisoryCount = findings.length - blockingCount;
-    return { kind: "review", reviewer: "adversarial", bySeverity, blockingCount, advisoryCount };
+    const result: Record<string, unknown> = {
+      kind: "review",
+      reviewer: "adversarial",
+      iteration: advIterationBefore,
+      bySeverity,
+      blockingCount,
+      advisoryCount,
+    };
+    if (config.reporters?.otel?.detail === "verbose") {
+      result.items = findings.map((f) => ({ message: f.message }));
+    }
+    return result;
   }
 
-  if (opName === "implementer" && isThreeSession) {
-    const impl = output as { isolation?: { passed: boolean } } | undefined;
-    return { kind: "authoring", role: "implementer", isolationPassed: impl?.isolation?.passed };
+  if (opName === "implementer") {
+    const impl = output as { isolation?: { passed: boolean }; filesChanged?: readonly string[] } | undefined;
+    const filesChanged = (impl?.filesChanged ?? []).length;
+    if (isThreeSession) {
+      return { kind: "authoring", role: "implementer", filesChanged, isolationPassed: impl?.isolation?.passed };
+    }
+    return { kind: "authoring", role: "implementer", filesChanged };
+  }
+
+  if (opName === "test-writer") {
+    const tw = output as { filesChanged?: readonly string[] } | undefined;
+    return { kind: "authoring", role: "test-writer", filesChanged: (tw?.filesChanged ?? []).length };
   }
 
   if (opName === "full-suite-gate") {
-    return { kind: "gate", gate: "full-suite" };
+    const gate = output as { failureCount?: number } | undefined;
+    return { kind: "gate", gate: "full-suite", failureCount: gate?.failureCount ?? 0 };
+  }
+
+  if (opName === "verifier" || opName === "verify-scoped") {
+    if (output === null || typeof output !== "object") return undefined;
+    const verdict = output as { passed?: boolean; failureCount?: number };
+    return { kind: "verdict", role: opName, passed: verdict.passed ?? false, failureCount: verdict.failureCount ?? 0 };
   }
 
   return undefined;

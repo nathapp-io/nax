@@ -484,10 +484,9 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
     throw new ParseValidationError("[adversarial-review] parse failed: invalid JSON shape");
   },
   async verify(parsed, input, _verifyCtx) {
-    if (parsed.failOpen || parsed.looksLikeFail) return parsed;
-    if (parsed.findings.length === 0) return parsed;
-
     const threshold = input.blockingThreshold ?? "error";
+    if (parsed.failOpen || parsed.looksLikeFail) return { ...parsed, blockingThreshold: threshold };
+    if (parsed.findings.length === 0) return { ...parsed, blockingThreshold: threshold };
     const findings = parsed.findings as AdversarialLLMFinding[];
 
     const substantiated = await substantiateAdversarialFindings({
@@ -568,6 +567,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
     return {
       ...parsed,
       passed,
+      blockingThreshold: threshold,
       findings: accepted,
       // #1368 — `testFileMatch` also decides the fix lane: a finding located in a
       // test file goes to the test-writer whatever its category says, because the
