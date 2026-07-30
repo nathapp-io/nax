@@ -19,26 +19,11 @@ import { pipelineEventBus } from "@/pipeline";
 import type { PostRunPhaseCompletedEvent, PostRunPhaseStartedEvent } from "@/pipeline";
 import type { NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd";
-import { makeNaxConfig, makeMockRuntime, makeMockAgentManager, makeSessionManager } from "@test/helpers";
+import { makeNaxConfig, makeMockRuntime, makeMockAgentManager, makeSessionManager, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function makeStory(id: string): UserStory {
-  return {
-    id,
-    title: `Story ${id}`,
-    description: "Test story",
-    acceptanceCriteria: [],
-    tags: [],
-    dependencies: [],
-    status: "passed",
-    passes: true,
-    escalations: [],
-    attempts: 1,
-  };
-}
 
 function makePRD(storyIds: string[]): PRD {
   return {
@@ -47,11 +32,13 @@ function makePRD(storyIds: string[]): PRD {
     branchName: "test-branch",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    userStories: storyIds.map(makeStory),
+    userStories: storyIds.map((id) =>
+      makeStory({ id, title: `Story ${id}`, description: "Test story", status: "passed", passes: true, attempts: 1 }),
+    ) as UserStory[],
   };
 }
 
-function makeConfig(
+function regressionConfig(
   regressionMode: "deferred" | "per-story" | "disabled" = "deferred",
 ): NaxConfig {
   return makeNaxConfig({
@@ -141,7 +128,7 @@ describe("handleRunCompletion — AC7: regression completed event details.mode",
     pipelineEventBus.on("postrun:phase:completed", (e) => { completed.push(e); });
 
     const prd = makePRD(["US-001"]);
-    await handleRunCompletion(makeOpts(makeConfig("deferred"), prd));
+    await handleRunCompletion(makeOpts(regressionConfig("deferred"), prd));
 
     const event = completed.find((e) => e.phase === "regression");
     expect(event).toBeDefined();
@@ -154,7 +141,7 @@ describe("handleRunCompletion — AC7: regression completed event details.mode",
     pipelineEventBus.on("postrun:phase:completed", (e) => { completed.push(e); });
 
     const prd = makePRD(["US-001"]);
-    await handleRunCompletion(makeOpts(makeConfig("per-story"), prd));
+    await handleRunCompletion(makeOpts(regressionConfig("per-story"), prd));
 
     const event = completed.find((e) => e.phase === "regression");
     expect(event).toBeDefined();
@@ -189,7 +176,7 @@ describe("handleRunCompletion — AC9: regression completed event details.failed
     pipelineEventBus.on("postrun:phase:completed", (e) => { completed.push(e); });
 
     const prd = makePRD(["US-001"]);
-    await handleRunCompletion(makeOpts(makeConfig("deferred"), prd));
+    await handleRunCompletion(makeOpts(regressionConfig("deferred"), prd));
 
     const event = completed.find((e) => e.phase === "regression");
     expect(event).toBeDefined();
@@ -211,7 +198,7 @@ describe("handleRunCompletion — AC9: regression completed event details.failed
     }));
 
     const prd = makePRD(["US-001"]);
-    await handleRunCompletion(makeOpts(makeConfig("deferred"), prd));
+    await handleRunCompletion(makeOpts(regressionConfig("deferred"), prd));
 
     const event = completed.find((e) => e.phase === "regression");
     expect(event).toBeDefined();
@@ -319,7 +306,7 @@ describe("handleRunCompletion — AC9: durationMs in completed events", () => {
     pipelineEventBus.on("postrun:phase:completed", (e) => { completed.push(e); });
 
     const prd = makePRD(["US-001"]);
-    await handleRunCompletion(makeOpts(makeConfig("deferred"), prd));
+    await handleRunCompletion(makeOpts(regressionConfig("deferred"), prd));
 
     const regressionStarted = started.find((e) => e.phase === "regression");
     const regressionCompleted = completed.find((e) => e.phase === "regression");
@@ -383,7 +370,7 @@ describe("handleRunCompletion — AC9: durationMs in completed events", () => {
     pipelineEventBus.on("postrun:phase:completed", (e) => { completed.push(e); });
 
     const prd = makePRD(["US-001"]);
-    await handleRunCompletion(makeOpts(makeConfig("deferred"), prd));
+    await handleRunCompletion(makeOpts(regressionConfig("deferred"), prd));
 
     const regressionCompleted = completed.find((e) => e.phase === "regression");
     const dur = regressionCompleted?.durationMs;

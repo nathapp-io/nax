@@ -19,26 +19,11 @@ import type { RunCompletionResult } from "@/execution/lifecycle/run-completion";
 import type { NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd";
 import type { LoadedHooksConfig } from "@/hooks";
-import { makeNaxConfig } from "@test/helpers";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function makeStory(id: string): UserStory {
-  return {
-    id,
-    title: `Story ${id}`,
-    description: "Test story",
-    acceptanceCriteria: ["AC-1"],
-    tags: [],
-    dependencies: [],
-    status: "passed",
-    passes: true,
-    escalations: [],
-    attempts: 1,
-  };
-}
 
 function makePRD(storyIds: string[]): PRD {
   return {
@@ -47,11 +32,21 @@ function makePRD(storyIds: string[]): PRD {
     branchName: "test-branch",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    userStories: storyIds.map(makeStory),
+    userStories: storyIds.map((id) =>
+      makeStory({
+        id,
+        title: `Story ${id}`,
+        description: "Test story",
+        acceptanceCriteria: ["AC-1"],
+        status: "passed",
+        passes: true,
+        attempts: 1,
+      }),
+    ) as UserStory[],
   };
 }
 
-function makeConfig(): NaxConfig {
+function acceptanceConfig(): NaxConfig {
   return makeNaxConfig({
     acceptance: { enabled: true, maxRetries: 3 },
     execution: { regressionGate: { mode: "disabled" } },
@@ -79,7 +74,7 @@ function makeOpts(
   featureDir?: string,
 ): RunnerCompletionOptions {
   return {
-    config: makeConfig(),
+    config: acceptanceConfig(),
     hooks: { hooks: {}, _skipGlobal: false } as unknown as LoadedHooksConfig,
     feature: "test-feature",
     workdir: WORKDIR,
@@ -117,7 +112,7 @@ const origDeps = { ..._runnerCompletionDeps };
 
 beforeEach(() => {
   _runnerCompletionDeps.handleRunCompletion = mock(async () => defaultCompletionResult);
-  _runnerCompletionDeps.loadConfigForWorkdir = mock(async () => makeConfig());
+  _runnerCompletionDeps.loadConfigForWorkdir = mock(async () => acceptanceConfig());
   pipelineEventBus.clear();
 });
 

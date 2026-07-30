@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { executionStage, _executionDeps } from "@/pipeline";
 import type { PipelineContext } from "@/pipeline/types";
 import type { CallContext } from "@/operations/types";
-import { makeMockAgentManager, makeNaxConfig, makeStory } from "@test/helpers";
+import { makeAgentAdapter, makeMockAgentManager, makeNaxConfig, makeStory } from "@test/helpers";
 
 function makePipelineContext(overrides: Partial<PipelineContext> = {}): PipelineContext {
   const config = makeNaxConfig();
@@ -72,8 +72,7 @@ let capturedCallCtx: CallContext | undefined;
 beforeEach(() => {
   orig = { ..._executionDeps };
   capturedCallCtx = undefined;
-  _executionDeps.getAgent = () =>
-    ({ name: "claude", capabilities: { supportedTiers: ["fast", "balanced", "powerful"] } }) as any;
+  _executionDeps.getAgent = () => makeAgentAdapter({ name: "claude" });
   _executionDeps.validateAgentForTier = () => true;
   _executionDeps.captureGitRef = async () => "HEAD";
   _executionDeps.assemblePlanInputsFromCtx = async () => ({}) as any;
@@ -105,7 +104,15 @@ describe("execution stage — phaseTelemetry derivation (US-003 ACs 1-4)", () =>
 
   test("AC4: phaseTelemetry.tier equals the post-clamp effective tier, not the raw requested tier", async () => {
     _executionDeps.validateAgentForTier = () => false; // force the clamp path
-    _executionDeps.getAgent = () => ({ name: "claude", capabilities: { supportedTiers: ["fast"] } }) as any;
+    const defaultCapabilities = makeAgentAdapter().capabilities;
+    _executionDeps.getAgent = () =>
+      makeAgentAdapter({
+        name: "claude",
+        capabilities: {
+          ...defaultCapabilities,
+          supportedTiers: ["fast"],
+        },
+      });
     const ctx = makePipelineContext({ routing: { ...makePipelineContext().routing, modelTier: "powerful" } });
     await executionStage.execute(ctx);
     expect(capturedCallCtx?.phaseTelemetry?.tier).toBe("fast");

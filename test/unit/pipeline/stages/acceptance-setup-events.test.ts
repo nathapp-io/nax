@@ -19,27 +19,17 @@ import type {
   PostRunPhaseCompletedEvent,
 } from "@/pipeline";
 import { DEFAULT_CONFIG } from "@/config";
+import { makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeStory(id: string, criteria: string[]) {
-  return {
-    id,
-    title: `Story ${id}`,
-    description: "desc",
-    acceptanceCriteria: criteria,
-    tags: [],
-    dependencies: [],
-    status: "pending" as const,
-    passes: false,
-    escalations: [],
-    attempts: 0,
-  };
+function testStory(id: string, criteria: string[]) {
+  return makeStory({ id, title: `Story ${id}`, description: "desc", acceptanceCriteria: criteria });
 }
 
-function makePrd(stories: ReturnType<typeof makeStory>[]) {
+function makePrd(stories: ReturnType<typeof testStory>[]) {
   return {
     project: "test-project",
     feature: "test-feature",
@@ -53,8 +43,8 @@ function makePrd(stories: ReturnType<typeof makeStory>[]) {
 // Default context: 3 total criteria across 2 stories, no refinement
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   const stories = [
-    makeStory("US-001", ["AC-1: first criterion", "AC-2: second criterion"]),
-    makeStory("US-002", ["AC-1: third criterion"]),
+    testStory("US-001", ["AC-1: first criterion", "AC-2: second criterion"]),
+    testStory("US-002", ["AC-1: third criterion"]),
   ];
   return {
     config: {
