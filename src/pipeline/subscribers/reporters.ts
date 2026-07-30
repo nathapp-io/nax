@@ -75,19 +75,19 @@ export function wireReporters(
         startTime: new Date().toISOString(),
       }),
     ),
-    bus.on("story:phase:completed", (ev) =>
+    bus.on("story:phase:completed", (phaseEvent) =>
       phaseComplete({
         runId,
         scope: "story",
-        storyId: ev.storyId,
-        phase: ev.phase,
-        outcome: ev.outcome,
-        durationMs: ev.durationMs,
-        costUsd: ev.costUsd,
-        tier: ev.tier,
-        testStrategy: ev.testStrategy,
-        sessionModel: ev.sessionModel,
-        details: ev.details,
+        storyId: phaseEvent.storyId,
+        phase: phaseEvent.phase,
+        outcome: phaseEvent.outcome,
+        durationMs: phaseEvent.durationMs,
+        costUsd: phaseEvent.costUsd,
+        tier: phaseEvent.tier,
+        testStrategy: phaseEvent.testStrategy,
+        sessionModel: phaseEvent.sessionModel,
+        details: phaseEvent.details,
       }),
     ),
     bus.on("postrun:phase:started", (ev) =>
@@ -98,15 +98,15 @@ export function wireReporters(
         startTime: new Date().toISOString(),
       }),
     ),
-    bus.on("postrun:phase:completed", (ev) =>
+    bus.on("postrun:phase:completed", (phaseEvent) =>
       phaseComplete({
         runId,
         scope: "run",
-        phase: ev.phase,
-        outcome: ev.passed ? "passed" : "failed",
-        durationMs: ev.durationMs ?? 0,
-        costUsd: ev.costUsd ?? 0,
-        details: ev.details,
+        phase: phaseEvent.phase,
+        outcome: phaseEvent.passed ? "passed" : "failed",
+        durationMs: phaseEvent.durationMs ?? 0,
+        costUsd: phaseEvent.costUsd ?? 0,
+        details: phaseEvent.details,
       }),
     ),
   );
