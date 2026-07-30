@@ -314,6 +314,8 @@ export interface RunStartEvent {
   feature: string;
   totalStories: number;
   startTime: string;
+  /** Project name (basename of workdir) — used to scope heartbeat attributes (US-008). */
+  project?: string;
 }
 
 /**
