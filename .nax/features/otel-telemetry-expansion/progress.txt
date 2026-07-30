@@ -18,3 +18,4 @@ Node.js v22.22.2
 [2026-07-30T03:08:55.530Z] US-005 — PASSED — Reporter fan-out for phase hooks — Cost: $0.5893
 [2026-07-30T03:52:38.201Z] US-006 — PASSED — Batch queue and traceparent — Cost: $14.1956
 [2026-07-30T04:17:17.142Z] US-007 — PASSED — Span tree and phase metrics — Cost: $7.6603
+[2026-07-30T05:05:08.351Z] US-008 — PASSED — Heartbeat, redaction, and flush lifecycle — Cost: $16.1646

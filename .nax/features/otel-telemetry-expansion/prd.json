@@ -3,7 +3,7 @@
   "feature": "otel-telemetry-expansion",
   "branchName": "feat/otel-telemetry-expansion",
   "createdAt": "2026-07-29T00:00:00.000Z",
-  "updatedAt": "2026-07-30T04:17:20.748Z",
+  "updatedAt": "2026-07-30T05:05:08.352Z",
   "userStories": [
     {
       "id": "US-001",
@@ -442,8 +442,8 @@
       "dependencies": [
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
