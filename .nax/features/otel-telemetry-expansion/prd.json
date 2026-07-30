@@ -3,7 +3,7 @@
   "feature": "otel-telemetry-expansion",
   "branchName": "feat/otel-telemetry-expansion",
   "createdAt": "2026-07-29T00:00:00.000Z",
-  "updatedAt": "2026-07-30T02:23:18.778Z",
+  "updatedAt": "2026-07-30T02:30:01.486Z",
   "userStories": [
     {
       "id": "US-001",
@@ -200,9 +200,9 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "failed",
+      "status": "pending",
       "passes": false,
-      "attempts": 2,
+      "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
@@ -215,7 +215,7 @@
         "initialProfileId": "claude-final",
         "initialModelTier": "balanced",
         "initialComplexity": "complex",
-        "modelTier": "powerful"
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/pipeline/stages/acceptance-setup.ts",
