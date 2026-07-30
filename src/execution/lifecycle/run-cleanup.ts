@@ -144,11 +144,17 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
 
   // Execute post-run actions sequentially after reporters.onRunEnd()
   const actions = pluginRegistry.getPostRunActions();
+  // `data` must be forwarded, not dropped: PluginLogger's contract is
+  // (message, data), and every post-run action relies on it — each one's catch
+  // path logs `{ error: String(err) }`, and nax-finish logs the finish flow's
+  // stdout/stderr there. Swallowing the third argument silently discarded all
+  // of it, leaving bare messages with no cause attached. Secrets are handled
+  // downstream: the Logger write path runs `redactEntry` over message + data.
   const pluginLogger: PluginLogger = {
-    debug: (msg: string) => logger?.debug("post-run", msg),
-    info: (msg: string) => logger?.info("post-run", msg),
-    warn: (msg: string) => logger?.warn("post-run", msg),
-    error: (msg: string) => logger?.error("post-run", msg),
+    debug: (msg: string, data?: Record<string, unknown>) => logger?.debug("post-run", msg, data),
+    info: (msg: string, data?: Record<string, unknown>) => logger?.info("post-run", msg, data),
+    warn: (msg: string, data?: Record<string, unknown>) => logger?.warn("post-run", msg, data),
+    error: (msg: string, data?: Record<string, unknown>) => logger?.error("post-run", msg, data),
   };
   const ctx = buildPostRunContext(options, durationMs, pluginLogger);
 

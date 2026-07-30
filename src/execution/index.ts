@@ -43,6 +43,8 @@ export {
   type StorySnapshot,
   type RunCompletionOptions,
   type RunCompletionResult,
+  cleanupRun,
+  type RunCleanupOptions,
 } from "./lifecycle";
 export {
   StoryOrchestratorBuilder,

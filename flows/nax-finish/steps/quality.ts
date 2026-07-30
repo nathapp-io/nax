@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { FinishError } from "../errors";
 import { DEFAULT_GATE_TIMEOUT_MS, runShell } from "../exec";
 import type { ShellRunFn } from "../types";
@@ -12,9 +13,17 @@ export interface QualityCommands {
 
 export const _qualityDeps: { runShell: ShellRunFn; readText: (path: string) => Promise<string | null> } = {
   runShell,
+  // node:fs, not Bun.file — this module runs inside acpx's Node process, where
+  // the `Bun` global does not exist (see the header of `../exec.ts`). A single
+  // read that treats ENOENT as "absent" also avoids the exists()-then-read race
+  // the Bun version had.
   readText: async (path) => {
-    const file = Bun.file(path);
-    return (await file.exists()) ? await file.text() : null;
+    try {
+      return await readFile(path, "utf8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw err;
+    }
   },
 };
 
