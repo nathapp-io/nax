@@ -1,3 +1,16 @@
 [2026-07-29T13:46:03.506Z] US-001 — PASSED — Telemetry event types and reporter config schema — Cost: $0.5104
 [2026-07-29T14:10:36.699Z] US-002 — PASSED — Story-phase event emission and outcome derivation — Cost: $2.0854
 [2026-07-29T16:04:40.672Z] US-004 — FAILED — Run-level phase events and enrichment — Stage "execution" threw error: callOp[test-writer]: aborted
+[2026-07-30T02:23:18.778Z] US-004 — FAILED — Run-level phase events and enrichment — Stage "execution" threw error: [acp-adapter] Failed to create session: file:///Users/williamkhoo/workspace/sandbox/acpx/dist/cli.js:1501
+	if (typeof command !== "string" || command.trim().length === 0) throw new Error(`Invalid config agents.${name}.command in ${sourcePath}: expected non-empty string`);
+	                                                                      ^
+
+Error: Invalid config agents.nax-quality-reviewer.command in /Users/williamkhoo/.acpx/config.json: expected non-empty string
+    at parseLegacyAgentEntry (file:///Users/williamkhoo/workspace/sandbox/acpx/dist/cli.js:1501:72)
+    at parseAgentEntry (file:///Users/williamkhoo/workspace/sandbox/acpx/dist/cli.js:1487:106)
+    at parseAgents (file:///Users/williamkhoo/workspace/sandbox/acpx/dist/cli.js:1482:88)
+    at loadResolvedConfig (file:///Users/williamkhoo/workspace/sandbox/acpx/dist/cli.js:1612:29)
+    at async main (file:///Users/williamkhoo/workspace/sandbox/acpx/dist/cli.js:2694:17)
+
+Node.js v22.22.2
+

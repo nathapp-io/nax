@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-07-30T02-16-19-218Z",
+    "feature": "otel-telemetry-expansion",
+    "startedAt": "2026-07-30T02:16:19.218Z",
+    "status": "failed",
+    "dryRun": false,
+    "pid": 2152
+  },
+  "progress": {
+    "total": 8,
+    "passed": 3,
+    "failed": 1,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 4
+  },
+  "cost": {
+    "spent": 2.8218615999999996,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 2,
+  "updatedAt": "2026-07-30T02:24:04.479Z",
+  "durationMs": 465261,
+  "postRun": {
+    "acceptance": {
+      "status": "not-run"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-07-30T02:24:03.222Z"
+    }
+  }
+}
