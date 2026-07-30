@@ -86,6 +86,39 @@ describe("buildTracesPayload", () => {
     });
     expect(ok.resourceSpans[0].scopeSpans[0].spans[0].status).toEqual({ code: 1 });
   });
+
+  test("US-008: extraSpans are appended to scopeSpans[0].spans after the root span", () => {
+    const extraSpans = [
+      { traceId: "a".repeat(32), spanId: "c".repeat(16), name: "nax.phase", attributes: [] },
+      { traceId: "a".repeat(32), spanId: "d".repeat(16), name: "nax.phase", attributes: [] },
+    ];
+    // biome-ignore lint/suspicious/noExplicitAny: testing dynamic OTLP payload
+    const withExtras: any = buildTracesPayload({
+      serviceName: "nax",
+      traceId: "a".repeat(32),
+      spanId: "b".repeat(16),
+      startUnixNano: "1000",
+      endUnixNano: "2000",
+      feature: "feat",
+      runId: "r1",
+      storySummary: summary,
+      totalCost: 0.42,
+      events,
+      extraSpans,
+    });
+
+    const spans = withExtras.resourceSpans[0].scopeSpans[0].spans;
+    expect(spans).toHaveLength(3);
+    expect(spans[0].name).toBe("nax.run"); // root span stays first
+    expect(spans[0].spanId).toBe("b".repeat(16));
+    expect(spans.slice(1)).toEqual(extraSpans);
+  });
+
+  test("US-008 boundary: an omitted extraSpans yields only the root span", () => {
+    const spans = payload.resourceSpans[0].scopeSpans[0].spans;
+    expect(spans).toHaveLength(1);
+    expect(spans[0].name).toBe("nax.run");
+  });
 });
 
 describe("buildMetricsPayload", () => {

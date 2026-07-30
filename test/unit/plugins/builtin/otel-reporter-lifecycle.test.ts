@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { type PostJsonDeps, createOtelReporterPlugin } from "@/plugins";
+import { withWarnSpy } from "@test/helpers";
 import { attr } from "../../../../src/plugins/builtin/otel-reporter/otlp";
 
 /**
@@ -114,6 +115,29 @@ describe("otel-reporter heartbeat", () => {
     expect(attrs).toContainEqual(attr("story_id", "s2"));
     expect(attrs).toContainEqual(attr("tier", "balanced"));
     expect(attrs).toContainEqual(attr("test_strategy", "tdd-simple"));
+  });
+
+  // Spec: `flush` already warns ("Skipping OTLP export — unresolved env vars")
+  // when configured headers reference an unset env var (see the identical
+  // check a few lines below in index.ts's `flush`). The heartbeat export path
+  // must behave the same way instead of silently dropping every tick with no
+  // observable signal to the user.
+  test("heartbeat export logs a warning when configured headers reference an unresolved env var, matching flush's behavior for the same condition", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      delete process.env.OTLP_TOKEN;
+      const { deps } = capturing();
+      const plugin = createOtelReporterPlugin(
+        { ...baseCfg, heartbeatIntervalMs: 40, headers: { Authorization: "Bearer ${OTLP_TOKEN}" } },
+        deps,
+      );
+      const r = plugin.extensions.reporter!;
+
+      await r.onRunStart?.({ runId: "hbwarn", feature: "f", totalStories: 1, startTime: new Date().toISOString(), project: "nax" });
+      await sleep(150); // > heartbeatIntervalMs (40ms) — allow at least one tick
+
+      const otelWarnings = warnSpy.mock.calls.filter((c) => c[0] === "otel-reporter");
+      expect(otelWarnings.length).toBeGreaterThan(0);
+    });
   });
 
   test("AC6: heartbeatIntervalMs=0 issues no heartbeat export regardless of elapsed time", async () => {
