@@ -377,6 +377,129 @@ describe("validateMockStructureFiles", () => {
       expect(invalid).toHaveLength(1);
     });
 
+    test("package-relative anchor wins when the file exists under both", async () => {
+      // Anchored pattern matches only the package-relative rebase, so a pass
+      // proves the packageDir candidate was the one used — not just probed first.
+      const anchored: ResolvedTestPatterns = {
+        regex: [/^tests\/.+\.py$/],
+        globs: ["tests/**/*.py"],
+        pathspec: [],
+        testDirs: ["tests"],
+      };
+      const probed: string[] = [];
+
+      const decl: TestEditDeclaration = {
+        reason: "mock_structure",
+        file: "tests/test_observability.py",
+        files: ["tests/test_observability.py"],
+        reasonDetail: "ambiguous under both anchors",
+      };
+
+      const { valid, invalid } = await validateMockStructureFiles([decl], anchored, "/repo/apps/api", {
+        repoRoot: "/repo",
+        fileExists: (p) => {
+          probed.push(p);
+          // Both a package-local and a repo-root tests/ tree exist.
+          return Promise.resolve(
+            p === "/repo/apps/api/tests/test_observability.py" || p === "/repo/tests/test_observability.py",
+          );
+        },
+      });
+
+      expect(invalid).toHaveLength(0);
+      expect(valid).toHaveLength(1);
+      expect(probed[0]).toBe("/repo/apps/api/tests/test_observability.py");
+    });
+
+    test("rejects a test file belonging to a different package", async () => {
+      // Resolver regexes are typically unanchored, so without containment this
+      // repo-relative path would match and be handed to a test-writer scoped to
+      // apps/api. Cross-package spillover belongs to sibling_scope.
+      const decl: TestEditDeclaration = {
+        reason: "mock_structure",
+        file: "packages/shared/tests/test_helpers.py",
+        files: ["packages/shared/tests/test_helpers.py"],
+        reasonDetail: "another package's tests",
+      };
+
+      const { valid, invalid } = await validateMockStructureFiles([decl], pyPatterns, "/repo/apps/api", {
+        repoRoot: "/repo",
+        fileExists: makeFileExists(["/repo/packages/shared/tests/test_helpers.py"]),
+      });
+
+      expect(valid).toHaveLength(0);
+      expect(invalid).toHaveLength(1);
+      expect(invalid[0]).toBe(decl);
+    });
+
+    test("rejects a path that escapes packageDir via ..", async () => {
+      const decl: TestEditDeclaration = {
+        reason: "mock_structure",
+        file: "../shared/tests/test_helpers.py",
+        files: ["../shared/tests/test_helpers.py"],
+        reasonDetail: "traversal out of the package",
+      };
+
+      const { valid, invalid } = await validateMockStructureFiles([decl], pyPatterns, "/repo/apps/api", {
+        repoRoot: "/repo",
+        fileExists: makeFileExists(["/repo/apps/shared/tests/test_helpers.py"]),
+      });
+
+      expect(valid).toHaveLength(0);
+      expect(invalid).toHaveLength(1);
+    });
+
+    test("accepts an absolute declaration inside the package", async () => {
+      const decl: TestEditDeclaration = {
+        reason: "mock_structure",
+        file: "/repo/apps/api/tests/test_observability.py",
+        files: ["/repo/apps/api/tests/test_observability.py"],
+        reasonDetail: "absolute form",
+      };
+
+      const { valid, invalid } = await validateMockStructureFiles([decl], pyPatterns, "/repo/apps/api", {
+        repoRoot: "/repo",
+        fileExists: makeFileExists(["/repo/apps/api/tests/test_observability.py"]),
+      });
+
+      expect(invalid).toHaveLength(0);
+      expect(valid).toHaveLength(1);
+    });
+
+    test("rejects an absolute declaration outside the package", async () => {
+      const decl: TestEditDeclaration = {
+        reason: "mock_structure",
+        file: "/repo/packages/shared/tests/test_helpers.py",
+        files: ["/repo/packages/shared/tests/test_helpers.py"],
+        reasonDetail: "absolute, wrong package",
+      };
+
+      const { valid, invalid } = await validateMockStructureFiles([decl], pyPatterns, "/repo/apps/api", {
+        repoRoot: "/repo",
+        fileExists: makeFileExists(["/repo/packages/shared/tests/test_helpers.py"]),
+      });
+
+      expect(valid).toHaveLength(0);
+      expect(invalid).toHaveLength(1);
+    });
+
+    test("rejects a declaration naming packageDir itself", async () => {
+      const decl: TestEditDeclaration = {
+        reason: "mock_structure",
+        file: ".",
+        files: ["."],
+        reasonDetail: "directory, not a file",
+      };
+
+      const { valid, invalid } = await validateMockStructureFiles([decl], pyPatterns, "/repo/apps/api", {
+        repoRoot: "/repo",
+        fileExists: makeFileExists(["/repo/apps/api"]),
+      });
+
+      expect(valid).toHaveLength(0);
+      expect(invalid).toHaveLength(1);
+    });
+
     test("single-package repo (repoRoot === packageDir) resolves once", async () => {
       const seen: string[] = [];
       const decl: TestEditDeclaration = {

@@ -3,7 +3,8 @@
  *
  * A declaration is valid when ALL its declared files:
  *   (a) exist on disk under `packageDir` or (when supplied) `repoRoot`, AND
- *   (b) match at least one resolved test-file pattern regex, tested against the
+ *   (b) resolve to a path *inside* `packageDir`, AND
+ *   (c) match at least one resolved test-file pattern regex, tested against the
  *       path rebased to be package-relative.
  *
  * Two anchors are tried because the declaration's paths come from an LLM that
@@ -11,6 +12,12 @@
  * per-package config are package-relative. Anchoring on `packageDir` alone
  * double-prefixed repo-relative declarations in monorepos, rejecting real test
  * files as nonexistent and deadlocking the story (#1385).
+ *
+ * Containment (b) keeps the second anchor from widening scope: resolver regexes
+ * are typically unanchored, so without it a repo-relative path naming another
+ * package's tests would now match and be handed to a test-writer that may only
+ * edit inside its own package. Cross-package spillover routes through the
+ * sibling_scope declaration instead.
  *
  * Non-mock_structure declarations pass through unchanged to `valid`.
  *
@@ -35,12 +42,37 @@ const defaultFileExists = (p: string): Promise<boolean> => Bun.file(p).exists();
 /** Candidate absolute paths for a declared file, package-relative anchor first. */
 function resolutionCandidates(file: string, packageDir: string, repoRoot?: string): string[] {
   if (isAbsolute(file)) return [file];
-  const candidates = [join(packageDir, file)];
-  if (repoRoot !== undefined) {
-    const viaRepoRoot = join(repoRoot, file);
-    if (viaRepoRoot !== candidates[0]) candidates.push(viaRepoRoot);
+  const viaPackageDir = join(packageDir, file);
+  if (repoRoot === undefined) return [viaPackageDir];
+  const viaRepoRoot = join(repoRoot, file);
+  // Equal in a single-package repo — probe once rather than twice.
+  return viaRepoRoot === viaPackageDir ? [viaPackageDir] : [viaPackageDir, viaRepoRoot];
+}
+
+interface ResolveOptions {
+  packageDir: string;
+  repoRoot?: string;
+  fileExists: (path: string) => Promise<boolean>;
+}
+
+/**
+ * Resolve a declared file to its package-relative path.
+ *
+ * Returns null when the file exists under no anchor, or when the first anchor it
+ * does exist under places it outside `packageDir` — see containment in the module
+ * header. A path that escapes under one anchor escapes under both, so the first
+ * hit is decisive.
+ */
+async function resolvePackageRelative(file: string, opts: ResolveOptions): Promise<string | null> {
+  for (const candidate of resolutionCandidates(file, opts.packageDir, opts.repoRoot)) {
+    if (!(await opts.fileExists(candidate))) continue;
+    const rel = relative(opts.packageDir, candidate);
+    // "" means the path IS packageDir; ".." escapes it; absolute means a
+    // different root entirely.
+    if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return null;
+    return rel;
   }
-  return candidates;
+  return null;
 }
 
 /**
@@ -70,23 +102,20 @@ export async function validateMockStructureFiles(
 
     const files = d.files ?? [d.file];
 
-    // Check all files: must exist on disk AND match at least one test pattern regex
+    // Check all files: must resolve inside the package AND match a test pattern.
     let allValid = true;
     for (const file of files) {
-      let resolved: string | null = null;
-      for (const candidate of resolutionCandidates(file, packageDir, opts?.repoRoot)) {
-        if (await fileExists(candidate)) {
-          resolved = candidate;
-          break;
-        }
-      }
-      if (resolved === null) {
+      const packageRelative = await resolvePackageRelative(file, {
+        packageDir,
+        repoRoot: opts?.repoRoot,
+        fileExists,
+      });
+      if (packageRelative === null) {
         allValid = false;
         break;
       }
       // Patterns are package-relative, so test the resolved path rebased onto
       // packageDir — never the raw declared string, whose anchor is unknown.
-      const packageRelative = relative(packageDir, resolved);
       const matchesPattern = resolvedTestPatterns.regex.some((re) => re.test(packageRelative));
       if (!matchesPattern) {
         allValid = false;
