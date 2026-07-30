@@ -13,6 +13,7 @@ import type { Logger } from "@/logger";
 import { callOp as _callOp } from "@/operations";
 import type { Operation } from "@/operations";
 import { errorMessage } from "@/utils/errors";
+import { createDeclineLedger } from "./cycle-retirement";
 import type {
   FixApplied,
   FixCycle,
@@ -159,12 +160,10 @@ export async function runFixCycle<F extends Finding>(
   const packageDir = ctx.packageDir;
   let totalCostUsd = 0;
 
-  // Strategies that answered UNRESOLVED. The signal is per-strategy — the agent
-  // said "I cannot fix this", not "nobody can" — so the strategy is retired for
-  // the rest of the cycle instead of being re-dispatched to reach the same
-  // answer. Retiring it can only shrink the selectable set, so the cycle still
-  // terminates. (#1369)
-  const spentStrategies = new Set<string>();
+  // Per-finding retirement ledger (#1369, #1384) — see `createDeclineLedger` for why
+  // UNRESOLVED retires a (strategy, finding) pair rather than the strategy itself, and
+  // for the termination argument.
+  const declines = createDeclineLedger<F>();
   let unresolvedDetail: string | undefined;
 
   /**
@@ -187,8 +186,9 @@ export async function runFixCycle<F extends Finding>(
     }
 
     // ── Select active strategies ──────────────────────────────────────────────
-    // Strategies retired by an UNRESOLVED verdict are excluded (#1369).
-    const selectable = cycle.strategies.filter((s) => !spentStrategies.has(s.name));
+    // A strategy is excluded only once it has declined every remaining finding it
+    // claims — declining one finding must not retire it for the others (#1384).
+    const selectable = cycle.strategies.filter((s) => !declines.isRetiredFor(s, cycle.findings));
     const active = selectActiveStrategies(selectable, cycle.findings, cycle.verdict);
     if (active.length === 0) {
       // Orphaned findings: at least one finding remains but no selectable
@@ -199,6 +199,7 @@ export async function runFixCycle<F extends Finding>(
       // level — without this the cause is invisible, turning either into an
       // un-diagnosable "story failed for no reason".
       const orphanSources = [...new Set(cycle.findings.map((f) => f.source))];
+      const retiredStrategies = declines.retiredNames(cycle.strategies, cycle.findings);
       logger?.warn("findings.cycle", "cycle exited — no matching strategy (orphaned findings)", {
         storyId,
         packageDir,
@@ -206,7 +207,7 @@ export async function runFixCycle<F extends Finding>(
         reason: "no-strategy",
         findingsCount: cycle.findings.length,
         orphanSources,
-        ...(spentStrategies.size > 0 ? { retiredStrategies: [...spentStrategies] } : {}),
+        ...(retiredStrategies.length > 0 ? { retiredStrategies } : {}),
       });
       return finish({
         iterations: cycle.iterations,
@@ -316,6 +317,14 @@ export async function runFixCycle<F extends Finding>(
     //   - EVERY strategy that ran gave up  -> nothing was attempted that could
     //     have changed the tree, so revalidating would burn a full suite run to
     //     learn nothing. Exit immediately, as before.
+    //
+    //     This exit SURVIVES #1384's per-finding retirement, which looks wrong at a
+    //     glance — surely a strategy that declined only finding A deserves another
+    //     dispatch? It does not, here: nothing in the group touched the tree, so
+    //     `validate` can only re-emit the findings that were already in the declined
+    //     batch. There is no finding it could be re-dispatched FOR. The per-finding
+    //     scope pays off on the other branch, where a sibling's work surfaces
+    //     something new (US-006's barrel export).
     //   - SOME strategy ran without giving up -> its work may have resolved the
     //     findings. Retire only the strategies that gave up and fall through to
     //     validate, so the sibling's progress is measured instead of discarded.
@@ -326,7 +335,12 @@ export async function runFixCycle<F extends Finding>(
     if (unresolvedFas.length > 0) {
       const firstUnresolved = unresolvedFas[0] as FixApplied;
       unresolvedDetail = firstUnresolved.unresolved;
-      for (const fa of unresolvedFas) spentStrategies.add(fa.strategyName);
+      // Decline the findings that were IN that dispatch's input, not the strategy
+      // as a whole (#1384).
+      for (const fa of unresolvedFas) {
+        const strategy = group.find((s) => s.name === fa.strategyName);
+        if (strategy) declines.recordDeclined(strategy, findingsBefore);
+      }
 
       const allGaveUp = unresolvedFas.length === fixesApplied.length;
       if (allGaveUp) {
