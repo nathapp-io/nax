@@ -48,10 +48,27 @@ const PACKAGE_ROOT_SEARCH_DEPTH = 6;
  * must carry *something*. Reporting only the exit code (the previous behaviour)
  * made a hard flow crash indistinguishable from a clean failure: a
  * `ReferenceError: Bun is not defined` on the flow's first node was reported as
- * a bare "exited 1 (no result file)" with the real cause discarded. The full
- * output still goes to the logger below.
+ * a bare "exited 1 (no result file)" with the real cause discarded. A larger
+ * slice of both streams still goes to the logger below.
  */
 const STDERR_TAIL_CHARS = 400;
+
+/**
+ * How much of each stream to put in the log payload.
+ *
+ * Not unbounded: on a flow that ran to completion and only failed to write its
+ * result, acpx's stdout carries every node's output — including full LLM review
+ * text — which would land in the JSONL log as a single multi-megabyte line.
+ * The tail is the useful end (that is where a crash reports itself), so
+ * truncation drops from the front and says so.
+ */
+const LOG_TAIL_CHARS = 20_000;
+
+/** Last `LOG_TAIL_CHARS` of a stream, with an explicit marker when anything was dropped. */
+function logTail(stream: string): string {
+  if (stream.length <= LOG_TAIL_CHARS) return stream;
+  return `[…${stream.length - LOG_TAIL_CHARS} chars truncated…]\n${stream.slice(-LOG_TAIL_CHARS)}`;
+}
 
 /** Last `STDERR_TAIL_CHARS` of the flow's stderr, whitespace-collapsed for one-line log output. */
 function stderrTail(stderr: string): string {
@@ -261,11 +278,11 @@ const naxFinishAction: IPostRunAction = {
       const result = await _naxFinishDeps.readResult(ctx.workdir);
       if (!result) {
         // The flow produced no result file, so its stdout/stderr is the only
-        // evidence of what went wrong — log it in full before it is dropped.
+        // evidence of what went wrong — log it before it is dropped.
         ctx.logger.warn("nax-finish flow produced no result file", {
           exitCode: res.exitCode,
-          stdout: res.stdout,
-          stderr: res.stderr,
+          stdout: logTail(res.stdout),
+          stderr: logTail(res.stderr),
         });
         const tail = stderrTail(res.stderr);
         return {

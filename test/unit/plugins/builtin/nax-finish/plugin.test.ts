@@ -114,7 +114,7 @@ describe("nax-finish post-run action", () => {
       expect(warns[0].data).toMatchObject({ exitCode: 1, stdout: "step one\n", stderr: "boom\n" });
     });
 
-    test("truncates a long stderr in the message but not in the log", async () => {
+    test("truncates a long stderr hard in the message, loosely in the log", async () => {
       const long = `${"x".repeat(5000)}TAIL`;
       _naxFinishDeps.run = async () => ({ exitCode: 1, stdout: "", stderr: long });
       _naxFinishDeps.readResult = async () => null;
@@ -122,7 +122,23 @@ describe("nax-finish post-run action", () => {
       const r = await action.execute(ctx);
       expect(r.message).toContain("TAIL");
       expect(r.message.length).toBeLessThan(600);
+      // Well under the log cap, so the log keeps it whole.
       expect(warns[0].data?.stderr).toBe(long);
+    });
+
+    test("caps a huge stream in the log and says how much was dropped", async () => {
+      // acpx echoes every node's output on a full run; without a cap this lands
+      // in the JSONL log as one multi-megabyte line.
+      const huge = `HEAD${"y".repeat(50_000)}TAIL`;
+      _naxFinishDeps.run = async () => ({ exitCode: 1, stdout: huge, stderr: "" });
+      _naxFinishDeps.readResult = async () => null;
+      const { ctx, warns } = captureCtx();
+      await action.execute(ctx);
+      const logged = warns[0].data?.stdout as string;
+      expect(logged.length).toBeLessThan(21_000);
+      expect(logged).toContain("chars truncated");
+      expect(logged.endsWith("TAIL")).toBe(true);
+      expect(logged).not.toContain("HEAD");
     });
 
     test("omits the separator when the flow wrote nothing to stderr", async () => {

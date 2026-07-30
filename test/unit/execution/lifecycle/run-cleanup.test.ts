@@ -305,6 +305,31 @@ describe("cleanupRun — action result logging", () => {
     const found = warnMessages.some((m) => m.includes("[post-run] webhook") && m.includes("failed") && m.includes("Connection refused"));
     expect(found).toBe(true);
   });
+
+  test("forwards the action's structured data to the logger", async () => {
+    const { cleanupRun } = await import("@/execution");
+
+    // Every post-run action logs its cause through this argument — nax-finish
+    // passes the finish flow's stdout/stderr, and each plugin's catch path
+    // passes `{ error }`. Dropping it left bare messages with no cause.
+    const action: IPostRunAction = {
+      name: "webhook",
+      description: "desc",
+      shouldRun: mock(async () => true),
+      execute: mock(async (ctx: PostRunContext) => {
+        ctx.logger.warn("subprocess produced no result", { exitCode: 1, stderr: "Bun is not defined" });
+        ctx.logger.info("progress", { step: 2 });
+        return { success: true, message: "done" } as PostRunActionResult;
+      }),
+    };
+
+    await cleanupRun(makeCleanupOptions({ pluginRegistry: makePluginRegistry([action]) }));
+
+    const warned = logWarnCalls.find(([, msg]) => msg === "subprocess produced no result");
+    expect(warned?.[0]).toBe("post-run");
+    expect(warned?.[2]).toEqual({ exitCode: 1, stderr: "Bun is not defined" });
+    expect(logInfoCalls.find(([, msg]) => msg === "progress")?.[2]).toEqual({ step: 2 });
+  });
 });
 
 // ============================================================================
