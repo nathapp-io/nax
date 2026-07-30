@@ -109,7 +109,10 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
   const exportHeartbeat = async (snapshot: HeartbeatSnapshot): Promise<void> => {
     if (!base) return;
     const { resolved, missing } = interpolateHeaders(cfg.headers);
-    if (missing.length > 0) return;
+    if (missing.length > 0) {
+      getSafeLogger()?.warn(STAGE, "Skipping OTLP export — unresolved env vars", { missing });
+      return;
+    }
     const metrics = buildHeartbeatMetricsPayload({
       serviceName: cfg.serviceName,
       timeUnixNano: msToUnixNano(Date.now()),
