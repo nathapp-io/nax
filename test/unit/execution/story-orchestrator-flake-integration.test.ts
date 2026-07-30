@@ -23,7 +23,7 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { DEFAULT_CONFIG } from "@/config";
 import { pickSelector } from "@/config";
-import { StoryOrchestratorBuilder, _storyOrchestratorDeps } from "@/execution";
+import { StoryOrchestratorBuilder, _storyOrchestratorDeps, runRectification } from "@/execution";
 import { describeGateRegression, gateFailureKeys } from "@/execution";
 import type { Finding, FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings";
 import { getLogger, initLogger, resetLogger } from "@/logger";
@@ -685,5 +685,72 @@ describe("describeGateRegression — quarantine-memo filter (#1383)", () => {
     });
     expect(detail.regressed).toBe(false);
     expect(detail.memoExcludedKeys).toEqual(["test/unit/flaky.test.ts::sometimes"]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #1383 — the invariant behind the restore log's `flakeTriageRan: false`.
+//
+// `runNonBlockingFix` states that literal because the nbf path seeds
+// `overrides.initialFindings` and so takes the branch that never calls the triage
+// seam. The log-field test in non-blocking-fix.test.ts supplies that value itself,
+// so it cannot catch the claim going stale. These two pin the branch directly:
+// the negative case, and a control proving this fixture would see a triage call.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runRectification — nbf path never invokes flake triage (#1383)", () => {
+  /** Minimal state: rectification needs one validation phase, and triage needs the gate slot. */
+  function makeRectifyState() {
+    return {
+      fullSuiteGate: { kind: "full-suite-gate" as const, slot: { op: makeGateOp(), input: { story: "US-003" } } },
+      rectification: { maxAttempts: 1, strategies: [], abortOnIncreasingFailures: false },
+    } as unknown as Parameters<typeof runRectification>[1];
+  }
+
+  /** A failing gate output carrying one structured failure — triage's precondition. */
+  const failingGateOutput = () => ({
+    "full-suite-gate": {
+      success: false,
+      passed: false,
+      rawOutput: "1 fail",
+      findings: [makeFailedTest({ file: "test/unit/a.test.ts", rule: "shouldA" })],
+    },
+  });
+
+  let triageCalls: number;
+
+  beforeEach(() => {
+    triageCalls = 0;
+    (_storyOrchestratorDeps as Record<string, unknown>).triage = async (findings: Finding[]) => {
+      triageCalls++;
+      return [findings, { quarantinedKeys: [] }];
+    };
+    // Neutralise the cycle: this suite asserts on dispatch of the triage seam only.
+    _storyOrchestratorDeps.runFixCycle = (async () => ({
+      iterations: [],
+      finalFindings: [],
+      exitReason: "resolved" as FixCycleExitReason,
+      costUsd: 0,
+    })) as typeof _storyOrchestratorDeps.runFixCycle;
+  });
+
+  test("seeded initialFindings (the nbf path) → triage seam is NOT invoked", async () => {
+    const { ctx } = makeCtx();
+    const phaseOutputs: Record<string, unknown> = failingGateOutput();
+    await runRectification(ctx, makeRectifyState(), {}, phaseOutputs, {
+      initialFindings: [
+        { source: "adversarial-review", severity: "warning", category: "style", message: "advisory" },
+      ],
+    });
+    expect(triageCalls).toBe(0);
+  });
+
+  test("control: same fixture WITHOUT seeded findings → triage seam IS invoked", async () => {
+    // Without this the assertion above could pass for an unrelated reason (no gate
+    // output, empty findings, a throwing seam) and the invariant would go unpinned.
+    const { ctx } = makeCtx();
+    const phaseOutputs: Record<string, unknown> = failingGateOutput();
+    await runRectification(ctx, makeRectifyState(), {}, phaseOutputs);
+    expect(triageCalls).toBe(1);
   });
 });

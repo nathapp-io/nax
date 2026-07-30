@@ -49,6 +49,7 @@ export {
   ExecutionPlan,
   _storyOrchestratorDeps,
   runPhase,
+  runRectification,
   CANONICAL_ORDER,
   EXHAUSTED_EXIT_REASONS,
   PHASE_KIND_TO_STATE_KEY,
