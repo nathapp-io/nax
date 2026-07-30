@@ -61,7 +61,7 @@ and the verdict's staleness guard — since a known flake is not attributable to
 either path. This does narrow when a story fails, which is why it is recorded here rather
 than treated as a pure bug fix.
 
-Two deliberate limits:
+Three deliberate limits:
 
 - **`keyless` is still decided on the unfiltered key set.** Excluding quarantined keys first
   would empty the set on a still-failing gate, which §3's keyless rule would then read as a
@@ -71,6 +71,12 @@ Two deliberate limits:
   gate's `success` to `true` (its `allTestRunnersQuarantined` branch), so nbf would keep
   trees that are red-modulo-quarantine — a semantics change deferred to its own decision.
   The restore log therefore states `flakeTriageRan: false` so the gap is visible.
+- **A quarantined test that the pass then genuinely breaks is masked**, so nbf may keep a
+  tree where that test is red. This is inherent to a run-scoped memo — the main path already
+  ignores quarantined tests for the rest of the run — so it is parity with the main path
+  rather than a new hole, and accepting it is the point of this amendment. The residual is
+  bounded by the memo only ever holding tests a probe showed to be non-deterministic on an
+  earlier tree.
 
 ### 4. Bounded, transactional
 

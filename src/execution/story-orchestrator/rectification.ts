@@ -197,6 +197,11 @@ export async function runRectification(
   let initialFindings: Finding[];
   if (overrides?.initialFindings) {
     // ADR-024 nbf path — triage is a separate concern owned by the main gate path.
+    //
+    // This branch is what `runNonBlockingFix`'s restore log asserts as
+    // `flakeTriageRan: false` (#1383). If triage is ever wired in here, update that
+    // log field too — otherwise it silently reports a gap that no longer exists, and
+    // an operator reading it will misjudge a genuine break as a possible flake.
     initialFindings = [...overrides.initialFindings];
   } else {
     // US-003 — Flake triage runs on the gate's failed-test findings BEFORE

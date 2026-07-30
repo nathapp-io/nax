@@ -79,9 +79,12 @@ flaky earlier in the run.
 - Existing fix strategies' `appliesTo` (`category === "failed-test"`) no longer
   match relabeled findings → no agent dispatched for flakes.
 - If **all** gate failures are flaky → gate treated as passed-with-warnings.
-- `gateFailureKeys()` and `gateRegressedAfterRectification()` (phase-eval) skip
+- `gateFailureKeys()` and `describeGateRegression()` (phase-eval) skip
   `flaky-test` findings so a flake flipping state mid-story does not read as a
-  rectification regression.
+  rectification regression. #1383 extended this: `describeGateRegression` also
+  excludes keys already in the run-scoped quarantine memo, since the ADR-024 nbf
+  revalidation gate is never triaged and so can never carry the `flaky-test`
+  category itself.
 
 ### Touched: regression gate (`src/execution/lifecycle/run-regression.ts`)
 

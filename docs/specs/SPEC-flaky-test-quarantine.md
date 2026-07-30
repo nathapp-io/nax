@@ -34,7 +34,7 @@ Verified symbols (codebase @ `feat/flaky-test-quarantine`, grounded 2026-07-04):
 - `Framework = "bun" | "jest" | "vitest" | "pytest" | "go" | "unknown"` and `detectFramework(output: string)` — `src/test-runners/detector.ts`. The probe derives the framework from the failed run's raw output.
 - `executeWithTimeout(command, timeoutSeconds, env?, options?: { shell?, gracePeriodMs?, drainTimeoutMs?, cwd? })` — `src/verification/executor.ts` (has `_executorDeps.spawn` DI seam). The probe executes through this.
 - `gatherRectificationFindings(...)` / `runRectification(...)` — `src/execution/story-orchestrator/rectification.ts`. Triage runs on gate findings before they reach the fix cycle.
-- `gateFailureKeys(gateOutput)` and `gateRegressedAfterRectification(...)` — `src/execution/story-orchestrator/phase-eval.ts`. Key shape `${file}::${rule}` where `rule` is the testName; both must skip `flaky-test` findings.
+- `gateFailureKeys(gateOutput)` and `describeGateRegression(...)` — `src/execution/story-orchestrator/phase-eval.ts`. Key shape `${file}::${rule}` where `rule` is the testName; both must skip `flaky-test` findings. (The boolean wrapper `gateRegressedAfterRectification` named here at spec time was folded into `describeGateRegression` by #1382/#1383.)
 - `runDeferredRegression(options: DeferredRegressionOptions)` + internal `buildRegressionFindings(...)`, `findResponsibleStoryByTransition(...)`, `_regressionDeps` DI object — `src/execution/lifecycle/run-regression.ts`.
 - `testFailureToFinding` / `testSummaryToFindings` — `src/findings/adapters/test-failure.ts`; produces `Finding { source: "test-runner", category: "failed-test", file, rule: testName, ... }`. `Finding.category` is an open vocabulary — `"flaky-test"` is a new value, no schema change.
 - Existing precedent for the philosophy: `shouldSkipPhaseForRectification()` (same file as `gatherRectificationFindings`) already treats a failing gate with a passing verifier as an unrelated pre-existing regression.
@@ -161,7 +161,7 @@ Wire triage into the deferred regression gate; exclude flakes from story attribu
 2. `[unit]` When triage relabels every gate failure to `flaky-test`, no fix cycle is dispatched for the gate and the story proceeds as if the gate passed, with a warning recorded for each quarantined test.
 3. `[unit]` When triage returns a mix of `flaky-test` and `failed-test` findings, the rectification fix cycle receives only the `failed-test` findings.
 4. `[unit]` `gateFailureKeys` returns a key set that excludes findings with `category: "flaky-test"`.
-5. `[unit]` `gateRegressedAfterRectification` does not report a regression when the only difference between baseline and final gate findings is in `flaky-test` findings.
+5. `[unit]` `describeGateRegression` does not report a regression when the only difference between baseline and final gate findings is in `flaky-test` findings. (Covered by the `AC5:` describe block; renamed from `gateRegressedAfterRectification` by #1383.)
 6. `[unit]` Each quarantine decision at the gate emits a structured log entry that includes the story id and the quarantined test's `${file}::${testName}` key.
 
 ### US-004 — Regression-gate integration
