@@ -212,6 +212,23 @@ describe("formatAdvisorySummary", () => {
     expect(output).toContain("coverage-gap");
   });
 
+  test("surfaces the no-action count and tags compliance notes (#1359)", () => {
+    // These are reported but never fixed — the label is what tells an operator that
+    // nothing was skipped by mistake.
+    const findings = [
+      advisoryFinding({ storyId: "US-004", actionRequired: false, issue: "correct per Out of Scope #10" }),
+      advisoryFinding({ storyId: "US-005", issue: "ordinary advisory" }),
+    ];
+    const output = plain(formatAdvisorySummary(findings, { mode: "normal", useColor: false }));
+    expect(output).toContain("1 of 2 asked for no change");
+    expect(output).toContain("no-action");
+  });
+
+  test("omits the no-action line when every finding asks for a change (#1359)", () => {
+    const output = plain(formatAdvisorySummary([advisoryFinding()], { mode: "normal", useColor: false }));
+    expect(output).not.toContain("asked for no change");
+  });
+
   test("omits the coverage-gap line when no finding was demoted", () => {
     const output = plain(formatAdvisorySummary([advisoryFinding()], { mode: "normal", useColor: false }));
     expect(output).not.toContain("coverage-gap demotions");

@@ -352,6 +352,33 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
     expect(summary.find((s) => s.issue === "ordinary")?.coverageGap).toBeUndefined();
   });
 
+  test("preserves actionRequired:false on the summary entry (#1359)", async () => {
+    const { deps } = makeDeps();
+    Object.assign(_reviewAuditDeps, deps);
+    const auditor = new ReviewAuditor("run-ar", "/tmp/workdir");
+
+    auditor.recordDecision({
+      reviewer: "adversarial",
+      storyId: "US-004",
+      featureName: "f",
+      parsed: true,
+      passed: true,
+      blockingThreshold: "error",
+      result: { passed: true, findings: [] },
+      advisoryFindings: [
+        { severity: "warning", category: "out-of-scope", file: "lib/s.ts", issue: "compliance", actionRequired: false },
+        { severity: "warning", category: "correctness", file: "lib/s.ts", issue: "ordinary" },
+      ],
+    });
+    await auditor.flush();
+    Object.assign(_reviewAuditDeps, saved);
+
+    const summary = auditor.getAdvisoryFindings();
+    // Excluded from the fix pass, still present in the report.
+    expect(summary.find((s) => s.issue === "compliance")?.actionRequired).toBe(false);
+    expect(summary.find((s) => s.issue === "ordinary")?.actionRequired).toBeUndefined();
+  });
+
   test("decisions with no advisory findings contribute nothing", async () => {
     const { deps } = makeDeps();
     Object.assign(_reviewAuditDeps, deps);

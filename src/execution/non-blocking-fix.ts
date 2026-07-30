@@ -31,6 +31,26 @@ const REVIEW_PHASE_KINDS = ["semantic-review", "adversarial-review"] as const sa
  */
 const MAX_LOGGED_REGRESSED_KEYS = 10;
 
+/**
+ * Advisory findings that actually ask for a change.
+ *
+ * NBF seeds from the adversarial advisory bucket and used to apply no filter at all, so
+ * a finding whose own suggestion read "No action needed; this is the intended behaviour"
+ * still opened a pass: on otel-telemetry-expansion US-004 that dispatched a paid
+ * implementer session against a compliance confirmation, broke a test, and was rolled
+ * back for zero net change (#1359).
+ *
+ * Absent `actionRequired` counts as actionable — every producer predating #1359 omits
+ * it, and defaulting the other way would silence the whole feature.
+ *
+ * Applied at the SEEDING site only, never in the reviewer's own output: the end-of-run
+ * advisory report reads the op's `advisoryFindings` (`review-audit.ts`), and filtering
+ * there would delete the very visibility that made this diagnosable.
+ */
+export function actionableAdvisoryFindings(findings: readonly Finding[]): readonly Finding[] {
+  return findings.filter((f) => f.actionRequired !== false);
+}
+
 /** Run the pass only when enabled and there is at least one advisory finding. */
 export function shouldRunNonBlockingFix(cfg: NonBlockingFixConfig | undefined, advisoryCount: number): boolean {
   return cfg?.enabled === true && advisoryCount > 0;

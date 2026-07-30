@@ -1,10 +1,12 @@
 // test/unit/execution/non-blocking-fix.test.ts
 import { describe, expect, test } from "bun:test";
 import {
+  actionableAdvisoryFindings,
   nonBlockingExtraPhases,
   runNonBlockingFix,
   shouldRunNonBlockingFix,
 } from "../../../src/execution/non-blocking-fix";
+import type { Finding } from "@/findings";
 import { withInfoSpy } from "@test/helpers";
 
 describe("non-blocking-fix gating", () => {
@@ -535,5 +537,38 @@ describe("runNonBlockingFix sourceDiffCap", () => {
     );
     expect(res).toEqual({ ran: true, kept: true, restored: false });
     expect(rolled).toBe("");
+  });
+});
+
+// ─── actionability filter (#1359) ─────────────────────────────────────────────
+
+describe("actionableAdvisoryFindings", () => {
+  const advisory = (overrides: Partial<Finding> = {}): Finding => ({
+    source: "adversarial-review",
+    severity: "warning",
+    category: "input",
+    message: "m",
+    ...overrides,
+  });
+
+  test("drops findings the reviewer marked as requiring no action", () => {
+    const kept = actionableAdvisoryFindings([
+      advisory({ message: "real issue" }),
+      advisory({ message: "compliance confirmation", actionRequired: false }),
+    ]);
+    expect(kept.map((f) => f.message)).toEqual(["real issue"]);
+  });
+
+  test("keeps findings that omit actionRequired — absent means actionable", () => {
+    // Every producer predating #1359 omits the field; none of them may be dropped.
+    expect(actionableAdvisoryFindings([advisory(), advisory({ actionRequired: true })])).toHaveLength(2);
+  });
+
+  test("an all-compliance advisory bucket closes the NBF gate", () => {
+    // The observed US-004 case: one advisory finding, and it asked for nothing.
+    // NBF must not open a paid pass for it.
+    const cfg = { enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true } as const;
+    const actionable = actionableAdvisoryFindings([advisory({ actionRequired: false })]);
+    expect(shouldRunNonBlockingFix(cfg, actionable.length)).toBe(false);
   });
 });

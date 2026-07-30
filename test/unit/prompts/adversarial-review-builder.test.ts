@@ -169,6 +169,16 @@ describe("AdversarialReviewPromptBuilder — placeholder-test carve-out (#2) and
     expect(result).toContain("No rubber-stamping");
   });
 
+  test("forbids reporting compliance as a finding, and offers actionRequired instead (#1359)", () => {
+    // The reviewer emitted "correct per Out of Scope #10 … No action needed" AS a
+    // finding, and nbf then paid an implementer to fix it. The prompt is the primary
+    // guard; the actionability filter is the backstop.
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF });
+    expect(result).toContain("Do not report compliance as a finding");
+    expect(result).toContain('"actionRequired"');
+    expect(result).toContain("actionRequired: false");
+  });
+
   test("demandInspection re-prompt names inspectedFiles and demands tool use", () => {
     const reprompt = AdversarialReviewPromptBuilder.demandInspection();
     expect(reprompt).toContain("inspectedFiles");

@@ -50,6 +50,23 @@ const WARNING_ONLY_RESPONSE = JSON.stringify({
   ],
 });
 
+// #1359 — the observed US-004 shape: an advisory finding that asks for nothing.
+const COMPLIANCE_RESPONSE = JSON.stringify({
+  passed: true,
+  findings: [
+    {
+      severity: "warning",
+      category: "out-of-scope",
+      file: "src/foo.ts",
+      line: 1,
+      issue: "Removed quarantined:0 — correct per Out of Scope #10 which mandates omission",
+      suggestion: "No action needed; this is the intended behaviour.",
+      actionRequired: false,
+      verifiedBy: { file: "src/foo.ts", observed: "warning stub" },
+    },
+  ],
+});
+
 const ERROR_ONLY_RESPONSE = JSON.stringify({
   passed: false,
   findings: [
@@ -141,6 +158,17 @@ describe("runAdversarialReview — blockingThreshold defaults to 'error'", () =>
     expect(!result.findings || result.findings.length === 0).toBe(true);
     expect(result.advisoryFindings).toBeDefined();
     expect(result.advisoryFindings![0].message).toBe("A warning");
+  });
+
+  // #1359 — the actionability filter reads `actionRequired` off the wire Finding, so it
+  // has to survive the whole reviewer pipeline (parse → substantiate → recurrence split
+  // → projection), not just the projection helper the unit test covers.
+  test("actionRequired: false survives the reviewer pipeline onto the advisory finding", async () => {
+    const agentManager = makeAgentManager(COMPLIANCE_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+    const result = await runAdversarialReview({ workdir: "/tmp/wd", storyGitRef: "abc123", story: STORY, adversarialConfig: BASE_CFG, agentManager, runtime });
+
+    expect(result.advisoryFindings?.[0]?.actionRequired).toBe(false);
   });
 
   test("error finding blocks by default", async () => {
