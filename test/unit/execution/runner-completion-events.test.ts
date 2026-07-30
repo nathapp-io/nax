@@ -269,3 +269,119 @@ describe("runCompletionPhase — AC6: acceptance completed event details.failedA
     expect(details?.failedACCount).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// AC7: details.fixStoriesCreated equals the number of fix stories the
+// acceptance loop created.
+// ---------------------------------------------------------------------------
+
+describe("runCompletionPhase — AC7: acceptance completed event details.fixStoriesCreated", () => {
+  test("AC7: details.fixStoriesCreated is 0 when the acceptance loop succeeds", async () => {
+    const completed: PostRunPhaseCompletedEvent[] = [];
+    pipelineEventBus.on("postrun:phase:completed", (e) => {
+      if (e.phase === "acceptance") completed.push(e);
+    });
+
+    const prd = makePRD(["US-001"]);
+
+    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
+      success: true,
+      prd,
+      totalCost: 0,
+      iterations: 1,
+      storiesCompleted: 1,
+      prdDirty: false,
+      retries: 0,
+    }));
+
+    await runCompletionPhase(makeOpts(prd, makeStatusWriter(), `${WORKDIR}/.nax/features/test-feature`));
+
+    const event = completed.find((e) => e.phase === "acceptance");
+    expect(event).toBeDefined();
+    const details = event?.details as Record<string, unknown> | undefined;
+    expect(details?.fixStoriesCreated).toBe(0);
+  });
+
+  test("AC7: details.fixStoriesCreated is 0 when the acceptance loop fails (in-place rectification never appends fix stories)", async () => {
+    const completed: PostRunPhaseCompletedEvent[] = [];
+    pipelineEventBus.on("postrun:phase:completed", (e) => {
+      if (e.phase === "acceptance") completed.push(e);
+    });
+
+    const prd = makePRD(["US-001"]);
+
+    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
+      success: false,
+      prd,
+      totalCost: 0,
+      iterations: 3,
+      storiesCompleted: 1,
+      prdDirty: false,
+      retries: 3,
+      failedACs: ["AC-1"],
+    }));
+
+    await runCompletionPhase(makeOpts(prd, makeStatusWriter(), `${WORKDIR}/.nax/features/test-feature`));
+
+    const event = completed.find((e) => e.phase === "acceptance");
+    expect(event).toBeDefined();
+    const details = event?.details as Record<string, unknown> | undefined;
+    expect(details?.fixStoriesCreated).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC11: the acceptance completed event carries durationMs measured from the
+// matching postrun:phase:started event.
+// ---------------------------------------------------------------------------
+
+describe("runCompletionPhase — AC11: acceptance completed event durationMs", () => {
+  test("AC11: details includes a non-negative durationMs on success", async () => {
+    const completed: PostRunPhaseCompletedEvent[] = [];
+    pipelineEventBus.on("postrun:phase:completed", (e) => {
+      if (e.phase === "acceptance") completed.push(e);
+    });
+
+    const prd = makePRD(["US-001"]);
+    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
+      success: true,
+      prd,
+      totalCost: 0,
+      iterations: 1,
+      storiesCompleted: 1,
+      prdDirty: false,
+      retries: 0,
+    }));
+
+    await runCompletionPhase(makeOpts(prd, makeStatusWriter(), `${WORKDIR}/.nax/features/test-feature`));
+
+    const event = completed.find((e) => e.phase === "acceptance");
+    expect(typeof event?.durationMs).toBe("number");
+    expect(event?.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  test("AC11: details includes a non-negative durationMs on failure", async () => {
+    const completed: PostRunPhaseCompletedEvent[] = [];
+    pipelineEventBus.on("postrun:phase:completed", (e) => {
+      if (e.phase === "acceptance") completed.push(e);
+    });
+
+    const prd = makePRD(["US-001"]);
+    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
+      success: false,
+      prd,
+      totalCost: 0,
+      iterations: 2,
+      storiesCompleted: 1,
+      prdDirty: false,
+      retries: 2,
+      failedACs: ["AC-1"],
+    }));
+
+    await runCompletionPhase(makeOpts(prd, makeStatusWriter(), `${WORKDIR}/.nax/features/test-feature`));
+
+    const event = completed.find((e) => e.phase === "acceptance");
+    expect(Number.isFinite(event?.durationMs)).toBe(true);
+    expect(event?.durationMs).toBeGreaterThanOrEqual(0);
+  });
+});

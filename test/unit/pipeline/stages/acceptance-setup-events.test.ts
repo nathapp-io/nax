@@ -323,3 +323,36 @@ describe("acceptance-setup events — AC4: completed emitted when stage skips", 
     expect(typeof completed[0].passed).toBe("boolean");
   });
 });
+
+// ---------------------------------------------------------------------------
+// AC11: every postrun:phase:completed event carries durationMs measured from
+// the matching postrun:phase:started event.
+// ---------------------------------------------------------------------------
+
+describe("acceptance-setup events — AC11: durationMs on completed event", () => {
+  test("AC11: completed event carries a non-negative durationMs on the RED-gate-fails path", async () => {
+    const completed: PostRunPhaseCompletedEvent[] = [];
+    pipelineEventBus.on("postrun:phase:completed", (e) => {
+      if (e.phase === "acceptance-setup") completed.push(e);
+    });
+
+    wireDeps(1);
+    await acceptanceSetupStage.execute(makeCtx());
+
+    expect(typeof completed[0].durationMs).toBe("number");
+    expect(completed[0].durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  test("AC11 boundary: durationMs is a finite number on the skip path", async () => {
+    const completed: PostRunPhaseCompletedEvent[] = [];
+    pipelineEventBus.on("postrun:phase:completed", (e) => {
+      if (e.phase === "acceptance-setup") completed.push(e);
+    });
+
+    wireDeps(0);
+    await acceptanceSetupStage.execute(makeCtx());
+
+    expect(Number.isFinite(completed[0].durationMs)).toBe(true);
+    expect(completed[0].durationMs).toBeGreaterThanOrEqual(0);
+  });
+});

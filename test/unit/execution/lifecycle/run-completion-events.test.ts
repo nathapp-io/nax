@@ -179,6 +179,48 @@ describe("handleRunCompletion — AC7: regression completed event details.mode",
 });
 
 // ---------------------------------------------------------------------------
+// AC9: regression completed event details.failedTests equals the number of
+// failing tests the regression gate reported
+// ---------------------------------------------------------------------------
+
+describe("handleRunCompletion — AC9: regression completed event details.failedTests", () => {
+  test("AC9: details.failedTests is 0 when the regression gate succeeds", async () => {
+    const completed: PostRunPhaseCompletedEvent[] = [];
+    pipelineEventBus.on("postrun:phase:completed", (e) => { completed.push(e); });
+
+    const prd = makePRD(["US-001"]);
+    await handleRunCompletion(makeOpts(makeConfig("deferred"), prd));
+
+    const event = completed.find((e) => e.phase === "regression");
+    expect(event).toBeDefined();
+    const details = event?.details as Record<string, unknown> | undefined;
+    expect(details?.failedTests).toBe(0);
+  });
+
+  test("AC9: details.failedTests equals the failing-test count reported by the regression gate", async () => {
+    const completed: PostRunPhaseCompletedEvent[] = [];
+    pipelineEventBus.on("postrun:phase:completed", (e) => { completed.push(e); });
+
+    _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => ({
+      success: false,
+      failedTests: 4,
+      failedTestFiles: ["a.test.ts", "b.test.ts"],
+      passedTests: 10,
+      rectificationAttempts: 1,
+      affectedStories: ["US-001"],
+    }));
+
+    const prd = makePRD(["US-001"]);
+    await handleRunCompletion(makeOpts(makeConfig("deferred"), prd));
+
+    const event = completed.find((e) => e.phase === "regression");
+    expect(event).toBeDefined();
+    const details = event?.details as Record<string, unknown> | undefined;
+    expect(details?.failedTests).toBe(4);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // AC8: deferred review completed event details.findingCount equals produced finding count
 // ---------------------------------------------------------------------------
 
