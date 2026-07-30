@@ -95,7 +95,10 @@ REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses,
 Rules:
 - Do NOT make any edits yourself; the test-writer will fulfill.
 - Do NOT also emit \`UNRESOLVED:\` in the same turn — this declaration IS the handoff.
-- FILES must list real test files. Each path must exist and be a test file.`;
+- FILES must list real test files. Each path must exist and be a test file.
+- Write each path exactly as it appears in the findings above (repository-relative).
+  Paths that resolve under neither the repository root nor the package directory are
+  rejected and the handoff is dropped — the findings then have no owner.`;
 
 // ─── Escape hatch builder ─────────────────────────────────────────────────────
 
