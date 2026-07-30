@@ -92,6 +92,14 @@ describe("adversarialReviewOp.verify() — short-circuits (AC13)", () => {
     const result = await adversarialReviewOp.verify!(parsed, BASE_INPUT, ctx);
     expect(result).toBe(parsed);
   });
+
+  test("AC8: verify() persists blockingThreshold from input onto output (empty-findings path)", async () => {
+    const ctx = makeVerifyCtx();
+    const input: AdversarialReviewInput = { ...BASE_INPUT, blockingThreshold: "warning" };
+    const parsed = makeOutput({ passed: true, findings: [], normalizedFindings: [] });
+    const result = await adversarialReviewOp.verify!(parsed, input, ctx);
+    expect((result as AdversarialReviewOutput & Record<string, unknown>).blockingThreshold).toBe("warning");
+  });
 });
 
 describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", () => {

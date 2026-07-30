@@ -106,6 +106,12 @@ export interface AdversarialReviewOutput {
   /** Raw AdversarialLLMFinding[]. Consumed by `src/review/adversarial.ts`. */
   findings: unknown[];
   /**
+   * The resolved blockingThreshold used during verify(). Persisted here so
+   * buildPhaseDetails can compute blockingCount at the configured threshold
+   * rather than always defaulting to "error".
+   */
+  blockingThreshold?: string;
+  /**
    * Source-tagged Finding[] (`source: "adversarial-review"`), used by the rectification
    * cycle's `extractPhaseFindings` → strategy `appliesTo` routing. Populated after
    * `verify()` runs the filter pipeline; empty for fail-open / looksLikeFail outcomes.

@@ -64,6 +64,11 @@ export interface CallContext {
     readonly sessionModel: "single-session" | "three-session";
     readonly tier: string;
   };
+  /** Populated per-strategy in the fix cycle loop so runPhase can emit kind:"fix" details. */
+  readonly fixStrategy?: {
+    readonly name: string;
+    readonly findingsBefore: number;
+  };
 }
 
 interface OperationBase<I, O, C> {
