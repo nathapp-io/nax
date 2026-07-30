@@ -356,3 +356,27 @@ describe("acceptance-setup events — AC11: durationMs on completed event", () =
     expect(completed[0].durationMs).toBeGreaterThanOrEqual(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Exception safety: a thrown error between started and completed must still
+// resolve the phase (post-impl-review quality finding) — otherwise the TUI
+// shows "running" forever and reporters never see the phase resolve.
+// ---------------------------------------------------------------------------
+
+describe("acceptance-setup events — exception safety", () => {
+  test("a thrown error mid-setup still emits postrun:phase:completed with passed:false, then rethrows", async () => {
+    const completed: PostRunPhaseCompletedEvent[] = [];
+    pipelineEventBus.on("postrun:phase:completed", (e) => {
+      if (e.phase === "acceptance-setup") completed.push(e);
+    });
+
+    wireDeps(1);
+    _acceptanceSetupDeps.writeMeta = async () => {
+      throw new Error("disk full");
+    };
+
+    await expect(acceptanceSetupStage.execute(makeCtx())).rejects.toThrow("disk full");
+    expect(completed).toHaveLength(1);
+    expect(completed[0].passed).toBe(false);
+  });
+});

@@ -143,30 +143,44 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     const regressionStartTime = Date.now();
     pipelineEventBus.emit({ type: "postrun:phase:started", phase: "regression" });
 
-    const regressionResult = await _runCompletionDeps.runDeferredRegression({
-      config,
-      prd,
-      workdir,
-      runtime: options.runtime,
-      // Shared with the per-story full-suite gate (via the story-orchestrator's
-      // triage seam) so a test quarantined earlier in the run is relabeled here
-      // without a second probe.
-      quarantineMemo: options.runtime.quarantineMemo,
-      // Per-story gate snapshots enable causal blame attribution (transition
-      // pass -> fail) instead of the git-recency heuristic. Sequential runs
-      // only: in parallel mode story completion order (`completedAt`) is not
-      // causal and each story runs in an isolated worktree, so a per-story
-      // snapshot does not reflect merged-repo state — fall back to the git
-      // heuristic there by withholding snapshots.
-      storyMetrics:
-        options.isSequential === false
-          ? undefined
-          : allStoryMetrics.map((m) => ({
-              storyId: m.storyId,
-              completedAt: m.completedAt,
-              failingTestFiles: m.failingTestFiles,
-            })),
-    });
+    let regressionResult: Awaited<ReturnType<typeof _runCompletionDeps.runDeferredRegression>>;
+    try {
+      regressionResult = await _runCompletionDeps.runDeferredRegression({
+        config,
+        prd,
+        workdir,
+        runtime: options.runtime,
+        // Shared with the per-story full-suite gate (via the story-orchestrator's
+        // triage seam) so a test quarantined earlier in the run is relabeled here
+        // without a second probe.
+        quarantineMemo: options.runtime.quarantineMemo,
+        // Per-story gate snapshots enable causal blame attribution (transition
+        // pass -> fail) instead of the git-recency heuristic. Sequential runs
+        // only: in parallel mode story completion order (`completedAt`) is not
+        // causal and each story runs in an isolated worktree, so a per-story
+        // snapshot does not reflect merged-repo state — fall back to the git
+        // heuristic there by withholding snapshots.
+        storyMetrics:
+          options.isSequential === false
+            ? undefined
+            : allStoryMetrics.map((m) => ({
+                storyId: m.storyId,
+                completedAt: m.completedAt,
+                failingTestFiles: m.failingTestFiles,
+              })),
+      });
+    } catch (err) {
+      // A thrown error here would otherwise leave "regression" permanently
+      // "running" in the TUI/status.json — no postrun:phase:completed ever
+      // fires (post-impl-review quality finding).
+      pipelineEventBus.emit({
+        type: "postrun:phase:completed",
+        phase: "regression",
+        passed: false,
+        durationMs: Date.now() - regressionStartTime,
+      });
+      throw err;
+    }
 
     const lastRunAt = new Date().toISOString();
 

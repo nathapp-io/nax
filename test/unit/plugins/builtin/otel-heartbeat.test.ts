@@ -97,6 +97,40 @@ describe("startHeartbeat", () => {
     expect(ticks[0]?.phaseElapsedMs).toBe(42);
     expect(ticks[0]?.costUsd).toBe(1.23);
   });
+
+  test("a synchronously throwing getSnapshot does not stop subsequent ticks", async () => {
+    let calls = 0;
+    track(
+      startHeartbeat({
+        intervalMs: 30,
+        getSnapshot: () => {
+          calls++;
+          throw new Error("boom");
+        },
+        onTick: () => {},
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(calls).toBeGreaterThanOrEqual(2);
+  });
+
+  test("an onTick that returns a rejected promise does not stop subsequent ticks", async () => {
+    let calls = 0;
+    track(
+      startHeartbeat({
+        intervalMs: 30,
+        getSnapshot: () => snapshot(),
+        onTick: async () => {
+          calls++;
+          throw new Error("boom");
+        },
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(calls).toBeGreaterThanOrEqual(2);
+  });
 });
 
 describe("buildHeartbeatMetricsPayload", () => {

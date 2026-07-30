@@ -1,4 +1,7 @@
+import { getSafeLogger } from "@/logger";
 import { type KeyValue, attr } from "./otlp";
+
+const STAGE = "otel-reporter-heartbeat";
 
 /** Attributes carried by every heartbeat gauge (US-008). */
 export interface HeartbeatAttributes {
@@ -49,7 +52,20 @@ export function startHeartbeat(opts: HeartbeatOptions): Heartbeat {
 
   const armTimer = (): void => {
     timer = setTimeout(() => {
-      void onTick(getSnapshot());
+      // Never let a telemetry tick escalate into a fatal unhandled
+      // rejection/exception (src/execution/crash-signals.ts aborts the run
+      // on either) — mirrors batch-queue.ts's own defensive try/catch.
+      try {
+        Promise.resolve(onTick(getSnapshot())).catch((err) =>
+          getSafeLogger()?.warn(STAGE, "Heartbeat tick failed", {
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      } catch (err) {
+        getSafeLogger()?.warn(STAGE, "Heartbeat tick failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
       if (!stopped) armTimer();
     }, intervalMs);
   };

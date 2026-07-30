@@ -178,28 +178,42 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
           )
         : undefined;
 
-      const acceptanceResult = await _runnerCompletionDeps.runAcceptanceLoop({
-        config: options.config,
-        prd: options.prd,
-        prdPath: options.prdPath,
-        workdir: options.workdir,
-        featureDir: options.featureDir,
-        hooks: options.hooks,
-        feature: options.feature,
-        totalCost: options.totalCost,
-        iterations: options.iterations,
-        storiesCompleted: options.storiesCompleted,
-        allStoryMetrics: options.allStoryMetrics,
-        pluginRegistry: options.pluginRegistry,
-        eventEmitter: options.eventEmitter,
-        statusWriter: options.statusWriter,
-        agentGetFn: options.agentGetFn,
-        agentManager: options.agentManager,
-        sessionManager: options.sessionManager,
-        runtime: options.runtime,
-        abortSignal: options.abortSignal,
-        acceptanceTestPaths,
-      });
+      let acceptanceResult: Awaited<ReturnType<typeof _runnerCompletionDeps.runAcceptanceLoop>>;
+      try {
+        acceptanceResult = await _runnerCompletionDeps.runAcceptanceLoop({
+          config: options.config,
+          prd: options.prd,
+          prdPath: options.prdPath,
+          workdir: options.workdir,
+          featureDir: options.featureDir,
+          hooks: options.hooks,
+          feature: options.feature,
+          totalCost: options.totalCost,
+          iterations: options.iterations,
+          storiesCompleted: options.storiesCompleted,
+          allStoryMetrics: options.allStoryMetrics,
+          pluginRegistry: options.pluginRegistry,
+          eventEmitter: options.eventEmitter,
+          statusWriter: options.statusWriter,
+          agentGetFn: options.agentGetFn,
+          agentManager: options.agentManager,
+          sessionManager: options.sessionManager,
+          runtime: options.runtime,
+          abortSignal: options.abortSignal,
+          acceptanceTestPaths,
+        });
+      } catch (err) {
+        // A thrown error here would otherwise leave "acceptance" permanently
+        // "running" in the TUI/status.json — no postrun:phase:completed ever
+        // fires (post-impl-review quality finding).
+        pipelineEventBus.emit({
+          type: "postrun:phase:completed",
+          phase: "acceptance",
+          passed: false,
+          durationMs: Date.now() - acceptanceStartTime,
+        });
+        throw err;
+      }
 
       const lastRunAt = new Date().toISOString();
       const acceptanceDurationMs = Date.now() - acceptanceStartTime;

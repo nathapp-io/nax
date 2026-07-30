@@ -189,313 +189,331 @@ export const acceptanceSetupStage: PipelineStage = {
     const phaseStartTime = Date.now();
     pipelineEventBus.emit({ type: "postrun:phase:started", phase: "acceptance-setup" });
 
-    const language = ctx.config.project?.language;
-    const testPathConfig = ctx.config.acceptance.testPath;
-    const metaPath = path.join(ctx.featureDir, "acceptance-meta.json");
-
-    // All criteria from original stories only — fix stories (US-FIX-*) and decomposed
-    // parent stories are excluded. Fix stories are excluded so the fingerprint stays
-    // stable when fix stories are added during the acceptance loop. Decomposed stories
-    // are excluded because their ACs are fully covered by their children, and including
-    // them would inflate the fingerprint with duplicate criteria.
-    const allCriteria: string[] = ctx.prd.userStories
-      .filter((s) => !s.id.startsWith("US-FIX-") && s.status !== "decomposed")
-      .flatMap((s) => s.acceptanceCriteria);
-
-    // US-001: Group non-fix, non-decomposed stories by story.workdir — one test file per package.
-    // groupStoriesByPackage handles workdir grouping, path computation, and root fallback.
-    const featureName = ctx.prd.feature ?? (ctx.prd as unknown as Record<string, string>).featureName;
-    const groups = await groupStoriesByPackage(ctx.prd, ctx.workdir, featureName, testPathConfig, language);
-    const nonFixStories = groups.flatMap((g) => g.stories);
-
-    let totalCriteria = 0;
-    let testableCount = 0;
-
-    // P2-A: Staleness detection — regenerate if fingerprint changed or meta missing.
-    // Fingerprint is the source of truth for AC stability; file existence is secondary.
-    // If fingerprint matches the stored meta, reuse existing tests even if the file
-    // was lost (e.g., after a crash). If fingerprint mismatches, regenerate with .bak backup.
-    const fingerprint = computeACFingerprint(allCriteria);
-    const meta = await _acceptanceSetupDeps.readMeta(metaPath);
-    getSafeLogger()?.debug("acceptance-setup", "Fingerprint check", {
-      currentFingerprint: fingerprint,
-      storedFingerprint: meta?.acFingerprint ?? "none",
-      match: meta?.acFingerprint === fingerprint,
-    });
-
-    let shouldGenerate = false;
-    let regenerated = false;
-    if (!meta || meta.acFingerprint !== fingerprint) {
-      if (!meta) {
-        getSafeLogger()?.info("acceptance-setup", "No acceptance meta — generating acceptance tests");
-      } else {
-        getSafeLogger()?.info("acceptance-setup", "ACs changed — regenerating acceptance tests", {
-          reason: "fingerprint mismatch",
-          currentFingerprint: fingerprint,
-          storedFingerprint: meta.acFingerprint,
-        });
-      }
-      // Back up and delete all existing per-package test files
-      for (const { testPath } of groups) {
-        if (await _acceptanceSetupDeps.fileExists(testPath)) {
-          await _acceptanceSetupDeps.copyFile(testPath, `${testPath}.bak`);
-          await _acceptanceSetupDeps.deleteFile(testPath);
-        }
-      }
-      // Clear semantic verdicts so stale results don't influence the acceptance loop
-      await _acceptanceSetupDeps.deleteSemanticVerdicts(ctx.featureDir);
-      shouldGenerate = true;
-      regenerated = true;
-    } else {
-      // Fingerprint matches — reuse existing tests. If the file is missing (e.g.,
-      // overwritten by TDD cycle then deleted in a crash), the existing tests are
-      // still valid: skip generation and let the RED gate decide whether to run.
-      getSafeLogger()?.info("acceptance-setup", "Reusing existing acceptance tests (fingerprint match)");
-    }
-
-    if (shouldGenerate) {
-      totalCriteria = allCriteria.length;
-
-      // Refine criteria per-story via callOp (preserves storyId association for per-group filtering)
-      let allRefinedCriteria: RefinedCriterion[];
-
-      if (ctx.config.acceptance.refinement) {
-        const maxConcurrency = ctx.config.acceptance.refinementConcurrency ?? 3;
-        const results: RefinedCriterion[][] = new Array(nonFixStories.length);
-        const executing = new Set<Promise<void>>();
-
-        for (let i = 0; i < nonFixStories.length; i++) {
-          const story = nonFixStories[i];
-          const task = (
-            _acceptanceSetupDeps.callOp(
-              ctx,
-              ctx.workdir,
-              acceptanceRefineOp,
-              {
-                criteria: story.acceptanceCriteria,
-                codebaseContext: "",
-                storyId: story.id,
-                testStrategy: ctx.config.acceptance.testStrategy,
-                testFramework: ctx.config.acceptance.testFramework,
-                storyTitle: story.title,
-                storyDescription: story.description,
-              },
-              story.id,
-            ) as Promise<RefinedCriterion[]>
-          )
-            .then((refined) => {
-              results[i] = refined;
-            })
-            .catch(() => {
-              getSafeLogger()?.warn(
-                "acceptance-setup",
-                "AC refinement failed after retries — using unrefined criteria",
-                {
-                  storyId: story.id,
-                },
-              );
-              results[i] = story.acceptanceCriteria.map((c) => ({
-                original: c,
-                refined: c,
-                testable: true,
-                storyId: story.id,
-              }));
-            })
-            .finally(() => {
-              executing.delete(task);
-            });
-          executing.add(task);
-
-          if (executing.size >= maxConcurrency) {
-            await Promise.race(executing);
-          }
-        }
-
-        await Promise.all(executing);
-        allRefinedCriteria = results.flat();
-      } else {
-        allRefinedCriteria = nonFixStories.flatMap((story) =>
-          story.acceptanceCriteria.map((c) => ({
-            original: c,
-            refined: c,
-            testable: true,
-            storyId: story.id,
-          })),
-        );
-      }
-
-      testableCount = allRefinedCriteria.filter((r) => r.testable).length;
-
-      // Generate one acceptance test file per workdir group via callOp
-      for (const group of groups) {
-        const { testPath, packageDir } = group;
-
-        // Filter refined criteria to this group's stories
-        const groupStoryIds = new Set(group.stories.map((s) => s.id));
-        const groupRefined = allRefinedCriteria.filter((r) => groupStoryIds.has(r.storyId));
-
-        const criteriaList = groupRefined.map((c, i) => `AC-${i + 1}: ${c.refined}`).join("\n");
-        const frameworkOverrideLine = ctx.config.acceptance.testFramework
-          ? `\n[FRAMEWORK OVERRIDE: Use ${ctx.config.acceptance.testFramework} as the test framework regardless of what you detect.]`
-          : "";
-
-        const groupStoryId = group.stories[0]?.id;
-        const genResult = (await _acceptanceSetupDeps.callOp(
-          ctx,
-          packageDir,
-          acceptanceGenerateOp,
-          {
-            featureName: featureName ?? "",
-            criteriaList,
-            frameworkOverrideLine,
-            targetTestFilePath: testPath,
-            ...("implementationContext" in ctx && ctx.implementationContext
-              ? { implementationContext: ctx.implementationContext as Array<{ path: string; content: string }> }
-              : {}),
-          },
-          groupStoryId,
-        )) as { testCode: string | null };
-
-        // verify+recover already ran inside callOp (ADR-020 Wave 3).
-        const testCode = genResult.testCode;
-        if (testCode) {
-          await _acceptanceSetupDeps.writeFile(testPath, testCode);
-        } else {
-          // Stage decision: op exhausted recovery — fall back to skeleton.
-          const skeletonCriteria: AcceptanceCriterion[] = groupRefined.map((c, i) => ({
-            id: `AC-${i + 1}`,
-            text: c.refined,
-            lineNumber: i + 1,
-          }));
-          const skeletonCode = generateSkeletonTests(
-            featureName,
-            skeletonCriteria,
-            ctx.config.acceptance.testFramework,
-            group.language,
-          );
-          await _acceptanceSetupDeps.writeFile(testPath, skeletonCode);
-          getSafeLogger()?.warn("acceptance-setup", "agent did not produce test content; using skeleton", {
-            storyId: groupStoryId,
-            testPath,
-          });
-        }
-      }
-
-      // Write acceptance-refined.json with the final criteria mapping (used by acceptance loop)
-      if (allRefinedCriteria.length > 0) {
-        const refinedJsonContent = JSON.stringify(
-          allRefinedCriteria.map((c, i) => ({
-            acId: `AC-${i + 1}`,
-            original: c.original,
-            refined: c.refined,
-            testable: c.testable,
-            storyId: c.storyId,
-          })),
-          null,
-          2,
-        );
-        await _acceptanceSetupDeps.writeFile(path.join(ctx.featureDir, "acceptance-refined.json"), refinedJsonContent);
-      }
-
-      // P2-B: Store acceptance metadata (centralized in featureDir)
-      const fingerprint = computeACFingerprint(allCriteria);
-      await _acceptanceSetupDeps.writeMeta(metaPath, {
-        generatedAt: new Date().toISOString(),
-        acFingerprint: fingerprint,
-        storyCount: ctx.prd.userStories.length,
-        acCount: totalCriteria,
-        generator: "nax",
+    try {
+      return await runAcceptanceSetup(ctx, ctx.featureDir, phaseStartTime);
+    } catch (err) {
+      // Every early-return path below emits its own postrun:phase:completed —
+      // this catch only covers a thrown error between started and completed,
+      // so the phase never resolves as permanently "running" (issue found in
+      // post-impl-review quality pass).
+      pipelineEventBus.emit({
+        type: "postrun:phase:completed",
+        phase: "acceptance-setup",
+        passed: false,
+        durationMs: Date.now() - phaseStartTime,
       });
+      throw err;
+    }
+  },
+};
 
-      // Commit the generated acceptance test file(s) and meta before any story's
-      // storyGitRef is captured. Without this commit, the acceptance test file lands
-      // in the working tree as untracked, the implementer agent may stage it with
-      // "git add .", and it then appears in git diff storyGitRef..HEAD — causing the
-      // adversarial reviewer to flag future-story ACs as abandonment findings.
-      await _acceptanceSetupDeps.autoCommitIfDirty(
-        ctx.workdir,
-        "acceptance-setup",
-        "pre-run",
-        ctx.prd.feature ?? "feature",
+async function runAcceptanceSetup(
+  ctx: PipelineContext,
+  featureDir: string,
+  phaseStartTime: number,
+): Promise<StageResult> {
+  const language = ctx.config.project?.language;
+  const testPathConfig = ctx.config.acceptance.testPath;
+  const metaPath = path.join(featureDir, "acceptance-meta.json");
+
+  // All criteria from original stories only — fix stories (US-FIX-*) and decomposed
+  // parent stories are excluded. Fix stories are excluded so the fingerprint stays
+  // stable when fix stories are added during the acceptance loop. Decomposed stories
+  // are excluded because their ACs are fully covered by their children, and including
+  // them would inflate the fingerprint with duplicate criteria.
+  const allCriteria: string[] = ctx.prd.userStories
+    .filter((s) => !s.id.startsWith("US-FIX-") && s.status !== "decomposed")
+    .flatMap((s) => s.acceptanceCriteria);
+
+  // US-001: Group non-fix, non-decomposed stories by story.workdir — one test file per package.
+  // groupStoriesByPackage handles workdir grouping, path computation, and root fallback.
+  const featureName = ctx.prd.feature ?? (ctx.prd as unknown as Record<string, string>).featureName;
+  const groups = await groupStoriesByPackage(ctx.prd, ctx.workdir, featureName, testPathConfig, language);
+  const nonFixStories = groups.flatMap((g) => g.stories);
+
+  let totalCriteria = 0;
+  let testableCount = 0;
+
+  // P2-A: Staleness detection — regenerate if fingerprint changed or meta missing.
+  // Fingerprint is the source of truth for AC stability; file existence is secondary.
+  // If fingerprint matches the stored meta, reuse existing tests even if the file
+  // was lost (e.g., after a crash). If fingerprint mismatches, regenerate with .bak backup.
+  const fingerprint = computeACFingerprint(allCriteria);
+  const meta = await _acceptanceSetupDeps.readMeta(metaPath);
+  getSafeLogger()?.debug("acceptance-setup", "Fingerprint check", {
+    currentFingerprint: fingerprint,
+    storedFingerprint: meta?.acFingerprint ?? "none",
+    match: meta?.acFingerprint === fingerprint,
+  });
+
+  let shouldGenerate = false;
+  let regenerated = false;
+  if (!meta || meta.acFingerprint !== fingerprint) {
+    if (!meta) {
+      getSafeLogger()?.info("acceptance-setup", "No acceptance meta — generating acceptance tests");
+    } else {
+      getSafeLogger()?.info("acceptance-setup", "ACs changed — regenerating acceptance tests", {
+        reason: "fingerprint mismatch",
+        currentFingerprint: fingerprint,
+        storedFingerprint: meta.acFingerprint,
+      });
+    }
+    // Back up and delete all existing per-package test files
+    for (const { testPath } of groups) {
+      if (await _acceptanceSetupDeps.fileExists(testPath)) {
+        await _acceptanceSetupDeps.copyFile(testPath, `${testPath}.bak`);
+        await _acceptanceSetupDeps.deleteFile(testPath);
+      }
+    }
+    // Clear semantic verdicts so stale results don't influence the acceptance loop
+    await _acceptanceSetupDeps.deleteSemanticVerdicts(featureDir);
+    shouldGenerate = true;
+    regenerated = true;
+  } else {
+    // Fingerprint matches — reuse existing tests. If the file is missing (e.g.,
+    // overwritten by TDD cycle then deleted in a crash), the existing tests are
+    // still valid: skip generation and let the RED gate decide whether to run.
+    getSafeLogger()?.info("acceptance-setup", "Reusing existing acceptance tests (fingerprint match)");
+  }
+
+  if (shouldGenerate) {
+    totalCriteria = allCriteria.length;
+
+    // Refine criteria per-story via callOp (preserves storyId association for per-group filtering)
+    let allRefinedCriteria: RefinedCriterion[];
+
+    if (ctx.config.acceptance.refinement) {
+      const maxConcurrency = ctx.config.acceptance.refinementConcurrency ?? 3;
+      const results: RefinedCriterion[][] = new Array(nonFixStories.length);
+      const executing = new Set<Promise<void>>();
+
+      for (let i = 0; i < nonFixStories.length; i++) {
+        const story = nonFixStories[i];
+        const task = (
+          _acceptanceSetupDeps.callOp(
+            ctx,
+            ctx.workdir,
+            acceptanceRefineOp,
+            {
+              criteria: story.acceptanceCriteria,
+              codebaseContext: "",
+              storyId: story.id,
+              testStrategy: ctx.config.acceptance.testStrategy,
+              testFramework: ctx.config.acceptance.testFramework,
+              storyTitle: story.title,
+              storyDescription: story.description,
+            },
+            story.id,
+          ) as Promise<RefinedCriterion[]>
+        )
+          .then((refined) => {
+            results[i] = refined;
+          })
+          .catch(() => {
+            getSafeLogger()?.warn("acceptance-setup", "AC refinement failed after retries — using unrefined criteria", {
+              storyId: story.id,
+            });
+            results[i] = story.acceptanceCriteria.map((c) => ({
+              original: c,
+              refined: c,
+              testable: true,
+              storyId: story.id,
+            }));
+          })
+          .finally(() => {
+            executing.delete(task);
+          });
+        executing.add(task);
+
+        if (executing.size >= maxConcurrency) {
+          await Promise.race(executing);
+        }
+      }
+
+      await Promise.all(executing);
+      allRefinedCriteria = results.flat();
+    } else {
+      allRefinedCriteria = nonFixStories.flatMap((story) =>
+        story.acceptanceCriteria.map((c) => ({
+          original: c,
+          refined: c,
+          testable: true,
+          storyId: story.id,
+        })),
       );
     }
 
-    // Store per-package test paths in context for the acceptance runner (US-002).
-    // Resolve per-package testFramework and commandOverride so the runner uses the
-    // correct test framework for each package in a monorepo.
-    const acceptanceTestPaths: NonNullable<typeof ctx.acceptanceTestPaths> = [];
-    for (const g of groups) {
-      const relativeWorkdir = path.relative(ctx.projectDir, g.packageDir);
-      let groupConfig = ctx.config;
-      if (relativeWorkdir && relativeWorkdir !== ".") {
-        try {
-          groupConfig = await _acceptanceSetupDeps.loadGroupConfig(ctx.projectDir, relativeWorkdir);
-        } catch {
-          groupConfig = ctx.config;
-        }
-      }
-      acceptanceTestPaths.push({
-        testPath: g.testPath,
-        packageDir: g.packageDir,
-        testFramework: groupConfig.project?.testFramework,
-        commandOverride: groupConfig.acceptance.command,
-      });
-    }
-    ctx.acceptanceTestPaths = acceptanceTestPaths;
+    testableCount = allRefinedCriteria.filter((r) => r.testable).length;
 
-    if (ctx.config.acceptance.redGate === false) {
-      ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount: 0 };
-      pipelineEventBus.emit({
-        type: "postrun:phase:completed",
-        phase: "acceptance-setup",
-        passed: true,
-        durationMs: Date.now() - phaseStartTime,
-        details: { totalCriteria, testableCount, redFailCount: 0, regenerated },
-      });
-      return { action: "continue" };
-    }
+    // Generate one acceptance test file per workdir group via callOp
+    for (const group of groups) {
+      const { testPath, packageDir } = group;
 
-    // @design: BUG-084: Use testFramework-aware single-file command (not quality.commands.test which runs full suite)
-    // Run RED gate for each per-package test file from its package directory.
-    // Use per-package testFramework/commandOverride resolved above.
-    let redFailCount = 0;
-    for (const { testPath, packageDir, testFramework, commandOverride } of acceptanceTestPaths) {
-      const runCmd = buildAcceptanceRunCommand(testPath, testFramework, commandOverride, packageDir);
-      getSafeLogger()?.info("acceptance-setup", "Running acceptance RED gate command", {
-        cmd: runCmd.join(" "),
+      // Filter refined criteria to this group's stories
+      const groupStoryIds = new Set(group.stories.map((s) => s.id));
+      const groupRefined = allRefinedCriteria.filter((r) => groupStoryIds.has(r.storyId));
+
+      const criteriaList = groupRefined.map((c, i) => `AC-${i + 1}: ${c.refined}`).join("\n");
+      const frameworkOverrideLine = ctx.config.acceptance.testFramework
+        ? `\n[FRAMEWORK OVERRIDE: Use ${ctx.config.acceptance.testFramework} as the test framework regardless of what you detect.]`
+        : "";
+
+      const groupStoryId = group.stories[0]?.id;
+      const genResult = (await _acceptanceSetupDeps.callOp(
+        ctx,
         packageDir,
-      });
-      const { exitCode } = await _acceptanceSetupDeps.runTest(testPath, packageDir, runCmd);
-      if (exitCode !== 0) {
-        redFailCount++;
+        acceptanceGenerateOp,
+        {
+          featureName: featureName ?? "",
+          criteriaList,
+          frameworkOverrideLine,
+          targetTestFilePath: testPath,
+          ...("implementationContext" in ctx && ctx.implementationContext
+            ? { implementationContext: ctx.implementationContext as Array<{ path: string; content: string }> }
+            : {}),
+        },
+        groupStoryId,
+      )) as { testCode: string | null };
+
+      // verify+recover already ran inside callOp (ADR-020 Wave 3).
+      const testCode = genResult.testCode;
+      if (testCode) {
+        await _acceptanceSetupDeps.writeFile(testPath, testCode);
+      } else {
+        // Stage decision: op exhausted recovery — fall back to skeleton.
+        const skeletonCriteria: AcceptanceCriterion[] = groupRefined.map((c, i) => ({
+          id: `AC-${i + 1}`,
+          text: c.refined,
+          lineNumber: i + 1,
+        }));
+        const skeletonCode = generateSkeletonTests(
+          featureName,
+          skeletonCriteria,
+          ctx.config.acceptance.testFramework,
+          group.language,
+        );
+        await _acceptanceSetupDeps.writeFile(testPath, skeletonCode);
+        getSafeLogger()?.warn("acceptance-setup", "agent did not produce test content; using skeleton", {
+          storyId: groupStoryId,
+          testPath,
+        });
       }
     }
 
-    // All tests passing means they are not testing new behavior — skip acceptance gate
-    if (redFailCount === 0) {
-      ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount: 0 };
-      pipelineEventBus.emit({
-        type: "postrun:phase:completed",
-        phase: "acceptance-setup",
-        passed: true,
-        durationMs: Date.now() - phaseStartTime,
-        details: { totalCriteria, testableCount, redFailCount: 0, regenerated },
-      });
-      return {
-        action: "skip",
-        reason:
-          "[acceptance-setup] Acceptance tests already pass — they are not testing new behavior. Skipping acceptance gate.",
-      };
+    // Write acceptance-refined.json with the final criteria mapping (used by acceptance loop)
+    if (allRefinedCriteria.length > 0) {
+      const refinedJsonContent = JSON.stringify(
+        allRefinedCriteria.map((c, i) => ({
+          acId: `AC-${i + 1}`,
+          original: c.original,
+          refined: c.refined,
+          testable: c.testable,
+          storyId: c.storyId,
+        })),
+        null,
+        2,
+      );
+      await _acceptanceSetupDeps.writeFile(path.join(featureDir, "acceptance-refined.json"), refinedJsonContent);
     }
 
-    ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount };
+    // P2-B: Store acceptance metadata (centralized in featureDir)
+    const fingerprint = computeACFingerprint(allCriteria);
+    await _acceptanceSetupDeps.writeMeta(metaPath, {
+      generatedAt: new Date().toISOString(),
+      acFingerprint: fingerprint,
+      storyCount: ctx.prd.userStories.length,
+      acCount: totalCriteria,
+      generator: "nax",
+    });
+
+    // Commit the generated acceptance test file(s) and meta before any story's
+    // storyGitRef is captured. Without this commit, the acceptance test file lands
+    // in the working tree as untracked, the implementer agent may stage it with
+    // "git add .", and it then appears in git diff storyGitRef..HEAD — causing the
+    // adversarial reviewer to flag future-story ACs as abandonment findings.
+    await _acceptanceSetupDeps.autoCommitIfDirty(
+      ctx.workdir,
+      "acceptance-setup",
+      "pre-run",
+      ctx.prd.feature ?? "feature",
+    );
+  }
+
+  // Store per-package test paths in context for the acceptance runner (US-002).
+  // Resolve per-package testFramework and commandOverride so the runner uses the
+  // correct test framework for each package in a monorepo.
+  const acceptanceTestPaths: NonNullable<typeof ctx.acceptanceTestPaths> = [];
+  for (const g of groups) {
+    const relativeWorkdir = path.relative(ctx.projectDir, g.packageDir);
+    let groupConfig = ctx.config;
+    if (relativeWorkdir && relativeWorkdir !== ".") {
+      try {
+        groupConfig = await _acceptanceSetupDeps.loadGroupConfig(ctx.projectDir, relativeWorkdir);
+      } catch {
+        groupConfig = ctx.config;
+      }
+    }
+    acceptanceTestPaths.push({
+      testPath: g.testPath,
+      packageDir: g.packageDir,
+      testFramework: groupConfig.project?.testFramework,
+      commandOverride: groupConfig.acceptance.command,
+    });
+  }
+  ctx.acceptanceTestPaths = acceptanceTestPaths;
+
+  if (ctx.config.acceptance.redGate === false) {
+    ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount: 0 };
     pipelineEventBus.emit({
       type: "postrun:phase:completed",
       phase: "acceptance-setup",
       passed: true,
       durationMs: Date.now() - phaseStartTime,
-      details: { totalCriteria, testableCount, redFailCount, regenerated },
+      details: { totalCriteria, testableCount, redFailCount: 0, regenerated },
     });
     return { action: "continue" };
-  },
-};
+  }
+
+  // @design: BUG-084: Use testFramework-aware single-file command (not quality.commands.test which runs full suite)
+  // Run RED gate for each per-package test file from its package directory.
+  // Use per-package testFramework/commandOverride resolved above.
+  let redFailCount = 0;
+  for (const { testPath, packageDir, testFramework, commandOverride } of acceptanceTestPaths) {
+    const runCmd = buildAcceptanceRunCommand(testPath, testFramework, commandOverride, packageDir);
+    getSafeLogger()?.info("acceptance-setup", "Running acceptance RED gate command", {
+      cmd: runCmd.join(" "),
+      packageDir,
+    });
+    const { exitCode } = await _acceptanceSetupDeps.runTest(testPath, packageDir, runCmd);
+    if (exitCode !== 0) {
+      redFailCount++;
+    }
+  }
+
+  // All tests passing means they are not testing new behavior — skip acceptance gate
+  if (redFailCount === 0) {
+    ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount: 0 };
+    pipelineEventBus.emit({
+      type: "postrun:phase:completed",
+      phase: "acceptance-setup",
+      passed: true,
+      durationMs: Date.now() - phaseStartTime,
+      details: { totalCriteria, testableCount, redFailCount: 0, regenerated },
+    });
+    return {
+      action: "skip",
+      reason:
+        "[acceptance-setup] Acceptance tests already pass — they are not testing new behavior. Skipping acceptance gate.",
+    };
+  }
+
+  ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount };
+  pipelineEventBus.emit({
+    type: "postrun:phase:completed",
+    phase: "acceptance-setup",
+    passed: true,
+    durationMs: Date.now() - phaseStartTime,
+    details: { totalCriteria, testableCount, redFailCount, regenerated },
+  });
+  return { action: "continue" };
+}
