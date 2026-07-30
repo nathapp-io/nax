@@ -29,7 +29,9 @@ async function fanOutReporters(
     try {
       await invoke(reporter);
     } catch (err) {
-      logger?.warn("plugins", `Reporter '${reporter.name}' ${hook} failed`, { error: err });
+      try {
+        logger?.warn("plugins", `Reporter '${reporter.name}' ${hook} failed`, { error: err });
+      } catch {}
     }
   }
 }

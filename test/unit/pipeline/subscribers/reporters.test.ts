@@ -1,5 +1,6 @@
 // RE-ARCH: keep
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as loggerModule from "@/logger";
 import { PipelineEventBus, wireReporters } from "@/pipeline";
 import type { PluginRegistry } from "@/plugins";
 import type { IReporter, PhaseCompleteEvent, PhaseStartEvent } from "@/plugins/types";
@@ -246,6 +247,40 @@ describe("wireReporters", () => {
       costUsd: 0,
     });
     await bus.drain();
+
+    expect(calls).toEqual(["second"]);
+  });
+
+  test("isolates logger failures while continuing phase completion fan-out", async () => {
+    const warn = spyOn(loggerModule.getSafeLogger()!, "warn").mockImplementation(() => {
+      throw new Error("logger failed");
+    });
+    const calls: string[] = [];
+    const first: IReporter = {
+      name: "first",
+      async onPhaseComplete() {
+        throw new Error("reporter failed");
+      },
+    };
+    const second: IReporter = {
+      name: "second",
+      async onPhaseComplete() {
+        calls.push("second");
+      },
+    };
+    const bus = new PipelineEventBus();
+    wireReporters(bus, makeRegistry(first, second), "run-1", Date.now());
+
+    bus.emit({
+      type: "story:phase:completed",
+      storyId: "US-005",
+      phase: "implementer",
+      outcome: "failed",
+      durationMs: 1,
+      costUsd: 0,
+    });
+    await bus.drain();
+    warn.mockRestore();
 
     expect(calls).toEqual(["second"]);
   });
