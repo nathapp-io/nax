@@ -33,7 +33,7 @@ export { waitForCondition } from "./timeout";
 export { makeLinkWithCosts } from "./link-with-costs";
 export { makeMockCallContext } from "./call-context";
 export { makeMockPlanInputs } from "./plan-inputs";
-export { withWarnSpy } from "./warn-spy";
+export { withWarnSpy, withInfoSpy } from "./warn-spy";
 export { withTimerSpy } from "./timer-spy";
 export type { TimerSpyResult } from "./timer-spy";
 export { makeScriptedAgent, runOrchestratorE2E } from "./e2e";

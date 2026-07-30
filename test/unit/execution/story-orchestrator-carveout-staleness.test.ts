@@ -19,6 +19,7 @@ import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import {
   StoryOrchestratorBuilder,
   _storyOrchestratorDeps,
+  describeGateRegression,
   gateFailureKeys,
   gateRegressedAfterRectification,
 } from "@/execution";
@@ -141,6 +142,76 @@ describe("gateRegressedAfterRectification", () => {
     const out = { success: false, passed: false, status: "execution-failed", findings: [execFailFinding] };
     expect(gateRegressedAfterRectification(out, new Set(["::"]), GATE)).toBe(true);
     expect(gateRegressedAfterRectification(out, new Set(["foo.test.ts::t-a"]), GATE)).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// describeGateRegression — the identities behind the boolean (#1382)
+//
+// `gateRegressedAfterRectification` computes the new-key diff and discards it,
+// so an ADR-024 nbf rollback could name no cause. The detail form exposes it;
+// the boolean is now a projection of the same computation, so the two can never
+// disagree.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("describeGateRegression", () => {
+  const GATE = "full-suite-gate";
+  const execFailFinding = { source: "test-runner", category: "execution-failed", severity: "error", message: "boom" };
+
+  test("green final gate → not regressed, no keys, baseline size reported", () => {
+    const out = { success: true, passed: true, findings: [] };
+    const baseline = new Set(["foo.test.ts::t-a"]);
+    expect(describeGateRegression(out, baseline, GATE)).toEqual({
+      regressed: false,
+      regressedKeys: [],
+      baselineKeySize: 1,
+      keyless: false,
+    });
+  });
+
+  test("NEW structured key → regressed, and the key is named", () => {
+    const out = { success: false, passed: false, findings: [testFinding("new.test.ts", "t-new")] };
+    const detail = describeGateRegression(out, new Set(["foo.test.ts::t-a"]), GATE);
+    expect(detail.regressed).toBe(true);
+    expect(detail.regressedKeys).toEqual(["new.test.ts::t-new"]);
+    expect(detail.baselineKeySize).toBe(1);
+    expect(detail.keyless).toBe(false);
+  });
+
+  test("subset of baseline → not regressed, and no key is named", () => {
+    const out = { success: false, passed: false, findings: [testFinding("foo.test.ts", "t-a")] };
+    const detail = describeGateRegression(out, new Set(["foo.test.ts::t-a", "bar.test.ts::t-b"]), GATE);
+    expect(detail.regressed).toBe(false);
+    expect(detail.regressedKeys).toEqual([]);
+  });
+
+  test("TIMEOUT (failing, findings: []) → regressed and flagged keyless", () => {
+    const out = { success: false, passed: false, status: "timeout", findings: [] };
+    const detail = describeGateRegression(out, new Set(["foo.test.ts::t-a"]), GATE);
+    expect(detail.regressed).toBe(true);
+    expect(detail.keyless).toBe(true);
+    expect(detail.regressedKeys).toEqual([]);
+  });
+
+  test("EXECUTION-FAILURE (synth '::' key) → regressed and flagged keyless", () => {
+    const out = { success: false, passed: false, status: "execution-failed", findings: [execFailFinding] };
+    const detail = describeGateRegression(out, new Set(["::"]), GATE);
+    expect(detail.regressed).toBe(true);
+    expect(detail.keyless).toBe(true);
+  });
+
+  test("undefined gateName → not regressed (no gate to compare)", () => {
+    const out = { success: false, passed: false, findings: [testFinding("new.test.ts", "t-new")] };
+    expect(describeGateRegression(out, new Set(), undefined).regressed).toBe(false);
+  });
+
+  test.each([
+    ["green", { success: true, passed: true, findings: [] }, new Set<string>()],
+    ["new key", { success: false, passed: false, findings: [testFinding("n.test.ts", "t")] }, new Set<string>()],
+    ["subset", { success: false, passed: false, findings: [testFinding("f.test.ts", "t")] }, new Set(["f.test.ts::t"])],
+    ["timeout", { success: false, passed: false, status: "timeout", findings: [] }, new Set<string>()],
+  ])("boolean wrapper agrees with detail.regressed — %s", (_label, out, baseline) => {
+    expect(gateRegressedAfterRectification(out, baseline, GATE)).toBe(describeGateRegression(out, baseline, GATE).regressed);
   });
 });
 

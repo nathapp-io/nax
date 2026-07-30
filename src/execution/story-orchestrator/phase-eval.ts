@@ -126,6 +126,67 @@ export function gateFailureKeys(gateOutput: unknown): Set<string> {
 const KEYLESS_GATE_FAILURE_KEY = "::";
 
 /**
+ * Why `gateRegressedAfterRectification` returned what it did — the identities behind
+ * the boolean.
+ *
+ * Exists because the ADR-024 nbf rollback (`runNonBlockingFix`) used to log a discarded
+ * best-effort pass with no recoverable evidence of what broke: the new-key diff was
+ * computed here and thrown away, `phaseOutputs` is wiped by the restore, and the
+ * offending edit is hard-reset away (#1382). The boolean is a projection of this detail,
+ * so the two can never disagree.
+ */
+export interface GateRegressionDetail {
+  /** The verdict — identical to `gateRegressedAfterRectification`'s return. */
+  regressed: boolean;
+  /** Structured failure keys in the final gate that are absent from the baseline. */
+  regressedKeys: readonly string[];
+  /** Size of the verifier-time baseline the final gate was diffed against. */
+  baselineKeySize: number;
+  /**
+   * The gate failed with no comparable identity (timeout ⇒ no findings, or
+   * execution-failure ⇒ the synth `"::"` key). Such a failure is treated as a
+   * regression on principle, so an empty `regressedKeys` here does NOT mean
+   * "nothing regressed".
+   */
+  keyless: boolean;
+}
+
+/**
+ * `gateRegressedAfterRectification` with its reasoning exposed — see
+ * `GateRegressionDetail`. Same semantics; `gateName === undefined` (no gate in the
+ * plan) reports not-regressed, matching the `gateName !== undefined &&` guard every
+ * call site used to carry.
+ *
+ * Pure over (output, baseline, gateName) — exported for unit testing.
+ */
+export function describeGateRegression(
+  finalGateOutput: unknown,
+  baselineKeys: ReadonlySet<string>,
+  gateName: string | undefined,
+  storyId?: string,
+): GateRegressionDetail {
+  const notRegressed: GateRegressionDetail = {
+    regressed: false,
+    regressedKeys: [],
+    baselineKeySize: baselineKeys.size,
+    keyless: false,
+  };
+  // Green gate ⇒ not regressed. Also guards the keyless check below: a passing gate
+  // has an empty key set too, but must never be read as a keyless failure.
+  if (gateName === undefined || phasePassed(gateName, finalGateOutput, storyId)) return notRegressed;
+
+  const finalKeys = gateFailureKeys(finalGateOutput);
+  const regressedKeys = [...finalKeys].filter((k) => !baselineKeys.has(k));
+  const keyless = finalKeys.size === 0 || finalKeys.has(KEYLESS_GATE_FAILURE_KEY);
+  return {
+    regressed: regressedKeys.length > 0 || keyless,
+    regressedKeys,
+    baselineKeySize: baselineKeys.size,
+    keyless,
+  };
+}
+
+/**
  * Did the full-suite gate REGRESS during rectification relative to the verifier-time
  * baseline? Drives the verifier-SSOT carve-out: a verifier that passed exempts a red
  * gate as a "pre-existing/unrelated regression" ONLY while the gate did not get worse
@@ -142,6 +203,9 @@ const KEYLESS_GATE_FAILURE_KEY = "::";
  *    failure is the same one the verifier blessed, and silently exempting an unidentifiable
  *    red suite is exactly the laundering this guards against — so treat it as a regression.
  *
+ * Boolean projection of `describeGateRegression` — one computation, so the verdict and
+ * the logged explanation of it can never diverge.
+ *
  * Pure over (output, baseline, gateName) — exported for unit testing.
  */
 export function gateRegressedAfterRectification(
@@ -150,14 +214,7 @@ export function gateRegressedAfterRectification(
   gateName: string,
   storyId?: string,
 ): boolean {
-  // Green gate ⇒ not regressed. Also guards the keyless check below: a passing gate
-  // has an empty key set too, but must never be read as a keyless failure.
-  if (phasePassed(gateName, finalGateOutput, storyId)) return false;
-
-  const finalKeys = gateFailureKeys(finalGateOutput);
-  const hasNewStructuredKey = [...finalKeys].some((k) => !baselineKeys.has(k));
-  const isKeylessFailure = finalKeys.size === 0 || finalKeys.has(KEYLESS_GATE_FAILURE_KEY);
-  return hasNewStructuredKey || isKeylessFailure;
+  return describeGateRegression(finalGateOutput, baselineKeys, gateName, storyId).regressed;
 }
 
 /**

@@ -4,12 +4,14 @@
 export { StoryOrchestratorBuilder } from "./builder";
 export { ExecutionPlan } from "./execution-plan";
 export {
+  describeGateRegression,
   extractPhaseFindings,
   gateFailureKeys,
   gateRegressedAfterRectification,
   orderGateLast,
   phasePassed,
   phasesToRevalidate,
+  type GateRegressionDetail,
 } from "./phase-eval";
 export { runRectification, triageGateFindings, gatherRectificationFindings, type TriageResult } from "./rectification";
 export {

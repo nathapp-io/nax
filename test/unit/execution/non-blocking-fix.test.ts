@@ -5,6 +5,7 @@ import {
   runNonBlockingFix,
   shouldRunNonBlockingFix,
 } from "../../../src/execution/non-blocking-fix";
+import { withInfoSpy } from "@test/helpers";
 
 describe("non-blocking-fix gating", () => {
   test("disabled config → does not run", () => {
@@ -82,7 +83,12 @@ describe("runNonBlockingFix keep vs restore", () => {
           phaseOutputs["full-suite-gate"] = { success: false }; // fix broke a test
           return { rectificationExhausted: false }; // but cycle exempted the gate (verifier passed)
         },
-        keptTreeRegressed: () => (phaseOutputs["full-suite-gate"] as { success?: boolean }).success === false,
+        keptTreeRegressed: () => ({
+          regressed: (phaseOutputs["full-suite-gate"] as { success?: boolean }).success === false,
+          regressedKeys: ["broke.test.ts::t-new"],
+          baselineKeySize: 0,
+          keyless: false,
+        }),
       },
       {
         captureSnapshotRef: async () => "snap-sha",
@@ -106,7 +112,7 @@ describe("runNonBlockingFix keep vs restore", () => {
         ...baseArgs,
         phaseOutputs,
         runRectify: async () => ({ rectificationExhausted: false }),
-        keptTreeRegressed: () => false,
+        keptTreeRegressed: () => ({ regressed: false, regressedKeys: [], baselineKeySize: 0, keyless: false }),
       },
       {
         captureSnapshotRef: async () => "snap-sha",
@@ -117,6 +123,96 @@ describe("runNonBlockingFix keep vs restore", () => {
     );
     expect(res).toEqual({ ran: true, kept: true, restored: false });
     expect(rolled).toBe("");
+  });
+
+  // #1382 — the rollback used to log `storyId` only, so an operator saw a revert with
+  // no cause and the evidence was unrecoverable afterwards (phaseOutputs are wiped and
+  // the offending edit is hard-reset away). The regressing identity must be in the log.
+  test("regression restore names the regressing keys in the log (#1382)", async () => {
+    const phaseOutputs: Record<string, unknown> = { "full-suite-gate": { success: true } };
+    const record = await withInfoSpy(async (infoSpy) => {
+      await runNonBlockingFix(
+        {
+          ...baseArgs,
+          phaseOutputs,
+          runRectify: async () => ({ rectificationExhausted: false }),
+          keptTreeRegressed: () => ({
+            regressed: true,
+            regressedKeys: ["broke.test.ts::renders empty state"],
+            baselineKeySize: 2,
+            keyless: false,
+          }),
+        },
+        fakeDeps,
+      );
+      return infoSpy.mock.calls.find((c) => String(c[1]).includes("kept tree regressed"));
+    });
+
+    expect(record).toBeDefined();
+    const data = record?.[2] as Record<string, unknown>;
+    expect(data.regressedKeys).toEqual(["broke.test.ts::renders empty state"]);
+    expect(data.regressedKeyCount).toBe(1);
+    expect(data.baselineKeySize).toBe(2);
+    expect(data.keyless).toBe(false);
+    // Structured-log convention: storyId is the FIRST key so parallel-mode runs stay
+    // correlatable (.claude/rules/project-conventions.md).
+    expect(Object.keys(data)[0]).toBe("storyId");
+  });
+
+  test("keyless regression is logged as such, with an empty key list (#1382)", async () => {
+    // A timeout / execution-failure yields no comparable identity. The log must say so
+    // rather than showing an empty `regressedKeys` that reads as "nothing regressed".
+    const phaseOutputs: Record<string, unknown> = { "full-suite-gate": { success: true } };
+    const data = await withInfoSpy(async (infoSpy) => {
+      await runNonBlockingFix(
+        {
+          ...baseArgs,
+          phaseOutputs,
+          runRectify: async () => ({ rectificationExhausted: false }),
+          keptTreeRegressed: () => ({
+            regressed: true,
+            regressedKeys: [],
+            baselineKeySize: 0,
+            keyless: true,
+          }),
+        },
+        fakeDeps,
+      );
+      const call = infoSpy.mock.calls.find((c) => String(c[1]).includes("kept tree regressed"));
+      return call?.[2] as Record<string, unknown>;
+    });
+
+    expect(data?.keyless).toBe(true);
+    expect(data?.regressedKeys).toEqual([]);
+    expect(data?.regressedKeyCount).toBe(0);
+  });
+
+  test("logged key list is capped, but the true count is reported (#1382)", async () => {
+    // An unbounded key list can dwarf every other field in the JSONL record when a
+    // whole suite goes red. Cap the sample; never lose the magnitude.
+    const many = Array.from({ length: 25 }, (_, i) => `f${i}.test.ts::t${i}`);
+    const phaseOutputs: Record<string, unknown> = { "full-suite-gate": { success: true } };
+    const data = await withInfoSpy(async (infoSpy) => {
+      await runNonBlockingFix(
+        {
+          ...baseArgs,
+          phaseOutputs,
+          runRectify: async () => ({ rectificationExhausted: false }),
+          keptTreeRegressed: () => ({
+            regressed: true,
+            regressedKeys: many,
+            baselineKeySize: 0,
+            keyless: false,
+          }),
+        },
+        fakeDeps,
+      );
+      const call = infoSpy.mock.calls.find((c) => String(c[1]).includes("kept tree regressed"));
+      return call?.[2] as Record<string, unknown>;
+    });
+
+    expect((data?.regressedKeys as string[]).length).toBe(10);
+    expect(data?.regressedKeyCount).toBe(25);
   });
 
   test("restored when harness exhausts — phaseOutputs rolled back", async () => {
