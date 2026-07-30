@@ -19,10 +19,17 @@ import { captureSnapshotRef, rollbackToRef } from "../tdd/rollback";
 import { createTestFileClassifier, resolveTestFilePatterns } from "../test-runners";
 import { typedSpawn } from "../utils/bun-deps";
 import { packageDirRelative } from "../utils/paths";
-import type { PhaseKind } from "./story-orchestrator";
+import type { GateRegressionDetail, PhaseKind } from "./story-orchestrator";
 
 /** Phase kinds to strip from revalidation — always the LLM reviews. */
 const REVIEW_PHASE_KINDS = ["semantic-review", "adversarial-review"] as const satisfies readonly PhaseKind[];
+
+/**
+ * How many regressing test identities to sample into the rollback log. An unbounded
+ * list dwarfs every other field in the JSONL record when a whole suite goes red;
+ * `regressedKeyCount` carries the true magnitude alongside the sample.
+ */
+const MAX_LOGGED_REGRESSED_KEYS = 10;
 
 /** Run the pass only when enabled and there is at least one advisory finding. */
 export function shouldRunNonBlockingFix(cfg: NonBlockingFixConfig | undefined, advisoryCount: number): boolean {
@@ -102,9 +109,16 @@ export interface NonBlockingFixArgs {
    * the story" floor. The caller wires this to the SAME staleness predicate the final
    * verdict uses, so the keep-decision and the verdict can never disagree.
    *
+   * Returns the DETAIL rather than a bare boolean so the restore can name what
+   * regressed (#1382): a bare `true` produced a revert an operator could not
+   * distinguish from a flake or a pre-existing failure, and the evidence was gone
+   * by the time they looked (`phaseOutputs` wiped here, the edit hard-reset away).
+   * A single detail-returning predicate — rather than a second `describeGateRegression`
+   * dep — keeps the verdict and its explanation from ever disagreeing.
+   *
    * Absent ⇒ no gate check (backward-compatible).
    */
-  keptTreeRegressed?: () => boolean;
+  keptTreeRegressed?: () => GateRegressionDetail;
 }
 
 export interface NonBlockingFixResult {
@@ -208,9 +222,20 @@ export async function runNonBlockingFix(
     // resolved via the verifier-SSOT exemption while leaving the full-suite gate red.
     // Reuse the caller's staleness predicate (identical to the final verdict's) so a
     // "kept then failed by the downstream guard" contradiction is impossible.
-    if (args.keptTreeRegressed?.()) {
+    const gateVerdict = args.keptTreeRegressed?.();
+    if (gateVerdict?.regressed) {
+      // Name the regressing identities here: this is the only point where they exist.
+      // `restoreToSnapshot` clears `phaseOutputs` (so the gate's rawOutput goes with it)
+      // and `rollbackToRef` hard-resets the offending edit, leaving `git reflog` with
+      // only the destination. Without this record the revert is unattributable (#1382).
       logger?.info("non-blocking-fix", "kept tree regressed the full-suite gate — restoring (ADR-024 §3)", {
         storyId: args.storyId,
+        regressedKeys: gateVerdict.regressedKeys.slice(0, MAX_LOGGED_REGRESSED_KEYS),
+        regressedKeyCount: gateVerdict.regressedKeys.length,
+        baselineKeySize: gateVerdict.baselineKeySize,
+        // True ⇒ timeout / execution-failure, so `regressedKeys` is empty because there
+        // was no identity to capture, NOT because nothing regressed.
+        keyless: gateVerdict.keyless,
       });
       return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
     }

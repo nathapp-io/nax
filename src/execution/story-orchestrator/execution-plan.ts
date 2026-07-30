@@ -9,7 +9,13 @@ import {
   nonBlockingExtraPhases,
   shouldRunNonBlockingFix,
 } from "../non-blocking-fix";
-import { gateFailureKeys, gateRegressedAfterRectification, phaseExplicitlyPassed, phasePassed } from "./phase-eval";
+import {
+  describeGateRegression,
+  gateFailureKeys,
+  gateRegressedAfterRectification,
+  phaseExplicitlyPassed,
+  phasePassed,
+} from "./phase-eval";
 import { collectOrderedPhases } from "./phase-state";
 import { runRectification } from "./rectification";
 import { _storyOrchestratorDeps, runPhase } from "./run-phase";
@@ -313,9 +319,15 @@ export class ExecutionPlan {
           // (`gateRegressedDuringRect`), so nbf's keep-decision can never disagree with
           // the verdict: a fix the guard would fail on is restored to adversarial-passed
           // here instead, leaving the story green with zero net change.
+          // Detail-returning (not boolean) so the restore log can name the regressing
+          // test identities — the only point at which they still exist (#1382).
           keptTreeRegressed: () =>
-            gateName !== undefined &&
-            gateRegressedAfterRectification(phaseOutputs[gateName], preRectGateFailureKeys, gateName, this.ctx.storyId),
+            describeGateRegression(
+              gateName === undefined ? undefined : phaseOutputs[gateName],
+              preRectGateFailureKeys,
+              gateName,
+              this.ctx.storyId,
+            ),
         },
         {
           measureSourceDiff: createMeasureSourceDiff({
