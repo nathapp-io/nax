@@ -247,6 +247,158 @@ describe("validateMockStructureFiles", () => {
     });
   });
 
+  // Regression: #1385. In a monorepo the rectification agent declares paths in
+  // the form it reads them from findings — repo-relative — while `packageDir` is
+  // the story's package. Resolving against `packageDir` alone double-prefixed the
+  // path, so a real, existing test file was rejected as nonexistent, the
+  // mock-structure handoff was stripped, and the story deadlocked into a wasted
+  // tier escalation (rs-stock metrics-endpoint-protection US-002).
+  describe("monorepo path anchoring (packageDir !== repoRoot)", () => {
+    // A Python package at apps/api whose test patterns are package-relative.
+    const pyPatterns: ResolvedTestPatterns = {
+      regex: [/(?:^|\/)tests(?:.*\/)?[^/]*\.py$/],
+      globs: ["tests/**/*.py"],
+      pathspec: [],
+      testDirs: ["tests"],
+    };
+
+    test("accepts a repo-relative declaration when repoRoot is supplied", async () => {
+      const decl: TestEditDeclaration = {
+        reason: "mock_structure",
+        file: "apps/api/tests/test_observability.py",
+        files: ["apps/api/tests/test_observability.py", "apps/api/tests/test__security_headers.py"],
+        reasonDetail: "existing tests assert the pre-protection /metrics contract",
+      };
+
+      const { valid, invalid } = await validateMockStructureFiles([decl], pyPatterns, "/repo/apps/api", {
+        repoRoot: "/repo",
+        fileExists: makeFileExists([
+          "/repo/apps/api/tests/test_observability.py",
+          "/repo/apps/api/tests/test__security_headers.py",
+        ]),
+      });
+
+      expect(invalid).toHaveLength(0);
+      expect(valid).toHaveLength(1);
+      expect(valid[0]).toBe(decl);
+    });
+
+    test("still accepts a package-relative declaration for the same package", async () => {
+      const decl: TestEditDeclaration = {
+        reason: "mock_structure",
+        file: "tests/test_observability.py",
+        files: ["tests/test_observability.py"],
+        reasonDetail: "package-relative form",
+      };
+
+      const { valid, invalid } = await validateMockStructureFiles([decl], pyPatterns, "/repo/apps/api", {
+        repoRoot: "/repo",
+        fileExists: makeFileExists(["/repo/apps/api/tests/test_observability.py"]),
+      });
+
+      expect(invalid).toHaveLength(0);
+      expect(valid).toHaveLength(1);
+    });
+
+    test("pattern is tested against the package-relative form of the resolved path", async () => {
+      // Anchored package-relative pattern: only "tests/..." matches, so a
+      // repo-relative declaration must be rebased before the pattern test.
+      const anchored: ResolvedTestPatterns = {
+        regex: [/^tests\/.+\.py$/],
+        globs: ["tests/**/*.py"],
+        pathspec: [],
+        testDirs: ["tests"],
+      };
+
+      const decl: TestEditDeclaration = {
+        reason: "mock_structure",
+        file: "apps/api/tests/test_observability.py",
+        files: ["apps/api/tests/test_observability.py"],
+        reasonDetail: "anchored pattern",
+      };
+
+      const { valid, invalid } = await validateMockStructureFiles([decl], anchored, "/repo/apps/api", {
+        repoRoot: "/repo",
+        fileExists: makeFileExists(["/repo/apps/api/tests/test_observability.py"]),
+      });
+
+      expect(invalid).toHaveLength(0);
+      expect(valid).toHaveLength(1);
+    });
+
+    test("a file that exists under neither anchor is still invalid", async () => {
+      const decl: TestEditDeclaration = {
+        reason: "mock_structure",
+        file: "apps/api/tests/test_missing.py",
+        files: ["apps/api/tests/test_missing.py"],
+        reasonDetail: "hallucinated file",
+      };
+
+      const { valid, invalid } = await validateMockStructureFiles([decl], pyPatterns, "/repo/apps/api", {
+        repoRoot: "/repo",
+        fileExists: makeFileExists([]),
+      });
+
+      expect(valid).toHaveLength(0);
+      expect(invalid).toHaveLength(1);
+      expect(invalid[0]).toBe(decl);
+    });
+
+    test("a non-test file resolved via repoRoot is still invalid", async () => {
+      const decl: TestEditDeclaration = {
+        reason: "mock_structure",
+        file: "apps/api/src/stock_api/app.py",
+        files: ["apps/api/src/stock_api/app.py"],
+        reasonDetail: "source file smuggled through the handoff",
+      };
+
+      const { valid, invalid } = await validateMockStructureFiles([decl], pyPatterns, "/repo/apps/api", {
+        repoRoot: "/repo",
+        fileExists: makeFileExists(["/repo/apps/api/src/stock_api/app.py"]),
+      });
+
+      expect(valid).toHaveLength(0);
+      expect(invalid).toHaveLength(1);
+    });
+
+    test("omitting repoRoot preserves package-relative-only resolution", async () => {
+      const decl: TestEditDeclaration = {
+        reason: "mock_structure",
+        file: "apps/api/tests/test_observability.py",
+        files: ["apps/api/tests/test_observability.py"],
+        reasonDetail: "no repoRoot anchor available",
+      };
+
+      const { valid, invalid } = await validateMockStructureFiles([decl], pyPatterns, "/repo/apps/api", {
+        fileExists: makeFileExists(["/repo/apps/api/tests/test_observability.py"]),
+      });
+
+      expect(valid).toHaveLength(0);
+      expect(invalid).toHaveLength(1);
+    });
+
+    test("single-package repo (repoRoot === packageDir) resolves once", async () => {
+      const seen: string[] = [];
+      const decl: TestEditDeclaration = {
+        reason: "mock_structure",
+        file: "tests/test_observability.py",
+        files: ["tests/test_observability.py"],
+        reasonDetail: "single package",
+      };
+
+      const { valid } = await validateMockStructureFiles([decl], pyPatterns, "/repo", {
+        repoRoot: "/repo",
+        fileExists: (p) => {
+          seen.push(p);
+          return Promise.resolve(p === "/repo/tests/test_observability.py");
+        },
+      });
+
+      expect(valid).toHaveLength(1);
+      expect(seen).toEqual(["/repo/tests/test_observability.py"]);
+    });
+  });
+
   describe("injectable deps", () => {
     test("uses injectable fileExists (no real disk I/O)", async () => {
       let callCount = 0;
