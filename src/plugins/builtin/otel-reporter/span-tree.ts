@@ -103,12 +103,13 @@ export function createSpanTree(traceId: string, runSpanId: string): SpanTree {
     };
   }
 
-  function buildPhaseSpan({ event, startUnixNano, endUnixNano }: PhaseSpanInput): Span {
-    const parentSpanId = event.scope === "story" && event.storyId ? storySpanId(event.storyId) : runSpanId;
+  function buildPhaseSpan({ event, traceId: spanTraceId, startUnixNano, endUnixNano }: PhaseSpanInput): Span {
+    const parentSpanId =
+      event.scope === "story" && event.storyId !== undefined ? storySpanId(event.storyId) : runSpanId;
     const attributes = [attr("phase", event.phase), attr("outcome", event.outcome)];
     if (event.testStrategy) attributes.push(attr("nax.test_strategy", event.testStrategy));
     return {
-      traceId,
+      traceId: spanTraceId,
       spanId: newSpanId(),
       parentSpanId,
       name: "nax.phase",
