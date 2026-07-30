@@ -236,6 +236,14 @@ export async function runNonBlockingFix(
         // True ⇒ timeout / execution-failure, so `regressedKeys` is empty because there
         // was no identity to capture, NOT because nothing regressed.
         keyless: gateVerdict.keyless,
+        // Failures excluded as already-quarantined flakes (#1383).
+        memoExcludedKeyCount: gateVerdict.memoExcludedKeys.length,
+        // Stated, not computed: this pass's revalidation gate is never flake-triaged —
+        // triage owns the main gate path only (`rectification.ts`, the non-override
+        // branch). So a FIRST-observation flake inside the revalidation window still
+        // reads as a regression here, and an operator must be able to see that was
+        // possible rather than infer a real break (#1383 option 3).
+        flakeTriageRan: false,
       });
       return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
     }

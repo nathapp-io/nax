@@ -11,7 +11,7 @@
  * produces `failed-test` findings, triage runs ONCE before rectification
  * gathers findings. Findings relabeled to `flaky-test` are quarantined for the
  * run; only `failed-test` findings feed the fix cycle. `gateFailureKeys` and
- * `gateRegressedAfterRectification` exclude `flaky-test` keys so the
+ * `describeGateRegression` exclude `flaky-test` keys so the
  * phase-regression comparisons ignore quarantined flakes.
  *
  * Triage is invoked via the `_storyOrchestratorDeps.triage` injectable seam
@@ -24,7 +24,7 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import type { DEFAULT_CONFIG } from "@/config";
 import { pickSelector } from "@/config";
 import { StoryOrchestratorBuilder, _storyOrchestratorDeps } from "@/execution";
-import { gateFailureKeys, gateRegressedAfterRectification } from "@/execution";
+import { describeGateRegression, gateFailureKeys } from "@/execution";
 import type { Finding, FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { CallContext, RunOperation } from "@/operations";
@@ -376,10 +376,10 @@ describe("AC4: gateFailureKeys excludes flaky-test findings", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC5 — gateRegressedAfterRectification ignores flaky-test key differences.
+// AC5 — describeGateRegression ignores flaky-test key differences.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("AC5: gateRegressedAfterRectification ignores flaky-test diffs", () => {
+describe("AC5: describeGateRegression ignores flaky-test diffs", () => {
   test("returns false when the only diff between baseline and final is flaky-test entries", () => {
     const baseline = new Set(["test/unit/real.test.ts::shouldReal"]);
     const finalGateOutput = {
@@ -391,7 +391,10 @@ describe("AC5: gateRegressedAfterRectification ignores flaky-test diffs", () => 
         makeFailedTest({ file: "test/unit/real.test.ts", rule: "shouldReal" }),
       ],
     };
-    expect(gateRegressedAfterRectification(finalGateOutput, baseline, GATE_NAME, "US-003")).toBe(false);
+    expect(
+      describeGateRegression({ gateOutput: finalGateOutput, baselineKeys: baseline, gateName: GATE_NAME, storyId: "US-003" })
+        .regressed,
+    ).toBe(false);
   });
 
   test("still reports regression when a NEW failed-test key appears alongside a flaky diff", () => {
@@ -405,7 +408,10 @@ describe("AC5: gateRegressedAfterRectification ignores flaky-test diffs", () => 
         makeFailedTest({ file: "test/unit/newlybroken.test.ts", rule: "shouldNew" }),
       ],
     };
-    expect(gateRegressedAfterRectification(finalGateOutput, baseline, GATE_NAME, "US-003")).toBe(true);
+    expect(
+      describeGateRegression({ gateOutput: finalGateOutput, baselineKeys: baseline, gateName: GATE_NAME, storyId: "US-003" })
+        .regressed,
+    ).toBe(true);
   });
 });
 
@@ -576,5 +582,108 @@ describe("F5: triage visibility — skipped path is surfaced", () => {
     expect(data?.storyId).toBe("US-003");
     expect(data?.gateName).toBe(GATE_NAME);
     expect(typeof data?.error).toBe("string");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #1383 — the NBF revalidation gate is never flake-triaged, so a known flake
+// used to discard the best-effort pass deterministically. The regression check
+// now consults the run-scoped quarantine memo.
+//
+// The trap this pins: filtering memo'd keys OUT of `gateFailureKeys` would empty
+// the key set on a still-FAILING gate, which the keyless branch reads as a
+// timeout — so the pass would be discarded anyway and mislabelled. `keyless`
+// must therefore be decided on the UNFILTERED set.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("describeGateRegression — quarantine-memo filter (#1383)", () => {
+  const memoOf = (...keys: string[]) => ({ has: (k: string) => keys.includes(k), add: () => {} });
+
+  test("sole failing key is an already-quarantined flake → NOT regressed, and NOT read as keyless", () => {
+    const gateOutput = {
+      success: false,
+      findings: [makeFailedTest({ file: "test/unit/flaky.test.ts", rule: "sometimes" })],
+    };
+    const detail = describeGateRegression({
+      gateOutput,
+      baselineKeys: new Set(),
+      gateName: GATE_NAME,
+      storyId: "US-003",
+      quarantineMemo: memoOf("test/unit/flaky.test.ts::sometimes"),
+    });
+    expect(detail.regressed).toBe(false);
+    expect(detail.keyless).toBe(false); // the trap: unfiltered set still has an identity
+    expect(detail.regressedKeys).toEqual([]);
+    expect(detail.memoExcludedKeys).toEqual(["test/unit/flaky.test.ts::sometimes"]);
+  });
+
+  test("known flake alongside a genuinely new failure → regressed, only the new key blamed", () => {
+    const gateOutput = {
+      success: false,
+      findings: [
+        makeFailedTest({ file: "test/unit/flaky.test.ts", rule: "sometimes" }),
+        makeFailedTest({ file: "test/unit/broke.test.ts", rule: "byTheFix" }),
+      ],
+    };
+    const detail = describeGateRegression({
+      gateOutput,
+      baselineKeys: new Set(),
+      gateName: GATE_NAME,
+      quarantineMemo: memoOf("test/unit/flaky.test.ts::sometimes"),
+    });
+    expect(detail.regressed).toBe(true);
+    expect(detail.regressedKeys).toEqual(["test/unit/broke.test.ts::byTheFix"]);
+    expect(detail.memoExcludedKeys).toEqual(["test/unit/flaky.test.ts::sometimes"]);
+  });
+
+  test("TIMEOUT stays a regression however populated the memo is", () => {
+    const detail = describeGateRegression({
+      gateOutput: { success: false, status: "timeout", findings: [] },
+      baselineKeys: new Set(),
+      gateName: GATE_NAME,
+      quarantineMemo: memoOf("test/unit/flaky.test.ts::sometimes"),
+    });
+    expect(detail.regressed).toBe(true);
+    expect(detail.keyless).toBe(true);
+  });
+
+  test("EXECUTION-FAILURE stays a regression even if the memo contains the synth '::' key", () => {
+    const detail = describeGateRegression({
+      gateOutput: {
+        success: false,
+        status: "execution-failed",
+        findings: [{ source: "test-runner", category: "execution-failed", severity: "error", message: "boom" }],
+      },
+      baselineKeys: new Set(),
+      gateName: GATE_NAME,
+      quarantineMemo: memoOf("::"),
+    });
+    expect(detail.regressed).toBe(true);
+    expect(detail.keyless).toBe(true);
+  });
+
+  test("no memo supplied → pre-#1383 behaviour, and nothing reported as excluded", () => {
+    const gateOutput = {
+      success: false,
+      findings: [makeFailedTest({ file: "test/unit/flaky.test.ts", rule: "sometimes" })],
+    };
+    const detail = describeGateRegression({ gateOutput, baselineKeys: new Set(), gateName: GATE_NAME });
+    expect(detail.regressed).toBe(true);
+    expect(detail.memoExcludedKeys).toEqual([]);
+  });
+
+  test("a quarantined key already in the baseline is still reported as memo-excluded", () => {
+    const gateOutput = {
+      success: false,
+      findings: [makeFailedTest({ file: "test/unit/flaky.test.ts", rule: "sometimes" })],
+    };
+    const detail = describeGateRegression({
+      gateOutput,
+      baselineKeys: new Set(["test/unit/flaky.test.ts::sometimes"]),
+      gateName: GATE_NAME,
+      quarantineMemo: memoOf("test/unit/flaky.test.ts::sometimes"),
+    });
+    expect(detail.regressed).toBe(false);
+    expect(detail.memoExcludedKeys).toEqual(["test/unit/flaky.test.ts::sometimes"]);
   });
 });
