@@ -291,7 +291,7 @@ describe("Adversarial op verify() parity with wrapper consumer (AC10, AC11 adver
     });
   });
 
-  test("advisory-only run: verify() preserves passed:false for wrapper fail-closed handling", async () => {
+  test("advisory-only run: verdict passes (nax#1378) with empty normalizedFindings", async () => {
     return withTempDir(async (workdir) => {
       const ctx = makeAdversarialVerifyCtx();
       const input: AdversarialReviewInput = {
@@ -329,8 +329,11 @@ describe("Adversarial op verify() parity with wrapper consumer (AC10, AC11 adver
       const result = await adversarialReviewOp.verify!(parsed, input, ctx);
       expect(result).not.toBeNull();
 
-      // verify() preserves the LLM's failure signal even when only advisory findings remain.
-      expect(result!.passed).toBe(false);
+      // nax#1378 — parity with semantic (nax#1347): the verdict honours blockingThreshold,
+      // so an advisory-only result passes. Preserving the LLM's raw failure signal here
+      // deadlocked the story: the wrapper saw passed:false with nothing routable, so the
+      // rectification cycle had no finding to hand a fix strategy.
+      expect(result!.passed).toBe(true);
       expect(result!.normalizedFindings).toHaveLength(0);
     });
   });

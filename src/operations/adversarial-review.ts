@@ -103,6 +103,12 @@ function extractRepromptInfo(raw: Record<string, unknown> | null | undefined): R
 
 export interface AdversarialReviewOutput {
   passed: boolean;
+  /**
+   * The model's raw `passed` flag, before `verify()` applies blockingThreshold (#1378).
+   * The wrapper's ungrounded-drop branches key off this (not `passed`) so they fail
+   * closed on a model-claimed failure regardless of sub-threshold survivors.
+   */
+  modelPassed?: boolean;
   /** Raw AdversarialLLMFinding[]. Consumed by `src/review/adversarial.ts`. */
   findings: unknown[];
   /**
@@ -557,17 +563,25 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
       });
     }
 
-    // Pass when nothing blocks AND either the model passed, or the classifier
-    // reclassified a blocking-severity finding to non-blocking (recurrence-demoted
-    // OR oscillation-suppressed to advisory). Preserves fail-closed when the model
-    // fails with no blocking-severity findings at all.
-    const hadBlockingSeverity = accepted.some((f) => isBlockingSeverity(f.severity, threshold));
-    const passed = blocking.length === 0 && (parsed.passed || hadBlockingSeverity);
+    // Honour blockingThreshold: the verdict fails only when a blocking finding survives.
+    // The model's raw `passed:false` must NOT fail the review when every surviving
+    // finding is sub-threshold (nax#1347 for semantic, nax#1378 here) — the prior
+    // `accepted.some(isBlockingSeverity)` clause collapsed to `parsed.passed` alone for
+    // ordinary sub-threshold findings, which deadlocks the story: `normalizedFindings`
+    // carries `blocking` only, so the rectification cycle gets nothing routable and
+    // exits "resolved" with no derivable failure category.
+    //
+    // `accepted.length > 0` keeps the fail-closed guard when the model claims failure
+    // but every finding was dropped as ungrounded (accepted empty) — there we still
+    // respect `parsed.passed`. `accepted` is a superset of the old clause, so
+    // demotion/oscillation pass-through is unchanged.
+    const passed = blocking.length === 0 && (parsed.passed || accepted.length > 0);
 
     return {
       ...parsed,
       passed,
       blockingThreshold: threshold,
+      modelPassed: parsed.passed,
       findings: accepted,
       // #1368 — `testFileMatch` also decides the fix lane: a finding located in a
       // test file goes to the test-writer whatever its category says, because the

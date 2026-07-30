@@ -473,10 +473,11 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     };
   }
 
-  if (!opResult.passed && acDropped.length > 0) {
-    const allHallucinated = acDropped.every((d) => d.code === "ac_quote_not_substring");
-
-    if (allHallucinated) {
+  // #1378 — MODEL verdict, not `opResult.passed`: the latter now honours blockingThreshold,
+  // so a surviving sub-threshold finding would skip both branches — waving through blocking
+  // concerns the model could not ground (Case B) and losing the demoted drops (Case A).
+  if (!opResult.modelPassed && acDropped.length > 0) {
+    if (acDropped.every((d) => d.code === "ac_quote_not_substring")) {
       // Case A: every blocking finding cited a quote that does not exist in any AC.
       // The model fabricated its grounding. Treat as pass — demote each dropped finding
       // to "warning" and surface as advisory so it remains auditable.
@@ -484,8 +485,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
         acDropped.map((d) => ({ ...d.finding, severity: "warning" as const, acQuote: undefined, acIndex: undefined })),
         { isTestFile: testFileMatch },
       );
-      const existingAdvisory = advisoryFindings.length > 0 ? advisoryFindingsAsFindings : [];
-      const allAdvisory = [...existingAdvisory, ...demotedFindings];
+      const allAdvisory = [...advisoryFindingsAsFindings, ...demotedFindings];
 
       logger?.warn("review", "Adversarial review passed: all blocking findings discarded as hallucinated AC quotes", {
         storyId: story.id,

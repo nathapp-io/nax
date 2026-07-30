@@ -176,8 +176,9 @@ export async function buildPlanForStrategy(
   // Path anchors shared by both the main-rectification postValidate and the nbf postValidate.
   // Computed once here; used in both closures below to avoid duplicate async FS reads.
   // ctx.packageDir = repo root (absolute); story.workdir = relative sub-path to package.
-  const packageDir = join(ctx.packageDir, story.workdir ?? "");
-  const resolvedTestPatterns = await resolveTestFilePatterns(config, ctx.packageDir, story.workdir);
+  const repoRoot = ctx.packageDir;
+  const packageDir = join(repoRoot, story.workdir ?? "");
+  const resolvedTestPatterns = await resolveTestFilePatterns(config, repoRoot, story.workdir);
 
   // Rectification: requires both config gate and typed inputs.
   // Assemble strategies: mechanical fixes first, then full-suite (TDD), then autofix agents.
@@ -272,7 +273,11 @@ export async function buildPlanForStrategy(
         reasonDetail: h.reasonDetail,
       }));
 
-      const { valid, invalid } = await validateMockStructureFiles(pendingMock, resolvedTestPatterns, packageDir);
+      const { valid, invalid } = await validateMockStructureFiles(pendingMock, resolvedTestPatterns, packageDir, {
+        // The agent declares paths as it read them from the findings stream —
+        // repo-relative — so repoRoot must be offered as a second anchor (#1385).
+        repoRoot,
+      });
 
       // Replace sink.mockHandoffs with only valid entries for test-writer to consume.
       sink.mockHandoffs = valid.map((d) => ({ files: d.files ?? [], reasonDetail: d.reasonDetail ?? "" }));
@@ -395,7 +400,11 @@ export async function buildPlanForStrategy(
         reasonDetail: h.reasonDetail,
       }));
 
-      const { valid, invalid } = await validateMockStructureFiles(pendingMock, resolvedTestPatterns, packageDir);
+      const { valid, invalid } = await validateMockStructureFiles(pendingMock, resolvedTestPatterns, packageDir, {
+        // The agent declares paths as it read them from the findings stream —
+        // repo-relative — so repoRoot must be offered as a second anchor (#1385).
+        repoRoot,
+      });
 
       nbSink.mockHandoffs = valid.map((d) => ({ files: d.files ?? [], reasonDetail: d.reasonDetail ?? "" }));
 
