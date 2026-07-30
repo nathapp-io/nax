@@ -1,6 +1,6 @@
 import type { PhaseCompleteEvent } from "@/plugins/types";
 import { newSpanId } from "./ids";
-import { type KeyValue, attr } from "./otlp";
+import { type KeyValue, type SpanEvent, attr } from "./otlp";
 
 /** Fixed bucket boundaries for the `nax.phase.duration` histogram, in milliseconds. */
 export const PHASE_DURATION_BOUNDS = [100, 500, 1000, 5000, 15000, 60000, 300000, 900000];
@@ -58,6 +58,8 @@ export interface Span {
   startTimeUnixNano: string;
   endTimeUnixNano: string;
   attributes: KeyValue[];
+  /** Span events (e.g. review findings) — set post-construction when present (US-008). */
+  events?: SpanEvent[];
 }
 
 export interface PhaseSpanInput {

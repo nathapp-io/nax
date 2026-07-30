@@ -1,3 +1,5 @@
+import { type KeyValue, attr } from "./otlp";
+
 /** Attributes carried by every heartbeat gauge (US-008). */
 export interface HeartbeatAttributes {
   runId: string;
@@ -32,7 +34,75 @@ export interface Heartbeat {
   stop(): void;
 }
 
-/** Starts a repeating heartbeat timer. Stub — scheduling not yet implemented. */
-export function startHeartbeat(_opts: HeartbeatOptions): Heartbeat {
-  return { stop() {} };
+/**
+ * Starts a repeating heartbeat timer. `intervalMs <= 0` disables it entirely
+ * (no timer armed). Uses a re-armed `setTimeout` rather than `setInterval` so
+ * `stop()` can cancel the exact pending handle via `clearTimeout` — the
+ * cancellable-handle exception documented in forbidden-patterns.md.
+ */
+export function startHeartbeat(opts: HeartbeatOptions): Heartbeat {
+  const { intervalMs, getSnapshot, onTick } = opts;
+  if (intervalMs <= 0) return { stop() {} };
+
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const armTimer = (): void => {
+    timer = setTimeout(() => {
+      void onTick(getSnapshot());
+      if (!stopped) armTimer();
+    }, intervalMs);
+  };
+  armTimer();
+
+  return {
+    stop(): void {
+      stopped = true;
+      if (timer !== undefined) clearTimeout(timer);
+    },
+  };
+}
+
+function heartbeatAttributes(a: HeartbeatAttributes): KeyValue[] {
+  return [
+    attr("run_id", a.runId),
+    attr("feature", a.feature),
+    attr("project", a.project),
+    attr("story_id", a.storyId),
+    attr("phase", a.phase),
+    attr("tier", a.tier),
+    attr("test_strategy", a.testStrategy),
+  ];
+}
+
+export interface HeartbeatMetricsInput {
+  serviceName: string;
+  timeUnixNano: string;
+  snapshot: HeartbeatSnapshot;
+}
+
+/** Build the OTLP/HTTP-JSON gauge payload for one heartbeat tick. */
+export function buildHeartbeatMetricsPayload(p: HeartbeatMetricsInput): object {
+  const attributes = heartbeatAttributes(p.snapshot.attributes);
+  const gauge = (name: string, value: number) => ({
+    name,
+    gauge: { dataPoints: [{ asDouble: value, timeUnixNano: p.timeUnixNano, attributes }] },
+  });
+  return {
+    resourceMetrics: [
+      {
+        resource: { attributes: [attr("service.name", p.serviceName)] },
+        scopeMetrics: [
+          {
+            scope: { name: "nax" },
+            metrics: [
+              gauge("nax.run.active", 1),
+              gauge("nax.run.phase_elapsed_ms", p.snapshot.phaseElapsedMs),
+              gauge("nax.run.cost_usd", p.snapshot.costUsd),
+            ],
+          },
+        ],
+      },
+    ],
+  };
 }

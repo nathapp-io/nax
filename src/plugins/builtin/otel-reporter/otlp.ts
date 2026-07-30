@@ -41,6 +41,8 @@ export interface TracesInput {
   storySummary: StorySummary;
   totalCost: number;
   events: SpanEvent[];
+  /** Additional spans (e.g. phase spans) appended after the root span (US-008). */
+  extraSpans?: object[];
 }
 
 /** Build an OTLP/HTTP-JSON ResourceSpans payload with one root `nax.run` span. */
@@ -69,7 +71,7 @@ export function buildTracesPayload(p: TracesInput): object {
     resourceSpans: [
       {
         resource: { attributes: [attr("service.name", p.serviceName)] },
-        scopeSpans: [{ scope: { name: "nax" }, spans: [span] }],
+        scopeSpans: [{ scope: { name: "nax" }, spans: [span, ...(p.extraSpans ?? [])] }],
       },
     ],
   };
