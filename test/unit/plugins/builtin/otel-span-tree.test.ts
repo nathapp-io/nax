@@ -242,4 +242,13 @@ describe("createPhaseMetricsAggregator", () => {
     expect(point.count).toBe(2);
     expect(point.sum).toBe(300);
   });
+
+  test("boundary: an aggregator with nothing recorded still exports a resource-attributed payload with no metrics", () => {
+    const agg = createPhaseMetricsAggregator();
+    // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
+    const payload: any = agg.buildMetricsPayload("nax", "r1", "1000");
+    expect(payload.resourceMetrics[0].scopeMetrics[0].metrics).toEqual([]);
+    expect(resourceAttributesOf(payload)).toContainEqual(attr("service.name", "nax"));
+    expect(resourceAttributesOf(payload)).toContainEqual(attr("nax.run_id", "r1"));
+  });
 });
