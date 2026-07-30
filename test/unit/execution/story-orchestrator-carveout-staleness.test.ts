@@ -16,13 +16,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
-import {
-  StoryOrchestratorBuilder,
-  _storyOrchestratorDeps,
-  describeGateRegression,
-  gateFailureKeys,
-  gateRegressedAfterRectification,
-} from "@/execution";
+import { StoryOrchestratorBuilder, _storyOrchestratorDeps, describeGateRegression, gateFailureKeys } from "@/execution";
 import { deriveTddFailureCategory } from "@/execution";
 import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
@@ -102,56 +96,56 @@ describe("gateFailureKeys", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// gateRegressedAfterRectification — pure (audit #3: keyless-failure blind spot)
+// describeGateRegression — verdict semantics (audit #3: keyless-failure blind spot)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("gateRegressedAfterRectification", () => {
+describe("describeGateRegression — verdict", () => {
   const GATE = "full-suite-gate";
   // An execution-failure synth finding: source test-runner, no file/rule → key "::".
   const execFailFinding = { source: "test-runner", category: "execution-failed", severity: "error", message: "boom" };
 
   test("green final gate → not regressed", () => {
     const out = { success: true, passed: true, findings: [] };
-    expect(gateRegressedAfterRectification(out, new Set(), GATE)).toBe(false);
+    expect(describeGateRegression({ gateOutput: out, baselineKeys: new Set(), gateName: GATE }).regressed).toBe(false);
     // Even with a non-empty baseline (pre-existing failures the verifier blessed).
-    expect(gateRegressedAfterRectification(out, new Set(["foo.test.ts::t-a"]), GATE)).toBe(false);
+    expect(describeGateRegression({ gateOutput: out, baselineKeys: new Set(["foo.test.ts::t-a"]), gateName: GATE }).regressed).toBe(false);
   });
 
   test("structured failure that is a SUBSET of baseline → not regressed (carve-out preserved)", () => {
     const out = { success: false, passed: false, findings: [testFinding("foo.test.ts", "t-a")] };
     const baseline = new Set(["foo.test.ts::t-a", "bar.test.ts::t-b"]);
-    expect(gateRegressedAfterRectification(out, baseline, GATE)).toBe(false);
+    expect(describeGateRegression({ gateOutput: out, baselineKeys: baseline, gateName: GATE }).regressed).toBe(false);
   });
 
   test("NEW structured failure key absent from baseline → regressed", () => {
     const out = { success: false, passed: false, findings: [testFinding("new.test.ts", "t-new")] };
     const baseline = new Set(["foo.test.ts::t-a"]);
-    expect(gateRegressedAfterRectification(out, baseline, GATE)).toBe(true);
+    expect(describeGateRegression({ gateOutput: out, baselineKeys: baseline, gateName: GATE }).regressed).toBe(true);
   });
 
   test("TIMEOUT (failing, findings: []) → regressed even though there is no key to diff (#3)", () => {
     // Before #3 this returned false: empty key set ⇒ [].some(...) ⇒ false ⇒ laundered.
     const timeoutOut = { success: false, passed: false, status: "timeout", findings: [] };
-    expect(gateRegressedAfterRectification(timeoutOut, new Set(["foo.test.ts::t-a"]), GATE)).toBe(true);
+    expect(describeGateRegression({ gateOutput: timeoutOut, baselineKeys: new Set(["foo.test.ts::t-a"]), gateName: GATE }).regressed).toBe(true);
     // Even when the baseline was already failing with structured keys.
-    expect(gateRegressedAfterRectification(timeoutOut, new Set(), GATE)).toBe(true);
+    expect(describeGateRegression({ gateOutput: timeoutOut, baselineKeys: new Set(), gateName: GATE }).regressed).toBe(true);
   });
 
   test("EXECUTION-FAILURE (failing, synth key '::') → regressed even if baseline also had '::' (#3)", () => {
     // Before #3: '::' ∈ baseline ⇒ not "new" ⇒ false ⇒ a story-caused suite crash laundered.
     const out = { success: false, passed: false, status: "execution-failed", findings: [execFailFinding] };
-    expect(gateRegressedAfterRectification(out, new Set(["::"]), GATE)).toBe(true);
-    expect(gateRegressedAfterRectification(out, new Set(["foo.test.ts::t-a"]), GATE)).toBe(true);
+    expect(describeGateRegression({ gateOutput: out, baselineKeys: new Set(["::"]), gateName: GATE }).regressed).toBe(true);
+    expect(describeGateRegression({ gateOutput: out, baselineKeys: new Set(["foo.test.ts::t-a"]), gateName: GATE }).regressed).toBe(true);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // describeGateRegression — the identities behind the boolean (#1382)
 //
-// `gateRegressedAfterRectification` computes the new-key diff and discards it,
-// so an ADR-024 nbf rollback could name no cause. The detail form exposes it;
-// the boolean is now a projection of the same computation, so the two can never
-// disagree.
+// The regression check used to compute the new-key diff and discard it, so an
+// ADR-024 nbf rollback could name no cause. The detail is now the return value,
+// and both consumers (nbf keep-decision + verdict staleness guard) read the same
+// one, so they can never disagree.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("describeGateRegression", () => {
@@ -161,9 +155,10 @@ describe("describeGateRegression", () => {
   test("green final gate → not regressed, no keys, baseline size reported", () => {
     const out = { success: true, passed: true, findings: [] };
     const baseline = new Set(["foo.test.ts::t-a"]);
-    expect(describeGateRegression(out, baseline, GATE)).toEqual({
+    expect(describeGateRegression({ gateOutput: out, baselineKeys: baseline, gateName: GATE })).toEqual({
       regressed: false,
       regressedKeys: [],
+      memoExcludedKeys: [],
       baselineKeySize: 1,
       keyless: false,
     });
@@ -171,7 +166,7 @@ describe("describeGateRegression", () => {
 
   test("NEW structured key → regressed, and the key is named", () => {
     const out = { success: false, passed: false, findings: [testFinding("new.test.ts", "t-new")] };
-    const detail = describeGateRegression(out, new Set(["foo.test.ts::t-a"]), GATE);
+    const detail = describeGateRegression({ gateOutput: out, baselineKeys: new Set(["foo.test.ts::t-a"]), gateName: GATE });
     expect(detail.regressed).toBe(true);
     expect(detail.regressedKeys).toEqual(["new.test.ts::t-new"]);
     expect(detail.baselineKeySize).toBe(1);
@@ -180,14 +175,18 @@ describe("describeGateRegression", () => {
 
   test("subset of baseline → not regressed, and no key is named", () => {
     const out = { success: false, passed: false, findings: [testFinding("foo.test.ts", "t-a")] };
-    const detail = describeGateRegression(out, new Set(["foo.test.ts::t-a", "bar.test.ts::t-b"]), GATE);
+    const detail = describeGateRegression({
+      gateOutput: out,
+      baselineKeys: new Set(["foo.test.ts::t-a", "bar.test.ts::t-b"]),
+      gateName: GATE,
+    });
     expect(detail.regressed).toBe(false);
     expect(detail.regressedKeys).toEqual([]);
   });
 
   test("TIMEOUT (failing, findings: []) → regressed and flagged keyless", () => {
     const out = { success: false, passed: false, status: "timeout", findings: [] };
-    const detail = describeGateRegression(out, new Set(["foo.test.ts::t-a"]), GATE);
+    const detail = describeGateRegression({ gateOutput: out, baselineKeys: new Set(["foo.test.ts::t-a"]), gateName: GATE });
     expect(detail.regressed).toBe(true);
     expect(detail.keyless).toBe(true);
     expect(detail.regressedKeys).toEqual([]);
@@ -195,24 +194,16 @@ describe("describeGateRegression", () => {
 
   test("EXECUTION-FAILURE (synth '::' key) → regressed and flagged keyless", () => {
     const out = { success: false, passed: false, status: "execution-failed", findings: [execFailFinding] };
-    const detail = describeGateRegression(out, new Set(["::"]), GATE);
+    const detail = describeGateRegression({ gateOutput: out, baselineKeys: new Set(["::"]), gateName: GATE });
     expect(detail.regressed).toBe(true);
     expect(detail.keyless).toBe(true);
   });
 
   test("undefined gateName → not regressed (no gate to compare)", () => {
     const out = { success: false, passed: false, findings: [testFinding("new.test.ts", "t-new")] };
-    expect(describeGateRegression(out, new Set(), undefined).regressed).toBe(false);
+    expect(describeGateRegression({ gateOutput: out, baselineKeys: new Set(), gateName: undefined }).regressed).toBe(false);
   });
 
-  test.each([
-    ["green", { success: true, passed: true, findings: [] }, new Set<string>()],
-    ["new key", { success: false, passed: false, findings: [testFinding("n.test.ts", "t")] }, new Set<string>()],
-    ["subset", { success: false, passed: false, findings: [testFinding("f.test.ts", "t")] }, new Set(["f.test.ts::t"])],
-    ["timeout", { success: false, passed: false, status: "timeout", findings: [] }, new Set<string>()],
-  ])("boolean wrapper agrees with detail.regressed — %s", (_label, out, baseline) => {
-    expect(gateRegressedAfterRectification(out, baseline, GATE)).toBe(describeGateRegression(out, baseline, GATE).regressed);
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -416,6 +407,88 @@ describe("ExecutionPlan.run — carve-out staleness", () => {
       // The keyless gate failure is now recognised as a regression — no silent pass.
       expect(result.gateRegressedDuringRect).toBe(true);
       expect(result.success).toBe(false);
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    }
+  });
+
+  // #1383 — the verdict-side half of the memo filter. The staleness guard and nbf's
+  // keep-decision call the SAME predicate, so both must ignore keys the run already
+  // quarantined; filtering only nbf's side would leave one predicate meaning two
+  // different things at two call sites.
+  test("gate regressed ONLY into an already-quarantined flake → carve-out preserved, story passes (#1383)", async () => {
+    const config = makeNaxConfig({
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2, abortOnIncreasingFailures: false } },
+    });
+    rt = makeTestRuntime({ config });
+    // The run already probed this test and quarantined it as flaky at an earlier gate.
+    rt.quarantineMemo.add("flaky.test.ts::sometimes");
+
+    let gateCalls = 0;
+    const gateOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+      kind: "deterministic",
+      name: "full-suite-gate",
+      stage: "verify",
+      config: testSel,
+      execute: async () => {
+        gateCalls++;
+        const ok = gateCalls === 1;
+        return {
+          success: ok,
+          passed: ok,
+          estimatedCostUsd: 0,
+          // The re-run's only failure is the known flake — not attributable to the story.
+          findings: ok ? [] : [testFinding("flaky.test.ts", "sometimes")],
+        };
+      },
+    };
+    let reviewCalls = 0;
+    const reviewOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+      kind: "deterministic",
+      name: "semantic-review",
+      stage: "verify",
+      config: testSel,
+      execute: async () => {
+        reviewCalls++;
+        const ok = reviewCalls > 1;
+        return {
+          success: ok,
+          passed: ok,
+          estimatedCostUsd: 0,
+          findings: ok
+            ? []
+            : [{ source: "semantic", category: "x", severity: "error", message: "r", rule: "r", file: "a.ts" }],
+        };
+      },
+    };
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.callOp = (async (
+      _ctx: unknown,
+      op: { kind?: string; execute?: (i: unknown, c: unknown) => unknown },
+      input: unknown,
+    ) => {
+      if (op.kind === "deterministic" && op.execute) return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    }) as typeof _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.runFixCycle = (async (cycle: { validate: (c: unknown, o: unknown) => Promise<unknown> }) => {
+      await cycle.validate({}, { mode: "full", strategiesRun: ["autofix-implementer"] });
+      return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
+
+    try {
+      const ctx = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-memo",
+      } as unknown as CallContext;
+      const result = await buildPlan(ctx, gateOp, reviewOp).run();
+      expect(result.gateRegressedDuringRect).toBe(false);
+      expect(result.success).toBe(true);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;

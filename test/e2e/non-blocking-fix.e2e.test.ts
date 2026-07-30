@@ -149,7 +149,7 @@ describe("E2E: non-blocking fix (ADR-024)", () => {
       gates: {
         // attempt 0 (main pipeline): green. attempt >= 1 (nbf revalidation): the fix
         // broke a test — structured failure so gateFailureKeys yields a NEW key absent
-        // from the (empty) verifier-time baseline → gateRegressedAfterRectification true.
+        // from the (empty) verifier-time baseline → describeGateRegression reports regressed.
         fullSuite: (attempt) =>
           attempt === 0
             ? { passed: true, failed: 0 }

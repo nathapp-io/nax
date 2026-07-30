@@ -45,6 +45,39 @@ The feature acts only on adversarial findings. Semantic review is AC-grounded by
 
 After a best-effort fix, re-validate with `lint` + `typecheck` + `full-suite-gate` (and `verifier` per §7), **never** `semantic-review` / `adversarial-review`. A deterministic red is trustworthy (real regression → revert); a review red may be a phantom (reviewer variance) and is unrevertable. This eliminates the green→red flip and the non-termination risk in one stroke.
 
+#### Amendment (2026-07-30, #1383): a deterministic red must be *attributable*
+
+§3 called a deterministic red "trustworthy". That holds for the main gate path, where flake
+triage runs before findings are read — but **the nbf revalidation gate is never triaged**
+(`rectification.ts` triages only on the branch that reads findings from `phaseOutputs`; the
+nbf path supplies `overrides.initialFindings` and skips it). So a single flaky test firing
+inside the revalidation window deterministically discarded the best-effort pass, was
+indistinguishable in the logs from a real break, and produced a verdict opposite to the one
+the same failure would have received on the main path.
+
+`describeGateRegression` now excludes failing keys the run has already quarantined
+(`runtime.quarantineMemo`) from the blame set, on **both** consumers — nbf's keep-decision
+and the verdict's staleness guard — since a known flake is not attributable to the story on
+either path. This does narrow when a story fails, which is why it is recorded here rather
+than treated as a pure bug fix.
+
+Three deliberate limits:
+
+- **`keyless` is still decided on the unfiltered key set.** Excluding quarantined keys first
+  would empty the set on a still-failing gate, which §3's keyless rule would then read as a
+  timeout — so the single-known-flake case would still revert, now mislabelled.
+- **First-observation flakes are not covered.** Only the memo is consulted; no probing runs
+  inside a pass that may be rolled back. Running real triage there would let it flip the
+  gate's `success` to `true` (its `allTestRunnersQuarantined` branch), so nbf would keep
+  trees that are red-modulo-quarantine — a semantics change deferred to its own decision.
+  The restore log therefore states `flakeTriageRan: false` so the gap is visible.
+- **A quarantined test that the pass then genuinely breaks is masked**, so nbf may keep a
+  tree where that test is red. This is inherent to a run-scoped memo — the main path already
+  ignores quarantined tests for the rest of the run — so it is parity with the main path
+  rather than a new hole, and accepting it is the point of this amendment. The residual is
+  bounded by the memo only ever holding tests a probe showed to be non-deterministic on an
+  earlier tree.
+
 ### 4. Bounded, transactional
 
 One best-effort fix plus `regressionAttempts` (default 1) source/test fix attempts to clear any regression the fix introduced. The whole pass is a single transaction.

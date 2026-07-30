@@ -7,11 +7,11 @@ export {
   describeGateRegression,
   extractPhaseFindings,
   gateFailureKeys,
-  gateRegressedAfterRectification,
   orderGateLast,
   phasePassed,
   phasesToRevalidate,
   type GateRegressionDetail,
+  type GateRegressionInput,
 } from "./phase-eval";
 export { runRectification, triageGateFindings, gatherRectificationFindings, type TriageResult } from "./rectification";
 export {

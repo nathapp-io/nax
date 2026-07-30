@@ -86,6 +86,7 @@ describe("runNonBlockingFix keep vs restore", () => {
         keptTreeRegressed: () => ({
           regressed: (phaseOutputs["full-suite-gate"] as { success?: boolean }).success === false,
           regressedKeys: ["broke.test.ts::t-new"],
+          memoExcludedKeys: [],
           baselineKeySize: 0,
           keyless: false,
         }),
@@ -112,7 +113,13 @@ describe("runNonBlockingFix keep vs restore", () => {
         ...baseArgs,
         phaseOutputs,
         runRectify: async () => ({ rectificationExhausted: false }),
-        keptTreeRegressed: () => ({ regressed: false, regressedKeys: [], baselineKeySize: 0, keyless: false }),
+        keptTreeRegressed: () => ({
+          regressed: false,
+          regressedKeys: [],
+          memoExcludedKeys: [],
+          baselineKeySize: 0,
+          keyless: false,
+        }),
       },
       {
         captureSnapshotRef: async () => "snap-sha",
@@ -139,6 +146,7 @@ describe("runNonBlockingFix keep vs restore", () => {
           keptTreeRegressed: () => ({
             regressed: true,
             regressedKeys: ["broke.test.ts::renders empty state"],
+            memoExcludedKeys: [],
             baselineKeySize: 2,
             keyless: false,
           }),
@@ -172,6 +180,7 @@ describe("runNonBlockingFix keep vs restore", () => {
           keptTreeRegressed: () => ({
             regressed: true,
             regressedKeys: [],
+            memoExcludedKeys: [],
             baselineKeySize: 0,
             keyless: true,
           }),
@@ -201,6 +210,7 @@ describe("runNonBlockingFix keep vs restore", () => {
           keptTreeRegressed: () => ({
             regressed: true,
             regressedKeys: many,
+            memoExcludedKeys: [],
             baselineKeySize: 0,
             keyless: false,
           }),
@@ -213,6 +223,37 @@ describe("runNonBlockingFix keep vs restore", () => {
 
     expect((data?.regressedKeys as string[]).length).toBe(10);
     expect(data?.regressedKeyCount).toBe(25);
+  });
+
+  // #1383 — nbf's revalidation gate is never flake-triaged, so a first-observation flake
+  // is indistinguishable from a real break. The log must disclose that, and report how
+  // many failures were dropped as already-known flakes.
+  test("restore log discloses the triage gap and the memo exclusions (#1383)", async () => {
+    const phaseOutputs: Record<string, unknown> = { "full-suite-gate": { success: true } };
+    const data = await withInfoSpy(async (infoSpy) => {
+      await runNonBlockingFix(
+        {
+          ...baseArgs,
+          phaseOutputs,
+          runRectify: async () => ({ rectificationExhausted: false }),
+          keptTreeRegressed: () => ({
+            regressed: true,
+            regressedKeys: ["broke.test.ts::real"],
+            memoExcludedKeys: ["flaky.test.ts::sometimes", "other.test.ts::rarely"],
+            baselineKeySize: 0,
+            keyless: false,
+          }),
+        },
+        fakeDeps,
+      );
+      const call = infoSpy.mock.calls.find((c) => String(c[1]).includes("kept tree regressed"));
+      return call?.[2] as Record<string, unknown>;
+    });
+
+    expect(data?.memoExcludedKeyCount).toBe(2);
+    // Stated so an operator can tell a possible flake from a proven break.
+    expect(data?.flakeTriageRan).toBe(false);
+    expect(data?.regressedKeys).toEqual(["broke.test.ts::real"]);
   });
 
   test("restored when harness exhausts — phaseOutputs rolled back", async () => {

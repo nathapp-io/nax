@@ -9,13 +9,8 @@ import {
   nonBlockingExtraPhases,
   shouldRunNonBlockingFix,
 } from "../non-blocking-fix";
-import {
-  describeGateRegression,
-  gateFailureKeys,
-  gateRegressedAfterRectification,
-  phaseExplicitlyPassed,
-  phasePassed,
-} from "./phase-eval";
+import type { GateRegressionDetail } from "./phase-eval";
+import { describeGateRegression, gateFailureKeys, phaseExplicitlyPassed, phasePassed } from "./phase-eval";
 import { collectOrderedPhases } from "./phase-state";
 import { runRectification } from "./rectification";
 import { _storyOrchestratorDeps, runPhase } from "./run-phase";
@@ -33,6 +28,31 @@ export class ExecutionPlan {
      */
     private readonly isThreeSession: boolean = false,
   ) {}
+
+  /**
+   * Evaluate the gate against the pre-rectification baseline, as of right now.
+   *
+   * Sole supplier of `describeGateRegression`'s input inside the plan, so nbf's
+   * keep-decision (ADR-024 §3) and the verdict's staleness guard cannot drift apart —
+   * they are the same call with the same memo. Splitting them is what the §3 comment at
+   * the nbf call site warns against, and filtering flakes into only one of them would
+   * reintroduce exactly the main-path/nbf asymmetry #1383 is about.
+   */
+  private describeGateRegressionNow(
+    phaseOutputs: Record<string, unknown>,
+    gateName: string | undefined,
+    baselineKeys: ReadonlySet<string>,
+  ): GateRegressionDetail {
+    return describeGateRegression({
+      gateOutput: gateName === undefined ? undefined : phaseOutputs[gateName],
+      baselineKeys,
+      gateName,
+      storyId: this.ctx.storyId,
+      // Run-scoped: a test this run already probed and quarantined is not attributable
+      // to this story, on either path (#1383).
+      quarantineMemo: this.ctx.runtime.quarantineMemo,
+    });
+  }
 
   /**
    * Returns the names of all phases in canonical execution order.
@@ -321,13 +341,7 @@ export class ExecutionPlan {
           // here instead, leaving the story green with zero net change.
           // Detail-returning (not boolean) so the restore log can name the regressing
           // test identities — the only point at which they still exist (#1382).
-          keptTreeRegressed: () =>
-            describeGateRegression(
-              gateName === undefined ? undefined : phaseOutputs[gateName],
-              preRectGateFailureKeys,
-              gateName,
-              this.ctx.storyId,
-            ),
+          keptTreeRegressed: () => this.describeGateRegressionNow(phaseOutputs, gateName, preRectGateFailureKeys),
         },
         {
           measureSourceDiff: createMeasureSourceDiff({
@@ -361,9 +375,11 @@ export class ExecutionPlan {
     const verifierExplicitlyPassed = verifierName !== undefined && phaseExplicitlyPassed(phaseOutputs[verifierName]);
     // Compares the FINAL gate against the verifier-time baseline, including keyless
     // (timeout / execution-failure) regressions the raw key-diff is blind to (audit #3).
-    const gateRegressedDuringRect =
-      gateName !== undefined &&
-      gateRegressedAfterRectification(phaseOutputs[gateName], preRectGateFailureKeys, gateName, this.ctx.storyId);
+    const gateRegressedDuringRect = this.describeGateRegressionNow(
+      phaseOutputs,
+      gateName,
+      preRectGateFailureKeys,
+    ).regressed;
     const verifierPassedSsot = verifierExplicitlyPassed && !gateRegressedDuringRect;
     if (verifierExplicitlyPassed && gateRegressedDuringRect) {
       logger?.warn(

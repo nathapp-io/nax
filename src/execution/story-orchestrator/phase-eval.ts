@@ -1,5 +1,6 @@
 import type { Finding } from "@/findings";
 import { getSafeLogger } from "@/logger";
+import type { QuarantineMemo } from "@/verification";
 import type { InternalPhase, PhaseKind } from "./types";
 import { STRATEGY_TO_REVALIDATION_PHASES, STRICT_VERDICT_PHASE_NAMES } from "./types";
 
@@ -126,20 +127,27 @@ export function gateFailureKeys(gateOutput: unknown): Set<string> {
 const KEYLESS_GATE_FAILURE_KEY = "::";
 
 /**
- * Why `gateRegressedAfterRectification` returned what it did — the identities behind
- * the boolean.
+ * A gate-regression verdict together with the identities behind it.
  *
- * Exists because the ADR-024 nbf rollback (`runNonBlockingFix`) used to log a discarded
- * best-effort pass with no recoverable evidence of what broke: the new-key diff was
- * computed here and thrown away, `phaseOutputs` is wiped by the restore, and the
- * offending edit is hard-reset away (#1382). The boolean is a projection of this detail,
- * so the two can never disagree.
+ * The evidence is part of the return value because the ADR-024 nbf rollback
+ * (`runNonBlockingFix`) used to discard a best-effort pass with no recoverable record of
+ * what broke: the new-key diff was computed here and thrown away, `phaseOutputs` is wiped
+ * by the restore, and the offending edit is hard-reset away (#1382).
  */
 export interface GateRegressionDetail {
-  /** The verdict — identical to `gateRegressedAfterRectification`'s return. */
+  /** The verdict: did the gate get worse in a way attributable to this story? */
   regressed: boolean;
-  /** Structured failure keys in the final gate that are absent from the baseline. */
+  /**
+   * Structured failure keys in the final gate that are absent from the baseline AND
+   * not already quarantined as flakes. These are what the story is blamed for.
+   */
   regressedKeys: readonly string[];
+  /**
+   * Failing keys excluded because the run had already quarantined them as flakes
+   * (`runtime.quarantineMemo`). Never contribute to `regressed` — a known flake is
+   * not attributable to the story on any path (#1383).
+   */
+  memoExcludedKeys: readonly string[];
   /** Size of the verifier-time baseline the final gate was diffed against. */
   baselineKeySize: number;
   /**
@@ -151,70 +159,76 @@ export interface GateRegressionDetail {
   keyless: boolean;
 }
 
+/** Inputs to `describeGateRegression`. Options object — five positional params would breach the convention cap. */
+export interface GateRegressionInput {
+  /** The gate's FINAL output, after rectification / the nbf pass. */
+  gateOutput: unknown;
+  /** Failing-test identities captured before rectification (the verifier-time baseline). */
+  baselineKeys: ReadonlySet<string>;
+  /** Absent ⇒ no gate in the plan ⇒ nothing to be stale about. */
+  gateName: string | undefined;
+  storyId?: string;
+  /**
+   * Run-scoped quarantine memo (`runtime.quarantineMemo`). When supplied, failing keys
+   * the run already quarantined as flakes are excluded from the blame set.
+   *
+   * Load-bearing for #1383: the nbf revalidation re-runs the gate but never flake-triages
+   * it (triage owns the main gate path only), so without this a single known flake firing
+   * inside the revalidation window deterministically discarded the best-effort pass — and
+   * was indistinguishable in the logs from a real break. Omitted ⇒ pre-#1383 behaviour.
+   */
+  quarantineMemo?: QuarantineMemo;
+}
+
 /**
- * `gateRegressedAfterRectification` with its reasoning exposed — see
- * `GateRegressionDetail`. Same semantics; `gateName === undefined` (no gate in the
- * plan) reports not-regressed, matching the `gateName !== undefined &&` guard every
- * call site used to carry.
+ * Did the full-suite gate REGRESS relative to the baseline, and on what evidence?
  *
- * Pure over (output, baseline, gateName) — exported for unit testing.
+ * Drives two decisions that must never disagree: the verifier-SSOT carve-out in the story
+ * verdict, and ADR-024 §3's keep-or-restore for a best-effort nbf pass.
+ *
+ * Not regressed when the final gate is passing, or when there is no gate at all.
+ * Otherwise it regressed if EITHER:
+ *  - it carries a structured failure key that is absent from `baselineKeys` and not
+ *    already quarantined (a new, identifiable, attributable failing test), OR
+ *  - it failed in a KEYLESS form — a timeout (`findings: []` ⇒ empty key set) or an
+ *    execution-failure (synth finding ⇒ `"::"`). These yield no identity to compare, so
+ *    the structured key-diff alone is blind to them (audit #3). We cannot prove a keyless
+ *    failure is the same one the baseline blessed, and silently exempting an unidentifiable
+ *    red suite is exactly the laundering this guards against — so treat it as a regression.
+ *
+ * `keyless` is decided on the UNFILTERED key set, deliberately. Excluding quarantined keys
+ * first would empty the set on a still-failing gate, which this function would then read as
+ * a timeout — so the single-known-flake case (#1383's motivating case) would still be called
+ * a regression, now mislabelled as keyless. The memo filter narrows blame; it must never
+ * erase the fact that an identity existed.
+ *
+ * Pure over its input — exported for unit testing.
  */
-export function describeGateRegression(
-  finalGateOutput: unknown,
-  baselineKeys: ReadonlySet<string>,
-  gateName: string | undefined,
-  storyId?: string,
-): GateRegressionDetail {
+export function describeGateRegression(input: GateRegressionInput): GateRegressionDetail {
+  const { gateOutput, baselineKeys, gateName, storyId, quarantineMemo } = input;
   const notRegressed: GateRegressionDetail = {
     regressed: false,
     regressedKeys: [],
+    memoExcludedKeys: [],
     baselineKeySize: baselineKeys.size,
     keyless: false,
   };
   // Green gate ⇒ not regressed. Also guards the keyless check below: a passing gate
   // has an empty key set too, but must never be read as a keyless failure.
-  if (gateName === undefined || phasePassed(gateName, finalGateOutput, storyId)) return notRegressed;
+  if (gateName === undefined || phasePassed(gateName, gateOutput, storyId)) return notRegressed;
 
-  const finalKeys = gateFailureKeys(finalGateOutput);
-  const regressedKeys = [...finalKeys].filter((k) => !baselineKeys.has(k));
-  const keyless = finalKeys.size === 0 || finalKeys.has(KEYLESS_GATE_FAILURE_KEY);
+  const allKeys = gateFailureKeys(gateOutput);
+  const memoExcludedKeys = quarantineMemo ? [...allKeys].filter((k) => quarantineMemo.has(k)) : [];
+  const excluded = new Set(memoExcludedKeys);
+  const regressedKeys = [...allKeys].filter((k) => !baselineKeys.has(k) && !excluded.has(k));
+  const keyless = allKeys.size === 0 || allKeys.has(KEYLESS_GATE_FAILURE_KEY);
   return {
     regressed: regressedKeys.length > 0 || keyless,
     regressedKeys,
+    memoExcludedKeys,
     baselineKeySize: baselineKeys.size,
     keyless,
   };
-}
-
-/**
- * Did the full-suite gate REGRESS during rectification relative to the verifier-time
- * baseline? Drives the verifier-SSOT carve-out: a verifier that passed exempts a red
- * gate as a "pre-existing/unrelated regression" ONLY while the gate did not get worse
- * after the verifier blessed it.
- *
- * Returns false when the final gate is passing (green ⇒ nothing to be stale about).
- *
- * When the final gate is failing, it regressed if EITHER:
- *  - it carries a structured failure key absent from `baselineKeys` (a new, identifiable
- *    failing test), OR
- *  - it failed in a KEYLESS form — a timeout (`findings: []` ⇒ empty key set) or an
- *    execution-failure (synth finding ⇒ `"::"`). These yield no identity to compare, so
- *    the structured key-diff alone is blind to them (audit #3). We cannot prove a keyless
- *    failure is the same one the verifier blessed, and silently exempting an unidentifiable
- *    red suite is exactly the laundering this guards against — so treat it as a regression.
- *
- * Boolean projection of `describeGateRegression` — one computation, so the verdict and
- * the logged explanation of it can never diverge.
- *
- * Pure over (output, baseline, gateName) — exported for unit testing.
- */
-export function gateRegressedAfterRectification(
-  finalGateOutput: unknown,
-  baselineKeys: ReadonlySet<string>,
-  gateName: string,
-  storyId?: string,
-): boolean {
-  return describeGateRegression(finalGateOutput, baselineKeys, gateName, storyId).regressed;
 }
 
 /**
