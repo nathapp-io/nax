@@ -102,7 +102,7 @@ export type {
 export { validateMockStructureFiles } from "./validate-mock-structure-files";
 export { setupGenerateOp, MAX_SETUP_LLM_ATTEMPTS } from "./setup-generate";
 export type { SetupPlan, MonoPackageConfig, RawSetupPlan } from "./setup-generate";
-export type { ValidateMockStructureDeps } from "./validate-mock-structure-files";
+export type { ValidateMockStructureOptions } from "./validate-mock-structure-files";
 export { makeDeclarationSink } from "./declaration-sink";
 export type { DeclarationSink } from "./declaration-sink";
 export { findingsToFailedChecks } from "./_finding-to-check";
