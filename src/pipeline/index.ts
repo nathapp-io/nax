@@ -22,6 +22,8 @@ export { queueCheckStage } from "./stages/queue-check";
 export { resolveExecutionAgent } from "./stages/execution-helpers";
 export type { ResolvedExecutionAgent } from "./stages/execution-helpers";
 
+export { acceptanceSetupStage, _acceptanceSetupDeps } from "./stages/acceptance-setup";
+
 export { pipelineEventBus } from "./event-bus";
 export type {
   PipelineEvent,

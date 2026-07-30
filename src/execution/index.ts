@@ -97,6 +97,12 @@ export {
 } from "./checkpoint";
 export type { StoryRunResult } from "./types";
 export {
+  runCompletionPhase,
+  _runnerCompletionDeps,
+  type RunnerCompletionOptions,
+  type RunnerCompletionResult,
+} from "./runner-completion";
+export {
   applyPostRunInspection,
   decideStageAction,
   extractPauseReason,

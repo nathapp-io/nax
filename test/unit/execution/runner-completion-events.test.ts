@@ -7,13 +7,13 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { pipelineEventBus } from "@/pipeline/event-bus";
-import type { PostRunPhaseCompletedEvent } from "@/pipeline/event-bus";
+import { pipelineEventBus } from "@/pipeline";
+import type { PostRunPhaseCompletedEvent } from "@/pipeline";
 import {
   _runnerCompletionDeps,
   runCompletionPhase,
-  type RunnerCompletionOptions,
-} from "@/execution/runner-completion";
+} from "@/execution";
+import type { RunnerCompletionOptions } from "@/execution";
 import type { AcceptanceLoopResult } from "@/execution/lifecycle/acceptance-loop";
 import type { RunCompletionResult } from "@/execution/lifecycle/run-completion";
 import type { NaxConfig } from "@/config";

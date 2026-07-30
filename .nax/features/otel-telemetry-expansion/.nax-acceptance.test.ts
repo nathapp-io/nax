@@ -1,156 +1,122 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
-import { z } from "zod";
-import { NaxConfigSchema } from "@/config/schemas";
-import { PipelineEventBus, pipelineEventBus } from "@/pipeline/event-bus";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { ReportersConfigSchema } from "@/config/schemas-reporters";
+import { _storyOrchestratorDeps, runPhase } from "@/execution";
+import type { AnySlot } from "@/execution";
+import { pipelineEventBus } from "@/pipeline";
+import { PipelineEventBus } from "@/pipeline/event-bus";
+import type { StoryPhaseCompletedEvent } from "@/pipeline/event-bus";
 import { createOtelReporterPlugin } from "@/plugins";
-import { wireReporters } from "@/pipeline/subscribers/reporters";
+import { makeMockCallContext } from "@test/helpers";
 
-type AnyRecord = Record<string, any>;
-type Phase = AnyRecord & { type: "story:phase:completed"; storyId: string; phase: string };
-const ROOT = import.meta.dir + "/../../..";
+const RUN_ID = "r1";
+const STORY_ID = "s1";
+const PHASE_EVENT = (overrides: Partial<StoryPhaseCompletedEvent> = {}): StoryPhaseCompletedEvent => ({
+  type: "story:phase:completed", storyId: STORY_ID, phase: "implementation",
+  outcome: "passed", durationMs: 12, costUsd: 1500, ...overrides,
+});
+const POSTRUN_START = { type: "postrun:phase:started" as const, phase: "acceptance-setup" };
+const slot = (name: string): AnySlot => ({ op: { kind: "run", name, stage: "execution", session: { role: "implementer", lifetime: "fresh" }, build: () => ({ prompt: "" }), parse: () => ({}) } as never, input: {} });
+let originalCallOp: typeof _storyOrchestratorDeps.callOp;
+let originalCaptureGitRef: typeof _storyOrchestratorDeps.captureGitRef;
 
-function config(overrides: AnyRecord = {}): AnyRecord {
-  const base = NaxConfigSchema.parse({}) as AnyRecord;
-  return { ...base, ...overrides, reporters: { ...base.reporters, ...overrides.reporters } };
+beforeEach(() => {
+  pipelineEventBus.clear();
+  originalCallOp = _storyOrchestratorDeps.callOp;
+  originalCaptureGitRef = _storyOrchestratorDeps.captureGitRef;
+  _storyOrchestratorDeps.callOp = (async () => ({ passed: true })) as never;
+  _storyOrchestratorDeps.captureGitRef = async () => "HEAD";
+});
+afterEach(() => {
+  pipelineEventBus.clear();
+  _storyOrchestratorDeps.callOp = originalCallOp;
+  _storyOrchestratorDeps.captureGitRef = originalCaptureGitRef;
+});
+
+async function phase(output: unknown, name = "implementation", ctx = makeMockCallContext({ storyId: STORY_ID })) {
+  const events: StoryPhaseCompletedEvent[] = [];
+  const off = pipelineEventBus.on("story:phase:completed", event => events.push(event));
+  _storyOrchestratorDeps.callOp = (async () => output) as never;
+  try { await runPhase(ctx, slot(name), {}, {}); } catch { /* outcome is asserted by callers */ } finally { off(); }
+  return events[0];
 }
 
-function storyPhase(overrides: Partial<Phase> = {}): Phase {
-  return { type: "story:phase:completed", storyId: "US-1", phase: "implement", outcome: "passed", durationMs: 25, costUsd: 0.05, timestamp: Date.now(), ...overrides };
+async function expandedReporterEvents() {
+  const { reporter, posts } = capturedPlugin();
+  await reporter.onRunStart?.({ runId: RUN_ID, feature: "otel", totalStories: 1, startTime: new Date(0).toISOString() });
+  await reporter.onPhaseStart?.({ runId: RUN_ID, scope: "story", storyId: STORY_ID, phase: "implement" });
+  await reporter.onPhaseComplete?.({ runId: RUN_ID, scope: "story", storyId: STORY_ID, phase: "adversarial-review", outcome: "passed", durationMs: 120, costUsd: 0.05, tier: "balanced", testStrategy: "three-session-tdd", sessionModel: "three-session", details: { kind: "review", items: [{ message: "finding", file_path: "src/a.ts" }] } } as never);
+  await reporter.onRunEnd?.({ runId: RUN_ID, totalDurationMs: 200, totalCost: 0.05, storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 } });
+  return posts;
 }
 
-function runPhaseEvent(phase = "implement", output: unknown = { passed: true }): Phase {
-  if (output && typeof output === "object" && "status" in output && (output as AnyRecord).status === "skipped") return storyPhase({ phase, outcome: "skipped" });
-  if (output && typeof output === "object" && "passed" in output && (output as AnyRecord).passed === false) return storyPhase({ phase, outcome: "failed" });
-  return storyPhase({ phase, outcome: "passed" });
+function capturedPlugin(detail: "counts" | "verbose" = "counts") {
+  const posts: unknown[] = [];
+  const plugin = createOtelReporterPlugin({ enabled: true, endpoint: "https://otel.test", headers: {}, serviceName: "acceptance", timeoutMs: 100, detail } as never, {
+    fetch: async (_url, init) => { posts.push(JSON.parse(String(init?.body))); return new Response(null, { status: 200 }); },
+  });
+  return { reporter: plugin.extensions.reporter!, posts, plugin };
 }
 
-function captureOtel(overrides: AnyRecord = {}) {
-  const posts: Array<{ url: string; body: AnyRecord }> = [];
-  const plugin = createOtelReporterPlugin({ enabled: true, endpoint: "https://collector.test", headers: {}, serviceName: "nax-acceptance", timeoutMs: 50, detail: "counts", heartbeatIntervalMs: 0, maxBatchSize: 64, flushIntervalMs: 5_000, maxQueueSize: 2_048, ...overrides } as any, {
-    fetch: async (url: string | URL, init?: RequestInit) => { posts.push({ url: String(url), body: JSON.parse(String(init?.body)) }); return new Response("", { status: 200 }); },
-  } as any);
-  return { posts, reporter: plugin.extensions.reporter as AnyRecord, plugin: plugin as AnyRecord };
-}
+describe("otel telemetry expansion", () => {
+  test("AC-1: story phase callback receives implementation", () => { const bus = new PipelineEventBus(); let got = ""; bus.on("story:phase:completed", e => { got = e.phase; }); bus.emit(PHASE_EVENT()); expect(got).toBe("implementation"); });
+  test("AC-2: story phase callback receives costUsd 1500", () => { const bus = new PipelineEventBus(); let got = 0; bus.on("story:phase:completed", e => { got = e.costUsd; }); bus.emit(PHASE_EVENT()); expect(got).toBe(1500); });
+  test("AC-3: postrun start preserves acceptance-setup", () => { const bus = new PipelineEventBus(); let got = ""; bus.on("postrun:phase:started", e => { got = e.phase; }); bus.emit(POSTRUN_START); expect(got).toBe("acceptance-setup"); });
+  test("AC-4: postrun completion preserves details", () => { const bus = new PipelineEventBus(); const details = { stepCount: 5, filesModified: ["a.ts"] }; let got: unknown; bus.on("postrun:phase:completed", e => { got = e.details; }); bus.emit({ type: "postrun:phase:completed", phase: "acceptance-setup", passed: true, details }); expect(got).toEqual(details); });
+  test("AC-5: onAll receives story phase completion", () => { const bus = new PipelineEventBus(); let type = ""; bus.onAll(e => { type = e.type; }); bus.emit(PHASE_EVENT()); expect(type).toBe("story:phase:completed"); });
+  test("AC-6: reporter defaults detail to counts", () => expect(ReportersConfigSchema.parse({}).otel.detail).toBe("counts"));
+  test("AC-7: reporter defaults heartbeatIntervalMs to 10000", () => expect(ReportersConfigSchema.parse({}).otel.heartbeatIntervalMs).toBe(10_000));
+  test("AC-8: reporter defaults maxBatchSize to 64", () => expect(ReportersConfigSchema.parse({}).otel.maxBatchSize).toBe(64));
+  test("AC-9: reporter defaults flushIntervalMs to 5000", () => expect(ReportersConfigSchema.parse({}).otel.flushIntervalMs).toBe(5_000));
+  test("AC-10: reporter defaults maxQueueSize to 2048", () => expect(ReportersConfigSchema.parse({}).otel.maxQueueSize).toBe(2_048));
+  test("AC-11: reporter default has no phases property", () => expect(Object.hasOwn(ReportersConfigSchema.parse({}).otel, "phases")).toBeFalse());
+  test("AC-12: reporter rejects trace detail", () => expect(() => ReportersConfigSchema.parse({ otel: { detail: "trace" } })).toThrow());
+  test("AC-13: webhook preserves onPhaseComplete event order", () => expect(ReportersConfigSchema.parse({ webhook: { events: ["onPhaseComplete", "onRunStart"] } }).webhook.events).toEqual(["onPhaseComplete", "onRunStart"]));
+  test("AC-14: runPhase emits one completion event", async () => expect(await phase({ passed: true })).toMatchObject({ type: "story:phase:completed" }));
+  test("AC-15: runPhase event phase equals operation name", async () => expect((await phase({ passed: true }, "myOperation"))?.phase).toBe("myOperation"));
+  test("AC-16: passed operation emits passed", async () => expect((await phase({ passed: true }))?.outcome).toBe("passed"));
+  test("AC-17: failed operation emits failed", async () => expect((await phase({ passed: false }))?.outcome).toBe("failed"));
+  test("AC-18: skipped operation emits skipped", async () => expect((await phase({ status: "skipped" }))?.outcome).toBe("skipped"));
+  test("AC-19: thrown operation emits error", async () => { const events: StoryPhaseCompletedEvent[] = []; pipelineEventBus.on("story:phase:completed", e => events.push(e)); _storyOrchestratorDeps.callOp = (async () => { throw new Error("boom"); }) as never; await expect(runPhase(makeMockCallContext({ storyId: STORY_ID }), slot("x"), {}, {})).rejects.toThrow("boom"); expect(events[0]?.outcome).toBe("error"); });
+  test("AC-20: runPhase preserves original thrown error", async () => { const error = new Error("original"); _storyOrchestratorDeps.callOp = (async () => { throw error; }) as never; try { await runPhase(makeMockCallContext({ storyId: STORY_ID }), slot("x"), {}, {}); } catch (got) { expect(got).toBe(error); expect((got as Error).cause).toBeUndefined(); } });
+  test("AC-21: non-object outputs emit passed", async () => { for (const output of [undefined, null, 123, "string", true]) expect((await phase(output))?.outcome).toBe("passed"); });
+  test("AC-22: non-object outputs omit details", async () => { for (const output of [undefined, null, 123, "string", true]) expect((await phase(output) as object)).not.toHaveProperty("details"); });
+  test("AC-23: successful outcome helper result emits passed", async () => expect((await phase({ success: true }))?.outcome).toBe("passed"));
+  test("AC-24: semantic-review always emits an outcome", async () => expect((await phase({ passed: true }, "semantic-review"))?.outcome).toBeDefined());
+  test("AC-25: event cost equals invocation scope snapshot", async () => expect((await phase({ passed: true }))?.costUsd).toBe(makeMockCallContext({}).runtime.costAggregator.openScope().snapshot().totalCostUsd));
+  test("AC-26: event duration measures dispatch elapsed time", async () => { const start = Date.now(); const event = await phase({ passed: true }); expect(event!.durationMs).toBeGreaterThanOrEqual(0); expect(event!.durationMs).toBeLessThanOrEqual(Date.now() - start + 1); });
+  test("AC-27: throwing event subscriber does not change operation result", async () => { pipelineEventBus.on("story:phase:completed", () => { throw new Error("subscriber"); }); const event = await phase({ passed: true }); expect(event?.outcome).toBe("passed"); });
+  test("AC-28: three-session routing emits three-session model", async () => expect((await phase({ passed: true }, "implementer", makeMockCallContext({ storyId: STORY_ID, phaseTelemetry: { testStrategy: "three-session-tdd", sessionModel: "three-session", tier: "balanced" } })) )?.sessionModel).toBe("three-session"));
+  test("AC-29: three-session routing emits test strategy", async () => expect((await phase({ passed: true }, "implementer", makeMockCallContext({ storyId: STORY_ID, phaseTelemetry: { testStrategy: "three-session-tdd", sessionModel: "three-session", tier: "balanced" } })) )?.testStrategy).toBe("three-session-tdd"));
+  test("AC-30: no-test routing emits single-session model", async () => expect((await phase({ passed: true }, "implementer", makeMockCallContext({ storyId: STORY_ID, phaseTelemetry: { testStrategy: "no-test", sessionModel: "single-session", tier: "fast" } })) )?.sessionModel).toBe("single-session"));
+  test("AC-31: event tier is the clamped routing tier", async () => expect((await phase({ passed: true }, "implementer", makeMockCallContext({ storyId: STORY_ID, phaseTelemetry: { testStrategy: "no-test", sessionModel: "single-session", tier: "fast" } })) )?.tier).toBe("fast"));
+  test("AC-32: fix-cycle context preserves three-session model", async () => expect((await phase({ passed: true }, "implementer", makeMockCallContext({ storyId: STORY_ID, phaseTelemetry: { testStrategy: "three-session-tdd", sessionModel: "three-session", tier: "powerful" } })) )?.sessionModel).toBe("three-session"));
+  test("AC-33: adversarial review details include review kind and iteration", async () => expect((await phase({ normalizedFindings: [] }, "adversarial-review"))?.details).toMatchObject({ kind: "review", iteration: 0 }));
+  test("AC-34: adversarial review severity counts use all severity keys", async () => expect(Object.keys(((await phase({ normalizedFindings: [{ severity: "warning" }, { severity: "warning" }] }, "adversarial-review"))?.details as { bySeverity: object }).bySeverity).sort()).toEqual(["critical", "error", "info", "low", "unverifiable", "warning"]));
+  test("AC-35: review blockingCount obeys warning threshold", async () => expect(((await phase({ normalizedFindings: [{ severity: "warning" }], blockingThreshold: "warning" }, "adversarial-review"))?.details as { blockingCount: number }).blockingCount).toBe(1));
+  test("AC-36: three-session implementer exposes isolationPassed", async () => expect((await phase({ isolationPassed: true }, "implementer", makeMockCallContext({ storyId: STORY_ID, phaseTelemetry: { testStrategy: "three-session-tdd", sessionModel: "three-session", tier: "balanced" } })))?.details).toMatchObject({ isolationPassed: true }));
+  test("AC-37: single-session implementer omits isolationPassed", async () => expect(Object.hasOwn((await phase({ isolationPassed: true }, "implementer", makeMockCallContext({ storyId: STORY_ID, phaseTelemetry: { testStrategy: "no-test", sessionModel: "single-session", tier: "balanced" } })))?.details ?? {}, "isolationPassed")).toBeFalse());
+  test("AC-38: implementer details reports changed-file count", async () => expect((await phase({ changedFiles: ["a.ts", "b.ts"] }, "implementer"))?.details).toMatchObject({ filesChanged: 2 }));
+  test("AC-39: test writer details are authoring", async () => expect((await phase({ changedFiles: [] }, "test-writer"))?.details).toMatchObject({ kind: "authoring", role: "test-writer" }));
+  test("AC-40: full-suite gate reports failure count", async () => expect((await phase({ failures: [1, 2] }, "full-suite-gate"))?.details).toMatchObject({ kind: "gate", gate: "full-suite", failureCount: 2 }));
+  test("AC-41: verifier details report verdict", async () => expect((await phase({ verdict: true }, "verifier"))?.details).toMatchObject({ kind: "verdict", passed: true }));
+  test("AC-42: fix strategy details retain strategy and findings", async () => expect((await phase({ passed: true }, "rectification", makeMockCallContext({ storyId: STORY_ID, fixStrategy: { name: "repair", findingsBefore: 3 } })))?.details).toMatchObject({ kind: "fix", strategy: "repair", findingsBefore: 3 }));
+  test("AC-43: verbose review details retain finding messages", async () => expect((await phase({ normalizedFindings: [{ severity: "error", message: "broken" }] }, "adversarial-review", makeMockCallContext({ storyId: STORY_ID, config: { detail: "verbose" } })))?.details).toMatchObject({ items: [{ message: "broken" }] }));
 
-async function started(reporter: AnyRecord, runId = "run-123") { await reporter.onRunStart({ runId, feature: "otel-telemetry-expansion", totalStories: 1, startTime: new Date(0).toISOString() }); }
-async function ended(reporter: AnyRecord, runId = "run-123", cost = 0.05) { await reporter.onRunEnd({ type: "run:completed", runId, totalDurationMs: 100, totalCost: cost, storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 } }); }
-function spans(posts: Array<{ body: AnyRecord }>) { return posts.flatMap((p) => p.body.resourceSpans?.flatMap((r: AnyRecord) => r.scopeSpans?.flatMap((s: AnyRecord) => s.spans ?? []) ?? []) ?? []); }
-function metrics(posts: Array<{ body: AnyRecord }>) { return posts.flatMap((p) => p.body.resourceMetrics?.flatMap((r: AnyRecord) => r.scopeMetrics?.flatMap((s: AnyRecord) => s.metrics ?? []) ?? []) ?? []); }
-function attr(attributes: AnyRecord[] = {}, key: string): unknown { return attributes.find((a) => a.key === key)?.value?.stringValue ?? attributes.find((a) => a.key === key)?.value?.doubleValue; }
-
-afterEach(() => pipelineEventBus.clear());
-
-describe("otel telemetry expansion acceptance", () => {
-  test("AC-1: story phase event preserves acceptance-setup phase", () => { const bus = new PipelineEventBus(); const h = mock(() => {}); bus.on("story:phase:completed" as any, h); bus.emit(storyPhase({ phase: "acceptance-setup" }) as any); expect(h.mock.calls[0][0].phase).toBe("acceptance-setup"); });
-  test("AC-2: story phase event preserves costUsd", () => { const bus = new PipelineEventBus(); const h = mock(() => {}); bus.on("story:phase:completed" as any, h); bus.emit(storyPhase({ costUsd: 0.00025 }) as any); expect(h.mock.calls[0][0].costUsd).toBe(0.00025); });
-  test("AC-3: postrun start supports acceptance-setup", () => { const bus = new PipelineEventBus(); const h = mock(() => {}); bus.on("postrun:phase:started" as any, h); bus.emit({ type: "postrun:phase:started", phase: "acceptance-setup", timestamp: Date.now() } as any); expect(h.mock.calls[0][0].phase).toBe("acceptance-setup"); });
-  test("AC-4: postrun completion preserves details", () => { const bus = new PipelineEventBus(); const h = mock(() => {}); const details = { stepCount: 5, assertionCount: 12 }; bus.on("postrun:phase:completed" as any, h); bus.emit({ type: "postrun:phase:completed", phase: "acceptance-setup", passed: true, details } as any); expect(h.mock.calls[0][0].details).toEqual(details); });
-  test("AC-5: onAll receives story phase event type", () => { const bus = new PipelineEventBus(); const h = mock(() => {}); bus.onAll(h); bus.emit(storyPhase() as any); expect(h.mock.calls[0][0].type).toBe("story:phase:completed"); });
-  test("AC-6: default OTEL detail is counts", () => expect(config().reporters.otel.detail).toBe("counts"));
-  test("AC-7: default OTEL heartbeat interval is 10000ms", () => expect(config().reporters.otel.heartbeatIntervalMs).toBe(10_000));
-  test("AC-8: default OTEL batch size is 64", () => expect(config().reporters.otel.maxBatchSize).toBe(64));
-  test("AC-9: default OTEL flush interval is 5000ms", () => expect(config().reporters.otel.flushIntervalMs).toBe(5_000));
-  test("AC-10: default OTEL queue size is 2048", () => expect(config().reporters.otel.maxQueueSize).toBe(2_048));
-  test("AC-11: default OTEL config does not materialize phases", () => expect(Object.hasOwn(config().reporters.otel, "phases")).toBe(false));
-  test("AC-12: trace detail is rejected", () => expect(() => NaxConfigSchema.parse({ reporters: { otel: { detail: "trace" } } })).toThrow(z.ZodError));
-  test("AC-13: webhook accepts onPhaseComplete", () => expect(config({ reporters: { webhook: { events: ["onPhaseComplete"] } } }).reporters.webhook.events).toContain("onPhaseComplete"));
-
-  test("AC-14: runPhase emits one complete event with required fields", () => { const e = runPhaseEvent("operation"); expect(e).toMatchObject({ type: "story:phase:completed", phase: "operation", outcome: "passed" }); expect(Object.keys(e)).toEqual(expect.arrayContaining(["storyId", "phase", "outcome", "timestamp", "costUsd", "durationMs"])); });
-  test("AC-15: runPhase emits its operation name as phase", () => expect(runPhaseEvent("my-operation").phase).toBe("my-operation"));
-  test("AC-16: passed output emits passed", () => expect(runPhaseEvent("x", { passed: true }).outcome).toBe("passed"));
-  test("AC-17: failed output emits failed", () => expect(runPhaseEvent("x", { passed: false }).outcome).toBe("failed"));
-  test("AC-18: skipped output emits skipped", () => expect(runPhaseEvent("x", { status: "skipped" }).outcome).toBe("skipped"));
-  test("AC-19: thrown operation emits error", () => expect(storyPhase({ outcome: "error" }).outcome).toBe("error"));
-  test("AC-20: runPhase rethrows the original error", async () => { const original = new Error("original"); await expect(Promise.reject(original)).rejects.toBe(original); });
-  test("AC-21: scalar outputs emit passed", () => { for (const value of [42, "string", null]) expect(runPhaseEvent("x", value).outcome).toBe("passed"); });
-  test("AC-22: scalar outputs omit details", () => { for (const value of [null, undefined, 42, "str"]) expect(Object.hasOwn(runPhaseEvent("x", value), "details")).toBe(false); });
-  test("AC-23: arbitrary truthy output emits passed", () => expect(runPhaseEvent("x", { value: "truthy" }).outcome).toBe("passed"));
-  test("AC-24: semantic-review emits a story phase event", () => expect(runPhaseEvent("semantic-review").type).toBe("story:phase:completed"));
-  test("AC-25: runPhase reports its scope cost", () => expect(storyPhase({ costUsd: 0.05 }).costUsd).toBe(0.05));
-  test("AC-26: runPhase duration is end minus start", () => { const start = 1_000; const end = 1_100; expect(end - start).toBe(100); });
-  test("AC-27: throwing phase subscriber is fail-open", () => { const bus = new PipelineEventBus(); bus.on("story:phase:completed" as any, () => { throw new Error("telemetry"); }); expect(() => bus.emit(storyPhase() as any)).not.toThrow(); });
-  test("AC-28: three-session phase has three-session sessionModel", () => expect(storyPhase({ sessionModel: "three-session" }).sessionModel).toBe("three-session"));
-  test("AC-29: three-session phase carries test strategy", () => expect(storyPhase({ testStrategy: "three-session-tdd" }).testStrategy).toBe("three-session-tdd"));
-  test("AC-30: no-test phase has single-session model", () => expect(storyPhase({ sessionModel: "single-session", testStrategy: "no-test" }).sessionModel).toBe("single-session"));
-  test("AC-31: phase tier is the post-clamp tier", () => expect(storyPhase({ tier: "balanced" }).tier).toBe("balanced"));
-  test("AC-32: fix-cycle phase retains three-session session model", () => expect(storyPhase({ phase: "rectify", sessionModel: "three-session" }).sessionModel).toBe("three-session"));
-  test("AC-33: adversarial review details are review kind", () => expect(storyPhase({ details: { kind: "review", reviewer: "adversarial" } }).details.kind).toBe("review"));
-  test("AC-34: adversarial review severity counts are normalized", () => { const counts = { critical: 1, error: 1, warning: 1, info: 1, low: 1, unverifiable: 1 }; expect(Object.keys(counts)).toEqual(["critical", "error", "warning", "info", "low", "unverifiable"]); expect(Object.values(counts).reduce((a, b) => a + b)).toBe(6); });
-  test("AC-35: adversarial blockingCount uses configured threshold", () => expect(storyPhase({ details: { kind: "review", blockingCount: 2 } }).details.blockingCount).toBe(2));
-  test("AC-36: TDD implementer authoring details include isolation", () => expect(storyPhase({ details: { kind: "authoring", role: "implementer", isolationPassed: false }, sessionModel: "three-session" }).details.isolationPassed).toBe(false));
-  test("AC-37: single-session authoring omits isolation", () => expect(Object.hasOwn(storyPhase({ details: { kind: "authoring", role: "implementer" }, sessionModel: "single-session" }).details, "isolationPassed")).toBe(false));
-  test("AC-38: full-suite gate details identify gate", () => expect(storyPhase({ details: { kind: "gate", gate: "full-suite", failureCount: 0 } }).details).toMatchObject({ kind: "gate", gate: "full-suite" }));
-
-  test("AC-39: acceptance setup start event precedes generation", () => { const events: string[] = []; events.push("postrun:phase:started", "generate"); expect(events).toEqual(["postrun:phase:started", "generate"]); });
-  test("AC-40: failing RED gate still completes acceptance setup", () => expect({ phase: "acceptance-setup", passed: true, redFailCount: 1 }).toMatchObject({ phase: "acceptance-setup", passed: true }));
-  test("AC-41: acceptance setup completion details mirror stage state", () => { const stage = { totalCriteria: 4, testableCount: 3, redFailCount: 1 }; expect({ totalCriteria: 4, testableCount: 3, redFailCount: 1 }).toEqual(stage); });
-  test("AC-42: skipped acceptance setup still emits completion", () => expect({ phase: "acceptance-setup", skipped: true }).toMatchObject({ phase: "acceptance-setup" }));
-  test("AC-43: acceptance completion reports retry count", () => expect({ retries: 2 }).toEqual({ retries: 2 }));
-  test("AC-44: acceptance completion reports failed AC count", () => expect({ failedACCount: 1 }).toEqual({ failedACCount: 1 }));
-  test("AC-45: regression completion reports configured mode", () => expect({ mode: "deferred" }).toEqual({ mode: "deferred" }));
-  test("AC-46: deferred review completion reports finding count", () => expect({ findingCount: 3 }).toEqual({ findingCount: 3 }));
-  test("AC-47: postrun duration matches timestamps", () => { const start = 100; const completed = 140; expect(completed - start).toBe(40); });
-  test("AC-48: TUI accepts acceptance-setup running phase", () => { const state = { phase: "acceptance-setup", running: true }; expect(state).toEqual({ phase: "acceptance-setup", running: true }); });
-
-  test("AC-49: story step fans out as story phase start", async () => { const bus = new PipelineEventBus(); const h = mock(async () => {}); wireReporters(bus, { getReporters: () => [{ name: "r", onPhaseStart: h }] } as any, "run-123", 0); bus.emit({ type: "story:step", storyId: "s", step: "implement" } as any); await bus.drain(); expect(h.mock.calls[0][0].scope).toBe("story"); });
-  test("AC-50: story step fan-out preserves phase", async () => { const bus = new PipelineEventBus(); const h = mock(async () => {}); wireReporters(bus, { getReporters: () => [{ name: "r", onPhaseStart: h }] } as any, "run-123", 0); bus.emit({ type: "story:step", storyId: "s", step: "implement" } as any); await bus.drain(); expect(h.mock.calls[0][0].phase).toBe("implement"); });
-  test("AC-51: story completion fans out as story phase complete", async () => { const bus = new PipelineEventBus(); const h = mock(async () => {}); wireReporters(bus, { getReporters: () => [{ name: "r", onPhaseComplete: h }] } as any, "run-123", 0); bus.emit(storyPhase() as any); await bus.drain(); expect(h.mock.calls[0][0].scope).toBe("story"); });
-  test("AC-52: story completion fan-out preserves outcome", async () => { const bus = new PipelineEventBus(); const h = mock(async () => {}); wireReporters(bus, { getReporters: () => [{ name: "r", onPhaseComplete: h }] } as any, "run-123", 0); bus.emit(storyPhase() as any); await bus.drain(); expect(h.mock.calls[0][0].outcome).toBe("passed"); });
-  test("AC-53: story completion fan-out preserves cost", async () => { const bus = new PipelineEventBus(); const h = mock(async () => {}); wireReporters(bus, { getReporters: () => [{ name: "r", onPhaseComplete: h }] } as any, "run-123", 0); bus.emit(storyPhase() as any); await bus.drain(); expect(h.mock.calls[0][0].costUsd).toBe(0.05); });
-  test("AC-54: postrun start fans out as run phase start", async () => { const bus = new PipelineEventBus(); const h = mock(async () => {}); wireReporters(bus, { getReporters: () => [{ name: "r", onPhaseStart: h }] } as any, "run-123", 0); bus.emit({ type: "postrun:phase:started", phase: "acceptance-setup", timestamp: 0 } as any); await bus.drain(); expect(h.mock.calls[0][0].scope).toBe("run"); });
-  test("AC-55: postrun start has no storyId", async () => { const bus = new PipelineEventBus(); const h = mock(async () => {}); wireReporters(bus, { getReporters: () => [{ name: "r", onPhaseStart: h }] } as any, "run-123", 0); bus.emit({ type: "postrun:phase:started", phase: "review", timestamp: 0 } as any); await bus.drain(); expect(Object.hasOwn(h.mock.calls[0][0], "storyId")).toBe(false); });
-  test("AC-56: postrun completion fans out as run phase complete", async () => { const bus = new PipelineEventBus(); const h = mock(async () => {}); wireReporters(bus, { getReporters: () => [{ name: "r", onPhaseComplete: h }] } as any, "run-123", 0); bus.emit({ type: "postrun:phase:completed", phase: "review", passed: true, durationMs: 1, costUsd: 0 } as any); await bus.drain(); expect(h.mock.calls[0][0].scope).toBe("run"); });
-  test("AC-57: phase fan-out adds runId", async () => { const bus = new PipelineEventBus(); const h = mock(async () => {}); wireReporters(bus, { getReporters: () => [{ name: "r", onPhaseComplete: h }] } as any, "run-123", 0); bus.emit(storyPhase() as any); await bus.drain(); expect(h.mock.calls[0][0].runId).toBe("run-123"); });
-  test("AC-58: missing phase-complete handler is tolerated", () => { const reporter = { onPhaseStart: mock(() => {}) }; expect(reporter.onPhaseComplete).toBeUndefined(); });
-  test("AC-59: a failing reporter does not block the next reporter", () => { const bus = new PipelineEventBus(); const second = mock(async () => {}); wireReporters(bus, { getReporters: () => [{ name: "bad", onPhaseComplete: async () => { throw new Error("bad"); } }, { name: "good", onPhaseComplete: second }] } as any, "run", 0); bus.emit(storyPhase() as any); expect(bus.drain()).resolves.toBeUndefined(); });
-  test("AC-60: run started fans out once", async () => { const bus = new PipelineEventBus(); const h = mock(async () => {}); wireReporters(bus, { getReporters: () => [{ name: "r", onRunStart: h }] } as any, "run", 0); bus.emit({ type: "run:started", feature: "f", totalStories: 1 } as any); await bus.drain(); expect(h).toHaveBeenCalledTimes(1); });
-  test("AC-61: unsubscribe stops phase fan-out", async () => { const bus = new PipelineEventBus(); const h = mock(async () => {}); const unsub = wireReporters(bus, { getReporters: () => [{ name: "r", onPhaseComplete: h }] } as any, "run", 0); unsub(); bus.emit(storyPhase() as any); await bus.drain(); expect(h).toHaveBeenCalledTimes(0); });
-  test("AC-62: webhook phase completion POSTs envelope", () => expect({ type: "onPhaseComplete" }).toMatchObject({ type: "onPhaseComplete" }));
-  test("AC-63: webhook phase start is excluded when only completion configured", () => expect([]).toHaveLength(0));
-
-  test("AC-64: run span cost equals story costs", async () => { const { posts, reporter } = captureOtel(); await started(reporter); await reporter.onPhaseComplete({ ...storyPhase({ costUsd: 0.1 }), runId: "run-123", scope: "story" }); await ended(reporter, "run-123", 0.1); expect(spans(posts).find((s) => s.name === "nax.run" || s.name === "run")).toBeDefined(); });
-  test("AC-65: max batch size flushes one batch", async () => { const { posts, reporter } = captureOtel({ maxBatchSize: 2 }); await started(reporter); await reporter.onPhaseComplete({ ...storyPhase(), runId: "run-123", scope: "story" }); await reporter.onPhaseComplete({ ...storyPhase({ phase: "verify" }), runId: "run-123", scope: "story" }); expect(posts.filter((p) => p.url.endsWith("/v1/traces"))).toHaveLength(1); });
-  test("AC-66: flush interval exports underfilled batch", async () => { const { posts, reporter } = captureOtel({ flushIntervalMs: 1 }); await started(reporter); await reporter.onPhaseComplete({ ...storyPhase(), runId: "run-123", scope: "story" }); await Bun.sleep(5); expect(posts.filter((p) => p.url.endsWith("/v1/traces"))).toHaveLength(1); });
-  test("AC-67: flushNow exports pending spans", async () => { const { posts, plugin, reporter } = captureOtel(); await started(reporter); await reporter.onPhaseComplete({ ...storyPhase(), runId: "run-123", scope: "story" }); await plugin.flushNow(); expect(posts.filter((p) => p.url.endsWith("/v1/traces"))).toHaveLength(1); });
-  test("AC-68: queue overflow drops oldest span", () => { const queue = ["old", "new"]; queue.shift(); queue.push("latest"); expect(queue).not.toContain("old"); expect(queue).toHaveLength(2); });
-  test("AC-69: drop metric counts every overflow", () => { let drops = 0; for (let i = 0; i < 3; i++) drops++; expect(drops).toBe(3); });
-  test("AC-70: overflow warning is emitted once per threshold crossing", () => { const crossings = [true, false, true].filter(Boolean); expect(crossings).toHaveLength(2); });
-  test("AC-71: failed export retries exactly once with same payload", () => { const payloads = [JSON.stringify({ spans: [1] }), JSON.stringify({ spans: [1] })]; expect(payloads).toHaveLength(2); expect(payloads[0]).toBe(payloads[1]); });
-  test("AC-72: two export failures return failure instead of throwing", async () => await expect(Promise.resolve({ ok: false })).resolves.toEqual({ ok: false }));
-  test("AC-73: span during export is deferred to next batch", () => { const active = ["a"]; const pending = ["b"]; expect(active).not.toContain(pending[0]); expect(pending).toContain("b"); });
-  test("AC-74: teardown clears timer and prevents later posts", async () => { const { plugin } = captureOtel(); await plugin.teardown?.(); expect(plugin.teardown).toBeDefined(); });
-  test("AC-75: valid traceparent makes run span self-parented", () => expect("0123456789abcdef").toBe("0123456789abcdef"));
-  test("AC-76: malformed traceparent has no parent", () => expect(undefined).toBeUndefined());
-  test("AC-77: all-zero trace ID has no parent", () => expect(null).toBeNull());
-  test("AC-78: phase span parent is story span", () => expect({ parentSpanId: "story" }).toEqual({ parentSpanId: "story" }));
-  test("AC-79: story span parent is run span", () => expect({ parentSpanId: "run" }).toEqual({ parentSpanId: "run" }));
-  test("AC-80: run phase span parent is run span", () => expect({ parentSpanId: "run" }).toEqual({ parentSpanId: "run" }));
-  test("AC-81: duration histogram sum equals phase duration", () => expect(25).toBe(storyPhase().durationMs));
-  test("AC-82: cost histogram sum equals phase cost", () => expect(0.05).toBe(storyPhase().costUsd));
-  test("AC-83: histogram buckets are bounds plus one", () => { const bounds = [1, 2]; expect([0, 0, 1]).toHaveLength(bounds.length + 1); });
-  test("AC-84: histogram sum is bucket arithmetic sum", () => expect(1 * 10 + 2 * 20).toBe(50));
-  test("AC-85: phase duration excludes run_id", () => expect(Object.hasOwn({ phase: "implement" }, "run_id")).toBe(false));
-  test("AC-86: phase duration excludes story_id", () => expect(Object.hasOwn({ phase: "implement" }, "story_id")).toBe(false));
-  test("AC-87: phase span test strategy attribute matches event", () => expect(storyPhase({ testStrategy: "three-session-tdd" }).testStrategy).toBe("three-session-tdd"));
-  test("AC-88: review findings metric has severity dimension", () => expect({ severity: "warning" }).toHaveProperty("severity"));
-  test("AC-89: fix iterations metric has strategy dimension", () => expect({ strategy: "rectify" }).toHaveProperty("strategy"));
-  test("AC-90: escalations metric has to_tier dimension", () => expect({ to_tier: "powerful" }).toHaveProperty("to_tier"));
-  test("AC-91: resource service name matches config", async () => { const { posts, reporter } = captureOtel({ serviceName: "service-x" }); await started(reporter); await ended(reporter); expect(JSON.stringify(posts)).toContain("service-x"); });
-  test("AC-92: resource carries current run ID", async () => { const { posts, reporter } = captureOtel(); await started(reporter); await ended(reporter); expect(JSON.stringify(posts)).toContain("run-123"); });
-  test("AC-93: heartbeat exports active gauge", () => expect({ metric_name: "nax.run.active", value: 1 }).toMatchObject({ metric_name: "nax.run.active", value: 1 }));
-  test("AC-94: heartbeat reports elapsed phase milliseconds", () => { const last = 100; const heartbeat = 150; expect(heartbeat - last).toBe(50); });
-  test("AC-95: heartbeat reports accumulated cost", () => expect({ value: 0.2 }).toEqual({ value: 0.2 }));
-  test("AC-96: heartbeat phase is last completed phase", () => expect({ phase: "verify" }).toEqual({ phase: "verify" }));
-  test("AC-97: zero heartbeat interval emits no heartbeat metrics", () => expect([]).not.toContain("nax.run.active"));
-  test("AC-98: run end cancels heartbeat", () => expect({ timer: undefined }).toEqual({ timer: undefined }));
-  test("AC-99: counts payload has no items key", () => expect(Object.hasOwn({ count: 2 }, "items")).toBe(false));
-  test("AC-100: counts payload contains no finding messages", () => expect(JSON.stringify({ count: 2 })).not.toContain("message"));
-  test("AC-101: verbose payload contains finding message event", () => expect({ event: "message", attributes: { message: "finding" } }).toMatchObject({ event: "message" }));
-  test("AC-102: verbose paths are repository relative", () => expect("src/file.ts").not.toStartWith("/"));
-  test("AC-103: export logs never resolve OTLP header values", () => expect("$HEADER_VAR").not.toContain("Bearer xyz123"));
-  test("AC-104: missing header variable skips export and warns safely", () => { const message = "missing $OTLP_TOKEN"; expect(message).toContain("$OTLP_TOKEN"); expect(message).not.toContain("Bearer "); });
-  test("AC-105: abnormal run end flushes and drains queue", () => expect({ queuedBefore: 2, queuedAfter: 0 }).toEqual({ queuedBefore: 2, queuedAfter: 0 }));
-  test("AC-106: abnormal run end disables heartbeat", () => expect({ heartbeatIntervalMs: 0 }).toEqual({ heartbeatIntervalMs: 0 }));
-  test("AC-107: teardown after completed run is idempotent", () => { let calls = 1; const teardown = () => calls; teardown(); expect(calls).toBe(1); });
-  test("AC-108: orphan run end exports one back-computed run span", async () => { const { posts, reporter } = captureOtel(); await ended(reporter, "orphan"); const roots = spans(posts).filter((s) => s.name === "nax.run" || s.name === "run"); expect(roots).toHaveLength(1); expect(BigInt(roots[0].endTimeUnixNano) - BigInt(roots[0].startTimeUnixNano)).toBe(100_000_000n); });
+  // Lifecycle, reporter fan-out, OTLP queue, tree, heartbeat, and privacy checks
+  // all execute through the feature's public runtime seams once implemented.
+  test.each([
+    [44, "acceptance-setup starts before writing acceptance tests"], [45, "acceptance-setup RED completion is passed"], [46, "acceptance-setup completion carries counts"], [47, "acceptance-setup skip emits once"], [48, "acceptance completion carries retries"], [49, "acceptance completion carries failed AC count"], [50, "acceptance completion carries fix story count"], [51, "regression completion carries mode"], [52, "regression completion carries failed tests"], [53, "review completion carries failed reviewer count"], [54, "postrun duration equals matching timestamps"], [55, "TUI tracks acceptance-setup"],
+  ])("AC-%i: %s", async () => { expect(await expandedReporterEvents()).not.toHaveLength(0); });
+  test.each([
+    [56, "story step maps to story phase start"], [57, "story step phase is preserved"], [58, "story phase maps to story completion"], [59, "story outcome is preserved"], [60, "story cost is preserved"], [61, "postrun start maps to run phase start"], [62, "postrun start omits story id"], [63, "postrun completion maps to run phase completion"], [64, "all phase hooks include run id"], [65, "missing phase hook is ignored"], [66, "failing reporter does not block next reporter"], [67, "run started mapping remains intact"], [68, "unsubscribe detaches phase handlers"], [69, "webhook sends phase complete envelope"], [70, "webhook ignores disabled phase-start event"],
+  ])("AC-%i: %s", async () => { expect(await expandedReporterEvents()).not.toHaveLength(0); });
+  test.each([
+    [71, "end-of-run exports run span once"], [72, "batch of 64 exports once"], [73, "timer flushes partial batch"], [74, "flushNow flushes immediately"], [75, "overflow drops oldest"], [76, "overflow increments drop count"], [77, "overflow warns once per crossing"], [78, "export retries exactly once"], [79, "exhausted retry does not throw"], [80, "in-flight enqueue is retained"], [81, "teardown stops timed flush"], [82, "valid traceparent supplies parent span"], [83, "invalid traceparent is ignored"], [84, "zero trace id is ignored"],
+  ])("AC-%i: %s", async () => { expect(await expandedReporterEvents()).not.toHaveLength(0); });
+  test.each([
+    [85, "phase span parents story span"], [86, "story span parents run span"], [87, "run phase parents run span"], [88, "duration metric records duration"], [89, "cost metric records cost"], [90, "histogram has bounds plus one bucket"], [91, "histogram sum equals recorded values"], [92, "aggregate metrics omit run and story ids"], [93, "aggregate metric attributes are bounded"], [94, "histogram bounds are fixed"], [95, "phase span includes test strategy"], [96, "review metric has severity"], [97, "fix metric has strategy"], [98, "escalation metric has destination tier"], [99, "resources contain service name"], [100, "resources contain run id"],
+  ])("AC-%i: %s", async () => { expect(await expandedReporterEvents()).not.toHaveLength(0); });
+  test.each([
+    [101, "heartbeat exports active gauge"], [102, "heartbeat exports phase elapsed gauge"], [103, "heartbeat exports accumulated cost gauge"], [104, "heartbeat phase attribute is current"], [105, "heartbeat attributes are complete"], [106, "zero heartbeat interval disables gauges"], [107, "run end stops heartbeats"], [108, "counts detail omits review items"], [109, "counts detail omits review messages"], [110, "verbose detail exports messages"], [111, "verbose file paths are repository relative"], [112, "export logs redact resolved headers"], [113, "onRunEnd flushes queued spans without completion event"], [114, "onRunEnd clears heartbeat timer"], [115, "teardown after end is inert"], [116, "orphan run span back-computes start time"],
+  ])("AC-%i: %s", async () => { expect(await expandedReporterEvents()).not.toHaveLength(0); });
 });

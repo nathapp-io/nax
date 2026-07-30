@@ -11,14 +11,14 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   acceptanceSetupStage,
   _acceptanceSetupDeps,
-} from "@/pipeline/stages/acceptance-setup";
-import type { PipelineContext } from "@/pipeline/types";
-import { DEFAULT_CONFIG } from "@/config";
-import { pipelineEventBus } from "@/pipeline/event-bus";
+  pipelineEventBus,
+} from "@/pipeline";
+import type { PipelineContext } from "@/pipeline";
 import type {
   PostRunPhaseStartedEvent,
   PostRunPhaseCompletedEvent,
-} from "@/pipeline/event-bus";
+} from "@/pipeline";
+import { DEFAULT_CONFIG } from "@/config";
 
 // ---------------------------------------------------------------------------
 // Helpers
