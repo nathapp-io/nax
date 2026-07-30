@@ -32,6 +32,8 @@ export interface TracesInput {
   serviceName: string;
   traceId: string;
   spanId: string;
+  /** W3C-adopted parent span id — omitted when no valid TRACEPARENT was present. */
+  parentSpanId?: string;
   startUnixNano: string;
   endUnixNano: string;
   feature: string;
@@ -46,6 +48,7 @@ export function buildTracesPayload(p: TracesInput): object {
   const span = {
     traceId: p.traceId,
     spanId: p.spanId,
+    ...(p.parentSpanId ? { parentSpanId: p.parentSpanId } : {}),
     name: "nax.run",
     kind: 1, // SPAN_KIND_INTERNAL
     startTimeUnixNano: p.startUnixNano,

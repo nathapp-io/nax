@@ -4,15 +4,24 @@ import type { IReporter, NaxPlugin, RunEndEvent } from "@/plugins/types";
 import { type PostJsonDeps, interpolateHeaders, postJson } from "../reporter-shared";
 import { newSpanId, newTraceId } from "./ids";
 import { type SpanEvent, attr, buildMetricsPayload, buildTracesPayload, msToUnixNano } from "./otlp";
+import { parseTraceparent } from "./traceparent";
 
 const STAGE = "otel-reporter";
 
 interface RunState {
   traceId: string;
   spanId: string;
+  parentSpanId?: string;
   startMs: number;
   feature: string;
   events: SpanEvent[];
+}
+
+/** Root span identity: adopts the W3C TRACEPARENT env var when valid, else starts a new root trace. */
+function rootSpanIdentity(): { traceId: string; spanId: string; parentSpanId?: string } {
+  const adopted = parseTraceparent(process.env.TRACEPARENT);
+  if (!adopted) return { traceId: newTraceId(), spanId: newSpanId() };
+  return { traceId: adopted.traceId, spanId: newSpanId(), parentSpanId: adopted.spanId };
 }
 
 /**
@@ -40,6 +49,7 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
       serviceName: cfg.serviceName,
       traceId: st.traceId,
       spanId: st.spanId,
+      parentSpanId: st.parentSpanId,
       startUnixNano,
       endUnixNano,
       feature: st.feature,
@@ -65,8 +75,7 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
     name: STAGE,
     async onRunStart(event) {
       states.set(event.runId, {
-        traceId: newTraceId(),
-        spanId: newSpanId(),
+        ...rootSpanIdentity(),
         startMs: Date.parse(event.startTime),
         feature: event.feature,
         events: [],
@@ -93,8 +102,7 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
       const existing = states.get(event.runId);
       const startMs = existing?.startMs ?? Date.now() - event.totalDurationMs;
       const st: RunState = existing ?? {
-        traceId: newTraceId(),
-        spanId: newSpanId(),
+        ...rootSpanIdentity(),
         startMs,
         feature: "",
         events: [],
