@@ -13,6 +13,7 @@ import type { IContextProvider, IPostRunAction, IReporter, IReviewPlugin } from 
 // Re-export extension types
 export type {
   ContextProviderResult,
+  EscalationEvent,
   IContextProvider,
   IPostRunAction,
   IReporter,
@@ -24,6 +25,7 @@ export type {
   PostRunContext,
   ReviewCheckResult,
   ReviewFinding,
+  ReviewFindingSummary,
   RunEndEvent,
   RunPhaseDetails,
   RunStartEvent,

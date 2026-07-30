@@ -6,6 +6,7 @@ import type { AdversarialReviewInput, CallContext, SemanticReviewInput } from "@
 import { callOp } from "@/operations";
 import { pipelineEventBus } from "@/pipeline";
 import type { StoryPhaseCompletedEvent } from "@/pipeline/event-bus";
+import type { PhaseDetails } from "@/plugins/types";
 import {
   getAdversarialIterations,
   isBlockingSeverity,
@@ -314,14 +315,21 @@ function buildPhaseDetails(
   config: NaxConfig,
   advIterationBefore: number,
   fixStrategy?: { name: string; findingsBefore: number },
-): Record<string, unknown> | undefined {
+): PhaseDetails | undefined {
   if (fixStrategy) {
     return { kind: "fix", strategy: fixStrategy.name, findingsBefore: fixStrategy.findingsBefore };
   }
 
+  // Spec's Outcome-derivation rule is unconditional across every op name:
+  // non-object output emits `"passed"` with no `details`.
+  if (output === null || typeof output !== "object") return undefined;
+
   if (opName === "adversarial-review") {
     const adv = output as
-      | { normalizedFindings?: Array<{ severity: string; message: string }>; blockingThreshold?: string }
+      | {
+          normalizedFindings?: Array<{ severity: FindingSeverity; message: string; rule?: string; file?: string }>;
+          blockingThreshold?: string;
+        }
       | undefined;
     const findings = adv?.normalizedFindings ?? [];
     const threshold = (adv?.blockingThreshold ?? "error") as "error" | "warning" | "info";
@@ -330,18 +338,24 @@ function buildPhaseDetails(
     ) as Record<FindingSeverity, number>;
     const blockingCount = findings.filter((f) => isBlockingSeverity(f.severity, threshold)).length;
     const advisoryCount = findings.length - blockingCount;
-    const result: Record<string, unknown> = {
+    return {
       kind: "review",
       reviewer: "adversarial",
       iteration: advIterationBefore,
       bySeverity,
       blockingCount,
       advisoryCount,
+      ...(config.reporters?.otel?.detail === "verbose"
+        ? {
+            items: findings.map((f) => ({
+              message: f.message,
+              severity: f.severity,
+              ...(f.rule ? { rule: f.rule } : {}),
+              ...(f.file ? { file: f.file } : {}),
+            })),
+          }
+        : {}),
     };
-    if (config.reporters?.otel?.detail === "verbose") {
-      result.items = findings.map((f) => ({ message: f.message }));
-    }
-    return result;
   }
 
   if (opName === "implementer") {
@@ -364,7 +378,6 @@ function buildPhaseDetails(
   }
 
   if (opName === "verifier" || opName === "verify-scoped") {
-    if (output === null || typeof output !== "object") return undefined;
     const verdict = output as { passed?: boolean; failureCount?: number };
     return { kind: "verdict", role: opName, passed: verdict.passed ?? false, failureCount: verdict.failureCount ?? 0 };
   }

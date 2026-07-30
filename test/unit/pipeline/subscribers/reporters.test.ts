@@ -19,6 +19,9 @@ function makeReporter(): IReporter & { calls: string[] } {
     async onRunEnd() {
       calls.push("onRunEnd");
     },
+    async onEscalation(ev) {
+      calls.push(`onEscalation:${ev.fromTier}->${ev.toTier}`);
+    },
   };
 }
 
@@ -81,6 +84,17 @@ describe("wireReporters", () => {
 
     await Promise.resolve();
     expect(reporter.calls).toContain("onStoryComplete:paused");
+  });
+
+  test("story:escalated fires onEscalation", async () => {
+    const bus = new PipelineEventBus();
+    const reporter = makeReporter();
+    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now());
+
+    bus.emit({ type: "story:escalated", storyId: "US-001", fromTier: "fast", toTier: "balanced" });
+
+    await Promise.resolve();
+    expect(reporter.calls).toContain("onEscalation:fast->balanced");
   });
 
   test("run:completed fires onRunEnd", async () => {
@@ -203,6 +217,23 @@ describe("wireReporters", () => {
     expect(events).toEqual([
       expect.objectContaining({ runId: "run-1", scope: "run", phase: "acceptance", outcome: "passed", durationMs: 15 }),
     ]);
+  });
+
+  test("post-run phase completion with no measured cost leaves costUsd absent, not fabricated 0", async () => {
+    const events: PhaseCompleteEvent[] = [];
+    const reporter: IReporter = {
+      name: "phase",
+      async onPhaseComplete(event) {
+        events.push(event);
+      },
+    };
+    const bus = new PipelineEventBus();
+    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now());
+
+    bus.emit({ type: "postrun:phase:completed", phase: "regression", passed: true, durationMs: 10 });
+    await bus.drain();
+
+    expect(events[0]?.costUsd).toBeUndefined();
   });
 
   test("AC10: skips reporters without onPhaseComplete", async () => {

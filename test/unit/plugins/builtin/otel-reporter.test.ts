@@ -163,6 +163,108 @@ describe("otel-reporter", () => {
     const span = tracesPost?.body.resourceSpans[0].scopeSpans[0].spans[0];
     expect(span.attributes).toContainEqual({ key: "cost.total", value: { doubleValue: 0.3 } });
   });
+
+  // SEAM-5: buildHistogramPoint must actually be reached by a completed phase,
+  // not merely unit-tested in isolation (US-007).
+  test("SEAM-5: a completed phase produces an exported nax.phase.duration data point matching the event's durationMs", async () => {
+    const { posts, deps } = capturing();
+    const plugin = createOtelReporterPlugin(fullCfg, deps);
+    const r = plugin.extensions.reporter!;
+
+    await r.onRunStart?.({ runId: "seam5", feature: "f", totalStories: 1, startTime: new Date().toISOString() });
+    await r.onPhaseComplete?.({
+      runId: "seam5",
+      scope: "story",
+      storyId: "s1",
+      phase: "implementer",
+      outcome: "passed",
+      durationMs: 1234,
+      costUsd: 0.05,
+      tier: "fast",
+      testStrategy: "tdd-simple",
+      sessionModel: "single-session",
+    });
+    await r.onRunEnd?.({
+      runId: "seam5",
+      totalDurationMs: 2000,
+      totalCost: 0.05,
+      storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
+    });
+
+    const metricsPost = posts.find((p) => p.url.endsWith("/v1/metrics"));
+    const metrics = metricsPost?.body.resourceMetrics[0].scopeMetrics[0].metrics;
+    const durationMetric = metrics.find((m: any) => m.name === "nax.phase.duration");
+    expect(durationMetric).toBeDefined();
+    const point = durationMetric.histogram.dataPoints[0];
+    expect(point.sum).toBe(1234);
+    expect(point.count).toBe(1);
+  });
+
+  test("a story:escalated event reaches the reporter's onEscalation hook and produces an exported nax.escalations counter", async () => {
+    const { posts, deps } = capturing();
+    const plugin = createOtelReporterPlugin(fullCfg, deps);
+    const r = plugin.extensions.reporter!;
+
+    await r.onRunStart?.({ runId: "esc1", feature: "f", totalStories: 1, startTime: new Date().toISOString() });
+    await r.onEscalation?.({ runId: "esc1", storyId: "s1", fromTier: "fast", toTier: "powerful" });
+    await r.onRunEnd?.({
+      runId: "esc1",
+      totalDurationMs: 100,
+      totalCost: 0,
+      storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
+    });
+
+    const metricsPost = posts.find((p) => p.url.endsWith("/v1/metrics"));
+    const metrics = metricsPost?.body.resourceMetrics[0].scopeMetrics[0].metrics;
+    const escalations = metrics.find((m: any) => m.name === "nax.escalations");
+    expect(escalations).toBeDefined();
+    expect(escalations.sum.dataPoints[0].asInt).toBe("1");
+  });
+
+  test("a story with completed phases exports a nax.story span parented to the run span, and its phase span is parented to the story span", async () => {
+    const { posts, deps } = capturing();
+    const plugin = createOtelReporterPlugin(fullCfg, deps);
+    const r = plugin.extensions.reporter!;
+
+    await r.onRunStart?.({ runId: "story1", feature: "f", totalStories: 1, startTime: new Date().toISOString() });
+    await r.onPhaseComplete?.({
+      runId: "story1",
+      scope: "story",
+      storyId: "s1",
+      phase: "implementer",
+      outcome: "passed",
+      durationMs: 10,
+      costUsd: 0.01,
+    });
+    await r.onStoryComplete?.({
+      runId: "story1",
+      storyId: "s1",
+      status: "completed",
+      runElapsedMs: 50,
+      cost: 0.01,
+      tier: "fast",
+      testStrategy: "tdd-simple",
+    });
+    await r.onRunEnd?.({
+      runId: "story1",
+      totalDurationMs: 100,
+      totalCost: 0.01,
+      storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
+    });
+
+    const allSpans = posts
+      .filter((p) => p.url.endsWith("/v1/traces"))
+      .flatMap((p) => p.body.resourceSpans[0].scopeSpans[0].spans);
+    const runSpan = allSpans.find((s: any) => s.name === "nax.run");
+    const storySpan = allSpans.find((s: any) => s.name === "nax.story");
+    const phaseSpan = allSpans.find((s: any) => s.name === "nax.phase");
+
+    expect(runSpan).toBeDefined();
+    expect(storySpan).toBeDefined();
+    expect(storySpan.parentSpanId).toBe(runSpan.spanId);
+    expect(phaseSpan).toBeDefined();
+    expect(phaseSpan.parentSpanId).toBe(storySpan.spanId);
+  });
 });
 
 describe("otel-reporter traceparent adoption", () => {

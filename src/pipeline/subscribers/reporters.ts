@@ -105,7 +105,7 @@ export function wireReporters(
         phase: phaseEvent.phase,
         outcome: phaseEvent.passed ? "passed" : "failed",
         durationMs: phaseEvent.durationMs ?? 0,
-        costUsd: phaseEvent.costUsd ?? 0,
+        costUsd: phaseEvent.costUsd,
         details: phaseEvent.details,
       }),
     ),
@@ -205,6 +205,29 @@ export function wireReporters(
               });
             } catch (err) {
               logger?.warn("plugins", `Reporter '${r.name}' onStoryComplete failed`, { error: err });
+            }
+          }
+        }
+      });
+    }),
+  );
+
+  // story:escalated → reporter.onEscalation
+  unsubs.push(
+    bus.on("story:escalated", (ev) => {
+      return safe("onEscalation", async () => {
+        const reporters = pluginRegistry.getReporters();
+        for (const r of reporters) {
+          if (r.onEscalation) {
+            try {
+              await r.onEscalation({
+                runId,
+                storyId: ev.storyId,
+                fromTier: ev.fromTier,
+                toTier: ev.toTier,
+              });
+            } catch (err) {
+              logger?.warn("plugins", `Reporter '${r.name}' onEscalation failed`, { error: err });
             }
           }
         }

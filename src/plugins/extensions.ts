@@ -5,7 +5,8 @@
  */
 
 import type { TestStrategy } from "../config";
-import type { FixTarget } from "../findings/types";
+import type { RegressionGateConfig } from "../config/runtime-types";
+import type { FindingSeverity, FixTarget } from "../findings/types";
 import type { UserStory } from "../prd/types";
 import type { PluginLogger } from "./types";
 
@@ -353,8 +354,36 @@ interface PhaseEventBase {
   storyId?: string;
 }
 
-export type PhaseDetails = Record<string, unknown>;
-export type RunPhaseDetails = Record<string, unknown>;
+/** Per-finding summary carried only when `reporters.otel.detail` is `"verbose"`. */
+export interface ReviewFindingSummary {
+  message: string;
+  rule?: string;
+  file?: string;
+  severity: FindingSeverity;
+}
+
+/** Structured per-op-name `story:phase:completed` payload (US-003). */
+export type PhaseDetails =
+  | { kind: "authoring"; role: "test-writer" | "implementer"; filesChanged: number; isolationPassed?: boolean }
+  | { kind: "verdict"; role: "verifier" | "verify-scoped"; passed: boolean; failureCount: number }
+  | { kind: "gate"; gate: "greenfield" | "full-suite" | "test-presence" | "lint" | "typecheck"; failureCount: number }
+  | {
+      kind: "review";
+      reviewer: "semantic" | "adversarial";
+      iteration: number;
+      bySeverity: Record<FindingSeverity, number>;
+      blockingCount: number;
+      advisoryCount: number;
+      items?: ReviewFindingSummary[];
+    }
+  | { kind: "fix"; strategy: string; findingsBefore: number };
+
+/** Structured per-phase `postrun:phase:completed` payload (US-004), one shape per `PostRunPhase`. */
+export type RunPhaseDetails =
+  | { totalCriteria: number; testableCount: number; redFailCount: number; regenerated: boolean }
+  | { retries: number; failedACCount: number; fixStoriesCreated: number }
+  | { mode: RegressionGateConfig["mode"]; failedTests: number }
+  | { findingCount: number; anyFailed: boolean };
 
 export interface PhaseStartEvent extends PhaseEventBase {
   startTime: string;
@@ -363,11 +392,27 @@ export interface PhaseStartEvent extends PhaseEventBase {
 export interface PhaseCompleteEvent extends PhaseEventBase {
   outcome: "passed" | "failed" | "skipped" | "error";
   durationMs: number;
-  costUsd: number;
+  /**
+   * Absent (not `0`) when the phase's cost genuinely wasn't measured — e.g.
+   * run-scope completions today (US-004 Out of Scope). A fabricated `0`
+   * would misreport "definitively zero cost" for an unmeasured phase.
+   */
+  costUsd?: number;
   tier?: string;
   testStrategy?: TestStrategy;
   sessionModel?: "single-session" | "three-session";
   details?: PhaseDetails | RunPhaseDetails;
+}
+
+/**
+ * Event emitted when a story escalates from one model tier to another
+ * (mirrors the bus's `story:escalated` event).
+ */
+export interface EscalationEvent {
+  runId: string;
+  storyId: string;
+  fromTier: string;
+  toTier: string;
 }
 
 /**
@@ -413,4 +458,7 @@ export interface IReporter {
 
   /** Called when a story or run phase completes */
   onPhaseComplete?(event: PhaseCompleteEvent): Promise<void>;
+
+  /** Called when a story escalates from one model tier to another */
+  onEscalation?(event: EscalationEvent): Promise<void>;
 }

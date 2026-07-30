@@ -171,14 +171,16 @@ export interface StoryPhaseCompletedEvent {
   details?: PhaseDetails;
 }
 
+export type PostRunPhase = "regression" | "acceptance" | "review" | "acceptance-setup";
+
 export interface PostRunPhaseStartedEvent {
   type: "postrun:phase:started";
-  phase: string;
+  phase: PostRunPhase;
 }
 
 export interface PostRunPhaseCompletedEvent {
   type: "postrun:phase:completed";
-  phase: string;
+  phase: PostRunPhase;
   passed: boolean;
   /** Elapsed milliseconds from the matching postrun:phase:started event. */
   durationMs?: number;

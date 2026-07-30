@@ -28,6 +28,48 @@ export function msToUnixNano(ms: number): string {
   return (BigInt(Math.round(ms)) * 1_000_000n).toString();
 }
 
+export interface HistogramDataPoint {
+  attributes: KeyValue[];
+  timeUnixNano: string;
+  count: number;
+  sum: number;
+  bucketCounts: number[];
+  explicitBounds: number[];
+}
+
+/** Build an OTLP histogram data point. `bucketCounts` has `bounds.length + 1` entries. */
+export function buildHistogramPoint(
+  values: number[],
+  bounds: number[],
+  attributes: KeyValue[],
+  timeUnixNano: string,
+): HistogramDataPoint {
+  const bucketCounts = new Array(bounds.length + 1).fill(0);
+  let sum = 0;
+  for (const value of values) {
+    sum += value;
+    const bucketIndex = bounds.findIndex((bound) => value <= bound);
+    bucketCounts[bucketIndex === -1 ? bounds.length : bucketIndex]++;
+  }
+  return { attributes, timeUnixNano, count: values.length, sum, bucketCounts, explicitBounds: bounds };
+}
+
+export interface CounterDataPoint {
+  attributes: KeyValue[];
+  timeUnixNano: string;
+  asInt: string;
+}
+
+/** Build an OTLP monotonic-sum (counter) data point. */
+export function buildCounterPoint(count: number, attributes: KeyValue[], timeUnixNano: string): CounterDataPoint {
+  return { attributes, timeUnixNano, asInt: String(count) };
+}
+
+/** Resource attributes shared by every OTLP payload this reporter exports. */
+export function buildResourceAttributes(serviceName: string, runId: string): KeyValue[] {
+  return [attr("service.name", serviceName), attr("nax.run_id", runId)];
+}
+
 export interface TracesInput {
   serviceName: string;
   traceId: string;

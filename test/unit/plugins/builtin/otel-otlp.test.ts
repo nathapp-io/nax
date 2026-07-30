@@ -3,10 +3,14 @@ import { newSpanId, newTraceId } from "../../../../src/plugins/builtin/otel-repo
 import {
   type SpanEvent,
   attr,
+  buildCounterPoint,
+  buildHistogramPoint,
   buildMetricsPayload,
+  buildResourceAttributes,
   buildTracesPayload,
   msToUnixNano,
 } from "../../../../src/plugins/builtin/otel-reporter/otlp";
+import { PHASE_DURATION_BOUNDS } from "../../../../src/plugins/builtin/otel-reporter/span-tree";
 
 describe("ids", () => {
   test("newTraceId is 32 lowercase hex chars", () => {
@@ -150,5 +154,47 @@ describe("buildMetricsPayload", () => {
   test("emits run.cost and run.duration_ms gauges", () => {
     expect(byName("nax.run.cost").gauge.dataPoints[0].asDouble).toBe(0.42);
     expect(byName("nax.run.duration_ms").gauge.dataPoints[0].asDouble).toBe(1234);
+  });
+});
+
+describe("buildHistogramPoint", () => {
+  test("AC6: bucket-count list has exactly one more entry than the explicit-bounds list", () => {
+    const point = buildHistogramPoint([50, 600, 20_000], PHASE_DURATION_BOUNDS, [], "0");
+    expect(point.bucketCounts).toHaveLength(point.explicitBounds.length + 1);
+  });
+
+  test("AC7: sum equals the total of the values recorded into it", () => {
+    const point = buildHistogramPoint([1, 2, 3.5], [1, 2, 3], [], "0");
+    expect(point.sum).toBe(6.5);
+  });
+
+  test("boundary: no values yields a zeroed histogram of the correct shape", () => {
+    const point = buildHistogramPoint([], [1, 2, 3], [], "0");
+    expect(point.count).toBe(0);
+    expect(point.sum).toBe(0);
+    expect(point.bucketCounts).toEqual([0, 0, 0, 0]);
+  });
+});
+
+describe("buildCounterPoint", () => {
+  test("carries the given attributes and count", () => {
+    const point = buildCounterPoint(3, [attr("severity", "high")], "1000");
+    expect(point.attributes).toContainEqual(attr("severity", "high"));
+    expect(point.asInt).toBe("3");
+  });
+
+  test("boundary: a zero count still produces a valid data point", () => {
+    const point = buildCounterPoint(0, [], "1000");
+    expect(point.asInt).toBe("0");
+  });
+});
+
+describe("buildResourceAttributes", () => {
+  test("AC15: includes a service.name attribute equal to the configured service name", () => {
+    expect(buildResourceAttributes("my-service", "r1")).toContainEqual(attr("service.name", "my-service"));
+  });
+
+  test("AC16: includes a nax.run_id attribute equal to the current run's id", () => {
+    expect(buildResourceAttributes("nax", "r42")).toContainEqual(attr("nax.run_id", "r42"));
   });
 });

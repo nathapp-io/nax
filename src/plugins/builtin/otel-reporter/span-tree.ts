@@ -1,54 +1,19 @@
 import type { PhaseCompleteEvent } from "@/plugins/types";
 import { newSpanId } from "./ids";
-import { type KeyValue, type SpanEvent, attr } from "./otlp";
+import {
+  type KeyValue,
+  type SpanEvent,
+  attr,
+  buildCounterPoint,
+  buildHistogramPoint,
+  buildResourceAttributes,
+} from "./otlp";
 
 /** Fixed bucket boundaries for the `nax.phase.duration` histogram, in milliseconds. */
 export const PHASE_DURATION_BOUNDS = [100, 500, 1000, 5000, 15000, 60000, 300000, 900000];
 
 /** Fixed bucket boundaries for the `nax.phase.cost_usd` histogram, in USD. */
 export const PHASE_COST_BOUNDS = [0.001, 0.01, 0.05, 0.1, 0.5, 1, 5];
-
-export interface HistogramDataPoint {
-  attributes: KeyValue[];
-  timeUnixNano: string;
-  count: number;
-  sum: number;
-  bucketCounts: number[];
-  explicitBounds: number[];
-}
-
-/** Build an OTLP histogram data point. `bucketCounts` has `bounds.length + 1` entries. */
-export function buildHistogramPoint(
-  values: number[],
-  bounds: number[],
-  attributes: KeyValue[],
-  timeUnixNano: string,
-): HistogramDataPoint {
-  const bucketCounts = new Array(bounds.length + 1).fill(0);
-  let sum = 0;
-  for (const value of values) {
-    sum += value;
-    const bucketIndex = bounds.findIndex((bound) => value <= bound);
-    bucketCounts[bucketIndex === -1 ? bounds.length : bucketIndex]++;
-  }
-  return { attributes, timeUnixNano, count: values.length, sum, bucketCounts, explicitBounds: bounds };
-}
-
-export interface CounterDataPoint {
-  attributes: KeyValue[];
-  timeUnixNano: string;
-  asInt: string;
-}
-
-/** Build an OTLP monotonic-sum (counter) data point. */
-export function buildCounterPoint(count: number, attributes: KeyValue[], timeUnixNano: string): CounterDataPoint {
-  return { attributes, timeUnixNano, asInt: String(count) };
-}
-
-/** Resource attributes shared by every OTLP payload this reporter exports. */
-export function buildResourceAttributes(serviceName: string, runId: string): KeyValue[] {
-  return [attr("service.name", serviceName), attr("nax.run_id", runId)];
-}
 
 export interface Span {
   traceId: string;
@@ -184,7 +149,9 @@ export function createPhaseMetricsAggregator(): PhaseMetricsAggregator {
       phaseGroups.set(key, group);
     }
     group.durations.push(event.durationMs);
-    group.costs.push(event.costUsd);
+    // Absent (not fabricated 0) for run-scope completions whose cost genuinely
+    // wasn't measured (US-004 Out of Scope) — omit rather than misreport.
+    if (event.costUsd !== undefined) group.costs.push(event.costUsd);
   }
 
   function recordReviewFindings(phase: string, severity: string, count: number): void {

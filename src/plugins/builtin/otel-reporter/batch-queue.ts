@@ -38,6 +38,8 @@ export function createBatchQueue<T>(opts: BatchQueueOptions<T>): BatchQueue<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   const armTimer = (): void => {
+    // forbidden-patterns.md: setInterval is banned; setTimeout is permitted here
+    // because the handle is cancelled mid-flight via clearTimeout in teardown().
     timer = setTimeout(() => {
       void doFlush();
       if (!tornDown) armTimer();
