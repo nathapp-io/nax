@@ -3,7 +3,7 @@ import { z } from "zod";
 /** Header map; values may contain ${ENV_VAR} placeholders resolved at emit time. */
 const HeadersSchema = z.record(z.string(), z.string()).default({});
 
-const ReporterEventSchema = z.enum(["onRunStart", "onStoryComplete", "onRunEnd"]);
+const ReporterEventSchema = z.enum(["onRunStart", "onStoryComplete", "onRunEnd", "onPhaseStart", "onPhaseComplete"]);
 
 export const WebhookReporterConfigSchema = z
   .object({
@@ -26,12 +26,24 @@ export const OtelReporterConfigSchema = z
     headers: HeadersSchema,
     serviceName: z.string().default("nax"),
     timeoutMs: z.number().int().positive().default(5000),
+    detail: z.enum(["counts", "verbose"]).default("counts"),
+    /** 0 disables the heartbeat entirely; positive values are the emit cadence in ms. */
+    heartbeatIntervalMs: z.number().int().nonnegative().default(10_000),
+    maxBatchSize: z.number().int().positive().default(64),
+    flushIntervalMs: z.number().int().positive().default(5_000),
+    maxQueueSize: z.number().int().positive().default(2_048),
+    phases: z.array(z.string()).optional(),
   })
   .default({
     enabled: false,
     headers: {},
     serviceName: "nax",
     timeoutMs: 5000,
+    detail: "counts",
+    heartbeatIntervalMs: 10_000,
+    maxBatchSize: 64,
+    flushIntervalMs: 5_000,
+    maxQueueSize: 2_048,
   });
 
 export const ReportersConfigSchema = z
@@ -50,6 +62,11 @@ export const ReportersConfigSchema = z
       headers: {},
       serviceName: "nax",
       timeoutMs: 5000,
+      detail: "counts",
+      heartbeatIntervalMs: 10_000,
+      maxBatchSize: 64,
+      flushIntervalMs: 5_000,
+      maxQueueSize: 2_048,
     },
   });
 

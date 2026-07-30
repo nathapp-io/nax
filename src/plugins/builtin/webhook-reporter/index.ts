@@ -34,6 +34,8 @@ export function createWebhookReporterPlugin(cfg: WebhookReporterConfig, deps?: P
     onRunStart: (event) => emit("onRunStart", event),
     onStoryComplete: (event) => emit("onStoryComplete", event),
     onRunEnd: (event) => emit("onRunEnd", event),
+    onPhaseStart: (event) => emit("onPhaseStart", event),
+    onPhaseComplete: (event) => emit("onPhaseComplete", event),
   };
 
   return {

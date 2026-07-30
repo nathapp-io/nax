@@ -22,7 +22,10 @@ export { queueCheckStage } from "./stages/queue-check";
 export { resolveExecutionAgent } from "./stages/execution-helpers";
 export type { ResolvedExecutionAgent } from "./stages/execution-helpers";
 
-export { pipelineEventBus } from "./event-bus";
+export { acceptanceSetupStage, _acceptanceSetupDeps } from "./stages/acceptance-setup";
+
+export { PipelineEventBus, pipelineEventBus } from "./event-bus";
+export { wireReporters } from "./subscribers/reporters";
 export type {
   PipelineEvent,
   PipelineEventType,
@@ -31,6 +34,7 @@ export type {
   StoryEscalatedEvent,
   StoryStartedEvent,
   StoryFailedEvent,
+  StoryPhaseCompletedEvent,
   StoryStepEvent,
   PostRunPhaseStartedEvent,
   PostRunPhaseCompletedEvent,

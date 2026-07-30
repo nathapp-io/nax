@@ -57,9 +57,10 @@ export interface PipelineBusState {
   escalationLog: EscalationEntry[];
   /** Current orchestrator step per story (e.g. "test-writer", "implementer", "verifier") */
   storySteps: Record<string, string>;
-  /** Post-run phase statuses (acceptance, regression, review) */
+  /** Post-run phase statuses (acceptance, acceptance-setup, regression, review) */
   postRunPhases: {
     acceptance?: PostRunPhaseState;
+    "acceptance-setup"?: PostRunPhaseState;
     regression?: PostRunPhaseState;
     review?: PostRunPhaseState;
   };

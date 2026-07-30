@@ -17,7 +17,9 @@
  * - Zero dependencies on pipeline internals
  */
 
+import type { TestStrategy } from "../config";
 import { getLogger } from "../logger";
+import type { PhaseDetails, RunPhaseDetails } from "../plugins/extensions";
 // ---------------------------------------------------------------------------
 // Event types
 // ---------------------------------------------------------------------------
@@ -156,15 +158,35 @@ export interface StoryStepEvent {
   step: string;
 }
 
+export interface StoryPhaseCompletedEvent {
+  type: "story:phase:completed";
+  storyId: string;
+  phase: string;
+  outcome: "passed" | "failed" | "skipped" | "error";
+  durationMs: number;
+  costUsd: number;
+  tier?: string;
+  testStrategy?: TestStrategy;
+  sessionModel?: "single-session" | "three-session";
+  details?: PhaseDetails;
+}
+
+export type PostRunPhase = "regression" | "acceptance" | "review" | "acceptance-setup";
+
 export interface PostRunPhaseStartedEvent {
   type: "postrun:phase:started";
-  phase: "regression" | "acceptance" | "review";
+  phase: PostRunPhase;
 }
 
 export interface PostRunPhaseCompletedEvent {
   type: "postrun:phase:completed";
-  phase: "regression" | "acceptance" | "review";
+  phase: PostRunPhase;
   passed: boolean;
+  /** Elapsed milliseconds from the matching postrun:phase:started event. */
+  durationMs?: number;
+  /** Phase cost in USD. */
+  costUsd?: number;
+  details?: RunPhaseDetails;
 }
 
 /** Discriminated union of all pipeline events. */
@@ -183,6 +205,7 @@ export type PipelineEvent =
   | RunResumedEvent
   | RunErroredEvent
   | StoryStepEvent
+  | StoryPhaseCompletedEvent
   | PostRunPhaseStartedEvent
   | PostRunPhaseCompletedEvent;
 

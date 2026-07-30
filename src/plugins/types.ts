@@ -13,15 +13,21 @@ import type { IContextProvider, IPostRunAction, IReporter, IReviewPlugin } from 
 // Re-export extension types
 export type {
   ContextProviderResult,
+  EscalationEvent,
   IContextProvider,
   IPostRunAction,
   IReporter,
   IReviewPlugin,
+  PhaseCompleteEvent,
+  PhaseDetails,
+  PhaseStartEvent,
   PostRunActionResult,
   PostRunContext,
   ReviewCheckResult,
   ReviewFinding,
+  ReviewFindingSummary,
   RunEndEvent,
+  RunPhaseDetails,
   RunStartEvent,
   StoryCompleteEvent,
 } from "./extensions";

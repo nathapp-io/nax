@@ -311,6 +311,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       agentManager,
       pluginProviderCache,
       deferredReview: executionResult.deferredReview,
+      deferredReviewStartedAt: executionResult.deferredReviewStartedAt,
       exitReason: executionResult.exitReason,
       runtime,
       abortSignal: shutdownController.signal,

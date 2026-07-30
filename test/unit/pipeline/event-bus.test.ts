@@ -13,6 +13,17 @@ function makeStoryCompletedEvent(): PipelineEvent {
   };
 }
 
+function makeStoryPhaseCompletedEvent(): PipelineEvent {
+  return {
+    type: "story:phase:completed",
+    storyId: "US-001",
+    phase: "implementer",
+    outcome: "passed",
+    durationMs: 120,
+    costUsd: 0.42,
+  };
+}
+
 describe("PipelineEventBus", () => {
   test("subscribes and receives event", () => {
     const bus = new PipelineEventBus();
@@ -112,6 +123,71 @@ describe("PipelineEventBus", () => {
 
     expect(received).toHaveLength(1);
     expect(received[0].type).toBe("story:skipped");
+  });
+
+  test("AC1: story phase subscriber receives the emitted phase", () => {
+    const bus = new PipelineEventBus();
+    let receivedPhase: string | undefined;
+    bus.on("story:phase:completed", (event) => {
+      receivedPhase = event.phase;
+    });
+
+    bus.emit(makeStoryPhaseCompletedEvent());
+
+    expect(receivedPhase).toBe("implementer");
+  });
+
+  test("AC2: story phase subscriber receives the emitted cost", () => {
+    const bus = new PipelineEventBus();
+    let receivedCost: number | undefined;
+    bus.on("story:phase:completed", (event) => {
+      receivedCost = event.costUsd;
+    });
+
+    bus.emit(makeStoryPhaseCompletedEvent());
+
+    expect(receivedCost).toBe(0.42);
+  });
+
+  test("AC3: post-run phase start preserves acceptance-setup phase", () => {
+    const bus = new PipelineEventBus();
+    let receivedPhase: string | undefined;
+    bus.on("postrun:phase:started", (event) => {
+      receivedPhase = event.phase;
+    });
+
+    bus.emit({ type: "postrun:phase:started", phase: "acceptance-setup" });
+
+    expect(receivedPhase).toBe("acceptance-setup");
+  });
+
+  test("AC4: post-run phase completion preserves details payload", () => {
+    const bus = new PipelineEventBus();
+    const details = { total: 3, passed: 2, failed: 1 };
+    let receivedDetails: unknown;
+    bus.on("postrun:phase:completed", (event) => {
+      receivedDetails = event.details;
+    });
+
+    bus.emit({
+      type: "postrun:phase:completed",
+      phase: "acceptance",
+      passed: false,
+      details,
+    });
+
+    expect(receivedDetails).toBe(details);
+  });
+
+  test("AC5: onAll receives story phase completion", () => {
+    const bus = new PipelineEventBus();
+    const received: PipelineEvent[] = [];
+    bus.onAll((event) => received.push(event));
+
+    const event = makeStoryPhaseCompletedEvent();
+    bus.emit(event);
+
+    expect(received).toContain(event);
   });
 
   test("story:escalated event is typed and receivable", () => {

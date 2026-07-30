@@ -3,10 +3,14 @@ import { newSpanId, newTraceId } from "../../../../src/plugins/builtin/otel-repo
 import {
   type SpanEvent,
   attr,
+  buildCounterPoint,
+  buildHistogramPoint,
   buildMetricsPayload,
+  buildResourceAttributes,
   buildTracesPayload,
   msToUnixNano,
 } from "../../../../src/plugins/builtin/otel-reporter/otlp";
+import { PHASE_DURATION_BOUNDS } from "../../../../src/plugins/builtin/otel-reporter/span-tree";
 
 describe("ids", () => {
   test("newTraceId is 32 lowercase hex chars", () => {
@@ -86,6 +90,39 @@ describe("buildTracesPayload", () => {
     });
     expect(ok.resourceSpans[0].scopeSpans[0].spans[0].status).toEqual({ code: 1 });
   });
+
+  test("US-008: extraSpans are appended to scopeSpans[0].spans after the root span", () => {
+    const extraSpans = [
+      { traceId: "a".repeat(32), spanId: "c".repeat(16), name: "nax.phase", attributes: [] },
+      { traceId: "a".repeat(32), spanId: "d".repeat(16), name: "nax.phase", attributes: [] },
+    ];
+    // biome-ignore lint/suspicious/noExplicitAny: testing dynamic OTLP payload
+    const withExtras: any = buildTracesPayload({
+      serviceName: "nax",
+      traceId: "a".repeat(32),
+      spanId: "b".repeat(16),
+      startUnixNano: "1000",
+      endUnixNano: "2000",
+      feature: "feat",
+      runId: "r1",
+      storySummary: summary,
+      totalCost: 0.42,
+      events,
+      extraSpans,
+    });
+
+    const spans = withExtras.resourceSpans[0].scopeSpans[0].spans;
+    expect(spans).toHaveLength(3);
+    expect(spans[0].name).toBe("nax.run"); // root span stays first
+    expect(spans[0].spanId).toBe("b".repeat(16));
+    expect(spans.slice(1)).toEqual(extraSpans);
+  });
+
+  test("US-008 boundary: an omitted extraSpans yields only the root span", () => {
+    const spans = payload.resourceSpans[0].scopeSpans[0].spans;
+    expect(spans).toHaveLength(1);
+    expect(spans[0].name).toBe("nax.run");
+  });
 });
 
 describe("buildMetricsPayload", () => {
@@ -117,5 +154,47 @@ describe("buildMetricsPayload", () => {
   test("emits run.cost and run.duration_ms gauges", () => {
     expect(byName("nax.run.cost").gauge.dataPoints[0].asDouble).toBe(0.42);
     expect(byName("nax.run.duration_ms").gauge.dataPoints[0].asDouble).toBe(1234);
+  });
+});
+
+describe("buildHistogramPoint", () => {
+  test("AC6: bucket-count list has exactly one more entry than the explicit-bounds list", () => {
+    const point = buildHistogramPoint([50, 600, 20_000], PHASE_DURATION_BOUNDS, [], "0");
+    expect(point.bucketCounts).toHaveLength(point.explicitBounds.length + 1);
+  });
+
+  test("AC7: sum equals the total of the values recorded into it", () => {
+    const point = buildHistogramPoint([1, 2, 3.5], [1, 2, 3], [], "0");
+    expect(point.sum).toBe(6.5);
+  });
+
+  test("boundary: no values yields a zeroed histogram of the correct shape", () => {
+    const point = buildHistogramPoint([], [1, 2, 3], [], "0");
+    expect(point.count).toBe(0);
+    expect(point.sum).toBe(0);
+    expect(point.bucketCounts).toEqual([0, 0, 0, 0]);
+  });
+});
+
+describe("buildCounterPoint", () => {
+  test("carries the given attributes and count", () => {
+    const point = buildCounterPoint(3, [attr("severity", "high")], "1000");
+    expect(point.attributes).toContainEqual(attr("severity", "high"));
+    expect(point.asInt).toBe("3");
+  });
+
+  test("boundary: a zero count still produces a valid data point", () => {
+    const point = buildCounterPoint(0, [], "1000");
+    expect(point.asInt).toBe("0");
+  });
+});
+
+describe("buildResourceAttributes", () => {
+  test("AC15: includes a service.name attribute equal to the configured service name", () => {
+    expect(buildResourceAttributes("my-service", "r1")).toContainEqual(attr("service.name", "my-service"));
+  });
+
+  test("AC16: includes a nax.run_id attribute equal to the current run's id", () => {
+    expect(buildResourceAttributes("nax", "r42")).toContainEqual(attr("nax.run_id", "r42"));
   });
 });

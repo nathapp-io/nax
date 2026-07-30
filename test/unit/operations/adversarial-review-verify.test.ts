@@ -72,25 +72,36 @@ function makeOutput(overrides: Partial<AdversarialReviewOutput> = {}): Adversari
 }
 
 describe("adversarialReviewOp.verify() — short-circuits (AC13)", () => {
-  test("FAIL_OPEN short-circuits verify — returns parsed unchanged", async () => {
+  // Contract drift (US-003 AC8): verify() now always persists blockingThreshold onto
+  // the output, so it returns a new object (not the same reference as parsed).
+  // Assertions updated from toBe (identity) to toMatchObject (content superset).
+  test("FAIL_OPEN short-circuits verify — returns parsed content unchanged", async () => {
     const ctx = makeVerifyCtx();
     const parsed = makeOutput({ failOpen: true, passed: true, findings: [], normalizedFindings: [] });
     const result = await adversarialReviewOp.verify!(parsed, BASE_INPUT, ctx);
-    expect(result).toBe(parsed);
+    expect(result).toMatchObject(parsed);
   });
 
-  test("looksLikeFail short-circuits verify — returns parsed unchanged", async () => {
+  test("looksLikeFail short-circuits verify — returns parsed content unchanged", async () => {
     const ctx = makeVerifyCtx();
     const parsed = makeOutput({ looksLikeFail: true, passed: false, findings: [], normalizedFindings: [] });
     const result = await adversarialReviewOp.verify!(parsed, BASE_INPUT, ctx);
-    expect(result).toBe(parsed);
+    expect(result).toMatchObject(parsed);
   });
 
-  test("empty findings short-circuits verify — returns parsed unchanged", async () => {
+  test("empty findings short-circuits verify — returns parsed content unchanged", async () => {
     const ctx = makeVerifyCtx();
     const parsed = makeOutput({ passed: true, findings: [], normalizedFindings: [] });
     const result = await adversarialReviewOp.verify!(parsed, BASE_INPUT, ctx);
-    expect(result).toBe(parsed);
+    expect(result).toMatchObject(parsed);
+  });
+
+  test("AC8: verify() persists blockingThreshold from input onto output (empty-findings path)", async () => {
+    const ctx = makeVerifyCtx();
+    const input: AdversarialReviewInput = { ...BASE_INPUT, blockingThreshold: "warning" };
+    const parsed = makeOutput({ passed: true, findings: [], normalizedFindings: [] });
+    const result = await adversarialReviewOp.verify!(parsed, input, ctx);
+    expect((result as AdversarialReviewOutput & Record<string, unknown>).blockingThreshold).toBe("warning");
   });
 });
 

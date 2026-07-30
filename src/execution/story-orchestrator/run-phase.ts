@@ -1,11 +1,15 @@
-import type { Finding, FixStrategy, Iteration } from "@/findings";
+import type { NaxConfig } from "@/config";
+import type { Finding, FindingSeverity, FixStrategy, Iteration } from "@/findings";
 import { runFixCycle } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { AdversarialReviewInput, CallContext, SemanticReviewInput } from "@/operations";
 import { callOp } from "@/operations";
 import { pipelineEventBus } from "@/pipeline";
+import type { StoryPhaseCompletedEvent } from "@/pipeline/event-bus";
+import type { PhaseDetails } from "@/plugins/types";
 import {
   getAdversarialIterations,
+  isBlockingSeverity,
   prepareAdversarialReviewInput,
   prepareSemanticReviewInput,
   recordAdversarialIteration,
@@ -17,7 +21,7 @@ import { buildResumePlan as realBuildResumePlan } from "../checkpoint/resume-pla
 import type { ResumePlan } from "../checkpoint/resume-plan";
 import type { StoryCheckpoint, TreeState } from "../checkpoint/types";
 import { runNonBlockingFix } from "../non-blocking-fix";
-import { logDeterministicPhaseOutcome } from "../story-orchestrator-logging";
+import { buildPhaseOutcomeLogData, logDeterministicPhaseOutcome } from "../story-orchestrator-logging";
 import { productionTriageSeam } from "./flake-triage-seam";
 import { emitReviewDecision, logUnifiedReviewPhaseResult, logUnifiedReviewPhaseStart } from "./review-decision";
 import type { AnySlot } from "./types";
@@ -164,10 +168,13 @@ export async function runPhase(
   let dispatchInput = isTddPhase && beforeRef ? { ...(slot.input as Record<string, unknown>), beforeRef } : slot.input;
   // Refresh stat/diff/etc for review phases — plan-build's snapshot is stale.
   dispatchInput = await refreshReviewInputForDispatch(opName, dispatchInput);
+  let advIterationBefore = 0;
   if (opName === "adversarial-review" && ctx.storyId) {
+    const priorIterations = getAdversarialIterations(ctx.runtime.adversarialIterations, ctx.storyId);
+    advIterationBefore = priorIterations.length;
     dispatchInput = {
       ...(dispatchInput as Record<string, unknown>),
-      priorAdversarialIterations: getAdversarialIterations(ctx.runtime.adversarialIterations, ctx.storyId),
+      priorAdversarialIterations: priorIterations,
     };
   }
 
@@ -188,6 +195,7 @@ export async function runPhase(
 
   const phaseStartedAt = Date.now();
   const scope = ctx.runtime.costAggregator.openScope();
+  let outcome: "passed" | "failed" | "skipped" | "error" = "passed";
   try {
     const output = await _storyOrchestratorDeps.callOp({ ...ctx, scopeId: scope.scopeId }, slot.op, dispatchInput);
     phaseOutputs[opName] = output;
@@ -209,6 +217,7 @@ export async function runPhase(
       slot.op.stage,
       progressData,
     );
+    outcome = derivePhaseOutcome(output);
 
     // Post-phase logs (TDD phases only).
     if (isTddPhase) {
@@ -253,10 +262,140 @@ export async function runPhase(
     }
 
     return output;
+  } catch (err) {
+    outcome = "error";
+    throw err;
   } finally {
-    phaseCosts[opName] = (phaseCosts[opName] ?? 0) + scope.snapshot().totalCostUsd;
+    const snapshot = scope.snapshot();
+    phaseCosts[opName] = (phaseCosts[opName] ?? 0) + snapshot.totalCostUsd;
     scope.close();
+    if (ctx.storyId) {
+      const phaseDetails = buildPhaseDetails(
+        opName,
+        phaseOutputs[opName],
+        isThreeSession,
+        ctx.packageView.config,
+        advIterationBefore,
+        ctx.fixStrategy,
+      );
+      const event: StoryPhaseCompletedEvent = {
+        type: "story:phase:completed",
+        storyId: ctx.storyId,
+        phase: opName,
+        outcome,
+        durationMs: Date.now() - phaseStartedAt,
+        costUsd: snapshot.totalCostUsd,
+        ...(ctx.phaseTelemetry
+          ? {
+              tier: ctx.phaseTelemetry.tier,
+              testStrategy: ctx.phaseTelemetry.testStrategy,
+              sessionModel: ctx.phaseTelemetry.sessionModel,
+            }
+          : {}),
+        ...(phaseDetails !== undefined ? { details: phaseDetails } : {}),
+      };
+      pipelineEventBus.emit(event);
+    }
   }
+}
+
+const ALL_FINDING_SEVERITIES: readonly FindingSeverity[] = [
+  "critical",
+  "error",
+  "warning",
+  "info",
+  "low",
+  "unverifiable",
+];
+
+function buildPhaseDetails(
+  opName: string,
+  output: unknown,
+  isThreeSession: boolean,
+  config: NaxConfig,
+  advIterationBefore: number,
+  fixStrategy?: { name: string; findingsBefore: number },
+): PhaseDetails | undefined {
+  if (fixStrategy) {
+    return { kind: "fix", strategy: fixStrategy.name, findingsBefore: fixStrategy.findingsBefore };
+  }
+
+  // Spec's Outcome-derivation rule is unconditional across every op name:
+  // non-object output emits `"passed"` with no `details`.
+  if (output === null || typeof output !== "object") return undefined;
+
+  if (opName === "adversarial-review") {
+    const adv = output as
+      | {
+          normalizedFindings?: Array<{ severity: FindingSeverity; message: string; rule?: string; file?: string }>;
+          blockingThreshold?: string;
+        }
+      | undefined;
+    const findings = adv?.normalizedFindings ?? [];
+    const threshold = (adv?.blockingThreshold ?? "error") as "error" | "warning" | "info";
+    const bySeverity = Object.fromEntries(
+      ALL_FINDING_SEVERITIES.map((sev) => [sev, findings.filter((f) => f.severity === sev).length]),
+    ) as Record<FindingSeverity, number>;
+    const blockingCount = findings.filter((f) => isBlockingSeverity(f.severity, threshold)).length;
+    const advisoryCount = findings.length - blockingCount;
+    return {
+      kind: "review",
+      reviewer: "adversarial",
+      iteration: advIterationBefore,
+      bySeverity,
+      blockingCount,
+      advisoryCount,
+      ...(config.reporters?.otel?.detail === "verbose"
+        ? {
+            items: findings.map((f) => ({
+              message: f.message,
+              severity: f.severity,
+              ...(f.rule ? { rule: f.rule } : {}),
+              ...(f.file ? { file: f.file } : {}),
+            })),
+          }
+        : {}),
+    };
+  }
+
+  if (opName === "implementer") {
+    const impl = output as { isolation?: { passed: boolean }; filesChanged?: readonly string[] } | undefined;
+    const filesChanged = (impl?.filesChanged ?? []).length;
+    if (isThreeSession) {
+      return { kind: "authoring", role: "implementer", filesChanged, isolationPassed: impl?.isolation?.passed };
+    }
+    return { kind: "authoring", role: "implementer", filesChanged };
+  }
+
+  if (opName === "test-writer") {
+    const tw = output as { filesChanged?: readonly string[] } | undefined;
+    return { kind: "authoring", role: "test-writer", filesChanged: (tw?.filesChanged ?? []).length };
+  }
+
+  if (opName === "full-suite-gate") {
+    const gate = output as { failureCount?: number } | undefined;
+    return { kind: "gate", gate: "full-suite", failureCount: gate?.failureCount ?? 0 };
+  }
+
+  if (opName === "verifier" || opName === "verify-scoped") {
+    const verdict = output as { passed?: boolean; failureCount?: number };
+    return { kind: "verdict", role: opName, passed: verdict.passed ?? false, failureCount: verdict.failureCount ?? 0 };
+  }
+
+  return undefined;
+}
+
+/**
+ * Derive the phase-completion outcome from an operation's output, reusing
+ * `buildPhaseOutcomeLogData` so the per-phase log and the bus event stay in
+ * lockstep. Non-object outputs are treated as `passed` (no `details`).
+ */
+function derivePhaseOutcome(output: unknown): "passed" | "failed" | "skipped" {
+  const built = buildPhaseOutcomeLogData(undefined, "", output, 0);
+  if (!built) return "passed";
+  if (built.success) return "passed";
+  if (built.data.status === "skipped") return "skipped";
+  return "failed";
 }
 
 /**

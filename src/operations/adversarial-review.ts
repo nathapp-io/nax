@@ -105,15 +105,18 @@ export interface AdversarialReviewOutput {
   passed: boolean;
   /**
    * The model's raw `passed` flag, before `verify()` applies blockingThreshold (#1378).
-   * `passed` answers "does this block the story?"; `modelPassed` answers "did the model
-   * claim failure?". The wrapper's ungrounded-drop branches key off the latter — they
-   * must fail closed when the model raised concerns it could not ground, regardless of
-   * whether an unrelated sub-threshold finding happened to survive filtering.
-   * Undefined on the fail-open / looksLikeFail short-circuits, which set no drops.
+   * The wrapper's ungrounded-drop branches key off this (not `passed`) so they fail
+   * closed on a model-claimed failure regardless of sub-threshold survivors.
    */
   modelPassed?: boolean;
   /** Raw AdversarialLLMFinding[]. Consumed by `src/review/adversarial.ts`. */
   findings: unknown[];
+  /**
+   * The resolved blockingThreshold used during verify(). Persisted here so
+   * buildPhaseDetails can compute blockingCount at the configured threshold
+   * rather than always defaulting to "error".
+   */
+  blockingThreshold?: string;
   /**
    * Source-tagged Finding[] (`source: "adversarial-review"`), used by the rectification
    * cycle's `extractPhaseFindings` → strategy `appliesTo` routing. Populated after
@@ -487,10 +490,9 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
     throw new ParseValidationError("[adversarial-review] parse failed: invalid JSON shape");
   },
   async verify(parsed, input, _verifyCtx) {
-    if (parsed.failOpen || parsed.looksLikeFail) return parsed;
-    if (parsed.findings.length === 0) return parsed;
-
     const threshold = input.blockingThreshold ?? "error";
+    if (parsed.failOpen || parsed.looksLikeFail) return { ...parsed, blockingThreshold: threshold };
+    if (parsed.findings.length === 0) return { ...parsed, blockingThreshold: threshold };
     const findings = parsed.findings as AdversarialLLMFinding[];
 
     const substantiated = await substantiateAdversarialFindings({
@@ -561,28 +563,24 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
       });
     }
 
-    // Honour blockingThreshold: the verdict fails only when a blocking finding
-    // survives. The model's raw `passed:false` must NOT fail the review when every
-    // surviving finding is sub-threshold — that was nax#1347 for semantic, and
-    // nax#1378 here. This clause was previously `accepted.some(isBlockingSeverity)`,
-    // which can only be true when `blocking` is non-empty *unless* classifyRecurrence
-    // moved a blocking-severity finding out (demotion / oscillation-suppression);
-    // for ordinary sub-threshold findings it collapsed to `parsed.passed` alone.
+    // Honour blockingThreshold: the verdict fails only when a blocking finding survives.
+    // The model's raw `passed:false` must NOT fail the review when every surviving
+    // finding is sub-threshold (nax#1347 for semantic, nax#1378 here) — the prior
+    // `accepted.some(isBlockingSeverity)` clause collapsed to `parsed.passed` alone for
+    // ordinary sub-threshold findings, which deadlocks the story: `normalizedFindings`
+    // carries `blocking` only, so the rectification cycle gets nothing routable and
+    // exits "resolved" with no derivable failure category.
     //
-    // That collapse deadlocks the story rather than merely pausing it: `normalizedFindings`
-    // carries `blocking` only, so a sub-threshold-only failure hands the rectification
-    // cycle nothing routable — it exits "resolved" without dispatching a fix strategy,
-    // and the story terminates with no derivable failure category.
-    //
-    // `accepted.length > 0` preserves the fail-closed guard for the distinct case where
-    // the model claims failure but every finding was dropped as ungrounded (accepted
-    // empty): there we still respect the model's `passed` flag. `accepted` is a superset
-    // of what the old clause tested, so demotion/oscillation pass-through is unchanged.
+    // `accepted.length > 0` keeps the fail-closed guard when the model claims failure
+    // but every finding was dropped as ungrounded (accepted empty) — there we still
+    // respect `parsed.passed`. `accepted` is a superset of the old clause, so
+    // demotion/oscillation pass-through is unchanged.
     const passed = blocking.length === 0 && (parsed.passed || accepted.length > 0);
 
     return {
       ...parsed,
       passed,
+      blockingThreshold: threshold,
       modelPassed: parsed.passed,
       findings: accepted,
       // #1368 — `testFileMatch` also decides the fix lane: a finding located in a

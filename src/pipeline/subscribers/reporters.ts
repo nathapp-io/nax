@@ -11,10 +11,30 @@
  * - Returns unsubscribe function for cleanup
  */
 
-import { getSafeLogger } from "../../logger";
-import type { PluginRegistry } from "../../plugins";
-import type { PipelineEventBus } from "../event-bus";
-import type { UnsubscribeFn } from "./hooks";
+import { getSafeLogger } from "@/logger";
+import type { PipelineEventBus } from "@/pipeline/event-bus";
+import type { UnsubscribeFn } from "@/pipeline/subscribers/hooks";
+import type { PluginRegistry } from "@/plugins";
+import type { IReporter, PhaseCompleteEvent, PhaseStartEvent } from "@/plugins/types";
+
+type ReporterHook = "onRunStart" | "onStoryComplete" | "onRunEnd" | "onPhaseStart" | "onPhaseComplete";
+
+async function fanOutReporters(
+  reporters: IReporter[],
+  hook: ReporterHook,
+  invoke: (reporter: IReporter) => Promise<void> | undefined,
+): Promise<void> {
+  const logger = getSafeLogger();
+  for (const reporter of reporters) {
+    try {
+      await invoke(reporter);
+    } catch (err) {
+      try {
+        logger?.warn("plugins", `Reporter '${reporter.name}' ${hook} failed`, { error: err });
+      } catch {}
+    }
+  }
+}
 
 /**
  * Wire reporter plugin lifecycle events to the event bus.
@@ -40,6 +60,56 @@ export function wireReporters(
   };
 
   const unsubs: UnsubscribeFn[] = [];
+  const phaseStart = (event: PhaseStartEvent): Promise<void> =>
+    fanOutReporters(pluginRegistry.getReporters(), "onPhaseStart", (reporter) => reporter.onPhaseStart?.(event));
+  const phaseComplete = (event: PhaseCompleteEvent): Promise<void> =>
+    fanOutReporters(pluginRegistry.getReporters(), "onPhaseComplete", (reporter) => reporter.onPhaseComplete?.(event));
+
+  unsubs.push(
+    bus.on("story:step", (ev) =>
+      phaseStart({
+        runId,
+        scope: "story",
+        storyId: ev.storyId,
+        phase: ev.step,
+        startTime: new Date().toISOString(),
+      }),
+    ),
+    bus.on("story:phase:completed", (phaseEvent) =>
+      phaseComplete({
+        runId,
+        scope: "story",
+        storyId: phaseEvent.storyId,
+        phase: phaseEvent.phase,
+        outcome: phaseEvent.outcome,
+        durationMs: phaseEvent.durationMs,
+        costUsd: phaseEvent.costUsd,
+        tier: phaseEvent.tier,
+        testStrategy: phaseEvent.testStrategy,
+        sessionModel: phaseEvent.sessionModel,
+        details: phaseEvent.details,
+      }),
+    ),
+    bus.on("postrun:phase:started", (ev) =>
+      phaseStart({
+        runId,
+        scope: "run",
+        phase: ev.phase,
+        startTime: new Date().toISOString(),
+      }),
+    ),
+    bus.on("postrun:phase:completed", (phaseEvent) =>
+      phaseComplete({
+        runId,
+        scope: "run",
+        phase: phaseEvent.phase,
+        outcome: phaseEvent.passed ? "passed" : "failed",
+        durationMs: phaseEvent.durationMs ?? 0,
+        costUsd: phaseEvent.costUsd,
+        details: phaseEvent.details,
+      }),
+    ),
+  );
 
   // run:started → reporter.onRunStart
   unsubs.push(
@@ -135,6 +205,29 @@ export function wireReporters(
               });
             } catch (err) {
               logger?.warn("plugins", `Reporter '${r.name}' onStoryComplete failed`, { error: err });
+            }
+          }
+        }
+      });
+    }),
+  );
+
+  // story:escalated → reporter.onEscalation
+  unsubs.push(
+    bus.on("story:escalated", (ev) => {
+      return safe("onEscalation", async () => {
+        const reporters = pluginRegistry.getReporters();
+        for (const r of reporters) {
+          if (r.onEscalation) {
+            try {
+              await r.onEscalation({
+                runId,
+                storyId: ev.storyId,
+                fromTier: ev.fromTier,
+                toTier: ev.toTier,
+              });
+            } catch (err) {
+              logger?.warn("plugins", `Reporter '${r.name}' onEscalation failed`, { error: err });
             }
           }
         }

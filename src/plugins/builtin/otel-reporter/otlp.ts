@@ -28,10 +28,54 @@ export function msToUnixNano(ms: number): string {
   return (BigInt(Math.round(ms)) * 1_000_000n).toString();
 }
 
+export interface HistogramDataPoint {
+  attributes: KeyValue[];
+  timeUnixNano: string;
+  count: number;
+  sum: number;
+  bucketCounts: number[];
+  explicitBounds: number[];
+}
+
+/** Build an OTLP histogram data point. `bucketCounts` has `bounds.length + 1` entries. */
+export function buildHistogramPoint(
+  values: number[],
+  bounds: number[],
+  attributes: KeyValue[],
+  timeUnixNano: string,
+): HistogramDataPoint {
+  const bucketCounts = new Array(bounds.length + 1).fill(0);
+  let sum = 0;
+  for (const value of values) {
+    sum += value;
+    const bucketIndex = bounds.findIndex((bound) => value <= bound);
+    bucketCounts[bucketIndex === -1 ? bounds.length : bucketIndex]++;
+  }
+  return { attributes, timeUnixNano, count: values.length, sum, bucketCounts, explicitBounds: bounds };
+}
+
+export interface CounterDataPoint {
+  attributes: KeyValue[];
+  timeUnixNano: string;
+  asInt: string;
+}
+
+/** Build an OTLP monotonic-sum (counter) data point. */
+export function buildCounterPoint(count: number, attributes: KeyValue[], timeUnixNano: string): CounterDataPoint {
+  return { attributes, timeUnixNano, asInt: String(count) };
+}
+
+/** Resource attributes shared by every OTLP payload this reporter exports. */
+export function buildResourceAttributes(serviceName: string, runId: string): KeyValue[] {
+  return [attr("service.name", serviceName), attr("nax.run_id", runId)];
+}
+
 export interface TracesInput {
   serviceName: string;
   traceId: string;
   spanId: string;
+  /** W3C-adopted parent span id — omitted when no valid TRACEPARENT was present. */
+  parentSpanId?: string;
   startUnixNano: string;
   endUnixNano: string;
   feature: string;
@@ -39,6 +83,8 @@ export interface TracesInput {
   storySummary: StorySummary;
   totalCost: number;
   events: SpanEvent[];
+  /** Additional spans (e.g. phase spans) appended after the root span (US-008). */
+  extraSpans?: object[];
 }
 
 /** Build an OTLP/HTTP-JSON ResourceSpans payload with one root `nax.run` span. */
@@ -46,6 +92,7 @@ export function buildTracesPayload(p: TracesInput): object {
   const span = {
     traceId: p.traceId,
     spanId: p.spanId,
+    ...(p.parentSpanId ? { parentSpanId: p.parentSpanId } : {}),
     name: "nax.run",
     kind: 1, // SPAN_KIND_INTERNAL
     startTimeUnixNano: p.startUnixNano,
@@ -66,7 +113,7 @@ export function buildTracesPayload(p: TracesInput): object {
     resourceSpans: [
       {
         resource: { attributes: [attr("service.name", p.serviceName)] },
-        scopeSpans: [{ scope: { name: "nax" }, spans: [span] }],
+        scopeSpans: [{ scope: { name: "nax" }, spans: [span, ...(p.extraSpans ?? [])] }],
       },
     ],
   };

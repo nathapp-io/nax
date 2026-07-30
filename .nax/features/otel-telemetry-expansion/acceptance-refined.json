@@ -1,0 +1,814 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When a subscriber registered via `bus.on(\"story:phase:completed\", fn)` receives an emitted event, then its `phase` equals the emitted phase.",
+    "refined": "Emit a StoryPhaseCompletedEvent with phase='implementation' via the pipeline event bus; invoke the subscriber callback registered via bus.on('story:phase:completed', fn); assert callback received phase === 'implementation'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When a subscriber registered for `story:phase:completed` receives an emitted event, then its `costUsd` equals the emitted value.",
+    "refined": "Emit a StoryPhaseCompletedEvent with costUsd=1500 (1.5 cents) via the pipeline event bus; invoke the subscriber callback; assert callback received costUsd === 1500.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `postrun:phase:started` is emitted with phase `acceptance-setup`, then its subscriber receives `acceptance-setup` unchanged.",
+    "refined": "Emit a PhaseStartEvent with phase='acceptance-setup' on the postrun bus; invoke the subscriber registered via bus.on('postrun:phase:started', fn); assert subscriber received phase === 'acceptance-setup' (string identity, not transformed).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `postrun:phase:completed` is emitted with a `details` payload, then its subscriber receives that payload unmodified.",
+    "refined": "Emit a PhaseCompleteEvent on the postrun bus with details={ stepCount: 5, filesModified: ['a.ts'] }; invoke subscriber; assert subscriber received details === { stepCount: 5, filesModified: ['a.ts'] } (deep equality).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `story:phase:completed` is emitted, then `bus.onAll` receives it.",
+    "refined": "Emit a StoryPhaseCompletedEvent on the story bus; invoke the handler registered via bus.onAll(handler); assert handler was called with event.type === 'story:phase:completed'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When an empty configuration is parsed, then `reporters.otel.detail` is `counts`.",
+    "refined": "Parse an empty object {} as reporter config; access the resolved otel.detail field; assert otel.detail === 'counts'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When an empty configuration is parsed, then `reporters.otel.heartbeatIntervalMs` is `10000`.",
+    "refined": "Parse an empty object {} as reporter config; access reporters.otel.heartbeatIntervalMs; assert heartbeatIntervalMs === 10000.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When an empty configuration is parsed, then `reporters.otel.maxBatchSize` is `64`.",
+    "refined": "Parse an empty object {} as reporter config; access reporters.otel.maxBatchSize; assert maxBatchSize === 64.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When an empty configuration is parsed, then `reporters.otel.flushIntervalMs` is `5000`.",
+    "refined": "Parse an empty object {} as reporter config; access reporters.otel.flushIntervalMs; assert flushIntervalMs === 5000.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When an empty configuration is parsed, then `reporters.otel.maxQueueSize` is `2048`.",
+    "refined": "Parse an empty object {} as reporter config; access reporters.otel.maxQueueSize; assert maxQueueSize === 2048.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When an empty configuration is parsed, then `reporters.otel.phases` is absent.",
+    "refined": "Parse an empty object {} as reporter config; access reporters.otel.phases; assert phases is undefined (property absent, not null or empty array).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When `reporters.otel.detail` is `trace`, then configuration validation rejects it.",
+    "refined": "Parse reporter config with { otel: { detail: 'trace' } }; assert config parsing throws a ZodValidationError (or equivalent) with a refinement error indicating 'trace' is not a valid detail value.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When `reporters.webhook.events` contains `onPhaseComplete`, then the parsed configuration retains that entry.",
+    "refined": "Parse reporter config with { webhook: { events: ['onPhaseComplete', 'onRunStart'] } }; access reporters.webhook.events; assert events includes 'onPhaseComplete' and events order is preserved ['onPhaseComplete', 'onRunStart'].",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When `runPhase` dispatches an operation returning `{ passed: true }`, then it emits exactly one `story:phase:completed` event.",
+    "refined": "After calling `runPhase(operationReturning({ passed: true }))`, the mock event emitter must have `emit` called exactly once with arguments matching `{ type: 'story:phase:completed', data: expect.any(Object) }`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When `runPhase` dispatches an operation, then the emitted event phase equals the operation name.",
+    "refined": "After calling `runPhase({ name: 'myOperation', fn: ... })`, the emitted event must have `data.phase === 'myOperation'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When an operation returns `{ passed: true }`, then the emitted outcome is `passed`.",
+    "refined": "When operation returns `{ passed: true }`, emitted event must have `data.outcome === 'passed'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When an operation returns `{ passed: false }`, then the emitted outcome is `failed`.",
+    "refined": "When operation returns `{ passed: false }`, emitted event must have `data.outcome === 'failed'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When an operation returns `{ status: \"skipped\" }`, then the emitted outcome is `skipped`.",
+    "refined": "When operation returns `{ status: 'skipped' }`, emitted event must have `data.outcome === 'skipped'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When a dispatched operation throws, then the emitted outcome is `error`.",
+    "refined": "When operation throws an Error, emitted event must have `data.outcome === 'error'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When a dispatched operation throws, then `runPhase` rethrows the original error unchanged.",
+    "refined": "When operation throws `new Error('original')`, calling `runPhase` must throw an error with `message === 'original'` and `cause === undefined` (error not wrapped or re-assigned).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When an operation returns a non-object value, then its emitted outcome is `passed`.",
+    "refined": "When operation returns `undefined`, `null`, `123`, `'string'`, or `true`, emitted event must have `data.outcome === 'passed'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When an operation returns a non-object value, then its emitted event has no `details` field.",
+    "refined": "When operation returns a non-object (undefined/null/primitive), emitted event must either lack a `details` field or `data.details` must be `undefined`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When an operation output makes `buildPhaseOutcomeLogData` report success, then the emitted outcome is `passed`.",
+    "refined": "When `buildPhaseOutcomeLogData(operationOutput)` returns an object with `success === true`, emitted event must have `data.outcome === 'passed'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When a `semantic-review` operation runs, then it emits an outcome even though deterministic outcome logging returns early.",
+    "refined": "When phase name is 'semantic-review' and operation runs, emitted event must have a defined `data.outcome` string (one of 'passed', 'failed', 'skipped', 'error') despite `buildPhaseOutcomeLogData` returning early.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When a phase completes, then its emitted `costUsd` equals that invocation scope snapshot total.",
+    "refined": "When phase completes, emitted event must have `data.costUsd` equal to `scope.snapshot().totalCostUsd` from the same invocation scope, verified via strict equality.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When a phase completes, then its emitted `durationMs` equals elapsed operation-dispatch time.",
+    "refined": "When phase completes, emitted event must have `data.durationMs` equal to the elapsed time measured from operation dispatch start to completion, verified within a 1ms tolerance.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When a `story:phase:completed` subscriber throws, then `runPhase` returns the operation output normally.",
+    "refined": "After registering a subscriber that throws on 'story:phase:completed' event, calling `runPhase(operation)` must return the operation's result without throwing, where result equals `operation()`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-28",
+    "original": "Running the execution stage for a story routed with `testStrategy` `\"three-session-tdd\"` emits phase events whose `sessionModel` is `\"three-session\"`.",
+    "refined": "When `runPhase(ctx, ...)` is called with `ctx.routing.testStrategy === \"three-session-tdd\"`, the emitted phase event payload satisfies `sessionModel === \"three-session\"`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "Running the execution stage for a story routed with `testStrategy` `\"three-session-tdd\"` emits phase events whose `testStrategy` is `\"three-session-tdd\"`.",
+    "refined": "When `runPhase(ctx, ...)` is called with `ctx.routing.testStrategy === \"three-session-tdd\"`, the emitted phase event payload satisfies `testStrategy === \"three-session-tdd\"`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "Running the execution stage for a story routed with `testStrategy` `\"no-test\"` emits phase events whose `sessionModel` is `\"single-session\"`.",
+    "refined": "When `runPhase(ctx, ...)` is called with `ctx.routing.testStrategy === \"no-test\"`, the emitted phase event payload satisfies `sessionModel === \"single-session\"`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "Emitted phase events carry a `tier` equal to the model tier the execution stage resolved after its supported-tier clamp.",
+    "refined": "When `runPhase(ctx, ...)` is called, the emitted phase event payload satisfies `tier` equals the clamped tier derived from `ctx.routing.tier` via the supported-tier clamp in `src/routing/strategies/*.ts`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-32",
+    "original": "A phase dispatched through `runFixCycle` during a story routed as `\"three-session-tdd\"` emits `sessionModel` equal to `\"three-session\"`.",
+    "refined": "When `runPhase` is called within `runFixCycle(cycleCtx, ...)` where `cycleCtx.routing.testStrategy === \"three-session-tdd\"`, the emitted phase event payload satisfies `sessionModel === \"three-session\"`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-33",
+    "original": "An `adversarial-review` operation emits `details` whose `kind` is `\"review\"` and whose `iteration` equals the number of times that operation has already completed for the same story.",
+    "refined": "For an adversarial-review operation on a given `storyId`, the emitted `details` satisfies `details.kind === \"review\"` and `details.iteration === N` where N is the count of prior adversarial-review phase completions for that `storyId` in the current run.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-34",
+    "original": "An `adversarial-review` operation emits `details.bySeverity` counts keyed by the members of `FindingSeverity`, matching its normalized findings.",
+    "refined": "For an adversarial-review operation, the emitted `details.bySeverity` is an object whose keys are exactly `[\"critical\", \"error\", \"warning\", \"info\", \"low\", \"unverifiable\"]` and where each value equals the count of normalized findings with that severity.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-35",
+    "original": "An `adversarial-review` operation configured with a `blockingThreshold` of `\"warning\"` emits a `details.blockingCount` equal to the number of its findings for which `isBlockingSeverity` returns true at `\"warning\"`, not at the `\"error\"` default.",
+    "refined": "When adversarial-review runs with `input.blockingThreshold === \"warning\"`, the emitted `details.blockingCount` equals the count of findings where `isBlockingSeverity(finding.severity, \"warning\") === true`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-36",
+    "original": "An `implementer` operation in a three-session context emits `details.isolationPassed` equal to the operation's isolation result.",
+    "refined": "When `ctx.sessionModel === \"three-session\"` and the operation is `implementer`, the emitted `details.isolationPassed` equals the isolation result from `operation.output.isolationPassed`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-37",
+    "original": "An `implementer` operation in a single-session context emits `details` with no `isolationPassed` field.",
+    "refined": "When `ctx.sessionModel === \"single-session\"` and the operation is `implementer`, `Object.hasOwn(details, \"isolationPassed\") === false`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-38",
+    "original": "An `implementer` operation emits `details.filesChanged` equal to the number of files its output reports as changed.",
+    "refined": "For an implementer operation, `details.filesChanged` equals `operation.output.changedFiles.length`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-39",
+    "original": "A `test-writer` operation emits `details` whose `kind` is `\"authoring\"` and whose `role` is `\"test-writer\"`.",
+    "refined": "For a test-writer operation, the emitted `details` satisfies `details.kind === \"authoring\"` and `details.role === \"test-writer\"`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-40",
+    "original": "A `full-suite-gate` operation emits `details` whose `kind` is `\"gate\"` and whose `failureCount` equals the number of failures its output reports.",
+    "refined": "For a full-suite-gate operation, the emitted `details` satisfies `details.kind === \"gate\"`, `details.gate === \"full-suite\"`, and `details.failureCount === operation.output.failures.length`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-41",
+    "original": "A `verifier` operation emits `details` whose `kind` is `\"verdict\"` and whose `passed` equals the operation's verdict.",
+    "refined": "For a verifier operation, the emitted `details` satisfies `details.kind === \"verdict\"` and `details.passed === operation.output.verdict`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-42",
+    "original": "An operation dispatched while the `fixStrategy` context slice is populated emits `details` whose `kind` is `\"fix\"`, whose `strategy` equals the slice's `name`, and whose `findingsBefore` equals the slice's `findingsBefore`.",
+    "refined": "When `ctx.fixStrategy` is populated, the emitted `details` satisfies `details.kind === \"fix\"`, `details.strategy === ctx.fixStrategy.name`, and `details.findingsBefore === ctx.fixStrategy.findingsBefore`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-43",
+    "original": "With `detail` set to `\"verbose\"`, an `adversarial-review` operation emits `details.items` carrying each finding's `message`.",
+    "refined": "When `ctx.config.detail === \"verbose\"` and the operation is adversarial-review, `Array.isArray(details.items) === true` and every `item.message` equals the `message` field of the corresponding finding in `operation.output.findings`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-44",
+    "original": "Running the acceptance-setup stage emits a `postrun:phase:started` event whose `phase` is `\"acceptance-setup\"` before any acceptance test file is generated.",
+    "refined": "When acceptance-setup stage executes, the event bus emits PostRunPhaseStartedEvent with phase=\"acceptance-setup\" and timestamp t0. The first subsequent filesystem write to an acceptance test file must occur at timestamp t1 where t1 > t0.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-45",
+    "original": "Running the acceptance-setup stage with a RED gate that fails emits `postrun:phase:completed` for `\"acceptance-setup\"` with `passed` true.",
+    "refined": "When acceptance-setup stage executes with a RED gate result containing failed criteria, the event bus emits PostRunPhaseCompletedEvent with phase=\"acceptance-setup\", passed=true, and the event timestamp occurs after the matching started event.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-46",
+    "original": "The `\"acceptance-setup\"` completion event's `details` carries `totalCriteria`, `testableCount`, and `redFailCount` equal to the values the stage records.",
+    "refined": "PostRunPhaseCompletedEvent for phase=\"acceptance-setup\" contains details object where details.totalCriteria equals the totalCriteria value recorded by the stage, details.testableCount equals the testableCount value, and details.redFailCount equals the redFailCount value.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-47",
+    "original": "When every acceptance test already passes and the stage returns a skip result, the `\"acceptance-setup\"` completion event is still emitted.",
+    "refined": "When acceptance-setup stage returns skipResult (no tests needed), the event bus emits exactly one PostRunPhaseCompletedEvent with phase=\"acceptance-setup\" and passed=undefined/skipped flag set.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-48",
+    "original": "The `\"acceptance\"` completion event's `details.retries` equals the retry count returned by the acceptance loop.",
+    "refined": "PostRunPhaseCompletedEvent for phase=\"acceptance\" has details.retries equal to the retryCount value returned by AcceptanceLoop.execute().",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-49",
+    "original": "The `\"acceptance\"` completion event's `details.failedACCount` equals the number of failed acceptance criteria returned by the acceptance loop.",
+    "refined": "PostRunPhaseCompletedEvent for phase=\"acceptance\" has details.failedACCount equal to the failedACCount value returned by AcceptanceLoop.execute().",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-50",
+    "original": "The `\"acceptance\"` completion event's `details.fixStoriesCreated` equals the number of fix stories the acceptance loop created.",
+    "refined": "PostRunPhaseCompletedEvent for phase=\"acceptance\" has details.fixStoriesCreated equal to the fixStoriesCreated count returned by AcceptanceLoop.execute().",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-51",
+    "original": "The `\"regression\"` completion event's `details.mode` equals the configured regression gate mode.",
+    "refined": "PostRunPhaseCompletedEvent for phase=\"regression\" has details.mode equal to the configured RegressionGate.mode value (\"deferred\" | \"per-story\" | \"disabled\").",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-52",
+    "original": "The `\"regression\"` completion event's `details.failedTests` equals the number of failing tests the regression gate reported.",
+    "refined": "PostRunPhaseCompletedEvent for phase=\"regression\" has details.failedTests equal to the failedTests count reported by RegressionGate.run().",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-53",
+    "original": "The `\"review\"` completion event's `details.findingCount` equals the number of deferred reviewers that reported a failure.",
+    "refined": "PostRunPhaseCompletedEvent for phase=\"review\" has details.findingCount equal to the total number of deferred reviewers where reviewer.result.status === \"failed\".",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-54",
+    "original": "Every `postrun:phase:completed` event carries a `durationMs` measured from its matching `postrun:phase:started` event.",
+    "refined": "For every PostRunPhaseCompletedEvent, durationMs === completedEvent.timestamp - matching PostRunPhaseStartedEvent.timestamp (where matching means same phase value).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-55",
+    "original": "The TUI pipeline-bus subscriber handles a `postrun:phase:started` event with `phase` `\"acceptance-setup\"` without throwing and records it as a running phase.",
+    "refined": "When TUIPipelineBusSubscriber receives PostRunPhaseStartedEvent with phase=\"acceptance-setup\", no exception is thrown and subscriber.runningPhases includes \"acceptance-setup\".",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-56",
+    "original": "After `wireReporters`, emitting `story:step` invokes the registered reporter's `onPhaseStart` with `scope` `\"story\"` and a `storyId` equal to the event's `storyId`.",
+    "refined": "Call `wireReporters(reporters, runId).emit('story:step', { storyId: 's1', step: 'implement' })`. Assert reporter's `onPhaseStart` was called once with arguments `({ scope: 'story', storyId: 's1', phase: 'implement', runId: 'r1' })`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-57",
+    "original": "The `onPhaseStart` invocation triggered by `story:step` carries a `phase` equal to the event's `step`.",
+    "refined": "Emit `story:step` with `{ step: 'test' }`. Assert `onPhaseStart` was called with `phase: 'test'`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-58",
+    "original": "After `wireReporters`, emitting `story:phase:completed` invokes `onPhaseComplete` with `scope` `\"story\"`.",
+    "refined": "Call `wireReporters(reporters, runId).emit('story:phase:completed', { storyId: 's1' })`. Assert `onPhaseComplete` was called once with `scope: 'story'`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-59",
+    "original": "The `onPhaseComplete` invocation triggered by `story:phase:completed` carries an `outcome` equal to the event's `outcome`.",
+    "refined": "Emit `story:phase:completed` with `{ outcome: 'passed' }`. Assert `onPhaseComplete` was called with `outcome: 'passed'`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-60",
+    "original": "The `onPhaseComplete` invocation triggered by `story:phase:completed` carries a `costUsd` equal to the event's `costUsd`.",
+    "refined": "Emit `story:phase:completed` with `{ costUsd: 0.05 }`. Assert `onPhaseComplete` was called with `costUsd: 0.05`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-61",
+    "original": "After `wireReporters`, emitting `postrun:phase:started` invokes `onPhaseStart` with `scope` equal to `\"run\"`.",
+    "refined": "Emit `postrun:phase:started`. Assert `onPhaseStart` was called with `scope: 'run'`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-62",
+    "original": "The `onPhaseStart` invocation triggered by `postrun:phase:started` has no `storyId` field.",
+    "refined": "Emit `postrun:phase:started`. Assert `onPhaseStart` was called with no `storyId` property (or `storyId: undefined`).",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-63",
+    "original": "After `wireReporters`, emitting `postrun:phase:completed` invokes `onPhaseComplete` with `scope` `\"run\"`.",
+    "refined": "Emit `postrun:phase:completed`. Assert `onPhaseComplete` was called with `scope: 'run'`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-64",
+    "original": "Every phase event delivered to a reporter hook carries the `runId` that `wireReporters` was constructed with.",
+    "refined": "Call `wireReporters(reporters, 'run-abc')`. Emit `story:step`, `story:phase:completed`, `postrun:phase:started`, `postrun:phase:completed`. Assert every `onPhaseStart`/`onPhaseComplete` call includes `runId: 'run-abc'`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-65",
+    "original": "A registered reporter that does not implement `onPhaseComplete` is skipped when `story:phase:completed` is emitted.",
+    "refined": "Register a reporter without `onPhaseComplete`. Emit `story:phase:completed`. Assert no error is thrown and other reporters' `onPhaseComplete` was called.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-66",
+    "original": "When the first of two registered reporters throws from `onPhaseComplete`, the second reporter's `onPhaseComplete` is still invoked.",
+    "refined": "Register reporter1 whose `onPhaseComplete` throws. Register reporter2 whose `onPhaseComplete` records a call. Emit `story:phase:completed`. Assert reporter2's `onPhaseComplete` was called.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-67",
+    "original": "Emitting `run:started` after the new wiring still invokes the reporter's `onRunStart`.",
+    "refined": "Call `wireReporters(reporters, runId).emit('run:started', { timestamp: 123 })`. Assert `onRunStart` was called once.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-68",
+    "original": "Invoking the unsubscribe function returned by `wireReporters` stops further `onPhaseComplete` invocations for subsequently emitted events.",
+    "refined": "Call `const unsubscribe = wireReporters(reporters, runId)`. Call `unsubscribe()`. Emit `story:phase:completed`. Assert `onPhaseComplete` was not called.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-69",
+    "original": "A webhook reporter configured with `events` containing only `\"onPhaseComplete\"` posts an envelope whose `type` is `\"onPhaseComplete\"` when that hook fires.",
+    "refined": "Configure webhook reporter with `events: ['onPhaseComplete']`. Emit `story:phase:completed`. Assert HTTP POST was made with `Content-Type: application/json` and body containing `\"type\":\"onPhaseComplete\"`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-70",
+    "original": "A webhook reporter configured with `events` containing only `\"onPhaseComplete\"` performs no request when `onPhaseStart` fires.",
+    "refined": "Configure webhook reporter with `events: ['onPhaseComplete']`. Emit `story:step`. Assert no HTTP request was made.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-71",
+    "original": "A run whose stories all complete still exports a run span carrying the run's total cost, preserving the end-of-run export behaviour this story replaces.",
+    "refined": "When Runner.run() completes successfully, verify: (1) PostJsonDeps.postJson is called at least once after the last story completes, (2) the exported payload contains a span with type='run' and cost equal to the sum of all story costs, (3) no spans are exported after run completion.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-72",
+    "original": "Enqueuing `maxBatchSize` spans issues exactly one export request carrying every enqueued span.",
+    "refined": "Call queue.enqueue(span) exactly 64 times with distinct span ids. Verify PostJsonDeps.postJson is called exactly once, and the payload contains all 64 spans with matching span ids.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-73",
+    "original": "Enqueuing fewer than `maxBatchSize` spans issues an export request once `flushIntervalMs` has elapsed.",
+    "refined": "Enqueue 10 spans (less than maxBatchSize of 64). After t=0, verify PostJsonDeps.postJson is NOT called. At t=5000ms (flushIntervalMs elapsed), verify PostJsonDeps.postJson IS called exactly once with all 10 spans.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-74",
+    "original": "Calling `flushNow` exports pending spans before `flushIntervalMs` has elapsed.",
+    "refined": "Enqueue 5 spans. WITHOUT waiting for flushIntervalMs (e.g., at t=1000ms), call queue.flushNow(). Verify PostJsonDeps.postJson is called within 100ms of flushNow() and contains all 5 spans.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-75",
+    "original": "Enqueuing beyond `maxQueueSize` discards the oldest entries.",
+    "refined": "Enqueue 2048 spans to fill the queue, then enqueue span2049. Verify the queue length remains 2048 and span2048 (the oldest) is not present in queue state.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-76",
+    "original": "After an overflow, the queue reports a drop count equal to the number of entries discarded.",
+    "refined": "After enqueueing 2049 spans (2048 + 1 overflow), verify queue.getMetrics().dropCount === 1. Enqueue 10 more (total 2059), verify dropCount === 11.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-77",
+    "original": "An overflow logs one warning per threshold crossing rather than one per discarded entry.",
+    "refined": "Enqueue spans until overflow occurs, causing 5 discards. Verify the test captures exactly 1 log.warn call for the overflow event, not 5 separate warnings.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-78",
+    "original": "A failed export request is retried exactly once.",
+    "refined": "Configure PostJsonDeps.postJson to fail 3 times consecutively, then succeed. Enqueue 10 spans and wait for flush. Verify postJson is called exactly 3 times (initial + 2 retries), not 4.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-79",
+    "original": "`flushNow` completes without throwing once the retry budget for a failing export is exhausted.",
+    "refined": "`flushNow` completes without throwing once the retry budget for a failing export is exhausted.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-80",
+    "original": "A span enqueued while an export request is in flight is included in a subsequent export.",
+    "refined": "Enqueue 5 spans and capture the first postJson call. Before that call resolves, enqueue span6. After first call resolves, verify postJson is called again with span6 included (or span6 included in next batch).",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-81",
+    "original": "After the queue is torn down, no export request is issued even once `flushIntervalMs` has elapsed.",
+    "refined": "Enqueue 3 spans. Call queue.teardown(). Wait for flushIntervalMs (5000ms) to elapse. Verify postJson is never called after teardown.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-82",
+    "original": "A valid W3C traceparent value produces a run span whose parent span id equals that value's span id.",
+    "refined": "Set env TRACEPARENT='00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'. Complete a run. Verify the exported run span has parentSpanId === 'b7ad6b7169203331'.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-83",
+    "original": "A malformed traceparent value produces a run span with no parent span id.",
+    "refined": "Set env TRACEPARENT='invalid'. Complete a run. Verify the exported run span has parentSpanId === undefined (or null, depending on schema).",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-84",
+    "original": "A traceparent whose trace id is all zeros produces a run span with no parent span id.",
+    "refined": "Set env TRACEPARENT='00-00000000000000000000000000000000-b7ad6b7169203331-01'. Complete a run. Verify the exported run span has parentSpanId === undefined.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-85",
+    "original": "A `story:phase:completed` event produces a span whose parent span id equals its story span's id.",
+    "refined": "After emitting a story:phase:completed event while a story span is active, the created span's parentSpanId equals storySpan.context().spanId.",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-86",
+    "original": "A story's span carries a parent span id equal to the run span's id.",
+    "refined": "When a story span is created, its parentSpanId equals runSpan.context().spanId of the active run span.",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-87",
+    "original": "A run-scope phase completion produces a span whose parent span id equals the run span's id.",
+    "refined": "After emitting a phase event with scope='run', the created span's parentSpanId equals runSpan.context().spanId.",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-88",
+    "original": "Emitting a `story:phase:completed` event produces an exported `nax.phase.duration` data point whose recorded value equals the event's `durationMs`.",
+    "refined": "Given a story:phase:completed event with durationMs=D, the next exported MetricPacket for nax.phase.duration contains a histogram point where the sum of (bucketCounts[i] * boundary_intervals[i]) equals D, or a sum value of D for non-histogram aggregations.",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-89",
+    "original": "Emitting a `story:phase:completed` event produces an exported `nax.phase.cost_usd` data point whose recorded value equals the event's `costUsd`.",
+    "refined": "Given a story:phase:completed event with costUsd=C, the next exported MetricPacket for nax.phase.cost_usd contains a data point with value C.",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-90",
+    "original": "A histogram data point's bucket-count list has exactly one more entry than its explicit-bounds list.",
+    "refined": "For any histogram data point exported, histogram.bucketCounts.length === histogram.explicitBounds.length + 1.",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-91",
+    "original": "A histogram data point's `sum` equals the total of the values recorded into it.",
+    "refined": "For any histogram data point, the sum field equals the sum of all individual recorded values that contributed to any bucket.",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-92",
+    "original": "A phase-duration metric data point carries no attribute named `run_id` and none named `story_id`.",
+    "refined": "For any MetricPacket with name 'nax.phase.duration' or 'nax.phase.cost_usd', dataPoint.attributes does not contain keys 'run_id' or 'story_id'.",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-93",
+    "original": "A phase-duration metric data point's attribute names are exactly `phase`, `outcome`, `tier`, `test_strategy`, and `session_model`.",
+    "refined": "For nax.phase.duration and nax.phase.cost_usd data points, Object.keys(dataPoint.attributes).sort() === ['outcome', 'phase', 'session_model', 'tier', 'test_strategy'].sort().",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-94",
+    "original": "A phase-duration histogram data point's explicit bounds are `[100, 500, 1000, 5000, 15000, 60000, 300000, 900000]`, and a phase-cost histogram data point's are `[0.001, 0.01, 0.05, 0.1, 0.5, 1, 5]`.",
+    "refined": "For nax.phase.duration histogram points, explicitBounds === [100, 500, 1000, 5000, 15000, 60000, 300000, 900000]. For nax.phase.cost_usd histogram points, explicitBounds === [0.001, 0.01, 0.05, 0.1, 0.5, 1, 5].",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-95",
+    "original": "A phase span carries a `nax.test_strategy` attribute equal to the event's `testStrategy`.",
+    "refined": "When a phase event with testStrategy='T' is emitted, the created span has attributes['nax.test_strategy'] === 'T'.",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-96",
+    "original": "An `adversarial-review` phase event produces an exported `nax.review.findings` counter data point carrying a `severity` attribute.",
+    "refined": "After emitting a phase event with phase='adversarial-review', the exported MetricPacket for nax.review.findings contains a data point with attributes.severity defined.",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-97",
+    "original": "A rectification phase event produces an exported `nax.fix.iterations` counter data point carrying a `strategy` attribute.",
+    "refined": "After emitting a phase event with phase='rectification', the exported MetricPacket for nax.fix.iterations contains a data point with attributes.strategy defined.",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-98",
+    "original": "A `story:escalated` event produces an exported `nax.escalations` counter data point carrying a `to_tier` attribute.",
+    "refined": "After emitting a story:escalated event, the exported MetricPacket for nax.escalations contains a data point with attributes.to_tier defined.",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-99",
+    "original": "Every exported payload carries a `service.name` resource attribute equal to the configured service name.",
+    "refined": "For every exported SpanPacket or MetricPacket, resource.attributes['service.name'] === configuredServiceName.",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-100",
+    "original": "Every exported payload carries a `nax.run_id` resource attribute equal to the current run's id.",
+    "refined": "For every exported SpanPacket or MetricPacket, resource.attributes['nax.run_id'] === currentRunId.",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-101",
+    "original": "With `heartbeatIntervalMs` set to a positive value, an export request containing a `nax.run.active` gauge of value 1 is issued once that interval has elapsed.",
+    "refined": "After waiting heartbeatIntervalMs milliseconds from run start, the exported metrics payload contains a gauge metric with name 'nax.run.active' and numeric value 1.",
+    "testable": true,
+    "storyId": "US-008"
+  },
+  {
+    "acId": "AC-102",
+    "original": "A heartbeat export request contains a `nax.run.phase_elapsed_ms` gauge whose value is the elapsed time since the most recent phase event.",
+    "refined": "Every heartbeat export contains a gauge metric 'nax.run.phase_elapsed_ms' whose value equals (heartbeat_export_timestamp - most_recent_phase_event_timestamp) in milliseconds, with tolerance of 500ms for clock drift.",
+    "testable": true,
+    "storyId": "US-008"
+  },
+  {
+    "acId": "AC-103",
+    "original": "A heartbeat export request contains a `nax.run.cost_usd` gauge whose value equals the run's accumulated cost.",
+    "refined": "Every heartbeat export contains a gauge metric 'nax.run.cost_usd' whose value matches the run's accumulated cost in microdollars at the time of export, verified against the cost tracker state.",
+    "testable": true,
+    "storyId": "US-008"
+  },
+  {
+    "acId": "AC-104",
+    "original": "A heartbeat gauge carries a `phase` attribute equal to the most recently completed phase's name.",
+    "refined": "All heartbeat gauge metrics include an attribute 'phase' whose string value exactly matches the name of the most recently completed phase event.",
+    "testable": true,
+    "storyId": "US-008"
+  },
+  {
+    "acId": "AC-105",
+    "original": "A heartbeat gauge carries `run_id`, `feature`, `project`, `story_id`, `tier`, and `test_strategy` attributes alongside `phase`.",
+    "refined": "Every heartbeat gauge metric contains all seven attributes: 'run_id', 'feature', 'project', 'story_id', 'tier', 'test_strategy', and 'phase', each with non-empty string values.",
+    "testable": true,
+    "storyId": "US-008"
+  },
+  {
+    "acId": "AC-106",
+    "original": "With `heartbeatIntervalMs` set to 0, no heartbeat export request is issued regardless of elapsed time.",
+    "refined": "Given heartbeatIntervalMs=0, after waiting 2x the default interval (20000ms), the export verifier records zero exports containing nax.run.active, nax.run.phase_elapsed_ms, or nax.run.cost_usd gauges.",
+    "testable": true,
+    "storyId": "US-008"
+  },
+  {
+    "acId": "AC-107",
+    "original": "After `onRunEnd`, no further heartbeat export request is issued.",
+    "refined": "After onRunEnd is invoked, after waiting the former heartbeatIntervalMs duration, the export verifier records zero additional exports.",
+    "testable": true,
+    "storyId": "US-008"
+  },
+  {
+    "acId": "AC-108",
+    "original": "With `detail` set to `\"counts\"`, an emitted review phase's `details` carries no `items` array.",
+    "refined": "When detail='counts', the exported review phase's details object does not contain an 'items' key, verified by parsing the exported JSON payload.",
+    "testable": true,
+    "storyId": "US-008"
+  },
+  {
+    "acId": "AC-109",
+    "original": "With `detail` set to `\"counts\"`, no exported payload contains any review finding's `message` text.",
+    "refined": "When detail='counts', parsing all exported payloads yields zero occurrences of a 'message' field within any 'details' object of type 'review'.",
+    "testable": true,
+    "storyId": "US-008"
+  },
+  {
+    "acId": "AC-110",
+    "original": "With `detail` set to `\"verbose\"`, an exported payload contains a span event carrying a review finding's `message`.",
+    "refined": "When detail='verbose', at least one exported span event's attributes contain a 'message' field whose parent finding has type 'review'.",
+    "testable": true,
+    "storyId": "US-008"
+  },
+  {
+    "acId": "AC-111",
+    "original": "With `detail` set to `\"verbose\"`, every exported file path is relative to the repository root.",
+    "refined": "When detail='verbose', all 'file_path' values in any exported payload contain no leading slash and pass path.isAbsolute() === false, and concatenating the repository root with the path resolves to an existing file.",
+    "testable": true,
+    "storyId": "US-008"
+  },
+  {
+    "acId": "AC-112",
+    "original": "No log record produced during export contains a resolved header value.",
+    "refined": "During any export operation, every log record's interpolated values contain zero instances of the resolved form of any header key (e.g., 'Bearer sk-...', 'token=...') found in the export metadata.",
+    "testable": true,
+    "storyId": "US-008"
+  },
+  {
+    "acId": "AC-113",
+    "original": "Invoking `onRunEnd` without any preceding `run:completed` bus event exports every queued span.",
+    "refined": "With no 'run:completed' event fired, calling onRunEnd results in the export verifier receiving all queued spans (verified by span count matching queued count before onRunEnd).",
+    "testable": true,
+    "storyId": "US-008"
+  },
+  {
+    "acId": "AC-114",
+    "original": "Invoking `onRunEnd` without any preceding `run:completed` bus event stops the heartbeat.",
+    "refined": "With no 'run:completed' event fired, calling onRunEnd causes the heartbeat scheduler's active timers to be cleared, verified by scheduling another heartbeat after onRunEnd and observing zero callback invocations.",
+    "testable": true,
+    "storyId": "US-008"
+  },
+  {
+    "acId": "AC-115",
+    "original": "Invoking the plugin's `teardown` after `onRunEnd` has already completed issues no additional export request.",
+    "refined": "After onRunEnd completes (verified by export count N), calling teardown() results in the export verifier recording export count still equal to N after 500ms.",
+    "testable": true,
+    "storyId": "US-008"
+  },
+  {
+    "acId": "AC-116",
+    "original": "Invoking `onRunEnd` with no preceding `onRunStart` exports a run span whose start time is back-computed from the reported run duration.",
+    "refined": "When onRunEnd is called without prior onRunStart, the exported run span has start_time equal to (end_time - reported_duration_ms), verified by parsing the exported root span and comparing start_time + duration_ms === end_time within 100ms tolerance.",
+    "testable": true,
+    "storyId": "US-008"
+  }
+]

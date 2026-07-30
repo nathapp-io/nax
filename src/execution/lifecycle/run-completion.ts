@@ -74,6 +74,12 @@ export interface RunCompletionOptions extends DispatchContext {
    * the run only when config.review.pluginMode === "gating".
    */
   deferredReview?: DeferredReviewResult;
+  /**
+   * Timestamp (from Date.now()) when postrun:phase:started was emitted for the review phase.
+   * Emitted in unified-executor.ts before the review ran; threaded here so handleRunCompletion
+   * can compute accurate durationMs for the postrun:phase:completed event (AC9).
+   */
+  deferredReviewStartedAt?: number;
   /** Why the execution phase stopped — used to distinguish a cost-limit stop from a normal completion. */
   exitReason?: ExitReason;
 }
@@ -134,32 +140,47 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     config.quality.commands.test
   ) {
     statusWriter.setPostRunPhase("regression", { status: "running" });
+    const regressionStartTime = Date.now();
     pipelineEventBus.emit({ type: "postrun:phase:started", phase: "regression" });
 
-    const regressionResult = await _runCompletionDeps.runDeferredRegression({
-      config,
-      prd,
-      workdir,
-      runtime: options.runtime,
-      // Shared with the per-story full-suite gate (via the story-orchestrator's
-      // triage seam) so a test quarantined earlier in the run is relabeled here
-      // without a second probe.
-      quarantineMemo: options.runtime.quarantineMemo,
-      // Per-story gate snapshots enable causal blame attribution (transition
-      // pass -> fail) instead of the git-recency heuristic. Sequential runs
-      // only: in parallel mode story completion order (`completedAt`) is not
-      // causal and each story runs in an isolated worktree, so a per-story
-      // snapshot does not reflect merged-repo state — fall back to the git
-      // heuristic there by withholding snapshots.
-      storyMetrics:
-        options.isSequential === false
-          ? undefined
-          : allStoryMetrics.map((m) => ({
-              storyId: m.storyId,
-              completedAt: m.completedAt,
-              failingTestFiles: m.failingTestFiles,
-            })),
-    });
+    let regressionResult: Awaited<ReturnType<typeof _runCompletionDeps.runDeferredRegression>>;
+    try {
+      regressionResult = await _runCompletionDeps.runDeferredRegression({
+        config,
+        prd,
+        workdir,
+        runtime: options.runtime,
+        // Shared with the per-story full-suite gate (via the story-orchestrator's
+        // triage seam) so a test quarantined earlier in the run is relabeled here
+        // without a second probe.
+        quarantineMemo: options.runtime.quarantineMemo,
+        // Per-story gate snapshots enable causal blame attribution (transition
+        // pass -> fail) instead of the git-recency heuristic. Sequential runs
+        // only: in parallel mode story completion order (`completedAt`) is not
+        // causal and each story runs in an isolated worktree, so a per-story
+        // snapshot does not reflect merged-repo state — fall back to the git
+        // heuristic there by withholding snapshots.
+        storyMetrics:
+          options.isSequential === false
+            ? undefined
+            : allStoryMetrics.map((m) => ({
+                storyId: m.storyId,
+                completedAt: m.completedAt,
+                failingTestFiles: m.failingTestFiles,
+              })),
+      });
+    } catch (err) {
+      // A thrown error here would otherwise leave "regression" permanently
+      // "running" in the TUI/status.json — no postrun:phase:completed ever
+      // fires (post-impl-review quality finding).
+      pipelineEventBus.emit({
+        type: "postrun:phase:completed",
+        phase: "regression",
+        passed: false,
+        durationMs: Date.now() - regressionStartTime,
+      });
+      throw err;
+    }
 
     const lastRunAt = new Date().toISOString();
 
@@ -169,9 +190,16 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
       affectedStories: regressionResult.affectedStories,
     });
 
+    const regressionDurationMs = Date.now() - regressionStartTime;
     if (regressionResult.success) {
       statusWriter.setPostRunPhase("regression", { status: "passed", lastRunAt });
-      pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "regression", passed: true });
+      pipelineEventBus.emit({
+        type: "postrun:phase:completed",
+        phase: "regression",
+        passed: true,
+        durationMs: regressionDurationMs,
+        details: { mode: regressionMode, failedTests: 0 },
+      });
     } else {
       statusWriter.setPostRunPhase("regression", {
         status: "failed",
@@ -179,7 +207,16 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
         affectedStories: regressionResult.affectedStories,
         lastRunAt,
       });
-      pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "regression", passed: false });
+      pipelineEventBus.emit({
+        type: "postrun:phase:completed",
+        phase: "regression",
+        passed: false,
+        durationMs: regressionDurationMs,
+        details: {
+          mode: regressionMode,
+          failedTests: regressionResult.failedTests,
+        },
+      });
 
       // Mark affected stories as regression-failed in-memory for current-run event counts (RL-004).
       // Intentionally NOT saved to prd.json — rerun resume is driven by status.json via
@@ -283,8 +320,18 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   let pluginGateFailed = false;
   const deferredReview = options.deferredReview;
   if (deferredReview !== undefined) {
+    const findingCount = deferredReview.reviewerResults.filter((r) => !r.passed).length;
     // postrun:phase:started was already emitted in unified-executor.ts before the review ran.
-    pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "review", passed: !deferredReview.anyFailed });
+    // Use deferredReviewStartedAt (threaded from the call site) so durationMs reflects the
+    // actual review execution time, not the trivial overhead of this emit call.
+    const reviewDurationMs = Date.now() - (options.deferredReviewStartedAt ?? Date.now());
+    pipelineEventBus.emit({
+      type: "postrun:phase:completed",
+      phase: "review",
+      passed: !deferredReview.anyFailed,
+      durationMs: reviewDurationMs,
+      details: { findingCount, anyFailed: deferredReview.anyFailed },
+    });
   }
   if (deferredReview?.anyFailed) {
     const failedReviewers = deferredReview.reviewerResults.filter((r) => !r.passed).map((r) => r.name);

@@ -48,6 +48,7 @@ export {
   StoryOrchestratorBuilder,
   ExecutionPlan,
   _storyOrchestratorDeps,
+  runPhase,
   CANONICAL_ORDER,
   EXHAUSTED_EXIT_REASONS,
   PHASE_KIND_TO_STATE_KEY,
@@ -95,6 +96,12 @@ export {
   type TreeState,
 } from "./checkpoint";
 export type { StoryRunResult } from "./types";
+export {
+  runCompletionPhase,
+  _runnerCompletionDeps,
+  type RunnerCompletionOptions,
+  type RunnerCompletionResult,
+} from "./runner-completion";
 export {
   applyPostRunInspection,
   decideStageAction,

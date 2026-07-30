@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { PhaseCompleteEvent, PhaseStartEvent } from "@/plugins";
 import { createWebhookReporterPlugin, type PostJsonDeps } from "@/plugins";
 import type { WebhookReporterConfig } from "@/config/schemas-reporters";
 
@@ -79,6 +80,27 @@ describe("webhook-reporter", () => {
     await plugin.extensions.reporter?.onStoryComplete?.({
       runId: "r1", storyId: "s1", status: "completed", runElapsedMs: 5, cost: 0.1, tier: "fast", testStrategy: "tdd-simple",
     });
+    expect(calls).toHaveLength(0);
+  });
+
+  test("AC14: onPhaseComplete posts an onPhaseComplete envelope", async () => {
+    const { calls, deps } = capturing();
+    const plugin = createWebhookReporterPlugin({ ...baseCfg, headers: {}, events: ["onPhaseComplete"] }, deps);
+    const event: PhaseCompleteEvent = { runId: "r1", scope: "story", storyId: "s1", phase: "implementer", outcome: "passed", durationMs: 10, costUsd: 0.1 };
+
+    await plugin.extensions.reporter?.onPhaseComplete?.(event);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].body.type).toBe("onPhaseComplete");
+  });
+
+  test("AC15: onPhaseComplete filter performs no request for onPhaseStart", async () => {
+    const { calls, deps } = capturing();
+    const plugin = createWebhookReporterPlugin({ ...baseCfg, headers: {}, events: ["onPhaseComplete"] }, deps);
+    const event: PhaseStartEvent = { runId: "r1", scope: "story", storyId: "s1", phase: "implementer", startTime: "2026-07-18T00:00:00.000Z" };
+
+    await plugin.extensions.reporter?.onPhaseStart?.(event);
+
     expect(calls).toHaveLength(0);
   });
 });

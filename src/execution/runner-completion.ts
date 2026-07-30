@@ -62,6 +62,8 @@ export interface RunnerCompletionOptions extends DispatchContext {
   pluginProviderCache?: import("../context/engine").PluginProviderCache;
   /** End-of-run deferred plugin review result (#1146 G2). Forwarded to handleRunCompletion. */
   deferredReview?: DeferredReviewResult;
+  /** Date.now() captured before postrun:phase:started for review was emitted. Forwarded to handleRunCompletion for accurate durationMs (AC9). */
+  deferredReviewStartedAt?: number;
   /** Why the execution phase stopped — used to distinguish a cost-limit stop from a normal completion. */
   exitReason?: ExitReason;
 }
@@ -130,6 +132,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
       logger?.info("execution", "Acceptance already passed — skipping acceptance phase");
     } else if (options.config.acceptance.enabled && isComplete(options.prd)) {
       options.statusWriter.setPostRunPhase("acceptance", { status: "running" });
+      const acceptanceStartTime = Date.now();
       pipelineEventBus.emit({ type: "postrun:phase:started", phase: "acceptance" });
 
       // Compute per-package acceptance test paths from PRD story workdirs.
@@ -175,33 +178,61 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
           )
         : undefined;
 
-      const acceptanceResult = await _runnerCompletionDeps.runAcceptanceLoop({
-        config: options.config,
-        prd: options.prd,
-        prdPath: options.prdPath,
-        workdir: options.workdir,
-        featureDir: options.featureDir,
-        hooks: options.hooks,
-        feature: options.feature,
-        totalCost: options.totalCost,
-        iterations: options.iterations,
-        storiesCompleted: options.storiesCompleted,
-        allStoryMetrics: options.allStoryMetrics,
-        pluginRegistry: options.pluginRegistry,
-        eventEmitter: options.eventEmitter,
-        statusWriter: options.statusWriter,
-        agentGetFn: options.agentGetFn,
-        agentManager: options.agentManager,
-        sessionManager: options.sessionManager,
-        runtime: options.runtime,
-        abortSignal: options.abortSignal,
-        acceptanceTestPaths,
-      });
+      let acceptanceResult: Awaited<ReturnType<typeof _runnerCompletionDeps.runAcceptanceLoop>>;
+      try {
+        acceptanceResult = await _runnerCompletionDeps.runAcceptanceLoop({
+          config: options.config,
+          prd: options.prd,
+          prdPath: options.prdPath,
+          workdir: options.workdir,
+          featureDir: options.featureDir,
+          hooks: options.hooks,
+          feature: options.feature,
+          totalCost: options.totalCost,
+          iterations: options.iterations,
+          storiesCompleted: options.storiesCompleted,
+          allStoryMetrics: options.allStoryMetrics,
+          pluginRegistry: options.pluginRegistry,
+          eventEmitter: options.eventEmitter,
+          statusWriter: options.statusWriter,
+          agentGetFn: options.agentGetFn,
+          agentManager: options.agentManager,
+          sessionManager: options.sessionManager,
+          runtime: options.runtime,
+          abortSignal: options.abortSignal,
+          acceptanceTestPaths,
+        });
+      } catch (err) {
+        // A thrown error here would otherwise leave "acceptance" permanently
+        // "running" in the TUI/status.json — no postrun:phase:completed ever
+        // fires (post-impl-review quality finding).
+        pipelineEventBus.emit({
+          type: "postrun:phase:completed",
+          phase: "acceptance",
+          passed: false,
+          durationMs: Date.now() - acceptanceStartTime,
+        });
+        throw err;
+      }
 
       const lastRunAt = new Date().toISOString();
+      const acceptanceDurationMs = Date.now() - acceptanceStartTime;
       if (acceptanceResult.success) {
         options.statusWriter.setPostRunPhase("acceptance", { status: "passed", lastRunAt });
-        pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "acceptance", passed: true });
+        pipelineEventBus.emit({
+          type: "postrun:phase:completed",
+          phase: "acceptance",
+          passed: true,
+          durationMs: acceptanceDurationMs,
+          details: {
+            retries: acceptanceResult.retries ?? 0,
+            failedACCount: acceptanceResult.failedACs?.length ?? 0,
+            // ADR-022 replaced fix-story PRD mutation with in-place runFixCycle
+            // rectification — the acceptance loop never appends US-FIX-* stories,
+            // so this is always accurately 0, not an unmeasured placeholder.
+            fixStoriesCreated: 0,
+          },
+        });
       } else {
         acceptancePassed = false;
         options.statusWriter.setPostRunPhase("acceptance", {
@@ -210,7 +241,17 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
           retries: acceptanceResult.retries ?? 0,
           lastRunAt,
         });
-        pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "acceptance", passed: false });
+        pipelineEventBus.emit({
+          type: "postrun:phase:completed",
+          phase: "acceptance",
+          passed: false,
+          durationMs: acceptanceDurationMs,
+          details: {
+            retries: acceptanceResult.retries ?? 0,
+            failedACCount: acceptanceResult.failedACs?.length ?? 0,
+            fixStoriesCreated: 0,
+          },
+        });
       }
 
       Object.assign(options, {
@@ -251,6 +292,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     sessionManager: options.sessionManager,
     pluginProviderCache: options.pluginProviderCache,
     deferredReview: options.deferredReview,
+    deferredReviewStartedAt: options.deferredReviewStartedAt,
     exitReason: options.exitReason,
     runtime: options.runtime,
     abortSignal: options.abortSignal,

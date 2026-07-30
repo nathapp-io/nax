@@ -26,6 +26,29 @@ describe("ReportersConfigSchema", () => {
     expect(parsed.webhook.events).toEqual(["onRunEnd"]);
   });
 
+  test("AC6-11: defaults OTel phase telemetry settings", () => {
+    const parsed = ReportersConfigSchema.parse({});
+
+    expect(parsed.otel.detail).toBe("counts");
+    expect(parsed.otel.heartbeatIntervalMs).toBe(10_000);
+    expect(parsed.otel.maxBatchSize).toBe(64);
+    expect(parsed.otel.flushIntervalMs).toBe(5_000);
+    expect(parsed.otel.maxQueueSize).toBe(2_048);
+    expect(parsed.otel.phases).toBeUndefined();
+  });
+
+  test("AC12: rejects trace OTel detail", () => {
+    const parsed = ReportersConfigSchema.safeParse({ otel: { detail: "trace" } });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  test("AC13: retains onPhaseComplete webhook event", () => {
+    const parsed = ReportersConfigSchema.parse({ webhook: { events: ["onPhaseComplete"] } });
+
+    expect(parsed.webhook.events).toEqual(["onPhaseComplete"]);
+  });
+
   test("rejects an unknown event name", () => {
     const res = ReportersConfigSchema.safeParse({
       webhook: { events: ["onSomething"] },

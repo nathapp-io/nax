@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import React, { act } from "react";
+import { act } from "react";
 import { Text } from "ink";
 import { pipelineEventBus } from "../../src/pipeline/event-bus";
 import { usePipelineBusEvents } from "../../src/tui/hooks/usePipelineBusEvents";
@@ -315,5 +315,59 @@ describe("usePipelineBusEvents", () => {
     });
 
     expect(lastFrame()).toContain("lastFailed:US-001");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC10: TUI records acceptance-setup phase as running without throwing
+// ---------------------------------------------------------------------------
+
+function PostRunPhaseOutput({ stories }: { stories: StoryDisplayState[] }) {
+  const state = usePipelineBusEvents(stories);
+  const phase = state.postRunPhases["acceptance-setup"];
+  return <Text>acceptanceSetupPhase:{phase?.status ?? "none"}</Text>;
+}
+
+describe("usePipelineBusEvents — AC10: acceptance-setup phase:started", () => {
+  test("AC10: records acceptance-setup phase as running when postrun:phase:started fires", () => {
+    const { lastFrame } = render(
+      <PostRunPhaseOutput stories={[]} />
+    );
+
+    act(() => {
+      pipelineEventBus.emit({
+        type: "postrun:phase:started",
+        phase: "acceptance-setup",
+      });
+    });
+
+    expect(lastFrame()).toContain("acceptanceSetupPhase:running");
+  });
+
+  test("AC10: does not throw when receiving acceptance-setup started event", () => {
+    expect(() => {
+      render(<PostRunPhaseOutput stories={[]} />);
+      act(() => {
+        pipelineEventBus.emit({
+          type: "postrun:phase:started",
+          phase: "acceptance-setup",
+        });
+      });
+    }).not.toThrow();
+  });
+
+  test("AC10 boundary: acceptance-setup phase transitions to passed on completed event", () => {
+    const { lastFrame } = render(
+      <PostRunPhaseOutput stories={[]} />
+    );
+
+    act(() => {
+      pipelineEventBus.emit({ type: "postrun:phase:started", phase: "acceptance-setup" });
+    });
+    act(() => {
+      pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "acceptance-setup", passed: true });
+    });
+
+    expect(lastFrame()).toContain("acceptanceSetupPhase:passed");
   });
 });
