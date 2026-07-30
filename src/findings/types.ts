@@ -160,6 +160,22 @@ export interface Finding {
   fixTarget?: FixTarget;
 
   /**
+   * Does this finding ask for a change? `false` means the producer is REPORTING
+   * rather than requesting — e.g. an adversarial reviewer confirming that the
+   * implementation correctly honoured a declared out-of-scope boundary.
+   *
+   * Absent means actionable. Every producer predating #1359 omits the field, so the
+   * default must not drop their findings.
+   *
+   * First-class rather than a `meta` entry deliberately: consumers branch on this to
+   * decide whether to dispatch a paid fix pass (ADR-024 nbf seeding), and `meta` is
+   * read-only-by-convention — see the note on `meta` below. Non-actionable findings
+   * are still surfaced in the end-of-run advisory report; the filter applies only
+   * where the decision is "spend an agent session on this".
+   */
+  actionRequired?: boolean;
+
+  /**
    * Producer-specific extras — semantic review's verifiedBy evidence,
    * raw tool output, AC text, TS span, etc.
    *

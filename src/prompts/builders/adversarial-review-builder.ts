@@ -142,6 +142,7 @@ Respond with ONLY a JSON object — no preamble, no explanation outside the JSON
       "acIndex": 2,
       "scopeQuote": "<out-of-scope findings ONLY: verbatim substring of one Out of Scope entry>",
       "scopeIndex": 1,
+      "actionRequired": true,
       "verifiedBy": {
         "command": "command used to inspect the current codebase",
         "file": "relative/path/to/file.ts",
@@ -194,6 +195,11 @@ A finding about code that crossed one of these boundaries must NOT cite an AC �
 - When the boundary comes from the numbered **Out of Scope** list, set \`scopeQuote\` to a verbatim substring of that entry and \`scopeIndex\` to its 1-based number. A \`scopeQuote\` that is not a verbatim substring of the entry you indexed is discarded.
 - When the boundary is only a description "Out:" bullet, quote it in \`issue\` and leave \`scopeQuote\`/\`scopeIndex\` unset.
 - Emit scope-violation findings as \`"warning"\` — never \`"error"\`. Reporting the boundary is the goal; it does not block the story.
+
+**Do not report compliance as a finding:**
+A finding is a request for a change. If you inspected something and the code was CORRECT — it honoured an out-of-scope boundary, satisfied a convention, handled the edge case — that is not a finding. Say it in \`passed\`, not in \`findings\`. Emitting "this is correct per Out of Scope #10 / no action needed" as a finding causes an automated fix pass to be dispatched against code that needs no fix; one such report edited working code and broke a test.
+
+If you judge a no-change note genuinely worth recording, set \`actionRequired: false\` on it. Every finding that asks for a change must leave \`actionRequired\` unset or \`true\`. Never pair \`actionRequired: false\` with a \`suggestion\` that requests an edit — pick one.
 
 Never use \`acIndex: 0\`; \`acIndex\` is 1-based (first AC bullet = 1). The same applies to \`scopeIndex\`.
 

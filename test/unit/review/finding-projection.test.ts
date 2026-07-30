@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { llmFindingToReviewFinding, llmFindingsToReviewFindings } from "../../../src/review";
+import { llmFindingToReviewFinding, llmFindingsToReviewFindings, toAdversarialReviewFindings } from "../../../src/review";
 // LLMFinding / AdversarialLLMFinding are import-type only (erased at compile
 // time) so leaf-path imports here do not cause singleton fragmentation.
 import type { LLMFinding } from "../../../src/review/semantic-helpers";
@@ -192,5 +192,43 @@ describe("llmFindingsToReviewFindings", () => {
 
   test("returns empty array for empty input", () => {
     expect(llmFindingsToReviewFindings([])).toEqual([]);
+  });
+});
+
+// ─── actionRequired projection (#1359) ────────────────────────────────────────
+//
+// The adversarial reviewer emitted a COMPLIANCE CONFIRMATION as an out-of-scope
+// finding ("correct per Out of Scope #10 … No action needed; this is the intended
+// behaviour"). NBF seeds from the advisory bucket and applied no actionability
+// filter, so it paid an implementer pass to "fix" a finding whose own suggestion
+// said no action was needed — and that pass broke a test and was rolled back.
+//
+// `actionRequired: false` is how the reviewer says so in a machine-readable way.
+// It has to survive projection to the wire Finding or the filter has nothing to read.
+
+describe("actionRequired projection", () => {
+  test("actionRequired: false survives projection to the wire Finding", () => {
+    const f: AdversarialLLMFinding = {
+      severity: "warning",
+      category: "out-of-scope",
+      file: "src/execution/lifecycle/run-completion.ts",
+      line: 187,
+      issue: "Removed quarantined:0 — correct per Out of Scope #10",
+      suggestion: "No action needed; this is the intended behaviour.",
+      actionRequired: false,
+    };
+    expect(toAdversarialReviewFindings([f])[0]?.actionRequired).toBe(false);
+  });
+
+  test("actionRequired defaults to absent (treated as true) when the reviewer omits it", () => {
+    const f: AdversarialLLMFinding = {
+      severity: "warning",
+      category: "input",
+      file: "src/a.ts",
+      line: 1,
+      issue: "unvalidated input",
+      suggestion: "guard it",
+    };
+    expect(toAdversarialReviewFindings([f])[0]?.actionRequired).toBeUndefined();
   });
 });

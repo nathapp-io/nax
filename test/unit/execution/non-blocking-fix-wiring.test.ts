@@ -131,6 +131,76 @@ describe("non-blocking-fix runtime wiring", () => {
     expect(typeof deps?.measureSourceDiff).toBe("function");
   });
 
+  test("non-blocking fix is SKIPPED when every advisory finding requires no action (#1359)", async () => {
+    // The observed US-004 case: adversarial passed with ONE advisory finding, and that
+    // finding was a compliance confirmation whose own suggestion read "No action needed".
+    // NBF opened anyway, dispatched a paid implementer pass, broke a test, and rolled
+    // back. With the actionability filter the gate never opens.
+    const runNonBlockingFix = mock(async () => ({ ran: true, kept: true, restored: false }));
+    (_storyOrchestratorDeps as { runNonBlockingFix?: typeof runNonBlockingFix }).runNonBlockingFix = runNonBlockingFix;
+
+    const callOp = _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.callOp = mock(async (_ctx, op) => {
+      if (op.name === "adversarial-review") {
+        return {
+          success: true,
+          passed: true,
+          advisoryFindings: [
+            {
+              source: "adversarial-review",
+              severity: "warning",
+              category: "out-of-scope",
+              message: "Removed quarantined:0 — correct per Out of Scope #10",
+              suggestion: "No action needed; this is the intended behaviour.",
+              actionRequired: false,
+            },
+          ],
+        };
+      }
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    const config = makeNaxConfig({
+      quality: { autofix: { enabled: true } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
+      review: {
+        adversarial: {
+          model: "balanced",
+          diffMode: "ref",
+          rules: [],
+          timeoutMs: 600_000,
+          parallel: false,
+          maxConcurrentSessions: 2,
+          nonBlockingFix: { enabled: true, scope: "triage", regressionAttempts: 1, verifierGuard: true },
+        },
+      },
+    });
+    const story = makeStory({ attempts: 1 });
+    runtime = makeTestRuntime({ config });
+    const ctx = makeMockCallContext({ runtime });
+    const inputs = makeMockPlanInputs({
+      story,
+      implementer: { story },
+      fullSuiteGate: { story, workdir: "/tmp/test" },
+      verifier: { story },
+      adversarialReview: {
+        story,
+        workdir: "/tmp/test",
+        adversarialConfig: config.review.adversarial!,
+        mode: config.review.adversarial!.diffMode,
+      },
+      rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+    });
+
+    try {
+      const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+      await plan.run();
+      expect(runNonBlockingFix).not.toHaveBeenCalled();
+    } finally {
+      _storyOrchestratorDeps.callOp = callOp;
+    }
+  });
+
   test("non-blocking fix is SKIPPED when the story is not green (rectification exhausted with unfixed findings)", async () => {
     // Regression: log 2026-06-24 US-001. Adversarial review FAILED (blocking findings)
     // yet its output still carried advisoryFindings. The outer rectification fixed the

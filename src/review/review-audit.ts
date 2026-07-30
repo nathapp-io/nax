@@ -107,6 +107,12 @@ export interface AdvisoryFindingSummaryEntry {
   issue: string;
   /** True when this advisory finding was recurrence-demoted (tagged `meta.coverageGap`). */
   coverageGap?: boolean;
+  /**
+   * `false` when the reviewer marked the finding as requiring no change (#1359). Such
+   * findings are excluded from the nbf fix pass but still reported here — the point is
+   * to surface them, labelled, not to hide them.
+   */
+  actionRequired?: boolean;
 }
 
 export interface IReviewAuditor {
@@ -210,6 +216,7 @@ function toAdvisorySummaryEntries(entry: ReviewAuditDecision): AdvisoryFindingSu
       file?: string;
       line?: number;
       issue?: string;
+      actionRequired?: boolean;
       meta?: { coverageGap?: boolean };
     };
     return {
@@ -222,6 +229,7 @@ function toAdvisorySummaryEntries(entry: ReviewAuditDecision): AdvisoryFindingSu
       line: f.line,
       issue: f.issue ?? "(no description)",
       coverageGap: f.meta?.coverageGap === true ? true : undefined,
+      actionRequired: f.actionRequired === false ? false : undefined,
     };
   });
 }

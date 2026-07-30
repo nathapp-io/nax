@@ -40,6 +40,13 @@ export interface AdversarialLLMFinding {
   /** 1-based index into story.outOfScope corresponding to scopeQuote. */
   scopeIndex?: number;
   /**
+   * `false` when the finding reports compliance rather than requesting a change —
+   * the reviewer noting that the code correctly honoured a constraint. Omitted means
+   * actionable. Read by the ADR-024 nbf seeding filter so a "no action needed"
+   * finding cannot trigger a paid fix pass (#1359).
+   */
+  actionRequired?: boolean;
+  /**
    * Required for severity "error" / "critical" (Issue #987): evidence anchoring
    * the finding to real source. `observed` is a verbatim 1–3 line code excerpt
    * from `verifiedBy.file` (defaulting to `file`). Substring-checked against
@@ -128,6 +135,9 @@ export function toAdversarialReviewFindings(
       message: f.issue,
       suggestion: f.suggestion,
       fixTarget: resolveFixTarget({ base: categoryToFixTarget(f.category), file: f.file, isTestFile: opts.isTestFile }),
+      // Only forwarded when the reviewer said `false`; absent stays absent so the
+      // "absent means actionable" default is not silently materialised (#1359).
+      ...(f.actionRequired === false ? { actionRequired: false } : {}),
       meta: Object.keys(metaExtras).length > 0 ? metaExtras : undefined,
     };
   });

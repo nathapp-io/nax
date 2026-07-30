@@ -460,6 +460,14 @@ export function formatAdvisorySummary(
       ),
     );
   }
+  const noActionCount = findings.filter((f) => f.actionRequired === false).length;
+  if (noActionCount > 0) {
+    lines.push(
+      c.gray(
+        `  ${noActionCount} of ${findings.length} asked for no change (compliance notes — the best-effort fix pass skipped them)`,
+      ),
+    );
+  }
   lines.push(c.yellow("─".repeat(60)));
 
   for (const f of sorted) {
@@ -470,6 +478,7 @@ export function formatAdvisorySummary(
       location,
       f.category,
       f.coverageGap ? "coverage-gap" : undefined,
+      f.actionRequired === false ? "no-action" : undefined,
     ].filter((v): v is string => typeof v === "string" && v.length > 0);
     lines.push(`  ${c.gray(parts.join(" · "))}`);
     lines.push(`    ${f.issue}`);

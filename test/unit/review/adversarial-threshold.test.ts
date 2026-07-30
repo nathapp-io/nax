@@ -50,10 +50,46 @@ const WARNING_ONLY_RESPONSE = JSON.stringify({
   ],
 });
 
+// #1359 — the observed US-004 shape: an advisory finding that asks for nothing.
+const COMPLIANCE_RESPONSE = JSON.stringify({
+  passed: true,
+  findings: [
+    {
+      severity: "warning",
+      category: "out-of-scope",
+      file: "src/foo.ts",
+      line: 1,
+      issue: "Removed quarantined:0 — correct per Out of Scope #10 which mandates omission",
+      suggestion: "No action needed; this is the intended behaviour.",
+      actionRequired: false,
+      verifiedBy: { file: "src/foo.ts", observed: "warning stub" },
+    },
+  ],
+});
+
 const ERROR_ONLY_RESPONSE = JSON.stringify({
   passed: false,
   findings: [
     { severity: "error", category: "error-path", file: "src/findings-bar.ts", line: 2, issue: "An error", suggestion: "Fix error", acQuote: "findings", acIndex: 1, verifiedBy: { file: "src/findings-bar.ts", observed: "error stub" } },
+  ],
+});
+
+// #1359 — actionRequired must not become a "do not block me" escape hatch.
+const BLOCKING_WITH_NO_ACTION_RESPONSE = JSON.stringify({
+  passed: false,
+  findings: [
+    {
+      severity: "error",
+      category: "error-path",
+      file: "src/findings-bar.ts",
+      line: 2,
+      issue: "An error the reviewer would rather not be held to",
+      suggestion: "Fix error",
+      acQuote: "findings",
+      acIndex: 1,
+      actionRequired: false,
+      verifiedBy: { file: "src/findings-bar.ts", observed: "error stub" },
+    },
   ],
 });
 
@@ -141,6 +177,29 @@ describe("runAdversarialReview — blockingThreshold defaults to 'error'", () =>
     expect(!result.findings || result.findings.length === 0).toBe(true);
     expect(result.advisoryFindings).toBeDefined();
     expect(result.advisoryFindings![0].message).toBe("A warning");
+  });
+
+  // #1359 — the actionability filter reads `actionRequired` off the wire Finding, so it
+  // has to survive the whole reviewer pipeline (parse → substantiate → recurrence split
+  // → projection), not just the projection helper the unit test covers.
+  test("actionRequired: false survives the reviewer pipeline onto the advisory finding", async () => {
+    const agentManager = makeAgentManager(COMPLIANCE_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+    const result = await runAdversarialReview({ workdir: "/tmp/wd", storyGitRef: "abc123", story: STORY, adversarialConfig: BASE_CFG, agentManager, runtime });
+
+    expect(result.advisoryFindings?.[0]?.actionRequired).toBe(false);
+  });
+
+  test("actionRequired: false does NOT let a blocking finding escape the gate (#1359)", async () => {
+    // The filter is scoped to the advisory bucket at nbf seeding. If it ever reached the
+    // blocking bucket, a reviewer could self-exempt any error finding by flagging it
+    // no-action — turning an advisory hint into a story-verdict override.
+    const agentManager = makeAgentManager(BLOCKING_WITH_NO_ACTION_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+    const result = await runAdversarialReview({ workdir: "/tmp/wd", storyGitRef: "abc123", story: STORY, adversarialConfig: BASE_CFG, agentManager, runtime });
+
+    expect(result.success).toBe(false);
+    expect(result.findings?.length).toBeGreaterThan(0);
   });
 
   test("error finding blocks by default", async () => {

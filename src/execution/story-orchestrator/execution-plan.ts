@@ -4,6 +4,7 @@ import type { CallContext } from "@/operations";
 import { errorMessage } from "@/utils/errors";
 import { hydrateFromResumePlan } from "../checkpoint/resume-hydrate";
 import {
+  actionableAdvisoryFindings,
   createMeasureSourceDiff,
   nonBlockingExcludePhases,
   nonBlockingExtraPhases,
@@ -309,7 +310,11 @@ export class ExecutionPlan {
       Object.entries(phaseOutputs).every(([name, output]) => phasePassed(name, output, this.ctx.storyId));
     const advCfg = this.state.adversarialReview ? this.state.nonBlockingFix : undefined;
     const advisoryOut = phaseOutputs["adversarial-review"] as { advisoryFindings?: Finding[] } | undefined;
-    const advisoryFindings = advisoryOut?.advisoryFindings ?? [];
+    // Seed only the findings that ask for a change: a reviewer's compliance
+    // confirmation must not buy an agent session (#1359). The unfiltered bucket stays
+    // in `phaseOutputs` and in the reviewer's own output, so the end-of-run advisory
+    // report still shows everything.
+    const advisoryFindings = actionableAdvisoryFindings(advisoryOut?.advisoryFindings ?? []);
     if (
       advCfg &&
       storyCurrentlyGreen &&
