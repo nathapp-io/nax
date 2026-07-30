@@ -11,10 +11,28 @@
  * - Returns unsubscribe function for cleanup
  */
 
-import { getSafeLogger } from "../../logger";
-import type { PluginRegistry } from "../../plugins";
-import type { PipelineEventBus } from "../event-bus";
-import type { UnsubscribeFn } from "./hooks";
+import { getSafeLogger } from "@/logger";
+import type { PipelineEventBus } from "@/pipeline/event-bus";
+import type { UnsubscribeFn } from "@/pipeline/subscribers/hooks";
+import type { PluginRegistry } from "@/plugins";
+import type { IReporter, PhaseCompleteEvent, PhaseStartEvent } from "@/plugins/types";
+
+type ReporterHook = "onRunStart" | "onStoryComplete" | "onRunEnd" | "onPhaseStart" | "onPhaseComplete";
+
+async function fanOutReporters(
+  reporters: IReporter[],
+  hook: ReporterHook,
+  invoke: (reporter: IReporter) => Promise<void> | undefined,
+): Promise<void> {
+  const logger = getSafeLogger();
+  for (const reporter of reporters) {
+    try {
+      await invoke(reporter);
+    } catch (err) {
+      logger?.warn("plugins", `Reporter '${reporter.name}' ${hook} failed`, { error: err });
+    }
+  }
+}
 
 /**
  * Wire reporter plugin lifecycle events to the event bus.
@@ -40,6 +58,56 @@ export function wireReporters(
   };
 
   const unsubs: UnsubscribeFn[] = [];
+  const phaseStart = (event: PhaseStartEvent): Promise<void> =>
+    fanOutReporters(pluginRegistry.getReporters(), "onPhaseStart", (reporter) => reporter.onPhaseStart?.(event));
+  const phaseComplete = (event: PhaseCompleteEvent): Promise<void> =>
+    fanOutReporters(pluginRegistry.getReporters(), "onPhaseComplete", (reporter) => reporter.onPhaseComplete?.(event));
+
+  unsubs.push(
+    bus.on("story:step", (ev) =>
+      phaseStart({
+        runId,
+        scope: "story",
+        storyId: ev.storyId,
+        phase: ev.step,
+        startTime: new Date().toISOString(),
+      }),
+    ),
+    bus.on("story:phase:completed", (ev) =>
+      phaseComplete({
+        runId,
+        scope: "story",
+        storyId: ev.storyId,
+        phase: ev.phase,
+        outcome: ev.outcome,
+        durationMs: ev.durationMs,
+        costUsd: ev.costUsd,
+        tier: ev.tier,
+        testStrategy: ev.testStrategy,
+        sessionModel: ev.sessionModel,
+        details: ev.details,
+      }),
+    ),
+    bus.on("postrun:phase:started", (ev) =>
+      phaseStart({
+        runId,
+        scope: "run",
+        phase: ev.phase,
+        startTime: new Date().toISOString(),
+      }),
+    ),
+    bus.on("postrun:phase:completed", (ev) =>
+      phaseComplete({
+        runId,
+        scope: "run",
+        phase: ev.phase,
+        outcome: ev.passed ? "passed" : "failed",
+        durationMs: ev.durationMs ?? 0,
+        costUsd: ev.costUsd ?? 0,
+        details: ev.details,
+      }),
+    ),
+  );
 
   // run:started → reporter.onRunStart
   unsubs.push(

@@ -24,7 +24,8 @@ export type { ResolvedExecutionAgent } from "./stages/execution-helpers";
 
 export { acceptanceSetupStage, _acceptanceSetupDeps } from "./stages/acceptance-setup";
 
-export { pipelineEventBus } from "./event-bus";
+export { PipelineEventBus, pipelineEventBus } from "./event-bus";
+export { wireReporters } from "./subscribers/reporters";
 export type {
   PipelineEvent,
   PipelineEventType,
