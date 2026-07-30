@@ -32,6 +32,15 @@ import { findingKey } from "./types";
  * LLM-rephrased text mints a new key and becomes dispatchable again — accepted,
  * because the drift is in the "try again" direction and the cycle's
  * `maxAttempts` caps still bind.
+ *
+ * Verdict-driven dispatches (`appliesToVerdict`, selected when the cycle has no
+ * findings) record nothing, and need not: `classifyOutcome([], [])` is "resolved", so
+ * `runFixCycle` returns at the end of that iteration. A verdict-only dispatch cannot
+ * iterate, so a strategy that declined one can never be re-dispatched and there is
+ * nothing for a ledger entry to prevent. If that resolved-exit ever changes, the
+ * verdict path needs whole-strategy retirement here — the test
+ * "verdict-only dispatch cannot iterate" in cycle-retirement.test.ts guards the
+ * assumption.
  */
 export interface DeclineLedger<F extends Finding> {
   /**

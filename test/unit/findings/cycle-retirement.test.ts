@@ -233,3 +233,41 @@ describe("runFixCycle — per-finding retirement", () => {
     expect(r.exitReason).toBe("max-attempts-per-strategy");
   });
 });
+
+// ─── verdict-driven dispatch — why it needs no ledger entry (#1384) ──────────
+
+describe("runFixCycle — verdict-driven dispatch", () => {
+  const verdictStrategy = (name: string, dispatched: string[], unresolved?: string) =>
+    makeStrategy({
+      name,
+      coRun: "co-run-sequential",
+      maxAttempts: 3,
+      appliesTo: () => false, // findings-blind: selected purely by verdict
+      appliesToVerdict: (v) => v === "source_bug",
+      extractApplied: () => {
+        dispatched.push(name);
+        return { summary: "", ...(unresolved ? { unresolved } : {}) };
+      },
+    });
+
+  test("verdict-only dispatch cannot iterate, so a declined strategy is never re-dispatched", async () => {
+    // Per-finding retirement has nothing to key on when selection is verdict-driven:
+    // the dispatched batch carries no claimed finding. That is safe only because such a
+    // cycle cannot reach a second iteration — findings stay empty, and
+    // `classifyOutcome([], [])` is "resolved", so runFixCycle returns.
+    //
+    // This test exists to guard that assumption. If it starts failing because the cycle
+    // now iterates on the verdict path, `createDeclineLedger` needs whole-strategy
+    // retirement for verdict declines or #1369's guarantee is lost there.
+    const dispatched: string[] = [];
+    const gaveUp = verdictStrategy("acceptance-source-fix", dispatched, "cannot fix");
+    const sibling = verdictStrategy("acceptance-test-fix", dispatched);
+    const cycle = makeCycle([], [gaveUp, sibling], async () => [], { verdict: "source_bug" });
+    const r = await runFixCycle(cycle, makeCtx(), "test-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn,
+    });
+    expect(r.exitReason).toBe("resolved");
+    expect(cycle.iterations).toHaveLength(1);
+    expect(dispatched.filter((n) => n === "acceptance-source-fix")).toHaveLength(1);
+  });
+});
