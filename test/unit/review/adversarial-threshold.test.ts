@@ -74,6 +74,25 @@ const ERROR_ONLY_RESPONSE = JSON.stringify({
   ],
 });
 
+// #1359 — actionRequired must not become a "do not block me" escape hatch.
+const BLOCKING_WITH_NO_ACTION_RESPONSE = JSON.stringify({
+  passed: false,
+  findings: [
+    {
+      severity: "error",
+      category: "error-path",
+      file: "src/findings-bar.ts",
+      line: 2,
+      issue: "An error the reviewer would rather not be held to",
+      suggestion: "Fix error",
+      acQuote: "findings",
+      acIndex: 1,
+      actionRequired: false,
+      verifiedBy: { file: "src/findings-bar.ts", observed: "error stub" },
+    },
+  ],
+});
+
 const MIXED_RESPONSE = JSON.stringify({
   passed: false,
   findings: [
@@ -169,6 +188,18 @@ describe("runAdversarialReview — blockingThreshold defaults to 'error'", () =>
     const result = await runAdversarialReview({ workdir: "/tmp/wd", storyGitRef: "abc123", story: STORY, adversarialConfig: BASE_CFG, agentManager, runtime });
 
     expect(result.advisoryFindings?.[0]?.actionRequired).toBe(false);
+  });
+
+  test("actionRequired: false does NOT let a blocking finding escape the gate (#1359)", async () => {
+    // The filter is scoped to the advisory bucket at nbf seeding. If it ever reached the
+    // blocking bucket, a reviewer could self-exempt any error finding by flagging it
+    // no-action — turning an advisory hint into a story-verdict override.
+    const agentManager = makeAgentManager(BLOCKING_WITH_NO_ACTION_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+    const result = await runAdversarialReview({ workdir: "/tmp/wd", storyGitRef: "abc123", story: STORY, adversarialConfig: BASE_CFG, agentManager, runtime });
+
+    expect(result.success).toBe(false);
+    expect(result.findings?.length).toBeGreaterThan(0);
   });
 
   test("error finding blocks by default", async () => {

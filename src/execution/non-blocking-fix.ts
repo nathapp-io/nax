@@ -103,6 +103,14 @@ const DEFAULT_DEPS: NonBlockingFixDeps = {
 export interface NonBlockingFixArgs {
   workdir: string;
   storyId: string;
+  /**
+   * Sub-threshold adversarial findings to seed the pass with.
+   *
+   * MUST already be filtered through `actionableAdvisoryFindings` — the caller owns
+   * that because it also builds the `runRectify` closure these seed, so filtering here
+   * would fix the gate while leaving the seed unfiltered. Passing the raw bucket
+   * re-opens #1359: a pass gets dispatched for a finding that asked for nothing.
+   */
   advisoryFindings: readonly Finding[];
   cfg: NonBlockingFixConfig;
   phaseOutputs: Record<string, unknown>;
