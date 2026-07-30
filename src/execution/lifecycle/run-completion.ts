@@ -184,7 +184,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
         phase: "regression",
         passed: true,
         durationMs: regressionDurationMs,
-        details: { mode: regressionMode, failedTests: 0, quarantined: 0 },
+        details: { mode: regressionMode, failedTests: 0 },
       });
     } else {
       statusWriter.setPostRunPhase("regression", {
@@ -201,7 +201,6 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
         details: {
           mode: regressionMode,
           failedTests: regressionResult.failedTests,
-          quarantined: 0,
         },
       });
 

@@ -213,6 +213,10 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
           details: {
             retries: acceptanceResult.retries ?? 0,
             failedACCount: acceptanceResult.failedACs?.length ?? 0,
+            // ADR-022 replaced fix-story PRD mutation with in-place runFixCycle
+            // rectification — the acceptance loop never appends US-FIX-* stories,
+            // so this is always accurately 0, not an unmeasured placeholder.
+            fixStoriesCreated: 0,
           },
         });
       } else {
@@ -231,6 +235,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
           details: {
             retries: acceptanceResult.retries ?? 0,
             failedACCount: acceptanceResult.failedACs?.length ?? 0,
+            fixStoriesCreated: 0,
           },
         });
       }
