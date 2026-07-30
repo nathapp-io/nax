@@ -16,3 +16,4 @@ Node.js v22.22.2
 
 [2026-07-30T02:52:04.271Z] US-004 — PASSED — Run-level phase events and enrichment — Cost: $6.4874
 [2026-07-30T03:08:55.530Z] US-005 — PASSED — Reporter fan-out for phase hooks — Cost: $0.5893
+[2026-07-30T03:52:38.201Z] US-006 — PASSED — Batch queue and traceparent — Cost: $14.1956

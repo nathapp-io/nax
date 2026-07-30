@@ -3,7 +3,7 @@
   "feature": "otel-telemetry-expansion",
   "branchName": "feat/otel-telemetry-expansion",
   "createdAt": "2026-07-29T00:00:00.000Z",
-  "updatedAt": "2026-07-30T03:08:59.076Z",
+  "updatedAt": "2026-07-30T03:52:42.136Z",
   "userStories": [
     {
       "id": "US-001",
@@ -317,8 +317,8 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -392,7 +392,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "claude",
         "initialProfileId": "claude-final",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/plugins/builtin/otel-reporter/otlp.ts",
@@ -406,7 +408,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "177c0dc0fa819b062debd5cff2e835ed36af5913"
     },
     {
       "id": "US-008",
