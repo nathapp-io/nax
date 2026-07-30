@@ -1,5 +1,8 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import { _qualityDeps, loadQualityCommands, runQualityGates } from "@flows/nax-finish/steps/quality";
+import { withTempDir } from "@test/helpers";
 
 const originalRunShell = _qualityDeps.runShell;
 const originalReadText = _qualityDeps.readText;
@@ -74,5 +77,37 @@ describe("loadQualityCommands", () => {
   test("throws a coded error when the config file is corrupt", async () => {
     _qualityDeps.readText = async () => "{ not json";
     await expect(loadQualityCommands("/repo")).rejects.toThrow(/Failed to parse .nax\/config.json/);
+  });
+});
+
+/**
+ * The default `readText` is the node:fs port of what used to be `Bun.file()` —
+ * every test above injects over it, so without these it would ship uncovered,
+ * exactly as the `Bun.file` version did before it threw inside acpx's Node
+ * process. These exercise the real implementation against a real file.
+ */
+describe("_qualityDeps.readText (real fs)", () => {
+  test("reads config through the real loader", async () => {
+    await withTempDir(async (dir) => {
+      await mkdir(join(dir, ".nax"), { recursive: true });
+      await writeFile(join(dir, ".nax", "config.json"), JSON.stringify({ quality: { commands: { test: "go test" } } }));
+      expect(await loadQualityCommands(dir)).toEqual({ test: "go test" });
+    });
+  });
+
+  test("returns null for a missing file rather than throwing ENOENT", async () => {
+    await withTempDir(async (dir) => {
+      expect(await _qualityDeps.readText(join(dir, "nope.json"))).toBeNull();
+      expect(await loadQualityCommands(dir)).toEqual({});
+    });
+  });
+
+  test("propagates non-ENOENT errors instead of silently reporting no commands", async () => {
+    await withTempDir(async (dir) => {
+      // A directory, not a file — read fails with EISDIR, which must not be
+      // swallowed into a false "no quality commands configured".
+      await mkdir(join(dir, "adir"));
+      await expect(_qualityDeps.readText(join(dir, "adir"))).rejects.toThrow();
+    });
   });
 });
