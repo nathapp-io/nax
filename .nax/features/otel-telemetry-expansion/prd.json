@@ -3,7 +3,7 @@
   "feature": "otel-telemetry-expansion",
   "branchName": "feat/otel-telemetry-expansion",
   "createdAt": "2026-07-29T00:00:00.000Z",
-  "updatedAt": "2026-07-30T00:00:00.000Z",
+  "updatedAt": "2026-07-30T01:37:51.032Z",
   "userStories": [
     {
       "id": "US-001",
@@ -145,9 +145,9 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
-      "attempts": 0,
+      "status": "passed",
+      "passes": true,
+      "attempts": 1,
       "escalations": [],
       "routing": {
         "complexity": "complex",
@@ -202,7 +202,7 @@
       ],
       "status": "pending",
       "passes": false,
-      "attempts": 0,
+      "attempts": 1,
       "escalations": [],
       "routing": {
         "complexity": "complex",
@@ -226,8 +226,7 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1,
-      "storyGitRef": "0e8487c9d59c54ad5f963e349736d4d14a547aef"
+      "storyPoints": 1
     },
     {
       "id": "US-005",
