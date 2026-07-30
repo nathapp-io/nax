@@ -149,12 +149,16 @@ describe("nax-finish post-run action", () => {
       expect(r.message).toBe("nax-finish flow exited 1 (no result file)");
     });
 
-    test("still reports success when the flow exited 0 without a result file", async () => {
+    test("reports failure even when the flow exited 0", async () => {
+      // Both terminal nodes write the result file on every branch, so its
+      // absence means the graph never reached one — exit 0 makes that worse,
+      // not better. Reporting success logged the anomaly at info level.
       _naxFinishDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
       _naxFinishDeps.readResult = async () => null;
       const { ctx } = captureCtx();
       const r = await action.execute(ctx);
-      expect(r.success).toBe(true);
+      expect(r.success).toBe(false);
+      expect(r.message).toContain("exited 0 (no result file)");
     });
   });
 

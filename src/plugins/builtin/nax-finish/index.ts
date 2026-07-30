@@ -284,9 +284,16 @@ const naxFinishAction: IPostRunAction = {
           stdout: logTail(res.stdout),
           stderr: logTail(res.stderr),
         });
+        // Always a failure, including on exit 0: both of the flow's terminal
+        // nodes (open_pr, escalate) write the result file on every branch, so
+        // its absence means the graph ended without reaching one. There is no
+        // outcome to report, and calling that success logged the anomaly at
+        // info — the same "broken state wearing an unremarkable label" that hid
+        // the crash this message now carries. The action is fail-open either
+        // way: `success` only selects the post-run log level.
         const tail = stderrTail(res.stderr);
         return {
-          success: res.exitCode === 0,
+          success: false,
           message: `nax-finish flow exited ${res.exitCode} (no result file)${tail ? `: ${tail}` : ""}`,
         };
       }
