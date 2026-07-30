@@ -74,11 +74,14 @@ function heartbeatSnapshotOf(runId: string, st: RunState): HeartbeatSnapshot {
 }
 
 /**
- * Span events for a review phase's findings. `items` is only ever present
- * when `detail: "verbose"` — the pipeline gates population upstream (US-003)
- * — so no redundant detail-level check is needed here.
+ * Span events for a review phase's findings. `items` is only ever populated
+ * upstream when `detail: "verbose"` (US-003), but the reporter re-checks
+ * `verbose` itself here rather than trusting that gate alone — a defense
+ * against AC9 (no finding message under "counts") if the upstream gate ever
+ * has a bug.
  */
-function reviewSpanEvents(details: unknown, timeUnixNano: string): SpanEvent[] {
+function reviewSpanEvents(details: unknown, timeUnixNano: string, verbose: boolean): SpanEvent[] {
+  if (!verbose) return [];
   if (typeof details !== "object" || details === null) return [];
   const record = details as Record<string, unknown>;
   if (record.kind !== "review" || !Array.isArray(record.items)) return [];
@@ -207,7 +210,7 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
         startUnixNano: msToUnixNano(endMs - event.durationMs),
         endUnixNano,
       });
-      const events = reviewSpanEvents(event.details, endUnixNano);
+      const events = reviewSpanEvents(event.details, endUnixNano, cfg.detail === "verbose");
       if (events.length > 0) span.events = events;
       st.phaseSpans.push(span);
     },
