@@ -42,6 +42,26 @@ const PLUGIN_VERSION = "0.1.0";
 const PACKAGE_ROOT_SEARCH_DEPTH = 6;
 
 /**
+ * How much of the flow's stderr to inline in the failure message.
+ *
+ * The message goes to the run's exit summary, so it has to stay short — but it
+ * must carry *something*. Reporting only the exit code (the previous behaviour)
+ * made a hard flow crash indistinguishable from a clean failure: a
+ * `ReferenceError: Bun is not defined` on the flow's first node was reported as
+ * a bare "exited 1 (no result file)" with the real cause discarded. The full
+ * output still goes to the logger below.
+ */
+const STDERR_TAIL_CHARS = 400;
+
+/** Last `STDERR_TAIL_CHARS` of the flow's stderr, whitespace-collapsed for one-line log output. */
+function stderrTail(stderr: string): string {
+  const trimmed = stderr.trim();
+  if (!trimmed) return "";
+  const tail = trimmed.length > STDERR_TAIL_CHARS ? `…${trimmed.slice(-STDERR_TAIL_CHARS)}` : trimmed;
+  return tail.replace(/\s+/g, " ");
+}
+
+/**
  * Default subprocess runner — wraps Bun.spawn with concurrent stdout/stderr
  * reads so non-trivial output does not deadlock, under a wall-clock cap so a
  * wedged flow cannot hang the run's completion phase forever.
@@ -240,7 +260,18 @@ const naxFinishAction: IPostRunAction = {
       });
       const result = await _naxFinishDeps.readResult(ctx.workdir);
       if (!result) {
-        return { success: res.exitCode === 0, message: `nax-finish flow exited ${res.exitCode} (no result file)` };
+        // The flow produced no result file, so its stdout/stderr is the only
+        // evidence of what went wrong — log it in full before it is dropped.
+        ctx.logger.warn("nax-finish flow produced no result file", {
+          exitCode: res.exitCode,
+          stdout: res.stdout,
+          stderr: res.stderr,
+        });
+        const tail = stderrTail(res.stderr);
+        return {
+          success: res.exitCode === 0,
+          message: `nax-finish flow exited ${res.exitCode} (no result file)${tail ? `: ${tail}` : ""}`,
+        };
       }
 
       if (result.status === "escalated" && escalateTelegram && creds) {

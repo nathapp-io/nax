@@ -77,6 +77,71 @@ describe("nax-finish post-run action", () => {
     expect(r.message).toContain("escalated");
   });
 
+  describe("no result file", () => {
+    // PluginLogger is (message, data) — not the 3-arg src/logger API that
+    // test/helpers' makeLogger() mocks — so the capture is local by necessity.
+    const captureCtx = (): { ctx: PostRunContext; warns: { message: string; data?: Record<string, unknown> }[] } => {
+      const warns: { message: string; data?: Record<string, unknown> }[] = [];
+      const ctx = baseCtx({
+        logger: {
+          debug() {},
+          info() {},
+          warn: (message: string, data?: Record<string, unknown>) => {
+            warns.push({ message, data });
+          },
+          error() {},
+        },
+      } as never);
+      return { ctx, warns };
+    };
+
+    test("surfaces the flow's stderr in the failure message", async () => {
+      _naxFinishDeps.run = async () => ({ exitCode: 1, stdout: "", stderr: "Bun is not defined\n" });
+      _naxFinishDeps.readResult = async () => null;
+      const { ctx } = captureCtx();
+      const r = await action.execute(ctx);
+      expect(r.success).toBe(false);
+      expect(r.message).toContain("exited 1");
+      expect(r.message).toContain("Bun is not defined");
+    });
+
+    test("logs the flow's full stdout and stderr", async () => {
+      _naxFinishDeps.run = async () => ({ exitCode: 1, stdout: "step one\n", stderr: "boom\n" });
+      _naxFinishDeps.readResult = async () => null;
+      const { ctx, warns } = captureCtx();
+      await action.execute(ctx);
+      expect(warns).toHaveLength(1);
+      expect(warns[0].data).toMatchObject({ exitCode: 1, stdout: "step one\n", stderr: "boom\n" });
+    });
+
+    test("truncates a long stderr in the message but not in the log", async () => {
+      const long = `${"x".repeat(5000)}TAIL`;
+      _naxFinishDeps.run = async () => ({ exitCode: 1, stdout: "", stderr: long });
+      _naxFinishDeps.readResult = async () => null;
+      const { ctx, warns } = captureCtx();
+      const r = await action.execute(ctx);
+      expect(r.message).toContain("TAIL");
+      expect(r.message.length).toBeLessThan(600);
+      expect(warns[0].data?.stderr).toBe(long);
+    });
+
+    test("omits the separator when the flow wrote nothing to stderr", async () => {
+      _naxFinishDeps.run = async () => ({ exitCode: 1, stdout: "", stderr: "   \n" });
+      _naxFinishDeps.readResult = async () => null;
+      const { ctx } = captureCtx();
+      const r = await action.execute(ctx);
+      expect(r.message).toBe("nax-finish flow exited 1 (no result file)");
+    });
+
+    test("still reports success when the flow exited 0 without a result file", async () => {
+      _naxFinishDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+      _naxFinishDeps.readResult = async () => null;
+      const { ctx } = captureCtx();
+      const r = await action.execute(ctx);
+      expect(r.success).toBe(true);
+    });
+  });
+
   describe("escalation notification", () => {
     const CONFIG_WITH_TELEGRAM = {
       finish: { autoFlow: { enabled: true } },
