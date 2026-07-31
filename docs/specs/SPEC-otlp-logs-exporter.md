@@ -187,6 +187,21 @@ All five resource-block sites listed in Motivation adopt the shared builder:
 (`index.ts:133`), and `span-tree.ts:205` (already calling it, updated for the new
 signature).
 
+**Widening the payload builders' input types is in scope for this work.** The builders
+cannot pass identity fields they never receive, so the adoption above requires the
+following input-shape changes:
+
+| Input type | Carries today | Add |
+|:---|:---|:---|
+| `TracesInput` (`otlp.ts:73-88`) | `serviceName`, `runId`, `feature` | `project`, `gitBranch`, `gitSha` |
+| `MetricsInput` (`otlp.ts:122-129`) | `serviceName`, `runId` — no `feature`, no `project` | `feature`, `project`, `gitBranch`, `gitSha` |
+| span-tree metrics builder (`span-tree.ts:205`) | `serviceName`, `runId` positional | `feature`, `project`, `gitBranch`, `gitSha` |
+| `HeartbeatMetricsInput` (`heartbeat.ts:94-98`) | `snapshot.attributes` already holds `runId`, `feature`, `project` | nothing — derive from the snapshot |
+
+`MetricsInput` is the load-bearing one: without `feature` on it, no implementation of
+`buildMetricsPayload` can emit `nax.feature`. New fields carrying git data are optional,
+matching the omit-when-unresolved rule above.
+
 Heartbeat's **datapoint** attributes (`heartbeat.ts:84-90`) are untouched, so existing
 heartbeat queries keep matching.
 
@@ -296,7 +311,9 @@ attributes, omitting the git attributes when unresolved.
 
 Adopt the widened builder at all five resource-block construction sites, replacing the
 hardcoded `service.name`-only blocks, and resolve the git attributes once at
-`onRunStart`.
+`onRunStart`. Widening the payload builders' input types (`MetricsInput`, `TracesInput`,
+and the span-tree metrics builder) to carry `feature`, `project`, and the git fields is
+part of this story — `buildMetricsPayload` cannot emit `nax.feature` otherwise.
 
 - **Context Files:** `src/plugins/builtin/otel-reporter/otlp.ts`, `src/plugins/builtin/otel-reporter/heartbeat.ts`, `src/plugins/builtin/otel-reporter/span-tree.ts`, `src/plugins/builtin/otel-reporter/index.ts`, `src/utils/git.ts`
 - **Creates:** none
