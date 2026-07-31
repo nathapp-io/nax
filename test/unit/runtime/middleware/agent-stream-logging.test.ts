@@ -94,9 +94,9 @@ async function parseAllEntries(logFile: string): Promise<LogEntry[]> {
     .map((line) => JSON.parse(line) as LogEntry);
 }
 
-async function parseLastEntry(logFile: string): Promise<LogEntry> {
+async function findEntry(logFile: string, message: string): Promise<LogEntry | undefined> {
   const entries = await parseAllEntries(logFile);
-  return entries[entries.length - 1];
+  return entries.find((entry) => entry.stage === "agent-stream" && entry.message === message);
 }
 
 describe("attachAgentStreamLogging", () => {
@@ -132,10 +132,10 @@ describe("attachAgentStreamLogging", () => {
     );
     await getLogger().flush();
 
-    const entry = await parseLastEntry(logFile);
-    expect(entry.level).toBe("info");
-    expect(entry.message).toBe("Agent call started");
-    expect(entry.data).toMatchObject({
+    const entry = await findEntry(logFile, "Agent call started");
+    expect(entry).toBeDefined();
+    expect(entry?.level).toBe("info");
+    expect(entry?.data).toMatchObject({
       storyId: "s-42",
       callId: "call-001",
       agentName: "claude",
