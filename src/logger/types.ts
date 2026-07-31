@@ -46,6 +46,12 @@ export interface LoggerOptions {
 }
 
 /**
+ * A consumer of redacted log entries — invoked once per log call after secret
+ * redaction, immediately before console/file sinks.
+ */
+export type LogSink = (entry: LogEntry) => void;
+
+/**
  * Story-scoped logger that auto-injects storyId into all log calls
  */
 export interface StoryLogger {

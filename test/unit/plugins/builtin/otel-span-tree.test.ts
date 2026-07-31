@@ -91,7 +91,7 @@ describe("createPhaseMetricsAggregator", () => {
     const agg = createPhaseMetricsAggregator();
     agg.recordPhase(makePhaseEvent({ durationMs: 4200 }));
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
-    const payload: any = agg.buildMetricsPayload("nax", "r1", "1000000");
+    const payload: any = agg.buildMetricsPayload({ serviceName: "nax", runId: "r1", timeUnixNano: "1000000" });
     const point = findMetric(payload, "nax.phase.duration").histogram.dataPoints[0];
     expect(point.sum).toBe(4200);
     expect(point.count).toBe(1);
@@ -101,7 +101,7 @@ describe("createPhaseMetricsAggregator", () => {
     const agg = createPhaseMetricsAggregator();
     agg.recordPhase(makePhaseEvent({ costUsd: 0.42 }));
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
-    const payload: any = agg.buildMetricsPayload("nax", "r1", "1000000");
+    const payload: any = agg.buildMetricsPayload({ serviceName: "nax", runId: "r1", timeUnixNano: "1000000" });
     const point = findMetric(payload, "nax.phase.cost_usd").histogram.dataPoints[0];
     expect(point.sum).toBe(0.42);
     expect(point.count).toBe(1);
@@ -111,7 +111,7 @@ describe("createPhaseMetricsAggregator", () => {
     const agg = createPhaseMetricsAggregator();
     agg.recordPhase(makePhaseEvent({}));
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
-    const payload: any = agg.buildMetricsPayload("nax", "r1", "1000");
+    const payload: any = agg.buildMetricsPayload({ serviceName: "nax", runId: "r1", timeUnixNano: "1000" });
     const point = findMetric(payload, "nax.phase.duration").histogram.dataPoints[0];
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP attribute entries
     const keys = point.attributes.map((a: any) => a.key);
@@ -123,7 +123,7 @@ describe("createPhaseMetricsAggregator", () => {
     const agg = createPhaseMetricsAggregator();
     agg.recordPhase(makePhaseEvent({}));
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
-    const payload: any = agg.buildMetricsPayload("nax", "r1", "1000");
+    const payload: any = agg.buildMetricsPayload({ serviceName: "nax", runId: "r1", timeUnixNano: "1000" });
     const point = findMetric(payload, "nax.phase.duration").histogram.dataPoints[0];
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP attribute entries
     const keys = point.attributes.map((a: any) => a.key).sort();
@@ -134,7 +134,7 @@ describe("createPhaseMetricsAggregator", () => {
     const agg = createPhaseMetricsAggregator();
     agg.recordPhase(makePhaseEvent({}));
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
-    const payload: any = agg.buildMetricsPayload("nax", "r1", "1000");
+    const payload: any = agg.buildMetricsPayload({ serviceName: "nax", runId: "r1", timeUnixNano: "1000" });
     expect(findMetric(payload, "nax.phase.duration").histogram.dataPoints[0].explicitBounds).toEqual(
       PHASE_DURATION_BOUNDS,
     );
@@ -145,7 +145,7 @@ describe("createPhaseMetricsAggregator", () => {
     const agg = createPhaseMetricsAggregator();
     agg.recordReviewFindings("adversarial-review", "high", 3);
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
-    const payload: any = agg.buildMetricsPayload("nax", "r1", "1000");
+    const payload: any = agg.buildMetricsPayload({ serviceName: "nax", runId: "r1", timeUnixNano: "1000" });
     const point = findMetric(payload, "nax.review.findings").sum.dataPoints[0];
     expect(point.attributes).toContainEqual(attr("severity", "high"));
     expect(point.asInt).toBe("3");
@@ -155,7 +155,7 @@ describe("createPhaseMetricsAggregator", () => {
     const agg = createPhaseMetricsAggregator();
     agg.recordFixIterations("rectification", "source-fix", 2);
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
-    const payload: any = agg.buildMetricsPayload("nax", "r1", "1000");
+    const payload: any = agg.buildMetricsPayload({ serviceName: "nax", runId: "r1", timeUnixNano: "1000" });
     const point = findMetric(payload, "nax.fix.iterations").sum.dataPoints[0];
     expect(point.attributes).toContainEqual(attr("strategy", "source-fix"));
     expect(point.asInt).toBe("2");
@@ -165,7 +165,7 @@ describe("createPhaseMetricsAggregator", () => {
     const agg = createPhaseMetricsAggregator();
     agg.recordEscalation("powerful", 1);
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
-    const payload: any = agg.buildMetricsPayload("nax", "r1", "1000");
+    const payload: any = agg.buildMetricsPayload({ serviceName: "nax", runId: "r1", timeUnixNano: "1000" });
     const point = findMetric(payload, "nax.escalations").sum.dataPoints[0];
     expect(point.attributes).toContainEqual(attr("to_tier", "powerful"));
     expect(point.asInt).toBe("1");
@@ -175,7 +175,7 @@ describe("createPhaseMetricsAggregator", () => {
     const agg = createPhaseMetricsAggregator();
     agg.recordPhase(makePhaseEvent({}));
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
-    const payload: any = agg.buildMetricsPayload("my-service", "r1", "1000");
+    const payload: any = agg.buildMetricsPayload({ serviceName: "my-service", runId: "r1", timeUnixNano: "1000" });
     expect(resourceAttributesOf(payload)).toContainEqual(attr("service.name", "my-service"));
   });
 
@@ -183,7 +183,7 @@ describe("createPhaseMetricsAggregator", () => {
     const agg = createPhaseMetricsAggregator();
     agg.recordPhase(makePhaseEvent({}));
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
-    const payload: any = agg.buildMetricsPayload("nax", "r42", "1000");
+    const payload: any = agg.buildMetricsPayload({ serviceName: "nax", runId: "r42", timeUnixNano: "1000" });
     expect(resourceAttributesOf(payload)).toContainEqual(attr("nax.run_id", "r42"));
   });
 
@@ -192,7 +192,7 @@ describe("createPhaseMetricsAggregator", () => {
     agg.recordPhase(makePhaseEvent({ durationMs: 100 }));
     agg.recordPhase(makePhaseEvent({ durationMs: 200 }));
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
-    const payload: any = agg.buildMetricsPayload("nax", "r1", "1000");
+    const payload: any = agg.buildMetricsPayload({ serviceName: "nax", runId: "r1", timeUnixNano: "1000" });
     const point = findMetric(payload, "nax.phase.duration").histogram.dataPoints[0];
     expect(point.count).toBe(2);
     expect(point.sum).toBe(300);
@@ -201,7 +201,7 @@ describe("createPhaseMetricsAggregator", () => {
   test("boundary: an aggregator with nothing recorded still exports a resource-attributed payload with no metrics", () => {
     const agg = createPhaseMetricsAggregator();
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
-    const payload: any = agg.buildMetricsPayload("nax", "r1", "1000");
+    const payload: any = agg.buildMetricsPayload({ serviceName: "nax", runId: "r1", timeUnixNano: "1000" });
     expect(payload.resourceMetrics[0].scopeMetrics[0].metrics).toEqual([]);
     expect(resourceAttributesOf(payload)).toContainEqual(attr("service.name", "nax"));
     expect(resourceAttributesOf(payload)).toContainEqual(attr("nax.run_id", "r1"));

@@ -1,6 +1,6 @@
 {
-  "count": 2849,
-  "updatedAt": "2026-07-30T05:55:08.825Z",
+  "count": 2853,
+  "updatedAt": "2026-07-31T07:16:39.650Z",
   "byFile": {
     "src/pipeline/stages/acceptance-setup.ts": 1,
     "src/pipeline/stages/prompt.ts": 5,
@@ -255,6 +255,7 @@
     "test/unit/plugins/builtin/otel-heartbeat.test.ts": 2,
     "test/unit/plugins/builtin/auto-pr-forge.test.ts": 2,
     "test/unit/plugins/builtin/curator-heuristics.test.ts": 3,
+    "test/unit/plugins/builtin/otel-resource-adoption.test.ts": 3,
     "test/unit/plugins/builtin/curator-registration.test.ts": 3,
     "test/unit/plugins/builtin/curator-paths.test.ts": 2,
     "test/unit/plugins/builtin/curator.test.ts": 2,
@@ -265,7 +266,7 @@
     "test/unit/plugins/builtin/otel-span-tree.test.ts": 2,
     "test/unit/plugins/builtin/curator-acceptance.test.ts": 3,
     "test/unit/plugins/builtin/auto-pr-pr-body.test.ts": 2,
-    "test/unit/plugins/builtin/otel-otlp.test.ts": 3,
+    "test/unit/plugins/builtin/otel-otlp.test.ts": 4,
     "test/unit/plugins/builtin/auto-pr-acceptance.test.ts": 3,
     "test/unit/plugins/builtin/curator-types.test.ts": 1,
     "test/unit/plugins/builtin/curator-integration.test.ts": 2,

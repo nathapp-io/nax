@@ -6,11 +6,12 @@
  * @module logger
  */
 
-export { Logger, initLogger, getLogger, getSafeLogger, resetLogger } from "./logger.js";
+export { Logger, initLogger, getLogger, getSafeLogger, resetLogger, addSink } from "./logger.js";
 export { formatConsole, formatJsonl } from "./formatters.js";
 export type {
   LogLevel,
   LogEntry,
+  LogSink,
   LoggerOptions,
   StoryLogger,
 } from "./types.js";

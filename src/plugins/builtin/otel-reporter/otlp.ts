@@ -1,3 +1,6 @@
+import { hostname } from "node:os";
+import { NAX_VERSION } from "@/version";
+
 /** OTLP/JSON attribute value (subset — string and double only). */
 export interface KeyValue {
   key: string;
@@ -65,9 +68,32 @@ export function buildCounterPoint(count: number, attributes: KeyValue[], timeUni
   return { attributes, timeUnixNano, asInt: String(count) };
 }
 
+export interface ResourceAttributesInput {
+  serviceName: string;
+  runId: string;
+  feature?: string;
+  project?: string;
+  git?: { branch?: string; sha?: string };
+}
+
 /** Resource attributes shared by every OTLP payload this reporter exports. */
-export function buildResourceAttributes(serviceName: string, runId: string): KeyValue[] {
-  return [attr("service.name", serviceName), attr("nax.run_id", runId)];
+export function buildResourceAttributes(input: ResourceAttributesInput): KeyValue[] {
+  const attrs: KeyValue[] = [
+    attr("service.name", input.serviceName),
+    attr("nax.run_id", input.runId),
+    attr("nax.version", NAX_VERSION),
+    attr("process.pid", process.pid),
+  ];
+  try {
+    attrs.push(attr("host.name", hostname()));
+  } catch {
+    // best-effort: omit host.name when hostname() throws (e.g. restricted environments)
+  }
+  if (input.feature !== undefined) attrs.push(attr("nax.feature", input.feature));
+  if (input.project !== undefined) attrs.push(attr("nax.project", input.project));
+  if (input.git?.branch !== undefined) attrs.push(attr("nax.git.branch", input.git.branch));
+  if (input.git?.sha !== undefined) attrs.push(attr("nax.git.sha", input.git.sha));
+  return attrs;
 }
 
 export interface TracesInput {
@@ -80,6 +106,9 @@ export interface TracesInput {
   endUnixNano: string;
   feature: string;
   runId: string;
+  project?: string;
+  gitBranch?: string;
+  gitSha?: string;
   storySummary: StorySummary;
   totalCost: number;
   events: SpanEvent[];
@@ -112,7 +141,18 @@ export function buildTracesPayload(p: TracesInput): object {
   return {
     resourceSpans: [
       {
-        resource: { attributes: [attr("service.name", p.serviceName)] },
+        resource: {
+          attributes: buildResourceAttributes({
+            serviceName: p.serviceName,
+            runId: p.runId,
+            feature: p.feature,
+            project: p.project,
+            git: {
+              branch: p.gitBranch,
+              sha: p.gitSha,
+            },
+          }),
+        },
         scopeSpans: [{ scope: { name: "nax" }, spans: [span, ...(p.extraSpans ?? [])] }],
       },
     ],
@@ -123,6 +163,10 @@ export interface MetricsInput {
   serviceName: string;
   runId: string;
   timeUnixNano: string;
+  feature?: string;
+  project?: string;
+  gitBranch?: string;
+  gitSha?: string;
   storySummary: StorySummary;
   totalCost: number;
   totalDurationMs: number;
@@ -150,7 +194,18 @@ export function buildMetricsPayload(p: MetricsInput): object {
   return {
     resourceMetrics: [
       {
-        resource: { attributes: [attr("service.name", p.serviceName)] },
+        resource: {
+          attributes: buildResourceAttributes({
+            serviceName: p.serviceName,
+            runId: p.runId,
+            feature: p.feature,
+            project: p.project,
+            git: {
+              branch: p.gitBranch,
+              sha: p.gitSha,
+            },
+          }),
+        },
         scopeMetrics: [
           {
             scope: { name: "nax" },

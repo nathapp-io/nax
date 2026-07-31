@@ -33,6 +33,12 @@ export const OtelReporterConfigSchema = z
     flushIntervalMs: z.number().int().positive().default(5_000),
     maxQueueSize: z.number().int().positive().default(2_048),
     phases: z.array(z.string()).optional(),
+    logs: z
+      .object({
+        enabled: z.boolean().default(false),
+        level: z.enum(["silent", "error", "warn", "info", "debug"]).default("info"),
+      })
+      .default({ enabled: false, level: "info" }),
   })
   .default({
     enabled: false,
@@ -44,6 +50,7 @@ export const OtelReporterConfigSchema = z
     maxBatchSize: 64,
     flushIntervalMs: 5_000,
     maxQueueSize: 2_048,
+    logs: { enabled: false, level: "info" },
   });
 
 export const ReportersConfigSchema = z
@@ -67,6 +74,7 @@ export const ReportersConfigSchema = z
       maxBatchSize: 64,
       flushIntervalMs: 5_000,
       maxQueueSize: 2_048,
+      logs: { enabled: false, level: "info" },
     },
   });
 

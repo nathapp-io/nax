@@ -1,11 +1,22 @@
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
-import { getSafeLogger } from "@/logger";
+import { addSink, getSafeLogger } from "@/logger";
+import type { LogEntry, LogSink } from "@/logger";
 import type { EscalationEvent, IReporter, NaxPlugin, RunEndEvent } from "@/plugins/types";
+import { gitWithTimeout } from "@/utils/git";
 import { type PostJsonDeps, interpolateHeaders, postJson } from "../reporter-shared";
 import { type BatchQueue, createBatchQueue } from "./batch-queue";
 import { type Heartbeat, type HeartbeatSnapshot, buildHeartbeatMetricsPayload, startHeartbeat } from "./heartbeat";
 import { newSpanId, newTraceId } from "./ids";
-import { type SpanEvent, attr, buildMetricsPayload, buildTracesPayload, msToUnixNano } from "./otlp";
+import { buildLogsPayload } from "./logs";
+import {
+  type KeyValue,
+  type SpanEvent,
+  attr,
+  buildMetricsPayload,
+  buildResourceAttributes,
+  buildTracesPayload,
+  msToUnixNano,
+} from "./otlp";
 import {
   type PhaseMetricsAggregator,
   type Span,
@@ -16,9 +27,22 @@ import {
 import { parseTraceparent } from "./traceparent";
 
 const STAGE = "otel-reporter";
+const REENTRY_STAGE = "otel-batch-queue";
+/** Stages whose own log entries must never be re-enqueued into the logs sink — an export
+ * failure logged from either the reporter itself or the batch queue would otherwise
+ * amplify into a recursive cascade. */
+const REENTRY_STAGES = new Set([STAGE, REENTRY_STAGE]);
 const DEFAULT_MAX_BATCH_SIZE = 64;
 const DEFAULT_FLUSH_INTERVAL_MS = 5_000;
 const DEFAULT_MAX_QUEUE_SIZE = 2_048;
+
+const LOG_PRIORITY: Record<string, number> = {
+  silent: -1,
+  error: 0,
+  warn: 1,
+  info: 2,
+  debug: 3,
+};
 
 interface LastPhase {
   phase: string;
@@ -35,6 +59,8 @@ interface RunState {
   startMs: number;
   feature: string;
   project: string;
+  gitBranch?: string;
+  gitSha?: string;
   events: SpanEvent[];
   spanTree: SpanTree;
   spanQueue: BatchQueue<Span>;
@@ -44,6 +70,8 @@ interface RunState {
   costUsd: number;
   lastPhase?: LastPhase;
   heartbeat: Heartbeat;
+  logsQueue?: BatchQueue<LogEntry>;
+  logUnsubscribe?: () => void;
 }
 
 /** Root span identity: adopts the W3C TRACEPARENT env var when valid, else starts a new root trace. */
@@ -106,49 +134,111 @@ function reviewSpanEvents(details: unknown, timeUnixNano: string, verbose: boole
   });
 }
 
+interface ReporterDeps extends PostJsonDeps {
+  addSink?: (sink: LogSink) => () => void;
+}
+
 /**
  * Built-in reporter that emits OTLP/HTTP-JSON traces + metrics per run.
  * Buffers each run's story completions as span events and flushes one traces
  * POST + one metrics POST at run end. Fire-and-forget.
  *
- * @param cfg  - resolved OTel reporter config (closed over by the reporter)
- * @param deps - injectable fetch deps (tests only)
+ * When `cfg.logs.enabled` is true, also registers a logger sink to export
+ * redacted log entries as OTLP LogRecords through a dedicated queue.
+ *
+ * @param cfg     - resolved OTel reporter config (closed over by the reporter)
+ * @param deps    - injectable deps (tests only)
+ * @param workdir - target repository root, used for best-effort git branch/sha resolution
  */
-export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJsonDeps): NaxPlugin {
+export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: ReporterDeps, workdir?: string): NaxPlugin {
   const states = new Map<string, RunState>();
   const base = cfg.endpoint?.replace(/\/$/, "");
   let tornDown = false;
 
   /** Incremental export for phase spans (US-006) — a standalone traces POST per batch, no root span. */
-  const sendSpanBatch = async (batch: Span[]): Promise<boolean> => {
-    if (!base || batch.length === 0) return true;
-    const { resolved, missing } = interpolateHeaders(cfg.headers);
-    if (missing.length > 0) {
-      getSafeLogger()?.warn(STAGE, "Skipping OTLP export — unresolved env vars", { missing });
-      return true; // not a transient failure — don't burn a batch-queue retry
-    }
-    const payload = {
-      resourceSpans: [
-        {
-          resource: { attributes: [attr("service.name", cfg.serviceName)] },
-          scopeSpans: [{ scope: { name: "nax" }, spans: batch }],
-        },
-      ],
+  const makeSendSpanBatch =
+    (resourceAttrs: KeyValue[]): ((batch: Span[]) => Promise<boolean>) =>
+    async (batch: Span[]): Promise<boolean> => {
+      if (!base || batch.length === 0) return true;
+      const { resolved, missing } = interpolateHeaders(cfg.headers);
+      if (missing.length > 0) {
+        getSafeLogger()?.warn(STAGE, "Skipping OTLP export — unresolved env vars", { missing });
+        return true; // not a transient failure — don't burn a batch-queue retry
+      }
+      const payload = {
+        resourceSpans: [
+          {
+            resource: { attributes: resourceAttrs },
+            scopeSpans: [{ scope: { name: "nax" }, spans: batch }],
+          },
+        ],
+      };
+      return postJson(`${base}/v1/traces`, payload, {
+        headers: resolved,
+        timeoutMs: cfg.timeoutMs,
+        stage: STAGE,
+        deps,
+      });
     };
-    return postJson(`${base}/v1/traces`, payload, { headers: resolved, timeoutMs: cfg.timeoutMs, stage: STAGE, deps });
-  };
 
-  const makeSpanQueue = (): BatchQueue<Span> =>
+  const makeSpanQueue = (resourceAttrs: KeyValue[]): BatchQueue<Span> =>
     createBatchQueue<Span>({
       maxBatchSize: cfg.maxBatchSize ?? DEFAULT_MAX_BATCH_SIZE,
       flushIntervalMs: cfg.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS,
       maxQueueSize: cfg.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE,
-      send: sendSpanBatch,
+      send: makeSendSpanBatch(resourceAttrs),
+    });
+
+  const makeSendLogsBatch =
+    (resource: {
+      serviceName: string;
+      runId: string;
+      feature: string;
+      project: string;
+      gitBranch?: string;
+      gitSha?: string;
+    }): ((batch: LogEntry[]) => Promise<boolean>) =>
+    async (batch: LogEntry[]): Promise<boolean> => {
+      if (!base || batch.length === 0) return true;
+      const { resolved, missing } = interpolateHeaders(cfg.headers);
+      if (missing.length > 0) {
+        getSafeLogger()?.warn(STAGE, "Skipping OTLP export — unresolved env vars", { missing });
+        return true; // not a transient failure — don't burn a batch-queue retry
+      }
+      const payload = buildLogsPayload(batch, {
+        serviceName: resource.serviceName,
+        runId: resource.runId,
+        feature: resource.feature,
+        project: resource.project,
+        git: { branch: resource.gitBranch, sha: resource.gitSha },
+      });
+      return postJson(`${base}/v1/logs`, payload, {
+        headers: resolved,
+        timeoutMs: cfg.timeoutMs,
+        stage: STAGE,
+        deps,
+      });
+    };
+
+  const makeLogsQueue = (resource: {
+    serviceName: string;
+    runId: string;
+    feature: string;
+    project: string;
+    gitBranch?: string;
+    gitSha?: string;
+  }): BatchQueue<LogEntry> =>
+    createBatchQueue<LogEntry>({
+      maxBatchSize: cfg.maxBatchSize ?? DEFAULT_MAX_BATCH_SIZE,
+      flushIntervalMs: cfg.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS,
+      maxQueueSize: cfg.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE,
+      send: makeSendLogsBatch(resource),
     });
 
   /** Best-effort run state for an `onRunEnd` with no preceding `onRunStart` (US-008 AC16). */
   const buildOrphanState = (startMs: number): RunState => {
     const identity = rootSpanIdentity();
+    const orphanAttrs = buildResourceAttributes({ serviceName: cfg.serviceName, runId: "orphan" });
     return {
       ...identity,
       startMs,
@@ -156,7 +246,7 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
       project: "",
       events: [],
       spanTree: createSpanTree(identity.traceId, identity.spanId),
-      spanQueue: makeSpanQueue(),
+      spanQueue: makeSpanQueue(orphanAttrs),
       metrics: createPhaseMetricsAggregator(),
       storyBounds: new Map(),
       costUsd: 0,
@@ -196,6 +286,9 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
       startUnixNano,
       endUnixNano,
       feature: st.feature,
+      project: st.project,
+      gitBranch: st.gitBranch,
+      gitSha: st.gitSha,
       runId: e.runId,
       storySummary: e.storySummary,
       totalCost: e.totalCost,
@@ -205,13 +298,25 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
       serviceName: cfg.serviceName,
       runId: e.runId,
       timeUnixNano: endUnixNano,
+      feature: st.feature,
+      project: st.project,
+      gitBranch: st.gitBranch,
+      gitSha: st.gitSha,
       storySummary: e.storySummary,
       totalCost: e.totalCost,
       totalDurationMs: e.totalDurationMs,
     }) as { resourceMetrics: [{ scopeMetrics: [{ metrics: object[] }] }] };
     // US-007: merge the run's accumulated phase histograms + counters into the
     // same metrics POST (SEAM-5) rather than issuing a third export request.
-    const aggMetrics = st.metrics.buildMetricsPayload(cfg.serviceName, e.runId, endUnixNano) as {
+    const aggMetrics = st.metrics.buildMetricsPayload({
+      serviceName: cfg.serviceName,
+      runId: e.runId,
+      timeUnixNano: endUnixNano,
+      feature: st.feature,
+      project: st.project,
+      gitBranch: st.gitBranch,
+      gitSha: st.gitSha,
+    }) as {
       resourceMetrics: [{ scopeMetrics: [{ metrics: object[] }] }];
     };
     metrics.resourceMetrics[0].scopeMetrics[0].metrics.push(...aggMetrics.resourceMetrics[0].scopeMetrics[0].metrics);
@@ -225,14 +330,42 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
     async onRunStart(event) {
       const identity = rootSpanIdentity();
       const runId = event.runId;
+
+      let gitBranch: string | undefined;
+      let gitSha: string | undefined;
+      if (base && workdir) {
+        const [branchResult, shaResult] = await Promise.all([
+          gitWithTimeout(["rev-parse", "--abbrev-ref", "HEAD"], workdir).catch(() => null),
+          gitWithTimeout(["rev-parse", "HEAD"], workdir).catch(() => null),
+        ]);
+        if (branchResult?.exitCode === 0) {
+          const branch = branchResult.stdout.trim();
+          if (branch && branch !== "HEAD") gitBranch = branch;
+        }
+        if (shaResult?.exitCode === 0) {
+          const sha = shaResult.stdout.trim();
+          if (sha) gitSha = sha;
+        }
+      }
+
+      const resourceAttrs = buildResourceAttributes({
+        serviceName: cfg.serviceName,
+        runId,
+        feature: event.feature,
+        project: event.project,
+        git: { branch: gitBranch, sha: gitSha },
+      });
+
       const state: RunState = {
         ...identity,
         startMs: Date.parse(event.startTime),
         feature: event.feature,
         project: event.project ?? "",
+        gitBranch,
+        gitSha,
         events: [],
         spanTree: createSpanTree(identity.traceId, identity.spanId),
-        spanQueue: makeSpanQueue(),
+        spanQueue: makeSpanQueue(resourceAttrs),
         metrics: createPhaseMetricsAggregator(),
         storyBounds: new Map(),
         costUsd: 0,
@@ -243,6 +376,29 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
         }),
       };
       states.set(runId, state);
+
+      if (cfg.logs?.enabled) {
+        const logsQueue = makeLogsQueue({
+          serviceName: cfg.serviceName,
+          runId,
+          feature: event.feature,
+          project: event.project ?? "",
+          gitBranch,
+          gitSha,
+        });
+        const floorKey = cfg.logs.level;
+        const sank: LogSink = (entry) => {
+          // Re-entrancy guard: entries logged by the exporter itself must not
+          // be re-enqueued, otherwise an export failure that logs a warning
+          // would amplify into a recursive cascade.
+          if (REENTRY_STAGES.has(entry.stage)) return;
+          if (LOG_PRIORITY[entry.level] > LOG_PRIORITY[floorKey]) return;
+          logsQueue.enqueue(entry);
+        };
+        const addSinkFn = deps?.addSink ?? addSink;
+        state.logsQueue = logsQueue;
+        state.logUnsubscribe = addSinkFn(sank);
+      }
     },
     async onStoryComplete(event) {
       const st = states.get(event.runId);
@@ -318,6 +474,13 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
       // both the normal (bus) and abnormal-exit (direct-call) onRunEnd paths.
       await st.spanQueue.flushNow();
       st.spanQueue.teardown();
+      // Flush any logs still queued, then unsubscribe the sink so subsequent
+      // log calls are not silently dropped (the queue is tearing down).
+      if (st.logsQueue) {
+        await st.logsQueue.flushNow();
+        st.logsQueue.teardown();
+        st.logUnsubscribe?.();
+      }
       await flush(st, startMs + event.totalDurationMs, event);
     },
   };
@@ -338,6 +501,11 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
         st.heartbeat.stop();
         await st.spanQueue.flushNow();
         st.spanQueue.teardown();
+        if (st.logsQueue) {
+          await st.logsQueue.flushNow();
+          st.logsQueue.teardown();
+          st.logUnsubscribe?.();
+        }
         const endMs = Date.now();
         await flush(st, endMs, {
           runId,

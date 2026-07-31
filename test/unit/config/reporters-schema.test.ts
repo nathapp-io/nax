@@ -61,3 +61,30 @@ describe("ReportersConfigSchema", () => {
     expect(res.success).toBe(false);
   });
 });
+
+describe("US-005 AC2: OtelReporterConfigSchema defaults logs.enabled to false", () => {
+  test("success: when logs is omitted, parsed config reports logs.enabled === false", () => {
+    const parsed = ReportersConfigSchema.parse({ otel: { enabled: true } });
+    expect((parsed.otel as any).logs?.enabled).toBe(false);
+  });
+
+  test("boundary: when logs is omitted entirely, the value is still false (not undefined)", () => {
+    const parsed = ReportersConfigSchema.parse({});
+    expect((parsed.otel as any).logs).toBeDefined();
+    expect((parsed.otel as any).logs?.enabled).toBe(false);
+  });
+});
+
+describe("US-005 AC3: OtelReporterConfigSchema defaults logs.level to \"info\"", () => {
+  test("success: when logs is omitted, parsed config reports logs.level === \"info\"", () => {
+    const parsed = ReportersConfigSchema.parse({ otel: { enabled: true } });
+    expect((parsed.otel as any).logs?.level).toBe("info");
+  });
+
+  test("boundary: an explicit level overrides the default", () => {
+    const parsed = ReportersConfigSchema.parse({
+      otel: { enabled: true, logs: { enabled: true, level: "warn" } },
+    });
+    expect((parsed.otel as any).logs?.level).toBe("warn");
+  });
+});

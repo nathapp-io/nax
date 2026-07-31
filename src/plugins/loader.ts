@@ -192,7 +192,7 @@ export async function loadPlugins(
         {
           name: "otel-reporter",
           enabled: reporters.otel.enabled,
-          make: () => createOtelReporterPlugin(reporters.otel),
+          make: () => createOtelReporterPlugin(reporters.otel, undefined, effectiveProjectRoot),
         },
       ]
     : [];

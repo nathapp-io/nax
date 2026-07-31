@@ -1,9 +1,11 @@
 import { mkdirSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
+import { NaxError } from "../errors.js";
 import { type FormatterOptions, type VerbosityMode, formatLogEntry } from "../log-format/index.js";
 import { formatConsole, formatJsonl } from "./formatters.js";
 import { redactEntry } from "./redact.js";
-import type { LogEntry, LogLevel, LoggerOptions, StoryLogger } from "./types.js";
+import { SinkRegistry } from "./sink-registry.js";
+import type { LogEntry, LogLevel, LogSink, LoggerOptions, StoryLogger } from "./types.js";
 
 /**
  * Severity ordering for log levels (lower number = more severe)
@@ -56,6 +58,8 @@ export class Logger {
   private writeQueueTail: Promise<void> = Promise.resolve();
   /** Lines buffered since the last flush task ran — drained as one batched append */
   private readonly pendingLines: string[] = [];
+  /** Registered redacted-entry consumers. Order is preserved so dispatch is deterministic. */
+  private readonly sinkRegistry = new SinkRegistry();
 
   constructor(options: LoggerOptions) {
     this.level = options.level;
@@ -117,13 +121,19 @@ export class Logger {
       ...(strippedData && { data: strippedData }),
     };
 
-    const consoleEnabled = this.shouldLog(level) && !this.suppressConsole;
-    if (!consoleEnabled && !this.filePath) return;
-
-    // Redact once, up front, so BOTH sinks see the sanitized entry. Redacting
+    // Redact once, up front, so ALL sinks see the sanitized entry. Redacting
     // only on the file path (and only `data`) let secrets interpolated into
     // `message` reach the JSONL log and the terminal in cleartext.
     const entry = redactEntry(rawEntry);
+
+    // Registered sinks inherit secret redaction by construction: they observe
+    // the already-redacted entry, never the raw one. Sinks are dispatched
+    // independently of console/file gating so a silent-level logger can still
+    // ship entries to registered exporters.
+    this.sinkRegistry.dispatch(entry);
+
+    const consoleEnabled = this.shouldLog(level) && !this.suppressConsole;
+    if (!consoleEnabled && !this.filePath) return;
 
     // Console output (level-gated, suppressed in TUI mode to avoid corrupting Ink's terminal)
     if (consoleEnabled) {
@@ -270,12 +280,42 @@ export class Logger {
   }
 
   /**
+   * Register a sink to receive every redacted log entry. Returns an
+   * unsubscribe function. Throws from a sink are swallowed by `SinkRegistry`.
+   */
+  addSink(sink: LogSink): () => void {
+    return this.sinkRegistry.add(sink);
+  }
+
+  /**
    * Close logger (cleanup method for shutdown)
    * Note: Bun.write handles file operations automatically, no manual cleanup needed
    */
   close(): void {
     // No-op: Bun handles file operations internally
   }
+}
+
+/**
+ * Register a sink on the singleton logger instance.
+ *
+ * Mirrors the `Logger.addSink` API at the module level so callers can wire
+ * exporters without holding a direct `Logger` reference.
+ *
+ * @throws {NaxError} `LOGGER_NOT_INITIALIZED` if the singleton has not been
+ * initialized. A sink registered before `initLogger` cannot fire (the
+ * singleton is created with an empty `SinkRegistry`), so silently accepting
+ * the registration would orphan it.
+ *
+ * @returns An unsubscribe function.
+ */
+export function addSink(sink: LogSink): () => void {
+  if (!instance) {
+    throw new NaxError("Logger not initialized. Call initLogger() before addSink().", "LOGGER_NOT_INITIALIZED", {
+      stage: "logger",
+    });
+  }
+  return instance.addSink(sink);
 }
 
 /**

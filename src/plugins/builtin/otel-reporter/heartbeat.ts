@@ -1,5 +1,5 @@
 import { getSafeLogger } from "@/logger";
-import { type KeyValue, attr } from "./otlp";
+import { type KeyValue, attr, buildResourceAttributes } from "./otlp";
 
 const STAGE = "otel-reporter-heartbeat";
 
@@ -107,7 +107,12 @@ export function buildHeartbeatMetricsPayload(p: HeartbeatMetricsInput): object {
   return {
     resourceMetrics: [
       {
-        resource: { attributes: [attr("service.name", p.serviceName)] },
+        resource: {
+          attributes: buildResourceAttributes({
+            serviceName: p.serviceName,
+            runId: p.snapshot.attributes.runId,
+          }),
+        },
         scopeMetrics: [
           {
             scope: { name: "nax" },
