@@ -10,15 +10,28 @@
  * - Release lock
  */
 
-import { disposeFeatureResolver } from "../../context";
-import type { InteractionChain } from "../../interaction";
-import { getSafeLogger } from "../../logger";
-import type { PostRunContext } from "../../plugins/extensions";
-import type { PluginRegistry } from "../../plugins/registry";
-import type { PluginLogger } from "../../plugins/types";
-import { countStories } from "../../prd";
-import type { PRD } from "../../prd";
+import { disposeFeatureResolver } from "@/context";
+import { type HookContext, type LoadedHooksConfig, fireHook } from "@/hooks";
+import type { InteractionChain } from "@/interaction";
+import { getSafeLogger } from "@/logger";
+import type {
+  IPostRunAction,
+  PluginLogger,
+  PluginRegistry,
+  PostRunActionRegistration,
+  PostRunActionResult,
+  PostRunContext,
+} from "@/plugins";
+import { type PRD, countStories } from "@/prd";
 import { releaseLock } from "../helpers";
+
+type PostRunActionOutcome =
+  | { status: "succeeded"; message: string; url?: string }
+  | { status: "failed"; message: string; url?: string }
+  | { status: "skipped"; reason: string }
+  | { status: "error"; reason: string };
+
+export const _runCleanupDeps = { fireHook };
 
 export interface RunCleanupOptions {
   runId: string;
@@ -33,6 +46,7 @@ export interface RunCleanupOptions {
   prdPath: string;
   branch: string;
   version: string;
+  hooks: LoadedHooksConfig;
   /**
    * True when run:completed was already emitted (success path).
    * When true, skip the direct onRunEnd call — the reporters.ts subscriber
@@ -52,6 +66,71 @@ export interface RunCleanupOptions {
   logFilePath?: string;
   /** Full nax config (for curator and other plugins) */
   config?: unknown;
+}
+
+async function settlePostRunAction(action: IPostRunAction, ctx: PostRunContext): Promise<PostRunActionOutcome> {
+  try {
+    if (!(await action.shouldRun(ctx))) return { status: "skipped", reason: "shouldRun=false" };
+    return outcomeFromResult(await action.execute(ctx));
+  } catch (error) {
+    return { status: "error", reason: String(error) };
+  }
+}
+
+function outcomeFromResult(result: PostRunActionResult): PostRunActionOutcome {
+  if (result.skipped) return { status: "skipped", reason: result.reason ?? result.message };
+  if (!result.success) return { status: "failed", message: result.message, url: result.url };
+  return { status: "succeeded", message: result.message, url: result.url };
+}
+
+function logPostRunOutcome(actionName: string, outcome: PostRunActionOutcome): void {
+  const logger = getSafeLogger();
+  if (outcome.status === "skipped") {
+    const level = outcome.reason === "shouldRun=false" ? "debug" : "info";
+    logger?.[level]("post-run", `[post-run] ${actionName}: skipped — ${outcome.reason}`);
+  } else if (outcome.status === "failed") {
+    logger?.warn("post-run", `[post-run] ${actionName}: failed — ${outcome.message}`);
+  } else if (outcome.status === "error") {
+    logger?.warn("post-run", `[post-run] ${actionName}: error — ${outcome.reason}`);
+  } else {
+    const suffix = outcome.url ? `${outcome.message} (${outcome.url})` : outcome.message;
+    logger?.info("post-run", `[post-run] ${actionName}: ${suffix}`);
+  }
+}
+
+function postRunHookContext(
+  feature: string,
+  registration: PostRunActionRegistration,
+  outcome: PostRunActionOutcome,
+): HookContext {
+  const reason = outcome.status === "succeeded" || outcome.status === "failed" ? outcome.message : outcome.reason;
+  return {
+    event: "on-post-run-action",
+    feature,
+    pluginName: registration.pluginName,
+    actionName: registration.action.name,
+    status: outcome.status,
+    reason,
+    url: "url" in outcome ? outcome.url : undefined,
+  };
+}
+
+async function runPostRunActions(options: RunCleanupOptions, ctx: PostRunContext): Promise<void> {
+  const registrations = options.pluginRegistry.getPostRunActionRegistrations();
+  for (const registration of registrations) {
+    const outcome = await settlePostRunAction(registration.action, ctx);
+    logPostRunOutcome(registration.action.name, outcome);
+    try {
+      await _runCleanupDeps.fireHook(
+        options.hooks,
+        "on-post-run-action",
+        postRunHookContext(options.feature, registration, outcome),
+        options.workdir,
+      );
+    } catch (error) {
+      getSafeLogger()?.warn("hooks", `on-post-run-action hook failed for '${registration.pluginName}'`, { error });
+    }
+  }
 }
 
 /**
@@ -143,7 +222,6 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
   }
 
   // Execute post-run actions sequentially after reporters.onRunEnd()
-  const actions = pluginRegistry.getPostRunActions();
   // `data` must be forwarded, not dropped: PluginLogger's contract is
   // (message, data), and every post-run action relies on it — each one's catch
   // path logs `{ error: String(err) }`, and nax-finish logs the finish flow's
@@ -158,28 +236,7 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
   };
   const ctx = buildPostRunContext(options, durationMs, pluginLogger);
 
-  for (const action of actions) {
-    try {
-      const shouldRun = await action.shouldRun(ctx);
-      if (!shouldRun) {
-        logger?.debug("post-run", `[post-run] ${action.name}: shouldRun=false, skipping`);
-        continue;
-      }
-      const result = await action.execute(ctx);
-      if (result.skipped) {
-        logger?.info("post-run", `[post-run] ${action.name}: skipped — ${result.reason}`);
-      } else if (!result.success) {
-        logger?.warn("post-run", `[post-run] ${action.name}: failed — ${result.message}`);
-      } else {
-        const msg = result.url
-          ? `[post-run] ${action.name}: ${result.message} (${result.url})`
-          : `[post-run] ${action.name}: ${result.message}`;
-        logger?.info("post-run", msg);
-      }
-    } catch (error) {
-      logger?.warn("post-run", `[post-run] ${action.name}: error — ${error}`);
-    }
-  }
+  await runPostRunActions(options, ctx);
 
   // Teardown plugins
   try {

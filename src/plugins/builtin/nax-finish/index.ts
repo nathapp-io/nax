@@ -7,7 +7,7 @@
  * spec/quality reviewer profiles to the flow module via env vars (the flow
  * module reloads fresh on every `acpx flow run` invocation, so profiles are
  * read at module-load time rather than passed as flow input), and notifies
- * via Telegram when the flow escalates.
+ * terminal outcomes according to `finish.autoFlow.notify.mode`.
  *
  * Note: the flow contract types below (`FinishResult`, `RunFn`) are declared
  * locally rather than imported from `flows/nax-finish/` — `src/` must never
@@ -21,7 +21,8 @@
 import * as path from "node:path";
 import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
 import { type FinishAutoFlowSettings, getFinishAutoFlowConfig, telegramCreds } from "./config";
-import { buildEscalationMessage, sendTelegramNotify } from "./telegram";
+import { logTail, stderrTail } from "./output";
+import { buildEscalationMessage, buildTerminalMessage, sendTelegramNotify } from "./telegram";
 
 interface FinishResult {
   feature: string;
@@ -34,6 +35,14 @@ interface FinishResult {
   deliveryError?: string;
 }
 
+type TelegramCreds = NonNullable<ReturnType<typeof telegramCreds>>;
+
+interface FinishTerminalOutcome {
+  actionResult: PostRunActionResult;
+  result?: FinishResult;
+  escalateTelegram: boolean;
+}
+
 type RunFn = (
   cmd: string[],
   opts: { cwd: string; env?: Record<string, string>; timeoutMs?: number },
@@ -44,43 +53,6 @@ const PLUGIN_VERSION = "0.1.0";
 
 /** How far up from this module to look for the nax package root (`src/…` in dev, `dist/` when built). */
 const PACKAGE_ROOT_SEARCH_DEPTH = 6;
-
-/**
- * How much of the flow's stderr to inline in the failure message.
- *
- * The message goes to the run's exit summary, so it has to stay short — but it
- * must carry *something*. Reporting only the exit code (the previous behaviour)
- * made a hard flow crash indistinguishable from a clean failure: a
- * `ReferenceError: Bun is not defined` on the flow's first node was reported as
- * a bare "exited 1 (no result file)" with the real cause discarded. A larger
- * slice of both streams still goes to the logger below.
- */
-const STDERR_TAIL_CHARS = 400;
-
-/**
- * How much of each stream to put in the log payload.
- *
- * Not unbounded: on a flow that ran to completion and only failed to write its
- * result, acpx's stdout carries every node's output — including full LLM review
- * text — which would land in the JSONL log as a single multi-megabyte line.
- * The tail is the useful end (that is where a crash reports itself), so
- * truncation drops from the front and says so.
- */
-const LOG_TAIL_CHARS = 20_000;
-
-/** Last `LOG_TAIL_CHARS` of a stream, with an explicit marker when anything was dropped. */
-function logTail(stream: string): string {
-  if (stream.length <= LOG_TAIL_CHARS) return stream;
-  return `[…${stream.length - LOG_TAIL_CHARS} chars truncated…]\n${stream.slice(-LOG_TAIL_CHARS)}`;
-}
-
-/** Last `STDERR_TAIL_CHARS` of the flow's stderr, whitespace-collapsed for one-line log output. */
-function stderrTail(stderr: string): string {
-  const trimmed = stderr.trim();
-  if (!trimmed) return "";
-  const tail = trimmed.length > STDERR_TAIL_CHARS ? `…${trimmed.slice(-STDERR_TAIL_CHARS)}` : trimmed;
-  return tail.replace(/\s+/g, " ");
-}
 
 /**
  * Default subprocess runner — wraps Bun.spawn with concurrent stdout/stderr
@@ -128,6 +100,12 @@ async function defaultReadResult(workdir: string): Promise<FinishResult | null> 
   return JSON.parse(await f.text()) as FinishResult;
 }
 
+/** Remove an earlier run's terminal artifact before starting a new flow. */
+async function defaultClearResult(workdir: string): Promise<void> {
+  const file = Bun.file(path.join(workdir, ".nax", "nax-finish-result.json"));
+  if (await file.exists()) await file.delete();
+}
+
 /**
  * Module-level deps for testability (`_deps` pattern).
  *
@@ -137,6 +115,7 @@ async function defaultReadResult(workdir: string): Promise<FinishResult | null> 
 export const _naxFinishDeps: {
   run: RunFn;
   readResult: (workdir: string) => Promise<FinishResult | null>;
+  clearResult: (workdir: string) => Promise<void>;
   /** Path-existence probe — used to resolve the flow module and the nax package root. */
   exists: (p: string) => Promise<boolean>;
   /** Directory this module was loaded from; overridable so package-root walking is testable. */
@@ -152,6 +131,7 @@ export const _naxFinishDeps: {
 } = {
   run: defaultRun,
   readResult: defaultReadResult,
+  clearResult: defaultClearResult,
   exists: (p) => Bun.file(p).exists(),
   moduleDir: import.meta.dir,
   notify: sendTelegramNotify,
@@ -230,6 +210,151 @@ function buildFlowEnv(cfg: FinishAutoFlowSettings): Record<string, string> {
   return env;
 }
 
+interface ExecuteFinishOptions {
+  ctx: PostRunContext;
+  cfg: FinishAutoFlowSettings;
+  creds: TelegramCreds | null;
+  escalateTelegram: boolean;
+}
+
+function missingResultOutcome(
+  ctx: PostRunContext,
+  res: { exitCode: number; stdout: string; stderr: string },
+  escalateTelegram: boolean,
+): FinishTerminalOutcome {
+  ctx.logger.warn("nax-finish flow produced no result file", {
+    exitCode: res.exitCode,
+    stdout: logTail(res.stdout),
+    stderr: logTail(res.stderr),
+  });
+  const tail = stderrTail(res.stderr);
+  return {
+    actionResult: {
+      success: false,
+      message: `nax-finish flow exited ${res.exitCode} (no result file)${tail ? `: ${tail}` : ""}`,
+    },
+    escalateTelegram,
+  };
+}
+
+async function executeFinishFlow(options: ExecuteFinishOptions): Promise<FinishTerminalOutcome> {
+  const { ctx, cfg, escalateTelegram } = options;
+  const flowPath = await resolveFlowPath(ctx.workdir, cfg.flowPath);
+  if (!flowPath) {
+    return {
+      actionResult: {
+        success: false,
+        message: `nax-finish: flow module "${cfg.flowPath}" not found in the nax install or ${ctx.workdir}`,
+      },
+      escalateTelegram,
+    };
+  }
+
+  await _naxFinishDeps.clearResult(ctx.workdir);
+  const input = {
+    feature: ctx.feature,
+    workdir: ctx.workdir,
+    branch: ctx.branch,
+    prdPath: ctx.prdPath,
+    escalateTelegram,
+    timeouts: { acceptanceMs: cfg.timeouts.acceptanceMs, gateMs: cfg.timeouts.gateMs },
+  };
+  const cmd = buildFlowArgv(flowPath, JSON.stringify(input), cfg.defaultAgent, cfg.timeouts.stepMs);
+  const res = await _naxFinishDeps.run(cmd, {
+    cwd: ctx.workdir,
+    env: buildFlowEnv(cfg),
+    timeoutMs: cfg.timeouts.flowMs,
+  });
+  const result = await _naxFinishDeps.readResult(ctx.workdir);
+  if (!result) return missingResultOutcome(ctx, res, escalateTelegram);
+  return {
+    actionResult: { success: true, message: `nax-finish: ${result.status}`, url: result.url },
+    result,
+    escalateTelegram,
+  };
+}
+
+async function settleFinishFlow(
+  options: Omit<ExecuteFinishOptions, "escalateTelegram">,
+): Promise<FinishTerminalOutcome> {
+  const escalateTelegram = options.cfg.notify.mode !== "off" && options.cfg.escalate.telegram && options.creds !== null;
+  try {
+    return await executeFinishFlow({ ...options, escalateTelegram });
+  } catch (error) {
+    options.ctx.logger.warn("nax-finish execute failed", { error: String(error) });
+    return {
+      actionResult: { success: false, message: `nax-finish failed: ${String(error)}` },
+      escalateTelegram,
+    };
+  }
+}
+
+async function notifyBestEffort(ctx: PostRunContext, creds: TelegramCreds | null, message: string): Promise<void> {
+  if (!creds) {
+    ctx.logger.warn("nax-finish terminal notification skipped: Telegram credentials are unavailable");
+    return;
+  }
+  try {
+    if (!(await _naxFinishDeps.notify(creds, message))) {
+      ctx.logger.warn("nax-finish terminal notification was rejected", { feature: ctx.feature });
+    }
+  } catch (error) {
+    ctx.logger.warn("nax-finish terminal notification failed", { feature: ctx.feature, error: String(error) });
+  }
+}
+
+async function finalizeEscalation(
+  ctx: PostRunContext,
+  outcome: FinishTerminalOutcome,
+  creds: TelegramCreds | null,
+): Promise<PostRunActionResult> {
+  const result = outcome.result;
+  if (!result) return outcome.actionResult;
+  const problems: string[] = [];
+  let delivered = !outcome.escalateTelegram && !result.deliveryError;
+  if (outcome.escalateTelegram && creds) {
+    try {
+      delivered = await _naxFinishDeps.notify(
+        creds,
+        buildEscalationMessage(result.feature, result.escalationReason ?? "", result.findings ?? []),
+      );
+      if (!delivered) problems.push("Telegram rejected the message");
+    } catch (error) {
+      problems.push(`Telegram failed: ${String(error)}`);
+    }
+  }
+  if (delivered) return outcome.actionResult;
+  if (result.deliveryError) problems.push(`the flow could not post it: ${result.deliveryError}`);
+  if (problems.length === 0) problems.push("no escalation channel was reachable");
+  ctx.logger.warn("nax-finish escalation was not delivered", {
+    feature: result.feature,
+    reasons: problems,
+    escalationReason: result.escalationReason,
+  });
+  return {
+    success: false,
+    message: `nax-finish: escalated but undelivered — ${problems.join("; ")}`,
+    url: result.url,
+  };
+}
+
+async function finalizeFinishOutcome(
+  options: Omit<ExecuteFinishOptions, "escalateTelegram"> & { outcome: FinishTerminalOutcome },
+): Promise<PostRunActionResult> {
+  const { ctx, cfg, creds, outcome } = options;
+  if (outcome.result?.status === "escalated") return finalizeEscalation(ctx, outcome, creds);
+  if (cfg.notify.mode === "always") {
+    const status = outcome.result?.status ?? "failed";
+    const detail = outcome.result ? undefined : outcome.actionResult.message;
+    await notifyBestEffort(
+      ctx,
+      creds,
+      buildTerminalMessage({ feature: ctx.feature, status, detail, url: outcome.actionResult.url }),
+    );
+  }
+  return outcome.actionResult;
+}
+
 const naxFinishAction: IPostRunAction = {
   name: PLUGIN_NAME,
   description:
@@ -246,102 +371,10 @@ const naxFinishAction: IPostRunAction = {
   },
 
   async execute(ctx: PostRunContext): Promise<PostRunActionResult> {
-    try {
-      const cfg = getFinishAutoFlowConfig(ctx);
-      const flowPath = await resolveFlowPath(ctx.workdir, cfg.flowPath);
-      if (!flowPath) {
-        return {
-          success: false,
-          message: `nax-finish: flow module "${cfg.flowPath}" not found in the nax install or ${ctx.workdir}`,
-        };
-      }
-
-      const creds = telegramCreds(ctx.config);
-      // Telegram is the escalation channel only when it is both enabled AND
-      // credentialed; otherwise the flow falls back to a PR/MR comment. It has
-      // to know which, so it doesn't do both (or open a draft it won't need).
-      const escalateTelegram = cfg.escalate.telegram && creds !== null;
-
-      // No `reviewers` field on the flow input — profiles flow to the flow
-      // module via env vars instead (see module header comment).
-      const input = {
-        feature: ctx.feature,
-        workdir: ctx.workdir,
-        branch: ctx.branch,
-        prdPath: ctx.prdPath,
-        escalateTelegram,
-        timeouts: { acceptanceMs: cfg.timeouts.acceptanceMs, gateMs: cfg.timeouts.gateMs },
-      };
-
-      const cmd = buildFlowArgv(flowPath, JSON.stringify(input), cfg.defaultAgent, cfg.timeouts.stepMs);
-      const res = await _naxFinishDeps.run(cmd, {
-        cwd: ctx.workdir,
-        env: buildFlowEnv(cfg),
-        timeoutMs: cfg.timeouts.flowMs,
-      });
-      const result = await _naxFinishDeps.readResult(ctx.workdir);
-      if (!result) {
-        // The flow produced no result file, so its stdout/stderr is the only
-        // evidence of what went wrong — log it before it is dropped.
-        ctx.logger.warn("nax-finish flow produced no result file", {
-          exitCode: res.exitCode,
-          stdout: logTail(res.stdout),
-          stderr: logTail(res.stderr),
-        });
-        // Always a failure, including on exit 0: both of the flow's terminal
-        // nodes (open_pr, escalate) write the result file on every branch, so
-        // its absence means the graph ended without reaching one. There is no
-        // outcome to report, and calling that success logged the anomaly at
-        // info — the same "broken state wearing an unremarkable label" that hid
-        // the crash this message now carries. The action is fail-open either
-        // way: `success` only selects the post-run log level.
-        const tail = stderrTail(res.stderr);
-        return {
-          success: false,
-          message: `nax-finish flow exited ${res.exitCode} (no result file)${tail ? `: ${tail}` : ""}`,
-        };
-      }
-
-      // An escalation nobody receives is the same broken-state-wearing-an-
-      // unremarkable-label failure as a missing result file.
-      //
-      // Which channel counts is not symmetric: the flow posts the PR/MR comment
-      // itself ONLY when Telegram is not the channel, so on the Telegram path
-      // its `deliveryError` means just that the URL lookup failed — the comment
-      // was never meant to be posted. Treating that as undelivered would raise
-      // a false alarm on the path that actually worked.
-      if (result.status === "escalated") {
-        const problems: string[] = [];
-        let delivered = !escalateTelegram && !result.deliveryError;
-        if (escalateTelegram && creds) {
-          const sent = await _naxFinishDeps.notify(
-            creds,
-            buildEscalationMessage(result.feature, result.escalationReason ?? "", result.findings ?? []),
-          );
-          if (sent) delivered = true;
-          else problems.push("Telegram rejected the message");
-        }
-        if (!delivered) {
-          if (result.deliveryError) problems.push(`the flow could not post it: ${result.deliveryError}`);
-          if (problems.length === 0) problems.push("no escalation channel was reachable");
-          ctx.logger.warn("nax-finish escalation was not delivered", {
-            feature: result.feature,
-            reasons: problems,
-            escalationReason: result.escalationReason,
-          });
-          return {
-            success: false,
-            message: `nax-finish: escalated but undelivered — ${problems.join("; ")}`,
-            url: result.url,
-          };
-        }
-      }
-
-      return { success: true, message: `nax-finish: ${result.status}`, url: result.url };
-    } catch (err) {
-      ctx.logger.warn("nax-finish execute failed", { error: String(err) });
-      return { success: false, message: `nax-finish failed: ${String(err)}` };
-    }
+    const cfg = getFinishAutoFlowConfig(ctx);
+    const creds = telegramCreds(ctx.config);
+    const outcome = await settleFinishFlow({ ctx, cfg, creds });
+    return finalizeFinishOutcome({ ctx, cfg, creds, outcome });
   },
 };
 

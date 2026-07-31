@@ -105,6 +105,26 @@ describe("nax-finish post-run action", () => {
       expect(r.message).toContain("Bun is not defined");
     });
 
+    test("notifies a failure in always mode before returning", async () => {
+      const sent: string[] = [];
+      _naxFinishDeps.run = async () => ({ exitCode: 1, stdout: "", stderr: "flow crashed" });
+      _naxFinishDeps.readResult = async () => null;
+      _naxFinishDeps.notify = async (_creds, message) => {
+        sent.push(message);
+        return true;
+      };
+      const config = {
+        finish: { autoFlow: { enabled: true, notify: { mode: "always" } } },
+        interaction: { plugin: "telegram", config: { botToken: "t", chatId: "c" } },
+      };
+
+      const result = await action.execute(baseCtx({ config } as never));
+
+      expect(result.success).toBe(false);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]).toContain("flow crashed");
+    });
+
     test("logs the flow's full stdout and stderr", async () => {
       _naxFinishDeps.run = async () => ({ exitCode: 1, stdout: "step one\n", stderr: "boom\n" });
       _naxFinishDeps.readResult = async () => null;
@@ -315,6 +335,35 @@ describe("nax-finish post-run action", () => {
       expect(sent).toHaveLength(0);
     });
 
+    test("notifies successful terminal results in always mode", async () => {
+      const sent = stubRun({ feature: "x", status: "opened" });
+      const config = {
+        finish: { autoFlow: { enabled: true, notify: { mode: "always" } } },
+        interaction: CONFIG_WITH_TELEGRAM.interaction,
+      };
+
+      const result = await action.execute(baseCtx({ config } as never));
+
+      expect(result.success).toBe(true);
+      expect(sent).toHaveLength(1);
+      expect(sent[0].text).toContain("nax-finish opened x");
+    });
+
+    test("ordinary notification rejection or exception does not change a successful result", async () => {
+      const config = {
+        finish: { autoFlow: { enabled: true, notify: { mode: "always" } } },
+        interaction: CONFIG_WITH_TELEGRAM.interaction,
+      };
+      _naxFinishDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+      _naxFinishDeps.readResult = async () => ({ feature: "x", status: "opened" });
+      _naxFinishDeps.notify = async () => false;
+      expect((await action.execute(baseCtx({ config } as never))).success).toBe(true);
+      _naxFinishDeps.notify = async () => {
+        throw new Error("network down");
+      };
+      expect((await action.execute(baseCtx({ config } as never))).success).toBe(true);
+    });
+
     test("does not notify when escalate.telegram is disabled", async () => {
       const sent = stubRun({ feature: "x", status: "escalated", escalationReason: "design call" });
       const config = {
@@ -334,6 +383,22 @@ describe("nax-finish post-run action", () => {
 
       expect(sent).toHaveLength(0);
     });
+  });
+
+  test("clears any stale result before starting the flow", async () => {
+    const order: string[] = [];
+    _naxFinishDeps.clearResult = async () => {
+      order.push("clear");
+    };
+    _naxFinishDeps.run = async () => {
+      order.push("run");
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    _naxFinishDeps.readResult = async () => ({ feature: "x", status: "opened" });
+
+    await action.execute(baseCtx());
+
+    expect(order).toEqual(["clear", "run"]);
   });
 
   test("execute sets reviewer profile env vars from config.finish.autoFlow.reviewers", async () => {
@@ -407,6 +472,12 @@ describe("nax-finish post-run action", () => {
     // Enabled but with no credentials → the flow must fall back to a PR comment.
     const uncredentialed = await inputsFor({ finish: { autoFlow: { enabled: true } }, interaction: { plugin: "cli" } });
     expect(uncredentialed.escalateTelegram).toBe(false);
+
+    const notificationsOff = await inputsFor({
+      finish: { autoFlow: { enabled: true, notify: { mode: "off" } } },
+      interaction: { plugin: "telegram", config: { botToken: "t", chatId: "c" } },
+    });
+    expect(notificationsOff.escalateTelegram).toBe(false);
   });
 
   test("execute reports a clear failure when the flow module cannot be found", async () => {

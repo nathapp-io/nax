@@ -32,7 +32,7 @@ export type {
 
 export { validatePlugin } from "./validator";
 export { loadPlugins } from "./loader";
-export { PluginRegistry } from "./registry";
+export { PluginRegistry, type PostRunActionRegistration } from "./registry";
 export { createPluginLogger } from "./plugin-logger";
 
 // Built-in auto-route plugin (US-005) — exposed for test injection (`_autoRouteDeps`)

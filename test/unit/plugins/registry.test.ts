@@ -195,6 +195,20 @@ describe("PluginRegistry.getPostRunActions", () => {
     expect(filtered.length).toBe(1);
     expect(filtered[0]).toBe(action1);
   });
+
+  it("retains the owning plugin name for post-run hook attribution", () => {
+    const action = { name: "publish-report" } as any;
+    const builtin = { name: "auto-pr" } as any;
+    const registry = new PluginRegistry(
+      [createMockPlugin("report-plugin", ["post-run-action"], { postRunAction: action })],
+      [builtin],
+    );
+
+    expect(registry.getPostRunActionRegistrations()).toEqual([
+      { pluginName: "report-plugin", action },
+      { pluginName: "auto-pr", action: builtin },
+    ]);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

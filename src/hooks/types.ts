@@ -17,6 +17,7 @@ export const HOOK_EVENTS = [
   "on-complete",
   "on-error",
   "on-final-regression-fail",
+  "on-post-run-action",
 ] as const;
 
 /** All supported hook events */
@@ -58,9 +59,9 @@ export interface HookContext {
   feature: string;
   /** Current story ID */
   storyId?: string;
-  /** Status (pass/fail/paused/error) */
+  /** Event-specific status (for example pass/fail or a post-run action outcome) */
   status?: string;
-  /** Reason for pause/error */
+  /** Event-specific reason or result message */
   reason?: string;
   /** Accumulated cost (USD) */
   cost?: number;
@@ -76,4 +77,10 @@ export interface HookContext {
   affectedStories?: string[];
   /** Number of sub-stories created (on-story-complete with status "decomposed") */
   subStoryCount?: number;
+  /** Plugin that owns the settled post-run action. */
+  pluginName?: string;
+  /** Settled post-run action name. */
+  actionName?: string;
+  /** Optional result URL produced by a post-run action. */
+  url?: string;
 }

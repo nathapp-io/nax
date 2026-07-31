@@ -45,6 +45,7 @@ export {
   type RunCompletionOptions,
   type RunCompletionResult,
   cleanupRun,
+  _runCleanupDeps,
   type RunCleanupOptions,
 } from "./lifecycle";
 export {

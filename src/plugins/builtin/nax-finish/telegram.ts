@@ -15,6 +15,24 @@ export const TELEGRAM_MAX_MESSAGE_CHARS = 4096;
 /** Per-finding title budget, so one verbose title can't crowd out every other finding. */
 const MAX_FINDING_TITLE_CHARS = 120;
 
+interface TerminalMessageOptions {
+  feature: string;
+  status: string;
+  detail?: string;
+  url?: string;
+}
+
+/** Build a bounded plain-text terminal notification for non-escalation outcomes. */
+export function buildTerminalMessage(options: TerminalMessageOptions): string {
+  const lines = [`nax-finish ${options.status} ${options.feature}`];
+  if (options.detail) lines.push(options.detail);
+  if (options.url) lines.push(options.url);
+  const message = lines.join("\n");
+  return message.length <= TELEGRAM_MAX_MESSAGE_CHARS
+    ? message
+    : `${message.slice(0, TELEGRAM_MAX_MESSAGE_CHARS - 1)}…`;
+}
+
 /**
  * Compose the escalation message: the reason, then each finding by severity and
  * title.

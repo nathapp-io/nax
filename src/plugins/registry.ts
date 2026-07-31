@@ -10,6 +10,11 @@ import type { RoutingStrategy } from "../routing/router";
 import type { LoadedPlugin, PluginSource } from "./loader";
 import type { IContextProvider, IPostRunAction, IPromptOptimizer, IReporter, IReviewPlugin, NaxPlugin } from "./types";
 
+export interface PostRunActionRegistration {
+  pluginName: string;
+  action: IPostRunAction;
+}
+
 /**
  * Plugin registry with typed getters for each extension type.
  *
@@ -172,11 +177,17 @@ export class PluginRegistry {
    * @returns Array of post-run action implementations
    */
   getPostRunActions(): IPostRunAction[] {
-    const pluginActions = this.plugins
-      .filter((p) => p.provides.includes("post-run-action"))
-      .map((p) => p.extensions.postRunAction)
-      .filter((action): action is IPostRunAction => action !== undefined);
-    return [...pluginActions, ...this.builtinPostRunActions];
+    return this.getPostRunActionRegistrations().map(({ action }) => action);
+  }
+
+  /** Return post-run actions together with their owning plugin identity. */
+  getPostRunActionRegistrations(): PostRunActionRegistration[] {
+    const pluginActions = this.plugins.flatMap((plugin) => {
+      const action = plugin.extensions.postRunAction;
+      return plugin.provides.includes("post-run-action") && action ? [{ pluginName: plugin.name, action }] : [];
+    });
+    const builtinActions = this.builtinPostRunActions.map((action) => ({ pluginName: action.name, action }));
+    return [...pluginActions, ...builtinActions];
   }
 
   /**

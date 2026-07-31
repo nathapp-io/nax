@@ -9,6 +9,7 @@ describe("finish.autoFlow schema", () => {
     expect(c.finish.autoFlow.defaultAgent).toBeNull();
     expect(c.finish.autoFlow.reviewers).toEqual({ spec: null, quality: null });
     expect(c.finish.autoFlow.escalate.telegram).toBe(true);
+    expect(c.finish.autoFlow.notify.mode).toBe("escalation");
     // Every subprocess the flow awaits is capped — nothing defaults to unbounded.
     expect(c.finish.autoFlow.timeouts.acceptanceMs).toBeGreaterThan(0);
     expect(c.finish.autoFlow.timeouts.gateMs).toBeGreaterThan(0);
@@ -36,10 +37,21 @@ describe("finish.autoFlow schema", () => {
   test("accepts overrides", () => {
     const c = NaxConfigSchema.parse({
       version: 1,
-      finish: { autoFlow: { enabled: true, reviewers: { spec: "adversarial", quality: "balanced" }, escalate: { telegram: false } } },
+      finish: {
+        autoFlow: {
+          enabled: true,
+          reviewers: { spec: "adversarial", quality: "balanced" },
+          escalate: { telegram: false },
+          notify: { mode: "always" },
+        },
+      },
     });
     expect(c.finish.autoFlow.enabled).toBe(true);
     expect(c.finish.autoFlow.reviewers.spec).toBe("adversarial");
     expect(c.finish.autoFlow.escalate.telegram).toBe(false);
+    expect(c.finish.autoFlow.notify.mode).toBe("always");
+    expect(
+      NaxConfigSchema.safeParse({ version: 1, finish: { autoFlow: { notify: { mode: "sometimes" } } } }).success,
+    ).toBe(false);
   });
 });

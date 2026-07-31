@@ -465,6 +465,7 @@ escalates** instead of guessing. It never merges.
       "enabled": true,
       "reviewers": { "spec": "nax-spec-reviewer", "quality": "nax-quality-reviewer" },
       "escalate": { "telegram": true },
+      "notify": { "mode": "escalation" },
       "timeouts": { "acceptanceMs": 600000, "gateMs": 900000, "flowMs": 5400000 }
     }
   }
@@ -478,6 +479,7 @@ escalates** instead of guessing. It never merges.
 | `defaultAgent` | `null` | acpx `--default-agent` for nodes with no pinned profile. |
 | `reviewers.spec` / `reviewers.quality` | `null` | acpx agent profiles (from `~/.acpx/config.json`) for the two review phases — each runs in its own isolated session, so they can be different agents/models. Unset → `defaultAgent`. |
 | `escalate.telegram` | `true` | Prefer Telegram for escalations when `interaction.plugin` is `telegram` (or `NAX_TELEGRAM_TOKEN` + `NAX_TELEGRAM_CHAT_ID` are set). With no credentials it falls back to a PR/MR comment. |
+| `notify.mode` | `"escalation"` | `escalation` preserves escalation-only reporting; `always` also reports clean outcomes and crashes; `off` disables Telegram and uses the escalation comment fallback. |
 | `timeouts.acceptanceMs` | 10 min | Cap per acceptance-test group. |
 | `timeouts.gateMs` | 15 min | Cap per quality gate. |
 | `timeouts.flowMs` | 90 min | Cap on the whole `acpx flow run` subprocess. |

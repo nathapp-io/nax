@@ -11,6 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { _runCleanupDeps, cleanupRun } from "@/execution";
 import type { IPostRunAction, PostRunActionResult, PostRunContext } from "../../../../src/plugins/extensions";
 import type { RunCleanupOptions } from "../../../../src/execution/lifecycle/run-cleanup";
 import * as loggerModule from "../../../../src/logger";
@@ -34,6 +35,9 @@ function makePluginRegistry(actions: IPostRunAction[] = [], reporters: unknown[]
   const teardownAll = mock(async () => {});
   return {
     getPostRunActions: mock(() => actions),
+    getPostRunActionRegistrations: mock(() =>
+      actions.map((action) => ({ pluginName: `plugin-${action.name}`, action })),
+    ),
     getReporters: mock(() => reporters),
     teardownAll,
   } as unknown as import("../../../../src/plugins/registry").PluginRegistry;
@@ -53,6 +57,7 @@ function makeCleanupOptions(overrides: Partial<RunCleanupOptions> = {}): RunClea
     prdPath: "/tmp/test/.nax/features/my-feature/prd.json",
     branch: "feat/my-feature",
     version: "1.2.3",
+    hooks: { hooks: {} },
     ...overrides,
   };
 }
@@ -198,7 +203,7 @@ describe("cleanupRun — post-run action loop", () => {
       shouldRun: mock(async () => true),
       execute: mock(async () => { callOrder.push("action.execute"); return { success: true, message: "done" }; }),
     };
-    registry.getPostRunActions = mock(() => [action]) as typeof registry.getPostRunActions;
+    registry.getPostRunActionRegistrations = mock(() => [{ pluginName: "action-plugin", action }]);
 
     const opts = makeCleanupOptions({ pluginRegistry: registry });
     await cleanupRun(opts);
@@ -209,6 +214,74 @@ describe("cleanupRun — post-run action loop", () => {
     expect(reporterIdx).toBeGreaterThanOrEqual(0);
     expect(actionIdx).toBeGreaterThan(reporterIdx);
     expect(teardownIdx).toBeGreaterThan(actionIdx);
+  });
+});
+
+describe("cleanupRun — on-post-run-action hook", () => {
+  const originalFireHook = _runCleanupDeps.fireHook;
+
+  afterEach(() => {
+    _runCleanupDeps.fireHook = originalFireHook;
+  });
+
+  test.each([
+    ["succeeded", { success: true, message: "published", url: "https://example.com/result" }],
+    ["failed", { success: false, message: "connection refused" }],
+    ["skipped", { success: true, message: "nothing", skipped: true, reason: "no changes" }],
+  ] as const)("fires once with plugin metadata for a %s result", async (status, result) => {
+    const calls: Array<{ event: string; ctx: Record<string, unknown> }> = [];
+    _runCleanupDeps.fireHook = mock(async (_hooks, event, ctx) => {
+      calls.push({ event, ctx: ctx as unknown as Record<string, unknown> });
+    });
+    const action: IPostRunAction = {
+      name: "publisher",
+      description: "desc",
+      shouldRun: async () => true,
+      execute: async () => result,
+    };
+
+    await cleanupRun(makeCleanupOptions({ pluginRegistry: makePluginRegistry([action]) }));
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      event: "on-post-run-action",
+      ctx: { pluginName: "plugin-publisher", actionName: "publisher", status },
+    });
+  });
+
+  test("fires skipped when shouldRun is false and error when action evaluation throws", async () => {
+    const statuses: string[] = [];
+    _runCleanupDeps.fireHook = mock(async (_hooks, _event, ctx) => {
+      statuses.push(ctx.status ?? "");
+    });
+    const actions: IPostRunAction[] = [
+      { name: "skip", description: "desc", shouldRun: async () => false, execute: async () => ({ success: true, message: "x" }) },
+      { name: "error", description: "desc", shouldRun: async () => { throw new Error("boom"); }, execute: async () => ({ success: true, message: "x" }) },
+    ];
+
+    await cleanupRun(makeCleanupOptions({ pluginRegistry: makePluginRegistry(actions) }));
+
+    expect(statuses).toEqual(["skipped", "error"]);
+  });
+
+  test("a hook failure does not prevent the next post-run action", async () => {
+    const executed: string[] = [];
+    _runCleanupDeps.fireHook = mock(async () => {
+      throw new Error("hook crashed");
+    });
+    const actions: IPostRunAction[] = ["first", "second"].map((name) => ({
+      name,
+      description: "desc",
+      shouldRun: async () => true,
+      execute: async () => {
+        executed.push(name);
+        return { success: true, message: "ok" };
+      },
+    }));
+
+    await cleanupRun(makeCleanupOptions({ pluginRegistry: makePluginRegistry(actions) }));
+
+    expect(executed).toEqual(["first", "second"]);
   });
 });
 
@@ -409,6 +482,7 @@ describe("runner.ts — cleanupRun receives feature/prdPath/branch/version", () 
       prdPath: "/path/prd.json",
       branch: "feat/test",
       version: "1.0.0",
+      hooks: { hooks: {} },
     };
 
     expect(opts.feature).toBe("my-feature");
@@ -433,6 +507,7 @@ describe("runner.ts — cleanupRun receives feature/prdPath/branch/version", () 
     expect(cleanupBlock).toContain("prdPath");
     expect(cleanupBlock).toContain("branch");
     expect(cleanupBlock).toContain("version");
+    expect(cleanupBlock).toContain("hooks");
   });
 });
 

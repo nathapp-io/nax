@@ -106,6 +106,9 @@ function buildEnv(ctx: HookContext): Record<string, string> {
   if (ctx.model) env.NAX_MODEL = escapeEnvValue(ctx.model);
   if (ctx.agent) env.NAX_AGENT = escapeEnvValue(ctx.agent);
   if (ctx.iteration !== undefined) env.NAX_ITERATION = String(ctx.iteration);
+  if (ctx.pluginName) env.NAX_PLUGIN_NAME = escapeEnvValue(ctx.pluginName);
+  if (ctx.actionName) env.NAX_ACTION_NAME = escapeEnvValue(ctx.actionName);
+  if (ctx.url) env.NAX_RESULT_URL = escapeEnvValue(ctx.url);
 
   return env;
 }
