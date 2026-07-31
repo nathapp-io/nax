@@ -68,6 +68,24 @@ const mockTypecheckCheckOp = makePhaseOp("typecheck-check", "verify", "verifier"
 const mockSemanticReviewOp = makePhaseOp("semantic-review", "review", "reviewer-semantic");
 const mockAdversarialReviewOp = makePhaseOp("adversarial-review", "review", "reviewer-adversarial");
 
+// #1401 nbf fixtures — shared by both nbf describes below.
+const ADVISORY = {
+  source: "adversarial-review",
+  severity: "warning",
+  category: "style",
+  message: "advisory — seeds the nbf pass",
+} as unknown as Finding;
+
+/** The regression an nbf pass introduces: a test-runner failure with a stable identity. */
+const GATE_FAILURE = {
+  source: "test-runner",
+  severity: "error",
+  category: "",
+  message: "the regression the nbf pass introduced",
+  file: "test/integration/tdd/story-orchestrator-verdict.test.ts",
+  rule: "verifier session fails",
+} as unknown as Finding;
+
 const LINT_FINDING: Finding = {
   source: "lint",
   tool: "biome",
@@ -573,22 +591,6 @@ describe("orderGateLast — pure ordering helper", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale verifier pass (#1401)", () => {
-  const ADVISORY = {
-    source: "adversarial-review",
-    severity: "warning",
-    category: "style",
-    message: "advisory — seeds the nbf pass",
-  } as unknown as Finding;
-
-  const GATE_FAILURE = {
-    source: "test-runner",
-    severity: "error",
-    category: "",
-    message: "the regression the nbf pass introduced",
-    file: "test/integration/tdd/story-orchestrator-verdict.test.ts",
-    rule: "verifier session fails",
-  } as unknown as Finding;
-
   /** Gate + verifier + the cheap checks: the minimum to reproduce the stale read. */
   function makeRectifyState(strategies: unknown[] = []): Parameters<typeof runRectification>[1] {
     return {
@@ -705,6 +707,25 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
     expect(result.findings.some((f) => f.source === "test-runner")).toBe(false);
     expect((result as { shortCircuited?: boolean }).shortCircuited).toBe(false);
   });
+
+  // #1383 parity. `describeGateRegression` excludes already-quarantined keys from the
+  // blame set, so a known flake firing inside the revalidation window must KEEP the pass.
+  // Turning the carve-out off exposed the sweep to that same gate output, so the sweep has
+  // to apply the same exclusion — otherwise the flake seeds a fix attempt (and a test-code
+  // edit via full-suite-rectify) and the pass is discarded, reversing #1383.
+  test("nbf path: a failure the run already quarantined does NOT seed a fix attempt", async () => {
+    const ctx = makeCtx();
+    ctx.runtime.quarantineMemo.add(`${GATE_FAILURE.file}::${GATE_FAILURE.rule}`);
+
+    const phaseOutputs = greenBefore();
+    const { cycle, cycleCtx } = await captureNbfCycle(ctx, makeRectifyState(), phaseOutputs, nbfOverrides());
+
+    const result = await cycle.validate(cycleCtx, { mode: "full", strategiesRun: ["autofix-implementer"] });
+
+    // No blame ⇒ no finding ⇒ the cycle resolves and `keptTreeRegressed` (which excludes
+    // the same key) keeps the pass, exactly as it did before #1401.
+    expect(result.findings.some((f) => f.source === "test-runner")).toBe(false);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -717,22 +738,6 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("nbf regressionAttempts is actually spendable once the gate regression surfaces (#1401)", () => {
-  const ADVISORY = {
-    source: "adversarial-review",
-    severity: "warning",
-    category: "style",
-    message: "advisory — seeds the nbf pass",
-  } as unknown as Finding;
-
-  const GATE_FAILURE = {
-    source: "test-runner",
-    severity: "error",
-    category: "",
-    message: "the regression the nbf pass introduced",
-    file: "test/integration/tdd/story-orchestrator-verdict.test.ts",
-    rule: "verifier session fails",
-  } as unknown as Finding;
-
   test("a gate that stays red drives a SECOND fix attempt instead of exiting 'resolved' after one", async () => {
     const ctx = makeCtx();
 

@@ -80,6 +80,8 @@ Three deliberate limits:
 
 #### Amendment (2026-07-31, #1401): the verifier-SSOT carve-out does not apply to nbf
 
+> Subject is §4's budget; placed here because it builds directly on the #1383 amendment above.
+
 §4 promises "one best-effort fix plus `regressionAttempts` (default 1) ... to clear any
 regression the fix introduced". On any verifier-bearing (three-session) plan that budget was
 unreachable, so the code did not implement §4.
@@ -99,11 +101,31 @@ regressions it did not cause, and nbf never fails a story — it only chooses ke
 of its own edits. Blast radius is bounded by the §5 entry condition: nbf runs only when every
 phase output passes, gate included, so a red gate inside the pass is always newly introduced.
 
-One accepted cost: a *keyless* gate failure (timeout / execution-failure) now also seeds a
-finding, so the pass spends one repair attempt before restoring where it previously restored
-immediately. Bounded by `regressionAttempts`, and the alternative — special-casing keyless
-here — would re-create the same split-brain between what the cycle sees and what
-`describeGateRegression` sees.
+The considered alternative — "apply the carve-out only if the verifier re-ran within this
+sweep" — was rejected because it silently changes the main path too: `autofix-implementer`
+and `autofix-test-writer` deliberately exclude `verifier` from
+`STRATEGY_TO_REVALIDATION_PHASES`, so the verifier structurally cannot have re-run in most
+main-path sweeps either, and the carve-out would switch off there as a side effect.
+
+Because the sweep and `describeGateRegression` now both see the same gate output, they must
+agree on what counts as blame. The sweep therefore applies the **same quarantine-memo
+exclusion** (`isQuarantinedFlake`, sharing `gateFindingKey` with `gateFailureKeys`): a failure
+this run already quarantined seeds no finding, so #1383's "a known flake keeps the pass"
+outcome is preserved rather than being turned into a paid repair attempt on a flake — which,
+via `full-suite-rectify`, would have edited test code and then discarded the pass.
+
+Two consequences beyond the budget itself:
+
+- **`execution-failure` costs one attempt.** A gate that dies without structured results
+  emits the synthetic `"::"` finding, which now seeds the cycle, so the pass spends one repair
+  attempt before restoring where it previously restored immediately. Bounded by
+  `regressionAttempts`. *Timeout does not* — `full-suite-gate` returns `findings: []` there,
+  so the sweep short-circuits with nothing to fix and the pass still exits at iteration 1.
+- **Pre-existing failures the pass re-breaks are now visible.** `describeGateRegression`
+  exempts keys in the verifier-time baseline (`preRectGateFailureKeys`), but the sweep has no
+  baseline. Such a failure previously stayed hidden and the pass was kept with a red gate;
+  it now earns a repair attempt and is restored if the repair fails. Strictly safer, but it
+  is an outcome change, recorded here rather than treated as a pure bug fix.
 
 ### 4. Bounded, transactional
 

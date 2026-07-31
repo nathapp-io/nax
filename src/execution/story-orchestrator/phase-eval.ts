@@ -113,9 +113,34 @@ export function gateFailureKeys(gateOutput: unknown): Set<string> {
   for (const f of extractPhaseFindings(gateOutput)) {
     if (f.source !== "test-runner") continue;
     if (f.category === "flaky-test") continue;
-    keys.add(`${f.file ?? ""}::${f.rule ?? ""}`);
+    keys.add(gateFindingKey(f));
   }
   return keys;
+}
+
+/**
+ * Identity key for a single gate test-failure finding: `file::rule`.
+ *
+ * SSOT for every consumer that has to decide "is this the same failure?" — baseline
+ * diffing here, and quarantine-memo exclusion in both `describeGateRegression` and the
+ * rectification validate sweep. Extracted because those consumers must agree: when the
+ * sweep computed membership differently from the keep-decision that consumes its verdict,
+ * a known flake could seed a fix attempt that the keep-decision would have ignored (#1401).
+ */
+export function gateFindingKey(finding: Finding): string {
+  return `${finding.file ?? ""}::${finding.rule ?? ""}`;
+}
+
+/**
+ * True when this finding is a test failure the run has already quarantined as a flake.
+ *
+ * Mirrors the exclusion `describeGateRegression` applies before assigning blame, so a
+ * consumer that filters findings and a consumer that diffs keys reach the same verdict
+ * about the same gate output.
+ */
+export function isQuarantinedFlake(finding: Finding, quarantineMemo: QuarantineMemo | undefined): boolean {
+  if (finding.source !== "test-runner") return false;
+  return quarantineMemo?.has(gateFindingKey(finding)) === true;
 }
 
 /**

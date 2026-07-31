@@ -3,7 +3,7 @@ import { getSafeLogger } from "@/logger";
 import type { CallContext, Operation, RunOperation } from "@/operations";
 import { countOscillationOutcomes, recordOscillations } from "../oscillation-store";
 import { extractPhaseFindings, orderGateLast, phasesToRevalidate } from "./phase-eval";
-import { phaseExplicitlyPassed, phasePassed } from "./phase-eval";
+import { isQuarantinedFlake, phaseExplicitlyPassed, phasePassed } from "./phase-eval";
 import { _storyOrchestratorDeps, runPhase, withIncreasingFailuresBail } from "./run-phase";
 import type { AnySlot, InternalBuildState, InternalPhase, RectificationOverrides, RectificationResult } from "./types";
 import { EXHAUSTED_EXIT_REASONS } from "./types";
@@ -337,7 +337,23 @@ export async function runRectification(
         await runPhase(ctx, phase.slot, phaseCosts, phaseOutputs);
         if (shouldSkipPhaseForRectification({ phase, state, phaseOutputs, nbfPath })) continue;
         const output = phaseOutputs[phase.slot.op.name];
-        findings.push(...extractPhaseFindings(output));
+        // #1383 parity. `describeGateRegression` — the predicate that actually decides
+        // keep-vs-discard for this pass — excludes failures the run already quarantined as
+        // flakes. Until #1401 the carve-out hid the whole gate output from the nbf sweep, so
+        // the cycle never had to agree with it; now it does. Without this filter a known
+        // flake firing inside the revalidation window would buy an agent session to "fix" it
+        // (via `full-suite-rectify`, which edits TEST code) and then discard a pass the
+        // keep-decision would have kept — silently walking back #1383.
+        //
+        // nbf-scoped: the main path reaches the same place differently (triage runs there and
+        // relabels quarantined failures to `flaky-test`, which `gatherRectificationFindings`
+        // already drops), so widening this would be an unrelated behaviour change.
+        const phaseFindings = extractPhaseFindings(output);
+        findings.push(
+          ...(nbfPath
+            ? phaseFindings.filter((f) => !isQuarantinedFlake(f, ctx.runtime.quarantineMemo))
+            : phaseFindings),
+        );
         // Mirror the main loop's halt-on-failure contract (spec §2C, PR #1127):
         // verifier and reviews must never judge broken-gate code, even inside the
         // rectification revalidation sweep. Findings collected so far feed the next
