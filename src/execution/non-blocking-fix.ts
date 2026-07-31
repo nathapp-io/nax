@@ -256,23 +256,12 @@ export async function runNonBlockingFix(
       // `restoreToSnapshot` clears `phaseOutputs` (so the gate's rawOutput goes with it)
       // and `rollbackToRef` hard-resets the offending edit, leaving `git reflog` with
       // only the destination. Without this record the revert is unattributable (#1382).
-      logger?.info("non-blocking-fix", "kept tree regressed the full-suite gate — restoring (ADR-024 §3)", {
-        storyId: args.storyId,
-        regressedKeys: gateVerdict.regressedKeys.slice(0, MAX_LOGGED_REGRESSED_KEYS),
-        regressedKeyCount: gateVerdict.regressedKeys.length,
-        baselineKeySize: gateVerdict.baselineKeySize,
-        // True ⇒ timeout / execution-failure, so `regressedKeys` is empty because there
-        // was no identity to capture, NOT because nothing regressed.
-        keyless: gateVerdict.keyless,
-        // Failures excluded as already-quarantined flakes (#1383).
-        memoExcludedKeyCount: gateVerdict.memoExcludedKeys.length,
-        // Stated, not computed: this pass's revalidation gate is never flake-triaged —
-        // triage owns the main gate path only (`rectification.ts`, the non-override
-        // branch). So a FIRST-observation flake inside the revalidation window still
-        // reads as a regression here, and an operator must be able to see that was
-        // possible rather than infer a real break (#1383 option 3).
-        flakeTriageRan: false,
-      });
+      logGateRegression(
+        logger,
+        args.storyId,
+        "kept tree regressed the full-suite gate — restoring (ADR-024 §3)",
+        gateVerdict,
+      );
       return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
     }
     // Enforce sourceDiffCap over the post-pass snapshot. A pass whose source
@@ -303,7 +292,63 @@ export async function runNonBlockingFix(
     return { ran: true, kept: true, restored: false };
   }
 
+  // #1382 parity on the exhausted path. Before #1401 the gate's regression was hidden
+  // from the cycle, so a gate-red pass always exited "resolved" and the identity log
+  // above was the only one that could fire. Now the cycle can see that regression and
+  // spend `regressionAttempts` on it — and when the repair fails, the restore arrives
+  // HERE instead, where the identities were never named. Without this the richer
+  // diagnostic disappears in exactly the case an operator most needs it: a regression
+  // real enough to survive a repair attempt. Read-only — `describeGateRegression` diffs
+  // key sets already in `phaseOutputs` and re-runs nothing.
+  //
+  // Also reached when `runRectify` THREW (above), where `phaseOutputs` may hold a
+  // half-finished sweep. The verdict is log-only and the restore happens regardless, so a
+  // partial read is harmless — but the keys named on that path describe an aborted
+  // validation, not a completed one.
+  const exhaustedGateVerdict = args.keptTreeRegressed?.();
+  if (exhaustedGateVerdict?.regressed) {
+    logGateRegression(
+      logger,
+      args.storyId,
+      "best-effort fix exhausted with the full-suite gate red",
+      exhaustedGateVerdict,
+    );
+  }
+
   return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
+}
+
+/**
+ * Emit the #1382 regression evidence: which test identities the pass is being blamed for.
+ *
+ * Shared by both restore paths — the gate-regressed keep-decision and the exhausted tail —
+ * because they must report the same fields. `flakeTriageRan` in particular is stated, not
+ * computed, and two hardcoded copies would drift the moment #1383's triage lands.
+ */
+function logGateRegression(
+  logger: ReturnType<typeof getSafeLogger>,
+  storyId: string,
+  message: string,
+  verdict: GateRegressionDetail,
+): void {
+  logger?.info("non-blocking-fix", message, {
+    storyId,
+    regressedKeys: verdict.regressedKeys.slice(0, MAX_LOGGED_REGRESSED_KEYS),
+    regressedKeyCount: verdict.regressedKeys.length,
+    baselineKeySize: verdict.baselineKeySize,
+    // True ⇒ execution-failure (or timeout, which yields no findings at all), so
+    // `regressedKeys` is empty because there was no identity to capture, NOT because
+    // nothing regressed.
+    keyless: verdict.keyless,
+    // Failures excluded as already-quarantined flakes (#1383).
+    memoExcludedKeyCount: verdict.memoExcludedKeys.length,
+    // Stated, not computed: this pass's revalidation gate is never flake-triaged — triage
+    // owns the main gate path only (`rectification.ts`, the non-override branch). So a
+    // FIRST-observation flake inside the revalidation window still reads as a regression,
+    // and an operator must be able to see that was possible rather than infer a real
+    // break (#1383 option 3).
+    flakeTriageRan: false,
+  });
 }
 
 async function restoreToSnapshot(

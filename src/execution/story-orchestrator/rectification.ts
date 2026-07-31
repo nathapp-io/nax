@@ -3,10 +3,34 @@ import { getSafeLogger } from "@/logger";
 import type { CallContext, Operation, RunOperation } from "@/operations";
 import { countOscillationOutcomes, recordOscillations } from "../oscillation-store";
 import { extractPhaseFindings, orderGateLast, phasesToRevalidate } from "./phase-eval";
-import { phaseExplicitlyPassed, phasePassed } from "./phase-eval";
+import { isQuarantinedFlake, phaseExplicitlyPassed, phasePassed } from "./phase-eval";
 import { _storyOrchestratorDeps, runPhase, withIncreasingFailuresBail } from "./run-phase";
 import type { AnySlot, InternalBuildState, InternalPhase, RectificationOverrides, RectificationResult } from "./types";
 import { EXHAUSTED_EXIT_REASONS } from "./types";
+
+/** Inputs to `shouldSkipPhaseForRectification`. Options object — the convention caps positional params at three. */
+export interface SkipPhaseForRectificationInput {
+  phase: InternalPhase;
+  state: InternalBuildState;
+  phaseOutputs: Record<string, unknown>;
+  /**
+   * True on the ADR-024 nbf revalidation sweep, where the carve-out must NOT apply (#1401).
+   *
+   * Two reasons. First, correctness: `phasesToRevalidate` orders the gate BEFORE the
+   * verifier, so at this point `phaseOutputs[verifier]` still holds the verifier's
+   * PRE-rectification pass. Reading it would exempt the gate on stale evidence — the
+   * verifier has not yet judged the tree the nbf pass just edited.
+   *
+   * Second, the policy has nothing to protect here. The carve-out exists so a story is
+   * not rolled back over regressions it did not cause; nbf never fails a story, it only
+   * chooses keep-vs-discard of its own edits, and `runNonBlockingFix` reads the same gate
+   * output RAW (`describeGateRegression`) to make that choice. Hiding the failure from the
+   * cycle therefore changed nothing about the outcome — it only forfeited the
+   * `regressionAttempts` repair budget and let the sweep spend a verifier session on a
+   * tree that was already condemned.
+   */
+  nbfPath?: boolean;
+}
 
 /**
  * Verifier-as-SSOT: when the verifier explicitly passed, full-suite-gate
@@ -14,12 +38,10 @@ import { EXHAUSTED_EXIT_REASONS } from "./types";
  * Excluded from rectification (mirrors the carve-out in ExecutionPlan.run
  * success aggregation and post-run.ts:deriveFailureCategory).
  */
-export function shouldSkipPhaseForRectification(
-  phase: InternalPhase,
-  state: InternalBuildState,
-  phaseOutputs: Record<string, unknown>,
-): boolean {
+export function shouldSkipPhaseForRectification(input: SkipPhaseForRectificationInput): boolean {
+  const { phase, state, phaseOutputs, nbfPath } = input;
   if (phase.kind !== "full-suite-gate") return false;
+  if (nbfPath) return false;
   const verifierName = state.verifier?.slot.op.name;
   if (!verifierName) return false;
   return phaseExplicitlyPassed(phaseOutputs[verifierName]);
@@ -32,7 +54,9 @@ export function gatherRectificationFindings(
 ): Finding[] {
   const findings: Finding[] = [];
   for (const phase of phases) {
-    if (shouldSkipPhaseForRectification(phase, state, phaseOutputs)) continue;
+    // Seed-gathering runs only on the main path (the nbf path seeds from
+    // `overrides.initialFindings`), so the carve-out always applies here.
+    if (shouldSkipPhaseForRectification({ phase, state, phaseOutputs })) continue;
     for (const f of extractPhaseFindings(phaseOutputs[phase.slot.op.name])) {
       // Quarantined flakes (category === "flaky-test") are NOT actionable — the
       // story didn't cause them. Excluding them here keeps them out of the fix
@@ -195,7 +219,14 @@ export async function runRectification(
   }
 
   let initialFindings: Finding[];
+  // The ADR-024 nbf discriminator, assigned by the branch below rather than re-tested
+  // from `overrides` — the two must never be able to disagree about which path is
+  // running. Seeded findings are what distinguishes the best-effort pass from the main
+  // rectification loop, so this is also the SSOT for the behaviours that differ: no
+  // flake triage (#1383), and no verifier-SSOT carve-out in the validate sweep (#1401).
+  let nbfPath = false;
   if (overrides?.initialFindings) {
+    nbfPath = true;
     // ADR-024 nbf path — triage is a separate concern owned by the main gate path.
     //
     // This branch is what `runNonBlockingFix`'s restore log asserts as
@@ -281,14 +312,18 @@ export async function runRectification(
       // saving that motivated lite mode), and when everything cheaper is green
       // the gate is re-run to validate the fix.
       //
-      // Caveat — the verifier-SSOT carve-out still applies: when a verifier ran
-      // and passed, `shouldSkipPhaseForRectification` discards the gate's finding
-      // (unrelated-regression policy, lines ~430), so in that case the gate is
+      // Caveat — on the MAIN path the verifier-SSOT carve-out still applies: when a
+      // verifier ran and passed, `shouldSkipPhaseForRectification` discards the gate's
+      // finding (unrelated-regression policy, lines ~430), so in that case the gate is
       // dispatched (validating the just-applied fix per Q1) but does NOT block
       // "resolved". The gate is the decisive arbiter only when no passing
       // verifier overrides it (single-session, or a failed/absent verifier).
       // Session-agnostic — also covers a single-session per-story
       // full-suite-gate; verify-scoped was never skipped and is unaffected.
+      //
+      // On the nbf path the carve-out is OFF (#1401): the verifier output in scope is
+      // pre-rectification, and nbf discards its own tree on gate red regardless — see
+      // `SkipPhaseForRectificationInput.nbfPath`.
       const phases = lite ? orderGateLast(selectedWithExtra) : selectedWithExtra;
       getSafeLogger()?.debug("story-orchestrator", "rectification validate scope", {
         storyId: ctx.storyId,
@@ -300,9 +335,25 @@ export async function runRectification(
       let shortCircuited = false;
       for (const phase of phases) {
         await runPhase(ctx, phase.slot, phaseCosts, phaseOutputs);
-        if (shouldSkipPhaseForRectification(phase, state, phaseOutputs)) continue;
+        if (shouldSkipPhaseForRectification({ phase, state, phaseOutputs, nbfPath })) continue;
         const output = phaseOutputs[phase.slot.op.name];
-        findings.push(...extractPhaseFindings(output));
+        // #1383 parity. `describeGateRegression` — the predicate that actually decides
+        // keep-vs-discard for this pass — excludes failures the run already quarantined as
+        // flakes. Until #1401 the carve-out hid the whole gate output from the nbf sweep, so
+        // the cycle never had to agree with it; now it does. Without this filter a known
+        // flake firing inside the revalidation window would buy an agent session to "fix" it
+        // (via `full-suite-rectify`, which edits TEST code) and then discard a pass the
+        // keep-decision would have kept — silently walking back #1383.
+        //
+        // nbf-scoped: the main path reaches the same place differently (triage runs there and
+        // relabels quarantined failures to `flaky-test`, which `gatherRectificationFindings`
+        // already drops), so widening this would be an unrelated behaviour change.
+        const phaseFindings = extractPhaseFindings(output);
+        findings.push(
+          ...(nbfPath
+            ? phaseFindings.filter((f) => !isQuarantinedFlake(f, ctx.runtime.quarantineMemo))
+            : phaseFindings),
+        );
         // Mirror the main loop's halt-on-failure contract (spec §2C, PR #1127):
         // verifier and reviews must never judge broken-gate code, even inside the
         // rectification revalidation sweep. Findings collected so far feed the next

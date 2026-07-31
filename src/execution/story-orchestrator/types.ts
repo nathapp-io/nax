@@ -199,7 +199,16 @@ export const STRATEGY_TO_REVALIDATION_PHASES: Record<string, readonly PhaseKind[
  * blocking-cycle behavior exactly.
  */
 export interface RectificationOverrides {
-  /** Seed findings instead of gatherRectificationFindings(...). */
+  /**
+   * Seed findings instead of `gatherRectificationFindings(...)`.
+   *
+   * Load-bearing beyond seeding: setting this field IS the ADR-024 nbf discriminator, and
+   * `runRectification` derives two further behaviours from it — flake triage is skipped
+   * (#1383) and the verifier-SSOT carve-out is disabled in the validate sweep, with the
+   * quarantine-memo exclusion applied there instead (#1401). A caller that seeds findings
+   * for some other reason inherits all three. `ExecutionPlan.run`'s nbf branch is currently
+   * the only such caller; a second one should promote this to an explicit flag.
+   */
   initialFindings?: readonly Finding[];
   /** Strategy set instead of state.rectification.strategies (scope filtering). */
   strategies?: FixStrategy<Finding, unknown, unknown, unknown>[];

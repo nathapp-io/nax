@@ -78,6 +78,55 @@ Three deliberate limits:
   bounded by the memo only ever holding tests a probe showed to be non-deterministic on an
   earlier tree.
 
+#### Amendment (2026-07-31, #1401): the verifier-SSOT carve-out does not apply to nbf
+
+> Subject is §4's budget; placed here because it builds directly on the #1383 amendment above.
+
+§4 promises "one best-effort fix plus `regressionAttempts` (default 1) ... to clear any
+regression the fix introduced". On any verifier-bearing (three-session) plan that budget was
+unreachable, so the code did not implement §4.
+
+`phasesToRevalidate` orders `full-suite-gate` before `verifier` in the sweep, so when the
+verifier-SSOT carve-out was evaluated `phaseOutputs[verifier]` still held the verifier's
+*pre-rectification* pass. On the nbf path that stale green made the carve-out skip the gate,
+which both discarded the regression the pass had just introduced — the cycle then exited
+"resolved" on iteration 1 and never requested the repair — and bypassed the halt-on-failure
+short-circuit, so lint, typecheck and a full verifier session ran against a red gate.
+`runNonBlockingFix` read the same gate output raw and restored anyway.
+
+The carve-out is therefore **off on the nbf path** (`shouldSkipPhaseForRectification`'s
+`nbfPath` input, derived from the same `overrides.initialFindings` branch that governs the
+triage skip above). Rationale: the carve-out exists so a story is not rolled back over
+regressions it did not cause, and nbf never fails a story — it only chooses keep-vs-discard
+of its own edits. Blast radius is bounded by the §5 entry condition: nbf runs only when every
+phase output passes, gate included, so a red gate inside the pass is always newly introduced.
+
+The considered alternative — "apply the carve-out only if the verifier re-ran within this
+sweep" — was rejected because it silently changes the main path too: `autofix-implementer`
+and `autofix-test-writer` deliberately exclude `verifier` from
+`STRATEGY_TO_REVALIDATION_PHASES`, so the verifier structurally cannot have re-run in most
+main-path sweeps either, and the carve-out would switch off there as a side effect.
+
+Because the sweep and `describeGateRegression` now both see the same gate output, they must
+agree on what counts as blame. The sweep therefore applies the **same quarantine-memo
+exclusion** (`isQuarantinedFlake`, sharing `gateFindingKey` with `gateFailureKeys`): a failure
+this run already quarantined seeds no finding, so #1383's "a known flake keeps the pass"
+outcome is preserved rather than being turned into a paid repair attempt on a flake — which,
+via `full-suite-rectify`, would have edited test code and then discarded the pass.
+
+Two consequences beyond the budget itself:
+
+- **`execution-failure` costs one attempt.** A gate that dies without structured results
+  emits the synthetic `"::"` finding, which now seeds the cycle, so the pass spends one repair
+  attempt before restoring where it previously restored immediately. Bounded by
+  `regressionAttempts`. *Timeout does not* — `full-suite-gate` returns `findings: []` there,
+  so the sweep short-circuits with nothing to fix and the pass still exits at iteration 1.
+- **Pre-existing failures the pass re-breaks are now visible.** `describeGateRegression`
+  exempts keys in the verifier-time baseline (`preRectGateFailureKeys`), but the sweep has no
+  baseline. Such a failure previously stayed hidden and the pass was kept with a red gate;
+  it now earns a repair attempt and is restored if the repair fails. Strictly safer, but it
+  is an outcome change, recorded here rather than treated as a pure bug fix.
+
 ### 4. Bounded, transactional
 
 One best-effort fix plus `regressionAttempts` (default 1) source/test fix attempts to clear any regression the fix introduced. The whole pass is a single transaction.
