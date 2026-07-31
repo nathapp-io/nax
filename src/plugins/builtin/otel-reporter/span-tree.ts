@@ -124,7 +124,15 @@ export interface PhaseMetricsAggregator {
   /** Record a `story:escalated` event for `nax.escalations`, tagged with `to_tier`. */
   recordEscalation(toTier: string, count: number): void;
   /** Build the OTLP ResourceMetrics payload for everything recorded so far. */
-  buildMetricsPayload(serviceName: string, runId: string, timeUnixNano: string): object;
+  buildMetricsPayload(
+    serviceName: string,
+    runId: string,
+    timeUnixNano: string,
+    feature?: string,
+    project?: string,
+    gitBranch?: string,
+    gitSha?: string,
+  ): object;
 }
 
 /** Accumulates phase telemetry into bounded-cardinality OTLP metric data points. */
@@ -166,7 +174,15 @@ export function createPhaseMetricsAggregator(): PhaseMetricsAggregator {
     bumpCounter(escalations, [attr("to_tier", toTier)], count);
   }
 
-  function buildMetricsPayload(serviceName: string, runId: string, timeUnixNano: string): object {
+  function buildMetricsPayload(
+    serviceName: string,
+    runId: string,
+    timeUnixNano: string,
+    feature?: string,
+    project?: string,
+    gitBranch?: string,
+    gitSha?: string,
+  ): object {
     const groups = [...phaseGroups.values()];
     const counterMetric = (name: string, source: Map<string, CounterGroup>) => ({
       name,
@@ -202,7 +218,15 @@ export function createPhaseMetricsAggregator(): PhaseMetricsAggregator {
     return {
       resourceMetrics: [
         {
-          resource: { attributes: buildResourceAttributes({ serviceName, runId }) },
+          resource: {
+            attributes: buildResourceAttributes({
+              serviceName,
+              runId,
+              feature,
+              project,
+              git: { branch: gitBranch, sha: gitSha },
+            }),
+          },
           scopeMetrics: [{ scope: { name: "nax" }, metrics }],
         },
       ],

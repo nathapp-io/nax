@@ -3,7 +3,7 @@
   "feature": "otlp-logs-exporter",
   "branchName": "feat/otlp-logs-exporter",
   "createdAt": "2026-07-31T12:03:10+08:00",
-  "updatedAt": "2026-07-31T04:26:10.933Z",
+  "updatedAt": "2026-07-31T04:57:20.771Z",
   "userStories": [
     {
       "id": "US-001",
@@ -30,8 +30,8 @@
         "observability"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -82,8 +82,8 @@
         "observability"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -95,7 +95,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/plugins/builtin/otel-reporter/otlp.ts",
@@ -104,7 +106,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "55dd80ab08623a470da20cc87d30124fdba7dfff"
     },
     {
       "id": "US-003",
@@ -141,7 +144,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-balanced",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/plugins/builtin/otel-reporter/otlp.ts",
@@ -152,7 +157,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0b12e2120cd91eaac497401eba1dc61b5d294fe9"
     },
     {
       "id": "US-004",

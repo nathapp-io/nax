@@ -106,6 +106,9 @@ export interface TracesInput {
   endUnixNano: string;
   feature: string;
   runId: string;
+  project?: string;
+  gitBranch?: string;
+  gitSha?: string;
   storySummary: StorySummary;
   totalCost: number;
   events: SpanEvent[];
@@ -138,7 +141,18 @@ export function buildTracesPayload(p: TracesInput): object {
   return {
     resourceSpans: [
       {
-        resource: { attributes: [attr("service.name", p.serviceName)] },
+        resource: {
+          attributes: buildResourceAttributes({
+            serviceName: p.serviceName,
+            runId: p.runId,
+            feature: p.feature,
+            project: p.project,
+            git: {
+              branch: p.gitBranch,
+              sha: p.gitSha,
+            },
+          }),
+        },
         scopeSpans: [{ scope: { name: "nax" }, spans: [span, ...(p.extraSpans ?? [])] }],
       },
     ],
@@ -149,6 +163,10 @@ export interface MetricsInput {
   serviceName: string;
   runId: string;
   timeUnixNano: string;
+  feature?: string;
+  project?: string;
+  gitBranch?: string;
+  gitSha?: string;
   storySummary: StorySummary;
   totalCost: number;
   totalDurationMs: number;
@@ -176,7 +194,18 @@ export function buildMetricsPayload(p: MetricsInput): object {
   return {
     resourceMetrics: [
       {
-        resource: { attributes: [attr("service.name", p.serviceName)] },
+        resource: {
+          attributes: buildResourceAttributes({
+            serviceName: p.serviceName,
+            runId: p.runId,
+            feature: p.feature,
+            project: p.project,
+            git: {
+              branch: p.gitBranch,
+              sha: p.gitSha,
+            },
+          }),
+        },
         scopeMetrics: [
           {
             scope: { name: "nax" },

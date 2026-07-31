@@ -1,11 +1,20 @@
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { getSafeLogger } from "@/logger";
 import type { EscalationEvent, IReporter, NaxPlugin, RunEndEvent } from "@/plugins/types";
+import { gitWithTimeout } from "@/utils/git";
 import { type PostJsonDeps, interpolateHeaders, postJson } from "../reporter-shared";
 import { type BatchQueue, createBatchQueue } from "./batch-queue";
 import { type Heartbeat, type HeartbeatSnapshot, buildHeartbeatMetricsPayload, startHeartbeat } from "./heartbeat";
 import { newSpanId, newTraceId } from "./ids";
-import { type SpanEvent, attr, buildMetricsPayload, buildTracesPayload, msToUnixNano } from "./otlp";
+import {
+  type KeyValue,
+  type SpanEvent,
+  attr,
+  buildMetricsPayload,
+  buildResourceAttributes,
+  buildTracesPayload,
+  msToUnixNano,
+} from "./otlp";
 import {
   type PhaseMetricsAggregator,
   type Span,
@@ -35,6 +44,8 @@ interface RunState {
   startMs: number;
   feature: string;
   project: string;
+  gitBranch?: string;
+  gitSha?: string;
   events: SpanEvent[];
   spanTree: SpanTree;
   spanQueue: BatchQueue<Span>;
@@ -120,35 +131,43 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
   let tornDown = false;
 
   /** Incremental export for phase spans (US-006) — a standalone traces POST per batch, no root span. */
-  const sendSpanBatch = async (batch: Span[]): Promise<boolean> => {
-    if (!base || batch.length === 0) return true;
-    const { resolved, missing } = interpolateHeaders(cfg.headers);
-    if (missing.length > 0) {
-      getSafeLogger()?.warn(STAGE, "Skipping OTLP export — unresolved env vars", { missing });
-      return true; // not a transient failure — don't burn a batch-queue retry
-    }
-    const payload = {
-      resourceSpans: [
-        {
-          resource: { attributes: [attr("service.name", cfg.serviceName)] },
-          scopeSpans: [{ scope: { name: "nax" }, spans: batch }],
-        },
-      ],
+  const makeSendSpanBatch =
+    (resourceAttrs: KeyValue[]): ((batch: Span[]) => Promise<boolean>) =>
+    async (batch: Span[]): Promise<boolean> => {
+      if (!base || batch.length === 0) return true;
+      const { resolved, missing } = interpolateHeaders(cfg.headers);
+      if (missing.length > 0) {
+        getSafeLogger()?.warn(STAGE, "Skipping OTLP export — unresolved env vars", { missing });
+        return true; // not a transient failure — don't burn a batch-queue retry
+      }
+      const payload = {
+        resourceSpans: [
+          {
+            resource: { attributes: resourceAttrs },
+            scopeSpans: [{ scope: { name: "nax" }, spans: batch }],
+          },
+        ],
+      };
+      return postJson(`${base}/v1/traces`, payload, {
+        headers: resolved,
+        timeoutMs: cfg.timeoutMs,
+        stage: STAGE,
+        deps,
+      });
     };
-    return postJson(`${base}/v1/traces`, payload, { headers: resolved, timeoutMs: cfg.timeoutMs, stage: STAGE, deps });
-  };
 
-  const makeSpanQueue = (): BatchQueue<Span> =>
+  const makeSpanQueue = (resourceAttrs: KeyValue[]): BatchQueue<Span> =>
     createBatchQueue<Span>({
       maxBatchSize: cfg.maxBatchSize ?? DEFAULT_MAX_BATCH_SIZE,
       flushIntervalMs: cfg.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS,
       maxQueueSize: cfg.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE,
-      send: sendSpanBatch,
+      send: makeSendSpanBatch(resourceAttrs),
     });
 
   /** Best-effort run state for an `onRunEnd` with no preceding `onRunStart` (US-008 AC16). */
   const buildOrphanState = (startMs: number): RunState => {
     const identity = rootSpanIdentity();
+    const orphanAttrs = buildResourceAttributes({ serviceName: cfg.serviceName, runId: "orphan" });
     return {
       ...identity,
       startMs,
@@ -156,7 +175,7 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
       project: "",
       events: [],
       spanTree: createSpanTree(identity.traceId, identity.spanId),
-      spanQueue: makeSpanQueue(),
+      spanQueue: makeSpanQueue(orphanAttrs),
       metrics: createPhaseMetricsAggregator(),
       storyBounds: new Map(),
       costUsd: 0,
@@ -196,6 +215,9 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
       startUnixNano,
       endUnixNano,
       feature: st.feature,
+      project: st.project,
+      gitBranch: st.gitBranch,
+      gitSha: st.gitSha,
       runId: e.runId,
       storySummary: e.storySummary,
       totalCost: e.totalCost,
@@ -205,13 +227,25 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
       serviceName: cfg.serviceName,
       runId: e.runId,
       timeUnixNano: endUnixNano,
+      feature: st.feature,
+      project: st.project,
+      gitBranch: st.gitBranch,
+      gitSha: st.gitSha,
       storySummary: e.storySummary,
       totalCost: e.totalCost,
       totalDurationMs: e.totalDurationMs,
     }) as { resourceMetrics: [{ scopeMetrics: [{ metrics: object[] }] }] };
     // US-007: merge the run's accumulated phase histograms + counters into the
     // same metrics POST (SEAM-5) rather than issuing a third export request.
-    const aggMetrics = st.metrics.buildMetricsPayload(cfg.serviceName, e.runId, endUnixNano) as {
+    const aggMetrics = st.metrics.buildMetricsPayload(
+      cfg.serviceName,
+      e.runId,
+      endUnixNano,
+      st.feature,
+      st.project,
+      st.gitBranch,
+      st.gitSha,
+    ) as {
       resourceMetrics: [{ scopeMetrics: [{ metrics: object[] }] }];
     };
     metrics.resourceMetrics[0].scopeMetrics[0].metrics.push(...aggMetrics.resourceMetrics[0].scopeMetrics[0].metrics);
@@ -225,14 +259,49 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
     async onRunStart(event) {
       const identity = rootSpanIdentity();
       const runId = event.runId;
+
+      let gitBranch: string | undefined;
+      let gitSha: string | undefined;
+      const workdir = (cfg as Record<string, unknown>).workdir as string | undefined;
+      if (workdir) {
+        try {
+          const branchResult = await gitWithTimeout(["rev-parse", "--abbrev-ref", "HEAD"], workdir);
+          if (branchResult.exitCode === 0) {
+            const branch = branchResult.stdout.trim();
+            if (branch && branch !== "HEAD") gitBranch = branch;
+          }
+        } catch {
+          // best-effort — omit nax.git.branch
+        }
+        try {
+          const shaResult = await gitWithTimeout(["rev-parse", "HEAD"], workdir);
+          if (shaResult.exitCode === 0) {
+            const sha = shaResult.stdout.trim();
+            if (sha) gitSha = sha;
+          }
+        } catch {
+          // best-effort — omit nax.git.sha
+        }
+      }
+
+      const resourceAttrs = buildResourceAttributes({
+        serviceName: cfg.serviceName,
+        runId,
+        feature: event.feature,
+        project: event.project,
+        git: { branch: gitBranch, sha: gitSha },
+      });
+
       const state: RunState = {
         ...identity,
         startMs: Date.parse(event.startTime),
         feature: event.feature,
         project: event.project ?? "",
+        gitBranch,
+        gitSha,
         events: [],
         spanTree: createSpanTree(identity.traceId, identity.spanId),
-        spanQueue: makeSpanQueue(),
+        spanQueue: makeSpanQueue(resourceAttrs),
         metrics: createPhaseMetricsAggregator(),
         storyBounds: new Map(),
         costUsd: 0,
