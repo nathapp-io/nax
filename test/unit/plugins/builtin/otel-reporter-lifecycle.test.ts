@@ -63,58 +63,62 @@ describe("otel-reporter heartbeat", () => {
     const plugin = createOtelReporterPlugin({ ...baseCfg, heartbeatIntervalMs: 40 }, deps);
     const r = plugin.extensions.reporter!;
 
-    await r.onRunStart?.({
-      runId: "hb1",
-      feature: "f",
-      totalStories: 2,
-      startTime: new Date().toISOString(),
-      project: "nax-proj",
-    });
-    await r.onPhaseComplete?.({
-      runId: "hb1",
-      scope: "story",
-      storyId: "s1",
-      phase: "test-writer",
-      outcome: "passed",
-      durationMs: 10,
-      costUsd: 0.05,
-      tier: "fast",
-      testStrategy: "tdd-simple",
-    });
-    await r.onPhaseComplete?.({
-      runId: "hb1",
-      scope: "story",
-      storyId: "s2",
-      phase: "implementer",
-      outcome: "passed",
-      durationMs: 10,
-      costUsd: 0.07,
-      tier: "balanced",
-      testStrategy: "tdd-simple",
-    });
+    try {
+      await r.onRunStart?.({
+        runId: "hb1",
+        feature: "f",
+        totalStories: 2,
+        startTime: new Date().toISOString(),
+        project: "nax-proj",
+      });
+      await r.onPhaseComplete?.({
+        runId: "hb1",
+        scope: "story",
+        storyId: "s1",
+        phase: "test-writer",
+        outcome: "passed",
+        durationMs: 10,
+        costUsd: 0.05,
+        tier: "fast",
+        testStrategy: "tdd-simple",
+      });
+      await r.onPhaseComplete?.({
+        runId: "hb1",
+        scope: "story",
+        storyId: "s2",
+        phase: "implementer",
+        outcome: "passed",
+        durationMs: 10,
+        costUsd: 0.07,
+        tier: "balanced",
+        testStrategy: "tdd-simple",
+      });
 
-    await sleep(200); // > heartbeatIntervalMs (40ms)
+      await sleep(200); // > heartbeatIntervalMs (40ms)
 
-    const hbPosts = metricsPosts(posts);
-    expect(hbPosts.length).toBeGreaterThan(0); // AC1
+      const hbPosts = metricsPosts(posts);
+      expect(hbPosts.length).toBeGreaterThan(0); // AC1
 
-    const metrics = hbPosts[0].body.resourceMetrics[0].scopeMetrics[0].metrics;
-    const active = findMetric(metrics, "nax.run.active");
-    const elapsed = findMetric(metrics, "nax.run.phase_elapsed_ms");
-    const cost = findMetric(metrics, "nax.run.cost_usd");
+      const metrics = hbPosts[0].body.resourceMetrics[0].scopeMetrics[0].metrics;
+      const active = findMetric(metrics, "nax.run.active");
+      const elapsed = findMetric(metrics, "nax.run.phase_elapsed_ms");
+      const cost = findMetric(metrics, "nax.run.cost_usd");
 
-    expect(active?.gauge?.dataPoints?.[0]?.asDouble).toBe(1); // AC1
-    expect(elapsed?.gauge?.dataPoints?.[0]?.asDouble).toBeGreaterThanOrEqual(0); // AC2
-    expect(cost?.gauge?.dataPoints?.[0]?.asDouble).toBeCloseTo(0.12, 5); // AC3
+      expect(active?.gauge?.dataPoints?.[0]?.asDouble).toBe(1); // AC1
+      expect(elapsed?.gauge?.dataPoints?.[0]?.asDouble).toBeGreaterThanOrEqual(0); // AC2
+      expect(cost?.gauge?.dataPoints?.[0]?.asDouble).toBeCloseTo(0.12, 5); // AC3
 
-    const attrs = active?.gauge?.dataPoints?.[0]?.attributes ?? [];
-    expect(attrs).toContainEqual(attr("phase", "implementer")); // AC4 — most recently completed phase
-    expect(attrs).toContainEqual(attr("run_id", "hb1")); // AC5
-    expect(attrs).toContainEqual(attr("feature", "f"));
-    expect(attrs).toContainEqual(attr("project", "nax-proj"));
-    expect(attrs).toContainEqual(attr("story_id", "s2"));
-    expect(attrs).toContainEqual(attr("tier", "balanced"));
-    expect(attrs).toContainEqual(attr("test_strategy", "tdd-simple"));
+      const attrs = active?.gauge?.dataPoints?.[0]?.attributes ?? [];
+      expect(attrs).toContainEqual(attr("phase", "implementer")); // AC4 — most recently completed phase
+      expect(attrs).toContainEqual(attr("run_id", "hb1")); // AC5
+      expect(attrs).toContainEqual(attr("feature", "f"));
+      expect(attrs).toContainEqual(attr("project", "nax-proj"));
+      expect(attrs).toContainEqual(attr("story_id", "s2"));
+      expect(attrs).toContainEqual(attr("tier", "balanced"));
+      expect(attrs).toContainEqual(attr("test_strategy", "tdd-simple"));
+    } finally {
+      await plugin.teardown?.();
+    }
   });
 
   // Spec: `flush` already warns ("Skipping OTLP export — unresolved env vars")
@@ -132,11 +136,15 @@ describe("otel-reporter heartbeat", () => {
       );
       const r = plugin.extensions.reporter!;
 
-      await r.onRunStart?.({ runId: "hbwarn", feature: "f", totalStories: 1, startTime: new Date().toISOString(), project: "nax" });
-      await sleep(150); // > heartbeatIntervalMs (40ms) — allow at least one tick
+      try {
+        await r.onRunStart?.({ runId: "hbwarn", feature: "f", totalStories: 1, startTime: new Date().toISOString(), project: "nax" });
+        await sleep(150); // > heartbeatIntervalMs (40ms) — allow at least one tick
 
-      const otelWarnings = warnSpy.mock.calls.filter((c) => c[0] === "otel-reporter");
-      expect(otelWarnings.length).toBeGreaterThan(0);
+        const otelWarnings = warnSpy.mock.calls.filter((c) => c[0] === "otel-reporter");
+        expect(otelWarnings.length).toBeGreaterThan(0);
+      } finally {
+        await plugin.teardown?.();
+      }
     });
   });
 

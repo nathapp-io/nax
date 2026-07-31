@@ -62,10 +62,14 @@ function makeErrorEvent(overrides: Partial<DispatchErrorEvent> = {}): DispatchEr
   };
 }
 
-async function parseLastEntry(logFile: string): Promise<LogEntry> {
+async function findEntry(logFile: string, message: string): Promise<LogEntry | undefined> {
   const content = await Bun.file(logFile).text();
-  const lines = content.trim().split("\n").filter(Boolean);
-  return JSON.parse(lines[lines.length - 1]) as LogEntry;
+  return content
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as LogEntry)
+    .find((entry) => entry.stage === "middleware" && entry.message === message);
 }
 
 describe("attachLoggingSubscriber", () => {
@@ -91,10 +95,10 @@ describe("attachLoggingSubscriber", () => {
     bus.emitDispatch(makeSessionTurnEvent({ agentName: "codex", stage: "verify", durationMs: 350 }));
     await getLogger().flush();
 
-    const entry = await parseLastEntry(logFile);
-    expect(entry.level).toBe("info");
-    expect(entry.message).toBe("Agent call complete");
-    expect(entry.data).toMatchObject({
+    const entry = await findEntry(logFile, "Agent call complete");
+    expect(entry).toBeDefined();
+    expect(entry?.level).toBe("info");
+    expect(entry?.data).toMatchObject({
       agentName: "codex",
       kind: "session-turn",
       stage: "verify",
@@ -111,11 +115,11 @@ describe("attachLoggingSubscriber", () => {
     bus.emitDispatch(makeCompleteEvent({ agentName: "claude", stage: "plan" }));
     await getLogger().flush();
 
-    const entry = await parseLastEntry(logFile);
-    expect(entry.level).toBe("info");
-    expect(entry.message).toBe("Agent call complete");
-    expect(entry.data?.agentName).toBe("claude");
-    expect(entry.data?.kind).toBe("complete");
+    const entry = await findEntry(logFile, "Agent call complete");
+    expect(entry).toBeDefined();
+    expect(entry?.level).toBe("info");
+    expect(entry?.data?.agentName).toBe("claude");
+    expect(entry?.data?.kind).toBe("complete");
   });
 
   test("logs Agent call failed on dispatch error", async () => {
@@ -125,10 +129,10 @@ describe("attachLoggingSubscriber", () => {
     bus.emitDispatchError(makeErrorEvent({ agentName: "claude", stage: "run", durationMs: 100 }));
     await getLogger().flush();
 
-    const entry = await parseLastEntry(logFile);
-    expect(entry.level).toBe("warn");
-    expect(entry.message).toBe("Agent call failed");
-    expect(entry.data).toMatchObject({
+    const entry = await findEntry(logFile, "Agent call failed");
+    expect(entry).toBeDefined();
+    expect(entry?.level).toBe("warn");
+    expect(entry?.data).toMatchObject({
       agentName: "claude",
       stage: "run",
       durationMs: 100,
