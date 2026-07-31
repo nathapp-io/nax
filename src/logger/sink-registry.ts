@@ -26,11 +26,17 @@ export class SinkRegistry {
 
   /**
    * Dispatch a redacted entry to every registered sink in registration order.
+   *
+   * Each sink gets a shallow clone so one sink mutating `message`, `data`, or
+   * any other field cannot leak the mutation to later sinks or to the JSONL
+   * file written after dispatch. Without this, a buggy sink could rewrite a
+   * redacted secret back into the entry and break the redaction-by-construction
+   * guarantee the Logger relies on.
    */
   dispatch(entry: LogEntry): void {
     for (const sink of this.sinks) {
       try {
-        sink(entry);
+        sink({ ...entry });
       } catch (error) {
         process.stderr.write(`[logger] Sink threw: ${error}\n`);
       }

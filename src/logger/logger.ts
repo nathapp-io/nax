@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
+import { NaxError } from "../errors.js";
 import { type FormatterOptions, type VerbosityMode, formatLogEntry } from "../log-format/index.js";
 import { formatConsole, formatJsonl } from "./formatters.js";
 import { redactEntry } from "./redact.js";
@@ -297,17 +298,20 @@ export class Logger {
  * Register a sink on the singleton logger instance.
  *
  * Mirrors the `Logger.addSink` API at the module level so callers can wire
- * exporters without holding a direct `Logger` reference. If the singleton has
- * not been initialized yet, the sink is registered on the noop logger and
- * the returned unsubscribe is a no-op; this matches the existing `getLogger`
- * fallback that quietly uses a noop logger.
+ * exporters without holding a direct `Logger` reference.
+ *
+ * @throws {NaxError} `LOGGER_NOT_INITIALIZED` if the singleton has not been
+ * initialized. A sink registered before `initLogger` cannot fire (the
+ * singleton is created with an empty `SinkRegistry`), so silently accepting
+ * the registration would orphan it.
  *
  * @returns An unsubscribe function.
  */
 export function addSink(sink: LogSink): () => void {
   if (!instance) {
-    noopLogger.addSink(sink);
-    return () => {};
+    throw new NaxError("Logger not initialized. Call initLogger() before addSink().", "LOGGER_NOT_INITIALIZED", {
+      stage: "logger",
+    });
   }
   return instance.addSink(sink);
 }

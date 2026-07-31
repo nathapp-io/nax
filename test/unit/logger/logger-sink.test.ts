@@ -50,8 +50,8 @@ describe("logger sink registration", () => {
     const calls: LogEntry[] = [];
     addSink((entry) => calls.push(entry));
     getLogger().info("some-stage", "test");
-    const iso = new Date(calls[0].timestamp).toISOString();
-    expect(iso.startsWith(String(new Date().getFullYear()))).toBe(true);
+    expect(calls[0].timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    expect(new Date(calls[0].timestamp).toISOString()).toBe(calls[0].timestamp);
   });
 
   test("AC-6: story-scoped log call delivers storyId to the sink", () => {
