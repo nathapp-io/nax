@@ -3,7 +3,7 @@
   "feature": "otlp-logs-exporter",
   "branchName": "feat/otlp-logs-exporter",
   "createdAt": "2026-07-31T12:03:10+08:00",
-  "updatedAt": "2026-07-31T04:57:20.771Z",
+  "updatedAt": "2026-07-31T05:29:34.254Z",
   "userStories": [
     {
       "id": "US-001",
@@ -131,8 +131,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -200,7 +200,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/logger/types.ts",
@@ -212,7 +214,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "bca9178e617257a742486a5ad14a8549518d10ab"
     },
     {
       "id": "US-005",
