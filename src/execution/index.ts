@@ -4,6 +4,7 @@ export { inspectOscillationBreaker, type BreakerDecision } from "./oscillation-b
 export { run, _runnerDeps, _runnerReentrancyGuard } from "./runner";
 export type { FailureCategory } from "../tdd/types";
 export { appendProgress } from "./progress";
+export { releaseHeavyPipelineContext } from "./iteration-runner";
 export { groupStoriesIntoBatches, type StoryBatch } from "./batching";
 export { escalateTier, getTierConfig, calculateMaxIterations, resolveMaxAttemptsOutcome } from "./escalation";
 export { readQueueFile, clearQueueFile } from "./queue-handler";

@@ -20,6 +20,7 @@ import { makeMockRuntime } from "../../../helpers/runtime";
 const origSavePRD = _completionDeps.savePRD;
 const origGetDiffText = _completionDeps.getDiffText;
 const origCheckReviewGate = _completionDeps.checkReviewGate;
+const origSpawn = _completionDeps.spawn;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -50,6 +51,7 @@ afterEach(() => {
   _completionDeps.savePRD = origSavePRD;
   _completionDeps.getDiffText = origGetDiffText;
   _completionDeps.checkReviewGate = origCheckReviewGate;
+  _completionDeps.spawn = origSpawn;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -99,5 +101,66 @@ describe("completionStage skipPrdPersistence", () => {
     const result = await completionStage.execute(ctx);
 
     expect(result.action).toBe("continue");
+  });
+});
+
+describe("completionStage bounded stream reading", () => {
+  test("getDiffText retains 8,000 characters and drains stderr", async () => {
+    const encoder = new TextEncoder();
+    let stderrPulls = 0;
+    _completionDeps.spawn = (() => ({
+      stdout: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode("x".repeat(9_000)));
+          controller.close();
+        },
+      }),
+      stderr: new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (stderrPulls++ === 0) controller.enqueue(encoder.encode("warning"));
+          else controller.close();
+        },
+      }),
+      exited: Promise.resolve(0),
+    })) as unknown as typeof _completionDeps.spawn;
+
+    const output = await _completionDeps.getDiffText("/repo", "base-ref");
+
+    expect(output).toBe("x".repeat(8_000));
+    expect(stderrPulls).toBe(2);
+  });
+
+  test("retains only the requested prefix while draining the full stream", async () => {
+    const encoder = new TextEncoder();
+    let pulls = 0;
+    const chunks = ["abc", "def", "ghi"];
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        const chunk = chunks[pulls++];
+        if (chunk) controller.enqueue(encoder.encode(chunk));
+        else controller.close();
+      },
+    });
+
+    const output = await _completionDeps.readTextStreamPrefix(stream, 5);
+
+    expect(output).toBe("abcde");
+    expect(pulls).toBe(4);
+  });
+
+  test("decodes multibyte characters split across stream chunks", async () => {
+    const bytes = new TextEncoder().encode("A😀BC");
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes.slice(0, 2));
+        controller.enqueue(bytes.slice(2, 4));
+        controller.enqueue(bytes.slice(4));
+        controller.close();
+      },
+    });
+
+    const output = await _completionDeps.readTextStreamPrefix(stream, 4);
+
+    expect(output).toBe("A😀B");
   });
 });

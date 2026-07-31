@@ -23,6 +23,22 @@ import { errorMessage } from "../../utils/errors";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
+const MAX_EFFECTIVENESS_DIFF_CHARS = 8_000;
+const HIGH_MEMORY_TELEMETRY_BYTES = 512 * 1_024 * 1_024;
+
+function logHighMemoryCheckpoint(logger: ReturnType<typeof getLogger>, ctx: PipelineContext): void {
+  const usage = process.memoryUsage();
+  if (usage.heapUsed < HIGH_MEMORY_TELEMETRY_BYTES && usage.rss < HIGH_MEMORY_TELEMETRY_BYTES) return;
+  logger.debug("completion.memory", "High memory at completion boundary", {
+    storyId: ctx.story.id,
+    heapUsedBytes: usage.heapUsed,
+    rssBytes: usage.rss,
+    externalBytes: usage.external,
+    arrayBuffersBytes: usage.arrayBuffers,
+    agentOutputChars: ctx.agentResult?.output.length ?? 0,
+  });
+}
+
 export const completionStage: PipelineStage = {
   name: "completion",
   enabled: () => true,
@@ -129,6 +145,8 @@ export const completionStage: PipelineStage = {
       await _completionDeps.savePRD(ctx.prd, prdPath);
     }
 
+    logHighMemoryCheckpoint(logger, ctx);
+
     // Display progress
     const updatedCounts = countStories(ctx.prd);
     logger.info("completion", "Progress update", {
@@ -143,14 +161,42 @@ export const completionStage: PipelineStage = {
   },
 };
 
+async function readTextStreamPrefix(stream: ReadableStream<Uint8Array>, maxChars: number): Promise<string> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let output = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (output.length >= maxChars) continue;
+      const decoded = decoder.decode(value, { stream: true });
+      output += decoded.slice(0, maxChars - output.length);
+    }
+    if (output.length < maxChars) {
+      output += decoder.decode().slice(0, maxChars - output.length);
+    }
+    return output;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 /** Get a git diff text between baseRef and HEAD. Best-effort, returns "" on failure. */
 async function getDiffText(workdir: string, baseRef: string | undefined): Promise<string> {
   if (!baseRef) return "";
   try {
-    const proc = Bun.spawn(["git", "diff", `${baseRef}..HEAD`], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
-    const output = await new Response(proc.stdout).text();
-    await proc.exited;
-    return output.slice(0, 8000); // cap to avoid bloating effectiveness inputs
+    const proc = _completionDeps.spawn(["git", "diff", `${baseRef}..HEAD`], {
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [output] = await Promise.all([
+      readTextStreamPrefix(proc.stdout, MAX_EFFECTIVENESS_DIFF_CHARS),
+      readTextStreamPrefix(proc.stderr, 0),
+      proc.exited,
+    ]);
+    return output;
   } catch {
     return "";
   }
@@ -164,4 +210,6 @@ export const _completionDeps = {
   persistSemanticVerdict,
   savePRD,
   getDiffText,
+  readTextStreamPrefix,
+  spawn: Bun.spawn,
 };

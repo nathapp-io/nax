@@ -36,6 +36,24 @@ export interface IterationResult {
   subStoryCount?: number;
 }
 
+/** Drop per-story payloads after result handlers persist the data needed by later iterations. */
+export function releaseHeavyPipelineContext(ctx: PipelineContext): void {
+  ctx.agentResult = undefined;
+  ctx.prompt = undefined;
+  ctx.contextMarkdown = undefined;
+  ctx.featureContextMarkdown = undefined;
+  ctx.builtContext = undefined;
+  ctx.contextBundle = undefined;
+  ctx.constitution = undefined;
+  ctx.acceptanceFailures = undefined;
+  ctx.autofixPriorIterations = undefined;
+  ctx.priorSemanticIterations = undefined;
+  ctx.priorAdversarialIterations = undefined;
+  ctx.reviewFindings = undefined;
+  ctx.selfVerification = undefined;
+  ctx.tddIsolations = undefined;
+}
+
 export async function runIteration(
   ctx: SequentialExecutionContext,
   prd: PRD,
@@ -282,12 +300,7 @@ export async function runIteration(
     };
   }
 
-  // Release heavy context fields after handlers are done reading them.
-  pipelineContext.agentResult = undefined;
-  pipelineContext.prompt = undefined;
-  pipelineContext.contextMarkdown = undefined;
-  pipelineContext.builtContext = undefined;
-  pipelineContext.constitution = undefined;
+  releaseHeavyPipelineContext(pipelineContext);
 
   return iterResult;
 }
