@@ -1,0 +1,429 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When addSink is called with a no-op sink, then it returns a function.",
+    "refined": "After calling addSink(() => {}), the returned value is a function",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When a sink is registered and logger.info is called with stage \"verify\" and message \"no test command\", then the sink receives an entry whose message equals \"no test command\".",
+    "refined": "After addSink(fn), calling logger.info({ stage: 'verify', message: 'no test command' }) invokes fn once with object.message === 'no test command'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When a sink is registered and a log call uses stage \"verify\", then the received entry has stage \"verify\".",
+    "refined": "After addSink(fn), calling logger.info({ stage: 'verify', message: 'test' }) invokes fn with object.stage === 'verify'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When a sink is registered and logger.warn is called, then the received entry has level \"warn\".",
+    "refined": "After addSink(fn), calling logger.warn('test') invokes fn with object.level === 'warn'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When a sink receives an entry, then its timestamp parses as an ISO-8601 date.",
+    "refined": "After addSink(fn), any log call invokes fn where new Date(object.timestamp).toISOString().startsWith(new Date().getFullYear().toString()) is true (valid ISO-8601)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When a story-scoped logger emits an entry, then the sink receives the supplied story identifier in storyId.",
+    "refined": "After addSink(fn), calling logger.info({ storyId: 'story-abc' }) invokes fn with object.storyId === 'story-abc'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When logging data with apiKey \"sk-live-abc123\", then the sink receives data.apiKey equal to \"[REDACTED]\".",
+    "refined": "After addSink(fn), calling logger.info({ data: { apiKey: 'sk-live-abc123' } }) invokes fn with object.data.apiKey === '[REDACTED]'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When logging message \"token ghp_0123456789abcdefghij failed\", then the sink receives message \"token [REDACTED] failed\".",
+    "refined": "After addSink(fn), calling logger.info('token ghp_0123456789abcdefghij failed') invokes fn with object.message === 'token [REDACTED] failed'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When the unsubscribe function returned by addSink is invoked, then that sink receives no subsequent log entries.",
+    "refined": "const unsub = addSink(fn); unsub(); logger.info('test'); fn is never called",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When two sinks are registered and one log call occurs, then both sinks receive the entry.",
+    "refined": "After addSink(fn1) and addSink(fn2), calling logger.info('test') invokes fn1 and fn2 each exactly once with the same entry",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When the first registered sink throws during a log call, then a later registered sink still receives the entry.",
+    "refined": "After addSink(() => { throw new Error('sink error') }) and addSink(fn2), calling logger.info('test') invokes fn2 with entry.message === 'test' and does not throw",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When a registered sink throws and a file path is configured, then the JSONL file still receives the entry.",
+    "refined": "With logger configured with filePath and addSink(() => { throw new Error() }), after logger.info('test') the JSONL file contains an entry with message 'test'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When a registered sink throws, then the originating log call does not throw.",
+    "refined": "After addSink(() => { throw new Error('sink error') }), calling logger.info('test') completes without throwing",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When buildResourceAttributes is called with a service name, then it returns service.name equal to that service name.",
+    "refined": "Call buildResourceAttributes({ serviceName: 'my-service', runId: '123' }) and assert the returned array contains exactly one entry with key='service.name' and value='my-service'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When buildResourceAttributes is called with a run identifier, then it returns nax.run_id equal to that identifier.",
+    "refined": "Call buildResourceAttributes({ serviceName: 'svc', runId: 'run-456' }) and assert the returned array contains exactly one entry with key='nax.run_id' and value='run-456'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When buildResourceAttributes is called with a feature name, then it returns nax.feature equal to that name.",
+    "refined": "Call buildResourceAttributes({ serviceName: 'svc', runId: '123', feature: 'my-feature' }) and assert the returned array contains exactly one entry with key='nax.feature' and value='my-feature'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When buildResourceAttributes is called with a project name, then it returns nax.project equal to that name.",
+    "refined": "Call buildResourceAttributes({ serviceName: 'svc', runId: '123', project: 'my-project' }) and assert the returned array contains exactly one entry with key='nax.project' and value='my-project'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When buildResourceAttributes is called, then it returns nax.version equal to NAX_VERSION.",
+    "refined": "Call buildResourceAttributes({ serviceName: 'svc', runId: '123' }) and assert the returned array contains exactly one entry with key='nax.version' and value equal to process.env.NAX_VERSION.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When buildResourceAttributes is called, then it returns host.name equal to the operating system hostname.",
+    "refined": "Call buildResourceAttributes({ serviceName: 'svc', runId: '123' }) and assert the returned array contains exactly one entry with key='host.name' and value equal to os.hostname().",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When buildResourceAttributes is called, then it returns process.pid as a numeric attribute equal to the current process identifier.",
+    "refined": "Call buildResourceAttributes({ serviceName: 'svc', runId: '123' }) and assert the returned array contains exactly one entry with key='process.pid' where typeof value === 'number' and value === process.pid.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When buildResourceAttributes is called with a branch name, then it returns nax.git.branch equal to that branch.",
+    "refined": "Call buildResourceAttributes({ serviceName: 'svc', runId: '123', git: { branch: 'main' } }) and assert the returned array contains exactly one entry with key='nax.git.branch' and value='main'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When buildResourceAttributes is called with a commit sha, then it returns nax.git.sha equal to that sha.",
+    "refined": "Call buildResourceAttributes({ serviceName: 'svc', runId: '123', git: { sha: 'abc123' } }) and assert the returned array contains exactly one entry with key='nax.git.sha' and value='abc123'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When no branch is supplied, then the returned attributes contain no nax.git.branch key.",
+    "refined": "Call buildResourceAttributes({ serviceName: 'svc', runId: '123' }) (without git.branch) and assert no entry in the returned array has key='nax.git.branch'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When no commit sha is supplied, then the returned attributes contain no nax.git.sha key.",
+    "refined": "Call buildResourceAttributes({ serviceName: 'svc', runId: '123' }) (without git.sha) and assert no entry in the returned array has key='nax.git.sha'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When buildTracesPayload creates a payload, then its resource attributes include nax.feature.",
+    "refined": "Given TracesInput with feature='my-feature' passed to buildTracesPayload, when the function returns a payload, then payload.resource.attributes['nax.feature'] === 'my-feature'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When the OTLP module buildMetricsPayload creates a payload, then its resource attributes include nax.feature.",
+    "refined": "Given MetricsInput with feature='my-feature' passed to buildMetricsPayload, when the function returns a payload, then payload.resource.attributes['nax.feature'] === 'my-feature'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When buildHeartbeatMetricsPayload creates a payload, then its resource attributes include nax.run_id.",
+    "refined": "Given HeartbeatMetricsInput with snapshot.attributes['nax.run_id']='run-123', when buildHeartbeatMetricsPayload is called, then the returned payload.resource.attributes['nax.run_id'] === 'run-123'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When buildHeartbeatMetricsPayload creates gauge points, then their attributes still include the bare key feature.",
+    "refined": "Given HeartbeatMetricsInput with snapshot.attributes['feature']='my-feature', when buildHeartbeatMetricsPayload is called, then for each gauge datapoint in the returned payload, datapoint.attributes['feature'] === 'my-feature'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When the span-tree payload builder creates a payload, then its resource attributes include nax.project.",
+    "refined": "Given span-tree builder called with project='my-project', when the builder returns a payload, then payload.resource.attributes['nax.project'] === 'my-project'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When an incremental span flush is issued before run end, then its request resource attributes include nax.run_id.",
+    "refined": "Given onRunStart has set runId='run-456' and a span is flushed incrementally via flushIncrementalSpan, when the flush returns a TracesPayload, then the payload.resource.attributes['nax.run_id'] === 'run-456'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When git branch and sha resolution fails during onRunStart, then the hook completes without throwing.",
+    "refined": "Given gitWithTimeout is stubbed to reject with an error, when onRunStart is called, then the call returns a resolved Promise and does not throw.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When git branch resolution fails during onRunStart, then a subsequent exported payload contains no nax.git.branch attribute.",
+    "refined": "Given gitWithTimeout returns { sha: 'abc123', branch: undefined } (branch missing), when onRunStart completes and then buildTracesPayload or buildMetricsPayload is called, then the returned payload.resource.attributes does not contain 'nax.git.branch'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When toLogRecord receives a known ISO-8601 timestamp, then timeUnixNano equals that instant in nanoseconds as a string.",
+    "refined": "Calling toLogRecord({ timestamp: '2024-01-15T10:30:00.000Z' }) returns a LogRecord where timeUnixNano equals '1705315800000000000'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When toLogRecord receives level error, then severityNumber is 17.",
+    "refined": "Calling toLogRecord({ level: 'error', ... }) returns a LogRecord where severityNumber === 17.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "When toLogRecord receives level error, then severityText is \"ERROR\".",
+    "refined": "Calling toLogRecord({ level: 'error', ... }) returns a LogRecord where severityText === 'ERROR'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-36",
+    "original": "When toLogRecord receives level warn, then severityNumber is 13.",
+    "refined": "Calling toLogRecord({ level: 'warn', ... }) returns a LogRecord where severityNumber === 13.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-37",
+    "original": "When toLogRecord receives level info, then severityNumber is 9.",
+    "refined": "Calling toLogRecord({ level: 'info', ... }) returns a LogRecord where severityNumber === 9.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-38",
+    "original": "When toLogRecord receives level debug, then severityNumber is 5.",
+    "refined": "Calling toLogRecord({ level: 'debug', ... }) returns a LogRecord where severityNumber === 5.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-39",
+    "original": "When toLogRecord receives a message, then body.stringValue equals that message.",
+    "refined": "Calling toLogRecord({ message: 'test message' }) returns a LogRecord where body.stringValue === 'test message'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-40",
+    "original": "When toLogRecord receives a stage, then attributes contain nax.stage.",
+    "refined": "Calling toLogRecord({ stage: 'implementation' }) returns a LogRecord where attributes contains a key 'nax.stage' with value 'implementation'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-41",
+    "original": "When toLogRecord receives storyId, then attributes contain nax.story_id equal to it.",
+    "refined": "Calling toLogRecord({ storyId: 'abc-123' }) returns a LogRecord where attributes['nax.story_id'] === 'abc-123'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-42",
+    "original": "When toLogRecord receives no storyId, then attributes contain no nax.story_id key.",
+    "refined": "Calling toLogRecord({}) returns a LogRecord where 'nax.story_id' is not a key in attributes.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-43",
+    "original": "When toLogRecord receives sessionRole, then attributes contain nax.session_role equal to it.",
+    "refined": "Calling toLogRecord({ sessionRole: 'agent' }) returns a LogRecord where attributes['nax.session_role'] === 'agent'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-44",
+    "original": "When data contains top-level string phase, then attributes contain nax.data.phase with that string.",
+    "refined": "Calling toLogRecord({ data: { phase: 'testing' } }) returns a LogRecord where attributes['nax.data.phase'].stringValue === 'testing'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-45",
+    "original": "When data contains top-level number count, then attributes contain numeric nax.data.count equal to it.",
+    "refined": "Calling toLogRecord({ data: { count: 42 } }) returns a LogRecord where attributes['nax.data.count'].doubleValue === 42.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-46",
+    "original": "When data contains nested findings, then attributes contain nax.data_json with JSON containing that nested content.",
+    "refined": "Calling toLogRecord({ data: { findings: [{ id: 1, severity: 'high' }] } }) returns a LogRecord where attributes['nax.data_json'].stringValue is valid JSON containing the nested findings array.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-47",
+    "original": "When data serialization exceeds 2048 characters, then nax.data_json is at most 2048 characters and ends with a truncation marker.",
+    "refined": "Calling toLogRecord with data that serializes to more than 2048 characters returns a LogRecord where attributes['nax.data_json'].stringValue.length <= 2048 and endsWith('...').",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-48",
+    "original": "When buildLogsPayload creates a payload, then its resource attributes include nax.feature.",
+    "refined": "buildLogsPayload(resource, scope, record) returns an object where result.resource.attributes contains key \"nax.feature\" with a non-empty string value.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-49",
+    "original": "When OTEL reporter configuration omits logs.enabled, then it resolves to false.",
+    "refined": "With config lacking a logs.enabled field, parseOTELReporterConfig(config).logs.enabled === false.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-50",
+    "original": "When OTEL reporter configuration omits logs.level, then it resolves to \"info\".",
+    "refined": "With config lacking a logs.level field, parseOTELReporterConfig(config).logs.level === \"info\".",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-51",
+    "original": "When logs.enabled is false and onRunStart runs, then addSink is not invoked.",
+    "refined": "With logs: { enabled: false }, calling onRunStart() results in zero invocations of addSink.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-52",
+    "original": "When logs.enabled is true and onRunStart runs, then addSink is invoked exactly once.",
+    "refined": "With logs: { enabled: true }, calling onRunStart() results in exactly one invocation of addSink.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-53",
+    "original": "When logs.level is \"warn\" and an info LogEntry is emitted, then no log record is posted.",
+    "refined": "With logs: { enabled: true, level: \"warn\" }, emitting a LogEntry with severity \"info\" results in zero POST calls to the logs endpoint.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-54",
+    "original": "When logs.level is \"warn\" and a warn LogEntry is emitted, then a log record is posted.",
+    "refined": "With logs: { enabled: true, level: \"warn\" }, emitting a LogEntry with severity \"warn\" results in exactly one POST call to the logs endpoint with a body containing a logRecord where severityText === \"WARN\".",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-55",
+    "original": "When a LogEntry stage is \"otel-batch-queue\", then no log record is posted.",
+    "refined": "With logs: { enabled: true }, emitting a LogEntry where entry.stage === \"otel-batch-queue\" results in zero POST calls to the logs endpoint.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-56",
+    "original": "When logs are enabled, message \"no test command\" is logged, and the queue flushes, then the posted body contains a log record whose body.stringValue equals \"no test command\".",
+    "refined": "With logs: { enabled: true }, after emitting a LogEntry with body.message === \"no test command\" and calling flush on the logs queue, POST is called with URL ending in \"/v1/logs\" and the request body matches /\\[\\{\"body\":\\{\"stringValue\":\"no test command\"/.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-57",
+    "original": "When logs are exported, then the request URL ends in /v1/logs.",
+    "refined": "Every POST call made for log export has a URL pathname that ends with \"/v1/logs\".",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-58",
+    "original": "When onRunEnd runs with queued log records, then it posts those records.",
+    "refined": "Calling onRunEnd() when the logs queue contains N > 0 entries results in exactly one POST call with a body containing N log records.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-59",
+    "original": "When teardown runs after onRunEnd completed, then it posts no further logs request.",
+    "refined": "After onRunEnd() completes (having posted), calling teardown() results in zero additional POST calls to the logs endpoint.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-60",
+    "original": "When a configured header references an unset environment variable and a log record is queued, then no logs request is posted.",
+    "refined": "Given config.logs.headers contains a header value referencing an unset env var (e.g., \"${UNSET_VAR}\"), after emitting a log entry, POST is not called and the logs queue remains unflushed.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-61",
+    "original": "When a logs header references unset environment variables, then export is skipped and the reporter warns with the missing variable names without consuming a logs-queue retry.",
+    "refined": "Given config.logs.headers references an unset env var, after emitting a log entry the warning log message contains the name of the missing variable and the logs queue retry count remains unchanged (not decremented).",
+    "testable": true,
+    "storyId": "US-005"
+  }
+]
