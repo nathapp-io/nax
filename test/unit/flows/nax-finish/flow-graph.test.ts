@@ -366,9 +366,102 @@ describe("review parse + route_* nodes", () => {
 describe("quality_gates node", () => {
   const originalRun = _qualityDeps.runShell;
   const originalReadText = _qualityDeps.readText;
+  const originalAcceptanceRun = _acceptanceDeps.runShell;
   afterEach(() => {
     _qualityDeps.runShell = originalRun;
     _qualityDeps.readText = originalReadText;
+    _acceptanceDeps.runShell = originalAcceptanceRun;
+  });
+
+  // The feature's acceptance tests are re-run here because the quality-review
+  // and gate fix loops edit code after the `acceptance` node last passed, and
+  // the repo-root `test` command does not cover them — they live under
+  // `<pkg>/.nax/features/<f>/` and usually need their own runner config. Without
+  // this, a quality fix could break the feature's own contract and still ship.
+  describe("acceptance as gate zero", () => {
+    const withGroups = () => ctxOf({ outputs: { load_ctx: { groups: GROUPS } } });
+
+    test("runs the feature's acceptance tests before the configured commands", async () => {
+      const order: string[] = [];
+      _acceptanceDeps.runShell = async () => {
+        order.push("acceptance");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      };
+      _qualityDeps.readText = async () => JSON.stringify({ quality: { commands: { lint: "bun run lint" } } });
+      _qualityDeps.runShell = async () => {
+        order.push("lint");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      };
+
+      const out = await nodeRun<{ route: string }>("quality_gates").run(withGroups());
+
+      expect(out.route).toBe("green");
+      expect(order).toEqual(["acceptance", "lint"]);
+    });
+
+    test("a fix that broke the contract routes to the gate fix loop, naming acceptance", async () => {
+      _acceptanceDeps.runShell = async () => ({ exitCode: 1, stdout: "", stderr: "AssertionError" });
+      _qualityDeps.readText = async () => JSON.stringify({ quality: { commands: { lint: "bun run lint" } } });
+      _qualityDeps.runShell = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+
+      const out = await nodeRun<{ route: string; failing: string[]; output: string }>("quality_gates").run(
+        withGroups(),
+      );
+
+      expect(out.route).toBe("fix");
+      expect(out.failing).toContain("acceptance");
+      expect(out.output).toContain("AssertionError");
+    });
+
+    test("does not run the repo gates while acceptance is red", async () => {
+      _acceptanceDeps.runShell = async () => ({ exitCode: 1, stdout: "", stderr: "boom" });
+      _qualityDeps.readText = async () => JSON.stringify({ quality: { commands: { lint: "bun run lint" } } });
+      let gatesRan = 0;
+      _qualityDeps.runShell = async () => {
+        gatesRan += 1;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      };
+
+      const out = await nodeRun<{ route: string; reason?: string }>("quality_gates").run(withGroups());
+
+      expect(gatesRan).toBe(0);
+      // must not be mistaken for the "nothing configured" escalation — the
+      // commands are configured, they were skipped on purpose
+      expect(out.reason).toBeUndefined();
+    });
+
+    test("at the cap it escalates naming the broken contract, not the lint gate", async () => {
+      _acceptanceDeps.runShell = async () => ({ exitCode: 1, stdout: "", stderr: "boom" });
+      _qualityDeps.readText = async () => JSON.stringify({ quality: { commands: { lint: "bun run lint" } } });
+      _qualityDeps.runShell = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+
+      const out = await nodeRun<{ route: string; reason?: string }>("quality_gates").run(
+        ctxOf({
+          outputs: { load_ctx: { groups: GROUPS } },
+          steps: [{ nodeId: "fix_gate" }, { nodeId: "fix_gate" }, { nodeId: "fix_gate" }],
+        }),
+      );
+
+      expect(out.route).toBe("escalate");
+      expect(out.reason).toContain("contract");
+    });
+
+    test("acceptance disabled (no groups) does not block a green gate", async () => {
+      let acceptanceRan = 0;
+      _acceptanceDeps.runShell = async () => {
+        acceptanceRan += 1;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      };
+      _qualityDeps.readText = async () => JSON.stringify({ quality: { commands: { lint: "bun run lint" } } });
+      _qualityDeps.runShell = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+
+      const out = await nodeRun<{ route: string }>("quality_gates").run(
+        ctxOf({ outputs: { load_ctx: { groups: [] } } }),
+      );
+
+      expect(acceptanceRan).toBe(0);
+      expect(out.route).toBe("green");
+    });
   });
 
   test("escalates instead of reporting green when the repo configured no commands", async () => {

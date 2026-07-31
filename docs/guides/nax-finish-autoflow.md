@@ -35,7 +35,8 @@ review_quality    code-quality review, isolated session, own agent profile
   ↳ recommended fix  → fix_quality (agent) → commit → re-review
   ↳ needs judgment   → escalate
   ↓
-quality_gates     run the repo's own quality.commands at the repo root
+quality_gates     re-run the feature's acceptance tests (gate zero), then the
+                  repo's own quality.commands at the repo root
   ↳ red → fix_gate (agent) → commit → re-run        [max 3 attempts → escalate]
   ↳ none configured → escalate (a gate that verified nothing is not a pass)
   ↓
@@ -51,6 +52,29 @@ The fix agent itself is still told not to commit; the flow owns the history.
 
 Both terminal nodes (`open_pr`, `escalate`) commit and push first, so the PR — or
 the escalation — describes state a human can actually see.
+
+### Why acceptance runs twice
+
+The `acceptance` node is the cheap fail-fast gate: it proves the feature meets
+its own contract before a full LLM review is spent on it. But two fix loops run
+*after* it — quality review and the gate loop — and both edit code. The repo-root
+`test` command does not cover the feature's acceptance tests: they are generated
+per-feature under `<packageDir>/.nax/features/<feature>/` and usually need their
+own runner config (a separate jest/vitest/pytest invocation), which is exactly
+why they are excluded from the normal suite. So a quality-phase fix could break
+the contract the first gate proved, and nothing downstream would notice.
+
+Re-running them as gate zero of `quality_gates` makes one property true on every
+path: **nothing reaches `open_pr` without the feature's own acceptance tests
+passing against the tree as it will ship.** A failure there routes to `fix_gate`
+with the failing output, so it is repaired rather than escalated.
+
+It runs unconditionally, even on the all-green path where nothing changed since
+the first run. Skipping it when no fix has landed is derivable from the step
+history, but a conditional correctness check that can be *wrong* is worse than a
+cheap one that cannot — a missed re-run is a silent false green, the failure
+mode this exists to prevent. Acceptance is the cheapest gate in the pipeline;
+the redundant run costs seconds against a flow that spends minutes in review.
 
 | Outcome | Result |
 |:---|:---|
@@ -169,7 +193,7 @@ post-run driver treats it as non-blocking and logs a warning).
 | `reviewers.spec` | `null` | acpx agent profile for the spec-review phase — see §4. |
 | `reviewers.quality` | `null` | acpx agent profile for the quality-review phase. |
 | `escalate.telegram` | `true` | Prefer Telegram for escalations when credentials resolve; else PR/MR comment. |
-| `timeouts.acceptanceMs` | 600000 (10 min) | Cap per acceptance-test group. |
+| `timeouts.acceptanceMs` | 600000 (10 min) | Cap per acceptance-test group, in both the `acceptance` node and gate zero of `quality_gates`. |
 | `timeouts.gateMs` | 900000 (15 min) | Cap per quality gate. |
 | `timeouts.flowMs` | 5400000 (90 min) | Cap on the whole `acpx flow run`. |
 | `timeouts.stepMs` | `null` | Cap per flow step (one agent turn), passed to acpx as `--timeout`. `null` keeps acpx's own 15-minute default — raise it if reviews of large diffs get cut off. |

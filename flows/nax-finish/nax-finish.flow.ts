@@ -26,6 +26,11 @@
  *   escalated at the cap (issue #1397).
  * - `route_*` compute nodes hold the escalate/clean/fix decision so the cap is
  *   enforced deterministically rather than trusting the model's own route.
+ * - `quality_gates` re-runs the feature's acceptance tests before the repo's
+ *   own commands. The quality-review and gate fix loops both edit code after
+ *   the `acceptance` node last passed, and the repo-root `test` command does
+ *   not cover per-feature acceptance tests — so without this a fix could break
+ *   the contract the first gate proved and still ship.
  */
 import { defineFlow, extractJsonObject } from "acpx/flows";
 import { buildReviewPrompt, fixPrompt } from "./review-prompts";
@@ -269,6 +274,46 @@ export default defineFlow({
       nodeType: "action",
       async run(ctx) {
         const i = inputOf(ctx);
+
+        // Acceptance is gate zero here, not just at the `acceptance` node.
+        // Both fix loops that run after it — quality review and this gate —
+        // edit code, and the repo-root `test` command does not cover the
+        // feature's acceptance tests: they live under `<pkg>/.nax/features/<f>/`
+        // and usually need their own runner config. Re-running them here is what
+        // makes "nothing reaches open_pr without the feature's own contract
+        // passing against the tree as it will ship" true on every path (#1398).
+        //
+        // Unconditional, though the common green path re-runs a gate that
+        // already passed: acceptance is the cheapest gate in the pipeline, and a
+        // conditional skip derived from step history would be a check that can
+        // be *wrong* — a silent false green, the failure mode this exists to
+        // prevent.
+        //
+        // `missing` is deliberately ignored: groups are resolved once at
+        // load_ctx, so a coverage hole was already escalated by the acceptance
+        // node and cannot appear here.
+        const acc = await runAcceptanceGate(i.workdir, loadCtxOf(ctx).groups ?? [], {
+          timeoutMs: i.timeouts?.acceptanceMs,
+        });
+        if (!acc.passed) {
+          // Short-circuit: the repo gates are re-run next round anyway, and
+          // skipping them keeps this out of the "nothing configured" branch
+          // below, which would otherwise misreport configured-but-skipped
+          // commands as absent.
+          const accAttempts = fixAttemptCount(ctx, "fix_gate");
+          const failing = ["acceptance"];
+          if (accAttempts >= MAX_FIX_ATTEMPTS) {
+            return {
+              route: "escalate",
+              reason: `A later fix broke the feature's own contract: acceptance still failing after ${accAttempts} fix attempts.`,
+              ran: [],
+              failing,
+              output: acc.output,
+            };
+          }
+          return { route: "fix", ran: [], failing, output: acc.output };
+        }
+
         const cmds = await loadQualityCommands(i.workdir);
         const r = await runQualityGates(i.workdir, cmds, { timeoutMs: i.timeouts?.gateMs });
         if (r.passed) return { route: "green", ran: r.ran, failing: r.failing, output: r.output };
