@@ -60,6 +60,8 @@ interface LoadCtxOutput {
   base?: string;
   specPath?: string;
   groups?: AcceptanceGroup[];
+  /** `nax features resolve`'s acceptance status: "ok" | "disabled" | "no-prd". */
+  acceptanceStatus?: string;
   route?: string;
 }
 
@@ -71,16 +73,48 @@ function loadCtxOf(ctx: { outputs: unknown }): LoadCtxOutput {
   return ((ctx.outputs as Record<string, LoadCtxOutput | undefined>).load_ctx ?? {}) as LoadCtxOutput;
 }
 
-/** Re-run the acceptance gate, routing on the shared fix-cap rules. */
+/**
+ * Re-run the acceptance gate, routing on the shared fix-cap rules.
+ *
+ * "Nothing ran" is not a pass — the same rule `quality_gates` applies to an
+ * unconfigured repo. `nax features resolve` reports `groups: []` for BOTH
+ * `no-prd` and `disabled`, and reports `exists: false` for a group whose test
+ * was expected at its canonical path but never generated. Treating all of those
+ * as green let the flow open a ready PR having verified nothing about the
+ * feature's own contract (#1398). Only `disabled` — the repo's explicit opt-out
+ * — skips cleanly.
+ */
 async function acceptanceGateNode(ctx: {
   input: unknown;
   outputs: unknown;
   state: { steps: { nodeId: string }[] };
 }): Promise<{ route: string; reason?: string; output: string }> {
   const i = inputOf(ctx);
-  const groups = loadCtxOf(ctx).groups ?? [];
+  const { groups = [], acceptanceStatus } = loadCtxOf(ctx);
+  if (acceptanceStatus === "disabled") {
+    return { route: "proceed", output: "[acceptance] disabled in .nax/config.json — skipping" };
+  }
+  if (acceptanceStatus === "no-prd") {
+    return {
+      route: "escalate",
+      reason: `Acceptance targets could not be computed (status: no-prd) — nothing was verified for "${i.feature}".`,
+      output: "[acceptance] no prd.json resolved — acceptance targets unknown",
+    };
+  }
+
   const r = await runAcceptanceGate(i.workdir, groups, { timeoutMs: i.timeouts?.acceptanceMs });
-  if (r.passed) return { route: "proceed", output: r.output };
+  if (r.passed) {
+    // A real failure below routes to the fix loop, which is more actionable;
+    // the coverage hole is only reported once the runnable groups are green.
+    if (r.missing.length > 0) {
+      return {
+        route: "escalate",
+        reason: `Acceptance test never generated for: ${r.missing.join(", ")} — that package's contract is unverified.`,
+        output: r.output,
+      };
+    }
+    return { route: "proceed", output: r.output };
+  }
   const attempts = fixAttemptCount(ctx, "fix_acceptance");
   if (attempts >= MAX_FIX_ATTEMPTS) {
     return {
@@ -319,7 +353,13 @@ export default defineFlow({
         const { url, channel } = await postEscalation(i.workdir, i.branch, comment, {
           preferTelegram: i.escalateTelegram,
         });
-        await writeResult(i.workdir, { feature: i.feature, status: "escalated", url, escalationReason: reason });
+        await writeResult(i.workdir, {
+          feature: i.feature,
+          status: "escalated",
+          url,
+          escalationReason: reason,
+          findings: verdict?.findings ?? [],
+        });
         return { route: "done", url, channel, escalationReason: reason };
       },
     },

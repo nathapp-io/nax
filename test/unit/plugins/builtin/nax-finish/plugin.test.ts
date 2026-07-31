@@ -168,7 +168,12 @@ describe("nax-finish post-run action", () => {
       interaction: { plugin: "telegram", config: { botToken: "t", chatId: "c" } },
     };
 
-    function stubRun(result: { feature: string; status: string; escalationReason?: string }) {
+    function stubRun(result: {
+      feature: string;
+      status: string;
+      escalationReason?: string;
+      findings?: { severity: string; title: string; problem: string; fix: string }[];
+    }) {
       const sent: Array<{ creds: { token: string; chatId: string }; text: string }> = [];
       _naxFinishDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
       _naxFinishDeps.readResult = async () => result as never;
@@ -185,8 +190,72 @@ describe("nax-finish post-run action", () => {
       await action.execute(baseCtx({ config: CONFIG_WITH_TELEGRAM } as never));
 
       expect(sent).toHaveLength(1);
-      expect(sent[0].text).toBe("nax-finish escalated *x*: design call");
+      expect(sent[0].text).toBe("nax-finish escalated x: design call");
       expect(sent[0].creds).toEqual({ token: "t", chatId: "c" });
+    });
+
+    // Regression: the message carried only the reason ("3 finding(s) after 3 fix
+    // attempts"), so the human had to dig through the acpx run bundle to learn
+    // what the findings actually were (issue #1398).
+    test("names each finding in the message, not just the count", async () => {
+      const sent = stubRun({
+        feature: "x",
+        status: "escalated",
+        escalationReason: "spec review still reporting 2 finding(s)",
+        findings: [
+          { severity: "HIGH", title: "holidays ignores timezone", problem: "no query param", fix: "add it" },
+          { severity: "MEDIUM", title: "routes untyped", problem: "dict[str, Any]", fix: "add response_model" },
+        ],
+      });
+
+      await action.execute(baseCtx({ config: CONFIG_WITH_TELEGRAM } as never));
+
+      expect(sent[0].text).toContain("spec review still reporting 2 finding(s)");
+      expect(sent[0].text).toContain("[HIGH] holidays ignores timezone");
+      expect(sent[0].text).toContain("[MEDIUM] routes untyped");
+    });
+
+    test("caps the message so a long finding list cannot exceed Telegram's limit", async () => {
+      const sent = stubRun({
+        feature: "x",
+        status: "escalated",
+        escalationReason: "many findings",
+        findings: Array.from({ length: 40 }, (_, n) => ({
+          severity: "HIGH",
+          title: `finding ${n} ${"x".repeat(300)}`,
+          problem: "p",
+          fix: "f",
+        })),
+      });
+
+      await action.execute(baseCtx({ config: CONFIG_WITH_TELEGRAM } as never));
+
+      expect(sent[0].text.length).toBeLessThanOrEqual(4096);
+      expect(sent[0].text).toContain("more");
+    });
+
+    // Sent as plain text: under parse_mode Markdown these characters either 400
+    // the whole message or, if stripped, rewrite `_calendar.py` to a filename
+    // that isn't the one under discussion.
+    test("delivers filenames and punctuation in a finding title verbatim", async () => {
+      const sent = stubRun({
+        feature: "x",
+        status: "escalated",
+        escalationReason: "r",
+        findings: [{ severity: "HIGH", title: "`_calendar.py` ignores *timezone*", problem: "p", fix: "f" }],
+      });
+
+      await action.execute(baseCtx({ config: CONFIG_WITH_TELEGRAM } as never));
+
+      expect(sent[0].text).toContain("`_calendar.py` ignores *timezone*");
+    });
+
+    test("still sends a reason-only message when the flow reported no findings", async () => {
+      const sent = stubRun({ feature: "x", status: "escalated", escalationReason: "gates still failing (lint)" });
+
+      await action.execute(baseCtx({ config: CONFIG_WITH_TELEGRAM } as never));
+
+      expect(sent[0].text).toBe("nax-finish escalated x: gates still failing (lint)");
     });
 
     test("does not notify for a non-escalated status", async () => {

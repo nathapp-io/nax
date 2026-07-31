@@ -21,13 +21,15 @@
 import * as path from "node:path";
 import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
 import { type FinishAutoFlowSettings, getFinishAutoFlowConfig, telegramCreds } from "./config";
-import { sendTelegramNotify } from "./telegram";
+import { buildEscalationMessage, sendTelegramNotify } from "./telegram";
 
 interface FinishResult {
   feature: string;
   status: "opened" | "promoted" | "already-ready" | "escalated" | "nothing-to-finish";
   url?: string;
   escalationReason?: string;
+  /** Findings behind an escalation — named in the notification, not just counted. */
+  findings?: { severity: string; title: string }[];
 }
 
 type RunFn = (
@@ -301,7 +303,7 @@ const naxFinishAction: IPostRunAction = {
       if (result.status === "escalated" && escalateTelegram && creds) {
         await _naxFinishDeps.notify(
           creds,
-          `nax-finish escalated *${result.feature}*: ${result.escalationReason ?? ""}`,
+          buildEscalationMessage(result.feature, result.escalationReason ?? "", result.findings ?? []),
         );
       }
 

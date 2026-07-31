@@ -48,6 +48,13 @@ export interface FinishResult {
   status: "opened" | "promoted" | "already-ready" | "escalated" | "nothing-to-finish";
   url?: string;
   escalationReason?: string;
+  /**
+   * The findings behind an escalation. Persisted because the reason alone is a
+   * bare count ("3 finding(s) after 3 fix attempts"), and on the Telegram
+   * channel the composed PR comment — the only other thing carrying them — is
+   * never posted. Without this the findings survived only in acpx's run bundle.
+   */
+  findings?: Finding[];
 }
 export interface RunResult {
   exitCode: number;

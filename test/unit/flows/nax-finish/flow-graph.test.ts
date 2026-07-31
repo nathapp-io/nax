@@ -221,6 +221,73 @@ describe("acceptance node", () => {
     expect(out.route).toBe("fix");
   });
 
+  // Regression: an empty/ungenerated acceptance set used to report `passed`,
+  // so the flow could open a ready PR having verified nothing (issue #1398).
+  test("escalates instead of passing when the feature has no PRD to compute targets from", async () => {
+    _acceptanceDeps.runShell = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+    const out = await nodeRun<{ route: string; reason?: string }>("acceptance").run(
+      ctxOf({ outputs: { load_ctx: { groups: [], acceptanceStatus: "no-prd" } } }),
+    );
+    expect(out.route).toBe("escalate");
+    expect(out.reason).toContain("no-prd");
+  });
+
+  test("skips cleanly when acceptance is disabled in config", async () => {
+    let ran = 0;
+    _acceptanceDeps.runShell = async () => {
+      ran += 1;
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    const out = await nodeRun<{ route: string; output: string }>("acceptance").run(
+      ctxOf({ outputs: { load_ctx: { groups: [], acceptanceStatus: "disabled" } } }),
+    );
+    expect(out.route).toBe("proceed");
+    expect(ran).toBe(0);
+    expect(out.output).toContain("disabled");
+  });
+
+  test("escalates when every group's acceptance test is missing — nothing was verified", async () => {
+    _acceptanceDeps.runShell = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+    const out = await nodeRun<{ route: string; reason?: string }>("acceptance").run(
+      ctxOf({
+        outputs: { load_ctx: { groups: [{ ...GROUPS[0], exists: false }], acceptanceStatus: "ok" } },
+      }),
+    );
+    expect(out.route).toBe("escalate");
+    expect(out.reason).toContain("never generated");
+  });
+
+  test("escalates on a partial coverage hole even when the runnable groups pass", async () => {
+    _acceptanceDeps.runShell = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+    const out = await nodeRun<{ route: string; reason?: string }>("acceptance").run(
+      ctxOf({
+        outputs: {
+          load_ctx: {
+            groups: [GROUPS[0], { ...GROUPS[0], packageDir: "apps/web", exists: false }],
+            acceptanceStatus: "ok",
+          },
+        },
+      }),
+    );
+    expect(out.route).toBe("escalate");
+    expect(out.reason).toContain("apps/web");
+  });
+
+  test("a real test failure still routes to the fix loop, not the coverage escalation", async () => {
+    _acceptanceDeps.runShell = async () => ({ exitCode: 1, stdout: "", stderr: "assert failed" });
+    const out = await nodeRun<{ route: string }>("acceptance").run(
+      ctxOf({
+        outputs: {
+          load_ctx: {
+            groups: [GROUPS[0], { ...GROUPS[0], packageDir: "apps/web", exists: false }],
+            acceptanceStatus: "ok",
+          },
+        },
+      }),
+    );
+    expect(out.route).toBe("fix");
+  });
+
   test("at the cap routes to escalate with a reason", async () => {
     _acceptanceDeps.runShell = async () => ({ exitCode: 1, stdout: "", stderr: "still failing" });
     const out = await nodeRun<{ route: string; reason?: string }>("acceptance").run(
@@ -484,5 +551,29 @@ describe("escalate node", () => {
 
     expect(out.channel).toBe("telegram");
     expect(forgeCalls.some((c) => c.join(" ").includes("pr comment"))).toBe(false);
+  });
+
+  // Regression: on the Telegram path the composed comment (the only thing
+  // carrying the findings) was discarded, and the result file recorded just a
+  // count — so no artifact anywhere named what needed judgment (issue #1398).
+  test("persists the findings in the result file, not only the reason", async () => {
+    stubForge([]);
+    _gitDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+    let wrote = "";
+    _resultDeps.writeText = async (_p, s) => {
+      wrote = s;
+    };
+    const findings = [
+      { severity: "HIGH", title: "holidays ignores timezone", problem: "no query param", fix: "add it" },
+    ];
+
+    await nodeRun("escalate").run(
+      ctxOf({
+        input: { ...INPUT, escalateTelegram: true },
+        outputs: { route_spec: { route: "escalate", findings, escalationReason: "3 findings after 3 attempts" } },
+      }),
+    );
+
+    expect(JSON.parse(wrote).findings).toEqual(findings);
   });
 });

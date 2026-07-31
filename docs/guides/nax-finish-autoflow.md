@@ -21,6 +21,9 @@ load_ctx          detect base branch, resolve the feature spec + acceptance grou
   ↓
 acceptance        run the feature's acceptance tests
   ↳ fail → fix_acceptance (agent) → commit → re-run [max 3 attempts → escalate]
+  ↳ acceptance disabled in config → skip cleanly
+  ↳ no PRD, or a package's test never generated → escalate
+                  (nothing verified is not a pass — same rule as quality_gates)
   ↓
 review_spec       spec-relative review, isolated session, own agent profile
   ↳ clean            → skip to review_quality
@@ -64,6 +67,19 @@ The terminal state is written to `.nax/nax-finish-result.json`:
 
 `status` is one of `opened`, `promoted`, `already-ready`, `escalated`,
 `nothing-to-finish`. Add it to `.gitignore`.
+
+On `escalated` the file also carries `escalationReason` and the `findings` that
+caused it:
+
+```json
+{
+  "feature": "auth-hardening",
+  "status": "escalated",
+  "url": "https://github.com/o/r/pull/42",
+  "escalationReason": "spec review still reporting 3 finding(s) after 3 fix attempts.",
+  "findings": [{ "severity": "HIGH", "title": "…", "problem": "…", "fix": "…" }]
+}
+```
 
 ---
 
@@ -294,7 +310,10 @@ export NAX_TELEGRAM_CHAT_ID=…
 ```
 
 When Telegram is enabled **and** credentialed, the flow posts no PR comment and
-opens no draft to hold one.
+opens no draft to hold one. The message names each finding by severity and
+title, not just the count, and is truncated to the Bot API's 4096-char limit
+(saying how many it dropped). It is sent as plain text — review titles carry
+backticks and underscores that Markdown parsing would reject outright.
 
 **PR/MR comment (fallback).** With `escalate.telegram: false`, or no credentials,
 the flow comments on the branch's existing PR/MR — opening a *draft* to hold the
