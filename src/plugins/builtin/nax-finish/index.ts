@@ -20,6 +20,7 @@
 
 import * as path from "node:path";
 import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
+import { errorMessage } from "@/utils/errors";
 import { type FinishAutoFlowSettings, getFinishAutoFlowConfig, telegramCreds } from "./config";
 import { logTail, stderrTail } from "./output";
 import { buildEscalationMessage, buildTerminalMessage, sendTelegramNotify } from "./telegram";
@@ -121,7 +122,7 @@ export const _naxFinishDeps: {
   /** Directory this module was loaded from; overridable so package-root walking is testable. */
   moduleDir: string;
   /**
-   * Escalation notifier. Routed through `_deps` (rather than called as a direct
+   * Terminal-outcome notifier. Routed through `_deps` (rather than called as a direct
    * import) because `telegramCreds` falls back to ambient `TELEGRAM_BOT_TOKEN` /
    * `NAX_TELEGRAM_CHAT_ID` env vars — so a test that stubs only `run`/`readResult`
    * and returns an "escalated" status would otherwise send a REAL Telegram
@@ -281,9 +282,9 @@ async function settleFinishFlow(
   try {
     return await executeFinishFlow({ ...options, escalateTelegram });
   } catch (error) {
-    options.ctx.logger.warn("nax-finish execute failed", { error: String(error) });
+    options.ctx.logger.warn("nax-finish execute failed", { error: errorMessage(error) });
     return {
-      actionResult: { success: false, message: `nax-finish failed: ${String(error)}` },
+      actionResult: { success: false, message: `nax-finish failed: ${errorMessage(error)}` },
       escalateTelegram,
     };
   }
@@ -299,7 +300,7 @@ async function notifyBestEffort(ctx: PostRunContext, creds: TelegramCreds | null
       ctx.logger.warn("nax-finish terminal notification was rejected", { feature: ctx.feature });
     }
   } catch (error) {
-    ctx.logger.warn("nax-finish terminal notification failed", { feature: ctx.feature, error: String(error) });
+    ctx.logger.warn("nax-finish terminal notification failed", { feature: ctx.feature, error: errorMessage(error) });
   }
 }
 
@@ -320,7 +321,7 @@ async function finalizeEscalation(
       );
       if (!delivered) problems.push("Telegram rejected the message");
     } catch (error) {
-      problems.push(`Telegram failed: ${String(error)}`);
+      problems.push(`Telegram failed: ${errorMessage(error)}`);
     }
   }
   if (delivered) return outcome.actionResult;

@@ -40,10 +40,15 @@ export class PluginRegistry {
    *    logic treat it as transparent — opt-in semantics live in the action's
    *    own `shouldRun()` (e.g. `config.autoPr.enabled`).
    */
-  private readonly builtinPostRunActions: ReadonlyArray<IPostRunAction>;
+  private readonly builtinPostRunActions: ReadonlyArray<PostRunActionRegistration>;
 
-  constructor(loadedPlugins: LoadedPlugin[] | NaxPlugin[], builtinPostRunActions: IPostRunAction[] = []) {
-    this.builtinPostRunActions = builtinPostRunActions;
+  constructor(
+    loadedPlugins: LoadedPlugin[] | NaxPlugin[],
+    builtinPostRunActions: Array<IPostRunAction | PostRunActionRegistration> = [],
+  ) {
+    this.builtinPostRunActions = builtinPostRunActions.map((registration) =>
+      "action" in registration ? registration : { pluginName: registration.name, action: registration },
+    );
     // Support both LoadedPlugin[] and NaxPlugin[] for backward compatibility
     if (loadedPlugins.length > 0 && "plugin" in loadedPlugins[0]) {
       // New format: LoadedPlugin[]
@@ -186,8 +191,7 @@ export class PluginRegistry {
       const action = plugin.extensions.postRunAction;
       return plugin.provides.includes("post-run-action") && action ? [{ pluginName: plugin.name, action }] : [];
     });
-    const builtinActions = this.builtinPostRunActions.map((action) => ({ pluginName: action.name, action }));
-    return [...pluginActions, ...builtinActions];
+    return [...pluginActions, ...this.builtinPostRunActions];
   }
 
   /**

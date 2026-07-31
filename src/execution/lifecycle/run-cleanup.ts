@@ -23,6 +23,7 @@ import type {
   PostRunContext,
 } from "@/plugins";
 import { type PRD, countStories } from "@/prd";
+import { errorMessage } from "@/utils/errors";
 import { releaseLock } from "../helpers";
 
 type PostRunActionOutcome =
@@ -73,7 +74,7 @@ async function settlePostRunAction(action: IPostRunAction, ctx: PostRunContext):
     if (!(await action.shouldRun(ctx))) return { status: "skipped", reason: "shouldRun=false" };
     return outcomeFromResult(await action.execute(ctx));
   } catch (error) {
-    return { status: "error", reason: String(error) };
+    return { status: "error", reason: errorMessage(error) };
   }
 }
 

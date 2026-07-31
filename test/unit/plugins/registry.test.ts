@@ -198,14 +198,21 @@ describe("PluginRegistry.getPostRunActions", () => {
 
   it("retains the owning plugin name for post-run hook attribution", () => {
     const action = { name: "publish-report" } as any;
-    const builtin = { name: "auto-pr" } as any;
+    const builtin = { name: "publish-pr" } as any;
     const registry = new PluginRegistry(
       [createMockPlugin("report-plugin", ["post-run-action"], { postRunAction: action })],
-      [builtin],
+      [{ pluginName: "auto-pr", action: builtin }],
     );
 
     expect(registry.getPostRunActionRegistrations()).toEqual([
       { pluginName: "report-plugin", action },
+      { pluginName: "auto-pr", action: builtin },
+    ]);
+  });
+
+  it("keeps legacy action-only registrations compatible", () => {
+    const builtin = { name: "auto-pr" } as any;
+    expect(new PluginRegistry([], [builtin]).getPostRunActionRegistrations()).toEqual([
       { pluginName: "auto-pr", action: builtin },
     ]);
   });
