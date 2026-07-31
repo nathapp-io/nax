@@ -104,12 +104,14 @@ describe("annotateManifestEffectiveness — #506 catch block logging", () => {
   let origListManifestFiles: typeof _manifestStoreDeps.listManifestFiles;
   let origFileExists: typeof _manifestStoreDeps.fileExists;
   let origGetLogger: typeof _effectivenessDeps.getLogger;
+  let origTokenize: typeof _effectivenessDeps.tokenize;
 
   beforeEach(() => {
     origReadFile = _manifestStoreDeps.readFile;
     origListManifestFiles = _manifestStoreDeps.listManifestFiles;
     origFileExists = _manifestStoreDeps.fileExists;
     origGetLogger = _effectivenessDeps.getLogger;
+    origTokenize = _effectivenessDeps.tokenize;
   });
 
   afterEach(() => {
@@ -117,6 +119,7 @@ describe("annotateManifestEffectiveness — #506 catch block logging", () => {
     _manifestStoreDeps.listManifestFiles = origListManifestFiles;
     _manifestStoreDeps.fileExists = origFileExists;
     _effectivenessDeps.getLogger = origGetLogger;
+    _effectivenessDeps.tokenize = origTokenize;
   });
 
   test("calls logger.warn when manifest read-modify-write throws", async () => {
@@ -178,5 +181,42 @@ describe("annotateManifestEffectiveness — #506 catch block logging", () => {
 
     // At least one manifest was still written (the non-failing one)
     expect(written.length).toBeGreaterThan(0);
+  });
+
+  test("tokenizes shared evidence once across all included chunks", async () => {
+    const manifest = JSON.stringify({
+      ...JSON.parse(VALID_MANIFEST),
+      includedChunks: ["chunk-a", "chunk-b", "chunk-c"],
+      chunkSummaries: {
+        "chunk-a": "Authentication authorization validation configuration",
+        "chunk-b": "Database transaction isolation consistency",
+        "chunk-c": "Observability tracing metrics instrumentation",
+      },
+    });
+    const originalTokenize = _effectivenessDeps.tokenize;
+    let tokenizeCalls = 0;
+    let readCount = 0;
+
+    _effectivenessDeps.tokenize = (text) => {
+      tokenizeCalls++;
+      return originalTokenize(text);
+    };
+    _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-execution.json"];
+    _manifestStoreDeps.fileExists = async () => true;
+    _manifestStoreDeps.readFile = async () => {
+      readCount++;
+      return manifest;
+    };
+    _manifestStoreDeps.writeFile = async () => 0;
+
+    await annotateManifestEffectiveness("/repo", "feat", "US-001", {
+      agentOutput: "unrelated agent response content",
+      diffText: "+unrelated source modification",
+      findingMessages: ["unrelated review observation"],
+    });
+
+    expect(readCount).toBe(2);
+    // Three chunk summaries plus one agent output, diff, and finding tokenization.
+    expect(tokenizeCalls).toBe(6);
   });
 });

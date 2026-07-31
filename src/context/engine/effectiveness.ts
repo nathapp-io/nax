@@ -18,6 +18,7 @@ import type { ChunkEffectiveness } from "./types";
 
 export const _effectivenessDeps = {
   getLogger,
+  tokenize,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -68,26 +69,73 @@ const STOPWORDS = new Set([
   "your",
 ]);
 const MIN_TOKEN_LEN = 4;
+const TOKEN_PATTERN = /[^\s_\-./:,;()\[\]{}'"!?]+/g;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tokenizer (local copy — avoids a circular dep between staleness ↔ effectiveness)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function tokenize(text: string): Set<string> {
-  if (!text) return new Set();
-  const raw = text
-    .toLowerCase()
-    .split(/[\s_\-./:,;()\[\]{}'"!?]+/)
-    .filter((t) => t.length >= MIN_TOKEN_LEN && !STOPWORDS.has(t));
-  return new Set(raw);
+  const terms = new Set<string>();
+  for (const match of text.matchAll(TOKEN_PATTERN)) {
+    const term = match[0].toLowerCase();
+    if (term.length >= MIN_TOKEN_LEN && !STOPWORDS.has(term)) terms.add(term);
+  }
+  return terms;
 }
 
-function sharedTermCount(a: Set<string>, b: Set<string>): number {
+function sharedTermCount(a: ReadonlySet<string>, b: ReadonlySet<string>): number {
   let count = 0;
   for (const term of a) {
     if (b.has(term)) count++;
   }
   return count;
+}
+
+interface EffectivenessEvidenceTerms {
+  findings: Array<{ message: string; terms: ReadonlySet<string> }>;
+  diff?: ReadonlySet<string>;
+  combined?: ReadonlySet<string>;
+}
+
+function buildEvidenceTerms(
+  agentOutput: string,
+  diffText: string,
+  findingMessages: string[],
+): EffectivenessEvidenceTerms {
+  const diffTerms = diffText ? _effectivenessDeps.tokenize(diffText) : undefined;
+  const outputTerms = agentOutput ? _effectivenessDeps.tokenize(agentOutput) : undefined;
+  let combined: Set<string> | undefined;
+  if (diffTerms || outputTerms) {
+    combined = new Set(diffTerms);
+    for (const term of outputTerms ?? []) combined.add(term);
+  }
+  return {
+    findings: findingMessages.map((message) => ({ message, terms: _effectivenessDeps.tokenize(message) })),
+    diff: diffTerms,
+    combined,
+  };
+}
+
+function classifyWithTerms(chunkSummary: string, evidence: EffectivenessEvidenceTerms): ChunkEffectiveness {
+  const summaryTerms = _effectivenessDeps.tokenize(chunkSummary);
+  if (summaryTerms.size < MIN_SIGNIFICANT_TERMS) return { signal: "unknown" };
+
+  for (const finding of evidence.findings) {
+    if (sharedTermCount(summaryTerms, finding.terms) >= MIN_SIGNIFICANT_TERMS) {
+      return { signal: "contradicted", evidence: finding.message.slice(0, 200) };
+    }
+  }
+
+  if (evidence.diff && sharedTermCount(summaryTerms, evidence.diff) >= MIN_SIGNIFICANT_TERMS) {
+    return { signal: "followed", evidence: "terms found in diff" };
+  }
+
+  if (evidence.combined && sharedTermCount(summaryTerms, evidence.combined) < MIN_SIGNIFICANT_TERMS) {
+    return { signal: "ignored" };
+  }
+
+  return { signal: "unknown" };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,44 +164,7 @@ export function classifyEffectiveness(
   diffText: string,
   findingMessages: string[],
 ): ChunkEffectiveness {
-  const summaryTerms = tokenize(chunkSummary);
-
-  // Too few terms → cannot classify meaningfully
-  if (summaryTerms.size < MIN_SIGNIFICANT_TERMS) {
-    return { signal: "unknown" };
-  }
-
-  // 1. Contradicted: review finding text overlaps with chunk summary
-  for (const finding of findingMessages) {
-    const findingTerms = tokenize(finding);
-    if (sharedTermCount(summaryTerms, findingTerms) >= MIN_SIGNIFICANT_TERMS) {
-      return {
-        signal: "contradicted",
-        evidence: finding.slice(0, 200),
-      };
-    }
-  }
-
-  // 2. Followed: diff overlaps with chunk summary
-  if (diffText) {
-    const diffTerms = tokenize(diffText);
-    if (sharedTermCount(summaryTerms, diffTerms) >= MIN_SIGNIFICANT_TERMS) {
-      return {
-        signal: "followed",
-        evidence: "terms found in diff",
-      };
-    }
-  }
-
-  // 3. Ignored: terms appear in neither diff nor agent output
-  if (diffText || agentOutput) {
-    const combinedTerms = tokenize(`${diffText} ${agentOutput}`);
-    if (sharedTermCount(summaryTerms, combinedTerms) < MIN_SIGNIFICANT_TERMS) {
-      return { signal: "ignored" };
-    }
-  }
-
-  return { signal: "unknown" };
+  return classifyWithTerms(chunkSummary, buildEvidenceTerms(agentOutput, diffText, findingMessages));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -185,16 +196,18 @@ export async function annotateManifestEffectiveness(
   },
 ): Promise<void> {
   const stored = await loadContextManifests(projectDir, storyId, featureId);
+  let evidenceTerms: EffectivenessEvidenceTerms | undefined;
 
   for (const item of stored) {
     const { manifest } = item;
     if (!manifest.chunkSummaries || manifest.includedChunks.length === 0) continue;
+    evidenceTerms ??= buildEvidenceTerms(agentOutput, diffText, findingMessages);
 
     const effectiveness: Record<string, ChunkEffectiveness> = {};
     for (const id of manifest.includedChunks) {
       const summary = manifest.chunkSummaries[id];
       if (!summary) continue;
-      effectiveness[id] = classifyEffectiveness(summary, agentOutput, diffText, findingMessages);
+      effectiveness[id] = classifyWithTerms(summary, evidenceTerms);
     }
 
     if (Object.keys(effectiveness).length === 0) continue;
