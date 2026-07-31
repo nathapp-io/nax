@@ -3,7 +3,8 @@ import { appendFile } from "node:fs/promises";
 import { type FormatterOptions, type VerbosityMode, formatLogEntry } from "../log-format/index.js";
 import { formatConsole, formatJsonl } from "./formatters.js";
 import { redactEntry } from "./redact.js";
-import type { LogEntry, LogLevel, LoggerOptions, StoryLogger } from "./types.js";
+import { SinkRegistry } from "./sink-registry.js";
+import type { LogEntry, LogLevel, LogSink, LoggerOptions, StoryLogger } from "./types.js";
 
 /**
  * Severity ordering for log levels (lower number = more severe)
@@ -56,6 +57,8 @@ export class Logger {
   private writeQueueTail: Promise<void> = Promise.resolve();
   /** Lines buffered since the last flush task ran — drained as one batched append */
   private readonly pendingLines: string[] = [];
+  /** Registered redacted-entry consumers. Order is preserved so dispatch is deterministic. */
+  private readonly sinkRegistry = new SinkRegistry();
 
   constructor(options: LoggerOptions) {
     this.level = options.level;
@@ -124,6 +127,10 @@ export class Logger {
     // only on the file path (and only `data`) let secrets interpolated into
     // `message` reach the JSONL log and the terminal in cleartext.
     const entry = redactEntry(rawEntry);
+
+    // Registered sinks inherit secret redaction by construction: they observe
+    // the already-redacted entry, never the raw one.
+    this.sinkRegistry.dispatch(entry);
 
     // Console output (level-gated, suppressed in TUI mode to avoid corrupting Ink's terminal)
     if (consoleEnabled) {
@@ -270,12 +277,39 @@ export class Logger {
   }
 
   /**
+   * Register a sink to receive every redacted log entry. Returns an
+   * unsubscribe function. Throws from a sink are swallowed by `SinkRegistry`.
+   */
+  addSink(sink: LogSink): () => void {
+    return this.sinkRegistry.add(sink);
+  }
+
+  /**
    * Close logger (cleanup method for shutdown)
    * Note: Bun.write handles file operations automatically, no manual cleanup needed
    */
   close(): void {
     // No-op: Bun handles file operations internally
   }
+}
+
+/**
+ * Register a sink on the singleton logger instance.
+ *
+ * Mirrors the `Logger.addSink` API at the module level so callers can wire
+ * exporters without holding a direct `Logger` reference. If the singleton has
+ * not been initialized yet, the sink is registered on the noop logger and
+ * the returned unsubscribe is a no-op; this matches the existing `getLogger`
+ * fallback that quietly uses a noop logger.
+ *
+ * @returns An unsubscribe function.
+ */
+export function addSink(sink: LogSink): () => void {
+  if (!instance) {
+    noopLogger.addSink(sink);
+    return () => {};
+  }
+  return instance.addSink(sink);
 }
 
 /**
