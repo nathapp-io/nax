@@ -89,7 +89,7 @@ describe("US-007 AC7: git branch and sha resolution failure does not throw onRun
       } as any;
     }) as typeof _gitDeps.spawn;
 
-    const plugin = createOtelReporterPlugin({ ...baseCfg, workdir: "/tmp/nax-test-repo" } as any);
+    const plugin = createOtelReporterPlugin(baseCfg, undefined, "/tmp/nax-test-repo");
     const r = plugin.extensions.reporter!;
     await expect(
       r.onRunStart?.({
@@ -110,7 +110,7 @@ describe("US-007 AC7: git branch and sha resolution failure does not throw onRun
 
   test("success: spawn throwing during git reads does not reject the onRunStart hook", async () => {
     _gitDeps.spawn = spawnThrowsOnRead();
-    const plugin = createOtelReporterPlugin({ ...baseCfg, workdir: "/tmp/nax-test-repo" } as any);
+    const plugin = createOtelReporterPlugin(baseCfg, undefined, "/tmp/nax-test-repo");
     const r = plugin.extensions.reporter!;
     await expect(
       r.onRunStart?.({
@@ -126,7 +126,7 @@ describe("US-007 AC7: git branch and sha resolution failure does not throw onRun
 
   test("success: subsequent onStoryComplete and onRunEnd keep working after a git failure", async () => {
     _gitDeps.spawn = spawnAlwaysFails();
-    const plugin = createOtelReporterPlugin({ ...baseCfg, workdir: "/tmp/nax-test-repo" } as any);
+    const plugin = createOtelReporterPlugin(baseCfg, undefined, "/tmp/nax-test-repo");
     const r = plugin.extensions.reporter!;
     await r.onRunStart?.({
       runId: "gitfail-3",
@@ -172,7 +172,7 @@ describe("US-007 AC8: when git branch resolution fails, exported payloads omit n
       } as any;
     }) as typeof _gitDeps.spawn;
     const { posts, deps } = capturingPosts();
-    const plugin = createOtelReporterPlugin({ ...baseCfg, workdir: "/tmp/nax-test-repo" } as any, deps);
+    const plugin = createOtelReporterPlugin(baseCfg, deps, "/tmp/nax-test-repo");
     const r = plugin.extensions.reporter!;
 
     await r.onRunStart?.({
@@ -219,7 +219,7 @@ describe("US-007 AC8: when git branch resolution fails, exported payloads omit n
       } as any;
     }) as typeof _gitDeps.spawn;
     const { posts, deps } = capturingPosts();
-    const plugin = createOtelReporterPlugin({ ...baseCfg, workdir: "/tmp/nax-test-repo" } as any, deps);
+    const plugin = createOtelReporterPlugin(baseCfg, deps, "/tmp/nax-test-repo");
     const r = plugin.extensions.reporter!;
 
     await r.onRunStart?.({

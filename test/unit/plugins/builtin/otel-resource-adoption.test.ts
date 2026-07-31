@@ -256,13 +256,13 @@ describe("US-007 AC5: span-tree payload builder resource attributes include nax.
       sessionModel: "single-session",
     });
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
-    const payload: any = agg.buildMetricsPayload(
-      "nax",
-      "r1",
-      "1000",
-      "feat-1",
-      "proj-1",
-    );
+    const payload: any = agg.buildMetricsPayload({
+      serviceName: "nax",
+      runId: "r1",
+      timeUnixNano: "1000",
+      feature: "feat-1",
+      project: "proj-1",
+    });
     const attrs = payload.resourceMetrics[0].resource.attributes;
     expect(attrs).toContainEqual({ key: "nax.project", value: { stringValue: "proj-1" } });
   });
@@ -282,13 +282,13 @@ describe("US-007 AC5: span-tree payload builder resource attributes include nax.
       sessionModel: "single-session",
     });
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
-    const payload: any = agg.buildMetricsPayload(
-      "nax",
-      "r1",
-      "1000",
-      "feat-1",
-      "proj-1",
-    );
+    const payload: any = agg.buildMetricsPayload({
+      serviceName: "nax",
+      runId: "r1",
+      timeUnixNano: "1000",
+      feature: "feat-1",
+      project: "proj-1",
+    });
     const attrs = payload.resourceMetrics[0].resource.attributes;
     expect(attrs).toContainEqual({ key: "nax.feature", value: { stringValue: "feat-1" } });
     expect(attrs).toContainEqual({ key: "nax.run_id", value: { stringValue: "r1" } });
@@ -309,15 +309,15 @@ describe("US-007 AC5: span-tree payload builder resource attributes include nax.
       sessionModel: "single-session",
     });
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
-    const payload: any = agg.buildMetricsPayload(
-      "my-service",
-      "r42",
-      "1000",
-      "feat-x",
-      "proj-x",
-      "feat-branch",
-      "deadbeef",
-    );
+    const payload: any = agg.buildMetricsPayload({
+      serviceName: "my-service",
+      runId: "r42",
+      timeUnixNano: "1000",
+      feature: "feat-x",
+      project: "proj-x",
+      gitBranch: "feat-branch",
+      gitSha: "deadbeef",
+    });
     const attrs = payload.resourceMetrics[0].resource.attributes;
     const expected = buildResourceAttributes({
       serviceName: "my-service",
@@ -334,13 +334,13 @@ describe("US-007 AC5: span-tree payload builder resource attributes include nax.
   test("boundary: empty aggregator still emits nax.project on its resource block", () => {
     const agg = createPhaseMetricsAggregator();
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
-    const payload: any = agg.buildMetricsPayload(
-      "nax",
-      "r1",
-      "1000",
-      "feat-empty",
-      "proj-empty",
-    );
+    const payload: any = agg.buildMetricsPayload({
+      serviceName: "nax",
+      runId: "r1",
+      timeUnixNano: "1000",
+      feature: "feat-empty",
+      project: "proj-empty",
+    });
     const attrs = payload.resourceMetrics[0].resource.attributes;
     expect(attrs).toContainEqual({ key: "nax.project", value: { stringValue: "proj-empty" } });
     expect(attrs).toContainEqual({ key: "nax.feature", value: { stringValue: "feat-empty" } });

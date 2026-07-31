@@ -372,13 +372,12 @@ describe("US-003: resource attribute adoption", () => {
 
   test("AC-29: the span-tree metrics payload builder carries nax.project on the resource block", () => {
     const aggregator = createPhaseMetricsAggregator();
-    const payload: any = aggregator.buildMetricsPayload(
-      "nax",
-      "run-1",
-      "1000",
-      undefined,
-      "my-project",
-    );
+    const payload: any = aggregator.buildMetricsPayload({
+      serviceName: "nax",
+      runId: "run-1",
+      timeUnixNano: "1000",
+      project: "my-project",
+    });
     const attrs = payload.resourceMetrics[0].resource.attributes as KeyValue[];
     expect(findAttr(attrs, "nax.project")?.value.stringValue).toBe("my-project");
   });

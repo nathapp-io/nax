@@ -28,6 +28,10 @@ import { parseTraceparent } from "./traceparent";
 
 const STAGE = "otel-reporter";
 const REENTRY_STAGE = "otel-batch-queue";
+/** Stages whose own log entries must never be re-enqueued into the logs sink — an export
+ * failure logged from either the reporter itself or the batch queue would otherwise
+ * amplify into a recursive cascade. */
+const REENTRY_STAGES = new Set([STAGE, REENTRY_STAGE]);
 const DEFAULT_MAX_BATCH_SIZE = 64;
 const DEFAULT_FLUSH_INTERVAL_MS = 5_000;
 const DEFAULT_MAX_QUEUE_SIZE = 2_048;
@@ -142,10 +146,11 @@ interface ReporterDeps extends PostJsonDeps {
  * When `cfg.logs.enabled` is true, also registers a logger sink to export
  * redacted log entries as OTLP LogRecords through a dedicated queue.
  *
- * @param cfg  - resolved OTel reporter config (closed over by the reporter)
- * @param deps - injectable deps (tests only)
+ * @param cfg     - resolved OTel reporter config (closed over by the reporter)
+ * @param deps    - injectable deps (tests only)
+ * @param workdir - target repository root, used for best-effort git branch/sha resolution
  */
-export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: ReporterDeps): NaxPlugin {
+export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: ReporterDeps, workdir?: string): NaxPlugin {
   const states = new Map<string, RunState>();
   const base = cfg.endpoint?.replace(/\/$/, "");
   let tornDown = false;
@@ -303,15 +308,15 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: Reporte
     }) as { resourceMetrics: [{ scopeMetrics: [{ metrics: object[] }] }] };
     // US-007: merge the run's accumulated phase histograms + counters into the
     // same metrics POST (SEAM-5) rather than issuing a third export request.
-    const aggMetrics = st.metrics.buildMetricsPayload(
-      cfg.serviceName,
-      e.runId,
-      endUnixNano,
-      st.feature,
-      st.project,
-      st.gitBranch,
-      st.gitSha,
-    ) as {
+    const aggMetrics = st.metrics.buildMetricsPayload({
+      serviceName: cfg.serviceName,
+      runId: e.runId,
+      timeUnixNano: endUnixNano,
+      feature: st.feature,
+      project: st.project,
+      gitBranch: st.gitBranch,
+      gitSha: st.gitSha,
+    }) as {
       resourceMetrics: [{ scopeMetrics: [{ metrics: object[] }] }];
     };
     metrics.resourceMetrics[0].scopeMetrics[0].metrics.push(...aggMetrics.resourceMetrics[0].scopeMetrics[0].metrics);
@@ -328,25 +333,18 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: Reporte
 
       let gitBranch: string | undefined;
       let gitSha: string | undefined;
-      const workdir = (cfg as Record<string, unknown>).workdir as string | undefined;
-      if (workdir) {
-        try {
-          const branchResult = await gitWithTimeout(["rev-parse", "--abbrev-ref", "HEAD"], workdir);
-          if (branchResult.exitCode === 0) {
-            const branch = branchResult.stdout.trim();
-            if (branch && branch !== "HEAD") gitBranch = branch;
-          }
-        } catch {
-          // best-effort — omit nax.git.branch
+      if (base && workdir) {
+        const [branchResult, shaResult] = await Promise.all([
+          gitWithTimeout(["rev-parse", "--abbrev-ref", "HEAD"], workdir).catch(() => null),
+          gitWithTimeout(["rev-parse", "HEAD"], workdir).catch(() => null),
+        ]);
+        if (branchResult?.exitCode === 0) {
+          const branch = branchResult.stdout.trim();
+          if (branch && branch !== "HEAD") gitBranch = branch;
         }
-        try {
-          const shaResult = await gitWithTimeout(["rev-parse", "HEAD"], workdir);
-          if (shaResult.exitCode === 0) {
-            const sha = shaResult.stdout.trim();
-            if (sha) gitSha = sha;
-          }
-        } catch {
-          // best-effort — omit nax.git.sha
+        if (shaResult?.exitCode === 0) {
+          const sha = shaResult.stdout.trim();
+          if (sha) gitSha = sha;
         }
       }
 
@@ -393,7 +391,7 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: Reporte
           // Re-entrancy guard: entries logged by the exporter itself must not
           // be re-enqueued, otherwise an export failure that logs a warning
           // would amplify into a recursive cascade.
-          if (entry.stage === REENTRY_STAGE) return;
+          if (REENTRY_STAGES.has(entry.stage)) return;
           if (LOG_PRIORITY[entry.level] > LOG_PRIORITY[floorKey]) return;
           logsQueue.enqueue(entry);
         };

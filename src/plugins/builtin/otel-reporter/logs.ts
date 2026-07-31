@@ -47,7 +47,7 @@ export function toLogRecord(entry: LogEntry): LogRecord {
   const nonScalars: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data)) {
     if (typeof value === "string") {
-      attributes.push(attr(`nax.data.${key}`, value));
+      attributes.push(attr(`nax.data.${key}`, truncate(value)));
     } else if (typeof value === "number") {
       // Non-finite numbers are not valid OTLP doubles; serialize as JSON to keep the
       // payload parseable rather than embedding NaN/Infinity that JSON.stringify
