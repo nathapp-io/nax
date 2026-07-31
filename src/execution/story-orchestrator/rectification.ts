@@ -2,6 +2,7 @@ import type { Finding, FixCycle, FixCycleContext } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { CallContext, Operation, RunOperation } from "@/operations";
 import { countOscillationOutcomes, recordOscillations } from "../oscillation-store";
+import { triageNbfGate } from "./nbf-flake-triage";
 import { extractPhaseFindings, orderGateLast, phasesToRevalidate } from "./phase-eval";
 import { isQuarantinedFlake, phaseExplicitlyPassed, phasePassed } from "./phase-eval";
 import { _storyOrchestratorDeps, runPhase, withIncreasingFailuresBail } from "./run-phase";
@@ -190,6 +191,14 @@ export function collectRectificationPhases(state: InternalBuildState): InternalP
   ].filter((phase): phase is InternalPhase => phase !== undefined);
 }
 
+function isQuarantinedOnlyGateFailure(
+  phase: InternalPhase,
+  rawFindings: readonly Finding[],
+  blockingFindings: readonly Finding[],
+): boolean {
+  return phase.kind === "full-suite-gate" && rawFindings.length > 0 && blockingFindings.length === 0;
+}
+
 /**
  * @internal
  * Run the rectification loop and return a structured result describing the exit.
@@ -229,10 +238,9 @@ export async function runRectification(
     nbfPath = true;
     // ADR-024 nbf path — triage is a separate concern owned by the main gate path.
     //
-    // This branch is what `runNonBlockingFix`'s restore log asserts as
-    // `flakeTriageRan: false` (#1383). If triage is ever wired in here, update that
-    // log field too — otherwise it silently reports a gap that no longer exists, and
-    // an operator reading it will misjudge a genuine break as a possible flake.
+    // Seed findings are advisory-review findings, so they still bypass gate triage.
+    // #1404 triages only newly failing gate findings later, inside validate(), using
+    // the optional transaction-local `nbfFlakeTriage` state.
     initialFindings = [...overrides.initialFindings];
   } else {
     // US-003 — Flake triage runs on the gate's failed-test findings BEFORE
@@ -337,6 +345,16 @@ export async function runRectification(
         await runPhase(ctx, phase.slot, phaseCosts, phaseOutputs);
         if (shouldSkipPhaseForRectification({ phase, state, phaseOutputs, nbfPath })) continue;
         const output = phaseOutputs[phase.slot.op.name];
+        const nbfFlakeTriage = overrides?.nbfFlakeTriage;
+        if (nbfPath && phase.kind === "full-suite-gate" && nbfFlakeTriage) {
+          await triageNbfGate({
+            output,
+            gateName: phase.slot.op.name,
+            ctx,
+            transaction: nbfFlakeTriage,
+            triage: _storyOrchestratorDeps.triage,
+          });
+        }
         // #1383 parity. `describeGateRegression` — the predicate that actually decides
         // keep-vs-discard for this pass — excludes failures the run already quarantined as
         // flakes. Until #1401 the carve-out hid the whole gate output from the nbf sweep, so
@@ -349,16 +367,18 @@ export async function runRectification(
         // relabels quarantined failures to `flaky-test`, which `gatherRectificationFindings`
         // already drops), so widening this would be an unrelated behaviour change.
         const phaseFindings = extractPhaseFindings(output);
-        findings.push(
-          ...(nbfPath
-            ? phaseFindings.filter((f) => !isQuarantinedFlake(f, ctx.runtime.quarantineMemo))
-            : phaseFindings),
-        );
+        const blockingFindings = nbfPath
+          ? phaseFindings.filter(
+              (finding) => !isQuarantinedFlake(finding, nbfFlakeTriage?.memo ?? ctx.runtime.quarantineMemo),
+            )
+          : phaseFindings;
+        findings.push(...blockingFindings);
         // Mirror the main loop's halt-on-failure contract (spec §2C, PR #1127):
         // verifier and reviews must never judge broken-gate code, even inside the
         // rectification revalidation sweep. Findings collected so far feed the next
         // fix iteration; downstream phases are skipped to avoid stale-verdict pollution.
-        if (!phasePassed(phase.slot.op.name, output, ctx.storyId)) {
+        const quarantinedOnly = nbfPath && isQuarantinedOnlyGateFailure(phase, phaseFindings, blockingFindings);
+        if (!phasePassed(phase.slot.op.name, output, ctx.storyId) && !quarantinedOnly) {
           getSafeLogger()?.warn("story-orchestrator", "Short-circuiting revalidation on phase failure", {
             storyId: ctx.storyId,
             phase: phase.slot.op.name,

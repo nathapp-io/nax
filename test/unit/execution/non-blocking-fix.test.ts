@@ -289,10 +289,9 @@ describe("runNonBlockingFix keep vs restore", () => {
     expect(data?.regressedKeyCount).toBe(25);
   });
 
-  // #1383 — nbf's revalidation gate is never flake-triaged, so a first-observation flake
-  // is indistinguishable from a real break. The log must disclose that, and report how
-  // many failures were dropped as already-known flakes.
-  test("restore log discloses the triage gap and the memo exclusions (#1383)", async () => {
+  // Backward-compatible/no-probe path: diagnostics must report that triage did not run,
+  // while preserving the count of failures excluded by an existing memo.
+  test("restore log reports an untriaged pass and its memo exclusions", async () => {
     const phaseOutputs: Record<string, unknown> = { "full-suite-gate": { success: true } };
     const data = await withInfoSpy(async (infoSpy) => {
       await runNonBlockingFix(

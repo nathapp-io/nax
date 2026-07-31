@@ -2,6 +2,7 @@ import type { Finding } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
 import { errorMessage } from "@/utils/errors";
+import type { QuarantineMemo } from "@/verification";
 import { hydrateFromResumePlan } from "../checkpoint/resume-hydrate";
 import {
   actionableAdvisoryFindings,
@@ -42,16 +43,16 @@ export class ExecutionPlan {
   private describeGateRegressionNow(
     phaseOutputs: Record<string, unknown>,
     gateName: string | undefined,
-    baselineKeys: ReadonlySet<string>,
+    options: { baselineKeys: ReadonlySet<string>; quarantineMemo?: QuarantineMemo },
   ): GateRegressionDetail {
     return describeGateRegression({
       gateOutput: gateName === undefined ? undefined : phaseOutputs[gateName],
-      baselineKeys,
+      baselineKeys: options.baselineKeys,
       gateName,
       storyId: this.ctx.storyId,
       // Run-scoped: a test this run already probed and quarantined is not attributable
       // to this story, on either path (#1383).
-      quarantineMemo: this.ctx.runtime.quarantineMemo,
+      quarantineMemo: options.quarantineMemo ?? this.ctx.runtime.quarantineMemo,
     });
   }
 
@@ -330,9 +331,12 @@ export class ExecutionPlan {
           cfg: advCfg,
           phaseOutputs,
           phaseCosts,
-          runRectify: (maxAttempts) =>
+          quarantineMemo: this.ctx.runtime.quarantineMemo,
+          gateBaselineKeys: preRectGateFailureKeys,
+          runRectify: (maxAttempts, nbfFlakeTriage) =>
             runRectification(this.ctx, this.state, phaseCosts, phaseOutputs, {
               initialFindings: advisoryFindings,
+              nbfFlakeTriage,
               strategies: this.state.nonBlockingFixStrategies ?? [],
               excludePhaseKinds: nonBlockingExcludePhases(),
               extraRevalidationKinds: nonBlockingExtraPhases(advCfg),
@@ -346,7 +350,11 @@ export class ExecutionPlan {
           // here instead, leaving the story green with zero net change.
           // Detail-returning (not boolean) so the restore log can name the regressing
           // test identities — the only point at which they still exist (#1382).
-          keptTreeRegressed: () => this.describeGateRegressionNow(phaseOutputs, gateName, preRectGateFailureKeys),
+          keptTreeRegressed: (quarantineMemo) =>
+            this.describeGateRegressionNow(phaseOutputs, gateName, {
+              baselineKeys: preRectGateFailureKeys,
+              quarantineMemo,
+            }),
         },
         {
           measureSourceDiff: createMeasureSourceDiff({
@@ -380,11 +388,9 @@ export class ExecutionPlan {
     const verifierExplicitlyPassed = verifierName !== undefined && phaseExplicitlyPassed(phaseOutputs[verifierName]);
     // Compares the FINAL gate against the verifier-time baseline, including keyless
     // (timeout / execution-failure) regressions the raw key-diff is blind to (audit #3).
-    const gateRegressedDuringRect = this.describeGateRegressionNow(
-      phaseOutputs,
-      gateName,
-      preRectGateFailureKeys,
-    ).regressed;
+    const gateRegressedDuringRect = this.describeGateRegressionNow(phaseOutputs, gateName, {
+      baselineKeys: preRectGateFailureKeys,
+    }).regressed;
     const verifierPassedSsot = verifierExplicitlyPassed && !gateRegressedDuringRect;
     if (verifierExplicitlyPassed && gateRegressedDuringRect) {
       logger?.warn(

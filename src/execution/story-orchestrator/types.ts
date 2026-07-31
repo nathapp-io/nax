@@ -1,6 +1,7 @@
 import type { NonBlockingFixConfig } from "@/config/selectors";
 import type { Finding, FixCycleContext, FixStrategy } from "@/findings";
 import type { DeterministicOperation, RunOperation } from "@/operations";
+import type { NbfFlakeTriageTransaction } from "./nbf-flake-triage";
 
 export const EXHAUSTED_EXIT_REASONS = new Set<string>([
   "max-attempts-total",
@@ -210,6 +211,8 @@ export interface RectificationOverrides {
    * the only such caller; a second one should promote this to an explicit flag.
    */
   initialFindings?: readonly Finding[];
+  /** Transaction-local, read-only gate triage for the ADR-024 NBF path (#1404). */
+  nbfFlakeTriage?: NbfFlakeTriageTransaction;
   /** Strategy set instead of state.rectification.strategies (scope filtering). */
   strategies?: FixStrategy<Finding, unknown, unknown, unknown>[];
   /** Phase kinds removed from validationPhases (e.g. the LLM reviews). */

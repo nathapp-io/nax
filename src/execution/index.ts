@@ -61,6 +61,7 @@ export {
   orderGateLast,
   gateFailureKeys,
   describeGateRegression,
+  createNbfFlakeTriageTransaction,
   refreshReviewInputForDispatch,
   withIncreasingFailuresBail,
   extractPhaseFindings,
@@ -68,6 +69,7 @@ export {
   type GateRegressionDetail,
   type GateRegressionInput,
   type InternalBuildState,
+  type NbfFlakeTriageTransaction,
   type OrchestratorSlot,
   type PhaseKind,
   type RectificationOverrides,
@@ -80,6 +82,7 @@ export {
   logDeterministicPhaseOutcome,
 } from "./story-orchestrator-logging";
 export { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "./plan-inputs";
+export { runNonBlockingFix } from "./non-blocking-fix";
 export { buildPlanForStrategy } from "./build-plan-for-strategy";
 export {
   CheckpointWriter,
