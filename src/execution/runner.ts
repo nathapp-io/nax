@@ -372,6 +372,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         prdPath,
         branch,
         version: NAX_VERSION,
+        hooks,
         runCompleted,
         outputDir: runtime.outputDir,
         globalDir: runtime.globalDir,

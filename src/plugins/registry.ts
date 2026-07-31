@@ -10,6 +10,11 @@ import type { RoutingStrategy } from "../routing/router";
 import type { LoadedPlugin, PluginSource } from "./loader";
 import type { IContextProvider, IPostRunAction, IPromptOptimizer, IReporter, IReviewPlugin, NaxPlugin } from "./types";
 
+export interface PostRunActionRegistration {
+  pluginName: string;
+  action: IPostRunAction;
+}
+
 /**
  * Plugin registry with typed getters for each extension type.
  *
@@ -35,10 +40,15 @@ export class PluginRegistry {
    *    logic treat it as transparent — opt-in semantics live in the action's
    *    own `shouldRun()` (e.g. `config.autoPr.enabled`).
    */
-  private readonly builtinPostRunActions: ReadonlyArray<IPostRunAction>;
+  private readonly builtinPostRunActions: ReadonlyArray<PostRunActionRegistration>;
 
-  constructor(loadedPlugins: LoadedPlugin[] | NaxPlugin[], builtinPostRunActions: IPostRunAction[] = []) {
-    this.builtinPostRunActions = builtinPostRunActions;
+  constructor(
+    loadedPlugins: LoadedPlugin[] | NaxPlugin[],
+    builtinPostRunActions: Array<IPostRunAction | PostRunActionRegistration> = [],
+  ) {
+    this.builtinPostRunActions = builtinPostRunActions.map((registration) =>
+      "action" in registration ? registration : { pluginName: registration.name, action: registration },
+    );
     // Support both LoadedPlugin[] and NaxPlugin[] for backward compatibility
     if (loadedPlugins.length > 0 && "plugin" in loadedPlugins[0]) {
       // New format: LoadedPlugin[]
@@ -172,10 +182,15 @@ export class PluginRegistry {
    * @returns Array of post-run action implementations
    */
   getPostRunActions(): IPostRunAction[] {
-    const pluginActions = this.plugins
-      .filter((p) => p.provides.includes("post-run-action"))
-      .map((p) => p.extensions.postRunAction)
-      .filter((action): action is IPostRunAction => action !== undefined);
+    return this.getPostRunActionRegistrations().map(({ action }) => action);
+  }
+
+  /** Return post-run actions together with their owning plugin identity. */
+  getPostRunActionRegistrations(): PostRunActionRegistration[] {
+    const pluginActions = this.plugins.flatMap((plugin) => {
+      const action = plugin.extensions.postRunAction;
+      return plugin.provides.includes("post-run-action") && action ? [{ pluginName: plugin.name, action }] : [];
+    });
     return [...pluginActions, ...this.builtinPostRunActions];
   }
 

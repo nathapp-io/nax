@@ -439,6 +439,9 @@ export const NaxConfigSchema = z
               })
               .default({ spec: null, quality: null }),
             escalate: z.object({ telegram: z.boolean().default(true) }).default({ telegram: true }),
+            notify: z
+              .object({ mode: z.enum(["escalation", "always", "off"]).default("escalation") })
+              .default({ mode: "escalation" }),
             // Wall-clock caps. Every one of these bounds a subprocess the flow
             // awaits; without them a hung gate stalls the whole run's
             // completion phase, which has no timeout of its own.
@@ -465,6 +468,7 @@ export const NaxConfigSchema = z
             defaultAgent: null,
             reviewers: { spec: null, quality: null },
             escalate: { telegram: true },
+            notify: { mode: "escalation" },
             timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },
           }),
       })
@@ -475,6 +479,7 @@ export const NaxConfigSchema = z
           defaultAgent: null,
           reviewers: { spec: null, quality: null },
           escalate: { telegram: true },
+          notify: { mode: "escalation" },
           timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },
         },
       }),

@@ -20,8 +20,8 @@ import { naxFinishPlugin } from "./builtin/nax-finish";
 import { createOtelReporterPlugin } from "./builtin/otel-reporter";
 import { createWebhookReporterPlugin } from "./builtin/webhook-reporter";
 import { createPluginLogger } from "./plugin-logger";
-import { PluginRegistry } from "./registry";
-import type { IPostRunAction, NaxPlugin, PluginConfigEntry } from "./types";
+import { PluginRegistry, type PostRunActionRegistration } from "./registry";
+import type { NaxPlugin, PluginConfigEntry } from "./types";
 import { validatePlugin } from "./validator";
 
 /**
@@ -114,7 +114,7 @@ export async function loadPlugins(
   reporters?: ReportersConfig,
 ): Promise<PluginRegistry> {
   const loadedPlugins: LoadedPlugin[] = [];
-  const builtinPostRunActions: IPostRunAction[] = [];
+  const builtinPostRunActions: PostRunActionRegistration[] = [];
   const effectiveProjectRoot = projectRoot || projectDir;
   const pluginNames = new Set<string>();
   const disabledSet = new Set(disabledPlugins ?? []);
@@ -148,7 +148,7 @@ export async function loadPlugins(
     // exists for branch". auto-route follows the same side-channel layout.
     const autoPrAction = autoPrPlugin.extensions.postRunAction;
     if (autoPrAction) {
-      builtinPostRunActions.push(autoPrAction);
+      builtinPostRunActions.push({ pluginName: autoPrPlugin.name, action: autoPrAction });
     }
   } else {
     logger?.info("plugins", `Skipping disabled plugin: '${autoPrPlugin.name}' (built-in)`);
@@ -161,7 +161,7 @@ export async function loadPlugins(
     }
     // Side-channel action only (same layout as auto-pr) — not added to loadedPlugins.
     const action = naxFinishPlugin.extensions.postRunAction;
-    if (action) builtinPostRunActions.push(action);
+    if (action) builtinPostRunActions.push({ pluginName: naxFinishPlugin.name, action });
   } else {
     logger?.info("plugins", `Skipping disabled plugin: '${naxFinishPlugin.name}' (built-in)`);
   }
@@ -173,7 +173,7 @@ export async function loadPlugins(
     }
     const autoRouteAction = autoRoutePlugin.extensions.postRunAction;
     if (autoRouteAction) {
-      builtinPostRunActions.push(autoRouteAction);
+      builtinPostRunActions.push({ pluginName: autoRoutePlugin.name, action: autoRouteAction });
     }
   } else {
     logger?.info("plugins", `Skipping disabled plugin: '${autoRoutePlugin.name}' (built-in)`);

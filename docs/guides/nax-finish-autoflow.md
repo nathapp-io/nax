@@ -180,6 +180,7 @@ post-run driver treats it as non-blocking and logs a warning).
         "quality": "nax-quality-reviewer"
       },
       "escalate": { "telegram": true },
+      "notify": { "mode": "escalation" },
       "timeouts": {
         "acceptanceMs": 600000,
         "gateMs": 900000,
@@ -199,6 +200,7 @@ post-run driver treats it as non-blocking and logs a warning).
 | `reviewers.spec` | `null` | acpx agent profile for the spec-review phase — see §4. |
 | `reviewers.quality` | `null` | acpx agent profile for the quality-review phase. |
 | `escalate.telegram` | `true` | Prefer Telegram for escalations when credentials resolve; else PR/MR comment. |
+| `notify.mode` | `"escalation"` | Terminal notification policy: `escalation` preserves escalation-only behavior, `always` also reports success/failure, and `off` disables Telegram notifications. |
 | `timeouts.acceptanceMs` | 600000 (10 min) | Cap per acceptance-test group, in both the `acceptance` node and gate zero of `quality_gates`. |
 | `timeouts.gateMs` | 900000 (15 min) | Cap per quality gate. |
 | `timeouts.flowMs` | 5400000 (90 min) | Cap on the whole `acpx flow run`. |
@@ -348,6 +350,12 @@ backticks and underscores that Markdown parsing would reject outright.
 **PR/MR comment (fallback).** With `escalate.telegram: false`, or no credentials,
 the flow comments on the branch's existing PR/MR — opening a *draft* to hold the
 comment only if none exists. It never opens a ready PR while escalating.
+
+**Terminal notification policy.** `notify.mode: "always"` sends a best-effort Telegram report for every
+non-escalation terminal result and for flow crashes. A rejected or failed ordinary notification is logged but does
+not change the action result. Escalation delivery keeps its stronger guarantee: when Telegram is the selected
+escalation channel, a failed send is reported as an undelivered escalation. `notify.mode: "off"` forces escalation
+through the PR/MR-comment fallback so disabling Telegram cannot silently suppress both channels.
 
 **Delivery is never fatal.** The result file is written *before* delivery is
 attempted, so a rate limit, an expired token or an unrecognised remote cannot

@@ -714,7 +714,7 @@ This wiring is internal to the fix cycle (`runFixCycle`, §Fix Cycle above).
 
 ## §27 Hooks & Lifecycle
 
-### Hook Events (11 types)
+### Hook Events (12 types)
 
 `src/hooks/types.ts`:
 
@@ -731,6 +731,7 @@ This wiring is internal to the fix cycle (`runFixCycle`, §Fix Cycle above).
 | `on-complete` | Run finishes successfully |
 | `on-error` | Unrecoverable run error |
 | `on-final-regression-fail` | Post-run regression fails |
+| `on-post-run-action` | A registered post-run action settles (success, failure, skip, or error) |
 
 ### Hook Definition
 
@@ -761,6 +762,9 @@ interface HookContext {
   model?: string;
   agent?: string;
   iteration?: number;
+  pluginName?: string;
+  actionName?: string;
+  url?: string;
 }
 ```
 
