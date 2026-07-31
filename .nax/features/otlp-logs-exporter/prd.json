@@ -3,7 +3,7 @@
   "feature": "otlp-logs-exporter",
   "branchName": "feat/otlp-logs-exporter",
   "createdAt": "2026-07-31T12:03:10+08:00",
-  "updatedAt": "2026-07-31T05:29:34.254Z",
+  "updatedAt": "2026-07-31T05:41:00.099Z",
   "userStories": [
     {
       "id": "US-001",
@@ -187,8 +187,8 @@
         "serialization"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -261,7 +261,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-balanced",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/plugins/builtin/otel-reporter/index.ts",
@@ -272,7 +274,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "16385f44a61c315c85d09078fb64b01a8b9eb748"
     }
   ],
   "analysis": "Existing enhancement in a Bun/strict-TypeScript CLI. The logger singleton is implemented by Logger in src/logger/logger.ts:49-279; its private log() constructs LogEntry, returns early when neither console nor file is active, then calls redactEntry before the console and JSONL sinks (src/logger/logger.ts:88-134). The new general-purpose sink must be dispatched immediately after that redaction point, must not be subject to the existing console/file early-return, and each sink must be isolated so a throw cannot prevent later sinks or JSONL output. LogEntry already exposes timestamp, level, stage, optional storyId/sessionRole, message and arbitrary data in src/logger/types.ts:9-28; initLogger remains a throwing singleton (src/logger/logger.ts, initLogger) and resetLogger is test-only. Barrel exports must be updated so addSink is importable as @/logger. Existing logger redaction/file tests are the natural extension point.\n\nThe built-in reporter is createOtelReporterPlugin in src/plugins/builtin/otel-reporter/index.ts:117-352. It owns a Map<runId, RunState>; RunState already retains feature and project (index.ts:31-47), starts a separate span batch queue on onRunStart, flushes queued spans plus terminal traces/metrics on onRunEnd, and has an idempotent teardown backstop. Header interpolation and skip-with-warning behavior appears in incremental span flush, heartbeat export, and terminal flush. A new logs queue must be separate from spanQueue to preserve drop-oldest isolation. Add its queue, sink unsubscribe, and resolved target-repository git identity to RunState; onRunStart resolves git once, registers only when logs.enabled is true, and onRunEnd/teardown flush/unsubscribe in both normal and abnormal paths. The current incremental trace-batch resource is hardcoded service.name at index.ts:133; this is one of five required adoption sites. Existing reporter integration tests are test/unit/plugins/builtin/otel-reporter.test.ts and otel-reporter-lifecycle.test.ts; postJson already accepts injectable dependencies for fetch assertions.\n\nOTLP helpers are in src/plugins/builtin/otel-reporter/otlp.ts. attr supports string and number values, and msToUnixNano is reusable. buildResourceAttributes currently accepts (serviceName, runId) and returns only service.name/nax.run_id (otlp.ts:69-71). buildTracesPayload and buildMetricsPayload each construct service.name-only resource blocks (otlp.ts:91-163); heartbeat does the same in heartbeat.ts:101-124. span-tree.ts has another builder that already calls the old shared builder. Widen the inputs of all payload builders to carry a shared resource-options object or its required identity fields, migrate all five builders, and retain heartbeat datapoint labels exactly as they are. Note that the PhaseMetricsAggregator buildMetricsPayload resource is discarded when its metrics are merged, so tests must assert the free otlp.ts buildMetricsPayload resource actually sent on the wire. src/utils/git.ts exports bounded gitWithTimeout(args, workdir, timeoutMs), suitable for best-effort branch/sha resolution; failures must omit attributes, not stall lifecycle. NAX_VERSION comes from src/version.ts.\n\nConfig is Zod-based in src/config/schemas-reporters.ts:22-75. OtelReporterConfigSchema and ReportersConfigSchema defaults must receive logs.enabled=false and logs.level=info without changing trace/metric defaults or detail semantics. The pure log encoder should be a new logs.ts module beside otlp.ts: map LogEntry to OTLP JSON LogRecord with the stated severity table; use top-level scalar nax.data.<key> attributes and a capped nax.data_json string for non-scalars. New unit tests should mirror test/unit/plugins/builtin/otel-otlp.test.ts, otel-heartbeat.test.ts, otel-span-tree.test.ts, and otel-batch-queue.test.ts; lifecycle wiring belongs with the existing reporter tests. Main compatibility risks are breaking the buildResourceAttributes signature, unintentionally modifying heartbeat datapoint dimensions, listener leaks or double delivery across teardown, recursive exporter logging, and consuming a batch retry for missing header variables. Dependency order is sink seam/resource builder/log mapping first; resource adoption after builder; lifecycle wiring terminal after all three seams. No data migration is required: logs export is opt-in and existing JSONL, traces, metrics, endpoints, headers, batching policy, and heartbeat datapoint labels remain compatible.",
