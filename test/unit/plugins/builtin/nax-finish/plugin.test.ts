@@ -270,6 +270,26 @@ describe("nax-finish post-run action", () => {
       expect(r.message).toContain("Telegram");
     });
 
+    // The flow's deliveryError on the Telegram path means only that its URL
+    // lookup failed — the comment is deliberately not posted there. Reporting
+    // that as undelivered false-alarms on the path that actually worked.
+    test("does not report undelivered when Telegram carried it despite a flow-side failure", async () => {
+      _naxFinishDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+      _naxFinishDeps.readResult = async () =>
+        ({
+          feature: "x",
+          status: "escalated",
+          escalationReason: "design call",
+          deliveryError: "Unable to determine forge",
+        }) as never;
+      _naxFinishDeps.notify = async () => true;
+
+      const r = await action.execute(baseCtx({ config: CONFIG_WITH_TELEGRAM } as never));
+
+      expect(r.success).toBe(true);
+      expect(r.message).toBe("nax-finish: escalated");
+    });
+
     test("reports an undelivered escalation the flow already flagged", async () => {
       _naxFinishDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
       _naxFinishDeps.readResult = async () =>

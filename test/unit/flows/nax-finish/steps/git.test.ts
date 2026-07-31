@@ -106,4 +106,29 @@ describe("commitFixes", () => {
     };
     await expect(commitFixes("/repo", "msg")).rejects.toThrow(/pre-commit hook failed/);
   });
+
+  // A mid-loop commit is an internal checkpoint, not shipped history. Letting a
+  // repo's pre-commit hook run there means a hook that rejects an intermediate
+  // state (a lint error the gate loop would go on to fix) kills the whole flow
+  // with no result file — a failure mode that did not exist when the only
+  // commit was at a terminal node.
+  test("skipHooks passes --no-verify so an intermediate state cannot kill the flow", async () => {
+    const calls: string[][] = [];
+    _gitDeps.run = async (cmd) => {
+      calls.push(cmd);
+      return cmd.includes("--porcelain") ? ok(" M a.ts\n") : ok("");
+    };
+    await commitFixes("/repo", "msg", { skipHooks: true });
+    expect(argvOf(calls)).toContain("git commit -m msg --no-verify");
+  });
+
+  test("hooks run by default — the terminal commit is real history", async () => {
+    const calls: string[][] = [];
+    _gitDeps.run = async (cmd) => {
+      calls.push(cmd);
+      return cmd.includes("--porcelain") ? ok(" M a.ts\n") : ok("");
+    };
+    await commitAndPush("/repo", "feat/x", "msg");
+    expect(argvOf(calls).some((c) => c.includes("--no-verify"))).toBe(false);
+  });
 });

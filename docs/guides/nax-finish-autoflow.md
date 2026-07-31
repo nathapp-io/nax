@@ -45,10 +45,16 @@ open_pr           commit + push the fixes, then open a ready PR
 ```
 
 Every fix node is followed by a `commit_*` node that commits the agent's edits
-locally (no push). The reviewers read `git diff <base>...HEAD`, so a fix left
-uncommitted is invisible to the re-review — the loop would re-report findings it
-had already fixed and escalate at the cap ([#1397](https://github.com/nathapp-io/nax/issues/1397)).
+locally (no push, `--no-verify`). The reviewers read `git diff <base>...HEAD`, so
+a fix left uncommitted is invisible to the re-review — the loop would re-report
+findings it had already fixed and escalate at the cap ([#1397](https://github.com/nathapp-io/nax/issues/1397)).
 The fix agent itself is still told not to commit; the flow owns the history.
+
+These are internal checkpoints, so they skip your pre-commit hooks: a hook that
+runs lint or typecheck would otherwise reject an intermediate state the gate
+loop was about to fix, and take the whole flow down with it. Nothing is lost —
+`quality_gates` runs the repo's own build/typecheck/lint/test and no PR opens
+unless they pass. The terminal commit before pushing runs hooks normally.
 
 Both terminal nodes (`open_pr`, `escalate`) commit and push first, so the PR — or
 the escalation — describes state a human can actually see.

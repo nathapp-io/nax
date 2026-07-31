@@ -47,12 +47,22 @@ async function isDirty(repoRoot: string): Promise<boolean> {
  * that diff — which is also why committing beats widening the reviewer's diff
  * to include the working tree.
  *
- * A failing commit (a rejecting pre-commit hook, most likely) throws: the fix
- * is then unreviewable, and continuing would silently reproduce the stale-diff
- * bug this exists to fix. The flow fails loudly and the plugin reports the
- * flow's stderr.
+ * `skipHooks` (used by every mid-loop `commit_*` node) adds `--no-verify`. Those
+ * commits are internal checkpoints, not shipped history: a repo whose
+ * pre-commit hook runs lint or typecheck would otherwise reject an intermediate
+ * state — a lint error the gate loop was about to fix — and take the whole flow
+ * down with it, with no result file. Nothing is lost by skipping them, because
+ * `quality_gates` runs the repo's own build/typecheck/lint/test and no PR opens
+ * unless they are green. The terminal `commitAndPush` leaves hooks enabled.
+ *
+ * A failing commit still throws: the fix is then unreviewable, and continuing
+ * would silently reproduce the stale-diff bug this exists to fix.
  */
-export async function commitFixes(repoRoot: string, message: string): Promise<{ committed: boolean }> {
+export async function commitFixes(
+  repoRoot: string,
+  message: string,
+  opts: { skipHooks?: boolean } = {},
+): Promise<{ committed: boolean }> {
   if (!(await isDirty(repoRoot))) return { committed: false };
 
   const add = await _gitDeps.run(["git", "add", "-A"], { cwd: repoRoot });
@@ -63,7 +73,8 @@ export async function commitFixes(repoRoot: string, message: string): Promise<{ 
       { stage: "finish-git", repoRoot },
     );
   }
-  const commit = await _gitDeps.run(["git", "commit", "-m", message], { cwd: repoRoot });
+  const commitArgv = ["git", "commit", "-m", message, ...(opts.skipHooks ? ["--no-verify"] : [])];
+  const commit = await _gitDeps.run(commitArgv, { cwd: repoRoot });
   if (commit.exitCode !== 0) {
     throw new FinishError(
       `git commit failed in "${repoRoot}": ${commit.stderr.trim() || commit.stdout.trim() || `exit ${commit.exitCode}`}`,

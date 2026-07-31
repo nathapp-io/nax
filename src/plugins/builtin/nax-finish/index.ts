@@ -303,30 +303,38 @@ const naxFinishAction: IPostRunAction = {
       }
 
       // An escalation nobody receives is the same broken-state-wearing-an-
-      // unremarkable-label failure as a missing result file, so both a rejected
-      // send and a delivery the flow already gave up on are reported as such.
-      const undelivered: string[] = [];
+      // unremarkable-label failure as a missing result file.
+      //
+      // Which channel counts is not symmetric: the flow posts the PR/MR comment
+      // itself ONLY when Telegram is not the channel, so on the Telegram path
+      // its `deliveryError` means just that the URL lookup failed — the comment
+      // was never meant to be posted. Treating that as undelivered would raise
+      // a false alarm on the path that actually worked.
       if (result.status === "escalated") {
-        if (result.deliveryError) undelivered.push(`flow could not post it: ${result.deliveryError}`);
+        const problems: string[] = [];
+        let delivered = !escalateTelegram && !result.deliveryError;
         if (escalateTelegram && creds) {
           const sent = await _naxFinishDeps.notify(
             creds,
             buildEscalationMessage(result.feature, result.escalationReason ?? "", result.findings ?? []),
           );
-          if (!sent) undelivered.push("Telegram rejected the message");
+          if (sent) delivered = true;
+          else problems.push("Telegram rejected the message");
         }
-      }
-      if (undelivered.length > 0) {
-        ctx.logger.warn("nax-finish escalation was not delivered", {
-          feature: result.feature,
-          reasons: undelivered,
-          escalationReason: result.escalationReason,
-        });
-        return {
-          success: false,
-          message: `nax-finish: escalated but undelivered — ${undelivered.join("; ")}`,
-          url: result.url,
-        };
+        if (!delivered) {
+          if (result.deliveryError) problems.push(`the flow could not post it: ${result.deliveryError}`);
+          if (problems.length === 0) problems.push("no escalation channel was reachable");
+          ctx.logger.warn("nax-finish escalation was not delivered", {
+            feature: result.feature,
+            reasons: problems,
+            escalationReason: result.escalationReason,
+          });
+          return {
+            success: false,
+            message: `nax-finish: escalated but undelivered — ${problems.join("; ")}`,
+            url: result.url,
+          };
+        }
       }
 
       return { success: true, message: `nax-finish: ${result.status}`, url: result.url };

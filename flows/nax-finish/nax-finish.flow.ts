@@ -175,7 +175,10 @@ function commitFixNode(phase: "acceptance" | "spec" | "quality" | "gate") {
     nodeType: "action" as const,
     async run(ctx: { input: unknown }): Promise<{ committed: boolean }> {
       const i = inputOf(ctx);
-      return commitFixes(i.workdir, `fix(${i.feature}): nax-finish ${phase} fixes`);
+      // skipHooks: an intermediate checkpoint must not be rejected by a repo's
+      // pre-commit hook — quality_gates runs the repo's real gates before any
+      // PR opens, and a hook failure here would kill the flow mid-loop.
+      return commitFixes(i.workdir, `fix(${i.feature}): nax-finish ${phase} fixes`, { skipHooks: true });
     },
   };
 }

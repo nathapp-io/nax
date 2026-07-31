@@ -137,7 +137,9 @@ describe("commit_* nodes", () => {
   test("commits the fix with a conventional, phase-named message and no push", async () => {
     const { out, argv } = await runCommitNode("commit_spec", " M apps/api/_calendar.py\n");
     expect(out.committed).toBe(true);
-    expect(argv).toContain("git commit -m fix(x): nax-finish spec fixes");
+    // --no-verify: a pre-commit hook rejecting an intermediate state would
+    // otherwise kill the flow before the gate loop could fix it
+    expect(argv).toContain("git commit -m fix(x): nax-finish spec fixes --no-verify");
     // the push belongs to the terminal nodes; a mid-loop push would publish
     // half-fixed states to the forge on every round
     expect(argv.some((c) => c.startsWith("git push"))).toBe(false);
@@ -146,7 +148,7 @@ describe("commit_* nodes", () => {
   test("each phase commits under its own message", async () => {
     for (const phase of ["acceptance", "quality", "gate"]) {
       const { argv } = await runCommitNode(`commit_${phase}`, " M a.ts\n");
-      expect(argv).toContain(`git commit -m fix(x): nax-finish ${phase} fixes`);
+      expect(argv).toContain(`git commit -m fix(x): nax-finish ${phase} fixes --no-verify`);
     }
   });
 
