@@ -48,7 +48,7 @@ After a best-effort fix, re-validate with `lint` + `typecheck` + `full-suite-gat
 #### Amendment (2026-07-30, #1383): a deterministic red must be *attributable*
 
 §3 called a deterministic red "trustworthy". That holds for the main gate path, where flake
-triage runs before findings are read — but **the nbf revalidation gate is never triaged**
+triage runs before findings are read — but **the nbf revalidation gate was not triaged**
 (`rectification.ts` triages only on the branch that reads findings from `phaseOutputs`; the
 nbf path supplies `overrides.initialFindings` and skips it). So a single flaky test firing
 inside the revalidation window deterministically discarded the best-effort pass, was
@@ -66,11 +66,12 @@ Three deliberate limits:
 - **`keyless` is still decided on the unfiltered key set.** Excluding quarantined keys first
   would empty the set on a still-failing gate, which §3's keyless rule would then read as a
   timeout — so the single-known-flake case would still revert, now mislabelled.
-- **First-observation flakes are not covered.** Only the memo is consulted; no probing runs
+- **First-observation flakes were not covered by this amendment.** Only the memo was consulted; no probing ran
   inside a pass that may be rolled back. Running real triage there would let it flip the
   gate's `success` to `true` (its `allTestRunnersQuarantined` branch), so nbf would keep
   trees that are red-modulo-quarantine — a semantics change deferred to its own decision.
-  The restore log therefore states `flakeTriageRan: false` so the gap is visible.
+  The restore log therefore stated `flakeTriageRan: false` so the gap was visible. The
+  #1404 amendment below resolves this limit without mutating the gate verdict.
 - **A quarantined test that the pass then genuinely breaks is masked**, so nbf may keep a
   tree where that test is red. This is inherent to a run-scoped memo — the main path already
   ignores quarantined tests for the rest of the run — so it is parity with the main path
@@ -126,6 +127,25 @@ Two consequences beyond the budget itself:
   baseline. Such a failure previously stayed hidden and the pass was kept with a red gate;
   it now earns a repair attempt and is restored if the repair fails. Strictly safer, but it
   is an outcome change, recorded here rather than treated as a pure bug fix.
+
+#### Amendment (2026-07-31, #1404): NBF triages first-observation flakes transactionally
+
+NBF revalidation now probes newly failing test identities through a read-only path. The
+gate output remains untouched: triage neither replaces its findings nor flips
+`success`/`passed`. Instead, quarantined keys enter a transaction-local memo overlay shared
+by the revalidation finding filter and `describeGateRegression`, so both consumers reach
+the same verdict while the raw gate evidence remains available.
+
+The overlay reads the run-scoped memo but buffers new keys. `runNonBlockingFix` commits them
+only after the gate comparison and source-diff cap both accept the pass; every restore path
+drops them. Identities present in the verifier-time baseline, already memoized identities,
+and identities already attempted in this transaction are not probed again.
+
+A red gate whose structured findings are all confirmed flakes no longer short-circuits the
+NBF sweep. This is control-flow equivalence with the main path's red-modulo-quarantine
+handling, not a gate-output mutation. Keyless failures and mixed flake/genuine failures stay
+blocking. Restore diagnostics carry the transaction's actual `flakeTriageRan` state rather
+than a hardcoded value.
 
 ### 4. Bounded, transactional
 

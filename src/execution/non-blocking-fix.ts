@@ -19,7 +19,9 @@ import { captureSnapshotRef, rollbackToRef } from "../tdd/rollback";
 import { createTestFileClassifier, resolveTestFilePatterns } from "../test-runners";
 import { typedSpawn } from "../utils/bun-deps";
 import { packageDirRelative } from "../utils/paths";
+import type { QuarantineMemo } from "../verification";
 import type { GateRegressionDetail, PhaseKind } from "./story-orchestrator";
+import { type NbfFlakeTriageTransaction, createNbfFlakeTriageTransaction } from "./story-orchestrator/nbf-flake-triage";
 
 /** Phase kinds to strip from revalidation — always the LLM reviews. */
 const REVIEW_PHASE_KINDS = ["semantic-review", "adversarial-review"] as const satisfies readonly PhaseKind[];
@@ -122,8 +124,15 @@ export interface NonBlockingFixArgs {
    * middleware / CostAggregator, the SSOT; this is the diagnostic per-phase split.)
    */
   phaseCosts: Record<string, number>;
+  /** Run-scoped memo; new NBF verdicts are buffered until the pass is kept. */
+  quarantineMemo?: QuarantineMemo;
+  /** Verifier-time failures excluded from NBF first-observation probing. */
+  gateBaselineKeys?: ReadonlySet<string>;
   /** Runs the harness; returns true when it exhausted without resolving. */
-  runRectify: (maxAttempts: number) => Promise<{ rectificationExhausted?: boolean }>;
+  runRectify: (
+    maxAttempts: number,
+    flakeTriage: NbfFlakeTriageTransaction,
+  ) => Promise<{ rectificationExhausted?: boolean }>;
   /**
    * Reports whether the KEPT working tree regressed the deterministic full-suite
    * gate relative to the adversarial-passed baseline. ADR-024 §3: a deterministic
@@ -146,7 +155,7 @@ export interface NonBlockingFixArgs {
    *
    * Absent ⇒ no gate check (backward-compatible).
    */
-  keptTreeRegressed?: () => GateRegressionDetail;
+  keptTreeRegressed?: (quarantineMemo?: QuarantineMemo) => GateRegressionDetail;
 }
 
 export interface NonBlockingFixResult {
@@ -231,10 +240,14 @@ export async function runNonBlockingFix(
     return { ran: false, kept: false, restored: false };
   }
   const maxAttempts = 1 + args.cfg.regressionAttempts;
+  const flakeTriage = createNbfFlakeTriageTransaction({
+    baseMemo: args.quarantineMemo,
+    baselineKeys: args.gateBaselineKeys ?? new Set(),
+  });
 
   let exhausted = false;
   try {
-    const result = await args.runRectify(maxAttempts);
+    const result = await args.runRectify(maxAttempts, flakeTriage);
     exhausted = result.rectificationExhausted === true;
   } catch (err) {
     logger?.warn("non-blocking-fix", "best-effort pass threw — restoring", {
@@ -250,18 +263,19 @@ export async function runNonBlockingFix(
     // resolved via the verifier-SSOT exemption while leaving the full-suite gate red.
     // Reuse the caller's staleness predicate (identical to the final verdict's) so a
     // "kept then failed by the downstream guard" contradiction is impossible.
-    const gateVerdict = args.keptTreeRegressed?.();
+    const gateVerdict = args.keptTreeRegressed?.(flakeTriage.memo);
     if (gateVerdict?.regressed) {
       // Name the regressing identities here: this is the only point where they exist.
       // `restoreToSnapshot` clears `phaseOutputs` (so the gate's rawOutput goes with it)
       // and `rollbackToRef` hard-resets the offending edit, leaving `git reflog` with
       // only the destination. Without this record the revert is unattributable (#1382).
-      logGateRegression(
+      logGateRegression({
         logger,
-        args.storyId,
-        "kept tree regressed the full-suite gate — restoring (ADR-024 §3)",
-        gateVerdict,
-      );
+        storyId: args.storyId,
+        message: "kept tree regressed the full-suite gate — restoring (ADR-024 §3)",
+        verdict: gateVerdict,
+        flakeTriageRan: flakeTriage.flakeTriageRan,
+      });
       return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
     }
     // Enforce sourceDiffCap over the post-pass snapshot. A pass whose source
@@ -288,6 +302,7 @@ export async function runNonBlockingFix(
         return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
       }
     }
+    flakeTriage.commit();
     logger?.info("non-blocking-fix", "best-effort fix kept", { storyId: args.storyId });
     return { ran: true, kept: true, restored: false };
   }
@@ -305,14 +320,15 @@ export async function runNonBlockingFix(
   // half-finished sweep. The verdict is log-only and the restore happens regardless, so a
   // partial read is harmless — but the keys named on that path describe an aborted
   // validation, not a completed one.
-  const exhaustedGateVerdict = args.keptTreeRegressed?.();
+  const exhaustedGateVerdict = args.keptTreeRegressed?.(flakeTriage.memo);
   if (exhaustedGateVerdict?.regressed) {
-    logGateRegression(
+    logGateRegression({
       logger,
-      args.storyId,
-      "best-effort fix exhausted with the full-suite gate red",
-      exhaustedGateVerdict,
-    );
+      storyId: args.storyId,
+      message: "best-effort fix exhausted with the full-suite gate red",
+      verdict: exhaustedGateVerdict,
+      flakeTriageRan: flakeTriage.flakeTriageRan,
+    });
   }
 
   return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
@@ -322,15 +338,19 @@ export async function runNonBlockingFix(
  * Emit the #1382 regression evidence: which test identities the pass is being blamed for.
  *
  * Shared by both restore paths — the gate-regressed keep-decision and the exhausted tail —
- * because they must report the same fields. `flakeTriageRan` in particular is stated, not
- * computed, and two hardcoded copies would drift the moment #1383's triage lands.
+ * because they must report the same fields. `flakeTriageRan` comes from the pass's
+ * transaction-local triage state rather than a restore-path constant (#1404).
  */
-function logGateRegression(
-  logger: ReturnType<typeof getSafeLogger>,
-  storyId: string,
-  message: string,
-  verdict: GateRegressionDetail,
-): void {
+interface LogGateRegressionInput {
+  logger: ReturnType<typeof getSafeLogger>;
+  storyId: string;
+  message: string;
+  verdict: GateRegressionDetail;
+  flakeTriageRan: boolean;
+}
+
+function logGateRegression(input: LogGateRegressionInput): void {
+  const { logger, storyId, message, verdict, flakeTriageRan } = input;
   logger?.info("non-blocking-fix", message, {
     storyId,
     regressedKeys: verdict.regressedKeys.slice(0, MAX_LOGGED_REGRESSED_KEYS),
@@ -342,12 +362,7 @@ function logGateRegression(
     keyless: verdict.keyless,
     // Failures excluded as already-quarantined flakes (#1383).
     memoExcludedKeyCount: verdict.memoExcludedKeys.length,
-    // Stated, not computed: this pass's revalidation gate is never flake-triaged — triage
-    // owns the main gate path only (`rectification.ts`, the non-override branch). So a
-    // FIRST-observation flake inside the revalidation window still reads as a regression,
-    // and an operator must be able to see that was possible rather than infer a real
-    // break (#1383 option 3).
-    flakeTriageRan: false,
+    flakeTriageRan,
   });
 }
 

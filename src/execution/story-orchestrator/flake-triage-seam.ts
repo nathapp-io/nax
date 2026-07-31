@@ -12,16 +12,18 @@ import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
 import { detectFramework } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
-import { resolveFlakeBaselineDiff, triageFlakyFindings } from "@/verification";
+import { type QuarantineMemo, resolveFlakeBaselineDiff, triageFlakyFindings } from "@/verification";
 
 /** Triage result tuple shape — produced by `_storyOrchestratorDeps.triage`. */
-export type TriageResult = readonly [Finding[], { quarantinedKeys: readonly string[] }];
+export type TriageResult = readonly [Finding[], { quarantinedKeys: readonly string[]; flakeTriageRan?: boolean }];
 
 /** Context the seam needs beyond the gate's findings — supplied by the caller (`triageGateFindings`). */
 export interface TriageSeamContext {
   readonly ctx: CallContext;
   /** Raw full-suite-gate test-runner output, for `detectFramework()`. */
   readonly rawOutput: string;
+  /** Optional transaction-local memo used by ADR-024 NBF revalidation. */
+  readonly quarantineMemo?: QuarantineMemo;
 }
 
 /**
@@ -44,7 +46,10 @@ export type TriageSeam = (gateFindings: Finding[], seamCtx: TriageSeamContext) =
  * unchanged with an empty quarantine report. Used only where no real story
  * context is available (never wired in production — see `productionTriageSeam`).
  */
-export const defaultTriageSeam: TriageSeam = async (gateFindings) => [gateFindings, { quarantinedKeys: [] }];
+export const defaultTriageSeam: TriageSeam = async (gateFindings) => [
+  gateFindings,
+  { quarantinedKeys: [], flakeTriageRan: false },
+];
 
 /**
  * Production triage seam — binds `triageFlakyFindings` (US-002) to the
@@ -58,16 +63,16 @@ export const defaultTriageSeam: TriageSeam = async (gateFindings) => [gateFindin
  * findings unchanged (no quarantine) rather than risking a false quarantine.
  * `triageFlakyFindings` itself already fails closed on probe errors.
  */
-export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawOutput }) => {
+export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawOutput, quarantineMemo }) => {
   const config = ctx.packageView.config;
   const flakeDetection = config.execution?.flakeDetection;
   if (!flakeDetection?.enabled) {
-    return [gateFindings, { quarantinedKeys: [] }];
+    return [gateFindings, { quarantinedKeys: [], flakeTriageRan: false }];
   }
 
   const framework = detectFramework(rawOutput);
   if (framework === "unknown") {
-    return [gateFindings, { quarantinedKeys: [] }];
+    return [gateFindings, { quarantinedKeys: [], flakeTriageRan: false }];
   }
 
   const workdir = ctx.runtime.workdir;
@@ -78,12 +83,12 @@ export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawO
     const { testCommand } = await resolveQualityTestCommands(config, workdir, storyWorkdir);
     const baseCommand = testCommand ?? config.quality?.commands?.test;
     if (!baseCommand) {
-      return [gateFindings, { quarantinedKeys: [] }];
+      return [gateFindings, { quarantinedKeys: [], flakeTriageRan: false }];
     }
 
     const diff = await resolveFlakeBaselineDiff(config, workdir, storyWorkdir);
     if (diff === null) {
-      return [gateFindings, { quarantinedKeys: [] }];
+      return [gateFindings, { quarantinedKeys: [], flakeTriageRan: false }];
     }
 
     const result = await triageFlakyFindings({
@@ -93,9 +98,9 @@ export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawO
       baseCommand,
       cwd: ctx.packageDir,
       framework,
-      quarantineMemo: ctx.runtime.quarantineMemo,
+      quarantineMemo: quarantineMemo ?? ctx.runtime.quarantineMemo,
     });
-    return [result.findings, { quarantinedKeys: result.quarantineReport.keys }];
+    return [result.findings, { quarantinedKeys: result.quarantineReport.keys, flakeTriageRan: true }];
   } catch (err) {
     getSafeLogger()?.warn(
       "story-orchestrator",
@@ -105,6 +110,6 @@ export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawO
         error: errorMessage(err),
       },
     );
-    return [gateFindings, { quarantinedKeys: [] }];
+    return [gateFindings, { quarantinedKeys: [], flakeTriageRan: false }];
   }
 };

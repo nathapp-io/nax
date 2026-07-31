@@ -131,25 +131,22 @@ export function gateFindingKey(finding: Finding): string {
   return `${finding.file ?? ""}::${finding.rule ?? ""}`;
 }
 
+/** Synthetic key for a gate failure with no comparable test identity. */
+const KEYLESS_GATE_FAILURE_KEY = "::";
+
 /**
  * True when this finding is a test failure the run has already quarantined as a flake.
  *
  * Mirrors the exclusion `describeGateRegression` applies before assigning blame, so a
  * consumer that filters findings and a consumer that diffs keys reach the same verdict
- * about the same gate output.
+ * about the same gate output. Keyless failures are never quarantinable: the regression
+ * predicate treats them as attributable regardless of memo contents.
  */
 export function isQuarantinedFlake(finding: Finding, quarantineMemo: QuarantineMemo | undefined): boolean {
   if (finding.source !== "test-runner") return false;
-  return quarantineMemo?.has(gateFindingKey(finding)) === true;
+  const key = gateFindingKey(finding);
+  return key !== KEYLESS_GATE_FAILURE_KEY && quarantineMemo?.has(key) === true;
 }
-
-/**
- * The key `gateFailureKeys` emits for a gate failure with no identity — both `file`
- * and `rule` empty. Produced by execution-failure synth findings (non-zero exit, no
- * structured failures). Such a key cannot be diffed against a baseline, so the
- * staleness guard must treat it as a regression rather than a comparable identity.
- */
-const KEYLESS_GATE_FAILURE_KEY = "::";
 
 /**
  * A gate-regression verdict together with the identities behind it.

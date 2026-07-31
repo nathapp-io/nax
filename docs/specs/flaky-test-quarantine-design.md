@@ -82,9 +82,9 @@ flaky earlier in the run.
 - `gateFailureKeys()` and `describeGateRegression()` (phase-eval) skip
   `flaky-test` findings so a flake flipping state mid-story does not read as a
   rectification regression. #1383 extended this: `describeGateRegression` also
-  excludes keys already in the run-scoped quarantine memo, since the ADR-024 nbf
-  revalidation gate is never triaged and so can never carry the `flaky-test`
-  category itself.
+  excludes keys in its effective quarantine memo. #1404 adds read-only NBF triage:
+  first-observation verdicts enter a transaction-local overlay because the raw gate
+  output deliberately never carries the `flaky-test` category itself.
 
 ### Touched: regression gate (`src/execution/lifecycle/run-regression.ts`)
 

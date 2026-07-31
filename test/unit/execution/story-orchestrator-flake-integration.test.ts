@@ -689,16 +689,14 @@ describe("describeGateRegression — quarantine-memo filter (#1383)", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// #1383 — the invariant behind the restore log's `flakeTriageRan: false`.
+// #1383 — seeded advisory findings themselves do not invoke gate triage.
 //
-// `runNonBlockingFix` states that literal because the nbf path seeds
-// `overrides.initialFindings` and so takes the branch that never calls the triage
-// seam. The log-field test in non-blocking-fix.test.ts supplies that value itself,
-// so it cannot catch the claim going stale. These two pin the branch directly:
-// the negative case, and a control proving this fixture would see a triage call.
+// #1404 adds triage later, when the NBF validate sweep produces a newly failing gate,
+// through `overrides.nbfFlakeTriage`. These tests retain the narrower seed-branch
+// invariant and a control proving the fixture observes main-path triage.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("runRectification — nbf path never invokes flake triage (#1383)", () => {
+describe("runRectification — seeded findings do not invoke initial gate triage", () => {
   /** Minimal state: rectification needs one validation phase, and triage needs the gate slot. */
   function makeRectifyState() {
     return {

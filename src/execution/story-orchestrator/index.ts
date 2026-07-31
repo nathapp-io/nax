@@ -15,6 +15,11 @@ export {
 } from "./phase-eval";
 export { runRectification, triageGateFindings, gatherRectificationFindings, type TriageResult } from "./rectification";
 export {
+  createNbfFlakeTriageTransaction,
+  type CreateNbfFlakeTriageTransactionInput,
+  type NbfFlakeTriageTransaction,
+} from "./nbf-flake-triage";
+export {
   _storyOrchestratorDeps,
   refreshReviewInputForDispatch,
   runPhase,
