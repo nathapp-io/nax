@@ -82,9 +82,13 @@ export function buildResourceAttributes(input: ResourceAttributesInput): KeyValu
     attr("service.name", input.serviceName),
     attr("nax.run_id", input.runId),
     attr("nax.version", NAX_VERSION),
-    attr("host.name", hostname()),
     attr("process.pid", process.pid),
   ];
+  try {
+    attrs.push(attr("host.name", hostname()));
+  } catch {
+    // best-effort: omit host.name when hostname() throws (e.g. restricted environments)
+  }
   if (input.feature !== undefined) attrs.push(attr("nax.feature", input.feature));
   if (input.project !== undefined) attrs.push(attr("nax.project", input.project));
   if (input.git?.branch !== undefined) attrs.push(attr("nax.git.branch", input.git.branch));

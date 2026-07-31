@@ -253,4 +253,22 @@ describe("buildResourceAttributes", () => {
   test("AC11: omits nax.git.sha when no sha is supplied", () => {
     expect(buildResourceAttributes({ serviceName: "nax", runId: "r1" }).some((a) => a.key === "nax.git.sha")).toBe(false);
   });
+
+  test("edge: omits nax.feature when feature is not supplied", () => {
+    expect(buildResourceAttributes({ serviceName: "nax", runId: "r1" }).some((a) => a.key === "nax.feature")).toBe(
+      false,
+    );
+  });
+
+  test("edge: omits nax.project when project is not supplied", () => {
+    expect(buildResourceAttributes({ serviceName: "nax", runId: "r1" }).some((a) => a.key === "nax.project")).toBe(
+      false,
+    );
+  });
+
+  test("edge: omits both git attrs when git is supplied as an empty object", () => {
+    const attrs = buildResourceAttributes({ serviceName: "nax", runId: "r1", git: {} });
+    expect(attrs.some((a) => a.key === "nax.git.branch")).toBe(false);
+    expect(attrs.some((a) => a.key === "nax.git.sha")).toBe(false);
+  });
 });
