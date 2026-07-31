@@ -258,6 +258,35 @@ describe("nax-finish post-run action", () => {
       expect(sent[0].text).toBe("nax-finish escalated x: gates still failing (lint)");
     });
 
+    test("reports a rejected Telegram send instead of claiming the escalation landed", async () => {
+      _naxFinishDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+      _naxFinishDeps.readResult = async () =>
+        ({ feature: "x", status: "escalated", escalationReason: "design call" }) as never;
+      _naxFinishDeps.notify = async () => false;
+
+      const r = await action.execute(baseCtx({ config: CONFIG_WITH_TELEGRAM } as never));
+
+      expect(r.success).toBe(false);
+      expect(r.message).toContain("Telegram");
+    });
+
+    test("reports an undelivered escalation the flow already flagged", async () => {
+      _naxFinishDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+      _naxFinishDeps.readResult = async () =>
+        ({
+          feature: "x",
+          status: "escalated",
+          escalationReason: "design call",
+          deliveryError: "rate limit exceeded",
+        }) as never;
+      _naxFinishDeps.notify = async () => true;
+
+      const r = await action.execute(baseCtx());
+
+      expect(r.success).toBe(false);
+      expect(r.message).toContain("rate limit exceeded");
+    });
+
     test("does not notify for a non-escalated status", async () => {
       const sent = stubRun({ feature: "x", status: "opened" });
 

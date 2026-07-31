@@ -576,4 +576,73 @@ describe("escalate node", () => {
 
     expect(JSON.parse(wrote).findings).toEqual(findings);
   });
+
+  // Regression: postEscalation ran before writeResult, so a failing comment (or
+  // an unknown forge) killed the node with no result file — the plugin then had
+  // nothing to notify from, and the escalation vanished entirely (#1399).
+  test("a failed delivery still leaves a result file the plugin can notify from", async () => {
+    _escalateDeps.run = async (cmd) => {
+      if (cmd.join(" ").includes("remote get-url")) return { exitCode: 0, stdout: "git@github.com:o/r", stderr: "" };
+      if (cmd.includes("view")) return { exitCode: 0, stdout: JSON.stringify({ url: "https://gh/pr/9" }), stderr: "" };
+      return { exitCode: 1, stdout: "", stderr: "rate limit exceeded" };
+    };
+    _gitDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+    const writes: string[] = [];
+    _resultDeps.writeText = async (_p, s) => {
+      writes.push(s);
+    };
+
+    const out = await nodeRun<{ escalationReason: string; deliveryError?: string }>("escalate").run(
+      ctxOf({ outputs: { route_spec: { route: "escalate", findings: [], escalationReason: "needs judgment" } } }),
+    );
+
+    expect(out.escalationReason).toBe("needs judgment");
+    expect(out.deliveryError).toContain("rate limit exceeded");
+    const final = JSON.parse(writes[writes.length - 1]);
+    expect(final).toMatchObject({ status: "escalated", escalationReason: "needs judgment" });
+    expect(final.deliveryError).toContain("rate limit exceeded");
+  });
+
+  test("writes the result before attempting delivery, not after", async () => {
+    const order: string[] = [];
+    _escalateDeps.run = async (cmd) => {
+      if (cmd.join(" ").includes("remote get-url")) return { exitCode: 0, stdout: "git@github.com:o/r", stderr: "" };
+      if (cmd.includes("view")) return { exitCode: 0, stdout: JSON.stringify({ url: "https://gh/pr/9" }), stderr: "" };
+      order.push("deliver");
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    _gitDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+    _resultDeps.writeText = async () => {
+      order.push("write");
+    };
+
+    await nodeRun("escalate").run(
+      ctxOf({ outputs: { route_spec: { route: "escalate", findings: [], escalationReason: "r" } } }),
+    );
+
+    expect(order[0]).toBe("write");
+    expect(order).toContain("deliver");
+  });
+
+  test("an unknown forge does not sink the escalation", async () => {
+    _escalateDeps.run = async (cmd) => {
+      if (cmd.join(" ").includes("remote get-url")) return { exitCode: 0, stdout: "git@git.corp:o/r", stderr: "" };
+      return { exitCode: 127, stdout: "", stderr: "command not found" };
+    };
+    _gitDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+    let wrote = "";
+    _resultDeps.writeText = async (_p, s) => {
+      wrote = s;
+    };
+
+    const out = await nodeRun<{ deliveryError?: string }>("escalate").run(
+      ctxOf({
+        input: { ...INPUT, escalateTelegram: true },
+        outputs: { route_spec: { route: "escalate", findings: [], escalationReason: "r" } },
+      }),
+    );
+
+    expect(out.deliveryError).toBeTruthy();
+    expect(JSON.parse(wrote)).toMatchObject({ status: "escalated", escalationReason: "r" });
+  });
 });

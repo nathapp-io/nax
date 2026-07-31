@@ -319,6 +319,17 @@ backticks and underscores that Markdown parsing would reject outright.
 the flow comments on the branch's existing PR/MR — opening a *draft* to hold the
 comment only if none exists. It never opens a ready PR while escalating.
 
+**Delivery is never fatal.** The result file is written *before* delivery is
+attempted, so a rate limit, an expired token or an unrecognised remote cannot
+lose the escalation. A failed delivery is recorded as `deliveryError` in the
+result, logged, and reported by the plugin as `escalated but undelivered` —
+Telegram still fires, because the plugin sends from the result file.
+
+**Forge detection** matches the remote's *host*, so self-hosted instances
+(`gitlab.mycorp.com`, `github.mycorp.com`) work. For an enterprise host naming
+neither forge (`git.corp.com`), it falls back to whichever of `gh` / `glab` is
+installed, and only errors when that is ambiguous too.
+
 ---
 
 ## 6. Running the flow by hand

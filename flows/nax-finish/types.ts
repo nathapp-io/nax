@@ -55,6 +55,13 @@ export interface FinishResult {
    * never posted. Without this the findings survived only in acpx's run bundle.
    */
   findings?: Finding[];
+  /**
+   * Set when the escalation could not be delivered to its channel (forge
+   * comment failed, remote unrecognised). The result file is written before
+   * delivery is attempted, so an undelivered escalation is still reported
+   * rather than lost.
+   */
+  deliveryError?: string;
 }
 export interface RunResult {
   exitCode: number;

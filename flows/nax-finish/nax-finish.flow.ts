@@ -44,7 +44,7 @@ import {
   runQualityGates,
   writeResult,
 } from "./steps";
-import type { AcceptanceGroup, FinishInput, ReviewVerdict } from "./types";
+import type { AcceptanceGroup, FinishInput, FinishResult, ReviewVerdict } from "./types";
 
 const inputOf = (ctx: { input: unknown }) => ctx.input as FinishInput;
 
@@ -349,18 +349,36 @@ export default defineFlow({
           syncNote = `\n\n> Note: nax-finish could not push its partial fixes — ${String(err)}`;
         }
 
-        const comment = buildEscalationComment(i.feature, reason, verdict?.findings ?? []) + syncNote;
-        const { url, channel } = await postEscalation(i.workdir, i.branch, comment, {
-          preferTelegram: i.escalateTelegram,
-        });
-        await writeResult(i.workdir, {
+        // Write the result BEFORE attempting delivery. Delivery touches the
+        // network and the forge — a rate limit, an expired token, a locked PR
+        // or an unrecognised remote used to throw here, killing the node before
+        // any result existed. The plugin then had nothing to report and, on the
+        // Telegram channel, nothing to notify from: the one path whose job is
+        // to say "a human is needed" was the one path with no fallback (#1399).
+        const result: FinishResult = {
           feature: i.feature,
           status: "escalated",
-          url,
           escalationReason: reason,
           findings: verdict?.findings ?? [],
-        });
-        return { route: "done", url, channel, escalationReason: reason };
+        };
+        await writeResult(i.workdir, result);
+
+        const comment = buildEscalationComment(i.feature, reason, verdict?.findings ?? []) + syncNote;
+        let url: string | undefined;
+        let channel: string | undefined;
+        let deliveryError: string | undefined;
+        try {
+          const posted = await postEscalation(i.workdir, i.branch, comment, {
+            preferTelegram: i.escalateTelegram,
+          });
+          url = posted.url;
+          channel = posted.channel;
+        } catch (err) {
+          deliveryError = String(err);
+        }
+        await writeResult(i.workdir, { ...result, url, deliveryError });
+
+        return { route: "done", url, channel, deliveryError, escalationReason: reason };
       },
     },
   },
