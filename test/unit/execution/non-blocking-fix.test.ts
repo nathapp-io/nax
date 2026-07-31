@@ -169,6 +169,68 @@ describe("runNonBlockingFix keep vs restore", () => {
     expect(Object.keys(data)[0]).toBe("storyId");
   });
 
+  // #1401 — once the gate regression became visible to the cycle, a pass that spends
+  // `regressionAttempts` and still fails exits EXHAUSTED, so the restore arrives on the
+  // exhausted path instead of the keptTreeRegressed one above. Without a log there, the
+  // #1382 diagnostic silently vanishes in the case that most warrants it: a regression
+  // real enough to survive a repair attempt.
+  test("exhausted restore also names the regressing keys when the gate is red (#1401)", async () => {
+    const phaseOutputs: Record<string, unknown> = { "full-suite-gate": { success: false } };
+    const record = await withInfoSpy(async (infoSpy) => {
+      await runNonBlockingFix(
+        {
+          ...baseArgs,
+          phaseOutputs,
+          // The repair attempt ran and failed — the cycle exhausted its budget.
+          runRectify: async () => ({ rectificationExhausted: true }),
+          keptTreeRegressed: () => ({
+            regressed: true,
+            regressedKeys: ["still-broke.test.ts::renders empty state"],
+            memoExcludedKeys: [],
+            baselineKeySize: 3,
+            keyless: false,
+          }),
+        },
+        fakeDeps,
+      );
+      return infoSpy.mock.calls.find((c) => String(c[1]).includes("exhausted with the full-suite gate red"));
+    });
+
+    expect(record).toBeDefined();
+    const data = record?.[2] as Record<string, unknown>;
+    expect(data.regressedKeys).toEqual(["still-broke.test.ts::renders empty state"]);
+    expect(data.regressedKeyCount).toBe(1);
+    expect(data.baselineKeySize).toBe(3);
+    expect(data.keyless).toBe(false);
+    expect(Object.keys(data)[0]).toBe("storyId");
+  });
+
+  test("exhausted restore stays quiet when the gate did NOT regress (ordinary exhaustion)", async () => {
+    // Guards the log above from degrading into noise on every exhausted pass — the
+    // common case is "the fix just didn't land", which has no gate regression to name.
+    const phaseOutputs: Record<string, unknown> = { "full-suite-gate": { success: true } };
+    const record = await withInfoSpy(async (infoSpy) => {
+      await runNonBlockingFix(
+        {
+          ...baseArgs,
+          phaseOutputs,
+          runRectify: async () => ({ rectificationExhausted: true }),
+          keptTreeRegressed: () => ({
+            regressed: false,
+            regressedKeys: [],
+            memoExcludedKeys: [],
+            baselineKeySize: 0,
+            keyless: false,
+          }),
+        },
+        fakeDeps,
+      );
+      return infoSpy.mock.calls.find((c) => String(c[1]).includes("exhausted with the full-suite gate red"));
+    });
+
+    expect(record).toBeUndefined();
+  });
+
   test("keyless regression is logged as such, with an empty key list (#1382)", async () => {
     // A timeout / execution-failure yields no comparable identity. The log must say so
     // rather than showing an empty `regressedKeys` that reads as "nothing regressed".

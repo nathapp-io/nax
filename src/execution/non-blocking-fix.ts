@@ -303,6 +303,28 @@ export async function runNonBlockingFix(
     return { ran: true, kept: true, restored: false };
   }
 
+  // #1382 parity on the exhausted path. Before #1401 the gate's regression was hidden
+  // from the cycle, so a gate-red pass always exited "resolved" and the identity log
+  // above was the only one that could fire. Now the cycle can see that regression and
+  // spend `regressionAttempts` on it — and when the repair fails, the restore arrives
+  // HERE instead, where the identities were never named. Without this the richer
+  // diagnostic disappears in exactly the case an operator most needs it: a regression
+  // real enough to survive a repair attempt. Read-only — `describeGateRegression` diffs
+  // key sets already in `phaseOutputs` and re-runs nothing.
+  const exhaustedGateVerdict = args.keptTreeRegressed?.();
+  if (exhaustedGateVerdict?.regressed) {
+    logger?.info("non-blocking-fix", "best-effort fix exhausted with the full-suite gate red", {
+      storyId: args.storyId,
+      regressedKeys: exhaustedGateVerdict.regressedKeys.slice(0, MAX_LOGGED_REGRESSED_KEYS),
+      regressedKeyCount: exhaustedGateVerdict.regressedKeys.length,
+      baselineKeySize: exhaustedGateVerdict.baselineKeySize,
+      keyless: exhaustedGateVerdict.keyless,
+      memoExcludedKeyCount: exhaustedGateVerdict.memoExcludedKeys.length,
+      // Same gap as the sibling log above — triage owns the main gate path only (#1383).
+      flakeTriageRan: false,
+    });
+  }
+
   return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
 }
 
