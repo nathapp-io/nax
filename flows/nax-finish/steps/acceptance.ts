@@ -21,24 +21,47 @@ export function buildAcceptanceCommand(repoRoot: string, group: AcceptanceGroup)
   return template.replace(/\{\{FILE\}\}|\{\{file\}\}|\{\{files\}\}/g, absFile);
 }
 
+export interface AcceptanceGateOutcome {
+  /** Every group that ran exited 0. Says nothing about groups that could not run. */
+  passed: boolean;
+  ran: number;
+  /**
+   * Package names whose acceptance test the resolver expected at its canonical
+   * path but which is absent on disk — never generated, or generation failed.
+   * The caller must treat a non-empty list as a coverage hole rather than a
+   * pass: skipping these silently is how a feature reached a "ready" PR with
+   * nothing verified.
+   */
+  missing: string[];
+  output: string;
+}
+
 export async function runAcceptanceGate(
   repoRoot: string,
   groups: AcceptanceGroup[],
   opts: { timeoutMs?: number } = {},
-): Promise<{ passed: boolean; ran: number; output: string }> {
+): Promise<AcceptanceGateOutcome> {
   const chunks: string[] = [];
   const timeoutMs = opts.timeoutMs ?? DEFAULT_ACCEPTANCE_TIMEOUT_MS;
+  const missing: string[] = [];
   let ran = 0;
   for (const g of groups) {
-    if (!g.exists) continue;
+    const name = g.packageDir || "root";
+    if (!g.exists) {
+      missing.push(name);
+      continue;
+    }
     const cwd = g.packageDir ? `${repoRoot}/${g.packageDir}` : repoRoot;
     ran += 1;
     const res = await _acceptanceDeps.runShell(buildAcceptanceCommand(repoRoot, g), { cwd, timeoutMs });
-    chunks.push(`[${g.packageDir || "root"}] exit=${res.exitCode}\n${res.stdout}\n${res.stderr}`);
-    if (res.exitCode !== 0) return { passed: false, ran, output: chunks.join("\n\n") };
+    chunks.push(`[${name}] exit=${res.exitCode}\n${res.stdout}\n${res.stderr}`);
+    if (res.exitCode !== 0) return { passed: false, ran, missing, output: chunks.join("\n\n") };
+  }
+  if (missing.length > 0) {
+    chunks.push(`[acceptance] no acceptance test file on disk for: ${missing.join(", ")}`);
   }
   if (ran === 0) chunks.push("[acceptance] no acceptance test files present — nothing to run");
-  return { passed: true, ran, output: chunks.join("\n\n") };
+  return { passed: true, ran, missing, output: chunks.join("\n\n") };
 }
 
 function languageRunner(language: string): string {

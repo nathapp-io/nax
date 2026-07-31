@@ -20,28 +20,67 @@ load_ctx          detect base branch, resolve the feature spec + acceptance grou
                   check the branch is ahead of base (else: nothing-to-finish)
   ↓
 acceptance        run the feature's acceptance tests
-  ↳ fail → fix_acceptance (agent) → re-run          [max 3 attempts → escalate]
+  ↳ fail → fix_acceptance (agent) → commit → re-run [max 3 attempts → escalate]
+  ↳ acceptance disabled in config → skip cleanly
+  ↳ no PRD, or a package's test never generated → escalate
+                  (nothing verified is not a pass — same rule as quality_gates)
   ↓
 review_spec       spec-relative review, isolated session, own agent profile
   ↳ clean            → skip to review_quality
-  ↳ recommended fix  → fix_spec (agent) → re-run acceptance → re-review
+  ↳ recommended fix  → fix_spec (agent) → commit → re-run acceptance → re-review
   ↳ needs judgment   → escalate
   ↓
 review_quality    code-quality review, isolated session, own agent profile
   ↳ clean            → skip to quality_gates
-  ↳ recommended fix  → fix_quality (agent) → re-review
+  ↳ recommended fix  → fix_quality (agent) → commit → re-review
   ↳ needs judgment   → escalate
   ↓
-quality_gates     run the repo's own quality.commands at the repo root
-  ↳ red → fix_gate (agent) → re-run                 [max 3 attempts → escalate]
+quality_gates     re-run the feature's acceptance tests (gate zero), then the
+                  repo's own quality.commands at the repo root
+  ↳ red → fix_gate (agent) → commit → re-run        [max 3 attempts → escalate]
   ↳ none configured → escalate (a gate that verified nothing is not a pass)
   ↓
 open_pr           commit + push the fixes, then open a ready PR
                   (or promote the draft autoPR already opened)
 ```
 
+Every fix node is followed by a `commit_*` node that commits the agent's edits
+locally (no push, `--no-verify`). The reviewers read `git diff <base>...HEAD`, so
+a fix left uncommitted is invisible to the re-review — the loop would re-report
+findings it had already fixed and escalate at the cap ([#1397](https://github.com/nathapp-io/nax/issues/1397)).
+The fix agent itself is still told not to commit; the flow owns the history.
+
+These are internal checkpoints, so they skip your pre-commit hooks: a hook that
+runs lint or typecheck would otherwise reject an intermediate state the gate
+loop was about to fix, and take the whole flow down with it. Nothing is lost —
+`quality_gates` runs the repo's own build/typecheck/lint/test and no PR opens
+unless they pass. The terminal commit before pushing runs hooks normally.
+
 Both terminal nodes (`open_pr`, `escalate`) commit and push first, so the PR — or
 the escalation — describes state a human can actually see.
+
+### Why acceptance runs twice
+
+The `acceptance` node is the cheap fail-fast gate: it proves the feature meets
+its own contract before a full LLM review is spent on it. But two fix loops run
+*after* it — quality review and the gate loop — and both edit code. The repo-root
+`test` command does not cover the feature's acceptance tests: they are generated
+per-feature under `<packageDir>/.nax/features/<feature>/` and usually need their
+own runner config (a separate jest/vitest/pytest invocation), which is exactly
+why they are excluded from the normal suite. So a quality-phase fix could break
+the contract the first gate proved, and nothing downstream would notice.
+
+Re-running them as gate zero of `quality_gates` makes one property true on every
+path: **nothing reaches `open_pr` without the feature's own acceptance tests
+passing against the tree as it will ship.** A failure there routes to `fix_gate`
+with the failing output, so it is repaired rather than escalated.
+
+It runs unconditionally, even on the all-green path where nothing changed since
+the first run. Skipping it when no fix has landed is derivable from the step
+history, but a conditional correctness check that can be *wrong* is worse than a
+cheap one that cannot — a missed re-run is a silent false green, the failure
+mode this exists to prevent. Acceptance is the cheapest gate in the pipeline;
+the redundant run costs seconds against a flow that spends minutes in review.
 
 | Outcome | Result |
 |:---|:---|
@@ -58,6 +97,19 @@ The terminal state is written to `.nax/nax-finish-result.json`:
 
 `status` is one of `opened`, `promoted`, `already-ready`, `escalated`,
 `nothing-to-finish`. Add it to `.gitignore`.
+
+On `escalated` the file also carries `escalationReason` and the `findings` that
+caused it:
+
+```json
+{
+  "feature": "auth-hardening",
+  "status": "escalated",
+  "url": "https://github.com/o/r/pull/42",
+  "escalationReason": "spec review still reporting 3 finding(s) after 3 fix attempts.",
+  "findings": [{ "severity": "HIGH", "title": "…", "problem": "…", "fix": "…" }]
+}
+```
 
 ---
 
@@ -147,7 +199,7 @@ post-run driver treats it as non-blocking and logs a warning).
 | `reviewers.spec` | `null` | acpx agent profile for the spec-review phase — see §4. |
 | `reviewers.quality` | `null` | acpx agent profile for the quality-review phase. |
 | `escalate.telegram` | `true` | Prefer Telegram for escalations when credentials resolve; else PR/MR comment. |
-| `timeouts.acceptanceMs` | 600000 (10 min) | Cap per acceptance-test group. |
+| `timeouts.acceptanceMs` | 600000 (10 min) | Cap per acceptance-test group, in both the `acceptance` node and gate zero of `quality_gates`. |
 | `timeouts.gateMs` | 900000 (15 min) | Cap per quality gate. |
 | `timeouts.flowMs` | 5400000 (90 min) | Cap on the whole `acpx flow run`. |
 | `timeouts.stepMs` | `null` | Cap per flow step (one agent turn), passed to acpx as `--timeout`. `null` keeps acpx's own 15-minute default — raise it if reviews of large diffs get cut off. |
@@ -288,11 +340,25 @@ export NAX_TELEGRAM_CHAT_ID=…
 ```
 
 When Telegram is enabled **and** credentialed, the flow posts no PR comment and
-opens no draft to hold one.
+opens no draft to hold one. The message names each finding by severity and
+title, not just the count, and is truncated to the Bot API's 4096-char limit
+(saying how many it dropped). It is sent as plain text — review titles carry
+backticks and underscores that Markdown parsing would reject outright.
 
 **PR/MR comment (fallback).** With `escalate.telegram: false`, or no credentials,
 the flow comments on the branch's existing PR/MR — opening a *draft* to hold the
 comment only if none exists. It never opens a ready PR while escalating.
+
+**Delivery is never fatal.** The result file is written *before* delivery is
+attempted, so a rate limit, an expired token or an unrecognised remote cannot
+lose the escalation. A failed delivery is recorded as `deliveryError` in the
+result, logged, and reported by the plugin as `escalated but undelivered` —
+Telegram still fires, because the plugin sends from the result file.
+
+**Forge detection** matches the remote's *host*, so self-hosted instances
+(`gitlab.mycorp.com`, `github.mycorp.com`) work. For an enterprise host naming
+neither forge (`git.corp.com`), it falls back to whichever of `gh` / `glab` is
+installed, and only errors when that is ambiguous too.
 
 ---
 

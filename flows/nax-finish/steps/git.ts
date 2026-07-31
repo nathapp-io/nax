@@ -1,11 +1,17 @@
 /**
  * Branch synchronisation for the nax-finish flow.
  *
- * Every fix node edits the working tree in place. Without this step those edits
- * stay local and uncommitted: `gh pr create --head <branch>` then opens a PR
- * from the *remote* branch, which is missing every fix the flow just made (and
- * an escalation comment would describe state nobody else can see). Both
- * terminal nodes call `commitAndPush` before touching the forge.
+ * Every fix node edits the working tree in place, which two different consumers
+ * would otherwise miss:
+ *
+ * - The **reviewers** read `git diff <base>...HEAD` — committed history only.
+ *   With the fixes uncommitted, every re-review re-read the pre-fix code and
+ *   re-reported findings the fix node had already resolved, so the loop could
+ *   never converge and always escalated at the fix cap (issue #1397). Each
+ *   `commit_*` node calls `commitFixes` for this reason.
+ * - The **forge**: `gh pr create --head <branch>` opens a PR from the *remote*
+ *   branch, and an escalation comment would describe state nobody else can see.
+ *   Both terminal nodes call `commitAndPush` before touching the forge.
  */
 import { FinishError } from "../errors";
 import { runArgv } from "../exec";
@@ -33,33 +39,61 @@ async function isDirty(repoRoot: string): Promise<boolean> {
 }
 
 /**
+ * Commit the working tree, if it has anything in it, without pushing.
+ *
+ * Called by the `commit_*` nodes after every fix node so the next reviewer's
+ * `git diff <base>...HEAD` contains the fix. `git add -A` (not `-u`) because a
+ * fix routinely adds a *new* test file, and an untracked file is invisible to
+ * that diff — which is also why committing beats widening the reviewer's diff
+ * to include the working tree.
+ *
+ * `skipHooks` (used by every mid-loop `commit_*` node) adds `--no-verify`. Those
+ * commits are internal checkpoints, not shipped history: a repo whose
+ * pre-commit hook runs lint or typecheck would otherwise reject an intermediate
+ * state — a lint error the gate loop was about to fix — and take the whole flow
+ * down with it, with no result file. Nothing is lost by skipping them, because
+ * `quality_gates` runs the repo's own build/typecheck/lint/test and no PR opens
+ * unless they are green. The terminal `commitAndPush` leaves hooks enabled.
+ *
+ * A failing commit still throws: the fix is then unreviewable, and continuing
+ * would silently reproduce the stale-diff bug this exists to fix.
+ */
+export async function commitFixes(
+  repoRoot: string,
+  message: string,
+  opts: { skipHooks?: boolean } = {},
+): Promise<{ committed: boolean }> {
+  if (!(await isDirty(repoRoot))) return { committed: false };
+
+  const add = await _gitDeps.run(["git", "add", "-A"], { cwd: repoRoot });
+  if (add.exitCode !== 0) {
+    throw new FinishError(
+      `git add failed in "${repoRoot}": ${add.stderr.trim() || `exit ${add.exitCode}`}`,
+      "FINISH_GIT_ADD_FAILED",
+      { stage: "finish-git", repoRoot },
+    );
+  }
+  const commitArgv = ["git", "commit", "-m", message, ...(opts.skipHooks ? ["--no-verify"] : [])];
+  const commit = await _gitDeps.run(commitArgv, { cwd: repoRoot });
+  if (commit.exitCode !== 0) {
+    throw new FinishError(
+      `git commit failed in "${repoRoot}": ${commit.stderr.trim() || commit.stdout.trim() || `exit ${commit.exitCode}`}`,
+      "FINISH_GIT_COMMIT_FAILED",
+      { stage: "finish-git", repoRoot },
+    );
+  }
+  return { committed: true };
+}
+
+/**
  * Commit any outstanding fixes and push the branch to `origin`.
  *
  * The push is unconditional — even with nothing new to commit the local branch
- * may be ahead of its remote (nax's own run commits, or a previous partial
- * finish), and the PR must reflect HEAD.
+ * may be ahead of its remote (nax's own run commits, or the `commit_*` nodes'
+ * per-round commits), and the PR must reflect HEAD.
  */
 export async function commitAndPush(repoRoot: string, branch: string, message: string): Promise<SyncOutcome> {
-  let committed = false;
-  if (await isDirty(repoRoot)) {
-    const add = await _gitDeps.run(["git", "add", "-A"], { cwd: repoRoot });
-    if (add.exitCode !== 0) {
-      throw new FinishError(
-        `git add failed in "${repoRoot}": ${add.stderr.trim() || `exit ${add.exitCode}`}`,
-        "FINISH_GIT_ADD_FAILED",
-        { stage: "finish-git", repoRoot },
-      );
-    }
-    const commit = await _gitDeps.run(["git", "commit", "-m", message], { cwd: repoRoot });
-    if (commit.exitCode !== 0) {
-      throw new FinishError(
-        `git commit failed in "${repoRoot}": ${commit.stderr.trim() || commit.stdout.trim() || `exit ${commit.exitCode}`}`,
-        "FINISH_GIT_COMMIT_FAILED",
-        { stage: "finish-git", repoRoot, branch },
-      );
-    }
-    committed = true;
-  }
+  const { committed } = await commitFixes(repoRoot, message);
 
   const push = await _gitDeps.run(["git", "push", "--set-upstream", "origin", branch], { cwd: repoRoot });
   if (push.exitCode !== 0) {

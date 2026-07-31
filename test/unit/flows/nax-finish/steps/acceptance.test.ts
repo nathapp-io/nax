@@ -78,4 +78,27 @@ describe("runAcceptanceGate", () => {
     expect(r.ran).toBe(0);
     expect(r.output).toContain("no acceptance test files present");
   });
+
+  test("names the packages whose acceptance test was expected but never generated", async () => {
+    _acceptanceDeps.runShell = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+    const r = await runAcceptanceGate("/repo", [
+      group({ packageDir: "apps/api", exists: true }),
+      group({ packageDir: "apps/web", exists: false }),
+    ]);
+    // the runnable group passed, but the gate must not hide the missing one
+    expect(r.ran).toBe(1);
+    expect(r.missing).toEqual(["apps/web"]);
+  });
+
+  test("reports the root package's missing test under a readable name", async () => {
+    _acceptanceDeps.runShell = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+    const r = await runAcceptanceGate("/repo", [group({ packageDir: "", exists: false })]);
+    expect(r.missing).toEqual(["root"]);
+  });
+
+  test("missing is empty when every group ran", async () => {
+    _acceptanceDeps.runShell = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+    const r = await runAcceptanceGate("/repo", [group()]);
+    expect(r.missing).toEqual([]);
+  });
 });

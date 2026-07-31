@@ -96,12 +96,66 @@ describe("nax-finish flow graph", () => {
 
   test("review fixes are re-verified, not applied once and trusted", () => {
     // spec fixes re-run the acceptance gate, which routes back into review_spec
-    expect(toOf("fix_spec")).toBe("acceptance");
+    expect(toOf("commit_spec")).toBe("acceptance");
     expect(switchOf("acceptance").cases.proceed).toBe("review_spec");
     // quality fixes are re-reviewed by the same lens
-    expect(toOf("fix_quality")).toBe("review_quality");
-    expect(toOf("fix_acceptance")).toBe("acceptance");
-    expect(toOf("fix_gate")).toBe("quality_gates");
+    expect(toOf("commit_quality")).toBe("review_quality");
+    expect(toOf("commit_acceptance")).toBe("acceptance");
+    expect(toOf("commit_gate")).toBe("quality_gates");
+  });
+
+  // Regression: #1397 — reviewers read `git diff base...HEAD`, so an uncommitted
+  // fix is invisible to the re-review and the loop escalates at the cap having
+  // re-reported findings that were already fixed.
+  test("every fix node commits before anything re-reads the diff", () => {
+    for (const phase of ["acceptance", "spec", "quality", "gate"]) {
+      expect(flow.nodes[`commit_${phase}`]).toBeDefined();
+      expect(flow.nodes[`commit_${phase}`].nodeType).toBe("action");
+      expect(toOf(`fix_${phase}`)).toBe(`commit_${phase}`);
+    }
+  });
+});
+
+describe("commit_* nodes", () => {
+  const originalRun = _gitDeps.run;
+  afterEach(() => {
+    _gitDeps.run = originalRun;
+  });
+
+  const runCommitNode = async (id: string, porcelain: string) => {
+    const calls: string[][] = [];
+    _gitDeps.run = async (cmd) => {
+      calls.push(cmd);
+      return cmd.includes("--porcelain")
+        ? { exitCode: 0, stdout: porcelain, stderr: "" }
+        : { exitCode: 0, stdout: "", stderr: "" };
+    };
+    const out = await nodeRun<{ committed: boolean }>(id).run(ctxOf({}));
+    return { out, argv: calls.map((c) => c.join(" ")) };
+  };
+
+  test("commits the fix with a conventional, phase-named message and no push", async () => {
+    const { out, argv } = await runCommitNode("commit_spec", " M apps/api/_calendar.py\n");
+    expect(out.committed).toBe(true);
+    // --no-verify: a pre-commit hook rejecting an intermediate state would
+    // otherwise kill the flow before the gate loop could fix it
+    expect(argv).toContain("git commit -m fix(x): nax-finish spec fixes --no-verify");
+    // the push belongs to the terminal nodes; a mid-loop push would publish
+    // half-fixed states to the forge on every round
+    expect(argv.some((c) => c.startsWith("git push"))).toBe(false);
+  });
+
+  test("each phase commits under its own message", async () => {
+    for (const phase of ["acceptance", "quality", "gate"]) {
+      const { argv } = await runCommitNode(`commit_${phase}`, " M a.ts\n");
+      expect(argv).toContain(`git commit -m fix(x): nax-finish ${phase} fixes --no-verify`);
+    }
+  });
+
+  test("a fix node that changed nothing produces no commit", async () => {
+    const { out, argv } = await runCommitNode("commit_gate", "");
+    expect(out.committed).toBe(false);
+    expect(argv.some((c) => c.startsWith("git commit"))).toBe(false);
   });
 });
 
@@ -164,6 +218,73 @@ describe("acceptance node", () => {
       ctxOf({
         outputs: { load_ctx: { groups: GROUPS } },
         steps: [{ nodeId: "fix_acceptance" }, { nodeId: "fix_acceptance" }],
+      }),
+    );
+    expect(out.route).toBe("fix");
+  });
+
+  // Regression: an empty/ungenerated acceptance set used to report `passed`,
+  // so the flow could open a ready PR having verified nothing (issue #1398).
+  test("escalates instead of passing when the feature has no PRD to compute targets from", async () => {
+    _acceptanceDeps.runShell = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+    const out = await nodeRun<{ route: string; reason?: string }>("acceptance").run(
+      ctxOf({ outputs: { load_ctx: { groups: [], acceptanceStatus: "no-prd" } } }),
+    );
+    expect(out.route).toBe("escalate");
+    expect(out.reason).toContain("no-prd");
+  });
+
+  test("skips cleanly when acceptance is disabled in config", async () => {
+    let ran = 0;
+    _acceptanceDeps.runShell = async () => {
+      ran += 1;
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    const out = await nodeRun<{ route: string; output: string }>("acceptance").run(
+      ctxOf({ outputs: { load_ctx: { groups: [], acceptanceStatus: "disabled" } } }),
+    );
+    expect(out.route).toBe("proceed");
+    expect(ran).toBe(0);
+    expect(out.output).toContain("disabled");
+  });
+
+  test("escalates when every group's acceptance test is missing — nothing was verified", async () => {
+    _acceptanceDeps.runShell = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+    const out = await nodeRun<{ route: string; reason?: string }>("acceptance").run(
+      ctxOf({
+        outputs: { load_ctx: { groups: [{ ...GROUPS[0], exists: false }], acceptanceStatus: "ok" } },
+      }),
+    );
+    expect(out.route).toBe("escalate");
+    expect(out.reason).toContain("never generated");
+  });
+
+  test("escalates on a partial coverage hole even when the runnable groups pass", async () => {
+    _acceptanceDeps.runShell = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+    const out = await nodeRun<{ route: string; reason?: string }>("acceptance").run(
+      ctxOf({
+        outputs: {
+          load_ctx: {
+            groups: [GROUPS[0], { ...GROUPS[0], packageDir: "apps/web", exists: false }],
+            acceptanceStatus: "ok",
+          },
+        },
+      }),
+    );
+    expect(out.route).toBe("escalate");
+    expect(out.reason).toContain("apps/web");
+  });
+
+  test("a real test failure still routes to the fix loop, not the coverage escalation", async () => {
+    _acceptanceDeps.runShell = async () => ({ exitCode: 1, stdout: "", stderr: "assert failed" });
+    const out = await nodeRun<{ route: string }>("acceptance").run(
+      ctxOf({
+        outputs: {
+          load_ctx: {
+            groups: [GROUPS[0], { ...GROUPS[0], packageDir: "apps/web", exists: false }],
+            acceptanceStatus: "ok",
+          },
+        },
       }),
     );
     expect(out.route).toBe("fix");
@@ -247,9 +368,102 @@ describe("review parse + route_* nodes", () => {
 describe("quality_gates node", () => {
   const originalRun = _qualityDeps.runShell;
   const originalReadText = _qualityDeps.readText;
+  const originalAcceptanceRun = _acceptanceDeps.runShell;
   afterEach(() => {
     _qualityDeps.runShell = originalRun;
     _qualityDeps.readText = originalReadText;
+    _acceptanceDeps.runShell = originalAcceptanceRun;
+  });
+
+  // The feature's acceptance tests are re-run here because the quality-review
+  // and gate fix loops edit code after the `acceptance` node last passed, and
+  // the repo-root `test` command does not cover them — they live under
+  // `<pkg>/.nax/features/<f>/` and usually need their own runner config. Without
+  // this, a quality fix could break the feature's own contract and still ship.
+  describe("acceptance as gate zero", () => {
+    const withGroups = () => ctxOf({ outputs: { load_ctx: { groups: GROUPS } } });
+
+    test("runs the feature's acceptance tests before the configured commands", async () => {
+      const order: string[] = [];
+      _acceptanceDeps.runShell = async () => {
+        order.push("acceptance");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      };
+      _qualityDeps.readText = async () => JSON.stringify({ quality: { commands: { lint: "bun run lint" } } });
+      _qualityDeps.runShell = async () => {
+        order.push("lint");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      };
+
+      const out = await nodeRun<{ route: string }>("quality_gates").run(withGroups());
+
+      expect(out.route).toBe("green");
+      expect(order).toEqual(["acceptance", "lint"]);
+    });
+
+    test("a fix that broke the contract routes to the gate fix loop, naming acceptance", async () => {
+      _acceptanceDeps.runShell = async () => ({ exitCode: 1, stdout: "", stderr: "AssertionError" });
+      _qualityDeps.readText = async () => JSON.stringify({ quality: { commands: { lint: "bun run lint" } } });
+      _qualityDeps.runShell = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+
+      const out = await nodeRun<{ route: string; failing: string[]; output: string }>("quality_gates").run(
+        withGroups(),
+      );
+
+      expect(out.route).toBe("fix");
+      expect(out.failing).toContain("acceptance");
+      expect(out.output).toContain("AssertionError");
+    });
+
+    test("does not run the repo gates while acceptance is red", async () => {
+      _acceptanceDeps.runShell = async () => ({ exitCode: 1, stdout: "", stderr: "boom" });
+      _qualityDeps.readText = async () => JSON.stringify({ quality: { commands: { lint: "bun run lint" } } });
+      let gatesRan = 0;
+      _qualityDeps.runShell = async () => {
+        gatesRan += 1;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      };
+
+      const out = await nodeRun<{ route: string; reason?: string }>("quality_gates").run(withGroups());
+
+      expect(gatesRan).toBe(0);
+      // must not be mistaken for the "nothing configured" escalation — the
+      // commands are configured, they were skipped on purpose
+      expect(out.reason).toBeUndefined();
+    });
+
+    test("at the cap it escalates naming the broken contract, not the lint gate", async () => {
+      _acceptanceDeps.runShell = async () => ({ exitCode: 1, stdout: "", stderr: "boom" });
+      _qualityDeps.readText = async () => JSON.stringify({ quality: { commands: { lint: "bun run lint" } } });
+      _qualityDeps.runShell = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+
+      const out = await nodeRun<{ route: string; reason?: string }>("quality_gates").run(
+        ctxOf({
+          outputs: { load_ctx: { groups: GROUPS } },
+          steps: [{ nodeId: "fix_gate" }, { nodeId: "fix_gate" }, { nodeId: "fix_gate" }],
+        }),
+      );
+
+      expect(out.route).toBe("escalate");
+      expect(out.reason).toContain("contract");
+    });
+
+    test("acceptance disabled (no groups) does not block a green gate", async () => {
+      let acceptanceRan = 0;
+      _acceptanceDeps.runShell = async () => {
+        acceptanceRan += 1;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      };
+      _qualityDeps.readText = async () => JSON.stringify({ quality: { commands: { lint: "bun run lint" } } });
+      _qualityDeps.runShell = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+
+      const out = await nodeRun<{ route: string }>("quality_gates").run(
+        ctxOf({ outputs: { load_ctx: { groups: [] } } }),
+      );
+
+      expect(acceptanceRan).toBe(0);
+      expect(out.route).toBe("green");
+    });
   });
 
   test("escalates instead of reporting green when the repo configured no commands", async () => {
@@ -432,5 +646,98 @@ describe("escalate node", () => {
 
     expect(out.channel).toBe("telegram");
     expect(forgeCalls.some((c) => c.join(" ").includes("pr comment"))).toBe(false);
+  });
+
+  // Regression: on the Telegram path the composed comment (the only thing
+  // carrying the findings) was discarded, and the result file recorded just a
+  // count — so no artifact anywhere named what needed judgment (issue #1398).
+  test("persists the findings in the result file, not only the reason", async () => {
+    stubForge([]);
+    _gitDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+    let wrote = "";
+    _resultDeps.writeText = async (_p, s) => {
+      wrote = s;
+    };
+    const findings = [
+      { severity: "HIGH", title: "holidays ignores timezone", problem: "no query param", fix: "add it" },
+    ];
+
+    await nodeRun("escalate").run(
+      ctxOf({
+        input: { ...INPUT, escalateTelegram: true },
+        outputs: { route_spec: { route: "escalate", findings, escalationReason: "3 findings after 3 attempts" } },
+      }),
+    );
+
+    expect(JSON.parse(wrote).findings).toEqual(findings);
+  });
+
+  // Regression: postEscalation ran before writeResult, so a failing comment (or
+  // an unknown forge) killed the node with no result file — the plugin then had
+  // nothing to notify from, and the escalation vanished entirely (#1399).
+  test("a failed delivery still leaves a result file the plugin can notify from", async () => {
+    _escalateDeps.run = async (cmd) => {
+      if (cmd.join(" ").includes("remote get-url")) return { exitCode: 0, stdout: "git@github.com:o/r", stderr: "" };
+      if (cmd.includes("view")) return { exitCode: 0, stdout: JSON.stringify({ url: "https://gh/pr/9" }), stderr: "" };
+      return { exitCode: 1, stdout: "", stderr: "rate limit exceeded" };
+    };
+    _gitDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+    const writes: string[] = [];
+    _resultDeps.writeText = async (_p, s) => {
+      writes.push(s);
+    };
+
+    const out = await nodeRun<{ escalationReason: string; deliveryError?: string }>("escalate").run(
+      ctxOf({ outputs: { route_spec: { route: "escalate", findings: [], escalationReason: "needs judgment" } } }),
+    );
+
+    expect(out.escalationReason).toBe("needs judgment");
+    expect(out.deliveryError).toContain("rate limit exceeded");
+    const final = JSON.parse(writes[writes.length - 1]);
+    expect(final).toMatchObject({ status: "escalated", escalationReason: "needs judgment" });
+    expect(final.deliveryError).toContain("rate limit exceeded");
+  });
+
+  test("writes the result before attempting delivery, not after", async () => {
+    const order: string[] = [];
+    _escalateDeps.run = async (cmd) => {
+      if (cmd.join(" ").includes("remote get-url")) return { exitCode: 0, stdout: "git@github.com:o/r", stderr: "" };
+      if (cmd.includes("view")) return { exitCode: 0, stdout: JSON.stringify({ url: "https://gh/pr/9" }), stderr: "" };
+      order.push("deliver");
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    _gitDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+    _resultDeps.writeText = async () => {
+      order.push("write");
+    };
+
+    await nodeRun("escalate").run(
+      ctxOf({ outputs: { route_spec: { route: "escalate", findings: [], escalationReason: "r" } } }),
+    );
+
+    expect(order[0]).toBe("write");
+    expect(order).toContain("deliver");
+  });
+
+  test("an unknown forge does not sink the escalation", async () => {
+    _escalateDeps.run = async (cmd) => {
+      if (cmd.join(" ").includes("remote get-url")) return { exitCode: 0, stdout: "git@git.corp:o/r", stderr: "" };
+      return { exitCode: 127, stdout: "", stderr: "command not found" };
+    };
+    _gitDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+    let wrote = "";
+    _resultDeps.writeText = async (_p, s) => {
+      wrote = s;
+    };
+
+    const out = await nodeRun<{ deliveryError?: string }>("escalate").run(
+      ctxOf({
+        input: { ...INPUT, escalateTelegram: true },
+        outputs: { route_spec: { route: "escalate", findings: [], escalationReason: "r" } },
+      }),
+    );
+
+    expect(out.deliveryError).toBeTruthy();
+    expect(JSON.parse(wrote)).toMatchObject({ status: "escalated", escalationReason: "r" });
   });
 });

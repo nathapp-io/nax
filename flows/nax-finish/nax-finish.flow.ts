@@ -17,11 +17,20 @@
  * - `load_ctx` is an `action`, not a `compute`: it shells git + `nax features
  *   resolve` once, and its output feeds both the review prompts (specPath) and
  *   the acceptance gate (groups), so nothing resolves the feature twice.
- * - Review fixes loop: `review_* → route_* → fix_* → (re-run acceptance |
- *   re-review) → review_*` until the reviewer comes back clean or the fix cap
- *   trips. A single-shot fix left the fixed diff unverified.
+ * - Review fixes loop: `review_* → route_* → fix_* → commit_* → (re-run
+ *   acceptance | re-review) → review_*` until the reviewer comes back clean or
+ *   the fix cap trips. A single-shot fix left the fixed diff unverified.
+ * - Every `fix_*` node is followed by a `commit_*` node. The reviewers read
+ *   `git diff <base>...HEAD`, so an uncommitted fix is invisible to the
+ *   re-review: the loop re-reported findings that were already fixed and always
+ *   escalated at the cap (issue #1397).
  * - `route_*` compute nodes hold the escalate/clean/fix decision so the cap is
  *   enforced deterministically rather than trusting the model's own route.
+ * - `quality_gates` re-runs the feature's acceptance tests before the repo's
+ *   own commands. The quality-review and gate fix loops both edit code after
+ *   the `acceptance` node last passed, and the repo-root `test` command does
+ *   not cover per-feature acceptance tests — so without this a fix could break
+ *   the contract the first gate proved and still ship.
  */
 import { defineFlow, extractJsonObject } from "acpx/flows";
 import { buildReviewPrompt, fixPrompt } from "./review-prompts";
@@ -29,6 +38,7 @@ import {
   _contextDeps,
   buildEscalationComment,
   commitAndPush,
+  commitFixes,
   detectBaseBranch,
   loadQualityCommands,
   openOrPromotePr,
@@ -39,7 +49,7 @@ import {
   runQualityGates,
   writeResult,
 } from "./steps";
-import type { AcceptanceGroup, FinishInput, ReviewVerdict } from "./types";
+import type { AcceptanceGroup, FinishInput, FinishResult, ReviewVerdict } from "./types";
 
 const inputOf = (ctx: { input: unknown }) => ctx.input as FinishInput;
 
@@ -55,6 +65,8 @@ interface LoadCtxOutput {
   base?: string;
   specPath?: string;
   groups?: AcceptanceGroup[];
+  /** `nax features resolve`'s acceptance status: "ok" | "disabled" | "no-prd". */
+  acceptanceStatus?: string;
   route?: string;
 }
 
@@ -66,16 +78,48 @@ function loadCtxOf(ctx: { outputs: unknown }): LoadCtxOutput {
   return ((ctx.outputs as Record<string, LoadCtxOutput | undefined>).load_ctx ?? {}) as LoadCtxOutput;
 }
 
-/** Re-run the acceptance gate, routing on the shared fix-cap rules. */
+/**
+ * Re-run the acceptance gate, routing on the shared fix-cap rules.
+ *
+ * "Nothing ran" is not a pass — the same rule `quality_gates` applies to an
+ * unconfigured repo. `nax features resolve` reports `groups: []` for BOTH
+ * `no-prd` and `disabled`, and reports `exists: false` for a group whose test
+ * was expected at its canonical path but never generated. Treating all of those
+ * as green let the flow open a ready PR having verified nothing about the
+ * feature's own contract (#1398). Only `disabled` — the repo's explicit opt-out
+ * — skips cleanly.
+ */
 async function acceptanceGateNode(ctx: {
   input: unknown;
   outputs: unknown;
   state: { steps: { nodeId: string }[] };
 }): Promise<{ route: string; reason?: string; output: string }> {
   const i = inputOf(ctx);
-  const groups = loadCtxOf(ctx).groups ?? [];
+  const { groups = [], acceptanceStatus } = loadCtxOf(ctx);
+  if (acceptanceStatus === "disabled") {
+    return { route: "proceed", output: "[acceptance] disabled in .nax/config.json — skipping" };
+  }
+  if (acceptanceStatus === "no-prd") {
+    return {
+      route: "escalate",
+      reason: `Acceptance targets could not be computed (status: no-prd) — nothing was verified for "${i.feature}".`,
+      output: "[acceptance] no prd.json resolved — acceptance targets unknown",
+    };
+  }
+
   const r = await runAcceptanceGate(i.workdir, groups, { timeoutMs: i.timeouts?.acceptanceMs });
-  if (r.passed) return { route: "proceed", output: r.output };
+  if (r.passed) {
+    // A real failure below routes to the fix loop, which is more actionable;
+    // the coverage hole is only reported once the runnable groups are green.
+    if (r.missing.length > 0) {
+      return {
+        route: "escalate",
+        reason: `Acceptance test never generated for: ${r.missing.join(", ")} — that package's contract is unverified.`,
+        output: r.output,
+      };
+    }
+    return { route: "proceed", output: r.output };
+  }
   const attempts = fixAttemptCount(ctx, "fix_acceptance");
   if (attempts >= MAX_FIX_ATTEMPTS) {
     return {
@@ -117,6 +161,26 @@ function routeReview(
     };
   }
   return { route: "fix", findings };
+}
+
+/**
+ * Build the `commit_<phase>` node that follows `fix_<phase>`.
+ *
+ * One node per phase rather than a single shared one because each returns to a
+ * different successor, and acpx routes on the node id — a shared node would
+ * need a switch reconstructing which fix ran from the step history.
+ */
+function commitFixNode(phase: "acceptance" | "spec" | "quality" | "gate") {
+  return {
+    nodeType: "action" as const,
+    async run(ctx: { input: unknown }): Promise<{ committed: boolean }> {
+      const i = inputOf(ctx);
+      // skipHooks: an intermediate checkpoint must not be rejected by a repo's
+      // pre-commit hook — quality_gates runs the repo's real gates before any
+      // PR opens, and a hook failure here would kill the flow mid-loop.
+      return commitFixes(i.workdir, `fix(${i.feature}): nax-finish ${phase} fixes`, { skipHooks: true });
+    },
+  };
 }
 
 /** Normalise a reviewer's JSON, rewriting a findings-free `proceed` to `clean`. */
@@ -162,6 +226,7 @@ export default defineFlow({
       prompt: (ctx) => fixPrompt("acceptance", ctx),
       parse: parseVerdict,
     },
+    commit_acceptance: commitFixNode("acceptance"),
     review_spec: {
       nodeType: "acp",
       session: { isolated: true },
@@ -181,6 +246,7 @@ export default defineFlow({
       prompt: (ctx) => fixPrompt("spec", ctx),
       parse: parseVerdict,
     },
+    commit_spec: commitFixNode("spec"),
     review_quality: {
       nodeType: "acp",
       session: { isolated: true },
@@ -200,15 +266,57 @@ export default defineFlow({
       prompt: (ctx) => fixPrompt("quality", ctx),
       parse: parseVerdict,
     },
+    commit_quality: commitFixNode("quality"),
     fix_gate: {
       nodeType: "acp",
       prompt: (ctx) => fixPrompt("gate", ctx),
       parse: parseVerdict,
     },
+    commit_gate: commitFixNode("gate"),
     quality_gates: {
       nodeType: "action",
       async run(ctx) {
         const i = inputOf(ctx);
+
+        // Acceptance is gate zero here, not just at the `acceptance` node.
+        // Both fix loops that run after it — quality review and this gate —
+        // edit code, and the repo-root `test` command does not cover the
+        // feature's acceptance tests: they live under `<pkg>/.nax/features/<f>/`
+        // and usually need their own runner config. Re-running them here is what
+        // makes "nothing reaches open_pr without the feature's own contract
+        // passing against the tree as it will ship" true on every path (#1398).
+        //
+        // Unconditional, though the common green path re-runs a gate that
+        // already passed: acceptance is the cheapest gate in the pipeline, and a
+        // conditional skip derived from step history would be a check that can
+        // be *wrong* — a silent false green, the failure mode this exists to
+        // prevent.
+        //
+        // `missing` is deliberately ignored: groups are resolved once at
+        // load_ctx, so a coverage hole was already escalated by the acceptance
+        // node and cannot appear here.
+        const acc = await runAcceptanceGate(i.workdir, loadCtxOf(ctx).groups ?? [], {
+          timeoutMs: i.timeouts?.acceptanceMs,
+        });
+        if (!acc.passed) {
+          // Short-circuit: the repo gates are re-run next round anyway, and
+          // skipping them keeps this out of the "nothing configured" branch
+          // below, which would otherwise misreport configured-but-skipped
+          // commands as absent.
+          const accAttempts = fixAttemptCount(ctx, "fix_gate");
+          const failing = ["acceptance"];
+          if (accAttempts >= MAX_FIX_ATTEMPTS) {
+            return {
+              route: "escalate",
+              reason: `A later fix broke the feature's own contract: acceptance still failing after ${accAttempts} fix attempts.`,
+              ran: [],
+              failing,
+              output: acc.output,
+            };
+          }
+          return { route: "fix", ran: [], failing, output: acc.output };
+        }
+
         const cmds = await loadQualityCommands(i.workdir);
         const r = await runQualityGates(i.workdir, cmds, { timeoutMs: i.timeouts?.gateMs });
         if (r.passed) return { route: "green", ran: r.ran, failing: r.failing, output: r.output };
@@ -289,12 +397,36 @@ export default defineFlow({
           syncNote = `\n\n> Note: nax-finish could not push its partial fixes — ${String(err)}`;
         }
 
+        // Write the result BEFORE attempting delivery. Delivery touches the
+        // network and the forge — a rate limit, an expired token, a locked PR
+        // or an unrecognised remote used to throw here, killing the node before
+        // any result existed. The plugin then had nothing to report and, on the
+        // Telegram channel, nothing to notify from: the one path whose job is
+        // to say "a human is needed" was the one path with no fallback (#1399).
+        const result: FinishResult = {
+          feature: i.feature,
+          status: "escalated",
+          escalationReason: reason,
+          findings: verdict?.findings ?? [],
+        };
+        await writeResult(i.workdir, result);
+
         const comment = buildEscalationComment(i.feature, reason, verdict?.findings ?? []) + syncNote;
-        const { url, channel } = await postEscalation(i.workdir, i.branch, comment, {
-          preferTelegram: i.escalateTelegram,
-        });
-        await writeResult(i.workdir, { feature: i.feature, status: "escalated", url, escalationReason: reason });
-        return { route: "done", url, channel, escalationReason: reason };
+        let url: string | undefined;
+        let channel: string | undefined;
+        let deliveryError: string | undefined;
+        try {
+          const posted = await postEscalation(i.workdir, i.branch, comment, {
+            preferTelegram: i.escalateTelegram,
+          });
+          url = posted.url;
+          channel = posted.channel;
+        } catch (err) {
+          deliveryError = String(err);
+        }
+        await writeResult(i.workdir, { ...result, url, deliveryError });
+
+        return { route: "done", url, channel, deliveryError, escalationReason: reason };
       },
     },
   },
@@ -304,7 +436,11 @@ export default defineFlow({
       from: "acceptance",
       switch: { on: "$.route", cases: { proceed: "review_spec", fix: "fix_acceptance", escalate: "escalate" } },
     },
-    { from: "fix_acceptance", to: "acceptance" },
+    // Each fix commits before anything re-reads the diff: the reviewers see
+    // `git diff <base>...HEAD` only, so an uncommitted fix would be re-reported
+    // verbatim until the cap escalated it (#1397).
+    { from: "fix_acceptance", to: "commit_acceptance" },
+    { from: "commit_acceptance", to: "acceptance" },
     { from: "review_spec", to: "route_spec" },
     {
       from: "route_spec",
@@ -312,7 +448,8 @@ export default defineFlow({
     },
     // Spec fixes re-run the acceptance gate first (they can break it), and the
     // acceptance node's `proceed` edge leads back into review_spec for re-review.
-    { from: "fix_spec", to: "acceptance" },
+    { from: "fix_spec", to: "commit_spec" },
+    { from: "commit_spec", to: "acceptance" },
     { from: "review_quality", to: "route_quality" },
     {
       from: "route_quality",
@@ -320,11 +457,13 @@ export default defineFlow({
     },
     // Quality fixes are re-reviewed by the same lens; the repo-root gates that
     // follow catch anything the fix broke mechanically.
-    { from: "fix_quality", to: "review_quality" },
+    { from: "fix_quality", to: "commit_quality" },
+    { from: "commit_quality", to: "review_quality" },
     {
       from: "quality_gates",
       switch: { on: "$.route", cases: { green: "open_pr", fix: "fix_gate", escalate: "escalate" } },
     },
-    { from: "fix_gate", to: "quality_gates" },
+    { from: "fix_gate", to: "commit_gate" },
+    { from: "commit_gate", to: "quality_gates" },
   ],
 });

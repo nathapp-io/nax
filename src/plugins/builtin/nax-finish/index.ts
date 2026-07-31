@@ -21,13 +21,17 @@
 import * as path from "node:path";
 import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
 import { type FinishAutoFlowSettings, getFinishAutoFlowConfig, telegramCreds } from "./config";
-import { sendTelegramNotify } from "./telegram";
+import { buildEscalationMessage, sendTelegramNotify } from "./telegram";
 
 interface FinishResult {
   feature: string;
   status: "opened" | "promoted" | "already-ready" | "escalated" | "nothing-to-finish";
   url?: string;
   escalationReason?: string;
+  /** Findings behind an escalation — named in the notification, not just counted. */
+  findings?: { severity: string; title: string }[];
+  /** Set by the flow when it could not deliver the escalation to its channel. */
+  deliveryError?: string;
 }
 
 type RunFn = (
@@ -298,11 +302,39 @@ const naxFinishAction: IPostRunAction = {
         };
       }
 
-      if (result.status === "escalated" && escalateTelegram && creds) {
-        await _naxFinishDeps.notify(
-          creds,
-          `nax-finish escalated *${result.feature}*: ${result.escalationReason ?? ""}`,
-        );
+      // An escalation nobody receives is the same broken-state-wearing-an-
+      // unremarkable-label failure as a missing result file.
+      //
+      // Which channel counts is not symmetric: the flow posts the PR/MR comment
+      // itself ONLY when Telegram is not the channel, so on the Telegram path
+      // its `deliveryError` means just that the URL lookup failed — the comment
+      // was never meant to be posted. Treating that as undelivered would raise
+      // a false alarm on the path that actually worked.
+      if (result.status === "escalated") {
+        const problems: string[] = [];
+        let delivered = !escalateTelegram && !result.deliveryError;
+        if (escalateTelegram && creds) {
+          const sent = await _naxFinishDeps.notify(
+            creds,
+            buildEscalationMessage(result.feature, result.escalationReason ?? "", result.findings ?? []),
+          );
+          if (sent) delivered = true;
+          else problems.push("Telegram rejected the message");
+        }
+        if (!delivered) {
+          if (result.deliveryError) problems.push(`the flow could not post it: ${result.deliveryError}`);
+          if (problems.length === 0) problems.push("no escalation channel was reachable");
+          ctx.logger.warn("nax-finish escalation was not delivered", {
+            feature: result.feature,
+            reasons: problems,
+            escalationReason: result.escalationReason,
+          });
+          return {
+            success: false,
+            message: `nax-finish: escalated but undelivered — ${problems.join("; ")}`,
+            url: result.url,
+          };
+        }
       }
 
       return { success: true, message: `nax-finish: ${result.status}`, url: result.url };
