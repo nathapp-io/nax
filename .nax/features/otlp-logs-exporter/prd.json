@@ -3,7 +3,7 @@
   "feature": "otlp-logs-exporter",
   "branchName": "feat/otlp-logs-exporter",
   "createdAt": "2026-07-31T12:03:10+08:00",
-  "updatedAt": "2026-07-31T05:41:00.099Z",
+  "updatedAt": "2026-07-31T06:55:05.572Z",
   "userStories": [
     {
       "id": "US-001",
@@ -248,8 +248,8 @@
         "US-003",
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

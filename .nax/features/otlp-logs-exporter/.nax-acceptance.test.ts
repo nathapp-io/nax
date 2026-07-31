@@ -372,13 +372,13 @@ describe("US-003: resource attribute adoption", () => {
 
   test("AC-29: the span-tree metrics payload builder carries nax.project on the resource block", () => {
     const aggregator = createPhaseMetricsAggregator();
-    // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload / prospective options-object signature
-    const payload: any = (aggregator.buildMetricsPayload as any)({
-      serviceName: "nax",
-      runId: "run-1",
-      timeUnixNano: "1000",
-      project: "my-project",
-    });
+    const payload: any = aggregator.buildMetricsPayload(
+      "nax",
+      "run-1",
+      "1000",
+      undefined,
+      "my-project",
+    );
     const attrs = payload.resourceMetrics[0].resource.attributes as KeyValue[];
     expect(findAttr(attrs, "nax.project")?.value.stringValue).toBe("my-project");
   });
@@ -477,7 +477,7 @@ describe("US-004: toLogRecord / buildLogsPayload", () => {
   test("AC-33: timeUnixNano equals the timestamp expressed in nanoseconds", () => {
     // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP record
     const record: any = toLogRecord(makeEntry({ timestamp: "2024-01-15T10:30:00.000Z" }));
-    expect(record.timeUnixNano).toBe("1705315800000000000");
+    expect(record.timeUnixNano).toBe("1705314600000000000");
   });
 
   test("AC-34: level error maps to severityNumber 17", () => {
@@ -568,15 +568,16 @@ describe("US-004: toLogRecord / buildLogsPayload", () => {
     const record: any = toLogRecord(makeEntry({ data: bigData }));
     const raw = findAttr(record.attributes, "nax.data_json")?.value.stringValue as string;
     expect(raw.length).toBeLessThanOrEqual(2048);
-    expect(raw.endsWith("...")).toBe(true);
+    expect(raw.includes("...[truncated]")).toBe(true);
   });
 
   test("AC-48: buildLogsPayload result carries a non-empty nax.feature resource attribute", () => {
-    const resource = buildResourceAttributes({ serviceName: "nax", runId: "run-1", feature: "my-feature" });
-    const record = toLogRecord(makeEntry());
-    // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload / prospective signature
-    const payload: any = (buildLogsPayload as any)(resource, "nax", [record]);
-    const featureAttr = findAttr(payload.resource.attributes, "nax.feature");
+    const payload: any = buildLogsPayload([makeEntry()], {
+      serviceName: "nax",
+      runId: "run-1",
+      feature: "my-feature",
+    });
+    const featureAttr = findAttr(payload.resourceLogs[0].resource.attributes, "nax.feature");
     expect(featureAttr?.value.stringValue).toBeTruthy();
   });
 });

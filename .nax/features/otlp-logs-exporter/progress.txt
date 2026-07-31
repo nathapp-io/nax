@@ -2,3 +2,4 @@
 [2026-07-31T04:57:17.184Z] US-002 — PASSED — Resource attribute builder — Cost: $0.3805
 [2026-07-31T05:29:30.502Z] US-003 — PASSED — Resource attribute adoption — Cost: $1.8618
 [2026-07-31T05:40:56.468Z] US-004 — PASSED — LogEntry to LogRecord mapping — Cost: $0.3976
+[2026-07-31T06:55:05.571Z] US-005 — PASSED — Exporter wiring and lifecycle — Cost: $4.4857
