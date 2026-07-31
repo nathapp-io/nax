@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { hostname } from "node:os";
 import { newSpanId, newTraceId } from "../../../../src/plugins/builtin/otel-reporter/ids";
 import {
   type SpanEvent,
@@ -11,6 +12,7 @@ import {
   msToUnixNano,
 } from "../../../../src/plugins/builtin/otel-reporter/otlp";
 import { PHASE_DURATION_BOUNDS } from "../../../../src/plugins/builtin/otel-reporter/span-tree";
+import { NAX_VERSION } from "../../../../src/version";
 
 describe("ids", () => {
   test("newTraceId is 32 lowercase hex chars", () => {
@@ -190,11 +192,65 @@ describe("buildCounterPoint", () => {
 });
 
 describe("buildResourceAttributes", () => {
-  test("AC15: includes a service.name attribute equal to the configured service name", () => {
-    expect(buildResourceAttributes("my-service", "r1")).toContainEqual(attr("service.name", "my-service"));
+  test("AC1: includes a service.name attribute equal to the configured service name", () => {
+    expect(buildResourceAttributes({ serviceName: "my-service", runId: "r1" })).toContainEqual(
+      attr("service.name", "my-service"),
+    );
   });
 
-  test("AC16: includes a nax.run_id attribute equal to the current run's id", () => {
-    expect(buildResourceAttributes("nax", "r42")).toContainEqual(attr("nax.run_id", "r42"));
+  test("AC2: includes a nax.run_id attribute equal to the current run's id", () => {
+    expect(buildResourceAttributes({ serviceName: "nax", runId: "r42" })).toContainEqual(attr("nax.run_id", "r42"));
+  });
+
+  test("AC3: includes a nax.feature attribute equal to the supplied feature name", () => {
+    expect(
+      buildResourceAttributes({ serviceName: "nax", runId: "r1", feature: "my-feature" }),
+    ).toContainEqual(attr("nax.feature", "my-feature"));
+  });
+
+  test("AC4: includes a nax.project attribute equal to the supplied project name", () => {
+    expect(
+      buildResourceAttributes({ serviceName: "nax", runId: "r1", project: "my-project" }),
+    ).toContainEqual(attr("nax.project", "my-project"));
+  });
+
+  test("AC5: includes a nax.version attribute equal to NAX_VERSION", () => {
+    expect(buildResourceAttributes({ serviceName: "nax", runId: "r1" })).toContainEqual(
+      attr("nax.version", NAX_VERSION),
+    );
+  });
+
+  test("AC6: includes a host.name attribute equal to the OS hostname", () => {
+    expect(buildResourceAttributes({ serviceName: "nax", runId: "r1" })).toContainEqual(attr("host.name", hostname()));
+  });
+
+  test("AC7: includes a numeric process.pid attribute equal to process.pid", () => {
+    const attrs = buildResourceAttributes({ serviceName: "nax", runId: "r1" });
+    const pidAttr = attrs.find((a) => a.key === "process.pid");
+    expect(pidAttr).toBeDefined();
+    expect(pidAttr?.value.doubleValue).toBe(process.pid);
+    expect(typeof pidAttr?.value.doubleValue).toBe("number");
+  });
+
+  test("AC8: includes a nax.git.branch attribute equal to the supplied branch", () => {
+    expect(
+      buildResourceAttributes({ serviceName: "nax", runId: "r1", git: { branch: "main" } }),
+    ).toContainEqual(attr("nax.git.branch", "main"));
+  });
+
+  test("AC9: includes a nax.git.sha attribute equal to the supplied sha", () => {
+    expect(
+      buildResourceAttributes({ serviceName: "nax", runId: "r1", git: { sha: "abc123" } }),
+    ).toContainEqual(attr("nax.git.sha", "abc123"));
+  });
+
+  test("AC10: omits nax.git.branch when no branch is supplied", () => {
+    expect(buildResourceAttributes({ serviceName: "nax", runId: "r1" }).some((a) => a.key === "nax.git.branch")).toBe(
+      false,
+    );
+  });
+
+  test("AC11: omits nax.git.sha when no sha is supplied", () => {
+    expect(buildResourceAttributes({ serviceName: "nax", runId: "r1" }).some((a) => a.key === "nax.git.sha")).toBe(false);
   });
 });

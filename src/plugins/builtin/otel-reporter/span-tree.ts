@@ -202,7 +202,7 @@ export function createPhaseMetricsAggregator(): PhaseMetricsAggregator {
     return {
       resourceMetrics: [
         {
-          resource: { attributes: buildResourceAttributes(serviceName, runId) },
+          resource: { attributes: buildResourceAttributes({ serviceName, runId }) },
           scopeMetrics: [{ scope: { name: "nax" }, metrics }],
         },
       ],

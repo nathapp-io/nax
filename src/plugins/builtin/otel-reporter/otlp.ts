@@ -1,3 +1,6 @@
+import { hostname } from "node:os";
+import { NAX_VERSION } from "@/version";
+
 /** OTLP/JSON attribute value (subset — string and double only). */
 export interface KeyValue {
   key: string;
@@ -65,9 +68,28 @@ export function buildCounterPoint(count: number, attributes: KeyValue[], timeUni
   return { attributes, timeUnixNano, asInt: String(count) };
 }
 
+export interface ResourceAttributesInput {
+  serviceName: string;
+  runId: string;
+  feature?: string;
+  project?: string;
+  git?: { branch?: string; sha?: string };
+}
+
 /** Resource attributes shared by every OTLP payload this reporter exports. */
-export function buildResourceAttributes(serviceName: string, runId: string): KeyValue[] {
-  return [attr("service.name", serviceName), attr("nax.run_id", runId)];
+export function buildResourceAttributes(input: ResourceAttributesInput): KeyValue[] {
+  const attrs: KeyValue[] = [
+    attr("service.name", input.serviceName),
+    attr("nax.run_id", input.runId),
+    attr("nax.version", NAX_VERSION),
+    attr("host.name", hostname()),
+    attr("process.pid", process.pid),
+  ];
+  if (input.feature !== undefined) attrs.push(attr("nax.feature", input.feature));
+  if (input.project !== undefined) attrs.push(attr("nax.project", input.project));
+  if (input.git?.branch !== undefined) attrs.push(attr("nax.git.branch", input.git.branch));
+  if (input.git?.sha !== undefined) attrs.push(attr("nax.git.sha", input.git.sha));
+  return attrs;
 }
 
 export interface TracesInput {
