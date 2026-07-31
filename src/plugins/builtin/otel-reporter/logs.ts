@@ -68,10 +68,10 @@ export function toLogRecord(entry: LogEntry): LogRecord {
   }
 
   return {
+    body: { stringValue: entry.message },
     timeUnixNano,
     severityNumber,
     severityText,
-    body: { stringValue: entry.message },
     attributes,
   };
 }

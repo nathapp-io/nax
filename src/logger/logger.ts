@@ -121,17 +121,19 @@ export class Logger {
       ...(strippedData && { data: strippedData }),
     };
 
-    const consoleEnabled = this.shouldLog(level) && !this.suppressConsole;
-    if (!consoleEnabled && !this.filePath) return;
-
-    // Redact once, up front, so BOTH sinks see the sanitized entry. Redacting
+    // Redact once, up front, so ALL sinks see the sanitized entry. Redacting
     // only on the file path (and only `data`) let secrets interpolated into
     // `message` reach the JSONL log and the terminal in cleartext.
     const entry = redactEntry(rawEntry);
 
     // Registered sinks inherit secret redaction by construction: they observe
-    // the already-redacted entry, never the raw one.
+    // the already-redacted entry, never the raw one. Sinks are dispatched
+    // independently of console/file gating so a silent-level logger can still
+    // ship entries to registered exporters.
     this.sinkRegistry.dispatch(entry);
+
+    const consoleEnabled = this.shouldLog(level) && !this.suppressConsole;
+    if (!consoleEnabled && !this.filePath) return;
 
     // Console output (level-gated, suppressed in TUI mode to avoid corrupting Ink's terminal)
     if (consoleEnabled) {

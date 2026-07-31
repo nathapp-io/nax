@@ -1,11 +1,13 @@
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
-import { getSafeLogger } from "@/logger";
+import { addSink, getSafeLogger } from "@/logger";
+import type { LogEntry, LogSink } from "@/logger";
 import type { EscalationEvent, IReporter, NaxPlugin, RunEndEvent } from "@/plugins/types";
 import { gitWithTimeout } from "@/utils/git";
 import { type PostJsonDeps, interpolateHeaders, postJson } from "../reporter-shared";
 import { type BatchQueue, createBatchQueue } from "./batch-queue";
 import { type Heartbeat, type HeartbeatSnapshot, buildHeartbeatMetricsPayload, startHeartbeat } from "./heartbeat";
 import { newSpanId, newTraceId } from "./ids";
+import { buildLogsPayload } from "./logs";
 import {
   type KeyValue,
   type SpanEvent,
@@ -25,9 +27,18 @@ import {
 import { parseTraceparent } from "./traceparent";
 
 const STAGE = "otel-reporter";
+const REENTRY_STAGE = "otel-batch-queue";
 const DEFAULT_MAX_BATCH_SIZE = 64;
 const DEFAULT_FLUSH_INTERVAL_MS = 5_000;
 const DEFAULT_MAX_QUEUE_SIZE = 2_048;
+
+const LOG_PRIORITY: Record<string, number> = {
+  silent: -1,
+  error: 0,
+  warn: 1,
+  info: 2,
+  debug: 3,
+};
 
 interface LastPhase {
   phase: string;
@@ -55,6 +66,8 @@ interface RunState {
   costUsd: number;
   lastPhase?: LastPhase;
   heartbeat: Heartbeat;
+  logsQueue?: BatchQueue<LogEntry>;
+  logUnsubscribe?: () => void;
 }
 
 /** Root span identity: adopts the W3C TRACEPARENT env var when valid, else starts a new root trace. */
@@ -117,15 +130,22 @@ function reviewSpanEvents(details: unknown, timeUnixNano: string, verbose: boole
   });
 }
 
+interface ReporterDeps extends PostJsonDeps {
+  addSink?: (sink: LogSink) => () => void;
+}
+
 /**
  * Built-in reporter that emits OTLP/HTTP-JSON traces + metrics per run.
  * Buffers each run's story completions as span events and flushes one traces
  * POST + one metrics POST at run end. Fire-and-forget.
  *
+ * When `cfg.logs.enabled` is true, also registers a logger sink to export
+ * redacted log entries as OTLP LogRecords through a dedicated queue.
+ *
  * @param cfg  - resolved OTel reporter config (closed over by the reporter)
- * @param deps - injectable fetch deps (tests only)
+ * @param deps - injectable deps (tests only)
  */
-export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJsonDeps): NaxPlugin {
+export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: ReporterDeps): NaxPlugin {
   const states = new Map<string, RunState>();
   const base = cfg.endpoint?.replace(/\/$/, "");
   let tornDown = false;
@@ -162,6 +182,52 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
       flushIntervalMs: cfg.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS,
       maxQueueSize: cfg.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE,
       send: makeSendSpanBatch(resourceAttrs),
+    });
+
+  const makeSendLogsBatch =
+    (resource: {
+      serviceName: string;
+      runId: string;
+      feature: string;
+      project: string;
+      gitBranch?: string;
+      gitSha?: string;
+    }): ((batch: LogEntry[]) => Promise<boolean>) =>
+    async (batch: LogEntry[]): Promise<boolean> => {
+      if (!base || batch.length === 0) return true;
+      const { resolved, missing } = interpolateHeaders(cfg.headers);
+      if (missing.length > 0) {
+        getSafeLogger()?.warn(STAGE, "Skipping OTLP export — unresolved env vars", { missing });
+        return true; // not a transient failure — don't burn a batch-queue retry
+      }
+      const payload = buildLogsPayload(batch, {
+        serviceName: resource.serviceName,
+        runId: resource.runId,
+        feature: resource.feature,
+        project: resource.project,
+        git: { branch: resource.gitBranch, sha: resource.gitSha },
+      });
+      return postJson(`${base}/v1/logs`, payload, {
+        headers: resolved,
+        timeoutMs: cfg.timeoutMs,
+        stage: STAGE,
+        deps,
+      });
+    };
+
+  const makeLogsQueue = (resource: {
+    serviceName: string;
+    runId: string;
+    feature: string;
+    project: string;
+    gitBranch?: string;
+    gitSha?: string;
+  }): BatchQueue<LogEntry> =>
+    createBatchQueue<LogEntry>({
+      maxBatchSize: cfg.maxBatchSize ?? DEFAULT_MAX_BATCH_SIZE,
+      flushIntervalMs: cfg.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS,
+      maxQueueSize: cfg.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE,
+      send: makeSendLogsBatch(resource),
     });
 
   /** Best-effort run state for an `onRunEnd` with no preceding `onRunStart` (US-008 AC16). */
@@ -312,6 +378,29 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
         }),
       };
       states.set(runId, state);
+
+      if (cfg.logs?.enabled) {
+        const logsQueue = makeLogsQueue({
+          serviceName: cfg.serviceName,
+          runId,
+          feature: event.feature,
+          project: event.project ?? "",
+          gitBranch,
+          gitSha,
+        });
+        const floorKey = cfg.logs.level;
+        const sank: LogSink = (entry) => {
+          // Re-entrancy guard: entries logged by the exporter itself must not
+          // be re-enqueued, otherwise an export failure that logs a warning
+          // would amplify into a recursive cascade.
+          if (entry.stage === REENTRY_STAGE) return;
+          if (LOG_PRIORITY[entry.level] > LOG_PRIORITY[floorKey]) return;
+          logsQueue.enqueue(entry);
+        };
+        const addSinkFn = deps?.addSink ?? addSink;
+        state.logsQueue = logsQueue;
+        state.logUnsubscribe = addSinkFn(sank);
+      }
     },
     async onStoryComplete(event) {
       const st = states.get(event.runId);
@@ -387,6 +476,13 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
       // both the normal (bus) and abnormal-exit (direct-call) onRunEnd paths.
       await st.spanQueue.flushNow();
       st.spanQueue.teardown();
+      // Flush any logs still queued, then unsubscribe the sink so subsequent
+      // log calls are not silently dropped (the queue is tearing down).
+      if (st.logsQueue) {
+        await st.logsQueue.flushNow();
+        st.logsQueue.teardown();
+        st.logUnsubscribe?.();
+      }
       await flush(st, startMs + event.totalDurationMs, event);
     },
   };
@@ -407,6 +503,11 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: PostJso
         st.heartbeat.stop();
         await st.spanQueue.flushNow();
         st.spanQueue.teardown();
+        if (st.logsQueue) {
+          await st.logsQueue.flushNow();
+          st.logsQueue.teardown();
+          st.logUnsubscribe?.();
+        }
         const endMs = Date.now();
         await flush(st, endMs, {
           runId,
