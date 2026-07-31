@@ -83,6 +83,21 @@ describe("toLogRecord", () => {
     expect(record.attributes).toContainEqual({ key: "nax.data.count", value: { doubleValue: 7 } });
   });
 
+  test("boundary: top-level boolean data stringifies into nax.data.<key>", () => {
+    const record = toLogRecord({ ...baseEntry, data: { ok: true, retry: false } });
+    expect(record.attributes).toContainEqual({ key: "nax.data.ok", value: { stringValue: "true" } });
+    expect(record.attributes).toContainEqual({ key: "nax.data.retry", value: { stringValue: "false" } });
+  });
+
+  test("boundary: non-finite numbers are funneled into nax.data_json, not embedded as NaN", () => {
+    const record = toLogRecord({ ...baseEntry, data: { ratio: Number.NaN, big: Number.POSITIVE_INFINITY } });
+    expect(record.attributes.some((a) => a.key === "nax.data.ratio")).toBe(false);
+    expect(record.attributes.some((a) => a.key === "nax.data.big")).toBe(false);
+    const dataJson = record.attributes.find((a) => a.key === "nax.data_json");
+    expect(dataJson?.value.stringValue).toContain("ratio");
+    expect(dataJson?.value.stringValue).toContain("big");
+  });
+
   test("AC14: nested data values are serialized into nax.data_json", () => {
     const record = toLogRecord({
       ...baseEntry,

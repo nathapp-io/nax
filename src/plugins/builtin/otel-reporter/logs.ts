@@ -49,7 +49,14 @@ export function toLogRecord(entry: LogEntry): LogRecord {
     if (typeof value === "string") {
       attributes.push(attr(`nax.data.${key}`, value));
     } else if (typeof value === "number") {
-      attributes.push(attr(`nax.data.${key}`, value));
+      // Non-finite numbers are not valid OTLP doubles; serialize as JSON to keep the
+      // payload parseable rather than embedding NaN/Infinity that JSON.stringify
+      // would emit as `null` mid-record and that collectors reject.
+      if (Number.isFinite(value)) {
+        attributes.push(attr(`nax.data.${key}`, value));
+      } else {
+        nonScalars[key] = value;
+      }
     } else if (typeof value === "boolean") {
       attributes.push(attr(`nax.data.${key}`, String(value)));
     } else {
