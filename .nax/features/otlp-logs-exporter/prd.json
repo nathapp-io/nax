@@ -1,0 +1,279 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "otlp-logs-exporter",
+  "branchName": "feat/otlp-logs-exporter",
+  "createdAt": "2026-07-31T12:03:10+08:00",
+  "updatedAt": "2026-07-31T04:07:24.047Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Logger sink seam",
+      "description": "**Goal** — Add a general redacted LogEntry sink-registration API to the singleton logger.\n\n**Motivation** — Run logs therefore live in exactly one place: a per-run JSONL file written by `src/logger/logger.ts`, readable only via `nax logs` on the machine that produced it.\n\n**Approach** — **Tap point.** `src/logger/logger.ts:126`, immediately after `redactEntry(rawEntry)` and before the existing console and file sinks:\n\n```typescript\n// Redact once, up front, so BOTH sinks see the sanitized entry.\nconst entry = redactEntry(rawEntry);\n```\n\nRegistered sinks therefore inherit secret redaction by construction. A sink added below that line cannot observe unredacted data.\n\n**Scope** — In: logger-owned registration, unsubscribe, redacted dispatch, and per-sink fault isolation. Out: OTLP encoding/exporter lifecycle (US-005), and crash-path delivery.\n\n**Interface** — `LogEntry` is `{ timestamp: string; level: LogLevel; stage: string; storyId?: string; sessionRole?: string; message: string; data?: Record<string, unknown> }`; export `addSink` from the `@/logger` barrel and return an unsubscribe function.",
+      "acceptanceCriteria": [
+        "When addSink is called with a no-op sink, then it returns a function.",
+        "When a sink is registered and logger.info is called with stage \"verify\" and message \"no test command\", then the sink receives an entry whose message equals \"no test command\".",
+        "When a sink is registered and a log call uses stage \"verify\", then the received entry has stage \"verify\".",
+        "When a sink is registered and logger.warn is called, then the received entry has level \"warn\".",
+        "When a sink receives an entry, then its timestamp parses as an ISO-8601 date.",
+        "When a story-scoped logger emits an entry, then the sink receives the supplied story identifier in storyId.",
+        "When logging data with apiKey \"sk-live-abc123\", then the sink receives data.apiKey equal to \"[REDACTED]\".",
+        "When logging message \"token ghp_0123456789abcdefghij failed\", then the sink receives message \"token [REDACTED] failed\".",
+        "When the unsubscribe function returned by addSink is invoked, then that sink receives no subsequent log entries.",
+        "When two sinks are registered and one log call occurs, then both sinks receive the entry.",
+        "When the first registered sink throws during a log call, then a later registered sink still receives the entry.",
+        "When a registered sink throws and a file path is configured, then the JSONL file still receives the entry.",
+        "When a registered sink throws, then the originating log call does not throw."
+      ],
+      "tags": [
+        "feature",
+        "logger",
+        "observability"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Crosses logger dispatch, redaction, file behavior, and barrel exports but uses an established singleton.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/logger/logger.ts",
+        "src/logger/types.ts",
+        "src/logger/index.ts",
+        "src/logger/redact.ts",
+        "test/unit/logger/logger-redaction.test.ts"
+      ],
+      "outOfScope": [
+        "Crash-path log delivery is deferred. `src/execution/crash-writer.ts` writes fatal entries with `appendFileSync` directly from signal and exception handlers, bypassing the `Logger`, so a logger sink cannot observe them; signal handlers are synchronous and OTLP export is an async fetch. Fatal entries remain JSONL-only, and an abnormally terminated run stays inferable from the last shipped log plus an absent run-end span."
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Resource attribute builder",
+      "description": "**Goal** — Widen the shared OTLP resource builder to emit the complete nine-attribute resource identity.\n\n**Motivation** — `buildResourceAttributes` emits only `service.name` and `nax.run_id`.\n\n**Approach** — `buildResourceAttributes` widens to an options object and is used by every payload builder — traces, aggregate metrics, heartbeat metrics, and logs. `nax.git.*` means the **target repository** the run is working on, not nax's own build commit — `nax.version` already identifies the nax that produced the telemetry. Both are best-effort: on failure the attribute is **omitted, never emitted empty**.\n\n**Scope** — In: builder signature, NAX_VERSION/hostname/pid attributes, and optional git attributes. Out: adopting the builder at payload sites and resolving git (US-003).\n\n**Interface** — replace `(serviceName: string, runId: string) => KeyValue[]` with an options-object signature carrying `serviceName`, `runId`, `feature`, `project`, and optional git branch/sha; `attr` accepts `string | number`, so `process.pid` is numeric.",
+      "acceptanceCriteria": [
+        "When buildResourceAttributes is called with a service name, then it returns service.name equal to that service name.",
+        "When buildResourceAttributes is called with a run identifier, then it returns nax.run_id equal to that identifier.",
+        "When buildResourceAttributes is called with a feature name, then it returns nax.feature equal to that name.",
+        "When buildResourceAttributes is called with a project name, then it returns nax.project equal to that name.",
+        "When buildResourceAttributes is called, then it returns nax.version equal to NAX_VERSION.",
+        "When buildResourceAttributes is called, then it returns host.name equal to the operating system hostname.",
+        "When buildResourceAttributes is called, then it returns process.pid as a numeric attribute equal to the current process identifier.",
+        "When buildResourceAttributes is called with a branch name, then it returns nax.git.branch equal to that branch.",
+        "When buildResourceAttributes is called with a commit sha, then it returns nax.git.sha equal to that sha.",
+        "When no branch is supplied, then the returned attributes contain no nax.git.branch key.",
+        "When no commit sha is supplied, then the returned attributes contain no nax.git.sha key."
+      ],
+      "tags": [
+        "feature",
+        "otel",
+        "observability"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A contained pure API migration with host/process inputs and compatibility-sensitive optional fields.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/plugins/builtin/otel-reporter/otlp.ts",
+        "src/version.ts",
+        "test/unit/plugins/builtin/otel-otlp.test.ts"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Resource attribute adoption",
+      "description": "**Goal** — Apply the shared resource identity to every OTLP payload and resolve target-repository git metadata once per run.\n\n**Motivation** — Four of the five paths omit even `nax.run_id`, which means that spec's own AC — \"every exported payload carries a `nax.run_id` resource attribute\" — is unsatisfied on four paths today.\n\n**Approach** — All five resource-block sites adopt the shared builder: `buildTracesPayload`, `buildMetricsPayload`, `buildHeartbeatMetricsPayload`, the incremental span flush, and `span-tree.ts` (already calling it, updated for the new signature). Heartbeat's **datapoint** attributes are untouched, so existing heartbeat queries keep matching. At `index.ts:214` the `PhaseMetricsAggregator.buildMetricsPayload` method produces a second metrics payload whose `metrics` array is merged into the first; **its resource block is discarded**. Only the resource block from `buildMetricsPayload` (`otlp.ts`) reaches the wire.\n\n**Scope** — In: resource-input propagation, five call-site migrations, and bounded best-effort git branch/sha resolution at onRunStart. Out: log-record mapping (US-004) and logger sink/lifecycle wiring (US-005).\n\n**Interface** — use `gitWithTimeout(args, workdir, timeoutMs)` to resolve the target repository; unresolved branch/sha omit `nax.git.branch`/`nax.git.sha` from the shared resource attributes. Widening the payload builders' input types is in scope for this story: `MetricsInput` gains `feature`, `project` and optional `gitBranch`/`gitSha`; `TracesInput` gains `project` and the git fields; the span-tree metrics builder takes them as arguments. `MetricsInput` is the load-bearing one — `buildMetricsPayload` cannot emit `nax.feature` without it. `HeartbeatMetricsInput` needs no change; derive identity from `snapshot.attributes`.",
+      "acceptanceCriteria": [
+        "When buildTracesPayload creates a payload, then its resource attributes include nax.feature.",
+        "When the OTLP module buildMetricsPayload creates a payload, then its resource attributes include nax.feature.",
+        "When buildHeartbeatMetricsPayload creates a payload, then its resource attributes include nax.run_id.",
+        "When buildHeartbeatMetricsPayload creates gauge points, then their attributes still include the bare key feature.",
+        "When the span-tree payload builder creates a payload, then its resource attributes include nax.project.",
+        "When an incremental span flush is issued before run end, then its request resource attributes include nax.run_id.",
+        "When git branch and sha resolution fails during onRunStart, then the hook completes without throwing.",
+        "When git branch resolution fails during onRunStart, then a subsequent exported payload contains no nax.git.branch attribute."
+      ],
+      "tags": [
+        "feature",
+        "otel",
+        "integration"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-module resource propagation and asynchronous lifecycle/git failure handling affect every existing OTLP signal.",
+        "agentProfileId": "opencode-balanced",
+        "agent": "opencode",
+        "profileModelTier": "powerful",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-balanced",
+        "initialModelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/plugins/builtin/otel-reporter/otlp.ts",
+        "src/plugins/builtin/otel-reporter/heartbeat.ts",
+        "src/plugins/builtin/otel-reporter/span-tree.ts",
+        "src/plugins/builtin/otel-reporter/index.ts",
+        "src/utils/git.ts"
+      ],
+      "outOfScope": [
+        "Heartbeat **datapoint** attributes are not changed. The bare `run_id`, `feature`, and `project` labels on the heartbeat gauges keep their current names and values so existing dashboard queries continue to match."
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "LogEntry to LogRecord mapping",
+      "description": "**Goal** — Add a pure OTLP/HTTP JSON log encoder and logs payload envelope.\n\n**Motivation** — `otel-reporter` exports two of the three OTLP signals and has no logs path at all.\n\n**Approach** — `LogEntry` maps to an OTLP `LogRecord`: timestamp maps through `msToUnixNano`; error/warn/info/debug map to 17/13/9/5 and ERROR/WARN/INFO/DEBUG; message maps to `body.stringValue`; stage, storyId, and sessionRole map to `nax.stage`, optional `nax.story_id`, and optional `nax.session_role`. Top-level scalar values become attributes prefixed `nax.data.`; strings map to `stringValue`, numbers to `doubleValue`, booleans stringify. Every remaining value is JSON-serialized into a single `nax.data_json` attribute capped at **2048 characters**, truncated with a trailing marker.\n\n**Scope** — In: pure severity/attribute conversion and resourceLogs payload construction. Out: config, queueing, endpoint POSTs, and lifecycle registration (US-005).\n\n**Interface** — create and export `toLogRecord` and `buildLogsPayload` from `src/plugins/builtin/otel-reporter/logs.ts`; reuse `LogEntry`, `KeyValue`, `attr`, `msToUnixNano`, and shared resource attributes.",
+      "acceptanceCriteria": [
+        "When toLogRecord receives a known ISO-8601 timestamp, then timeUnixNano equals that instant in nanoseconds as a string.",
+        "When toLogRecord receives level error, then severityNumber is 17.",
+        "When toLogRecord receives level error, then severityText is \"ERROR\".",
+        "When toLogRecord receives level warn, then severityNumber is 13.",
+        "When toLogRecord receives level info, then severityNumber is 9.",
+        "When toLogRecord receives level debug, then severityNumber is 5.",
+        "When toLogRecord receives a message, then body.stringValue equals that message.",
+        "When toLogRecord receives a stage, then attributes contain nax.stage.",
+        "When toLogRecord receives storyId, then attributes contain nax.story_id equal to it.",
+        "When toLogRecord receives no storyId, then attributes contain no nax.story_id key.",
+        "When toLogRecord receives sessionRole, then attributes contain nax.session_role equal to it.",
+        "When data contains top-level string phase, then attributes contain nax.data.phase with that string.",
+        "When data contains top-level number count, then attributes contain numeric nax.data.count equal to it.",
+        "When data contains nested findings, then attributes contain nax.data_json with JSON containing that nested content.",
+        "When data serialization exceeds 2048 characters, then nax.data_json is at most 2048 characters and ends with a truncation marker."
+      ],
+      "tags": [
+        "feature",
+        "otel",
+        "serialization"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A new pure serialization module with clear conversion rules and bounded payload behavior.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/logger/types.ts",
+        "src/plugins/builtin/otel-reporter/otlp.ts",
+        "test/unit/plugins/builtin/otel-otlp.test.ts"
+      ],
+      "expectedFiles": [
+        "src/plugins/builtin/otel-reporter/logs.ts"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Exporter wiring and lifecycle",
+      "description": "**Goal** — Wire opt-in live OTLP log exporting from redacted logger sinks through a dedicated queue.\n\n**Motivation** — An operator running nax on other machines or in CI must reach the box to read logs, leaving separate monitoring paths for one system.\n\n**Approach** — The logs path follows the existing traces path in `index.ts` exactly: resolve headers via `interpolateHeaders`, skip-with-warning on unresolved env vars without consuming a retry, enqueue through a `createBatchQueue` instance, POST via `postJson` with `PostJsonDeps` injection, flush from `onRunEnd` and the idempotent `teardown()` backstop. The logs queue is a **separate** `createBatchQueue` instance reusing existing batch values; a shared queue would let a log burst evict queued spans. Exporter's own log entries are dropped by stage before enqueue, so an export failure that logs a warning cannot amplify.\n\n**Scope** — In: Zod logs defaults, sink registration/unsubscription, severity floor, re-entrancy guard, `/v1/logs` POST, header skip, and dual-path queue flushing. Out: Batch-queue retry and backoff behaviour is unchanged. The existing single-retry-then- drop policy applies to the logs queue as-is. Crash-path delivery, trace correlation, protobuf encoding, concurrent runs, and content filtering beyond credential redaction are also out of scope.\n\n**Interface** — consume `addSink` from `@/logger`, `toLogRecord` and `buildLogsPayload` from `otel-reporter/logs.ts`, `createBatchQueue<LogEntry>`, `postJson`, and `interpolateHeaders`; add `logs: { enabled: false, level: \"info\" }` to the OTEL reporter schema.",
+      "acceptanceCriteria": [
+        "When buildLogsPayload creates a payload, then its resource attributes include nax.feature.",
+        "When OTEL reporter configuration omits logs.enabled, then it resolves to false.",
+        "When OTEL reporter configuration omits logs.level, then it resolves to \"info\".",
+        "When logs.enabled is false and onRunStart runs, then addSink is not invoked.",
+        "When logs.enabled is true and onRunStart runs, then addSink is invoked exactly once.",
+        "When logs.level is \"warn\" and an info LogEntry is emitted, then no log record is posted.",
+        "When logs.level is \"warn\" and a warn LogEntry is emitted, then a log record is posted.",
+        "When a LogEntry stage is \"otel-batch-queue\", then no log record is posted.",
+        "When logs are enabled, message \"no test command\" is logged, and the queue flushes, then the posted body contains a log record whose body.stringValue equals \"no test command\".",
+        "When logs are exported, then the request URL ends in /v1/logs.",
+        "When onRunEnd runs with queued log records, then it posts those records.",
+        "When teardown runs after onRunEnd completed, then it posts no further logs request.",
+        "When a configured header references an unset environment variable and a log record is queued, then no logs request is posted.",
+        "When a logs header references unset environment variables, then export is skipped and the reporter warns with the missing variable names without consuming a logs-queue retry."
+      ],
+      "tags": [
+        "feature",
+        "otel",
+        "lifecycle",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-003",
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Lifecycle-scoped integration combines global sink ownership, queue isolation, config defaults, HTTP behavior, and idempotent cleanup.",
+        "agentProfileId": "opencode-balanced",
+        "agent": "opencode",
+        "profileModelTier": "powerful",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-balanced",
+        "initialModelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/plugins/builtin/otel-reporter/index.ts",
+        "src/config/schemas-reporters.ts",
+        "src/plugins/builtin/otel-reporter/batch-queue.ts",
+        "src/plugins/builtin/otel-reporter/logs.ts",
+        "test/unit/plugins/builtin/otel-reporter-lifecycle.test.ts"
+      ],
+      "outOfScope": [
+        "Crash-path log delivery is deferred. `src/execution/crash-writer.ts` writes fatal entries with `appendFileSync` directly from signal and exception handlers, bypassing the `Logger`, so a logger sink cannot observe them; signal handlers are synchronous and OTLP export is an async fetch. Fatal entries remain JSONL-only, and an abnormally terminated run stays inferable from the last shipped log plus an absent run-end span.",
+        "Trace correlation is deferred: log records will not carry `traceId` or `spanId`, so logs are not clickable from a phase span in the trace view.",
+        "OTLP/protobuf encoding is deferred. The exporter stays OTLP/HTTP with JSON encoding; an OTel Collector accepts JSON and re-exports protobuf to any downstream backend.",
+        "No log-shipping agent, JSONL tailer, or aggregator daemon is added. Export is in-process and live.",
+        "Content filtering beyond credential redaction is deferred. `redactSecrets` strips credential-shaped keys and values only; it does not strip prompts, agent output, or diffs that a caller places in `LogEntry.data`, and `logs.level` defaults to `info` rather than `debug` to limit exposure.",
+        "`US-005 only:` retry and backoff tuning for the logs queue — the existing single-retry-then-drop policy in `batch-queue.ts` applies unchanged and is not re-verified here."
+      ]
+    }
+  ],
+  "analysis": "Existing enhancement in a Bun/strict-TypeScript CLI. The logger singleton is implemented by Logger in src/logger/logger.ts:49-279; its private log() constructs LogEntry, returns early when neither console nor file is active, then calls redactEntry before the console and JSONL sinks (src/logger/logger.ts:88-134). The new general-purpose sink must be dispatched immediately after that redaction point, must not be subject to the existing console/file early-return, and each sink must be isolated so a throw cannot prevent later sinks or JSONL output. LogEntry already exposes timestamp, level, stage, optional storyId/sessionRole, message and arbitrary data in src/logger/types.ts:9-28; initLogger remains a throwing singleton (src/logger/logger.ts, initLogger) and resetLogger is test-only. Barrel exports must be updated so addSink is importable as @/logger. Existing logger redaction/file tests are the natural extension point.\n\nThe built-in reporter is createOtelReporterPlugin in src/plugins/builtin/otel-reporter/index.ts:117-352. It owns a Map<runId, RunState>; RunState already retains feature and project (index.ts:31-47), starts a separate span batch queue on onRunStart, flushes queued spans plus terminal traces/metrics on onRunEnd, and has an idempotent teardown backstop. Header interpolation and skip-with-warning behavior appears in incremental span flush, heartbeat export, and terminal flush. A new logs queue must be separate from spanQueue to preserve drop-oldest isolation. Add its queue, sink unsubscribe, and resolved target-repository git identity to RunState; onRunStart resolves git once, registers only when logs.enabled is true, and onRunEnd/teardown flush/unsubscribe in both normal and abnormal paths. The current incremental trace-batch resource is hardcoded service.name at index.ts:133; this is one of five required adoption sites. Existing reporter integration tests are test/unit/plugins/builtin/otel-reporter.test.ts and otel-reporter-lifecycle.test.ts; postJson already accepts injectable dependencies for fetch assertions.\n\nOTLP helpers are in src/plugins/builtin/otel-reporter/otlp.ts. attr supports string and number values, and msToUnixNano is reusable. buildResourceAttributes currently accepts (serviceName, runId) and returns only service.name/nax.run_id (otlp.ts:69-71). buildTracesPayload and buildMetricsPayload each construct service.name-only resource blocks (otlp.ts:91-163); heartbeat does the same in heartbeat.ts:101-124. span-tree.ts has another builder that already calls the old shared builder. Widen the inputs of all payload builders to carry a shared resource-options object or its required identity fields, migrate all five builders, and retain heartbeat datapoint labels exactly as they are. Note that the PhaseMetricsAggregator buildMetricsPayload resource is discarded when its metrics are merged, so tests must assert the free otlp.ts buildMetricsPayload resource actually sent on the wire. src/utils/git.ts exports bounded gitWithTimeout(args, workdir, timeoutMs), suitable for best-effort branch/sha resolution; failures must omit attributes, not stall lifecycle. NAX_VERSION comes from src/version.ts.\n\nConfig is Zod-based in src/config/schemas-reporters.ts:22-75. OtelReporterConfigSchema and ReportersConfigSchema defaults must receive logs.enabled=false and logs.level=info without changing trace/metric defaults or detail semantics. The pure log encoder should be a new logs.ts module beside otlp.ts: map LogEntry to OTLP JSON LogRecord with the stated severity table; use top-level scalar nax.data.<key> attributes and a capped nax.data_json string for non-scalars. New unit tests should mirror test/unit/plugins/builtin/otel-otlp.test.ts, otel-heartbeat.test.ts, otel-span-tree.test.ts, and otel-batch-queue.test.ts; lifecycle wiring belongs with the existing reporter tests. Main compatibility risks are breaking the buildResourceAttributes signature, unintentionally modifying heartbeat datapoint dimensions, listener leaks or double delivery across teardown, recursive exporter logging, and consuming a batch retry for missing header variables. Dependency order is sink seam/resource builder/log mapping first; resource adoption after builder; lifecycle wiring terminal after all three seams. No data migration is required: logs export is opt-in and existing JSONL, traces, metrics, endpoints, headers, batching policy, and heartbeat datapoint labels remain compatible.",
+  "outOfScope": [
+    "Crash-path log delivery is deferred. `src/execution/crash-writer.ts` writes fatal entries with `appendFileSync` directly from signal and exception handlers, bypassing the `Logger`, so a logger sink cannot observe them; signal handlers are synchronous and OTLP export is an async fetch. Fatal entries remain JSONL-only, and an abnormally terminated run stays inferable from the last shipped log plus an absent run-end span.",
+    "Trace correlation is deferred: log records will not carry `traceId` or `spanId`, so logs are not clickable from a phase span in the trace view.",
+    "OTLP/protobuf encoding is deferred. The exporter stays OTLP/HTTP with JSON encoding; an OTel Collector accepts JSON and re-exports protobuf to any downstream backend.",
+    "Heartbeat **datapoint** attributes are not changed. The bare `run_id`, `feature`, and `project` labels on the heartbeat gauges keep their current names and values so existing dashboard queries continue to match.",
+    "No log-shipping agent, JSONL tailer, or aggregator daemon is added. Export is in-process and live.",
+    "Sampling, filtering rules, and retention policy are not implemented; they belong to the collector or backend.",
+    "Content filtering beyond credential redaction is deferred. `redactSecrets` strips credential-shaped keys and values only; it does not strip prompts, agent output, or diffs that a caller places in `LogEntry.data`, and `logs.level` defaults to `info` rather than `debug` to limit exposure.",
+    "Batch-queue retry and backoff behaviour is unchanged. The existing single-retry-then-drop policy applies to the logs queue as-is.",
+    "Concurrent runs within a single process are not supported for log attribution. `LogEntry` carries no `runId`, this spec does not add one, and no behaviour is specified for the case where a second run registers a sink while another is active. The CLI mints one run identifier per `Runner.run()` and `initLogger` throws on re-initialization, so one process is one run.",
+    "`US-005 only:` retry and backoff tuning for the logs queue — the existing single-retry-then-drop policy in `batch-queue.ts` applies unchanged and is not re-verified here."
+  ],
+  "routingProfile": "cross-agent"
+}
