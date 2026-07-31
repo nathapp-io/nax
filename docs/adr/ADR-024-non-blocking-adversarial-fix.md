@@ -78,6 +78,33 @@ Three deliberate limits:
   bounded by the memo only ever holding tests a probe showed to be non-deterministic on an
   earlier tree.
 
+#### Amendment (2026-07-31, #1401): the verifier-SSOT carve-out does not apply to nbf
+
+§4 promises "one best-effort fix plus `regressionAttempts` (default 1) ... to clear any
+regression the fix introduced". On any verifier-bearing (three-session) plan that budget was
+unreachable, so the code did not implement §4.
+
+`phasesToRevalidate` orders `full-suite-gate` before `verifier` in the sweep, so when the
+verifier-SSOT carve-out was evaluated `phaseOutputs[verifier]` still held the verifier's
+*pre-rectification* pass. On the nbf path that stale green made the carve-out skip the gate,
+which both discarded the regression the pass had just introduced — the cycle then exited
+"resolved" on iteration 1 and never requested the repair — and bypassed the halt-on-failure
+short-circuit, so lint, typecheck and a full verifier session ran against a red gate.
+`runNonBlockingFix` read the same gate output raw and restored anyway.
+
+The carve-out is therefore **off on the nbf path** (`shouldSkipPhaseForRectification`'s
+`nbfPath` input, derived from the same `overrides.initialFindings` branch that governs the
+triage skip above). Rationale: the carve-out exists so a story is not rolled back over
+regressions it did not cause, and nbf never fails a story — it only chooses keep-vs-discard
+of its own edits. Blast radius is bounded by the §5 entry condition: nbf runs only when every
+phase output passes, gate included, so a red gate inside the pass is always newly introduced.
+
+One accepted cost: a *keyless* gate failure (timeout / execution-failure) now also seeds a
+finding, so the pass spends one repair attempt before restoring where it previously restored
+immediately. Bounded by `regressionAttempts`, and the alternative — special-casing keyless
+here — would re-create the same split-brain between what the cycle sees and what
+`describeGateRegression` sees.
+
 ### 4. Bounded, transactional
 
 One best-effort fix plus `regressionAttempts` (default 1) source/test fix attempts to clear any regression the fix introduced. The whole pass is a single transaction.
