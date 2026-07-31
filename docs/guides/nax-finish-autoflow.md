@@ -20,25 +20,31 @@ load_ctx          detect base branch, resolve the feature spec + acceptance grou
                   check the branch is ahead of base (else: nothing-to-finish)
   ↓
 acceptance        run the feature's acceptance tests
-  ↳ fail → fix_acceptance (agent) → re-run          [max 3 attempts → escalate]
+  ↳ fail → fix_acceptance (agent) → commit → re-run [max 3 attempts → escalate]
   ↓
 review_spec       spec-relative review, isolated session, own agent profile
   ↳ clean            → skip to review_quality
-  ↳ recommended fix  → fix_spec (agent) → re-run acceptance → re-review
+  ↳ recommended fix  → fix_spec (agent) → commit → re-run acceptance → re-review
   ↳ needs judgment   → escalate
   ↓
 review_quality    code-quality review, isolated session, own agent profile
   ↳ clean            → skip to quality_gates
-  ↳ recommended fix  → fix_quality (agent) → re-review
+  ↳ recommended fix  → fix_quality (agent) → commit → re-review
   ↳ needs judgment   → escalate
   ↓
 quality_gates     run the repo's own quality.commands at the repo root
-  ↳ red → fix_gate (agent) → re-run                 [max 3 attempts → escalate]
+  ↳ red → fix_gate (agent) → commit → re-run        [max 3 attempts → escalate]
   ↳ none configured → escalate (a gate that verified nothing is not a pass)
   ↓
 open_pr           commit + push the fixes, then open a ready PR
                   (or promote the draft autoPR already opened)
 ```
+
+Every fix node is followed by a `commit_*` node that commits the agent's edits
+locally (no push). The reviewers read `git diff <base>...HEAD`, so a fix left
+uncommitted is invisible to the re-review — the loop would re-report findings it
+had already fixed and escalate at the cap ([#1397](https://github.com/nathapp-io/nax/issues/1397)).
+The fix agent itself is still told not to commit; the flow owns the history.
 
 Both terminal nodes (`open_pr`, `escalate`) commit and push first, so the PR — or
 the escalation — describes state a human can actually see.

@@ -17,9 +17,13 @@
  * - `load_ctx` is an `action`, not a `compute`: it shells git + `nax features
  *   resolve` once, and its output feeds both the review prompts (specPath) and
  *   the acceptance gate (groups), so nothing resolves the feature twice.
- * - Review fixes loop: `review_* → route_* → fix_* → (re-run acceptance |
- *   re-review) → review_*` until the reviewer comes back clean or the fix cap
- *   trips. A single-shot fix left the fixed diff unverified.
+ * - Review fixes loop: `review_* → route_* → fix_* → commit_* → (re-run
+ *   acceptance | re-review) → review_*` until the reviewer comes back clean or
+ *   the fix cap trips. A single-shot fix left the fixed diff unverified.
+ * - Every `fix_*` node is followed by a `commit_*` node. The reviewers read
+ *   `git diff <base>...HEAD`, so an uncommitted fix is invisible to the
+ *   re-review: the loop re-reported findings that were already fixed and always
+ *   escalated at the cap (issue #1397).
  * - `route_*` compute nodes hold the escalate/clean/fix decision so the cap is
  *   enforced deterministically rather than trusting the model's own route.
  */
@@ -29,6 +33,7 @@ import {
   _contextDeps,
   buildEscalationComment,
   commitAndPush,
+  commitFixes,
   detectBaseBranch,
   loadQualityCommands,
   openOrPromotePr,
@@ -119,6 +124,23 @@ function routeReview(
   return { route: "fix", findings };
 }
 
+/**
+ * Build the `commit_<phase>` node that follows `fix_<phase>`.
+ *
+ * One node per phase rather than a single shared one because each returns to a
+ * different successor, and acpx routes on the node id — a shared node would
+ * need a switch reconstructing which fix ran from the step history.
+ */
+function commitFixNode(phase: "acceptance" | "spec" | "quality" | "gate") {
+  return {
+    nodeType: "action" as const,
+    async run(ctx: { input: unknown }): Promise<{ committed: boolean }> {
+      const i = inputOf(ctx);
+      return commitFixes(i.workdir, `fix(${i.feature}): nax-finish ${phase} fixes`);
+    },
+  };
+}
+
 /** Normalise a reviewer's JSON, rewriting a findings-free `proceed` to `clean`. */
 function parseVerdict(text: string): ReviewVerdict {
   const raw = extractJsonObject(text) as Partial<ReviewVerdict>;
@@ -162,6 +184,7 @@ export default defineFlow({
       prompt: (ctx) => fixPrompt("acceptance", ctx),
       parse: parseVerdict,
     },
+    commit_acceptance: commitFixNode("acceptance"),
     review_spec: {
       nodeType: "acp",
       session: { isolated: true },
@@ -181,6 +204,7 @@ export default defineFlow({
       prompt: (ctx) => fixPrompt("spec", ctx),
       parse: parseVerdict,
     },
+    commit_spec: commitFixNode("spec"),
     review_quality: {
       nodeType: "acp",
       session: { isolated: true },
@@ -200,11 +224,13 @@ export default defineFlow({
       prompt: (ctx) => fixPrompt("quality", ctx),
       parse: parseVerdict,
     },
+    commit_quality: commitFixNode("quality"),
     fix_gate: {
       nodeType: "acp",
       prompt: (ctx) => fixPrompt("gate", ctx),
       parse: parseVerdict,
     },
+    commit_gate: commitFixNode("gate"),
     quality_gates: {
       nodeType: "action",
       async run(ctx) {
@@ -304,7 +330,11 @@ export default defineFlow({
       from: "acceptance",
       switch: { on: "$.route", cases: { proceed: "review_spec", fix: "fix_acceptance", escalate: "escalate" } },
     },
-    { from: "fix_acceptance", to: "acceptance" },
+    // Each fix commits before anything re-reads the diff: the reviewers see
+    // `git diff <base>...HEAD` only, so an uncommitted fix would be re-reported
+    // verbatim until the cap escalated it (#1397).
+    { from: "fix_acceptance", to: "commit_acceptance" },
+    { from: "commit_acceptance", to: "acceptance" },
     { from: "review_spec", to: "route_spec" },
     {
       from: "route_spec",
@@ -312,7 +342,8 @@ export default defineFlow({
     },
     // Spec fixes re-run the acceptance gate first (they can break it), and the
     // acceptance node's `proceed` edge leads back into review_spec for re-review.
-    { from: "fix_spec", to: "acceptance" },
+    { from: "fix_spec", to: "commit_spec" },
+    { from: "commit_spec", to: "acceptance" },
     { from: "review_quality", to: "route_quality" },
     {
       from: "route_quality",
@@ -320,11 +351,13 @@ export default defineFlow({
     },
     // Quality fixes are re-reviewed by the same lens; the repo-root gates that
     // follow catch anything the fix broke mechanically.
-    { from: "fix_quality", to: "review_quality" },
+    { from: "fix_quality", to: "commit_quality" },
+    { from: "commit_quality", to: "review_quality" },
     {
       from: "quality_gates",
       switch: { on: "$.route", cases: { green: "open_pr", fix: "fix_gate", escalate: "escalate" } },
     },
-    { from: "fix_gate", to: "quality_gates" },
+    { from: "fix_gate", to: "commit_gate" },
+    { from: "commit_gate", to: "quality_gates" },
   ],
 });
