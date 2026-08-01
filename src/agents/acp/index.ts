@@ -8,7 +8,6 @@ export {
   AcpSessionHandleImpl,
   _acpAdapterDeps,
   _fallbackDeps,
-  MAX_AGENT_OUTPUT_CHARS,
   buildTurnResult,
 } from "./adapter";
 export type { BuildTurnResultInput } from "./adapter";
