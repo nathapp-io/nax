@@ -180,8 +180,8 @@ describe("AC5: onRunStart calls addSink exactly once when logs.enabled is true",
   });
 });
 
-describe("AC6: severity floor drops an info entry when logs.level is \"warn\"", () => {
-  test("success: an info entry is not enqueued when logs.level is \"warn\"", async () => {
+describe('AC6: severity floor drops an info entry when logs.level is "warn"', () => {
+  test('success: an info entry is not enqueued when logs.level is "warn"', async () => {
     const { posts, deps } = capturingDeps();
     const plugin = createOtelReporterPlugin(makeLogsOn({ enabled: true, level: "warn" }), deps);
     const r = await startRun(plugin, { runId: "ac6" });
@@ -191,7 +191,7 @@ describe("AC6: severity floor drops an info entry when logs.level is \"warn\"", 
     expect(allLogRecords(posts)).toHaveLength(0);
   });
 
-  test("boundary: a debug entry is also dropped under logs.level=\"warn\"", async () => {
+  test('boundary: a debug entry is also dropped under logs.level="warn"', async () => {
     const { posts, deps } = capturingDeps();
     const plugin = createOtelReporterPlugin(makeLogsOn({ enabled: true, level: "warn" }), deps);
     const r = await startRun(plugin, { runId: "ac6b" });
@@ -202,8 +202,8 @@ describe("AC6: severity floor drops an info entry when logs.level is \"warn\"", 
   });
 });
 
-describe("AC7: severity floor passes a warn entry when logs.level is \"warn\"", () => {
-  test("success: a warn entry is enqueued and posted when logs.level is \"warn\"", async () => {
+describe('AC7: severity floor passes a warn entry when logs.level is "warn"', () => {
+  test('success: a warn entry is enqueued and posted when logs.level is "warn"', async () => {
     const { posts, deps } = capturingDeps();
     const plugin = createOtelReporterPlugin(makeLogsOn({ enabled: true, level: "warn" }), deps);
     const r = await startRun(plugin, { runId: "ac7" });
@@ -217,7 +217,7 @@ describe("AC7: severity floor passes a warn entry when logs.level is \"warn\"", 
     expect(found?.severityNumber).toBe(13);
   });
 
-  test("boundary: an error entry is also passed under logs.level=\"warn\"", async () => {
+  test('boundary: an error entry is also passed under logs.level="warn"', async () => {
     const { posts, deps } = capturingDeps();
     const plugin = createOtelReporterPlugin(makeLogsOn({ enabled: true, level: "warn" }), deps);
     const r = await startRun(plugin, { runId: "ac7b" });
@@ -228,8 +228,8 @@ describe("AC7: severity floor passes a warn entry when logs.level is \"warn\"", 
   });
 });
 
-describe("AC8: log entry stage \"otel-batch-queue\" is dropped before enqueue", () => {
-  test("success: a log entry whose stage equals \"otel-batch-queue\" is not enqueued", async () => {
+describe('AC8: log entry stage "otel-batch-queue" is dropped before enqueue', () => {
+  test('success: a log entry whose stage equals "otel-batch-queue" is not enqueued', async () => {
     const { posts, deps } = capturingDeps();
     const plugin = createOtelReporterPlugin(makeLogsOn({ enabled: true, level: "info" }), deps);
     const r = await startRun(plugin, { runId: "ac8" });
@@ -254,7 +254,7 @@ describe("AC8: log entry stage \"otel-batch-queue\" is dropped before enqueue", 
 });
 
 describe("AC9: a logged message is exported to /v1/logs when the queue flushes", () => {
-  test("success: the message \"no test command\" is exported as a log record body.stringValue", async () => {
+  test('success: the message "no test command" is exported as a log record body.stringValue', async () => {
     const { posts, deps } = capturingDeps();
     const plugin = createOtelReporterPlugin(makeLogsOn({ enabled: true, level: "info" }), deps);
     const r = await startRun(plugin, { runId: "ac9" });

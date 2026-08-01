@@ -203,15 +203,15 @@ describe("buildResourceAttributes", () => {
   });
 
   test("AC3: includes a nax.feature attribute equal to the supplied feature name", () => {
-    expect(
-      buildResourceAttributes({ serviceName: "nax", runId: "r1", feature: "my-feature" }),
-    ).toContainEqual(attr("nax.feature", "my-feature"));
+    expect(buildResourceAttributes({ serviceName: "nax", runId: "r1", feature: "my-feature" })).toContainEqual(
+      attr("nax.feature", "my-feature"),
+    );
   });
 
   test("AC4: includes a nax.project attribute equal to the supplied project name", () => {
-    expect(
-      buildResourceAttributes({ serviceName: "nax", runId: "r1", project: "my-project" }),
-    ).toContainEqual(attr("nax.project", "my-project"));
+    expect(buildResourceAttributes({ serviceName: "nax", runId: "r1", project: "my-project" })).toContainEqual(
+      attr("nax.project", "my-project"),
+    );
   });
 
   test("AC5: includes a nax.version attribute equal to NAX_VERSION", () => {
@@ -233,15 +233,15 @@ describe("buildResourceAttributes", () => {
   });
 
   test("AC8: includes a nax.git.branch attribute equal to the supplied branch", () => {
-    expect(
-      buildResourceAttributes({ serviceName: "nax", runId: "r1", git: { branch: "main" } }),
-    ).toContainEqual(attr("nax.git.branch", "main"));
+    expect(buildResourceAttributes({ serviceName: "nax", runId: "r1", git: { branch: "main" } })).toContainEqual(
+      attr("nax.git.branch", "main"),
+    );
   });
 
   test("AC9: includes a nax.git.sha attribute equal to the supplied sha", () => {
-    expect(
-      buildResourceAttributes({ serviceName: "nax", runId: "r1", git: { sha: "abc123" } }),
-    ).toContainEqual(attr("nax.git.sha", "abc123"));
+    expect(buildResourceAttributes({ serviceName: "nax", runId: "r1", git: { sha: "abc123" } })).toContainEqual(
+      attr("nax.git.sha", "abc123"),
+    );
   });
 
   test("AC10: omits nax.git.branch when no branch is supplied", () => {
@@ -251,7 +251,9 @@ describe("buildResourceAttributes", () => {
   });
 
   test("AC11: omits nax.git.sha when no sha is supplied", () => {
-    expect(buildResourceAttributes({ serviceName: "nax", runId: "r1" }).some((a) => a.key === "nax.git.sha")).toBe(false);
+    expect(buildResourceAttributes({ serviceName: "nax", runId: "r1" }).some((a) => a.key === "nax.git.sha")).toBe(
+      false,
+    );
   });
 
   test("edge: omits nax.feature when feature is not supplied", () => {

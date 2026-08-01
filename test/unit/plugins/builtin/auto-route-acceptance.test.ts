@@ -24,9 +24,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { PostRunContext } from "@/plugins/extensions";
-import { _autoRouteDeps, autoRoutePlugin, loadPlugins, type AutoRouteDeps } from "@/plugins";
 import type { RunMetrics, StoryMetrics } from "@/metrics";
+import { type AutoRouteDeps, _autoRouteDeps, autoRoutePlugin, loadPlugins } from "@/plugins";
+import type { PostRunContext } from "@/plugins/extensions";
 import type { TierAdjustment } from "@/routing";
 
 const PLUGIN_NAME = "nax-auto-route";
@@ -330,26 +330,14 @@ describe("autoRoutePlugin.execute", () => {
 describe("loadPlugins — autoRoute registration", () => {
   test("AC7 — getPostRunActions() includes 'nax-auto-route' when not disabled", async () => {
     const root = await mkdtemp(join(tmpdir(), "autoroute-registration-"));
-    const registry = await loadPlugins(
-      join(root, "global"),
-      join(root, "project"),
-      [],
-      root,
-      [],
-    );
+    const registry = await loadPlugins(join(root, "global"), join(root, "project"), [], root, []);
     const actions = registry.getPostRunActions();
     expect(actions.some((a) => a.name === PLUGIN_NAME)).toBe(true);
   });
 
   test("autoRoute is excluded from getPostRunActions() when 'nax-auto-route' is in disabledPlugins", async () => {
     const root = await mkdtemp(join(tmpdir(), "autoroute-registration-"));
-    const registry = await loadPlugins(
-      join(root, "global"),
-      join(root, "project"),
-      [],
-      root,
-      [PLUGIN_NAME],
-    );
+    const registry = await loadPlugins(join(root, "global"), join(root, "project"), [], root, [PLUGIN_NAME]);
     const actions = registry.getPostRunActions();
     expect(actions.some((a) => a.name === PLUGIN_NAME)).toBe(false);
   });

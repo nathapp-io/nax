@@ -108,6 +108,17 @@ describe("buildPostRunContext", () => {
     expect(ctx.pluginConfig).toEqual({});
   });
 
+  test("populates runStartedAt from the run's startTime (#1422)", async () => {
+    // The curator scopes its observations with this value. If the producer stops
+    // setting it, every collector silently falls back to "no scoping" and the
+    // cumulative-count defect returns — with the consumer-side tests still green,
+    // because they inject runStartedAt directly.
+    const { buildPostRunContext } = await import("../../../../src/execution/lifecycle/run-cleanup");
+    const startTime = Date.parse("2026-08-01T12:00:00.000Z");
+    const ctx = buildPostRunContext(makeCleanupOptions({ startTime }), 5000, makePluginLogger());
+    expect(ctx.runStartedAt).toBe(startTime);
+  });
+
   test("storySummary reflects prd story counts", async () => {
     const { buildPostRunContext } = await import("../../../../src/execution/lifecycle/run-cleanup");
 

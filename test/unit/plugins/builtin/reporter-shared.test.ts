@@ -1,25 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import {
-  interpolateHeaders,
-  postJson,
-  type PostJsonDeps,
-} from "@/plugins";
+import { type PostJsonDeps, interpolateHeaders, postJson } from "@/plugins";
 
 describe("interpolateHeaders", () => {
   test("resolves a single env placeholder", () => {
-    const { resolved, missing } = interpolateHeaders(
-      { Authorization: "Bearer ${TOK}" },
-      { TOK: "abc" },
-    );
+    const { resolved, missing } = interpolateHeaders({ Authorization: "Bearer ${TOK}" }, { TOK: "abc" });
     expect(resolved.Authorization).toBe("Bearer abc");
     expect(missing).toEqual([]);
   });
 
   test("resolves multiple placeholders across headers", () => {
-    const { resolved, missing } = interpolateHeaders(
-      { A: "${X}", B: "p-${Y}-q" },
-      { X: "1", Y: "2" },
-    );
+    const { resolved, missing } = interpolateHeaders({ A: "${X}", B: "p-${Y}-q" }, { X: "1", Y: "2" });
     expect(resolved).toEqual({ A: "1", B: "p-2-q" });
     expect(missing).toEqual([]);
   });
@@ -37,8 +27,7 @@ describe("interpolateHeaders", () => {
 });
 
 describe("postJson", () => {
-  const okFetch: PostJsonDeps["fetch"] = async () =>
-    new Response(null, { status: 200 });
+  const okFetch: PostJsonDeps["fetch"] = async () => new Response(null, { status: 200 });
 
   test("returns true and POSTs JSON with merged headers on 2xx", async () => {
     let capturedUrl = "";
@@ -50,12 +39,16 @@ describe("postJson", () => {
         return new Response(null, { status: 204 });
       },
     };
-    const ok = await postJson("https://h/x", { a: 1 }, {
-      headers: { "X-Api": "k" },
-      timeoutMs: 1000,
-      stage: "test",
-      deps,
-    });
+    const ok = await postJson(
+      "https://h/x",
+      { a: 1 },
+      {
+        headers: { "X-Api": "k" },
+        timeoutMs: 1000,
+        stage: "test",
+        deps,
+      },
+    );
     expect(ok).toBe(true);
     expect(capturedUrl).toBe("https://h/x");
     expect(capturedInit?.method).toBe("POST");
@@ -67,24 +60,49 @@ describe("postJson", () => {
 
   test("returns false on non-2xx", async () => {
     const deps: PostJsonDeps = { fetch: async () => new Response(null, { status: 500 }) };
-    const ok = await postJson("https://h/x", {}, {
-      headers: {}, timeoutMs: 1000, stage: "test", deps,
-    });
+    const ok = await postJson(
+      "https://h/x",
+      {},
+      {
+        headers: {},
+        timeoutMs: 1000,
+        stage: "test",
+        deps,
+      },
+    );
     expect(ok).toBe(false);
   });
 
   test("returns false when fetch throws (network/timeout)", async () => {
-    const deps: PostJsonDeps = { fetch: async () => { throw new Error("boom"); } };
-    const ok = await postJson("https://h/x", {}, {
-      headers: {}, timeoutMs: 1000, stage: "test", deps,
-    });
+    const deps: PostJsonDeps = {
+      fetch: async () => {
+        throw new Error("boom");
+      },
+    };
+    const ok = await postJson(
+      "https://h/x",
+      {},
+      {
+        headers: {},
+        timeoutMs: 1000,
+        stage: "test",
+        deps,
+      },
+    );
     expect(ok).toBe(false);
   });
 
   test("uses the ok fetch by default deps arg", async () => {
-    const ok = await postJson("https://h/x", {}, {
-      headers: {}, timeoutMs: 1000, stage: "test", deps: { fetch: okFetch },
-    });
+    const ok = await postJson(
+      "https://h/x",
+      {},
+      {
+        headers: {},
+        timeoutMs: 1000,
+        stage: "test",
+        deps: { fetch: okFetch },
+      },
+    );
     expect(ok).toBe(true);
   });
 });

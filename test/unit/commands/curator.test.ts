@@ -513,7 +513,8 @@ describe("curatorDryrun", () => {
       const runDir = join(outputDir, "runs", "run-001");
       mkdirSync(runDir, { recursive: true });
 
-      // Two review-finding observations with same ruleId (threshold 2) → H1 fires
+      // Same defect (same file + message → same fingerprint) in two distinct
+      // FEATURES → H1 fires. Cross-feature recurrence is the trigger (#1422).
       const obs: Observation[] = [
         {
           schemaVersion: 1,
@@ -523,17 +524,17 @@ describe("curatorDryrun", () => {
           stage: "review",
           ts: "2026-01-01T00:00:00.000Z",
           kind: "review-finding",
-          payload: { ruleId: "no-any", severity: "HIGH", file: "src/foo.ts", line: 1, message: "no any" },
+          payload: { ruleId: "no-any", category: "convention", severity: "HIGH", file: "src/foo.ts", line: 1, message: "explicit any is not allowed in public APIs" },
         } as Observation,
         {
           schemaVersion: 1,
           runId: "run-001",
-          featureId: "feat-1",
+          featureId: "feat-2",
           storyId: "US-002",
           stage: "review",
           ts: "2026-01-01T00:00:00.000Z",
           kind: "review-finding",
-          payload: { ruleId: "no-any", severity: "HIGH", file: "src/bar.ts", line: 5, message: "no any" },
+          payload: { ruleId: "no-any", category: "convention", severity: "HIGH", file: "src/foo.ts", line: 5, message: "explicit any is not allowed in public APIs" },
         } as Observation,
       ];
       writeObservations(runDir, obs);

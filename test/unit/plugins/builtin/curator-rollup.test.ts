@@ -6,8 +6,8 @@
 
 import { describe, expect, test } from "bun:test";
 import * as path from "node:path";
-import { appendToRollup } from "../../../../src/plugins/builtin/curator/rollup";
 import type { Observation } from "../../../../src/plugins/builtin/curator";
+import { appendToRollup } from "../../../../src/plugins/builtin/curator/rollup";
 import { withTempDir } from "../../../helpers";
 
 describe("appendToRollup", () => {
@@ -44,10 +44,7 @@ describe("appendToRollup", () => {
     await withTempDir(async (dir) => {
       const rollupPath = path.join(dir, "rollup.jsonl");
 
-      const obs1: Observation[] = [
-        baseObservation,
-        { ...baseObservation, storyId: "story-2" },
-      ];
+      const obs1: Observation[] = [baseObservation, { ...baseObservation, storyId: "story-2" }];
       await appendToRollup(obs1, rollupPath);
 
       const file = Bun.file(rollupPath);
@@ -153,7 +150,12 @@ describe("appendToRollup", () => {
 
       const obs: Observation[] = [
         baseObservation,
-        { ...baseObservation, storyId: "story-2", kind: "chunk-included", payload: { chunkId: "c1", label: "chunk", tokens: 100 } },
+        {
+          ...baseObservation,
+          storyId: "story-2",
+          kind: "chunk-included",
+          payload: { chunkId: "c1", label: "chunk", tokens: 100 },
+        },
         { ...baseObservation, storyId: "story-3", kind: "escalation", payload: { from: "fast", to: "balanced" } },
       ];
 
@@ -184,14 +186,10 @@ describe("appendToRollup", () => {
     await withTempDir(async (dir) => {
       const rollupPath = path.join(dir, "rollup.jsonl");
 
-      const obs1: Observation[] = [
-        { ...baseObservation, runId: "run-first" },
-      ];
+      const obs1: Observation[] = [{ ...baseObservation, runId: "run-first" }];
       await appendToRollup(obs1, rollupPath);
 
-      const obs2: Observation[] = [
-        { ...baseObservation, runId: "run-second" },
-      ];
+      const obs2: Observation[] = [{ ...baseObservation, runId: "run-second" }];
       await appendToRollup(obs2, rollupPath);
 
       const file = Bun.file(rollupPath);

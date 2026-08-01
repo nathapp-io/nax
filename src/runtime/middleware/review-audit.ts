@@ -1,5 +1,5 @@
-import type { IReviewAuditor } from "../../review/review-audit";
-import type { ReviewAck } from "../../review/types";
+import type { IReviewAuditor } from "@/review/review-audit";
+import type { ReviewAck } from "@/review/types";
 import type { DispatchEvent, IDispatchEventBus, ReviewDecisionEvent } from "../dispatch-events";
 
 function reviewerFromRole(role: string): "semantic" | "adversarial" | null {

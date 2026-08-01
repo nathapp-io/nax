@@ -95,7 +95,7 @@ async function collectFromMetrics(context: CuratorPostRunContext): Promise<Obser
       const success = boolValue(story.success, false);
       const storyId = stringValue(story.storyId ?? story.id, "unknown");
       const obs: VerdictObservation = {
-        schemaVersion: 1,
+        schemaVersion: OBSERVATION_SCHEMA_VERSION,
         runId: context.runId,
         featureId: stringValue(currentRun.feature, context.feature),
         storyId,
@@ -116,6 +116,37 @@ async function collectFromMetrics(context: CuratorPostRunContext): Promise<Obser
     // Missing or malformed metrics.json — skip.
   }
   return observations;
+}
+
+/**
+ * True when an artifact stamped `timestamp` belongs to the current run (#1422).
+ *
+ * Absent `runStartedAt` means "no scoping" — the pre-#1422 behaviour, kept so
+ * out-of-tree callers of `collectObservations` do not silently start dropping
+ * observations. An artifact with an unparseable or missing timestamp is KEPT:
+ * dropping it would hide real findings, whereas keeping it only risks the stale
+ * count that was already the status quo.
+ */
+function withinRun(timestamp: unknown, runStartedAt: number | undefined): boolean {
+  if (runStartedAt === undefined) return true;
+  const ts = typeof timestamp === "string" ? Date.parse(timestamp) : Number.NaN;
+  if (Number.isNaN(ts)) return true;
+  return ts >= runStartedAt;
+}
+
+/** Bumped to 2 when collection became run-scoped (#1422) — see `BaseObservation.schemaVersion`. */
+const OBSERVATION_SCHEMA_VERSION = 2;
+
+/** mtime-based counterpart to `withinRun` for artifacts that carry no timestamp field. */
+async function writtenThisRun(filePath: string, runStartedAt: number | undefined): Promise<boolean> {
+  if (runStartedAt === undefined) return true;
+  try {
+    const stat = await Bun.file(filePath).stat();
+    return stat.mtimeMs >= runStartedAt;
+  } catch {
+    // Unreadable stat — keep the artifact rather than silently dropping it.
+    return true;
+  }
 }
 
 // Prefer canonical Phase-1 fields first; fall back to legacy on-disk variants for pre-normalization audits.
@@ -150,16 +181,24 @@ async function collectFromReviewAudit(context: CuratorPostRunContext): Promise<O
       try {
         const audit = asRecord(await readJsonFile(fullPath));
         if (!audit) continue;
+        const featureId = stringValue(audit.featureName ?? audit.featureId, context.feature);
+        // A concurrent run against a DIFFERENT feature writes into the same
+        // outputDir; its entries fall inside this run's time window and would
+        // inflate H1's distinct-feature count with work this run never saw.
+        // Identity cannot be used here: the audit's `runId` is the runtime's
+        // crypto.randomUUID(), while `context.runId` is the execution layer's
+        // `run-<iso>` — two independent ID spaces (see #1422).
+        if (context.runStartedAt !== undefined && featureId !== context.feature) continue;
+        if (!withinRun(audit.timestamp, context.runStartedAt)) continue;
         const result = asRecord(audit.result);
         const findings = asArray(result?.findings);
         const storyId = stringValue(audit.storyId, "unknown");
-        const featureId = stringValue(audit.featureName ?? audit.featureId, context.feature);
         for (const rawFinding of findings) {
           const finding = asRecord(rawFinding);
           if (!finding) continue;
           const ruleId = findingRuleId(finding);
           const obs: ReviewFindingObservation = {
-            schemaVersion: 1,
+            schemaVersion: OBSERVATION_SCHEMA_VERSION,
             runId: context.runId,
             featureId,
             storyId,
@@ -170,6 +209,7 @@ async function collectFromReviewAudit(context: CuratorPostRunContext): Promise<O
               ruleId,
               checkId: ruleId,
               severity: stringValue(finding.severity, "info"),
+              category: optionalString(finding.category),
               file: stringValue(finding.file),
               line: numberValue(finding.line, 0),
               message: findingMessage(finding),
@@ -190,6 +230,7 @@ async function collectFromReviewAudit(context: CuratorPostRunContext): Promise<O
 async function collectFromContextManifests(context: CuratorPostRunContext): Promise<Observation[]> {
   const observations: Observation[] = [];
   const featuresDir = path.join(context.workdir, ".nax", "features");
+  let skippedManifests = 0;
   try {
     const glob = new Bun.Glob("*/stories/*/context-manifest-*.json");
     for await (const file of glob.scan({ cwd: featuresDir, absolute: false })) {
@@ -198,6 +239,12 @@ async function collectFromContextManifests(context: CuratorPostRunContext): Prom
         const parts = file.split("/");
         const featureId = parts[0] ?? context.feature;
         const storyId = parts[2] ?? "unknown";
+        // Stat before parsing: a manifest from an earlier run should cost a stat,
+        // not a full JSON read.
+        if (!(await writtenThisRun(fullPath, context.runStartedAt))) {
+          skippedManifests += 1;
+          continue;
+        }
         const manifest = asRecord(await readJsonFile(fullPath));
         if (!manifest) continue;
         const ts = now();
@@ -209,7 +256,7 @@ async function collectFromContextManifests(context: CuratorPostRunContext): Prom
         for (const chunkId of asArray(manifest.includedChunks)) {
           const id = String(chunkId);
           const obs: ChunkIncludedObservation = {
-            schemaVersion: 1,
+            schemaVersion: OBSERVATION_SCHEMA_VERSION,
             runId: context.runId,
             featureId,
             storyId,
@@ -230,7 +277,7 @@ async function collectFromContextManifests(context: CuratorPostRunContext): Prom
           if (!excluded) continue;
           const id = stringValue(excluded.id, "unknown");
           const obs: ChunkExcludedObservation = {
-            schemaVersion: 1,
+            schemaVersion: OBSERVATION_SCHEMA_VERSION,
             runId: context.runId,
             featureId,
             storyId,
@@ -250,7 +297,7 @@ async function collectFromContextManifests(context: CuratorPostRunContext): Prom
           const provider = asRecord(rawProvider);
           if (!provider || stringValue(provider.status) !== "empty") continue;
           const obs: ProviderEmptyObservation = {
-            schemaVersion: 1,
+            schemaVersion: OBSERVATION_SCHEMA_VERSION,
             runId: context.runId,
             featureId,
             storyId,
@@ -289,7 +336,7 @@ function entryFeatureId(context: CuratorPostRunContext, entry: JsonRecord, data:
 function collectPullCall(context: CuratorPostRunContext, entry: JsonRecord, data: JsonRecord): PullCallObservation {
   const toolName = stringValue(data.tool ?? data.toolName, "unknown");
   return {
-    schemaVersion: 1,
+    schemaVersion: OBSERVATION_SCHEMA_VERSION,
     runId: context.runId,
     featureId: entryFeatureId(context, entry, data),
     storyId: entryStoryId(entry, data),
@@ -313,7 +360,7 @@ function collectAcceptanceVerdict(
   data: JsonRecord,
 ): AcceptanceVerdictObservation {
   return {
-    schemaVersion: 1,
+    schemaVersion: OBSERVATION_SCHEMA_VERSION,
     runId: context.runId,
     featureId: entryFeatureId(context, entry, data),
     storyId: entryStoryId(entry, data),
@@ -332,7 +379,7 @@ function collectAcceptanceVerdict(
 
 function collectRectify(context: CuratorPostRunContext, entry: JsonRecord, data: JsonRecord): RectifyCycleObservation {
   return {
-    schemaVersion: 1,
+    schemaVersion: OBSERVATION_SCHEMA_VERSION,
     runId: context.runId,
     featureId: entryFeatureId(context, entry, data),
     storyId: entryStoryId(entry, data),
@@ -348,7 +395,7 @@ function collectRectify(context: CuratorPostRunContext, entry: JsonRecord, data:
 
 function collectEscalation(context: CuratorPostRunContext, entry: JsonRecord, data: JsonRecord): EscalationObservation {
   return {
-    schemaVersion: 1,
+    schemaVersion: OBSERVATION_SCHEMA_VERSION,
     runId: context.runId,
     featureId: entryFeatureId(context, entry, data),
     storyId: entryStoryId(entry, data),
@@ -369,7 +416,7 @@ function collectFixCycleIteration(
 ): FixCycleIterationObservation {
   const outcome = optionalString(data.outcome) as FixCycleIterationObservation["payload"]["outcome"];
   return {
-    schemaVersion: 1,
+    schemaVersion: OBSERVATION_SCHEMA_VERSION,
     runId: context.runId,
     featureId: entryFeatureId(context, entry, data),
     storyId: entryStoryId(entry, data),
@@ -394,7 +441,7 @@ function collectFixCycleExit(
   data: JsonRecord,
 ): FixCycleExitObservation {
   return {
-    schemaVersion: 1,
+    schemaVersion: OBSERVATION_SCHEMA_VERSION,
     runId: context.runId,
     featureId: entryFeatureId(context, entry, data),
     storyId: entryStoryId(entry, data),
@@ -414,7 +461,7 @@ function collectFixCycleRetry(
   data: JsonRecord,
 ): FixCycleValidatorRetryObservation {
   return {
-    schemaVersion: 1,
+    schemaVersion: OBSERVATION_SCHEMA_VERSION,
     runId: context.runId,
     featureId: entryFeatureId(context, entry, data),
     storyId: entryStoryId(entry, data),

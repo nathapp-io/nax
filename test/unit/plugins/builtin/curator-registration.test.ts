@@ -8,9 +8,9 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { curatorPlugin } from "../../../../src/plugins/builtin/curator";
 import { loadPlugins } from "../../../../src/plugins/loader";
 import { PluginRegistry } from "../../../../src/plugins/registry";
-import { curatorPlugin } from "../../../../src/plugins/builtin/curator";
 
 describe("Curator Plugin Registration", () => {
   test("should be available as a built-in plugin", () => {

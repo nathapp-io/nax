@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { PhaseCompleteEvent, PhaseStartEvent } from "@/plugins";
-import { createWebhookReporterPlugin, type PostJsonDeps } from "@/plugins";
 import type { WebhookReporterConfig } from "@/config/schemas-reporters";
+import type { PhaseCompleteEvent, PhaseStartEvent } from "@/plugins";
+import { type PostJsonDeps, createWebhookReporterPlugin } from "@/plugins";
 
 const baseCfg: WebhookReporterConfig = {
   enabled: true,
@@ -38,7 +38,10 @@ describe("webhook-reporter", () => {
     process.env.WH_TOKEN = "secret";
     const plugin = createWebhookReporterPlugin(baseCfg, deps);
     await plugin.extensions.reporter?.onRunStart?.({
-      runId: "r1", feature: "f", totalStories: 3, startTime: "2026-07-18T00:00:00.000Z",
+      runId: "r1",
+      feature: "f",
+      totalStories: 3,
+      startTime: "2026-07-18T00:00:00.000Z",
     });
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe("https://hook.example.com");
@@ -53,11 +56,16 @@ describe("webhook-reporter", () => {
     const { calls, deps } = capturing();
     const plugin = createWebhookReporterPlugin({ ...baseCfg, headers: {}, events: ["onRunEnd"] }, deps);
     await plugin.extensions.reporter?.onRunStart?.({
-      runId: "r1", feature: "f", totalStories: 1, startTime: "2026-07-18T00:00:00.000Z",
+      runId: "r1",
+      feature: "f",
+      totalStories: 1,
+      startTime: "2026-07-18T00:00:00.000Z",
     });
     expect(calls).toHaveLength(0);
     await plugin.extensions.reporter?.onRunEnd?.({
-      runId: "r1", totalDurationMs: 10, totalCost: 0,
+      runId: "r1",
+      totalDurationMs: 10,
+      totalCost: 0,
       storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
     });
     expect(calls).toHaveLength(1);
@@ -69,7 +77,10 @@ describe("webhook-reporter", () => {
     delete process.env.WH_TOKEN;
     const plugin = createWebhookReporterPlugin(baseCfg, deps);
     await plugin.extensions.reporter?.onRunStart?.({
-      runId: "r1", feature: "f", totalStories: 1, startTime: "2026-07-18T00:00:00.000Z",
+      runId: "r1",
+      feature: "f",
+      totalStories: 1,
+      startTime: "2026-07-18T00:00:00.000Z",
     });
     expect(calls).toHaveLength(0);
   });
@@ -78,7 +89,13 @@ describe("webhook-reporter", () => {
     const { calls, deps } = capturing();
     const plugin = createWebhookReporterPlugin({ enabled: true, headers: {}, timeoutMs: 1000 }, deps);
     await plugin.extensions.reporter?.onStoryComplete?.({
-      runId: "r1", storyId: "s1", status: "completed", runElapsedMs: 5, cost: 0.1, tier: "fast", testStrategy: "tdd-simple",
+      runId: "r1",
+      storyId: "s1",
+      status: "completed",
+      runElapsedMs: 5,
+      cost: 0.1,
+      tier: "fast",
+      testStrategy: "tdd-simple",
     });
     expect(calls).toHaveLength(0);
   });
@@ -86,7 +103,15 @@ describe("webhook-reporter", () => {
   test("AC14: onPhaseComplete posts an onPhaseComplete envelope", async () => {
     const { calls, deps } = capturing();
     const plugin = createWebhookReporterPlugin({ ...baseCfg, headers: {}, events: ["onPhaseComplete"] }, deps);
-    const event: PhaseCompleteEvent = { runId: "r1", scope: "story", storyId: "s1", phase: "implementer", outcome: "passed", durationMs: 10, costUsd: 0.1 };
+    const event: PhaseCompleteEvent = {
+      runId: "r1",
+      scope: "story",
+      storyId: "s1",
+      phase: "implementer",
+      outcome: "passed",
+      durationMs: 10,
+      costUsd: 0.1,
+    };
 
     await plugin.extensions.reporter?.onPhaseComplete?.(event);
 
@@ -97,7 +122,13 @@ describe("webhook-reporter", () => {
   test("AC15: onPhaseComplete filter performs no request for onPhaseStart", async () => {
     const { calls, deps } = capturing();
     const plugin = createWebhookReporterPlugin({ ...baseCfg, headers: {}, events: ["onPhaseComplete"] }, deps);
-    const event: PhaseStartEvent = { runId: "r1", scope: "story", storyId: "s1", phase: "implementer", startTime: "2026-07-18T00:00:00.000Z" };
+    const event: PhaseStartEvent = {
+      runId: "r1",
+      scope: "story",
+      storyId: "s1",
+      phase: "implementer",
+      startTime: "2026-07-18T00:00:00.000Z",
+    };
 
     await plugin.extensions.reporter?.onPhaseStart?.(event);
 

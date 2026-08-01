@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { collectObservations } from "../../../../src/plugins/builtin/curator";
@@ -324,7 +324,9 @@ describe("collectObservations", () => {
         stage: "review",
         includedChunks: ["feature-context:abc"],
         excludedChunks: [{ id: "rules:def", reason: "stale" }],
-        providerResults: [{ providerId: "feature-context", status: "empty", chunkCount: 0, durationMs: 1, tokensProduced: 0 }],
+        providerResults: [
+          { providerId: "feature-context", status: "empty", chunkCount: 0, durationMs: 1, tokensProduced: 0 },
+        ],
         chunkSummaries: { "feature-context:abc": "Auth context" },
       }),
     );
@@ -337,21 +339,41 @@ describe("collectObservations", () => {
           level: "info",
           stage: "pull-tool",
           message: "invoked",
-          data: { storyId: "US-001", tool: "query_feature_context", keyword: "auth cache", resultCount: 0, resultBytes: 0 },
+          data: {
+            storyId: "US-001",
+            tool: "query_feature_context",
+            keyword: "auth cache",
+            resultCount: 0,
+            resultBytes: 0,
+          },
         }),
         JSON.stringify({
           timestamp: "2026-05-04T00:02:00.000Z",
           level: "info",
           stage: "acceptance",
           message: "verdict",
-          data: { storyId: "US-001", passed: false, failedACs: ["AC-2"], retries: 1, packageDir: workdir, durationMs: 50 },
+          data: {
+            storyId: "US-001",
+            passed: false,
+            failedACs: ["AC-2"],
+            retries: 1,
+            packageDir: workdir,
+            durationMs: 50,
+          },
         }),
         JSON.stringify({
           timestamp: "2026-05-04T00:03:00.000Z",
           level: "info",
           stage: "findings.cycle",
           message: "iteration completed",
-          data: { storyId: "US-001", cycleName: "acceptance", iterationNum: 1, outcome: "unchanged", findingsBefore: 1, findingsAfter: 1 },
+          data: {
+            storyId: "US-001",
+            cycleName: "acceptance",
+            iterationNum: 1,
+            outcome: "unchanged",
+            findingsBefore: 1,
+            findingsAfter: 1,
+          },
         }),
       ].join("\n"),
     );
@@ -384,7 +406,9 @@ describe("collectObservations", () => {
     expect(observations.some((o) => o.kind === "chunk-excluded" && o.payload.reason === "stale")).toBe(true);
     expect(observations.some((o) => o.kind === "provider-empty")).toBe(true);
     expect(observations.some((o) => o.kind === "pull-call" && o.payload.resultCount === 0)).toBe(true);
-    expect(observations.some((o) => o.kind === "acceptance-verdict" && o.payload.failedACs?.includes("AC-2"))).toBe(true);
+    expect(observations.some((o) => o.kind === "acceptance-verdict" && o.payload.failedACs?.includes("AC-2"))).toBe(
+      true,
+    );
     expect(observations.some((o) => o.kind === "fix-cycle-iteration" && o.payload.outcome === "unchanged")).toBe(true);
   });
 
@@ -494,25 +518,17 @@ describe("collectObservations", () => {
     const findings = observations.filter((o) => o.kind === "review-finding");
     expect(findings.length).toBe(2);
 
-    const withSuggestion = findings.find(
-      (o) => o.kind === "review-finding" && o.payload.line === 73,
-    );
+    const withSuggestion = findings.find((o) => o.kind === "review-finding" && o.payload.line === 73);
     expect(withSuggestion).toBeDefined();
     if (withSuggestion?.kind === "review-finding") {
-      expect(withSuggestion.payload.message).toContain(
-        "onAgentStream(listener) does not validate",
-      );
+      expect(withSuggestion.payload.message).toContain("onAgentStream(listener) does not validate");
       expect(withSuggestion.payload.message).toContain("Add a guard");
     }
 
-    const noSuggestion = findings.find(
-      (o) => o.kind === "review-finding" && o.payload.line === 81,
-    );
+    const noSuggestion = findings.find((o) => o.kind === "review-finding" && o.payload.line === 81);
     expect(noSuggestion).toBeDefined();
     if (noSuggestion?.kind === "review-finding") {
-      expect(noSuggestion.payload.message).toBe(
-        "Listener errors are swallowed when logger is null.",
-      );
+      expect(noSuggestion.payload.message).toBe("Listener errors are swallowed when logger is null.");
     }
   });
 
