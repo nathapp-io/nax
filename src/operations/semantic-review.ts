@@ -19,7 +19,7 @@ import {
 import type { AcDroppedEntry, AcGroundingMinimalRejection, LLMFinding } from "../review/finding-filters";
 import { classifyRecurrence, tagCoverageGap } from "../review/recurrence-demotion";
 import { parseRequoteResponse } from "../review/requote-response";
-import type { SemanticReviewConfig, SemanticStory } from "../review/types";
+import type { ReviewAck, SemanticReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { reviewExhaustedFallback } from "./_review-fallback";
 import type { HopBodyContext, RunOperation } from "./types";
@@ -110,6 +110,12 @@ export interface SemanticReviewOutput {
   findings: unknown[];
   normalizedFindings: Finding[];
   acDropped: AcDroppedEntry<LLMFinding, AcGroundingMinimalRejection>[];
+  /**
+   * Prior findings the reviewer resolved or withdrew this round rather than
+   * re-flagging (#1423). Persisted to the audit record so carry-forward
+   * bookkeeping is visible without being counted as findings.
+   */
+  acks?: ReviewAck[];
   failOpen?: boolean;
   looksLikeFail?: boolean;
   /** Blocking-severity findings that did NOT block: oscillation-suppressed or recurrence-demoted. */
@@ -351,6 +357,7 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
         normalizedFindings: [],
         acDropped: [],
         repromptEvent,
+        ...(parsed.acks && { acks: parsed.acks }),
       };
     }
     // Both give-up branches carry a preview of the output that defeated the

@@ -18,6 +18,7 @@ import { getSafeLogger } from "../logger";
 import { findNaxProjectRoot } from "../utils/nax-project-root";
 import { NAX_COMMIT, NAX_VERSION } from "../version";
 import type { AdversarialAcceptAnalysis, AdversarialDropAnalysis } from "./ac-structural-counterfactual";
+import type { ReviewAck } from "./types";
 
 export interface ReviewAuditEntry {
   /** Runtime run ID for correlation with prompt/cost audit. */
@@ -59,6 +60,13 @@ export interface ReviewAuditEntry {
   result: { passed: boolean; findings: unknown[] } | null;
   /** Findings retained as advisory after threshold handling. */
   advisoryFindings?: unknown[];
+  /**
+   * Prior findings the reviewer resolved or withdrew this round (#1423).
+   * Deliberately NOT part of `result.findings`: an acknowledgement is
+   * bookkeeping, not a defect, and counting it as a finding inflated finding
+   * telemetry and became the evidence quoted in curator rule proposals.
+   */
+  acks?: ReviewAck[];
   /**
    * Findings deleted by the AC-grounding filter (missing / out-of-range acIndex).
    * Persisted because nothing else records them: a real defect the reviewer could
@@ -181,6 +189,7 @@ export function toPersistedEntry(entry: ReviewAuditEntry, epochMs: number): stri
       blockingThreshold: entry.blockingThreshold ?? "error",
       result: entry.result,
       advisoryFindings: entry.advisoryFindings ?? null,
+      acks: entry.acks ?? null,
       acDropped: entry.acDropped ?? null,
       ...(entry.parsed ? {} : { unparsedPreview: entry.unparsedPreview ?? null }),
       // Issue #986 — adversarial-only structural counterfactual telemetry.

@@ -112,9 +112,13 @@ function renderVerdictTemplate<F extends Finding>(iterations: Iteration<F>[]): s
 
   return [
     `**Required:** before adding any new finding, classify each of the ${total} prior finding(s) above as one of:`,
-    "- `addressed` — the current diff resolves it (cite the diff line that fixes it in your `message` field)",
-    "- `still-blocking` — the implementer did not fix it; re-flag it with the IDENTICAL `file`, `line`, `category`, and substantively the same `message` wording",
-    `- \`never-an-issue\` — your prior judgment was wrong; explain why in \`message\` and emit severity \`"info"\``,
+    "- `addressed` — the current diff resolves it; record it in `acks` (not `findings`), citing the diff line that fixes it in `note`",
+    "- `still-blocking` — the implementer did not fix it; re-flag it in `findings` with the IDENTICAL `file`, `line`, `category`, and substantively the same `message` wording",
+    "- `never-an-issue` — your prior judgment was wrong; record it in `acks` (not `findings`) and explain why in `note`",
+    "",
+    "Do NOT emit an acknowledgement as a finding. A resolved or withdrawn prior finding is not a defect —",
+    "reporting it as one inflates the finding count and buries the real defects. Only `still-blocking` belongs in `findings`.",
+    "",
     `Then surface any genuinely new findings.${unchangedNote}`,
   ].join("\n");
 }

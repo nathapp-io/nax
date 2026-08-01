@@ -23,10 +23,12 @@ import {
 import type { AcDroppedEntry, AcQuoteRejectionCode } from "../review/finding-filters";
 import { classifyRecurrence, tagCoverageGap } from "../review/recurrence-demotion";
 import { parseRequoteResponse } from "../review/requote-response";
+import type { ReviewAck } from "../review/types";
 import type { AdversarialReviewConfig, SemanticStory } from "../review/types";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { reviewExhaustedFallback } from "./_review-fallback";
+import { type RepromptInfo, extractRepromptInfo, withRepromptMarker } from "./adversarial-reprompt-marker";
 import type { HopBodyContext, RunOperation } from "./types";
 
 export type { AdversarialReviewConfig, SemanticStory, TestInventory };
@@ -70,38 +72,6 @@ export interface AdversarialReviewInput {
   };
 }
 
-type RepromptInfo = {
-  dropCount: number;
-  outcome: "recovered-blocking" | "recovered-advisory-only" | "still-dropped" | "parse-failed";
-  costUsd: number;
-};
-
-/**
- * Embed a `_repromptInfo` marker into a JSON output string. `validateAdversarialShape`
- * ignores unknown keys, so the marker is invisible to the shape validator but readable
- * by `parse()`. No-ops for non-JSON output.
- */
-function withRepromptMarker(output: string, info: RepromptInfo): string {
-  const parsed = tryParseLLMJson<Record<string, unknown>>(output);
-  if (!parsed || typeof parsed !== "object") return output;
-  return JSON.stringify({ ...parsed, _repromptInfo: info });
-}
-
-function extractRepromptInfo(raw: Record<string, unknown> | null | undefined): RepromptInfo | undefined {
-  if (!raw || typeof raw !== "object") return undefined;
-  const info = raw._repromptInfo;
-  if (!info || typeof info !== "object") return undefined;
-  const i = info as Record<string, unknown>;
-  if (typeof i.dropCount !== "number" || typeof i.costUsd !== "number" || typeof i.outcome !== "string") {
-    return undefined;
-  }
-  return {
-    dropCount: i.dropCount,
-    costUsd: i.costUsd,
-    outcome: i.outcome as RepromptInfo["outcome"],
-  };
-}
-
 export interface AdversarialReviewOutput {
   passed: boolean;
   /**
@@ -112,6 +82,8 @@ export interface AdversarialReviewOutput {
   modelPassed?: boolean;
   /** Raw AdversarialLLMFinding[]. Consumed by `src/review/adversarial.ts`. */
   findings: unknown[];
+  /** Prior findings resolved or withdrawn this round, not re-flagged — see `review/acks.ts` (#1423). */
+  acks?: ReviewAck[];
   /**
    * The resolved blockingThreshold used during verify(). Persisted here so
    * buildPhaseDetails can compute blockingCount at the configured threshold
@@ -476,6 +448,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
         normalizedFindings: [],
         acDropped: [],
         repromptEvent,
+        ...(parsed.acks && { acks: parsed.acks }),
       };
     }
     if (/"passed"\s*:\s*false/.test(output) && !/"findings"\s*:\s*\[\s*\{/.test(output)) {

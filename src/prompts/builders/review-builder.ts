@@ -68,6 +68,13 @@ const SEMANTIC_OUTPUT_SCHEMA = `Respond with JSON only — no explanation text b
 {
   "passed": boolean,
   "inspectedFiles": ["relative/path/you/actually/opened.ts"],
+  "acks": [
+    {
+      "priorFinding": "<short identifier — file:line or a few words of its message>",
+      "status": "addressed" | "never-an-issue",
+      "note": "<why: the diff line that fixes it, or why the prior judgment was wrong>"
+    }
+  ],
   "findings": [
     {
       "severity": "error" | "warning" | "info" | "unverifiable",

@@ -51,6 +51,7 @@ export function attachReviewAuditSubscriber(
       blockingThreshold: event.blockingThreshold,
       result: event.result,
       advisoryFindings: event.advisoryFindings,
+      acks: event.acks as import("../../review/types").ReviewAck[] | undefined,
       acDropped: event.acDropped ? [...event.acDropped] : undefined,
       unparsedPreview: event.unparsedPreview,
       diffAvailable: event.diffAvailable,

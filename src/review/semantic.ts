@@ -24,7 +24,7 @@ import { prepareSemanticReviewInput } from "./prepare-inputs";
 import { writeReviewAudit } from "./review-audit";
 import { runSemanticDebate } from "./semantic-debate";
 import { type LLMFinding, formatFindings, isBlockingSeverity, toReviewFindings } from "./semantic-helpers";
-import type { ReviewCheckResult, SemanticReviewConfig, SemanticStory } from "./types";
+import type { ReviewAck, ReviewCheckResult, SemanticReviewConfig, SemanticStory } from "./types";
 
 // Re-export so existing callers (`import type { SemanticStory } from "./semantic"`) keep working.
 export type { SemanticStory };
@@ -49,6 +49,8 @@ function recordSemanticAudit(opts: {
   blockingThreshold?: "error" | "warning" | "info";
   result: { passed: boolean; findings: unknown[] } | null;
   advisoryFindings?: unknown[];
+  /** #1423 — prior findings resolved or withdrawn, recorded outside `result.findings`. */
+  acks?: ReviewAck[];
 }): void {
   opts.runtime?.dispatchEvents.emitReviewDecision({
     kind: "review-decision",
@@ -65,6 +67,7 @@ function recordSemanticAudit(opts: {
     blockingThreshold: opts.blockingThreshold,
     result: opts.result,
     advisoryFindings: opts.advisoryFindings,
+    acks: opts.acks,
   });
 }
 
@@ -413,6 +416,8 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
   // still fail-closed when passed:false survives without remaining blockers.
   const threshold = blockingThreshold ?? "error";
   const allFindings = opResult.findings as LLMFinding[];
+  // #1423 — carry-forward bookkeeping, recorded alongside findings but never as one.
+  const acks = opResult.acks;
   const blockingFindings = allFindings.filter((f) => isBlockingSeverity(f.severity, threshold));
   const advisoryFindings = allFindings.filter((f) => !isBlockingSeverity(f.severity, threshold));
 
@@ -455,6 +460,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       failOpen: false,
       passed: false,
       blockingThreshold: threshold,
+      acks,
       result: {
         passed: false,
         findings: llmFindingsToReviewFindings(allFindings, { source: "semantic-review", isTestFile: testFileMatch }),

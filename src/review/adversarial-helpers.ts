@@ -7,8 +7,10 @@
 
 import type { Finding, FindingSeverity } from "../findings";
 import { tryParseLLMJson } from "../utils/llm-json";
+import { extractAcks } from "./acks";
 import { categoryToFixTarget, resolveFixTarget } from "./category-fix-target";
 import { isBlockingSeverity } from "./severity";
+import type { ReviewAck } from "./types";
 export { isBlockingSeverity };
 
 export interface AdversarialLLMFinding {
@@ -64,6 +66,8 @@ export interface AdversarialLLMFinding {
 export interface AdversarialLLMResponse {
   passed: boolean;
   findings: AdversarialLLMFinding[];
+  /** Prior findings resolved or withdrawn this round (#1423). Absent when none. */
+  acks?: ReviewAck[];
 }
 
 /**
@@ -74,7 +78,12 @@ export function validateAdversarialShape(parsed: unknown): AdversarialLLMRespons
   const obj = parsed as Record<string, unknown>;
   if (typeof obj.passed !== "boolean") return null;
   if (!Array.isArray(obj.findings)) return null;
-  return { passed: obj.passed, findings: obj.findings as AdversarialLLMFinding[] };
+  const acks = extractAcks(obj.acks);
+  return {
+    passed: obj.passed,
+    findings: obj.findings as AdversarialLLMFinding[],
+    ...(acks.length > 0 && { acks }),
+  };
 }
 
 /**

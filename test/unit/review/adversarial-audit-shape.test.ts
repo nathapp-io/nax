@@ -107,6 +107,74 @@ describe("adversarial reviewer audit shape (#942 AC-1 / AC-2)", () => {
     expect(inputFinding.severity).toBe("warning");
   });
 
+  test("acknowledgements land in `acks`, never in findings (#1423)", async () => {
+    // Before #1423 the verdict template gave the reviewer no channel but
+    // `findings` for an "addressed" verdict, so bookkeeping was counted as
+    // defects and became the evidence quoted in curator rule proposals.
+    const { auditor, decisions: captured } = captureAuditDecisions();
+    decisions = captured;
+    const agentManager = agentManagerWithFixedLLMResponse(
+      JSON.stringify({
+        passed: false,
+        acks: [
+          { priorFinding: "src/foo.ts:10", status: "addressed", note: "fixed at src/foo.ts:12" },
+          { priorFinding: "the picker layout", status: "never-an-issue", note: "misread the markup" },
+        ],
+        findings: [
+          {
+            severity: "warning",
+            category: "input",
+            file: "src/foo.ts",
+            line: 10,
+            issue: "Listener arg not validated as function",
+            suggestion: "Add typeof guard",
+          },
+        ],
+      }),
+    );
+    const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
+
+    await runAdversarialReview({
+      workdir: "/tmp/test",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: CFG,
+      agentManager,
+      featureName: "feat-x",
+      runtime,
+    });
+
+    const decision = decisions[0]!;
+    // The one real defect is a finding; the two acks are not.
+    expect((decision.result?.findings as unknown[]).length).toBe(1);
+    expect(decision.acks).toHaveLength(2);
+    expect(decision.acks?.[0]).toEqual({
+      priorFinding: "src/foo.ts:10",
+      status: "addressed",
+      note: "fixed at src/foo.ts:12",
+    });
+    expect(decision.acks?.[1]?.status).toBe("never-an-issue");
+  });
+
+  test("a response with no acks records none, rather than an empty array (#1423)", async () => {
+    const { auditor, decisions: captured } = captureAuditDecisions();
+    decisions = captured;
+    const agentManager = agentManagerWithFixedLLMResponse(ADVERSARIAL_LLM_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
+
+    await runAdversarialReview({
+      workdir: "/tmp/test",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: CFG,
+      agentManager,
+      featureName: "feat-x",
+      runtime,
+    });
+
+    expect(decisions[0]!.acks).toBeUndefined();
+  });
+
   test("ruleId starts with the finding's category", async () => {
     const { auditor, decisions: captured } = captureAuditDecisions();
     decisions = captured;
