@@ -326,19 +326,22 @@ describe("PromptBuilder — test-quality pre-brief section", () => {
     "%s prompt contains the Review-Proof Tests pre-brief with the story ID pinned",
     async (role) => {
       const prompt = await PromptBuilder.for(role).story(makeStory({ id: "US-007" })).build();
-      expect(prompt).toContain("## Review-Proof Tests");
+      expect(prompt).toContain("# Review-Proof Tests");
       expect(prompt).toContain("(US-007)");
     },
   );
 
   test("batch prompt contains the pre-brief (no per-story ID pin)", async () => {
     const prompt = await PromptBuilder.for("batch").stories([makeStory({ id: "B-001" })]).build();
-    expect(prompt).toContain("## Review-Proof Tests");
+    expect(prompt).toContain("# Review-Proof Tests");
   });
 
-  test("implementer lite variant (fills coverage gaps) receives the pre-brief", async () => {
+  test("implementer lite variant (fills coverage gaps) receives the pre-brief and relaxed isolation", async () => {
     const prompt = await PromptBuilder.for("implementer", { variant: "lite" }).story(makeStory()).build();
-    expect(prompt).toContain("## Review-Proof Tests");
+    expect(prompt).toContain("# Review-Proof Tests");
+    // Isolation must not contradict the pre-brief: lite may add tests for uncovered ACs.
+    expect(prompt).toContain("MAY add tests");
+    expect(prompt).not.toMatch(/do not modify test files/i);
   });
 
   test.each([
@@ -347,7 +350,7 @@ describe("PromptBuilder — test-quality pre-brief section", () => {
     ["no-test — never writes tests", "no-test", undefined],
   ])("%s prompt omits the pre-brief", async (_label, role, options) => {
     const prompt = await PromptBuilder.for(role as PromptRole, options).story(makeStory()).build();
-    expect(prompt).not.toContain("## Review-Proof Tests");
+    expect(prompt).not.toContain("# Review-Proof Tests");
   });
 });
 

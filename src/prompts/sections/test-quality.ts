@@ -32,14 +32,14 @@ export function buildTestQualitySection(role: PromptRole, variant?: "standard" |
     ? `\n- Test names must use THIS story's ID (${storyId}) — never a sibling story's ID copied from a nearby test.`
     : "";
 
-  return `## Review-Proof Tests
+  return `# Review-Proof Tests
 
 An adversarial reviewer will audit your tests after implementation and BLOCK the story on any test-gap finding. Each block costs a full rectification round. Write tests that survive that audit the first time:
 
 - Every acceptance criterion needs a test that INVOKES the code at runtime and asserts its observable behavior (return value, thrown error, rendered/mounted output, emitted event, persisted state).
 - NEVER write source-inspection tests — asserting that a file contains a pattern, string, or symbol proves nothing about behavior and WILL be blocked as test-gap.
 - No placeholder or tautological tests: \`expect(true).toBe(true)\`, asserting on literals, empty bodies, \`.skip\`/\`.todo\` on an AC-covering test — all blocked as test-gap.
-- Every new exported symbol must be exercised by at least one test.
+- Every new exported symbol an AC depends on must be exercised by at least one test.
 - Cover the boundary and error paths the reviewer probes: empty/null/zero/negative inputs, and failure modes (errors must surface, not be swallowed).
-- For UI/page-level ACs, mount the page/component and simulate the interaction — testing only the underlying unit leaves the wiring unaudited.${storyIdLine}`;
+- For UI/page-level ACs, mount the page/component and simulate the interaction — a test that only exercises the underlying unit reads as no coverage for the AC's wiring.${storyIdLine}`;
 }

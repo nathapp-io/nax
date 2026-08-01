@@ -17,7 +17,7 @@ describe("buildTestQualitySection — test-authoring roles", () => {
   test.each([...TEST_AUTHORING_ROLES])("returns the pre-brief for %s", (role) => {
     const section = buildTestQualitySection(role);
     expect(section).not.toBe("");
-    expect(section).toContain("## Review-Proof Tests");
+    expect(section).toContain("# Review-Proof Tests");
   });
 
   test.each([...TEST_AUTHORING_ROLES])("%s pre-brief names the adversarial reviewer as the gate", (role) => {
@@ -58,7 +58,7 @@ describe("buildTestQualitySection — test-authoring roles", () => {
 describe("buildTestQualitySection — implementer lite variant fills coverage gaps", () => {
   test("implementer with lite variant receives the pre-brief", () => {
     const section = buildTestQualitySection("implementer", "lite");
-    expect(section).toContain("## Review-Proof Tests");
+    expect(section).toContain("# Review-Proof Tests");
   });
 
   test("implementer standard variant does not author tests — no section", () => {
@@ -83,7 +83,7 @@ describe("buildTestQualitySection — story ID pinning", () => {
 
   test("omits the story-ID line when no story ID is given", () => {
     const section = buildTestQualitySection("test-writer");
-    expect(section).not.toContain("US-");
+    expect(section).not.toContain("THIS story's ID");
   });
 });
 

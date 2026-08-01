@@ -9,7 +9,9 @@
 
 ## 1. Cost structure — rectification is the dominant spend
 
-| Stage | Cost | Share | Calls | Tokens |
+Stage-attributed cost from `cost/*.jsonl` totals $1,438.80 (the $1,873 headline sums story verdicts, which include spend the stage ledger does not attribute). Shares below are of the stage-ledger total.
+
+| Stage | Cost | Share of stage cost | Calls | Tokens |
 |:------|-----:|------:|------:|-------:|
 | rectification | $626.83 | **43.6%** | 909 | 296.8M |
 | run (implementer) | $365.33 | 25.4% | 735 | 340.1M |
@@ -18,7 +20,7 @@
 | verify | $55.46 | 3.9% | 339 | 216.0M |
 | plan | $15.54 | 1.1% | 236 | 20.0M |
 
-- Fixing first drafts costs **1.7×** producing them. Rectification prompts (759) outnumber initial implementer runs (538).
+- Fixing first drafts costs **1.7×** producing them. Rectification outnumbers initial implementation on both ledgers: 909 vs 735 LLM calls (cost ledger above) and 759 vs 538 session transcripts (`prompt-audit/`).
 - Story cost distribution: p50 $1.87, p90 $6.75, p99 $21.34, max $49.85.
 - Plan is nearly free (1.1%) — under-investing in spec/plan accuracy is false economy when downstream rework is 43.6%.
 
@@ -90,5 +92,18 @@ Proposals are generated per run but are raw-count aggregates ("test-gap fired 79
 | 10 | Close the curator loop: emit rule-file-ready diffs against `.nax/rules/`, threshold on cross-feature recurrence, surface at `nax finish` for accept/reject | curator | converts dead telemetry into a compounding improvement loop | open |
 
 **Estimated impact of #1–#3:** July's $1,873 → roughly $1,450–1,550 at equal throughput, with the 15–20-round failure tail largely eliminated.
+
+## 8. Implementation status (this branch — `feat/test-quality-prebrief`)
+
+**#1 — Test-gap pre-brief: implemented.**
+- `src/prompts/sections/test-quality.ts` — new `buildTestQualitySection(role, variant?, storyId?)`: a compact (<1,600 chars) "Review-Proof Tests" section distilling the adversarial Test Audit Gap rejection criteria — runtime-behavior tests only, explicit ban on source-inspection and placeholder/tautological tests, per-AC and per-exported-symbol coverage, boundary/error-path lenses, mount-and-interact for UI-level ACs.
+- Recommendation #5 folded in: when a story ID is available, the section pins it for test names (the 598 sibling-copy convention findings).
+- Wired into `TddPromptBuilder.build()` as section 6.8 for the roles that author tests: `test-writer`, `single-session`, `tdd-simple`, `batch`, and `implementer` (lite variant only). `verifier`, `no-test`, and standard `implementer` prompts are unchanged.
+- Tests: `test/unit/prompts/sections/test-quality.test.ts` (19 tests incl. a size-budget guard) + wiring assertions in `test/unit/prompts/builder.test.ts`. Full suite, typecheck, and lint green.
+- **Measurement plan:** compare August's adversarial first-round pass rate (July baseline: 69%) and test-gap share of blocking findings (July baseline: 263, ~67%) from `review-audit/`; compare rectification share of stage cost (July baseline: 43.6%) from `cost/*.jsonl`.
+
+**#2 — Adversarial sub-threshold verdict: closed as verified-fixed** (§2 above). #1378 shipped in v0.75.2; the July hits were pre-fix versions; regression coverage exists in `test/unit/review/adversarial-verifiedby.test.ts`. No code change on this branch.
+
+**Code review (this branch):** independent review found no critical/high issues; three mediums were fixed — heading level (`##` → `#` so the section is not a markdown child of Behavioral Guardrails), the exported-symbol bullet scoped to AC-dependent exports (was contradicting the guardrails "tests cover ACs only" rule), and implementer-lite's isolation section relaxed ("MAY add tests for uncovered ACs; do NOT weaken existing tests") so it no longer contradicts the role-task and pre-brief sections. The source-inspection ban was also added to the adversarial reviewer's own Test Audit Gap catalogue so the pre-brief's attribution is accurate on both sides.
 
 **Strategic observation:** the harness detects known failure modes post-hoc (adversarial review) instead of preventing them pre-hoc (test-writer/spec prompts). Every recommendation is a form of moving knowledge one stage earlier in the pipeline.

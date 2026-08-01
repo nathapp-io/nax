@@ -105,6 +105,7 @@ What new exported units lack corresponding test files?
 - Bodies that always pass: \`expect(true).toBe(true)\`, \`expect(x).toBe(x)\`, \`expect(1).toBe(1)\`, an empty test body, or \`assert(true)\`.
 - Tests skipped/disabled (\`it.skip\`, \`test.todo\`, \`xit\`, commented-out assertions) that an AC depends on.
 - Assertions that never exercise the implementation (e.g. asserting on a literal, not on a value the production code produced).
+- Source-inspection tests: reading a source file and asserting it contains a pattern, string, or symbol instead of invoking the code and asserting its runtime behavior.
 
 For each such finding: set \`acIndex\` to the AC the fake test purports to cover, \`acQuote\` to a verbatim substring of that AC, and \`verifiedBy.observed\` to the placeholder line itself (e.g. \`expect(true).toBe(true)\`). Do **not** downgrade these to \`warning\` — a green suite built on placeholder assertions is a failing implementation with hidden evidence.
 

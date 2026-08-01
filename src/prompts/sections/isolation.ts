@@ -68,6 +68,12 @@ export function buildIsolationSection(
   }
 
   if (role === "implementer") {
+    // lite mode — session 2 of three-session-tdd-lite: the implementer also
+    // fills AC coverage gaps the test-writer left, so a blanket "do not modify
+    // test files" would contradict the role-task and test-quality sections.
+    if (mode === "lite") {
+      return `${header}\n\nisolation scope: Implement source code in src/ to make tests pass. You MAY add tests for acceptance criteria that have no coverage yet; do NOT weaken, delete, or skip existing tests. Run tests frequently to track progress.${footer}`;
+    }
     return `${header}\n\nisolation scope: Implement source code in src/ to make tests pass. Do not modify test files. Run tests frequently to track progress.${footer}`;
   }
 

@@ -211,8 +211,13 @@ export class TddPromptBuilder {
       acc.add(this.s("verdict", buildVerdictSection(this.story_)));
     }
 
-    // (6) Isolation rules
-    const isolation = this.options.isolation as "strict" | "lite" | undefined;
+    // (6) Isolation rules — for implementer, the "lite" variant relaxes the
+    // no-test-edits rule (session 2 of three-session-tdd-lite fills coverage
+    // gaps), so the variant doubles as the isolation mode.
+    const isolation =
+      this.role === "implementer" && this.options.variant === "lite"
+        ? "lite"
+        : (this.options.isolation as "strict" | "lite" | undefined);
     acc.add(this.s("isolation", buildIsolationSection(this.role, isolation, this.testCommand_)));
 
     // (6.5) TDD language convention
