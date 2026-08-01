@@ -281,6 +281,7 @@ post-run driver treats it as non-blocking and logs a warning).
 | `enabled` | `false` | Master gate. |
 | `flowPath` | `flows/nax-finish/nax-finish.flow.ts` | Resolved against the **nax install** first, then your repo (vendor a variant by putting a file at the same relative path), then used as-is if absolute. |
 | `defaultAgent` | `agent.default` | acpx agent for any node without a pinned profile. Unset → the agent the run used, never acpx's own default. |
+| `model` | `null` | acpx `--model` — a run-wide model *floor*. Opt-in; see [Pinning the model](#pinning-the-model). |
 | `reviewers.spec` | `null` | acpx agent profile for the spec-review phase — see §4. |
 | `reviewers.quality` | `null` | acpx agent profile for the quality-review phase. |
 | `escalate.telegram` | `true` | Prefer Telegram for escalations when credentials resolve; else PR/MR comment. |
@@ -394,6 +395,47 @@ configures only reviewers behaves the way it reads.
 
 Fix nodes (`fix_acceptance`, `fix_spec`, `fix_quality`, `fix_gate`) are never
 pinned — they always use the default agent.
+
+### Pinning the model
+
+`agent.default` and `defaultAgent` name an **agent**, never a model. In acpx an
+agent entry carries its own model, so that is where the model normally lives:
+
+```json
+// ~/.acpx/config.json
+"nax-quality-reviewer-codex": {
+  "argv": ["npx", "-y", "@agentclientprotocol/codex-acp@^1.1.5"],
+  "model": "gpt-5.6-terra"
+}
+```
+
+acpx resolves each node's model as:
+
+```
+node.model  ??  agent.model  ??  --model
+```
+
+`finish.autoFlow.model` supplies that last term. It is a **floor, not an
+override**: a reviewer pinned to an agent entry that names its own model keeps
+that model, and `--model` reaches only the nodes with nothing above it — in
+practice the `fix_*` nodes.
+
+```json
+"finish": { "autoFlow": {
+  "defaultAgent": "claude",
+  "model": "sonnet",
+  "reviewers": { "spec": "nax-spec-reviewer-codex", "quality": "nax-quality-reviewer-codex" }
+}}
+```
+
+> **Requires an acpx that reads `model` from agent entries.** That precedence is
+> what keeps `--model` from reaching your reviewers. On a build without it,
+> `agent.model` is always absent, `--model` becomes the only model signal, and it
+> *would* override the reviewers. This is why the key defaults to `null` and is
+> never derived from `config.models` — leave it unset and the argv is unchanged.
+
+A run's own `config.models[agent][tier]` is **not** consulted here. That map is
+tier-keyed and the flow has no tier, so nax does not guess one for you.
 
 Verify a profile resolves before enabling the flow:
 

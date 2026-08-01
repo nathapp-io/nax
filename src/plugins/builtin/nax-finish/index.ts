@@ -212,30 +212,35 @@ export async function resolveFlowPath(
  * Build the `acpx flow run` argv.
  *
  * Flag placement is not interchangeable:
- * - `--approve-all` and `--timeout` are **top-level** flags and must precede
- *   `flow`. The flow declares `requireExplicitGrant`, so acpx rejects the run
- *   unless the grant is an explicit CLI flag (config alone does not satisfy it).
+ * - `--approve-all`, `--timeout` and `--model` are **top-level** flags and must
+ *   precede `flow`. The flow declares `requireExplicitGrant`, so acpx rejects
+ *   the run unless the grant is an explicit CLI flag (config alone does not
+ *   satisfy it).
  * - `--default-agent` is an option of the `flow run` **subcommand**, so it must
  *   come after the flow file; placing it before `flow` makes acpx exit with
  *   "unknown option '--default-agent'".
+ *
+ * `--model` is a *floor*, not an override: acpx resolves each node's model as
+ * `node.model ?? agent.model ?? --model`, so it reaches only nodes whose agent
+ * entry pins no model — the `fix_*` nodes, never a profile-pinned reviewer.
  */
 export function buildFlowArgv(
   flowPath: string,
   inputJson: string,
-  defaultAgent: string | null,
-  stepMs?: number | null,
+  opts: { defaultAgent?: string | null; stepMs?: number | null; model?: string | null } = {},
 ): string[] {
-  const stepTimeout = stepMs && stepMs > 0 ? ["--timeout", String(Math.ceil(stepMs / 1000))] : [];
+  const stepTimeout = opts.stepMs && opts.stepMs > 0 ? ["--timeout", String(Math.ceil(opts.stepMs / 1000))] : [];
   return [
     "acpx",
     "--approve-all",
     ...stepTimeout,
+    ...(opts.model ? ["--model", opts.model] : []),
     "flow",
     "run",
     flowPath,
     "--input-json",
     inputJson,
-    ...(defaultAgent ? ["--default-agent", defaultAgent] : []),
+    ...(opts.defaultAgent ? ["--default-agent", opts.defaultAgent] : []),
   ];
 }
 
@@ -300,7 +305,11 @@ async function executeFinishFlow(options: ExecuteFinishOptions): Promise<FinishT
     escalateTelegram,
     timeouts: { acceptanceMs: cfg.timeouts.acceptanceMs, gateMs: cfg.timeouts.gateMs },
   };
-  const cmd = buildFlowArgv(flowPath, JSON.stringify(input), cfg.defaultAgent, cfg.timeouts.stepMs);
+  const cmd = buildFlowArgv(flowPath, JSON.stringify(input), {
+    defaultAgent: cfg.defaultAgent,
+    stepMs: cfg.timeouts.stepMs,
+    model: cfg.model,
+  });
   const res = await _naxFinishDeps.run(cmd, {
     cwd: ctx.workdir,
     env: buildFlowEnv(cfg),

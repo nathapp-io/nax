@@ -18,6 +18,8 @@ export interface FinishAutoFlowSettings {
   flowPath: string;
   /** Never null — see resolveFlowAgent. */
   defaultAgent: string;
+  /** acpx `--model`; null passes no flag at all. Opt-in — see the schema. */
+  model: string | null;
   reviewers: { spec: string | null; quality: string | null };
   escalate: { telegram: boolean };
   notify: { mode: "escalation" | "always" | "off" };
@@ -32,6 +34,7 @@ export interface FinishAutoFlowSettings {
 const DEFAULT_FINISH_AUTO_FLOW_CONFIG: Omit<FinishAutoFlowSettings, "defaultAgent"> = {
   enabled: false,
   flowPath: "flows/nax-finish/nax-finish.flow.ts",
+  model: null,
   reviewers: { spec: null, quality: null },
   escalate: { telegram: true },
   notify: { mode: "escalation" },
@@ -69,6 +72,11 @@ export function getFinishAutoFlowConfig(ctx: { config?: unknown }): FinishAutoFl
     enabled: autoFlow.enabled === true,
     flowPath: autoFlow.flowPath ?? defaults.flowPath,
     defaultAgent: resolveFlowAgent(ctx.config, autoFlow.defaultAgent),
+    // Deliberately NOT defaulted to config.models: `--model` is opt-in because
+    // its "floor, not override" behaviour depends on acpx supporting a model on
+    // agent entries. Passing one unconditionally would override the pinned
+    // reviewers on a build without that support.
+    model: autoFlow.model ?? null,
     reviewers: {
       spec: autoFlow.reviewers?.spec ?? null,
       quality: autoFlow.reviewers?.quality ?? null,

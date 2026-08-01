@@ -55,3 +55,21 @@ describe("finish.autoFlow schema", () => {
     ).toBe(false);
   });
 });
+
+describe("finish.autoFlow.model", () => {
+  // Opt-in, because it is only meaningful on an acpx build that supports a
+  // `model` on agent entries — without that, `--model` has nothing above it in
+  // the precedence chain and would override the pinned reviewers too.
+  test("defaults to null so no --model is passed at all", () => {
+    expect(NaxConfigSchema.parse({ version: 1 }).finish.autoFlow.model).toBeNull();
+  });
+
+  test("accepts a model id", () => {
+    const c = NaxConfigSchema.parse({ version: 1, finish: { autoFlow: { model: "sonnet" } } });
+    expect(c.finish.autoFlow.model).toBe("sonnet");
+  });
+
+  test("rejects an empty model id, which would produce a bare --model flag", () => {
+    expect(NaxConfigSchema.safeParse({ version: 1, finish: { autoFlow: { model: "" } } }).success).toBe(false);
+  });
+});

@@ -37,6 +37,24 @@ describe("getFinishAutoFlowConfig — defaultAgent", () => {
   });
 });
 
+describe("getFinishAutoFlowConfig — model", () => {
+  // Opt-in on purpose. acpx resolves a node's model as
+  // `node.model ?? agent.model ?? --model`, so --model is a floor that cannot
+  // override a profile-pinned reviewer — but only on an acpx build that reads a
+  // `model` from agent entries. Defaulting it from config.models would break
+  // that guarantee on builds without the support.
+  test("is null unless explicitly configured, and is never derived from config.models", () => {
+    const cfg = getFinishAutoFlowConfig(
+      withAutoFlow({ enabled: true }, { agent: { default: "claude" }, models: { claude: { balanced: "sonnet" } } }),
+    );
+    expect(cfg.model).toBeNull();
+  });
+
+  test("passes an explicitly configured model through", () => {
+    expect(getFinishAutoFlowConfig(withAutoFlow({ enabled: true, model: "sonnet" })).model).toBe("sonnet");
+  });
+});
+
 describe("getFinishAutoFlowConfig — unrelated defaults are unchanged", () => {
   test("a context with no finish block at all still reports disabled", () => {
     expect(getFinishAutoFlowConfig({ config: {} }).enabled).toBe(false);

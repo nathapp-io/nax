@@ -562,7 +562,7 @@ describe("nax-finish post-run action", () => {
 
 describe("buildFlowArgv", () => {
   test("puts --default-agent AFTER the flow file — acpx defines it on `flow run`, not the root", () => {
-    const argv = buildFlowArgv("/pkg/flows/nax-finish/nax-finish.flow.ts", "{}", "claude");
+    const argv = buildFlowArgv("/pkg/flows/nax-finish/nax-finish.flow.ts", "{}", { defaultAgent: "claude" });
     expect(argv).toEqual([
       "acpx",
       "--approve-all",
@@ -580,18 +580,39 @@ describe("buildFlowArgv", () => {
   });
 
   test("omits --default-agent entirely when unset", () => {
-    expect(buildFlowArgv("/f.ts", "{}", null)).not.toContain("--default-agent");
+    expect(buildFlowArgv("/f.ts", "{}", {})).not.toContain("--default-agent");
   });
 
   test("puts --timeout (seconds) BEFORE `flow` — it is a top-level flag", () => {
-    const argv = buildFlowArgv("/f.ts", "{}", null, 1_800_000);
+    const argv = buildFlowArgv("/f.ts", "{}", { stepMs: 1_800_000 });
     expect(argv.slice(0, 4)).toEqual(["acpx", "--approve-all", "--timeout", "1800"]);
     expect(argv.indexOf("--timeout")).toBeLessThan(argv.indexOf("flow"));
   });
 
   test("omits --timeout when stepMs is unset, leaving acpx's own default", () => {
-    expect(buildFlowArgv("/f.ts", "{}", null, null)).not.toContain("--timeout");
-    expect(buildFlowArgv("/f.ts", "{}", null)).not.toContain("--timeout");
+    expect(buildFlowArgv("/f.ts", "{}", { stepMs: null })).not.toContain("--timeout");
+    expect(buildFlowArgv("/f.ts", "{}", {})).not.toContain("--timeout");
+  });
+
+  // acpx resolves a node's model as `node.model ?? agent.model ?? --model`, so
+  // this flag is the run-wide floor: it reaches the fix_* nodes and cannot
+  // override a reviewer whose agent entry pins its own model.
+  test("puts --model BEFORE `flow` — it is a top-level flag, not a `flow run` option", () => {
+    const argv = buildFlowArgv("/f.ts", "{}", { model: "sonnet" });
+    expect(argv.slice(0, 4)).toEqual(["acpx", "--approve-all", "--model", "sonnet"]);
+    expect(argv.indexOf("--model")).toBeLessThan(argv.indexOf("flow"));
+  });
+
+  test("omits --model when unset, so nothing changes for a repo that did not opt in", () => {
+    expect(buildFlowArgv("/f.ts", "{}", {})).not.toContain("--model");
+    expect(buildFlowArgv("/f.ts", "{}", { model: null })).not.toContain("--model");
+  });
+
+  test("--model and --timeout coexist, both ahead of `flow`", () => {
+    const argv = buildFlowArgv("/f.ts", "{}", { defaultAgent: "claude", stepMs: 60_000, model: "sonnet" });
+    expect(argv.indexOf("--model")).toBeLessThan(argv.indexOf("flow"));
+    expect(argv.indexOf("--timeout")).toBeLessThan(argv.indexOf("flow"));
+    expect(argv.indexOf("--default-agent")).toBeGreaterThan(argv.indexOf("run"));
   });
 });
 
@@ -685,5 +706,33 @@ describe("telegramCreds / isTelegramConfigured", () => {
     const config = {};
     expect(telegramCreds(config)).toBeNull();
     expect(isTelegramConfigured(config)).toBe(false);
+  });
+});
+
+describe("model reaches the spawned acpx argv", () => {
+  const spawnedArgv = async (autoFlow: Record<string, unknown>): Promise<string[]> => {
+    let argv: string[] = [];
+    _naxFinishDeps.run = async (cmd) => {
+      argv = cmd;
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    _naxFinishDeps.clearResult = async () => {};
+    _naxFinishDeps.readResult = async () => ({ feature: "x", status: "opened" });
+    _naxFinishDeps.exists = async () => true;
+    await action.execute(baseCtx({ config: { finish: { autoFlow: { enabled: true, ...autoFlow } } } } as never));
+    return argv;
+  };
+
+  test("a configured model is spawned as a top-level --model", async () => {
+    const argv = await spawnedArgv({ model: "sonnet" });
+    expect(argv.join(" ")).toContain("--model sonnet");
+    expect(argv.indexOf("--model")).toBeLessThan(argv.indexOf("flow"));
+  });
+
+  // The default path must be byte-identical to before this feature existed —
+  // an unconditional --model would override profile-pinned reviewers on an acpx
+  // build that does not support a model on agent entries.
+  test("no --model is spawned when the repo did not opt in", async () => {
+    expect(await spawnedArgv({})).not.toContain("--model");
   });
 });

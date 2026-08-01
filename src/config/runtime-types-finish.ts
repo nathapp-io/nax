@@ -20,6 +20,8 @@ export interface FinishAutoFlowConfig {
   flowPath: string;
   /** acpx `--default-agent` for nodes without a pinned profile */
   defaultAgent: string | null;
+  /** acpx `--model` — a run-wide fallback below `node.model` and `agent.model`; null passes no flag */
+  model: string | null;
   /** Per-phase reviewer acpx profiles */
   reviewers: { spec: string | null; quality: string | null };
   escalate: { telegram: boolean };
