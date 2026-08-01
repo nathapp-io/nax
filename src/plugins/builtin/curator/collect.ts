@@ -202,6 +202,9 @@ async function collectFromContextManifests(context: CuratorPostRunContext): Prom
         if (!manifest) continue;
         const ts = now();
         const chunkSummaries = asRecord(manifest.chunkSummaries) ?? {};
+        // Manifests written before #1421 carry no token data — those chunks
+        // report 0 rather than a fabricated estimate.
+        const chunkTokens = asRecord(manifest.chunkTokens) ?? {};
 
         for (const chunkId of asArray(manifest.includedChunks)) {
           const id = String(chunkId);
@@ -216,7 +219,7 @@ async function collectFromContextManifests(context: CuratorPostRunContext): Prom
             payload: {
               chunkId: id,
               label: stringValue(chunkSummaries[id], id),
-              tokens: 0,
+              tokens: numberValue(chunkTokens[id], 0),
             },
           };
           observations.push(obs);

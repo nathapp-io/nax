@@ -20,6 +20,7 @@ import { AGENT_PROFILES, getAgentProfile } from "./agent-profiles";
 import { renderForAgent } from "./agent-renderer";
 import { dedupeChunks } from "./dedupe";
 import { buildDigest, digestTokens } from "./digest";
+import { buildManifest } from "./manifest-builder";
 import { FLOOR_KINDS, packChunks } from "./packing";
 import type { PackedChunk } from "./packing";
 import { PULL_TOOL_REGISTRY } from "./pull-tools";
@@ -437,37 +438,21 @@ export class ContextOrchestrator {
 
     const buildMs = _orchestratorDeps.now() - startMs;
 
-    // Amendment A: collect stale chunk IDs and chunk content summaries for
-    // post-story effectiveness annotation. Both are optional and absent when empty.
-    const staleChunkIds = packed.filter((c) => c.staleCandidate).map((c) => c.id);
-    const chunkSummaries: Record<string, string> = {};
-    for (const c of packed) {
-      chunkSummaries[c.id] = c.content.slice(0, 300);
-    }
-
-    // Build manifest
-    const manifest: ContextManifest = {
+    const manifest = buildManifest({
       requestId,
-      stage: request.stage,
-      totalBudgetTokens: request.budgetTokens,
-      usedTokens: usedTokens + dTokens,
-      includedChunks: packed.map((c) => c.id),
-      excludedChunks: [
-        ...roleFiltered.map((c) => ({ id: c.id, reason: "role-filter" as const })),
-        ...belowMin.map((c) => ({ id: c.id, reason: "below-min-score" as const })),
-        ...dedupeDropped.map((id) => ({ id, reason: "dedupe" as const })),
-        ...budgetExcludedIds.map((id) => ({ id, reason: "budget" as const })),
-      ],
-      floorItems: floorPackedIds,
-      floorOverageItems: floorOverageIds.length > 0 ? floorOverageIds : undefined,
+      request,
+      packed,
+      usedTokens,
       digestTokens: dTokens,
       buildMs,
       providerResults,
-      repoRoot: request.repoRoot,
-      packageDir: request.packageDir,
-      ...(Object.keys(chunkSummaries).length > 0 && { chunkSummaries }),
-      ...(staleChunkIds.length > 0 && { staleChunks: staleChunkIds }),
-    };
+      roleFiltered,
+      belowMin,
+      dedupeDropped,
+      budgetExcludedIds,
+      floorPackedIds,
+      floorOverageIds,
+    });
 
     logger.debug("context-v2", "Bundle assembled", {
       storyId: request.storyId,
