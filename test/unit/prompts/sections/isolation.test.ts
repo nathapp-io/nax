@@ -55,6 +55,20 @@ describe("buildIsolationSection — implementer role", () => {
     const result = buildIsolationSection("implementer", undefined, "bun test");
     expect(result).toContain("bun test");
   });
+
+  test("lite mode allows adding tests for uncovered ACs instead of forbidding all test edits", () => {
+    const result = buildIsolationSection("implementer", "lite");
+    // Session 2 of three-session-tdd-lite fills coverage gaps; a blanket
+    // "do not modify test files" would contradict the role-task section.
+    expect(result).toContain("MAY add tests");
+    expect(result).not.toMatch(/do not modify test files/i);
+    expect(result.toLowerCase()).toMatch(/do not weaken/i);
+  });
+
+  test("explicit strict mode keeps the standard no-test-edits rule", () => {
+    const result = buildIsolationSection("implementer", "strict");
+    expect(result.toLowerCase()).toMatch(/do not modify.*test|test.*do not modify/i);
+  });
 });
 
 describe("buildIsolationSection — verifier role", () => {
