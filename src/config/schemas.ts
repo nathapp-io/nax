@@ -245,6 +245,7 @@ export const NaxConfigSchema = z
         rules: [],
         timeoutMs: 600_000,
         demandInspectionTrail: true,
+        recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
         substantiation: {
           requote: true,
           maxRequotes: 5,

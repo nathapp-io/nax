@@ -36,7 +36,8 @@ describe("SemanticReviewConfig", () => {
     const config: SemanticReviewConfig = {
       model: "balanced",
       diffMode: "embedded",
-      resetRefOnRerun: false,
+      recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
+        resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,
       substantiation: { requote: true, maxRequotes: 5 },
@@ -50,7 +51,8 @@ describe("SemanticReviewConfig", () => {
     const config: SemanticReviewConfig = {
       model: { agent: "codex", model: "gpt-5.4" },
       diffMode: "embedded",
-      resetRefOnRerun: false,
+      recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
+        resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,
       substantiation: { requote: true, maxRequotes: 5 },
@@ -63,7 +65,8 @@ describe("SemanticReviewConfig", () => {
     const config: SemanticReviewConfig = {
       model: "balanced",
       diffMode: "embedded",
-      resetRefOnRerun: false,
+      recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
+        resetRefOnRerun: false,
       rules: ["rule1", "rule2"],
       timeoutMs: 600_000,
       substantiation: { requote: true, maxRequotes: 5 },
@@ -80,6 +83,7 @@ describe("SemanticReviewConfig", () => {
       const config: SemanticReviewConfig = {
         model: tier,
         diffMode: "embedded",
+        recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
         resetRefOnRerun: false,
         rules: [],
         timeoutMs: 600_000,
@@ -109,6 +113,7 @@ describe("ReviewConfig semantic field", () => {
       expect(result.data.review.semantic).toEqual({
         model: "balanced",
         diffMode: "ref",
+        recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
         resetRefOnRerun: false,
         rules: [],
         timeoutMs: 600_000,
@@ -252,7 +257,8 @@ describe("DEFAULT_CONFIG.review.semantic", () => {
     expect(DEFAULT_CONFIG.review.semantic).toEqual({
       model: "balanced",
       diffMode: "ref",
-      resetRefOnRerun: false,
+      recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
+        resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,
       demandInspectionTrail: true,

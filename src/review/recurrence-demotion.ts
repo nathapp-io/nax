@@ -100,12 +100,15 @@ export function lookupPriorAppearance(
  * fingerprint (cumulative within run). `lastSeverity` is the severity in the
  * most-recent iteration containing it (iterations are chronological).
  */
-export function countPriorAppearances(priorIterations: Iteration[]): Map<string, PriorAppearance> {
+export function countPriorAppearances(
+  priorIterations: Iteration[],
+  source: Finding["source"] = "adversarial-review",
+): Map<string, PriorAppearance> {
   const counts = new Map<string, PriorAppearance>();
   for (const it of priorIterations) {
     const seenThisIter = new Map<string, string>();
     for (const f of (it.findingsAfter ?? []) as Finding[]) {
-      if (f.source !== "adversarial-review") continue;
+      if (f.source !== source) continue;
       // Index under BOTH keys. `finding-projection.ts` persists a valid 1-based
       // acIndex into meta, but iterations recorded before that — or by an older
       // nax — carry only prose. A current-round finding looks itself up under
@@ -132,11 +135,24 @@ export function tagCoverageGap<T extends { meta?: Record<string, unknown> }>(fin
 }
 
 export type RecurrenceConfig = { enabled: boolean; maxBlockingRounds: number };
-export type RecurrenceResult = {
-  blocking: AdversarialLLMFinding[];
-  advisory: AdversarialLLMFinding[];
-  demoted: AdversarialLLMFinding[];
+export type RecurrenceResult<T = AdversarialLLMFinding> = {
+  blocking: T[];
+  advisory: T[];
+  demoted: T[];
 };
+
+/**
+ * Structural minimum `classifyRecurrence` reads. Both AdversarialLLMFinding and
+ * the semantic LLMFinding satisfy it; semantic findings carry no `category`,
+ * which only means the test-gap carve-out never fires for them.
+ */
+export interface RecurrenceCandidate {
+  severity: string;
+  file: string;
+  issue: string;
+  category?: string;
+  acIndex?: number;
+}
 
 /**
  * Partition accepted adversarial findings into block / advisory / demoted.
@@ -150,23 +166,24 @@ export type RecurrenceResult = {
  * `demoted` is a subset reported separately for coverage-gap logging; callers
  * surface it through advisoryFindings.
  */
-export function classifyRecurrence(
-  accepted: AdversarialLLMFinding[],
+export function classifyRecurrence<T extends RecurrenceCandidate>(
+  accepted: T[],
   priorIterations: Iteration[],
   cfg: RecurrenceConfig,
   testFileMatch: (file: string) => boolean,
   threshold: "error" | "warning" | "info",
-): RecurrenceResult {
-  const blocking: AdversarialLLMFinding[] = [];
-  const advisory: AdversarialLLMFinding[] = [];
-  const demoted: AdversarialLLMFinding[] = [];
+  source: Finding["source"] = "adversarial-review",
+): RecurrenceResult<T> {
+  const blocking: T[] = [];
+  const advisory: T[] = [];
+  const demoted: T[] = [];
 
   if (!cfg.enabled) {
     for (const f of accepted) (isBlockingSeverity(f.severity, threshold) ? blocking : advisory).push(f);
     return { blocking, advisory, demoted };
   }
 
-  const priorCounts = countPriorAppearances(priorIterations);
+  const priorCounts = countPriorAppearances(priorIterations, source);
 
   for (const f of accepted) {
     // test-gap carve-out applies only to blocking severities (mirrors the

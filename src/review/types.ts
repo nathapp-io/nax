@@ -95,6 +95,8 @@ export interface SemanticReviewConfig {
    * reviewer actually open the code before passing (#3A inspection-trail guard).
    */
   demandInspectionTrail?: boolean;
+  /** Opt-in for semantic (default disabled) — see schemas-review.ts. */
+  recurrenceDemotion?: { enabled: boolean; maxBlockingRounds: number };
 }
 
 /** Review check result */
