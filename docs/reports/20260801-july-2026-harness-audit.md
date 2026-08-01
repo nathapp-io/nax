@@ -176,18 +176,18 @@ Phase 7 of the spec-review skill already bans `[grep]`/`[file]`/`[verbatim]` ACs
 | 2 | Adversarial sub-threshold verdict | **shipped before the audit** — #1378 / v0.75.2, coverage verified |
 | 3 | Oscillation circuit-breaker | **shipped before the audit** — ping-pong-only counting (#1355) |
 | 6 | Semantic category taxonomy | **shipped** — [#1420](https://github.com/nathapp-io/nax/pull/1420) |
-| 7 | Reviewer `acks` channel | **in review** — [#1426](https://github.com/nathapp-io/nax/pull/1426) |
-| 9 | Chunk token accounting | **in review** — [#1426](https://github.com/nathapp-io/nax/pull/1426) |
+| 7 | Reviewer `acks` channel | **shipped** — [#1426](https://github.com/nathapp-io/nax/pull/1426) |
+| 9 | Chunk token accounting | **shipped** — [#1426](https://github.com/nathapp-io/nax/pull/1426) |
 | 4 | Spec-review data-literal check | open — [spec-kit#18](https://github.com/nathapp-io/nax-spec-kit-skills/issues/18) |
 | 8 | Acceptance retry tail | open, diagnostic — [#1424](https://github.com/nathapp-io/nax/issues/1424) |
-| 10 | Curator loop | open, largest remaining — [#1422](https://github.com/nathapp-io/nax/issues/1422) |
+| 10 | Curator loop | counts **shipped** ([#1427](https://github.com/nathapp-io/nax/pull/1427) + [#1428](https://github.com/nathapp-io/nax/pull/1428)); recall re-scoped — [#1422](https://github.com/nathapp-io/nax/issues/1422), §12 |
 | 3b | Non-productive-iteration bail | **withdrawn** — §10 |
 
-Four of the ten shipped or in review; two were already fixed before the audit was written; one is withdrawn.
+Six of the ten shipped; two were already fixed before the audit was written; one is withdrawn.
 
 ### What is actually left
 
-**#10 (curator) — counts fixed in [#1427](https://github.com/nathapp-io/nax/pull/1427); consumption is an open question, not a defect.** Two shipped changes depended on the counts being fixed:
+**#10 (curator) — counts fixed in [#1427](https://github.com/nathapp-io/nax/pull/1427) / [#1428](https://github.com/nathapp-io/nax/pull/1428), then replayed against real data; see §12 for the outcome.** Two shipped changes depended on the counts being fixed:
 
 - #1420 makes semantic findings carry categories, which the curator folds into its counts — the same counts that accumulated over each project's whole audit history and could never clear. Without the fix, the new taxonomy would have inherited the defect that made the adversarial counts useless.
 - #1426 stops *new* acknowledgement pollution, but historical acks remained in the cumulative totals until collection was run-scoped.
@@ -212,3 +212,41 @@ Nothing shipped this month can be evaluated yet — August data does not exist o
 The last three are correctness checks — they should go to ~100%, ~0, and ~100% immediately, and if they do not, the change did not take effect. The first three are the ones that actually cost money, and they need a month of runs before the comparison means anything.
 
 **Strategic observation:** the harness detects known failure modes post-hoc (adversarial review) instead of preventing them pre-hoc (test-writer/spec prompts). Every recommendation is a form of moving knowledge one stage earlier in the pipeline.
+
+## 12. Curator replay against real July artifacts (2026-08-01)
+
+§11 said the curator's remaining question was "answerable with August data rather than more code". It was answerable sooner: the shipped pipeline can be replayed over July's own artifacts. Criteria were fixed before looking at any result.
+
+**Method.** Real `collectObservations` → `appendToRollup` → `readHeuristicWindow(20)` → `runHeuristics`, shipped default thresholds, no reimplementation of the pipeline. Audit files were staged into a scratchpad mirror incrementally so run N never saw run N+1's artifacts — the collector has no upper time bound, and in production the future does not exist yet. `~/.nax` was read-only. Only the `review-audit` source was replayed, so H2–H6 could not fire; H1 is what #1427 / #1428 changed.
+
+**Result: 2 distinct proposals from 419 runs and 8,070 findings.**
+
+| | |
+|:--|--:|
+| runs replayed | 419 |
+| review findings in corpus | 8,070 |
+| runs producing ≥1 proposal | 34 |
+| distinct proposals | 2 |
+| max proposals in any single run | 1 |
+
+The per-category spam is gone — median 0 proposals per run, no bare-category description, no single-feature proposal — and both survivors are real defects (an untested redaction branch shared by two rs-stock adapters; a dead `ROOT = Path(...)` constant). But two proposals from 8,070 findings is effectively zero recall.
+
+**The binding constraint is the identity key, not the threshold.** `crossFeatureKey` is `category | normalizeIssueText(message)[0:48]`, and two reviewers describing the same defect in different features almost never agree on their first 48 normalized characters. At the shipped threshold of 2 there are only 3 qualifying groups in the entire corpus, so lowering the threshold cannot help. Cross-feature groups (≥2 features), ack-leak prose excluded:
+
+| project | findings | shipped (48) | 32 | 24 |
+|:---|---:|---:|---:|---:|
+| rs-stock | 4,740 | 3 | 17 | 34 |
+| nathapp-nestjs-platform | 1,414 | 0 | 6 | 10 |
+| nax | 1,013 | 0 | 1 | 3 |
+| koda | 375 | 0 | 0 | 0 |
+
+Category-only keys yield 7–9 groups but with up to 180 features in one — the collapse §6 identified in the first place. The useful range lies between, and nothing currently measures where.
+
+Two side effects worth recording. A 24-character prefix would have surfaced rule-shaped recurrences the 48-character key missed (dead test constants across 4 features; imports from private underscore modules across 3; changed test files failing the Ruff gate across 3). And 4 of its top 8 groups are carry-forward verdict prose grouping on its boilerplate opener — the #1423 leak that #1426 already fixed, 4.1% of the July corpus and ~0 going forward.
+
+**Two defects found in the process,** neither covered by tests because every curator test builds its own rollup in a temp dir:
+
+- [#1429](https://github.com/nathapp-io/nax/issues/1429) — the rollup is one global file shared by every project, so a run's heuristic window can be filled by another repo's runs and H1's distinct-feature count can mix projects. The 8 MB tail cap also binds before `windowRuns`: on the real rollup the "20-run" window contains 2 runs.
+- [#1430](https://github.com/nathapp-io/nax/issues/1430) — `nax curator gc` is never invoked automatically and loads the whole rollup into memory. The file is 618 MB / 1.13M rows on a live machine, which the prune command cannot itself process.
+
+**Caveats.** July semantic findings carry no category (778 `(none)` in rs-stock, 246 in nax) — the gap #1420 closed — so August grouping will differ. The replay shows what would be *proposed*, never whether a resulting rule prevents anything. It also used per-project rollups, which is more favourable than production's shared file (#1429); real recall is likely lower still.
