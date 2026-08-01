@@ -45,6 +45,13 @@ export interface HeuristicWindow {
    * exhausted: that is not truncation, there is just less history than asked for.
    */
   truncated: boolean;
+  /**
+   * Rows in the read span that belong to no project (pre-#1429 history). On an
+   * existing rollup these dominate, so a window can be empty while the file is
+   * hundreds of megabytes — reporting the count is what makes that legible
+   * instead of looking like a bug.
+   */
+  unattributedRows: number;
 }
 
 /**
@@ -76,14 +83,24 @@ export async function appendToRollup(observations: Observation[], rollupPath: st
   }
 }
 
-const EMPTY_WINDOW: HeuristicWindow = { observations: [], runIds: [], truncated: false };
+/** Fresh each time: a shared literal would let one caller's mutation poison every later empty read. */
+function emptyWindow(): HeuristicWindow {
+  return { observations: [], runIds: [], truncated: false, unattributedRows: 0 };
+}
+
+interface ParsedTail {
+  observations: Observation[];
+  /** Rows belonging to no project — pre-#1429 history. Explains an empty window. */
+  unattributed: number;
+}
 
 /** Parse a tail slice, dropping the partial first line when the read started mid-file. */
-function parseTail(text: string, startedMidFile: boolean, projectKey: string): Observation[] {
+function parseTail(text: string, startedMidFile: boolean, projectKey: string): ParsedTail {
   const lines = text.split("\n");
   if (startedMidFile) lines.shift();
 
   const observations: Observation[] = [];
+  let unattributed = 0;
   for (const line of lines) {
     if (!line.trim()) continue;
     try {
@@ -92,11 +109,12 @@ function parseTail(text: string, startedMidFile: boolean, projectKey: string): O
       // one, so they are dropped rather than claimed by whichever project
       // happens to be reading — that would be the contamination this prevents.
       if (obs.projectKey === projectKey) observations.push(obs);
+      else if (!obs.projectKey) unattributed += 1;
     } catch {
       // Truncated or malformed line — skip it, keep the rest.
     }
   }
-  return observations;
+  return { observations, unattributed };
 }
 
 /** The last `windowRuns` distinct runIds present, walking backwards so recency wins. */
@@ -131,17 +149,19 @@ export async function readHeuristicWindow(
   windowRuns: number,
   options: HeuristicWindowOptions,
 ): Promise<HeuristicWindow> {
-  const maxTail = options.maxTailBytes ?? MAX_WINDOW_TAIL_BYTES;
+  const maxTail = Math.max(1, options.maxTailBytes ?? MAX_WINDOW_TAIL_BYTES);
   try {
     const file = Bun.file(rollupPath);
-    if (!(await file.exists())) return EMPTY_WINDOW;
+    if (!(await file.exists())) return emptyWindow();
     const size = file.size;
 
-    let tail = Math.min(options.tailBytes ?? INITIAL_WINDOW_TAIL_BYTES, maxTail);
+    // Floored at one byte: a zero tail would read nothing, double to zero, and
+    // spin forever.
+    let tail = Math.max(1, Math.min(options.tailBytes ?? INITIAL_WINDOW_TAIL_BYTES, maxTail));
     while (true) {
       const start = Math.max(0, size - tail);
       const text = await (start > 0 ? file.slice(start).text() : file.text());
-      const observations = parseTail(text, start > 0, options.projectKey);
+      const { observations, unattributed } = parseTail(text, start > 0, options.projectKey);
       const keep = newestRunIds(observations, windowRuns);
 
       const exhausted = start === 0;
@@ -150,11 +170,12 @@ export async function readHeuristicWindow(
           observations: observations.filter((o) => keep.has(o.runId)),
           runIds: [...keep],
           truncated: keep.size < windowRuns && !exhausted,
+          unattributedRows: unattributed,
         };
       }
-      tail = Math.min(tail * 2, maxTail);
+      tail = Math.max(1, Math.min(tail * 2, maxTail));
     }
   } catch {
-    return EMPTY_WINDOW;
+    return emptyWindow();
   }
 }

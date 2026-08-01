@@ -276,6 +276,28 @@ describe("the window's byte ceiling must not masquerade as its run policy (#1429
     expect(truncated).toBe(true);
   });
 
+  test("a degenerate byte bound terminates instead of spinning", async () => {
+    // A zero tail reads nothing and doubles to zero — the growth loop must not
+    // depend on the caller passing a sane starting size.
+    const root = await mkdtemp(join(tmpdir(), "curator-window-zero-"));
+    const p = await bigRollup(root, 3, 10);
+    const { runIds } = await readHeuristicWindow(p, 5, { projectKey: "alpha", tailBytes: 0 });
+    expect(runIds).toHaveLength(3);
+  });
+
+  test("counts rows belonging to no project, so an empty window is legible", async () => {
+    // On an existing rollup pre-#1429 rows dominate: the window is empty while
+    // the file is hundreds of MB. Without this count that looks like a bug.
+    const root = await mkdtemp(join(tmpdir(), "curator-window-legacy-"));
+    const p = join(root, "rollup.jsonl");
+    const rows = [rollupRow("old-1", undefined), rollupRow("old-2", undefined), rollupRow("new-1", "alpha")];
+    await writeFile(p, `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`);
+
+    const window = await readHeuristicWindow(p, 20, { projectKey: "alpha" });
+    expect(window.runIds).toEqual(["new-1"]);
+    expect(window.unattributedRows).toBe(2);
+  });
+
   test("a window that fits reports no truncation even when fewer runs exist than requested", async () => {
     // Exhausting the file is not truncation — there is simply no more history.
     const root = await mkdtemp(join(tmpdir(), "curator-window-short-"));
