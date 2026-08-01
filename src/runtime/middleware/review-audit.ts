@@ -1,3 +1,4 @@
+import type { AdversarialAcceptAnalysis, AdversarialDropAnalysis } from "@/review/ac-structural-counterfactual";
 import type { IReviewAuditor } from "@/review/review-audit";
 import type { ReviewAck } from "@/review/types";
 import type { DispatchEvent, IDispatchEventBus, ReviewDecisionEvent } from "../dispatch-events";
@@ -57,12 +58,8 @@ export function attachReviewAuditSubscriber(
       unparsedPreview: event.unparsedPreview,
       diffAvailable: event.diffAvailable,
       // Cast unknown[] from the event boundary to the typed audit shapes.
-      adversarialDropAnalysis: event.adversarialDropAnalysis as
-        | import("../../review/ac-structural-counterfactual").AdversarialDropAnalysis[]
-        | undefined,
-      adversarialAcceptAnalysis: event.adversarialAcceptAnalysis as
-        | import("../../review/ac-structural-counterfactual").AdversarialAcceptAnalysis[]
-        | undefined,
+      adversarialDropAnalysis: event.adversarialDropAnalysis as AdversarialDropAnalysis[] | undefined,
+      adversarialAcceptAnalysis: event.adversarialAcceptAnalysis as AdversarialAcceptAnalysis[] | undefined,
     });
   });
 
