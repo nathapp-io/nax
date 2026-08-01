@@ -35,10 +35,10 @@ const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
 
 const PASSING_LLM_RESPONSE = JSON.stringify({ passed: true, findings: [] });
 
-// A response at 4950 chars is within 100 of the cap, so looksLikeTruncatedJson() returns true.
-// This fixture is intentionally NOT valid JSON — the parser-first logic still retries unparseable
-// near-cap responses. Valid JSON near the cap is the Bug 4 regression scenario (see below).
-const AT_CAP_UNPARSEABLE = "x".repeat(4950);
+// A response whose JSON structure was opened and never closed — what
+// looksLikeTruncatedJson() now detects. Long, so it also covers the case the old
+// length-based rule conflated with truncation.
+const UNFINISHED_JSON = `{"passed": false, "findings": [${'{"severity": "error", "file": "src/a.ts", "issue": "xxxxxxxxxx"},'.repeat(60)}{"severity": "error", "file": "src/b.ts", "issue": "cut off here`;
 
 // ─── Logger mock helpers ─────────────────────────────────────────────────────
 
@@ -114,9 +114,9 @@ async function runSemanticOp(
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe("truncation-detected condensed retry", () => {
-  test("uses condensed retry prompt when response length is at the ACP output cap", async () => {
+  test("uses condensed retry prompt when the JSON structure is unfinished", async () => {
     const { runtime, capturedPrompts } = makeCallOpRuntime([
-      { output: AT_CAP_UNPARSEABLE },
+      { output: UNFINISHED_JSON },
       { output: PASSING_LLM_RESPONSE },
     ]);
 
@@ -126,7 +126,7 @@ describe("truncation-detected condensed retry", () => {
     expect(capturedPrompts[1]).toContain("truncated");
   });
 
-  test("uses standard retry prompt when response is short unparseable text (not at cap)", async () => {
+  test("uses standard retry prompt when response is short unparseable text (structurally complete)", async () => {
     const { runtime, capturedPrompts } = makeCallOpRuntime([
       { output: "here is my analysis: the code looks fine overall" },
       { output: PASSING_LLM_RESPONSE },
@@ -138,9 +138,9 @@ describe("truncation-detected condensed retry", () => {
     expect(capturedPrompts[1]).not.toContain("truncated");
   });
 
-  test("fires retry when response is at cap even before attempting parse", async () => {
+  test("fires retry when JSON is unfinished, even before attempting parse", async () => {
     const { runtime, capturedPrompts } = makeCallOpRuntime([
-      { output: AT_CAP_UNPARSEABLE },
+      { output: UNFINISHED_JSON },
       { output: PASSING_LLM_RESPONSE },
     ]);
 
@@ -168,7 +168,7 @@ describe("truncation-detected condensed retry", () => {
       ],
     });
     const { runtime } = makeCallOpRuntime([
-      { output: AT_CAP_UNPARSEABLE },
+      { output: UNFINISHED_JSON },
       { output: condensedResponse },
     ]);
 
@@ -186,12 +186,12 @@ describe("truncation logging", () => {
     loggerSpy?.mockRestore();
   });
 
-  test("logs warn 'truncated' when response is at cap", async () => {
+  test("logs warn 'truncated' when the JSON is unfinished", async () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
     const { runtime } = makeCallOpRuntime([
-      { output: AT_CAP_UNPARSEABLE },
+      { output: UNFINISHED_JSON },
       { output: PASSING_LLM_RESPONSE },
     ]);
 
@@ -202,7 +202,7 @@ describe("truncation logging", () => {
     expect(truncatedLog?.stage).toBe("semantic");
   });
 
-  test("does not log truncation warning when response is short unparseable text (not at cap)", async () => {
+  test("does not log truncation warning when response is short unparseable text (structurally complete)", async () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
@@ -219,7 +219,7 @@ describe("truncation logging", () => {
 });
 
 describe("Bug 4 regression: parser-first, length is a hint not a veto", () => {
-  test("parseable near-cap response is NOT retried (Bug 4 regression)", async () => {
+  test("parseable long response is NOT retried (Bug 4 regression)", async () => {
     const validNearCap = JSON.stringify({
       passed: false,
       findings: Array.from({ length: 7 }, (_, i) => ({
@@ -240,9 +240,9 @@ describe("Bug 4 regression: parser-first, length is a hint not a veto", () => {
     expect(capturedPrompts).toHaveLength(1);
   });
 
-  test("unparseable near-cap response still triggers condensed retry", async () => {
+  test("unparseable unfinished response still triggers condensed retry", async () => {
     const { runtime, capturedPrompts } = makeCallOpRuntime([
-      { output: AT_CAP_UNPARSEABLE },
+      { output: UNFINISHED_JSON },
       { output: PASSING_LLM_RESPONSE },
     ]);
 

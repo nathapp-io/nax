@@ -17,8 +17,6 @@ describe("releaseHeavyPipelineContext", () => {
       constitution: { content: largeText },
       acceptanceFailures: { failedACs: [], findings: [], testOutput: largeText },
       autofixPriorIterations: [{ feedback: largeText }],
-      priorSemanticIterations: [{ feedback: largeText }],
-      priorAdversarialIterations: [{ feedback: largeText }],
       reviewFindings: [{ message: largeText }],
       selfVerification: { evidence: largeText },
       tddIsolations: { implementer: { output: largeText } },
@@ -37,8 +35,6 @@ describe("releaseHeavyPipelineContext", () => {
     expect(ctx.constitution).toBeUndefined();
     expect(ctx.acceptanceFailures).toBeUndefined();
     expect(ctx.autofixPriorIterations).toBeUndefined();
-    expect(ctx.priorSemanticIterations).toBeUndefined();
-    expect(ctx.priorAdversarialIterations).toBeUndefined();
     expect(ctx.reviewFindings).toBeUndefined();
     expect(ctx.selfVerification).toBeUndefined();
     expect(ctx.tddIsolations).toBeUndefined();

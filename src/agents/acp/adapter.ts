@@ -67,7 +67,6 @@ export type { BuildTurnResultInput } from "./adapter-output";
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const MAX_AGENT_OUTPUT_CHARS = 5000;
 const INTERACTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 min for human to respond
 
 // ─────────────────────────────────────────────────────────────────────────────

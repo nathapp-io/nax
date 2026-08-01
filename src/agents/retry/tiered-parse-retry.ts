@@ -1,5 +1,5 @@
 import { getSafeLogger } from "@/logger";
-import { MAX_AGENT_OUTPUT_CHARS } from "../acp/adapter";
+import { looksLikeTruncatedJson } from "../../review/truncation";
 import { ParseValidationError } from "./types";
 import type { RetryStrategy } from "./types";
 
@@ -37,7 +37,7 @@ export function makeTieredParseRetryStrategy<TOutput, TKind extends string, TPar
         return { retry: false, fallback: opts.exhaustedFallback(inspection, ctx.lastOutput) };
       }
 
-      const isTruncated = ctx.lastOutput.trimEnd().length >= MAX_AGENT_OUTPUT_CHARS - 100;
+      const isTruncated = looksLikeTruncatedJson(ctx.lastOutput);
       const logger = opts._logger ?? getSafeLogger();
       logger?.warn(opts.reviewerKind, `Parse retry — ${inspection.kind ?? "unknown"}`, {
         storyId: ctx.storyId,

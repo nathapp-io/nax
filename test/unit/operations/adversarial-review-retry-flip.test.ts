@@ -98,7 +98,9 @@ describe("AC3: retry behavior — truncated JSON response", () => {
     };
     const strategy = (adversarialReviewOp.retry as any)(inputWithThreshold, opCtx);
 
-    const truncatedOutput = "x".repeat(4950);
+    // Unfinished JSON — an object opened and never closed, which is what
+    // looksLikeTruncatedJson() detects now that nothing truncates by length.
+    const truncatedOutput = `{"passed": false, "findings": [{"severity": "error", "issue": "cut`;
 
     const retryCtx = {
       site: "complete" as const,
@@ -132,7 +134,7 @@ describe("AC3: retry behavior — truncated JSON response", () => {
         agentName: "claude",
         stage: "review" as const,
         storyId: SAMPLE_STORY.id,
-        lastOutput: "x".repeat(4950),
+        lastOutput: '{"passed": false, "findings": [{"severity": "error", "issue": "cut',
       },
     );
 
@@ -284,7 +286,9 @@ describe("AC7: logging — storyId is first key in data object", () => {
       const opCtx = { packageView: ctx.packageView, config: ctx.config };
       const strategy = (adversarialReviewOp.retry as any)(SAMPLE_INPUT, opCtx);
 
-      const truncatedOutput = "x".repeat(4950);
+      // Unfinished JSON — an object opened and never closed, which is what
+    // looksLikeTruncatedJson() detects now that nothing truncates by length.
+    const truncatedOutput = `{"passed": false, "findings": [{"severity": "error", "issue": "cut`;
 
       const retryCtx = {
         site: "complete" as const,

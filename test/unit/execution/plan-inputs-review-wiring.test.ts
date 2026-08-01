@@ -163,24 +163,6 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     expect(inputs.adversarialReview!.refExcludePatterns?.length ?? 0).toBeGreaterThan(0);
   });
 
-  test("priorSemanticIterations on ctx threads into semantic input", async () => {
-    const ctx = makeCtx({
-      review: { ...DEFAULT_CONFIG.review, enabled: true, checks: ["semantic"] },
-    });
-    ctx.storyGitRef = "abc123";
-    const priorIter = {
-      iterationNum: 1,
-      findingsBefore: [],
-      fixesApplied: [],
-      findingsAfter: [],
-      outcome: "unchanged" as const,
-      startedAt: "2026-01-01T00:00:00Z",
-      finishedAt: "2026-01-01T00:00:01Z",
-    };
-    ctx.priorSemanticIterations = [priorIter];
-    const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.semanticReview!.priorSemanticIterations).toEqual([priorIter]);
-  });
 
   test("AC#4 (#1120): resolveTestFilePatterns result is shared between semantic and adversarial helpers via resolvedTestPatterns", async () => {
     // Both checks enabled — two prepare-inputs calls. plan-inputs.ts resolves patterns

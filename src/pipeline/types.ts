@@ -199,9 +199,6 @@ export interface PipelineContext extends DispatchContext {
    * addressed / still-blocking / never-an-issue. Forwarded into the review op input
    * by plan-inputs.ts.
    */
-  priorSemanticIterations?: Iteration[];
-  /** Mirror of priorSemanticIterations for adversarial review. */
-  priorAdversarialIterations?: Iteration[];
   /** Git HEAD ref captured before agent ran this attempt (FEAT-010: precise smart-runner diff) */
   storyGitRef?: string;
   /** Collected story metrics (set by completionStage) */

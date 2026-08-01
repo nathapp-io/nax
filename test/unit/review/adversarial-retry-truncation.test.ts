@@ -40,8 +40,10 @@ const DEFAULT_ADVERSARIAL_CONFIG: AdversarialReviewConfig = {
   maxConcurrentSessions: 1,
 };
 
-// A response at 4950 chars is within 100 of the cap, so looksLikeTruncatedJson() returns true.
-const AT_CAP_UNPARSEABLE = "x".repeat(4950);
+// A response whose JSON structure was opened and never closed — what
+// looksLikeTruncatedJson() now detects. Long, so it also covers the case the old
+// length-based rule conflated with truncation.
+const UNFINISHED_JSON = `{"passed": false, "findings": [${'{"severity": "error", "file": "src/a.ts", "issue": "xxxxxxxxxx"},'.repeat(60)}{"severity": "error", "file": "src/b.ts", "issue": "cut off here`;
 
 // ─── Logger mock ─────────────────────────────────────────────────────────────
 
@@ -85,7 +87,7 @@ function makeRetryCtx(lastOutput: string, storyId = STORY.id) {
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe("adversarialReviewOp.retry — truncation-detected condensed retry", () => {
-  test("uses condensed retry prompt when response length is at the ACP output cap", () => {
+  test("uses condensed retry prompt when the JSON structure is unfinished", () => {
     const ctx = makeBuildCtx();
     const strategy = (adversarialReviewOp.retry as any)(
       { story: STORY, adversarialConfig: DEFAULT_ADVERSARIAL_CONFIG, mode: "embedded" },
@@ -95,14 +97,14 @@ describe("adversarialReviewOp.retry — truncation-detected condensed retry", ()
     const result = strategy.shouldRetry(
       new ParseValidationError("parse failed"),
       0,
-      makeRetryCtx(AT_CAP_UNPARSEABLE),
+      makeRetryCtx(UNFINISHED_JSON),
     );
 
     expect(result.retry).toBe(true);
     expect(result.nextPrompt).toContain("truncated");
   });
 
-  test("uses standard retry prompt when response is short unparseable text (not at cap)", () => {
+  test("uses standard retry prompt when response is short unparseable text (structurally complete)", () => {
     const ctx = makeBuildCtx();
     const strategy = (adversarialReviewOp.retry as any)(
       { story: STORY, adversarialConfig: DEFAULT_ADVERSARIAL_CONFIG, mode: "embedded" },
@@ -119,7 +121,7 @@ describe("adversarialReviewOp.retry — truncation-detected condensed retry", ()
     expect(result.nextPrompt).not.toContain("truncated");
   });
 
-  test("fires retry when response is at cap even before attempting parse", () => {
+  test("fires retry when JSON is unfinished, even before attempting parse", () => {
     const ctx = makeBuildCtx();
     const strategy = (adversarialReviewOp.retry as any)(
       { story: STORY, adversarialConfig: DEFAULT_ADVERSARIAL_CONFIG, mode: "embedded" },
@@ -129,7 +131,7 @@ describe("adversarialReviewOp.retry — truncation-detected condensed retry", ()
     const result = strategy.shouldRetry(
       new ParseValidationError("parse failed"),
       0,
-      makeRetryCtx(AT_CAP_UNPARSEABLE),
+      makeRetryCtx(UNFINISHED_JSON),
     );
 
     expect(result.retry).toBe(true);
@@ -137,7 +139,7 @@ describe("adversarialReviewOp.retry — truncation-detected condensed retry", ()
 });
 
 describe("adversarialReviewOp.retry — truncation logging", () => {
-  test("logs warn 'JSON parse retry — likely truncated' when response is at cap", () => {
+  test("logs warn 'JSON parse retry — likely truncated' when the JSON is unfinished", () => {
     const logger = makeLogger();
     const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
@@ -150,7 +152,7 @@ describe("adversarialReviewOp.retry — truncation logging", () => {
     strategy.shouldRetry(
       new ParseValidationError("parse failed"),
       0,
-      makeRetryCtx(AT_CAP_UNPARSEABLE),
+      makeRetryCtx(UNFINISHED_JSON),
     );
 
     const truncatedLog = logger.warnCalls.find((c) => c.message.includes("truncated"));
@@ -185,7 +187,7 @@ describe("adversarialReviewOp.retry — truncation logging", () => {
 });
 
 describe("adversarialReviewOp.retry — Bug 4 regression: parser-first, length is a hint not a veto", () => {
-  test("parseable near-cap response is NOT retried (Bug 4 regression)", () => {
+  test("parseable long response is NOT retried (Bug 4 regression)", () => {
     const validNearCap = JSON.stringify({
       passed: false,
       findings: Array.from({ length: 7 }, (_, i) => ({
@@ -215,7 +217,7 @@ describe("adversarialReviewOp.retry — Bug 4 regression: parser-first, length i
     expect(result.retry).toBe(false);
   });
 
-  test("unparseable near-cap response still triggers condensed retry", () => {
+  test("unparseable unfinished response still triggers condensed retry", () => {
     const ctx = makeBuildCtx();
     const strategy = (adversarialReviewOp.retry as any)(
       { story: STORY, adversarialConfig: DEFAULT_ADVERSARIAL_CONFIG, mode: "embedded" },
@@ -225,7 +227,7 @@ describe("adversarialReviewOp.retry — Bug 4 regression: parser-first, length i
     const result = strategy.shouldRetry(
       new ParseValidationError("parse failed"),
       0,
-      makeRetryCtx(AT_CAP_UNPARSEABLE),
+      makeRetryCtx(UNFINISHED_JSON),
     );
 
     expect(result.retry).toBe(true);
