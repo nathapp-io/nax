@@ -80,18 +80,19 @@ Proposals are generated per run but are raw-count aggregates ("test-gap fired 79
 
 | # | Change | Area | Expected effect | Status |
 |--:|:-------|:-----|:----------------|:-------|
-| 1 | Feed adversarial audit lenses forward into test-authoring prompts (test-gap pre-brief: runtime-behavior tests, no source-inspection/placeholder tests, per-AC coverage) | prompts (test-writer, single-session, tdd-simple, batch, implementer-lite) | test-gap = 67% of adversarial blocks; halving it cuts ~15–20% of rectification spend + one review round per affected story | **implemented — this branch** |
+| 1 | Feed adversarial audit lenses forward into test-authoring prompts (test-gap pre-brief: runtime-behavior tests, no source-inspection/placeholder tests, per-AC coverage) | prompts (test-writer, single-session, tdd-simple, batch, implementer-lite) | test-gap = 67% of adversarial blocks; halving it cuts ~15–20% of rectification spend + one review round per affected story | **merged — [#1419](https://github.com/nathapp-io/nax/pull/1419)** |
 | 2 | Fix adversarial sub-threshold verdict | review verdict | kills ~28 phantom fail rounds/mo | **already fixed in v0.75.2 (#1378); coverage verified** |
-| 3 | Generic fix-cycle circuit-breaker with full-reveal revalidation (#1335 rescope) — run all reviewers once before counting regressed-different-source; bail after 2 consecutive non-productive iterations | fix-cycle | 31.5% of iterations are non-productive; caps the 15–20-round tail | open |
-| 4 | Spec-review "verbatim reality check": verify every literal constant/URL/filename in an AC against the codebase or live source; fixture-shape claims must be derivable from the generation procedure; reject shell-grep ACs | spec-review skill | targets the most expensive deadlock stories | open |
+| 3 | Generic fix-cycle circuit-breaker (#1335 rescope) — ping-pong-only oscillation counting | fix-cycle | caps the 15–20-round tail | **done** (`countOscillationOutcomes`, #1355) |
+| 3b | ~~Bail after 2 consecutive non-productive iterations~~ | fix-cycle | ~~31.5% of iterations are non-productive~~ | **withdrawn — refuted by the data, see §10** |
+| 4 | Spec-review data-literal + fixture-derivability check (the shell-grep-AC half already shipped as Phase 7) | spec-review skill | targets the most expensive deadlock stories | [spec-kit#18](https://github.com/nathapp-io/nax-spec-kit-skills/issues/18) |
 | 5 | Pin story ID in implementer/test-writer prompts ("test names must use this story's ID") | prompts | ~598 convention findings | folded into #1 |
-| 6 | Give the semantic reviewer a category taxonomy (**semantic-specific**, not adversarial's — see §9) | prompts (semantic), review read-path | unlocks demotion/curator/telemetry for 53% of review rounds | **implemented — `feat/semantic-category-taxonomy`** |
-| 7 | Stop emitting "prior finding addressed" acks as findings — move to an `acks` array | review schema | cleans finding telemetry; curator stops proposing rules from acks | open |
-| 8 | Bootstrap the acceptance harness at plan time (or copy US-001's resolved harness config to siblings) | acceptance | removes the 13–15-retry US-001 tail (~$30–50/mo) | open |
-| 9 | Fix chunk token accounting; then drop providers empty >90% of the time per project from the default chain | context | prerequisite for budget tuning | open |
-| 10 | Close the curator loop: emit rule-file-ready diffs against `.nax/rules/`, threshold on cross-feature recurrence, surface at `nax finish` for accept/reject | curator | converts dead telemetry into a compounding improvement loop | open |
+| 6 | Give the semantic reviewer a category taxonomy (**semantic-specific**, not adversarial's — see §9) | prompts (semantic), review read-path | unlocks demotion/curator/telemetry for 53% of review rounds | **merged — [#1420](https://github.com/nathapp-io/nax/pull/1420)** |
+| 7 | Stop emitting "prior finding addressed" acks as findings — move to an `acks` array | review schema | 2.2% of findings, info-only; cleans curator evidence | [#1423](https://github.com/nathapp-io/nax/issues/1423) |
+| 8 | Diagnose the 8 features burning 5–15 acceptance retries (the US-001 bootstrap premise is refuted — see §10) | acceptance | ~$30–50/mo | [#1424](https://github.com/nathapp-io/nax/issues/1424) |
+| 9 | Fix chunk token accounting; then drop providers empty >90% of the time per project from the default chain | context | prerequisite for budget tuning | [#1421](https://github.com/nathapp-io/nax/issues/1421) |
+| 10 | Close the curator loop: rule-file-ready diffs, cross-feature recurrence threshold, run-scoped counts, surface at `nax finish` | curator | converts dead telemetry into a compounding improvement loop | [#1422](https://github.com/nathapp-io/nax/issues/1422) |
 
-**Estimated impact of #1–#3:** July's $1,873 → roughly $1,450–1,550 at equal throughput, with the 15–20-round failure tail largely eliminated.
+**Estimated impact of #1–#2:** the 15–20-round failure tail is addressed by #1 (prevention) and the shipped oscillation breaker. The original "$1,873 → $1,450–1,550" figure leaned on #3b's non-productive-iteration savings, which §10 withdraws — treat the remaining savings estimate as unquantified until August data lands.
 
 ## 8. Implementation status (this branch — `feat/test-quality-prebrief`)
 
@@ -121,5 +122,42 @@ Proposals are generated per run but are raw-count aggregates ("test-gap fired 79
 **Known limitation (parity with adversarial):** recurrence fingerprints include the category, so a genuine *axis* flip between rounds on the same issue (`partial` → `unimplemented`) still defeats demotion matching. Case/whitespace variants no longer do. Not otherwise mitigated here.
 
 **Measurement plan:** August `review-audit/` should show semantic blocking findings with a non-empty category (July baseline: 0 of 269); then check whether semantic recurrence-demotion (wired opt-in by #1414) actually fires, and whether curator H1 proposals from semantic findings become category-specific rather than one `review-*` blob.
+
+## 10. Verification pass on the open recommendations (2026-08-01)
+
+Each remaining recommendation was re-checked against the current code and the July run artifacts before being filed as an issue. Three did not survive as written.
+
+### #3b — "bail after 2 consecutive non-productive iterations": **withdrawn**
+
+The 31.5% non-productive share is real (re-measured: 34.1% across 1,277 July iterations — resolved 65.9%, regressed 14.3%, regressed-different-source 12.9%, unchanged 6.2%). The inference that it is recoverable waste is not.
+
+A bail already exists — `withIncreasingFailuresBail` in `src/execution/story-orchestrator/run-phase.ts`, on by default (`abortOnIncreasingFailures`, `consecutiveIncreasesToBail: 2`). It fires only when the finding **count** strictly increases, and the dominant real pattern is count-flat churn (1→1, 2→2), so it catches 7 of the 114 stories that hit ≥2 consecutive non-productive iterations.
+
+Widening it to count non-productive outcomes fails on its own numbers:
+
+| threshold | fires on | would abort stories that later resolved | trailing iterations saved |
+|:--|--:|--:|--:|
+| 2 consecutive | 114 (20.6%) | 64 (**56% false-positive**) | 36 |
+| 3 consecutive | 30 (5.4%) | 15 (50%) | 21 |
+| 4 consecutive | 15 (2.7%) | 4 (27%) | 9 |
+| 2 consecutive `unchanged` only | 22 | 8 | 2 |
+
+At every threshold it aborts more stories that were converging than it saves iterations — 9–36 iterations out of 1,277 for the month. Non-productive iterations are mostly normal convergence steps, and the genuinely terminal cases are already caught by `validate-short-circuit` (53), `agent-gave-up` (31), and `max-attempts-*` (18). Not filed.
+
+### #8 — acceptance US-001 tail: **mechanism refuted, tail re-scoped** → [#1424](https://github.com/nathapp-io/nax/issues/1424)
+
+"The first story pays acceptance-harness bootstrap; later stories retry ~0" is an artifact. `acceptance-setup.ts` generates one test file per package group and attributes it to `group.stories[0].id` — later stories never run acceptance at all, so there is nothing to inherit a resolved config. The real shape: 103 of 132 features need 0 retries; 8 features need 5–15.
+
+### #4 — spec-review verbatim check: **half already shipped** → [nax-spec-kit-skills#18](https://github.com/nathapp-io/nax-spec-kit-skills/issues/18)
+
+Phase 7 of the spec-review skill already bans `[grep]`/`[file]`/`[verbatim]` ACs as blockers. The residual gap is real: Phase 1 verifies code symbols but not data literals (the `constituents-dow.csv` case) or fixture-shape derivability (the "only t* is True" case).
+
+### Confirmed as written
+
+- **#9** → [#1421](https://github.com/nathapp-io/nax/issues/1421). All 269,355 `chunk-included` events carry `tokens: 0` — 100%, not a sample. Exclusions are 1,299 of 270,654 (0.5%).
+- **#10** → [#1422](https://github.com/nathapp-io/nax/issues/1422). Sharper than stated: proposals group on the bare category ("test-gap appeared 1008x"), counts accumulate over the project's whole audit history (723→888 within one project, monotonic, so a HIGH can never clear), and **0 of 263 proposal files** has a ticked checkbox.
+- **#7** → [#1423](https://github.com/nathapp-io/nax/issues/1423). Real but smaller than implied: 81 of 3,685 July findings (2.2%), all `info`, all adversarial — telemetry pollution, not deadlock. Its concrete harm is visible in curator proposal evidence, where the quoted examples are carry-forward bookkeeping rather than findings.
+
+**Method note:** every number above was re-derived from `~/.nax/global/curator/rollup.jsonl`, `~/.nax/*/review-audit/`, and the `curator-proposals.md` artifacts, not carried over from the audit body. Three of six recommendations changed materially on contact with the data.
 
 **Strategic observation:** the harness detects known failure modes post-hoc (adversarial review) instead of preventing them pre-hoc (test-writer/spec prompts). Every recommendation is a form of moving knowledge one stage earlier in the pipeline.
