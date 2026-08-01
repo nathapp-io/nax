@@ -6,12 +6,19 @@
 import type { Finding, FindingSeverity } from "../findings";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { resolveFixTarget } from "./category-fix-target";
+import { normalizeSemanticCategory } from "./semantic-categories";
 import { SEVERITY_RANK, isBlockingSeverity } from "./severity";
 export { isBlockingSeverity };
 import type { SemanticReviewConfig } from "./types";
 
 export interface LLMFinding {
   severity: string;
+  /**
+   * Semantic taxonomy axis (see `semantic-categories.ts`). Optional on the wire —
+   * a reviewer that omits it yields the pre-taxonomy empty category rather than
+   * a rejected finding.
+   */
+  category?: string;
   file: string;
   line: number;
   issue: string;
@@ -38,12 +45,33 @@ export interface LLMResponse {
   findings: LLMFinding[];
 }
 
+/**
+ * The single parse boundary for every semantic reviewer turn — the op's
+ * `parse`, both reprompt second-turns, and the debate path all land here.
+ *
+ * Category normalization happens HERE, not only in `llmFindingToFinding`,
+ * because most consumers read the accepted `LLMFinding[]` directly rather than
+ * the converted `Finding[]`: `llmFindingsToReviewFindings` (which derives
+ * `ruleId` from the category and feeds `review-audit/` and the curator) and
+ * `classifyRecurrence` (whose `test-gap` carve-out is adversarial-only and must
+ * stay unreachable from semantic). Normalizing at the boundary keeps every
+ * downstream reader on one canonical vocabulary.
+ */
 export function validateLLMShape(parsed: unknown): LLMResponse | null {
   if (typeof parsed !== "object" || parsed === null) return null;
   const obj = parsed as Record<string, unknown>;
   if (typeof obj.passed !== "boolean") return null;
   if (!Array.isArray(obj.findings)) return null;
-  return { passed: obj.passed, findings: obj.findings as LLMFinding[] };
+  return { passed: obj.passed, findings: (obj.findings as LLMFinding[]).map(withNormalizedCategory) };
+}
+
+/** Copy a finding with its category canonicalised; leaves every other field untouched. */
+function withNormalizedCategory(f: LLMFinding): LLMFinding {
+  const category = normalizeSemanticCategory(f?.category);
+  // Absent stays absent: `""` and "field omitted" are the same signal on the
+  // wire, and adding an empty key would show up in audit artifacts as noise.
+  if (category === "") return f;
+  return { ...f, category };
 }
 
 export function parseLLMResponse(raw: string): LLMResponse | null {
@@ -142,7 +170,7 @@ export function llmFindingToFinding(f: LLMFinding, opts: SemanticFindingOptions 
   return {
     source: "semantic-review",
     severity: normalizeSeverity(f.severity),
-    category: "",
+    category: normalizeSemanticCategory(f.category),
     file: f.file,
     line: f.line,
     message: f.issue,

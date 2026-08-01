@@ -38,6 +38,16 @@ Flag issues only when you have confirmed:
 4. New code is not wired into callers/exports (verified by grepping for usage)
 
 Do NOT flag: style issues, naming conventions, import ordering, file length, or anything lint handles.
+
+**Finding categories — every finding MUST carry exactly one \`category\`:**
+- \`unimplemented\` — an AC has no implementation at all.
+- \`partial\` — an AC is implemented for some inputs or paths, but not everything it specifies.
+- \`contradiction\` — the implementation does the opposite of what the AC specifies, or something the AC forbids.
+- \`dead-path\` — a stub, noop, or unreachable branch that will never execute.
+- \`unwired\` — new code exists but is not reachable: not exported, not called, not registered.
+- \`other\` — genuinely AC-related, but none of the above.
+
+Pick the most specific axis that fits. Do not invent categories outside this list — an unrecognised value is recorded as \`other\` and loses its signal.
 Respond with JSON only — no explanation text before or after:
 {
   "passed": boolean,
@@ -45,6 +55,7 @@ Respond with JSON only — no explanation text before or after:
   "findings": [
     {
       "severity": "error" | "warning" | "info" | "unverifiable",
+      "category": "unimplemented" | "partial" | "contradiction" | "dead-path" | "unwired" | "other",
       "file": "path/to/file",
       "line": 42,
       "issue": "description of the issue",
@@ -62,6 +73,7 @@ Respond with JSON only — no explanation text before or after:
 }
 
 Notes:
+- \`category\` is required on every finding — one of the axes listed above.
 - \`acIndex\` is required when severity is "error" (1-based, into the Acceptance Criteria list above).
 - \`acQuote\` is optional advisory metadata for human auditors — not validated.
 - Omit both for "warning", "info", "unverifiable".
@@ -119,6 +131,16 @@ Flag issues only when you have confirmed:
 4. New code is not wired into callers/exports (verified by grepping for usage)
 
 Do NOT flag: style issues, naming conventions, import ordering, file length, or anything lint handles.
+
+**Finding categories — every finding MUST carry exactly one \`category\`:**
+- \`unimplemented\` — an AC has no implementation at all.
+- \`partial\` — an AC is implemented for some inputs or paths, but not everything it specifies.
+- \`contradiction\` — the implementation does the opposite of what the AC specifies, or something the AC forbids.
+- \`dead-path\` — a stub, noop, or unreachable branch that will never execute.
+- \`unwired\` — new code exists but is not reachable: not exported, not called, not registered.
+- \`other\` — genuinely AC-related, but none of the above.
+
+Pick the most specific axis that fits. Do not invent categories outside this list — an unrecognised value is recorded as \`other\` and loses its signal.
 Respond with JSON only — no explanation text before or after:
 {
   "passed": boolean,
@@ -126,6 +148,7 @@ Respond with JSON only — no explanation text before or after:
   "findings": [
     {
       "severity": "error" | "warning" | "info" | "unverifiable",
+      "category": "unimplemented" | "partial" | "contradiction" | "dead-path" | "unwired" | "other",
       "file": "path/to/file",
       "line": 42,
       "issue": "description of the issue",
@@ -143,6 +166,7 @@ Respond with JSON only — no explanation text before or after:
 }
 
 Notes:
+- \`category\` is required on every finding — one of the axes listed above.
 - \`acIndex\` is required when severity is "error" (1-based, into the Acceptance Criteria list above).
 - \`acQuote\` is optional advisory metadata for human auditors — not validated.
 - Omit both for "warning", "info", "unverifiable".

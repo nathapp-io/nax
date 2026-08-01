@@ -11,6 +11,11 @@
 
 import type { Iteration } from "../../findings";
 import type { AcDroppedEntry, AcGroundingMinimalRejection } from "../../review/ac-quote-validator";
+// Leaf import (not the `src/review` barrel) for the same reason as the type
+// imports above: semantic.ts imports this builder from src/prompts, so pulling
+// the barrel in would close a cycle. `semantic-categories` has no imports of
+// its own, so the leaf is cycle-free.
+import { SEMANTIC_CATEGORY_ENUM_LINE } from "../../review/semantic-categories";
 import type { LLMFinding } from "../../review/semantic-helpers";
 import type { SemanticReviewConfig, SemanticStory } from "../../review/types";
 import { wrapJsonPrompt } from "../../utils/llm-json";
@@ -47,7 +52,17 @@ Flag issues only when you have confirmed:
 3. New code has dead paths that will never execute (stubs, noops, unreachable branches)
 4. New code is not wired into callers/exports (verified by grepping for usage)
 
-Do NOT flag: style issues, naming conventions, import ordering, file length, or anything lint handles.`;
+Do NOT flag: style issues, naming conventions, import ordering, file length, or anything lint handles.
+
+**Finding categories — every finding MUST carry exactly one \`category\`:**
+- \`unimplemented\` — an AC has no implementation at all.
+- \`partial\` — an AC is implemented for some inputs or paths, but not everything it specifies.
+- \`contradiction\` — the implementation does the opposite of what the AC specifies, or something the AC forbids.
+- \`dead-path\` — a stub, noop, or unreachable branch that will never execute.
+- \`unwired\` — new code exists but is not reachable: not exported, not called, not registered.
+- \`other\` — genuinely AC-related, but none of the above.
+
+Pick the most specific axis that fits. Do not invent categories outside this list — an unrecognised value is recorded as \`other\` and loses its signal.`;
 
 const SEMANTIC_OUTPUT_SCHEMA = `Respond with JSON only — no explanation text before or after:
 {
@@ -56,6 +71,7 @@ const SEMANTIC_OUTPUT_SCHEMA = `Respond with JSON only — no explanation text b
   "findings": [
     {
       "severity": "error" | "warning" | "info" | "unverifiable",
+      "category": ${SEMANTIC_CATEGORY_ENUM_LINE},
       "file": "path/to/file",
       "line": 42,
       "issue": "description of the issue",
@@ -73,6 +89,7 @@ const SEMANTIC_OUTPUT_SCHEMA = `Respond with JSON only — no explanation text b
 }
 
 Notes:
+- \`category\` is required on every finding — one of the axes listed above.
 - \`acIndex\` is required when severity is "error" (1-based, into the Acceptance Criteria list above).
 - \`acQuote\` is optional advisory metadata for human auditors — not validated.
 - Omit both for "warning", "info", "unverifiable".
@@ -195,7 +212,7 @@ Respond with a condensed summary:
 - ${advisoryClause}
 - Keep \`verifiedBy\` for every finding. If \`verifiedBy.observed\` is long, abbreviate it to one line — never drop the field.
 Output ONLY a complete, valid JSON object. It must start with { and end with }.
-Schema: {"passed": boolean, "findings": [{"severity": string, "category": string, "file": string, "line": number, "issue": string, "suggestion": string, "verifiedBy": {"command": string, "file": string, "line": number, "observed": string}}]}`;
+Schema: {"passed": boolean, "findings": [{"severity": string, "category": ${SEMANTIC_CATEGORY_ENUM_LINE}, "file": string, "line": number, "issue": string, "suggestion": string, "verifiedBy": {"command": string, "file": string, "line": number, "observed": string}}]}`;
   }
 
   /**
@@ -275,6 +292,7 @@ ${drops.map((d, i) => `${i + 1}. [${d.finding.severity}] ${d.finding.issue}`).jo
 Please re-review the code and re-issue any valid findings. For each finding you re-issue:
 - You MUST include a valid \`acIndex\` (1-based index into the AC list below)
 - You MUST include a \`verifiedBy\` field with verified evidence
+- You MUST include a \`category\`: ${SEMANTIC_CATEGORY_ENUM_LINE}
 
 ## Acceptance Criteria
 ${acList}
