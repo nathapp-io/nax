@@ -5,11 +5,12 @@
 
 import type { Finding, FindingSeverity } from "../findings";
 import { tryParseLLMJson } from "../utils/llm-json";
+import { extractAcks } from "./acks";
 import { resolveFixTarget } from "./category-fix-target";
 import { normalizeSemanticCategory } from "./semantic-categories";
 import { SEVERITY_RANK, isBlockingSeverity } from "./severity";
 export { isBlockingSeverity };
-import type { SemanticReviewConfig } from "./types";
+import type { ReviewAck, SemanticReviewConfig } from "./types";
 
 export interface LLMFinding {
   severity: string;
@@ -43,6 +44,8 @@ export interface LLMFinding {
 export interface LLMResponse {
   passed: boolean;
   findings: LLMFinding[];
+  /** Prior findings resolved or withdrawn this round (#1423). Absent when none. */
+  acks?: ReviewAck[];
 }
 
 /**
@@ -62,7 +65,12 @@ export function validateLLMShape(parsed: unknown): LLMResponse | null {
   const obj = parsed as Record<string, unknown>;
   if (typeof obj.passed !== "boolean") return null;
   if (!Array.isArray(obj.findings)) return null;
-  return { passed: obj.passed, findings: (obj.findings as LLMFinding[]).map(withNormalizedCategory) };
+  const acks = extractAcks(obj.acks);
+  return {
+    passed: obj.passed,
+    findings: (obj.findings as LLMFinding[]).map(withNormalizedCategory),
+    ...(acks.length > 0 && { acks }),
+  };
 }
 
 /** Copy a finding with its category canonicalised; leaves every other field untouched. */

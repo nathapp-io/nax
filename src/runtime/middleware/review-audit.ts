@@ -1,4 +1,5 @@
 import type { IReviewAuditor } from "../../review/review-audit";
+import type { ReviewAck } from "../../review/types";
 import type { DispatchEvent, IDispatchEventBus, ReviewDecisionEvent } from "../dispatch-events";
 
 function reviewerFromRole(role: string): "semantic" | "adversarial" | null {
@@ -51,6 +52,7 @@ export function attachReviewAuditSubscriber(
       blockingThreshold: event.blockingThreshold,
       result: event.result,
       advisoryFindings: event.advisoryFindings,
+      acks: event.acks ? ([...event.acks] as ReviewAck[]) : undefined,
       acDropped: event.acDropped ? [...event.acDropped] : undefined,
       unparsedPreview: event.unparsedPreview,
       diffAvailable: event.diffAvailable,

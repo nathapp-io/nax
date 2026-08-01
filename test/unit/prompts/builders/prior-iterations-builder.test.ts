@@ -185,6 +185,23 @@ describe("buildPriorIterationsBlock — verdict template", () => {
     expect(output).toContain("classify each of the 3 prior finding(s) above");
   });
 
+  test("routes addressed / never-an-issue verdicts to `acks`, not to findings (#1423)", () => {
+    // An acknowledgement is not a defect. Emitting it as a finding inflates
+    // finding telemetry and pollutes curator proposal evidence.
+    const finding = makeFinding({ source: "adversarial-review", message: "a" });
+    const output = buildPriorIterationsBlock([
+      makeIteration({ iterationNum: 1, outcome: "partial", findingsAfter: [finding] }),
+    ]);
+
+    expect(output).toContain("`acks`");
+    // The two non-blocking verdicts must be explicitly directed away from findings.
+    expect(output).toMatch(/`addressed`[^\n]*acks/i);
+    expect(output).toMatch(/`never-an-issue`[^\n]*acks/i);
+    // still-blocking remains a real finding — it is a defect the implementer left.
+    expect(output).toMatch(/`still-blocking`[^\n]*re-flag/i);
+    expect(output).toContain("Do NOT emit an acknowledgement as a finding");
+  });
+
   test("does NOT include FALSIFIED note when no unchanged iterations", () => {
     const finding = makeFinding({ source: "adversarial-review", message: "x" });
     const iter = makeIteration({ iterationNum: 1, outcome: "resolved", findingsAfter: [finding] });

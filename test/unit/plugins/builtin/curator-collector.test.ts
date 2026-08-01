@@ -9,6 +9,30 @@ import { join } from "node:path";
 import { collectObservations } from "../../../../src/plugins/builtin/curator";
 import type { CuratorPostRunContext } from "../../../../src/plugins/builtin/curator";
 
+/** Minimal context pointing the collector at a temp workdir. */
+function makeContext(root: string, workdir: string): CuratorPostRunContext {
+  return {
+    runId: "run-chunk-tokens",
+    feature: "feat-auth",
+    workdir,
+    prdPath: join(workdir, ".nax", "features", "feat-auth", "prd.json"),
+    branch: "main",
+    totalDurationMs: 1000,
+    totalCost: 10,
+    storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
+    stories: [],
+    version: "0.1.0",
+    pluginConfig: {},
+    logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+    // biome-ignore lint/suspicious/noExplicitAny: collector reads no config keys on this path
+    config: {} as any,
+    outputDir: join(root, "out"),
+    globalDir: join(root, "global"),
+    projectKey: "test-project",
+    curatorRollupPath: join(root, "rollup.jsonl"),
+  };
+}
+
 describe("collectObservations", () => {
   test("should return an array of observations", async () => {
     const context: CuratorPostRunContext = {
@@ -362,6 +386,52 @@ describe("collectObservations", () => {
     expect(observations.some((o) => o.kind === "pull-call" && o.payload.resultCount === 0)).toBe(true);
     expect(observations.some((o) => o.kind === "acceptance-verdict" && o.payload.failedACs?.includes("AC-2"))).toBe(true);
     expect(observations.some((o) => o.kind === "fix-cycle-iteration" && o.payload.outcome === "unchanged")).toBe(true);
+  });
+
+  test("chunk-included carries the manifest's real per-chunk token count (#1421)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "curator-chunk-tokens-"));
+    const workdir = join(root, "work");
+    const storyDir = join(workdir, ".nax", "features", "feat-auth", "stories", "US-001");
+    await mkdir(storyDir, { recursive: true });
+    await writeFile(
+      join(storyDir, "context-manifest-review.json"),
+      JSON.stringify({
+        stage: "review",
+        includedChunks: ["feature-context:abc", "static-rules:def"],
+        excludedChunks: [],
+        providerResults: [],
+        chunkSummaries: { "feature-context:abc": "Auth context" },
+        chunkTokens: { "feature-context:abc": 412, "static-rules:def": 1180 },
+      }),
+    );
+
+    const observations = await collectObservations(makeContext(root, workdir));
+    const included = observations.filter((o) => o.kind === "chunk-included");
+    expect(included).toHaveLength(2);
+    expect(included.find((o) => o.payload.chunkId === "feature-context:abc")?.payload.tokens).toBe(412);
+    expect(included.find((o) => o.payload.chunkId === "static-rules:def")?.payload.tokens).toBe(1180);
+  });
+
+  test("chunk-included falls back to 0 tokens for manifests written before chunkTokens existed", async () => {
+    const root = await mkdtemp(join(tmpdir(), "curator-chunk-tokens-legacy-"));
+    const workdir = join(root, "work");
+    const storyDir = join(workdir, ".nax", "features", "feat-auth", "stories", "US-001");
+    await mkdir(storyDir, { recursive: true });
+    await writeFile(
+      join(storyDir, "context-manifest-review.json"),
+      JSON.stringify({
+        stage: "review",
+        includedChunks: ["feature-context:abc"],
+        excludedChunks: [],
+        providerResults: [],
+      }),
+    );
+
+    const observations = await collectObservations(makeContext(root, workdir));
+    const included = observations.filter((o) => o.kind === "chunk-included");
+    expect(included).toHaveLength(1);
+    // Old manifests carry no token data; 0 is the honest answer, not a crash.
+    expect(included[0].payload.tokens).toBe(0);
   });
 
   test("AC-4: legacy on-disk LLM-shape audits remain readable", async () => {

@@ -4,6 +4,7 @@
  */
 
 import type { AdversarialAcceptAnalysis, AdversarialDropAnalysis } from "./ac-structural-counterfactual";
+import type { ReviewAck } from "./types";
 
 export interface RecordAdversarialAuditOptions {
   runtime?: import("../runtime").NaxRuntime;
@@ -19,6 +20,8 @@ export interface RecordAdversarialAuditOptions {
   blockingThreshold?: "error" | "warning" | "info";
   result: { passed: boolean; findings: unknown[] } | null;
   advisoryFindings?: unknown[];
+  /** #1423 — prior findings resolved or withdrawn, recorded outside `result.findings`. */
+  acks?: ReviewAck[];
   // Issue #986 — adversarial-only structural counterfactual telemetry.
   diffAvailable?: boolean;
   adversarialDropAnalysis?: AdversarialDropAnalysis[];
@@ -42,6 +45,7 @@ export function recordAdversarialAudit(opts: RecordAdversarialAuditOptions): voi
     blockingThreshold: opts.blockingThreshold,
     result: opts.result,
     advisoryFindings: opts.advisoryFindings,
+    acks: opts.acks,
     diffAvailable: opts.diffAvailable,
     adversarialDropAnalysis: opts.adversarialDropAnalysis,
     adversarialAcceptAnalysis: opts.adversarialAcceptAnalysis,

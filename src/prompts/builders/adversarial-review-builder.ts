@@ -131,6 +131,13 @@ Respond with ONLY a JSON object — no preamble, no explanation outside the JSON
 {
   "passed": true | false,
   "inspectedFiles": ["relative/path/you/actually/opened.ts"],
+  "acks": [
+    {
+      "priorFinding": "<short identifier of the prior finding — its file:line or a few words of its message>",
+      "status": "addressed" | "never-an-issue",
+      "note": "<why: the diff line that fixes it, or why the prior judgment was wrong>"
+    }
+  ],
   "findings": [
     {
       "severity": "error" | "warning" | "info" | "unverifiable",
@@ -156,6 +163,8 @@ Respond with ONLY a JSON object — no preamble, no explanation outside the JSON
 \`\`\`
 
 **No rubber-stamping:** \`inspectedFiles\` must list the relative paths you actually opened with your tools while reviewing. A \`passed:true\` verdict with an empty or absent \`inspectedFiles\` is invalid — it means you never looked at the code. Fetch the diff and open the changed files before forming any verdict.
+
+\`acks\` records prior findings you are NOT re-flagging — resolved by the diff, or withdrawn. Omit it (or use \`[]\`) when there are no prior findings. An acknowledgement must never appear in \`findings\`.
 
 Severity guide:
 - \`"error"\`: confident this will cause real failure or regression

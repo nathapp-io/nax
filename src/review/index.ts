@@ -19,7 +19,9 @@ export * from "./types";
 export * from "./runner";
 export * from "./requote-response";
 export * from "./severity";
-export { validateLLMShape } from "./semantic-helpers";
+export { validateLLMShape, parseLLMResponse } from "./semantic-helpers";
+// Review acknowledgements (#1423) — shared read path for both reviewers.
+export { extractAcks } from "./acks";
 // Semantic finding taxonomy. `src/prompts/builders/review-builder.ts` must keep
 // using the leaf path (importing this barrel from src/prompts would close a
 // cycle — see that file's header); every other consumer goes through here.
@@ -27,7 +29,7 @@ export * from "./semantic-categories";
 // Projection of adversarial LLM findings to the ADR-021 wire format. Already consumed
 // outside src/review (src/operations/adversarial-review.ts); exported here so callers
 // and tests reach it through the barrel rather than the leaf path.
-export { toAdversarialReviewFindings } from "./adversarial-helpers";
+export { toAdversarialReviewFindings, validateAdversarialShape } from "./adversarial-helpers";
 export { categoryToFixTarget, resolveFixTarget } from "./category-fix-target";
 export type { ResolveFixTargetArgs } from "./category-fix-target";
 // Promoted from finding-filters: not re-exported by adversarial.ts (verify if that changes)

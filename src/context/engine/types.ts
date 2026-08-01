@@ -194,6 +194,17 @@ export interface ContextManifest {
    * Empty when the floor fit comfortably within budget.
    */
   floorOverageItems?: string[];
+  /**
+   * Per-chunk token cost, keyed by chunk ID, for every chunk in
+   * `includedChunks`. Absent when nothing was packed.
+   *
+   * Written so downstream consumers (curator `chunk-included` observations)
+   * can report a real token cost per chunk instead of a placeholder. Without
+   * it the context budget cannot be tuned against measured data — see #1421.
+   * A sibling map rather than a shape change to `includedChunks`, which is a
+   * persisted schema other readers index by ID.
+   */
+  chunkTokens?: Record<string, number>;
   /** Tokens used by the digest string */
   digestTokens: number;
   /** Wall-clock time for the assemble() call in milliseconds */

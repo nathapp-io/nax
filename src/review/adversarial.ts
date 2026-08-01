@@ -23,12 +23,8 @@ import { adversarialReviewOp } from "../operations/adversarial-review";
 import { callOp as _callOp } from "../operations/call";
 import { extractDiffFiles } from "../utils/diff-files";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
-import {
-  type AdversarialAcceptAnalysis,
-  type AdversarialDropAnalysis,
-  analyzeStructuralCounterfactual,
-} from "./ac-structural-counterfactual";
 import { recordAdversarialAudit } from "./adversarial-audit-event";
+import { buildCounterfactualTelemetry } from "./adversarial-counterfactual-telemetry";
 import { type AdversarialLLMFinding, formatFindings, toAdversarialReviewFindings } from "./adversarial-helpers";
 import { collectDiffFileList as _collectDiffFileList } from "./diff-utils";
 import { llmFindingsToReviewFindings } from "./finding-projection";
@@ -345,6 +341,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     ...tagCoverageGap(toAdversarialReviewFindings(demoted, { isTestFile: testFileMatch })),
   ];
   const acDropped = opResult.acDropped ?? [];
+  const acks = opResult.acks; // #1423 — recorded alongside findings, never as one.
 
   // Issue #986 — build diff file set for structural counterfactual telemetry.
   // Embedded mode: parse `diff` (already in memory). Ref mode: shell git diff
@@ -368,41 +365,12 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     }
   }
 
-  // Issue #986 — counterfactual analysis for every drop. Adversarial-only.
-  const adversarialDropAnalysis: AdversarialDropAnalysis[] = acDropped.map((d) => ({
-    finding: {
-      file: d.finding.file ?? "<unknown>",
-      line: d.finding.line ?? 0,
-      severity: d.finding.severity,
-      category: d.finding.category ?? "<unknown>",
-      issue: d.finding.issue,
-    },
-    dropCode: d.code,
-    acIndex: d.finding.acIndex,
-    rawCategory: d.finding.category ?? "",
-    counterfactual: analyzeStructuralCounterfactual(
-      { acIndex: d.finding.acIndex, category: d.finding.category, file: d.finding.file },
-      story.acceptanceCriteria,
-      diffFiles,
-    ),
-  }));
-
-  // Issue #986 — counterfactual analysis for every accepted blocking finding.
-  const adversarialAcceptAnalysis: AdversarialAcceptAnalysis[] = blockingFindings.map((f) => ({
-    finding: {
-      file: f.file,
-      line: f.line,
-      severity: f.severity,
-      category: f.category,
-    },
-    acIndex: f.acIndex,
-    rawCategory: f.category,
-    counterfactual: analyzeStructuralCounterfactual(
-      { acIndex: f.acIndex, category: f.category, file: f.file },
-      story.acceptanceCriteria,
-      diffFiles,
-    ),
-  }));
+  const { adversarialDropAnalysis, adversarialAcceptAnalysis } = buildCounterfactualTelemetry({
+    acDropped,
+    blockingFindings,
+    acceptanceCriteria: story.acceptanceCriteria,
+    diffFiles,
+  });
 
   if (advisoryFindings.length > 0) {
     logger?.debug(
@@ -452,6 +420,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       diffAvailable,
       adversarialDropAnalysis,
       adversarialAcceptAnalysis,
+      acks,
     });
     const output =
       blockingFindings.length > 0
@@ -500,6 +469,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
         storyId: story.id,
         featureName,
         parsed: true,
+        acks,
         failOpen: false,
         passed: true,
         passReason: "ac_quote_not_substring_demoted",
@@ -541,6 +511,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       storyId: story.id,
       featureName,
       parsed: true,
+      acks,
       failOpen: false,
       passed: false,
       blockingThreshold: threshold,
@@ -572,6 +543,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     storyId: story.id,
     featureName,
     parsed: true,
+    acks,
     failOpen: false,
     passed: true,
     blockingThreshold: threshold,

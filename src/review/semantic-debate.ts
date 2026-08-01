@@ -22,7 +22,7 @@ import {
   toReviewFindings,
 } from "./semantic-helpers";
 import type { SemanticReviewConfig } from "./types";
-import type { ReviewCheckResult, SemanticStory } from "./types";
+import type { ReviewAck, ReviewCheckResult, SemanticStory } from "./types";
 
 function recordSemanticDebateAudit(opts: {
   runtime: import("../runtime").NaxRuntime;
@@ -34,6 +34,8 @@ function recordSemanticDebateAudit(opts: {
   blockingThreshold?: "error" | "warning" | "info";
   result: { passed: boolean; findings: unknown[] } | null;
   advisoryFindings?: unknown[];
+  /** #1423 — prior findings resolved or withdrawn, recorded outside `result.findings`. */
+  acks?: ReviewAck[];
 }): void {
   opts.runtime.dispatchEvents.emitReviewDecision({
     kind: "review-decision",
@@ -48,6 +50,7 @@ function recordSemanticDebateAudit(opts: {
     blockingThreshold: opts.blockingThreshold,
     result: opts.result,
     advisoryFindings: opts.advisoryFindings,
+    acks: opts.acks,
   });
 }
 
@@ -137,12 +140,17 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
   // Re-derive verdict from proposals (stateless path)
   const resolverPassed = debateResult.outcome === "passed";
   const allFindings: LLMFinding[] = [];
+  // #1423 — acknowledgements ride the same proposals as findings; without this
+  // a project running review debate would record no ack telemetry at all.
+  const acks: ReviewAck[] = [];
   for (const p of debateResult.proposals) {
     const parsed = parseLLMResponse(p.output);
     if (parsed) {
       allFindings.push(...parsed.findings);
+      if (parsed.acks) acks.push(...parsed.acks);
     }
   }
+  const debateAcks = acks.length > 0 ? acks : undefined;
 
   // Deduplicate findings by AC id (primary) or file:line (fallback)
   const seen = new Set<string>();
@@ -184,6 +192,7 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
         storyId: story.id,
         featureName,
         parsed: true,
+        acks: debateAcks,
         passed: false,
         blockingThreshold: debateThreshold,
         result: {
@@ -218,6 +227,7 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
       storyId: story.id,
       featureName,
       parsed: true,
+      acks: debateAcks,
       passed: true,
       blockingThreshold: debateThreshold,
       result: {
@@ -247,6 +257,7 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
     storyId: story.id,
     featureName,
     parsed: true,
+    acks: debateAcks,
     passed: true,
     blockingThreshold: debateThreshold,
     result: {

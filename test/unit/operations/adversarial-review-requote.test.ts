@@ -124,6 +124,62 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
     });
   });
 
+  test("preserves acks across the requote output rewrite (#1423)", async () => {
+    // hopBody synthesises a replacement output string; parse() reads THAT object,
+    // so anything the rewrite forgets is gone. Acks exist only on rounds with
+    // prior findings — exactly the rounds where requote is most likely to fire.
+    return withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src", "auth.ts"), "function login(u, p) { return db.rawQuery(u + p); }\n");
+
+      const initial = JSON.stringify({
+        passed: false,
+        acks: [{ priorFinding: "src/old.ts:3", status: "addressed", note: "fixed in this diff" }],
+        findings: [
+          {
+            severity: "error",
+            category: "security",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "SQL injection via rawQuery",
+            suggestion: "Use parameterized queries",
+            acQuote: "auth login must not allow SQL injection",
+            acIndex: 1,
+            verifiedBy: { file: "src/auth.ts", line: 1, observed: "wrong quote from memory" },
+          },
+        ],
+      });
+      const requote = JSON.stringify({ file: "src/auth.ts", line: 1, observed: "db.rawQuery(u + p)" });
+
+      let callCount = 0;
+      const mockSend = mock(async () => {
+        callCount += 1;
+        return {
+          output: callCount === 1 ? initial : requote,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          internalRoundTrips: 0,
+        };
+      });
+
+      const result = await adversarialReviewOp.hopBody!("initial prompt", {
+        send: mockSend,
+        sendWithParseRetry: mockSend,
+        input: {
+          workdir,
+          story: STORY,
+          adversarialConfig: { ...ADVERSARIAL_CONFIG, diffMode: "ref" },
+          mode: "ref",
+        },
+      } as any);
+
+      const parsed = JSON.parse(result.output);
+      expect(parsed.findings[0].verifiedBy.observed).toContain("db.rawQuery");
+      expect(parsed.acks).toEqual([
+        { priorFinding: "src/old.ts:3", status: "addressed", note: "fixed in this diff" },
+      ]);
+    });
+  });
+
   test("downgrades finding when requote response is invalid JSON", async () => {
     return withTempDir(async (workdir) => {
       mkdirSync(join(workdir, "src"), { recursive: true });

@@ -83,6 +83,37 @@ describe("ContextOrchestrator.assemble()", () => {
     expect(bundle.manifest.includedChunks).toContain("c:1");
   });
 
+  test("manifest records each packed chunk's token cost (#1421)", async () => {
+    // Without this the curator can only record tokens:0 for every chunk, and the
+    // context budget cannot be tuned against real data.
+    // Distinct content per chunk — identical content is deduped before packing.
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "c:1", tokens: 412, content: "alpha content" })),
+      makeProvider("p2", makeChunkResult({ id: "c:2", tokens: 1180, content: "beta content" })),
+    ]);
+    const bundle = await orch.assemble(BASE_REQUEST);
+    expect(bundle.manifest.chunkTokens).toEqual({ "c:1": 412, "c:2": 1180 });
+  });
+
+  test("chunkTokens covers exactly the included chunks and sums to usedTokens minus the digest", async () => {
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "c:1", tokens: 300, content: "alpha content" })),
+      makeProvider("p2", makeChunkResult({ id: "c:2", tokens: 700, content: "beta content" })),
+    ]);
+    const bundle = await orch.assemble(BASE_REQUEST);
+    const tokenMap = bundle.manifest.chunkTokens ?? {};
+    expect(bundle.manifest.includedChunks).toHaveLength(2);
+    expect(Object.keys(tokenMap).sort()).toEqual([...bundle.manifest.includedChunks].sort());
+    const summed = Object.values(tokenMap).reduce((a, b) => a + b, 0);
+    expect(summed).toBe(bundle.manifest.usedTokens - bundle.manifest.digestTokens);
+  });
+
+  test("manifest omits chunkTokens when nothing was packed", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble(BASE_REQUEST);
+    expect(bundle.manifest.chunkTokens).toBeUndefined();
+  });
+
   test("role-filtered chunks excluded and recorded in manifest", async () => {
     const provider = makeProvider("p1", makeChunkResult({
       id: "reviewer:chunk",

@@ -10,6 +10,33 @@ import type { Finding } from "../findings";
 export type ReviewCheckName = "typecheck" | "lint" | "test" | "build" | "semantic" | "adversarial" | "git-clean";
 
 /**
+ * A prior finding the reviewer explicitly did NOT re-flag this round (#1423).
+ *
+ * The carry-forward verdict template asks the reviewer to classify every prior
+ * finding as `addressed`, `still-blocking`, or `never-an-issue`. Only
+ * `still-blocking` is a defect; the other two are bookkeeping. Before this
+ * type existed the reviewer's only output channel was `findings`, so
+ * acknowledgements were counted as findings — 2.2% of July's, all `info` —
+ * and surfaced as the evidence samples in curator rule proposals.
+ */
+export interface ReviewAck {
+  /** Short identifier of the prior finding: `file:line`, or a few words of its message. */
+  priorFinding: string;
+  /**
+   * `unknown` when the reviewer supplied a status outside the schema — including
+   * `still-blocking`, which belongs in `findings`, not here. Recorded rather than
+   * coerced: an ack claiming a blocker was "addressed" when the reviewer meant
+   * the opposite would affirmatively certify an unfixed defect as resolved, and
+   * nothing downstream could ever detect it.
+   */
+  status: "addressed" | "never-an-issue" | "unknown";
+  /** The diff line that resolves it, or why the prior judgment was wrong. */
+  note?: string;
+  /** The reviewer's literal `status` string, kept when it was not a known value. */
+  rawStatus?: string;
+}
+
+/**
  * Diff context passed to debate resolver and prompt builders.
  * Discriminated on `mode` — prevents ambiguous routing when both
  * `diff` and `storyGitRef` are present.
