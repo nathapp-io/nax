@@ -51,9 +51,10 @@ function makeResolvedProject(projectDir: string): ResolvedProject {
   };
 }
 
-function makeObservation(kind: Observation["kind"], runId = "run-001"): Observation {
+function makeObservation(kind: Observation["kind"], runId = "run-001", projectKey = "test-proj"): Observation {
   return {
-    schemaVersion: 1,
+    schemaVersion: 3,
+    projectKey,
     runId,
     featureId: "feat-1",
     storyId: "US-001",
@@ -670,6 +671,64 @@ describe("curatorGc", () => {
       expect(writtenContent2).toBeDefined();
       const uniqueRunIds = new Set(writtenContent2!.trim().split("\n").filter(Boolean).map((l) => (JSON.parse(l) as Observation).runId));
       expect(uniqueRunIds.size).toBe(50);
+    });
+
+    test("prunes only this project's runs, leaving a neighbour project's rows untouched", async () => {
+      // The rollup defaults to one global file for the whole machine (#1429).
+      // An unscoped `--keep N` lets a busy project evict a quiet one entirely.
+      const obs: Observation[] = [
+        { ...makeObservation("verdict", "mine-001"), ts: "2026-01-01T00:00:00.000Z" },
+        { ...makeObservation("verdict", "other-001", "neighbour"), ts: "2026-01-02T00:00:00.000Z" },
+        { ...makeObservation("verdict", "other-002", "neighbour"), ts: "2026-01-03T00:00:00.000Z" },
+        { ...makeObservation("verdict", "mine-002"), ts: "2026-01-04T00:00:00.000Z" },
+        { ...makeObservation("verdict", "mine-003"), ts: "2026-01-05T00:00:00.000Z" },
+      ];
+      writeRollup(rollupPath, obs);
+
+      let written: string | undefined;
+      _deps.writeFile = mock(async (_p: string, content: string) => {
+        written = content;
+        await Bun.write(rollupPath, content);
+      });
+
+      await curatorGc({ keep: 2 });
+      expect(written).toBeDefined();
+      const rows = written!
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => JSON.parse(l) as Observation);
+
+      // Two most recent of MINE kept, my oldest dropped.
+      expect(rows.filter((r) => r.projectKey === "test-proj").map((r) => r.runId)).toEqual(["mine-002", "mine-003"]);
+      // The neighbour is not mine to prune — both rows survive.
+      expect(rows.filter((r) => r.projectKey === "neighbour").map((r) => r.runId)).toEqual(["other-001", "other-002"]);
+    });
+
+    test("rows predating project attribution are preserved, not pruned on one project's behalf", async () => {
+      // Pre-#1429 rows carry no projectKey. They belong to no project, so no
+      // project's gc may delete them; retention for them is #1430's problem.
+      const { projectKey: _unattributed, ...legacy } = makeObservation("verdict", "legacy-001");
+      const obs: Observation[] = [
+        { ...legacy, ts: "2026-01-01T00:00:00.000Z" } as Observation,
+        { ...makeObservation("verdict", "mine-001"), ts: "2026-01-02T00:00:00.000Z" },
+        { ...makeObservation("verdict", "mine-002"), ts: "2026-01-03T00:00:00.000Z" },
+      ];
+      writeRollup(rollupPath, obs);
+
+      let written: string | undefined;
+      _deps.writeFile = mock(async (_p: string, content: string) => {
+        written = content;
+        await Bun.write(rollupPath, content);
+      });
+
+      await curatorGc({ keep: 1 });
+      const runIds = written!
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => (JSON.parse(l) as Observation).runId);
+      expect(runIds).toEqual(["legacy-001", "mine-002"]);
     });
 
     test("deletes observations.jsonl and curator-proposals.md from pruned per-run dirs", async () => {

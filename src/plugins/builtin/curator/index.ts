@@ -105,8 +105,24 @@ const curatorAction: IPostRunAction = {
         await appendToRollup(observations, rollupPath);
 
         const thresholds = getCuratorThresholds(context);
-        const window = await readHeuristicWindow(rollupPath, HEURISTIC_WINDOW_RUNS);
-        const proposals = runHeuristics(window.length > 0 ? window : observations, thresholds);
+        const window = await readHeuristicWindow(rollupPath, HEURISTIC_WINDOW_RUNS, {
+          projectKey: curatorContext.projectKey,
+        });
+        if (window.truncated) {
+          // Silent truncation reads as "20 runs of history" when it was 2 (#1429).
+          // `unattributedRows` is the usual explanation on an existing rollup:
+          // pre-#1429 rows carry no project and are skipped, so the ceiling can
+          // be reached having found little or nothing of this project's own.
+          context.logger.warn("Curator window truncated at the byte ceiling", {
+            runsFound: window.runIds.length,
+            runsRequested: HEURISTIC_WINDOW_RUNS,
+            unattributedRows: window.unattributedRows,
+          });
+        }
+        const proposals = runHeuristics(
+          window.observations.length > 0 ? window.observations : observations,
+          thresholds,
+        );
         const markdown = renderProposals(proposals, context.runId, observations.length);
 
         const proposalsMdPath = path.join(runDir, "curator-proposals.md");
@@ -175,3 +191,4 @@ export type {
 } from "./types";
 export { collectObservations, resolveCuratorOutputs };
 export { readHeuristicWindow } from "./rollup";
+export type { HeuristicWindow, HeuristicWindowOptions } from "./rollup";

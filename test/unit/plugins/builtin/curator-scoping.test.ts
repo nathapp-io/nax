@@ -107,9 +107,11 @@ describe("collectObservations — run scoping", () => {
     expect(rules).not.toContain("theirs");
   });
 
-  test("observations are stamped schemaVersion 2 now that collection is run-scoped", async () => {
+  test("observations are stamped with the current schema version and their project", async () => {
     // schemaVersion 1 rows in the append-only global rollup are cumulative and
-    // not comparable to these; longitudinal analysis must be able to tell them apart.
+    // not comparable to these; longitudinal analysis must be able to tell them
+    // apart. Version 3 adds projectKey — without it a row in the shared global
+    // rollup cannot be attributed to the repo that produced it (#1429).
     const root = await mkdtemp(join(tmpdir(), "curator-schema-"));
     const outputDir = join(root, "out");
     const auditDir = join(outputDir, "review-audit", "feat-auth");
@@ -131,7 +133,10 @@ describe("collectObservations — run scoping", () => {
       runStartedAt: Date.parse("2026-08-01T12:00:00.000Z"),
     });
     expect(observations.length).toBeGreaterThan(0);
-    for (const o of observations) expect(o.schemaVersion).toBe(2);
+    for (const o of observations) {
+      expect(o.schemaVersion).toBe(3);
+      expect(o.projectKey).toBe("test-project");
+    }
   });
 
   test("collects everything when runStartedAt is absent (back-compat)", async () => {

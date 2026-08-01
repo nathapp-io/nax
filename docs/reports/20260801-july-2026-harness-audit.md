@@ -248,7 +248,28 @@ Two side effects worth recording. A 24-character prefix would have surfaced rule
 
 **Two defects found in the process,** neither covered by tests because every curator test builds its own rollup in a temp dir:
 
-- [#1429](https://github.com/nathapp-io/nax/issues/1429) — the rollup is one global file shared by every project, so a run's heuristic window can be filled by another repo's runs and H1's distinct-feature count can mix projects. The 8 MB tail cap also binds before `windowRuns`: on the real rollup the "20-run" window contains 2 runs.
+- [#1429](https://github.com/nathapp-io/nax/issues/1429) — the rollup is one global file shared by every project, so a run's heuristic window can be filled by another repo's runs and H1's distinct-feature count can mix projects. The 8 MB tail cap also binds before `windowRuns`: on the real rollup the "20-run" window contains 2 runs. **Fixed in [#1432](https://github.com/nathapp-io/nax/pull/1432)** — see §13.
 - [#1430](https://github.com/nathapp-io/nax/issues/1430) — `nax curator gc` is never invoked automatically and loads the whole rollup into memory. The file is 618 MB / 1.13M rows on a live machine, which the prune command cannot itself process.
 
 **Caveats.** July semantic findings carry no category (778 `(none)` in Project A, 246 in nax) — the gap #1420 closed — so August grouping will differ. The replay shows what would be *proposed*, never whether a resulting rule prevents anything. It also used per-project rollups, which is more favourable than production's shared file (#1429); real recall is likely lower still.
+
+## 13. Rollup scoping fixed ([#1432](https://github.com/nathapp-io/nax/pull/1432), 2026-08-01)
+
+§12's replay found two defects the replay itself had papered over — it built one rollup per project, while production shares a single global file. Both are now fixed.
+
+**The window was not the project's.** `~/.nax/global/curator/rollup.jsonl` is one file for every project on the machine, and nothing in a row identified its origin: `featureId` and `storyId` are project-local names that collide freely across repos. Reproduced through the real plugin — five interleaved runs across two projects, and the proposal written into the first project's run directory read:
+
+```
+Recurring across 5 features — feat-a, beta-x, feat-b, beta-y, feat-c
+Files: src/a.ts, src/x.ts, src/b.ts, src/y.ts
+```
+
+Three of those features and two of those files belong to the other repo, while the proposal targets the first project's `.nax/rules/`. The same root cause let `nax curator gc --keep 50` prune by global recency, so a busy project evicts a quiet one's entire history.
+
+Observations now carry `projectKey` (schemaVersion 3) and readers filter on it. Rows predating this carry no `projectKey` and no way to recover one, so they are dropped from windows and preserved by `gc` — claiming them would reintroduce the contamination, and deleting them on one project's behalf is not that project's decision.
+
+**The byte cap was acting as the window policy.** `MAX_WINDOW_TAIL_BYTES` bound before `windowRuns`: on the real rollup an 8 MB tail held 2 runs where 20 were configured, and nothing reported it, so proposals rested on less history than configured while appearing not to. Reads now grow from the tail until enough of this project's runs are found, the file is exhausted, or a 64 MB ceiling is hit; exhausting the file is explicitly *not* truncation, and a real shortfall is logged.
+
+**Consequence worth stating plainly:** this does not shrink an existing rollup. Almost all 648 MB of it is unattributable pre-#1429 rows, now deliberately preserved. Measured against the real file, a window read escalates to the ceiling and returns 0 runs in 229 ms — correct, bounded, and empty until a project accumulates new history. Reclaiming that space needs the retention decision and the streaming rewrite in #1430.
+
+**Method note.** Both defects were invisible to a test file written specifically to cover this seam (`curator-seam.test.ts`, added for the #1428 regression), because every test built a small single-project rollup in a temp dir. Neither a shared multi-project file nor a file larger than the tail read existed anywhere in the suite. That is the third time this month the same shape has appeared — the type was wired, the producer was not, and the tests sat on one side of the seam. Self-review of the fix then found three more defects in the new code, including a zero-length tail read that spun forever; they are recorded in the PR.
