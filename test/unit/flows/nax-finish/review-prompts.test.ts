@@ -51,3 +51,59 @@ describe("fixPrompt", () => {
     expect(p).toContain('"severity":"LOW"');
   });
 });
+
+// Reviews were 58% of the flow's wall clock on rs-stock/pipeline-run-outcome
+// (7 calls, 1306s of 2232s), most of it re-reading code an earlier round had
+// already cleared.
+describe("buildReviewPrompt — incremental re-review", () => {
+  const PRIOR = [{ severity: "HIGH" as const, title: "T", problem: "P", fix: "F" }];
+
+  test("round 1 (no since) reviews the whole branch diff", () => {
+    const p = buildReviewPrompt("spec", { base: "origin/main", specPath: "s.md" });
+    expect(p).toContain("git diff origin/main...HEAD");
+    expect(p).not.toContain("continuing a review you already started");
+  });
+
+  test("a re-review scopes the verdict to the fix diff", () => {
+    const p = buildReviewPrompt("spec", {
+      base: "origin/main",
+      specPath: "s.md",
+      since: "abc123",
+      priorFindings: PRIOR,
+    });
+    expect(p).toContain("git diff abc123..HEAD");
+    expect(p).toContain("continuing a review you already started");
+    expect(p).toContain("do not re-derive a verdict on it");
+  });
+
+  test("a re-review carries the prior findings forward, so the fix can be checked against them", () => {
+    const p = buildReviewPrompt("quality", {
+      base: "origin/main",
+      specPath: "s.md",
+      since: "abc123",
+      priorFindings: PRIOR,
+    });
+    expect(p).toContain('"title": "T"');
+  });
+
+  // The saving must come from narrowing what is *judged*, never from blinding
+  // the reviewer — a fix's real damage is often in the unchanged code it calls.
+  test("a re-review may still read anything, and is told so explicitly", () => {
+    const p = buildReviewPrompt("spec", { base: "origin/main", specPath: "s.md", since: "abc", priorFindings: PRIOR });
+    expect(p).toContain("the whole repo is available");
+    expect(p).toContain("Scope means *what you judge*, not *what you may read*");
+  });
+
+  test("a re-review refuses papered-over fixes rather than accepting a green gate", () => {
+    const p = buildReviewPrompt("spec", { base: "origin/main", specPath: "s.md", since: "abc", priorFindings: PRIOR });
+    expect(p).toContain("assertion weakened, test deleted, check disabled");
+  });
+
+  test("both rounds keep the full dimensions and the JSON contract", () => {
+    for (const since of [null, "abc123"]) {
+      const p = buildReviewPrompt("quality", { base: "origin/main", specPath: "s.md", since, priorFindings: PRIOR });
+      expect(p).toContain("Confidence threshold");
+      expect(p).toContain('"route"');
+    }
+  });
+});

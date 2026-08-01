@@ -125,7 +125,9 @@ export const llmRoutingConfigSelector = pickSelector(
 // nax-finish autonomous flow — needs its own `finish` block plus `interaction`
 // (Telegram escalation credentials) and `quality` (the gate commands the flow
 // re-runs at the repo root).
-export const finishConfigSelector = pickSelector("finish", "finish", "interaction", "quality");
+// `agent` is in the slice so nax-finish can default the flow's agent to the one
+// the run itself used, instead of letting acpx fall back to its own default.
+export const finishConfigSelector = pickSelector("finish", "finish", "interaction", "quality", "agent");
 
 // Derived config-slice types — co-located with each selector so consumers
 // import the type instead of re-deriving `ReturnType<typeof xSelector.select>`

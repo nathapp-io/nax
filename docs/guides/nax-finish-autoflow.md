@@ -38,8 +38,8 @@ review_quality    code-quality review, isolated session, own agent profile
 quality_gates     re-run the feature's acceptance tests (gate zero), then the
                   repo's own quality.commands at the repo root
   ↳ red → fix_gate (agent) → commit → re-review     [max 3 attempts → escalate]
-          (a gate fix that committed re-enters review_quality; one that
-           changed nothing goes straight back to the gates)
+          (a gate fix that touched production code re-enters review_quality;
+           a test-only fix, or one that changed nothing, returns to the gates)
   ↳ none configured → escalate (a gate that verified nothing is not a pass)
   ↓
 open_pr           commit + push the fixes, then open a ready PR
@@ -56,11 +56,25 @@ whose body lists the findings behind it, so a human reviewing the PR can triage
 the flow's commits without reading every diff. It also appends the round to the
 [audit trail](#audit-trail).
 
-**No fix reaches the PR unreviewed.** The gate loop is the last loop to edit the
-tree, and it used to route straight back to `quality_gates` — which proves the
-repo's commands are green, something a bad fix can satisfy. A gate fix that
-commits now re-enters `review_quality` first. Both loops keep their own 3-attempt
-caps, so the re-entry cannot run away; it costs one review per gate round.
+**Gate fixes to production code are reviewed.** The gate loop is the last loop
+to edit the tree, and it used to route straight back to `quality_gates` — which
+proves the repo's commands are green, something a bad fix can satisfy. A gate fix
+that touches non-test files now re-enters `review_quality` first. Both loops keep
+their own 3-attempt caps, so the re-entry cannot run away.
+
+> **Known gap — test-only gate fixes are not re-reviewed.** The re-review is the
+> flow's most expensive node and a gate fix is usually a mechanical test repair,
+> so a commit whose every path matches the repo's test-file patterns skips it.
+> This is a deliberate cost tradeoff with a real edge: the defect that motivated
+> the re-entry in the first place was itself test-only — eight copy-pasted stubs
+> across three test files. If test-quality regressions start reaching your PRs,
+> widen `gateCommitRoute` in `nax-finish.flow.ts`.
+>
+> Classification comes from `nax features resolve --json` (`testPatterns`), which
+> reports the repo's own patterns via the ADR-009 resolver — so it is correct for
+> Go, Python and Rust packages, not just `*.test.ts`. When the patterns cannot be
+> resolved at all, the fix is treated as non-test and **is** reviewed.
+
 The fix agent itself is still told not to commit; the flow owns the history.
 
 These are internal checkpoints, so they skip your pre-commit hooks: a hook that
@@ -71,6 +85,29 @@ unless they pass. The terminal commit before pushing runs hooks normally.
 
 Both terminal nodes (`open_pr`, `escalate`) commit and push first, so the PR — or
 the escalation — describes state a human can actually see.
+
+### Why re-reviews are narrower than the first pass
+
+A reviewer's first pass reads the spec in full and the whole
+`git diff <base>...HEAD`. Re-running that verbatim on every round made reviews
+**58% of the flow's wall clock** on one measured run (7 review calls, 1306s of
+2232s), most of it re-reading code an earlier round had already cleared.
+
+So a re-review is scoped: it is given the findings it raised last round and
+`git diff <shaAtLastReview>..HEAD` — the fix, and nothing else — and asked two
+questions. Are these findings actually resolved (a weakened assertion, a deleted
+test or a disabled check is **not** resolved)? And did the fix break anything,
+including in the unchanged code it now calls into?
+
+Scope here means *what is judged*, not *what may be read*: the reviewer still has
+the spec and the whole repo, and is told so explicitly.
+
+The narrowing only applies when it is provably safe — when exactly one commit
+separates the two reviews, so that commit's parent **is** the tree the previous
+verdict passed on. Anything else (the first review of a phase, or two commits in
+the window, which happens when the acceptance loop commits between a spec fix and
+its re-review) falls back to a full review rather than guessing at a window and
+silently hiding code from the reviewer.
 
 ### Why acceptance runs twice
 
@@ -243,7 +280,7 @@ post-run driver treats it as non-blocking and logs a warning).
 |:---|:---|:---|
 | `enabled` | `false` | Master gate. |
 | `flowPath` | `flows/nax-finish/nax-finish.flow.ts` | Resolved against the **nax install** first, then your repo (vendor a variant by putting a file at the same relative path), then used as-is if absolute. |
-| `defaultAgent` | `null` | acpx agent for any node without a pinned profile. Unset → acpx's own `defaultAgent`. |
+| `defaultAgent` | `agent.default` | acpx agent for any node without a pinned profile. Unset → the agent the run used, never acpx's own default. |
 | `reviewers.spec` | `null` | acpx agent profile for the spec-review phase — see §4. |
 | `reviewers.quality` | `null` | acpx agent profile for the quality-review phase. |
 | `escalate.telegram` | `true` | Prefer Telegram for escalations when credentials resolve; else PR/MR comment. |
@@ -346,8 +383,14 @@ You can also redefine a built-in name — useful for a local checkout or extra e
 
 1. the node's pinned profile — `reviewers.spec` / `reviewers.quality`
 2. else `finish.autoFlow.defaultAgent` (passed to acpx as `--default-agent`)
-3. else acpx config `defaultAgent`
-4. else acpx's built-in fallback
+3. else **`agent.default` — the agent the run itself used**
+
+Step 3 is the important one. Setting only `reviewers` used to leave
+`--default-agent` off the argv entirely, so acpx fell back to its *own* default:
+the reviewers ran on the models you named, and every `fix_*` node — the nodes
+that actually edit your code — ran on whatever acpx happened to be configured
+with. The flow now inherits the run's agent instead, so a profile that
+configures only reviewers behaves the way it reads.
 
 Fix nodes (`fix_acceptance`, `fix_spec`, `fix_quality`, `fix_gate`) are never
 pinned — they always use the default agent.

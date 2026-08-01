@@ -1,6 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
-import { findProjectDir } from "../config";
+import { findProjectDir, loadConfig } from "../config";
+import { resolveTestFilePatterns } from "../test-runners";
 import { validateFeatureName } from "../utils/feature-name";
 import { type AcceptanceResolution, resolveFeatureAcceptance } from "./features-acceptance";
 
@@ -13,15 +14,55 @@ export interface SpecSource {
   path: string; // repo-root-relative
 }
 
+/**
+ * Test-file classification patterns, in a JSON-portable form.
+ *
+ * `ResolvedTestPatterns.regex` is `RegExp[]`, which does not survive
+ * `JSON.stringify`, so the sources are emitted as strings for a consumer to
+ * rebuild with `new RegExp(src)`. Exists so out-of-process consumers — the
+ * nax-finish flow, which runs inside acpx and cannot import
+ * `resolveTestFilePatterns` — classify paths through the ADR-009 SSOT instead
+ * of reinventing `/\.test\.ts$/`.
+ *
+ * Root-level resolution only: a per-file answer in a polyglot monorepo would
+ * need `findPackageDir` per path. Consumers needing that precision must call
+ * the resolver directly.
+ */
+export interface TestPatternResolution {
+  /** Regex sources for path classification, e.g. ["\\.test\\.ts$"]. */
+  regex: string[];
+  /** Which tier resolved them: per-package | root-config | detected | fallback. */
+  resolution: string;
+}
+
 export interface ResolveResult {
   status: ResolveStatus;
   featureName?: string | null;
   specSource?: SpecSource | null;
   /** Acceptance test target(s) for the feature. Present only on an `ok` result with a known featureName. */
   acceptance?: AcceptanceResolution;
+  /** Repo-root test-file patterns. Present only on an `ok` result. */
+  testPatterns?: TestPatternResolution;
   candidates?: string[];
   checked?: string[];
   message: string;
+}
+
+/**
+ * Resolve the repo's test-file patterns for emission in `nax features resolve`.
+ *
+ * Never throws — this feeds a CLI whose primary job is spec resolution, so a
+ * broken/legacy config degrades to omitting the field rather than failing the
+ * whole command (the same rule `resolveFeatureAcceptance` follows).
+ */
+async function resolveTestPatterns(workdir: string): Promise<TestPatternResolution | undefined> {
+  try {
+    const config = await loadConfig(workdir);
+    const resolved = await resolveTestFilePatterns(config, workdir);
+    return { regex: resolved.regex.map((r) => r.source), resolution: resolved.resolution };
+  } catch {
+    return undefined;
+  }
 }
 
 /** Returns true if the file at absolutePath exists and has non-whitespace content. */
@@ -166,6 +207,7 @@ export async function resolveFeatureSpec(name: string | undefined, workdir: stri
         featureName: name,
         specSource: source,
         acceptance: await resolveFeatureAcceptance(name, workdir),
+        testPatterns: await resolveTestPatterns(workdir),
         message: `resolved spec: ${source.path}`,
       };
     }
@@ -220,6 +262,7 @@ export async function resolveFeatureSpec(name: string | undefined, workdir: stri
       featureName: onlyName,
       specSource: source,
       acceptance: await resolveFeatureAcceptance(onlyName, workdir),
+      testPatterns: await resolveTestPatterns(workdir),
       message: `resolved spec: ${source.path}`,
     };
   }

@@ -1,3 +1,5 @@
+import type { Finding } from "./types";
+
 export const SPEC_REVIEW_DIMENSIONS = `# Spec-relative review dimensions
 
 Reference for the post-impl-review **spec-relative** pass: Compliance, Drift,
@@ -310,12 +312,48 @@ const JSON_CONTRACT = [
   "}",
 ].join("\n");
 
-export function buildReviewPrompt(phase: "spec" | "quality", args: { base: string; specPath: string }): string {
+/**
+ * Build the reviewer prompt.
+ *
+ * With `since` set this is a **re-review**: the same reviewer already read the
+ * whole branch and raised `priorFindings`, a fix was applied and committed, and
+ * the only new material is `since..HEAD`. Re-reading the full branch diff every
+ * round made reviews 58% of the flow's wall clock, most of it re-reading code an
+ * earlier round had already cleared. The narrowed round still has the full repo
+ * available — it is told to open whatever the fix touches — it just is not asked
+ * to re-derive a verdict on unchanged code.
+ *
+ * `since` is only ever supplied when exactly one commit separates the two
+ * reviews (see `incrementalSince`), so `since..HEAD` provably contains every
+ * change made since the previous verdict.
+ */
+export function buildReviewPrompt(
+  phase: "spec" | "quality",
+  args: { base: string; specPath: string; since?: string | null; priorFindings?: Finding[] },
+): string {
   const dims = phase === "spec" ? SPEC_REVIEW_DIMENSIONS : QUALITY_REVIEW_DIMENSIONS;
+  if (!args.since) {
+    return [
+      `You are the ${phase.toUpperCase()} reviewer for a completed feature.`,
+      `The spec/requirements source is: ${args.specPath}. Read it in full.`,
+      `Fetch and review the diff: \`git diff ${args.base}...HEAD\` (also \`--name-only\` for the file list).`,
+      WORKER_PROTOCOL,
+      dims,
+      CLASSIFIER,
+      JSON_CONTRACT,
+    ].join("\n\n");
+  }
   return [
-    `You are the ${phase.toUpperCase()} reviewer for a completed feature.`,
-    `The spec/requirements source is: ${args.specPath}. Read it in full.`,
-    `Fetch and review the diff: \`git diff ${args.base}...HEAD\` (also \`--name-only\` for the file list).`,
+    `You are the ${phase.toUpperCase()} reviewer for a completed feature, continuing a review you already started.`,
+    `On your previous pass over \`git diff ${args.base}...HEAD\` you raised the findings below, and they have since been fixed and committed. Everything else in that diff you already judged acceptable — do not re-derive a verdict on it.`,
+    `Your findings from the previous pass:\n${JSON.stringify(args.priorFindings ?? [], null, 2)}`,
+    `The fix is \`git diff ${args.since}..HEAD\` — this is the only code that has changed since your last verdict. Review it, and only it, for two questions:`,
+    [
+      "1. **Resolved?** Does the fix actually resolve each finding above? A finding that was papered over (assertion weakened, test deleted, check disabled) is NOT resolved — re-raise it.",
+      "2. **Broken?** Did the fix introduce a new problem, in the changed lines or in the unchanged code they now call into?",
+      "",
+      `Read whatever files you need — the spec is at ${args.specPath} and the whole repo is available. Scope means *what you judge*, not *what you may read*.`,
+    ].join("\n"),
     WORKER_PROTOCOL,
     dims,
     CLASSIFIER,

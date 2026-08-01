@@ -17,6 +17,13 @@ export interface FeatureResolution {
   specKind: "markdown" | "prd";
   acceptanceStatus: string;
   groups: AcceptanceGroup[];
+  /**
+   * Test-file classification regexes, as sources, from `nax features resolve`
+   * (the ADR-009 SSOT). Empty when the CLI is older than the field or could not
+   * resolve them — callers must treat empty as "cannot classify", never as
+   * "nothing is a test file".
+   */
+  testFileRegex: string[];
 }
 
 /**
@@ -30,6 +37,7 @@ export async function resolveFeature(feature: string, workdir: string): Promise<
   let parsed: {
     specSource?: { kind: "markdown" | "prd"; path: string };
     acceptance?: { status?: string; groups?: AcceptanceGroup[] };
+    testPatterns?: { regex?: string[] };
   };
   try {
     parsed = JSON.parse(res.stdout);
@@ -51,7 +59,37 @@ export async function resolveFeature(feature: string, workdir: string): Promise<
     specKind: parsed.specSource.kind,
     acceptanceStatus: parsed.acceptance?.status ?? "no-prd",
     groups: parsed.acceptance?.groups ?? [],
+    testFileRegex: parsed.testPatterns?.regex ?? [],
   };
+}
+
+/**
+ * Split paths into test and non-test, using the regexes `nax features resolve`
+ * reported.
+ *
+ * With no patterns (older nax, or a config the resolver choked on) every path is
+ * reported as non-test. That is the safe direction for the one caller: the gate
+ * loop skips its re-review only for a test-only change, so "cannot classify"
+ * must mean "review it", never "skip it".
+ *
+ * An unparseable regex source is skipped rather than thrown — a bad pattern in
+ * one config entry must not take the flow down mid-loop.
+ */
+export function partitionTestFiles(paths: string[], regexSources: string[]): { test: string[]; nonTest: string[] } {
+  const matchers: RegExp[] = [];
+  for (const src of regexSources) {
+    try {
+      matchers.push(new RegExp(src));
+    } catch {
+      // Skip — see the doc comment above.
+    }
+  }
+  const test: string[] = [];
+  const nonTest: string[] = [];
+  for (const p of paths) {
+    (matchers.some((re) => re.test(p)) ? test : nonTest).push(p);
+  }
+  return { test, nonTest };
 }
 
 export async function preflight(

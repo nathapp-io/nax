@@ -140,3 +140,127 @@ describe("gate fixes re-enter the quality review", () => {
     expect(switchOf("route_quality").cases.clean).toBe("quality_gates");
   });
 });
+
+// Chosen tradeoff, not an oversight: the re-review is the flow's most expensive
+// node and a gate fix is usually a mechanical test repair. It is a real hole —
+// the defect that motivated the re-entry (rs-stock b6fb66dd) was itself
+// test-only — so these tests pin the boundary precisely.
+describe("gate re-entry is scoped to non-test changes", () => {
+  const originalRun = _gitDeps.run;
+  const originalAppend = _resultDeps.appendText;
+  afterEach(() => {
+    _gitDeps.run = originalRun;
+    _resultDeps.appendText = originalAppend;
+  });
+
+  const TS_TEST_REGEX = ["\\.test\\.ts$", "(^|/)test/"];
+
+  const runGateCommit = async (files: string[], regex: string[] = TS_TEST_REGEX) => {
+    _resultDeps.appendText = async () => {};
+    _gitDeps.run = async (cmd) => {
+      if (cmd.includes("--porcelain")) return { exitCode: 0, stdout: " M a\n", stderr: "" };
+      if (cmd.includes("rev-parse")) return { exitCode: 0, stdout: "sha1\n", stderr: "" };
+      if (cmd.includes("--name-only")) return { exitCode: 0, stdout: `${files.join("\n")}\n`, stderr: "" };
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    return nodeRun<{ route: string }>("commit_gate").run(ctxOf({ outputs: { load_ctx: { testFileRegex: regex } } }));
+  };
+
+  test("a fix touching production code routes into review_quality", async () => {
+    expect((await runGateCommit(["src/scheduler.ts", "test/unit/scheduler.test.ts"])).route).toBe("changed");
+  });
+
+  test("a fix touching only test files skips the re-review", async () => {
+    expect((await runGateCommit(["test/unit/a.test.ts", "test/unit/b.test.ts"])).route).toBe("tests-only");
+  });
+
+  // Fail-safe: an older nax whose `features resolve` predates testPatterns, or a
+  // config the resolver choked on, must review rather than skip.
+  test("with no patterns to classify by, it reviews rather than skipping", async () => {
+    expect((await runGateCommit(["test/unit/a.test.ts"], [])).route).toBe("changed");
+  });
+
+  test("an unparseable pattern is ignored without taking the flow down", async () => {
+    expect((await runGateCommit(["test/unit/a.test.ts"], ["\\.test\\.ts$", "([unclosed"])).route).toBe("tests-only");
+  });
+
+  test("an empty file list (git show failed) reviews rather than skipping", async () => {
+    expect((await runGateCommit([])).route).toBe("changed");
+  });
+});
+
+// `incrementalSince` decides how much a re-review re-reads. Under-scoping it
+// silently hides code from the reviewer, so every case that cannot prove
+// "exactly one commit since the last verdict" must fall back to a full review.
+describe("review nodes — incremental scoping window", () => {
+  const promptOf = (id: string, over: { outputs?: Record<string, unknown>; steps?: { nodeId: string }[] }) =>
+    (flow.nodes[id] as unknown as { prompt: (c: FlowNodeContext) => string }).prompt(ctxOf(over));
+
+  const LOAD = { load_ctx: { base: "origin/main", specPath: "s.md" } };
+
+  test("the first review of a phase reads the whole branch diff", () => {
+    expect(promptOf("review_spec", { outputs: LOAD, steps: [{ nodeId: "load_ctx" }] })).toContain(
+      "git diff origin/main...HEAD",
+    );
+  });
+
+  test("one commit since the last review scopes to that commit's parent tree", () => {
+    const p = promptOf("review_spec", {
+      outputs: { ...LOAD, commit_spec: { shaBefore: "sha-at-review-1" }, review_spec: { findings: [] } },
+      steps: [{ nodeId: "review_spec" }, { nodeId: "fix_spec" }, { nodeId: "commit_spec" }],
+    });
+    expect(p).toContain("git diff sha-at-review-1..HEAD");
+  });
+
+  // The acceptance loop can commit between a spec fix and its re-review. Only
+  // the latest output per node id survives, so the earliest shaBefore in the
+  // window may already be gone — guessing would hide the spec fix itself.
+  test("two commits since the last review fall back to a full review", () => {
+    const p = promptOf("review_spec", {
+      outputs: {
+        ...LOAD,
+        commit_spec: { shaBefore: "sha-a" },
+        commit_acceptance: { shaBefore: "sha-b" },
+        review_spec: { findings: [] },
+      },
+      steps: [
+        { nodeId: "review_spec" },
+        { nodeId: "commit_spec" },
+        { nodeId: "acceptance" },
+        { nodeId: "commit_acceptance" },
+      ],
+    });
+    expect(p).toContain("git diff origin/main...HEAD");
+    expect(p).not.toContain("sha-a..HEAD");
+  });
+
+  test("a commit that recorded no shaBefore falls back to a full review", () => {
+    const p = promptOf("review_quality", {
+      outputs: { ...LOAD, commit_quality: { shaBefore: null }, review_quality: { findings: [] } },
+      steps: [{ nodeId: "review_quality" }, { nodeId: "commit_quality" }],
+    });
+    expect(p).toContain("git diff origin/main...HEAD");
+  });
+
+  test("only commits AFTER the last review count — an earlier one does not scope it", () => {
+    const p = promptOf("review_quality", {
+      outputs: { ...LOAD, commit_quality: { shaBefore: "old" }, review_quality: { findings: [] } },
+      steps: [{ nodeId: "commit_quality" }, { nodeId: "review_quality" }],
+    });
+    expect(p).toContain("git diff origin/main...HEAD");
+  });
+
+  // The gate re-entry: quality_gates -> fix_gate -> commit_gate -> review_quality.
+  test("the gate re-entry scopes the quality re-review to the gate commit", () => {
+    const p = promptOf("review_quality", {
+      outputs: { ...LOAD, commit_gate: { shaBefore: "sha-at-clean-review" }, review_quality: { findings: [] } },
+      steps: [
+        { nodeId: "review_quality" },
+        { nodeId: "quality_gates" },
+        { nodeId: "fix_gate" },
+        { nodeId: "commit_gate" },
+      ],
+    });
+    expect(p).toContain("git diff sha-at-clean-review..HEAD");
+  });
+});

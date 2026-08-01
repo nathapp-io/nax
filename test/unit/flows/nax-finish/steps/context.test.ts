@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { _contextDeps, detectBaseBranch, preflight, resolveFeature } from "@flows/nax-finish/steps/context";
+import {
+  _contextDeps,
+  detectBaseBranch,
+  partitionTestFiles,
+  preflight,
+  resolveFeature,
+} from "@flows/nax-finish/steps/context";
 import type { RunResult } from "@flows/nax-finish/types";
 
 const ok = (stdout: string): RunResult => ({ exitCode: 0, stdout, stderr: "" });
@@ -83,5 +89,37 @@ describe("context steps", () => {
   test("preflight routes proceed when ahead", async () => {
     _contextDeps.run = async () => ok("3\n");
     expect(await preflight("/w", "origin/main")).toEqual({ commitsAhead: 3, route: "proceed" });
+  });
+});
+
+describe("partitionTestFiles", () => {
+  const TS = ["\\.test\\.ts$", "(^|/)test/"];
+
+  test("splits by the resolver's patterns", () => {
+    const r = partitionTestFiles(["src/a.ts", "test/unit/a.test.ts", "apps/api/tests/b.py"], TS);
+    expect(r.test).toEqual(["test/unit/a.test.ts"]);
+    expect(r.nonTest).toEqual(["src/a.ts", "apps/api/tests/b.py"]);
+  });
+
+  // The one caller skips its re-review only on a test-only change, so
+  // "cannot classify" must mean "review it", never "skip it".
+  test("no patterns means nothing is classified as a test", () => {
+    const r = partitionTestFiles(["test/unit/a.test.ts"], []);
+    expect(r.test).toEqual([]);
+    expect(r.nonTest).toEqual(["test/unit/a.test.ts"]);
+  });
+
+  test("an unparseable pattern is skipped, the valid ones still apply", () => {
+    const r = partitionTestFiles(["test/unit/a.test.ts", "src/a.ts"], ["([unclosed", "\\.test\\.ts$"]);
+    expect(r.test).toEqual(["test/unit/a.test.ts"]);
+    expect(r.nonTest).toEqual(["src/a.ts"]);
+  });
+
+  test("an all-bad pattern list degrades to non-test, not to a throw", () => {
+    expect(partitionTestFiles(["test/a.test.ts"], ["([unclosed"]).nonTest).toEqual(["test/a.test.ts"]);
+  });
+
+  test("an empty path list yields two empty buckets", () => {
+    expect(partitionTestFiles([], TS)).toEqual({ test: [], nonTest: [] });
   });
 });

@@ -362,3 +362,43 @@ function exitCodeFor(status: ResolveStatus): number {
   if (status === "not-a-nax-repo") return 1;
   return 2;
 }
+
+// Emitted so out-of-process consumers — the nax-finish flow, which runs inside
+// acpx and cannot import resolveTestFilePatterns — classify paths through the
+// ADR-009 SSOT instead of reinventing /\.test\.ts$/.
+describe("testPatterns", () => {
+  test("an ok result carries regex sources a JSON consumer can rebuild", async () => {
+    const naxDir = initNaxRepo();
+    createFeature(naxDir, "feat-x", { specMd: "# spec" });
+
+    const r = await resolveFeatureSpec("feat-x", tempDir);
+
+    expect(r.status).toBe("ok");
+    expect(r.testPatterns?.regex.length).toBeGreaterThan(0);
+    // Rebuildable, and actually classifying — a plain string list would pass a
+    // length assertion while being useless to the consumer.
+    const matchers = r.testPatterns!.regex.map((s) => new RegExp(s));
+    expect(matchers.some((re) => re.test("test/unit/a.test.ts"))).toBe(true);
+    expect(matchers.some((re) => re.test("src/scheduler.ts"))).toBe(false);
+  });
+
+  test("reports which tier resolved them", async () => {
+    const naxDir = initNaxRepo();
+    createFeature(naxDir, "feat-x", { specMd: "# spec" });
+    const r = await resolveFeatureSpec("feat-x", tempDir);
+    expect(["per-package", "root-config", "detected", "fallback"]).toContain(r.testPatterns?.resolution);
+  });
+
+  test("survives JSON round-trip, which is how the flow consumes it", async () => {
+    const naxDir = initNaxRepo();
+    createFeature(naxDir, "feat-x", { specMd: "# spec" });
+    const r = JSON.parse(JSON.stringify(await resolveFeatureSpec("feat-x", tempDir)));
+    expect(new RegExp(r.testPatterns.regex[0])).toBeInstanceOf(RegExp);
+  });
+
+  test("a non-nax dir resolves without testPatterns rather than throwing", async () => {
+    const r = await resolveFeatureSpec("feat-x", makeTempDir("nax-not-a-repo-"));
+    expect(r.status).toBe("not-a-nax-repo");
+    expect(r.testPatterns).toBeUndefined();
+  });
+});

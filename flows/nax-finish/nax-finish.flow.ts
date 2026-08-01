@@ -40,6 +40,7 @@
  */
 import { defineFlow, extractJsonObject } from "acpx/flows";
 import { buildFixCommitMessage } from "./commit-message";
+import { findingsOf, fixAttemptCount, gateOutputs, incrementalSince, inputOf, loadCtxOf } from "./flow-ctx";
 import { buildReviewPrompt, fixPrompt } from "./review-prompts";
 import {
   _contextDeps,
@@ -48,8 +49,10 @@ import {
   commitAndPush,
   commitFixes,
   detectBaseBranch,
+  filesInCommit,
   loadQualityCommands,
   openOrPromotePr,
+  partitionTestFiles,
   postEscalation,
   preflight,
   resolveFeature,
@@ -57,9 +60,7 @@ import {
   runQualityGates,
   writeResult,
 } from "./steps";
-import type { AcceptanceGroup, Finding, FinishInput, FinishPhase, FinishResult, ReviewVerdict } from "./types";
-
-const inputOf = (ctx: { input: unknown }) => ctx.input as FinishInput;
+import type { FinishInput, FinishPhase, FinishResult, ReviewVerdict } from "./types";
 
 /**
  * Cap on fix-and-reverify iterations, per phase, before escalating instead of
@@ -68,35 +69,6 @@ const inputOf = (ctx: { input: unknown }) => ctx.input as FinishInput;
  * time) hangs `acpx flow run` — and the post-run plugin awaits that subprocess.
  */
 const MAX_FIX_ATTEMPTS = 3;
-
-interface LoadCtxOutput {
-  base?: string;
-  specPath?: string;
-  groups?: AcceptanceGroup[];
-  /** `nax features resolve`'s acceptance status: "ok" | "disabled" | "no-prd". */
-  acceptanceStatus?: string;
-  route?: string;
-}
-
-function fixAttemptCount(ctx: { state: { steps: { nodeId: string }[] } }, fixNodeId: string): number {
-  return (ctx.state.steps ?? []).filter((s) => s.nodeId === fixNodeId).length;
-}
-
-function loadCtxOf(ctx: { outputs: unknown }): LoadCtxOutput {
-  return ((ctx.outputs as Record<string, LoadCtxOutput | undefined>).load_ctx ?? {}) as LoadCtxOutput;
-}
-
-function gateOutputs(ctx: { outputs: unknown }): { failing?: string[] } {
-  return ((ctx.outputs as Record<string, { failing?: string[] } | undefined>).quality_gates ?? {}) as {
-    failing?: string[];
-  };
-}
-
-/** The findings the `fix_<phase>` node was asked to resolve; empty for non-review phases. */
-function findingsOf(ctx: { outputs: unknown }, phase: FinishPhase): Finding[] {
-  if (phase !== "spec" && phase !== "quality") return [];
-  return (ctx.outputs as Record<string, ReviewVerdict | undefined>)[`review_${phase}`]?.findings ?? [];
-}
 
 /**
  * Re-run the acceptance gate, routing on the shared fix-cap rules.
@@ -195,6 +167,45 @@ function routeReview(
  * output per node, so a round not recorded here is a round no terminal node
  * can reconstruct.
  */
+/**
+ * Route for `commit_gate`, whose successor depends on what the fix touched.
+ *
+ * - `unchanged` — nothing committed; no new diff, so nothing to review.
+ * - `tests-only` — every touched path matched the repo's test-file patterns.
+ *   Skipped by explicit choice: the re-review is the flow's most expensive node
+ *   and a gate fix is usually a mechanical test repair. **This is a real hole.**
+ *   The defect that motivated the re-entry (rs-stock `b6fb66dd`) was itself
+ *   test-only — 8 copy-pasted stubs across 3 test files — so this route would
+ *   not have caught it. Widen it here if test-quality regressions start
+ *   shipping.
+ * - `changed` — production code was touched, or the paths could not be
+ *   classified at all. "Cannot classify" reviews rather than skips.
+ */
+async function gateCommitRoute(
+  i: FinishInput,
+  committed: boolean,
+  shaAfter: string | null,
+  testFileRegex: string[],
+): Promise<string> {
+  if (!committed || !shaAfter) return "unchanged";
+  const files = await filesInCommit(i.workdir, shaAfter);
+  if (files.length === 0) return "changed";
+  return partitionTestFiles(files, testFileRegex).nonTest.length > 0 ? "changed" : "tests-only";
+}
+
+/**
+ * Build the `commit_<phase>` node that follows `fix_<phase>`.
+ *
+ * One node per phase rather than a single shared one because each returns to a
+ * different successor, and acpx routes on the node id — a shared node would
+ * need a switch reconstructing which fix ran from the step history.
+ *
+ * Also the audit seam: this is the only point in the graph where a round's
+ * findings and its commit are both known. `ctx.outputs` keeps only the latest
+ * output per node, so a round not recorded here is a round no terminal node
+ * can reconstruct. `shaBefore` is recorded for the same reason — it is what the
+ * next review of this phase diffs from (see `incrementalSince`).
+ */
 function commitFixNode(phase: FinishPhase) {
   return {
     nodeType: "action" as const,
@@ -202,15 +213,17 @@ function commitFixNode(phase: FinishPhase) {
       input: unknown;
       outputs: unknown;
       state: { steps: { nodeId: string }[] };
-    }): Promise<{ committed: boolean; route: string }> {
+    }): Promise<{ committed: boolean; route: string; shaBefore: string | null; shaAfter: string | null }> {
       const i = inputOf(ctx);
       const messageCtx = { outputs: ctx.outputs as Record<string, unknown> };
       // skipHooks: an intermediate checkpoint must not be rejected by a repo's
       // pre-commit hook — quality_gates runs the repo's real gates before any
       // PR opens, and a hook failure here would kill the flow mid-loop.
-      const { committed } = await commitFixes(i.workdir, buildFixCommitMessage(phase, i.feature, messageCtx), {
-        skipHooks: true,
-      });
+      const { committed, shaBefore, shaAfter } = await commitFixes(
+        i.workdir,
+        buildFixCommitMessage(phase, i.feature, messageCtx),
+        { skipHooks: true },
+      );
       await appendRound(i, {
         ts: new Date().toISOString(),
         phase,
@@ -219,10 +232,15 @@ function commitFixNode(phase: FinishPhase) {
         findings: findingsOf(ctx, phase),
         ...(phase === "gate" ? { failing: gateOutputs(ctx).failing ?? [] } : {}),
       });
-      // `route` exists for `commit_gate`, whose successor depends on whether
-      // anything actually changed (see the edge list). The other phases route
-      // unconditionally and ignore it.
-      return { committed, route: committed ? "changed" : "unchanged" };
+      // Only `commit_gate` routes on this; the other phases have unconditional
+      // edges and ignore it.
+      const route =
+        phase === "gate"
+          ? await gateCommitRoute(i, committed, shaAfter, loadCtxOf(ctx).testFileRegex ?? [])
+          : committed
+            ? "changed"
+            : "unchanged";
+      return { committed, route, shaBefore, shaAfter };
     },
   };
 }
@@ -256,6 +274,7 @@ export default defineFlow({
           specPath: resolution.specPath,
           acceptanceStatus: resolution.acceptanceStatus,
           groups: resolution.groups,
+          testFileRegex: resolution.testFileRegex,
           commitsAhead: pf.commitsAhead,
           route: pf.route,
         };
@@ -277,7 +296,12 @@ export default defineFlow({
       profile: process.env.NAX_FINISH_SPEC_PROFILE || undefined,
       prompt(ctx) {
         const outs = loadCtxOf(ctx);
-        return buildReviewPrompt("spec", { base: outs.base ?? "origin/main", specPath: outs.specPath ?? "" });
+        return buildReviewPrompt("spec", {
+          base: outs.base ?? "origin/main",
+          specPath: outs.specPath ?? "",
+          since: incrementalSince(ctx, "spec"),
+          priorFindings: findingsOf(ctx, "spec"),
+        });
       },
       parse: parseVerdict,
     },
@@ -297,7 +321,12 @@ export default defineFlow({
       profile: process.env.NAX_FINISH_QUALITY_PROFILE || undefined,
       prompt(ctx) {
         const outs = loadCtxOf(ctx);
-        return buildReviewPrompt("quality", { base: outs.base ?? "origin/main", specPath: outs.specPath ?? "" });
+        return buildReviewPrompt("quality", {
+          base: outs.base ?? "origin/main",
+          specPath: outs.specPath ?? "",
+          since: incrementalSince(ctx, "quality"),
+          priorFindings: findingsOf(ctx, "quality"),
+        });
       },
       parse: parseVerdict,
     },
@@ -522,7 +551,10 @@ export default defineFlow({
     // turn to re-report what route_quality already called clean.
     {
       from: "commit_gate",
-      switch: { on: "$.route", cases: { changed: "review_quality", unchanged: "quality_gates" } },
+      switch: {
+        on: "$.route",
+        cases: { changed: "review_quality", "tests-only": "quality_gates", unchanged: "quality_gates" },
+      },
     },
   ],
 });

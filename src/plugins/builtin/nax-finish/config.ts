@@ -9,13 +9,15 @@
  * than as an ad-hoc key list here.
  */
 
+import { resolveDefaultAgent } from "@/agents";
 import { finishConfigSelector } from "@/config";
 import type { NaxConfig } from "@/config/types";
 
 export interface FinishAutoFlowSettings {
   enabled: boolean;
   flowPath: string;
-  defaultAgent: string | null;
+  /** Never null — see resolveFlowAgent. */
+  defaultAgent: string;
   reviewers: { spec: string | null; quality: string | null };
   escalate: { telegram: boolean };
   notify: { mode: "escalation" | "always" | "off" };
@@ -27,10 +29,9 @@ export interface FinishAutoFlowSettings {
  * only when the plugin is handed a config carrying no `finish` block at all
  * (older configs, and tests that pass a partial object).
  */
-const DEFAULT_FINISH_AUTO_FLOW_CONFIG: FinishAutoFlowSettings = {
+const DEFAULT_FINISH_AUTO_FLOW_CONFIG: Omit<FinishAutoFlowSettings, "defaultAgent"> = {
   enabled: false,
   flowPath: "flows/nax-finish/nax-finish.flow.ts",
-  defaultAgent: null,
   reviewers: { spec: null, quality: null },
   escalate: { telegram: true },
   notify: { mode: "escalation" },
@@ -44,15 +45,30 @@ function selectFinish(config: unknown): { autoFlow?: Partial<FinishAutoFlowSetti
     | undefined;
 }
 
+/**
+ * The agent every non-review node in the flow runs on.
+ *
+ * `finish.autoFlow.defaultAgent` wins when set. Otherwise it is the agent the
+ * run itself used — NOT null. Passing null omits `--default-agent` from the
+ * `acpx flow run` argv, which silently hands the fix nodes to whatever agent
+ * acpx defaults to: a profile that configured only `reviewers` ran its
+ * reviewers on the intended models and every `fix_*` node on a different one.
+ * `resolveDefaultAgent` is the same accessor the run uses, so the two agree.
+ */
+function resolveFlowAgent(config: unknown, explicit: string | null | undefined): string {
+  if (typeof explicit === "string" && explicit.length > 0) return explicit;
+  return resolveDefaultAgent((config ?? {}) as Parameters<typeof resolveDefaultAgent>[0]);
+}
+
 /** Read the `finish.autoFlow` slice from `ctx.config`, applying schema defaults when absent. */
 export function getFinishAutoFlowConfig(ctx: { config?: unknown }): FinishAutoFlowSettings {
   const autoFlow = selectFinish(ctx.config)?.autoFlow;
-  if (!autoFlow) return DEFAULT_FINISH_AUTO_FLOW_CONFIG;
+  if (!autoFlow) return { ...DEFAULT_FINISH_AUTO_FLOW_CONFIG, defaultAgent: resolveFlowAgent(ctx.config, null) };
   const defaults = DEFAULT_FINISH_AUTO_FLOW_CONFIG;
   return {
     enabled: autoFlow.enabled === true,
     flowPath: autoFlow.flowPath ?? defaults.flowPath,
-    defaultAgent: autoFlow.defaultAgent ?? null,
+    defaultAgent: resolveFlowAgent(ctx.config, autoFlow.defaultAgent),
     reviewers: {
       spec: autoFlow.reviewers?.spec ?? null,
       quality: autoFlow.reviewers?.quality ?? null,
