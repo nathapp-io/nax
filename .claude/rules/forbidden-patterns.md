@@ -94,7 +94,8 @@ const prompt = new AcceptancePromptBuilder().buildSourceFixPrompt(...);
 
 | ❌ Forbidden | ✅ Use Instead | Why |
 |:---|:---|:---|
-| Test files in `test/` root | `test/unit/`, `test/integration/`, `test/ui/`, or `test/e2e/` (sanctioned independent suite, run via `bun run test:e2e`) | Orphaned files with no clear ownership |
+| Test files anywhere outside `test/unit/`, `test/integration/`, `test/ui/` (or `test/e2e/`, run separately via `bun run test:e2e`) | Move under the matching sanctioned directory | Orphaned files with no clear ownership — **and they silently never run.** `bun run test` walks exactly those three directories (see `scripts/run-tests.ts` PHASES), so a `.test.ts` outside them looks like coverage and is not. |
+| Fixed-duration sleeps in tests — **both** `Bun.sleep(n)` and `await new Promise(r => setTimeout(r, n))` | Waiting on a side effect → `waitForCondition` / `waitForFile`. Timer-driven code → inject `_deps` timers and drive `makeFakeClock()`. Asserting a handle is cleared → `withTimerSpy`. | Flaky under load, and additive on the suite wall clock since Bun runs files serially. Naming only `Bun.sleep` left the `new Promise` spelling to accumulate. Carve-out: a bounded poll interval *inside* a `test/helpers/` helper. See `docs/guides/testing-rules.md` §3. |
 | Standalone bug-fix test files (`*-bug026.test.ts`) | Add to existing relevant test file | Fragments test coverage, creates ownership confusion |
 | `TEST_COVERAGE_*.md` in test/ | `docs/` directory | Test dir is for test code only |
 | `rm -rf` in test cleanup | `test/helpers/temp.ts` helpers (`makeTempDir()` / `cleanupTempDir()` / `withTempDir()`) | Accidental deletion risk; temp-dir handling is centralized and portable |
