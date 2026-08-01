@@ -25,6 +25,7 @@ export {
   runPhase,
   withIncreasingFailuresBail,
 } from "./run-phase";
+export { toReviewDecisionPayload } from "./review-decision";
 export {
   EXHAUSTED_EXIT_REASONS,
   CANONICAL_ORDER,

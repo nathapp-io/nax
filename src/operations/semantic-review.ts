@@ -1,4 +1,4 @@
-import { makeParseRetryStrategy } from "../agents/retry";
+import { UNPARSED_PREVIEW_BYTES, makeParseRetryStrategy, previewOutput } from "../agents/retry";
 import type { TurnResult } from "../agents/types";
 import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
@@ -20,6 +20,7 @@ import type { AcDroppedEntry, AcGroundingMinimalRejection, LLMFinding } from "..
 import { parseRequoteResponse } from "../review/requote-response";
 import type { SemanticReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
+import { reviewExhaustedFallback } from "./_review-fallback";
 import type { HopBodyContext, RunOperation } from "./types";
 
 export type { SemanticReviewConfig, SemanticStory };
@@ -110,6 +111,12 @@ export interface SemanticReviewOutput {
   acDropped: AcDroppedEntry<LLMFinding, AcGroundingMinimalRejection>[];
   failOpen?: boolean;
   looksLikeFail?: boolean;
+  /**
+   * Clipped preview of the output that could not be parsed, carried to the
+   * review-audit record. The raw reviewer response is retained nowhere else, so
+   * a give-up was previously undiagnosable after the run.
+   */
+  unparsedPreview?: string;
   repromptEvent?: {
     dropCount: number;
     outcome: "recovered-blocking" | "recovered-advisory-only" | "still-dropped" | "parse-failed";
@@ -310,10 +317,8 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
         invalid: () => ReviewPromptBuilder.jsonRetry(),
         truncated: () => ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: input.blockingThreshold }),
       },
-      exhaustedFallback: (lastOutput) =>
-        /"passed"\s*:\s*false/.test(lastOutput)
-          ? { passed: false, findings: [], normalizedFindings: [], acDropped: [], looksLikeFail: true }
-          : FAIL_OPEN,
+      exhaustedFallback: (lastOutput) => reviewExhaustedFallback(lastOutput, FAIL_OPEN),
+      outputPreviewBytes: UNPARSED_PREVIEW_BYTES,
       logContext: { blockingThreshold: input.blockingThreshold ?? "error" },
     }),
   hopBody: semanticReviewHopBody,
@@ -345,6 +350,9 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
         repromptEvent,
       };
     }
+    // Both give-up branches carry a preview of the output that defeated the
+    // parser — it is retained nowhere else once the turn is discarded.
+    const unparsedPreview = previewOutput(output, UNPARSED_PREVIEW_BYTES);
     if (/"passed"\s*:\s*false/.test(output)) {
       return {
         passed: false,
@@ -352,10 +360,11 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
         normalizedFindings: [],
         acDropped: [],
         looksLikeFail: true,
+        unparsedPreview,
         repromptEvent,
       };
     }
-    return FAIL_OPEN;
+    return { ...FAIL_OPEN, unparsedPreview };
   },
   async verify(parsed, input, _verifyCtx) {
     if (parsed.failOpen || parsed.looksLikeFail) return parsed;

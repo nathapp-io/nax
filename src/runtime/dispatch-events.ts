@@ -107,6 +107,10 @@ export interface ReviewDecisionEvent {
   readonly blockingThreshold?: "error" | "warning" | "info";
   readonly result: { passed: boolean; findings: unknown[] } | null;
   readonly advisoryFindings?: unknown[];
+  /** Findings deleted by the AC-grounding filter — invisible everywhere else. */
+  readonly acDropped?: readonly unknown[];
+  /** Clipped preview of output that failed to parse, for post-hoc give-up diagnosis. */
+  readonly unparsedPreview?: string;
   /** Issue #986 — adversarial-only structural-gate counterfactual telemetry. */
   readonly diffAvailable?: boolean;
   readonly adversarialDropAnalysis?: readonly unknown[];
