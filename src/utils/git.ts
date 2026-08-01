@@ -6,14 +6,6 @@ import { getSafeLogger } from "../logger";
 import { spawn } from "./bun-deps";
 
 /**
- * Injectable dependencies for git subprocess calls — allows tests to intercept
- * Bun.spawn without mock.module().
- *
- * @internal
- */
-export const _gitDeps = { spawn, getSafeLogger };
-
-/**
  * Default timeout for git subprocess calls.
  * Prevents git from hanging indefinitely on locked repos or network mounts.
  */
@@ -26,6 +18,21 @@ const GIT_TIMEOUT_MS = 10_000;
  * etc.) — a hung git here must not stall the already-timed-out agent turn.
  */
 const TIMEOUT_RETRY_GIT_TIMEOUT_MS = 3_000;
+
+/**
+ * Injectable dependencies for git subprocess calls — allows tests to intercept
+ * Bun.spawn without mock.module().
+ *
+ * `timeoutRetryGitTimeoutMs` is injectable so the hang-path tests can assert the
+ * SIGKILL contract without burning the full production timeout in wall-clock.
+ *
+ * @internal
+ */
+export const _gitDeps = {
+  spawn,
+  getSafeLogger,
+  timeoutRetryGitTimeoutMs: TIMEOUT_RETRY_GIT_TIMEOUT_MS,
+};
 
 /**
  * Return the absolute path of the git repository root for the given workdir.
@@ -346,7 +353,7 @@ export async function captureWorkingTreeChanges(
 
   const runDiff = async (args: string[]): Promise<string[]> => {
     const fullArgs = scopePrefix ? [...args, "--", `${scopePrefix}/`] : args;
-    const { stdout, exitCode } = await gitWithTimeout(fullArgs, workdir, TIMEOUT_RETRY_GIT_TIMEOUT_MS);
+    const { stdout, exitCode } = await gitWithTimeout(fullArgs, workdir, _gitDeps.timeoutRetryGitTimeoutMs);
     if (exitCode !== 0) return [];
     return stdout.trim().split("\n").filter(Boolean);
   };

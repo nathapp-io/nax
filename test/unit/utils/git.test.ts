@@ -53,13 +53,16 @@ function mockSpawnOutput(output: string, exitCode = 0) {
 }
 
 let origSpawn: typeof _gitDeps.spawn;
+let origRetryTimeoutMs: number;
 
 beforeEach(() => {
   origSpawn = _gitDeps.spawn;
+  origRetryTimeoutMs = _gitDeps.timeoutRetryGitTimeoutMs;
 });
 
 afterEach(() => {
   _gitDeps.spawn = origSpawn;
+  _gitDeps.timeoutRetryGitTimeoutMs = origRetryTimeoutMs;
   mock.restore();
 });
 
@@ -217,12 +220,17 @@ describe("captureWorkingTreeChanges", () => {
 
   test("does not stall when git subprocess hangs (SIGKILL after timeout)", async () => {
     // Adversarial review: a hung git must not stall timeout-retry recovery.
-    // captureWorkingTreeChanges passes TIMEOUT_RETRY_GIT_TIMEOUT_MS (3s) to
-    // gitWithTimeout, scoped separately from the general-purpose GIT_TIMEOUT_MS
-    // (10s) so a slow retry-recovery capture can't shrink the timeout for other
-    // gitWithTimeout callers. The mock simulates real Bun.spawn behaviour:
-    // proc.kill() resolves the exited promise so the await unblocks and the
-    // function returns the empty-on-failure contract.
+    // captureWorkingTreeChanges passes _gitDeps.timeoutRetryGitTimeoutMs (3s in
+    // production) to gitWithTimeout, scoped separately from the general-purpose
+    // GIT_TIMEOUT_MS (10s) so a slow retry-recovery capture can't shrink the
+    // timeout for other gitWithTimeout callers. The mock simulates real
+    // Bun.spawn behaviour: proc.kill() resolves the exited promise so the await
+    // unblocks and the function returns the empty-on-failure contract.
+    //
+    // The timeout is injected down to 50ms — the contract under test is
+    // "arms a timer, SIGKILLs on expiry, degrades to []", not the production
+    // duration. Waiting the real 3s made this the slowest test in the suite.
+    _gitDeps.timeoutRetryGitTimeoutMs = 50;
     let killCount = 0;
     _gitDeps.spawn = mock((_args: unknown[], _opts: unknown) => {
       let resolveExited: (code: number) => void = () => {};
@@ -243,8 +251,8 @@ describe("captureWorkingTreeChanges", () => {
     const start = Date.now();
     const result = await captureWorkingTreeChanges("/tmp/repo", "abc123");
     const elapsed = Date.now() - start;
-    // Allow generous slack for CI; the scoped TIMEOUT_RETRY_GIT_TIMEOUT_MS is 3s.
-    expect(elapsed).toBeLessThan(15_000);
+    // Allow generous slack for CI; the injected timeout above is 50ms.
+    expect(elapsed).toBeLessThan(5_000);
     // All three git subprocesses must be killed on timeout (one per diff call).
     expect(killCount).toBe(3);
     // Best-effort contract: hangs degrade to empty array.

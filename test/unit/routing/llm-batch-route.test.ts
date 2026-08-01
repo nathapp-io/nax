@@ -1,12 +1,24 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { UserStory } from "../../../src/prd/types";
+import { _callOpDeps } from "../../../src/operations";
 import { tryLlmBatchRoute } from "../../../src/routing/router";
 import { makeNaxConfig, makeStory } from "../../helpers";
 import { makeMockRuntime } from "../../helpers/runtime";
 import type { NaxRuntime } from "../../../src/runtime";
 
+// The mock runtime makes the routing LLM call fail, which the classify-route op
+// retries behind a 1s base backoff. The retry cadence is classify-route's
+// contract, not this file's — stub the sleep out so the swallow-the-failure
+// assertions don't pay it in wall-clock.
+let origSleep: typeof _callOpDeps.sleep;
+
 const createdRuntimes: NaxRuntime[] = [];
+beforeEach(() => {
+  origSleep = _callOpDeps.sleep;
+  _callOpDeps.sleep = async () => {};
+});
 afterEach(async () => {
+  _callOpDeps.sleep = origSleep;
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });

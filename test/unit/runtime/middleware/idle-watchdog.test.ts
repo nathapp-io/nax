@@ -26,9 +26,9 @@ function makeIdleWatchdogConfig(overrides: {
   return {
     enabled: true,
     mode: "cancel" as const,
-    idleTimeoutSeconds: 1,
+    idleTimeoutSeconds: 0.333,
     activityKinds: ["message_update", "thinking_update", "usage_update"] as ("message_update" | "thinking_update" | "usage_update")[],
-    cancelGraceSeconds: 0.5,
+    cancelGraceSeconds: 0.167,
     maxRetryAttempts: 3,
     ...overrides,
   };
@@ -181,7 +181,7 @@ describe("attachAgentIdleWatchdog", () => {
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-1" }));
 
     // Wait a tiny bit, then emit message_update
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 17));
     eventBus.emitAgentStream(makeMessageUpdateEvent({ callId: "call-1" }));
     await getLogger().flush();
 
@@ -204,7 +204,7 @@ describe("attachAgentIdleWatchdog", () => {
     currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-2" }));
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 17));
     eventBus.emitAgentStream(makeThinkingUpdateEvent({ callId: "call-2" }));
     await getLogger().flush();
 
@@ -226,7 +226,7 @@ describe("attachAgentIdleWatchdog", () => {
     currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-3" }));
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 17));
     eventBus.emitAgentStream(makeUsageUpdateEvent({ callId: "call-3" }));
     await getLogger().flush();
 
@@ -239,7 +239,7 @@ describe("attachAgentIdleWatchdog", () => {
       agent: {
         idleWatchdog: makeIdleWatchdogConfig({
           mode: "observe",
-          idleTimeoutSeconds: 0.2, // Short timeout so the timer fires quickly
+          idleTimeoutSeconds: 0.067, // Short timeout so the timer fires quickly
           activityKinds: ["message_update", "thinking_update", "usage_update"],
         }),
       },
@@ -250,11 +250,11 @@ describe("attachAgentIdleWatchdog", () => {
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-4" }));
 
     // Emit process_update well before the timeout — must NOT reset the idle clock
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 17));
     eventBus.emitAgentStream(makeProcessUpdateEvent({ callId: "call-4", status: "spawned" }));
 
     // Wait past the idle timeout — the timer must fire because process_update did not count as activity
-    await new Promise((r) => setTimeout(r, 250));
+    await new Promise((r) => setTimeout(r, 83));
     await getLogger().flush();
 
     const entries = await parseAllEntries(logFile);
@@ -278,7 +278,7 @@ describe("attachAgentIdleWatchdog", () => {
       agent: {
         idleWatchdog: makeIdleWatchdogConfig({
           mode: "observe",
-          idleTimeoutSeconds: 0.2,
+          idleTimeoutSeconds: 0.067,
           activityKinds: ["message_update"],
         }),
       },
@@ -289,7 +289,7 @@ describe("attachAgentIdleWatchdog", () => {
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-5" }));
 
     // Wait for timeout to be exceeded
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 100));
     await getLogger().flush();
 
     const entries = await parseAllEntries(logFile);
@@ -313,8 +313,8 @@ describe("attachAgentIdleWatchdog", () => {
       agent: {
         idleWatchdog: makeIdleWatchdogConfig({
           mode: "warn-then-cancel",
-          idleTimeoutSeconds: 0.2,
-          cancelGraceSeconds: 0.2,
+          idleTimeoutSeconds: 0.067,
+          cancelGraceSeconds: 0.067,
           activityKinds: ["message_update"],
         }),
       },
@@ -325,7 +325,7 @@ describe("attachAgentIdleWatchdog", () => {
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-6" }));
 
     // Wait for timeout + grace period
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 167));
     await getLogger().flush();
 
     // Should have logged warning and then canceled
@@ -350,8 +350,8 @@ describe("attachAgentIdleWatchdog", () => {
       agent: {
         idleWatchdog: makeIdleWatchdogConfig({
           mode: "warn-then-cancel",
-          idleTimeoutSeconds: 0.2,
-          cancelGraceSeconds: 0.3,
+          idleTimeoutSeconds: 0.067,
+          cancelGraceSeconds: 0.1,
           activityKinds: ["message_update"],
         }),
       },
@@ -362,13 +362,13 @@ describe("attachAgentIdleWatchdog", () => {
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-6b" }));
 
     // Wait for timeout to be exceeded
-    await new Promise((r) => setTimeout(r, 250));
+    await new Promise((r) => setTimeout(r, 83));
 
     // Activity arrives during grace period
     eventBus.emitAgentStream(makeMessageUpdateEvent({ callId: "call-6b" }));
 
     // Wait a bit more to see if cancel is called
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 67));
     await getLogger().flush();
 
     // Cancel should NOT have been called because activity reset the timer
@@ -392,7 +392,7 @@ describe("attachAgentIdleWatchdog", () => {
       agent: {
         idleWatchdog: makeIdleWatchdogConfig({
           mode: "cancel",
-          idleTimeoutSeconds: 0.2,
+          idleTimeoutSeconds: 0.067,
           cancelGraceSeconds: 0, // ignored in cancel mode
           activityKinds: ["message_update"],
         }),
@@ -404,13 +404,13 @@ describe("attachAgentIdleWatchdog", () => {
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-7" }));
 
     // Wait for timeout
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 100));
     await getLogger().flush();
 
     expect(cancelWasCalled).toBe(true);
     // Verify it was called around the timeout, not much later
     const elapsedMs = cancelTime - startTime;
-    expect(elapsedMs).toBeLessThan(500); // Should be around 200-300ms
+    expect(elapsedMs).toBeLessThan(167); // Should be around 67-100ms
 
     currentUnsubscribe();
   });
@@ -421,7 +421,7 @@ describe("attachAgentIdleWatchdog", () => {
       agent: {
         idleWatchdog: makeIdleWatchdogConfig({
           mode: "cancel",
-          idleTimeoutSeconds: 0.5,
+          idleTimeoutSeconds: 0.167,
           activityKinds: ["message_update"],
         }),
       },
@@ -432,11 +432,11 @@ describe("attachAgentIdleWatchdog", () => {
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-8" }));
 
     // Emit call_ended
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 17));
     eventBus.emitAgentStream(makeCallEndedEvent({ callId: "call-8", status: "success" }));
 
     // Wait to see if any timeout fires after call_ended
-    await new Promise((r) => setTimeout(r, 700));
+    await new Promise((r) => setTimeout(r, 233));
     await getLogger().flush();
 
     // Should not have any cancellation or excessive warnings
@@ -454,7 +454,7 @@ describe("attachAgentIdleWatchdog", () => {
       agent: {
         idleWatchdog: makeIdleWatchdogConfig({
           mode: "cancel",
-          idleTimeoutSeconds: 0.2,
+          idleTimeoutSeconds: 0.067,
           maxRetryAttempts: 2,
           activityKinds: ["message_update"],
         }),
@@ -466,7 +466,7 @@ describe("attachAgentIdleWatchdog", () => {
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-9" }));
 
     // Wait for multiple timeout/cancel cycles
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise((r) => setTimeout(r, 333));
     await getLogger().flush();
 
     const entries = await parseAllEntries(logFile);
@@ -507,7 +507,7 @@ describe("attachAgentIdleWatchdog", () => {
       agent: {
         idleWatchdog: makeIdleWatchdogConfig({
           mode: "cancel",
-          idleTimeoutSeconds: 0.2,
+          idleTimeoutSeconds: 0.067,
           activityKinds: ["message_update"],
         }),
       },
@@ -518,11 +518,11 @@ describe("attachAgentIdleWatchdog", () => {
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-unsub" }));
 
     // Unsubscribe before timeout
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 33));
     currentUnsubscribe();
 
     // Wait for what would have been the timeout
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 100));
     await getLogger().flush();
 
     // Should not have canceled because we unsubscribed
@@ -535,7 +535,7 @@ describe("attachAgentIdleWatchdog", () => {
         idleWatchdog: makeIdleWatchdogConfig({
           enabled: false,
           mode: "cancel",
-          idleTimeoutSeconds: 0.1,
+          idleTimeoutSeconds: 0.033,
         }),
       },
     });
@@ -544,7 +544,7 @@ describe("attachAgentIdleWatchdog", () => {
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-disabled" }));
 
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 100));
     await getLogger().flush();
 
     // No timers should be active when disabled
@@ -564,7 +564,7 @@ describe("attachAgentIdleWatchdog", () => {
       agent: {
         idleWatchdog: makeIdleWatchdogConfig({
           mode: "cancel",
-          idleTimeoutSeconds: 0.2,
+          idleTimeoutSeconds: 0.067,
           activityKinds: ["message_update"],
         }),
       },
@@ -578,14 +578,14 @@ describe("attachAgentIdleWatchdog", () => {
 
     // Keep call-10a alive: emit messages every ~100ms so it never reaches the 200ms idle threshold.
     // call-10b receives no activity and will time out at t≈200ms.
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 33));
     eventBus.emitAgentStream(makeMessageUpdateEvent({ callId: "call-10a" })); // t=100ms
 
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 33));
     eventBus.emitAgentStream(makeMessageUpdateEvent({ callId: "call-10a" })); // t=200ms
 
     // call-10b has been idle 200ms — confirm it timed out; call-10a is still fresh (lastActivity=200ms)
-    await new Promise((r) => setTimeout(r, 150));
+    await new Promise((r) => setTimeout(r, 50));
     await getLogger().flush();
 
     // call-10b should have been canceled, call-10a should still be active
@@ -617,7 +617,7 @@ describe("attachAgentIdleWatchdog", () => {
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-mode-off" }));
 
     // Wait longer than idle timeout
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 100));
     await getLogger().flush();
 
     // No cancellation should occur when mode is 'off'
@@ -637,7 +637,7 @@ describe("attachAgentIdleWatchdog", () => {
       agent: {
         idleWatchdog: makeIdleWatchdogConfig({
           mode: "warn-then-cancel",
-          idleTimeoutSeconds: 0.2,
+          idleTimeoutSeconds: 0.067,
           cancelGraceSeconds: 0, // Zero grace period
           activityKinds: ["message_update"],
         }),
@@ -649,7 +649,7 @@ describe("attachAgentIdleWatchdog", () => {
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-zero-grace" }));
 
     // Wait for timeout + negligible grace period
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => setTimeout(r, 133));
     await getLogger().flush();
 
     // Cancellation should have been called (like cancel mode)
@@ -680,7 +680,7 @@ describe("attachAgentIdleWatchdog", () => {
       agent: {
         idleWatchdog: makeIdleWatchdogConfig({
           mode: "cancel",
-          idleTimeoutSeconds: 0.2,
+          idleTimeoutSeconds: 0.067,
           activityKinds: ["message_update"],
         }),
       },
@@ -690,11 +690,11 @@ describe("attachAgentIdleWatchdog", () => {
 
     // Start two calls
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-throwing" }));
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 17));
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-normal" }));
 
     // Wait for timeouts
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => setTimeout(r, 133));
     await getLogger().flush();
 
     // Both should have been attempted to cancel
@@ -724,7 +724,7 @@ describe("attachAgentIdleWatchdog", () => {
       agent: {
         idleWatchdog: makeIdleWatchdogConfig({
           mode: "cancel",
-          idleTimeoutSeconds: 0.15,
+          idleTimeoutSeconds: 0.05,
           maxRetryAttempts: 3,
           activityKinds: ["message_update"],
         }),
@@ -734,11 +734,11 @@ describe("attachAgentIdleWatchdog", () => {
     currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-retry-a" }));
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 17));
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-retry-b" }));
 
     // Wait for multiple timeout cycles
-    await new Promise((r) => setTimeout(r, 800));
+    await new Promise((r) => setTimeout(r, 267));
     await getLogger().flush();
 
     // Each call should have been retried independently
