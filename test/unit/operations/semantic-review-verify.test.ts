@@ -351,3 +351,69 @@ describe("semanticReviewOp.verify() — filter pipeline (AC1 semantic)", () => {
     });
   });
 });
+
+/**
+ * Recurrence-demotion for semantic review (F1b). Opt-in: default disabled.
+ *
+ * The coverageGap assertion is the load-bearing one — `llmFindingToFinding`
+ * rebuilds `meta` from scratch, so tagging before the LLMFinding -> Finding
+ * conversion would silently drop the tag and the review-audit record would
+ * show a plain advisory.
+ */
+describe("semanticReviewOp.verify() — recurrence demotion", () => {
+  const RECURRING = "AC0 is not implemented — the handler returns 500";
+
+  function priorSemanticRound(n: number, message: string) {
+    return {
+      iterationNum: n,
+      findingsBefore: [],
+      fixesApplied: [],
+      findingsAfter: [
+        { source: "semantic-review", severity: "error", category: "", file: "src/h.ts", message, meta: { acIndex: 1 } },
+      ],
+      outcome: "fixes-applied",
+      startedAt: "2026-08-01T00:00:00.000Z",
+      finishedAt: "2026-08-01T00:00:01.000Z",
+      // biome-ignore lint/suspicious/noExplicitAny: minimal Iteration shape
+    } as any;
+  }
+
+  const finding = {
+    severity: "error",
+    file: "src/h.ts",
+    line: 1,
+    issue: "AC0 still unimplemented — reworded entirely this round",
+    suggestion: "implement it",
+    acIndex: 1,
+  };
+
+  async function runVerify(enabled: boolean) {
+    const input: SemanticReviewInput = {
+      ...BASE_INPUT,
+      mode: "embedded", // skip evidence substantiation (ref-mode only)
+      semanticConfig: { ...BASE_INPUT.semanticConfig, recurrenceDemotion: { enabled, maxBlockingRounds: 2 } },
+      priorSemanticIterations: [priorSemanticRound(1, RECURRING), priorSemanticRound(2, `${RECURRING} again`)],
+    };
+    const parsed = { passed: false, findings: [finding], normalizedFindings: [], acDropped: [] };
+    // biome-ignore lint/suspicious/noExplicitAny: verify ctx is unused on this path
+    return (await semanticReviewOp.verify!(parsed as any, input, {} as any)) as SemanticReviewOutput;
+  }
+
+  test("demotes a third-round recurrence to advisory and lets the story pass", async () => {
+    const out = await runVerify(true);
+    expect(out.normalizedFindings).toHaveLength(0);
+    expect(out.passed).toBe(true);
+  });
+
+  test("tags the demoted finding coverageGap so the audit record can distinguish it", async () => {
+    const out = await runVerify(true);
+    expect(out.advisoryFindings).toHaveLength(1);
+    expect(out.advisoryFindings?.[0].meta?.coverageGap).toBe(true);
+  });
+
+  test("keeps the finding blocking when demotion is disabled (the default)", async () => {
+    const out = await runVerify(false);
+    expect(out.normalizedFindings).toHaveLength(1);
+    expect(out.passed).toBe(false);
+  });
+});

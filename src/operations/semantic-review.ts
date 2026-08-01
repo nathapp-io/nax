@@ -17,6 +17,7 @@ import {
   validateLLMShape,
 } from "../review/finding-filters";
 import type { AcDroppedEntry, AcGroundingMinimalRejection, LLMFinding } from "../review/finding-filters";
+import { classifyRecurrence, tagCoverageGap } from "../review/recurrence-demotion";
 import { parseRequoteResponse } from "../review/requote-response";
 import type { SemanticReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
@@ -111,6 +112,8 @@ export interface SemanticReviewOutput {
   acDropped: AcDroppedEntry<LLMFinding, AcGroundingMinimalRejection>[];
   failOpen?: boolean;
   looksLikeFail?: boolean;
+  /** Blocking-severity findings that did NOT block: oscillation-suppressed or recurrence-demoted. */
+  advisoryFindings?: Finding[];
   /**
    * Clipped preview of the output that could not be parsed, carried to the
    * review-audit record. The raw reviewer response is retained nowhere else, so
@@ -386,7 +389,33 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
 
     const { accepted, dropped } = filterByAcGroundingMinimal(substantiated, input.story.acceptanceCriteria);
 
-    const blocking = accepted.filter((f) => isBlockingSeverity(f.severity, threshold));
+    const isTestFile = semanticTestFileMatch(input);
+    // Recurrence-demotion (opt-in for semantic — see schemas-review.ts). A
+    // finding whose fingerprint has recurred past maxBlockingRounds stops
+    // blocking and is surfaced as a coverageGap-tagged advisory, so one
+    // disputed finding cannot deadlock the story indefinitely.
+    const recurrenceCfg = input.semanticConfig.recurrenceDemotion ?? { enabled: false, maxBlockingRounds: 2 };
+    const {
+      blocking,
+      advisory: subThreshold,
+      demoted,
+    } = classifyRecurrence(
+      accepted,
+      input.priorSemanticIterations ?? [],
+      recurrenceCfg,
+      isTestFile,
+      threshold,
+      "semantic-review",
+    );
+    // Tag AFTER conversion: llmFindingToFinding rebuilds `meta` from scratch, so
+    // a coverageGap tag applied to the LLMFinding would be silently dropped.
+    const advisoryFindings = [
+      ...toReviewFindings(
+        subThreshold.filter((f) => isBlockingSeverity(f.severity, threshold)),
+        { isTestFile },
+      ),
+      ...tagCoverageGap(toReviewFindings(demoted, { isTestFile })),
+    ];
     // Honour blockingThreshold: the verdict fails only when a blocking finding
     // survives. The model's raw `passed:false` must NOT fail the review when every
     // surviving finding is advisory (sub-threshold) — that was nax#1347. The
@@ -399,7 +428,8 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
       ...parsed,
       passed,
       findings: accepted,
-      normalizedFindings: toReviewFindings(blocking, { isTestFile: semanticTestFileMatch(input) }),
+      normalizedFindings: toReviewFindings(blocking, { isTestFile }),
+      advisoryFindings,
       acDropped: dropped,
     };
   },

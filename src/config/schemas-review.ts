@@ -49,6 +49,23 @@ const SemanticReviewConfigSchema = z.object({
    * Mirrors the adversarial field so the guard is configurable on both reviewers.
    */
   demandInspectionTrail: z.boolean().default(true),
+  /**
+   * Semantic counterpart of the adversarial setting below. A non-blocking-lane
+   * error finding blocks for at most `maxBlockingRounds` rounds; once its
+   * fingerprint recurs beyond that it auto-demotes to advisory (coverage-gap),
+   * so one disputed finding cannot deadlock a story indefinitely.
+   *
+   * Defaults to `enabled: false` — unlike adversarial, which has shipped this
+   * for several releases. Semantic findings drive the source fix lane directly,
+   * so demoting one stops a real defect from blocking; this is opt-in until the
+   * coverage-gap telemetry shows what it would actually be demoting.
+   */
+  recurrenceDemotion: z
+    .object({
+      enabled: z.boolean().default(false),
+      maxBlockingRounds: z.number().int().min(1).default(2),
+    })
+    .default({ enabled: false, maxBlockingRounds: 2 }),
 });
 
 /**

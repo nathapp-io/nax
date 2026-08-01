@@ -291,3 +291,69 @@ describe("tagCoverageGap", () => {
     expect(tagCoverageGap([])).toEqual([]);
   });
 });
+
+describe("classifyRecurrence — semantic source (F1b)", () => {
+  const semanticIter = (n: number, message: string, acIndex?: number): Iteration =>
+    ({
+      iterationNum: n,
+      findingsBefore: [],
+      fixesApplied: [],
+      findingsAfter: [
+        {
+          source: "semantic-review",
+          severity: "error",
+          category: "",
+          file: REPLAY_STORE,
+          message,
+          ...(acIndex !== undefined ? { meta: { acIndex } } : {}),
+        },
+      ],
+      outcome: "fixes-applied",
+      startedAt: "2026-08-01T00:00:00.000Z",
+      finishedAt: "2026-08-01T00:00:01.000Z",
+      // biome-ignore lint/suspicious/noExplicitAny: minimal Iteration shape
+    }) as any;
+
+  // Semantic findings carry no `category`, so the fingerprint's prose fallback
+  // sees category undefined — the AC anchor is what has to carry them.
+  const semFinding = (issue: string, acIndex?: number) =>
+    ({ severity: "error", file: REPLAY_STORE, issue, acIndex }) as AdversarialLLMFinding;
+
+  test("counts semantic-source priors and demotes on the third sighting", () => {
+    const priors = [semanticIter(1, AC3_KEY_FORMAT[0], 3), semanticIter(2, AC3_KEY_FORMAT[1], 3)];
+    const r = classifyRecurrence(
+      [semFinding(AC3_KEY_FORMAT[2], 3)],
+      priors,
+      CFG,
+      noTest,
+      "error",
+      "semantic-review",
+    );
+    expect(r.demoted.length).toBe(1);
+    expect(r.blocking.length).toBe(0);
+  });
+
+  test("ignores adversarial-source priors when counting for semantic", () => {
+    const advPriors = [1, 2].map((n) =>
+      iter(n, [{ file: REPLAY_STORE, category: "", message: AC3_KEY_FORMAT[0], severity: "error", acIndex: 3 }]),
+    );
+    const r = classifyRecurrence(
+      [semFinding(AC3_KEY_FORMAT[2], 3)],
+      advPriors,
+      CFG,
+      noTest,
+      "error",
+      "semantic-review",
+    );
+    expect(r.blocking.length).toBe(1);
+    expect(r.demoted.length).toBe(0);
+  });
+
+  test("disabled config leaves every blocking finding blocking", () => {
+    const priors = [semanticIter(1, AC3_KEY_FORMAT[0], 3), semanticIter(2, AC3_KEY_FORMAT[1], 3)];
+    const off = { enabled: false, maxBlockingRounds: 2 };
+    const r = classifyRecurrence([semFinding(AC3_KEY_FORMAT[2], 3)], priors, off, noTest, "error", "semantic-review");
+    expect(r.blocking.length).toBe(1);
+    expect(r.demoted.length).toBe(0);
+  });
+});

@@ -8,11 +8,11 @@ import { pipelineEventBus } from "@/pipeline";
 import type { StoryPhaseCompletedEvent } from "@/pipeline/event-bus";
 import type { PhaseDetails } from "@/plugins/types";
 import {
-  getAdversarialIterations,
+  getReviewIterations,
   isBlockingSeverity,
   prepareAdversarialReviewInput,
   prepareSemanticReviewInput,
-  recordAdversarialIteration,
+  recordReviewIteration,
 } from "@/review";
 import { errorMessage } from "@/utils/errors";
 import { _gitDeps, captureGitRef } from "@/utils/git";
@@ -170,11 +170,21 @@ export async function runPhase(
   dispatchInput = await refreshReviewInputForDispatch(opName, dispatchInput);
   let advIterationBefore = 0;
   if (opName === "adversarial-review" && ctx.storyId) {
-    const priorIterations = getAdversarialIterations(ctx.runtime.adversarialIterations, ctx.storyId);
+    const priorIterations = getReviewIterations(ctx.runtime.adversarialIterations, ctx.storyId);
     advIterationBefore = priorIterations.length;
     dispatchInput = {
       ...(dispatchInput as Record<string, unknown>),
       priorAdversarialIterations: priorIterations,
+    };
+  }
+  // Same carry-forward for the semantic reviewer. Its whole chain — context
+  // field, plan-inputs threading, op input, prompt block — already existed and
+  // was unit-tested, but nothing ever populated it, so the semantic reviewer
+  // entered every round blind to the ones before it while adversarial did not.
+  if (opName === "semantic-review" && ctx.storyId) {
+    dispatchInput = {
+      ...(dispatchInput as Record<string, unknown>),
+      priorSemanticIterations: getReviewIterations(ctx.runtime.semanticIterations, ctx.storyId),
     };
   }
 
@@ -202,9 +212,16 @@ export async function runPhase(
     emitReviewDecision(ctx, opName, output);
     if (opName === "adversarial-review" && ctx.storyId) {
       const advOut = output as { normalizedFindings?: Finding[]; advisoryFindings?: Finding[] };
-      recordAdversarialIteration(ctx.runtime.adversarialIterations, ctx.storyId, [
+      recordReviewIteration(ctx.runtime.adversarialIterations, ctx.storyId, [
         ...(advOut.normalizedFindings ?? []),
         ...(advOut.advisoryFindings ?? []),
+      ]);
+    }
+    if (opName === "semantic-review" && ctx.storyId) {
+      const semOut = output as { normalizedFindings?: Finding[]; advisoryFindings?: Finding[] };
+      recordReviewIteration(ctx.runtime.semanticIterations, ctx.storyId, [
+        ...(semOut.normalizedFindings ?? []),
+        ...(semOut.advisoryFindings ?? []),
       ]);
     }
     logUnifiedReviewPhaseResult(ctx.storyId, opName, output);

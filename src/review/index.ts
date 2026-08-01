@@ -5,7 +5,7 @@
  */
 
 export * from "./ac-quote-validator";
-export * from "./adversarial-iteration-store";
+export * from "./review-iteration-store";
 export * from "./ac-structural-counterfactual";
 export * from "./adversarial";
 export * from "./semantic-evidence";

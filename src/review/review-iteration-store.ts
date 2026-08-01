@@ -1,19 +1,22 @@
 import type { Finding, Iteration } from "../findings";
 import { classifyOutcome } from "../findings";
 
-/** Run-scoped, per-story adversarial-review round history. Keyed by storyId. */
-export function getAdversarialIterations(store: Map<string, Iteration[]>, storyId: string): Iteration[] {
+/** Run-scoped, per-story review round history. Keyed by storyId. One store per reviewer. */
+export function getReviewIterations(store: Map<string, Iteration[]>, storyId: string): Iteration[] {
   return store.get(storyId) ?? [];
 }
 
 /**
- * Append one adversarial round to the per-story history. `fixesApplied` is `[]`
+ * Append one review round to the per-story history. `fixesApplied` is `[]`
  * because the fix ran in the implementation session outside the FixCycle (see
  * the ADR-022 note on `Iteration.fixesApplied`). `findingsAfter` is this round's
- * adversarial findings (source "adversarial-review"), which recurrence-demotion
- * (`countPriorAppearances`) and the carry-forward prompt both read.
+ * source-tagged findings, which recurrence-demotion (`countPriorAppearances`)
+ * and the carry-forward prompt both read.
+ *
+ * Reviewer-agnostic: callers pass the store for their own reviewer, so the
+ * semantic and adversarial histories never mix.
  */
-export function recordAdversarialIteration(
+export function recordReviewIteration(
   store: Map<string, Iteration[]>,
   storyId: string,
   roundFindings: readonly Finding[],
