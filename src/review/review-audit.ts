@@ -59,6 +59,18 @@ export interface ReviewAuditEntry {
   result: { passed: boolean; findings: unknown[] } | null;
   /** Findings retained as advisory after threshold handling. */
   advisoryFindings?: unknown[];
+  /**
+   * Findings deleted by the AC-grounding filter (missing / out-of-range acIndex).
+   * Persisted because nothing else records them: a real defect the reviewer could
+   * not pin to an AC otherwise vanishes without trace.
+   */
+  acDropped?: unknown[];
+  /**
+   * Clipped preview of a reviewer response that could not be parsed. The raw
+   * response is not retained anywhere else (prompt-audit stores prompts only),
+   * so without this a give-up leaves only a byte count behind.
+   */
+  unparsedPreview?: string;
   /** Issue #986 — true when diff file list was available; false signals "diff unavailable" (excluded from telemetry %). */
   diffAvailable?: boolean;
   /** Issue #986 — per-drop counterfactual analysis. Adversarial only. */
@@ -169,6 +181,8 @@ export function toPersistedEntry(entry: ReviewAuditEntry, epochMs: number): stri
       blockingThreshold: entry.blockingThreshold ?? "error",
       result: entry.result,
       advisoryFindings: entry.advisoryFindings ?? null,
+      acDropped: entry.acDropped ?? null,
+      ...(entry.parsed ? {} : { unparsedPreview: entry.unparsedPreview ?? null }),
       // Issue #986 — adversarial-only structural counterfactual telemetry.
       diffAvailable: entry.diffAvailable ?? null,
       adversarialDropAnalysis: entry.adversarialDropAnalysis ?? null,

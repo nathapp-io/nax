@@ -9,11 +9,12 @@ export function toReviewDecisionPayload(opName: string, output: unknown): Review
   const reviewer = opName === "semantic-review" ? "semantic" : opName === "adversarial-review" ? "adversarial" : null;
   if (!reviewer) return null;
 
+  const unparsedPreview = typeof record.unparsedPreview === "string" ? record.unparsedPreview : undefined;
   if (record.failOpen === true) {
-    return { reviewer, parsed: false, passed: true, failOpen: true, result: null };
+    return { reviewer, parsed: false, passed: true, failOpen: true, result: null, unparsedPreview };
   }
   if (record.looksLikeFail === true) {
-    return { reviewer, parsed: false, passed: false, looksLikeFail: true, result: null };
+    return { reviewer, parsed: false, passed: false, looksLikeFail: true, result: null, unparsedPreview };
   }
 
   if (typeof record.passed !== "boolean" || !Array.isArray(record.findings)) {
@@ -41,6 +42,7 @@ export function toReviewDecisionPayload(opName: string, output: unknown): Review
     passed: record.passed,
     result: { passed: record.passed, findings: record.findings },
     acDropped,
+    ...(Array.isArray(record.advisoryFindings) ? { advisoryFindings: record.advisoryFindings } : {}),
   };
 }
 
@@ -63,6 +65,12 @@ export function emitReviewDecision(ctx: CallContext, opName: string, output: unk
     failOpen: payload.parsed ? false : payload.failOpen,
     passed: payload.passed,
     result: payload.result,
+    // These three were computed by both review ops and then dropped here, so
+    // every review-audit record wrote them as null. See F3 of
+    // docs/findings/2026-08-01-review-pipeline-gap-analysis.md.
+    advisoryFindings: payload.parsed ? payload.advisoryFindings : undefined,
+    acDropped: payload.parsed ? payload.acDropped : undefined,
+    unparsedPreview: payload.parsed ? undefined : payload.unparsedPreview,
   });
 }
 

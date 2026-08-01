@@ -93,6 +93,8 @@ export type ReviewDecisionPayload =
       passed: boolean;
       result: { passed: boolean; findings: unknown[] };
       acDropped?: DroppedFindingSummary[];
+      /** Sub-threshold findings retained as advisory — carries `meta.coverageGap`. */
+      advisoryFindings?: unknown[];
     }
   | {
       reviewer: "semantic" | "adversarial";
@@ -101,6 +103,12 @@ export type ReviewDecisionPayload =
       failOpen?: boolean;
       looksLikeFail?: boolean;
       result: null;
+      /**
+       * Clipped preview of the output that could not be parsed. Without it a
+       * give-up leaves only a byte count behind and is undiagnosable after the
+       * fact — the raw response is not retained anywhere else.
+       */
+      unparsedPreview?: string;
     };
 
 // biome-ignore lint/suspicious/noExplicitAny: heterogeneous slot list is intentionally erased internally

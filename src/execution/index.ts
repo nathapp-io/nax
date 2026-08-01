@@ -67,6 +67,7 @@ export {
   withIncreasingFailuresBail,
   extractPhaseFindings,
   phasePassed,
+  toReviewDecisionPayload,
   type GateRegressionDetail,
   type GateRegressionInput,
   type InternalBuildState,

@@ -51,6 +51,8 @@ export function attachReviewAuditSubscriber(
       blockingThreshold: event.blockingThreshold,
       result: event.result,
       advisoryFindings: event.advisoryFindings,
+      acDropped: event.acDropped ? [...event.acDropped] : undefined,
+      unparsedPreview: event.unparsedPreview,
       diffAvailable: event.diffAvailable,
       // Cast unknown[] from the event boundary to the typed audit shapes.
       adversarialDropAnalysis: event.adversarialDropAnalysis as

@@ -1,4 +1,4 @@
-import { ParseValidationError, makeParseRetryStrategy } from "../agents/retry";
+import { ParseValidationError, UNPARSED_PREVIEW_BYTES, makeParseRetryStrategy } from "../agents/retry";
 import type { TurnResult } from "../agents/types";
 import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
@@ -26,6 +26,7 @@ import { parseRequoteResponse } from "../review/requote-response";
 import type { AdversarialReviewConfig, SemanticStory } from "../review/types";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { tryParseLLMJson } from "../utils/llm-json";
+import { reviewExhaustedFallback } from "./_review-fallback";
 import type { HopBodyContext, RunOperation } from "./types";
 
 export type { AdversarialReviewConfig, SemanticStory, TestInventory };
@@ -137,6 +138,8 @@ export interface AdversarialReviewOutput {
    * Callers should treat this as a hard failure rather than fail-open.
    */
   looksLikeFail?: boolean;
+  /** Clipped preview of unparseable output — retained nowhere else. See semantic-review.ts. */
+  unparsedPreview?: string;
   /**
    * Set when hopBody executed a reprompt (second turn). Used by adversarial.ts
    * to emit review-reprompt-on-drop telemetry event.
@@ -251,10 +254,8 @@ const adversarialParseRetry = (input: AdversarialReviewInput) =>
       invalid: () => ReviewPromptBuilder.jsonRetry(),
       truncated: () => ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: input.blockingThreshold }),
     },
-    exhaustedFallback: (lastOutput) =>
-      /"passed"\s*:\s*false/.test(lastOutput)
-        ? { passed: false, findings: [], normalizedFindings: [], acDropped: [], looksLikeFail: true }
-        : FAIL_OPEN,
+    exhaustedFallback: (lastOutput) => reviewExhaustedFallback(lastOutput, FAIL_OPEN),
+    outputPreviewBytes: UNPARSED_PREVIEW_BYTES,
     logContext: { blockingThreshold: input.blockingThreshold ?? "error" },
   });
 

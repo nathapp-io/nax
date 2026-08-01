@@ -34,8 +34,15 @@ export interface ParseRetryOpts {
   readonly _logger?: { warn(kind: string, msg: string, data: Record<string, unknown>): void };
 }
 
+/**
+ * Bytes of unparseable agent output retained when a parse-retry budget is
+ * exhausted. Enough to tell a prose preamble from a refusal from a malformed
+ * JSON body, without bloating the log line or the audit record.
+ */
+export const UNPARSED_PREVIEW_BYTES = 600;
+
 /** Collapse whitespace and clip to `maxBytes` so the preview stays a single, log-friendly line. */
-function previewOutput(output: string, maxBytes: number): string {
+export function previewOutput(output: string, maxBytes: number): string {
   const collapsed = output.replace(/\s+/g, " ").trim();
   return collapsed.length > maxBytes ? `${collapsed.slice(0, maxBytes)}…` : collapsed;
 }
