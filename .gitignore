@@ -59,7 +59,7 @@ test/integration/tmp/
 TEST_SUMMARY_*.md
 .nax-pids
 .nax/metrics.json
-.nax/nax-finish-result.json
+.nax/finish-audit/
 
 .nax/**/runs/
 

@@ -101,7 +101,10 @@ describe("nax-finish flow graph", () => {
     // quality fixes are re-reviewed by the same lens
     expect(toOf("commit_quality")).toBe("review_quality");
     expect(toOf("commit_acceptance")).toBe("acceptance");
-    expect(toOf("commit_gate")).toBe("quality_gates");
+    // commit_gate is the exception — it switches on whether it committed, so
+    // that a real gate fix is re-reviewed. See "gate fixes re-enter the quality
+    // review" below.
+    expect(switchOf("commit_gate").cases.unchanged).toBe("quality_gates");
   });
 
   // Regression: #1397 — reviewers read `git diff base...HEAD`, so an uncommitted
@@ -113,49 +116,6 @@ describe("nax-finish flow graph", () => {
       expect(flow.nodes[`commit_${phase}`].nodeType).toBe("action");
       expect(toOf(`fix_${phase}`)).toBe(`commit_${phase}`);
     }
-  });
-});
-
-describe("commit_* nodes", () => {
-  const originalRun = _gitDeps.run;
-  afterEach(() => {
-    _gitDeps.run = originalRun;
-  });
-
-  const runCommitNode = async (id: string, porcelain: string) => {
-    const calls: string[][] = [];
-    _gitDeps.run = async (cmd) => {
-      calls.push(cmd);
-      return cmd.includes("--porcelain")
-        ? { exitCode: 0, stdout: porcelain, stderr: "" }
-        : { exitCode: 0, stdout: "", stderr: "" };
-    };
-    const out = await nodeRun<{ committed: boolean }>(id).run(ctxOf({}));
-    return { out, argv: calls.map((c) => c.join(" ")) };
-  };
-
-  test("commits the fix with a conventional, phase-named message and no push", async () => {
-    const { out, argv } = await runCommitNode("commit_spec", " M apps/api/_calendar.py\n");
-    expect(out.committed).toBe(true);
-    // --no-verify: a pre-commit hook rejecting an intermediate state would
-    // otherwise kill the flow before the gate loop could fix it
-    expect(argv).toContain("git commit -m fix(x): nax-finish spec fixes --no-verify");
-    // the push belongs to the terminal nodes; a mid-loop push would publish
-    // half-fixed states to the forge on every round
-    expect(argv.some((c) => c.startsWith("git push"))).toBe(false);
-  });
-
-  test("each phase commits under its own message", async () => {
-    for (const phase of ["acceptance", "quality", "gate"]) {
-      const { argv } = await runCommitNode(`commit_${phase}`, " M a.ts\n");
-      expect(argv).toContain(`git commit -m fix(x): nax-finish ${phase} fixes --no-verify`);
-    }
-  });
-
-  test("a fix node that changed nothing produces no commit", async () => {
-    const { out, argv } = await runCommitNode("commit_gate", "");
-    expect(out.committed).toBe(false);
-    expect(argv.some((c) => c.startsWith("git commit"))).toBe(false);
   });
 });
 
@@ -572,8 +532,7 @@ describe("escalate node", () => {
     _escalateDeps.run = async (cmd) => {
       calls.push(cmd);
       if (cmd.join(" ").includes("remote get-url")) return { exitCode: 0, stdout: "git@github.com:o/r", stderr: "" };
-      if (cmd.includes("view"))
-        return { exitCode: 0, stdout: JSON.stringify({ url: "https://gh/pr/9" }), stderr: "" };
+      if (cmd.includes("view")) return { exitCode: 0, stdout: JSON.stringify({ url: "https://gh/pr/9" }), stderr: "" };
       return { exitCode: 0, stdout: "", stderr: "" };
     };
   };

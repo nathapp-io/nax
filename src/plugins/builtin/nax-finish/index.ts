@@ -34,6 +34,8 @@ interface FinishResult {
   findings?: { severity: string; title: string }[];
   /** Set by the flow when it could not deliver the escalation to its channel. */
   deliveryError?: string;
+  /** Every fix round the flow ran — recorded on all terminal statuses, not just escalations. */
+  rounds?: { phase: string; attempt: number; committed: boolean }[];
 }
 
 type TelegramCreds = NonNullable<ReturnType<typeof telegramCreds>>;
@@ -94,16 +96,49 @@ async function defaultRun(
   }
 }
 
+/**
+ * Where this feature's finish-audit artifacts live.
+ *
+ * `<outputDir>/finish-audit/<feature>/`, i.e. `~/.nax/<project>/finish-audit/`
+ * — the same per-project, per-feature shape as `prompt-audit/` and
+ * `review-audit/`, resolved from the run's own `outputDir` so a configured
+ * `config.outputDir` override is honoured. The artifact records a *run*, not
+ * the source tree, so the repo was never the right home for it.
+ *
+ * `outputDir` is optional on `PostRunContext` for backward compatibility; a
+ * context without it falls back to the repo, which is where the artifact used
+ * to live. The flow applies the same fallback, so both sides agree.
+ */
+export function finishAuditDir(ctx: Pick<PostRunContext, "outputDir" | "workdir" | "feature">): string {
+  const root = ctx.outputDir ?? path.join(ctx.workdir, ".nax");
+  return path.join(root, "finish-audit", ctx.feature);
+}
+
+/** The terminal result file for one run, named the way prompt-audit names its runs. */
+export function finishResultPath(
+  ctx: Pick<PostRunContext, "outputDir" | "workdir" | "feature">,
+  runId: string,
+): string {
+  return path.join(finishAuditDir(ctx), `${runId}.result.json`);
+}
+
 /** Default result reader — reads the flow's terminal result off disk. */
-async function defaultReadResult(workdir: string): Promise<FinishResult | null> {
-  const f = Bun.file(path.join(workdir, ".nax", "nax-finish-result.json"));
+async function defaultReadResult(resultPath: string): Promise<FinishResult | null> {
+  const f = Bun.file(resultPath);
   if (!(await f.exists())) return null;
   return JSON.parse(await f.text()) as FinishResult;
 }
 
-/** Remove an earlier run's terminal artifact before starting a new flow. */
-async function defaultClearResult(workdir: string): Promise<void> {
-  const file = Bun.file(path.join(workdir, ".nax", "nax-finish-result.json"));
+/**
+ * Remove any terminal artifact left at this run's path before starting a flow.
+ *
+ * The path is run-scoped, so a stale file can only exist when the same run id
+ * is finished twice (a resume). Clearing keeps the "no result file" branch
+ * honest in that case — without it, a flow that died before writing would be
+ * reported using the previous attempt's outcome.
+ */
+async function defaultClearResult(resultPath: string): Promise<void> {
+  const file = Bun.file(resultPath);
   if (await file.exists()) await file.delete();
 }
 
@@ -115,8 +150,8 @@ async function defaultClearResult(workdir: string): Promise<void> {
  */
 export const _naxFinishDeps: {
   run: RunFn;
-  readResult: (workdir: string) => Promise<FinishResult | null>;
-  clearResult: (workdir: string) => Promise<void>;
+  readResult: (resultPath: string) => Promise<FinishResult | null>;
+  clearResult: (resultPath: string) => Promise<void>;
   /** Path-existence probe — used to resolve the flow module and the nax package root. */
   exists: (p: string) => Promise<boolean>;
   /** Directory this module was loaded from; overridable so package-root walking is testable. */
@@ -251,12 +286,17 @@ async function executeFinishFlow(options: ExecuteFinishOptions): Promise<FinishT
     };
   }
 
-  await _naxFinishDeps.clearResult(ctx.workdir);
+  const resultPath = finishResultPath(ctx, ctx.runId);
+  await _naxFinishDeps.clearResult(resultPath);
   const input = {
     feature: ctx.feature,
     workdir: ctx.workdir,
     branch: ctx.branch,
     prdPath: ctx.prdPath,
+    // The flow cannot import nax's path SSOT (`src/runtime/paths.ts`) — it runs
+    // inside acpx's process — so the audit location is resolved here and passed in.
+    auditDir: finishAuditDir(ctx),
+    runId: ctx.runId,
     escalateTelegram,
     timeouts: { acceptanceMs: cfg.timeouts.acceptanceMs, gateMs: cfg.timeouts.gateMs },
   };
@@ -266,7 +306,7 @@ async function executeFinishFlow(options: ExecuteFinishOptions): Promise<FinishT
     env: buildFlowEnv(cfg),
     timeoutMs: cfg.timeouts.flowMs,
   });
-  const result = await _naxFinishDeps.readResult(ctx.workdir);
+  const result = await _naxFinishDeps.readResult(resultPath);
   if (!result) return missingResultOutcome(ctx, res, escalateTelegram);
   return {
     actionResult: { success: true, message: `nax-finish: ${result.status}`, url: result.url },

@@ -23,4 +23,9 @@ export const NAX_GITIGNORE_ENTRIES = [
   "**/_nax_suggested_test.py",
   "**/.nax/features/*/",
   ".nax/prompt-audit/",
+  // Only reached when a run has no outputDir — nax-finish normally writes its
+  // audit under `~/.nax/<project>/finish-audit/`. It still must be ignored:
+  // the flow's `commit_*` nodes run `git add -A`, so an un-ignored artifact
+  // here lands in the feature branch's history.
+  ".nax/finish-audit/",
 ];

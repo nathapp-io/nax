@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   _naxFinishDeps,
   buildFlowArgv,
+  finishAuditDir,
+  finishResultPath,
   isTelegramConfigured,
   naxFinishPlugin,
   resolveFlowPath,
@@ -37,6 +39,54 @@ const baseCtx = (over: Partial<PostRunContext> = {}): PostRunContext =>
     },
     ...over,
   }) as unknown as PostRunContext;
+
+describe("finish-audit location", () => {
+  // The artifact records a run, not the source tree, so it belongs beside
+  // prompt-audit/ and review-audit/ under the project's output dir — not in the
+  // user's repo, where it was neither committable nor gitignorable.
+  test("resolves under <outputDir>/finish-audit/<feature>, like prompt-audit and review-audit", () => {
+    const ctx = baseCtx({ outputDir: "/home/u/.nax/proj" });
+    expect(finishAuditDir(ctx)).toBe("/home/u/.nax/proj/finish-audit/x");
+  });
+
+  test("names the result file by run id, so two finishes of one feature do not collide", () => {
+    const ctx = baseCtx({ outputDir: "/home/u/.nax/proj" });
+    expect(finishResultPath(ctx, "run-a")).toBe("/home/u/.nax/proj/finish-audit/x/run-a.result.json");
+    expect(finishResultPath(ctx, "run-b")).not.toBe(finishResultPath(ctx, "run-a"));
+  });
+
+  // outputDir is optional on PostRunContext for backward compatibility; the
+  // flow applies the same repo-local fallback, so both sides agree on the path.
+  test("falls back to the repo when the context carries no outputDir", () => {
+    expect(finishAuditDir(baseCtx())).toBe("/repo/.nax/finish-audit/x");
+  });
+
+  test("passes the resolved audit dir and run id to the flow, and reads back the same path", async () => {
+    let flowInput: Record<string, unknown> = {};
+    let readFrom = "";
+    let clearedFrom = "";
+    _naxFinishDeps.run = async (cmd) => {
+      flowInput = JSON.parse(cmd[cmd.indexOf("--input-json") + 1]);
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    _naxFinishDeps.clearResult = async (p) => {
+      clearedFrom = p;
+    };
+    _naxFinishDeps.readResult = async (p) => {
+      readFrom = p;
+      return { feature: "x", status: "opened" };
+    };
+    _naxFinishDeps.exists = async () => true;
+    const ctx = baseCtx({ outputDir: "/home/u/.nax/proj", runId: "run-42" });
+    await action.execute(ctx);
+
+    expect(flowInput.auditDir).toBe("/home/u/.nax/proj/finish-audit/x");
+    expect(flowInput.runId).toBe("run-42");
+    // The plugin must read back exactly where it told the flow to write.
+    expect(readFrom).toBe("/home/u/.nax/proj/finish-audit/x/run-42.result.json");
+    expect(clearedFrom).toBe(readFrom);
+  });
+});
 
 describe("nax-finish post-run action", () => {
   test("shouldRun=false when disabled", async () => {
@@ -555,10 +605,7 @@ describe("resolveFlowPath", () => {
     const resolved = await resolveFlowPath(
       "/user/repo",
       "flows/nax-finish/nax-finish.flow.ts",
-      deps(
-        ["/nax/package.json", "/nax/flows/nax-finish/nax-finish.flow.ts"],
-        "/nax/src/plugins/builtin/nax-finish",
-      ),
+      deps(["/nax/package.json", "/nax/flows/nax-finish/nax-finish.flow.ts"], "/nax/src/plugins/builtin/nax-finish"),
     );
     expect(resolved).toBe("/nax/flows/nax-finish/nax-finish.flow.ts");
   });
@@ -590,7 +637,11 @@ describe("resolveFlowPath", () => {
 
   test("returns null when the flow exists nowhere", async () => {
     expect(
-      await resolveFlowPath("/user/repo", "flows/nax-finish/nax-finish.flow.ts", deps(["/nax/package.json"], "/nax/dist")),
+      await resolveFlowPath(
+        "/user/repo",
+        "flows/nax-finish/nax-finish.flow.ts",
+        deps(["/nax/package.json"], "/nax/dist"),
+      ),
     ).toBeNull();
   });
 });

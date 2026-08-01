@@ -505,7 +505,10 @@ one completed), HEAD is not `main`/`master`, and `enabled` is true.
 | Spec conflicts, contradictions, design calls, or anything it can't get green | Commits and pushes what it fixed, then escalates via Telegram or a PR/MR comment. No ready PR. |
 | Branch has no commits ahead of base | Reports `nothing-to-finish` and stops. |
 
-The flow's terminal state is written to `.nax/nax-finish-result.json` (gitignored).
+The flow's audit trail — one line per fix round, plus the terminal state — is
+written to `~/.nax/<project>/finish-audit/<feature>/`, beside `prompt-audit/`
+and `review-audit/`. See
+[nax-finish-autoflow.md](./nax-finish-autoflow.md#audit-trail).
 
 The interactive, approval-gated `nax-finish` skill still exists for manual
 finishes — this is the autonomous path, not a replacement.

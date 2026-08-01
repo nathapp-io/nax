@@ -37,7 +37,9 @@ review_quality    code-quality review, isolated session, own agent profile
   ↓
 quality_gates     re-run the feature's acceptance tests (gate zero), then the
                   repo's own quality.commands at the repo root
-  ↳ red → fix_gate (agent) → commit → re-run        [max 3 attempts → escalate]
+  ↳ red → fix_gate (agent) → commit → re-review     [max 3 attempts → escalate]
+          (a gate fix that committed re-enters review_quality; one that
+           changed nothing goes straight back to the gates)
   ↳ none configured → escalate (a gate that verified nothing is not a pass)
   ↓
 open_pr           commit + push the fixes, then open a ready PR
@@ -48,6 +50,17 @@ Every fix node is followed by a `commit_*` node that commits the agent's edits
 locally (no push, `--no-verify`). The reviewers read `git diff <base>...HEAD`, so
 a fix left uncommitted is invisible to the re-review — the loop would re-report
 findings it had already fixed and escalate at the cap ([#1397](https://github.com/nathapp-io/nax/issues/1397)).
+
+Each `commit_*` node writes a commit whose subject names what was fixed and
+whose body lists the findings behind it, so a human reviewing the PR can triage
+the flow's commits without reading every diff. It also appends the round to the
+[audit trail](#audit-trail).
+
+**No fix reaches the PR unreviewed.** The gate loop is the last loop to edit the
+tree, and it used to route straight back to `quality_gates` — which proves the
+repo's commands are green, something a bad fix can satisfy. A gate fix that
+commits now re-enters `review_quality` first. Both loops keep their own 3-attempt
+caps, so the re-entry cannot run away; it costs one review per gate round.
 The fix agent itself is still told not to commit; the flow owns the history.
 
 These are internal checkpoints, so they skip your pre-commit hooks: a hook that
@@ -89,14 +102,48 @@ the redundant run costs seconds against a flow that spends minutes in review.
 | Spec conflict, contradiction, design call, or can't reach green | Partial fixes pushed, escalation sent, **no ready PR**. |
 | Branch not ahead of base | `nothing-to-finish`, stops. |
 
-The terminal state is written to `.nax/nax-finish-result.json`:
+### Audit trail
+
+The flow writes two files per run, under nax's per-project output directory
+alongside `prompt-audit/` and `review-audit/` — not in your repo:
+
+```
+~/.nax/<project>/finish-audit/<feature>/<runId>.jsonl        one line per fix round
+~/.nax/<project>/finish-audit/<feature>/<runId>.result.json  terminal state
+```
+
+A `config.outputDir` override is honoured. Files are named by run id, so
+finishing the same feature twice keeps both trails.
+
+The result file:
 
 ```json
 { "feature": "auth-hardening", "status": "promoted", "url": "https://github.com/o/r/pull/42" }
 ```
 
 `status` is one of `opened`, `promoted`, `already-ready`, `escalated`,
-`nothing-to-finish`. Add it to `.gitignore`.
+`nothing-to-finish`.
+
+Every terminal status — not just `escalated` — carries a `rounds` array
+replaying what the flow fixed to get there. A finish that needed four rounds is
+the case most worth reading afterwards: each round is a defect the run's own
+review gates let through.
+
+```json
+{
+  "feature": "auth-hardening",
+  "status": "promoted",
+  "rounds": [
+    {
+      "ts": "2026-08-01T05:31:00.000Z",
+      "phase": "quality",
+      "attempt": 1,
+      "committed": true,
+      "findings": [{ "severity": "HIGH", "title": "…", "problem": "…", "fix": "…" }]
+    }
+  ]
+}
+```
 
 On `escalated` the file also carries `escalationReason` and the `findings` that
 caused it:

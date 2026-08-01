@@ -31,11 +31,19 @@
  *   the `acceptance` node last passed, and the repo-root `test` command does
  *   not cover per-feature acceptance tests — so without this a fix could break
  *   the contract the first gate proved and still ship.
+ * - `commit_gate` re-enters `review_quality` when it committed anything, so no
+ *   fix reaches the PR unreviewed — the gate loop was previously the one
+ *   editing loop whose output only ever faced mechanical checks.
+ * - Every `commit_*` node appends its round to the finish-audit trail. That is
+ *   the only place a round's findings and its commit are both in scope:
+ *   `ctx.outputs` holds one output per node, so the next round overwrites it.
  */
 import { defineFlow, extractJsonObject } from "acpx/flows";
+import { buildFixCommitMessage } from "./commit-message";
 import { buildReviewPrompt, fixPrompt } from "./review-prompts";
 import {
   _contextDeps,
+  appendRound,
   buildEscalationComment,
   commitAndPush,
   commitFixes,
@@ -49,7 +57,7 @@ import {
   runQualityGates,
   writeResult,
 } from "./steps";
-import type { AcceptanceGroup, FinishInput, FinishResult, ReviewVerdict } from "./types";
+import type { AcceptanceGroup, Finding, FinishInput, FinishPhase, FinishResult, ReviewVerdict } from "./types";
 
 const inputOf = (ctx: { input: unknown }) => ctx.input as FinishInput;
 
@@ -76,6 +84,18 @@ function fixAttemptCount(ctx: { state: { steps: { nodeId: string }[] } }, fixNod
 
 function loadCtxOf(ctx: { outputs: unknown }): LoadCtxOutput {
   return ((ctx.outputs as Record<string, LoadCtxOutput | undefined>).load_ctx ?? {}) as LoadCtxOutput;
+}
+
+function gateOutputs(ctx: { outputs: unknown }): { failing?: string[] } {
+  return ((ctx.outputs as Record<string, { failing?: string[] } | undefined>).quality_gates ?? {}) as {
+    failing?: string[];
+  };
+}
+
+/** The findings the `fix_<phase>` node was asked to resolve; empty for non-review phases. */
+function findingsOf(ctx: { outputs: unknown }, phase: FinishPhase): Finding[] {
+  if (phase !== "spec" && phase !== "quality") return [];
+  return (ctx.outputs as Record<string, ReviewVerdict | undefined>)[`review_${phase}`]?.findings ?? [];
 }
 
 /**
@@ -169,16 +189,40 @@ function routeReview(
  * One node per phase rather than a single shared one because each returns to a
  * different successor, and acpx routes on the node id — a shared node would
  * need a switch reconstructing which fix ran from the step history.
+ *
+ * Also the audit seam: this is the only point in the graph where a round's
+ * findings and its commit are both known. `ctx.outputs` keeps only the latest
+ * output per node, so a round not recorded here is a round no terminal node
+ * can reconstruct.
  */
-function commitFixNode(phase: "acceptance" | "spec" | "quality" | "gate") {
+function commitFixNode(phase: FinishPhase) {
   return {
     nodeType: "action" as const,
-    async run(ctx: { input: unknown }): Promise<{ committed: boolean }> {
+    async run(ctx: {
+      input: unknown;
+      outputs: unknown;
+      state: { steps: { nodeId: string }[] };
+    }): Promise<{ committed: boolean; route: string }> {
       const i = inputOf(ctx);
+      const messageCtx = { outputs: ctx.outputs as Record<string, unknown> };
       // skipHooks: an intermediate checkpoint must not be rejected by a repo's
       // pre-commit hook — quality_gates runs the repo's real gates before any
       // PR opens, and a hook failure here would kill the flow mid-loop.
-      return commitFixes(i.workdir, `fix(${i.feature}): nax-finish ${phase} fixes`, { skipHooks: true });
+      const { committed } = await commitFixes(i.workdir, buildFixCommitMessage(phase, i.feature, messageCtx), {
+        skipHooks: true,
+      });
+      await appendRound(i, {
+        ts: new Date().toISOString(),
+        phase,
+        attempt: fixAttemptCount(ctx, `fix_${phase}`),
+        committed,
+        findings: findingsOf(ctx, phase),
+        ...(phase === "gate" ? { failing: gateOutputs(ctx).failing ?? [] } : {}),
+      });
+      // `route` exists for `commit_gate`, whose successor depends on whether
+      // anything actually changed (see the edge list). The other phases route
+      // unconditionally and ignore it.
+      return { committed, route: committed ? "changed" : "unchanged" };
     },
   };
 }
@@ -350,7 +394,7 @@ export default defineFlow({
       async run(ctx) {
         const i = inputOf(ctx);
         if (loadCtxOf(ctx).route === "nothing-to-finish") {
-          await writeResult(i.workdir, { feature: i.feature, status: "nothing-to-finish" });
+          await writeResult(i, { feature: i.feature, status: "nothing-to-finish" });
           return { route: "done", status: "nothing-to-finish" };
         }
         // Every fix node edited the working tree; without this the PR would be
@@ -362,7 +406,7 @@ export default defineFlow({
           `nax-finish: ${i.feature}`,
           `Automated finish of \`${i.feature}\`.`,
         );
-        await writeResult(i.workdir, { feature: i.feature, status: r.status, url: r.url });
+        await writeResult(i, { feature: i.feature, status: r.status, url: r.url });
         return { route: "done", committed: sync.committed, ...r };
       },
     },
@@ -409,7 +453,7 @@ export default defineFlow({
           escalationReason: reason,
           findings: verdict?.findings ?? [],
         };
-        await writeResult(i.workdir, result);
+        await writeResult(i, result);
 
         const comment = buildEscalationComment(i.feature, reason, verdict?.findings ?? []) + syncNote;
         let url: string | undefined;
@@ -424,7 +468,7 @@ export default defineFlow({
         } catch (err) {
           deliveryError = String(err);
         }
-        await writeResult(i.workdir, { ...result, url, deliveryError });
+        await writeResult(i, { ...result, url, deliveryError });
 
         return { route: "done", url, channel, deliveryError, escalationReason: reason };
       },
@@ -464,6 +508,21 @@ export default defineFlow({
       switch: { on: "$.route", cases: { green: "open_pr", fix: "fix_gate", escalate: "escalate" } },
     },
     { from: "fix_gate", to: "commit_gate" },
-    { from: "commit_gate", to: "quality_gates" },
+    // A gate fix that changed code goes back through the quality reviewer, not
+    // straight to the gates. The gate loop is the last one to edit the tree and
+    // was the only one whose edits nothing reviewed: `quality_gates` proves the
+    // repo's commands are green, which a bad fix can satisfy. Observed on
+    // rs-stock/pipeline-run-outcome — the gate round repaired 8 tests by
+    // copy-pasting an identical 4-line stub into each, and it shipped, because
+    // no reviewer ran after it. Re-entry costs one review per gate round; both
+    // loops stay bounded by their own MAX_FIX_ATTEMPTS caps.
+    //
+    // `unchanged` skips it: with nothing committed there is no new diff to
+    // review, and re-running the reviewer on an identical tree would burn a
+    // turn to re-report what route_quality already called clean.
+    {
+      from: "commit_gate",
+      switch: { on: "$.route", cases: { changed: "review_quality", unchanged: "quality_gates" } },
+    },
   ],
 });
