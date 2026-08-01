@@ -72,7 +72,9 @@ Curator evidence shows spec defects surviving into implementation and causing re
 
 ## 6. Curator
 
-Proposals are generated per run but are raw-count aggregates ("test-gap fired 792×" → HIGH) with no rule-file-ready text, "prior finding addressed" acks are counted as findings, and no July proposal checkbox was ever consumed. The feedback loop is open.
+Proposals are generated per run but are raw-count aggregates ("test-gap fired 792×" → HIGH) with no rule-file-ready text, and "prior finding addressed" acks are counted as findings.
+
+**Correction (2026-08-01):** this section originally added "no July proposal checkbox was ever consumed — the feedback loop is open". That framing is wrong. nax has **no accept/reject process** for curator proposals, so an unticked checkbox is a vestigial UI element, not a loop that broke. Whether proposals should be consumed at all — and by what — is an open product question, not a defect.
 
 ---
 
@@ -91,7 +93,7 @@ Proposals are generated per run but are raw-count aggregates ("test-gap fired 79
 | 8 | Diagnose the 8 features burning 5–15 acceptance retries (the US-001 bootstrap premise is refuted — see §10) | acceptance | ~$30–50/mo | [#1424](https://github.com/nathapp-io/nax/issues/1424) |
 | 9 | Fix chunk token accounting | context | prerequisite for budget tuning | **in review — [#1426](https://github.com/nathapp-io/nax/pull/1426)** |
 | 9b | Then drop providers empty >90% of the time per project from the default chain | context | needs ≥1 month of real token data from #1426 first | blocked on 9 |
-| 10 | Close the curator loop: rule-file-ready diffs, cross-feature recurrence threshold, run-scoped counts, surface at `nax finish` | curator | converts dead telemetry into a compounding improvement loop | [#1422](https://github.com/nathapp-io/nax/issues/1422) |
+| 10 | Make curator counts mean something: cross-feature recurrence threshold + run-scoped counts (the "surface at `nax finish` for accept/reject" half is withdrawn — see §6 correction) | curator | proposals stop restating the category histogram | **in review — [#1427](https://github.com/nathapp-io/nax/pull/1427)** |
 
 **Estimated impact of #1–#2:** the 15–20-round failure tail is addressed by #1 (prevention) and the shipped oscillation breaker. The original "$1,873 → $1,450–1,550" figure leaned on #3b's non-productive-iteration savings, which §10 withdraws — treat the remaining savings estimate as unquantified until August data lands.
 
@@ -156,7 +158,7 @@ Phase 7 of the spec-review skill already bans `[grep]`/`[file]`/`[verbatim]` ACs
 ### Confirmed as written
 
 - **#9** → [#1421](https://github.com/nathapp-io/nax/issues/1421). All 269,355 `chunk-included` events carry `tokens: 0` — 100%, not a sample. Exclusions are 1,299 of 270,654 (0.5%).
-- **#10** → [#1422](https://github.com/nathapp-io/nax/issues/1422). Sharper than stated: proposals group on the bare category ("test-gap appeared 1008x"), counts accumulate over the project's whole audit history (723→888 within one project, monotonic, so a HIGH can never clear), and **0 of 263 proposal files** has a ticked checkbox.
+- **#10** → [#1422](https://github.com/nathapp-io/nax/issues/1422). Two of three sub-claims confirmed and sharper than stated: proposals group on the bare category ("test-gap appeared 1008x"), and counts accumulate over the project's whole audit history (723→888 within one project, monotonic, so a HIGH can never clear). The third — **0 of 263 proposal files** has a ticked checkbox — is a real number but was misread as a broken feedback loop; see the §6 correction.
 - **#7** → [#1423](https://github.com/nathapp-io/nax/issues/1423). Real but smaller than implied: 81 of 3,685 July findings (2.2%), all `info`, all adversarial — telemetry pollution, not deadlock. Its concrete harm is visible in curator proposal evidence, where the quoted examples are carry-forward bookkeeping rather than findings.
 
 **Method note:** every number above was re-derived from `~/.nax/global/curator/rollup.jsonl`, `~/.nax/*/review-audit/`, and the `curator-proposals.md` artifacts, not carried over from the audit body. Three of six recommendations changed materially on contact with the data.
@@ -180,12 +182,12 @@ Four of the ten shipped or in review; two were already fixed before the audit wa
 
 ### What is actually left
 
-**#10 (curator) is the load-bearing one.** It is the only remaining item that changes the *shape* of the feedback loop rather than one measurement inside it, and two shipped changes now depend on it to be worth anything:
+**#10 (curator) — counts fixed in [#1427](https://github.com/nathapp-io/nax/pull/1427); consumption is an open question, not a defect.** Two shipped changes depended on the counts being fixed:
 
-- #1420 makes semantic findings carry categories, which the curator will fold into its per-category counts — the same counts that accumulate over each project's whole audit history and can never clear. Without #1422, the new taxonomy inherits the defect that made the adversarial counts useless.
-- #1426 stops *new* acknowledgement pollution, but historical acks remain in the cumulative totals until collection is run-scoped.
+- #1420 makes semantic findings carry categories, which the curator folds into its counts — the same counts that accumulated over each project's whole audit history and could never clear. Without the fix, the new taxonomy would have inherited the defect that made the adversarial counts useless.
+- #1426 stops *new* acknowledgement pollution, but historical acks remained in the cumulative totals until collection was run-scoped.
 
-Its three defects are independent and the count-scoping one is the prerequisite: until counts mean "this run", no threshold choice is meaningful. Worth designing before coding — the grouping key (finding fingerprint vs category + locus) and the collection window are both judgment calls.
+The count-scoping half was the prerequisite: until counts mean "this run", no threshold choice is meaningful. What remains is **not** a third defect. The original recommendation assumed proposals should be surfaced for accept/reject at `nax finish`; nax has no accept/reject process and `nax finish` ships features rather than curating rules (§6 correction). Whether anything should consume proposals — and what — is undecided, and should not be built on the strength of this audit alone.
 
 **#8 produces a question, not a patch.** Someone has to read the `alerts-tool` / `kv-cache` / `agent-tools-multi-ticker` transcripts and find the shared cause; all three are tool-shaped features in one project, which points at a per-project harness problem rather than anything intrinsic to acceptance.
 
