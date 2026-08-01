@@ -4,6 +4,7 @@
  * Reads Tier 1 run artifacts and projects them to normalized observations.
  */
 
+import { statSync } from "node:fs";
 import * as path from "node:path";
 import type {
   AcceptanceVerdictObservation,
@@ -118,6 +119,33 @@ async function collectFromMetrics(context: CuratorPostRunContext): Promise<Obser
   return observations;
 }
 
+/**
+ * True when an artifact stamped `timestamp` belongs to the current run (#1422).
+ *
+ * Absent `runStartedAt` means "no scoping" — the pre-#1422 behaviour, kept so
+ * out-of-tree callers of `collectObservations` do not silently start dropping
+ * observations. An artifact with an unparseable or missing timestamp is KEPT:
+ * dropping it would hide real findings, whereas keeping it only risks the stale
+ * count that was already the status quo.
+ */
+function withinRun(timestamp: unknown, runStartedAt: number | undefined): boolean {
+  if (runStartedAt === undefined) return true;
+  const ts = typeof timestamp === "string" ? Date.parse(timestamp) : Number.NaN;
+  if (Number.isNaN(ts)) return true;
+  return ts >= runStartedAt;
+}
+
+/** mtime-based counterpart to `withinRun` for artifacts that carry no timestamp field. */
+function writtenThisRun(filePath: string, runStartedAt: number | undefined): boolean {
+  if (runStartedAt === undefined) return true;
+  try {
+    return statSync(filePath).mtimeMs >= runStartedAt;
+  } catch {
+    // Unreadable stat — keep the artifact rather than silently dropping it.
+    return true;
+  }
+}
+
 // Prefer canonical Phase-1 fields first; fall back to legacy on-disk variants for pre-normalization audits.
 function findingRuleId(finding: JsonRecord): string {
   return stringValue(finding.ruleId ?? finding.rule ?? finding.checkId ?? finding.category, "unknown");
@@ -150,6 +178,7 @@ async function collectFromReviewAudit(context: CuratorPostRunContext): Promise<O
       try {
         const audit = asRecord(await readJsonFile(fullPath));
         if (!audit) continue;
+        if (!withinRun(audit.timestamp, context.runStartedAt)) continue;
         const result = asRecord(audit.result);
         const findings = asArray(result?.findings);
         const storyId = stringValue(audit.storyId, "unknown");
@@ -170,6 +199,7 @@ async function collectFromReviewAudit(context: CuratorPostRunContext): Promise<O
               ruleId,
               checkId: ruleId,
               severity: stringValue(finding.severity, "info"),
+              category: optionalString(finding.category),
               file: stringValue(finding.file),
               line: numberValue(finding.line, 0),
               message: findingMessage(finding),
@@ -200,6 +230,9 @@ async function collectFromContextManifests(context: CuratorPostRunContext): Prom
         const storyId = parts[2] ?? "unknown";
         const manifest = asRecord(await readJsonFile(fullPath));
         if (!manifest) continue;
+        // Manifests carry no timestamp of their own and persist per story across
+        // runs, so mtime is the only signal that this run actually wrote one.
+        if (!writtenThisRun(fullPath, context.runStartedAt)) continue;
         const ts = now();
         const chunkSummaries = asRecord(manifest.chunkSummaries) ?? {};
         // Manifests written before #1421 carry no token data — those chunks

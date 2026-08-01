@@ -154,6 +154,7 @@ export function buildPostRunContext(opts: RunCleanupOptions, durationMs: number,
     curatorRollupPath,
     logFilePath,
     config,
+    startTime,
   } = opts;
   const counts = countStories(prd);
 
@@ -165,6 +166,7 @@ export function buildPostRunContext(opts: RunCleanupOptions, durationMs: number,
     branch,
     version,
     totalDurationMs: durationMs,
+    runStartedAt: startTime,
     totalCost,
     storySummary: {
       completed: storiesCompleted,

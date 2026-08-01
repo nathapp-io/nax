@@ -5,6 +5,7 @@
  * Each heuristic is a pure function that groups observations and generates proposals.
  */
 
+import { fingerprintFor } from "../../../review";
 import type {
   ChunkExcludedObservation,
   EscalationObservation,
@@ -66,6 +67,16 @@ function uniqueStoryIds(storyIds: string[]): string[] {
   return [...new Set(storyIds)];
 }
 
+/** Feature spread at which a recurring finding is worth flagging as HIGH. */
+const HIGH_SEVERITY_FEATURE_SPREAD = 5;
+
+type H1Group = {
+  featureIds: Set<string>;
+  storyIds: Set<string>;
+  samples: string[];
+  locus?: { file: string; category?: string };
+};
+
 function firstLine(message: string): string {
   return message.split("\n")[0] ?? message;
 }
@@ -74,38 +85,44 @@ function firstLine(message: string): string {
 function h1RepeatedReviewFinding(observations: Observation[], threshold: number): Proposal[] {
   const findings = observations.filter((o): o is ReviewFindingObservation => o.kind === "review-finding");
 
-  const groups = new Map<string, { storyIds: string[]; samples: string[] }>();
+  const groups = new Map<string, H1Group>();
   for (const obs of findings) {
-    const ruleId = obs.payload.ruleId;
-    const message = obs.payload.message;
-    const existing = groups.get(ruleId);
-    if (existing) {
-      existing.storyIds.push(obs.storyId);
-      const sampleKey = firstLine(message);
-      if (existing.samples.length < 2 && sampleKey && !existing.samples.includes(sampleKey)) {
-        existing.samples.push(sampleKey);
-      }
-    } else {
-      const sampleKey = firstLine(message);
-      groups.set(ruleId, { storyIds: [obs.storyId], samples: sampleKey ? [sampleKey] : [] });
-    }
+    // A finding with no locus (no file AND no category) describes nothing a rule
+    // could constrain — carry-forward bookkeeping and free-text notes land here.
+    const { file, category, message } = obs.payload;
+    if (!file && !category) continue;
+
+    const key = fingerprintFor(file, category, message);
+    const group = groups.get(key) ?? { featureIds: new Set<string>(), storyIds: new Set<string>(), samples: [] };
+    group.featureIds.add(obs.featureId);
+    group.storyIds.add(obs.storyId);
+    group.locus = group.locus ?? { file, category };
+    const sample = firstLine(message);
+    if (sample && group.samples.length < 2 && !group.samples.includes(sample)) group.samples.push(sample);
+    groups.set(key, group);
   }
 
   const proposals: Proposal[] = [];
-  for (const [ruleId, { storyIds, samples }] of groups.entries()) {
-    if (storyIds.length < threshold) continue;
-    const count = storyIds.length;
-    const severity = count >= 4 ? "HIGH" : "MED";
-    const unique = uniqueStoryIds(storyIds);
-    const sampleSection = samples.length > 0 ? `\n  Examples: ${samples.join(" | ")}` : "";
+  for (const group of groups.values()) {
+    // Threshold is on DISTINCT FEATURES, not raw occurrences (#1422). One feature
+    // repeating a defect is a story problem; the same defect crossing features is
+    // what a project rule exists to prevent.
+    const featureCount = group.featureIds.size;
+    if (featureCount < threshold) continue;
+    const features = [...group.featureIds];
+    const stories = [...group.storyIds];
+    const locus = group.locus?.category
+      ? `${group.locus.category}${group.locus.file ? ` in ${group.locus.file}` : ""}`
+      : (group.locus?.file ?? "review finding");
+    const sampleSection = group.samples.length > 0 ? `\n  Examples: ${group.samples.join(" | ")}` : "";
     proposals.push({
       id: "H1",
-      severity,
+      severity: featureCount >= HIGH_SEVERITY_FEATURE_SPREAD ? "HIGH" : "MED",
       target: { canonicalFile: ".nax/rules/curator-suggestions.md", action: "add" },
-      description: `Repeated review finding: ${ruleId} appeared ${count}x across stories`,
-      evidence: `Rule ${ruleId} fired ${count}× in stories: ${unique.join(", ")}${sampleSection}`,
+      description: `Recurring review finding (${locus}) — hit ${featureCount} features`,
+      evidence: `Seen in ${featureCount} features: ${features.join(", ")} (stories: ${stories.join(", ")})${sampleSection}`,
       sourceKinds: ["review-finding"],
-      storyIds: unique,
+      storyIds: stories,
     });
   }
   return proposals;

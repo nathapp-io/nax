@@ -212,6 +212,15 @@ export interface PostRunContext {
   /** Total run duration in milliseconds */
   totalDurationMs: number;
 
+  /**
+   * Epoch ms at which this run started. Lets post-run actions scope themselves
+   * to artifacts this run produced — the curator's counts were previously
+   * cumulative over a project's entire history and could only ever grow (#1422).
+   * Optional so out-of-tree post-run actions built against the older shape keep
+   * compiling; consumers must treat absence as "no scoping".
+   */
+  runStartedAt?: number;
+
   /** Total cost of the run */
   totalCost: number;
 

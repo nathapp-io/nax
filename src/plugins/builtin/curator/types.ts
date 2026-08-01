@@ -72,6 +72,8 @@ export interface ReviewFindingObservation extends BaseObservation {
     ruleId: string;
     checkId?: string;
     severity: string;
+    /** Reviewer taxonomy axis. Drives H1's recurrence fingerprint (#1422). */
+    category?: string;
     file: string;
     line: number;
     message: string;
