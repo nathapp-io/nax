@@ -415,9 +415,19 @@ export async function curatorGc(options: CuratorGcOptions): Promise<void> {
   const lines = rollupText.trim().split("\n").filter(Boolean);
   const observations = lines.map((l) => JSON.parse(l) as Observation);
 
-  // Group by runId, find max ts per runId
+  // The rollup defaults to ONE global file shared by every project on the
+  // machine (#1429), so pruning by global recency lets a busy project evict a
+  // quiet one. Only rows this project owns are eligible; a neighbour's rows —
+  // and pre-#1429 rows, which belong to no project — are preserved verbatim.
+  // Retention for those unattributable rows is #1430's problem, not one
+  // project's to decide.
+  const projectKey = getProjectKey(config, resolved.projectDir);
+  const isMine = (obs: Observation): boolean => obs.projectKey === projectKey;
+
+  // Group this project's rows by runId, find max ts per runId
   const maxTsByRunId = new Map<string, string>();
   for (const obs of observations) {
+    if (!isMine(obs)) continue;
     const existing = maxTsByRunId.get(obs.runId);
     if (!existing || obs.ts > existing) {
       maxTsByRunId.set(obs.runId, obs.ts);
@@ -430,18 +440,19 @@ export async function curatorGc(options: CuratorGcOptions): Promise<void> {
     .map(([runId]) => runId);
 
   if (uniqueRunIds.length <= keep) {
-    console.log(`[gc] ${uniqueRunIds.length} unique run(s) in rollup — at or below keep=${keep}. Nothing to prune.`);
+    console.log(
+      `[gc] ${uniqueRunIds.length} unique run(s) for ${projectKey} in rollup — at or below keep=${keep}. Nothing to prune.`,
+    );
     return;
   }
 
   const keepSet = new Set(uniqueRunIds.slice(0, keep));
-  const filtered = observations.filter((obs) => keepSet.has(obs.runId));
+  const filtered = observations.filter((obs) => !isMine(obs) || keepSet.has(obs.runId));
   const newContent = `${filtered.map((obs) => JSON.stringify(obs)).join("\n")}\n`;
 
   await _curatorCmdDeps.writeFile(rollupPath, newContent);
 
   // Delete curator artifacts from per-run directories that are no longer kept
-  const projectKey = getProjectKey(config, resolved.projectDir);
   const outputDir = _curatorCmdDeps.projectOutputDir(projectKey, config.outputDir as string | undefined);
   const perRunsDir = join(outputDir, "runs");
   for (const runId of uniqueRunIds) {

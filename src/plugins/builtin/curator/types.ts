@@ -29,10 +29,18 @@ export interface BaseObservation {
   /**
    * 1 = observations re-ingested from a project's whole audit history on every
    * run (cumulative, monotonic). 2 = scoped to the run that produced them
-   * (#1422). The rollup is append-only and cross-project, so both versions
-   * coexist in one file; longitudinal analysis MUST NOT mix them.
+   * (#1422). 3 = carries `projectKey` (#1429). The rollup is append-only, so
+   * all three coexist in one file; longitudinal analysis MUST NOT mix them.
    */
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
+  /**
+   * Which project produced this row. The rollup defaults to ONE global file
+   * shared by every project on the machine (`~/.nax/global/curator/rollup.jsonl`),
+   * and nothing else in the row identifies its origin — `featureId` and `storyId`
+   * are project-local names that collide freely across repos. Readers MUST filter
+   * on this before counting anything (#1429).
+   */
+  projectKey: string;
   runId: string;
   featureId: string;
   storyId: string;

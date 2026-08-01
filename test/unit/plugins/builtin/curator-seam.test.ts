@@ -34,7 +34,13 @@ const THRESHOLDS: CuratorThresholds = {
 
 const DEFECT = "Test asserts a pattern exists in the source file instead of invoking the code";
 
-function makeContext(root: string, feature: string, runId: string, runStartedAt: number): CuratorPostRunContext {
+function makeContext(
+  root: string,
+  feature: string,
+  runId: string,
+  runStartedAt: number,
+  projectKey = "p",
+): CuratorPostRunContext {
   return {
     runId,
     feature,
@@ -50,17 +56,18 @@ function makeContext(root: string, feature: string, runId: string, runStartedAt:
     logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
     // biome-ignore lint/suspicious/noExplicitAny: collector reads no config keys on this path
     config: {} as any,
-    outputDir: join(root, "out"),
+    outputDir: join(root, "out", projectKey),
     globalDir: join(root, "global"),
-    projectKey: "p",
+    projectKey,
+    // One global rollup shared by every project — the production default (#1429).
     curatorRollupPath: join(root, "rollup.jsonl"),
     runStartedAt,
   };
 }
 
 /** One run over one feature, writing a review-audit entry the way production does. */
-async function runOnce(root: string, feature: string, runId: string, file: string, when: string) {
-  const dir = join(root, "out", "review-audit", feature);
+async function runOnce(root: string, feature: string, runId: string, file: string, when: string, projectKey = "p") {
+  const dir = join(root, "out", projectKey, "review-audit", feature);
   await mkdir(dir, { recursive: true });
   await writeFile(
     join(dir, `${runId}.json`),
@@ -73,10 +80,15 @@ async function runOnce(root: string, feature: string, runId: string, file: strin
       },
     }),
   );
-  const ctx = makeContext(root, feature, runId, Date.parse(when) - 60_000);
+  const ctx = makeContext(root, feature, runId, Date.parse(when) - 60_000, projectKey);
   const observations = await collectObservations(ctx);
   await appendToRollup(observations, ctx.curatorRollupPath);
   return ctx;
+}
+
+/** The window as the plugin asks for it: scoped to the run's own project. */
+async function windowFor(ctx: CuratorPostRunContext, runs: number) {
+  return readHeuristicWindow(ctx.curatorRollupPath, runs, { projectKey: ctx.projectKey });
 }
 
 describe("collector → heuristics seam", () => {
@@ -99,7 +111,7 @@ describe("collector → heuristics seam", () => {
     ctx = await runOnce(root, "feat-b", "run-2", "src/b.ts", "2026-08-01T11:00:00.000Z");
     ctx = await runOnce(root, "feat-c", "run-3", "src/c.ts", "2026-08-01T12:00:00.000Z");
 
-    const window = await readHeuristicWindow(ctx.curatorRollupPath, 10);
+    const { observations: window } = await windowFor(ctx, 10);
     const features = new Set(window.filter((o) => o.kind === "review-finding").map((o) => o.featureId));
     expect([...features].sort()).toEqual(["feat-a", "feat-b", "feat-c"]);
 
@@ -116,7 +128,7 @@ describe("collector → heuristics seam", () => {
     let ctx = await runOnce(root, "feat-a", "run-1", "src/a.ts", "2026-08-01T10:00:00.000Z");
     ctx = await runOnce(root, "feat-b", "run-2", "src/b.ts", "2026-08-01T11:00:00.000Z");
 
-    const window = await readHeuristicWindow(ctx.curatorRollupPath, 10);
+    const { observations: window } = await windowFor(ctx, 10);
     expect(window.filter((o) => o.kind === "review-finding")).toHaveLength(2);
   });
 
@@ -126,7 +138,7 @@ describe("collector → heuristics seam", () => {
     ctx = await runOnce(root, "feat-b", "run-2", "src/b.ts", "2026-08-01T11:00:00.000Z");
     ctx = await runOnce(root, "feat-c", "run-3", "src/c.ts", "2026-08-01T12:00:00.000Z");
 
-    const window = await readHeuristicWindow(ctx.curatorRollupPath, 2);
+    const { observations: window } = await windowFor(ctx, 2);
     const runs = new Set(window.map((o) => o.runId));
     expect(runs.has("run-1")).toBe(false);
     expect([...runs].sort()).toEqual(["run-2", "run-3"]);
@@ -134,41 +146,157 @@ describe("collector → heuristics seam", () => {
 
   test("a missing or empty rollup yields an empty window rather than throwing", async () => {
     const root = await mkdtemp(join(tmpdir(), "curator-seam-empty-"));
-    expect(await readHeuristicWindow(join(root, "nope.jsonl"), 5)).toEqual([]);
+    const opts = { projectKey: "p" };
+    expect((await readHeuristicWindow(join(root, "nope.jsonl"), 5, opts)).observations).toEqual([]);
     const empty = join(root, "empty.jsonl");
     await writeFile(empty, "");
-    expect(await readHeuristicWindow(empty, 5)).toEqual([]);
+    expect((await readHeuristicWindow(empty, 5, opts)).observations).toEqual([]);
   });
 
   test("malformed rollup lines are skipped, not fatal", async () => {
     const root = await mkdtemp(join(tmpdir(), "curator-seam-malformed-"));
     const p = join(root, "rollup.jsonl");
+    await writeFile(p, ["{not json", JSON.stringify(rollupRow("run-1", "p")), ""].join("\n"));
+    const { observations } = await readHeuristicWindow(p, 5, { projectKey: "p" });
+    expect(observations).toHaveLength(1);
+  });
+});
+
+/** A minimal well-formed rollup row, for tests that write the rollup directly. */
+function rollupRow(runId: string, projectKey: string | undefined, featureId = "f") {
+  return {
+    schemaVersion: 3,
+    ...(projectKey !== undefined && { projectKey }),
+    runId,
+    featureId,
+    storyId: "US-001",
+    stage: "review",
+    ts: "2026-08-01T10:00:00.000Z",
+    kind: "verdict",
+    payload: {},
+  };
+}
+
+describe("the rollup is shared by every project (#1429)", () => {
+  test("a project's window excludes another project's rows", async () => {
+    // The production default is ONE global rollup for the whole machine, so
+    // another repo's runs are interleaved with this one's in the same file.
+    const root = await mkdtemp(join(tmpdir(), "curator-scope-window-"));
+    await runOnce(root, "feat-a", "run-1", "src/a.ts", "2026-08-01T10:00:00.000Z", "alpha");
+    await runOnce(root, "feat-b", "run-2", "src/b.ts", "2026-08-01T11:00:00.000Z", "beta");
+    const ctx = await runOnce(root, "feat-c", "run-3", "src/c.ts", "2026-08-01T12:00:00.000Z", "alpha");
+
+    const { observations } = await windowFor(ctx, 20);
+    expect(new Set(observations.map((o) => o.projectKey))).toEqual(new Set(["alpha"]));
+    expect(new Set(observations.map((o) => o.runId))).toEqual(new Set(["run-1", "run-3"]));
+  });
+
+  test("H1 never counts a foreign project's features toward cross-feature recurrence", async () => {
+    // The consequence that matters: a proposal written into alpha's run dir,
+    // targeting alpha's .nax/rules/, grounded in beta's features and files.
+    const root = await mkdtemp(join(tmpdir(), "curator-scope-h1-"));
+    await runOnce(root, "feat-a", "run-1", "src/a.ts", "2026-08-01T10:00:00.000Z", "alpha");
+    await runOnce(root, "feat-b", "run-2", "src/b.ts", "2026-08-01T11:00:00.000Z", "beta");
+    await runOnce(root, "feat-c", "run-3", "src/c.ts", "2026-08-01T12:00:00.000Z", "beta");
+    const ctx = await runOnce(root, "feat-d", "run-4", "src/d.ts", "2026-08-01T13:00:00.000Z", "beta");
+
+    const { observations } = await windowFor(ctx, 20);
+    const h1 = runHeuristics(observations, THRESHOLDS).find((p) => p.id === "H1");
+    // Three of beta's features, never alpha's — even though alpha's row sits in
+    // the same file, inside the same window, carrying the same defect text.
+    expect(h1?.description).toContain("3 features");
+    expect(h1?.evidence).toContain("feat-b");
+    expect(h1?.evidence).toContain("feat-d");
+    expect(h1?.evidence).not.toContain("feat-a");
+  });
+
+  test("a run's own window still spans its own features", async () => {
+    // Scoping must not over-correct into per-run isolation — that was #1428.
+    const root = await mkdtemp(join(tmpdir(), "curator-scope-own-"));
+    await runOnce(root, "feat-a", "run-1", "src/a.ts", "2026-08-01T10:00:00.000Z", "alpha");
+    await runOnce(root, "feat-b", "run-2", "src/b.ts", "2026-08-01T11:00:00.000Z", "alpha");
+    const ctx = await runOnce(root, "feat-c", "run-3", "src/c.ts", "2026-08-01T12:00:00.000Z", "alpha");
+
+    const { observations } = await windowFor(ctx, 20);
+    const h1 = runHeuristics(observations, THRESHOLDS).find((p) => p.id === "H1");
+    expect(h1?.description).toContain("3 features");
+  });
+
+  test("rows written before project scoping are dropped, not attributed to the caller", async () => {
+    // Pre-#1429 rows carry no projectKey and no way to recover one. Claiming
+    // them would reintroduce exactly the contamination this fixes; they are
+    // also the pre-#1427 rows inflated by whole-history re-ingestion.
+    const root = await mkdtemp(join(tmpdir(), "curator-scope-legacy-"));
+    const p = join(root, "rollup.jsonl");
     await writeFile(
       p,
-      [
-        "{not json",
-        JSON.stringify({
-          schemaVersion: 2,
-          runId: "run-1",
-          featureId: "f",
-          storyId: "s",
-          stage: "review",
-          ts: "t",
-          kind: "verdict",
-          payload: {},
-        }),
-        "",
-      ].join("\n"),
+      [rollupRow("old-1", undefined), rollupRow("new-1", "alpha")].map((r) => JSON.stringify(r)).join("\n") + "\n",
     );
-    const window = await readHeuristicWindow(p, 5);
-    expect(window).toHaveLength(1);
+    const { observations } = await readHeuristicWindow(p, 20, { projectKey: "alpha" });
+    expect(observations.map((o) => o.runId)).toEqual(["new-1"]);
+  });
+});
+
+describe("the window's byte ceiling must not masquerade as its run policy (#1429)", () => {
+  /** A rollup whose rows are far larger than the initial tail read. */
+  async function bigRollup(root: string, runs: number, padBytes: number): Promise<string> {
+    const p = join(root, "rollup.jsonl");
+    const lines: string[] = [];
+    for (let i = 0; i < runs; i += 1) {
+      const row = rollupRow(`run-${i}`, "alpha", `feat-${i}`);
+      lines.push(JSON.stringify({ ...row, payload: { pad: "x".repeat(padBytes) } }));
+    }
+    await writeFile(p, `${lines.join("\n")}\n`);
+    return p;
+  }
+
+  test("reads further back when the initial tail holds fewer runs than requested", async () => {
+    // On the real rollup an 8 MB tail held 2 runs, not the 20 configured. The
+    // byte cap is a memory guard; it must not silently become the window size.
+    const root = await mkdtemp(join(tmpdir(), "curator-window-expand-"));
+    const p = await bigRollup(root, 10, 500);
+    const { runIds, truncated } = await readHeuristicWindow(p, 10, {
+      projectKey: "alpha",
+      tailBytes: 600,
+      maxTailBytes: 1024 * 1024,
+    });
+    expect(runIds).toHaveLength(10);
+    expect(truncated).toBe(false);
+  });
+
+  test("reports the shortfall when the hard ceiling is reached", async () => {
+    const root = await mkdtemp(join(tmpdir(), "curator-window-cap-"));
+    const p = await bigRollup(root, 10, 500);
+    const { runIds, truncated } = await readHeuristicWindow(p, 10, {
+      projectKey: "alpha",
+      tailBytes: 600,
+      maxTailBytes: 1200,
+    });
+    expect(runIds.length).toBeLessThan(10);
+    expect(truncated).toBe(true);
+  });
+
+  test("a window that fits reports no truncation even when fewer runs exist than requested", async () => {
+    // Exhausting the file is not truncation — there is simply no more history.
+    const root = await mkdtemp(join(tmpdir(), "curator-window-short-"));
+    const p = await bigRollup(root, 3, 10);
+    const { runIds, truncated } = await readHeuristicWindow(p, 20, { projectKey: "alpha" });
+    expect(runIds).toHaveLength(3);
+    expect(truncated).toBe(false);
   });
 });
 
 describe("curator plugin — end to end", () => {
   /** Drive the real post-run action, as the runner does. */
-  async function executeRun(root: string, feature: string, runId: string, file: string, when: string) {
-    const dir = join(root, "out", "review-audit", feature);
+  async function executeRun(
+    root: string,
+    feature: string,
+    runId: string,
+    file: string,
+    when: string,
+    projectKey = "p",
+  ) {
+    const dir = join(root, "out", projectKey, "review-audit", feature);
     await mkdir(dir, { recursive: true });
     await writeFile(
       join(dir, `${runId}.json`),
@@ -182,7 +310,7 @@ describe("curator plugin — end to end", () => {
       }),
     );
     const ctx = {
-      ...makeContext(root, feature, runId, Date.parse(when) - 60_000),
+      ...makeContext(root, feature, runId, Date.parse(when) - 60_000, projectKey),
       config: {
         curator: {
           enabled: true,
@@ -199,7 +327,7 @@ describe("curator plugin — end to end", () => {
       } as any,
     };
     await curatorPlugin.extensions.postRunAction?.execute(ctx);
-    return join(root, "out", "runs", runId, "curator-proposals.md");
+    return join(root, "out", projectKey, "runs", runId, "curator-proposals.md");
   }
 
   test("three runs over three features produce one cross-feature proposal", async () => {
@@ -216,6 +344,23 @@ describe("curator plugin — end to end", () => {
     expect(markdown).toContain("feat-c");
     // Files differ per feature; they are evidence, never identity.
     expect(markdown).toContain("src/a.ts");
+  });
+
+  test("a busy neighbour project cannot crowd out or contaminate this project's proposals", async () => {
+    // alpha's three runs are interleaved with beta's, so an unscoped window
+    // would cite beta's features as evidence for a rule written into alpha.
+    const root = await mkdtemp(join(tmpdir(), "curator-plugin-neighbour-"));
+    await executeRun(root, "feat-a", "run-1", "src/a.ts", "2026-08-01T10:00:00.000Z", "alpha");
+    await executeRun(root, "beta-x", "run-2", "src/x.ts", "2026-08-01T10:30:00.000Z", "beta");
+    await executeRun(root, "feat-b", "run-3", "src/b.ts", "2026-08-01T11:00:00.000Z", "alpha");
+    await executeRun(root, "beta-y", "run-4", "src/y.ts", "2026-08-01T11:30:00.000Z", "beta");
+    const proposalsPath = await executeRun(root, "feat-c", "run-5", "src/c.ts", "2026-08-01T12:00:00.000Z", "alpha");
+
+    const markdown = await Bun.file(proposalsPath).text();
+    expect(markdown).toContain("Recurring across 3 features");
+    expect(markdown).not.toContain("beta-");
+    expect(markdown).toContain("feat-a");
+    expect(markdown).toContain("feat-c");
   });
 
   test("the first run of a project proposes nothing, rather than erroring", async () => {

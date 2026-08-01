@@ -9,11 +9,43 @@ import * as path from "node:path";
 import type { Observation } from "./types";
 
 /**
- * Bytes read from the tail of the rollup when building the heuristic window.
- * The rollup is append-only and unbounded between `nax curator gc` runs, so the
- * window is taken from the end rather than by parsing the whole file.
+ * Bytes read from the tail of the rollup on the first attempt. The rollup is
+ * append-only and unbounded between `nax curator gc` runs, so the window is
+ * taken from the end rather than by parsing the whole file.
  */
-const MAX_WINDOW_TAIL_BYTES = 8 * 1024 * 1024;
+const INITIAL_WINDOW_TAIL_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Ceiling on the tail read, doubling from `INITIAL_WINDOW_TAIL_BYTES`.
+ *
+ * The initial read is a guess at "enough history"; it is not the window policy.
+ * On a real 618 MB rollup an 8 MB tail held 2 runs where 20 were configured
+ * (#1429), because pre-#1427 rows re-ingested the whole audit history and are
+ * enormous. Reading further back is correct; reading without a ceiling is not,
+ * since project-scoped filtering means a quiet project's 20th-newest run could
+ * be arbitrarily far from the end.
+ */
+const MAX_WINDOW_TAIL_BYTES = 64 * 1024 * 1024;
+
+/** Options for `readHeuristicWindow`; byte bounds are overridable for tests. */
+export interface HeuristicWindowOptions {
+  /** Only rows from this project are returned — see `BaseObservation.projectKey`. */
+  projectKey: string;
+  tailBytes?: number;
+  maxTailBytes?: number;
+}
+
+export interface HeuristicWindow {
+  observations: Observation[];
+  /** Distinct runIds represented, newest first. */
+  runIds: string[];
+  /**
+   * True when the byte ceiling was hit before `windowRuns` runs were found —
+   * i.e. more history exists but was not read. False when the file was simply
+   * exhausted: that is not truncation, there is just less history than asked for.
+   */
+  truncated: boolean;
+}
 
 /**
  * Append observations to a rollup file (JSONL format).
@@ -44,8 +76,41 @@ export async function appendToRollup(observations: Observation[], rollupPath: st
   }
 }
 
+const EMPTY_WINDOW: HeuristicWindow = { observations: [], runIds: [], truncated: false };
+
+/** Parse a tail slice, dropping the partial first line when the read started mid-file. */
+function parseTail(text: string, startedMidFile: boolean, projectKey: string): Observation[] {
+  const lines = text.split("\n");
+  if (startedMidFile) lines.shift();
+
+  const observations: Observation[] = [];
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    try {
+      const obs = JSON.parse(line) as Observation;
+      // Rows written before #1429 carry no projectKey and no way to recover
+      // one, so they are dropped rather than claimed by whichever project
+      // happens to be reading — that would be the contamination this prevents.
+      if (obs.projectKey === projectKey) observations.push(obs);
+    } catch {
+      // Truncated or malformed line — skip it, keep the rest.
+    }
+  }
+  return observations;
+}
+
+/** The last `windowRuns` distinct runIds present, walking backwards so recency wins. */
+function newestRunIds(observations: Observation[], windowRuns: number): Set<string> {
+  const keep = new Set<string>();
+  for (let i = observations.length - 1; i >= 0 && keep.size < windowRuns; i -= 1) {
+    const runId = observations[i]?.runId;
+    if (runId) keep.add(runId);
+  }
+  return keep;
+}
+
 /**
- * Observations from the most recent `windowRuns` runs in the rollup.
+ * Observations from this project's most recent `windowRuns` runs in the rollup.
  *
  * Heuristics that measure recurrence ACROSS features (H1) cannot run on a single
  * run's observations: collection is run-scoped and a run covers one feature, so
@@ -53,38 +118,43 @@ export async function appendToRollup(observations: Observation[], rollupPath: st
  * this needs — and because collection is run-scoped, each finding appears in it
  * exactly once, which is what makes counting it meaningful.
  *
+ * The rollup is shared by every project on the machine, so the window MUST be
+ * filtered by `projectKey` before anything counts features (#1429). Reads grow
+ * from the tail until enough of this project's runs are found, the file is
+ * exhausted, or the ceiling is hit — the last case sets `truncated`.
+ *
  * Never throws: a missing, empty, or partially corrupt rollup yields whatever
  * could be read. The curator must not affect the run's exit code.
  */
-export async function readHeuristicWindow(rollupPath: string, windowRuns: number): Promise<Observation[]> {
+export async function readHeuristicWindow(
+  rollupPath: string,
+  windowRuns: number,
+  options: HeuristicWindowOptions,
+): Promise<HeuristicWindow> {
+  const maxTail = options.maxTailBytes ?? MAX_WINDOW_TAIL_BYTES;
   try {
     const file = Bun.file(rollupPath);
-    if (!(await file.exists())) return [];
+    if (!(await file.exists())) return EMPTY_WINDOW;
     const size = file.size;
-    const start = Math.max(0, size - MAX_WINDOW_TAIL_BYTES);
-    const text = await (start > 0 ? file.slice(start).text() : file.text());
-    // A non-zero start almost certainly lands mid-line; drop the partial head.
-    const lines = text.split("\n");
-    if (start > 0) lines.shift();
 
-    const observations: Observation[] = [];
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        observations.push(JSON.parse(line) as Observation);
-      } catch {
-        // Truncated or malformed line — skip it, keep the rest.
+    let tail = Math.min(options.tailBytes ?? INITIAL_WINDOW_TAIL_BYTES, maxTail);
+    while (true) {
+      const start = Math.max(0, size - tail);
+      const text = await (start > 0 ? file.slice(start).text() : file.text());
+      const observations = parseTail(text, start > 0, options.projectKey);
+      const keep = newestRunIds(observations, windowRuns);
+
+      const exhausted = start === 0;
+      if (keep.size >= windowRuns || exhausted || tail >= maxTail) {
+        return {
+          observations: observations.filter((o) => keep.has(o.runId)),
+          runIds: [...keep],
+          truncated: keep.size < windowRuns && !exhausted,
+        };
       }
+      tail = Math.min(tail * 2, maxTail);
     }
-
-    // Keep the last `windowRuns` distinct runIds, walking backwards so recency wins.
-    const keep = new Set<string>();
-    for (let i = observations.length - 1; i >= 0 && keep.size < windowRuns; i -= 1) {
-      const runId = observations[i]?.runId;
-      if (runId) keep.add(runId);
-    }
-    return observations.filter((o) => keep.has(o.runId));
   } catch {
-    return [];
+    return EMPTY_WINDOW;
   }
 }
