@@ -12,6 +12,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Iteration } from "../../../src/findings";
 import { ReviewPromptBuilder } from "../../../src/prompts";
+import { SEMANTIC_CATEGORIES, SEMANTIC_CATEGORY_ENUM_LINE } from "../../../src/review/semantic-categories";
 import type { SemanticReviewConfig, SemanticStory } from "../../../src/review/types";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -113,6 +114,30 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt()", () => {
       expect(result).not.toContain("AC names the file but not the symbol");
       expect(result).toContain("acIndex");
       expect(result).toContain("acQuote");
+    });
+  });
+
+  describe("category taxonomy (audit rec #6)", () => {
+    test("output schema requires a category, rendered from the SSOT enum", () => {
+      const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
+      expect(result).toContain(`"category": ${SEMANTIC_CATEGORY_ENUM_LINE}`);
+      for (const category of SEMANTIC_CATEGORIES) {
+        expect(result).toContain(`"${category}"`);
+      }
+    });
+
+    test("each category is defined for the reviewer, so the axis is picked deliberately", () => {
+      const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
+      expect(result).toContain("Finding categories");
+      for (const category of SEMANTIC_CATEGORIES) {
+        expect(result).toMatch(new RegExp(`\`${category}\`\\s+—`));
+      }
+    });
+
+    test("does not offer adversarial-owned categories that are out of semantic scope", () => {
+      const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
+      expect(result).not.toContain('"test-gap"');
+      expect(result).not.toContain('"convention"');
     });
   });
 });

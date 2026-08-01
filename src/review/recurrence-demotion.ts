@@ -143,8 +143,11 @@ export type RecurrenceResult<T = AdversarialLLMFinding> = {
 
 /**
  * Structural minimum `classifyRecurrence` reads. Both AdversarialLLMFinding and
- * the semantic LLMFinding satisfy it; semantic findings carry no `category`,
- * which only means the test-gap carve-out never fires for them.
+ * the semantic LLMFinding satisfy it. Semantic findings carry their own
+ * taxonomy (`semantic-categories.ts`), disjoint from adversarial's. That
+ * disjointness is *enforced*, not merely intended: `validateLLMShape` maps any
+ * off-taxonomy value (including a stray `test-gap`) to `other` at the parse
+ * boundary, so the test-gap carve-out below cannot fire for a semantic finding.
  */
 export interface RecurrenceCandidate {
   severity: string;
