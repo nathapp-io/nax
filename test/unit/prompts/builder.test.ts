@@ -317,4 +317,38 @@ describe("PromptBuilder — batch role: build()", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Test-quality pre-brief wiring (July 2026 audit recommendation #1)
+// ---------------------------------------------------------------------------
+
+describe("PromptBuilder — test-quality pre-brief section", () => {
+  test.each(["test-writer", "single-session", "tdd-simple"] as PromptRole[])(
+    "%s prompt contains the Review-Proof Tests pre-brief with the story ID pinned",
+    async (role) => {
+      const prompt = await PromptBuilder.for(role).story(makeStory({ id: "US-007" })).build();
+      expect(prompt).toContain("## Review-Proof Tests");
+      expect(prompt).toContain("(US-007)");
+    },
+  );
+
+  test("batch prompt contains the pre-brief (no per-story ID pin)", async () => {
+    const prompt = await PromptBuilder.for("batch").stories([makeStory({ id: "B-001" })]).build();
+    expect(prompt).toContain("## Review-Proof Tests");
+  });
+
+  test("implementer lite variant (fills coverage gaps) receives the pre-brief", async () => {
+    const prompt = await PromptBuilder.for("implementer", { variant: "lite" }).story(makeStory()).build();
+    expect(prompt).toContain("## Review-Proof Tests");
+  });
+
+  test.each([
+    ["implementer standard — does not author tests", "implementer", { variant: "standard" as const }],
+    ["verifier — reviews, never authors", "verifier", undefined],
+    ["no-test — never writes tests", "no-test", undefined],
+  ])("%s prompt omits the pre-brief", async (_label, role, options) => {
+    const prompt = await PromptBuilder.for(role as PromptRole, options).story(makeStory()).build();
+    expect(prompt).not.toContain("## Review-Proof Tests");
+  });
+});
+
 

@@ -42,6 +42,7 @@ import {
   buildStoryReminderSection,
   buildStorySection,
   buildTddLanguageSection,
+  buildTestQualitySection,
   buildVerdictSection,
 } from "../sections";
 import type { GuardrailRole } from "../sections";
@@ -240,6 +241,16 @@ export class TddPromptBuilder {
       guardrailIsolation,
     );
     if (guardrails) acc.add(this.s("guardrails", guardrails));
+
+    // (6.8) Test-quality pre-brief — adversarial test-gap lenses forwarded to
+    // test-authoring roles (July 2026 audit: test-gap was 67% of adversarial
+    // blocking findings; pre-briefing avoids a review + rectification round).
+    const testQuality = buildTestQualitySection(
+      this.role,
+      this.options.variant as "standard" | "lite" | undefined,
+      this.story_?.id,
+    );
+    if (testQuality) acc.add(this.s("test-quality", testQuality));
 
     if (this.role !== "verifier") {
       const selfVerify = buildSelfVerificationSection(this.role, this.selfVerification_);
