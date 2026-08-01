@@ -149,4 +149,74 @@ describe("semantic reviewer audit shape (#942 AC-1 / AC-2)", () => {
       expect(slug.split("-").length).toBeGreaterThan(1);
     }
   });
+  test("acknowledgements reach the audit even when the review PASSES (#1423)", async () => {
+    // The most common ack shape by far: the implementer fixed everything, so the
+    // reviewer acknowledges the prior findings and reports none. If acks are only
+    // wired on the failing branch, exactly this case is lost.
+    const { auditor, decisions: captured } = captureAuditDecisions();
+    decisions = captured;
+    const agentManager = agentManagerWithFixedLLMResponse(
+      JSON.stringify({
+        passed: true,
+        inspectedFiles: ["src/foo.ts"],
+        acks: [
+          { priorFinding: "src/foo.ts:73", status: "addressed", note: "typeof guard added at line 74" },
+          { priorFinding: "src/foo.ts:81", status: "never-an-issue", note: "logger is never null here" },
+        ],
+        findings: [],
+      }),
+    );
+    const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
+
+    await runSemanticReview({
+      workdir: "/tmp/test",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: CFG,
+      agentManager,
+      featureName: "feat-x",
+      runtime,
+    });
+
+    const decision = decisions[0]!;
+    expect(decision.result?.passed).toBe(true);
+    expect(decision.result?.findings).toEqual([]);
+    expect(decision.acks).toHaveLength(2);
+    expect(decision.acks?.[0]?.status).toBe("addressed");
+    expect(decision.acks?.[1]?.status).toBe("never-an-issue");
+  });
+
+  test("acknowledgements reach the audit on the failing branch too (#1423)", async () => {
+    const { auditor, decisions: captured } = captureAuditDecisions();
+    decisions = captured;
+    const agentManager = agentManagerWithFixedLLMResponse(
+      JSON.stringify({
+        passed: false,
+        acks: [{ priorFinding: "src/foo.ts:73", status: "addressed" }],
+        findings: [
+          {
+            severity: "error",
+            file: "src/foo.ts",
+            line: 73,
+            issue: "still unvalidated",
+            suggestion: "guard it",
+            acIndex: 2,
+          },
+        ],
+      }),
+    );
+    const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
+
+    await runSemanticReview({
+      workdir: "/tmp/test",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: CFG,
+      agentManager,
+      featureName: "feat-x",
+      runtime,
+    });
+
+    expect(decisions[0]!.acks).toHaveLength(1);
+  });
 });

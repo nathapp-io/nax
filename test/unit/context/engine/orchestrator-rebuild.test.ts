@@ -91,6 +91,26 @@ describe("rebuildForAgent — failure note injection", () => {
     expect(rebuilt.pushMarkdown).toContain("fail-quota");
   });
 
+  test("rebuild recomputes chunkTokens so the injected failure note is not counted as 0 (#1421)", async () => {
+    // The rebuild adds a synthetic failure-note chunk. Inheriting the prior
+    // manifest's chunkTokens would leave that chunk with no entry, and the
+    // curator would record tokens:0 for it — the placeholder #1421 removed.
+    const provider = makeProvider("p1", makeChunkResult());
+    const orch = new ContextOrchestrator([provider]);
+    const original = await orch.assemble(BASE_REQUEST);
+
+    const rebuilt = orch.rebuildForAgent(
+      { ...original, agentId: "claude" },
+      { newAgentId: "codex", failure: AVAILABILITY_FAILURE },
+    );
+
+    const tokenMap = rebuilt.manifest.chunkTokens ?? {};
+    expect(Object.keys(tokenMap).sort()).toEqual([...rebuilt.manifest.includedChunks].sort());
+    for (const id of rebuilt.manifest.includedChunks) {
+      expect(tokenMap[id]).toBeGreaterThan(0);
+    }
+  });
+
   test("failure note includes prior and new agent id", async () => {
     const orch = new ContextOrchestrator([]);
     const original = await orch.assemble(BASE_REQUEST);

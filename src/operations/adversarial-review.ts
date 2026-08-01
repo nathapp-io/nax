@@ -294,6 +294,9 @@ async function performAdversarialReground(
       output: JSON.stringify({
         passed: false,
         findings: secondParsed.findings,
+        // Acknowledgements must survive every output rewrite — a synthetic
+        // output is still the object `parse()` reads (#1423).
+        ...(secondParsed.acks && { acks: secondParsed.acks }),
         _repromptInfo: { dropCount, outcome: "recovered-blocking", costUsd },
       }),
       estimatedCostUsd: costUsd,
@@ -309,6 +312,7 @@ async function performAdversarialReground(
       output: JSON.stringify({
         passed: true,
         findings: [...firstAdvisory, ...secondAdvisory],
+        ...(secondParsed.acks && { acks: secondParsed.acks }),
         _repromptInfo: { dropCount, outcome: "recovered-advisory-only", costUsd },
       }),
       estimatedCostUsd: costUsd,
@@ -407,7 +411,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
       );
       return {
         ...turn,
-        output: JSON.stringify({ passed, findings: requoted.findings }),
+        output: JSON.stringify({ passed, findings: requoted.findings, ...(parsed.acks && { acks: parsed.acks }) }),
         estimatedCostUsd: (turn.estimatedCostUsd ?? 0) + requoted.extraCostUsd,
       };
     }

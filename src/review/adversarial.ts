@@ -23,11 +23,6 @@ import { adversarialReviewOp } from "../operations/adversarial-review";
 import { callOp as _callOp } from "../operations/call";
 import { extractDiffFiles } from "../utils/diff-files";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
-import {
-  type AdversarialAcceptAnalysis,
-  type AdversarialDropAnalysis,
-  analyzeStructuralCounterfactual,
-} from "./ac-structural-counterfactual";
 import { recordAdversarialAudit } from "./adversarial-audit-event";
 import { buildCounterfactualTelemetry } from "./adversarial-counterfactual-telemetry";
 import { type AdversarialLLMFinding, formatFindings, toAdversarialReviewFindings } from "./adversarial-helpers";

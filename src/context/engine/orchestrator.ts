@@ -560,6 +560,10 @@ export class ContextOrchestrator {
       requestId: _orchestratorDeps.uuid(),
       // Update includedChunks so the manifest reflects the actual rendered content.
       includedChunks: packedChunks.map((c) => c.id),
+      // Recomputed, not inherited: a rebuild can add a chunk (the failure note)
+      // that the prior map has no entry for, which would make the curator record
+      // tokens:0 for it — the exact placeholder #1421 removed.
+      chunkTokens: Object.fromEntries(packedChunks.map((c) => [c.id, c.tokens])),
       usedTokens: Math.max(0, prior.manifest.usedTokens - prior.manifest.digestTokens + dTokens + extraTokens),
       digestTokens: dTokens,
       buildMs: 0,

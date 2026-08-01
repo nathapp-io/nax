@@ -96,6 +96,7 @@ const SEMANTIC_OUTPUT_SCHEMA = `Respond with JSON only — no explanation text b
 }
 
 Notes:
+- \`acks\` records prior findings you are NOT re-flagging — resolved by the diff, or withdrawn. Omit it (or use \`[]\`) when there are no prior findings. An acknowledgement must never appear in \`findings\`.
 - \`category\` is required on every finding — one of the axes listed above.
 - \`acIndex\` is required when severity is "error" (1-based, into the Acceptance Criteria list above).
 - \`acQuote\` is optional advisory metadata for human auditors — not validated.

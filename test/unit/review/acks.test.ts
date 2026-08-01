@@ -31,13 +31,37 @@ describe("extractAcks()", () => {
     },
   );
 
-  test("skips non-object entries instead of dropping the whole array", () => {
-    const acks = extractAcks(["junk", null, { priorFinding: "src/a.ts:4", status: "addressed" }]);
+  test("skips unusable entries instead of dropping the whole array", () => {
+    const acks = extractAcks([null, 42, { priorFinding: "src/a.ts:4", status: "addressed" }]);
     expect(acks).toEqual([{ priorFinding: "src/a.ts:4", status: "addressed" }]);
   });
 
-  test("an unrecognized status falls back to 'addressed' — benign, and still out of findings", () => {
-    expect(extractAcks([{ priorFinding: "x", status: "banana" }])[0].status).toBe("addressed");
+  test("an unrecognized status is recorded as 'unknown', never coerced to 'addressed'", () => {
+    // Coercing would let the audit certify an unfixed defect as resolved.
+    const ack = extractAcks([{ priorFinding: "x", status: "banana" }])[0];
+    expect(ack.status).toBe("unknown");
+    expect(ack.rawStatus).toBe("banana");
+  });
+
+  test("a `still-blocking` verdict misfiled into acks stays visibly unknown", () => {
+    // The realistic misuse: the reviewer puts a live blocker in `acks` instead
+    // of re-flagging it. It must remain detectable in the audit corpus.
+    const ack = extractAcks([{ priorFinding: "src/a.ts:4", status: "still-blocking" }])[0];
+    expect(ack.status).toBe("unknown");
+    expect(ack.rawStatus).toBe("still-blocking");
+  });
+
+  test("a bare string entry is kept as the referent rather than dropped", () => {
+    expect(extractAcks(["fixed the null check"])).toEqual([
+      { priorFinding: "fixed the null check", status: "unknown" },
+    ]);
+  });
+
+  test("caps ack count and note length so one reviewer cannot bloat every audit record", () => {
+    const many = Array.from({ length: 80 }, (_, i) => ({ priorFinding: `f${i}`, status: "addressed" }));
+    expect(extractAcks(many)).toHaveLength(50);
+    const longNote = extractAcks([{ priorFinding: "x", status: "addressed", note: "z".repeat(2000) }])[0].note;
+    expect(longNote?.length).toBe(500);
   });
 
   test("omits an empty note rather than persisting an empty string", () => {

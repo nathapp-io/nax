@@ -22,9 +22,18 @@ export type ReviewCheckName = "typecheck" | "lint" | "test" | "build" | "semanti
 export interface ReviewAck {
   /** Short identifier of the prior finding: `file:line`, or a few words of its message. */
   priorFinding: string;
-  status: "addressed" | "never-an-issue";
+  /**
+   * `unknown` when the reviewer supplied a status outside the schema — including
+   * `still-blocking`, which belongs in `findings`, not here. Recorded rather than
+   * coerced: an ack claiming a blocker was "addressed" when the reviewer meant
+   * the opposite would affirmatively certify an unfixed defect as resolved, and
+   * nothing downstream could ever detect it.
+   */
+  status: "addressed" | "never-an-issue" | "unknown";
   /** The diff line that resolves it, or why the prior judgment was wrong. */
   note?: string;
+  /** The reviewer's literal `status` string, kept when it was not a known value. */
+  rawStatus?: string;
 }
 
 /**

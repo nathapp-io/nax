@@ -87,27 +87,28 @@ Proposals are generated per run but are raw-count aggregates ("test-gap fired 79
 | 4 | Spec-review data-literal + fixture-derivability check (the shell-grep-AC half already shipped as Phase 7) | spec-review skill | targets the most expensive deadlock stories | [spec-kit#18](https://github.com/nathapp-io/nax-spec-kit-skills/issues/18) |
 | 5 | Pin story ID in implementer/test-writer prompts ("test names must use this story's ID") | prompts | ~598 convention findings | folded into #1 |
 | 6 | Give the semantic reviewer a category taxonomy (**semantic-specific**, not adversarial's — see §9) | prompts (semantic), review read-path | unlocks demotion/curator/telemetry for 53% of review rounds | **merged — [#1420](https://github.com/nathapp-io/nax/pull/1420)** |
-| 7 | Stop emitting "prior finding addressed" acks as findings — move to an `acks` array | review schema | 2.2% of findings, info-only; cleans curator evidence | [#1423](https://github.com/nathapp-io/nax/issues/1423) |
+| 7 | Stop emitting "prior finding addressed" acks as findings — move to an `acks` array | review schema | 2.2% of findings, info-only; cleans curator evidence | **in review — [#1426](https://github.com/nathapp-io/nax/pull/1426)** |
 | 8 | Diagnose the 8 features burning 5–15 acceptance retries (the US-001 bootstrap premise is refuted — see §10) | acceptance | ~$30–50/mo | [#1424](https://github.com/nathapp-io/nax/issues/1424) |
-| 9 | Fix chunk token accounting; then drop providers empty >90% of the time per project from the default chain | context | prerequisite for budget tuning | [#1421](https://github.com/nathapp-io/nax/issues/1421) |
+| 9 | Fix chunk token accounting | context | prerequisite for budget tuning | **in review — [#1426](https://github.com/nathapp-io/nax/pull/1426)** |
+| 9b | Then drop providers empty >90% of the time per project from the default chain | context | needs ≥1 month of real token data from #1426 first | blocked on 9 |
 | 10 | Close the curator loop: rule-file-ready diffs, cross-feature recurrence threshold, run-scoped counts, surface at `nax finish` | curator | converts dead telemetry into a compounding improvement loop | [#1422](https://github.com/nathapp-io/nax/issues/1422) |
 
 **Estimated impact of #1–#2:** the 15–20-round failure tail is addressed by #1 (prevention) and the shipped oscillation breaker. The original "$1,873 → $1,450–1,550" figure leaned on #3b's non-productive-iteration savings, which §10 withdraws — treat the remaining savings estimate as unquantified until August data lands.
 
-## 8. Implementation status (this branch — `feat/test-quality-prebrief`)
+## 8. Implementation status — #1 test-gap pre-brief (merged, [#1419](https://github.com/nathapp-io/nax/pull/1419))
 
-**#1 — Test-gap pre-brief: implemented.**
+**#1 — Test-gap pre-brief: shipped.**
 - `src/prompts/sections/test-quality.ts` — new `buildTestQualitySection(role, variant?, storyId?)`: a compact (<1,600 chars) "Review-Proof Tests" section distilling the adversarial Test Audit Gap rejection criteria — runtime-behavior tests only, explicit ban on source-inspection and placeholder/tautological tests, per-AC and per-exported-symbol coverage, boundary/error-path lenses, mount-and-interact for UI-level ACs.
 - Recommendation #5 folded in: when a story ID is available, the section pins it for test names (the 598 sibling-copy convention findings).
 - Wired into `TddPromptBuilder.build()` as section 6.8 for the roles that author tests: `test-writer`, `single-session`, `tdd-simple`, `batch`, and `implementer` (lite variant only). `verifier`, `no-test`, and standard `implementer` prompts are unchanged.
 - Tests: `test/unit/prompts/sections/test-quality.test.ts` (19 tests incl. a size-budget guard) + wiring assertions in `test/unit/prompts/builder.test.ts`. Full suite, typecheck, and lint green.
 - **Measurement plan:** compare August's adversarial first-round pass rate (July baseline: 69%) and test-gap share of blocking findings (July baseline: 263, ~67%) from `review-audit/`; compare rectification share of stage cost (July baseline: 43.6%) from `cost/*.jsonl`.
 
-**#2 — Adversarial sub-threshold verdict: closed as verified-fixed** (§2 above). #1378 shipped in v0.75.2; the July hits were pre-fix versions; regression coverage exists in `test/unit/review/adversarial-verifiedby.test.ts`. No code change on this branch.
+**#2 — Adversarial sub-threshold verdict: closed as verified-fixed** (§2 above). #1378 shipped in v0.75.2; the July hits were pre-fix versions; regression coverage exists in `test/unit/review/adversarial-verifiedby.test.ts`. No code change needed.
 
-**Code review (this branch):** independent review found no critical/high issues; three mediums were fixed — heading level (`##` → `#` so the section is not a markdown child of Behavioral Guardrails), the exported-symbol bullet scoped to AC-dependent exports (was contradicting the guardrails "tests cover ACs only" rule), and implementer-lite's isolation section relaxed ("MAY add tests for uncovered ACs; do NOT weaken existing tests") so it no longer contradicts the role-task and pre-brief sections. The source-inspection ban was also added to the adversarial reviewer's own Test Audit Gap catalogue so the pre-brief's attribution is accurate on both sides.
+**Code review:** independent review found no critical/high issues; three mediums were fixed — heading level (`##` → `#` so the section is not a markdown child of Behavioral Guardrails), the exported-symbol bullet scoped to AC-dependent exports (was contradicting the guardrails "tests cover ACs only" rule), and implementer-lite's isolation section relaxed ("MAY add tests for uncovered ACs; do NOT weaken existing tests") so it no longer contradicts the role-task and pre-brief sections. The source-inspection ban was also added to the adversarial reviewer's own Test Audit Gap catalogue so the pre-brief's attribution is accurate on both sides.
 
-## 9. Implementation status — #6 semantic category taxonomy (`feat/semantic-category-taxonomy`)
+## 9. Implementation status — #6 semantic category taxonomy (merged, [#1420](https://github.com/nathapp-io/nax/pull/1420))
 
 **Implemented.** Semantic findings no longer emit `category: ""` (the 269 × `None` in §2).
 
@@ -159,5 +160,48 @@ Phase 7 of the spec-review skill already bans `[grep]`/`[file]`/`[verbatim]` ACs
 - **#7** → [#1423](https://github.com/nathapp-io/nax/issues/1423). Real but smaller than implied: 81 of 3,685 July findings (2.2%), all `info`, all adversarial — telemetry pollution, not deadlock. Its concrete harm is visible in curator proposal evidence, where the quoted examples are carry-forward bookkeeping rather than findings.
 
 **Method note:** every number above was re-derived from `~/.nax/global/curator/rollup.jsonl`, `~/.nax/*/review-audit/`, and the `curator-proposals.md` artifacts, not carried over from the audit body. Three of six recommendations changed materially on contact with the data.
+
+## 11. Where we are (2026-08-01, end of day)
+
+| # | Recommendation | State |
+|--:|:---|:---|
+| 1 | Test-gap pre-brief | **shipped** — [#1419](https://github.com/nathapp-io/nax/pull/1419) |
+| 2 | Adversarial sub-threshold verdict | **shipped before the audit** — #1378 / v0.75.2, coverage verified |
+| 3 | Oscillation circuit-breaker | **shipped before the audit** — ping-pong-only counting (#1355) |
+| 6 | Semantic category taxonomy | **shipped** — [#1420](https://github.com/nathapp-io/nax/pull/1420) |
+| 7 | Reviewer `acks` channel | **in review** — [#1426](https://github.com/nathapp-io/nax/pull/1426) |
+| 9 | Chunk token accounting | **in review** — [#1426](https://github.com/nathapp-io/nax/pull/1426) |
+| 4 | Spec-review data-literal check | open — [spec-kit#18](https://github.com/nathapp-io/nax-spec-kit-skills/issues/18) |
+| 8 | Acceptance retry tail | open, diagnostic — [#1424](https://github.com/nathapp-io/nax/issues/1424) |
+| 10 | Curator loop | open, largest remaining — [#1422](https://github.com/nathapp-io/nax/issues/1422) |
+| 3b | Non-productive-iteration bail | **withdrawn** — §10 |
+
+Four of the ten shipped or in review; two were already fixed before the audit was written; one is withdrawn.
+
+### What is actually left
+
+**#10 (curator) is the load-bearing one.** It is the only remaining item that changes the *shape* of the feedback loop rather than one measurement inside it, and two shipped changes now depend on it to be worth anything:
+
+- #1420 makes semantic findings carry categories, which the curator will fold into its per-category counts — the same counts that accumulate over each project's whole audit history and can never clear. Without #1422, the new taxonomy inherits the defect that made the adversarial counts useless.
+- #1426 stops *new* acknowledgement pollution, but historical acks remain in the cumulative totals until collection is run-scoped.
+
+Its three defects are independent and the count-scoping one is the prerequisite: until counts mean "this run", no threshold choice is meaningful. Worth designing before coding — the grouping key (finding fingerprint vs category + locus) and the collection window are both judgment calls.
+
+**#8 produces a question, not a patch.** Someone has to read the `alerts-tool` / `kv-cache` / `agent-tools-multi-ticker` transcripts and find the shared cause; all three are tool-shaped features in one project, which points at a per-project harness problem rather than anything intrinsic to acceptance.
+
+### Measurement debt
+
+Nothing shipped this month can be evaluated yet — August data does not exist on 1 August. Three baselines to compare against once it does:
+
+| Metric | July baseline | Changed by |
+|:---|---:|:---|
+| Adversarial first-round pass rate | 69% | #1419 |
+| test-gap share of adversarial blocking findings | 263 (~67%) | #1419 |
+| Rectification share of stage cost | 43.6% | #1419 |
+| Semantic findings carrying a category | 0 of 269 | #1420 |
+| Acknowledgements counted as findings | 81 (2.2%) | #1426 |
+| `chunk-included` events with a real token count | 0 of 269,355 | #1426 |
+
+The last three are correctness checks — they should go to ~100%, ~0, and ~100% immediately, and if they do not, the change did not take effect. The first three are the ones that actually cost money, and they need a month of runs before the comparison means anything.
 
 **Strategic observation:** the harness detects known failure modes post-hoc (adversarial review) instead of preventing them pre-hoc (test-writer/spec prompts). Every recommendation is a form of moving knowledge one stage earlier in the pipeline.

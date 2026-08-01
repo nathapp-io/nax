@@ -447,6 +447,21 @@ describe("toPersistedEntry", () => {
     expect(json.naxCommit).toBe(NAX_COMMIT);
   });
 
+  test("persists acks to the audit JSON, outside result.findings (#1423)", () => {
+    const json = JSON.parse(
+      toPersistedEntry(
+        { ...base, acks: [{ priorFinding: "src/a.ts:4", status: "addressed", note: "fixed at line 6" }] },
+        1_700_000_000_000,
+      ),
+    );
+    expect(json.acks).toEqual([{ priorFinding: "src/a.ts:4", status: "addressed", note: "fixed at line 6" }]);
+    expect(json.result.findings).toEqual([]);
+  });
+
+  test("writes acks: null when the reviewer acknowledged nothing", () => {
+    expect(JSON.parse(toPersistedEntry(base, 1_700_000_000_000)).acks).toBeNull();
+  });
+
   test("resolves blockingThreshold to 'error' when unset (never null)", () => {
     const json = JSON.parse(toPersistedEntry(base, 1_700_000_000_000));
     expect(json.blockingThreshold).toBe("error");

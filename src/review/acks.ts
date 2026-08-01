@@ -14,25 +14,45 @@
 
 import type { ReviewAck } from "./types";
 
+/** Ceiling on retained acknowledgements; the rest are dropped rather than bloating every audit record. */
+const MAX_ACKS = 50;
+/** Ceiling on a single `note`, matching the clipping other reviewer text gets. */
+const MAX_NOTE_CHARS = 500;
+
 /**
  * Normalize a reviewer's `acks` array.
  *
  * Absent on first review rounds and on any response from a reviewer that
  * ignored the field, so a missing or malformed value degrades to "no
- * acknowledgements" — never an error. An unrecognised `status` falls back to
- * `addressed`, the benign reading: it keeps the entry out of `findings`, which
- * is the whole point, without inventing a withdrawal the reviewer did not make.
+ * acknowledgements" — never an error.
+ *
+ * An unrecognised `status` is recorded as `unknown` with the literal value
+ * preserved in `rawStatus`, NOT coerced to `addressed`. The realistic misuse is
+ * a reviewer writing `still-blocking` into `acks` instead of re-flagging the
+ * finding: coercing that to `addressed` would make the audit affirmatively
+ * certify an unfixed defect as resolved, and no post-hoc analysis could ever
+ * surface the pattern.
  */
 export function extractAcks(raw: unknown): ReviewAck[] {
   if (!Array.isArray(raw)) return [];
   const acks: ReviewAck[] = [];
   for (const entry of raw) {
+    if (acks.length >= MAX_ACKS) break;
+    // A bare string is a plausible LLM shape ("fixed the null check"); keep it
+    // as the referent rather than dropping the acknowledgement entirely.
+    if (typeof entry === "string") {
+      if (entry !== "") acks.push({ priorFinding: entry, status: "unknown" });
+      continue;
+    }
     if (typeof entry !== "object" || entry === null) continue;
     const e = entry as Record<string, unknown>;
+    const known = e.status === "addressed" || e.status === "never-an-issue";
+    const note = typeof e.note === "string" ? e.note.slice(0, MAX_NOTE_CHARS) : "";
     acks.push({
       priorFinding: typeof e.priorFinding === "string" ? e.priorFinding : "",
-      status: e.status === "never-an-issue" ? "never-an-issue" : "addressed",
-      ...(typeof e.note === "string" && e.note !== "" && { note: e.note }),
+      status: known ? (e.status as "addressed" | "never-an-issue") : "unknown",
+      ...(note !== "" && { note }),
+      ...(!known && typeof e.status === "string" && { rawStatus: e.status }),
     });
   }
   return acks;
