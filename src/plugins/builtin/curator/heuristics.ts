@@ -5,7 +5,7 @@
  * Each heuristic is a pure function that groups observations and generates proposals.
  */
 
-import { fingerprintFor } from "../../../review";
+import { normalizeIssueText } from "@/review";
 import type {
   ChunkExcludedObservation,
   EscalationObservation,
@@ -67,15 +67,42 @@ function uniqueStoryIds(storyIds: string[]): string[] {
   return [...new Set(storyIds)];
 }
 
-/** Feature spread at which a recurring finding is worth flagging as HIGH. */
-const HIGH_SEVERITY_FEATURE_SPREAD = 5;
+/** Feature spread, as a multiple of the configured threshold, at which a proposal is HIGH. */
+const HIGH_SEVERITY_MULTIPLE = 2;
+/** Characters of the leading sample kept in the checkbox-line description. */
+const DESCRIPTION_GIST_CHARS = 90;
+/** Files listed in evidence before truncating. */
+const MAX_EVIDENCE_FILES = 4;
+
+/** Characters of normalized message text that identify a defect across features. */
+const CROSS_FEATURE_MESSAGE_PREFIX = 48;
+
+/**
+ * Identity of a defect ACROSS features (#1422).
+ *
+ * Deliberately NOT `fingerprintFor` from recurrence-demotion: that key leads with
+ * the file path, which is correct for its own job (same story, successive rounds,
+ * where the file is stable) and exactly wrong here. Different features touch
+ * different files by definition, so a file-led key can only ever group the
+ * same-file case — meaning H1 would stay silent on "test-gap recurs across the
+ * project", the signal it exists to surface. The file is evidence, not identity.
+ */
+function crossFeatureKey(category: string | undefined, message: string): string {
+  return `${category ?? ""}|${normalizeIssueText(message).slice(0, CROSS_FEATURE_MESSAGE_PREFIX)}`;
+}
 
 type H1Group = {
   featureIds: Set<string>;
-  storyIds: Set<string>;
+  /** `featureId/storyId` pairs — story IDs alone collide across features. */
+  sites: Set<string>;
+  files: Set<string>;
   samples: string[];
-  locus?: { file: string; category?: string };
+  category?: string;
 };
+
+function truncate(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
 
 function firstLine(message: string): string {
   return message.split("\n")[0] ?? message;
@@ -92,14 +119,20 @@ function h1RepeatedReviewFinding(observations: Observation[], threshold: number)
     const { file, category, message } = obs.payload;
     if (!file && !category) continue;
 
-    const key = fingerprintFor(file, category, message);
-    const group = groups.get(key) ?? { featureIds: new Set<string>(), storyIds: new Set<string>(), samples: [] };
+    const key = crossFeatureKey(category, message);
+    let group = groups.get(key);
+    if (!group) {
+      group = { featureIds: new Set<string>(), sites: new Set<string>(), files: new Set<string>(), samples: [] };
+      groups.set(key, group);
+      group.category = category;
+    }
     group.featureIds.add(obs.featureId);
-    group.storyIds.add(obs.storyId);
-    group.locus = group.locus ?? { file, category };
+    // Story IDs are feature-scoped (`US-001` exists in every feature), so the
+    // pair is the only unambiguous site reference.
+    group.sites.add(`${obs.featureId}/${obs.storyId}`);
+    if (file) group.files.add(file);
     const sample = firstLine(message);
     if (sample && group.samples.length < 2 && !group.samples.includes(sample)) group.samples.push(sample);
-    groups.set(key, group);
   }
 
   const proposals: Proposal[] = [];
@@ -110,19 +143,25 @@ function h1RepeatedReviewFinding(observations: Observation[], threshold: number)
     const featureCount = group.featureIds.size;
     if (featureCount < threshold) continue;
     const features = [...group.featureIds];
-    const stories = [...group.storyIds];
-    const locus = group.locus?.category
-      ? `${group.locus.category}${group.locus.file ? ` in ${group.locus.file}` : ""}`
-      : (group.locus?.file ?? "review finding");
+    const sites = [...group.sites];
+    const files = [...group.files];
+    // The description must distinguish one proposal from another on the checkbox
+    // line alone — `nax curator commit` ticks are made against that line, and a
+    // bare category collapse is the #942 defect this must not reintroduce.
+    const gist = group.samples[0] ? truncate(group.samples[0], DESCRIPTION_GIST_CHARS) : "(no description)";
+    const categoryLabel = group.category ? `${group.category}: ` : "";
+    const fileSection = files.length > 0 ? ` Files: ${files.slice(0, MAX_EVIDENCE_FILES).join(", ")}.` : "";
     const sampleSection = group.samples.length > 0 ? `\n  Examples: ${group.samples.join(" | ")}` : "";
     proposals.push({
       id: "H1",
-      severity: featureCount >= HIGH_SEVERITY_FEATURE_SPREAD ? "HIGH" : "MED",
+      // Relative to the configured threshold: a fixed constant would pin every
+      // proposal to HIGH once the threshold is raised past it.
+      severity: featureCount >= threshold * HIGH_SEVERITY_MULTIPLE ? "HIGH" : "MED",
       target: { canonicalFile: ".nax/rules/curator-suggestions.md", action: "add" },
-      description: `Recurring review finding (${locus}) — hit ${featureCount} features`,
-      evidence: `Seen in ${featureCount} features: ${features.join(", ")} (stories: ${stories.join(", ")})${sampleSection}`,
+      description: `Recurring across ${featureCount} features — ${categoryLabel}${gist}`,
+      evidence: `Seen in ${featureCount} features: ${features.join(", ")} (sites: ${sites.join(", ")}).${fileSection}${sampleSection}`,
       sourceKinds: ["review-finding"],
-      storyIds: stories,
+      storyIds: sites,
     });
   }
   return proposals;

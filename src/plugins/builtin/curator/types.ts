@@ -4,8 +4,8 @@
  * Defines observation schema and curator-specific types for Phase 1 collection.
  */
 
-import type { NaxConfig } from "../../../config";
-import type { PostRunContext } from "../../extensions";
+import type { NaxConfig } from "@/config";
+import type { PostRunContext } from "@/plugins/extensions";
 
 /** Curator configuration with thresholds */
 export interface CuratorThresholds {
@@ -26,7 +26,13 @@ export interface CuratorConfigExt {
 
 /** Base observation shape */
 export interface BaseObservation {
-  schemaVersion: 1;
+  /**
+   * 1 = observations re-ingested from a project's whole audit history on every
+   * run (cumulative, monotonic). 2 = scoped to the run that produced them
+   * (#1422). The rollup is append-only and cross-project, so both versions
+   * coexist in one file; longitudinal analysis MUST NOT mix them.
+   */
+  schemaVersion: 1 | 2;
   runId: string;
   featureId: string;
   storyId: string;

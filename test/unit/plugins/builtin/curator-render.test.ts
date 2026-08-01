@@ -5,8 +5,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { renderProposals } from "../../../../src/plugins/builtin/curator/render";
 import type { Proposal } from "../../../../src/plugins/builtin/curator/heuristics";
+import { renderProposals } from "../../../../src/plugins/builtin/curator/render";
 
 describe("renderProposals", () => {
   const baseProposal: Proposal = {
@@ -213,5 +213,38 @@ describe("renderProposals", () => {
     const markdown = renderProposals([proposal], "run-1", 5);
 
     expect(markdown).toMatch(/\S/);
+  });
+});
+
+describe("renderProposals — evidence survives `nax curator commit` (#1422)", () => {
+  test("multi-line evidence is flattened so the parser keeps the samples", async () => {
+    const { _testing } = await import("../../../../src/commands/curator");
+    const markdown = renderProposals(
+      [
+        {
+          id: "H1",
+          severity: "MED",
+          target: { canonicalFile: ".nax/rules/curator-suggestions.md", action: "add" },
+          description: "Recurring across 3 features — test-gap: placeholder assertion",
+          evidence:
+            "Seen in 3 features: a, b, c (sites: a/US-001).\n  Examples: expect(true).toBe(true) | source-inspection test",
+          sourceKinds: ["review-finding"],
+          storyIds: ["a/US-001"],
+        },
+      ],
+      "run-1",
+      3,
+    );
+
+    // The rendered evidence must occupy exactly one line...
+    const evidenceLines = markdown.split("\n").filter((l) => l.includes("_Evidence:"));
+    expect(evidenceLines).toHaveLength(1);
+    expect(evidenceLines[0]).toContain("Examples:");
+
+    // ...and survive a real accept round-trip.
+    const checked = markdown.replace("- [ ]", "- [x]");
+    const parsed = _testing.parseCheckedProposals(checked);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].evidence).toContain("expect(true).toBe(true)");
   });
 });

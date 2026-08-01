@@ -4,17 +4,17 @@
 
 import { describe, expect, test } from "bun:test";
 import type {
-  ChunkIncludedObservation,
-  ChunkExcludedObservation,
-  ProviderEmptyObservation,
-  ReviewFindingObservation,
-  RectifyCycleObservation,
-  EscalationObservation,
   AcceptanceVerdictObservation,
-  PullCallObservation,
-  VerdictObservation,
+  ChunkExcludedObservation,
+  ChunkIncludedObservation,
+  EscalationObservation,
   FixCycleIterationObservation,
   Observation,
+  ProviderEmptyObservation,
+  PullCallObservation,
+  RectifyCycleObservation,
+  ReviewFindingObservation,
+  VerdictObservation,
 } from "../../../../src/plugins/builtin/curator";
 
 describe("Observation Types", () => {

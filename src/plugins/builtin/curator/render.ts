@@ -74,7 +74,12 @@ export function renderProposals(proposals: Proposal[], runId: string, observatio
         const storyList = p.storyIds.join(", ");
         lines.push(`- [ ] [${p.severity}] ${p.id}: ${p.description} — stories: ${storyList}`);
         if (p.evidence) {
-          lines.push(`  _Evidence: ${p.evidence}_`);
+          // Flattened to one line on purpose: `parseCheckedProposals` in
+          // `nax curator commit` captures a single `_Evidence:` line, so any
+          // continuation (the `Examples:` samples) was silently dropped on
+          // accept — and those samples are what distinguish one proposal from
+          // another.
+          lines.push(`  _Evidence: ${p.evidence.replace(/\s*\n\s*/g, " · ")}_`);
         }
       }
       lines.push("");

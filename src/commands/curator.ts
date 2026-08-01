@@ -180,6 +180,9 @@ function parseCheckedProposals(markdown: string): ParsedProposal[] {
   return proposals;
 }
 
+/** @internal Exported for round-trip tests against `renderProposals`; not a public API. */
+export const _testing = { parseCheckedProposals };
+
 // ─── curatorStatus ────────────────────────────────────────────────────────────
 
 export async function curatorStatus(options: CuratorStatusOptions): Promise<void> {

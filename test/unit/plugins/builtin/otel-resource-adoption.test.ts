@@ -22,10 +22,7 @@ import {
   buildResourceAttributes,
   buildTracesPayload,
 } from "../../../../src/plugins/builtin/otel-reporter/otlp";
-import {
-  createPhaseMetricsAggregator,
-  createSpanTree,
-} from "../../../../src/plugins/builtin/otel-reporter/span-tree";
+import { createPhaseMetricsAggregator, createSpanTree } from "../../../../src/plugins/builtin/otel-reporter/span-tree";
 
 const liveHeartbeats: Heartbeat[] = [];
 function track(hb: Heartbeat): Heartbeat {

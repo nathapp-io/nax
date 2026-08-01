@@ -21,12 +21,12 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import type { PostRunContext } from "@/plugins/extensions";
 import { loadPlugins } from "@/plugins";
-import { autoPrPlugin, _autoPrDeps } from "../../../../src/plugins/builtin/auto-pr";
-import type { AutoPrDeps } from "../../../../src/plugins/builtin/auto-pr/types";
-import { buildBody, buildTitle } from "../../../../src/plugins/builtin/auto-pr/pr-body";
+import type { PostRunContext } from "@/plugins/extensions";
 import { makeStory } from "@test/helpers";
+import { _autoPrDeps, autoPrPlugin } from "../../../../src/plugins/builtin/auto-pr";
+import { buildBody, buildTitle } from "../../../../src/plugins/builtin/auto-pr/pr-body";
+import type { AutoPrDeps } from "../../../../src/plugins/builtin/auto-pr/types";
 
 const PLUGIN_NAME = "nax-auto-pr";
 
@@ -357,13 +357,7 @@ describe("autoPrPlugin.execute", () => {
 describe("loadPlugins — autoPr registration", () => {
   test("AC11 — getPostRunActions() includes 'nax-auto-pr' exactly once when not disabled", async () => {
     const root = await mkdtemp(join(tmpdir(), "autopr-registration-"));
-    const registry = await loadPlugins(
-      join(root, "global"),
-      join(root, "project"),
-      [],
-      root,
-      [],
-    );
+    const registry = await loadPlugins(join(root, "global"), join(root, "project"), [], root, []);
     const actions = registry.getPostRunActions();
     // Regression: auto-pr must be a side-channel action only (like auto-route),
     // never also a full plugin — otherwise getPostRunActions returns it twice
@@ -377,13 +371,7 @@ describe("loadPlugins — autoPr registration", () => {
 
   test("autoPr is excluded from getPostRunActions() when 'nax-auto-pr' is in disabledPlugins", async () => {
     const root = await mkdtemp(join(tmpdir(), "autopr-registration-"));
-    const registry = await loadPlugins(
-      join(root, "global"),
-      join(root, "project"),
-      [],
-      root,
-      [PLUGIN_NAME],
-    );
+    const registry = await loadPlugins(join(root, "global"), join(root, "project"), [], root, [PLUGIN_NAME]);
     const actions = registry.getPostRunActions();
     expect(actions.some((a) => a.name === PLUGIN_NAME)).toBe(false);
   });

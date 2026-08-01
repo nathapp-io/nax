@@ -7,7 +7,7 @@
 
 import { mkdir } from "node:fs/promises";
 import * as path from "node:path";
-import type { IPostRunAction, PluginLogger, PostRunActionResult, PostRunContext } from "../../types";
+import type { IPostRunAction, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
 import type { NaxPlugin } from "../../types";
 import { collectObservations } from "./collect";
 import type { CuratorThresholds } from "./heuristics";

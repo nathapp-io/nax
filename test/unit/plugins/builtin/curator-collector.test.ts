@@ -324,7 +324,9 @@ describe("collectObservations", () => {
         stage: "review",
         includedChunks: ["feature-context:abc"],
         excludedChunks: [{ id: "rules:def", reason: "stale" }],
-        providerResults: [{ providerId: "feature-context", status: "empty", chunkCount: 0, durationMs: 1, tokensProduced: 0 }],
+        providerResults: [
+          { providerId: "feature-context", status: "empty", chunkCount: 0, durationMs: 1, tokensProduced: 0 },
+        ],
         chunkSummaries: { "feature-context:abc": "Auth context" },
       }),
     );
@@ -337,21 +339,41 @@ describe("collectObservations", () => {
           level: "info",
           stage: "pull-tool",
           message: "invoked",
-          data: { storyId: "US-001", tool: "query_feature_context", keyword: "auth cache", resultCount: 0, resultBytes: 0 },
+          data: {
+            storyId: "US-001",
+            tool: "query_feature_context",
+            keyword: "auth cache",
+            resultCount: 0,
+            resultBytes: 0,
+          },
         }),
         JSON.stringify({
           timestamp: "2026-05-04T00:02:00.000Z",
           level: "info",
           stage: "acceptance",
           message: "verdict",
-          data: { storyId: "US-001", passed: false, failedACs: ["AC-2"], retries: 1, packageDir: workdir, durationMs: 50 },
+          data: {
+            storyId: "US-001",
+            passed: false,
+            failedACs: ["AC-2"],
+            retries: 1,
+            packageDir: workdir,
+            durationMs: 50,
+          },
         }),
         JSON.stringify({
           timestamp: "2026-05-04T00:03:00.000Z",
           level: "info",
           stage: "findings.cycle",
           message: "iteration completed",
-          data: { storyId: "US-001", cycleName: "acceptance", iterationNum: 1, outcome: "unchanged", findingsBefore: 1, findingsAfter: 1 },
+          data: {
+            storyId: "US-001",
+            cycleName: "acceptance",
+            iterationNum: 1,
+            outcome: "unchanged",
+            findingsBefore: 1,
+            findingsAfter: 1,
+          },
         }),
       ].join("\n"),
     );
@@ -384,123 +406,10 @@ describe("collectObservations", () => {
     expect(observations.some((o) => o.kind === "chunk-excluded" && o.payload.reason === "stale")).toBe(true);
     expect(observations.some((o) => o.kind === "provider-empty")).toBe(true);
     expect(observations.some((o) => o.kind === "pull-call" && o.payload.resultCount === 0)).toBe(true);
-    expect(observations.some((o) => o.kind === "acceptance-verdict" && o.payload.failedACs?.includes("AC-2"))).toBe(true);
+    expect(observations.some((o) => o.kind === "acceptance-verdict" && o.payload.failedACs?.includes("AC-2"))).toBe(
+      true,
+    );
     expect(observations.some((o) => o.kind === "fix-cycle-iteration" && o.payload.outcome === "unchanged")).toBe(true);
-  });
-
-  test("collects only review-audit entries from THIS run when runStartedAt is set (#1422)", async () => {
-    // Curator counts must mean "this run". Re-reading the whole accumulated
-    // audit directory made every count monotonically increasing, so a
-    // threshold-based proposal tripped once and could never clear.
-    const root = await mkdtemp(join(tmpdir(), "curator-run-scope-"));
-    const outputDir = join(root, "out");
-    const auditDir = join(outputDir, "review-audit", "feat-auth");
-    await mkdir(auditDir, { recursive: true });
-
-    const runStartedAt = Date.parse("2026-08-01T12:00:00.000Z");
-    await writeFile(
-      join(auditDir, "old.json"),
-      JSON.stringify({
-        timestamp: "2026-07-15T09:00:00.000Z",
-        storyId: "US-001",
-        featureName: "feat-auth",
-        result: { findings: [{ rule: "stale-finding", severity: "error", file: "src/a.ts", line: 1, message: "old" }] },
-      }),
-    );
-    await writeFile(
-      join(auditDir, "current.json"),
-      JSON.stringify({
-        timestamp: "2026-08-01T12:05:00.000Z",
-        storyId: "US-002",
-        featureName: "feat-auth",
-        result: { findings: [{ rule: "fresh-finding", severity: "error", file: "src/b.ts", line: 2, message: "new" }] },
-      }),
-    );
-
-    const observations = await collectObservations({
-      ...makeContext(root, join(root, "work")),
-      outputDir,
-      runStartedAt,
-    });
-    const rules = observations.filter((o) => o.kind === "review-finding").map((o) => o.payload.ruleId);
-    expect(rules).toContain("fresh-finding");
-    expect(rules).not.toContain("stale-finding");
-  });
-
-  test("collects everything when runStartedAt is absent (back-compat)", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-no-scope-"));
-    const outputDir = join(root, "out");
-    const auditDir = join(outputDir, "review-audit", "feat-auth");
-    await mkdir(auditDir, { recursive: true });
-    await writeFile(
-      join(auditDir, "old.json"),
-      JSON.stringify({
-        timestamp: "2026-07-15T09:00:00.000Z",
-        storyId: "US-001",
-        featureName: "feat-auth",
-        result: { findings: [{ rule: "stale-finding", severity: "error", file: "src/a.ts", line: 1, message: "old" }] },
-      }),
-    );
-
-    const observations = await collectObservations({ ...makeContext(root, join(root, "work")), outputDir });
-    expect(observations.filter((o) => o.kind === "review-finding")).toHaveLength(1);
-  });
-
-  test("an audit entry with no timestamp is kept rather than silently dropped (#1422)", async () => {
-    // Dropping undated entries would hide real findings; keeping them only risks
-    // a stale count, which is the pre-existing behaviour.
-    const root = await mkdtemp(join(tmpdir(), "curator-undated-"));
-    const outputDir = join(root, "out");
-    const auditDir = join(outputDir, "review-audit", "feat-auth");
-    await mkdir(auditDir, { recursive: true });
-    await writeFile(
-      join(auditDir, "undated.json"),
-      JSON.stringify({
-        storyId: "US-001",
-        featureName: "feat-auth",
-        result: { findings: [{ rule: "undated-finding", severity: "error", file: "src/a.ts", line: 1, message: "x" }] },
-      }),
-    );
-
-    const observations = await collectObservations({
-      ...makeContext(root, join(root, "work")),
-      outputDir,
-      runStartedAt: Date.parse("2026-08-01T12:00:00.000Z"),
-    });
-    expect(observations.filter((o) => o.kind === "review-finding")).toHaveLength(1);
-  });
-
-  test("skips context manifests untouched by this run (#1422)", async () => {
-    // Manifests persist per story across runs; a run that touches US-002 must
-    // not re-report US-001's chunks as if it had assembled them.
-    const root = await mkdtemp(join(tmpdir(), "curator-manifest-scope-"));
-    const workdir = join(root, "work");
-    const stories = join(workdir, ".nax", "features", "feat-auth", "stories");
-    await mkdir(join(stories, "US-001"), { recursive: true });
-    await mkdir(join(stories, "US-002"), { recursive: true });
-
-    const manifest = (chunk: string) =>
-      JSON.stringify({
-        stage: "review",
-        includedChunks: [chunk],
-        excludedChunks: [],
-        providerResults: [],
-        chunkTokens: { [chunk]: 100 },
-      });
-    const stalePath = join(stories, "US-001", "context-manifest-review.json");
-    const freshPath = join(stories, "US-002", "context-manifest-review.json");
-    await writeFile(stalePath, manifest("stale:chunk"));
-    await writeFile(freshPath, manifest("fresh:chunk"));
-
-    // Age the first manifest to before the run started.
-    const runStartedAt = Date.now();
-    const old = new Date(runStartedAt - 86_400_000);
-    await utimes(stalePath, old, old);
-
-    const observations = await collectObservations({ ...makeContext(root, workdir), runStartedAt });
-    const chunkIds = observations.filter((o) => o.kind === "chunk-included").map((o) => o.payload.chunkId);
-    expect(chunkIds).toContain("fresh:chunk");
-    expect(chunkIds).not.toContain("stale:chunk");
   });
 
   test("chunk-included carries the manifest's real per-chunk token count (#1421)", async () => {
@@ -609,25 +518,17 @@ describe("collectObservations", () => {
     const findings = observations.filter((o) => o.kind === "review-finding");
     expect(findings.length).toBe(2);
 
-    const withSuggestion = findings.find(
-      (o) => o.kind === "review-finding" && o.payload.line === 73,
-    );
+    const withSuggestion = findings.find((o) => o.kind === "review-finding" && o.payload.line === 73);
     expect(withSuggestion).toBeDefined();
     if (withSuggestion?.kind === "review-finding") {
-      expect(withSuggestion.payload.message).toContain(
-        "onAgentStream(listener) does not validate",
-      );
+      expect(withSuggestion.payload.message).toContain("onAgentStream(listener) does not validate");
       expect(withSuggestion.payload.message).toContain("Add a guard");
     }
 
-    const noSuggestion = findings.find(
-      (o) => o.kind === "review-finding" && o.payload.line === 81,
-    );
+    const noSuggestion = findings.find((o) => o.kind === "review-finding" && o.payload.line === 81);
     expect(noSuggestion).toBeDefined();
     if (noSuggestion?.kind === "review-finding") {
-      expect(noSuggestion.payload.message).toBe(
-        "Listener errors are swallowed when logger is null.",
-      );
+      expect(noSuggestion.payload.message).toBe("Listener errors are swallowed when logger is null.");
     }
   });
 

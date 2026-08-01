@@ -35,9 +35,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { PostRunContext } from "../../../../src/plugins/extensions";
-import { curatorPlugin } from "../../../../src/plugins/builtin/curator";
 import { CuratorConfigSchema } from "../../../../src/config/schemas-infra";
+import { curatorPlugin } from "../../../../src/plugins/builtin/curator";
+import type { PostRunContext } from "../../../../src/plugins/extensions";
 
 describe("Curator Plugin Acceptance Criteria Coverage", () => {
   /**

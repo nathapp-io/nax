@@ -6,16 +6,24 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { PostRunActionResult } from "@/plugins/extensions";
 import { detectForge, hasOpenPr, openDraft } from "../../../../src/plugins/builtin/auto-pr/forge";
 import type { AutoPrDeps } from "../../../../src/plugins/builtin/auto-pr/types";
-import type { PostRunActionResult } from "@/plugins/extensions";
 
 interface CapturedRun {
   cmd: string[];
   cwd: string;
 }
 
-function makeDeps(handler: (cmd: string[], opts: { cwd: string }) => Promise<{ exitCode: number; stdout: string; stderr: string }> | { exitCode: number; stdout: string; stderr: string }, captured?: CapturedRun[]): AutoPrDeps {
+function makeDeps(
+  handler: (
+    cmd: string[],
+    opts: { cwd: string },
+  ) =>
+    | Promise<{ exitCode: number; stdout: string; stderr: string }>
+    | { exitCode: number; stdout: string; stderr: string },
+  captured?: CapturedRun[],
+): AutoPrDeps {
   return {
     run: async (cmd, opts) => {
       const res = await handler(cmd, opts);
@@ -102,12 +110,7 @@ describe("openDraft (draft flag)", () => {
       captured,
     );
 
-    await openDraft(
-      "github",
-      { title: "feat: t", body: "b", branch: "nax/auto-pr", draft: false },
-      deps,
-      "/workdir",
-    );
+    await openDraft("github", { title: "feat: t", body: "b", branch: "nax/auto-pr", draft: false }, deps, "/workdir");
 
     const argv = captured[0]?.cmd ?? [];
     expect(argv).not.toContain("--draft");
@@ -178,10 +181,7 @@ describe("hasOpenPr", () => {
 
   test("GitLab path — emits glab mr list with --output json so the result parses", async () => {
     const captured: CapturedRun[] = [];
-    const deps = makeDeps(
-      async () => ({ exitCode: 0, stdout: "[]", stderr: "" }),
-      captured,
-    );
+    const deps = makeDeps(async () => ({ exitCode: 0, stdout: "[]", stderr: "" }), captured);
 
     await hasOpenPr("gitlab", "nax/auto-pr", deps, "/workdir");
 

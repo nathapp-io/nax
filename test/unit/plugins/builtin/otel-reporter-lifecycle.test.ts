@@ -137,7 +137,13 @@ describe("otel-reporter heartbeat", () => {
       const r = plugin.extensions.reporter!;
 
       try {
-        await r.onRunStart?.({ runId: "hbwarn", feature: "f", totalStories: 1, startTime: new Date().toISOString(), project: "nax" });
+        await r.onRunStart?.({
+          runId: "hbwarn",
+          feature: "f",
+          totalStories: 1,
+          startTime: new Date().toISOString(),
+          project: "nax",
+        });
         await sleep(150); // > heartbeatIntervalMs (40ms) — allow at least one tick
 
         const otelWarnings = warnSpy.mock.calls.filter((c) => c[0] === "otel-reporter");
@@ -153,7 +159,13 @@ describe("otel-reporter heartbeat", () => {
     const plugin = createOtelReporterPlugin({ ...baseCfg, heartbeatIntervalMs: 0 }, deps);
     const r = plugin.extensions.reporter!;
 
-    await r.onRunStart?.({ runId: "hb0", feature: "f", totalStories: 1, startTime: new Date().toISOString(), project: "nax" });
+    await r.onRunStart?.({
+      runId: "hb0",
+      feature: "f",
+      totalStories: 1,
+      startTime: new Date().toISOString(),
+      project: "nax",
+    });
     await sleep(150);
 
     expect(metricsPosts(posts)).toHaveLength(0);
@@ -164,7 +176,13 @@ describe("otel-reporter heartbeat", () => {
     const plugin = createOtelReporterPlugin({ ...baseCfg, heartbeatIntervalMs: 40 }, deps);
     const r = plugin.extensions.reporter!;
 
-    await r.onRunStart?.({ runId: "hb7", feature: "f", totalStories: 1, startTime: new Date().toISOString(), project: "nax" });
+    await r.onRunStart?.({
+      runId: "hb7",
+      feature: "f",
+      totalStories: 1,
+      startTime: new Date().toISOString(),
+      project: "nax",
+    });
     await sleep(150); // allow at least one heartbeat tick to have a chance to fire
 
     await r.onRunEnd?.({
@@ -186,7 +204,13 @@ describe("otel-reporter detail-gated review payloads", () => {
     const plugin = createOtelReporterPlugin({ ...baseCfg, detail: "counts" }, deps);
     const r = plugin.extensions.reporter!;
 
-    await r.onRunStart?.({ runId: "r89", feature: "f", totalStories: 1, startTime: new Date().toISOString(), project: "nax" });
+    await r.onRunStart?.({
+      runId: "r89",
+      feature: "f",
+      totalStories: 1,
+      startTime: new Date().toISOString(),
+      project: "nax",
+    });
     await r.onPhaseComplete?.({
       runId: "r89",
       scope: "story",
@@ -224,7 +248,13 @@ describe("otel-reporter detail-gated review payloads", () => {
     const plugin = createOtelReporterPlugin({ ...baseCfg, detail: "verbose" }, deps);
     const r = plugin.extensions.reporter!;
 
-    await r.onRunStart?.({ runId: "r10", feature: "f", totalStories: 1, startTime: new Date().toISOString(), project: "nax" });
+    await r.onRunStart?.({
+      runId: "r10",
+      feature: "f",
+      totalStories: 1,
+      startTime: new Date().toISOString(),
+      project: "nax",
+    });
     await r.onPhaseComplete?.({
       runId: "r10",
       scope: "story",
@@ -255,7 +285,13 @@ describe("otel-reporter detail-gated review payloads", () => {
     const plugin = createOtelReporterPlugin({ ...baseCfg, detail: "verbose" }, deps);
     const r = plugin.extensions.reporter!;
 
-    await r.onRunStart?.({ runId: "r11", feature: "f", totalStories: 1, startTime: new Date().toISOString(), project: "nax" });
+    await r.onRunStart?.({
+      runId: "r11",
+      feature: "f",
+      totalStories: 1,
+      startTime: new Date().toISOString(),
+      project: "nax",
+    });
     await r.onPhaseComplete?.({
       runId: "r11",
       scope: "story",
@@ -294,13 +330,16 @@ describe("otel-reporter log redaction", () => {
     try {
       process.env.OTLP_TOKEN = "super-secret-token-value";
       const { posts, deps } = capturing();
-      const plugin = createOtelReporterPlugin(
-        { ...baseCfg, headers: { Authorization: "Bearer ${OTLP_TOKEN}" } },
-        deps,
-      );
+      const plugin = createOtelReporterPlugin({ ...baseCfg, headers: { Authorization: "Bearer ${OTLP_TOKEN}" } }, deps);
       const r = plugin.extensions.reporter!;
 
-      await r.onRunStart?.({ runId: "r12", feature: "f", totalStories: 1, startTime: new Date().toISOString(), project: "nax" });
+      await r.onRunStart?.({
+        runId: "r12",
+        feature: "f",
+        totalStories: 1,
+        startTime: new Date().toISOString(),
+        project: "nax",
+      });
       await r.onPhaseComplete?.({
         runId: "r12",
         scope: "story",
@@ -343,7 +382,13 @@ describe("otel-reporter flush and teardown lifecycle", () => {
     const plugin = createOtelReporterPlugin(baseCfg, deps);
     const r = plugin.extensions.reporter!;
 
-    await r.onRunStart?.({ runId: "r13", feature: "f", totalStories: 1, startTime: new Date().toISOString(), project: "nax" });
+    await r.onRunStart?.({
+      runId: "r13",
+      feature: "f",
+      totalStories: 1,
+      startTime: new Date().toISOString(),
+      project: "nax",
+    });
     const phases = ["test-writer", "implementer", "verifier"];
     for (const phase of phases) {
       await r.onPhaseComplete?.({
@@ -365,7 +410,9 @@ describe("otel-reporter flush and teardown lifecycle", () => {
 
     const spans = allTraceSpans(posts);
     for (const phase of phases) {
-      const found = spans.some((s: any) => (s.attributes ?? []).some((a: any) => a.key === "phase" && a.value.stringValue === phase));
+      const found = spans.some((s: any) =>
+        (s.attributes ?? []).some((a: any) => a.key === "phase" && a.value.stringValue === phase),
+      );
       expect(found).toBe(true);
     }
   });
@@ -375,7 +422,13 @@ describe("otel-reporter flush and teardown lifecycle", () => {
     const plugin = createOtelReporterPlugin(baseCfg, deps);
     const r = plugin.extensions.reporter!;
 
-    await r.onRunStart?.({ runId: "r15", feature: "f", totalStories: 1, startTime: new Date().toISOString(), project: "nax" });
+    await r.onRunStart?.({
+      runId: "r15",
+      feature: "f",
+      totalStories: 1,
+      startTime: new Date().toISOString(),
+      project: "nax",
+    });
     await r.onPhaseComplete?.({
       runId: "r15",
       scope: "story",
@@ -401,7 +454,13 @@ describe("otel-reporter flush and teardown lifecycle", () => {
     const plugin = createOtelReporterPlugin(baseCfg, deps);
     const r = plugin.extensions.reporter!;
 
-    await r.onRunStart?.({ runId: "r15b", feature: "f", totalStories: 1, startTime: new Date().toISOString(), project: "nax" });
+    await r.onRunStart?.({
+      runId: "r15b",
+      feature: "f",
+      totalStories: 1,
+      startTime: new Date().toISOString(),
+      project: "nax",
+    });
     await r.onRunEnd?.({
       runId: "r15b",
       totalDurationMs: 10,
