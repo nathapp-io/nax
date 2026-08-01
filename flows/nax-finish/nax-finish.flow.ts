@@ -31,12 +31,15 @@
  *   the `acceptance` node last passed, and the repo-root `test` command does
  *   not cover per-feature acceptance tests — so without this a fix could break
  *   the contract the first gate proved and still ship.
- * - `commit_gate` re-enters `review_quality` when it committed anything, so no
- *   fix reaches the PR unreviewed — the gate loop was previously the one
- *   editing loop whose output only ever faced mechanical checks.
- * - Every `commit_*` node appends its round to the finish-audit trail. That is
- *   the only place a round's findings and its commit are both in scope:
- *   `ctx.outputs` holds one output per node, so the next round overwrites it.
+ * - `commit_gate` re-enters `review_quality` when its fix touched non-test code
+ *   — the gate loop was previously the one editing loop whose output only ever
+ *   faced mechanical checks. A test-only fix skips the re-review by explicit
+ *   cost tradeoff; see `gateCommitRoute` for why that is a known hole.
+ * - Every `commit_*` node appends its round to the finish-audit trail as it
+ *   happens, rather than a terminal node reconstructing them from
+ *   `ctx.state.steps`. Appending live is what makes the trail survive a flow
+ *   that is killed or times out — no terminal node runs on that path, and a
+ *   crashed finish is exactly when the record of what it changed matters most.
  */
 import { defineFlow, extractJsonObject } from "acpx/flows";
 import { buildFixCommitMessage } from "./commit-message";
@@ -187,7 +190,12 @@ async function gateCommitRoute(
   shaAfter: string | null,
   testFileRegex: string[],
 ): Promise<string> {
-  if (!committed || !shaAfter) return "unchanged";
+  if (!committed) return "unchanged";
+  // Committed, but HEAD did not resolve: the fix is real and unclassifiable, so
+  // it must be reviewed. Folding this into the `!committed` branch would skip
+  // the review for a change that actually landed — the one direction this
+  // function must never fail in.
+  if (!shaAfter) return "changed";
   const files = await filesInCommit(i.workdir, shaAfter);
   if (files.length === 0) return "changed";
   return partitionTestFiles(files, testFileRegex).nonTest.length > 0 ? "changed" : "tests-only";

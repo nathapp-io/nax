@@ -35,11 +35,12 @@ export type FinishPhase = "acceptance" | "spec" | "quality" | "gate";
 /**
  * One completed fix round, appended to the audit trail as it happens.
  *
- * Rounds are written incrementally rather than reconstructed at the end
- * because acpx's `ctx.outputs` keeps only the *latest* output per node — by the
- * time a terminal node runs, every earlier round's findings have been
- * overwritten by the round that superseded them. Appending at `commit_<phase>`
- * is the only point where a round's findings and its commit are both known.
+ * Rounds are appended at `commit_<phase>` as they happen rather than
+ * reconstructed by a terminal node from `ctx.state.steps` (which does retain
+ * every step's output). Appending live is what makes the trail survive a flow
+ * that is killed or times out: no terminal node runs on those paths, and a
+ * finish that died mid-loop is exactly when the record of what it already
+ * changed on the branch matters most.
  */
 export interface FinishRound {
   ts: string;

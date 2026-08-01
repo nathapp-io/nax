@@ -6,17 +6,22 @@
  * functions of `ctx.input` / `ctx.outputs` / `ctx.state.steps`; anything that
  * shells out lives under `./steps/`.
  *
- * The recurring constraint they exist to work around: acpx keeps only the
- * **latest** output per node id. In a graph whose whole shape is loops, that
- * means a node's own previous-round output is gone by the time it runs again,
- * and `ctx.state.steps` — the ordered history — is the only record of what
- * happened when.
+ * Two views of the same run, and the difference matters in a graph whose whole
+ * shape is loops:
+ *
+ * - `ctx.outputs` is a map keyed by node id, so it holds only each node's
+ *   **latest** output. A node re-entering a loop cannot see its own previous
+ *   round there.
+ * - `ctx.state.steps` is the ordered history and carries every step's `output`,
+ *   so an earlier round IS recoverable from it. A step is appended on its
+ *   *outcome*, so the currently-executing node is never in this list — which is
+ *   what lets `incrementalSince` find the *previous* review rather than itself.
  */
 import type { AcceptanceGroup, Finding, FinishInput, FinishPhase, ReviewVerdict } from "./types";
 
 /** Minimal shapes so each reader takes only the part of the context it reads. */
 export interface StepsCtx {
-  state: { steps: { nodeId: string }[] };
+  state: { steps: { nodeId: string; output?: unknown }[] };
 }
 export interface OutputsCtx {
   outputs: unknown;
@@ -62,26 +67,29 @@ export function findingsOf(ctx: OutputsCtx, phase: FinishPhase): Finding[] {
  * A reviewer node re-reads the spec in full and the entire `git diff
  * base...HEAD` on every round. Reviews were 58% of the wall clock on
  * rs-stock/pipeline-run-outcome (7 calls, 1306s of 2232s), and round 3 re-read
- * everything rounds 1–2 had already cleared. When exactly one `commit_*` ran
- * since this phase last reviewed, that commit's `shaBefore` *is* the tree the
- * previous review passed on, so the new work is `shaBefore..HEAD` and the round
- * can be scoped to it.
+ * everything rounds 1-2 had already cleared.
  *
- * Returns null — a full review — whenever that identity does not hold:
- *   - no prior review of this phase (round 1)
- *   - no commit since it, so there is nothing new to look at anyway
- *   - two or more commit nodes since it. `ctx.outputs` keeps only the latest
- *     output per node id, so the *earliest* commit's `shaBefore` in that window
- *     may already be lost; guessing would silently under-scope the review.
- *     (Happens when the acceptance loop commits between a spec fix and its
- *     re-review.)
+ * The scoping ref is the `shaBefore` of the **first** `commit_*` step after this
+ * phase's last review — that commit's parent is, by construction, the tree the
+ * previous verdict passed on, since only `commit_*` nodes commit. Taking the
+ * first (not the last) is what makes the window complete when more than one
+ * commit landed in it, which happens when the acceptance loop commits between a
+ * spec fix and its re-review: `firstCommit.shaBefore..HEAD` spans both.
+ *
+ * Read from `ctx.state.steps[].output`, not `ctx.outputs` — the latter keeps
+ * only each node's newest output, which for two commit steps of the same node id
+ * would have discarded the earlier `shaBefore` and silently under-scoped the
+ * review.
+ *
+ * Returns null — a full review — when there is no prior review of this phase
+ * (round 1), no commit since it (nothing new to look at), or the commit step
+ * recorded no `shaBefore`.
  */
 export function incrementalSince(ctx: OutputsCtx & StepsCtx, phase: "spec" | "quality"): string | null {
   const steps = ctx.state.steps ?? [];
   const lastReview = steps.map((s) => s.nodeId).lastIndexOf(`review_${phase}`);
   if (lastReview < 0) return null;
-  const commitsSince = steps.slice(lastReview + 1).filter((s) => s.nodeId.startsWith("commit_"));
-  if (commitsSince.length !== 1) return null;
-  const out = (ctx.outputs as Record<string, { shaBefore?: string | null } | undefined>)[commitsSince[0].nodeId];
-  return out?.shaBefore ?? null;
+  const firstCommit = steps.slice(lastReview + 1).find((s) => s.nodeId.startsWith("commit_"));
+  if (!firstCommit) return null;
+  return (firstCommit.output as { shaBefore?: string | null } | undefined)?.shaBefore ?? null;
 }
