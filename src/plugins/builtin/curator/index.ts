@@ -8,13 +8,13 @@
 import { mkdir } from "node:fs/promises";
 import * as path from "node:path";
 import type { IPostRunAction, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
-import type { NaxPlugin } from "../../types";
+import type { NaxPlugin } from "@/plugins/types";
 import { collectObservations } from "./collect";
 import type { CuratorThresholds } from "./heuristics";
 import { runHeuristics } from "./heuristics";
 import { resolveCuratorOutputs } from "./paths";
 import { renderProposals } from "./render";
-import { appendToRollup } from "./rollup";
+import { appendToRollup, readHeuristicWindow } from "./rollup";
 import type { CuratorPostRunContext } from "./types";
 
 const PLUGIN_NAME = "nax-curator";
@@ -96,16 +96,21 @@ const curatorAction: IPostRunAction = {
           observations.map((o) => JSON.stringify(o)).join("\n") + (observations.length > 0 ? "\n" : ""),
         );
 
-        // Run heuristics and render proposals
+        // Append THIS run's observations first, then run heuristics over the
+        // accumulated window. Recurrence heuristics measure repetition across
+        // features, and collection is run-scoped to a single feature — running
+        // them on `observations` alone makes the distinct-feature count 1 and H1
+        // can never fire. The rollup is the cross-run record they need, and
+        // run-scoped collection is what keeps each finding in it exactly once.
+        await appendToRollup(observations, rollupPath);
+
         const thresholds = getCuratorThresholds(context);
-        const proposals = runHeuristics(observations, thresholds);
+        const window = await readHeuristicWindow(rollupPath, HEURISTIC_WINDOW_RUNS);
+        const proposals = runHeuristics(window.length > 0 ? window : observations, thresholds);
         const markdown = renderProposals(proposals, context.runId, observations.length);
 
         const proposalsMdPath = path.join(runDir, "curator-proposals.md");
         await Bun.write(proposalsMdPath, markdown);
-
-        // Append to cross-run rollup
-        await appendToRollup(observations, rollupPath);
       }
 
       return {
@@ -125,6 +130,13 @@ const curatorAction: IPostRunAction = {
 /**
  * Built-in curator plugin.
  */
+/**
+ * Runs of history the recurrence heuristics see. Bounded so a long-lived rollup
+ * does not make every proposal permanent: a defect fixed 30 runs ago should stop
+ * being proposed. Below `nax curator gc`'s default retention of 50 runs.
+ */
+const HEURISTIC_WINDOW_RUNS = 20;
+
 export const curatorPlugin: NaxPlugin = {
   name: PLUGIN_NAME,
   version: PLUGIN_VERSION,
@@ -162,3 +174,4 @@ export type {
   FixCycleValidatorRetryObservation,
 } from "./types";
 export { collectObservations, resolveCuratorOutputs };
+export { readHeuristicWindow } from "./rollup";
