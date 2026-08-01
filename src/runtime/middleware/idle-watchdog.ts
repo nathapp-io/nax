@@ -20,22 +20,36 @@ export interface WatchdogState {
 
 type IdleTimeoutReason = "idle_timeout_exceeded" | "tool_call_only_idle_timeout_exceeded";
 
+/**
+ * Injectable clock — the tick timer, the grace timer, and every elapsed-time
+ * comparison read through this.
+ *
+ * The watchdog is defined entirely in terms of "has enough time passed", so
+ * testing it against the real clock means sleeping through each threshold and
+ * asserting on a margin. That is slow and it is what made this suite flaky
+ * twice before (#1002, #1008). Injecting the clock lets tests step time
+ * exactly, so the assertions become deterministic instead of probabilistic.
+ *
+ * @internal
+ */
+export const _idleWatchdogDeps = {
+  setTimeout: ((fn: () => void, ms: number) => setTimeout(fn, ms)) as (fn: () => void, ms: number) => unknown,
+  clearTimeout: ((id: unknown) => clearTimeout(id as ReturnType<typeof setTimeout>)) as (id: unknown) => void,
+  now: (): number => Date.now(),
+};
+
 interface WatchdogStateInternal extends WatchdogState {
   cancelAttempts: number;
-  graceTimer?: ReturnType<typeof setTimeout>;
+  graceTimer?: unknown;
   inGracePeriod: boolean;
   warnedForCurrentIdlePeriod: boolean;
   graceReason?: IdleTimeoutReason;
 }
 
 // setTimeout is permitted here for the recurring tick and grace period cancellation via clearTimeout
-function scheduleTickIfNeeded(
-  tickRef: { handle: ReturnType<typeof setTimeout> | null },
-  tick: () => void,
-  intervalMs: number,
-): void {
+function scheduleTickIfNeeded(tickRef: { handle: unknown }, tick: () => void, intervalMs: number): void {
   if (tickRef.handle !== null) return;
-  tickRef.handle = setTimeout(tick, intervalMs);
+  tickRef.handle = _idleWatchdogDeps.setTimeout(tick, intervalMs);
 }
 
 function handleObserveTimeout(
@@ -82,7 +96,7 @@ async function handleCancelTimeout(
   }
   state.cancelAttempts++;
   // Reset synchronously to prevent double-trigger in next tick
-  state.lastActivityAt = Date.now();
+  state.lastActivityAt = _idleWatchdogDeps.now();
   getSafeLogger()?.warn(
     "idle-watchdog",
     reason === "tool_call_only_idle_timeout_exceeded" ? "Canceling tool-call-only idle call" : "Canceling idle call",
@@ -136,15 +150,15 @@ function handleWarnThenCancelTimeout(
   state.inGracePeriod = true;
   state.graceReason = reason;
   // setTimeout permitted here for grace period cancellation via clearTimeout
-  state.graceTimer = setTimeout(async () => {
+  state.graceTimer = _idleWatchdogDeps.setTimeout(async () => {
     if (!activeStates.has(state.callId)) return;
     state.inGracePeriod = false;
     state.graceTimer = undefined;
     state.graceReason = undefined;
-    const currentReason = getTimeoutReason(state, Date.now(), idleTimeoutMs, toolCallOnlyTimeoutMs);
+    const currentReason = getTimeoutReason(state, _idleWatchdogDeps.now(), idleTimeoutMs, toolCallOnlyTimeoutMs);
     if (currentReason !== reason) return;
     state.cancelAttempts++;
-    state.lastActivityAt = Date.now();
+    state.lastActivityAt = _idleWatchdogDeps.now();
     const cancel = controllerRegistry.get(state.callId);
     if (cancel) await cancel().catch(() => {});
   }, graceMs);
@@ -152,7 +166,7 @@ function handleWarnThenCancelTimeout(
 
 function clearGrace(state: WatchdogStateInternal): void {
   if (state.inGracePeriod && state.graceTimer !== undefined) {
-    clearTimeout(state.graceTimer);
+    _idleWatchdogDeps.clearTimeout(state.graceTimer);
     state.graceTimer = undefined;
     state.inGracePeriod = false;
     state.graceReason = undefined;
@@ -205,7 +219,7 @@ export function attachAgentIdleWatchdog(
 
   function tick(): void {
     tickRef.handle = null;
-    const now = Date.now();
+    const now = _idleWatchdogDeps.now();
     for (const [, state] of activeStates) {
       if (state.inGracePeriod) continue;
       const idleDurationMs = now - state.lastActivityAt;
@@ -234,7 +248,7 @@ export function attachAgentIdleWatchdog(
   const unsubscribe = agentStreamEvents.onAgentStream((event: AgentStreamEvent) => {
     switch (event.kind) {
       case "agent.call_started": {
-        const now = Date.now();
+        const now = _idleWatchdogDeps.now();
         activeStates.set(event.callId, {
           callId: event.callId,
           agentName: event.agentName,
@@ -306,11 +320,11 @@ export function attachAgentIdleWatchdog(
       case "agent.call_ended": {
         const state = activeStates.get(event.callId);
         if (state) {
-          if (state.graceTimer !== undefined) clearTimeout(state.graceTimer);
+          if (state.graceTimer !== undefined) _idleWatchdogDeps.clearTimeout(state.graceTimer);
           activeStates.delete(event.callId);
         }
         if (activeStates.size === 0 && tickRef.handle !== null) {
-          clearTimeout(tickRef.handle);
+          _idleWatchdogDeps.clearTimeout(tickRef.handle);
           tickRef.handle = null;
         }
         break;
@@ -321,11 +335,11 @@ export function attachAgentIdleWatchdog(
   return () => {
     unsubscribe();
     for (const state of activeStates.values()) {
-      if (state.graceTimer !== undefined) clearTimeout(state.graceTimer);
+      if (state.graceTimer !== undefined) _idleWatchdogDeps.clearTimeout(state.graceTimer);
     }
     activeStates.clear();
     if (tickRef.handle !== null) {
-      clearTimeout(tickRef.handle);
+      _idleWatchdogDeps.clearTimeout(tickRef.handle);
       tickRef.handle = null;
     }
   };

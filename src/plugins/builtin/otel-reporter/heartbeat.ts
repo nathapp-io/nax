@@ -3,6 +3,18 @@ import { type KeyValue, attr, buildResourceAttributes } from "./otlp";
 
 const STAGE = "otel-reporter-heartbeat";
 
+/**
+ * Injectable timer pair — allows tests to drive the heartbeat off a virtual
+ * clock instead of sleeping for real, which is both faster and removes the
+ * scheduling races that loose "at least one tick fired" bounds paper over.
+ *
+ * @internal
+ */
+export const _heartbeatDeps = {
+  setTimeout: ((fn: () => void, ms: number) => setTimeout(fn, ms)) as (fn: () => void, ms: number) => unknown,
+  clearTimeout: ((id: unknown) => clearTimeout(id as ReturnType<typeof setTimeout>)) as (id: unknown) => void,
+};
+
 /** Attributes carried by every heartbeat gauge (US-008). */
 export interface HeartbeatAttributes {
   runId: string;
@@ -48,10 +60,10 @@ export function startHeartbeat(opts: HeartbeatOptions): Heartbeat {
   if (intervalMs <= 0) return { stop() {} };
 
   let stopped = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timer: unknown;
 
   const armTimer = (): void => {
-    timer = setTimeout(() => {
+    timer = _heartbeatDeps.setTimeout(() => {
       // Never let a telemetry tick escalate into a fatal unhandled
       // rejection/exception (src/execution/crash-signals.ts aborts the run
       // on either) — mirrors batch-queue.ts's own defensive try/catch.
@@ -74,7 +86,7 @@ export function startHeartbeat(opts: HeartbeatOptions): Heartbeat {
   return {
     stop(): void {
       stopped = true;
-      if (timer !== undefined) clearTimeout(timer);
+      if (timer !== undefined) _heartbeatDeps.clearTimeout(timer);
     },
   };
 }
