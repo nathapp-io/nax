@@ -99,9 +99,27 @@ await mkdir(dir, { recursive: true });
 
 ## 3. Timing Rules
 
-### Never use `Bun.sleep()` in tests
+### Never sleep for a fixed duration in tests
 
-Fixed-duration waits are timing-sensitive and flaky under CI load. Use polling or make the operation awaitable.
+This covers **both** spellings — `await Bun.sleep(n)` and `await new Promise(r => setTimeout(r, n))`.
+They are the same rule. The second form is the one that actually accumulates,
+because it does not read as a "sleep" at a glance.
+
+Fixed-duration waits are timing-sensitive and flaky under CI load, and because
+Bun runs test files serially in one process, every one of them is additive on
+the suite's wall clock.
+
+The right replacement depends on **what you are waiting for**:
+
+| What you're waiting for | Use |
+|:---|:---|
+| An async side effect to land (file written, event handled) | Poll with a cap — `waitForFile`, `waitForCondition` |
+| Code under test that is **driven by a timer** (heartbeat, watchdog, poll loop, backoff) | Inject the clock via `_deps` and drive `makeFakeClock()` — see below |
+| That a timer handle actually reaches `clearTimeout` | `withTimerSpy`, which deliberately uses real timers |
+
+Only the *first* row is a polling problem. Reaching for polling in the second
+case still burns real wall-clock and still races — the fix there is to stop
+using the real clock at all.
 
 ```typescript
 // ❌ WRONG — may not be enough time under load
@@ -116,6 +134,11 @@ await waitForFile(metaFile, 500);
 const meta = JSON.parse(await readFile(metaFile, "utf8"));
 ```
 
+**Carve-out:** a bounded poll *inside a helper in `test/helpers/`* may use
+`new Promise(r => setTimeout(r, …))` as its own polling interval — that is the
+sanctioned place for it. `waitForFile` below is exactly that. Test files
+themselves should call the helper, never re-implement the wait inline.
+
 `waitForFile` lives in `test/helpers/fs.ts`:
 
 ```typescript
@@ -128,6 +151,54 @@ export async function waitForFile(path: string, timeoutMs = 500): Promise<void> 
   throw new Error(`waitForFile: ${path} not created within ${timeoutMs}ms`);
 }
 ```
+
+### Timer-driven code: inject the clock, never sleep past the threshold
+
+When the subject under test *is* a timer — a heartbeat, an idle watchdog, a poll
+loop, a retry backoff — there is no duration you can sleep that is both fast and
+safe. Shortening it shrinks the margin; lengthening it slows every run. Both are
+bets on the scheduler.
+
+Expose the timer pair (and `now()`, if the code compares elapsed time) on the
+module's `_deps` object and drive it from `makeFakeClock()` in `test/helpers/`.
+Time then moves only when the test says so.
+
+```typescript
+// ✅ Source — timers reach the module through _deps
+export const _heartbeatDeps = {
+  setTimeout: ((fn: () => void, ms: number) => setTimeout(fn, ms)) as (fn: () => void, ms: number) => unknown,
+  clearTimeout: ((id: unknown) => clearTimeout(id as ReturnType<typeof setTimeout>)) as (id: unknown) => void,
+  now: (): number => Date.now(),
+};
+
+// ✅ Test — exact, instant, and independent of machine load
+const clock = makeFakeClock();
+_heartbeatDeps.setTimeout = clock.setTimeout as typeof _heartbeatDeps.setTimeout;
+_heartbeatDeps.clearTimeout = clock.clearTimeout as typeof _heartbeatDeps.clearTimeout;
+
+startHeartbeat({ intervalMs: 100, ... });
+await clock.advance(300);
+expect(ticks).toHaveLength(3);   // exact count, not "at least one"
+expect(clock.pending()).toBe(0); // and nothing was left armed
+```
+
+Always save and restore the `_deps` fields in `beforeEach`/`afterEach` — they are
+module state and leak into every later test file in the same process otherwise.
+
+Inject **per module, never globally**. Patching `globalThis.setTimeout` would
+also freeze the logger's and the test runner's own timers.
+
+Two consequences worth planning for:
+
+- **State the exact number.** Virtual time makes `toHaveLength(3)` reachable where
+  the old sleep could only justify `toBeGreaterThanOrEqual(1)`. Assert the exact
+  count — a lower bound cannot catch a timer that fires twice as often as configured.
+- **Confirm the test can still fail.** A fake clock makes it easy to write a test
+  that passes because the timer never fired at all. After converting, break the
+  behaviour on purpose and check the test goes red. When this rule was introduced,
+  that step caught two tests that had stopped discriminating — one because a
+  downstream re-check masked the flag under test, one because the window never
+  reached the threshold it named.
 
 ### Never bump timeouts to fix flaky tests
 

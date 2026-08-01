@@ -60,7 +60,7 @@ export type {
   AgentStreamListener,
 } from "./agent-stream-events";
 export { AgentStreamEventBus } from "./agent-stream-events";
-export { attachAgentIdleWatchdog, attachAgentStreamLogging } from "./middleware";
+export { attachAgentIdleWatchdog, attachAgentStreamLogging, _idleWatchdogDeps } from "./middleware";
 export type { WatchdogState } from "./middleware";
 export { formatSessionName } from "./session-name";
 export { KNOWN_SESSION_ROLES, isSessionRole } from "./session-role";

@@ -4,4 +4,4 @@ export { attachAgentStreamLogging } from "./agent-stream-logging";
 export { attachCostSubscriber } from "./cost";
 export { attachAuditSubscriber } from "./audit";
 export { attachReviewAuditSubscriber } from "./review-audit";
-export { attachAgentIdleWatchdog, type WatchdogState } from "./idle-watchdog";
+export { attachAgentIdleWatchdog, _idleWatchdogDeps, type WatchdogState } from "./idle-watchdog";

@@ -4,9 +4,24 @@
  * Split out of telegram.test.ts, which was at the 800-line limit.
  */
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { InteractionRequest } from "@/interaction";
 import { TelegramInteractionPlugin, _telegramPluginDeps, normalizeChatId } from "@/interaction";
+
+// The poll loop sleeps `basePollBackoffMs` between getUpdates calls, so with the
+// production 1s base every multi-poll test costs seconds of wall-clock. The
+// behaviour under test is ordering and filtering, not the production cadence —
+// shrink the base and scale the receive() timeouts to match.
+const POLL_BACKOFF_MS = 20;
+const originalBackoffMs = _telegramPluginDeps.basePollBackoffMs;
+
+beforeEach(() => {
+  _telegramPluginDeps.basePollBackoffMs = POLL_BACKOFF_MS;
+});
+
+afterEach(() => {
+  _telegramPluginDeps.basePollBackoffMs = originalBackoffMs;
+});
 
 // ---------------------------------------------------------------------------
 // Inbound chat authorization (closes #1365)
@@ -103,7 +118,7 @@ describe("TelegramInteractionPlugin - inbound chat authorization", () => {
     await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
     await plugin.send(makeConfirmRequest("auth-1"));
 
-    const response = await plugin.receive("auth-1", 300);
+    const response = await plugin.receive("auth-1", 60);
 
     expect(response.respondedBy).toBe("timeout");
     expect(response.action).not.toBe("approve");
@@ -124,7 +139,7 @@ describe("TelegramInteractionPlugin - inbound chat authorization", () => {
     const plugin = new TelegramInteractionPlugin();
     await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
     await plugin.send(makeConfirmRequest("auth-2"));
-    await plugin.receive("auth-2", 300);
+    await plugin.receive("auth-2", 60);
 
     expect(acked).not.toContain("cq-foreign");
   });
@@ -149,7 +164,7 @@ describe("TelegramInteractionPlugin - inbound chat authorization", () => {
       createdAt: Date.now(),
     } as InteractionRequest);
 
-    const response = await plugin.receive("auth-3", 300);
+    const response = await plugin.receive("auth-3", 60);
 
     expect(response.respondedBy).toBe("timeout");
     expect(response.value).toBeUndefined();
@@ -166,9 +181,9 @@ describe("TelegramInteractionPlugin - inbound chat authorization", () => {
     const plugin = new TelegramInteractionPlugin();
     await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
     await plugin.send(makeConfirmRequest("auth-4"));
-    // 2500ms, not 300ms: the poll loop backs off 1000ms between attempts, so a
-    // short timeout yields a single poll and never demonstrates the offset moving.
-    await plugin.receive("auth-4", 2500);
+    // Must span several backoff cycles: a timeout shorter than one POLL_BACKOFF_MS
+    // yields a single poll and never demonstrates the offset moving.
+    await plugin.receive("auth-4", POLL_BACKOFF_MS * 8);
 
     // Reaching offset 8 is the discriminating assertion. If the filter ran
     // before lastUpdateId advanced, the offset would stay parked at 1 forever
@@ -193,7 +208,7 @@ describe("TelegramInteractionPlugin - inbound chat authorization", () => {
     await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
     await plugin.send(makeConfirmRequest("auth-5"));
 
-    const response = await plugin.receive("auth-5", 5000);
+    const response = await plugin.receive("auth-5", 1000);
 
     expect(response.action).toBe("approve");
     expect(response.respondedBy).toBe("telegram");
@@ -219,7 +234,7 @@ describe("TelegramInteractionPlugin - inbound chat authorization", () => {
       createdAt: Date.now(),
     } as InteractionRequest);
 
-    const response = await plugin.receive("auth-6", 5000);
+    const response = await plugin.receive("auth-6", 1000);
 
     expect(response.action).toBe("input");
     expect(response.value).toBe("ship it");
@@ -302,7 +317,7 @@ describe("TelegramInteractionPlugin - backlog drain with foreign traffic", () =>
       createdAt: Date.now(),
     } as InteractionRequest);
 
-    const response = await plugin.receive("drain-1", 300);
+    const response = await plugin.receive("drain-1", 60);
 
     // "yes do it" was sitting in the queue BEFORE the prompt was posted, so it
     // cannot be the answer to it. If the drain stopped at update 1 -- the first
@@ -413,7 +428,7 @@ describe("TelegramInteractionPlugin - configured chat id normalization", () => {
       createdAt: Date.now(),
     } as InteractionRequest);
 
-    const response = await plugin.receive("norm-1", 5000);
+    const response = await plugin.receive("norm-1", 60);
 
     expect(response.action).toBe("approve");
     expect(response.respondedBy).toBe("telegram");

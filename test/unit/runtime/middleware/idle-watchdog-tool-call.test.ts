@@ -2,22 +2,37 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
-import { AgentStreamEventBus, attachAgentIdleWatchdog, type AgentStreamEvent } from "@/runtime";
-import { cleanupTempDir, makeTempDir, makeNaxConfig, waitForCondition } from "@test/helpers";
+import { AgentStreamEventBus, attachAgentIdleWatchdog } from "@/runtime";
+import type { FakeClock } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
+import {
+  installFakeWatchdogClock,
+  makeCallStartedEvent,
+  makeThinkingUpdateEvent,
+  makeToolCallUpdateEvent,
+  restoreWatchdogClock,
+} from "./_idle-watchdog-harness";
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+// Virtual clock — see _idle-watchdog-harness.ts. These cases turn on how
+// tool-call activity interacts with two different timeouts, so the exact
+// interleaving of events and ticks is the thing under test; stepping the clock
+// makes that interleaving reproducible instead of scheduler-dependent.
+let clock: FakeClock;
 
+/**
+ * Emit a tool_call_update every `intervalMs` of virtual time for `durationMs`,
+ * then one more so the final activity timestamp is fresh for the assertions
+ * that run immediately after.
+ */
 async function emitToolCallUpdatesForDuration(
   eventBus: AgentStreamEventBus,
   durationMs: number,
   intervalMs = 25,
 ): Promise<void> {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < durationMs) {
+  for (let elapsed = 0; elapsed < durationMs; elapsed += intervalMs) {
     eventBus.emitAgentStream(makeToolCallUpdateEvent());
-    await sleep(intervalMs);
+    await clock.advance(intervalMs);
   }
-  // Keep the final activity timestamp fresh for immediate post-loop assertions.
   eventBus.emitAgentStream(makeToolCallUpdateEvent());
 }
 
@@ -45,42 +60,18 @@ function makeWatchdogConfig(overrides: {
   });
 }
 
-function makeBaseEvent(timestamp = Date.now()) {
-  return {
-    callId: "call-123",
-    runId: "run-001",
-    agentName: "claude",
-    sessionName: "test-session",
-    storyId: "story-42",
-    stage: "run" as const,
-    pid: 1234,
-    timestamp,
-  };
-}
-
-function makeCallStartedEvent(timestamp = Date.now()): AgentStreamEvent {
-  return {
-    ...makeBaseEvent(timestamp),
-    kind: "agent.call_started",
-    model: "claude-sonnet-4-5",
-    timeoutSeconds: 60,
-  };
-}
-
-function makeThinkingUpdateEvent(timestamp = Date.now()): AgentStreamEvent {
-  return {
-    ...makeBaseEvent(timestamp),
-    kind: "agent.thinking_update",
-    deltaBytes: 12,
-  };
-}
-
-function makeToolCallUpdateEvent(timestamp = Date.now()): AgentStreamEvent {
-  return {
-    ...makeBaseEvent(timestamp),
-    kind: "agent.tool_call_update",
-    toolName: "bash",
-  };
+/** Registry with a single counting cancel callback for "call-123". */
+function makeCountingRegistry(): { registry: Map<string, () => Promise<void>>; count: () => number } {
+  let cancelCount = 0;
+  const registry = new Map<string, () => Promise<void>>([
+    [
+      "call-123",
+      async () => {
+        cancelCount++;
+      },
+    ],
+  ]);
+  return { registry, count: () => cancelCount };
 }
 
 async function parseAllEntries(logFile: string): Promise<LogEntry[]> {
@@ -97,12 +88,14 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
   let logFile: string;
 
   beforeEach(() => {
+    clock = installFakeWatchdogClock();
     tmpDir = makeTempDir("nax-test-idle-watchdog-tool-");
     logFile = join(tmpDir, `idle-watchdog-tool-${Date.now()}.jsonl`);
     initLogger({ level: "silent", filePath: logFile });
   });
 
   afterEach(async () => {
+    restoreWatchdogClock();
     await getLogger().flush();
     resetLogger();
     cleanupTempDir(tmpDir);
@@ -110,15 +103,7 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
 
   test("tool-call updates keep the primary idle timeout alive until the secondary cap is reached", async () => {
     const eventBus = new AgentStreamEventBus();
-    let cancelCount = 0;
-    const registry = new Map<string, () => Promise<void>>([
-      [
-        "call-123",
-        async () => {
-          cancelCount++;
-        },
-      ],
-    ]);
+    const { registry, count } = makeCountingRegistry();
     const detach = attachAgentIdleWatchdog(
       eventBus,
       registry,
@@ -129,7 +114,7 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
       eventBus.emitAgentStream(makeCallStartedEvent());
       await emitToolCallUpdatesForDuration(eventBus, 220, 30);
 
-      expect(cancelCount).toBe(0);
+      expect(count()).toBe(0);
       await getLogger().flush();
       const entries = await parseAllEntries(logFile);
       expect(entries.some((entry) => entry.data?.key === "idle_timeout_exceeded")).toBe(false);
@@ -140,23 +125,16 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
 
   test("tool-call-only activity hits the secondary timeout with a distinct log key", async () => {
     const eventBus = new AgentStreamEventBus();
-    let cancelCount = 0;
-    const registry = new Map<string, () => Promise<void>>([
-      [
-        "call-123",
-        async () => {
-          cancelCount++;
-        },
-      ],
-    ]);
+    const { registry, count } = makeCountingRegistry();
     const detach = attachAgentIdleWatchdog(eventBus, registry, makeWatchdogConfig());
 
     try {
       eventBus.emitAgentStream(makeCallStartedEvent());
       await emitToolCallUpdatesForDuration(eventBus, 220, 25);
-      await waitForCondition(() => cancelCount === 1, 1_000, 10);
 
-      expect(cancelCount).toBe(1);
+      // No polling needed: the cancel runs inside advance(), and the fake clock
+      // drains microtasks before returning.
+      expect(count()).toBe(1);
       await getLogger().flush();
       const entries = await parseAllEntries(logFile);
       expect(entries.some((entry) => entry.data?.key === "tool_call_only_idle_timeout_exceeded")).toBe(true);
@@ -168,15 +146,7 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
 
   test("non-tool activity resets the secondary timer", async () => {
     const eventBus = new AgentStreamEventBus();
-    let cancelCount = 0;
-    const registry = new Map<string, () => Promise<void>>([
-      [
-        "call-123",
-        async () => {
-          cancelCount++;
-        },
-      ],
-    ]);
+    const { registry, count } = makeCountingRegistry();
     const detach = attachAgentIdleWatchdog(
       eventBus,
       registry,
@@ -194,7 +164,7 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
 
       await emitToolCallUpdatesForDuration(eventBus, 220, 30);
 
-      expect(cancelCount).toBe(0);
+      expect(count()).toBe(0);
     } finally {
       detach();
     }
@@ -202,15 +172,7 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
 
   test("excluding tool_call_update from activityKinds preserves the legacy primary timeout behavior", async () => {
     const eventBus = new AgentStreamEventBus();
-    let cancelCount = 0;
-    const registry = new Map<string, () => Promise<void>>([
-      [
-        "call-123",
-        async () => {
-          cancelCount++;
-        },
-      ],
-    ]);
+    const { registry, count } = makeCountingRegistry();
     const detach = attachAgentIdleWatchdog(
       eventBus,
       registry,
@@ -220,9 +182,8 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
     try {
       eventBus.emitAgentStream(makeCallStartedEvent());
       await emitToolCallUpdatesForDuration(eventBus, 220, 30);
-      await waitForCondition(() => cancelCount === 1, 1_000, 10);
 
-      expect(cancelCount).toBe(1);
+      expect(count()).toBe(1);
       await getLogger().flush();
       const entries = await parseAllEntries(logFile);
       expect(entries.some((entry) => entry.data?.key === "idle_timeout_exceeded")).toBe(true);
@@ -233,15 +194,7 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
 
   test("toolCallOnlyIdleTimeoutSeconds=0 disables the secondary cap", async () => {
     const eventBus = new AgentStreamEventBus();
-    let cancelCount = 0;
-    const registry = new Map<string, () => Promise<void>>([
-      [
-        "call-123",
-        async () => {
-          cancelCount++;
-        },
-      ],
-    ]);
+    const { registry, count } = makeCountingRegistry();
     const detach = attachAgentIdleWatchdog(
       eventBus,
       registry,
@@ -252,7 +205,7 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
       eventBus.emitAgentStream(makeCallStartedEvent());
       await emitToolCallUpdatesForDuration(eventBus, 260, 30);
 
-      expect(cancelCount).toBe(0);
+      expect(count()).toBe(0);
       await getLogger().flush();
       const entries = await parseAllEntries(logFile);
       expect(entries.some((entry) => entry.data?.key === "tool_call_only_idle_timeout_exceeded")).toBe(false);
@@ -263,15 +216,7 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
 
   test("toolCallOnlyIdleTimeoutSeconds less than or equal to the primary timeout does not create an earlier cancel path", async () => {
     const eventBus = new AgentStreamEventBus();
-    let cancelCount = 0;
-    const registry = new Map<string, () => Promise<void>>([
-      [
-        "call-123",
-        async () => {
-          cancelCount++;
-        },
-      ],
-    ]);
+    const { registry, count } = makeCountingRegistry();
     const detach = attachAgentIdleWatchdog(
       eventBus,
       registry,
@@ -283,9 +228,14 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
 
     try {
       eventBus.emitAgentStream(makeCallStartedEvent());
-      await emitToolCallUpdatesForDuration(eventBus, 180, 30);
+      // Must run PAST the secondary value (200ms), or the test proves nothing:
+      // if it stops short, no tick ever evaluates the secondary condition and
+      // the assertion holds even when the "> primary" guard is removed.
+      // Tool-call activity keeps refreshing the primary clock, so the 300ms
+      // primary timeout is never reached within this window.
+      await emitToolCallUpdatesForDuration(eventBus, 280, 30);
 
-      expect(cancelCount).toBe(0);
+      expect(count()).toBe(0);
       await getLogger().flush();
       const entries = await parseAllEntries(logFile);
       expect(entries.some((entry) => entry.data?.key === "tool_call_only_idle_timeout_exceeded")).toBe(false);

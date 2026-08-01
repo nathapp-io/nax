@@ -17,6 +17,12 @@ import { MAX_MESSAGE_CHARS, buildBody, buildHeader, buildKeyboard, splitText } f
  */
 export const _telegramPluginDeps = {
   fetch: globalThis.fetch.bind(globalThis) as typeof fetch,
+  /**
+   * Base interval between getUpdates polls, and the value the exponential
+   * backoff resets to on success. Injectable so poll-loop tests can exercise
+   * multi-poll behaviour without burning seconds of wall-clock per test.
+   */
+  basePollBackoffMs: 1000,
 };
 
 const CALLBACK_API_TIMEOUT_MS = 4000;
@@ -80,7 +86,8 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   // requestId -> { type of the request (gates which update kinds count as an answer), sent message ids }
   private pendingMessages = new Map<string, { type: InteractionRequest["type"]; ids: number[] }>();
   private lastUpdateId = 0;
-  private backoffMs = 1000; // Exponential backoff for getUpdates (starts at 1s)
+  // Exponential backoff for getUpdates (starts at the injectable base, 1s in production)
+  private backoffMs = _telegramPluginDeps.basePollBackoffMs;
   private readonly maxBackoffMs = 30000; // Max 30 seconds between retries
 
   /** Bound on how many getUpdates() pages drainBacklog() will consume before giving up. */
@@ -253,7 +260,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
           // Clean up tracking entry before returning to avoid accumulating stale entries
           this.pendingMessages.delete(requestId);
           // Reset backoff on successful response
-          this.backoffMs = 1000;
+          this.backoffMs = _telegramPluginDeps.basePollBackoffMs;
           return response;
         }
 
@@ -356,7 +363,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       }
 
       // Reset backoff on success
-      this.backoffMs = 1000;
+      this.backoffMs = _telegramPluginDeps.basePollBackoffMs;
       return { ok: true, updates, rawCount: raw.length };
     } catch (err) {
       // Apply exponential backoff on network error

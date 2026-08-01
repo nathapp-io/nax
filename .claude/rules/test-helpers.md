@@ -20,6 +20,8 @@ Import from the barrel: `import { ... } from "../../helpers"` (adjust depth).
 | `makeLogger()` | Logger with captured calls for assertions | `test/helpers/mock-logger.ts` |
 | `makeSessionManager(overrides?)` | `ISessionManager` mock (covers `openSession` / `sendPrompt` / `closeSession` / `runInSession` / `nameFor` / `handoff`) | `test/helpers/mock-session-manager.ts` |
 | `makeTestRuntime(opts?)` | `NaxRuntime` for tests that need the container (calls `createRuntime` with `DEFAULT_CONFIG` + `/tmp/test` defaults) | `test/helpers/runtime.ts` |
+| `makeFakeClock()` | Virtual clock for timer-driven code. Inject into the module's `_deps` and step with `advance(ms)` instead of sleeping. `pending()` asserts nothing was left armed. | `test/helpers/fake-clock.ts` |
+| `withTimerSpy(fn)` | Records timers armed/cleared during `fn` on the **real** clock — for asserting a handle reaches `clearTimeout`, which a fake clock would substitute away. | `test/helpers/timer-spy.ts` |
 
 ## Rule
 

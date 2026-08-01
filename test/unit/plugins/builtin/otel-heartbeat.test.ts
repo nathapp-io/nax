@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { withTimerSpy } from "@test/helpers";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { type FakeClock, makeFakeClock, withTimerSpy } from "@test/helpers";
 import {
   type Heartbeat,
   type HeartbeatSnapshot,
+  _heartbeatDeps,
   buildHeartbeatMetricsPayload,
   startHeartbeat,
 } from "../../../../src/plugins/builtin/otel-reporter/heartbeat";
@@ -32,8 +33,27 @@ function track(hb: Heartbeat): Heartbeat {
   return hb;
 }
 
+// Every timer assertion below runs on a virtual clock: time moves only when the
+// test advances it. That makes the tick counts exact rather than "at least N"
+// — a heartbeat that fires twice as often as configured is now a failure, which
+// a wall-clock sleep with a loose lower bound could never catch — and it costs
+// no real time, so nothing here can flake when the machine stalls.
+let clock: FakeClock;
+let origSetTimeout: typeof _heartbeatDeps.setTimeout;
+let origClearTimeout: typeof _heartbeatDeps.clearTimeout;
+
+beforeEach(() => {
+  clock = makeFakeClock();
+  origSetTimeout = _heartbeatDeps.setTimeout;
+  origClearTimeout = _heartbeatDeps.clearTimeout;
+  _heartbeatDeps.setTimeout = clock.setTimeout as typeof _heartbeatDeps.setTimeout;
+  _heartbeatDeps.clearTimeout = clock.clearTimeout as typeof _heartbeatDeps.clearTimeout;
+});
+
 afterEach(() => {
   for (const hb of liveHeartbeats.splice(0)) hb.stop();
+  _heartbeatDeps.setTimeout = origSetTimeout;
+  _heartbeatDeps.clearTimeout = origClearTimeout;
 });
 
 describe("startHeartbeat", () => {
@@ -41,15 +61,23 @@ describe("startHeartbeat", () => {
     const ticks: HeartbeatSnapshot[] = [];
     track(startHeartbeat({ intervalMs: 40, getSnapshot: () => snapshot(), onTick: (s) => ticks.push(s) }));
 
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(ticks.length).toBeGreaterThanOrEqual(1);
+    await clock.advance(40);
+    expect(ticks).toHaveLength(1);
+  });
+
+  test("AC1: keeps ticking once per interval", async () => {
+    const ticks: HeartbeatSnapshot[] = [];
+    track(startHeartbeat({ intervalMs: 40, getSnapshot: () => snapshot(), onTick: (s) => ticks.push(s) }));
+
+    await clock.advance(160);
+    expect(ticks).toHaveLength(4);
   });
 
   test("AC1 boundary: issues no tick before intervalMs has elapsed", async () => {
     const ticks: HeartbeatSnapshot[] = [];
     track(startHeartbeat({ intervalMs: 200, getSnapshot: () => snapshot(), onTick: (s) => ticks.push(s) }));
 
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await clock.advance(199);
     expect(ticks).toHaveLength(0);
   });
 
@@ -57,23 +85,56 @@ describe("startHeartbeat", () => {
     const ticks: HeartbeatSnapshot[] = [];
     track(startHeartbeat({ intervalMs: 0, getSnapshot: () => snapshot(), onTick: (s) => ticks.push(s) }));
 
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    await clock.advance(10_000);
     expect(ticks).toHaveLength(0);
+    // No timer was ever armed, not merely one that failed to fire.
+    expect(clock.pending()).toBe(0);
   });
 
   test("AC7: stop() prevents further ticks", async () => {
     const ticks: HeartbeatSnapshot[] = [];
     const hb = startHeartbeat({ intervalMs: 30, getSnapshot: () => snapshot(), onTick: (s) => ticks.push(s) });
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    hb.stop();
-    const countAtStop = ticks.length;
+    await clock.advance(90);
+    expect(ticks).toHaveLength(3);
 
-    await new Promise((resolve) => setTimeout(resolve, 120));
-    expect(ticks.length).toBe(countAtStop);
+    hb.stop();
+    await clock.advance(10_000);
+
+    expect(ticks).toHaveLength(3);
+    expect(clock.pending()).toBe(0);
   });
 
+  // Isolates the `stopped` flag from the clearTimeout in stop(). Called from
+  // outside a tick, clearTimeout alone is enough to halt the loop — so only a
+  // stop() issued from *inside* onTick, while the callback that will re-arm is
+  // still on the stack, can prove the flag is checked before re-arming.
+  test("AC7: stop() called from inside a tick prevents the loop re-arming", async () => {
+    let ticks = 0;
+    let hb: Heartbeat | undefined;
+    hb = track(
+      startHeartbeat({
+        intervalMs: 30,
+        getSnapshot: () => snapshot(),
+        onTick: () => {
+          ticks++;
+          hb?.stop();
+        },
+      }),
+    );
+
+    await clock.advance(300);
+
+    expect(ticks).toBe(1);
+    expect(clock.pending()).toBe(0);
+  });
+
+  // Runs against the REAL timers: this asserts that the handle reaches
+  // clearTimeout, which is precisely what the fake clock would substitute away.
   test("AC7: stop() clears the underlying timer (no leaked handle)", async () => {
+    _heartbeatDeps.setTimeout = origSetTimeout;
+    _heartbeatDeps.clearTimeout = origClearTimeout;
+
     const { leaked } = await withTimerSpy(async () => {
       const hb = startHeartbeat({ intervalMs: 30, getSnapshot: () => snapshot(), onTick: () => {} });
       hb.stop();
@@ -93,7 +154,7 @@ describe("startHeartbeat", () => {
       }),
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await clock.advance(30);
     expect(ticks[0]?.phaseElapsedMs).toBe(42);
     expect(ticks[0]?.costUsd).toBe(1.23);
   });
@@ -111,8 +172,9 @@ describe("startHeartbeat", () => {
       }),
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(calls).toBeGreaterThanOrEqual(2);
+    await clock.advance(90);
+    // Exact, not a lower bound: a throw must cost the heartbeat no ticks at all.
+    expect(calls).toBe(3);
   });
 
   test("an onTick that returns a rejected promise does not stop subsequent ticks", async () => {
@@ -128,8 +190,9 @@ describe("startHeartbeat", () => {
       }),
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(calls).toBeGreaterThanOrEqual(2);
+    await clock.advance(90);
+    // Exact, not a lower bound: a throw must cost the heartbeat no ticks at all.
+    expect(calls).toBe(3);
   });
 });
 

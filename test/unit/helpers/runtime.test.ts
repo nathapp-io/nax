@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { makeMockRuntime, makeTestRuntime } from "./runtime";
+import { makeMockRuntime, makeTestRuntime } from "@test/helpers";
 
 const autoCleanupCloseCalls: string[] = [];
 const manualCloseCalls: string[] = [];

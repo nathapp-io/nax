@@ -29,8 +29,10 @@ describe("normalizeEnvironment", () => {
 });
 
 describe("executeWithTimeout", () => {
+  // 0.1s, not 1s: `timeoutSeconds` is only ever multiplied out to ms, and what is
+  // under test is the timeout->kill transition, not how long the wait was.
   test("returns a timeout result and reports the process killed", async () => {
-    const result = await executeWithTimeout("sleep 30", 1, undefined, { gracePeriodMs: 200 });
+    const result = await executeWithTimeout("sleep 30", 0.1, undefined, { gracePeriodMs: 200 });
 
     expect(result.timeout).toBe(true);
     expect(result.killed).toBe(true);
@@ -58,7 +60,7 @@ describe("executeWithTimeout", () => {
       // never passed to clearTimeout), not durational, so the assertion does not
       // need a long window — and CI cannot be relied on to make SIGTERM reap the
       // child, which would otherwise stall the test for the full grace period.
-      executeWithTimeout("sleep 30", 1, undefined, { gracePeriodMs: 200, drainTimeoutMs: 500 }),
+      executeWithTimeout("sleep 30", 0.1, undefined, { gracePeriodMs: 200, drainTimeoutMs: 500 }),
     );
 
     expect(result.timeout).toBe(true);
