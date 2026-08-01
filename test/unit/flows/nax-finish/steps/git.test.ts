@@ -69,7 +69,7 @@ describe("commitFixes", () => {
       return cmd.includes("--porcelain") ? ok(" M apps/api/_calendar.py\n?? apps/api/tests/test_new.py\n") : ok();
     };
     const r = await commitFixes("/repo", "fix(x): nax-finish spec fixes");
-    expect(r).toEqual({ committed: true });
+    expect(r).toMatchObject({ committed: true });
     const argv = argvOf(calls);
     // -A, not -u: a fix that adds a new test file must be committed too, or the
     // reviewer's `git diff base...HEAD` still cannot see it.
@@ -94,7 +94,7 @@ describe("commitFixes", () => {
       return ok("");
     };
     const r = await commitFixes("/repo", "msg");
-    expect(r).toEqual({ committed: false });
+    expect(r).toMatchObject({ committed: false });
     expect(argvOf(calls).some((c) => c.startsWith("git commit"))).toBe(false);
   });
 

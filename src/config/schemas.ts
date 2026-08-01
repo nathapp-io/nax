@@ -433,6 +433,18 @@ export const NaxConfigSchema = z
             enabled: z.boolean().default(false),
             flowPath: z.string().default("flows/nax-finish/nax-finish.flow.ts"),
             defaultAgent: z.string().nullable().default(null),
+            /**
+             * acpx `--model`, a run-wide *fallback*. acpx resolves a node's
+             * model as `node.model ?? agent.model ?? --model`, so this only
+             * reaches nodes whose agent entry pins no model of its own — i.e.
+             * the `fix_*` nodes, not the profile-pinned reviewers.
+             *
+             * Opt-in (null) because that precedence needs an acpx build that
+             * accepts a `model` on agent entries. On a build without it there is
+             * nothing above `--model` in the chain, so it would override the
+             * reviewers too.
+             */
+            model: z.string().min(1, "model must be non-empty").nullable().default(null),
             reviewers: z
               .object({
                 spec: z.string().nullable().default(null),
@@ -467,6 +479,7 @@ export const NaxConfigSchema = z
             enabled: false,
             flowPath: "flows/nax-finish/nax-finish.flow.ts",
             defaultAgent: null,
+            model: null,
             reviewers: { spec: null, quality: null },
             escalate: { telegram: true },
             notify: { mode: "escalation" },
@@ -478,6 +491,7 @@ export const NaxConfigSchema = z
           enabled: false,
           flowPath: "flows/nax-finish/nax-finish.flow.ts",
           defaultAgent: null,
+          model: null,
           reviewers: { spec: null, quality: null },
           escalate: { telegram: true },
           notify: { mode: "escalation" },

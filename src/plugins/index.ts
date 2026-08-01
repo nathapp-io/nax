@@ -54,5 +54,12 @@ export { buildLogsPayload, toLogRecord } from "./builtin/otel-reporter/logs";
 export type { LogRecord, LogsResourceInput } from "./builtin/otel-reporter/logs";
 
 // Built-in nax-finish post-run action (Task 8) — exposed for test injection (`_naxFinishDeps`)
-export { naxFinishPlugin, _naxFinishDeps, buildFlowArgv, resolveFlowPath } from "./builtin/nax-finish";
+export {
+  naxFinishPlugin,
+  _naxFinishDeps,
+  buildFlowArgv,
+  finishAuditDir,
+  finishResultPath,
+  resolveFlowPath,
+} from "./builtin/nax-finish";
 export { getFinishAutoFlowConfig, isTelegramConfigured, telegramCreds } from "./builtin/nax-finish/config";

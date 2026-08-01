@@ -476,7 +476,8 @@ escalates** instead of guessing. It never merges.
 |:---|:---|:---|
 | `enabled` | `false` | Master gate. The flow never fires unless this is true. |
 | `flowPath` | `flows/nax-finish/nax-finish.flow.ts` | Relative paths resolve against the **nax install** first, then your repo (so you can vendor a variant). Absolute paths are used as-is. |
-| `defaultAgent` | `null` | acpx `--default-agent` for nodes with no pinned profile. |
+| `defaultAgent` | `agent.default` | acpx `--default-agent` for nodes with no pinned profile. Defaults to the agent the run itself used — setting only `reviewers` no longer leaves the `fix_*` nodes on acpx's own default. |
+| `model` | `null` | acpx `--model`, a run-wide model *floor* (`node.model ?? agent.model ?? --model`). Reaches the `fix_*` nodes; cannot override a profile-pinned reviewer whose agent entry names its own model. Opt-in — requires an acpx build that reads `model` from agent entries. Never derived from `config.models`. |
 | `reviewers.spec` / `reviewers.quality` | `null` | acpx agent profiles (from `~/.acpx/config.json`) for the two review phases — each runs in its own isolated session, so they can be different agents/models. Unset → `defaultAgent`. |
 | `escalate.telegram` | `true` | Prefer Telegram for escalations when `interaction.plugin` is `telegram` (or `NAX_TELEGRAM_TOKEN` + `NAX_TELEGRAM_CHAT_ID` are set). With no credentials it falls back to a PR/MR comment. |
 | `notify.mode` | `"escalation"` | `escalation` preserves escalation-only reporting; `always` also reports clean outcomes and crashes; `off` disables Telegram and uses the escalation comment fallback. |
@@ -505,7 +506,10 @@ one completed), HEAD is not `main`/`master`, and `enabled` is true.
 | Spec conflicts, contradictions, design calls, or anything it can't get green | Commits and pushes what it fixed, then escalates via Telegram or a PR/MR comment. No ready PR. |
 | Branch has no commits ahead of base | Reports `nothing-to-finish` and stops. |
 
-The flow's terminal state is written to `.nax/nax-finish-result.json` (gitignored).
+The flow's audit trail — one line per fix round, plus the terminal state — is
+written to `~/.nax/<project>/finish-audit/<feature>/`, beside `prompt-audit/`
+and `review-audit/`. See
+[nax-finish-autoflow.md](./nax-finish-autoflow.md#audit-trail).
 
 The interactive, approval-gated `nax-finish` skill still exists for manual
 finishes — this is the autonomous path, not a replacement.

@@ -58,12 +58,35 @@ async function isDirty(repoRoot: string): Promise<boolean> {
  * A failing commit still throws: the fix is then unreviewable, and continuing
  * would silently reproduce the stale-diff bug this exists to fix.
  */
+/** Current HEAD sha, or null outside a repo / on an unborn branch. */
+async function headSha(repoRoot: string): Promise<string | null> {
+  const res = await _gitDeps.run(["git", "rev-parse", "HEAD"], { cwd: repoRoot });
+  return res.exitCode === 0 ? res.stdout.trim() || null : null;
+}
+
+/**
+ * Repo-root-relative paths touched by a commit.
+ *
+ * `--format=` suppresses the header so the output is just the file list.
+ * Failure yields `[]`, which the gate loop reads as "cannot tell what changed"
+ * and therefore reviews — see `partitionTestFiles`.
+ */
+export async function filesInCommit(repoRoot: string, sha: string): Promise<string[]> {
+  const res = await _gitDeps.run(["git", "show", "--name-only", "--format=", sha], { cwd: repoRoot });
+  if (res.exitCode !== 0) return [];
+  return res.stdout
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+}
+
 export async function commitFixes(
   repoRoot: string,
   message: string,
   opts: { skipHooks?: boolean } = {},
-): Promise<{ committed: boolean }> {
-  if (!(await isDirty(repoRoot))) return { committed: false };
+): Promise<{ committed: boolean; shaBefore: string | null; shaAfter: string | null }> {
+  const shaBefore = await headSha(repoRoot);
+  if (!(await isDirty(repoRoot))) return { committed: false, shaBefore, shaAfter: shaBefore };
 
   const add = await _gitDeps.run(["git", "add", "-A"], { cwd: repoRoot });
   if (add.exitCode !== 0) {
@@ -82,7 +105,7 @@ export async function commitFixes(
       { stage: "finish-git", repoRoot },
     );
   }
-  return { committed: true };
+  return { committed: true, shaBefore, shaAfter: await headSha(repoRoot) };
 }
 
 /**
