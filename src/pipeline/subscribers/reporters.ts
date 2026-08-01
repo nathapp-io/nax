@@ -43,6 +43,9 @@ async function fanOutReporters(
  * @param pluginRegistry - Plugin registry exposing getReporters()
  * @param runId          - Current run ID (for reporter events)
  * @param startTime      - Run start timestamp in ms (for duration calculation)
+ * @param projectKey     - Project identity name (`runtime.projectKey`) — the same value
+ *                         `claimProjectIdentity` writes as `.identity`'s `name` field, so
+ *                         reporters scope telemetry by project without reading that file.
  * @returns Unsubscribe function
  */
 export function wireReporters(
@@ -50,6 +53,7 @@ export function wireReporters(
   pluginRegistry: PluginRegistry,
   runId: string,
   startTime: number,
+  projectKey: string,
 ): UnsubscribeFn {
   const logger = getSafeLogger();
 
@@ -124,6 +128,7 @@ export function wireReporters(
                 feature: ev.feature,
                 totalStories: ev.totalStories,
                 startTime: new Date(startTime).toISOString(),
+                project: projectKey,
               });
             } catch (err) {
               logger?.warn("plugins", `Reporter '${r.name}' onRunStart failed`, { error: err });

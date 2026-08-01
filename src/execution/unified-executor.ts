@@ -89,7 +89,7 @@ export async function executeUnified(
   _prevRunUnsubscribers = [];
   const thisRunUnsubscribers = [
     wireHooks(pipelineEventBus, ctx.hooks, ctx.workdir, ctx.feature),
-    wireReporters(pipelineEventBus, ctx.pluginRegistry, ctx.runId, ctx.startTime),
+    wireReporters(pipelineEventBus, ctx.pluginRegistry, ctx.runId, ctx.startTime, ctx.runtime.projectKey),
     wireInteraction(pipelineEventBus, ctx.interactionChain, ctx.config),
     wireEventsWriter(pipelineEventBus, ctx.feature, ctx.runId, ctx.workdir),
     wireRegistry(pipelineEventBus, ctx.feature, ctx.runId, ctx.workdir, ctx.runtime.outputDir),

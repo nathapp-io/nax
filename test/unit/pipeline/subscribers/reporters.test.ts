@@ -3,7 +3,7 @@ import { describe, expect, spyOn, test } from "bun:test";
 import * as loggerModule from "@/logger";
 import { PipelineEventBus, wireReporters } from "@/pipeline";
 import type { PluginRegistry } from "@/plugins";
-import type { IReporter, PhaseCompleteEvent, PhaseStartEvent } from "@/plugins/types";
+import type { IReporter, PhaseCompleteEvent, PhaseStartEvent, RunStartEvent } from "@/plugins/types";
 
 function makeReporter(): IReporter & { calls: string[] } {
   const calls: string[] = [];
@@ -33,7 +33,7 @@ describe("wireReporters", () => {
   test("run:started fires onRunStart", async () => {
     const bus = new PipelineEventBus();
     const reporter = makeReporter();
-    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now());
+    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "test-project");
 
     bus.emit({ type: "run:started", feature: "test", totalStories: 5, workdir: "/tmp" });
 
@@ -41,10 +41,27 @@ describe("wireReporters", () => {
     expect(reporter.calls).toContain("onRunStart");
   });
 
+  test("run:started passes the project key through to onRunStart", async () => {
+    const bus = new PipelineEventBus();
+    let received: RunStartEvent | undefined;
+    const reporter: IReporter = {
+      name: "capture-reporter",
+      async onRunStart(ev) {
+        received = ev;
+      },
+    };
+    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "my-project");
+
+    bus.emit({ type: "run:started", feature: "test", totalStories: 5, workdir: "/tmp" });
+
+    await Promise.resolve();
+    expect(received?.project).toBe("my-project");
+  });
+
   test("story:completed fires onStoryComplete(completed)", async () => {
     const bus = new PipelineEventBus();
     const reporter = makeReporter();
-    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now());
+    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "test-project");
 
     bus.emit({
       type: "story:completed",
@@ -61,7 +78,7 @@ describe("wireReporters", () => {
   test("story:failed fires onStoryComplete(failed)", async () => {
     const bus = new PipelineEventBus();
     const reporter = makeReporter();
-    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now());
+    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "test-project");
 
     bus.emit({
       type: "story:failed",
@@ -78,7 +95,7 @@ describe("wireReporters", () => {
   test("story:paused fires onStoryComplete(paused)", async () => {
     const bus = new PipelineEventBus();
     const reporter = makeReporter();
-    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now());
+    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "test-project");
 
     bus.emit({ type: "story:paused", storyId: "US-001", reason: "needs review", cost: 0.5 });
 
@@ -89,7 +106,7 @@ describe("wireReporters", () => {
   test("story:escalated fires onEscalation", async () => {
     const bus = new PipelineEventBus();
     const reporter = makeReporter();
-    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now());
+    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "test-project");
 
     bus.emit({ type: "story:escalated", storyId: "US-001", fromTier: "fast", toTier: "balanced" });
 
@@ -100,7 +117,7 @@ describe("wireReporters", () => {
   test("run:completed fires onRunEnd", async () => {
     const bus = new PipelineEventBus();
     const reporter = makeReporter();
-    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now());
+    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "test-project");
 
     bus.emit({ type: "run:completed", totalStories: 5, passedStories: 4, failedStories: 1, durationMs: 60000 });
 
@@ -116,7 +133,7 @@ describe("wireReporters", () => {
         throw new Error("reporter crash");
       },
     };
-    wireReporters(bus, makeRegistry(badReporter), "run-1", Date.now());
+    wireReporters(bus, makeRegistry(badReporter), "run-1", Date.now(), "test-project");
 
     expect(() =>
       bus.emit({
@@ -138,7 +155,7 @@ describe("wireReporters", () => {
       },
     };
     const bus = new PipelineEventBus();
-    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now());
+    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "test-project");
 
     bus.emit({ type: "story:step", storyId: "US-005", step: "implementer" });
     await bus.drain();
@@ -157,7 +174,7 @@ describe("wireReporters", () => {
       },
     };
     const bus = new PipelineEventBus();
-    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now());
+    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "test-project");
 
     bus.emit({
       type: "story:phase:completed",
@@ -190,7 +207,7 @@ describe("wireReporters", () => {
       },
     };
     const bus = new PipelineEventBus();
-    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now());
+    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "test-project");
 
     bus.emit({ type: "postrun:phase:started", phase: "acceptance" });
     await bus.drain();
@@ -209,7 +226,7 @@ describe("wireReporters", () => {
       },
     };
     const bus = new PipelineEventBus();
-    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now());
+    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "test-project");
 
     bus.emit({ type: "postrun:phase:completed", phase: "acceptance", passed: true, durationMs: 15 });
     await bus.drain();
@@ -228,7 +245,7 @@ describe("wireReporters", () => {
       },
     };
     const bus = new PipelineEventBus();
-    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now());
+    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "test-project");
 
     bus.emit({ type: "postrun:phase:completed", phase: "regression", passed: true, durationMs: 10 });
     await bus.drain();
@@ -238,7 +255,7 @@ describe("wireReporters", () => {
 
   test("AC10: skips reporters without onPhaseComplete", async () => {
     const bus = new PipelineEventBus();
-    wireReporters(bus, makeRegistry({ name: "legacy" }), "run-1", Date.now());
+    wireReporters(bus, makeRegistry({ name: "legacy" }), "run-1", Date.now(), "test-project");
 
     bus.emit({
       type: "story:phase:completed",
@@ -267,7 +284,7 @@ describe("wireReporters", () => {
       },
     };
     const bus = new PipelineEventBus();
-    wireReporters(bus, makeRegistry(first, second), "run-1", Date.now());
+    wireReporters(bus, makeRegistry(first, second), "run-1", Date.now(), "test-project");
 
     bus.emit({
       type: "story:phase:completed",
@@ -300,7 +317,7 @@ describe("wireReporters", () => {
       },
     };
     const bus = new PipelineEventBus();
-    wireReporters(bus, makeRegistry(first, second), "run-1", Date.now());
+    wireReporters(bus, makeRegistry(first, second), "run-1", Date.now(), "test-project");
 
     bus.emit({
       type: "story:phase:completed",
@@ -325,7 +342,7 @@ describe("wireReporters", () => {
       },
     };
     const bus = new PipelineEventBus();
-    const unsubscribe = wireReporters(bus, makeRegistry(reporter), "run-1", Date.now());
+    const unsubscribe = wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "test-project");
     const event = {
       type: "story:phase:completed" as const,
       storyId: "US-005",
