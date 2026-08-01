@@ -19,18 +19,81 @@ export function normalizeIssueText(s: string): string {
 }
 
 /**
- * Fingerprint = file + category + normalized issue TOPIC PREFIX. Excludes line
- * number (shifts as code changes) and acIndex (only in Finding.meta on prior
- * rounds, which is not load-bearing-branchable). The issue text is truncated to
- * FP_ISSUE_PREFIX so tail rephrasing does not create a new fingerprint. Used as
- * a plain Map key.
+ * Path key for a fingerprint. Backslashes normalized, then leading `./` and
+ * `../` segments stripped: the reviewer's cwd drifts between rounds in a
+ * monorepo (the same file has been cited as `components/X.tsx`,
+ * `apps/web/components/X.tsx`, and `../../apps/api/src/y.py` within one story),
+ * and an unnormalized prefix fragments the key.
  */
-export function fingerprintFor(file: string | undefined, category: string | undefined, text: string): string {
-  const normFile = (file ?? "").replace(/\\/g, "/");
+function normalizeFingerprintPath(file: string | undefined): string {
+  return (file ?? "").replace(/\\/g, "/").replace(/^(?:\.{1,2}\/)+/, "");
+}
+
+/**
+ * Fingerprint identifying "the same finding" across review rounds. Excludes the
+ * line number (shifts as code changes).
+ *
+ * **AC-anchored path (preferred).** When the finding carries an `acIndex`, the
+ * key is `file + acIndex` and the prose is not consulted at all. That pair is
+ * structurally stable: `acIndex` is a validated 1-based index into the story's
+ * acceptance criteria, mandatory for every blocking finding (the reviewer prompt
+ * requires it and `filterByAcGroundingMinimal` drops findings whose index is
+ * absent or out of range), so every recurrence-demotion decision takes this path.
+ *
+ * **Prose fallback.** Without an `acIndex` the key degrades to
+ * file + category + issue topic prefix. Retained for non-blocking findings and
+ * for iterations recorded before `meta.acIndex` was persisted.
+ *
+ * Why the prose cannot be the primary key: the reviewer re-words the *opening
+ * clause* of a finding every round, not just its tail. One defect in
+ * `auth-security-hardening` US-004 was filed 8 times across 17 rounds as
+ * "The stored expiresAt is never consulted…", "TTL is only written to
+ * expiresAt…", "Expired replay rows are never removed or ignored…" — three
+ * different keys under a prefix fingerprint, so `countPriorAppearances` never
+ * reached the demotion threshold and the story never converged. Bag-of-words
+ * similarity was measured against that corpus and rejected: no threshold
+ * separated the story's distinct defects without also merging unrelated ones,
+ * and over-merging demotes genuine blocking findings to advisory.
+ */
+export function fingerprintFor(
+  file: string | undefined,
+  category: string | undefined,
+  text: string,
+  acIndex?: number,
+): string {
+  const normFile = normalizeFingerprintPath(file);
+  if (typeof acIndex === "number" && Number.isInteger(acIndex) && acIndex >= 1) {
+    return `${normFile}|ac${acIndex}`;
+  }
   return `${normFile}|${category ?? ""}|${normalizeIssueText(text).slice(0, FP_ISSUE_PREFIX)}`;
 }
 
 export type PriorAppearance = { count: number; lastSeverity: string };
+
+/**
+ * Resolve a finding's prior-appearance record, trying the AC-anchored key first
+ * and falling back to the prose key.
+ *
+ * Both directions of the mixed case are real: a story mid-flight when nax is
+ * upgraded has prose-only priors and AC-anchored current findings, and a
+ * reviewer that omits `acIndex` on one round produces the reverse. Whichever
+ * identity has seen the defect more often wins — an undercount here silently
+ * re-blocks a finding that should have demoted, which is the loop this whole
+ * mechanism exists to break.
+ */
+export function lookupPriorAppearance(
+  priorCounts: Map<string, PriorAppearance>,
+  finding: { file: string; category?: string; issue: string; acIndex?: number },
+): PriorAppearance | undefined {
+  const acKey =
+    finding.acIndex === undefined
+      ? undefined
+      : priorCounts.get(fingerprintFor(finding.file, finding.category, finding.issue, finding.acIndex));
+  const proseKey = priorCounts.get(fingerprintFor(finding.file, finding.category, finding.issue));
+  if (!acKey) return proseKey;
+  if (!proseKey) return acKey;
+  return acKey.count >= proseKey.count ? acKey : proseKey;
+}
 
 /**
  * One increment per prior iteration whose adversarial findings contain the
@@ -43,8 +106,17 @@ export function countPriorAppearances(priorIterations: Iteration[]): Map<string,
     const seenThisIter = new Map<string, string>();
     for (const f of (it.findingsAfter ?? []) as Finding[]) {
       if (f.source !== "adversarial-review") continue;
-      const fp = fingerprintFor(f.file, f.category, f.message);
-      seenThisIter.set(fp, f.severity);
+      // Index under BOTH keys. `finding-projection.ts` persists a valid 1-based
+      // acIndex into meta, but iterations recorded before that — or by an older
+      // nax — carry only prose. A current-round finding looks itself up under
+      // exactly one key, so indexing both is what lets an AC-anchored lookup
+      // still match a prose-only prior (and vice versa). Two entries per finding
+      // never double-count: each lookup reads one key.
+      const acIndex = typeof f.meta?.acIndex === "number" ? f.meta.acIndex : undefined;
+      seenThisIter.set(fingerprintFor(f.file, f.category, f.message), f.severity);
+      if (acIndex !== undefined) {
+        seenThisIter.set(fingerprintFor(f.file, f.category, f.message, acIndex), f.severity);
+      }
     }
     for (const [fp, sev] of seenThisIter) {
       const cur = counts.get(fp);
@@ -108,7 +180,7 @@ export function classifyRecurrence(
       advisory.push(f);
       continue;
     }
-    const prior = priorCounts.get(fingerprintFor(f.file, f.category, f.issue));
+    const prior = lookupPriorAppearance(priorCounts, f);
     const n = (prior?.count ?? 0) + 1;
     const prevWasBlocking = prior !== undefined && isBlockingSeverity(prior.lastSeverity, threshold);
 
