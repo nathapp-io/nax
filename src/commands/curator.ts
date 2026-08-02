@@ -457,7 +457,9 @@ export async function curatorGc(options: CuratorGcOptions): Promise<void> {
     }
   }
 
-  const dropped = Math.max(0, uniqueRunIds.length - keepSet.size);
+  // Runs evicted, NOT rows — `result.dropped` below counts rows, and the two
+  // sat one line apart under near-identical names.
+  const droppedRuns = Math.max(0, uniqueRunIds.length - keepSet.size);
   console.log(
     `[gc] Pruned rollup for ${projectKey}: kept ${keepSet.size} of ${uniqueRunIds.length} run(s), dropped ${result.dropped} row(s).`,
   );
@@ -469,5 +471,5 @@ export async function curatorGc(options: CuratorGcOptions): Promise<void> {
       `[gc] ${result.keptUnattributed} unattributed row(s) predate project scoping (#1429) and can never be read back. Run with --sweep-unattributed to drop them machine-wide.`,
     );
   }
-  if (dropped === 0 && sweep) console.log("[gc] No run-level pruning was needed; only the unattributed sweep ran.");
+  if (droppedRuns === 0 && sweep) console.log("[gc] No run-level pruning was needed; only the unattributed sweep ran.");
 }
