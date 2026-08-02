@@ -58,9 +58,7 @@
     "fallback": {
       "enabled": true,
       "map": {
-        "claude": [
-          "codex"
-        ]
+        "claude": ["codex"]
       },
       "maxHopsPerStory": 2,
       "onQualityFailure": false,
