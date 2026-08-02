@@ -3,6 +3,8 @@ import { getSafeLogger } from "../logger";
 export interface CostEvent {
   readonly ts: number;
   readonly runId: string;
+  /** Stable project identity — `runId`/`storyId` collide across repos (#1429). */
+  readonly projectKey?: string;
   /** Row schema version. 1 = pre-#1433 (no model/role attribution). */
   readonly schemaVersion?: number;
   readonly agentName: string;
@@ -65,6 +67,7 @@ export interface CostErrorEvent {
   readonly kind: "error";
   readonly ts: number;
   readonly runId: string;
+  readonly projectKey?: string;
   readonly schemaVersion?: number;
   readonly agentName: string;
   readonly model?: string;

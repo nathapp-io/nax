@@ -14,7 +14,17 @@ import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus, OperationCom
  */
 export const COST_ROW_SCHEMA_VERSION = 2;
 
-export function attachCostSubscriber(bus: IDispatchEventBus, aggregator: ICostAggregator, runId: string): () => void {
+export function attachCostSubscriber(
+  bus: IDispatchEventBus,
+  aggregator: ICostAggregator,
+  runId: string,
+  /**
+   * Stable project identity. `runId` and `storyId` are project-local and collide
+   * across repos, so a row lifted out of its directory cannot otherwise say where
+   * it came from — the same defect #1429 fixed for curator observations.
+   */
+  projectKey?: string,
+): () => void {
   const offDispatch = bus.onDispatch((event: DispatchEvent) => {
     const tu = event.tokenUsage;
     const wireExactCostUsd = event.exactCostUsd;
@@ -29,6 +39,7 @@ export function attachCostSubscriber(bus: IDispatchEventBus, aggregator: ICostAg
     const costEvent: CostEvent = {
       ts: event.timestamp,
       runId,
+      ...(projectKey !== undefined ? { projectKey } : {}),
       schemaVersion: COST_ROW_SCHEMA_VERSION,
       agentName: event.agentName,
       // #1433: this was the literal "unknown" on every row, because DispatchEvent
@@ -70,6 +81,8 @@ export function attachCostSubscriber(bus: IDispatchEventBus, aggregator: ICostAg
       kind: "error",
       ts: event.timestamp,
       runId,
+      ...(projectKey !== undefined ? { projectKey } : {}),
+      ...(projectKey !== undefined ? { projectKey } : {}),
       schemaVersion: COST_ROW_SCHEMA_VERSION,
       agentName: event.agentName,
       stage: event.stage,

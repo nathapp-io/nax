@@ -466,4 +466,37 @@ describe("attachCostSubscriber", () => {
     expect(recorded[0].model).toBe("unknown");
     expect(recorded[0].pricingSource).toBe("unknown-model");
   });
+
+  test("#1433: stamps projectKey so a row survives being lifted from its directory", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001", "rs-stock");
+
+    bus.emitDispatch(makeSessionTurnEvent());
+
+    expect(recorded[0].projectKey).toBe("rs-stock");
+  });
+
+  test("#1433: omits projectKey when none is supplied", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent());
+
+    expect("projectKey" in recorded[0]).toBe(false);
+  });
+
+  test("#1433: error rows carry projectKey too", () => {
+    const errors: CostErrorEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), recordError: (e: CostErrorEvent) => errors.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001", "rs-stock");
+
+    bus.emitDispatchError(makeErrorEvent());
+
+    expect(errors[0].projectKey).toBe("rs-stock");
+  });
 });
