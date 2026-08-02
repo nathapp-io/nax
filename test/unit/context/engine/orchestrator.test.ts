@@ -140,6 +140,24 @@ describe("ContextOrchestrator.assemble()", () => {
     expect(bundle.chunks.some((c) => c.id === "good:1")).toBe(true);
   });
 
+  test("static (rules) provider failure aborts assembly instead of silently dropping rules", async () => {
+    // A "static"-kind provider (the canonical rules store) is special: its
+    // failure means the run would proceed with zero rules chunks, silently.
+    // Unlike a generic provider timeout, this must abort assemble() so
+    // callers (stage-assembler.ts / pipeline/stages/context.ts) fall back to
+    // the v1 context path instead of continuing ruleless in v2.
+    const failingRules: IContextProvider = {
+      id: "static-rules",
+      kind: "static",
+      fetch: async () => { throw new Error("simulated neutrality lint failure"); },
+    };
+    const goodProvider = makeProvider("good", makeChunkResult({ id: "good:1" }));
+    const orch = new ContextOrchestrator([failingRules, goodProvider]);
+    await expect(
+      orch.assemble({ ...BASE_REQUEST, providerIds: [...(BASE_REQUEST.providerIds ?? []), "static-rules"] }),
+    ).rejects.toThrow("simulated neutrality lint failure");
+  });
+
   test("providerIds filter restricts which providers fetch", async () => {
     const p1 = makeProvider("p1", makeChunkResult({ id: "p1:chunk" }));
     const p2 = makeProvider("p2", makeChunkResult({ id: "p2:chunk" }));

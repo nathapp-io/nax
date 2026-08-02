@@ -379,6 +379,117 @@ describe("curatorCommit", () => {
     });
   });
 
+  describe("target path containment", () => {
+    test("rejects a proposal whose ### heading escapes .nax/ via path traversal", async () => {
+      const projectDir = join(tmpDir, "project");
+      mkdirSync(join(projectDir, ".nax", "rules"), { recursive: true });
+      _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
+
+      setupRun(
+        [
+          "# Curator Proposals",
+          "## add — Add suggestions",
+          "### ../../../etc/whatever.md",
+          "- [x] [MED] H1: escape attempt — stories: US-001",
+          "  _Evidence: n/a_",
+        ].join("\n"),
+      );
+
+      let writeCalled = false;
+      _deps.appendFile = mock(async () => {
+        writeCalled = true;
+      });
+      _deps.writeFile = mock(async () => {
+        writeCalled = true;
+      });
+
+      await expect(curatorCommit({ runId })).rejects.toThrow(/resolves outside/);
+      expect(writeCalled).toBe(false);
+    });
+
+    test("allows a proposal targeting .nax/features/<id>/context.md (not just .nax/rules/)", async () => {
+      const projectDir = join(tmpDir, "project");
+      mkdirSync(join(projectDir, ".nax", "features", "feat-1"), { recursive: true });
+      _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
+
+      setupRun(
+        [
+          "# Curator Proposals",
+          "## add — Add suggestions",
+          "### .nax/features/feat-1/context.md",
+          "- [x] [MED] H2: legit feature-scoped target — stories: US-001",
+          "  _Evidence: n/a_",
+        ].join("\n"),
+      );
+
+      let appendCalled = false;
+      _deps.appendFile = mock(async (p: string, content: string) => {
+        appendCalled = true;
+        await Bun.write(p, content);
+      });
+
+      await curatorCommit({ runId });
+      expect(appendCalled).toBe(true);
+    });
+  });
+
+  describe("content neutrality lint before append", () => {
+    test("rejects a rules-store add proposal whose content fails the neutrality linter", async () => {
+      const projectDir = join(tmpDir, "project");
+      mkdirSync(join(projectDir, ".nax", "rules"), { recursive: true });
+      _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
+
+      // The description text lands verbatim in the appended HTML comment
+      // (buildAddContent) — an emoji here would otherwise break the
+      // canonical rules store the next time it loads.
+      setupRun(
+        [
+          "# Curator Proposals",
+          "## add — Add suggestions",
+          "### .nax/rules/curator-suggestions.md",
+          "- [x] [HIGH] H1: ship it 🚀 always — stories: US-001",
+          "  _Evidence: n/a_",
+        ].join("\n"),
+      );
+
+      let writeCalled = false;
+      _deps.appendFile = mock(async () => {
+        writeCalled = true;
+      });
+
+      await expect(curatorCommit({ runId })).rejects.toThrow(/neutrality linter/);
+      expect(writeCalled).toBe(false);
+    });
+
+    test("does NOT lint add proposals targeting .nax/features/<id>/context.md", async () => {
+      // Feature context.md isn't the canonical rules store the orchestrator
+      // fails closed on — lint scope is intentionally narrower than
+      // path-containment scope.
+      const projectDir = join(tmpDir, "project");
+      mkdirSync(join(projectDir, ".nax", "features", "feat-1"), { recursive: true });
+      _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
+
+      setupRun(
+        [
+          "# Curator Proposals",
+          "## add — Add suggestions",
+          "### .nax/features/feat-1/context.md",
+          "- [x] [HIGH] H1: ship it 🚀 always — stories: US-001",
+          "  _Evidence: n/a_",
+        ].join("\n"),
+      );
+
+      let appendCalled = false;
+      _deps.appendFile = mock(async (p: string, content: string) => {
+        appendCalled = true;
+        await Bun.write(p, content);
+      });
+
+      await curatorCommit({ runId });
+      expect(appendCalled).toBe(true);
+    });
+  });
+
   describe("drops before adds ordering", () => {
     test("applies drop proposals before add proposals", async () => {
       const projectDir = join(tmpDir, "project");

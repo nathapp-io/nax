@@ -308,7 +308,8 @@ export class ContextOrchestrator {
       }
     }
 
-    // Step 2: parallel fetch with timeout — failures return empty, never throw.
+    // Step 2: parallel fetch with timeout — failures return empty, never throw,
+    // except a "static" (rules) provider, which escalates (see catch below).
     // Per-provider status is recorded for manifest auditability (Finding 3).
     const fetchResults = await Promise.all(
       activeProviders.map(async (provider) => {
@@ -336,6 +337,15 @@ export class ContextOrchestrator {
           const durationMs = _orchestratorDeps.now() - providerStart;
           const errMsg = errorMessage(err);
           const status = errMsg.includes("timed out") ? ("timeout" as const) : ("failed" as const);
+
+          // A rules-store failure is a silent fail-open otherwise — see
+          // IContextProvider.fetch (types.ts) for the documented exception.
+          if (provider.kind === "static") {
+            const msg = `Rules provider "${provider.id}" ${status} — aborting rather than proceeding ruleless`;
+            logger.error("context-v2", msg, { storyId: request.storyId, error: errMsg });
+            throw err;
+          }
+
           logger.warn("context-v2", `Provider "${provider.id}" ${status} — skipping`, {
             storyId: request.storyId,
             error: errMsg,

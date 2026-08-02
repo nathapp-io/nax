@@ -9,6 +9,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { NaxError } from "@/errors";
+import { lintForNeutrality } from "../../../src/context/rules/canonical-loader";
 import { withTempDir } from "@test/helpers";
 import {
   neutralizeContent,
@@ -112,6 +113,29 @@ describe("neutralizeContent", () => {
     const { content } = neutralizeContent("\n\n## Style\n\nContent.\n\n");
     expect(content.startsWith("\n")).toBe(false);
     expect(content.endsWith("\n")).toBe(false);
+  });
+
+  test("round-trips clean against the lint table for every banned pattern (migrate<->lint parity)", () => {
+    // Previously neutralizeContent and the linter's BANNED_PATTERNS were two
+    // independent tables that had drifted: migrate never touched AGENTS.md /
+    // GEMINI.md / .codex/ / .gemini/ / <ide_diagnostics>, and its tool-phrasing
+    // match was case-sensitive on the first letter while the linter's was not
+    // — so migrated content could still fail `nax rules lint`. Both now read
+    // from the same NEUTRALITY_RULES table, so this must produce zero
+    // violations for every pattern the linter checks.
+    const dirty = [
+      "<system-reminder>internal</system-reminder>",
+      "<ide_diagnostics>errors</ide_diagnostics>",
+      "See CLAUDE.md, AGENTS.md, and GEMINI.md.",
+      "Rules live in .claude/, .codex/, and .gemini/.",
+      "use the grep tool to search (lowercase, was previously missed)",
+      "IMPORTANT: read this.",
+      "Ship it 🚀",
+    ].join("\n");
+
+    const { content, replacements } = neutralizeContent(dirty);
+    expect(replacements).toBeGreaterThan(0);
+    expect(lintForNeutrality(content, "test.md")).toEqual([]);
   });
 });
 

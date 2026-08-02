@@ -7,9 +7,11 @@
 
 import { readdirSync } from "node:fs";
 import { unlink } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
 import type { NaxConfig } from "../config";
 import { getProjectKey, loadConfig } from "../config";
+import { CANONICAL_RULES_DIR, lintForNeutrality } from "../context/rules/canonical-loader";
+import { NaxError } from "../errors";
 import type { CuratorThresholds } from "../plugins/builtin/curator/heuristics";
 import { runHeuristics } from "../plugins/builtin/curator/heuristics";
 import { renderProposals } from "../plugins/builtin/curator/render";
@@ -248,6 +250,34 @@ export async function curatorStatus(options: CuratorStatusOptions): Promise<void
 
 // ─── curatorCommit ────────────────────────────────────────────────────────────
 
+/** Root namespace every curator proposal target must resolve inside. */
+const CURATOR_TARGET_ROOT = ".nax";
+
+/**
+ * Resolve a proposal's `### <path>` heading to an absolute path, rejecting
+ * anything that escapes the `.nax/` namespace under the project root.
+ *
+ * `canonicalFile` comes from re-parsing `curator-proposals.md` — a file the
+ * operator (or a corrupted run) may have hand-edited — so it is untrusted
+ * input. Built-in heuristics target both `.nax/rules/curator-suggestions.md`
+ * and `.nax/features/<id>/context.md` (see plugins/builtin/curator/heuristics.ts),
+ * so containment is scoped to `.nax/` generally, not `.nax/rules/` alone —
+ * but `join()` on its own would still happily resolve a
+ * `### ../../../etc/whatever` heading outside the project entirely.
+ */
+function resolveCanonicalTargetPath(projectDir: string, canonicalFile: string): string | null {
+  const allowedRoot = resolve(projectDir, CURATOR_TARGET_ROOT);
+  const target = resolve(projectDir, canonicalFile);
+  if (target !== allowedRoot && !target.startsWith(allowedRoot + sep)) return null;
+  return target;
+}
+
+/** Whether a resolved target path falls inside the canonical rules store (`.nax/rules/`). */
+function isWithinCanonicalRulesDir(projectDir: string, targetPath: string): boolean {
+  const rulesRoot = resolve(projectDir, CANONICAL_RULES_DIR);
+  return targetPath === rulesRoot || targetPath.startsWith(rulesRoot + sep);
+}
+
 export async function curatorCommit(options: CuratorCommitOptions): Promise<void> {
   const resolved = await _curatorCmdDeps.resolveProject({ dir: options.project });
   const config = await _curatorCmdDeps.loadConfig(resolved.projectDir);
@@ -271,13 +301,55 @@ export async function curatorCommit(options: CuratorCommitOptions): Promise<void
 
   const modifiedFiles = new Set<string>();
 
+  // Validate ALL proposal target paths before any writes: every `### <path>`
+  // heading must resolve inside .nax/. Re-parsed from a file the operator
+  // may have hand-edited, so it's untrusted — a `..`-escaping heading must
+  // abort the whole commit, not just get skipped.
+  const resolvedTargets = new Map<ParsedProposal, string>();
+  for (const proposal of proposals) {
+    const targetPath = resolveCanonicalTargetPath(resolved.projectDir, proposal.canonicalFile);
+    if (targetPath === null) {
+      throw new NaxError(
+        `Proposal target "${proposal.canonicalFile}" resolves outside ${CURATOR_TARGET_ROOT}/ — abort`,
+        "CURATOR_TARGET_PATH_INVALID",
+        { stage: "curator-commit", canonicalFile: proposal.canonicalFile },
+      );
+    }
+    resolvedTargets.set(proposal, targetPath);
+  }
+
+  // Validate ALL add/advisory content targeting the canonical rules store
+  // before any writes: appending text that fails the neutrality linter (e.g.
+  // an "IMPORTANT:" or emoji surfaced verbatim from a run finding) would
+  // silently break the whole store the next time it loads (the orchestrator
+  // treats that as fatal). Proposals targeting other .nax/ files (e.g.
+  // feature context.md) aren't part of that contract and are left alone.
+  const adds = proposals.filter((p) => p.action === "add" || p.action === "advisory");
+  for (const add of adds) {
+    const targetPath = resolvedTargets.get(add);
+    if (!targetPath || !isWithinCanonicalRulesDir(resolved.projectDir, targetPath)) continue;
+
+    const content = buildAddContent(add);
+    const violations = lintForNeutrality(content, add.canonicalFile);
+    if (violations.length > 0) {
+      const summary = violations.map((v) => `${v.pattern}: "${v.line.slice(0, 80)}"`).join("; ");
+      throw new NaxError(
+        `Proposal for ${add.canonicalFile} fails the neutrality linter (${summary}) — abort`,
+        "CURATOR_CONTENT_LINT_FAILED",
+        { stage: "curator-commit", canonicalFile: add.canonicalFile, violationCount: violations.length },
+      );
+    }
+  }
+
   // Validate all drops before any writes: key token must exist, no overlapping ranges
   const drops = proposals.filter((p) => p.action === "drop");
   const dropFileState = new Map<string, { existing: string; usedLines: Set<number> }>();
   const skippedDrops = new Set<ParsedProposal>();
 
   for (const drop of drops) {
-    const targetPath = join(resolved.projectDir, drop.canonicalFile);
+    // Non-null: every proposal's target path was resolved and validated above.
+    const targetPath = resolvedTargets.get(drop);
+    if (!targetPath) continue;
 
     if (!dropFileState.has(targetPath)) {
       const fileExists = await Bun.file(targetPath).exists();
@@ -323,7 +395,8 @@ export async function curatorCommit(options: CuratorCommitOptions): Promise<void
     if (skippedDrops.has(drop)) {
       continue;
     }
-    const targetPath = join(resolved.projectDir, drop.canonicalFile);
+    const targetPath = resolvedTargets.get(drop);
+    if (!targetPath) continue;
     const existing = await _curatorCmdDeps.readFile(targetPath).catch(() => "");
     const filtered = filterDropContent(existing, drop.description);
     await _curatorCmdDeps.writeFile(targetPath, filtered);
@@ -331,10 +404,10 @@ export async function curatorCommit(options: CuratorCommitOptions): Promise<void
     console.log(`[drop] Applied to ${drop.canonicalFile}`);
   }
 
-  // Apply adds second
-  const adds = proposals.filter((p) => p.action === "add" || p.action === "advisory");
+  // Apply adds second (validated above)
   for (const add of adds) {
-    const targetPath = join(resolved.projectDir, add.canonicalFile);
+    const targetPath = resolvedTargets.get(add);
+    if (!targetPath) continue;
     const content = buildAddContent(add);
     await _curatorCmdDeps.appendFile(targetPath, content);
     modifiedFiles.add(targetPath);

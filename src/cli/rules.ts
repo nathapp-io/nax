@@ -23,7 +23,7 @@
 
 import { mkdir } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { CANONICAL_RULES_DIR, loadCanonicalRules } from "../context/rules/canonical-loader";
+import { CANONICAL_RULES_DIR, NEUTRALITY_RULES, loadCanonicalRules } from "../context/rules/canonical-loader";
 import { NaxError } from "../errors";
 import { errorMessage } from "../utils/errors";
 
@@ -150,13 +150,13 @@ export async function rulesExportCommand(options: RulesExportOptions): Promise<v
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Apply basic neutralization to source content:
- *   - Remove <system-reminder> tags
- *   - Replace "the <Word> tool" → "the <capability>"
- *   - Replace CLAUDE.md references → "project conventions"
- *   - Replace .claude/ directory references → ".nax/rules/"
- *   - Replace IMPORTANT: → "Note:"
- *   - Strip emoji characters
+ * Apply basic neutralization to source content, driven by the SAME
+ * `NEUTRALITY_RULES` table the lint command validates against
+ * (src/context/rules/canonical-loader.ts). Migrate and lint previously kept
+ * two independent pattern lists that drifted — migrated content could still
+ * fail lint (missing AGENTS.md/GEMINI.md/.codex//.gemini//<ide_diagnostics>
+ * handling, case-sensitive tool-phrasing). A single table makes that
+ * impossible by construction.
  *
  * Returns the neutralized content and a count of replacements made.
  */
@@ -164,21 +164,15 @@ export function neutralizeContent(content: string): { content: string; replaceme
   let result = content;
   let replacements = 0;
 
-  const apply = (pattern: RegExp, replacement: string): void => {
-    const matches = [...result.matchAll(pattern)].length;
-    if (matches > 0) {
-      result = result.replace(pattern, replacement);
-      replacements += matches;
+  for (const rule of NEUTRALITY_RULES) {
+    for (const { pattern, replacement } of rule.neutralizeSteps ?? []) {
+      const matches = [...result.matchAll(pattern)].length;
+      if (matches > 0) {
+        result = result.replace(pattern, replacement);
+        replacements += matches;
+      }
     }
-  };
-
-  apply(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "");
-  apply(/<system-reminder>/gi, "");
-  apply(/\bthe ([A-Z][a-zA-Z]+) tool\b/g, "the $1 capability");
-  apply(/CLAUDE\.md/g, "project conventions file");
-  apply(/\.claude\//g, ".nax/rules/");
-  apply(/\bIMPORTANT:/g, "Note:");
-  apply(/\p{Extended_Pictographic}/gu, "");
+  }
 
   return { content: result.trim(), replacements };
 }

@@ -555,6 +555,14 @@ export interface IContextProvider {
    * Fetch context chunks for the given request.
    * Must not throw — return empty chunks array on failure and log internally.
    *
+   * Exception: a `kind: "static"` provider (the canonical rules store) MAY
+   * throw to signal a fail-closed condition — e.g. StaticRulesProvider
+   * re-throws NeutralityLintError. The orchestrator treats that specific
+   * case as fatal to assemble() (see orchestrator.ts fetch loop) instead of
+   * the usual soft-skip, because silently proceeding with zero rules is
+   * worse than aborting the v2 bundle and falling back to the v1 context
+   * path. Every other kind must still honor the "never throw" contract.
+   *
    * Concurrency contract: fetch() must be safe under concurrent invocation with
    * distinct ContextRequest values. The orchestrator calls providers in parallel
    * within a single assemble pass, and a future plugin cache (Finding 5) will
