@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { DebateResult, DebateRunner } from "../../../src/debate";
 import { reviewConfigSelector } from "../../../src/config/selectors";
 import type { NaxRuntime, ReviewAuditDecision } from "../../../src/runtime";
+import { MAX_ACKS } from "@/review";
 import { runSemanticDebate } from "../../../src/review/semantic-debate";
 import type { SemanticReviewConfig } from "../../../src/review/types";
 import type { SemanticStory } from "../../../src/review/types";
@@ -166,4 +167,58 @@ describe("semantic-debate reviewer audit shape (#942 AC-1 / AC-2)", () => {
     }
   });
 
+  test("aggregate acks across proposals are capped, not multiplied by debater count", async () => {
+    // extractAcks caps each response at MAX_ACKS, but debate concatenates every
+    // proposal's acks into one audit record — N debaters could carry N × the
+    // ceiling into every entry. The cap is a bound on what gets persisted, so it
+    // has to hold after the merge too.
+    const acksFor = (debater: string) =>
+      JSON.stringify({
+        passed: true,
+        findings: [],
+        acks: Array.from({ length: MAX_ACKS }, (_, i) => ({
+          priorFinding: `${debater}:src/f${i}.ts:${i}`,
+          status: "addressed",
+        })),
+      });
+
+    const debateResult: DebateResult = {
+      ...makeDebateResult(acksFor("a")),
+      proposals: [
+        { debater: { agent: "claude" }, output: acksFor("a") },
+        { debater: { agent: "claude" }, output: acksFor("b") },
+        { debater: { agent: "claude" }, output: acksFor("c") },
+      ],
+    };
+
+    const agentManager = makeMockAgentManager();
+    const { auditor, decisions: captured } = captureAuditDecisions();
+    decisions = captured;
+    const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
+    createdRuntimes.push(runtime);
+
+    await runSemanticDebate({
+      naxConfig: reviewConfigSelector.select(makeNaxConfig()),
+      runtime,
+      workdir: "/tmp/test",
+      agentManager,
+      featureName: "feat-x",
+      story: STORY,
+      diffMode: "embedded",
+      diff: "some diff",
+      stat: "",
+      semanticConfig: CFG,
+      effectiveRef: "abc123",
+      startTime: Date.now(),
+      prompt: "review this diff",
+      productionExcludePatterns: [],
+      blockingThreshold: undefined,
+      createDebateRunner: () => makeMockDebateRunner(debateResult),
+    });
+
+    const acks = decisions[0]?.acks ?? [];
+    expect(acks).toHaveLength(MAX_ACKS);
+    // Truncation keeps the earliest proposals rather than interleaving.
+    expect(acks[0]?.priorFinding).toStartWith("a:");
+  });
 });

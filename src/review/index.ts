@@ -21,7 +21,7 @@ export * from "./requote-response";
 export * from "./severity";
 export { validateLLMShape, parseLLMResponse } from "./semantic-helpers";
 // Review acknowledgements (#1423) — shared read path for both reviewers.
-export { extractAcks } from "./acks";
+export { extractAcks, MAX_ACKS } from "./acks";
 // Semantic finding taxonomy. `src/prompts/builders/review-builder.ts` must keep
 // using the leaf path (importing this barrel from src/prompts would close a
 // cycle — see that file's header); every other consumer goes through here.
