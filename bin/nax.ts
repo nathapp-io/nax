@@ -1508,12 +1508,17 @@ curator
   .description("Prune old rows from the curator rollup JSONL")
   .option("-p, --project <path>", "Project directory (default: CWD)")
   .option("--keep <N>", "Number of most recent runIds to keep (default: 50)", "50")
+  .option(
+    "--sweep-unattributed",
+    "Also drop rows with no projectKey (pre-#1429 history, unreadable by any project). Machine-wide — affects every project sharing the rollup.",
+  )
   .action(async (options) => {
     const { curatorGc } = await import("../src/commands/curator");
     try {
       await curatorGc({
         project: options.project,
         keep: options.keep !== undefined ? Number.parseInt(options.keep, 10) : undefined,
+        sweepUnattributed: options.sweepUnattributed === true,
       });
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));

@@ -13,6 +13,8 @@ import { getProjectKey, loadConfig } from "../config";
 import type { CuratorThresholds } from "../plugins/builtin/curator/heuristics";
 import { runHeuristics } from "../plugins/builtin/curator/heuristics";
 import { renderProposals } from "../plugins/builtin/curator/render";
+import type { PruneResult, PruneRollupInput } from "../plugins/builtin/curator/rollup-prune";
+import { pruneRollup, scanProjectRunIds } from "../plugins/builtin/curator/rollup-prune";
 import type { Observation } from "../plugins/builtin/curator/types";
 import { curatorRollupPath, globalOutputDir, projectOutputDir } from "../runtime/paths";
 import type { ResolveProjectOptions, ResolvedProject } from "./common";
@@ -38,6 +40,13 @@ export interface CuratorDryrunOptions {
 export interface CuratorGcOptions {
   project?: string;
   keep?: number;
+  /**
+   * Also drop rows carrying no `projectKey` — pre-#1429 history that belongs to
+   * no project and that no reader can ever return (windows filter on
+   * `projectKey`). Opt-in and machine-wide: it deletes rows this project does
+   * not own, so it is never implied by a per-project prune.
+   */
+  sweepUnattributed?: boolean;
 }
 
 // ─── Injectable deps ──────────────────────────────────────────────────────────
@@ -49,6 +58,10 @@ export const _curatorCmdDeps = {
   globalOutputDir: (): string => globalOutputDir(),
   curatorRollupPath: (gDir: string, override?: string): string => curatorRollupPath(gDir, override),
   readFile: async (p: string): Promise<string> => Bun.file(p).text(),
+  fileExists: async (p: string): Promise<boolean> => Bun.file(p).exists(),
+  scanProjectRunIds: (rollupPath: string, projectKey: string): Promise<string[]> =>
+    scanProjectRunIds(rollupPath, projectKey),
+  pruneRollup: (input: PruneRollupInput): Promise<PruneResult> => pruneRollup(input),
   writeFile: async (p: string, content: string): Promise<void> => {
     await Bun.write(p, content);
   },
@@ -402,40 +415,23 @@ export async function curatorGc(options: CuratorGcOptions): Promise<void> {
   const gDir = _curatorCmdDeps.globalOutputDir();
   const rollupPath = _curatorCmdDeps.curatorRollupPath(gDir, config.curator?.rollupPath as string | undefined);
 
-  const rollupText = await _curatorCmdDeps.readFile(rollupPath).catch(() => null);
-  if (rollupText === null) {
+  if (!(await _curatorCmdDeps.fileExists(rollupPath))) {
     console.log(`[gc] No rollup file found at ${rollupPath}. Nothing to prune.`);
     return;
   }
 
-  const lines = rollupText.trim().split("\n").filter(Boolean);
-  const observations = lines.map((l) => JSON.parse(l) as Observation);
-
   // The rollup defaults to ONE global file shared by every project on the
   // machine (#1429), so pruning by global recency lets a busy project evict a
   // quiet one. Only rows this project owns are eligible; a neighbour's rows —
-  // and pre-#1429 rows, which belong to no project — are preserved verbatim.
-  // Retention for those unattributable rows is #1430's problem, not one
-  // project's to decide.
+  // and pre-#1429 rows, which belong to no project — are preserved unless
+  // --sweep-unattributed opts in explicitly.
   const projectKey = getProjectKey(config, resolved.projectDir);
-  const isMine = (obs: Observation): boolean => obs.projectKey === projectKey;
-
-  // Group this project's rows by runId, find max ts per runId
-  const maxTsByRunId = new Map<string, string>();
-  for (const obs of observations) {
-    if (!isMine(obs)) continue;
-    const existing = maxTsByRunId.get(obs.runId);
-    if (!existing || obs.ts > existing) {
-      maxTsByRunId.set(obs.runId, obs.ts);
-    }
-  }
+  const uniqueRunIds = await _curatorCmdDeps.scanProjectRunIds(rollupPath, projectKey);
 
   const keep = options.keep ?? DEFAULT_KEEP;
-  const uniqueRunIds = [...maxTsByRunId.entries()]
-    .sort((a, b) => (a[1] > b[1] ? -1 : a[1] < b[1] ? 1 : 0))
-    .map(([runId]) => runId);
+  const sweep = options.sweepUnattributed === true;
 
-  if (uniqueRunIds.length <= keep) {
+  if (uniqueRunIds.length <= keep && !sweep) {
     console.log(
       `[gc] ${uniqueRunIds.length} unique run(s) for ${projectKey} in rollup — at or below keep=${keep}. Nothing to prune.`,
     );
@@ -443,10 +439,12 @@ export async function curatorGc(options: CuratorGcOptions): Promise<void> {
   }
 
   const keepSet = new Set(uniqueRunIds.slice(0, keep));
-  const filtered = observations.filter((obs) => !isMine(obs) || keepSet.has(obs.runId));
-  const newContent = `${filtered.map((obs) => JSON.stringify(obs)).join("\n")}\n`;
-
-  await _curatorCmdDeps.writeFile(rollupPath, newContent);
+  const result = await _curatorCmdDeps.pruneRollup({
+    rollupPath,
+    projectKey,
+    keepRunIds: keepSet,
+    dropUnattributed: sweep,
+  });
 
   // Delete curator artifacts from per-run directories that are no longer kept
   const outputDir = _curatorCmdDeps.projectOutputDir(projectKey, config.outputDir as string | undefined);
@@ -459,5 +457,17 @@ export async function curatorGc(options: CuratorGcOptions): Promise<void> {
     }
   }
 
-  console.log(`[gc] Pruned rollup to ${keep} most recent runs (was ${uniqueRunIds.length}).`);
+  const dropped = Math.max(0, uniqueRunIds.length - keepSet.size);
+  console.log(
+    `[gc] Pruned rollup for ${projectKey}: kept ${keepSet.size} of ${uniqueRunIds.length} run(s), dropped ${result.dropped} row(s).`,
+  );
+  console.log(
+    `[gc] Preserved ${result.keptOtherProjects} row(s) from other projects and ${result.keptUnattributed} unattributed row(s).`,
+  );
+  if (!sweep && result.keptUnattributed > 0) {
+    console.log(
+      `[gc] ${result.keptUnattributed} unattributed row(s) predate project scoping (#1429) and can never be read back. Run with --sweep-unattributed to drop them machine-wide.`,
+    );
+  }
+  if (dropped === 0 && sweep) console.log("[gc] No run-level pruning was needed; only the unattributed sweep ran.");
 }
