@@ -342,4 +342,43 @@ describe("CostAggregator", () => {
     expect(noOp.byScope()).toEqual({});
     expect(noOp.byCall()).toEqual({});
   });
+
+  // ── #1433: attribution survives to disk ──────────────────────────────────
+  //
+  // The drain path is the seam this repo keeps breaking on: a field is added to
+  // the type and the producer, and nothing checks it actually lands in the file
+  // consumers read. Serialisation is a whole-object JSON.stringify, so a
+  // whitelist regression here would silently un-attribute every row again.
+
+  test("#1433: drain writes model, tier, role and schemaVersion into the JSONL", async () => {
+    await withTempDir(async (dir) => {
+      const drainDir = join(dir, "cost");
+      let captured = "";
+      const origWrite = _costAggDeps.write;
+      _costAggDeps.write = async (_p, data) => {
+        captured = String(data);
+        return 0;
+      };
+      const agg = new CostAggregator("my-run-id", drainDir);
+      agg.record(
+        makeEvent({
+          ts: 1000,
+          model: "haiku",
+          modelTier: "fast",
+          sessionRole: "test-writer",
+          featureName: "kv-cache",
+          schemaVersion: 2,
+        }),
+      );
+      await agg.drain();
+      _costAggDeps.write = origWrite;
+
+      const row = JSON.parse(captured.trim());
+      expect(row.model).toBe("haiku");
+      expect(row.modelTier).toBe("fast");
+      expect(row.sessionRole).toBe("test-writer");
+      expect(row.featureName).toBe("kv-cache");
+      expect(row.schemaVersion).toBe(2);
+    });
+  });
 });

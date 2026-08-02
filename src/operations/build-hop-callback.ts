@@ -247,7 +247,7 @@ export function buildHopCallback(
           // Only report a tier when one actually selected the model. A caller-pinned
           // modelDef bypassed tier resolution, and `effectiveTier` is defaulted, so
           // forwarding it there would record a tier that never applied (#1433).
-          ...(resolvedRunOptions.modelDef ? {} : { modelTier: effectiveTier }),
+          ...(resolvedRunOptions.modelDef !== undefined ? {} : { modelTier: effectiveTier }),
           timeoutSeconds:
             resolvedRunOptions.timeoutSeconds ??
             config.execution?.sessionTimeoutSeconds ??

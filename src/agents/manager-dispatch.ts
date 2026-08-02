@@ -12,8 +12,10 @@
 import type { ResolvedPermissions } from "../config/permissions";
 import type { PipelineStage } from "../config/permissions";
 import type { ModelDef, ModelTier } from "../config/schema";
+import { NaxError } from "../errors";
 import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "../runtime/dispatch-events";
 import type { SessionRole } from "../runtime/session-role";
+import { errorMessage } from "../utils/errors";
 import type { RunAsSessionOpts } from "./manager-types";
 import type { CompleteOptions, SessionHandle, TurnResult } from "./types";
 
@@ -126,9 +128,8 @@ export function buildDispatchErrorEvent(input: {
   agentName: string;
   stage: PipelineStage;
   storyId?: string;
+  /** The thrown value. Code and message are derived here so both call sites agree. */
   error: unknown;
-  errorCode: string;
-  errorMessage: string;
   prompt?: string;
   resolvedPermissions: ResolvedPermissions;
   callId?: string;
@@ -141,8 +142,8 @@ export function buildDispatchErrorEvent(input: {
     agentName: input.agentName,
     stage: input.stage,
     storyId: input.storyId,
-    errorCode: input.errorCode,
-    errorMessage: input.errorMessage,
+    errorCode: input.error instanceof NaxError ? input.error.code : "DISPATCH_ERROR",
+    errorMessage: errorMessage(input.error),
     prompt: input.prompt,
     durationMs: Date.now() - input.startedAt,
     timestamp: Date.now(),
