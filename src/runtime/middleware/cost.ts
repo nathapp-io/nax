@@ -35,6 +35,7 @@ export function attachCostSubscriber(bus: IDispatchEventBus, aggregator: ICostAg
       // resolved model, but that is now a real signal rather than a constant.
       model: event.model ?? "unknown",
       ...(event.modelTier !== undefined ? { modelTier: event.modelTier } : {}),
+      ...(event.profile !== undefined ? { profile: event.profile } : {}),
       stage: event.stage,
       // Both already on the event and previously discarded. sessionRole is the
       // sub-stage attribution key: `stage` alone collapses 23 roles into 6 buckets.

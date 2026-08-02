@@ -513,4 +513,21 @@ describe("dispatch events carry the model (#1433)", () => {
     expect(received[0]?.model).toBeUndefined();
     expect(received[0]?.modelTier).toBeUndefined();
   });
+
+  test("stamps the resolved run profile from config", async () => {
+    const bus = new DispatchEventBus();
+    const manager = new AgentManager({ ...DEFAULT_CONFIG, profile: "cc-acceptance" }, undefined, {
+      sendPrompt: mock(async () => makeTurnResult("hello")),
+      dispatchEvents: bus,
+    });
+
+    const received: SessionTurnDispatchEvent[] = [];
+    bus.onDispatch((e) => {
+      if (e.kind === "session-turn") received.push(e);
+    });
+
+    await manager.runAsSession("claude", makeHandle(), "p", { pipelineStage: "run" });
+
+    expect(received[0]?.profile).toBe("cc-acceptance");
+  });
 });

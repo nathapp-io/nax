@@ -15,6 +15,12 @@ export interface CostEvent {
   readonly model: string;
   /** Tier the model resolved from, when one selected it. Absent for pinned models. */
   readonly modelTier?: string;
+  /**
+   * Resolved run-profile chain ("cc-acceptance", "a+b", "default"). Without it a
+   * row cannot distinguish a deliberate profile pin from a stage ignoring its
+   * configured tier — profiles live outside the run artifacts entirely.
+   */
+  readonly profile?: string;
   readonly stage?: string;
   /**
    * Session role (`test-writer`, `implementer`, `acceptance-gen`, …). The

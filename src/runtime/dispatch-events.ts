@@ -28,6 +28,13 @@ export interface DispatchEventBase {
   readonly model?: string;
   /** Tier `model` resolved from, when it came from one. Attribution only. */
   readonly modelTier?: string;
+  /**
+   * Resolved run-profile chain as a display string ("cc-acceptance", "a+b", or
+   * "default"). Profiles repoint agent and model per stage but appear nowhere
+   * else in run artifacts, so without this a cost row cannot distinguish a
+   * deliberate model pin from a stage silently ignoring its configured tier.
+   */
+  readonly profile?: string;
   readonly stage: PipelineStage;
   readonly storyId?: string;
   readonly featureName?: string;

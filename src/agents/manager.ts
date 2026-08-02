@@ -694,6 +694,7 @@ export class AgentManager implements IAgentManager {
         stage,
         opts,
         resolvedPermissions,
+        profile: this._config.profile,
         startedAt: start,
       });
       this._dispatchEvents.emitDispatch(event);
@@ -743,6 +744,7 @@ export class AgentManager implements IAgentManager {
         tokenUsage: outcome.result.tokenUsage,
         estimatedCostUsd: outcome.result.estimatedCostUsd,
         exactCostUsd: outcome.result.exactCostUsd,
+        profile: this._config.profile,
         startedAt: start,
       });
       this._dispatchEvents.emitDispatch(event);

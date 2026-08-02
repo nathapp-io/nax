@@ -50,6 +50,8 @@ export function buildSessionTurnEvent(input: {
   stage: PipelineStage;
   opts: RunAsSessionOpts;
   resolvedPermissions: ResolvedPermissions;
+  /** Resolved profile-chain display string from config; "default" when none. */
+  profile?: string;
   startedAt: number;
 }): SessionTurnDispatchEvent {
   const { handle, result, opts, startedAt } = input;
@@ -61,6 +63,7 @@ export function buildSessionTurnEvent(input: {
     response: result.output,
     agentName: input.agentName,
     ...modelAttribution(handle),
+    ...(input.profile !== undefined ? { profile: input.profile } : {}),
     stage: input.stage,
     storyId: opts.storyId,
     featureName: opts.featureName,
@@ -96,6 +99,8 @@ export function buildCompleteEvent(input: {
   tokenUsage: TurnResult["tokenUsage"];
   estimatedCostUsd?: number;
   exactCostUsd?: number;
+  /** Resolved profile-chain display string from config; "default" when none. */
+  profile?: string;
   startedAt: number;
 }): CompleteDispatchEvent {
   const { options } = input;
@@ -107,6 +112,7 @@ export function buildCompleteEvent(input: {
     response: input.response,
     agentName: input.agentName,
     ...modelAttribution(options),
+    ...(input.profile !== undefined ? { profile: input.profile } : {}),
     stage: input.stage,
     storyId: options.storyId,
     featureName: options.featureName,

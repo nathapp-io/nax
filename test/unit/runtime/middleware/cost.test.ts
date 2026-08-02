@@ -380,4 +380,29 @@ describe("attachCostSubscriber", () => {
     expect(errors[0].kind).toBe("error");
     expect(errors[0].schemaVersion).toBe(COST_ROW_SCHEMA_VERSION);
   });
+
+  test("#1433: records the active run profile", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    // Profiles repoint agent/model per stage and appear nowhere else in run
+    // artifacts, so a Sonnet-priced row under a "fast" config is indistinguishable
+    // from a tier bug without this.
+    bus.emitDispatch(makeSessionTurnEvent({ model: "sonnet", profile: "cc-acceptance" }));
+
+    expect(recorded[0].profile).toBe("cc-acceptance");
+  });
+
+  test("#1433: omits profile when the dispatch carries none", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ profile: undefined }));
+
+    expect("profile" in recorded[0]).toBe(false);
+  });
 });

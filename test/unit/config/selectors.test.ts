@@ -19,11 +19,14 @@ import type { DebateConfig } from "@/config/selectors";
 
 describe("ConfigSelector — Phase 1 selectors", () => {
   describe("new selectors", () => {
-    test("agentManagerConfigSelector picks agent and execution", () => {
+    test("agentManagerConfigSelector picks agent, execution and profile", () => {
       const slice = agentManagerConfigSelector.select(DEFAULT_CONFIG);
       expect(slice).toHaveProperty("agent");
       expect(slice).toHaveProperty("execution");
-      expect(Object.keys(slice).sort()).toEqual(["agent", "execution"]);
+      // #1433 — AgentManager stamps the resolved profile onto dispatch events so
+      // cost rows record which overlay was active.
+      expect(slice).toHaveProperty("profile");
+      expect(Object.keys(slice).sort()).toEqual(["agent", "execution", "profile"]);
     });
 
     test.each([
