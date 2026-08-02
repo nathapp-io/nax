@@ -181,7 +181,7 @@ Phase 7 of the spec-review skill already bans `[grep]`/`[file]`/`[verbatim]` ACs
 | 7 | Reviewer `acks` channel | **shipped** — [#1426](https://github.com/nathapp-io/nax/pull/1426) |
 | 9 | Chunk token accounting | **shipped** — [#1426](https://github.com/nathapp-io/nax/pull/1426) |
 | 4 | Spec-review data-literal check | open — [spec-kit#18](https://github.com/nathapp-io/nax-spec-kit-skills/issues/18) |
-| 8 | Acceptance retry tail | open, diagnostic — [#1424](https://github.com/nathapp-io/nax/issues/1424) |
+| 8 | Acceptance retry tail | **dissolved** — the metric was not a retry count; [#1424](https://github.com/nathapp-io/nax/issues/1424) closed, see "Where to pick up" |
 | 10 | Curator loop | counts **shipped** ([#1427](https://github.com/nathapp-io/nax/pull/1427) + [#1428](https://github.com/nathapp-io/nax/pull/1428)); recall re-scoped — [#1422](https://github.com/nathapp-io/nax/issues/1422), §12 |
 | 3b | Non-productive-iteration bail | **withdrawn** — §10 |
 
@@ -273,3 +273,46 @@ Observations now carry `projectKey` (schemaVersion 3) and readers filter on it. 
 **Consequence worth stating plainly:** this does not shrink an existing rollup. Almost all 648 MB of it is unattributable pre-#1429 rows, now deliberately preserved. Measured against the real file, a window read escalates to the ceiling and returns 0 runs in 229 ms — correct, bounded, and empty until a project accumulates new history. Reclaiming that space needs the retention decision and the streaming rewrite in #1430.
 
 **Method note.** Both defects were invisible to a test file written specifically to cover this seam (`curator-seam.test.ts`, added for the #1428 regression), because every test built a small single-project rollup in a temp dir. Neither a shared multi-project file nor a file larger than the tail read existed anywhere in the suite. That is the third time this month the same shape has appeared — the type was wired, the producer was not, and the tests sat on one side of the seam. Self-review of the fix then found three more defects in the new code, including a zero-length tail read that spun forever; they are recorded in the PR.
+
+## Where to pick up (2026-08-02)
+
+> Deliberately unnumbered: this section and the acceptance-retry correction land on separate branches, so a fixed section number would dangle depending on merge order. Everything below references issues, not sections.
+
+Written so a fresh session can resume without re-deriving anything. Read this first — three of the report's quantitative claims have now failed on contact with the artifacts, and the common cause is the same: trusting a telemetry field's name.
+
+**Correction carried by [#1424](https://github.com/nathapp-io/nax/issues/1424) (closed as dissolved).** §4's acceptance retry tail does not exist. `verdict.retries` was emitting the hardening pass's promoted-AC count, not a retry count: reported max 15, real max 2, and 116 of 136 features reported a number that was not their retry count. The worst "13-retry" feature passed acceptance on its first attempt with zero failed ACs. Fixed on `fix/acceptance-verdict-retries-field`.
+
+### Ranked next steps
+
+| # | Work | Why it is ranked here | State |
+|--:|:---|:---|:---|
+| 1 | **Cost-ledger attribution** — [#1433](https://github.com/nathapp-io/nax/issues/1433) | Prerequisite for every other cost question, including this report's own August measurement plan. `model` was `"unknown"` on 100% of July spend and `sessionRole` absent on all of it, across all six stages. | **implemented** on `feat/cost-ledger-attribution` (unmerged) |
+| 2 | Acceptance generation: cache economics | 32% of generation spend is cacheWrite (19.31M tokens), because `acceptanceGenerateOp` is `session: { lifetime: "fresh" }` and every package group rebuilds cache from scratch. Independent of model tier; does not touch generation quality. | not started |
+| 3 | Re-derive rectification's breakdown once `sessionRole` lands | At 44.7% of stage cost it is the only stage where a 10% win outweighs all of acceptance — and it is currently 100% unattributable below the stage level. | blocked on #1 |
+| 4 | Acceptance generation: 34% excess calls | 409 generation calls against a structural floor of 271 (one per package group), across 61 features, with ~zero regeneration log lines to explain it. Mechanism unresolved. | not started |
+| 5 | Curator gc — [#1430](https://github.com/nathapp-io/nax/issues/1430) | Unblocked by #1432 but needs a retention decision first (auto-prune vs documented bound; what happens to ~648 MB of unattributable pre-#1429 rows). | awaiting decision |
+
+Also open, unchanged: [spec-kit#18](https://github.com/nathapp-io/nax-spec-kit-skills/issues/18) (spec-review data-literal check) and [#1422](https://github.com/nathapp-io/nax/issues/1422) (curator H1 identity-key recall, needs August data).
+
+[#1424](https://github.com/nathapp-io/nax/issues/1424) is **closed as dissolved** — see the correction above.
+
+### What acceptance spend actually is
+
+Derived by joining cost rows to `prompt-audit/` transcripts on `runId` + nearest timestamp, because `sessionRole` is not on the row (#1433):
+
+| sub-activity | cost | share | calls | output tok/call |
+|:---|---:|---:|---:|---:|
+| generation | $231.40 | **71.3%** | 324 | 18,112 |
+| diagnose | $49.54 | 15.3% | 312 | 2,153 |
+| source-fix | $14.65 | 4.5% | 24 | 7,917 |
+| hardening | $13.39 | 4.1% | 53 | 4,674 |
+| other | $11.80 | 3.6% | 36 | 2,022 |
+| ac-refine | $3.70 | 1.1% | 709 | 1,289 |
+
+Acceptance is output-bound one-shot generation, not a retry loop. §4's framing had it backwards.
+
+### Two traps for whoever picks this up
+
+**Run profiles are invisible in run artifacts.** `~/.nax/profiles/*.json` repoint agent and model per stage, and nothing in `cost/`, `prompt-audit/` or the feature run logs records which profile was active. Acceptance generation reconciles to Sonnet pricing while `acceptance.model` resolves to `"fast"` → haiku; that is not a bug, it is `cc-acceptance.json` pinning `generateModel: { agent: "claude", model: "balanced" }` deliberately. Check the profiles before concluding a stage uses the wrong model. Recording the active profile is item 5 of #1433's proposal list.
+
+**Two stages are majority-estimated.** `review` is 60% estimate-derived and `plan` is 63%, concentrated in the one agent that never returns a wire-exact cost. The estimator runs 0.4x aggregate and up to 21x off per row, so those two rows of §1's table — including "plan is nearly free" — are not reliable in either direction. The acceptance figures above are ~100% wire-exact and safe.
