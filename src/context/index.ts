@@ -30,6 +30,7 @@ export {
 export { estimateTokens } from "../optimizer/types";
 export { ContextOrchestrator } from "./engine";
 export type { AdapterFailure } from "./engine/types";
+export { NeutralityLintError } from "./rules/canonical-loader";
 
 export {
   generateTestCoverageSummary,

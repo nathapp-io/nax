@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { ContextOrchestrator, _orchestratorDeps } from "../../../../src/context/engine/orchestrator";
 import { QUERY_NEIGHBOR_DESCRIPTOR, QUERY_FEATURE_CONTEXT_DESCRIPTOR } from "../../../../src/context/engine/pull-tools";
+import { NeutralityLintError } from "@/context";
 import type { ContextRequest, IContextProvider, ContextProviderResult } from "../../../../src/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,6 +138,43 @@ describe("ContextOrchestrator.assemble()", () => {
     const orch = new ContextOrchestrator([timeoutProvider, goodProvider]);
     const bundle = await orch.assemble(BASE_REQUEST);
     // Good provider still works
+    expect(bundle.chunks.some((c) => c.id === "good:1")).toBe(true);
+  });
+
+  test("NeutralityLintError from a rules provider aborts assembly instead of silently dropping rules", async () => {
+    // A neutrality-lint failure is special: proceeding means the run gets
+    // zero rules chunks, silently. This must abort assemble() so callers
+    // (stage-assembler.ts / pipeline/stages/context.ts) can fall back to the
+    // v1 context path instead of continuing ruleless in v2.
+    const failingRules: IContextProvider = {
+      id: "static-rules",
+      kind: "static",
+      fetch: async () => {
+        throw new NeutralityLintError([{ file: "x.md", lineNumber: 1, line: "IMPORTANT:", ruleId: "important-shouting", pattern: "shouting-style IMPORTANT:" }]);
+      },
+    };
+    const goodProvider = makeProvider("good", makeChunkResult({ id: "good:1" }));
+    const orch = new ContextOrchestrator([failingRules, goodProvider]);
+    await expect(
+      orch.assemble({ ...BASE_REQUEST, providerIds: [...(BASE_REQUEST.providerIds ?? []), "static-rules"] }),
+    ).rejects.toThrow(NeutralityLintError);
+  });
+
+  test("a non-lint error (e.g. timeout) from a static-kind provider still soft-skips like any other provider", async () => {
+    // Escalation is scoped to NeutralityLintError specifically, not to
+    // `kind: "static"` generally — a static provider timeout or transient
+    // I/O error should degrade gracefully, not take down the whole bundle.
+    const flakyRules: IContextProvider = {
+      id: "static-rules",
+      kind: "static",
+      fetch: async () => { throw new Error("simulated I/O error"); },
+    };
+    const goodProvider = makeProvider("good", makeChunkResult({ id: "good:1" }));
+    const orch = new ContextOrchestrator([flakyRules, goodProvider]);
+    const bundle = await orch.assemble({
+      ...BASE_REQUEST,
+      providerIds: [...(BASE_REQUEST.providerIds ?? []), "static-rules"],
+    });
     expect(bundle.chunks.some((c) => c.id === "good:1")).toBe(true);
   });
 

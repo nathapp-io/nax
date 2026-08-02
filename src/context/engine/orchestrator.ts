@@ -16,6 +16,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { NaxError } from "../../errors";
 import { getLogger } from "../../logger";
 import { errorMessage } from "../../utils/errors";
+import { NeutralityLintError } from "../rules/canonical-loader";
 import { AGENT_PROFILES, getAgentProfile } from "./agent-profiles";
 import { renderForAgent } from "./agent-renderer";
 import { dedupeChunks } from "./dedupe";
@@ -308,8 +309,9 @@ export class ContextOrchestrator {
       }
     }
 
-    // Step 2: parallel fetch with timeout — failures return empty, never throw.
-    // Per-provider status is recorded for manifest auditability (Finding 3).
+    // Step 2: parallel fetch with timeout — failures return empty, never throw,
+    // except a NeutralityLintError, which escalates (see catch below). Per-
+    // provider status is recorded for manifest auditability (Finding 3).
     const fetchResults = await Promise.all(
       activeProviders.map(async (provider) => {
         const providerStart = _orchestratorDeps.now();
@@ -336,6 +338,16 @@ export class ContextOrchestrator {
           const durationMs = _orchestratorDeps.now() - providerStart;
           const errMsg = errorMessage(err);
           const status = errMsg.includes("timed out") ? ("timeout" as const) : ("failed" as const);
+
+          // Escalate on THIS error type only (see IContextProvider.fetch in
+          // types.ts) — not `provider.kind === "static"` generally, since a
+          // static provider timeout/IO error should still soft-skip.
+          if (err instanceof NeutralityLintError) {
+            const msg = `Rules provider "${provider.id}" failed neutrality lint — escalating`;
+            logger.error("context-v2", msg, { storyId: request.storyId, error: errMsg });
+            throw err;
+          }
+
           logger.warn("context-v2", `Provider "${provider.id}" ${status} — skipping`, {
             storyId: request.storyId,
             error: errMsg,

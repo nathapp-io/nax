@@ -74,25 +74,87 @@ export const _canonicalLoaderDeps = {
 // Neutrality linter
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface BannedPattern {
-  id: string;
-  regex: RegExp;
-  description: string;
+interface NeutralizeStep {
+  /** Global regex applied across the full file content (not just one line). */
+  pattern: RegExp;
+  replacement: string;
 }
 
-const BANNED_PATTERNS: BannedPattern[] = [
-  { id: "xml-tag", regex: /<system-reminder>|<ide_diagnostics>/i, description: "agent-specific XML tag" },
-  { id: "claude-reference", regex: /CLAUDE\.md/, description: "agent-specific file reference CLAUDE.md" },
-  { id: "codex-reference", regex: /AGENTS\.md/, description: "agent-specific file reference AGENTS.md" },
-  { id: "gemini-reference", regex: /GEMINI\.md/, description: "agent-specific file reference GEMINI.md" },
-  { id: "agent-directory", regex: /\.claude\/|\.codex\/|\.gemini\//, description: "agent-specific directory path" },
+interface NeutralityRule {
+  id: string;
+  /** Per-line test regex used by the linter — no /g flag (see lintForNeutrality). */
+  regex: RegExp;
+  description: string;
+  /**
+   * How `nax rules migrate` / `neutralizeContent` auto-fixes a match. Absent
+   * for patterns with no safe automatic fix.
+   */
+  neutralizeSteps?: NeutralizeStep[];
+}
+
+/**
+ * Single source of truth for what the neutrality linter bans AND how
+ * `nax rules migrate` auto-fixes it. Previously `lintForNeutrality` (here)
+ * and `neutralizeContent` (src/cli/rules.ts) maintained two independent
+ * pattern tables that had drifted — migrate didn't neutralize AGENTS.md /
+ * GEMINI.md / .codex/ / .gemini/ / <ide_diagnostics> references, and its
+ * tool-phrasing match was case-sensitive on the first letter while the
+ * linter's was not — so migrated content could still fail lint.
+ */
+export const NEUTRALITY_RULES: NeutralityRule[] = [
+  {
+    id: "xml-tag",
+    regex: /<system-reminder>|<ide_diagnostics>/i,
+    description: "agent-specific XML tag",
+    neutralizeSteps: [
+      { pattern: /<system-reminder>[\s\S]*?<\/system-reminder>/gi, replacement: "" },
+      { pattern: /<system-reminder>/gi, replacement: "" },
+      { pattern: /<ide_diagnostics>[\s\S]*?<\/ide_diagnostics>/gi, replacement: "" },
+      { pattern: /<ide_diagnostics>/gi, replacement: "" },
+    ],
+  },
+  {
+    id: "claude-reference",
+    regex: /CLAUDE\.md/,
+    description: "agent-specific file reference CLAUDE.md",
+    neutralizeSteps: [{ pattern: /CLAUDE\.md/g, replacement: "project conventions file" }],
+  },
+  {
+    id: "codex-reference",
+    regex: /AGENTS\.md/,
+    description: "agent-specific file reference AGENTS.md",
+    neutralizeSteps: [{ pattern: /AGENTS\.md/g, replacement: "project conventions file" }],
+  },
+  {
+    id: "gemini-reference",
+    regex: /GEMINI\.md/,
+    description: "agent-specific file reference GEMINI.md",
+    neutralizeSteps: [{ pattern: /GEMINI\.md/g, replacement: "project conventions file" }],
+  },
+  {
+    id: "agent-directory",
+    regex: /\.claude\/|\.codex\/|\.gemini\//,
+    description: "agent-specific directory path",
+    neutralizeSteps: [{ pattern: /\.claude\/|\.codex\/|\.gemini\//g, replacement: ".nax/rules/" }],
+  },
   {
     id: "tool-phrasing",
     regex: /\bthe [A-Za-z][A-Za-z0-9_-]* tool\b/i,
     description: "agent-specific tool-name phrasing",
+    neutralizeSteps: [{ pattern: /\bthe ([A-Za-z][A-Za-z0-9_-]*) tool\b/gi, replacement: "the $1 capability" }],
   },
-  { id: "important-shouting", regex: /\bIMPORTANT:/, description: "shouting-style IMPORTANT:" },
-  { id: "emoji", regex: /\p{Extended_Pictographic}/u, description: "emoji character" },
+  {
+    id: "important-shouting",
+    regex: /\bIMPORTANT:/,
+    description: "shouting-style IMPORTANT:",
+    neutralizeSteps: [{ pattern: /\bIMPORTANT:/g, replacement: "Note:" }],
+  },
+  {
+    id: "emoji",
+    regex: /\p{Extended_Pictographic}/u,
+    description: "emoji character",
+    neutralizeSteps: [{ pattern: /\p{Extended_Pictographic}/gu, replacement: "" }],
+  },
 ];
 
 const FRONTMATTER_PRIORITY_DEFAULT = 100;
@@ -134,7 +196,7 @@ export function lintForNeutrality(content: string, fileName: string): Neutrality
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
     const allowList = parseRuleAllowMarker(line);
-    for (const { id, regex, description } of BANNED_PATTERNS) {
+    for (const { id, regex, description } of NEUTRALITY_RULES) {
       if (allowList.has(id)) continue;
       if (regex.test(line)) {
         violations.push({

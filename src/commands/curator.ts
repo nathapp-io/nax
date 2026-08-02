@@ -7,9 +7,10 @@
 
 import { readdirSync } from "node:fs";
 import { unlink } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
 import type { NaxConfig } from "../config";
 import { getProjectKey, loadConfig } from "../config";
+import { CANONICAL_RULES_DIR, lintForNeutrality } from "../context/rules/canonical-loader";
 import type { CuratorThresholds } from "../plugins/builtin/curator/heuristics";
 import { runHeuristics } from "../plugins/builtin/curator/heuristics";
 import { renderProposals } from "../plugins/builtin/curator/render";
@@ -248,6 +249,45 @@ export async function curatorStatus(options: CuratorStatusOptions): Promise<void
 
 // ─── curatorCommit ────────────────────────────────────────────────────────────
 
+/**
+ * Shapes a proposal's `### <path>` heading is allowed to take, matched
+ * against the RESOLVED path relative to the project root (never the raw
+ * heading text — `resolve()` collapses any `..` first, so a heading like
+ * `.nax/rules/../x.md` is judged on where it actually lands, `.nax/x.md`,
+ * which matches neither shape below and is rejected).
+ *
+ * These are exactly the two shapes built-in heuristics emit today (see
+ * plugins/builtin/curator/heuristics.ts): `.nax/rules/<file>.md` (one
+ * optional subdirectory, matching canonical-loader.ts's own depth-2 limit)
+ * and `.nax/features/<id>/context.md`.
+ */
+const CURATOR_TARGET_SHAPES = [/^\.nax\/rules\/([^/]+\/)?[^/]+\.md$/, /^\.nax\/features\/[^/]+\/context\.md$/];
+
+/**
+ * Resolve a proposal's `### <path>` heading to an absolute path, rejecting
+ * anything outside the allow-listed target shapes.
+ *
+ * `canonicalFile` comes from re-parsing `curator-proposals.md` — a file the
+ * operator (or a corrupted run) may have hand-edited — so it is untrusted
+ * input. `join()`/`resolve()` alone would happily resolve a
+ * `### ../../../etc/whatever` heading outside the project entirely; this
+ * additionally confines targets to the two shapes curator actually writes.
+ */
+function resolveCanonicalTargetPath(projectDir: string, canonicalFile: string): string | null {
+  const target = resolve(projectDir, canonicalFile);
+  const root = resolve(projectDir);
+  if (target !== root && !target.startsWith(root + sep)) return null; // escaped the project
+
+  const relative = target.slice(root.length + 1).replaceAll(sep, "/");
+  return CURATOR_TARGET_SHAPES.some((shape) => shape.test(relative)) ? target : null;
+}
+
+/** Whether a resolved target path falls inside the canonical rules store (`.nax/rules/`). */
+function isWithinCanonicalRulesDir(projectDir: string, targetPath: string): boolean {
+  const rulesRoot = resolve(projectDir, CANONICAL_RULES_DIR);
+  return targetPath === rulesRoot || targetPath.startsWith(rulesRoot + sep);
+}
+
 export async function curatorCommit(options: CuratorCommitOptions): Promise<void> {
   const resolved = await _curatorCmdDeps.resolveProject({ dir: options.project });
   const config = await _curatorCmdDeps.loadConfig(resolved.projectDir);
@@ -270,14 +310,60 @@ export async function curatorCommit(options: CuratorCommitOptions): Promise<void
   }
 
   const modifiedFiles = new Set<string>();
+  // Proposals dropped from this commit for reasons other than the existing
+  // "no content to drop" skip below — invalid target path, or (for adds
+  // targeting the rules store) failing the neutrality linter. These skip
+  // rather than abort the whole commit: unlike the drop-conflict checks
+  // further down (which indicate genuine data corruption risk), an invalid
+  // heading or a stray "the X tool" phrase in ONE proposal's free-text
+  // description shouldn't block every other selected proposal in the batch.
+  const skippedProposals = new Set<ParsedProposal>();
+
+  // Resolve every proposal's target path up front; invalid targets are
+  // skipped, not applied. Re-parsed from a file the operator may have
+  // hand-edited, so it's untrusted.
+  const resolvedTargets = new Map<ParsedProposal, string>();
+  for (const proposal of proposals) {
+    const targetPath = resolveCanonicalTargetPath(resolved.projectDir, proposal.canonicalFile);
+    if (targetPath === null) {
+      console.log(
+        `[skip] Proposal target "${proposal.canonicalFile}" is not an allowed curator target (.nax/rules/*.md or .nax/features/<id>/context.md) — skipping.`,
+      );
+      skippedProposals.add(proposal);
+      continue;
+    }
+    resolvedTargets.set(proposal, targetPath);
+  }
+
+  // Lint add/advisory content targeting the canonical rules store before any
+  // writes: appending text that fails the neutrality linter (e.g. an
+  // "IMPORTANT:" or emoji surfaced verbatim from a run finding) would break
+  // the whole store the next time it loads (the orchestrator now treats
+  // that as fatal). Proposals targeting other allowed files (e.g. feature
+  // context.md) aren't part of that contract and are left alone.
+  for (const add of proposals) {
+    if (skippedProposals.has(add) || (add.action !== "add" && add.action !== "advisory")) continue;
+    const targetPath = resolvedTargets.get(add);
+    if (!targetPath || !isWithinCanonicalRulesDir(resolved.projectDir, targetPath)) continue;
+
+    const content = buildAddContent(add);
+    const violations = lintForNeutrality(content, add.canonicalFile);
+    if (violations.length > 0) {
+      const summary = violations.map((v) => `${v.pattern}: "${v.line.slice(0, 80)}"`).join("; ");
+      console.log(`[skip] Proposal for ${add.canonicalFile} fails the neutrality linter (${summary}) — skipping.`);
+      skippedProposals.add(add);
+    }
+  }
 
   // Validate all drops before any writes: key token must exist, no overlapping ranges
-  const drops = proposals.filter((p) => p.action === "drop");
+  const drops = proposals.filter((p) => p.action === "drop" && !skippedProposals.has(p));
   const dropFileState = new Map<string, { existing: string; usedLines: Set<number> }>();
   const skippedDrops = new Set<ParsedProposal>();
 
   for (const drop of drops) {
-    const targetPath = join(resolved.projectDir, drop.canonicalFile);
+    // Non-null: every proposal's target path was resolved and validated above.
+    const targetPath = resolvedTargets.get(drop);
+    if (!targetPath) continue;
 
     if (!dropFileState.has(targetPath)) {
       const fileExists = await Bun.file(targetPath).exists();
@@ -323,7 +409,8 @@ export async function curatorCommit(options: CuratorCommitOptions): Promise<void
     if (skippedDrops.has(drop)) {
       continue;
     }
-    const targetPath = join(resolved.projectDir, drop.canonicalFile);
+    const targetPath = resolvedTargets.get(drop);
+    if (!targetPath) continue;
     const existing = await _curatorCmdDeps.readFile(targetPath).catch(() => "");
     const filtered = filterDropContent(existing, drop.description);
     await _curatorCmdDeps.writeFile(targetPath, filtered);
@@ -331,10 +418,11 @@ export async function curatorCommit(options: CuratorCommitOptions): Promise<void
     console.log(`[drop] Applied to ${drop.canonicalFile}`);
   }
 
-  // Apply adds second
-  const adds = proposals.filter((p) => p.action === "add" || p.action === "advisory");
+  // Apply adds second (validated above)
+  const adds = proposals.filter((p) => (p.action === "add" || p.action === "advisory") && !skippedProposals.has(p));
   for (const add of adds) {
-    const targetPath = join(resolved.projectDir, add.canonicalFile);
+    const targetPath = resolvedTargets.get(add);
+    if (!targetPath) continue;
     const content = buildAddContent(add);
     await _curatorCmdDeps.appendFile(targetPath, content);
     modifiedFiles.add(targetPath);
