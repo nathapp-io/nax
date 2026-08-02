@@ -75,7 +75,7 @@ is unaffected: `src/agents/acp/adapter.ts:249-252` (cost log), `src/metrics/trac
 - **File-size ratchet (hard gate):** `src/agents/acp/spawn-client.ts` is grandfathered at exactly **737 lines** in `scripts/baselines/file-sizes-baseline.json`. It **must not exceed 737 lines** at any commit. New source files must be under **600** lines; new test files under **800**.
 - **The line budget is tight and was computed in advance.** Start 737, Task 2 frees ~30 (→ ~708), Task 3 adds ~13 (→ ~721), Task 4 adds ~5 (→ ~726). That ~11-line margin is why `applyReasoningEffort` lives in its own module instead of as a method on `SpawnAcpClient` — inlining it costs ~25 lines and **breaches the ceiling**. Do not "simplify" it back into `spawn-client.ts`.
 - **Do not run `bun run check:file-sizes:update`.** The ratchet is meant to fall, not rise. Task 2 exists to create headroom instead.
-- **Never run bare `bun test`.** A PreToolUse hook (`.claude/hooks/guard-bun-test.ts`) blocks it. Scoped runs must be `timeout`-wrapped, per `.claude/rules/testing-commands.md`.
+- **Never run bare `bun test`.** Scoped runs must be `timeout`-wrapped, per `.claude/rules/testing-commands.md`.
 - **Bun-native only.** `Bun.file()`, `Bun.write()`, `Bun.spawn()`, `Bun.sleep()`. No Node.js `fs`/`child_process`.
 - **No `console.log` in `src/`** — use the project logger. (`bun test` also swallows `console.log` here, so debug by asserting or writing to a file.)
 - **Logging:** structured, no emojis, `storyId` as the first key in the data object.

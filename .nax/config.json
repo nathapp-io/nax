@@ -153,5 +153,13 @@
   },
   "curator": {
     "enabled": true
+  },
+  "context": {
+    "v2": {
+      "enabled": true,
+      "rules": {
+        "budgetTokens": 20000
+      }
+    }
   }
 }
