@@ -61,6 +61,31 @@ describe("packChunks — greedy", () => {
     expect(packedIds).toContain("mid:1");
     expect(result.budgetExcludedIds).toContain("low:1");
   });
+
+  test("non-floor chunks are ordered by score density (score/tokens), not raw score", () => {
+    // "bulky" has higher raw score (0.9) but far lower density (0.9/900 = 0.001)
+    // than "dense" (0.5/100 = 0.005). A raw-score sort would pack "bulky" first
+    // and exclude "dense"; a density sort does the opposite.
+    const chunks = [
+      makeScored({ id: "bulky", kind: "session", score: 0.9, tokens: 900 }),
+      makeScored({ id: "dense", kind: "session", score: 0.5, tokens: 100 }),
+    ];
+    const result = packChunks(chunks, 900);
+    expect(result.packed.map((c) => c.id)).toEqual(["dense"]);
+    expect(result.budgetExcludedIds).toContain("bulky");
+  });
+
+  test("a zero-token chunk does not produce NaN/Infinity that breaks the sort", () => {
+    const chunks = [
+      makeScored({ id: "free", kind: "session", score: 0.1, tokens: 0 }),
+      makeScored({ id: "normal", kind: "session", score: 0.9, tokens: 100 }),
+    ];
+    const result = packChunks(chunks, 100);
+    const packedIds = result.packed.map((c) => c.id);
+    // Zero-token chunk is free to include and should not exclude "normal".
+    expect(packedIds).toContain("free");
+    expect(packedIds).toContain("normal");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

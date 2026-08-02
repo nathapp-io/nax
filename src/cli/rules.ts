@@ -31,6 +31,12 @@ import { errorMessage } from "../utils/errors";
 // Injectable deps
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Cap on the package-overlay glob scan (monorepo-awareness.md §6). */
+const MAX_CANONICAL_RULE_GLOB_FILES = 500;
+
+/** Directories that never legitimately contain a `.nax/rules` overlay root. */
+const CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS = ["/node_modules/", "/.git/"];
+
 export const _rulesCLIDeps = {
   readFile: async (path: string): Promise<string> => Bun.file(path).text(),
   writeFile: async (path: string, content: string): Promise<void> => {
@@ -49,7 +55,14 @@ export const _rulesCLIDeps = {
   },
   globCanonicalRuleFiles: (workdir: string): string[] => {
     try {
-      return [...new Bun.Glob("**/.nax/rules/**/*.md").scanSync({ cwd: workdir, absolute: false, dot: true })].sort();
+      const found: string[] = [];
+      for (const file of new Bun.Glob("**/.nax/rules/**/*.md").scanSync({ cwd: workdir, absolute: false, dot: true })) {
+        if (found.length >= MAX_CANONICAL_RULE_GLOB_FILES) break;
+        const normalized = `/${file}/`;
+        if (CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS.some((seg) => normalized.includes(seg))) continue;
+        found.push(file);
+      }
+      return found.sort();
     } catch {
       return [];
     }
