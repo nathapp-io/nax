@@ -74,7 +74,25 @@ const DESCRIPTION_GIST_CHARS = 90;
 /** Files listed in evidence before truncating. */
 const MAX_EVIDENCE_FILES = 4;
 
-/** Characters of normalized message text that identify a defect across features. */
+/**
+ * Characters of normalized message text that identify a defect across features.
+ *
+ * Shorter than `normalizeIssueText`'s own 160-char clamp, and deliberately so:
+ * that clamp identifies one finding across successive rounds of ONE story, where
+ * the reviewer is describing the same file and the wording barely moves. Across
+ * features the wording diverges much faster — different files, symbols and
+ * quoted snippets — so a 160-char key would put every occurrence in its own
+ * group and H1 could never reach its feature threshold.
+ *
+ * The cost is the mirror image: two genuinely distinct defects that share a
+ * category AND the first 48 normalized characters merge into one proposal. That
+ * is accepted. Reviewer messages lead with the generic description and trail
+ * into the specifics, so a shared 48-char lead is itself decent evidence the two
+ * are the same class of defect — which is the granularity a *rule* proposal
+ * wants. Do NOT "fix" this by mixing a hash of the full message into the key:
+ * that makes identity exact-match, and exact cross-feature message equality
+ * essentially never happens, which silently disables the heuristic.
+ */
 const CROSS_FEATURE_MESSAGE_PREFIX = 48;
 
 /**

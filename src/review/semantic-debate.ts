@@ -12,6 +12,7 @@ import { pickBaseSelectorKind } from "../debate";
 import type { DebateRunner, DebateRunnerOptions, DebateStageConfig } from "../debate";
 import { getSafeLogger } from "../logger";
 import { filterByAcGroundingMinimal } from "./ac-quote-validator";
+import { MAX_ACKS } from "./acks";
 import { llmFindingsToReviewFindings } from "./finding-projection";
 import {
   type LLMFinding,
@@ -147,7 +148,9 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
     const parsed = parseLLMResponse(p.output);
     if (parsed) {
       allFindings.push(...parsed.findings);
-      if (parsed.acks) acks.push(...parsed.acks);
+      // `extractAcks` caps each response; the merge across debaters has to
+      // respect the same ceiling or a 3-debater panel persists 3 × MAX_ACKS.
+      if (parsed.acks) acks.push(...parsed.acks.slice(0, MAX_ACKS - acks.length));
     }
   }
   const debateAcks = acks.length > 0 ? acks : undefined;

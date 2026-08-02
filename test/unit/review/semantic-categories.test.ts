@@ -127,6 +127,26 @@ describe("validateLLMShape() — normalization at the parse boundary", () => {
     expect(parsed?.findings[0]).not.toHaveProperty("category");
   });
 
+  test("drops non-object entries instead of passing them to consumers that dereference them", () => {
+    // An LLM that emits `findings: [null]` or a bare string used to survive the
+    // parse boundary untouched, then threw on the first `f.severity` read deep
+    // in a consumer. The parse boundary is where a malformed entry is cheap to
+    // discard — every consumer downstream assumes a finding-shaped object.
+    const parsed = parseLLMResponse(
+      JSON.stringify({
+        passed: false,
+        findings: [
+          null,
+          "the tests are inadequate",
+          42,
+          { severity: "error", category: "partial", file: "src/a.ts", line: 1, issue: "real", suggestion: "fix" },
+        ],
+      }),
+    );
+    expect(parsed?.findings).toHaveLength(1);
+    expect(parsed?.findings[0]).toMatchObject({ issue: "real", category: "partial" });
+  });
+
   test("preserves every other field on the finding", () => {
     const finding = parseLLMResponse(wire("Contradiction"))?.findings[0];
     expect(finding).toMatchObject({

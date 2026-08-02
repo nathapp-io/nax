@@ -298,6 +298,25 @@ describe("the window's byte ceiling must not masquerade as its run policy (#1429
     expect(window.unattributedRows).toBe(2);
   });
 
+  test("rows spanning a stream-chunk boundary survive intact", async () => {
+    // The window reads its tail through the same streaming reader the prune
+    // uses, so rows no longer arrive whole — a row can straddle two chunks.
+    // Padding each row past any plausible chunk size forces that split; a
+    // reader that lost the carry would drop or corrupt these rows silently.
+    const root = await mkdtemp(join(tmpdir(), "curator-window-chunked-"));
+    const p = await bigRollup(root, 6, 300_000);
+    const { observations, runIds } = await readHeuristicWindow(p, 6, {
+      projectKey: "alpha",
+      maxTailBytes: 64 * 1024 * 1024,
+    });
+    expect(runIds).toHaveLength(6);
+    expect(observations).toHaveLength(6);
+    // Every payload is intact — a mid-chunk split would truncate one.
+    for (const obs of observations) {
+      expect((obs.payload as unknown as { pad: string }).pad).toHaveLength(300_000);
+    }
+  });
+
   test("a window that fits reports no truncation even when fewer runs exist than requested", async () => {
     // Exhausting the file is not truncation — there is simply no more history.
     const root = await mkdtemp(join(tmpdir(), "curator-window-short-"));

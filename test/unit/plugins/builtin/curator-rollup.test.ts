@@ -1,12 +1,13 @@
 /**
  * Curator Rollup Tests
  *
- * Tests for append-only rollup functionality.
+ * Tests for append-only rollup functionality and the shared JSONL line
+ * reader both rollup readers stream through (#1439).
  */
 
 import { describe, expect, test } from "bun:test";
 import * as path from "node:path";
-import type { Observation } from "../../../../src/plugins/builtin/curator";
+import { type Observation, streamJsonlLines } from "../../../../src/plugins/builtin/curator";
 import { appendToRollup } from "../../../../src/plugins/builtin/curator/rollup";
 import { withTempDir } from "../../../helpers";
 
@@ -267,6 +268,113 @@ describe("appendToRollup", () => {
       expect(kinds).toContain("chunk-included");
       expect(kinds).toContain("chunk-excluded");
       expect(kinds).toContain("escalation");
+    });
+  });
+});
+
+/** Rows padded past any plausible chunk size, so every row straddles a boundary. */
+const CHUNK_STRADDLING_PAD = 200_000;
+
+async function collect(file: Bun.BunFile): Promise<string[]> {
+  const lines: string[] = [];
+  for await (const line of streamJsonlLines(file)) lines.push(line);
+  return lines;
+}
+
+describe("streamJsonlLines", () => {
+  test("reassembles rows that straddle chunk boundaries", async () => {
+    await withTempDir(async (dir) => {
+      const p = path.join(dir, "rollup.jsonl");
+      const rows = Array.from({ length: 12 }, (_, i) => ({ i, pad: "x".repeat(CHUNK_STRADDLING_PAD) }));
+      await Bun.write(p, `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`);
+
+      const lines = await collect(Bun.file(p));
+
+      expect(lines).toHaveLength(12);
+      expect(lines.map((l) => (JSON.parse(l) as { i: number }).i)).toEqual(rows.map((r) => r.i));
+    });
+  });
+
+  test("preserves multi-byte characters split across a chunk boundary", async () => {
+    // The reason the decoder is driven with `{ stream: true }`. Reviewer prose
+    // in the rollup is full of `—`, `·` and `→`; decoding each chunk
+    // independently replaces whichever one lands on the seam with U+FFFD.
+    //
+    // The padding itself must be multi-byte. A row of ASCII padding carrying a
+    // few non-ASCII characters in one small field passes either way — no chunk
+    // boundary ever lands inside those few bytes, so the test proves nothing.
+    // Filling the row with 3-byte characters makes a split mid-character
+    // certain rather than lucky.
+    await withTempDir(async (dir) => {
+      const p = path.join(dir, "rollup.jsonl");
+      const pad = "→".repeat(CHUNK_STRADDLING_PAD / 2);
+      const rows = Array.from({ length: 12 }, (_, i) => ({ i, pad }));
+      await Bun.write(p, `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`);
+
+      const lines = await collect(Bun.file(p));
+
+      expect(lines).toHaveLength(12);
+      for (const line of lines) {
+        expect((JSON.parse(line) as { pad: string }).pad).toBe(pad);
+      }
+      expect(lines.join("")).not.toContain("�");
+    });
+  });
+
+  test("a byte-sliced start yields exactly one leading fragment, then intact rows", async () => {
+    // `readHeuristicWindow` reads a tail by byte offset, so the first line is a
+    // fragment of a row whose start was never read — and `parseTail` drops
+    // exactly one line on that basis. If the reader ever yielded zero or two
+    // fragments, that caller would silently drop a good row or admit a broken one.
+    await withTempDir(async (dir) => {
+      const p = path.join(dir, "rollup.jsonl");
+      const rows = Array.from({ length: 12 }, (_, i) => ({ i, pad: "x".repeat(CHUNK_STRADDLING_PAD) }));
+      await Bun.write(p, `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`);
+
+      // Mid-row by construction: rows are ~200 KB, so this lands inside row 1.
+      const lines = await collect(Bun.file(p).slice(CHUNK_STRADDLING_PAD / 2));
+
+      const parses = lines.map((l) => {
+        try {
+          JSON.parse(l);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      expect(parses[0]).toBe(false);
+      expect(parses.slice(1).every(Boolean)).toBe(true);
+    });
+  });
+
+  test("yields a final row that has no trailing newline", async () => {
+    await withTempDir(async (dir) => {
+      const p = path.join(dir, "rollup.jsonl");
+      await Bun.write(p, '{"i":1}\n{"i":2}');
+
+      expect(await collect(Bun.file(p))).toEqual(['{"i":1}', '{"i":2}']);
+    });
+  });
+
+  test("yields nothing for an empty source rather than one empty line", async () => {
+    // `pruneRollup` counts every yielded line; a phantom row would inflate its
+    // kept/dropped tallies on an empty rollup.
+    await withTempDir(async (dir) => {
+      const p = path.join(dir, "rollup.jsonl");
+      await Bun.write(p, "");
+
+      expect(await collect(Bun.file(p))).toEqual([]);
+    });
+  });
+
+  test("preserves blank lines rather than collapsing them", async () => {
+    // Callers decide what a blank line means (both skip it via `.trim()`); the
+    // reader must not make that decision for them by silently dropping rows.
+    await withTempDir(async (dir) => {
+      const p = path.join(dir, "rollup.jsonl");
+      await Bun.write(p, '{"i":1}\n\n{"i":2}\n');
+
+      expect(await collect(Bun.file(p))).toEqual(['{"i":1}', "", '{"i":2}']);
     });
   });
 });

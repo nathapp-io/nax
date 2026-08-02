@@ -68,14 +68,24 @@ export function validateLLMShape(parsed: unknown): LLMResponse | null {
   const acks = extractAcks(obj.acks);
   return {
     passed: obj.passed,
-    findings: (obj.findings as LLMFinding[]).map(withNormalizedCategory),
+    // Non-object entries are discarded HERE rather than defended against by
+    // every consumer. `findings: [null]` and `findings: ["prose"]` are both
+    // shapes an LLM produces, and every downstream reader dereferences
+    // `f.severity` / `f.file` unguarded — so a malformed entry that survives the
+    // parse boundary becomes a crash somewhere far from its cause.
+    findings: (obj.findings as unknown[]).filter(isFindingShaped).map(withNormalizedCategory),
     ...(acks.length > 0 && { acks }),
   };
 }
 
+/** A finding must at least be an object; field-level validity is the consumer's business. */
+function isFindingShaped(f: unknown): f is LLMFinding {
+  return typeof f === "object" && f !== null && !Array.isArray(f);
+}
+
 /** Copy a finding with its category canonicalised; leaves every other field untouched. */
 function withNormalizedCategory(f: LLMFinding): LLMFinding {
-  const category = normalizeSemanticCategory(f?.category);
+  const category = normalizeSemanticCategory(f.category);
   // Absent stays absent: `""` and "field omitted" are the same signal on the
   // wire, and adding an empty key would show up in audit artifacts as noise.
   if (category === "") return f;
