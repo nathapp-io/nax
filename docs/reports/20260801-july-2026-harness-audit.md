@@ -342,12 +342,24 @@ The most recent of those is §14 — §4's acceptance retry tail does not exist,
 | # | Work | Why it is ranked here | State |
 |--:|:---|:---|:---|
 | 1 | **Cost-ledger attribution** — [#1433](https://github.com/nathapp-io/nax/issues/1433) | Prerequisite for every other cost question, including this report's own August measurement plan. `model` was `"unknown"` on 100% of July spend and `sessionRole` absent on all of it, across all six stages. | **shipped** — [#1434](https://github.com/nathapp-io/nax/pull/1434) |
-| 2 | Acceptance generation: cache economics | 32% of generation spend is cacheWrite (19.31M tokens), because `acceptanceGenerateOp` is `session: { lifetime: "fresh" }` and every package group rebuilds cache from scratch. Independent of model tier; does not touch generation quality. | not started |
+| 2 | Acceptance generation: cache economics | cacheWrite is the largest slice of generation spend, because `acceptanceGenerateOp` is `session: { lifetime: "fresh" }` and every package group rebuilds cache from scratch. **The 32% / 19.31M-token figure is contaminated by hardening — re-derive from August `sessionRole` data before acting.** | number needs re-deriving |
 | 3 | Re-derive rectification's breakdown from `sessionRole` | At 44.7% of stage cost it is the only stage where a 10% win outweighs all of acceptance — and it is currently 100% unattributable below the stage level. | unblocked by #1434; needs August data |
-| 4 | Acceptance generation: 34% excess calls | 409 generation calls against a structural floor of 271 (one per package group), across 61 features, with ~zero regeneration log lines to explain it. Mechanism unresolved. | not started |
+| — | ~~Acceptance generation: 34% excess calls~~ | **Answered.** The 409-vs-271 gap is the hardening pass, which dispatches through the `acceptance-gen` role and was counted as generation. Not regeneration and not multi-turn sessions. | **closed** — see "Hardening repeats" below |
 | 5 | Curator gc — [#1430](https://github.com/nathapp-io/nax/issues/1430) | Unblocked by #1432 but needs a retention decision first (auto-prune vs documented bound; what happens to ~648 MB of unattributable pre-#1429 rows). | awaiting decision |
 
 Also open, unchanged: [spec-kit#18](https://github.com/nathapp-io/nax-spec-kit-skills/issues/18) (spec-review data-literal check) and [#1422](https://github.com/nathapp-io/nax/issues/1422) (curator H1 identity-key recall, needs August data).
+
+**Note for whoever picks this up (revised 2026-08-02):** every ranked item is now
+either shipped, closed, or waiting on August data — including spec-kit#18, whose
+target class (data literals, fixture-shape claims) does not appear anywhere in the
+current cohort's review tail. That class is real but currently costs nothing
+measurable, so it should be re-checked against August data rather than built now.
+
+The highest-value August work, in order: re-derive rectification's sub-stage
+breakdown from `sessionRole` (44.7% of stage cost, still entirely unattributed
+below stage level), then re-derive generation's cacheWrite share from the same
+data, then re-run the cohort analysis above. All three are groupbys once the
+August ledger exists — no new instrumentation required.
 
 [#1424](https://github.com/nathapp-io/nax/issues/1424) is **closed as dissolved** — see §14.
 
@@ -365,6 +377,103 @@ Derived by joining cost rows to `prompt-audit/` transcripts on `runId` + nearest
 | ac-refine | $3.70 | 1.1% | 709 | 1,289 |
 
 Acceptance is output-bound one-shot generation, not a retry loop. §4's framing had it backwards.
+
+> **Correction (2026-08-02): the generation and hardening rows above are wrong.**
+> The hardening pass dispatches through the `acceptance-gen` session role with a
+> generation-shaped prompt, so a classifier keyed on prompt text cannot separate
+> it from initial generation. Re-measuring by hardening *window* — the interval
+> between `Starting hardening pass` and `Hardening pass complete` in the feature
+> run log — moves roughly $32:
+>
+> | | prompt-classifier (above) | window-based |
+> |:---|---:|---:|
+> | hardening | $13.39 (4.1%) | **$45.51 (14.0%)** |
+> | generation | $231.40 (71.3%) | **~$199 (~61%)** |
+>
+> Generation is still the dominant line and the qualitative conclusion holds. But
+> **the cacheWrite figure in ranked item 2 was derived from the contaminated
+> generation bucket and must be re-derived before that item is actioned.**
+>
+> This is the third name-based inference in this report to fail on contact with
+> the artifacts, after `verdict.retries` (§14) and the `acceptance.model` tier
+> reading. Same shape each time: identity inferred from what something is called
+> rather than from what it does. Once `sessionRole` reaches cost rows (#1433,
+> shipped in #1434), this particular join stops being necessary — August data
+> can be grouped directly.
+
+### Cohort the data by artifact creation date, not event date (2026-08-02)
+
+**Method finding, and the one most likely to change a future conclusion.**
+
+Asked whether the review-round tail had improved, the obvious split is by when
+the *review ran*. That is wrong, and it inverted the answer. A story reviewed on
+28 July may have been planned on 10 July under an older toolchain; splitting on
+the event date mixes cohorts that had different inputs.
+
+Splitting instead on **`prd.json` `createdAt`** — when the spec was actually
+planned — against the `nax-spec-kit-skills` release history (0.1.10 on 16 July
+through the fourteen-commit 0.2.x burst on 27 July):
+
+| PRD created | stories | p50 | p90 | max rounds | ≥6 rounds |
+|:---|---:|---:|---:|---:|---:|
+| ≤ Jul 15 (pre-0.1.10) | 853 | 2 | 6 | 19 | 10.8% |
+| Jul 16–26 (partial rollout) | 158 | 3 | 8 | **23** | **25.3%** |
+| Jul 27+ (post-0.2.x) | 82 | 2 | 7 | **11** | 11.0% |
+
+Three things fall out that the event-date split hid entirely:
+
+1. **The spec-kit work landed.** The extreme tail collapsed from 23 rounds to 11,
+   and the ≥6-round rate returned to its pre-change baseline.
+2. **Partial rollout was worse than either end.** The Jul 16–26 cohort is the
+   worst of the three by a wide margin. A half-applied spec discipline appears to
+   cost more than none — worth remembering before shipping the next phased change
+   to spec-writing or plan.
+3. **An event-date split reports the trough as the present.** Measured that way
+   the tail looked flat (13.2% → 14.8%, "no improvement"), because the recent
+   review activity was dominated by Jul 16–26 PRDs still working through.
+
+**Retraction.** On the contaminated split this report's author concluded the
+residual tail was whack-a-mole ([#1157](https://github.com/nathapp-io/nax/issues/1157))
+running at roughly 5x that issue's own "~3%, low priority" estimate. On the clean
+cohort the tail is 11.0% against a 10.8% baseline — indistinguishable. The
+whack-a-mole *diagnosis* survives (57% of later-round blocking findings land in a
+file already flagged; only 5% are verbatim repeats, so rectification is
+converging), but there is no evidence the residual is worse than when #1157 was
+filed. Its low-priority label stands.
+
+**Revisit in August.** The post-0.2.x cohort is 82 stories and 9 tail stories —
+enough to see the collapse, not enough to characterise what remains. Re-run with
+September's larger sample:
+
+- Cohort by `prd.json` `createdAt`, never by review or run timestamp.
+- Compare ≥6-round rate and max rounds against the 11.0% / 11 rounds recorded here.
+- Split later-round blocking findings by already-flagged file to test whether
+  whack-a-mole is still the residual's shape at 57%.
+- With `sessionRole` now on cost rows ([#1434](https://github.com/nathapp-io/nax/pull/1434)),
+  attach cost per round directly instead of joining through `prompt-audit/`.
+
+### Hardening repeats — investigated and closed, not a defect (2026-08-02)
+
+The window analysis above surfaced that `acceptanceStage.execute` runs the
+hardening pass inside its all-passed branch, while `runAcceptanceLoop` executes
+that stage several times per run (initial attempt, each fix-cycle re-validation,
+final pass). July: 81 passes across 46 feature-runs, 35 of them repeats, of which
+31 promoted nothing — $15.50 and 1.9 hours of wall clock.
+
+That reads like deterministic waste and it is not. Two findings closed it:
+
+1. **The frequency has collapsed.** Zero hardening passes from 2026-07-20 to
+   2026-07-31 across 68 acceptance runs, following spec-writing / spec-review /
+   `nax plan` changes that stopped emitting `suggestedCriteria`. One feature has
+   run it since.
+2. **The repeats are load-bearing.** That one recent run is the counter-example:
+   its first pass discarded the suggested criterion, and the *repeat* — after a
+   fix cycle had changed the source — promoted 5 ACs. Re-running against changed
+   code is the mechanism working, not misfiring. A run-once guard would have
+   turned 5 promoted ACs into 0.
+
+The July "31 of 35 repeats promoted nothing" number is real but describes
+usually-unproductive, not redundant. No change made.
 
 ### Two traps for whoever picks this up
 
