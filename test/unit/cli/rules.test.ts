@@ -12,6 +12,8 @@ import {
   rulesExportCommand,
   rulesLintCommand,
   rulesMigrateCommand,
+  translateLegacyFrontmatter,
+  withReviewNotice,
   _rulesCLIDeps,
 } from "../../../src/cli/rules";
 
@@ -273,5 +275,122 @@ describe("rulesLintCommand", () => {
     expect(calls).toContain("/repo");
     expect(calls).toContain("/repo/packages/api");
     expect(calls).toContain("/repo/packages/web");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Legacy `paths:` → `appliesTo:` translation
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("translateLegacyFrontmatter", () => {
+  test("rewrites a legacy `paths:` block to `appliesTo:`", () => {
+    // In tool-session rule files `paths:` is a FILE glob. In nax it is PACKAGE
+    // scope, and `ruleMatchesPackage` returns true unconditionally when
+    // packageDir === repoRoot — so copying it verbatim into a single-package
+    // repo yields config that looks scoped and does nothing.
+    const src = ['---', 'paths:', '  - "test/**/*.test.ts"', '---', '', '# Test Architecture', ''].join("\n");
+    const { content, translated } = translateLegacyFrontmatter(src);
+    expect(translated).toBe(true);
+    expect(content).toContain("appliesTo:");
+    expect(content).not.toContain("paths:");
+    expect(content).toContain('- "test/**/*.test.ts"');
+    expect(content).toContain("# Test Architecture");
+  });
+
+  test("preserves a multi-entry glob list verbatim", () => {
+    const src = ['---', 'paths:', '  - "src/agents/**/*.ts"', '  - "src/operations/**/*.ts"', '---', '', 'body'].join("\n");
+    const { content } = translateLegacyFrontmatter(src);
+    expect(content).toContain('  - "src/agents/**/*.ts"');
+    expect(content).toContain('  - "src/operations/**/*.ts"');
+  });
+
+  test("keeps other frontmatter keys untouched", () => {
+    const src = ['---', 'priority: 40', 'paths:', '  - "src/**"', '---', '', 'body'].join("\n");
+    const { content } = translateLegacyFrontmatter(src);
+    expect(content).toContain("priority: 40");
+    expect(content).toContain("appliesTo:");
+  });
+
+  test("is a no-op when there is no frontmatter", () => {
+    const src = "# Just a heading\n\nbody\n";
+    const { content, translated } = translateLegacyFrontmatter(src);
+    expect(translated).toBe(false);
+    expect(content).toBe(src);
+  });
+
+  test("is a no-op when the file has no `paths:` key", () => {
+    const src = ['---', 'priority: 50', '---', '', 'body'].join("\n");
+    const { translated } = translateLegacyFrontmatter(src);
+    expect(translated).toBe(false);
+  });
+
+  test("does not translate when `appliesTo:` is already present", () => {
+    // Re-running migrate must not produce two competing scope keys.
+    const src = ['---', 'appliesTo:', '  - "src/**"', 'paths:', '  - "apps/api/*"', '---', '', 'body'].join("\n");
+    const { content, translated } = translateLegacyFrontmatter(src);
+    expect(translated).toBe(false);
+    expect(content).toBe(src);
+  });
+
+  test("ignores a `paths:` that appears in the body rather than the frontmatter", () => {
+    const src = "# Rule\n\nSet `paths:` in frontmatter to scope a rule.\n";
+    const { translated } = translateLegacyFrontmatter(src);
+    expect(translated).toBe(false);
+  });
+});
+
+describe("rulesMigrateCommand — legacy scope translation", () => {
+  test("migrated rules carry appliesTo, never an inert paths block", async () => {
+    _rulesCLIDeps.globInDir = () => ["/repo/.claude/rules/test-architecture.md"];
+    _rulesCLIDeps.fileExists = async (p: string) => p.startsWith("/repo/.claude/");
+    _rulesCLIDeps.readFile = async () =>
+      ['---', 'paths:', '  - "test/**/*.test.ts"', '---', '', '# Test Architecture', ''].join("\n");
+
+    await rulesMigrateCommand({ dir: "/repo" });
+
+    const out = written["/repo/.nax/rules/test-architecture.md"];
+    expect(out).toBeDefined();
+    expect(out).toContain("appliesTo:");
+    expect(out).not.toMatch(/^paths:/m);
+  });
+});
+
+describe("withReviewNotice", () => {
+  test("places the notice after frontmatter so the block stays at byte 0", () => {
+    // Frontmatter is only recognised at the start of the file. A notice emitted
+    // first pushes it out of position and the scope key is silently ignored —
+    // which hits every rule that both needed neutralizing and carried a scope.
+    const src = ['---', 'appliesTo:', '  - "src/**"', '---', '', '# Body'].join("\n");
+    const out = withReviewNotice(src, 3);
+    expect(out.startsWith("---\n")).toBe(true);
+    expect(out).toContain("<!-- NOTE: 3 neutralization(s)");
+    expect(out.indexOf("appliesTo:")).toBeLessThan(out.indexOf("<!-- NOTE:"));
+    expect(/^---\n[\s\S]*?\n---\n/.test(out)).toBe(true);
+  });
+
+  test("prepends normally when there is no frontmatter", () => {
+    const out = withReviewNotice("# Body\n", 2);
+    expect(out.startsWith("<!-- NOTE: 2 neutralization(s)")).toBe(true);
+  });
+
+  test("adds nothing when no replacements were made", () => {
+    expect(withReviewNotice("# Body\n", 0)).toBe("# Body\n");
+  });
+
+  test("a translated scope survives neutralization end to end", async () => {
+    // The regression that motivates both fixes: paths -> appliesTo is useless
+    // if the notice then knocks the frontmatter out of parse position.
+    _rulesCLIDeps.globInDir = () => ["/repo/.claude/rules/retry-strategy.md"];
+    _rulesCLIDeps.fileExists = async (p: string) => p.startsWith("/repo/.claude/");
+    _rulesCLIDeps.readFile = async () =>
+      ['---', 'paths:', '  - "src/agents/**/*.ts"', '---', '', '# Retry', '', 'See CLAUDE.md for more.'].join("\n");
+
+    await rulesMigrateCommand({ dir: "/repo" });
+
+    const out = written["/repo/.nax/rules/retry-strategy.md"];
+    expect(out.startsWith("---\n")).toBe(true);
+    expect(out).toContain("appliesTo:");
+    expect(out).toContain("<!-- NOTE:");
+    expect(/^---\n[\s\S]*?\n---\n/.test(out)).toBe(true);
   });
 });

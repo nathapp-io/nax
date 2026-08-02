@@ -171,6 +171,59 @@ export function neutralizeContent(content: string): { content: string; replaceme
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Legacy frontmatter translation (used by migrate)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Rewrite a legacy `paths:` scope block to nax's `appliesTo:`.
+ *
+ * The two stores spell the key the same way and mean different things. In a
+ * per-agent rules directory `paths:` is a FILE glob — "load this rule when the
+ * story touches these files". In nax `paths:` is PACKAGE scope, matched against
+ * the story's package dir, and `ruleMatchesPackage` short-circuits to `true`
+ * whenever `packageDir === repoRoot`.
+ *
+ * So copying the key across verbatim silently produces config that reads as
+ * scoped and has no effect at all — in every single-package repo, for every
+ * migrated rule. `appliesTo:` is the key with the source's actual semantics.
+ *
+ * Only the leading frontmatter block is considered; a `paths:` mentioned in
+ * prose is left alone. A file that already declares `appliesTo:` is returned
+ * untouched rather than given two competing scope keys, which also makes a
+ * re-run of `nax rules migrate --force` idempotent.
+ */
+export function translateLegacyFrontmatter(content: string): { content: string; translated: boolean } {
+  const fm = /^---\n([\s\S]*?)\n---\n/.exec(content);
+  if (!fm?.[1]) return { content, translated: false };
+
+  const block = fm[1];
+  // Top-level keys only: an indented `paths:` belongs to a nested mapping.
+  if (!/^paths:/m.test(block) || /^appliesTo:/m.test(block)) return { content, translated: false };
+
+  const rewritten = block.replace(/^paths:/m, "appliesTo:");
+  const head = content.slice(0, fm.index);
+  const tail = content.slice(fm.index + fm[0].length);
+  return { content: `${head}---\n${rewritten}\n---\n${tail}`, translated: true };
+}
+
+/**
+ * Prepend the review notice, placing it AFTER any frontmatter block.
+ *
+ * The notice is an HTML comment, and frontmatter is only recognised at byte 0
+ * (`/^---\n/`). Emitting the notice first therefore pushes the block out of
+ * position and the whole thing is read as body text — so a migrated file that
+ * both needed neutralizing and carried a scope key silently lost its scope.
+ * That combination is not hypothetical: it is every rule with both.
+ */
+export function withReviewNotice(content: string, replacements: number): string {
+  if (replacements <= 0) return content;
+  const notice = `<!-- NOTE: ${replacements} neutralization(s) applied — review before committing -->\n\n`;
+  const fm = /^---\n[\s\S]*?\n---\n/.exec(content);
+  if (!fm) return notice + content;
+  return content.slice(0, fm[0].length) + notice + content.slice(fm[0].length).replace(/^\n+/, "");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // nax rules migrate
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -271,10 +324,9 @@ export async function rulesMigrateCommand(options: RulesMigrateOptions): Promise
       continue;
     }
 
-    const { content: neutralized, replacements } = neutralizeContent(content);
-    const notice =
-      replacements > 0 ? `<!-- NOTE: ${replacements} neutralization(s) applied — review before committing -->\n\n` : "";
-    const output = notice + neutralized;
+    const { content: scoped } = translateLegacyFrontmatter(content);
+    const { content: neutralized, replacements } = neutralizeContent(scoped);
+    const output = withReviewNotice(neutralized, replacements);
 
     if (options.dryRun) {
       console.log(`[dry-run] Would write ${targetFileName} from ${sourcePath} (${replacements} replacements)`);
