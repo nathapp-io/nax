@@ -5,12 +5,24 @@ import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus, OperationCom
 /**
  * Cost-row schema version.
  *
- * 1 — implicit, pre-#1433: `model` hardcoded to "unknown", no `modelTier`,
- *     `sessionRole` or `featureName`, and error rows indistinguishable from
- *     zero-cost rows. Those rows cannot be backfilled — `model` in particular is
- *     unrecoverable — so consumers must treat a row without this field as
- *     model-unattributed rather than reading its "unknown" as a value.
- * 2 — current.
+ * 1 — implicit, pre-#1433. `model` was hardcoded to the literal "unknown" on
+ *     every row; `modelTier`, `sessionRole`, `featureName`, `profile`,
+ *     `pricingSource` and `projectKey` did not exist; and error rows were
+ *     indistinguishable from genuine zero-cost rows.
+ *
+ *     These rows cannot be backfilled — `model` in particular is unrecoverable —
+ *     so a row *without* this field must be read as model-unattributed rather
+ *     than treating its "unknown" as a value.
+ *
+ * 2 — current. Guarantees, on every row: `model` (falling back to "unknown"
+ *     only when the dispatch resolved none), `sessionRole`, `pricingSource`,
+ *     `schemaVersion`, and `projectKey` when the runtime supplied one.
+ *     `modelTier` is present only when a tier selected the model — an explicit
+ *     `{ agent, model }` pin reports none rather than a fabricated tier.
+ *     Error rows additionally carry `kind: "error"`.
+ *
+ * Bump this when adding or changing a field consumers key on, and extend the
+ * list above — the constant is how a reader learns what a row guarantees.
  */
 export const COST_ROW_SCHEMA_VERSION = 2;
 

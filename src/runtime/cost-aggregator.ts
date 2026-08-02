@@ -5,7 +5,11 @@ export interface CostEvent {
   readonly runId: string;
   /** Stable project identity — `runId`/`storyId` collide across repos (#1429). */
   readonly projectKey?: string;
-  /** Row schema version. 1 = pre-#1433 (no model/role attribution). */
+  /**
+   * Row schema version; see `COST_ROW_SCHEMA_VERSION`. Absent on pre-#1433 rows,
+   * which carry no model, tier, role, profile, pricing-source or project
+   * attribution and cannot be backfilled.
+   */
   readonly schemaVersion?: number;
   readonly agentName: string;
   /**
