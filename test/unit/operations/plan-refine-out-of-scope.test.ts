@@ -155,3 +155,61 @@ describe("planRefineOp.verify — out-of-scope backfill", () => {
     expect(result?.outOfScope).toBeUndefined();
   });
 });
+
+describe("planRefineOp.verify — story-local hoist demotion (#1446)", () => {
+  const HOIST_SPEC = [
+    "## Out of Scope",
+    "",
+    "- An interactive Ink TUI",
+    "",
+    "## Acceptance Criteria",
+    "",
+    "### US-001 — Import endpoint",
+    "",
+    "**Out of scope:** body-size limits on the import endpoint, deferred to arc 3.",
+  ].join("\n");
+
+  function makeVerifyCtx() {
+    const runtime = makeTestRuntime();
+    createdRuntimes.push(runtime);
+    const view = runtime.packages.repo();
+    return {
+      packageView: view,
+      config: view.select(planRefineOp.config),
+      readFile: async (_p: string) => null,
+      fileExists: async (_p: string) => false,
+    };
+  }
+
+  const input = {
+    specContent: HOIST_SPEC,
+    codebaseContext: "",
+    featureName: "f",
+    branchName: "feat/f",
+    outputPath: "/tmp/p.json",
+  };
+
+  test("demotes a hoisted story-local block onto its owning story, and warns", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      const hoisted = makePrd(["An interactive Ink TUI", "body-size limits on the import endpoint, deferred to arc 3."]);
+
+      const result = await planRefineOp.verify!(hoisted, input as never, makeVerifyCtx() as never);
+
+      expect(result?.outOfScope).toEqual(["An interactive Ink TUI"]);
+      expect(result?.userStories[0].outOfScope).toEqual([
+        "body-size limits on the import endpoint, deferred to arc 3.",
+      ]);
+      const warn = warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("hoisted"));
+      expect(warn).toBeDefined();
+      expect((warn?.[2] as Record<string, unknown>).hoistedCount).toBe(1);
+    });
+  });
+
+  test("the demotion does not trip the backfill into restoring it at feature level", async () => {
+    const hoisted = makePrd(["An interactive Ink TUI", "body-size limits on the import endpoint, deferred to arc 3."]);
+
+    const result = await planRefineOp.verify!(hoisted, input as never, makeVerifyCtx() as never);
+
+    expect(result?.outOfScope).not.toContain("body-size limits on the import endpoint, deferred to arc 3.");
+  });
+});

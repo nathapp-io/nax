@@ -1,5 +1,5 @@
 /**
- * Feature-level out-of-scope preservation — deterministic scope-fidelity check.
+ * Feature-level out-of-scope preservation — deterministic scope-fidelity repair.
  *
  * A spec's `## Out of Scope` / `## Non-Goals` section states what the feature
  * deliberately does NOT do. Story-level `Scope — In: … Out: …` bullets in a
@@ -10,338 +10,26 @@
  * it which deferred arcs to stay away from.
  *
  * This module is the single source of truth for "what did the spec defer, and
- * did the PRD keep it?". It is pure and deterministic — no LLM, no I/O — so it
- * can back the prompt rule, the `verify` backfill, and the `plan-refine`
- * self-heal turn without divergence. The prompt asks the planner to emit
- * `outOfScope`; {@link applyOutOfScopeFallback} guarantees the field regardless
- * of whether the planner complied.
+ * did the PRD keep it, at the right level?". It is pure and deterministic — no
+ * LLM, no I/O — so it can back the prompt rule, the `verify` backfill, and the
+ * `plan-refine` self-heal turn without divergence. The prompt asks the planner
+ * to emit `outOfScope`; {@link applyOutOfScopeFallback} guarantees the field
+ * regardless of whether the planner complied, and
+ * {@link demoteStoryScopedOutOfScope} un-does the opposite failure — a
+ * story-local block the planner promoted to feature level.
  *
- * ## Matching semantics
- *
- * Out-of-scope items are prose, not executable assertions, so a planner is
- * allowed to expand an item ("no Ink TUI" →
- * "no Ink TUI; deferred to arc 3"). An item counts as preserved when its
- * canonical form (whitespace collapsed, backticks stripped, lowercased) is a
- * contiguous substring of a single PRD entry. Anything else is treated as
- * dropped and is backfilled verbatim from the spec.
+ * Spec parsing itself lives in `./out-of-scope-extract`.
  */
 
+import {
+  INLINE_MARKER,
+  canonical,
+  dedupeAndCap,
+  extractSpecOutOfScope,
+  extractStoryScopedOutOfScope,
+} from "./out-of-scope-extract";
+import type { StoryScopedExclusion } from "./out-of-scope-extract";
 import type { PRD, UserStory } from "./types";
-
-/**
- * Upper bound on extracted items. A spec listing more than this has an
- * out-of-scope section that is really a design document; truncating keeps the
- * planner prompt and every downstream story prompt bounded.
- */
-export const MAX_OUT_OF_SCOPE_ITEMS = 25;
-
-/** The section title itself, without heading syntax — `Out of Scope`, `Non-Goals`, … */
-const OUT_OF_SCOPE_TITLE = /^(?:out[\s-]?of[\s-]?scope|non[\s-]?goals?|not[\s-]in[\s-]scope)\b/i;
-
-/** `## Out of Scope`, `### Non-Goals`, `## Not in scope`, `## Out-of-scope`, … */
-const OUT_OF_SCOPE_HEADING = /^(#{1,6})\s*(?:out[\s-]?of[\s-]?scope|non[\s-]?goals?|not[\s-]in[\s-]scope)\b/i;
-
-/** Any markdown ATX heading, captured so section nesting can be compared. */
-const ANY_HEADING = /^(#{1,6})\s/;
-
-/** A fenced code block delimiter (``` or ~~~), with optional info string. */
-const FENCE = /^\s*(?:```|~~~)/;
-
-/** A markdown table separator row: `|---|:--:|`. Carries no content. */
-const TABLE_SEPARATOR = /^\s*\|?[\s:|-]+\|[\s:|-]*$/;
-
-/** A markdown table row. */
-const TABLE_ROW = /^\s*\|.*\|\s*$/;
-
-/**
- * The heading that begins per-story decomposition. Everything after it is
- * story-scoped territory (see {@link storyScopeBoundary}).
- */
-const STORY_SECTION_HEADING = /^#{1,3}\s*(?:stories|acceptance\s+criteria|user\s+stories)\b/i;
-
-/** A setext underline — `===` (H1) or `---` (H2) beneath a title line. */
-const SETEXT_UNDERLINE = /^\s*(?:=+|-+)\s*$/;
-
-/**
- * Strip inline emphasis/backticks so heading matching is not defeated by
- * formatting. `## **Out of Scope**` and `## \`Out of Scope\`` are the same
- * heading as `## Out of Scope` — treating them differently silently drops the
- * entire section, which is the exact failure this module exists to prevent.
- */
-function stripEmphasis(text: string): string {
-  return text.replace(/\*\*/g, "").replace(/[*`_]/g, "");
-}
-
-/**
- * Heading level when `line` opens an out-of-scope section, else null.
- *
- * Accepts ATX (`## Out of Scope`, with optional emphasis and a trailing colon)
- * and setext (a bare title line underlined with `===`/`---`, which `nextLine`
- * supplies). Setext `=` is level 1, `-` is level 2 — matching CommonMark, so
- * section-end comparison against ATX levels stays correct.
- */
-function outOfScopeHeadingLevel(line: string, nextLine: string | undefined): number | null {
-  const atx = stripEmphasis(line).match(OUT_OF_SCOPE_HEADING);
-  if (atx) return atx[1].length;
-
-  if (nextLine !== undefined && SETEXT_UNDERLINE.test(nextLine)) {
-    const title = stripEmphasis(line).trim().replace(/:$/, "");
-    if (OUT_OF_SCOPE_TITLE.test(title)) return nextLine.trim().startsWith("=") ? 1 : 2;
-  }
-  return null;
-}
-
-/** True when `line` is a setext underline for the (non-blank) line before it. */
-function isSetextUnderline(lines: string[], index: number): boolean {
-  if (!SETEXT_UNDERLINE.test(lines[index])) return false;
-  const prev = lines[index - 1];
-  return prev !== undefined && prev.trim().length > 0 && !ANY_HEADING.test(prev);
-}
-
-/**
- * A bold lead-in declaring deferred work inline, e.g.
- * `**Out of scope (deferred):** mid-phase resume`. The marker must be the first
- * thing on the line (after an optional bullet) so prose that merely says
- * "… is out of scope for this story" is never mistaken for a declaration.
- */
-const INLINE_MARKER = /^\s*(?:[-*]\s*)?\*\*\s*(?:out[\s-]?of[\s-]?scope|non[\s-]?goals?)[^*]*\*\*\s*:?\s*/i;
-
-/** A list item — used both to split bullets and to bound folded prose. */
-const LIST_ITEM_START = /^\s*(?:[-*+\u2022\u2023\u25E6\u2043\u2219]|\d+\.)\s+/;
-
-/** Collapse whitespace, strip backticks, lowercase — the comparison form. */
-function canonical(text: string): string {
-  return text.replace(/`/g, "").replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-/** Strip a leading `-`/`*`/`1.` bullet marker. */
-function stripBullet(line: string): string {
-  return line.replace(LIST_ITEM_START, "").trim();
-}
-
-/**
- * Lines belonging to the out-of-scope section that starts at `startIndex`.
- * The section ends at the next heading whose level is the same as or shallower
- * than the section heading's — a deeper sub-heading (e.g. `### Deferred arcs`
- * under `## Out of Scope`) is still part of the section.
- */
-function sectionLines(lines: string[], startIndex: number, level: number): string[] {
-  const collected: string[] = [];
-  let inFence = false;
-
-  for (let i = startIndex + 1; i < lines.length; i++) {
-    const line = lines[i];
-
-    // Fenced code inside an out-of-scope section is illustrative, never an
-    // exclusion. Folding it as prose would inject a garbage entry that is then
-    // propagated onto every story prompt.
-    if (FENCE.test(line)) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) continue;
-
-    // A deeper heading (`### Deferred arcs` under `## Out of Scope`) is a label
-    // inside the section, so its bullets still count. The `level === 1` guard is
-    // a safety rail: when the section heading is H1, *every* other section in the
-    // document nests under it, and folding the whole file into the exclusion list
-    // would push it into every story prompt. Over-capture is the dangerous
-    // direction here, so an H1 section ends at the first heading of any depth.
-    const heading = line.match(ANY_HEADING);
-    if (heading && (heading[1].length <= level || level === 1)) break;
-    // A deeper sub-heading is a label, but it still separates the items around
-    // it — without this blank line two prose exclusions under adjacent
-    // sub-headings would fold into one entry (and one `scopeIndex`).
-    if (heading) {
-      collected.push("");
-      continue;
-    }
-
-    // A setext underline ends the section when it belongs to a following title
-    // (that title is the next section's heading, and the title line itself was
-    // already collected — drop it).
-    if (isSetextUnderline(lines, i)) {
-      const setextLevel = line.trim().startsWith("=") ? 1 : 2;
-      if (setextLevel <= level) {
-        collected.pop();
-        break;
-      }
-      collected.pop();
-      continue; // deeper sub-heading — a label, same as the ATX case
-    }
-
-    collected.push(line);
-  }
-  return collected;
-}
-
-/**
- * Split a section body into items: one per bullet (continuation lines folded
- * in), or — when the section has no bullets at all — one per prose paragraph.
- */
-function itemsFromSection(body: string[]): string[] {
-  const items: string[] = [];
-  let current: string[] = [];
-  const flush = () => {
-    // An inline `**Out of scope:**` lead-in can also appear *inside* the section;
-    // strip the redundant marker so the item dedupes against the same statement
-    // written as a plain bullet.
-    const text = current.join(" ").replace(INLINE_MARKER, "").replace(/\s+/g, " ").trim();
-    if (text) items.push(text);
-    current = [];
-  };
-
-  const hasBullets = body.some((line) => LIST_ITEM_START.test(line));
-  for (const [index, line] of body.entries()) {
-    if (line.trim().length === 0) {
-      flush();
-      continue;
-    }
-    // A row immediately followed by a separator is the table header — column
-    // labels, not an exclusion.
-    if (TABLE_ROW.test(line) && TABLE_SEPARATOR.test(body[index + 1] ?? "")) continue;
-    // Tables are a common way to write "deferred item | reason". Each data row is
-    // one exclusion; keeping the pipes would turn the whole table into a single
-    // unreadable entry, and skipping tables outright would drop the section when
-    // the table IS the content.
-    if (TABLE_SEPARATOR.test(line)) continue;
-    if (TABLE_ROW.test(line)) {
-      flush();
-      const cells = line
-        .trim()
-        .replace(/^\||\|$/g, "")
-        .split("|")
-        .map((c) => c.trim())
-        .filter((c) => c.length > 0);
-      if (cells.length > 0) current.push(cells.join(" — "));
-      flush();
-      continue;
-    }
-    if (hasBullets && LIST_ITEM_START.test(line)) {
-      flush();
-      current.push(stripBullet(line));
-      continue;
-    }
-    current.push(line.trim());
-  }
-  flush();
-  return items;
-}
-
-/**
- * Indices of every line inside a fenced code block.
- *
- * Fenced content is illustrative — a spec documenting markdown (which spec-kit
- * specs routinely do) contains a literal `## Out of Scope` example. Treating it
- * as a real declaration fabricates an exclusion that is then backfilled into the
- * PRD, pushed onto every story, and rendered to the implementer as a hard
- * boundary. Every scan over raw lines must consult this.
- */
-function fencedLineIndices(lines: string[]): Set<number> {
-  const fenced = new Set<number>();
-  let inFence = false;
-  for (const [i, line] of lines.entries()) {
-    if (FENCE.test(line)) {
-      fenced.add(i);
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) fenced.add(i);
-  }
-  return fenced;
-}
-
-/**
- * One item per inline `**Out of scope …:**` lead-in.
- *
- * Two shapes, both common:
- * - Text on the same line, folded across wrapped prose lines.
- * - A bare marker followed by a bullet list — the single most common idiom.
- *   Handled explicitly because the prose fold stops at the first list item,
- *   which previously left the marker empty and the bullets claimed by nobody.
- */
-function itemsFromInlineMarkers(lines: string[], fenced: Set<number>, boundary: number): string[] {
-  const items: string[] = [];
-  for (let i = 0; i < boundary; i++) {
-    if (fenced.has(i) || !INLINE_MARKER.test(lines[i])) continue;
-
-    const remainder = lines[i].replace(INLINE_MARKER, "").trim();
-    let j = i + 1;
-
-    if (remainder.length === 0) {
-      // Bare marker — consume the bullet list (or prose block) beneath it.
-      const body: string[] = [];
-      while (j < lines.length && !fenced.has(j) && lines[j].trim().length > 0 && !ANY_HEADING.test(lines[j])) {
-        body.push(lines[j]);
-        j += 1;
-      }
-      items.push(...itemsFromSection(body));
-      i = j - 1;
-      continue;
-    }
-
-    const parts = [remainder];
-    while (
-      j < lines.length &&
-      !fenced.has(j) &&
-      lines[j].trim().length > 0 &&
-      !ANY_HEADING.test(lines[j]) &&
-      !LIST_ITEM_START.test(lines[j])
-    ) {
-      parts.push(lines[j].trim());
-      j += 1;
-    }
-    const text = parts.join(" ").replace(/\s+/g, " ").trim();
-    if (text) items.push(text);
-    i = j - 1;
-  }
-  return items;
-}
-
-/** Sentinels meaning "nothing deferred" — never a real exclusion. */
-const EMPTY_SENTINELS = new Set(["none", "none.", "n/a", "na", "nothing", "nothing.", "tbd", "-"]);
-
-/** A label introducing a list ("The following are deferred:"), not an exclusion itself. */
-function isListLeadIn(item: string): boolean {
-  return item.trimEnd().endsWith(":");
-}
-
-/** Deduplicate on canonical form, keeping first-seen (spec) wording, then cap. */
-function dedupeAndCap(items: string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const item of items) {
-    const key = canonical(item);
-    // A sentinel or a trailing-colon lead-in would otherwise be rendered to every
-    // implementer as a hard boundary ("do NOT implement these: None.") and become
-    // a citable `scopeIndex` target.
-    if (EMPTY_SENTINELS.has(key) || isListLeadIn(item)) continue;
-    if (key.length === 0 || seen.has(key)) continue;
-    seen.add(key);
-    out.push(item);
-    if (out.length >= MAX_OUT_OF_SCOPE_ITEMS) break;
-  }
-  return out;
-}
-
-/**
- * Index of the first `## Stories` / `## Acceptance Criteria` heading, or
- * `lines.length` when the spec has none.
- *
- * Declarations after this point belong to a *story*, not the feature.
- * spec-writing tells authors to give risk-sensitive stories their own
- * `**Out of scope:**` list under the story's AC block; hoisting those to feature
- * level propagated one story's deferral onto every other story — US-001's
- * implementer would be told US-002's deferred work is a hard boundary.
- *
- * A top-level (`#`/`##`) heading is exempt: a document section named
- * `## Out of Scope` is feature-level wherever the author placed it, including
- * after the story sections.
- */
-function storyScopeBoundary(lines: string[]): number {
-  const index = lines.findIndex((line) => STORY_SECTION_HEADING.test(stripEmphasis(line)));
-  return index === -1 ? lines.length : index;
-}
 
 /**
  * Coerce a raw `outOfScope` value from LLM output into a clean string list.
@@ -358,45 +46,125 @@ export function normalizeOutOfScopeList(raw: unknown): string[] | undefined {
 }
 
 /**
- * Every feature-level out-of-scope statement declared by the spec, in document
- * order: bullets (or paragraphs) under an `## Out of Scope` / `## Non-Goals`
- * heading, plus any inline `**Out of scope …:**` lead-in.
- *
- * Story-scoped declarations are excluded. spec-writing tells authors to give
- * risk-sensitive stories their own `**Out of scope:**` list under the story's AC
- * block; only declarations before the first `## Stories` / `## Acceptance
- * Criteria` heading — or in a top-level `##` section anywhere — are feature-level
- * (see {@link storyScopeBoundary}).
- *
- * Scope / assumptions (deliberate — the downstream gate warns, never fails):
- * - A sub-heading inside the section is treated as a label, not an item; its
- *   bullets are still collected.
- * - Fenced code blocks are skipped entirely, not folded — so a spec that
- *   documents markdown by example cannot inject a fabricated exclusion. The
- *   corollary: text written *inside* a fence is silently dropped, so exclusions
- *   must be bullets, table rows, or prose, never fenced.
+ * An entry already scoped to one story by the spec author, per the spec-writing
+ * guide's `US-00N only:` convention. Already correct — never demoted again.
  */
-export function extractSpecOutOfScope(specContent: string): string[] {
-  if (!specContent.trim()) return [];
-  const lines = specContent.split("\n");
+const STORY_ONLY_PREFIX = /^\s*US-\d+\s+only\s*:/i;
 
-  const fenced = fencedLineIndices(lines);
-  const boundary = storyScopeBoundary(lines);
-  const items: string[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (fenced.has(i)) continue;
-    const level = outOfScopeHeadingLevel(lines[i], lines[i + 1]);
-    if (level === null) continue;
-    // A sub-heading after story decomposition begins is that story's own
-    // deferral, not the feature's. Top-level sections stay feature-level.
-    if (level > 2 && i > boundary) continue;
-    // Setext consumes its underline; ATX does not.
-    const bodyStart = SETEXT_UNDERLINE.test(lines[i + 1] ?? "") ? i + 1 : i;
-    items.push(...itemsFromSection(sectionLines(lines, bodyStart, level)));
+/**
+ * Shortest canonical form long enough to match on. A two-word story-local
+ * fragment would substring-match unrelated feature-level entries and demote
+ * them, so a candidate below this length is left alone.
+ */
+const MIN_DEMOTION_MATCH_LENGTH = 16;
+
+/**
+ * How much of a story-local declaration an entry must account for before the
+ * *reverse* match (entry shorter than the declaration — the planner trimmed the
+ * spec's wording) is trusted.
+ *
+ * Without it, a story block that merely quotes a feature-level boundary in
+ * passing — "this story does not change the database schema, and no new
+ * migrations are added" — swallows the genuine feature entry "no new migrations
+ * are added" and demotes it off the feature list. Requiring the entry to be at
+ * least half the declaration keeps trimming supported while a passing mention
+ * stays feature-level.
+ */
+const MIN_DEMOTION_COVERAGE = 0.5;
+
+/**
+ * Stories owning a feature-level entry that was hoisted out of story territory —
+ * empty when the entry is genuinely feature-level and must stay put.
+ *
+ * All matching stories, not just the first: two stories may declare the same
+ * deferral, and demoting to one would silently strip it from the other.
+ */
+function hoistOwners(
+  entry: string,
+  storyScoped: readonly StoryScopedExclusion[],
+  featureLevel: readonly string[],
+): string[] {
+  if (STORY_ONLY_PREFIX.test(entry)) return [];
+  const key = canonical(entry.replace(INLINE_MARKER, ""));
+  if (key.length < MIN_DEMOTION_MATCH_LENGTH) return [];
+  // A statement the spec ALSO makes at feature level is feature-level, however
+  // many stories restate it under their own AC block. Checked both directions:
+  // the planner may have expanded or trimmed the spec's feature-level wording,
+  // and either way removing it from the feature list is the dangerous error.
+  if (featureLevel.some((item) => key.includes(item) || item.includes(key))) return [];
+
+  const owners = new Set<string>();
+  for (const item of storyScoped) {
+    // A declaration no story owns (an `## Constraints` section after the story
+    // list) cannot be demoted anywhere — treat it as feature-level.
+    if (!item.storyId) continue;
+    const declared = canonical(item.text);
+    if (declared.length < MIN_DEMOTION_MATCH_LENGTH) continue;
+    const matches = key.includes(declared)
+      ? true
+      : declared.includes(key) && key.length >= declared.length * MIN_DEMOTION_COVERAGE;
+    if (matches) owners.add(item.storyId);
   }
-  items.push(...itemsFromInlineMarkers(lines, fenced, boundary));
+  return [...owners];
+}
 
-  return dedupeAndCap(items);
+/**
+ * Undo the planner's hoist of a *story-local* deferral to feature level (#1446).
+ *
+ * The prompt asks the planner to enumerate every `**Out of scope …:**` lead-in
+ * in the spec, and it obliges for the ones under a story's AC block too. Those
+ * then reach {@link propagateOutOfScopeToStories}, which copies the feature list
+ * onto EVERY story — so one story's deferral becomes a waiver the adversarial
+ * reviewer can cite to close a finding in a story it never covered.
+ *
+ * Each such entry is moved onto the `outOfScope` of every story that declared
+ * it. Returns the input PRD unchanged when nothing was hoisted.
+ *
+ * **Fail-safe in the dangerous direction.** Demoting wrongly is far worse than
+ * not demoting: the entry disappears from the feature list, and the backfill
+ * cannot restore it because `extractSpecOutOfScope` never declared it. So an
+ * entry is only ever moved when a real destination exists — no owning story, an
+ * owner absent from the PRD, or an empty result after stripping the lead-in all
+ * leave it at feature level, exactly as `main` behaved.
+ *
+ * Runs before the backfill: {@link extractSpecOutOfScope} never yields
+ * story-scoped items, so the two can never fight over the same statement.
+ *
+ * **Best-effort by construction.** Matching is substring-on-canonical-form, so a
+ * planner that paraphrases a story-local block rather than copying it is not
+ * detected here. The plan prompt is the primary control; this is the backstop
+ * for the common verbatim (and lead-in-retaining) hoist. It also only runs at
+ * plan time — a `prd.json` already on disk with a hoisted entry is not repaired
+ * by `loadPRD`.
+ */
+export function demoteStoryScopedOutOfScope(prd: PRD, specContent: string): PRD {
+  const entries = prd.outOfScope ?? [];
+  if (entries.length === 0) return prd;
+  const storyScoped = extractStoryScopedOutOfScope(specContent);
+  if (storyScoped.length === 0) return prd;
+
+  const featureLevel = extractSpecOutOfScope(specContent).map(canonical);
+  const storyIds = new Set(prd.userStories.map((story) => story.id));
+  const demoted = new Map<string, string[]>();
+  const kept: string[] = [];
+  for (const entry of entries) {
+    // The literal lead-in survives the hoist often enough to be a signal in its
+    // own right; strip it so the demoted entry reads as a plain exclusion.
+    const text = entry.replace(INLINE_MARKER, "").trim();
+    const owners = text ? hoistOwners(entry, storyScoped, featureLevel).filter((id) => storyIds.has(id)) : [];
+    if (owners.length === 0) {
+      kept.push(entry);
+      continue;
+    }
+    for (const owner of owners) demoted.set(owner, [...(demoted.get(owner) ?? []), text]);
+  }
+  if (kept.length === entries.length) return prd;
+
+  const userStories: UserStory[] = prd.userStories.map((story) => {
+    const extra = demoted.get(story.id);
+    return extra ? { ...story, outOfScope: dedupeAndCap([...(story.outOfScope ?? []), ...extra]) } : story;
+  });
+  return { ...prd, outOfScope: kept.length > 0 ? kept : undefined, userStories };
 }
 
 /**

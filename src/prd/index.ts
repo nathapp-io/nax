@@ -22,10 +22,15 @@ export type {
 export { isStalled, markStoryAsBlocked, generateHumanHaltSummary, getContextFiles, getExpectedFiles } from "./types";
 export { findSpecDriftViolations } from "./spec-drift";
 export type { SpecDriftViolation } from "./spec-drift";
+export type { StoryScopedExclusion } from "./out-of-scope-extract";
 export {
   MAX_OUT_OF_SCOPE_ITEMS,
-  applyOutOfScopeFallback,
   extractSpecOutOfScope,
+  extractStoryScopedOutOfScope,
+} from "./out-of-scope-extract";
+export {
+  applyOutOfScopeFallback,
+  demoteStoryScopedOutOfScope,
   findMissingOutOfScope,
   normalizeOutOfScopeList,
   propagateOutOfScopeToStories,

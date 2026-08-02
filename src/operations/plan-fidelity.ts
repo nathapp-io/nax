@@ -7,29 +7,47 @@
  * it is not. spec-review remains the explicit gate before any story executes.
  */
 import { getSafeLogger } from "../logger";
-import { applyOutOfScopeFallback, findMissingOutOfScope, findSpecDriftViolations } from "../prd";
+import {
+  applyOutOfScopeFallback,
+  demoteStoryScopedOutOfScope,
+  findMissingOutOfScope,
+  findSpecDriftViolations,
+} from "../prd";
 import type { PRD } from "../prd/types";
 
 /**
- * Scope-fidelity backfill shared by the plan ops (single + refine).
+ * Scope-fidelity repair shared by the plan ops (single + refine).
  *
  * Feature-level exclusions have exactly one home (`prd.outOfScope`), so unlike
  * a dropped AC — where restoring it would require knowing which story owns it —
- * a dropped exclusion can be repaired deterministically. The prompt asks the planner for its own wording; whatever
- * it drops is appended verbatim from the spec here, and the warning records
- * that the planner needed the safety net.
+ * both directions of drift are repairable deterministically:
  *
- * Returns the backfilled PRD (the input reference when nothing was missing).
+ * - **Over-hoisting** — a story-local `**Out of scope:**` block promoted to
+ *   feature level is pushed back down onto its owning story (#1446). Runs first
+ *   so the backfill's substring check sees the corrected list.
+ * - **Dropping** — the prompt asks the planner for its own wording; whatever it
+ *   drops is appended verbatim from the spec.
+ *
+ * Each warning records that the planner needed the safety net. Returns the input
+ * reference when the PRD was already faithful.
  */
 export function backfillOutOfScope(prd: PRD, specContent: string, featureName: string): PRD {
-  const missing = findMissingOutOfScope(specContent, prd);
-  if (missing.length === 0) return prd;
+  const scoped = demoteStoryScopedOutOfScope(prd, specContent);
+  if (scoped !== prd) {
+    getSafeLogger()?.warn("plan", "Story-local out-of-scope blocks hoisted to feature level — demoted to their story", {
+      featureName,
+      hoistedCount: (prd.outOfScope ?? []).length - (scoped.outOfScope ?? []).length,
+    });
+  }
+
+  const missing = findMissingOutOfScope(specContent, scoped);
+  if (missing.length === 0) return scoped;
   getSafeLogger()?.warn("plan", "Spec out-of-scope statements dropped from PRD — backfilled verbatim from the spec", {
     featureName,
     missingCount: missing.length,
     missing,
   });
-  return applyOutOfScopeFallback(prd, specContent);
+  return applyOutOfScopeFallback(scoped, specContent);
 }
 
 /**
