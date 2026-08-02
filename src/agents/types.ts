@@ -223,6 +223,12 @@ export interface CompleteOptions {
    */
   modelDef: ModelDef;
   /**
+   * Tier the model was resolved from, when it came from one. Absent when an
+   * explicit `{ agent, model }` pin bypassed tier resolution. Recorded on cost
+   * rows for attribution (#1433) — never branch on it.
+   */
+  modelTier?: ModelTier;
+  /**
    * @internal Set by `AgentManager.completeAs`; callers must not pass this — it will be overwritten.
    * Pre-resolved permissions from AgentManager — adapter reads this instead of calling resolvePermissions().
    */
@@ -367,6 +373,14 @@ export interface SessionHandle {
   readonly role?: SessionRole;
   /** Protocol-specific IDs for SessionManager correlation. */
   readonly protocolIds?: ProtocolIds;
+  /**
+   * Model this session was opened with. Recorded on every turn's cost row so
+   * spend is attributable to a model (#1433) — before this, cost rows carried
+   * the literal string "unknown". Attribution only; never branch on it.
+   */
+  readonly modelDef?: ModelDef;
+  /** Tier `modelDef` resolved from, when it came from one. Attribution only. */
+  readonly modelTier?: ModelTier;
 }
 
 /** Options for openSession() — protocol-agnostic surface + ACP-specific pass-throughs. */
@@ -377,6 +391,8 @@ export interface OpenSessionOpts {
   resolvedPermissions: ResolvedPermissions;
   /** ACP: resolved model definition (required for client cmdStr + cost). */
   modelDef: ModelDef;
+  /** Tier the model resolved from, when applicable. Attribution only (#1433). */
+  modelTier?: ModelTier;
   /** ACP: maximum session duration in seconds. */
   timeoutSeconds: number;
   /** ACP: acpx --prompt-retries value (default 0 — opt-in). */

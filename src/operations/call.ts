@@ -159,6 +159,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
         : undefined;
     const completeOptions = {
       modelDef: resolved.modelDef,
+      ...(resolved.modelTier !== undefined ? { modelTier: resolved.modelTier } : {}),
       jsonMode: completeOp.jsonMode ?? false,
       pipelineStage: op.stage,
       storyId: ctx.storyId,

@@ -75,6 +75,7 @@ export {
   listProfiles,
 } from "./profile";
 export { pickSelector, reshapeSelector } from "./selector";
+export { getProjectKey } from "./project-key";
 export type { ConfigSelector } from "./selector";
 export {
   reviewConfigSelector,
