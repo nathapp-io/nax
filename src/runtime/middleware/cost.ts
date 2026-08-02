@@ -94,7 +94,6 @@ export function attachCostSubscriber(
       ts: event.timestamp,
       runId,
       ...(projectKey !== undefined ? { projectKey } : {}),
-      ...(projectKey !== undefined ? { projectKey } : {}),
       schemaVersion: COST_ROW_SCHEMA_VERSION,
       agentName: event.agentName,
       stage: event.stage,
