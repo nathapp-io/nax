@@ -58,7 +58,9 @@
     "fallback": {
       "enabled": true,
       "map": {
-        "claude": ["codex"]
+        "claude": [
+          "codex"
+        ]
       },
       "maxHopsPerStory": 2,
       "onQualityFailure": false,
@@ -153,5 +155,13 @@
   },
   "curator": {
     "enabled": true
+  },
+  "context": {
+    "v2": {
+      "enabled": true,
+      "rules": {
+        "budgetTokens": 20000
+      }
+    }
   }
 }

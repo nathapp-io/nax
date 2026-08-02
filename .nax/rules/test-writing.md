@@ -1,0 +1,28 @@
+---
+priority: 100
+---
+
+# Test Writing Rules
+
+`docs/guides/testing-rules.md` is the source of truth for test-writing behavior in this repo.
+
+This file is a quick lookup table for injectable test dependencies only. For the full 70+ module `_deps` reference, see `docs/architecture/conventions.md` §2.
+
+## Injectable `_deps` Available in nax Source
+
+Use these instead of mutating `Bun.spawn` globally (see `docs/architecture/conventions.md` §2):
+
+| Module | Deps export | Covers |
+|:---|:---|:---|
+| `src/tdd/isolation.ts` | `_isolationDeps.spawn` | `git diff` in `getChangedFiles` |
+| `src/tdd/cleanup.ts` | `_cleanupDeps.spawn/sleep/kill` | `ps`, `Bun.sleep`, `process.kill` in `cleanupProcessTree` |
+| `src/tdd/rollback.ts` | `_rollbackDeps.spawn` | `git reset`/`clean` in `rollbackToRef` |
+| `src/tdd/rectification-gate.ts` | `_rectificationGateDeps.executeWithTimeout/parseBunTestOutput/shouldRetryRectification` | Gate logic |
+| `src/utils/git.ts` | `_gitDeps.spawn` | All git commands |
+| `src/verification/executor.ts` | `_executorDeps.spawn` | Shell test command execution |
+| `src/verification/strategies/acceptance.ts` | `_acceptanceDeps.spawn` | Acceptance test runner |
+
+For orchestrator/multi-module tests, use the shared helper:
+```typescript
+import { saveDeps, restoreDeps, mockGitSpawn, mockAllSpawn } from "./_tdd-test-helpers";
+```
