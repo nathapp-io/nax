@@ -352,9 +352,15 @@ export function dedupeAndCap(items: string[]): string[] {
  * A top-level (`#`/`##`) heading is exempt: a document section named
  * `## Out of Scope` is feature-level wherever the author placed it, including
  * after the story sections.
+ *
+ * Fenced lines are skipped: spec-kit specs document their own markdown by
+ * example, so a literal ` ```markdown / ## Stories ` block would otherwise move
+ * the boundary to the top of the file and reclassify the entire preamble as
+ * story territory.
  */
 export function storyScopeBoundary(lines: string[]): number {
-  const index = lines.findIndex((line) => STORY_SECTION_HEADING.test(stripEmphasis(line)));
+  const fenced = fencedLineIndices(lines);
+  const index = lines.findIndex((line, i) => !fenced.has(i) && STORY_SECTION_HEADING.test(stripEmphasis(line)));
   return index === -1 ? lines.length : index;
 }
 
@@ -400,11 +406,24 @@ export function extractSpecOutOfScope(specContent: string): string[] {
   return dedupeAndCap(items);
 }
 
-/** Nearest `US-00N` heading at or above `index`, else null. */
+/**
+ * The story that owns a declaration at `index`: the nearest `US-00N` heading
+ * above it, or null when nothing owns it.
+ *
+ * Walking back stops at the first top-level (`#`/`##`) heading that is not
+ * itself a story heading, because such a section *closes* story territory — an
+ * `## Constraints` block placed after the story list is document-level again,
+ * and its deferrals belong to the feature, not to whichever story happened to
+ * be listed last. Returning null there is what makes the caller keep the
+ * statement at feature level instead of pinning it to an unrelated story.
+ */
 function owningStoryId(lines: string[], index: number): string | null {
   for (let i = index; i >= 0; i--) {
-    const match = stripEmphasis(lines[i]).match(STORY_ID_HEADING);
-    if (match) return match[1].toUpperCase();
+    const line = stripEmphasis(lines[i]);
+    const story = line.match(STORY_ID_HEADING);
+    if (story) return story[1].toUpperCase();
+    const heading = line.match(ANY_HEADING);
+    if (heading && heading[1].length <= 2) return null;
   }
   return null;
 }

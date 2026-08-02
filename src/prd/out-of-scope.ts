@@ -58,26 +58,54 @@ const STORY_ONLY_PREFIX = /^\s*US-\d+\s+only\s*:/i;
  */
 const MIN_DEMOTION_MATCH_LENGTH = 16;
 
-/** The story-scoped declaration a feature-level entry came from, if any. */
-function hoistSource(
+/**
+ * How much of a story-local declaration an entry must account for before the
+ * *reverse* match (entry shorter than the declaration — the planner trimmed the
+ * spec's wording) is trusted.
+ *
+ * Without it, a story block that merely quotes a feature-level boundary in
+ * passing — "this story does not change the database schema, and no new
+ * migrations are added" — swallows the genuine feature entry "no new migrations
+ * are added" and demotes it off the feature list. Requiring the entry to be at
+ * least half the declaration keeps trimming supported while a passing mention
+ * stays feature-level.
+ */
+const MIN_DEMOTION_COVERAGE = 0.5;
+
+/**
+ * Stories owning a feature-level entry that was hoisted out of story territory —
+ * empty when the entry is genuinely feature-level and must stay put.
+ *
+ * All matching stories, not just the first: two stories may declare the same
+ * deferral, and demoting to one would silently strip it from the other.
+ */
+function hoistOwners(
   entry: string,
   storyScoped: readonly StoryScopedExclusion[],
   featureLevel: readonly string[],
-): StoryScopedExclusion | null {
-  if (STORY_ONLY_PREFIX.test(entry)) return null;
+): string[] {
+  if (STORY_ONLY_PREFIX.test(entry)) return [];
   const key = canonical(entry.replace(INLINE_MARKER, ""));
-  if (key.length < MIN_DEMOTION_MATCH_LENGTH) return null;
+  if (key.length < MIN_DEMOTION_MATCH_LENGTH) return [];
   // A statement the spec ALSO makes at feature level is feature-level, however
-  // many stories restate it under their own AC block.
-  if (featureLevel.some((item) => key.includes(item))) return null;
-  return (
-    storyScoped.find((item) => {
-      const declared = canonical(item.text);
-      if (declared.length < MIN_DEMOTION_MATCH_LENGTH) return false;
-      // Either direction: the planner may expand the spec's wording or trim it.
-      return key.includes(declared) || declared.includes(key);
-    }) ?? null
-  );
+  // many stories restate it under their own AC block. Checked both directions:
+  // the planner may have expanded or trimmed the spec's feature-level wording,
+  // and either way removing it from the feature list is the dangerous error.
+  if (featureLevel.some((item) => key.includes(item) || item.includes(key))) return [];
+
+  const owners = new Set<string>();
+  for (const item of storyScoped) {
+    // A declaration no story owns (an `## Constraints` section after the story
+    // list) cannot be demoted anywhere — treat it as feature-level.
+    if (!item.storyId) continue;
+    const declared = canonical(item.text);
+    if (declared.length < MIN_DEMOTION_MATCH_LENGTH) continue;
+    const matches = key.includes(declared)
+      ? true
+      : declared.includes(key) && key.length >= declared.length * MIN_DEMOTION_COVERAGE;
+    if (matches) owners.add(item.storyId);
+  }
+  return [...owners];
 }
 
 /**
@@ -89,13 +117,25 @@ function hoistSource(
  * onto EVERY story — so one story's deferral becomes a waiver the adversarial
  * reviewer can cite to close a finding in a story it never covered.
  *
- * Each such entry is moved onto its owning story's own `outOfScope` (dropped
- * when no story owns it, or the owner is absent from the PRD — the statement is
- * story-scoped either way, and keeping it at feature level is the defect).
- * Returns the input PRD unchanged when nothing was hoisted.
+ * Each such entry is moved onto the `outOfScope` of every story that declared
+ * it. Returns the input PRD unchanged when nothing was hoisted.
+ *
+ * **Fail-safe in the dangerous direction.** Demoting wrongly is far worse than
+ * not demoting: the entry disappears from the feature list, and the backfill
+ * cannot restore it because `extractSpecOutOfScope` never declared it. So an
+ * entry is only ever moved when a real destination exists — no owning story, an
+ * owner absent from the PRD, or an empty result after stripping the lead-in all
+ * leave it at feature level, exactly as `main` behaved.
  *
  * Runs before the backfill: {@link extractSpecOutOfScope} never yields
  * story-scoped items, so the two can never fight over the same statement.
+ *
+ * **Best-effort by construction.** Matching is substring-on-canonical-form, so a
+ * planner that paraphrases a story-local block rather than copying it is not
+ * detected here. The plan prompt is the primary control; this is the backstop
+ * for the common verbatim (and lead-in-retaining) hoist. It also only runs at
+ * plan time — a `prd.json` already on disk with a hoisted entry is not repaired
+ * by `loadPRD`.
  */
 export function demoteStoryScopedOutOfScope(prd: PRD, specContent: string): PRD {
   const entries = prd.outOfScope ?? [];
@@ -104,19 +144,19 @@ export function demoteStoryScopedOutOfScope(prd: PRD, specContent: string): PRD 
   if (storyScoped.length === 0) return prd;
 
   const featureLevel = extractSpecOutOfScope(specContent).map(canonical);
+  const storyIds = new Set(prd.userStories.map((story) => story.id));
   const demoted = new Map<string, string[]>();
   const kept: string[] = [];
   for (const entry of entries) {
-    const source = hoistSource(entry, storyScoped, featureLevel);
-    if (!source) {
-      kept.push(entry);
-      continue;
-    }
     // The literal lead-in survives the hoist often enough to be a signal in its
     // own right; strip it so the demoted entry reads as a plain exclusion.
     const text = entry.replace(INLINE_MARKER, "").trim();
-    if (!source.storyId || !text) continue;
-    demoted.set(source.storyId, [...(demoted.get(source.storyId) ?? []), text]);
+    const owners = text ? hoistOwners(entry, storyScoped, featureLevel).filter((id) => storyIds.has(id)) : [];
+    if (owners.length === 0) {
+      kept.push(entry);
+      continue;
+    }
+    for (const owner of owners) demoted.set(owner, [...(demoted.get(owner) ?? []), text]);
   }
   if (kept.length === entries.length) return prd;
 
