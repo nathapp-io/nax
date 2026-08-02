@@ -16,6 +16,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { NaxError } from "../../errors";
 import { getLogger } from "../../logger";
 import { errorMessage } from "../../utils/errors";
+import { NeutralityLintError } from "../rules/canonical-loader";
 import { AGENT_PROFILES, getAgentProfile } from "./agent-profiles";
 import { renderForAgent } from "./agent-renderer";
 import { dedupeChunks } from "./dedupe";
@@ -309,8 +310,8 @@ export class ContextOrchestrator {
     }
 
     // Step 2: parallel fetch with timeout — failures return empty, never throw,
-    // except a "static" (rules) provider, which escalates (see catch below).
-    // Per-provider status is recorded for manifest auditability (Finding 3).
+    // except a NeutralityLintError, which escalates (see catch below). Per-
+    // provider status is recorded for manifest auditability (Finding 3).
     const fetchResults = await Promise.all(
       activeProviders.map(async (provider) => {
         const providerStart = _orchestratorDeps.now();
@@ -338,10 +339,11 @@ export class ContextOrchestrator {
           const errMsg = errorMessage(err);
           const status = errMsg.includes("timed out") ? ("timeout" as const) : ("failed" as const);
 
-          // A rules-store failure is a silent fail-open otherwise — see
-          // IContextProvider.fetch (types.ts) for the documented exception.
-          if (provider.kind === "static") {
-            const msg = `Rules provider "${provider.id}" ${status} — aborting rather than proceeding ruleless`;
+          // Escalate on THIS error type only (see IContextProvider.fetch in
+          // types.ts) — not `provider.kind === "static"` generally, since a
+          // static provider timeout/IO error should still soft-skip.
+          if (err instanceof NeutralityLintError) {
+            const msg = `Rules provider "${provider.id}" failed neutrality lint — escalating`;
             logger.error("context-v2", msg, { storyId: request.storyId, error: errMsg });
             throw err;
           }

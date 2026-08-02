@@ -380,7 +380,7 @@ describe("curatorCommit", () => {
   });
 
   describe("target path containment", () => {
-    test("rejects a proposal whose ### heading escapes .nax/ via path traversal", async () => {
+    test("skips (does not write) a proposal whose ### heading escapes the allowed targets via path traversal", async () => {
       const projectDir = join(tmpDir, "project");
       mkdirSync(join(projectDir, ".nax", "rules"), { recursive: true });
       _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
@@ -403,7 +403,35 @@ describe("curatorCommit", () => {
         writeCalled = true;
       });
 
-      await expect(curatorCommit({ runId })).rejects.toThrow(/resolves outside/);
+      await curatorCommit({ runId });
+      expect(writeCalled).toBe(false);
+      const out = capturedOutput.join("\n");
+      expect(out).toMatch(/\[skip\].*not an allowed curator target/);
+    });
+
+    test("skips a proposal targeting a shape outside .nax/rules/ or .nax/features/*/context.md", async () => {
+      // e.g. .nax/config.json — inside .nax/ but not one of the two shapes
+      // curator actually writes.
+      const projectDir = join(tmpDir, "project");
+      mkdirSync(join(projectDir, ".nax"), { recursive: true });
+      _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
+
+      setupRun(
+        [
+          "# Curator Proposals",
+          "## add — Add suggestions",
+          "### .nax/config.json",
+          "- [x] [MED] H1: not a rules or context target — stories: US-001",
+          "  _Evidence: n/a_",
+        ].join("\n"),
+      );
+
+      let writeCalled = false;
+      _deps.appendFile = mock(async () => {
+        writeCalled = true;
+      });
+
+      await curatorCommit({ runId });
       expect(writeCalled).toBe(false);
     });
 
@@ -434,7 +462,7 @@ describe("curatorCommit", () => {
   });
 
   describe("content neutrality lint before append", () => {
-    test("rejects a rules-store add proposal whose content fails the neutrality linter", async () => {
+    test("skips (does not append) a rules-store add proposal whose content fails the neutrality linter", async () => {
       const projectDir = join(tmpDir, "project");
       mkdirSync(join(projectDir, ".nax", "rules"), { recursive: true });
       _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
@@ -457,8 +485,40 @@ describe("curatorCommit", () => {
         writeCalled = true;
       });
 
-      await expect(curatorCommit({ runId })).rejects.toThrow(/neutrality linter/);
+      await curatorCommit({ runId });
       expect(writeCalled).toBe(false);
+      const out = capturedOutput.join("\n");
+      expect(out).toMatch(/\[skip\].*neutrality linter/);
+    });
+
+    test("one proposal failing lint does not block other valid proposals in the same commit", async () => {
+      const projectDir = join(tmpDir, "project");
+      mkdirSync(join(projectDir, ".nax", "rules"), { recursive: true });
+      mkdirSync(join(projectDir, ".nax", "features", "feat-1"), { recursive: true });
+      _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
+
+      setupRun(
+        [
+          "# Curator Proposals",
+          "## add — Add suggestions",
+          "### .nax/rules/curator-suggestions.md",
+          "- [x] [HIGH] H1: ship it 🚀 always — stories: US-001",
+          "  _Evidence: n/a_",
+          "### .nax/features/feat-1/context.md",
+          "- [x] [MED] H2: a valid unrelated proposal — stories: US-002",
+          "  _Evidence: n/a_",
+        ].join("\n"),
+      );
+
+      const appendedPaths: string[] = [];
+      _deps.appendFile = mock(async (p: string, content: string) => {
+        appendedPaths.push(p);
+        await Bun.write(p, content);
+      });
+
+      await curatorCommit({ runId });
+      expect(appendedPaths.some((p) => p.endsWith("feat-1/context.md"))).toBe(true);
+      expect(appendedPaths.some((p) => p.endsWith("curator-suggestions.md"))).toBe(false);
     });
 
     test("does NOT lint add proposals targeting .nax/features/<id>/context.md", async () => {

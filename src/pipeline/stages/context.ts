@@ -16,7 +16,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { createDefaultOrchestrator, createRunCallCounter } from "../../context/engine";
+import { NeutralityLintError, createDefaultOrchestrator, createRunCallCounter } from "../../context/engine";
 import type { ContextRequest, IContextProvider } from "../../context/engine";
 import { estimateAvailableBudgetTokens } from "../../context/engine/available-budget";
 import { writeContextManifest } from "../../context/engine/manifest-store";
@@ -201,6 +201,20 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
       buildMs: bundle.manifest.buildMs,
     });
   } catch (err) {
+    if (err instanceof NeutralityLintError) {
+      // The canonical rules store failed neutrality lint. Proceeding with v2
+      // enabled but zero rules chunks is a silent fail-open — fall back to
+      // the v1 path (reads CLAUDE.md / .nax/context.md directly, unaffected
+      // by this specific failure) so the story still gets SOME grounding
+      // content instead of none. See IContextProvider.fetch (types.ts).
+      logger.error("context", "Canonical rules failed neutrality lint — falling back to v1 context", {
+        storyId: ctx.story.id,
+        error: errorMessage(err),
+      });
+      await runV1Path(ctx);
+      return;
+    }
+
     // Soft failure — v2 context is not required for agent to proceed
     logger.warn("context", "v2 orchestrator failed — proceeding without v2 context", {
       storyId: ctx.story.id,
