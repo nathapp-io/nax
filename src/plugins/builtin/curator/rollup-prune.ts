@@ -14,8 +14,9 @@
  * original rollup intact rather than truncating it.
  */
 
-import { rename, unlink } from "node:fs/promises";
+import { rename, unlink, writeFile } from "node:fs/promises";
 import { appendFile } from "node:fs/promises";
+import { streamJsonlLines } from "./jsonl-stream";
 import type { Observation } from "./types";
 
 /**
@@ -43,22 +44,8 @@ export interface PruneResult {
 }
 
 /** Stream a JSONL file line by line without materialising it. */
-async function* streamLines(filePath: string): AsyncGenerator<string> {
-  const stream = Bun.file(filePath).stream();
-  const decoder = new TextDecoder();
-  let carry = "";
-  for await (const chunk of stream) {
-    carry += decoder.decode(chunk, { stream: true });
-    let nl = carry.indexOf("\n");
-    while (nl !== -1) {
-      yield carry.slice(0, nl);
-      carry = carry.slice(nl + 1);
-      nl = carry.indexOf("\n");
-    }
-  }
-  carry += decoder.decode();
-  // A final line without a trailing newline is still a row.
-  if (carry.length > 0) yield carry;
+function streamLines(filePath: string): AsyncGenerator<string> {
+  return streamJsonlLines(Bun.file(filePath));
 }
 
 /**
@@ -112,8 +99,14 @@ export interface PruneRollupInput {
 export async function pruneRollup(input: PruneRollupInput): Promise<PruneResult> {
   const { rollupPath, projectKey, keepRunIds, dropUnattributed = false } = input;
   const tmpPath = `${rollupPath}.gc-tmp`;
-  // A temp file left by an interrupted earlier run would otherwise be appended to.
-  await unlink(tmpPath).catch(() => {});
+  // Truncating creation, not append: a temp file left by an interrupted earlier
+  // run would otherwise be appended to. It must also happen UNCONDITIONALLY —
+  // when every row is dropped the buffer never flushes, and a temp file created
+  // only on first flush would leave the rename below with nothing to rename.
+  // That is the real `--sweep-unattributed` case: a rollup written entirely
+  // before #1429 has no attributable row, so `keepRunIds` is empty and the
+  // correct result is an empty rollup, not ENOENT.
+  await writeFile(tmpPath, "");
 
   const result: PruneResult = { kept: 0, dropped: 0, keptOtherProjects: 0, keptUnattributed: 0 };
   let buffer = "";

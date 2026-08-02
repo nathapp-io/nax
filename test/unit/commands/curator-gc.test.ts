@@ -388,6 +388,24 @@ describe("curatorGc", () => {
       expect((await readRollupRows(rollupPath)).map((r) => r.runId)).toEqual(["mine-001"]);
     });
 
+    test("--sweep-unattributed empties a rollup that is entirely pre-#1429 history", async () => {
+      // The motivating case: a 618 MB rollup written before project scoping, so
+      // NO row is attributable and `keepRunIds` is empty. Every row is dropped,
+      // which means the prune buffer never fills and the temp file is never
+      // created — the rename must still land on an empty rollup, not ENOENT.
+      const { projectKey: _dropped, ...legacy } = makeObservation("verdict", "legacy-001");
+      writeRollup(rollupPath, [
+        { ...legacy, ts: "2026-01-01T00:00:00.000Z" } as Observation,
+        { ...legacy, runId: "legacy-002", ts: "2026-01-02T00:00:00.000Z" } as Observation,
+      ]);
+
+      await curatorGc({ keep: 50, sweepUnattributed: true });
+
+      expect(await Bun.file(rollupPath).exists()).toBe(true);
+      expect(await Bun.file(rollupPath).text()).toBe("");
+      expect(existsSync(`${rollupPath}.gc-tmp`)).toBe(false);
+    });
+
     test("keeps rows that fail to parse rather than silently dropping them", async () => {
       // We cannot tell whose a corrupt row is, so deleting it is not ours to do.
       writeRollup(rollupPath, [
