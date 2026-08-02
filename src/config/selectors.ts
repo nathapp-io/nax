@@ -71,7 +71,11 @@ export const rectificationGateConfigSelector = pickSelector(
 
 // agent only selectors for resolveDefaultAgent
 export const agentConfigSelector = pickSelector("agent", "agent");
-export const agentManagerConfigSelector = pickSelector("agent-manager", "agent", "execution");
+// "profile" is the resolved profile-chain display string ("cc-acceptance",
+// "a+b", or "default"). AgentManager stamps it onto dispatch events so cost rows
+// record which overlay was active — profiles repoint agent and model per stage
+// and are otherwise invisible in run artifacts (#1433).
+export const agentManagerConfigSelector = pickSelector("agent-manager", "agent", "execution", "profile");
 export const interactionConfigSelector = pickSelector("interaction", "interaction");
 export const precheckConfigSelector = pickSelector(
   "precheck",

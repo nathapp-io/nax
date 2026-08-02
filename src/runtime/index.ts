@@ -72,7 +72,7 @@ import type { CreateAgentManagerOpts } from "../agents/factory";
 import { createAgentManager } from "../agents/factory";
 import { AgentManager } from "../agents/manager";
 import type { NaxConfig } from "../config";
-import { createConfigLoader } from "../config";
+import { createConfigLoader, getProjectKey } from "../config";
 import type { ConfigLoader } from "../config";
 import { NaxError } from "../errors";
 import { PidRegistry } from "../execution/pid-registry";
@@ -246,7 +246,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   }
 
   const offLogging = attachLoggingSubscriber(dispatchEvents, runId);
-  const offCost = attachCostSubscriber(dispatchEvents, costAggregator, runId);
+  const offCost = attachCostSubscriber(dispatchEvents, costAggregator, runId, getProjectKey(config, workdir));
   const offAudit = attachAuditSubscriber(dispatchEvents, promptAuditor, runId);
   const offReviewAudit = attachReviewAuditSubscriber(dispatchEvents, reviewAuditor, runId);
   const offAgentStreamLogging = attachAgentStreamLogging(agentStreamEvents, runId);

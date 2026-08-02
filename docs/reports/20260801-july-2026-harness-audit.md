@@ -189,7 +189,7 @@ Phase 7 of the spec-review skill already bans `[grep]`/`[file]`/`[verbatim]` ACs
 | 7 | Reviewer `acks` channel | **shipped** — [#1426](https://github.com/nathapp-io/nax/pull/1426) |
 | 9 | Chunk token accounting | **shipped** — [#1426](https://github.com/nathapp-io/nax/pull/1426) |
 | 4 | Spec-review data-literal check | open — [spec-kit#18](https://github.com/nathapp-io/nax-spec-kit-skills/issues/18) |
-| 8 | Acceptance retry tail | **dissolved** — the metric was not a retry count; instrumentation fixed, §14 |
+| 8 | Acceptance retry tail | **dissolved** — the metric was not a retry count; [#1424](https://github.com/nathapp-io/nax/issues/1424) closed, see §14 |
 | 10 | Curator loop | counts **shipped** ([#1427](https://github.com/nathapp-io/nax/pull/1427) + [#1428](https://github.com/nathapp-io/nax/pull/1428)); recall re-scoped — [#1422](https://github.com/nathapp-io/nax/issues/1422), §12 |
 | 3b | Non-productive-iteration bail | **withdrawn** — §10 |
 
@@ -328,3 +328,46 @@ The real ceiling of 2 is not a coincidence: `runAcceptanceLoop` returns after on
 **Method note.** The stage's three existing `acceptance verdict logger emit` tests asserted only that execution did not throw — the verdict payload they are named for was never captured. One of them asserted on `ctx.packageDir`, a property `PipelineContext` does not define, which `tsconfig.json` could not catch because it excludes `test/`. They now capture the emitted payloads through a logger sink and assert the fields. This is the fourth instance this month of the same shape recorded in §13: the producer was wired, the consumer was not, and the tests sat on the wrong side of the seam.
 
 **Standing implication for this report.** Three of its quantitative claims have now failed on contact with the artifacts (#3b, #8's mechanism, #8's tail). The common factor is not arithmetic — it is trusting a telemetry field's *name*. Any metric here that no production code consumes should be re-derived from a second, independent signal before it is used to justify work.
+
+## Where to pick up (2026-08-02)
+
+> Deliberately unnumbered so it stays the report's tail as sections are appended above it.
+
+Written so a fresh session can resume without re-deriving anything. Read this first — three of the report's quantitative claims have now failed on contact with the artifacts, and the common cause is the same: trusting a telemetry field's name.
+
+The most recent of those is §14 — §4's acceptance retry tail does not exist, because `verdict.retries` was reporting the hardening pass's promoted-AC count.
+
+### Ranked next steps
+
+| # | Work | Why it is ranked here | State |
+|--:|:---|:---|:---|
+| 1 | **Cost-ledger attribution** — [#1433](https://github.com/nathapp-io/nax/issues/1433) | Prerequisite for every other cost question, including this report's own August measurement plan. `model` was `"unknown"` on 100% of July spend and `sessionRole` absent on all of it, across all six stages. | **shipped** — [#1434](https://github.com/nathapp-io/nax/pull/1434) |
+| 2 | Acceptance generation: cache economics | 32% of generation spend is cacheWrite (19.31M tokens), because `acceptanceGenerateOp` is `session: { lifetime: "fresh" }` and every package group rebuilds cache from scratch. Independent of model tier; does not touch generation quality. | not started |
+| 3 | Re-derive rectification's breakdown from `sessionRole` | At 44.7% of stage cost it is the only stage where a 10% win outweighs all of acceptance — and it is currently 100% unattributable below the stage level. | unblocked by #1434; needs August data |
+| 4 | Acceptance generation: 34% excess calls | 409 generation calls against a structural floor of 271 (one per package group), across 61 features, with ~zero regeneration log lines to explain it. Mechanism unresolved. | not started |
+| 5 | Curator gc — [#1430](https://github.com/nathapp-io/nax/issues/1430) | Unblocked by #1432 but needs a retention decision first (auto-prune vs documented bound; what happens to ~648 MB of unattributable pre-#1429 rows). | awaiting decision |
+
+Also open, unchanged: [spec-kit#18](https://github.com/nathapp-io/nax-spec-kit-skills/issues/18) (spec-review data-literal check) and [#1422](https://github.com/nathapp-io/nax/issues/1422) (curator H1 identity-key recall, needs August data).
+
+[#1424](https://github.com/nathapp-io/nax/issues/1424) is **closed as dissolved** — see §14.
+
+### What acceptance spend actually is
+
+Derived by joining cost rows to `prompt-audit/` transcripts on `runId` + nearest timestamp, because `sessionRole` is not on the row (#1433):
+
+| sub-activity | cost | share | calls | output tok/call |
+|:---|---:|---:|---:|---:|
+| generation | $231.40 | **71.3%** | 324 | 18,112 |
+| diagnose | $49.54 | 15.3% | 312 | 2,153 |
+| source-fix | $14.65 | 4.5% | 24 | 7,917 |
+| hardening | $13.39 | 4.1% | 53 | 4,674 |
+| other | $11.80 | 3.6% | 36 | 2,022 |
+| ac-refine | $3.70 | 1.1% | 709 | 1,289 |
+
+Acceptance is output-bound one-shot generation, not a retry loop. §4's framing had it backwards.
+
+### Two traps for whoever picks this up
+
+**Run profiles are invisible in run artifacts.** `~/.nax/profiles/*.json` repoint agent and model per stage, and nothing in `cost/`, `prompt-audit/` or the feature run logs records which profile was active. Acceptance generation reconciles to Sonnet pricing while `acceptance.model` resolves to `"fast"` → haiku; that is not a bug, it is `cc-acceptance.json` pinning `generateModel: { agent: "claude", model: "balanced" }` deliberately. Check the profiles before concluding a stage uses the wrong model. Recording the active profile is item 5 of #1433's proposal list.
+
+**Two stages are majority-estimated.** `review` is 60% estimate-derived and `plan` is 63%, concentrated in the one agent that never returns a wire-exact cost. The estimator runs 0.4x aggregate and up to 21x off per row, so those two rows of §1's table — including "plan is nearly free" — are not reliable in either direction. The acceptance figures above are ~100% wire-exact and safe.

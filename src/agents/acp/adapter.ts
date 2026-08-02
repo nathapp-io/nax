@@ -421,6 +421,7 @@ export class AcpAgentAdapter implements AgentAdapter {
         resumed: ensured.resumed,
         timeoutSeconds,
         modelDef,
+        modelTier: opts.modelTier,
         permissionMode: resolvedPermissions.mode,
       });
     } catch (error) {

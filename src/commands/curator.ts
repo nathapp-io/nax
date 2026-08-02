@@ -9,7 +9,7 @@ import { readdirSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { NaxConfig } from "../config";
-import { loadConfig } from "../config";
+import { getProjectKey, loadConfig } from "../config";
 import type { CuratorThresholds } from "../plugins/builtin/curator/heuristics";
 import { runHeuristics } from "../plugins/builtin/curator/heuristics";
 import { renderProposals } from "../plugins/builtin/curator/render";
@@ -74,10 +74,6 @@ export const _curatorCmdDeps = {
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function getProjectKey(config: NaxConfig, projectDir: string): string {
-  return config.name?.trim() || basename(projectDir);
-}
 
 function listRunIds(runsDir: string): string[] {
   try {

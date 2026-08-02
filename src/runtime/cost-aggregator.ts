@@ -3,9 +3,37 @@ import { getSafeLogger } from "../logger";
 export interface CostEvent {
   readonly ts: number;
   readonly runId: string;
+  /** Stable project identity — `runId`/`storyId` collide across repos (#1429). */
+  readonly projectKey?: string;
+  /**
+   * Row schema version; see `COST_ROW_SCHEMA_VERSION`. Absent on pre-#1433 rows,
+   * which carry no model, tier, role, profile, pricing-source or project
+   * attribution and cannot be backfilled.
+   */
+  readonly schemaVersion?: number;
   readonly agentName: string;
+  /**
+   * Concrete model the call ran on. `"unknown"` only when the dispatch carried
+   * no resolved model — before #1433 this was hardcoded to `"unknown"` on 100%
+   * of rows, so treat `"unknown"` on a schemaVersion<2 row as "not recorded",
+   * not as a real value.
+   */
   readonly model: string;
+  /** Tier the model resolved from, when one selected it. Absent for pinned models. */
+  readonly modelTier?: string;
+  /**
+   * Resolved run-profile chain ("cc-acceptance", "a+b", "default"). Without it a
+   * row cannot distinguish a deliberate profile pin from a stage ignoring its
+   * configured tier — profiles live outside the run artifacts entirely.
+   */
+  readonly profile?: string;
   readonly stage?: string;
+  /**
+   * Session role (`test-writer`, `implementer`, `acceptance-gen`, …). The
+   * sub-stage attribution key — `stage` alone collapses 23 roles into 6 buckets.
+   */
+  readonly sessionRole?: string;
+  readonly featureName?: string;
   readonly storyId?: string;
   readonly packageDir?: string;
   readonly callId?: string;
@@ -19,12 +47,32 @@ export interface CostEvent {
   readonly costUsd: number;
   /** Confidence derived from presence of exactCostUsd at wire boundary. */
   readonly confidence: "exact" | "estimated";
+  /**
+   * Where `costUsd` came from.
+   *
+   * - `wire` — the agent reported an exact cost; `confidence` is `"exact"`.
+   * - `model-rates` — estimated from this model's entry in `MODEL_PRICING`.
+   * - `fallback-rates` — estimated from the generic $3/$15-per-1M card because
+   *   the pricing table has no entry for the model. Treat these as indicative
+   *   only: measured against rows that also had a wire cost, the estimator ran
+   *   0.4x in aggregate and up to 21x off per row (#1433).
+   * - `unknown-model` — no model was resolved, so the rate card cannot be named.
+   */
+  readonly pricingSource?: "wire" | "model-rates" | "fallback-rates" | "unknown-model";
   readonly durationMs: number;
 }
 
 export interface CostErrorEvent {
+  /**
+   * Discriminator. Error rows carry no cost or token fields, so without this a
+   * consumer cannot distinguish "the call failed" from "the call cost zero" —
+   * 197 of July 2026's 6,433 rows were ambiguous this way (#1433).
+   */
+  readonly kind: "error";
   readonly ts: number;
   readonly runId: string;
+  readonly projectKey?: string;
+  readonly schemaVersion?: number;
   readonly agentName: string;
   readonly model?: string;
   readonly stage?: string;

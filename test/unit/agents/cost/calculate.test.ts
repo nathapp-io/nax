@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { addTokenUsage } from "../../../../src/agents/cost";
+import { addTokenUsage, estimateCostFromTokenUsage, resolvePricingSource } from "../../../../src/agents/cost";
 import type { TokenUsage } from "../../../../src/agents/cost";
 
 describe("addTokenUsage", () => {
@@ -77,5 +77,35 @@ describe("addTokenUsage", () => {
     expect(result.outputTokens).toBe(0);
     expect(result.cacheReadInputTokens).toBeUndefined();
     expect(result.cacheCreationInputTokens).toBeUndefined();
+  });
+});
+
+// ─── resolvePricingSource (#1433) ────────────────────────────────────────────
+
+describe("resolvePricingSource", () => {
+  test.each([
+    ["haiku", "model-rates"],
+    ["sonnet", "model-rates"],
+    ["claude-haiku-4-5", "model-rates"],
+    // Real July models with no MODEL_PRICING entry.
+    ["minimax/MiniMax-M2.7", "fallback-rates"],
+    ["gpt-5.6-luna[medium]", "fallback-rates"],
+  ])("%s resolves to %s", (model, expected) => {
+    expect(resolvePricingSource(model)).toBe(expected);
+  });
+
+  test.each([[undefined], [""], ["unknown"]])("%p resolves to unknown-model", (model) => {
+    expect(resolvePricingSource(model as string | undefined)).toBe("unknown-model");
+  });
+
+  test("agrees with the estimator about which models use the generic card", () => {
+    const usage = { inputTokens: 1_000_000, outputTokens: 1_000_000 };
+    // The generic card is $3/$15 per 1M. A model reported as fallback-rates must
+    // price exactly there; one reported as model-rates must not (haiku is $0.8/$4).
+    expect(resolvePricingSource("minimax/MiniMax-M2.7")).toBe("fallback-rates");
+    expect(estimateCostFromTokenUsage(usage, "minimax/MiniMax-M2.7")).toBeCloseTo(18, 5);
+
+    expect(resolvePricingSource("haiku")).toBe("model-rates");
+    expect(estimateCostFromTokenUsage(usage, "haiku")).toBeCloseTo(4.8, 5);
   });
 });

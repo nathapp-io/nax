@@ -148,3 +148,24 @@ export function estimateCostFromTokenUsage(usage: TokenUsage, model: string): nu
 
   return inputCost + outputCost + cacheReadCost + cacheCreationCost;
 }
+
+/**
+ * Which rate card `estimateCostFromTokenUsage` would use for `model`.
+ *
+ * Deliberately adjacent to that function: it re-states the same
+ * `MODEL_PRICING[model]` predicate, so the two must be changed together. When
+ * the table has no entry the estimator silently applies a generic
+ * $3/$15-per-1M card, which is Sonnet-shaped and wrong for most third-party
+ * models — July 2026 priced every `minimax/*` and `gpt-5.6-*` row that way,
+ * giving per-row errors up to 21x. Recording the source makes an estimate built
+ * on guessed rates distinguishable from one built on the model's real rates
+ * (#1433).
+ *
+ * @param model - Resolved model name, or undefined when nothing resolved one
+ * @returns `"model-rates"` when priced from the table, `"fallback-rates"` when
+ *          priced from the generic card, `"unknown-model"` when no model is known
+ */
+export function resolvePricingSource(model: string | undefined): "model-rates" | "fallback-rates" | "unknown-model" {
+  if (model === undefined || model === "" || model === "unknown") return "unknown-model";
+  return MODEL_PRICING[model] ? "model-rates" : "fallback-rates";
+}

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { DispatchEventBus } from "../../../../src/runtime/dispatch-events";
 import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "../../../../src/runtime/dispatch-events";
-import { attachCostSubscriber } from "../../../../src/runtime/middleware/cost";
+import { COST_ROW_SCHEMA_VERSION, attachCostSubscriber } from "../../../../src/runtime/middleware/cost";
 import { createNoOpCostAggregator, type CostEvent, type CostErrorEvent } from "../../../../src/runtime/cost-aggregator";
 
 const PERMS = { mode: "approve-reads" as const, skipPermissions: false };
@@ -79,6 +79,8 @@ describe("attachCostSubscriber", () => {
     expect(recorded[0].costUsd).toBe(0.006);
     expect(recorded[0].confidence).toBe("exact");
     expect(recorded[0].durationMs).toBe(200);
+    // Falls back to "unknown" only because this fixture event carries no model;
+    // see the #1433 block below for the attributed case.
     expect(recorded[0].model).toBe("unknown");
     expect(recorded[0].storyId).toBe("s-1");
     expect(recorded[0].stage).toBe("run");
@@ -266,5 +268,235 @@ describe("attachCostSubscriber", () => {
 
     expect(recorded).toHaveLength(1);
     expect(recorded[0].scopeId).toBeUndefined();
+  });
+
+  // ── #1433: model / role attribution ──────────────────────────────────────
+  //
+  // These fields all existed on the dispatch event (or were resolvable) and were
+  // dropped by this middleware. Over July 2026, `model` was the literal string
+  // "unknown" on 100% of 6,433 rows and `sessionRole` was absent on all of them,
+  // which made per-model and per-sub-stage cost attribution impossible.
+
+  test("#1433: records the model the dispatch actually ran on", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ model: "haiku", modelTier: "fast" }));
+
+    expect(recorded[0].model).toBe("haiku");
+    expect(recorded[0].modelTier).toBe("fast");
+  });
+
+  test("#1433: model falls back to \"unknown\" only when the event carries none", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ model: undefined }));
+
+    expect(recorded[0].model).toBe("unknown");
+    expect(recorded[0].modelTier).toBeUndefined();
+  });
+
+  test("#1433: omits modelTier for a pinned model rather than inventing one", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    // A `{ agent, model }` pin bypasses tier resolution — recording a tier here
+    // would claim a tier that never selected the model.
+    bus.emitDispatch(makeSessionTurnEvent({ model: "sonnet", modelTier: undefined }));
+
+    expect(recorded[0].model).toBe("sonnet");
+    expect("modelTier" in recorded[0]).toBe(false);
+  });
+
+  test("#1433: carries sessionRole so sub-stage spend is attributable", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    // `stage` collapses 23 session roles into 6 buckets; without the role,
+    // "how much of rectification is test-writing?" has no answer.
+    bus.emitDispatch(makeSessionTurnEvent({ stage: "rectification", sessionRole: "test-writer" }));
+
+    expect(recorded[0].stage).toBe("rectification");
+    expect(recorded[0].sessionRole).toBe("test-writer");
+  });
+
+  test("#1433: carries featureName when the dispatch has one", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ featureName: "kv-cache" }));
+
+    expect(recorded[0].featureName).toBe("kv-cache");
+  });
+
+  test("#1433: complete-kind dispatches are attributed too", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(
+      makeCompleteEvent({ model: "sonnet", modelTier: "balanced", sessionRole: "judge", exactCostUsd: 0.02 }),
+    );
+
+    expect(recorded[0].model).toBe("sonnet");
+    expect(recorded[0].modelTier).toBe("balanced");
+    expect(recorded[0].sessionRole).toBe("judge");
+  });
+
+  test("#1433: rows carry a schemaVersion so pre-fix rows stay distinguishable", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ model: "haiku" }));
+
+    expect(recorded[0].schemaVersion).toBe(COST_ROW_SCHEMA_VERSION);
+    expect(COST_ROW_SCHEMA_VERSION).toBeGreaterThan(1);
+  });
+
+  test("#1433: error rows are discriminable from genuine zero-cost rows", () => {
+    const errors: CostErrorEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), recordError: (e: CostErrorEvent) => errors.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatchError(makeErrorEvent());
+
+    // Error rows carry no cost/token fields. Without the discriminator a reader
+    // cannot tell them from a real row that cost nothing.
+    expect(errors[0].kind).toBe("error");
+    expect(errors[0].schemaVersion).toBe(COST_ROW_SCHEMA_VERSION);
+  });
+
+  test("#1433: records the active run profile", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    // Profiles repoint agent/model per stage and appear nowhere else in run
+    // artifacts, so a Sonnet-priced row under a "fast" config is indistinguishable
+    // from a tier bug without this.
+    bus.emitDispatch(makeSessionTurnEvent({ model: "sonnet", profile: "cc-acceptance" }));
+
+    expect(recorded[0].profile).toBe("cc-acceptance");
+  });
+
+  test("#1433: omits profile when the dispatch carries none", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ profile: undefined }));
+
+    expect("profile" in recorded[0]).toBe(false);
+  });
+
+  // ── #1433 item 6: pricingSource ──────────────────────────────────────────
+  //
+  // `confidence` says whether a wire cost existed. It does NOT say what an
+  // estimate was built from. estimateCostFromTokenUsage silently applies a
+  // generic $3/$15-per-1M card to any model absent from MODEL_PRICING, so a
+  // minimax/* or gpt-5.6-* row was priced with Sonnet-shaped rates and looked
+  // identical to a correctly-priced one.
+
+  test("#1433: wire-exact rows record pricingSource=wire", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ model: "haiku", exactCostUsd: 0.006 }));
+
+    expect(recorded[0].confidence).toBe("exact");
+    expect(recorded[0].pricingSource).toBe("wire");
+  });
+
+  test("#1433: estimated rows for a known model record model-rates", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(
+      makeSessionTurnEvent({ model: "haiku", exactCostUsd: undefined, estimatedCostUsd: 0.01 }),
+    );
+
+    expect(recorded[0].confidence).toBe("estimated");
+    expect(recorded[0].pricingSource).toBe("model-rates");
+  });
+
+  test("#1433: estimated rows for a model absent from the table record fallback-rates", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    // Real July models with no MODEL_PRICING entry — these were the 60% of
+    // review spend and 63% of plan spend priced on guessed rates.
+    bus.emitDispatch(
+      makeSessionTurnEvent({ model: "minimax/MiniMax-M2.7", exactCostUsd: undefined, estimatedCostUsd: 0.01 }),
+    );
+
+    expect(recorded[0].pricingSource).toBe("fallback-rates");
+  });
+
+  test("#1433: rows with no resolved model record unknown-model", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ model: undefined, exactCostUsd: undefined, estimatedCostUsd: 0.01 }));
+
+    expect(recorded[0].model).toBe("unknown");
+    expect(recorded[0].pricingSource).toBe("unknown-model");
+  });
+
+  test("#1433: stamps projectKey so a row survives being lifted from its directory", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001", "rs-stock");
+
+    bus.emitDispatch(makeSessionTurnEvent());
+
+    expect(recorded[0].projectKey).toBe("rs-stock");
+  });
+
+  test("#1433: omits projectKey when none is supplied", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent());
+
+    expect("projectKey" in recorded[0]).toBe(false);
+  });
+
+  test("#1433: error rows carry projectKey too", () => {
+    const errors: CostErrorEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), recordError: (e: CostErrorEvent) => errors.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001", "rs-stock");
+
+    bus.emitDispatchError(makeErrorEvent());
+
+    expect(errors[0].projectKey).toBe("rs-stock");
   });
 });

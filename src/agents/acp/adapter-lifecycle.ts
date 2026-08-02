@@ -4,7 +4,7 @@
  */
 
 import { createHash } from "node:crypto";
-import type { ModelDef } from "../../config/schema";
+import type { ModelDef, ModelTier } from "../../config/schema";
 import { NaxError } from "../../errors";
 import { getSafeLogger } from "../../logger";
 import type { ProtocolIds } from "../../runtime/protocol-types";
@@ -269,6 +269,14 @@ export class AcpSessionHandleImpl implements SessionHandle {
   readonly id: string;
   readonly agentName: string;
   readonly protocolIds: ProtocolIds;
+  /**
+   * Public mirror of `_modelDef` (#1433). `_modelDef` stays for ACP-internal
+   * consumers; this one satisfies the protocol-agnostic `SessionHandle` surface
+   * so `AgentManager` can stamp the model onto each turn's dispatch event
+   * without reaching past the adapter boundary.
+   */
+  readonly modelDef: ModelDef;
+  readonly modelTier?: ModelTier;
 
   // ACP-internal fields — opaque to callers above the adapter boundary.
   readonly _client: AcpClient;
@@ -297,6 +305,7 @@ export class AcpSessionHandleImpl implements SessionHandle {
     resumed: boolean;
     timeoutSeconds: number;
     modelDef: ModelDef;
+    modelTier?: ModelTier;
     permissionMode: string;
   }) {
     this.id = opts.id;
@@ -308,6 +317,8 @@ export class AcpSessionHandleImpl implements SessionHandle {
     this._resumed = opts.resumed;
     this._timeoutSeconds = opts.timeoutSeconds;
     this._modelDef = opts.modelDef;
+    this.modelDef = opts.modelDef;
+    this.modelTier = opts.modelTier;
     this._permissionMode = opts.permissionMode;
   }
 }

@@ -17,6 +17,24 @@ export interface DispatchEventBase {
   readonly prompt: string;
   readonly response: string;
   readonly agentName: string;
+  /**
+   * Concrete model the call ran on (e.g. "haiku", "sonnet"), from the resolved
+   * `ModelDef`. Absent only when the dispatch had no resolved model to report.
+   *
+   * Attribution only — subscribers record it, never branch on it. Before #1433
+   * the cost middleware hardcoded `"unknown"` here because this field did not
+   * exist, which made every model-level cost question unanswerable.
+   */
+  readonly model?: string;
+  /** Tier `model` resolved from, when it came from one. Attribution only. */
+  readonly modelTier?: string;
+  /**
+   * Resolved run-profile chain as a display string ("cc-acceptance", "a+b", or
+   * "default"). Profiles repoint agent and model per stage but appear nowhere
+   * else in run artifacts, so without this a cost row cannot distinguish a
+   * deliberate model pin from a stage silently ignoring its configured tier.
+   */
+  readonly profile?: string;
   readonly stage: PipelineStage;
   readonly storyId?: string;
   readonly featureName?: string;
