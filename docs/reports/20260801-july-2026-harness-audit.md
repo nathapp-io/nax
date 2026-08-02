@@ -337,6 +337,31 @@ Written so a fresh session can resume without re-deriving anything. Read this fi
 
 The most recent of those is §14 — §4's acceptance retry tail does not exist, because `verdict.retries` was reporting the hardening pass's promoted-AC count.
 
+> ## Blocking prerequisite: none of this is running yet (2026-08-02)
+>
+> **Every August measurement below is gated on cutting a release, and the fixes
+> they depend on are unreleased.** `nax --version` reports 0.75.6; no tag
+> contains #1432, #1434 or #1435, and 13 commits sit on `main` above the tag —
+> including #1419, #1420, #1426, #1427, #1428, #1432, #1434 and #1435.
+>
+> The rollup shows it directly: rows written at `2026-08-01T17:35`, well after
+> #1432 merged, are still `schemaVersion: 1` with no `projectKey` — the running
+> build is producing exactly the unattributed rows #1429/#1432 fixed.
+>
+> Consequences if a release does not ship first:
+>
+> - August cost rows will still read `model: "unknown"` with no `sessionRole`, so
+>   the rectification breakdown — the largest remaining item — stays unmeasurable
+>   and the "re-derive from `sessionRole`" steps below are unrunnable.
+> - The curator rollup keeps growing with rows no reader can return, since
+>   windows filter on `projectKey`.
+> - `nax curator gc --sweep-unattributed` should run *after* the release, not
+>   before: sweeping first just lets the old build refill the file.
+>
+> Check before trusting any August number: `git tag --contains <commit>` for the
+> fix you are relying on, and confirm `nax --version` is at or above that tag.
+> A field being present in `main` is not evidence it is present in the data.
+
 ### Ranked next steps
 
 | # | Work | Why it is ranked here | State |
@@ -345,7 +370,7 @@ The most recent of those is §14 — §4's acceptance retry tail does not exist,
 | 2 | Acceptance generation: cache economics | cacheWrite is the largest slice of generation spend, because `acceptanceGenerateOp` is `session: { lifetime: "fresh" }` and every package group rebuilds cache from scratch. **The 32% / 19.31M-token figure is contaminated by hardening — re-derive from August `sessionRole` data before acting.** | number needs re-deriving |
 | 3 | Re-derive rectification's breakdown from `sessionRole` | At 44.7% of stage cost it is the only stage where a 10% win outweighs all of acceptance — and it is currently 100% unattributable below the stage level. | unblocked by #1434; needs August data |
 | — | ~~Acceptance generation: 34% excess calls~~ | **Answered.** The 409-vs-271 gap is the hardening pass, which dispatches through the `acceptance-gen` role and was counted as generation. Not regeneration and not multi-turn sessions. | **closed** — see "Hardening repeats" below |
-| 5 | Curator gc — [#1430](https://github.com/nathapp-io/nax/issues/1430) | Unblocked by #1432 but needs a retention decision first (auto-prune vs documented bound; what happens to ~648 MB of unattributable pre-#1429 rows). | awaiting decision |
+| 5 | Curator gc — [#1430](https://github.com/nathapp-io/nax/issues/1430) | Streaming prune + opt-in `--sweep-unattributed` shipped in [#1437](https://github.com/nathapp-io/nax/pull/1437). The retention policy is deliberately **not** built: the 648 MB is a fixed bug's residue (pre-#1427 rows re-ingesting whole audit histories), not a growth rate, and the real rate cannot be measured until a release ships. Measure a week of schemaVersion-3 growth, then decide with a number. | policy deferred on purpose |
 
 Also open, unchanged: [spec-kit#18](https://github.com/nathapp-io/nax-spec-kit-skills/issues/18) (spec-review data-literal check) and [#1422](https://github.com/nathapp-io/nax/issues/1422) (curator H1 identity-key recall, needs August data).
 
