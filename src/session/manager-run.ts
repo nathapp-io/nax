@@ -167,3 +167,17 @@ export async function runTrackedSession(
   // runAsSession) and the fix that removed this second emission.
   return result;
 }
+
+/**
+ * Model selection fields forwarded from an `OpenSessionRequest` to the adapter.
+ *
+ * `modelTier` is omitted rather than passed as `undefined` when absent — an
+ * explicit `{ agent, model }` pin bypasses tier resolution, and recording a tier
+ * there would claim one that never selected the model (#1433).
+ */
+export function selectModel(opts: {
+  modelDef: import("../config/schema").ModelDef;
+  modelTier?: import("../config/schema").ModelTier;
+}): { modelDef: import("../config/schema").ModelDef; modelTier?: import("../config/schema").ModelTier } {
+  return { modelDef: opts.modelDef, ...(opts.modelTier ? { modelTier: opts.modelTier } : {}) };
+}

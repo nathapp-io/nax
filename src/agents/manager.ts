@@ -26,6 +26,7 @@ import { DispatchEventBus } from "../runtime/dispatch-events";
 import { formatSessionName } from "../runtime/session-name";
 import { cancellableDelay } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
+import { buildCompleteEvent, buildDispatchErrorEvent, buildSessionTurnEvent } from "./manager-dispatch";
 import type {
   AgentCompleteOutcome,
   AgentFallbackRecord,
@@ -684,52 +685,34 @@ export class AgentManager implements IAgentManager {
         ...rawResult,
         protocolIds: rawResult.protocolIds ?? handle.protocolIds,
       };
-      const event: SessionTurnDispatchEvent = {
-        kind: "session-turn",
-        sessionName: handle.id,
+      const event = buildSessionTurnEvent({
+        handle,
         sessionRole,
         prompt,
-        response: result.output,
+        result,
         agentName,
         stage,
-        storyId: opts.storyId,
-        featureName: opts.featureName,
-        workdir: opts.workdir,
-        projectDir: opts.projectDir,
+        opts,
         resolvedPermissions,
-        tokenUsage: result.tokenUsage,
-        estimatedCostUsd: result.estimatedCostUsd,
-        exactCostUsd: result.exactCostUsd,
-        durationMs: Date.now() - start,
-        timestamp: Date.now(),
-        turn: result.internalRoundTrips ?? 1,
-        protocolIds: {
-          sessionId: handle.protocolIds?.sessionId ?? null,
-          recordId: handle.protocolIds?.recordId ?? null,
-        },
-        ...(result.interactions?.length ? { interactions: result.interactions } : {}),
-        origin: "runAsSession",
-        ...(opts.callId !== undefined ? { callId: opts.callId } : {}),
-        ...(opts.scopeId !== undefined ? { scopeId: opts.scopeId } : {}),
-      };
+        startedAt: start,
+      });
       this._dispatchEvents.emitDispatch(event);
       return result;
     } catch (err) {
-      const errEvent: DispatchErrorEvent = {
-        kind: "error",
+      const errEvent = buildDispatchErrorEvent({
         origin: "runAsSession",
         agentName,
         stage,
         storyId: opts.storyId,
+        error: err,
         errorCode: err instanceof NaxError ? err.code : "DISPATCH_ERROR",
         errorMessage: errorMessage(err),
         prompt,
-        durationMs: Date.now() - start,
-        timestamp: Date.now(),
         resolvedPermissions,
-        ...(opts.callId !== undefined ? { callId: opts.callId } : {}),
-        ...(opts.scopeId !== undefined ? { scopeId: opts.scopeId } : {}),
-      };
+        callId: opts.callId,
+        scopeId: opts.scopeId,
+        startedAt: start,
+      });
       this._dispatchEvents.emitDispatchError(errEvent);
       throw err;
     }
@@ -751,44 +734,36 @@ export class AgentManager implements IAgentManager {
     const start = Date.now();
     try {
       const outcome = await this.completeWithFallback(prompt, augmented, agentName);
-      const event: CompleteDispatchEvent = {
-        kind: "complete",
+      const event = buildCompleteEvent({
         sessionName,
-        sessionRole: options.sessionRole ?? "auto",
         prompt,
         response: outcome.result.output,
         agentName,
         stage,
-        storyId: options.storyId,
-        featureName: options.featureName,
-        workdir: options.workdir,
+        options,
         resolvedPermissions,
         tokenUsage: outcome.result.tokenUsage,
         estimatedCostUsd: outcome.result.estimatedCostUsd,
         exactCostUsd: outcome.result.exactCostUsd,
-        durationMs: Date.now() - start,
-        timestamp: Date.now(),
-        ...(options.callId !== undefined ? { callId: options.callId } : {}),
-        ...(options.scopeId !== undefined ? { scopeId: options.scopeId } : {}),
-      };
+        startedAt: start,
+      });
       this._dispatchEvents.emitDispatch(event);
       return outcome.result;
     } catch (err) {
-      const errEvent: DispatchErrorEvent = {
-        kind: "error",
+      const errEvent = buildDispatchErrorEvent({
         origin: "completeAs",
         agentName,
         stage,
         storyId: options.storyId,
+        error: err,
         errorCode: err instanceof NaxError ? err.code : "DISPATCH_ERROR",
         errorMessage: errorMessage(err),
         prompt,
-        durationMs: Date.now() - start,
-        timestamp: Date.now(),
         resolvedPermissions,
-        ...(options.callId !== undefined ? { callId: options.callId } : {}),
-        ...(options.scopeId !== undefined ? { scopeId: options.scopeId } : {}),
-      };
+        callId: options.callId,
+        scopeId: options.scopeId,
+        startedAt: start,
+      });
       this._dispatchEvents.emitDispatchError(errEvent);
       throw err;
     }

@@ -19,7 +19,7 @@ import { DispatchEventBus } from "../runtime/dispatch-events";
 import { NO_OP_INTERACTION_HANDLER } from "../runtime/no-op-interaction-handler";
 import type { ProtocolIds } from "../runtime/protocol-types";
 import { _sessionManagerDeps, resolveProjectDirFromScratchDir } from "./manager-deps";
-import { runTrackedSession } from "./manager-run";
+import { runTrackedSession, selectModel } from "./manager-run";
 import { DEFAULT_ORPHAN_TTL_MS, sweepOrphansImpl } from "./manager-sweep";
 import { formatSessionName } from "./naming";
 import type {
@@ -450,7 +450,7 @@ export class SessionManager implements ISessionManager {
       agentName: opts.agentName,
       workdir: opts.workdir,
       resolvedPermissions,
-      modelDef: opts.modelDef,
+      ...selectModel(opts),
       timeoutSeconds: opts.timeoutSeconds,
       onPidSpawned: this._pidRegistry ? (pid) => this._pidRegistry?.register(pid) : undefined,
       onPidExited: this._pidRegistry ? (pid) => this._pidRegistry?.unregister(pid) : undefined,

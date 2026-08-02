@@ -171,6 +171,12 @@ export interface OpenSessionRequest {
   pipelineStage: import("../config/permissions").PipelineStage;
   /** Resolved model definition for the adapter. */
   modelDef: import("../config/schema").ModelDef;
+  /**
+   * Tier the model was resolved from, when it came from one. Absent when an
+   * explicit `{ agent, model }` pin bypassed tier resolution. Carried purely so
+   * cost rows can attribute spend to a tier (#1433) — never branch on it.
+   */
+  modelTier?: import("../config/schema").ModelTier;
   /** Maximum session duration in seconds. */
   timeoutSeconds: number;
   /** Feature name for session naming and log correlation. */

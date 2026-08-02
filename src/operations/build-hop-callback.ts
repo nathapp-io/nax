@@ -244,6 +244,10 @@ export function buildHopCallback(
           workdir,
           pipelineStage: stage,
           modelDef,
+          // Only report a tier when one actually selected the model. A caller-pinned
+          // modelDef bypassed tier resolution, and `effectiveTier` is defaulted, so
+          // forwarding it there would record a tier that never applied (#1433).
+          ...(resolvedRunOptions.modelDef ? {} : { modelTier: effectiveTier }),
           timeoutSeconds:
             resolvedRunOptions.timeoutSeconds ??
             config.execution?.sessionTimeoutSeconds ??
@@ -254,6 +258,7 @@ export function buildHopCallback(
         });
       }
     } else {
+      const pinned = hopKind.kind === "primary" && resolvedRunOptions.modelDef !== undefined;
       const modelDef =
         hopKind.kind === "primary"
           ? (resolvedRunOptions.modelDef ?? resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent))
@@ -265,6 +270,8 @@ export function buildHopCallback(
         workdir,
         pipelineStage: stage,
         modelDef,
+        // See the pin rationale above — a pinned modelDef has no meaningful tier.
+        ...(pinned ? {} : { modelTier: effectiveTier }),
         timeoutSeconds:
           resolvedRunOptions.timeoutSeconds ??
           config.execution?.sessionTimeoutSeconds ??

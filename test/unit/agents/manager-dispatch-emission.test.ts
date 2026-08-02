@@ -466,3 +466,51 @@ describe("runAs envelope — no per-dispatch event, one OperationCompletedEvent"
     expect(opCompleted[0]?.finalStatus).toBe("ok");
   });
 });
+
+// ─── #1433: model attribution on dispatch events ─────────────────────────────
+
+describe("dispatch events carry the model (#1433)", () => {
+  test("runAsSession stamps the model the session was opened with", async () => {
+    const bus = new DispatchEventBus();
+    const manager = new AgentManager(DEFAULT_CONFIG, undefined, {
+      sendPrompt: mock(async () => makeTurnResult("hello")),
+      dispatchEvents: bus,
+    });
+
+    const received: SessionTurnDispatchEvent[] = [];
+    bus.onDispatch((e) => {
+      if (e.kind === "session-turn") received.push(e);
+    });
+
+    const handle: SessionHandle = {
+      id: "nax-test-handle",
+      agentName: "claude",
+      modelDef: { provider: "anthropic", model: "haiku" },
+      modelTier: "fast",
+    };
+    await manager.runAsSession("claude", handle, "p", { pipelineStage: "run", storyId: "US-001" });
+
+    expect(received[0]?.model).toBe("haiku");
+    expect(received[0]?.modelTier).toBe("fast");
+  });
+
+  test("runAsSession omits model when the handle carries none", async () => {
+    const bus = new DispatchEventBus();
+    const manager = new AgentManager(DEFAULT_CONFIG, undefined, {
+      sendPrompt: mock(async () => makeTurnResult("hello")),
+      dispatchEvents: bus,
+    });
+
+    const received: SessionTurnDispatchEvent[] = [];
+    bus.onDispatch((e) => {
+      if (e.kind === "session-turn") received.push(e);
+    });
+
+    // Pre-#1433 handles (and test doubles) have no modelDef. The field must stay
+    // absent rather than becoming a fabricated value.
+    await manager.runAsSession("claude", makeHandle(), "p", { pipelineStage: "run" });
+
+    expect(received[0]?.model).toBeUndefined();
+    expect(received[0]?.modelTier).toBeUndefined();
+  });
+});
