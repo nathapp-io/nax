@@ -66,6 +66,11 @@ Curator evidence shows spec defects surviving into implementation and causing re
 
 1,155 acceptance calls for 132 story verdicts (gen 301, test-fix 132, diagnose 102, source-fix 37 transcripts). The retry tail is **always US-001**: three tool-shaped features in one project took 15, 14 and 13 retries — the first story pays acceptance-harness bootstrap; later stories retry ~0 (p50 = p90 = 0).
 
+> **Correction (2026-08-02, twice over):** every claim in the paragraph above is wrong.
+> §10 already refuted the bootstrap *mechanism*. The retry *numbers* are also not
+> retry counts — `verdict.retries` was emitting the hardening pass's promoted-AC
+> count. Real July retries never exceed 2. See **§14**.
+
 ## 5. Context engine & rules
 
 - **231k chunks included vs 1,054 excluded** (all reason=budget) — the budget almost never binds; context assembly is concatenation, not selection.
@@ -158,6 +163,9 @@ At every threshold it aborts more stories that were converging than it saves ite
 
 "The first story pays acceptance-harness bootstrap; later stories retry ~0" is an artifact. `acceptance-setup.ts` generates one test file per package group and attributes it to `group.stories[0].id` — later stories never run acceptance at all, so there is nothing to inherit a resolved config. The real shape: 103 of 132 features need 0 retries; 8 features need 5–15.
 
+> **Correction (2026-08-02):** the re-scoped tail ("8 features need 5–15") is itself
+> an artifact of the same field. The metric was never a retry count. See **§14**.
+
 ### #4 — spec-review verbatim check: **half already shipped** → [nax-spec-kit-skills#18](https://github.com/nathapp-io/nax-spec-kit-skills/issues/18)
 
 Phase 7 of the spec-review skill already bans `[grep]`/`[file]`/`[verbatim]` ACs as blockers. The residual gap is real: Phase 1 verifies code symbols but not data literals (the `constituents-dow.csv` case) or fixture-shape derivability (the "only t* is True" case).
@@ -181,7 +189,7 @@ Phase 7 of the spec-review skill already bans `[grep]`/`[file]`/`[verbatim]` ACs
 | 7 | Reviewer `acks` channel | **shipped** — [#1426](https://github.com/nathapp-io/nax/pull/1426) |
 | 9 | Chunk token accounting | **shipped** — [#1426](https://github.com/nathapp-io/nax/pull/1426) |
 | 4 | Spec-review data-literal check | open — [spec-kit#18](https://github.com/nathapp-io/nax-spec-kit-skills/issues/18) |
-| 8 | Acceptance retry tail | open, diagnostic — [#1424](https://github.com/nathapp-io/nax/issues/1424) |
+| 8 | Acceptance retry tail | **dissolved** — the metric was not a retry count; instrumentation fixed, §14 |
 | 10 | Curator loop | counts **shipped** ([#1427](https://github.com/nathapp-io/nax/pull/1427) + [#1428](https://github.com/nathapp-io/nax/pull/1428)); recall re-scoped — [#1422](https://github.com/nathapp-io/nax/issues/1422), §12 |
 | 3b | Non-productive-iteration bail | **withdrawn** — §10 |
 
@@ -197,6 +205,9 @@ Six of the ten shipped; two were already fixed before the audit was written; one
 The count-scoping half was the prerequisite: until counts mean "this run", no threshold choice is meaningful. The consumer already exists — `nax curator commit` — so the remaining question is not "what should read proposals" but whether, once they are accurate, anyone finds them worth accepting. That is answerable with August data rather than more code.
 
 **#8 produces a question, not a patch.** Someone has to read those three features' transcripts (§4) and find the shared cause; all three are tool-shaped features in one project, which points at a per-project harness problem rather than anything intrinsic to acceptance.
+
+> **Resolved (2026-08-02).** Reading them was the right instinct and it dissolved the
+> question: there is no shared cause because there is no tail. See **§14**.
 
 ### Measurement debt
 
@@ -273,3 +284,47 @@ Observations now carry `projectKey` (schemaVersion 3) and readers filter on it. 
 **Consequence worth stating plainly:** this does not shrink an existing rollup. Almost all 648 MB of it is unattributable pre-#1429 rows, now deliberately preserved. Measured against the real file, a window read escalates to the ceiling and returns 0 runs in 229 ms — correct, bounded, and empty until a project accumulates new history. Reclaiming that space needs the retention decision and the streaming rewrite in #1430.
 
 **Method note.** Both defects were invisible to a test file written specifically to cover this seam (`curator-seam.test.ts`, added for the #1428 regression), because every test built a small single-project rollup in a temp dir. Neither a shared multi-project file nor a file larger than the tail read existed anywhere in the suite. That is the third time this month the same shape has appeared — the type was wired, the producer was not, and the tests sat on one side of the seam. Self-review of the fix then found three more defects in the new code, including a zero-length tail read that spun forever; they are recorded in the PR.
+
+## 14. The acceptance retry tail was a mislabelled field (2026-08-02)
+
+#1424 asked what the 8 features burning 5–15 acceptance retries had in common. Nothing: none of them retried more than twice. `verdict.retries` never carried a retry count.
+
+**`src/pipeline/stages/acceptance.ts`, before this fix:**
+
+```ts
+hardeningRetries = result.promoted.length;   // ACs promoted by the hardening pass
+...
+retries: hardeningRetries,                   // emitted as the verdict's retry count
+```
+
+The variable took the number of acceptance criteria the non-blocking hardening pass promoted and emitted it as `retries`. Nothing in `src/` read the field and no test asserted on it, so it was write-only telemetry — visible only to whoever later mined the logs, which is how it reached an audit and two issue re-scopes unchallenged.
+
+**The worst offender, F3, passed acceptance on its first attempt with zero failed ACs:**
+
+```
+Running acceptance command
+Package acceptance tests passed              <- first attempt, nothing failed
+Starting hardening pass  {storiesProcessed:3, totalSuggestedACs:5}
+Hardening pass complete  {promoted:13, discarded:0}
+verdict passed=true retries=13               <- == promoted
+```
+
+F1 and F2 have the same shape (one real retry each; `promoted` 15 and 14). Across all 493 July verdicts / 136 features:
+
+| | reported (`verdict.retries`) | real (`Acceptance retry N/M` events) |
+|:--|--:|--:|
+| max | 15 | **2** |
+| distribution | `{0:106, 1:6, 2:11, 3:4, 4:1, 5:3, 6:1, 7:1, 13:1, 14:1, 15:1}` | `{0:19, 1:115, 2:2}` |
+
+116 of 136 features reported a number that was not their retry count. Two further consequences fell out of the same wiring:
+
+- All **192 fail-path verdicts reported `retries:0`**, structurally — hardening only runs inside the all-passed branch, so the one case where a retry count carries information was guaranteed to read zero.
+- The field peaked exactly when acceptance was *least* troubled, since it tracked suggested-criteria volume.
+
+The real ceiling of 2 is not a coincidence: `runAcceptanceLoop` returns after one fix-cycle pass rather than re-entering the `while`, so a run reaches a third attempt only via the stub-guard `continue`.
+
+**Fixed.** `retries` now reports the loop's true attempt index, threaded from `runAcceptanceLoop` (which owns the counter) through `AcceptanceLoopContext.acceptanceRetries` onto a per-attempt context copy; re-validations inside a fix cycle inherit their attempt's index rather than inflating it. Hardening promotions moved to their own `hardeningPromoted` key. The fail path now reports its index.
+
+**Method note.** The stage's three existing `acceptance verdict logger emit` tests asserted only that execution did not throw — the verdict payload they are named for was never captured. One of them asserted on `ctx.packageDir`, a property `PipelineContext` does not define, which `tsconfig.json` could not catch because it excludes `test/`. They now capture the emitted payloads through a logger sink and assert the fields. This is the fourth instance this month of the same shape recorded in §13: the producer was wired, the consumer was not, and the tests sat on the wrong side of the seam.
+
+**Standing implication for this report.** Three of its quantitative claims have now failed on contact with the artifacts (#3b, #8's mechanism, #8's tail). The common factor is not arithmetic — it is trusting a telemetry field's *name*. Any metric here that no production code consumes should be re-derived from a second, independent signal before it is used to justify work.

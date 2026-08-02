@@ -155,7 +155,9 @@ export const acceptanceStage: PipelineStage = {
     const allOutputParts: string[] = [];
     let anyError = false;
     let errorExitCode = 0;
-    let hardeningRetries = 0;
+    // Acceptance criteria promoted by the non-blocking hardening pass. Reported
+    // on the verdict under its own key — it is NOT a retry count (#1424).
+    let hardeningPromoted = 0;
 
     for (const { testPath, packageDir, testFramework, commandOverride } of testGroups) {
       // Check if test file exists
@@ -279,7 +281,7 @@ export const acceptanceStage: PipelineStage = {
             runtime: ctx.runtime,
             abortSignal: ctx.abortSignal,
           });
-          hardeningRetries = result.promoted.length;
+          hardeningPromoted = result.promoted.length;
         } catch (err) {
           // runHardeningPass already logs "Hardening pass failed" with full storyIds attribution
           logger.debug("acceptance", "Hardening pass failed (non-blocking)", {
@@ -295,7 +297,8 @@ export const acceptanceStage: PipelineStage = {
         packageDir: ctx.workdir,
         passed: true,
         failedACs: [],
-        retries: hardeningRetries,
+        retries: ctx.acceptanceRetries ?? 0,
+        hardeningPromoted,
         durationMs,
       });
 
@@ -316,7 +319,8 @@ export const acceptanceStage: PipelineStage = {
       packageDir: ctx.workdir,
       passed: false,
       failedACs: allFailedACs,
-      retries: hardeningRetries,
+      retries: ctx.acceptanceRetries ?? 0,
+      hardeningPromoted,
       durationMs,
     });
 

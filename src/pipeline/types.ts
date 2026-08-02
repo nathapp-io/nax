@@ -168,6 +168,11 @@ export interface PipelineContext extends DispatchContext {
   agentResult?: AgentResult;
   /** Parsed self-verification marker from the latest execution session. */
   selfVerification?: import("../quality").SelfVerificationResult;
+  /**
+   * Retry attempts consumed before this acceptance attempt (0 on the first).
+   * Set by `runAcceptanceLoop`, which owns the counter; the stage only reports it.
+   */
+  acceptanceRetries?: number;
   /** Acceptance test failures (set by acceptanceStage) */
   acceptanceFailures?: {
     failedACs: string[];

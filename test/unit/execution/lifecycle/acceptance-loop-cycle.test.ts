@@ -10,19 +10,21 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { DiagnosisResult } from "../../../../src/acceptance/types";
-import type { Finding } from "../../../../src/findings";
-import { acFailureToFinding, acSentinelToFinding } from "../../../../src/findings";
-import type { FixCycle, FixCycleContext, FixCycleResult } from "../../../../src/findings";
+import type { DiagnosisResult } from "@/acceptance";
+import type { Finding } from "@/findings";
+import { acFailureToFinding, acSentinelToFinding } from "@/findings";
+import type { FixCycle, FixCycleContext, FixCycleResult } from "@/findings";
 import {
   _acceptanceFixCycleDeps,
   _acceptanceLoopDeps,
   _runAcceptanceTestsOnceDeps,
   runAcceptanceFixCycle,
+  runAcceptanceLoop,
   type AcceptanceLoopContext,
 } from "../../../../src/execution/lifecycle/acceptance-loop";
-import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "../../../helpers";
-import type { PRD } from "../../../../src/prd/types";
+import { _diagnosisDeps } from "../../../../src/execution/lifecycle/acceptance-fix";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import type { PRD } from "@/prd";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -594,9 +596,8 @@ describe("runAcceptanceLoop per-package fan-out", () => {
     _acceptanceLoopDeps.loadAcceptanceTestContent = async () => [];
 
     // Stub diagnosis to skip real LLM call.
-    const fixModule = await import("../../../../src/execution/lifecycle/acceptance-fix");
-    const origCallOp = fixModule._diagnosisDeps.callOp;
-    (fixModule._diagnosisDeps as any).callOp = async () => ({
+    const origCallOp = _diagnosisDeps.callOp;
+    (_diagnosisDeps as any).callOp = async () => ({
       output: { verdict: "source_bug", reasoning: "stub", confidence: 0.9 },
       costUsd: 0,
     });
@@ -610,12 +611,77 @@ describe("runAcceptanceLoop per-package fan-out", () => {
         { testPath: "/repo/apps/web/t.test.ts", packageDir: "/repo/apps/web" },
       ];
 
-      const { runAcceptanceLoop } = await import("../../../../src/execution/lifecycle/acceptance-loop");
       await runAcceptanceLoop(ctx);
 
       expect(fixedPackages.sort()).toEqual(["/repo/apps/api", "/repo/apps/web"]);
     } finally {
-      (fixModule._diagnosisDeps as any).callOp = origCallOp;
+      (_diagnosisDeps as any).callOp = origCallOp;
+      _runAcceptanceTestsOnceDeps.importAcceptanceStage = origImportAcceptanceStage;
+      _acceptanceLoopDeps.loadAcceptanceTestContent = origLoadContent;
+    }
+  });
+});
+
+// ─── #1424: the stage must receive a real retry index ────────────────────────
+
+describe("runAcceptanceLoop retry-index threading (#1424)", () => {
+  test("stamps the attempt index on every acceptance context it builds", async () => {
+    const seen: Array<number | undefined> = [];
+
+    _acceptanceFixCycleDeps.runFixCycle = async () => ({
+      iterations: [],
+      finalFindings: [],
+      exitReason: "resolved",
+    });
+
+    // First execution fails (opening the attempt); the fix-cycle re-validation and
+    // the final full pass then succeed. All three belong to attempt 0.
+    let callCount = 0;
+    const origImportAcceptanceStage = _runAcceptanceTestsOnceDeps.importAcceptanceStage;
+    const stubbedExecute = (ctx: any) => {
+      seen.push(ctx.acceptanceRetries);
+      callCount++;
+      if (callCount === 1) {
+        ctx.acceptanceFailures = {
+          failedACs: ["AC-1"],
+          findings: [],
+          testOutput: "boom",
+          failedPackages: [
+            { testPath: "/repo/t.test.ts", packageDir: "/repo", output: "boom", failedACs: ["AC-1"] },
+          ],
+        };
+        return Promise.resolve({ action: "fail" as const });
+      }
+      return Promise.resolve({ action: "continue" as const });
+    };
+    _runAcceptanceTestsOnceDeps.importAcceptanceStage = async () =>
+      ({ acceptanceStage: { execute: stubbedExecute } }) as any;
+
+    const origLoadContent = _acceptanceLoopDeps.loadAcceptanceTestContent;
+    _acceptanceLoopDeps.loadAcceptanceTestContent = async () => [];
+
+    const origCallOp = _diagnosisDeps.callOp;
+    (_diagnosisDeps as any).callOp = async () => ({
+      output: { verdict: "source_bug", reasoning: "stub", confidence: 0.9 },
+      costUsd: 0,
+    });
+
+    try {
+      const ctx = makeCtx();
+      ctx.workdir = "/repo";
+      ctx.featureDir = undefined; // skip stub guard / loadSemanticVerdicts
+      ctx.acceptanceTestPaths = [{ testPath: "/repo/t.test.ts", packageDir: "/repo" }];
+
+      await runAcceptanceLoop(ctx);
+
+      // Never undefined — the stage would silently report 0 and the field would
+      // mean nothing again (the #1424 defect).
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.every((v) => typeof v === "number")).toBe(true);
+      // Re-validations inside one attempt do not inflate the count.
+      expect(seen).toEqual(seen.map(() => 0));
+    } finally {
+      (_diagnosisDeps as any).callOp = origCallOp;
       _runAcceptanceTestsOnceDeps.importAcceptanceStage = origImportAcceptanceStage;
       _acceptanceLoopDeps.loadAcceptanceTestContent = origLoadContent;
     }
