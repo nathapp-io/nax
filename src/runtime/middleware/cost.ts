@@ -1,3 +1,4 @@
+import { resolvePricingSource } from "../../agents/cost";
 import type { CostErrorEvent, CostEvent, ICostAggregator, OperationSummaryEvent } from "../cost-aggregator";
 import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus, OperationCompletedEvent } from "../dispatch-events";
 
@@ -56,6 +57,9 @@ export function attachCostSubscriber(bus: IDispatchEventBus, aggregator: ICostAg
       exactCostUsd,
       costUsd: exactCostUsd,
       confidence,
+      // Same MODEL_PRICING predicate the estimator uses, so this names the rate
+      // card that actually produced the number rather than guessing at it.
+      pricingSource: hasWireExactCost ? "wire" : resolvePricingSource(event.model),
       durationMs: event.durationMs,
     };
     aggregator.record(costEvent);

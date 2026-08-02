@@ -405,4 +405,65 @@ describe("attachCostSubscriber", () => {
 
     expect("profile" in recorded[0]).toBe(false);
   });
+
+  // ── #1433 item 6: pricingSource ──────────────────────────────────────────
+  //
+  // `confidence` says whether a wire cost existed. It does NOT say what an
+  // estimate was built from. estimateCostFromTokenUsage silently applies a
+  // generic $3/$15-per-1M card to any model absent from MODEL_PRICING, so a
+  // minimax/* or gpt-5.6-* row was priced with Sonnet-shaped rates and looked
+  // identical to a correctly-priced one.
+
+  test("#1433: wire-exact rows record pricingSource=wire", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ model: "haiku", exactCostUsd: 0.006 }));
+
+    expect(recorded[0].confidence).toBe("exact");
+    expect(recorded[0].pricingSource).toBe("wire");
+  });
+
+  test("#1433: estimated rows for a known model record model-rates", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(
+      makeSessionTurnEvent({ model: "haiku", exactCostUsd: undefined, estimatedCostUsd: 0.01 }),
+    );
+
+    expect(recorded[0].confidence).toBe("estimated");
+    expect(recorded[0].pricingSource).toBe("model-rates");
+  });
+
+  test("#1433: estimated rows for a model absent from the table record fallback-rates", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    // Real July models with no MODEL_PRICING entry — these were the 60% of
+    // review spend and 63% of plan spend priced on guessed rates.
+    bus.emitDispatch(
+      makeSessionTurnEvent({ model: "minimax/MiniMax-M2.7", exactCostUsd: undefined, estimatedCostUsd: 0.01 }),
+    );
+
+    expect(recorded[0].pricingSource).toBe("fallback-rates");
+  });
+
+  test("#1433: rows with no resolved model record unknown-model", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ model: undefined, exactCostUsd: undefined, estimatedCostUsd: 0.01 }));
+
+    expect(recorded[0].model).toBe("unknown");
+    expect(recorded[0].pricingSource).toBe("unknown-model");
+  });
 });

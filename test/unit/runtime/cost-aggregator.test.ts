@@ -368,6 +368,7 @@ describe("CostAggregator", () => {
           sessionRole: "test-writer",
           featureName: "kv-cache",
           schemaVersion: 2,
+          pricingSource: "model-rates",
         }),
       );
       await agg.drain();
@@ -379,6 +380,7 @@ describe("CostAggregator", () => {
       expect(row.sessionRole).toBe("test-writer");
       expect(row.featureName).toBe("kv-cache");
       expect(row.schemaVersion).toBe(2);
+      expect(row.pricingSource).toBe("model-rates");
     });
   });
 });

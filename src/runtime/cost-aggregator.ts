@@ -41,6 +41,18 @@ export interface CostEvent {
   readonly costUsd: number;
   /** Confidence derived from presence of exactCostUsd at wire boundary. */
   readonly confidence: "exact" | "estimated";
+  /**
+   * Where `costUsd` came from.
+   *
+   * - `wire` — the agent reported an exact cost; `confidence` is `"exact"`.
+   * - `model-rates` — estimated from this model's entry in `MODEL_PRICING`.
+   * - `fallback-rates` — estimated from the generic $3/$15-per-1M card because
+   *   the pricing table has no entry for the model. Treat these as indicative
+   *   only: measured against rows that also had a wire cost, the estimator ran
+   *   0.4x in aggregate and up to 21x off per row (#1433).
+   * - `unknown-model` — no model was resolved, so the rate card cannot be named.
+   */
+  readonly pricingSource?: "wire" | "model-rates" | "fallback-rates" | "unknown-model";
   readonly durationMs: number;
 }
 
