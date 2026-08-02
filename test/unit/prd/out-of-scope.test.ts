@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test";
 import {
   MAX_OUT_OF_SCOPE_ITEMS,
   applyOutOfScopeFallback,
+  demoteStoryScopedOutOfScope,
   extractSpecOutOfScope,
+  extractStoryScopedOutOfScope,
   findMissingOutOfScope,
   propagateOutOfScopeToStories,
   stripPropagatedOutOfScope,
@@ -369,5 +371,206 @@ describe("stripPropagatedOutOfScope", () => {
     expect(stripPropagatedOutOfScope(prd)).toBe(prd);
     const noFeatureLevel = makePRD({ userStories: [makeStory({ outOfScope: ["no CLI wiring"] })] });
     expect(stripPropagatedOutOfScope(noFeatureLevel)).toBe(noFeatureLevel);
+  });
+});
+
+describe("extractStoryScopedOutOfScope", () => {
+  const spec = [
+    "# Feature",
+    "",
+    "## Out of Scope",
+    "",
+    "- An interactive Ink TUI",
+    "",
+    "## Acceptance Criteria",
+    "",
+    "### US-001 — Next-fire verdict",
+    "",
+    "- [unit] returns a NextFire for an enabled daily row",
+    "",
+    "**Out of scope:** no risk-sensitive domain applies to this story — the fields",
+    "are read-only derivations of existing rows.",
+    "",
+    "### US-003 — Impact endpoint",
+    "",
+    "- [integration] GET /api/calendar/impact returns the affected band",
+    "",
+    "**Out of scope:** pagination of `entries` — the range cap bounds the response.",
+  ].join("\n");
+
+  test("attributes each story-local block to the nearest preceding story heading", () => {
+    expect(extractStoryScopedOutOfScope(spec)).toEqual([
+      {
+        storyId: "US-001",
+        text: "no risk-sensitive domain applies to this story — the fields are read-only derivations of existing rows.",
+      },
+      { storyId: "US-003", text: "pagination of `entries` — the range cap bounds the response." },
+    ]);
+  });
+
+  test("excludes feature-level declarations — the extractor already owns those", () => {
+    const texts = extractStoryScopedOutOfScope(spec).map((item) => item.text);
+    expect(texts).not.toContain("An interactive Ink TUI");
+  });
+
+  test("treats a top-level `## Out of Scope` section placed after the stories as feature-level", () => {
+    const trailing = ["## Acceptance Criteria", "", "### US-001 — A", "", "## Out of Scope", "", "- no TUI"].join("\n");
+    expect(extractStoryScopedOutOfScope(trailing)).toEqual([]);
+  });
+
+  test("returns nothing when the spec has no story sections at all", () => {
+    expect(extractStoryScopedOutOfScope("## Out of Scope\n\n- no TUI\n")).toEqual([]);
+  });
+
+  test("ignores a story-local block written inside a fenced code block", () => {
+    const fencedSpec = [
+      "## Acceptance Criteria",
+      "",
+      "### US-001 — A",
+      "",
+      "```markdown",
+      "**Out of scope:** rate-limiting on this endpoint, deferred to arc 3.",
+      "```",
+    ].join("\n");
+    expect(extractStoryScopedOutOfScope(fencedSpec)).toEqual([]);
+  });
+
+  test("collects a deeper `### Out of scope` sub-heading under a story", () => {
+    const subheading = [
+      "## Acceptance Criteria",
+      "",
+      "### US-002 — B",
+      "",
+      "#### Out of scope",
+      "",
+      "- rate-limiting on this endpoint, deferred to arc 3",
+    ].join("\n");
+    expect(extractStoryScopedOutOfScope(subheading)).toEqual([
+      { storyId: "US-002", text: "rate-limiting on this endpoint, deferred to arc 3" },
+    ]);
+  });
+});
+
+describe("demoteStoryScopedOutOfScope", () => {
+  const spec = [
+    "## Out of Scope",
+    "",
+    "- An interactive Ink TUI",
+    "",
+    "## Acceptance Criteria",
+    "",
+    "### US-002 — Import endpoint",
+    "",
+    "- [integration] POST /api/import accepts a labelled bundle",
+    "",
+    "**Out of scope:** body-size limits on the import endpoint, deferred to arc 3.",
+  ].join("\n");
+
+  const twoStories = () => [makeStory({ id: "US-001" }), makeStory({ id: "US-002" })];
+
+  test("moves an unprefixed hoist off the feature list and onto its owning story", () => {
+    const prd = makePRD({
+      outOfScope: ["An interactive Ink TUI", "body-size limits on the import endpoint, deferred to arc 3."],
+      userStories: twoStories(),
+    });
+
+    const demoted = demoteStoryScopedOutOfScope(prd, spec);
+
+    expect(demoted.outOfScope).toEqual(["An interactive Ink TUI"]);
+    expect(demoted.userStories[0].outOfScope).toBeUndefined();
+    expect(demoted.userStories[1].outOfScope).toEqual(["body-size limits on the import endpoint, deferred to arc 3."]);
+  });
+
+  test("keeps an entry already prefixed with `US-00N only:` at feature level", () => {
+    const prd = makePRD({
+      outOfScope: ["US-002 only: body-size limits on the import endpoint, deferred to arc 3."],
+      userStories: twoStories(),
+    });
+
+    expect(demoteStoryScopedOutOfScope(prd, spec)).toBe(prd);
+  });
+
+  test("keeps an entry the spec also declares at feature level", () => {
+    const bothLevels = [
+      "## Out of Scope",
+      "",
+      "- body-size limits on the import endpoint, deferred to arc 3.",
+      "",
+      "## Acceptance Criteria",
+      "",
+      "### US-002 — Import endpoint",
+      "",
+      "**Out of scope:** body-size limits on the import endpoint, deferred to arc 3.",
+    ].join("\n");
+    const prd = makePRD({
+      outOfScope: ["body-size limits on the import endpoint, deferred to arc 3."],
+      userStories: twoStories(),
+    });
+
+    expect(demoteStoryScopedOutOfScope(prd, bothLevels)).toBe(prd);
+  });
+
+  test("strips a retained `**Out of scope:**` lead-in from the demoted entry", () => {
+    const prd = makePRD({
+      outOfScope: ["**Out of scope:** body-size limits on the import endpoint, deferred to arc 3."],
+      userStories: twoStories(),
+    });
+
+    expect(demoteStoryScopedOutOfScope(prd, spec).userStories[1].outOfScope).toEqual([
+      "body-size limits on the import endpoint, deferred to arc 3.",
+    ]);
+  });
+
+  test("drops a hoist whose owning story is absent from the PRD", () => {
+    const prd = makePRD({
+      outOfScope: ["An interactive Ink TUI", "body-size limits on the import endpoint, deferred to arc 3."],
+      userStories: [makeStory({ id: "US-001" })],
+    });
+
+    const demoted = demoteStoryScopedOutOfScope(prd, spec);
+
+    expect(demoted.outOfScope).toEqual(["An interactive Ink TUI"]);
+    expect(demoted.userStories[0].outOfScope).toBeUndefined();
+  });
+
+  test("appends to a story that already carries its own exclusions", () => {
+    const prd = makePRD({
+      outOfScope: ["body-size limits on the import endpoint, deferred to arc 3."],
+      userStories: [makeStory({ id: "US-001" }), makeStory({ id: "US-002", outOfScope: ["no CLI wiring"] })],
+    });
+
+    expect(demoteStoryScopedOutOfScope(prd, spec).userStories[1].outOfScope).toEqual([
+      "no CLI wiring",
+      "body-size limits on the import endpoint, deferred to arc 3.",
+    ]);
+  });
+
+  test("matches a planner rewording that expands the spec's own wording", () => {
+    const prd = makePRD({
+      outOfScope: ["body-size limits on the import endpoint, deferred to arc 3. Tracked separately."],
+      userStories: twoStories(),
+    });
+
+    expect(demoteStoryScopedOutOfScope(prd, spec).outOfScope).toBeUndefined();
+  });
+
+  test("returns the same PRD reference when nothing was hoisted", () => {
+    const prd = makePRD({ outOfScope: ["An interactive Ink TUI"], userStories: twoStories() });
+    expect(demoteStoryScopedOutOfScope(prd, spec)).toBe(prd);
+  });
+
+  test("survives propagation — the demoted entry reaches only its owning story", () => {
+    const prd = makePRD({
+      outOfScope: ["An interactive Ink TUI", "body-size limits on the import endpoint, deferred to arc 3."],
+      userStories: twoStories(),
+    });
+
+    const propagated = propagateOutOfScopeToStories(demoteStoryScopedOutOfScope(prd, spec));
+
+    expect(propagated.userStories[0].outOfScope).toEqual(["An interactive Ink TUI"]);
+    expect(propagated.userStories[1].outOfScope).toEqual([
+      "An interactive Ink TUI",
+      "body-size limits on the import endpoint, deferred to arc 3.",
+    ]);
   });
 });

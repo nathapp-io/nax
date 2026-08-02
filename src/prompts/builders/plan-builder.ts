@@ -65,11 +65,15 @@ const EXPECTED_FILES_SCHEMA_FIELD = `"expectedFiles": ["string — NEW files thi
  * statements to the implementer, which never sees the spec itself. Backfilled
  * deterministically by `applyOutOfScopeFallback` when the planner drops items —
  * this field asks for the planner's own (usually better-worded) version first.
+ *
+ * The feature-level qualifier is load-bearing: this list is copied onto EVERY
+ * story by `propagateOutOfScopeToStories`, so a story-local block hoisted here
+ * waives that story's deferral across all the others (#1446).
  */
-const OUT_OF_SCOPE_SCHEMA_FIELD = `"outOfScope": ["string — verbatim from the spec's Out of Scope / Non-Goals section: what this feature deliberately does NOT do. Omit if the spec declares none."],`;
+const OUT_OF_SCOPE_SCHEMA_FIELD = `"outOfScope": ["string — verbatim from the spec's FEATURE-LEVEL Out of Scope / Non-Goals section: what this feature deliberately does NOT do. A '**Out of scope:**' block under one story's acceptance criteria is that story's own — put it in that story's outOfScope, never here. Omit if the spec declares none."],`;
 
 /** Per-story exclusions, distinct from the feature-level list above. */
-const STORY_OUT_OF_SCOPE_SCHEMA_FIELD = `"outOfScope": ["string — optional, exclusions specific to THIS story beyond the feature-level list. Omit if none."],`;
+const STORY_OUT_OF_SCOPE_SCHEMA_FIELD = `"outOfScope": ["string — optional, exclusions specific to THIS story: any '**Out of scope:**' block under this story's acceptance criteria in the spec, plus anything else beyond the feature-level list. Omit if none."],`;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -230,7 +234,9 @@ Re-check routing.complexity and routing.testStrategy against the current codebas
 If a story changes existing behavior, extracts a shared helper, extends an existing function signature, or replaces a warning/stub path with real behavior, ensure there is at least one acceptance criterion protecting backward compatibility or proving the old placeholder behavior is gone.
 
 #### out-of-scope-preservation
-If the spec has an "Out of Scope", "Non-Goals", or "Not in scope" section — or an inline \`**Out of scope …:**\` lead-in — enumerate every item it states and confirm each appears in the top-level \`outOfScope\` array. Restore any that are missing, verbatim. Never convert one into an acceptance criterion, and never delete one because it looks obvious. Where a story sits close to one of these boundaries, echo the item into that story's \`**Scope** — Out:\` bullet too.
+If the spec has a feature-level "Out of Scope", "Non-Goals", or "Not in scope" section — or an inline \`**Out of scope …:**\` lead-in that appears BEFORE the first "Stories" / "Acceptance Criteria" heading — enumerate every item it states and confirm each appears in the top-level \`outOfScope\` array. Restore any that are missing, verbatim. Never convert one into an acceptance criterion, and never delete one because it looks obvious. Where a story sits close to one of these boundaries, echo the item into that story's \`**Scope** — Out:\` bullet too.
+
+A \`**Out of scope:**\` block written UNDER one story's acceptance criteria is that story's own deferral, not the feature's. Put it in that story's \`outOfScope\` array. Never lift it to the top-level array: that array is copied onto every story, so a hoisted story-local deferral tells the other stories' implementers that work is deliberately excluded when it is not.
 
 #### scope-consistency
 Check each story's title, description, scope, contextFiles, and acceptance criteria for internal consistency. If the story says a file or command is in scope anywhere else, do not list it as out of scope. If the title or acceptance criteria clearly include CLI, output, tests, or helper extraction work, the Scope section must reflect that accurately.${specGuardItems}
