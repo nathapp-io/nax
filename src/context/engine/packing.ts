@@ -3,13 +3,23 @@
  *
  * Selects which chunks fit within the token budget.
  *
- * Phase 0-2: Greedy algorithm — sort by score descending, always include
- * floor items (static + feature kinds) first regardless of budget.
+ * Phase 0-2: Greedy algorithm — sort by score/tokens (density) descending,
+ * always include floor items (static + feature kinds) first regardless of
+ * budget.
  *
  * Budget floor rule (spec §AC-6):
  *   "static" and "feature" chunks are always included even when their total
  *   tokens exceed budgetTokens. The manifest records reason:
  *   "budget-exceeded-by-floor" for any chunk that causes an overflow.
+ *
+ * Known limitation (spec §AC-7): density-greedy is the standard heuristic
+ * for fractional knapsack, but for the 0/1 case (chunks are atomic — no
+ * partial packing) it is not guaranteed to land within 5% of the brute-force
+ * optimum in adversarial inputs (e.g. one huge high-density chunk that
+ * excludes many smaller lower-density ones which would sum to more value).
+ * A true 5%-bound requires either the standard "best-of(greedy, largest
+ * single item that fits)" repair or a small-input DP, neither implemented
+ * yet — tracked as a follow-up alongside the AC-7 property test.
  *
  * Phase 3+: Optional 0/1 knapsack DP (in packing.ts) if greedy proves
  * suboptimal. Floor rule still applies in Phase 3+.
@@ -24,6 +34,15 @@ import type { ChunkKind } from "./types";
 
 /** Chunk kinds that are always included (budget floor) */
 export const FLOOR_KINDS: ChunkKind[] = ["static", "feature", "test-coverage"];
+
+/**
+ * Score per token — the packing priority metric (spec §AC-7). A zero-token
+ * chunk has no cost, so it is ranked as maximally dense rather than
+ * producing NaN/Infinity from a bare division.
+ */
+function scoreDensity(chunk: ScoredChunk): number {
+  return chunk.tokens > 0 ? chunk.score / chunk.tokens : Number.POSITIVE_INFINITY;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -65,7 +84,9 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
     availableBudgetTokens !== undefined ? Math.min(budgetTokens, availableBudgetTokens) : budgetTokens;
 
   const floorChunks = chunks.filter((c) => FLOOR_KINDS.includes(c.kind));
-  const nonFloorChunks = chunks.filter((c) => !FLOOR_KINDS.includes(c.kind)).sort((a, b) => b.score - a.score);
+  const nonFloorChunks = chunks
+    .filter((c) => !FLOOR_KINDS.includes(c.kind))
+    .sort((a, b) => scoreDensity(b) - scoreDensity(a));
 
   const packed: PackedChunk[] = [];
   const budgetExcludedIds: string[] = [];

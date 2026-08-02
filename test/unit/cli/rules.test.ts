@@ -6,7 +6,10 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { NaxError } from "../../../src/errors";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { NaxError } from "@/errors";
+import { withTempDir } from "@test/helpers";
 import {
   neutralizeContent,
   rulesExportCommand,
@@ -275,6 +278,50 @@ describe("rulesLintCommand", () => {
     expect(calls).toContain("/repo");
     expect(calls).toContain("/repo/packages/api");
     expect(calls).toContain("/repo/packages/web");
+  });
+
+  test("end-to-end: real glob discovery feeds package-overlay roots into loadCanonicalRules", async () => {
+    // Uses the REAL (unstubbed) globCanonicalRuleFiles against a real temp
+    // dir, so this fails if the dot:true fix regresses — unlike the two
+    // tests above, which stub the glob and so can't detect that class of bug.
+    _rulesCLIDeps.globCanonicalRuleFiles = origGlobCanonicalRuleFiles;
+    const calls: string[] = [];
+    _rulesCLIDeps.loadCanonicalRules = async (workdir: string) => {
+      calls.push(workdir);
+      return [];
+    };
+
+    await withTempDir(async (workdir) => {
+      await mkdir(join(workdir, ".nax", "rules"), { recursive: true });
+      await mkdir(join(workdir, "packages", "api", ".nax", "rules"), { recursive: true });
+      await Bun.write(join(workdir, ".nax", "rules", "root.md"), "# root\n");
+      await Bun.write(join(workdir, "packages", "api", ".nax", "rules", "api.md"), "# api\n");
+
+      await rulesLintCommand({ dir: workdir });
+
+      expect(calls).toContain(workdir);
+      expect(calls).toContain(join(workdir, "packages", "api"));
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// globCanonicalRuleFiles (real implementation)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("globCanonicalRuleFiles", () => {
+  test("finds hidden .nax/rules dirs (dot:true)", async () => {
+    await withTempDir(async (workdir) => {
+      await mkdir(join(workdir, ".nax", "rules"), { recursive: true });
+      await mkdir(join(workdir, "packages", "api", ".nax", "rules"), { recursive: true });
+      await Bun.write(join(workdir, ".nax", "rules", "root.md"), "# root\n");
+      await Bun.write(join(workdir, "packages", "api", ".nax", "rules", "api.md"), "# api\n");
+
+      const found = origGlobCanonicalRuleFiles(workdir);
+
+      expect(found).toContain(".nax/rules/root.md");
+      expect(found).toContain("packages/api/.nax/rules/api.md");
+    });
   });
 });
 
