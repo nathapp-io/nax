@@ -6,6 +6,7 @@
 
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import * as path from "node:path";
+import { streamJsonlLines } from "./jsonl-stream";
 import type { Observation } from "./types";
 
 /**
@@ -94,14 +95,27 @@ interface ParsedTail {
   unattributed: number;
 }
 
-/** Parse a tail slice, dropping the partial first line when the read started mid-file. */
-function parseTail(text: string, startedMidFile: boolean, projectKey: string): ParsedTail {
-  const lines = text.split("\n");
-  if (startedMidFile) lines.shift();
-
+/**
+ * Parse a tail slice, dropping the partial first line when the read started mid-file.
+ *
+ * Streamed rather than read into a string (#1439). The tail can be up to
+ * `MAX_WINDOW_TAIL_BYTES`, and slurping it would hold the text AND a line array
+ * of every row in it — the same unbounded materialisation `rollup-prune.ts`
+ * streams to avoid, on a path that runs after EVERY run rather than only on
+ * `gc`. Streaming leaves only this project's rows resident, which is the return
+ * value anyway.
+ */
+async function parseTail(file: Bun.BunFile, startedMidFile: boolean, projectKey: string): Promise<ParsedTail> {
   const observations: Observation[] = [];
   let unattributed = 0;
-  for (const line of lines) {
+  let first = true;
+  for await (const line of streamJsonlLines(file)) {
+    // The slice began mid-row, so the first line is a fragment of a row whose
+    // start was never read.
+    if (first) {
+      first = false;
+      if (startedMidFile) continue;
+    }
     if (!line.trim()) continue;
     try {
       const obs = JSON.parse(line) as Observation;
@@ -160,8 +174,11 @@ export async function readHeuristicWindow(
     let tail = Math.max(1, Math.min(options.tailBytes ?? INITIAL_WINDOW_TAIL_BYTES, maxTail));
     while (true) {
       const start = Math.max(0, size - tail);
-      const text = await (start > 0 ? file.slice(start).text() : file.text());
-      const { observations, unattributed } = parseTail(text, start > 0, options.projectKey);
+      const { observations, unattributed } = await parseTail(
+        start > 0 ? file.slice(start) : file,
+        start > 0,
+        options.projectKey,
+      );
       const keep = newestRunIds(observations, windowRuns);
 
       const exhausted = start === 0;
