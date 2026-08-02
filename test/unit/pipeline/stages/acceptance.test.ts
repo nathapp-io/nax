@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { acceptanceStage, parseTestFailures } from "../../../../src/pipeline/stages/acceptance";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
+import { addSink, initLogger, resetLogger } from "@/logger";
 import { makeStory } from "../../../helpers";
 
 // ---------------------------------------------------------------------------
@@ -489,13 +490,36 @@ describe("parseTestFailures()", () => {
 // ---------------------------------------------------------------------------
 
 describe("acceptance verdict logger emit", () => {
-  test("AC-1: executes without error when all ACs pass (verdict will be logged)", async () => {
-    const origSpawn = Bun.spawn;
+  const TEST_PATHS = [
+    { testPath: "/tmp/test-workdir/apps/api/.nax-acceptance.test.ts", packageDir: "/tmp/test-workdir/apps/api" },
+  ];
+
+  let origSpawn: typeof Bun.spawn;
+  let origFile: typeof Bun.file;
+  let unsubscribe: (() => void) | null = null;
+  let verdicts: Array<Record<string, unknown>> = [];
+
+  /** Capture every `acceptance`/`verdict` payload the stage emits. */
+  function captureVerdicts(): void {
+    resetLogger();
+    initLogger({ level: "info", headless: true, useChalk: false });
+    unsubscribe = addSink((entry) => {
+      if (entry.stage === "acceptance" && entry.message === "verdict") {
+        verdicts.push((entry.data ?? {}) as Record<string, unknown>);
+      }
+    });
+  }
+
+  /** Stub the test command to pass (exit 0) or fail on AC-2 (exit 1). */
+  function stubRun(pass: boolean): void {
+    origSpawn = Bun.spawn;
+    origFile = Bun.file;
+    const out = pass ? "1 pass\n" : "  (fail) AC-2: handles empty input\n";
     (Bun as any).spawn = (_cmd: string[], _opts: any) => ({
-      exited: Promise.resolve(0),
+      exited: Promise.resolve(pass ? 0 : 1),
       stdout: new ReadableStream({
         start(controller) {
-          controller.enqueue(new TextEncoder().encode("1 pass\n"));
+          controller.enqueue(new TextEncoder().encode(out));
           controller.close();
         },
       }),
@@ -505,106 +529,84 @@ describe("acceptance verdict logger emit", () => {
         },
       }),
     });
-
-    const origFile = Bun.file;
     (Bun as any).file = (_p: string) => ({
       exists: () => Promise.resolve(true),
       text: () => Promise.resolve(""),
     });
+  }
 
-    const ctx = makeCtx({
-      acceptanceTestPaths: [
-        { testPath: "/tmp/test-workdir/apps/api/.nax-acceptance.test.ts", packageDir: "/tmp/test-workdir/apps/api" },
-      ],
-    });
-
-    try {
-      const result = await acceptanceStage.execute(ctx);
-      expect(result.action).toBe("continue");
-      // The verdict logger.info("acceptance", "verdict", {...}) will be called internally
-    } finally {
-      (Bun as any).spawn = origSpawn;
-      (Bun as any).file = origFile;
-    }
+  beforeEach(() => {
+    verdicts = [];
+    captureVerdicts();
   });
 
-  test("AC-2: executes without error when tests fail (verdict will be logged with failures)", async () => {
-    const origSpawn = Bun.spawn;
-    (Bun as any).spawn = (_cmd: string[], _opts: any) => ({
-      exited: Promise.resolve(1),
-      stdout: new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode("  (fail) AC-2: handles empty input\n"));
-          controller.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(controller) {
-          controller.close();
-        },
-      }),
-    });
-
-    const origFile = Bun.file;
-    (Bun as any).file = (_p: string) => ({
-      exists: () => Promise.resolve(true),
-      text: () => Promise.resolve(""),
-    });
-
-    const ctx = makeCtx({
-      acceptanceTestPaths: [
-        { testPath: "/tmp/test-workdir/apps/api/.nax-acceptance.test.ts", packageDir: "/tmp/test-workdir/apps/api" },
-      ],
-    });
-
-    try {
-      const result = await acceptanceStage.execute(ctx);
-      expect(result.action).toBe("fail");
-      expect(result.reason).toContain("AC-2");
-      // The verdict logger.info("acceptance", "verdict", {... passed: false, failedACs: ["AC-2"] ...}) will be called internally
-    } finally {
-      (Bun as any).spawn = origSpawn;
-      (Bun as any).file = origFile;
-    }
+  afterEach(() => {
+    unsubscribe?.();
+    unsubscribe = null;
+    resetLogger();
+    if (origSpawn) (Bun as any).spawn = origSpawn;
+    if (origFile) (Bun as any).file = origFile;
   });
 
-  test("AC-3: context.packageDir is available for verdict logging", async () => {
-    const origSpawn = Bun.spawn;
-    (Bun as any).spawn = (_cmd: string[], _opts: any) => ({
-      exited: Promise.resolve(0),
-      stdout: new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode("1 pass\n"));
-          controller.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(controller) {
-          controller.close();
-        },
-      }),
-    });
+  test("AC-1: pass verdict carries passed:true and no failed ACs", async () => {
+    stubRun(true);
+    const result = await acceptanceStage.execute(makeCtx({ acceptanceTestPaths: TEST_PATHS }));
 
-    const origFile = Bun.file;
-    (Bun as any).file = (_p: string) => ({
-      exists: () => Promise.resolve(true),
-      text: () => Promise.resolve(""),
-    });
+    expect(result.action).toBe("continue");
+    expect(verdicts).toHaveLength(1);
+    expect(verdicts[0]).toMatchObject({ passed: true, failedACs: [], storyId: "US-001" });
+  });
 
-    const ctx = makeCtx({
-      packageDir: "/tmp/test-workdir/apps/api",
-      acceptanceTestPaths: [
-        { testPath: "/tmp/test-workdir/apps/api/.nax-acceptance.test.ts", packageDir: "/tmp/test-workdir/apps/api" },
-      ],
-    });
+  test("AC-2: fail verdict carries passed:false and the failed AC", async () => {
+    stubRun(false);
+    const result = await acceptanceStage.execute(makeCtx({ acceptanceTestPaths: TEST_PATHS }));
 
-    try {
-      await acceptanceStage.execute(ctx);
-      // packageDir is in context, will be included in verdict logger emit
-      expect(ctx.packageDir).toBe("/tmp/test-workdir/apps/api");
-    } finally {
-      (Bun as any).spawn = origSpawn;
-      (Bun as any).file = origFile;
-    }
+    expect(result.action).toBe("fail");
+    expect(verdicts).toHaveLength(1);
+    expect(verdicts[0]).toMatchObject({ passed: false, failedACs: ["AC-2"] });
+  });
+
+  test("AC-3: verdict's packageDir is the run workdir", async () => {
+    stubRun(true);
+    await acceptanceStage.execute(makeCtx({ acceptanceTestPaths: TEST_PATHS }));
+
+    // One verdict covers every package group in the run, so the field carries the
+    // repo root rather than any single group's directory. Pinned to stop the name
+    // being read as per-package attribution (the misreading behind #1424).
+    // (`packageDir` is not a PipelineContext field — the prior version of this
+    // test passed one via makeCtx and asserted on its own input.)
+    expect(verdicts[0]?.packageDir).toBe("/tmp/test-workdir");
+  });
+
+  // ── #1424: `retries` reported the hardening promotion count, not retries ────
+
+  test("#1424: retries reflects ctx.acceptanceRetries, not the hardening count", async () => {
+    stubRun(true);
+    await acceptanceStage.execute(makeCtx({ acceptanceRetries: 2, acceptanceTestPaths: TEST_PATHS }));
+
+    expect(verdicts[0]?.retries).toBe(2);
+  });
+
+  test("#1424: retries defaults to 0 when the loop supplied no attempt index", async () => {
+    stubRun(true);
+    await acceptanceStage.execute(makeCtx({ acceptanceTestPaths: TEST_PATHS }));
+
+    expect(verdicts[0]?.retries).toBe(0);
+  });
+
+  test("#1424: the fail path reports its retry index (previously always 0)", async () => {
+    stubRun(false);
+    await acceptanceStage.execute(makeCtx({ acceptanceRetries: 1, acceptanceTestPaths: TEST_PATHS }));
+
+    expect(verdicts[0]).toMatchObject({ passed: false, retries: 1 });
+  });
+
+  test("#1424: hardening promotions are reported under their own key", async () => {
+    stubRun(true);
+    await acceptanceStage.execute(makeCtx({ acceptanceTestPaths: TEST_PATHS }));
+
+    // No suggestedCriteria on the fixture story, so the hardening pass cannot run.
+    expect(verdicts[0]?.hardeningPromoted).toBe(0);
+    expect(verdicts[0]?.retries).toBe(0);
   });
 });

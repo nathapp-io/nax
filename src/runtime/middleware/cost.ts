@@ -1,4 +1,4 @@
-import { resolvePricingSource } from "../../agents/cost";
+import { resolvePricingSource } from "@/agents";
 import type { CostErrorEvent, CostEvent, ICostAggregator, OperationSummaryEvent } from "../cost-aggregator";
 import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus, OperationCompletedEvent } from "../dispatch-events";
 

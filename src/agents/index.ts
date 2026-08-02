@@ -43,6 +43,7 @@ export {
   estimateCostByDuration,
   formatCostWithConfidence,
   estimateCostFromTokenUsage,
+  resolvePricingSource,
 } from "./cost";
 export { validateAgentForTier, validateAgentFeature, describeAgentCapabilities } from "./shared/validation";
 export type { AgentVersionInfo } from "./shared/version-detection";

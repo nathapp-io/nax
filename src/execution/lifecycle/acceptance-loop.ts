@@ -70,6 +70,13 @@ export interface AcceptanceLoopContext extends DispatchContext {
   naxIgnoreIndex?: NaxIgnoreIndex;
   /** Per-package acceptance test paths — used to load test content for fix routing */
   acceptanceTestPaths?: AcceptanceTestPathEntry[];
+  /**
+   * Retry attempts consumed before the current acceptance attempt (0 on the first).
+   * Owned by `runAcceptanceLoop`, which stamps a per-attempt copy of this context so
+   * the stage can report a true retry count on its verdict. Re-validations inside a
+   * fix cycle belong to the enclosing attempt and carry its index unchanged.
+   */
+  acceptanceRetries?: number;
 }
 
 export interface AcceptanceLoopResult {
@@ -217,6 +224,7 @@ function buildAcceptanceContext(ctx: AcceptanceLoopContext, prd: PRD): PipelineC
     agentManager: ctx.agentManager,
     sessionManager: ctx.sessionManager,
     acceptanceTestPaths: ctx.acceptanceTestPaths,
+    acceptanceRetries: ctx.acceptanceRetries ?? 0,
     runtime: ctx.runtime,
     abortSignal: ctx.abortSignal,
   };
@@ -364,8 +372,12 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
 
   while (acceptanceRetries < maxRetries) {
     // ── 1. Run acceptance ────────────────────────────────────────────────
+    // Stamp the attempt index onto a per-iteration copy so the stage's verdict
+    // reports a real retry count. Fix-cycle re-validations reuse this same copy
+    // and so stay attributed to the attempt that triggered them.
+    const attemptCtx: AcceptanceLoopContext = { ...ctx, acceptanceRetries };
     const firstStory = prd.userStories[0];
-    const acceptanceContext = buildAcceptanceContext(ctx, prd);
+    const acceptanceContext = buildAcceptanceContext(attemptCtx, prd);
     const acceptanceResult = await acceptanceStage.execute(acceptanceContext);
 
     if (acceptanceResult.action === "continue") {
@@ -525,10 +537,15 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         attempt: acceptanceRetries,
       });
 
-      const cycleResult = await runAcceptanceFixCycle(ctx, prd, pkgFailures, diagnosis, effectivePath, testCommand, {
-        packageDir: pkg.packageDir,
-        testPath: effectivePath,
-      });
+      const cycleResult = await runAcceptanceFixCycle(
+        attemptCtx,
+        prd,
+        pkgFailures,
+        diagnosis,
+        effectivePath,
+        testCommand,
+        { packageDir: pkg.packageDir, testPath: effectivePath },
+      );
       totalCost += cycleResult.costUsd ?? 0;
       totalInternalIterations += cycleResult.iterations.length;
       const pkgResolved = cycleResult.exitReason === "resolved" || cycleResult.finalFindings.length === 0;
@@ -537,7 +554,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
 
     // ── Final full validation pass (all packages) — catches cross-package
     //    regressions one isolated cycle could miss. ───────────────────────
-    const finalCheck = await runAcceptanceTestsOnce(ctx, prd);
+    const finalCheck = await runAcceptanceTestsOnce(attemptCtx, prd);
     const success = finalCheck.passed && remainingFindings.length === 0;
     const failureMessages = !success
       ? finalCheck.failedACs.length > 0
