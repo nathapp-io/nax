@@ -192,3 +192,6 @@ export type {
 export { collectObservations, resolveCuratorOutputs };
 export { readHeuristicWindow } from "./rollup";
 export type { HeuristicWindow, HeuristicWindowOptions } from "./rollup";
+// Both rollup readers depend on this reassembling rows across chunk boundaries;
+// exported so it is reachable through the barrel rather than only its callers.
+export { streamJsonlLines } from "./jsonl-stream";
