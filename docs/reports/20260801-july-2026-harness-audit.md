@@ -349,7 +349,17 @@ The most recent of those is §14 — §4's acceptance retry tail does not exist,
 
 Also open, unchanged: [spec-kit#18](https://github.com/nathapp-io/nax-spec-kit-skills/issues/18) (spec-review data-literal check) and [#1422](https://github.com/nathapp-io/nax/issues/1422) (curator H1 identity-key recall, needs August data).
 
-**Note for whoever picks this up:** with the excess-calls question answered and both remaining acceptance items gated on August `sessionRole` data, spec-kit#18 is the only ranked item actionable today without waiting for data.
+**Note for whoever picks this up (revised 2026-08-02):** every ranked item is now
+either shipped, closed, or waiting on August data — including spec-kit#18, whose
+target class (data literals, fixture-shape claims) does not appear anywhere in the
+current cohort's review tail. That class is real but currently costs nothing
+measurable, so it should be re-checked against August data rather than built now.
+
+The highest-value August work, in order: re-derive rectification's sub-stage
+breakdown from `sessionRole` (44.7% of stage cost, still entirely unattributed
+below stage level), then re-derive generation's cacheWrite share from the same
+data, then re-run the cohort analysis above. All three are groupbys once the
+August ledger exists — no new instrumentation required.
 
 [#1424](https://github.com/nathapp-io/nax/issues/1424) is **closed as dissolved** — see §14.
 
@@ -390,6 +400,57 @@ Acceptance is output-bound one-shot generation, not a retry loop. §4's framing 
 > rather than from what it does. Once `sessionRole` reaches cost rows (#1433,
 > shipped in #1434), this particular join stops being necessary — August data
 > can be grouped directly.
+
+### Cohort the data by artifact creation date, not event date (2026-08-02)
+
+**Method finding, and the one most likely to change a future conclusion.**
+
+Asked whether the review-round tail had improved, the obvious split is by when
+the *review ran*. That is wrong, and it inverted the answer. A story reviewed on
+28 July may have been planned on 10 July under an older toolchain; splitting on
+the event date mixes cohorts that had different inputs.
+
+Splitting instead on **`prd.json` `createdAt`** — when the spec was actually
+planned — against the `nax-spec-kit-skills` release history (0.1.10 on 16 July
+through the fourteen-commit 0.2.x burst on 27 July):
+
+| PRD created | stories | p50 | p90 | max rounds | ≥6 rounds |
+|:---|---:|---:|---:|---:|---:|
+| ≤ Jul 15 (pre-0.1.10) | 853 | 2 | 6 | 19 | 10.8% |
+| Jul 16–26 (partial rollout) | 158 | 3 | 8 | **23** | **25.3%** |
+| Jul 27+ (post-0.2.x) | 82 | 2 | 7 | **11** | 11.0% |
+
+Three things fall out that the event-date split hid entirely:
+
+1. **The spec-kit work landed.** The extreme tail collapsed from 23 rounds to 11,
+   and the ≥6-round rate returned to its pre-change baseline.
+2. **Partial rollout was worse than either end.** The Jul 16–26 cohort is the
+   worst of the three by a wide margin. A half-applied spec discipline appears to
+   cost more than none — worth remembering before shipping the next phased change
+   to spec-writing or plan.
+3. **An event-date split reports the trough as the present.** Measured that way
+   the tail looked flat (13.2% → 14.8%, "no improvement"), because the recent
+   review activity was dominated by Jul 16–26 PRDs still working through.
+
+**Retraction.** On the contaminated split this report's author concluded the
+residual tail was whack-a-mole ([#1157](https://github.com/nathapp-io/nax/issues/1157))
+running at roughly 5x that issue's own "~3%, low priority" estimate. On the clean
+cohort the tail is 11.0% against a 10.8% baseline — indistinguishable. The
+whack-a-mole *diagnosis* survives (57% of later-round blocking findings land in a
+file already flagged; only 5% are verbatim repeats, so rectification is
+converging), but there is no evidence the residual is worse than when #1157 was
+filed. Its low-priority label stands.
+
+**Revisit in August.** The post-0.2.x cohort is 82 stories and 9 tail stories —
+enough to see the collapse, not enough to characterise what remains. Re-run with
+September's larger sample:
+
+- Cohort by `prd.json` `createdAt`, never by review or run timestamp.
+- Compare ≥6-round rate and max rounds against the 11.0% / 11 rounds recorded here.
+- Split later-round blocking findings by already-flagged file to test whether
+  whack-a-mole is still the residual's shape at 57%.
+- With `sessionRole` now on cost rows ([#1434](https://github.com/nathapp-io/nax/pull/1434)),
+  attach cost per round directly instead of joining through `prompt-audit/`.
 
 ### Hardening repeats — investigated and closed, not a defect (2026-08-02)
 
