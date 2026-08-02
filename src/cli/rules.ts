@@ -49,7 +49,7 @@ export const _rulesCLIDeps = {
   },
   globCanonicalRuleFiles: (workdir: string): string[] => {
     try {
-      return [...new Bun.Glob("**/.nax/rules/**/*.md").scanSync({ cwd: workdir, absolute: false })].sort();
+      return [...new Bun.Glob("**/.nax/rules/**/*.md").scanSync({ cwd: workdir, absolute: false, dot: true })].sort();
     } catch {
       return [];
     }

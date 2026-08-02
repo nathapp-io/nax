@@ -3,8 +3,9 @@
  *
  * Selects which chunks fit within the token budget.
  *
- * Phase 0-2: Greedy algorithm — sort by score descending, always include
- * floor items (static + feature kinds) first regardless of budget.
+ * Phase 0-2: Greedy algorithm — sort by score/tokens (density) descending,
+ * always include floor items (static + feature kinds) first regardless of
+ * budget.
  *
  * Budget floor rule (spec §AC-6):
  *   "static" and "feature" chunks are always included even when their total
@@ -65,7 +66,9 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
     availableBudgetTokens !== undefined ? Math.min(budgetTokens, availableBudgetTokens) : budgetTokens;
 
   const floorChunks = chunks.filter((c) => FLOOR_KINDS.includes(c.kind));
-  const nonFloorChunks = chunks.filter((c) => !FLOOR_KINDS.includes(c.kind)).sort((a, b) => b.score - a.score);
+  const nonFloorChunks = chunks
+    .filter((c) => !FLOOR_KINDS.includes(c.kind))
+    .sort((a, b) => b.score / b.tokens - a.score / a.tokens);
 
   const packed: PackedChunk[] = [];
   const budgetExcludedIds: string[] = [];
