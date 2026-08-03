@@ -54,6 +54,12 @@ export function requiresInitialRefCapture(strategy: TestStrategy): boolean {
   return isThreeSessionStrategy(strategy);
 }
 
+/** Normalized path with any trailing separator removed; a bare root ("/") is left alone. */
+function stripTrailingSep(p: string): string {
+  const normalized = normalize(p);
+  return normalized.length > 1 && normalized.endsWith(sep) ? normalized.slice(0, -1) : normalized;
+}
+
 /**
  * Resolve the `(repoRoot, packageDir)` anchor pair for a story.
  *
@@ -82,20 +88,21 @@ export function resolveStoryPathAnchors(
   ctxPackageDir: string,
   storyWorkdir?: string,
 ): { repoRoot: string; packageDir: string } {
-  const rel = (storyWorkdir ?? "").trim();
-  // `normalize` keeps a trailing separator ("apps/api/"), which `join` then preserves —
-  // enough to make the suffix comparison below miss. Compare on bare segments instead.
-  const segments = rel.split(/[\\/]+/).filter((segment) => segment !== "" && segment !== ".");
+  // Both sides of the suffix comparison below must be in the same canonical form.
+  // `normalize` preserves a trailing separator and `join` propagates it, so a base of
+  // "<repo>/apps/api/" would compare unequal to "<repo>/apps/api" and fall through to the
+  // repo-root branch — reinstating the very double-join this function exists to prevent.
+  const base = stripTrailingSep(ctxPackageDir);
+  const segments = (storyWorkdir ?? "").split(/[\\/]+/).filter((segment) => segment !== "" && segment !== ".");
   const normalizedRel = segments.join(sep);
-  const depth = segments.length;
-  if (depth === 0) {
-    return { repoRoot: ctxPackageDir, packageDir: ctxPackageDir };
+  if (segments.length === 0) {
+    return { repoRoot: base, packageDir: base };
   }
-  const candidateRoot = resolve(ctxPackageDir, ...Array<string>(depth).fill(".."));
-  if (join(candidateRoot, normalizedRel) === normalize(ctxPackageDir)) {
-    return { repoRoot: candidateRoot, packageDir: normalize(ctxPackageDir) };
+  const candidateRoot = resolve(base, ...Array<string>(segments.length).fill(".."));
+  if (join(candidateRoot, normalizedRel) === base) {
+    return { repoRoot: candidateRoot, packageDir: base };
   }
-  return { repoRoot: ctxPackageDir, packageDir: join(ctxPackageDir, normalizedRel) };
+  return { repoRoot: base, packageDir: join(base, normalizedRel) };
 }
 
 /**

@@ -52,6 +52,22 @@ describe("resolveStoryPathAnchors (#1451)", () => {
       packageDir: "/repo/apps/api",
     });
   });
+
+  test("a trailing separator on the package dir does not defeat suffix detection", () => {
+    // Both sides of the comparison must be canonical — otherwise this falls through to the
+    // repo-root branch and reinstates the #1451 double-join.
+    expect(resolveStoryPathAnchors("/repo/apps/api/", "apps/api")).toEqual({
+      repoRoot: "/repo",
+      packageDir: "/repo/apps/api",
+    });
+  });
+
+  test("normalizes redundant segments in the package dir", () => {
+    expect(resolveStoryPathAnchors("/repo/./apps/api", "apps/api")).toEqual({
+      repoRoot: "/repo",
+      packageDir: "/repo/apps/api",
+    });
+  });
 });
 
 describe("#1451 end-to-end — real resolver and validator against a temp monorepo", () => {
