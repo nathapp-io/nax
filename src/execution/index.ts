@@ -85,7 +85,7 @@ export {
 } from "./story-orchestrator-logging";
 export { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "./plan-inputs";
 export { runNonBlockingFix } from "./non-blocking-fix";
-export { buildPlanForStrategy } from "./build-plan-for-strategy";
+export { buildPlanForStrategy, resolveStoryPathAnchors } from "./build-plan-for-strategy";
 export {
   CheckpointWriter,
   createCheckpointWriter,
