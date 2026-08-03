@@ -11,7 +11,7 @@ import { SessionFailureError, SessionTurnError } from "../agents/types";
 import type { AgentResult, AgentRunOptions, TurnResult } from "../agents/types";
 import { DEFAULT_CONFIG, resolveModelForAgent } from "../config";
 import type { NaxConfig } from "../config";
-import { ContextOrchestrator, createContextToolRuntime } from "../context/engine";
+import { ContextOrchestrator, createContextToolRuntime, createSessionToolBudgets } from "../context/engine";
 import type { AdapterFailure, ContextBundle, RunCallCounter } from "../context/engine";
 import { writeRebuildManifest } from "../context/engine/manifest-store";
 import { getLogger } from "../logger";
@@ -126,6 +126,13 @@ export function buildHopCallback(
   // this hop's own start time.
   let priorHopStartedAt: number | undefined;
 
+  // Gap finding 7: pull-tool budgets must be scoped to the SESSION, not the hop.
+  // createContextToolRuntime is called inside the closure below (once per hop),
+  // so a runtime-local registry reset maxCallsPerSession on every retry /
+  // fallback / escalation — leaving only the run-level cap real. Created here,
+  // outside the closure, exactly like contextToolRunCounter is threaded in.
+  const sessionToolBudgets = createSessionToolBudgets();
+
   return async (
     agentName,
     hopBundle,
@@ -200,6 +207,7 @@ export function buildHopCallback(
           config,
           repoRoot: workdir,
           runCounter: contextToolRunCounter,
+          sessionBudgets: sessionToolBudgets,
         })
       : undefined;
     const contextPullTools = workingBundle?.pullTools;

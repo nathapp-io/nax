@@ -6,7 +6,10 @@
  * text-based tool-call protocol in its multi-turn loop.
  */
 
+import { join } from "node:path";
+
 import type { ContextToolRuntimeConfig } from "@/config/selectors";
+import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import type { UserStory } from "@/prd";
 import { resolveTestFilePatterns } from "@/test-runners";
@@ -20,6 +23,23 @@ export interface ContextToolRuntime {
   callTool(name: string, input: unknown): Promise<string>;
 }
 
+/**
+ * Per-tool budgets for one agent session, keyed by tool name.
+ *
+ * Must be created once per session and shared across every runtime built for
+ * it. `createContextToolRuntime` is called inside the hop closure
+ * (build-hop-callback), so a runtime-local map would reset
+ * `maxCallsPerSession` on every retry / fallback / escalation hop — making the
+ * per-session ceiling effectively unbounded and leaving only the run-level cap
+ * real. Threaded exactly like `runCounter`, for the same reason.
+ */
+export type SessionToolBudgets = Map<string, PullToolBudget>;
+
+/** Create an empty session-scoped budget registry. */
+export function createSessionToolBudgets(): SessionToolBudgets {
+  return new Map<string, PullToolBudget>();
+}
+
 function descriptorByName(bundle: ContextBundle): Map<string, ToolDescriptor> {
   return new Map(bundle.pullTools.map((tool) => [tool.name, tool]));
 }
@@ -31,12 +51,18 @@ export function createContextToolRuntime(options: {
   /** Absolute path to the repository root (AC-54). Used by all pull tool handlers. */
   repoRoot: string;
   runCounter?: RunCallCounter;
+  /**
+   * Session-scoped budget registry. Pass the same instance for every runtime
+   * built within one agent session so per-session ceilings survive hops.
+   * Omitted (tests, one-shot callers) means this runtime gets its own allowance.
+   */
+  sessionBudgets?: SessionToolBudgets;
 }): ContextToolRuntime | undefined {
   const { bundle, story, config, repoRoot } = options;
   if (bundle.pullTools.length === 0) return undefined;
 
   const descriptors = descriptorByName(bundle);
-  const budgets = new Map<string, PullToolBudget>();
+  const budgets = options.sessionBudgets ?? createSessionToolBudgets();
   const runCounter = options.runCounter ?? createRunCallCounter();
   const maxCallsPerRun = config.context?.v2?.pull?.maxCallsPerRun ?? 50;
 
@@ -72,7 +98,12 @@ export function createContextToolRuntime(options: {
     async callTool(name: string, input: unknown): Promise<string> {
       const tool = descriptors.get(name);
       if (!tool) {
-        throw new Error(`Unknown context tool: ${name}`);
+        throw new NaxError(`Unknown context tool: ${name}`, "PULL_TOOL_UNKNOWN", {
+          stage: "pull-tool",
+          storyId: story.id,
+          tool: name,
+          availableTools: [...descriptors.keys()].sort(),
+        });
       }
 
       switch (name) {
@@ -86,6 +117,9 @@ export function createContextToolRuntime(options: {
             patterns,
             story.id,
             config.context?.v2?.providers,
+            // monorepo-awareness §7: scope the pull path to the story's package,
+            // as the push path already does. Equals repoRoot for single-package.
+            story.workdir ? join(repoRoot, story.workdir) : repoRoot,
           );
         }
         case "query_feature_context":
@@ -98,7 +132,11 @@ export function createContextToolRuntime(options: {
             tool.maxTokensPerCall,
           );
         default:
-          throw new Error(`No runtime handler for context tool: ${name}`);
+          throw new NaxError(`No runtime handler for context tool: ${name}`, "PULL_TOOL_NO_HANDLER", {
+            stage: "pull-tool",
+            storyId: story.id,
+            tool: name,
+          });
       }
     },
   };

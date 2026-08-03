@@ -216,6 +216,14 @@ export async function handleQueryNeighbor(
   resolvedTestPatterns?: import("@/test-runners").ResolvedTestPatterns,
   storyId?: string,
   providerOptions?: { sourceGlob?: string; maxGlobFiles?: number },
+  /**
+   * Absolute path to the story's package. Defaults to `repoRoot` for
+   * single-package repos. The push path scopes CodeNeighborProvider by package
+   * (monorepo-awareness §7); before this parameter existed the pull path
+   * hardcoded `packageDir: repoRoot`, so a monorepo story pulled neighbours
+   * from the whole repo instead of its own package.
+   */
+  packageDir?: string,
 ): Promise<string> {
   budget.consume();
 
@@ -223,7 +231,7 @@ export async function handleQueryNeighbor(
   const request: ContextRequest = {
     storyId: storyId ?? "_pull-tool",
     repoRoot,
-    packageDir: repoRoot,
+    packageDir: packageDir ?? repoRoot,
     stage: "pull-tool",
     role: "implementer",
     budgetTokens: maxTokensPerCall,
@@ -242,6 +250,7 @@ export async function handleQueryNeighbor(
     storyId: storyId ?? "_pull-tool",
     tool: "query_neighbor",
     filePath: input.filePath,
+    packageDir: packageDir ?? repoRoot,
     resultCount: result.chunks.length,
     resultBytes: finalContent.length,
   };
