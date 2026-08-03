@@ -3,7 +3,7 @@
   "feature": "context-budget-truth",
   "branchName": "feat/context-budget-truth",
   "createdAt": "2026-08-03T02:11:58Z",
-  "updatedAt": "2026-08-03T05:30:53.073Z",
+  "updatedAt": "2026-08-03T05:39:38.939Z",
   "userStories": [
     {
       "id": "US-001",
@@ -116,8 +116,8 @@
         "algorithm"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -176,7 +176,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/context/engine/packing.ts",
@@ -187,7 +189,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4c3b046e0f660d1680179d56039774c765f337dc"
     },
     {
       "id": "US-004",
