@@ -173,6 +173,14 @@ export interface ContextManifest {
   stage: string;
   /** Total token budget passed in ContextRequest.budgetTokens */
   totalBudgetTokens: number;
+  /**
+   * Effective token ceiling actually used by `packChunks` — i.e.
+   * `min(totalBudgetTokens, availableBudgetTokens)` after agent-profile and
+   * reserve subtractions. Absent on manifests written before this field
+   * existed (US-003); downstream consumers must treat absence as
+   * "unknown ceiling" and fall back gracefully.
+   */
+  effectiveBudget?: number;
   /** Tokens actually used by included chunks + digest */
   usedTokens: number;
   /** IDs of chunks that were packed into the push markdown */

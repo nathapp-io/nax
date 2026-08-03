@@ -389,7 +389,7 @@ export class ContextOrchestrator {
 
     effectiveBudgetTokens = Math.max(0, effectiveBudgetTokens - separatorOverheadTokens(kept));
     // Step 7: greedy pack — agent-profile ceiling applied at packing.
-    const { packed, budgetExcludedIds, usedTokens, floorPackedIds, floorOverageIds } = packChunks(
+    const { packed, budgetExcludedIds, usedTokens, floorPackedIds, floorOverageIds, effectiveBudget } = packChunks(
       kept,
       effectiveBudgetTokens,
       request.availableBudgetTokens,
@@ -397,12 +397,14 @@ export class ContextOrchestrator {
 
     // US-003 AC-4: surface floor overage observability. Floor-kind chunks still
     // pack even when they overflow the effective budget; this warn makes the
-    // overage visible without changing which chunks are included.
+    // overage visible without changing which chunks are included. The
+    // `effectiveBudget` value reported here is the post-`availableBudgetTokens`
+    // ceiling packChunks actually used — never the pre-ceiling request budget.
     if (floorOverageIds.length > 0) {
       logger.warn("context-v2", "Floor-budget overage — floor chunks pushed bundle past effective budget", {
         storyId: request.storyId,
         stage: request.stage,
-        effectiveBudget: effectiveBudgetTokens,
+        effectiveBudget,
         excludedNonFloorChunkCount: budgetExcludedIds.length,
       });
     }
@@ -432,6 +434,7 @@ export class ContextOrchestrator {
       budgetExcludedIds,
       floorPackedIds,
       floorOverageIds,
+      effectiveBudget,
     });
 
     logger.debug("context-v2", "Bundle assembled", {

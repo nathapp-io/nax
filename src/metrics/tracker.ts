@@ -97,21 +97,33 @@ async function deriveContextMetrics(
 }
 
 /**
- * Sum per-chunk tokens for every chunk listed in `manifest.floorOverageItems`
- * across the persisted stage manifests. Each stage's `chunkTokens` map carries
- * the token count; absent entries (chunks with no recorded token cost) are
- * skipped rather than treated as 0 to avoid masking missing data.
+ * Sum per-stage floor-budget overage across the persisted stage manifests.
+ *
+ * For each stage manifest, the overage is
+ * `max(0, sum(tokens of all floor chunks packed) - effectiveBudget)` —
+ * the amount by which the floor alone pushed the bundle past the ceiling
+ * that `packChunks` actually used (which may be smaller than
+ * `totalBudgetTokens` due to `availableBudgetTokens`). Summing per-stage
+ * overflow chunk tokens without subtracting the ceiling (the previous
+ * behaviour) overstates the overage by the budget amount and compounds
+ * across stages.
+ *
+ * Manifests without `effectiveBudget` (legacy writes predating US-003)
+ * contribute 0 to the total rather than fall back to a wrong answer.
  */
 function computeFloorOverage(stored: Awaited<ReturnType<typeof loadContextManifests>>): FloorOverageMetrics {
   let overageTokens = 0;
   for (const { manifest } of stored) {
-    const overageIds = manifest.floorOverageItems ?? [];
-    if (overageIds.length === 0) continue;
+    if (typeof manifest.effectiveBudget !== "number") continue;
+    const floorIds = manifest.floorItems ?? [];
+    if (floorIds.length === 0) continue;
     const chunkTokens = manifest.chunkTokens ?? {};
-    for (const id of overageIds) {
+    let floorTotal = 0;
+    for (const id of floorIds) {
       const tokens = chunkTokens[id];
-      if (typeof tokens === "number") overageTokens += tokens;
+      if (typeof tokens === "number") floorTotal += tokens;
     }
+    overageTokens += Math.max(0, floorTotal - manifest.effectiveBudget);
   }
   return { overageTokens };
 }

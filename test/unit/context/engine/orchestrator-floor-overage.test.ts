@@ -120,4 +120,32 @@ describe("ContextOrchestrator.assemble() — US-003 floor overage warn log (AC-4
       .find((c) => c.message.includes("floor") || c.stage.includes("floor"));
     expect(floorWarn).toBeUndefined();
   });
+
+  test("warn effectiveBudget reflects the post-availableBudgetTokens ceiling, not request.budgetTokens", async () => {
+    // request.budgetTokens = 50_000 but request.availableBudgetTokens = 200.
+    // packChunks uses min(50_000, 200) = 200 as the effective ceiling, so the
+    // warn log must report 200 — not 50_000. Catches the regression where
+    // the log was wired to the pre-ceiling request value.
+    const orch = new ContextOrchestrator([
+      makeProvider("test-provider", {
+        chunks: [
+          { id: "feat:1", kind: "feature", scope: "feature", role: ["implementer"], content: "x".repeat(1200), tokens: 300, rawScore: 1.0 },
+        ],
+        pullTools: [],
+      }),
+    ]);
+
+    await orch.assemble({
+      ...BASE_REQUEST,
+      budgetTokens: 50_000,
+      availableBudgetTokens: 200,
+      providerIds: ["test-provider"],
+    });
+
+    const warnCalls = mockLogger.calls.filter((c) => c.level === "warn");
+    const floorWarn = warnCalls.find((c) => c.message.includes("floor") || c.stage.includes("floor"));
+    expect(floorWarn).toBeDefined();
+    const data = floorWarn!.data as Record<string, unknown>;
+    expect(data.effectiveBudget).toBe(200);
+  });
 });

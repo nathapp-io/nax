@@ -26,6 +26,8 @@ export interface ManifestInputs {
   budgetExcludedIds: string[];
   floorPackedIds: string[];
   floorOverageIds: string[];
+  /** Effective ceiling actually used by `packChunks` (US-003). */
+  effectiveBudget: number;
 }
 
 /**
@@ -49,6 +51,7 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     budgetExcludedIds,
     floorPackedIds,
     floorOverageIds,
+    effectiveBudget,
   } = inputs;
 
   // Amendment A: stale chunk IDs and content summaries for post-story
@@ -74,6 +77,7 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     requestId,
     stage: request.stage,
     totalBudgetTokens: request.budgetTokens,
+    effectiveBudget,
     usedTokens: usedTokens + priorStageDigestTokens,
     includedChunks: packed.map((c) => c.id),
     excludedChunks: [
