@@ -52,8 +52,8 @@ export type { AgentRenderOptions } from "./agent-renderer";
 
 export { assembleForStage, getBundleMarkdown } from "./stage-assembler";
 export type { StageAssembleOptions } from "./stage-assembler";
-export { createContextToolRuntime } from "./tool-runtime";
-export type { ContextToolRuntime } from "./tool-runtime";
+export { createContextToolRuntime, createSessionToolBudgets } from "./tool-runtime";
+export type { ContextToolRuntime, SessionToolBudgets } from "./tool-runtime";
 export {
   writeContextManifest,
   writeRebuildManifest,

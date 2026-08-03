@@ -12,9 +12,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { buildHopCallback, _buildHopCallbackDeps } from "@/operations";
 import type { SessionHandle, TurnResult } from "@/agents/types";
 import type { AdapterFailure } from "@/context/engine";
+import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
 import { makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -96,6 +96,30 @@ function makeCtx(sessionMgr: ReturnType<typeof makeSessionManager>) {
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Gap finding 7 — the pull budget registry must be created ONCE per callback,
+// outside the returned closure. Created inside, every retry / fallback /
+// escalation hop got a fresh registry and maxCallsPerSession reset to zero.
+// Nothing else in the suite pins this placement.
+describe("buildHopCallback — session-scoped pull budget registry", () => {
+  test("every hop receives the same sessionBudgets instance", async () => {
+    const seen: unknown[] = [];
+    _buildHopCallbackDeps.createContextToolRuntime = (opts: { sessionBudgets?: unknown }) => {
+      seen.push(opts.sessionBudgets);
+      return undefined as any;
+    };
+    const sessionMgr = makeSessionManager({});
+    const cb = buildHopCallback(makeCtx(sessionMgr), undefined, STUB_RUN_OPTIONS);
+
+    const bundle = { pushMarkdown: "", pullTools: [], digest: "", manifest: {} } as any;
+    await cb("claude", bundle, { kind: "primary", attempt: 1 }, STUB_RUN_OPTIONS);
+    await cb("claude", bundle, { kind: "stale-retry", attempt: 2 }, STUB_RUN_OPTIONS);
+
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toBeDefined();
+    expect(seen[0]).toBe(seen[1]);
+  });
+});
+
 describe("buildHopCallback — stale-retry session reuse", () => {
   test("stale-retry: getLiveHandle called; openSession and closeSession skipped", async () => {
     const getLiveHandle = mock((_name: string) => STUB_HANDLE);
@@ -150,12 +174,7 @@ describe("buildHopCallback — stale-retry session reuse", () => {
     const sessionMgr = makeSessionManager({ getLiveHandle, openSession, closeSession });
 
     const cb = buildHopCallback(makeCtx(sessionMgr), undefined, STUB_RUN_OPTIONS);
-    const result = await cb(
-      "codex",
-      undefined,
-      { kind: "swap", failure: SWAP_FAILURE },
-      STUB_RUN_OPTIONS,
-    );
+    const result = await cb("codex", undefined, { kind: "swap", failure: SWAP_FAILURE }, STUB_RUN_OPTIONS);
 
     expect(result.result.success).toBe(true);
     expect(getLiveHandle).not.toHaveBeenCalled();

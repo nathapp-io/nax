@@ -11,7 +11,12 @@ import { SessionFailureError, SessionTurnError } from "../agents/types";
 import type { AgentResult, AgentRunOptions, TurnResult } from "../agents/types";
 import { DEFAULT_CONFIG, resolveModelForAgent } from "../config";
 import type { NaxConfig } from "../config";
-import { ContextOrchestrator, createContextToolRuntime } from "../context/engine";
+import {
+  ContextOrchestrator,
+  createContextToolRuntime,
+  createRunCallCounter,
+  createSessionToolBudgets,
+} from "../context/engine";
 import type { AdapterFailure, ContextBundle, RunCallCounter } from "../context/engine";
 import { writeRebuildManifest } from "../context/engine/manifest-store";
 import { getLogger } from "../logger";
@@ -126,6 +131,24 @@ export function buildHopCallback(
   // this hop's own start time.
   let priorHopStartedAt: number | undefined;
 
+  // Gap finding 7: pull-tool budgets must be scoped to the SESSION, not the hop.
+  // createContextToolRuntime is called inside the closure below (once per hop),
+  // so a runtime-local registry reset maxCallsPerSession on every retry /
+  // fallback / escalation. Created here, outside the closure, alongside
+  // contextToolRunCounter — which until now was declared but never populated by
+  // any production caller, so the run-level cap reset per hop too (call.ts).
+  const sessionToolBudgets = createSessionToolBudgets();
+  // Same defect, different cause, for the RUN-level cap: BuildHopCallbackContext
+  // declares contextToolRunCounter but no production site populates it (the
+  // hopCtx literal in call.ts omits it), so tool-runtime's
+  // createRunCallCounter() fallback minted a fresh counter per hop and
+  // pull.maxCallsPerRun never bound. Hoisting the fallback here makes it hold
+  // across the hops of one callback. It is NOT yet a true per-run cap — that
+  // needs contextToolRunCounter threaded through CallContext, which cannot land
+  // in this change because call.ts is at its grandfathered file-size ceiling
+  // and the ratchet forbids growing it. Tracked as a follow-up.
+  const runCounterForHops = contextToolRunCounter ?? createRunCallCounter();
+
   return async (
     agentName,
     hopBundle,
@@ -199,7 +222,8 @@ export function buildHopCallback(
           story,
           config,
           repoRoot: workdir,
-          runCounter: contextToolRunCounter,
+          runCounter: runCounterForHops,
+          sessionBudgets: sessionToolBudgets,
         })
       : undefined;
     const contextPullTools = workingBundle?.pullTools;

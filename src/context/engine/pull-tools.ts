@@ -220,6 +220,13 @@ export async function handleQueryNeighbor(
   budget.consume();
 
   const provider = new CodeNeighborProvider(providerOptions ?? {});
+  // NOTE: packageDir intentionally equals repoRoot. Callers pass the story's
+  // already-resolved package dir AS repoRoot (build-hop-callback -> call.ts ->
+  // execution.ts -> iteration-runner, which joins story.workdir), so this IS
+  // package-scoped. Two attempts to "scope" it further were both wrong: joining
+  // story.workdir again double-joins in monorepos, and splitting repoRoot from
+  // packageDir redirects the cross-package scan at the main checkout under
+  // storyIsolation: "worktree". Do not "fix" this without a worktree test.
   const request: ContextRequest = {
     storyId: storyId ?? "_pull-tool",
     repoRoot,
@@ -242,6 +249,7 @@ export async function handleQueryNeighbor(
     storyId: storyId ?? "_pull-tool",
     tool: "query_neighbor",
     filePath: input.filePath,
+    packageDir: repoRoot,
     resultCount: result.chunks.length,
     resultBytes: finalContent.length,
   };
