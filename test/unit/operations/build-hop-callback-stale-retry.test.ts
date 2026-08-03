@@ -100,6 +100,30 @@ function makeCtx(sessionMgr: ReturnType<typeof makeSessionManager>) {
 // outside the returned closure. Created inside, every retry / fallback /
 // escalation hop got a fresh registry and maxCallsPerSession reset to zero.
 // Nothing else in the suite pins this placement.
+// Gap finding 7 / AC-18: BuildHopCallbackContext declared contextToolRunCounter
+// but no production site populated it — call.ts's hopCtx literal omitted it,
+// and could not gain the line because the file sat at its grandfathered
+// size ceiling (cleared by #1460). So the run cap reset every hop and pull
+// invocations were never recorded anywhere.
+describe("buildHopCallback — run counter threading", () => {
+  test("forwards the run counter it was given, instead of minting a fresh one", async () => {
+    const seen: unknown[] = [];
+    _buildHopCallbackDeps.createContextToolRuntime = (opts: { runCounter?: unknown }) => {
+      seen.push(opts.runCounter);
+      return undefined as never;
+    };
+    const counter = { count: 7, calls: [] };
+    const sessionMgr = makeSessionManager({});
+    const ctx = { ...makeCtx(sessionMgr), contextToolRunCounter: counter } as never;
+    const cb = buildHopCallback(ctx, undefined, STUB_RUN_OPTIONS);
+
+    const bundle = { pushMarkdown: "", pullTools: [], digest: "", manifest: {} } as never;
+    await cb("claude", bundle, { kind: "primary", attempt: 1 }, STUB_RUN_OPTIONS);
+
+    expect(seen[0]).toBe(counter);
+  });
+});
+
 describe("buildHopCallback — session-scoped pull budget registry", () => {
   test("every hop receives the same sessionBudgets instance", async () => {
     const seen: unknown[] = [];

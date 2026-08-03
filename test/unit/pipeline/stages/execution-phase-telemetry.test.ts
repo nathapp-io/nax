@@ -11,9 +11,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { executionStage, _executionDeps } from "@/pipeline";
-import type { PipelineContext } from "@/pipeline/types";
 import type { CallContext } from "@/operations/types";
+import { _executionDeps, executionStage } from "@/pipeline";
+import type { PipelineContext } from "@/pipeline/types";
 import { makeAgentAdapter, makeMockAgentManager, makeNaxConfig, makeStory } from "@test/helpers";
 
 function makePipelineContext(overrides: Partial<PipelineContext> = {}): PipelineContext {
@@ -90,7 +90,9 @@ afterEach(() => {
 
 describe("execution stage — phaseTelemetry derivation (US-003 ACs 1-4)", () => {
   test("AC1/AC2: three-session-tdd derives sessionModel=three-session and forwards testStrategy unchanged", async () => {
-    const ctx = makePipelineContext({ routing: { ...makePipelineContext().routing, testStrategy: "three-session-tdd" } });
+    const ctx = makePipelineContext({
+      routing: { ...makePipelineContext().routing, testStrategy: "three-session-tdd" },
+    });
     await executionStage.execute(ctx);
     expect(capturedCallCtx?.phaseTelemetry?.sessionModel).toBe("three-session");
     expect(capturedCallCtx?.phaseTelemetry?.testStrategy).toBe("three-session-tdd");
@@ -116,5 +118,33 @@ describe("execution stage — phaseTelemetry derivation (US-003 ACs 1-4)", () =>
     const ctx = makePipelineContext({ routing: { ...makePipelineContext().routing, modelTier: "powerful" } });
     await executionStage.execute(ctx);
     expect(capturedCallCtx?.phaseTelemetry?.tier).toBe("fast");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Gap finding 7 / AC-18. This one line in the callCtx literal is the only edge
+// connecting the counter the context stage creates to the call path that uses
+// it. Delete it and the whole pull-telemetry feature is inert in production —
+// metrics permanently absent, the cap back to per-hop — while every other test
+// in the suite stays green. That is the same declared-but-never-populated
+// pattern the feature exists to fix, so it gets its own guard.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("execution stage — contextToolRunCounter threading (AC-18)", () => {
+  test("forwards the SAME counter object from PipelineContext onto CallContext", async () => {
+    const counter = { count: 0, calls: [] };
+    const ctx = makePipelineContext();
+    (ctx as unknown as { contextToolRunCounter: unknown }).contextToolRunCounter = counter;
+
+    await executionStage.execute(ctx);
+
+    // Identity, not equality: a copy would leave collectStoryMetrics reading an
+    // empty array while every unit test still passed.
+    expect(capturedCallCtx?.contextToolRunCounter).toBe(counter);
+  });
+
+  test("omits the field entirely when the context stage never created a counter", async () => {
+    await executionStage.execute(makePipelineContext());
+    expect(capturedCallCtx?.contextToolRunCounter).toBeUndefined();
   });
 });

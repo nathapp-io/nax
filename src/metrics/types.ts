@@ -164,6 +164,13 @@ export interface StoryMetrics {
   context?: {
     providers: Record<string, ContextProviderMetrics>;
     /**
+     * Pull-tool invocations for this story (spec AC-18). Sourced from the
+     * run-scoped counter threaded through CallContext, so it reflects what the
+     * agent actually asked for rather than what was offered. Absent when the
+     * story made no pull calls.
+     */
+    pullCalls?: import("../context/engine").PullCallRecord[];
+    /**
      * Aggregate pollution indicators (Amendment A AC-48).
      * Populated post-story when effectiveness annotation and staleness detection run.
      * Absent when no manifests were found or no effectiveness data exists.

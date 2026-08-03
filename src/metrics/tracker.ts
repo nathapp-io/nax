@@ -7,6 +7,7 @@
 import path from "node:path";
 import { resolveDefaultAgent } from "../agents";
 import { resolveModelForAgent } from "../config/schema";
+import type { PullCallRecord } from "../context/engine";
 import { loadContextManifests } from "../context/engine/manifest-store";
 import { computePollutionMetrics } from "../context/engine/pollution";
 import type { PipelineContext } from "../pipeline/types";
@@ -45,6 +46,7 @@ async function deriveContextMetrics(
   projectDir: string,
   storyId: string,
   featureId: string,
+  pullCalls?: PullCallRecord[],
 ): Promise<StoryMetrics["context"] | undefined> {
   const stored = await loadContextManifests(projectDir, storyId, featureId);
   if (stored.length === 0) return undefined;
@@ -93,7 +95,12 @@ async function deriveContextMetrics(
   // above); a manifest set with no providers never reaches this line.
   const floorOverage = computeFloorOverage(stored);
 
-  return { providers, ...(hasPollution && { pollution }), floorOverage };
+  return {
+    providers,
+    ...(hasPollution && { pollution }),
+    floorOverage,
+    ...(pullCalls?.length ? { pullCalls } : {}),
+  };
 }
 
 /**
@@ -177,7 +184,9 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
 
   const featureId = ctx.prd.feature;
   const contextMetrics =
-    ctx.projectDir && featureId ? await deriveContextMetrics(ctx.projectDir, story.id, featureId) : undefined;
+    ctx.projectDir && featureId
+      ? await deriveContextMetrics(ctx.projectDir, story.id, featureId, ctx.contextToolRunCounter?.calls)
+      : undefined;
 
   return {
     storyId: story.id,
