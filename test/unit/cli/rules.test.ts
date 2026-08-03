@@ -5,21 +5,21 @@
  * Filesystem calls are intercepted via _rulesCLIDeps injection.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { NaxError } from "@/errors";
-import { lintForNeutrality } from "../../../src/context/rules/canonical-loader";
 import { makeLogger, withTempDir } from "@test/helpers";
 import {
+  _rulesCLIDeps,
   neutralizeContent,
   rulesExportCommand,
   rulesLintCommand,
   rulesMigrateCommand,
   translateLegacyFrontmatter,
   withReviewNotice,
-  _rulesCLIDeps,
 } from "../../../src/cli/rules";
+import { lintForNeutrality } from "../../../src/context/rules/canonical-loader";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers
@@ -49,7 +49,9 @@ beforeEach(() => {
   Object.keys(written).forEach((k) => delete written[k]);
 
   _rulesCLIDeps.readFile = async () => "";
-  _rulesCLIDeps.writeFile = async (path, content) => { written[path] = content; };
+  _rulesCLIDeps.writeFile = async (path, content) => {
+    written[path] = content;
+  };
   _rulesCLIDeps.fileExists = async () => false;
   _rulesCLIDeps.globInDir = () => [];
   _rulesCLIDeps.globCanonicalRuleFiles = () => [];
@@ -171,23 +173,192 @@ describe("rulesExportCommand", () => {
   });
 
   test.each([
-    ["claude", "/project/CLAUDE.md"],
+    ["claude", "/project/.claude/rules/style.md"],
     ["codex", "/project/AGENTS.md"],
-  ] as const)("writes correct shim file for agent=%s", async (agent, expectedPath) => {
-    _rulesCLIDeps.loadCanonicalRules = async () => [
-      { fileName: "style.md", content: "## Style\n\nContent." },
-    ];
+  ] as const)("writes correct target for agent=%s", async (agent, expectedPath) => {
+    _rulesCLIDeps.loadCanonicalRules = async () => [{ fileName: "style.md", content: "## Style\n\nContent." }];
     await rulesExportCommand({ dir: "/project", agent });
     expect(expectedPath in written).toBe(true);
   });
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // Issue #1442 — CLAUDE.md is the wrong target for rules. Claude Code reads
+  // .claude/rules/*.md natively and path-scopes them; CLAUDE.md is the CONTEXT
+  // file that `nax generate` owns. Exporting rules into it made the two
+  // generators clobber each other and collapsed the context/rules distinction.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  describe("agent=claude writes a rules DIRECTORY", () => {
+    test("writes one file per canonical rule, never CLAUDE.md", async () => {
+      _rulesCLIDeps.loadCanonicalRules = async () => [
+        { fileName: "style.md", content: "Body A." },
+        { fileName: "testing.md", content: "Body B." },
+      ];
+      await rulesExportCommand({ dir: "/project", agent: "claude" });
+
+      expect(Object.keys(written).sort()).toEqual([
+        "/project/.claude/rules/style.md",
+        "/project/.claude/rules/testing.md",
+      ]);
+      expect("/project/CLAUDE.md" in written).toBe(false);
+    });
+
+    test("mirrors nested relative paths so basenames cannot collide", async () => {
+      _rulesCLIDeps.loadCanonicalRules = async () => [
+        { fileName: "style.md", path: "frontend/style.md", content: "FE." },
+        { fileName: "style.md", path: "backend/style.md", content: "BE." },
+      ];
+      await rulesExportCommand({ dir: "/project", agent: "claude" });
+
+      expect(Object.keys(written).sort()).toEqual([
+        "/project/.claude/rules/backend/style.md",
+        "/project/.claude/rules/frontend/style.md",
+      ]);
+    });
+
+    test("translates canonical appliesTo: into Claude's paths: file glob", async () => {
+      _rulesCLIDeps.loadCanonicalRules = async () => [
+        { fileName: "t.md", content: "Body.", appliesTo: ["test/**/*.test.ts"], priority: 100 },
+      ];
+      await rulesExportCommand({ dir: "/project", agent: "claude" });
+
+      const out = written["/project/.claude/rules/t.md"] ?? "";
+      expect(out).toContain("paths:");
+      expect(out).toContain('"test/**/*.test.ts"');
+      // nax's own appliesTo: spelling means nothing to Claude Code.
+      expect(out).not.toContain("appliesTo:");
+    });
+
+    // The exact bug withReviewNotice exists to fix, in the opposite direction:
+    // frontmatter is only recognised at byte 0, so an HTML-comment header
+    // emitted FIRST pushes it out of position and the scoping silently dies.
+    test("keeps frontmatter at byte 0 with the generated-header comment below it", async () => {
+      _rulesCLIDeps.loadCanonicalRules = async () => [
+        { fileName: "t.md", content: "Body.", appliesTo: ["src/**/*.ts"] },
+      ];
+      await rulesExportCommand({ dir: "/project", agent: "claude" });
+
+      const out = written["/project/.claude/rules/t.md"] ?? "";
+      expect(out.startsWith("---\n")).toBe(true);
+      const fmEnd = out.indexOf("\n---\n") + 5;
+      expect(out.indexOf("AUTO-GENERATED")).toBeGreaterThan(fmEnd);
+    });
+
+    test("emits no frontmatter block for an unscoped rule", async () => {
+      _rulesCLIDeps.loadCanonicalRules = async () => [{ fileName: "g.md", content: "Global." }];
+      await rulesExportCommand({ dir: "/project", agent: "claude" });
+
+      const out = written["/project/.claude/rules/g.md"] ?? "";
+      expect(out.startsWith("---")).toBe(false);
+      expect(out).toContain("AUTO-GENERATED");
+      expect(out).toContain("Global.");
+    });
+  });
+
+  test("warns when canonical package scope is dropped, instead of widening silently", async () => {
+    const warnings: Array<{ msg: string; data: unknown }> = [];
+    _rulesCLIDeps.getLogger = () =>
+      ({ warn: (_s: string, msg: string, data: unknown) => warnings.push({ msg, data }) }) as never;
+    _rulesCLIDeps.loadCanonicalRules = async () => [{ fileName: "pkg.md", content: "Body.", paths: ["apps/api/**"] }];
+
+    await rulesExportCommand({ dir: "/project", agent: "claude" });
+
+    const w = warnings.find((x) => x.msg.includes("package scope"));
+    expect(w).toBeDefined();
+    expect(JSON.stringify(w?.data)).toContain("apps/api/**");
+  });
+
+  test("warns about a generated rule file with no canonical source", async () => {
+    const warnings: string[] = [];
+    _rulesCLIDeps.getLogger = () => ({ warn: (_s: string, msg: string) => warnings.push(msg) }) as never;
+    _rulesCLIDeps.loadCanonicalRules = async () => [{ fileName: "a.md", content: "Body." }];
+    _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/orphan.md"];
+
+    await rulesExportCommand({ dir: "/project", agent: "claude" });
+
+    expect(warnings.some((m) => m.includes("no canonical source"))).toBe(true);
+  });
+
+  test("rejects a rule path that escapes the rules directory", async () => {
+    _rulesCLIDeps.loadCanonicalRules = async () => [{ fileName: "x.md", path: "../../escape.md", content: "Body." }];
+    let threw: unknown;
+    try {
+      await rulesExportCommand({ dir: "/project", agent: "claude" });
+    } catch (e) {
+      threw = e;
+    }
+    expect((threw as NaxError)?.code).toBe("RULES_EXPORT_PATH_ESCAPE");
+  });
+
+  // The design's Risks section mandates this: it is the single test pinning the
+  // two translations against each other, so neither side can drift alone.
+  test("round-trip: a Claude paths: rule survives migrate -> canonical -> export", async () => {
+    const original = '---\npaths:\n  - "test/**/*.test.ts"\n---\nRule body.\n';
+    const { content: canonical } = translateLegacyFrontmatter(original);
+    expect(canonical).toContain("appliesTo:");
+
+    // Feed the migrated form back through the loader's own parse, then export.
+    const globs = [...canonical.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    _rulesCLIDeps.loadCanonicalRules = async () => [
+      { fileName: "t.md", content: "Rule body.", appliesTo: globs as string[] },
+    ];
+    await rulesExportCommand({ dir: "/project", agent: "claude" });
+
+    const out = written["/project/.claude/rules/t.md"] ?? "";
+    expect(out.startsWith("---")).toBe(true);
+    expect(out).toContain("paths:");
+    expect(out).toContain('"test/**/*.test.ts"');
+  });
+
+  describe("--check drift detection", () => {
+    test("resolves silently when the generated output matches what is on disk", async () => {
+      _rulesCLIDeps.loadCanonicalRules = async () => [{ fileName: "a.md", content: "Body." }];
+      // Prime disk with exactly what export would write.
+      await rulesExportCommand({ dir: "/project", agent: "claude" });
+      const onDisk = { ...written };
+      _rulesCLIDeps.readFile = async (path: string) => onDisk[path] ?? "";
+
+      await rulesExportCommand({ dir: "/project", agent: "claude", check: true });
+      // No throw = no drift.
+    });
+
+    test("throws RULES_EXPORT_DRIFT naming each stale file", async () => {
+      _rulesCLIDeps.loadCanonicalRules = async () => [{ fileName: "a.md", content: "NEW body." }];
+      _rulesCLIDeps.readFile = async () => "stale content";
+
+      let threw: unknown;
+      try {
+        await rulesExportCommand({ dir: "/project", agent: "claude", check: true });
+      } catch (e) {
+        threw = e;
+      }
+      expect(threw).toBeInstanceOf(NaxError);
+      expect((threw as NaxError).code).toBe("RULES_EXPORT_DRIFT");
+      expect((threw as NaxError).message).toContain("a.md");
+    });
+
+    test("--check writes nothing", async () => {
+      _rulesCLIDeps.loadCanonicalRules = async () => [{ fileName: "a.md", content: "Body." }];
+      _rulesCLIDeps.readFile = async () => "stale";
+      const before = Object.keys(written).length;
+      try {
+        await rulesExportCommand({ dir: "/project", agent: "claude", check: true });
+      } catch {
+        // drift expected
+      }
+      expect(Object.keys(written).length).toBe(before);
+    });
+  });
+
+  // Retargeted to codex: the single-shim blob format still applies to
+  // codex/gemini/cursor, but claude now writes a directory (issue #1442).
   test("shim content includes auto-generated header and all canonical rule files", async () => {
     _rulesCLIDeps.loadCanonicalRules = async () => [
       { fileName: "style.md", content: "Style content." },
       { fileName: "testing.md", content: "Testing content." },
     ];
-    await rulesExportCommand({ dir: "/project", agent: "claude" });
-    const content = written["/project/CLAUDE.md"]!;
+    await rulesExportCommand({ dir: "/project", agent: "codex" });
+    const content = written["/project/AGENTS.md"]!;
     expect(content).toContain("AUTO-GENERATED");
     expect(content).toContain(".nax/rules/");
     expect(content).toContain("Style content.");
@@ -195,9 +366,7 @@ describe("rulesExportCommand", () => {
   });
 
   test("dry run does not write any files", async () => {
-    _rulesCLIDeps.loadCanonicalRules = async () => [
-      { fileName: "style.md", content: "## Style\n\nContent." },
-    ];
+    _rulesCLIDeps.loadCanonicalRules = async () => [{ fileName: "style.md", content: "## Style\n\nContent." }];
     await rulesExportCommand({ dir: "/project", agent: "claude", dryRun: true });
     expect(Object.keys(written)).toHaveLength(0);
   });
@@ -235,7 +404,8 @@ describe("rulesMigrateCommand", () => {
     [false, false],
     [true, true],
   ] as const)("force=%s: existing file written=%s", async (force, expectedWritten) => {
-    _rulesCLIDeps.fileExists = async (p) => p === "/project/CLAUDE.md" || p === "/project/.nax/rules/project-conventions.md";
+    _rulesCLIDeps.fileExists = async (p) =>
+      p === "/project/CLAUDE.md" || p === "/project/.nax/rules/project-conventions.md";
     _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
     await rulesMigrateCommand({ dir: "/project", ...(force ? { force } : {}) });
     expect("/project/.nax/rules/project-conventions.md" in written).toBe(expectedWritten);
@@ -253,7 +423,9 @@ describe("rulesMigrateCommand", () => {
 
   test("includes neutralization notice when replacements were made and creates .nax/rules/ directory", async () => {
     const createdDirs: string[] = [];
-    _rulesCLIDeps.mkdir = async (dir) => { createdDirs.push(dir); };
+    _rulesCLIDeps.mkdir = async (dir) => {
+      createdDirs.push(dir);
+    };
     _rulesCLIDeps.fileExists = async (p) => p === "/project/CLAUDE.md";
     _rulesCLIDeps.readFile = async () => "IMPORTANT: do this.";
     await rulesMigrateCommand({ dir: "/project" });
@@ -411,7 +583,7 @@ describe("translateLegacyFrontmatter", () => {
     // scope, and `ruleMatchesPackage` returns true unconditionally when
     // packageDir === repoRoot — so copying it verbatim into a single-package
     // repo yields config that looks scoped and does nothing.
-    const src = ['---', 'paths:', '  - "test/**/*.test.ts"', '---', '', '# Test Architecture', ''].join("\n");
+    const src = ["---", "paths:", '  - "test/**/*.test.ts"', "---", "", "# Test Architecture", ""].join("\n");
     const { content, translated } = translateLegacyFrontmatter(src);
     expect(translated).toBe(true);
     expect(content).toContain("appliesTo:");
@@ -421,14 +593,16 @@ describe("translateLegacyFrontmatter", () => {
   });
 
   test("preserves a multi-entry glob list verbatim", () => {
-    const src = ['---', 'paths:', '  - "src/agents/**/*.ts"', '  - "src/operations/**/*.ts"', '---', '', 'body'].join("\n");
+    const src = ["---", "paths:", '  - "src/agents/**/*.ts"', '  - "src/operations/**/*.ts"', "---", "", "body"].join(
+      "\n",
+    );
     const { content } = translateLegacyFrontmatter(src);
     expect(content).toContain('  - "src/agents/**/*.ts"');
     expect(content).toContain('  - "src/operations/**/*.ts"');
   });
 
   test("keeps other frontmatter keys untouched", () => {
-    const src = ['---', 'priority: 40', 'paths:', '  - "src/**"', '---', '', 'body'].join("\n");
+    const src = ["---", "priority: 40", "paths:", '  - "src/**"', "---", "", "body"].join("\n");
     const { content } = translateLegacyFrontmatter(src);
     expect(content).toContain("priority: 40");
     expect(content).toContain("appliesTo:");
@@ -442,14 +616,14 @@ describe("translateLegacyFrontmatter", () => {
   });
 
   test("is a no-op when the file has no `paths:` key", () => {
-    const src = ['---', 'priority: 50', '---', '', 'body'].join("\n");
+    const src = ["---", "priority: 50", "---", "", "body"].join("\n");
     const { translated } = translateLegacyFrontmatter(src);
     expect(translated).toBe(false);
   });
 
   test("does not translate when `appliesTo:` is already present", () => {
     // Re-running migrate must not produce two competing scope keys.
-    const src = ['---', 'appliesTo:', '  - "src/**"', 'paths:', '  - "apps/api/*"', '---', '', 'body'].join("\n");
+    const src = ["---", "appliesTo:", '  - "src/**"', "paths:", '  - "apps/api/*"', "---", "", "body"].join("\n");
     const { content, translated } = translateLegacyFrontmatter(src);
     expect(translated).toBe(false);
     expect(content).toBe(src);
@@ -462,7 +636,7 @@ describe("translateLegacyFrontmatter", () => {
   });
 
   test("rewrites a legacy `paths:` block using CRLF line endings", () => {
-    const src = ['---', 'paths:', '  - "test/**/*.test.ts"', '---', '', '# Test Architecture', ''].join("\r\n");
+    const src = ["---", "paths:", '  - "test/**/*.test.ts"', "---", "", "# Test Architecture", ""].join("\r\n");
     const { content, translated } = translateLegacyFrontmatter(src);
     expect(translated).toBe(true);
     expect(content).toContain("appliesTo:");
@@ -474,7 +648,7 @@ describe("translateLegacyFrontmatter", () => {
     // `paths` accepts a bare scalar (canonical-loader.ts); `appliesTo` only accepts a
     // list (spec AC US-004.2). A verbatim key rename would migrate a scalar `paths:`
     // into a scalar `appliesTo:` that loadCanonicalRules rejects as malformed.
-    const src = ['---', 'paths: "src/agents/**/*.ts"', '---', '', 'body'].join("\n");
+    const src = ["---", 'paths: "src/agents/**/*.ts"', "---", "", "body"].join("\n");
     const { content, translated } = translateLegacyFrontmatter(src);
     expect(translated).toBe(true);
     expect(content).toContain('appliesTo: ["src/agents/**/*.ts"]');
@@ -484,13 +658,13 @@ describe("translateLegacyFrontmatter", () => {
   test("wraps an unquoted scalar `paths:` value without producing a YAML alias", () => {
     // An unquoted flow-sequence element starting with `*` (e.g. `[**/*.ts]`) parses as
     // a YAML alias reference, not a glob string — the wrapper must always quote.
-    const src = ['---', "paths: **/*.ts", '---', '', 'body'].join("\n");
+    const src = ["---", "paths: **/*.ts", "---", "", "body"].join("\n");
     const { content } = translateLegacyFrontmatter(src);
     expect(content).toContain('appliesTo: ["**/*.ts"]');
   });
 
   test("leaves an inline `paths: [...]` list as a plain key rename", () => {
-    const src = ['---', 'paths: ["src/**", "apps/**"]', '---', '', 'body'].join("\n");
+    const src = ["---", 'paths: ["src/**", "apps/**"]', "---", "", "body"].join("\n");
     const { content } = translateLegacyFrontmatter(src);
     expect(content).toContain('appliesTo: ["src/**", "apps/**"]');
   });
@@ -501,7 +675,7 @@ describe("rulesMigrateCommand — legacy scope translation", () => {
     _rulesCLIDeps.globInDir = () => ["/repo/.claude/rules/test-architecture.md"];
     _rulesCLIDeps.fileExists = async (p: string) => p.startsWith("/repo/.claude/");
     _rulesCLIDeps.readFile = async () =>
-      ['---', 'paths:', '  - "test/**/*.test.ts"', '---', '', '# Test Architecture', ''].join("\n");
+      ["---", "paths:", '  - "test/**/*.test.ts"', "---", "", "# Test Architecture", ""].join("\n");
 
     await rulesMigrateCommand({ dir: "/repo" });
 
@@ -517,7 +691,7 @@ describe("withReviewNotice", () => {
     // Frontmatter is only recognised at the start of the file. A notice emitted
     // first pushes it out of position and the scope key is silently ignored —
     // which hits every rule that both needed neutralizing and carried a scope.
-    const src = ['---', 'appliesTo:', '  - "src/**"', '---', '', '# Body'].join("\n");
+    const src = ["---", "appliesTo:", '  - "src/**"', "---", "", "# Body"].join("\n");
     const out = withReviewNotice(src, 3);
     expect(out.startsWith("---\n")).toBe(true);
     expect(out).toContain("<!-- NOTE: 3 neutralization(s)");
@@ -540,7 +714,7 @@ describe("withReviewNotice", () => {
     _rulesCLIDeps.globInDir = () => ["/repo/.claude/rules/retry-strategy.md"];
     _rulesCLIDeps.fileExists = async (p: string) => p.startsWith("/repo/.claude/");
     _rulesCLIDeps.readFile = async () =>
-      ['---', 'paths:', '  - "src/agents/**/*.ts"', '---', '', '# Retry', '', 'See CLAUDE.md for more.'].join("\n");
+      ["---", "paths:", '  - "src/agents/**/*.ts"', "---", "", "# Retry", "", "See CLAUDE.md for more."].join("\n");
 
     await rulesMigrateCommand({ dir: "/repo" });
 
@@ -559,7 +733,7 @@ describe("withReviewNotice", () => {
     _rulesCLIDeps.globInDir = () => ["/repo/.claude/rules/crlf-rule.md"];
     _rulesCLIDeps.fileExists = async (p: string) => p.startsWith("/repo/.claude/");
     _rulesCLIDeps.readFile = async () =>
-      ['---', 'paths:', '  - "src/agents/**/*.ts"', '---', '', '# CRLF Rule', '', 'IMPORTANT: see CLAUDE.md.'].join(
+      ["---", "paths:", '  - "src/agents/**/*.ts"', "---", "", "# CRLF Rule", "", "IMPORTANT: see CLAUDE.md."].join(
         "\r\n",
       );
 

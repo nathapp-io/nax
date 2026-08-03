@@ -1720,10 +1720,11 @@ rules
 
 rules
   .command("export")
-  .description("Export canonical rules to an agent shim file (CLAUDE.md / AGENTS.md / GEMINI.md)")
+  .description("Export canonical rules for an agent (claude -> .claude/rules/; others -> a shim file)")
   .requiredOption("-a, --agent <id>", "Target agent (claude|codex|gemini|cursor)")
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .option("--dry-run", "Preview output without writing", false)
+  .option("--check", "Verify the generated output is up to date; exit non-zero on drift", false)
   .action(async (options) => {
     let workdir: string;
     try {
@@ -1738,6 +1739,7 @@ rules
         dir: workdir,
         agent: options.agent,
         dryRun: options.dryRun,
+        check: options.check,
       });
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));

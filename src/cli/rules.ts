@@ -4,9 +4,11 @@
  * Provides commands for managing the canonical rules store (.nax/rules/):
  *
  *   nax rules export --agent=<id>
- *     One-way generation of per-agent shim files (CLAUDE.md, AGENTS.md,
- *     GEMINI.md) from the canonical store. Generation is canonical → shim only;
- *     manual edits to shims are not read back by the engine.
+ *     One-way generation from the canonical store. Agents with a native rules
+ *     directory (claude → .claude/rules/) get one file per rule with its scope
+ *     preserved; the rest get a single shim file (AGENTS.md, GEMINI.md,
+ *     .cursorrules). Generation is canonical → output only; manual edits to
+ *     generated files are not read back by the engine.
  *
  *   nax rules migrate
  *     Reads CLAUDE.md + .claude/rules/*.md and writes a .nax/rules/ draft
@@ -22,9 +24,10 @@
  */
 
 import { mkdir } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
 import { globToRegex, normalizePath } from "../context/engine";
 import { CANONICAL_RULES_DIR, NEUTRALITY_RULES, loadCanonicalRules } from "../context/rules/canonical-loader";
+import type { CanonicalRule } from "../context/rules/canonical-loader";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
@@ -98,13 +101,25 @@ export const _rulesCLIDeps = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const AGENT_SHIM_FILES: Record<string, string> = {
-  claude: "CLAUDE.md",
   codex: "AGENTS.md",
   gemini: "GEMINI.md",
   cursor: ".cursorrules",
 };
 
-const SUPPORTED_AGENTS = Object.keys(AGENT_SHIM_FILES);
+/**
+ * Agents that read a rules DIRECTORY natively rather than a single shim file.
+ *
+ * Claude Code loads `.claude/rules/*.md` itself and path-scopes each file via
+ * `paths:` frontmatter, so exporting rules into CLAUDE.md was wrong twice over:
+ * CLAUDE.md is the *context* file `nax generate` owns (the two commands
+ * whole-file-overwrote each other, issue #1442), and folding every rule into
+ * one blob discards the per-file scoping Claude would otherwise honour.
+ */
+const AGENT_RULE_DIRS: Record<string, string> = {
+  claude: ".claude/rules",
+};
+
+const SUPPORTED_AGENTS = [...Object.keys(AGENT_RULE_DIRS), ...Object.keys(AGENT_SHIM_FILES)].sort();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // nax rules export
@@ -117,23 +132,144 @@ export interface RulesExportOptions {
   agent: string;
   /** Preview output without writing any files */
   dryRun?: boolean;
+  /**
+   * Verify only: regenerate in memory and fail if the on-disk output differs.
+   * Writes nothing. Intended for a CI gate — without it the generated copy can
+   * drift from the canonical store silently, which is the whole failure mode
+   * this directory export exists to prevent.
+   */
+  check?: boolean;
+}
+
+/**
+ * Rebuild an agent-facing frontmatter block from a canonical rule.
+ *
+ * The key means different things in each store: nax's `appliesTo:` is the FILE
+ * glob and its `paths:` is PACKAGE scope, whereas Claude's `paths:` is the file
+ * glob. `nax rules migrate` translates Claude `paths:` -> nax `appliesTo:` on
+ * the way in (see translateLegacyFrontmatter); this is the same translation on
+ * the way out. Canonical `paths:` has no Claude equivalent and is dropped.
+ *
+ * Returns "" for an unscoped rule so no empty block is emitted.
+ */
+function claudeFrontmatter(rule: CanonicalRule): string {
+  // Canonical `paths:` is PACKAGE scope and has no Claude equivalent. Dropping
+  // it silently WIDENS the rule — a rule scoped to one package becomes globally
+  // loaded — so it is warned about rather than quietly discarded.
+  if (rule.paths?.length) {
+    _rulesCLIDeps.getLogger().warn("rules-export", "Dropping package scope — Claude has no equivalent", {
+      rule: rule.path ?? rule.fileName,
+      droppedPaths: rule.paths,
+    });
+  }
+  const globs = rule.appliesTo ?? [];
+  if (globs.length === 0) return "";
+  // JSON.stringify escapes quotes/backslashes — a raw interpolation would
+  // emit invalid YAML for a glob containing either (cf. toYamlListLiteral).
+  const lines = globs.map((g) => `  - ${JSON.stringify(g)}`).join("\n");
+  return `---\npaths:\n${lines}\n---\n`;
+}
+
+/**
+ * Write one file per canonical rule under the agent's native rules directory.
+ *
+ * Relative paths are mirrored (`.nax/rules/<rel>` -> `<ruleDir>/<rel>`) so two
+ * rules with the same basename in different subdirectories cannot overwrite
+ * each other.
+ *
+ * The generated-by notice is an HTML comment and MUST come after the
+ * frontmatter: frontmatter is only recognised at byte 0, so emitting the
+ * comment first silently demotes the whole block to body text and the rule
+ * loses its scoping. That is exactly the bug `withReviewNotice` was written to
+ * fix on the migrate path.
+ */
+async function exportRuleDirectory(input: {
+  workdir: string;
+  agent: string;
+  ruleDir: string;
+  rules: CanonicalRule[];
+  dryRun: boolean;
+  check: boolean;
+}): Promise<void> {
+  const { workdir, agent, ruleDir, rules, dryRun, check } = input;
+  const notice = `<!-- AUTO-GENERATED by nax rules export --agent=${agent} -->\n<!-- Do not edit manually — re-run this command to regenerate. -->\n<!-- Source of truth: ${CANONICAL_RULES_DIR}/ -->\n\n`;
+
+  const drifted: string[] = [];
+  for (const rule of rules) {
+    const rel = rule.path ?? rule.fileName;
+    const target = resolve(workdir, ruleDir, rel);
+    // The real loader derives `rel` from a glob under .nax/rules and cannot
+    // produce `..`, but the dep is injectable and this repo has shipped a
+    // path-containment bug before (#1449). Cheap insurance.
+    if (!target.startsWith(`${resolve(workdir, ruleDir)}${sep}`)) {
+      throw new NaxError(`Rule path escapes ${ruleDir}: ${rel}`, "RULES_EXPORT_PATH_ESCAPE", {
+        stage: "rules-export",
+        rule: rel,
+      });
+    }
+    const content = `${claudeFrontmatter(rule)}${notice}${rule.content.trim()}\n`;
+
+    if (check) {
+      const actual = await _rulesCLIDeps.readFile(target).catch(() => "");
+      if (actual !== content) drifted.push(rel);
+      continue;
+    }
+    if (dryRun) {
+      console.log(`[dry-run] Would write ${target} (${content.length} bytes)`);
+      continue;
+    }
+    await _rulesCLIDeps.writeFile(target, content);
+  }
+
+  // Files under the rules dir with no canonical counterpart are left alone —
+  // deleting hand-written rules would be destructive — but a stale one keeps
+  // being loaded forever, so it is surfaced in both modes.
+  const expected = new Set(rules.map((r) => resolve(workdir, ruleDir, r.path ?? r.fileName)));
+  for (const existing of _rulesCLIDeps.globInDir(join(workdir, ruleDir))) {
+    if (!expected.has(resolve(existing))) {
+      _rulesCLIDeps.getLogger().warn("rules-export", "Generated rules dir contains a file with no canonical source", {
+        file: existing,
+        hint: `Delete it, or add the rule to ${CANONICAL_RULES_DIR}/`,
+      });
+    }
+  }
+
+  if (check) {
+    if (drifted.length > 0) {
+      throw new NaxError(
+        `${ruleDir}/ is out of date with ${CANONICAL_RULES_DIR}/: ${drifted.join(", ")}. Run \`nax rules export --agent=${agent}\` to regenerate.`,
+        "RULES_EXPORT_DRIFT",
+        { stage: "rules-export", agent, drifted },
+      );
+    }
+    console.log(`[OK] ${ruleDir}/ is up to date with ${CANONICAL_RULES_DIR}/ (${rules.length} rule file(s)).`);
+    return;
+  }
+
+  if (!dryRun) {
+    console.log(`[OK] Wrote ${rules.length} rule file(s) to ${ruleDir}/ from ${CANONICAL_RULES_DIR}/`);
+  }
 }
 
 /**
  * `nax rules export --agent=<id>`
  *
- * Reads the canonical rules store (.nax/rules/*.md) and generates a
- * per-agent shim file at the project root. This is one-way — manual
- * edits to the shim are never read back by the engine.
+ * Reads the canonical rules store (.nax/rules/*.md) and writes it out for one
+ * agent. Agents with a native rules DIRECTORY (claude -> .claude/rules/) get
+ * one file per rule with its scope preserved; the rest get a single shim file
+ * at the project root. Either way this is one-way — manual edits to generated
+ * output are never read back by the engine.
  *
- * Throws NaxError when canonical store is empty or agent is unsupported.
+ * Throws NaxError when the canonical store is empty, the agent is unsupported,
+ * or (with `check`) the generated output has drifted from what is on disk.
  */
 export async function rulesExportCommand(options: RulesExportOptions): Promise<void> {
   const workdir = options.dir ?? process.cwd();
   const agent = options.agent.toLowerCase();
 
+  const ruleDir = AGENT_RULE_DIRS[agent];
   const shimFileName = AGENT_SHIM_FILES[agent];
-  if (!shimFileName) {
+  if (!ruleDir && !shimFileName) {
     throw new NaxError(
       `Unsupported agent "${agent}". Supported: ${SUPPORTED_AGENTS.join(", ")}`,
       "RULES_EXPORT_UNSUPPORTED_AGENT",
@@ -148,6 +284,18 @@ export async function rulesExportCommand(options: RulesExportOptions): Promise<v
       "RULES_EXPORT_NO_CANONICAL_RULES",
       { stage: "rules-export", workdir },
     );
+  }
+
+  if (ruleDir) {
+    await exportRuleDirectory({
+      workdir,
+      agent,
+      ruleDir,
+      rules,
+      dryRun: options.dryRun === true,
+      check: options.check === true,
+    });
+    return;
   }
 
   const header = `<!-- AUTO-GENERATED by nax rules export --agent=${agent} -->
