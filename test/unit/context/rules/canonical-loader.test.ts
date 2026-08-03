@@ -331,7 +331,7 @@ describe("applyCanonicalRulesBudget", () => {
       { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 10, priority: 3 },
     ];
     const result = applyCanonicalRulesBudget(rules, 100);
-    expect(result.rules).toHaveLength(3);
+    expect(result.rules).toEqual(rules);
     expect(result.droppedCount).toBe(0);
     expect(result.usedTokens).toBe(30);
     expect(result.usedTokens).toBe(result.totalTokens);

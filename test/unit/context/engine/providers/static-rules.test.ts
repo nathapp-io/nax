@@ -163,15 +163,28 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
   });
 
   test("[US-002 AC 5] emits chunks only for the surviving leading run and none for the dropped tail when budget is smaller than the store", async () => {
+    // Case 1: the first rule alone exceeds the budget → no chunk is emitted
     setupCanonical([
       { fileName: "huge.md", id: "huge", content: "H".repeat(4000), tokens: 1000, priority: 1 },
       { fileName: "tiny.md", id: "tiny", content: "T".repeat(40), tokens: 10, priority: 2 },
       { fileName: "tiny2.md", id: "tiny2", content: "T2".repeat(40), tokens: 10, priority: 3 },
     ]);
     const provider = new StaticRulesProvider({ budgetTokens: 500 });
-    const result = await provider.fetch(BASE_REQUEST);
-    // huge is the first rule; it doesn't fit; tail starts at huge → nothing kept
-    expect(result.chunks).toEqual([]);
+    const r1 = await provider.fetch(BASE_REQUEST);
+    expect(r1.chunks).toEqual([]);
+
+    // Case 2: a non-empty leading run survives, the dropped tail is excluded
+    setupCanonical([
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 10, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(400), tokens: 100, priority: 3 },
+      { fileName: "d.md", id: "d", content: "D".repeat(40), tokens: 10, priority: 4 },
+    ]);
+    const provider2 = new StaticRulesProvider({ budgetTokens: 30 });
+    const r2 = await provider2.fetch(BASE_REQUEST);
+    // Extract the rule-id segment from each chunk id (format: static-rules:<ruleId>:<hash>)
+    const ruleIds = r2.chunks.map((c) => c.id.split(":")[1]);
+    expect(ruleIds).toEqual(["a", "b"]);
   });
 
   test("propagates NeutralityLintError without falling back to legacy", async () => {
