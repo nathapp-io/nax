@@ -1,0 +1,170 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "[estimateAvailableBudgetTokens] returns 0 when the existing prompt leaves the agent profile with non-positive remaining context room.",
+    "refined": "When estimateAvailableBudgetTokens(agentId, existingPrompt) is called where existingPrompt.tokenCount >= agentProfile.maxContextTokens, the return value is exactly 0 (not negative, not undefined).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "[estimateAvailableBudgetTokens] returns a positive value smaller than the agent profile's maxContextTokens when called with a short prompt.",
+    "refined": "When estimateAvailableBudgetTokens(agentId, shortPrompt) is called where shortPrompt.tokenCount < agentProfile.maxContextTokens, the return value satisfies: 0 < returnValue < agentProfile.maxContextTokens.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "[packChunks] packs no non-floor chunks and still packs every floor-kind chunk when availableBudgetTokens is 0.",
+    "refined": "Calling packChunks(chunks, budgetTokens, 0) returns a result where result.packedChunks contains only chunks with chunk.kind === 'floor' and contains every floor chunk from the input chunks array.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "[packChunks] uses budgetTokens as its ceiling and packs the same chunks as before when availableBudgetTokens is omitted.",
+    "refined": "packChunks(chunks, budgetTokens) and packChunks(chunks, budgetTokens, undefined) return identical packed chunk arrays with identical token totals.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When ContextOrchestrator.assemble receives a stage budget, then its packed non-floor chunks total no more than that budget minus DIGEST_RESERVE_TOKENS.",
+    "refined": "After ContextOrchestrator.assemble completes with a stageBudget > 0, the sum of tokens in all packed non-floor chunks is <= stageBudget - DIGEST_RESERVE_TOKENS.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When ContextOrchestrator.assemble receives priorStageDigest, then manifest.usedTokens equals packed chunk tokens plus the token count of that prior-stage digest.",
+    "refined": "When assemble is called with request.priorStageDigest set to a non-empty string, the returned manifest satisfies: manifest.usedTokens === sumOfPackedChunkTokens + tokenCount(request.priorStageDigest).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When ContextOrchestrator.assemble has no overflowing floor chunk, then its rendered markdown estimated token count does not exceed request.budgetTokens.",
+    "refined": "When assemble completes and no floor chunk was excluded due to size, the estimatedTokenCount of the rendered markdown output is <= request.budgetTokens.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "[applyCanonicalRulesBudget] returns an empty rules array when its first priority-ordered rule alone exceeds budgetTokens, rather than retaining a later smaller rule.",
+    "refined": "When applyCanonicalRulesBudget is called with rules=[R1, R2, ...] where R1.tokenEstimate > budgetTokens and R2.tokenEstimate <= budgetTokens, the returned rules array must have length 0.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "[applyCanonicalRulesBudget] returns the longest leading priority-ordered run that fits budgetTokens and reports droppedCount as the number of following rules.",
+    "refined": "When budgetTokens fits rules R1 through Rn but not Rn+1, the returned rules array must have length n, contain exactly [R1, R2, ..., Rn], and droppedCount must equal len(input_rules) - n.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "[applyCanonicalRulesBudget] returns every input rule with droppedCount 0 and usedTokens equal to totalTokens when budgetTokens fits all rules.",
+    "refined": "When sum(rule.tokenEstimate for rule in rules) <= budgetTokens, the returned rules array must have length equal to input rules length, droppedCount must be 0, and usedTokens must equal totalTokens.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "[applyCanonicalRulesBudget] returns rules=[], usedTokens=0, and totalTokens equal to the summed input estimate when budgetTokens is 0.",
+    "refined": "When budgetTokens is 0 and rules is non-empty, the returned result must have rules array of length 0, usedTokens equal to 0, and totalTokens equal to sum(rule.tokenEstimate for rule in input_rules).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When StaticRulesProvider.fetch reads a store larger than its budget, then it emits chunks only for the surviving leading run and none for the dropped tail.",
+    "refined": "When StaticRulesProvider.fetch is invoked with a budget smaller than the store's total rules and the store's rules are priority-ordered, the emitted chunks must contain only rules from the surviving leading run (those returned by applyCanonicalRulesBudget) and must not contain any rules from the dropped tail.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "[packChunks] returns every overflowing floor-kind chunk id in floorOverageIds while retaining every floor-kind chunk in packed.",
+    "refined": "When packChunks is called with a budget that floor-kind chunks exceed, the returned PackResult satisfies: (1) floorOverageIds is an array containing exactly the ids of all floor-kind chunks whose combined token count exceeds the effective budget; (2) packed is an array that includes every floor-kind chunk id from the input; (3) every id in floorOverageIds corresponds to a floor-kind chunk in the input manifest.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given a manifest persisted from ContextOrchestrator.assemble whose floor chunks exceed its effective budget, when collectStoryMetrics derives StoryMetrics, then context.floorOverage records the overage token count.",
+    "refined": "Given a manifest M where sum(tokenCount for chunks with kind='floor') > effectiveBudget, when collectStoryMetrics(M) is called, the returned StoryMetrics.context.floorOverage.tokenCount equals (sum of floor chunk tokens) - effectiveBudget, and floorOverage.chunkIds is an array of ids of the overflowing floor-kind chunks.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given a manifest persisted from ContextOrchestrator.assemble whose floor chunks fit its effective budget, when collectStoryMetrics derives StoryMetrics, then context.floorOverage records 0 tokens.",
+    "refined": "Given a manifest M where sum(tokenCount for chunks with kind='floor') <= effectiveBudget, when collectStoryMetrics(M) is called, the returned StoryMetrics.context.floorOverage.tokenCount equals 0, and floorOverage.chunkIds is an empty array.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When ContextOrchestrator.assemble has floor overage, then it emits a warn-level log whose data object begins with storyId and includes stage, effectiveBudget, and the excluded non-floor chunk count.",
+    "refined": "When assemble() is called with a manifest that triggers floor overage, a log record is emitted at warn level where: log.data.storyId equals the manifest's storyId, log.data.stage equals 'context-assembly', log.data.effectiveBudget is a positive integer, and log.data.excludedNonFloorChunkCount is a non-negative integer equal to the count of non-floor chunks excluded due to the overage.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "[loadCanonicalRules] throws RulesFrontmatterError naming the offending file when frontmatter declares a top-level key other than priority, paths, or appliesTo.",
+    "refined": "Calling loadCanonicalRules([{filePath: 'rules/test.md', content: '---\\nunknownKey: value\\n---\\n'}] throws RulesFrontmatterError with message containing 'test.md' and 'unknownKey'",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-18",
+    "original": "[loadCanonicalRules] throws RulesFrontmatterError naming the offending file when appliesTo is present but is not a list of strings.",
+    "refined": "Calling loadCanonicalRules([{filePath: 'rules/test.md', content: '---\\nappliesTo: not-a-list\\n---\\n'}] throws RulesFrontmatterError with message containing 'test.md' and 'appliesTo'",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-19",
+    "original": "[loadCanonicalRules] resolves normally when a rule declares priority, paths, and appliesTo together.",
+    "refined": "Calling loadCanonicalRules([{filePath: 'rules/test.md', content: '---\\npriority: 60\\npaths:\\n  - \"packages/core/**\"\nappliesTo:\\n  - \"src/agents/**/*.ts\"\n---\\n'}] resolves to Array with 1 element having priority=60, paths=['packages/core/**'], appliesTo=['src/agents/**/*.ts']",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When an appliesTo glob matches zero files in the linted repository, then rulesLintCommand emits a warn-level project-logger record naming the rule file and unmatched pattern and completes without throwing.",
+    "refined": "Calling rulesLintCommand({files: [{path: 'rules/test.md', content: '---\\nappliesTo:\\n  - \"nonexistent/**/*\"\n---\\n'}]}, logger) with no matching files results in logger.warn called once with args containing 'test.md' and 'nonexistent/**/*', and function returns Promise that resolves without throwing",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When withReviewNotice is applied to translateLegacyFrontmatter output for a legacy rule declaring paths, then loadCanonicalRules reads back the translated appliesTo value.",
+    "refined": "Chaining withReviewNotice(translateLegacyFrontmatter('---\\npaths:\\n  - \"legacy/path/**\"\n---\\n')) produces content where loadCanonicalRules([{filePath: 'rules/test.md', content: <output>}] resolves to array with element where appliesTo[0] includes 'legacy/path/**'",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When StaticRulesProvider.fetch reads this repository's .nax/rules store with only non-test source touchedFiles, then it emits no chunk id beginning static-rules:test-writing:.",
+    "refined": "Calling StaticRulesProvider.fetch({touchedFiles: ['src/agents/client.ts', 'src/operations/index.ts']}) returns chunks where no chunk.id starts with 'static-rules:test-writing:'",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When StaticRulesProvider.fetch reads this repository's .nax/rules store with a touchedFiles path under test/, then it emits a chunk id beginning static-rules:test-writing:.",
+    "refined": "Calling StaticRulesProvider.fetch({touchedFiles: ['test/unit/client.test.ts']}) returns chunks where at least one chunk.id starts with 'static-rules:test-writing:'",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When StaticRulesProvider.fetch reads this repository's .nax/rules store with touchedFiles outside src/agents and src/operations, then it emits no chunk id beginning static-rules:adapter-wiring:.",
+    "refined": "Calling StaticRulesProvider.fetch({touchedFiles: ['src/other/module.ts']}) returns chunks where no chunk.id starts with 'static-rules:adapter-wiring:'",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]
