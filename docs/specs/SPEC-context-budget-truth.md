@@ -17,13 +17,15 @@ Four accounting defects compound in the assemble path:
 
 Underneath the size problem is a data problem. The engine already filters rules per story: `static-rules.ts:234` runs every rule through `ruleMatchesTouchedFiles(rule.appliesTo, request.touchedFiles)`, and `touchedFiles` is populated by both request builders (`stages/context.ts:104`, `stage-assembler.ts:193`). It is inert because **no file in `.nax/rules/` declares `appliesTo:` or `paths:`** — all 11 carry `priority:` alone, and the matcher early-returns `true` for an unscoped rule.
 
-Three of them had file scoping before migration and lost it:
+**Five** of them carried file scoping before migration. All five lost it; the three below were restored by US-004 but with **incomplete glob lists**, and two were missed entirely. Corrected list (this is the authoritative table — an earlier revision transcribed a truncated read of the source and named only three files):
 
 | File | `.claude/rules/` | `.nax/rules/` |
 |:--|:--|:--|
-| `.nax/rules/test-writing.md` | `paths: ["test/**/*.test.ts"]` | `priority: 100` |
-| `.nax/rules/test-architecture.md` | `paths: ["test/**/*.test.ts"]` | `priority: 50` |
-| `.nax/rules/adapter-wiring.md` | `paths: ["src/agents/**/*.ts", "src/operations/**/*.ts"]` | `priority: 60` |
+| `.nax/rules/adapter-wiring.md` | `paths: ["src/agents/**/*.ts", "src/operations/**/*.ts", "src/pipeline/**/*.ts", "src/execution/**/*.ts", "src/tdd/**/*.ts", "src/acceptance/**/*.ts", "src/review/**/*.ts", "src/debate/**/*.ts", "src/routing/**/*.ts", "src/cli/**/*.ts", "src/runtime/**/*.ts", "src/session/**/*.ts", "src/verification/**/*.ts"]` |
+| `.nax/rules/retry-strategy.md` | `paths: ["src/agents/**/*.ts", "src/operations/**/*.ts", "src/execution/**/*.ts", "src/tdd/**/*.ts", "src/review/**/*.ts"]` |
+| `.nax/rules/test-architecture.md` | `paths: ["test/**/*.test.ts"]` |
+| `.nax/rules/test-helpers.md` | `paths: ["test/**/*.test.ts"]` |
+| `.nax/rules/test-writing.md` | `paths: ["test/**/*.test.ts"]` |
 
 The migrator bug is already fixed — `withReviewNotice` (`cli/rules.ts:216-231`) documents it exactly: the review notice is an HTML comment, frontmatter is recognised only at byte 0, so emitting the notice first displaced the frontmatter and it parsed as body text, losing the scope key on every file that both needed neutralizing and carried one. `translateLegacyFrontmatter` (`:202-214`) correctly rewrites legacy file-glob `paths:` to nax's `appliesTo:`. The store on disk was produced by the pre-fix migrator and never regenerated, and nothing in `nax rules lint` would notice.
 
@@ -183,6 +185,6 @@ paths:                              # optional, list of package globs
 5. `[unit]` applying `withReviewNotice` to the output of `translateLegacyFrontmatter` for a legacy rule declaring `paths` yields content from which `loadCanonicalRules` reads back the translated `appliesTo` value.
 6. `[unit]` `StaticRulesProvider.fetch` reading the repository's own `.nax/rules` store with `touchedFiles` containing only non-test source paths emits no chunk whose id begins with `static-rules:test-writing:`.
 7. `[unit]` `StaticRulesProvider.fetch` reading the repository's own `.nax/rules` store with `touchedFiles` containing a path under `test/` emits a chunk whose id begins with `static-rules:test-writing:`.
-8. `[unit]` `StaticRulesProvider.fetch` reading the repository's own `.nax/rules` store with `touchedFiles` containing only paths outside `src/agents` and `src/operations` emits no chunk whose id begins with `static-rules:adapter-wiring:`.
+8. `[unit]` `StaticRulesProvider.fetch` reading the repository's own `.nax/rules` store with `touchedFiles` containing a path outside **every** glob `adapter-wiring.md` declares (e.g. `src/config/loader.ts`) emits no chunk whose id begins with `static-rules:adapter-wiring:`; a path under `src/pipeline/**`, which the rule declares, DOES emit one.
 
 **Out of scope:** validating that an `appliesTo` glob is syntactically well-formed beyond being a string — a malformed pattern that compiles to a regex matching nothing is reported by AC 4's dead-glob warning rather than a distinct error.
