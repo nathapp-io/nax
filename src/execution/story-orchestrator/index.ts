@@ -10,6 +10,7 @@ export {
   orderGateLast,
   phasePassed,
   phasesToRevalidate,
+  selectRegressedGateFindings,
   type GateRegressionDetail,
   type GateRegressionInput,
 } from "./phase-eval";

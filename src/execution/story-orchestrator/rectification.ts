@@ -4,7 +4,7 @@ import type { CallContext, Operation, RunOperation } from "@/operations";
 import { countOscillationOutcomes, recordOscillations } from "../oscillation-store";
 import { triageNbfGate } from "./nbf-flake-triage";
 import { extractPhaseFindings, orderGateLast, phasesToRevalidate } from "./phase-eval";
-import { isQuarantinedFlake, phaseExplicitlyPassed, phasePassed } from "./phase-eval";
+import { isQuarantinedFlake, phaseExplicitlyPassed, phasePassed, selectRegressedGateFindings } from "./phase-eval";
 import { _storyOrchestratorDeps, runPhase, withIncreasingFailuresBail } from "./run-phase";
 import type { AnySlot, InternalBuildState, InternalPhase, RectificationOverrides, RectificationResult } from "./types";
 import { EXHAUSTED_EXIT_REASONS } from "./types";
@@ -343,7 +343,31 @@ export async function runRectification(
       let shortCircuited = false;
       for (const phase of phases) {
         await runPhase(ctx, phase.slot, phaseCosts, phaseOutputs);
-        if (shouldSkipPhaseForRectification({ phase, state, phaseOutputs, nbfPath })) continue;
+        if (shouldSkipPhaseForRectification({ phase, state, phaseOutputs, nbfPath })) {
+          // Carve-out fired: the verifier explicitly passed, so this story is not failed
+          // by the gate here. It still must not swallow a regression rectification just
+          // introduced — that set is precisely what the staleness guard in
+          // `ExecutionPlan.run` will fail the story on, so hand it to the cycle instead of
+          // discarding it and failing later with no repair attempted (#1452).
+          //
+          // Findings only: the short-circuit below stays skipped, preserving the carve-out's
+          // other half — downstream phases still run, since a verifier-passed story should
+          // not have its reviews withheld over a gate the verifier already judged.
+          const carvedOutFindings = selectRegressedGateFindings(
+            extractPhaseFindings(phaseOutputs[phase.slot.op.name]),
+            overrides?.gateBaselineKeys ?? new Set<string>(),
+            ctx.runtime.quarantineMemo,
+          );
+          if (carvedOutFindings.length > 0) {
+            getSafeLogger()?.warn("story-orchestrator", "Gate regressed under the verifier-SSOT carve-out", {
+              storyId: ctx.storyId,
+              phase: phase.slot.op.name,
+              regressedCount: carvedOutFindings.length,
+            });
+          }
+          findings.push(...carvedOutFindings);
+          continue;
+        }
         const output = phaseOutputs[phase.slot.op.name];
         const nbfFlakeTriage = overrides?.nbfFlakeTriage;
         if (nbfPath && phase.kind === "full-suite-gate" && nbfFlakeTriage) {

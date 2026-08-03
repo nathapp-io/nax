@@ -135,6 +135,36 @@ export function gateFindingKey(finding: Finding): string {
 const KEYLESS_GATE_FAILURE_KEY = "::";
 
 /**
+ * The subset of a gate's findings that `describeGateRegression` would call regressed:
+ * failures absent from the verifier-time baseline, plus keyless (timeout /
+ * execution-failure) failures the key diff is blind to.
+ *
+ * Used by the rectification validate sweep so the findings it feeds the fix cycle are
+ * exactly the ones the terminal keep-decision will later judge (#1452). Before this, the
+ * verifier-SSOT carve-out discarded the gate's findings wholesale, so a regression
+ * introduced BY rectification never entered the cycle's work queue — and the story was
+ * then failed on it by the staleness guard, having never been given a chance to fix it.
+ *
+ * Quarantined flakes and findings already relabelled `flaky-test` are excluded, matching
+ * `gatherRectificationFindings` and the memo exclusion in `describeGateRegression` (#1383).
+ *
+ * Pure function. Exported for unit testing.
+ */
+export function selectRegressedGateFindings(
+  findings: readonly Finding[],
+  baselineKeys: ReadonlySet<string>,
+  quarantineMemo?: QuarantineMemo,
+): Finding[] {
+  return findings.filter((finding) => {
+    if (finding.category === "flaky-test") return false;
+    if (isQuarantinedFlake(finding, quarantineMemo)) return false;
+    const key = gateFindingKey(finding);
+    if (key === KEYLESS_GATE_FAILURE_KEY) return true;
+    return !baselineKeys.has(key);
+  });
+}
+
+/**
  * True when this finding is a test failure the run has already quarantined as a flake.
  *
  * Mirrors the exclusion `describeGateRegression` applies before assigning blame, so a

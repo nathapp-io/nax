@@ -62,6 +62,7 @@ export {
   orderGateLast,
   gateFailureKeys,
   describeGateRegression,
+  selectRegressedGateFindings,
   createNbfFlakeTriageTransaction,
   refreshReviewInputForDispatch,
   withIncreasingFailuresBail,
