@@ -221,6 +221,18 @@ export interface RectificationOverrides {
   initialFindings?: readonly Finding[];
   /** Transaction-local, read-only gate triage for the ADR-024 NBF path (#1404). */
   nbfFlakeTriage?: NbfFlakeTriageTransaction;
+  /**
+   * Gate failure keys as of the verifier-time baseline (`gateFailureKeys(phaseOutputs[gate])`
+   * captured before rectification).
+   *
+   * Read by the validate sweep when the verifier-SSOT carve-out fires on a red gate: failures
+   * present in this baseline stay exempt (the verifier already judged them unrelated), while
+   * failures absent from it — i.e. regressions rectification itself introduced — are fed to
+   * the fix cycle instead of being discarded (#1452). Omitting it means "no baseline known",
+   * so every failure counts as a regression: the safe direction, since findings reach the
+   * cycle rather than vanish.
+   */
+  gateBaselineKeys?: ReadonlySet<string>;
   /** Strategy set instead of state.rectification.strategies (scope filtering). */
   strategies?: FixStrategy<Finding, unknown, unknown, unknown>[];
   /** Phase kinds removed from validationPhases (e.g. the LLM reviews). */

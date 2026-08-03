@@ -176,7 +176,9 @@ export class ExecutionPlan {
     const gateName = this.state.fullSuiteGate?.slot.op.name;
     const preRectGateFailureKeys = gateName ? gateFailureKeys(phaseOutputs[gateName]) : new Set<string>();
 
-    const rectResult = await runRectification(this.ctx, this.state, phaseCosts, phaseOutputs);
+    const rectResult = await runRectification(this.ctx, this.state, phaseCosts, phaseOutputs, {
+      gateBaselineKeys: preRectGateFailureKeys,
+    });
 
     // Resume the canonical loop after rectification resolves. The strategy-specific
     // revalidation set (STRATEGY_TO_REVALIDATION_PHASES) intentionally narrow — e.g.
@@ -228,6 +230,7 @@ export class ExecutionPlan {
             );
             const secondRect = await runRectification(this.ctx, this.state, phaseCosts, phaseOutputs, {
               skipGateTriage: true,
+              gateBaselineKeys: preRectGateFailureKeys,
             });
             if (secondRect.rectificationExhausted) {
               logger?.warn("story-orchestrator", "Second rectification pass exhausted — terminal failure", {

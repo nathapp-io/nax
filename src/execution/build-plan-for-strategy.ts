@@ -16,7 +16,7 @@
  * addX(input: I) overload of StoryOrchestratorBuilder.
  */
 
-import { join } from "node:path";
+import { join, normalize, resolve, sep } from "node:path";
 import type { NaxConfig } from "../config";
 import { isThreeSessionStrategy, qualityConfigSelector } from "../config";
 import type { TestStrategy } from "../config/schema-types";
@@ -52,6 +52,57 @@ import { type ExecutionPlan, type RectificationPhaseOptions, StoryOrchestratorBu
  */
 export function requiresInitialRefCapture(strategy: TestStrategy): boolean {
   return isThreeSessionStrategy(strategy);
+}
+
+/** Normalized path with any trailing separator removed; a bare root ("/") is left alone. */
+function stripTrailingSep(p: string): string {
+  const normalized = normalize(p);
+  return normalized.length > 1 && normalized.endsWith(sep) ? normalized.slice(0, -1) : normalized;
+}
+
+/**
+ * Resolve the `(repoRoot, packageDir)` anchor pair for a story.
+ *
+ * `CallContext.packageDir` is populated from `PipelineContext.workdir`, which
+ * `iteration-runner.ts` builds as `join(<repo root>, story.workdir)` — it is ALREADY
+ * the package directory, not the repo root (the repo root is `PipelineContext.projectDir`).
+ * Joining `story.workdir` onto it a second time yielded `<repo>/apps/api/apps/api`, so in
+ * every monorepo story BOTH anchors handed to `validateMockStructureFiles` pointed at a
+ * path that does not exist — rejecting real test files as nonexistent — and
+ * `resolveTestFilePatterns` looked for `.nax/mono/<pkg>/config.json` under the package
+ * instead of the repo, silently falling back to root patterns (#1451).
+ *
+ * Deriving the root by stripping the suffix (rather than reading `projectDir`) keeps this
+ * correct under worktree/parallel execution, where the package lives inside the worktree
+ * but `projectDir` still names the primary checkout.
+ *
+ * Both input shapes are accepted so ad-hoc callers that pass a repo root keep working:
+ * when `ctxPackageDir` ends with `story.workdir` it is read as the package dir and the
+ * root is derived; otherwise it is read as the repo root and `story.workdir` is joined.
+ * The shapes are only ambiguous for a repo root whose own trailing segments happen to
+ * equal `story.workdir`, which production never produces.
+ *
+ * Pure function — no FS access. Exported for unit testing.
+ */
+export function resolveStoryPathAnchors(
+  ctxPackageDir: string,
+  storyWorkdir?: string,
+): { repoRoot: string; packageDir: string } {
+  // Both sides of the suffix comparison below must be in the same canonical form.
+  // `normalize` preserves a trailing separator and `join` propagates it, so a base of
+  // "<repo>/apps/api/" would compare unequal to "<repo>/apps/api" and fall through to the
+  // repo-root branch — reinstating the very double-join this function exists to prevent.
+  const base = stripTrailingSep(ctxPackageDir);
+  const segments = (storyWorkdir ?? "").split(/[\\/]+/).filter((segment) => segment !== "" && segment !== ".");
+  const normalizedRel = segments.join(sep);
+  if (segments.length === 0) {
+    return { repoRoot: base, packageDir: base };
+  }
+  const candidateRoot = resolve(base, ...Array<string>(segments.length).fill(".."));
+  if (join(candidateRoot, normalizedRel) === base) {
+    return { repoRoot: candidateRoot, packageDir: base };
+  }
+  return { repoRoot: base, packageDir: join(base, normalizedRel) };
 }
 
 /**
@@ -175,9 +226,7 @@ export async function buildPlanForStrategy(
 
   // Path anchors shared by both the main-rectification postValidate and the nbf postValidate.
   // Computed once here; used in both closures below to avoid duplicate async FS reads.
-  // ctx.packageDir = repo root (absolute); story.workdir = relative sub-path to package.
-  const repoRoot = ctx.packageDir;
-  const packageDir = join(repoRoot, story.workdir ?? "");
+  const { repoRoot, packageDir } = resolveStoryPathAnchors(ctx.packageDir, story.workdir);
   const resolvedTestPatterns = await resolveTestFilePatterns(config, repoRoot, story.workdir);
 
   // Rectification: requires both config gate and typed inputs.
