@@ -336,14 +336,10 @@ function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatter {
   const appliesRaw = doc.appliesTo;
   let appliesTo: string[] | undefined;
   if (appliesRaw !== undefined) {
-    if (typeof appliesRaw === "string") {
-      const trimmed = appliesRaw.trim();
-      if (!trimmed) throw new RulesFrontmatterError("frontmatter.appliesTo cannot be empty", filePath);
-      appliesTo = [trimmed];
-    } else if (Array.isArray(appliesRaw) && appliesRaw.every((v) => typeof v === "string" && v.trim())) {
+    if (Array.isArray(appliesRaw) && appliesRaw.every((v) => typeof v === "string" && v.trim())) {
       appliesTo = appliesRaw.map((v) => v.trim());
     } else {
-      throw new RulesFrontmatterError("frontmatter.appliesTo must be a string or string[]", filePath);
+      throw new RulesFrontmatterError("frontmatter.appliesTo must be a list of strings", filePath);
     }
   }
 
