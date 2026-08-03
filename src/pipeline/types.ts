@@ -94,6 +94,14 @@ export interface PipelineContext extends DispatchContext {
   workdir: string;
   /** Run-scoped pre-resolved .naxignore matcher index (repo-root + package-level). */
   naxIgnoreIndex?: import("../utils/path-filters").NaxIgnoreIndex;
+  /**
+   * Story-scoped ADR-009 test-file patterns, resolved once by the context stage
+   * and reused by every later assembly. Carried here rather than re-resolved per
+   * stage so `assembleForStage` performs no extra I/O; absent when the context
+   * stage did not run or pattern resolution failed (providers then degrade by
+   * skipping sibling-test hinting).
+   */
+  resolvedTestPatterns?: import("../test-runners/resolver").ResolvedTestPatterns;
   /** Dependency-preparation context for worktree execution, if one was created. */
   worktreeDependencyContext?: import("../worktree/types").WorktreeDependencyContext;
   /** Absolute path to the prd.json file (used by routing stage to persist initial classification) */
