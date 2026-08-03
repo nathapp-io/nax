@@ -30,6 +30,7 @@ export {
 export { estimateTokens } from "../optimizer/types";
 export {
   ContextOrchestrator,
+  _orchestratorDeps,
   DIGEST_RESERVE_TOKENS,
   estimateAvailableBudgetTokens,
   rebuildUsedTokens,

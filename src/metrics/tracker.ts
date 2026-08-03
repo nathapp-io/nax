@@ -11,7 +11,7 @@ import { loadContextManifests } from "../context/engine/manifest-store";
 import { computePollutionMetrics } from "../context/engine/pollution";
 import type { PipelineContext } from "../pipeline/types";
 import { loadJsonFile, saveJsonFile } from "../utils/json-file";
-import type { ContextProviderMetrics, RunMetrics, StoryMetrics } from "./types";
+import type { ContextProviderMetrics, FloorOverageMetrics, RunMetrics, StoryMetrics } from "./types";
 import { TokenUsage } from "./types";
 
 /**
@@ -87,7 +87,33 @@ async function deriveContextMetrics(
     pollution.contradictedChunks > 0 ||
     pollution.ignoredChunks > 0;
 
-  return { providers, ...(hasPollution && { pollution }) };
+  // US-003: floor overage — sum per-chunk tokens for chunks listed in
+  // manifest.floorOverageItems across every persisted stage manifest.
+  // Always emit the field (even when 0) when at least one manifest exists,
+  // so AC-3's "0 tokens when floor fits" is observable alongside providers.
+  const floorOverage = computeFloorOverage(stored);
+
+  return { providers, ...(hasPollution && { pollution }), floorOverage };
+}
+
+/**
+ * Sum per-chunk tokens for every chunk listed in `manifest.floorOverageItems`
+ * across the persisted stage manifests. Each stage's `chunkTokens` map carries
+ * the token count; absent entries (chunks with no recorded token cost) are
+ * skipped rather than treated as 0 to avoid masking missing data.
+ */
+function computeFloorOverage(stored: Awaited<ReturnType<typeof loadContextManifests>>): FloorOverageMetrics {
+  let overageTokens = 0;
+  for (const { manifest } of stored) {
+    const overageIds = manifest.floorOverageItems ?? [];
+    if (overageIds.length === 0) continue;
+    const chunkTokens = manifest.chunkTokens ?? {};
+    for (const id of overageIds) {
+      const tokens = chunkTokens[id];
+      if (typeof tokens === "number") overageTokens += tokens;
+    }
+  }
+  return { overageTokens };
 }
 
 export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string): Promise<StoryMetrics> {

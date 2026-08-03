@@ -22,6 +22,7 @@ import { renderForAgent } from "./agent-renderer";
 import { dedupeChunks } from "./dedupe";
 import { DIGEST_RESERVE_TOKENS, buildDigest, digestTokens } from "./digest";
 import { buildManifest, rebuildUsedTokens } from "./manifest-builder";
+import { DEFAULT_REBUILD_AGENT_ID, buildFailureNoteChunk } from "./orchestrator-rebuild-helpers";
 import { FLOOR_KINDS, packChunks } from "./packing";
 import type { PackedChunk } from "./packing";
 import { PULL_TOOL_REGISTRY } from "./pull-tools";
@@ -72,6 +73,7 @@ function buildPullToolDescriptors(
 export const _orchestratorDeps = {
   now: () => Date.now(),
   uuid: () => randomUUID(),
+  getLogger,
 };
 
 type ProviderActivationSource = NonNullable<NonNullable<ContextManifest["providerResults"]>[number]["source"]>;
@@ -165,57 +167,6 @@ function buildProviderSourceMap(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phase 5.5 — rebuild types and helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Agent id used when neither options.newAgentId nor prior.agentId is set.
- * Represents the historical default — change this constant (not the inline
- * fallback) if the project default agent ever changes.
- */
-const DEFAULT_REBUILD_AGENT_ID = "claude";
-
-/**
- * Build a deterministic failure-note chunk describing the agent swap.
- * This is a synthetic chunk (no provider fetch) injected so the new agent
- * understands why the session started with pre-existing context.
- *
- * Deterministic: same inputs → byte-identical output (no LLM call).
- */
-function buildFailureNoteChunk(
-  priorAgentId: string,
-  newAgentId: string,
-  failure: AdapterFailure,
-): import("./packing").PackedChunk {
-  const lines = [
-    "## Agent swap (availability fallback)",
-    "",
-    `Prior agent: ${priorAgentId} became unavailable.`,
-    `Reason: ${failure.outcome} — ${failure.message}`,
-    "",
-    `Continuing as: ${newAgentId}`,
-    "",
-    "Context from the prior session has been preserved below.",
-    "Resume from where the prior agent stopped.",
-  ];
-  const content = lines.join("\n");
-  const tokens = Math.ceil(content.length / 4);
-  return {
-    id: `failure-note:${priorAgentId}:${newAgentId}:${failure.outcome}`,
-    providerId: "orchestrator",
-    kind: "session",
-    scope: "session",
-    role: ["all"],
-    content,
-    tokens,
-    rawScore: 1.0,
-    score: 1.0,
-    roleFiltered: false,
-    belowMinScore: false,
-  };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // ContextOrchestrator
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -242,7 +193,7 @@ export class ContextOrchestrator {
    *   9. Build digest (≤250 tokens, deterministic)
    */
   async assemble(request: ContextRequest): Promise<ContextBundle> {
-    const logger = getLogger();
+    const logger = _orchestratorDeps.getLogger();
     const startMs = _orchestratorDeps.now();
     const requestId = _orchestratorDeps.uuid();
 
@@ -444,6 +395,18 @@ export class ContextOrchestrator {
       request.availableBudgetTokens,
     );
 
+    // US-003 AC-4: surface floor overage observability. Floor-kind chunks still
+    // pack even when they overflow the effective budget; this warn makes the
+    // overage visible without changing which chunks are included.
+    if (floorOverageIds.length > 0) {
+      logger.warn("context-v2", "Floor-budget overage — floor chunks pushed bundle past effective budget", {
+        storyId: request.storyId,
+        stage: request.stage,
+        effectiveBudget: effectiveBudgetTokens,
+        excludedNonFloorChunkCount: budgetExcludedIds.length,
+      });
+    }
+
     // Step 8: render markdown
     const pushMarkdown = renderChunks(packed, {
       priorStageDigest: request.priorStageDigest,
@@ -509,7 +472,7 @@ export class ContextOrchestrator {
   rebuildForAgent(prior: ContextBundle, options: RebuildOptions = {}): ContextBundle {
     const { newAgentId, failure, priorStageDigest, storyId } = options;
     const targetAgentId = newAgentId ?? prior.agentId ?? DEFAULT_REBUILD_AGENT_ID;
-    const logger = getLogger();
+    const logger = _orchestratorDeps.getLogger();
 
     if (newAgentId && !AGENT_PROFILES[newAgentId]) {
       logger.warn("context-v2", "rebuildForAgent: unknown agent id — using conservative defaults", {
