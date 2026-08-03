@@ -518,25 +518,35 @@ describe("ContextOrchestrator — repoRoot + packageDir (Amendment C AC-54/AC-60
 
 describe("US-001 — ContextOrchestrator budget arithmetic", () => {
   test("AC-5: packed non-floor chunks total ≤ stage budget − DIGEST_RESERVE_TOKENS", async () => {
-    // Mix floor (static + feature) with non-floor (session + history) chunks so the
-    // orchestrator's reserve subtraction has a non-floor cap to test.
+    // Boundary-sized fixture: floor is kept small (100 tokens total) so the
+    // non-floor room is large enough to approach the bound. non-floor:1 (200
+    // tokens, higher density) packs first; non-floor:2 (1600 tokens) is sized
+    // so it fits ONLY if DIGEST_RESERVE_TOKENS (~250) is NOT subtracted from
+    // the effective budget — i.e. if the reserve subtraction regressed, both
+    // chunks would pack and their 1800-token total would exceed the
+    // 1750-token bound (stageBudget − DIGEST_RESERVE_TOKENS), failing this
+    // assertion. With the reserve correctly applied, only non-floor:1 packs.
     const FLOOR_KIND = "static";
     const orch = new ContextOrchestrator([
-      makeProvider("p1", makeChunkResult({ id: "floor:1", kind: FLOOR_KIND, tokens: 500, content: "rules content a" })),
-      makeProvider("p2", makeChunkResult({ id: "floor:2", kind: "feature", tokens: 500, content: "rules content b" })),
-      makeProvider("p3", makeChunkResult({ id: "non-floor:1", kind: "session", tokens: 400, content: "sess content a" })),
-      makeProvider("p4", makeChunkResult({ id: "non-floor:2", kind: "history", tokens: 400, content: "hist content a" })),
-      makeProvider("p5", makeChunkResult({ id: "non-floor:3", kind: "session", tokens: 400, content: "sess content b" })),
+      makeProvider("p1", makeChunkResult({ id: "floor:1", kind: FLOOR_KIND, tokens: 50, content: "rules content a" })),
+      makeProvider("p2", makeChunkResult({ id: "floor:2", kind: "feature", tokens: 50, content: "rules content b" })),
+      makeProvider("p3", makeChunkResult({ id: "non-floor:1", kind: "session", tokens: 200, content: "sess content a" })),
+      makeProvider("p4", makeChunkResult({ id: "non-floor:2", kind: "history", tokens: 1_600, content: "hist content a" })),
     ]);
     const stageBudget = 2_000;
-    const bundle = await orch.assemble({ ...BASE_REQUEST, budgetTokens: stageBudget });
+    // BASE_REQUEST.providerIds omits p1-p4 — override explicitly so all four
+    // fixture chunks actually reach the packer (see BASE_REQUEST comment).
+    const bundle = await orch.assemble({
+      ...BASE_REQUEST,
+      budgetTokens: stageBudget,
+      providerIds: ["p1", "p2", "p3", "p4"],
+    });
     const nonFloorPacked = bundle.chunks
       .filter((c) => c.kind !== "static" && c.kind !== "feature" && c.kind !== "test-coverage")
       .reduce((sum, c) => sum + c.tokens, 0);
-    // Reserve = Math.ceil(MAX_DIGEST_CHARS / 4) ≈ 250 tokens. Floor uses 1000 of
-    // 2000; remaining ceiling is 1000 - DIGEST_RESERVE_TOKENS. Packing a 400-token
-    // chunk three times (1200) would exceed 2000 - DIGEST_RESERVE_TOKENS, so the
-    // non-floor total must be capped at 2000 - DIGEST_RESERVE_TOKENS.
+    // Only the 200-token chunk should fit under the reserved budget — the
+    // 1600-token chunk must be excluded, proving the reserve was subtracted.
+    expect(bundle.manifest.includedChunks).not.toContain("non-floor:2");
     const { DIGEST_RESERVE_TOKENS } = await import("@/context");
     expect(nonFloorPacked).toBeLessThanOrEqual(stageBudget - DIGEST_RESERVE_TOKENS);
   });
