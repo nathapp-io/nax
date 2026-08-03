@@ -90,6 +90,8 @@ const ContextPluginProviderConfigSchema = z.object({
 const ContextV2StageOverrideSchema = z.object({
   budgetTokens: z.number().int().positive().optional(),
   extraProviderIds: z.array(z.string().min(1)).default([]),
+  /** Per-stage override of the engine-wide providerTimeoutMs (spec :330). */
+  providerTimeoutMs: z.number().int().min(1000).optional(),
 });
 
 // Context Engine config (Phase 6: selective on; operators opt in per project)
@@ -107,6 +109,12 @@ export const ContextV2ConfigSchema = z
      * Post-GA: tuned upward once effectiveness signal data is available.
      */
     minScore: z.number().min(0).max(1).default(0.1),
+    /**
+     * Per-provider fetch timeout in ms (spec :841, AC-5). A provider that
+     * exceeds it is dropped with a warning; the stage still assembles.
+     * Was hardcoded at 5000 in the orchestrator before this key existed.
+     */
+    providerTimeoutMs: z.number().int().min(1000).default(5000),
     /** Pull tool configuration (Phase 4+) */
     pull: ContextV2PullConfigSchema,
     /** Canonical rules store configuration (Phase 5.1+) */
@@ -213,6 +221,7 @@ export const ContextV2ConfigSchema = z
   .default(() => ({
     enabled: false,
     minScore: 0.1,
+    providerTimeoutMs: 5000,
     pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
     rules: { allowLegacyClaudeMd: false, budgetTokens: 8192 },
     pluginProviders: [],

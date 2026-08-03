@@ -77,6 +77,8 @@ export interface ContextV2Config {
    * Phase 0 default: 0.1 (near-zero impact).
    */
   minScore: number;
+  /** Per-provider fetch timeout in ms (spec AC-5). Default 5000. */
+  providerTimeoutMs: number;
   /** Pull tool configuration (Phase 4+) */
   pull: ContextV2PullConfig;
   /** Canonical rules store configuration (Phase 5.1+) */
@@ -88,7 +90,7 @@ export interface ContextV2Config {
    * Set via per-package config (<repoRoot>/.nax/mono/<packageDir>/config.json).
    * Keys are stage names; value overrides the default stage budgetTokens.
    */
-  stages: Record<string, { budgetTokens?: number; extraProviderIds?: string[] }>;
+  stages: Record<string, { budgetTokens?: number; extraProviderIds?: string[]; providerTimeoutMs?: number }>;
   /**
    * Determinism mode (AC-24).
    * When true, providers declaring `deterministic: false` are excluded from assembly.

@@ -194,6 +194,9 @@ export async function assembleForStage(
       storyScratchDirs,
       priorStageDigest: options.priorStageDigest ?? ctx.contextBundle?.digest,
       minScore: ctx.config.context.v2.minScore,
+      ...((stageOverrides?.providerTimeoutMs ?? ctx.config.context?.v2?.providerTimeoutMs) !== undefined && {
+        providerTimeoutMs: stageOverrides?.providerTimeoutMs ?? ctx.config.context?.v2?.providerTimeoutMs,
+      }),
       pullConfig: ctx.config.context.v2.pull
         ? {
             enabled: ctx.config.context.v2.pull.enabled,

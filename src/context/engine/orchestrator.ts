@@ -279,7 +279,7 @@ export class ContextOrchestrator {
       activeProviders.map(async (provider) => {
         const providerStart = _orchestratorDeps.now();
         try {
-          const result = await fetchWithTimeout(provider, request);
+          const result = await fetchWithTimeout(provider, request, request.providerTimeoutMs);
           const durationMs = _orchestratorDeps.now() - providerStart;
           const status = result.chunks.length === 0 ? ("empty" as const) : ("ok" as const);
           const tokensProduced = result.chunks.reduce((sum, c) => sum + c.tokens, 0);

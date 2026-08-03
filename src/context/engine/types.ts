@@ -416,6 +416,13 @@ export interface ContextRequest {
    */
   minScore?: number;
   /**
+   * Per-provider fetch timeout in ms. A provider exceeding it is dropped; the
+   * orchestrator warns but does not fail the stage (spec AC-5). Sourced from
+   * `config.context.v2.stages[stage].providerTimeoutMs` falling back to
+   * `config.context.v2.providerTimeoutMs` (default 5000). Absent = engine default.
+   */
+  providerTimeoutMs?: number;
+  /**
    * Files this story touches (from PRD contextFiles or story.relevantFiles).
    * Used by GitHistoryProvider and CodeNeighborProvider (Phase 3).
    */
