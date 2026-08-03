@@ -255,6 +255,61 @@ describe("rulesExportCommand", () => {
     });
   });
 
+  test("warns when canonical package scope is dropped, instead of widening silently", async () => {
+    const warnings: Array<{ msg: string; data: unknown }> = [];
+    _rulesCLIDeps.getLogger = () =>
+      ({ warn: (_s: string, msg: string, data: unknown) => warnings.push({ msg, data }) }) as never;
+    _rulesCLIDeps.loadCanonicalRules = async () => [{ fileName: "pkg.md", content: "Body.", paths: ["apps/api/**"] }];
+
+    await rulesExportCommand({ dir: "/project", agent: "claude" });
+
+    const w = warnings.find((x) => x.msg.includes("package scope"));
+    expect(w).toBeDefined();
+    expect(JSON.stringify(w?.data)).toContain("apps/api/**");
+  });
+
+  test("warns about a generated rule file with no canonical source", async () => {
+    const warnings: string[] = [];
+    _rulesCLIDeps.getLogger = () => ({ warn: (_s: string, msg: string) => warnings.push(msg) }) as never;
+    _rulesCLIDeps.loadCanonicalRules = async () => [{ fileName: "a.md", content: "Body." }];
+    _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/orphan.md"];
+
+    await rulesExportCommand({ dir: "/project", agent: "claude" });
+
+    expect(warnings.some((m) => m.includes("no canonical source"))).toBe(true);
+  });
+
+  test("rejects a rule path that escapes the rules directory", async () => {
+    _rulesCLIDeps.loadCanonicalRules = async () => [{ fileName: "x.md", path: "../../escape.md", content: "Body." }];
+    let threw: unknown;
+    try {
+      await rulesExportCommand({ dir: "/project", agent: "claude" });
+    } catch (e) {
+      threw = e;
+    }
+    expect((threw as NaxError)?.code).toBe("RULES_EXPORT_PATH_ESCAPE");
+  });
+
+  // The design's Risks section mandates this: it is the single test pinning the
+  // two translations against each other, so neither side can drift alone.
+  test("round-trip: a Claude paths: rule survives migrate -> canonical -> export", async () => {
+    const original = '---\npaths:\n  - "test/**/*.test.ts"\n---\nRule body.\n';
+    const { content: canonical } = translateLegacyFrontmatter(original);
+    expect(canonical).toContain("appliesTo:");
+
+    // Feed the migrated form back through the loader's own parse, then export.
+    const globs = [...canonical.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    _rulesCLIDeps.loadCanonicalRules = async () => [
+      { fileName: "t.md", content: "Rule body.", appliesTo: globs as string[] },
+    ];
+    await rulesExportCommand({ dir: "/project", agent: "claude" });
+
+    const out = written["/project/.claude/rules/t.md"] ?? "";
+    expect(out.startsWith("---")).toBe(true);
+    expect(out).toContain("paths:");
+    expect(out).toContain('"test/**/*.test.ts"');
+  });
+
   describe("--check drift detection", () => {
     test("resolves silently when the generated output matches what is on disk", async () => {
       _rulesCLIDeps.loadCanonicalRules = async () => [{ fileName: "a.md", content: "Body." }];
