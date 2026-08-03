@@ -1709,6 +1709,7 @@ rules
       process.exit(1);
       return;
     }
+    initLogger({ level: "info", useChalk: true });
     try {
       await rulesLintCommand({ dir: workdir });
     } catch (err) {
