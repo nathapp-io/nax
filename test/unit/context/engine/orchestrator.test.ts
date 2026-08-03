@@ -41,6 +41,8 @@ function makeProvider(id: string, result: Partial<ContextProviderResult> = {}): 
 
 function makeChunkResult(overrides: {
   id: string;
+  kind?: string;
+  scope?: string;
   content?: string;
   tokens?: number;
   rawScore?: number;
@@ -49,8 +51,8 @@ function makeChunkResult(overrides: {
   return {
     chunks: [{
       id: overrides.id,
-      kind: "feature",
-      scope: "feature",
+      kind: overrides.kind ?? "feature",
+      scope: overrides.scope ?? "feature",
       role: overrides.role ?? ["implementer"],
       content: overrides.content ?? "feature context content",
       tokens: overrides.tokens ?? 200,

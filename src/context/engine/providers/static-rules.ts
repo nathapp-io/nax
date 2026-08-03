@@ -261,10 +261,11 @@ export class StaticRulesProvider implements IContextProvider {
           return { chunks: [], pullTools: [] };
         }
         const chunks = effectiveRules.map((rule) => {
-          const hash = contentHash8(rule.content);
-          const tokens = estimateTokens(rule.content);
           const ruleId = canonicalRuleId(rule);
           const rulePath = canonicalRulePath(rule);
+          const content = `### ${rulePath}\n\n${rule.content}`;
+          const tokens = estimateTokens(content);
+          const hash = contentHash8(rule.content);
           return {
             // Include fileName so two rules with identical content but different names
             // are not deduplicated by the packing stage (content-hash collision).
@@ -272,7 +273,7 @@ export class StaticRulesProvider implements IContextProvider {
             kind: "static" as const,
             scope: "project" as const,
             role: ["all"] as ["all"],
-            content: `### ${rulePath}\n\n${rule.content}`,
+            content,
             tokens,
             rawScore: 1.0,
           } satisfies RawChunk;
