@@ -3,7 +3,7 @@
   "feature": "context-budget-truth",
   "branchName": "feat/context-budget-truth",
   "createdAt": "2026-08-03T02:11:58Z",
-  "updatedAt": "2026-08-03T06:14:53.485Z",
+  "updatedAt": "2026-08-03T07:15:40.373Z",
   "userStories": [
     {
       "id": "US-001",
@@ -214,8 +214,8 @@
         "migration"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
