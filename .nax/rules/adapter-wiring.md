@@ -3,6 +3,17 @@ priority: 60
 appliesTo:
   - "src/agents/**/*.ts"
   - "src/operations/**/*.ts"
+  - "src/pipeline/**/*.ts"
+  - "src/execution/**/*.ts"
+  - "src/tdd/**/*.ts"
+  - "src/acceptance/**/*.ts"
+  - "src/review/**/*.ts"
+  - "src/debate/**/*.ts"
+  - "src/routing/**/*.ts"
+  - "src/cli/**/*.ts"
+  - "src/verification/**/*.ts"
+  - "src/runtime/**/*.ts"
+  - "src/session/**/*.ts"
 ---
 
 # Adapter Wiring

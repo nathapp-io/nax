@@ -1,5 +1,11 @@
 ---
 priority: 90
+appliesTo:
+  - "src/agents/**/*.ts"
+  - "src/operations/**/*.ts"
+  - "src/routing/**/*.ts"
+  - "src/pipeline/**/*.ts"
+  - "src/execution/**/*.ts"
 ---
 
 # Retry Strategy
