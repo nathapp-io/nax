@@ -1,5 +1,7 @@
 ---
 priority: 100
+appliesTo:
+  - "test/**/*.test.ts"
 ---
 
 # Test Writing Rules

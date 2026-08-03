@@ -1,5 +1,7 @@
 ---
 priority: 50
+appliesTo:
+  - "test/**/*.test.ts"
 ---
 
 # Test Architecture

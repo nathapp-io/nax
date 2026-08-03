@@ -157,6 +157,7 @@ export const NEUTRALITY_RULES: NeutralityRule[] = [
   },
 ];
 
+const KNOWN_FRONTMATTER_KEYS = new Set(["priority", "paths", "appliesTo"]);
 const FRONTMATTER_PRIORITY_DEFAULT = 100;
 export const DEFAULT_CANONICAL_RULES_BUDGET_TOKENS = 8_192;
 const RULES_BUDGET_WARNING_RATIO = 0.75;
@@ -301,6 +302,14 @@ function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatter {
   }
 
   const doc = (parsed ?? {}) as Record<string, unknown>;
+  const unknownKeys = Object.keys(doc).filter((key) => !KNOWN_FRONTMATTER_KEYS.has(key));
+  if (unknownKeys.length > 0) {
+    throw new RulesFrontmatterError(
+      `Canonical rule frontmatter declares unknown key(s): ${unknownKeys.join(", ")}. Only priority, paths, and appliesTo are recognised.`,
+      filePath,
+    );
+  }
+
   const priorityRaw = doc.priority;
   let priority = FRONTMATTER_PRIORITY_DEFAULT;
   if (priorityRaw !== undefined) {

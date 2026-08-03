@@ -68,6 +68,16 @@ export const _rulesCLIDeps = {
       return [];
     }
   },
+  globHasMatch: (pattern: string, cwd: string): boolean => {
+    try {
+      for (const _match of new Bun.Glob(pattern).scanSync({ cwd, absolute: false })) {
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  },
   loadCanonicalRules,
   getLogger,
 };
@@ -382,11 +392,22 @@ function collectCanonicalRuleRoots(workdir: string): string[] {
 export async function rulesLintCommand(options: RulesLintOptions): Promise<void> {
   const workdir = options.dir ?? process.cwd();
   const roots = collectCanonicalRuleRoots(workdir);
+  const logger = _rulesCLIDeps.getLogger();
 
   let totalRuleFiles = 0;
   for (const root of roots) {
     const rules = await _rulesCLIDeps.loadCanonicalRules(root);
     totalRuleFiles += rules.length;
+    for (const rule of rules) {
+      for (const pattern of rule.appliesTo ?? []) {
+        if (_rulesCLIDeps.globHasMatch(pattern, root)) continue;
+        logger.warn("rules-lint", "Canonical rule appliesTo glob matches no files in the linted repository", {
+          file: rule.path ?? rule.fileName,
+          pattern,
+          root,
+        });
+      }
+    }
   }
 
   const scopeLabel = roots.length === 1 ? "repo root" : `${roots.length} rule roots`;
