@@ -13,7 +13,6 @@ import type { UserStory } from "@/prd";
 import { resolveTestFilePatterns } from "@/test-runners";
 import type { ResolvedTestPatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
-import { packageDirRelative } from "@/utils/paths";
 import { PullToolBudget, createRunCallCounter, handleQueryFeatureContext, handleQueryNeighbor } from "./pull-tools";
 import type { RunCallCounter } from "./pull-tools";
 import type { ContextBundle, ToolDescriptor } from "./types";
@@ -47,14 +46,8 @@ export function createContextToolRuntime(options: {
   bundle: ContextBundle;
   story: UserStory;
   config: ContextToolRuntimeConfig;
-  /** Absolute path to the repository root (AC-54) — where `.nax/` lives. */
+  /** Absolute path to the repository root (AC-54). Used by all pull tool handlers. */
   repoRoot: string;
-  /**
-   * Absolute path to the story's package. Equals `repoRoot` for single-package
-   * repos. Callers pass the already-joined package dir; this module must never
-   * re-join `story.workdir` onto it (pipeline/types.ts:88-93).
-   */
-  packageDir?: string;
   runCounter?: RunCallCounter;
   /**
    * Session-scoped budget registry. Pass the same instance for every runtime
@@ -64,7 +57,6 @@ export function createContextToolRuntime(options: {
   sessionBudgets?: SessionToolBudgets;
 }): ContextToolRuntime | undefined {
   const { bundle, story, config, repoRoot } = options;
-  const packageDir = options.packageDir ?? repoRoot;
   if (bundle.pullTools.length === 0) return undefined;
 
   const descriptors = descriptorByName(bundle);
@@ -79,12 +71,7 @@ export function createContextToolRuntime(options: {
   let resolvedTestPatternsPromise: Promise<ResolvedTestPatterns | undefined> | null = null;
   async function getResolvedTestPatterns(): Promise<ResolvedTestPatterns | undefined> {
     if (resolvedTestPatternsPromise === null) {
-      // Anchors per ADR-009: absolute repo ROOT plus a package path RELATIVE to
-      // it. Previously `repoRoot` was the already-joined package dir AND
-      // story.workdir was passed alongside, doubling the segment and silently
-      // falling back to DEFAULT_TEST_FILE_PATTERNS.
-      const relPackage = packageDirRelative(repoRoot, packageDir);
-      resolvedTestPatternsPromise = resolveTestFilePatterns(config, repoRoot, relPackage, {
+      resolvedTestPatternsPromise = resolveTestFilePatterns(config, repoRoot, story.workdir || undefined, {
         storyId: story.id,
       }).catch((err) => {
         getLogger().warn("context", "Pull-tool runtime: failed to resolve test patterns", {
@@ -128,8 +115,6 @@ export function createContextToolRuntime(options: {
             patterns,
             story.id,
             config.context?.v2?.providers,
-            // Already-joined package dir from the caller — never re-joined here.
-            packageDir,
           );
         }
         case "query_feature_context":

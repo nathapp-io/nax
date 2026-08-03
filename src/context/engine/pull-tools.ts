@@ -216,24 +216,21 @@ export async function handleQueryNeighbor(
   resolvedTestPatterns?: import("@/test-runners").ResolvedTestPatterns,
   storyId?: string,
   providerOptions?: { sourceGlob?: string; maxGlobFiles?: number },
-  /**
-   * Absolute path to the story's package. Defaults to `repoRoot` for
-   * single-package repos. The push path scopes CodeNeighborProvider by package
-   * (monorepo-awareness §7); before this parameter existed the pull path
-   * hardcoded `packageDir: repoRoot`, so a monorepo story pulled neighbours
-   * from the whole repo instead of its own package.
-   */
-  packageDir?: string,
 ): Promise<string> {
   budget.consume();
 
   const provider = new CodeNeighborProvider(providerOptions ?? {});
-  // One source of truth so the request and the log provably cannot diverge.
-  const resolvedPackageDir = packageDir ?? repoRoot;
+  // NOTE: packageDir intentionally equals repoRoot. Callers pass the story's
+  // already-resolved package dir AS repoRoot (build-hop-callback -> call.ts ->
+  // execution.ts -> iteration-runner, which joins story.workdir), so this IS
+  // package-scoped. Two attempts to "scope" it further were both wrong: joining
+  // story.workdir again double-joins in monorepos, and splitting repoRoot from
+  // packageDir redirects the cross-package scan at the main checkout under
+  // storyIsolation: "worktree". Do not "fix" this without a worktree test.
   const request: ContextRequest = {
     storyId: storyId ?? "_pull-tool",
     repoRoot,
-    packageDir: resolvedPackageDir,
+    packageDir: repoRoot,
     stage: "pull-tool",
     role: "implementer",
     budgetTokens: maxTokensPerCall,
@@ -252,7 +249,7 @@ export async function handleQueryNeighbor(
     storyId: storyId ?? "_pull-tool",
     tool: "query_neighbor",
     filePath: input.filePath,
-    packageDir: resolvedPackageDir,
+    packageDir: repoRoot,
     resultCount: result.chunks.length,
     resultBytes: finalContent.length,
   };

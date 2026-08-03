@@ -221,13 +221,7 @@ export function buildHopCallback(
           bundle: workingBundle,
           story,
           config,
-          // `workdir` here is ALREADY join(projectDir, story.workdir) — set from
-          // ctx.packageDir in call.ts, which iteration-runner joined. Passing it
-          // as repoRoot made `repoRoot` a lie inside the runtime; pass the real
-          // root and the package dir separately instead. Never re-join
-          // story.workdir onto workdir (pipeline/types.ts:88-93).
-          repoRoot: projectDir ?? workdir,
-          packageDir: workdir,
+          repoRoot: workdir,
           runCounter: runCounterForHops,
           sessionBudgets: sessionToolBudgets,
         })

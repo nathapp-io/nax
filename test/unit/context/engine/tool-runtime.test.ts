@@ -1,11 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { contextToolRuntimeConfigSelector } from "../../../../src/config";
 import type { ContextToolRuntimeConfig } from "../../../../src/config/selectors";
-import {
-  _codeNeighborDeps,
-  createContextToolRuntime,
-  createSessionToolBudgets,
-} from "../../../../src/context/engine";
+import { createContextToolRuntime, createSessionToolBudgets } from "../../../../src/context/engine";
 import type { ContextBundle } from "../../../../src/context/engine";
 import { makeNaxConfig } from "../../../helpers/mock-nax-config";
 
@@ -114,47 +110,6 @@ describe("createContextToolRuntime — session-scoped pull budget", () => {
     const b = createContextToolRuntime({ bundle, story, config: RUNTIME_CONFIG, repoRoot: "/tmp" });
     await b?.callTool("query_feature_context", {});
     // No throw — an isolated runtime still gets its own allowance.
-  });
-
-  test("forwards the caller's packageDir to query_neighbor rather than the repo root", async () => {
-    const scanRoots: string[] = [];
-    const origGlob = _codeNeighborDeps.glob;
-    const origExists = _codeNeighborDeps.fileExists;
-    _codeNeighborDeps.fileExists = async () => false;
-    _codeNeighborDeps.glob = (_pattern: unknown, workdir: string) => {
-      scanRoots.push(workdir);
-      return { files: [], truncated: false };
-    };
-
-    try {
-      const bundle = {
-        pushMarkdown: "",
-        pullTools: [
-          {
-            name: "query_neighbor",
-            description: "t",
-            inputSchema: { type: "object", properties: {} },
-            maxCallsPerSession: 5,
-            maxTokensPerCall: 100,
-          },
-        ],
-        meta: { stage: "test", schemaVersion: 1, totalTokens: 0 },
-      } as unknown as ContextBundle;
-
-      const runtime = createContextToolRuntime({
-        bundle,
-        story,
-        config: RUNTIME_CONFIG,
-        repoRoot: "/repo",
-        packageDir: "/repo/packages/api",
-      });
-      await runtime?.callTool("query_neighbor", { filePath: "src/a.ts" });
-
-      expect(scanRoots).toContain("/repo/packages/api");
-    } finally {
-      _codeNeighborDeps.glob = origGlob;
-      _codeNeighborDeps.fileExists = origExists;
-    }
   });
 
   test("rejects an unknown tool with a NaxError carrying a machine-readable code", async () => {
