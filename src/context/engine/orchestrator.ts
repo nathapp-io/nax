@@ -263,12 +263,13 @@ export class ContextOrchestrator {
       });
     }
 
-    // AC-32 + US-001: reserve digest + per-chunk-aware markdown overhead against min(stage, profile) so rendered markdown fits when no floor overflows (AC-7).
+    // AC-32 + US-001: reserve digest + prior digest + per-chunk markdown overhead so rendered markdown fits when no floor overflows (AC-7).
     const profileBudget = agentProfile.caps.preferredPromptTokens;
     const stageCeiling = Math.min(request.budgetTokens, profileBudget);
+    const priorDigestTokens = request.priorStageDigest ? Math.ceil(request.priorStageDigest.length / 4) : 0;
     const effectiveBudgetTokens = Math.max(
       0,
-      stageCeiling - DIGEST_RESERVE_TOKENS - renderOverheadTokens(stageCeiling),
+      stageCeiling - DIGEST_RESERVE_TOKENS - priorDigestTokens - renderOverheadTokens(stageCeiling),
     );
 
     // Step 1: filter providers to those applicable for this stage.
@@ -570,11 +571,9 @@ export class ContextOrchestrator {
     const manifest: ContextManifest = {
       ...prior.manifest,
       requestId: _orchestratorDeps.uuid(),
-      // Update includedChunks so the manifest reflects the actual rendered content.
       includedChunks: packedChunks.map((c) => c.id),
-      // Recomputed, not inherited: a rebuild can add a chunk (the failure note)
-      // that the prior map has no entry for, which would make the curator record
-      // tokens:0 for it — the exact placeholder #1421 removed.
+      // Recomputed chunk tokens — a rebuild can add a chunk (the failure note)
+      // that the prior map has no entry for, which would record tokens:0 (#1421).
       chunkTokens: Object.fromEntries(packedChunks.map((c) => [c.id, c.tokens])),
       usedTokens,
       digestTokens: dTokens,

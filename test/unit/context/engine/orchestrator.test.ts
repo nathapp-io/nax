@@ -576,14 +576,12 @@ describe("US-001 — ContextOrchestrator budget arithmetic", () => {
     // Catches the gap where only DIGEST_RESERVE was subtracted (the markdown
     // framing overhead — prior heading + scope headers — was not reserved).
     //
-    // Scenario: stageBudget=500, priorDigest=1000 chars (full), one non-floor chunk
-    // sized to fill the effective packing ceiling. With only DIGEST_RESERVE reserved
-    // (no RENDER_OVERHEAD), packed content fills to budget-250 and the total
-    // rendered output (packed + prior + scope header + section separator)
-    // exceeds the stage budget by ~40 tokens — the size of the headings.
+    // Scenario: stageBudget fits the prior digest (250 tokens), the digest this
+    // stage produces (250 tokens), markdown framing overhead, and one non-floor
+    // chunk. Without the prior-digest and overhead reserves, the rendered output
+    // exceeds the stage budget.
     const priorDigest = "x".repeat(1_000); // full MAX_DIGEST_CHARS digest
-    // Session-kind chunk (NOT a floor kind) sized to fill the 250-token effective
-    // ceiling under the unfixed implementation.
+    // Session-kind chunk (NOT a floor kind) sized to consume the remaining ceiling.
     const sessionProvider: IContextProvider = {
       id: "p3",
       kind: "feature",
@@ -607,7 +605,10 @@ describe("US-001 — ContextOrchestrator budget arithmetic", () => {
       makeProvider("p2", makeChunkResult({ id: "feat:1", kind: "feature", tokens: 20, content: "y".repeat(80) })),
       sessionProvider,
     ]);
-    const stageBudget = 500;
+    // Budget large enough to fit prior (250) + digest reserve (250) + framing
+    // overhead (~136) + floor (40) + non-floor chunk (210) = ~886. Use 1000 to
+    // give the chunk room and still test the tight case.
+    const stageBudget = 1_000;
     const bundle = await orch.assemble({
       ...BASE_REQUEST,
       budgetTokens: stageBudget,
@@ -642,7 +643,9 @@ describe("US-001 — ContextOrchestrator budget arithmetic", () => {
       makeProvider("p1", makeChunkResult({ id: "floor:1", kind: "static", tokens: 10, content: "rules" })),
       { id: "p3", kind: "feature", fetch: async () => ({ chunks: smallChunks, pullTools: [] }) } as IContextProvider,
     ]);
-    const stageBudget = 700;
+    // Budget sized so prior (250) + digest reserve (250) + framing overhead
+    // (~200) + floor (10) + enough non-floor room for many small chunks fits.
+    const stageBudget = 1_500;
     const bundle = await orch.assemble({
       ...BASE_REQUEST,
       budgetTokens: stageBudget,
@@ -650,6 +653,59 @@ describe("US-001 — ContextOrchestrator budget arithmetic", () => {
       providerIds: ["p1", "p3"],
     });
     expect(bundle.manifest.floorOverageItems ?? []).toEqual([]);
+    const renderedTokens = Math.ceil(bundle.pushMarkdown.length / 4);
+    expect(renderedTokens).toBeLessThanOrEqual(stageBudget);
+  });
+
+  test("AC-7: prior-stage digest tokens are reserved so a full prior digest near the budget does not push non-floor packing over the ceiling", async () => {
+    // Catches the gap where the prior-stage digest (rendered into the push markdown
+    // by renderChunks) was not subtracted from the effective budget. With a full
+    // prior digest near the stage budget, packing non-floor chunks at the previous
+    // ceiling would cause the rendered markdown (prior + packed + overhead) to
+    // exceed the stage budget. The reserve must include prior-digest tokens.
+    const priorDigest = "x".repeat(1_000); // full MAX_DIGEST_CHARS digest (250 tokens)
+    // One non-floor chunk sized to fit the previous (without prior-reserve) ceiling
+    // but exceed the new (with prior-reserve) ceiling.
+    const sessionProvider: IContextProvider = {
+      id: "p3",
+      kind: "feature",
+      fetch: async () => ({
+        chunks: [
+          {
+            id: "sess:1",
+            kind: "session",
+            scope: "feature",
+            role: ["implementer"],
+            content: "z".repeat(1_200), // ~300 chars/token worth of content
+            tokens: 300,
+            rawScore: 0.9,
+          },
+        ],
+        pullTools: [],
+      }),
+    };
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "floor:1", kind: "static", tokens: 20, content: "x".repeat(80) })),
+      makeProvider("p2", makeChunkResult({ id: "feat:1", kind: "feature", tokens: 20, content: "y".repeat(80) })),
+      sessionProvider,
+    ]);
+    // Budget that fits prior (250) + digest reserve (250) + framing overhead (~189)
+    // + floor (40) + non-floor (300) = ~1029, but with prior-digest reserved the
+    // effective packing ceiling shrinks and sess:1 must be excluded to keep the
+    // rendered markdown within the stage budget.
+    const stageBudget = 1_000;
+    const bundle = await orch.assemble({
+      ...BASE_REQUEST,
+      budgetTokens: stageBudget,
+      priorStageDigest: priorDigest,
+      providerIds: ["p1", "p2", "p3"],
+    });
+    // No floor overflow.
+    expect(bundle.manifest.floorOverageItems ?? []).toEqual([]);
+    // The non-floor chunk was excluded by the prior-digest-aware budget reserve
+    // so the rendered markdown (prior + floor + overhead) stays within the budget.
+    expect(bundle.chunks.some((c) => c.id === "sess:1")).toBe(false);
+    // Rendered markdown (in tokens) does not exceed the stage budget.
     const renderedTokens = Math.ceil(bundle.pushMarkdown.length / 4);
     expect(renderedTokens).toBeLessThanOrEqual(stageBudget);
   });
