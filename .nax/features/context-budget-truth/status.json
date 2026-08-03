@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-08-03T02-37-32-967Z",
+    "feature": "context-budget-truth",
+    "startedAt": "2026-08-03T02:37:32.967Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 25219
+  },
+  "progress": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 51.978224751999996,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 7,
+  "updatedAt": "2026-08-03T07:22:47.226Z",
+  "durationMs": 17114259,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-08-03T07:22:19.139Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-08-03T07:22:46.016Z"
+    }
+  }
+}

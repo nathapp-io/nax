@@ -1,5 +1,8 @@
 ---
 priority: 60
+appliesTo:
+  - "src/agents/**/*.ts"
+  - "src/operations/**/*.ts"
 ---
 
 # Adapter Wiring

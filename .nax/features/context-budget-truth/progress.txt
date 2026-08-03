@@ -1,0 +1,4 @@
+[2026-08-03T05:30:49.700Z] US-001 — PASSED — Make context-budget arithmetic truthful — Cost: $31.4361
+[2026-08-03T05:39:35.393Z] US-002 — PASSED — Restore tail-biased canonical-rule truncation — Cost: $0.5605
+[2026-08-03T06:14:50.031Z] US-003 — PASSED — Expose floor-budget overage in logs and story metrics — Cost: $3.2517
+[2026-08-03T07:15:40.372Z] US-004 — PASSED — Validate and restore canonical-rule file scope — Cost: $16.5601

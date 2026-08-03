@@ -162,6 +162,31 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
     expect(result.chunks[1]?.id).toContain("b");
   });
 
+  test("[US-002 AC 5] emits chunks only for the surviving leading run and none for the dropped tail when budget is smaller than the store", async () => {
+    // Case 1: the first rule alone exceeds the budget → no chunk is emitted
+    setupCanonical([
+      { fileName: "huge.md", id: "huge", content: "H".repeat(4000), tokens: 1000, priority: 1 },
+      { fileName: "tiny.md", id: "tiny", content: "T".repeat(40), tokens: 10, priority: 2 },
+      { fileName: "tiny2.md", id: "tiny2", content: "T2".repeat(40), tokens: 10, priority: 3 },
+    ]);
+    const provider = new StaticRulesProvider({ budgetTokens: 500 });
+    const r1 = await provider.fetch(BASE_REQUEST);
+    expect(r1.chunks).toEqual([]);
+
+    // Case 2: a non-empty leading run survives, the dropped tail is excluded
+    setupCanonical([
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 10, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(400), tokens: 100, priority: 3 },
+      { fileName: "d.md", id: "d", content: "D".repeat(40), tokens: 10, priority: 4 },
+    ]);
+    const provider2 = new StaticRulesProvider({ budgetTokens: 30 });
+    const r2 = await provider2.fetch(BASE_REQUEST);
+    // Extract the rule-id segment from each chunk id (format: static-rules:<ruleId>:<hash>)
+    const ruleIds = r2.chunks.map((c) => c.id.split(":")[1]);
+    expect(ruleIds).toEqual(["a", "b"]);
+  });
+
   test("propagates NeutralityLintError without falling back to legacy", async () => {
     _staticRulesDeps.loadCanonicalRules = async () => {
       throw new NeutralityLintError([
@@ -435,5 +460,44 @@ describe("StaticRulesProvider — AC-57 per-package overlay", () => {
     expect(ids.some((id) => id.includes("rule-b"))).toBe(true);
     // IDs must be distinct even though content hashes are identical
     expect(ids[0]).not.toBe(ids[1]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-004 AC 6-8: real .nax/rules store scope filtering by touchedFiles
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("StaticRulesProvider — real .nax/rules store scope filtering (US-004)", () => {
+  // A large explicit budget isolates the scoping behavior under test from
+  // priority-ordered budget trimming, which is a separate, out-of-scope concern.
+  const REAL_REPO_REQUEST: ContextRequest = {
+    storyId: "US-004",
+    repoRoot: process.cwd(),
+    packageDir: process.cwd(),
+    stage: "execution",
+    role: "implementer",
+    budgetTokens: 8000,
+  };
+
+  beforeEach(() => {
+    _staticRulesDeps.loadCanonicalRules = origLoadCanonicalRules;
+  });
+
+  test("[US-004 AC 6] emits no static-rules:test-writing: chunk when touchedFiles are non-test source files", async () => {
+    const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, touchedFiles: ["src/context/rules/canonical-loader.ts"] });
+    expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-writing:"))).toBe(false);
+  });
+
+  test("[US-004 AC 7] emits a static-rules:test-writing: chunk when touchedFiles include a path under test/", async () => {
+    const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, touchedFiles: ["test/unit/context/rules/canonical-loader.test.ts"] });
+    expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-writing:"))).toBe(true);
+  });
+
+  test("[US-004 AC 8] emits no static-rules:adapter-wiring: chunk when touchedFiles are outside src/agents and src/operations", async () => {
+    const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, touchedFiles: ["src/pipeline/stages/verify.ts"] });
+    expect(result.chunks.some((c) => c.id.startsWith("static-rules:adapter-wiring:"))).toBe(false);
   });
 });

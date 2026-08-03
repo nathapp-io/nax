@@ -20,12 +20,13 @@ import { NeutralityLintError } from "../rules/canonical-loader";
 import { AGENT_PROFILES, getAgentProfile } from "./agent-profiles";
 import { renderForAgent } from "./agent-renderer";
 import { dedupeChunks } from "./dedupe";
-import { buildDigest, digestTokens } from "./digest";
-import { buildManifest } from "./manifest-builder";
+import { DIGEST_RESERVE_TOKENS, buildDigest, digestTokens } from "./digest";
+import { buildManifest, rebuildUsedTokens } from "./manifest-builder";
+import { DEFAULT_REBUILD_AGENT_ID, buildFailureNoteChunk } from "./orchestrator-rebuild-helpers";
 import { FLOOR_KINDS, packChunks } from "./packing";
 import type { PackedChunk } from "./packing";
 import { PULL_TOOL_REGISTRY } from "./pull-tools";
-import { renderChunks } from "./render";
+import { FIXED_RENDER_OVERHEAD_TOKENS, renderChunks, separatorOverheadTokens } from "./render";
 import { MIN_SCORE, scoreChunks } from "./scoring";
 import { neutralizeForAgent } from "./scratch-neutralizer";
 import { getStageContextConfig } from "./stage-config";
@@ -72,6 +73,7 @@ function buildPullToolDescriptors(
 export const _orchestratorDeps = {
   now: () => Date.now(),
   uuid: () => randomUUID(),
+  getLogger,
 };
 
 type ProviderActivationSource = NonNullable<NonNullable<ContextManifest["providerResults"]>[number]["source"]>;
@@ -165,57 +167,6 @@ function buildProviderSourceMap(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phase 5.5 — rebuild types and helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Agent id used when neither options.newAgentId nor prior.agentId is set.
- * Represents the historical default — change this constant (not the inline
- * fallback) if the project default agent ever changes.
- */
-const DEFAULT_REBUILD_AGENT_ID = "claude";
-
-/**
- * Build a deterministic failure-note chunk describing the agent swap.
- * This is a synthetic chunk (no provider fetch) injected so the new agent
- * understands why the session started with pre-existing context.
- *
- * Deterministic: same inputs → byte-identical output (no LLM call).
- */
-function buildFailureNoteChunk(
-  priorAgentId: string,
-  newAgentId: string,
-  failure: AdapterFailure,
-): import("./packing").PackedChunk {
-  const lines = [
-    "## Agent swap (availability fallback)",
-    "",
-    `Prior agent: ${priorAgentId} became unavailable.`,
-    `Reason: ${failure.outcome} — ${failure.message}`,
-    "",
-    `Continuing as: ${newAgentId}`,
-    "",
-    "Context from the prior session has been preserved below.",
-    "Resume from where the prior agent stopped.",
-  ];
-  const content = lines.join("\n");
-  const tokens = Math.ceil(content.length / 4);
-  return {
-    id: `failure-note:${priorAgentId}:${newAgentId}:${failure.outcome}`,
-    providerId: "orchestrator",
-    kind: "session",
-    scope: "session",
-    role: ["all"],
-    content,
-    tokens,
-    rawScore: 1.0,
-    score: 1.0,
-    roleFiltered: false,
-    belowMinScore: false,
-  };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // ContextOrchestrator
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -242,7 +193,7 @@ export class ContextOrchestrator {
    *   9. Build digest (≤250 tokens, deterministic)
    */
   async assemble(request: ContextRequest): Promise<ContextBundle> {
-    const logger = getLogger();
+    const logger = _orchestratorDeps.getLogger();
     const startMs = _orchestratorDeps.now();
     const requestId = _orchestratorDeps.uuid();
 
@@ -263,10 +214,22 @@ export class ContextOrchestrator {
       });
     }
 
-    // AC-32: agent profile tightens the budget ceiling. Effective budget is
-    // min(stage budget, agent preferred prompt tokens, caller availableBudget).
+    // AC-32 + US-001: reserve digest + prior digest + fixed framing; per-chunk separator from kept below.
+    // availableBudgetTokens (the caller's remaining-window ceiling) is folded in here, before the
+    // reserve subtractions, so a binding remaining-window value cannot bypass the reserves — it must
+    // shrink alongside budgetTokens/profileBudget, not compete with the already-reserved result.
     const profileBudget = agentProfile.caps.preferredPromptTokens;
-    const effectiveBudgetTokens = Math.min(request.budgetTokens, profileBudget);
+    const stageCeiling = Math.min(
+      request.budgetTokens,
+      profileBudget,
+      request.availableBudgetTokens ?? Number.POSITIVE_INFINITY,
+    );
+    const trimmedPriorDigest = request.priorStageDigest?.trim();
+    const priorDigestTokens = trimmedPriorDigest ? Math.ceil(trimmedPriorDigest.length / 4) : 0;
+    let effectiveBudgetTokens = Math.max(
+      0,
+      stageCeiling - DIGEST_RESERVE_TOKENS - priorDigestTokens - FIXED_RENDER_OVERHEAD_TOKENS,
+    );
 
     // Step 1: filter providers to those applicable for this stage.
     // request.providerIds (test-only override) takes precedence; otherwise stageConfig.providerIds.
@@ -431,13 +394,28 @@ export class ContextOrchestrator {
     const belowMin = postRoleFilter.filter((c) => !c.roleFiltered && c.belowMinScore && !FLOOR_KINDS.includes(c.kind));
     const kept = postRoleFilter.filter((c) => !c.roleFiltered && (!c.belowMinScore || FLOOR_KINDS.includes(c.kind)));
 
-    // Step 7: greedy pack. Apply agent-profile ceiling to the stage budget so
-    // the final budget is min(stage, profile, caller availableBudget).
-    const { packed, budgetExcludedIds, usedTokens, floorPackedIds, floorOverageIds } = packChunks(
+    effectiveBudgetTokens = Math.max(0, effectiveBudgetTokens - separatorOverheadTokens(kept));
+    // Step 7: greedy pack. availableBudgetTokens is already folded into effectiveBudgetTokens
+    // above (before the reserve subtractions), so no third ceiling argument is passed here —
+    // passing it separately would let it bypass the reserves via packChunks' own Math.min.
+    const { packed, budgetExcludedIds, usedTokens, floorPackedIds, floorOverageIds, effectiveBudget } = packChunks(
       kept,
       effectiveBudgetTokens,
-      request.availableBudgetTokens,
     );
+
+    // US-003 AC-4: surface floor overage observability. Floor-kind chunks still
+    // pack even when they overflow the effective budget; this warn makes the
+    // overage visible without changing which chunks are included. The
+    // `effectiveBudget` value reported here is the post-`availableBudgetTokens`
+    // ceiling packChunks actually used — never the pre-ceiling request budget.
+    if (floorOverageIds.length > 0) {
+      logger.warn("context-v2", "Floor-budget overage — floor chunks pushed bundle past effective budget", {
+        storyId: request.storyId,
+        stage: request.stage,
+        effectiveBudget,
+        excludedNonFloorChunkCount: budgetExcludedIds.length,
+      });
+    }
 
     // Step 8: render markdown
     const pushMarkdown = renderChunks(packed, {
@@ -464,6 +442,7 @@ export class ContextOrchestrator {
       budgetExcludedIds,
       floorPackedIds,
       floorOverageIds,
+      effectiveBudget,
     });
 
     logger.debug("context-v2", "Bundle assembled", {
@@ -504,7 +483,7 @@ export class ContextOrchestrator {
   rebuildForAgent(prior: ContextBundle, options: RebuildOptions = {}): ContextBundle {
     const { newAgentId, failure, priorStageDigest, storyId } = options;
     const targetAgentId = newAgentId ?? prior.agentId ?? DEFAULT_REBUILD_AGENT_ID;
-    const logger = getLogger();
+    const logger = _orchestratorDeps.getLogger();
 
     if (newAgentId && !AGENT_PROFILES[newAgentId]) {
       logger.warn("context-v2", "rebuildForAgent: unknown agent id — using conservative defaults", {
@@ -562,29 +541,33 @@ export class ContextOrchestrator {
           }
         : undefined;
 
-    // Recompute token delta: failure-note chunk adds tokens not present in prior bundle.
-    const extraTokens = packedChunks
-      .filter((c) => !prior.chunks.some((pc) => pc.id === c.id))
-      .reduce((sum, c) => sum + c.tokens, 0);
-
-    const manifest: ContextManifest = {
-      ...prior.manifest,
-      requestId: _orchestratorDeps.uuid(),
-      // Update includedChunks so the manifest reflects the actual rendered content.
-      includedChunks: packedChunks.map((c) => c.id),
-      // Recomputed, not inherited: a rebuild can add a chunk (the failure note)
-      // that the prior map has no entry for, which would make the curator record
-      // tokens:0 for it — the exact placeholder #1421 removed.
-      chunkTokens: Object.fromEntries(packedChunks.map((c) => [c.id, c.tokens])),
-      usedTokens: Math.max(0, prior.manifest.usedTokens - prior.manifest.digestTokens + dTokens + extraTokens),
-      digestTokens: dTokens,
-      buildMs: 0,
-      rebuildInfo,
-    };
+    const usedTokens = rebuildUsedTokens(prior, packedChunks, priorStageDigest);
 
     // AC-33: strip pull tools if the new agent cannot invoke tool calls.
     const targetProfile = getAgentProfile(targetAgentId).profile;
     const rebuiltPullTools = targetProfile.caps.supportsToolCalls ? prior.pullTools : [];
+
+    const manifest: ContextManifest = {
+      ...prior.manifest,
+      requestId: _orchestratorDeps.uuid(),
+      includedChunks: packedChunks.map((c) => c.id),
+      // Recomputed chunk tokens — a rebuild can add a chunk (the failure note)
+      // that the prior map has no entry for, which would record tokens:0 (#1421).
+      chunkTokens: Object.fromEntries(packedChunks.map((c) => [c.id, c.tokens])),
+      usedTokens,
+      digestTokens: dTokens,
+      buildMs: 0,
+      rebuildInfo,
+      // Re-tighten to the target agent's own ceiling on an agent swap — the spread above
+      // otherwise carries the PRIOR agent's effectiveBudget forward alongside the new
+      // agent's content (and any injected failure-note chunk), which would make
+      // computeFloorOverage (src/metrics/tracker.ts) compute overage against the wrong
+      // ceiling for every swapped story.
+      effectiveBudget: Math.min(
+        prior.manifest.effectiveBudget ?? Number.POSITIVE_INFINITY,
+        targetProfile.caps.preferredPromptTokens,
+      ),
+    };
 
     return {
       pushMarkdown,

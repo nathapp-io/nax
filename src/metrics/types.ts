@@ -53,6 +53,20 @@ export class TokenUsage {
 }
 
 /**
+ * Aggregated floor-budget overage across all pipeline stages for a story (US-003).
+ *
+ * `overageTokens` is, per stage, `max(0, sum(tokens of ALL floor-kind chunks in
+ * ContextManifest.floorItems) - effectiveBudget)`, summed across every persisted
+ * stage manifest — not merely the tokens of `floorOverageItems` (the subset that
+ * individually caused the overflow); see `computeFloorOverage` in
+ * `src/metrics/tracker.ts` for the exact computation. Zero when the floor fit
+ * within the effective budget for every stage this story ran.
+ */
+export interface FloorOverageMetrics {
+  overageTokens: number;
+}
+
+/**
  * Aggregated context provider metrics across all pipeline stages for a story.
  */
 export interface ContextProviderMetrics {
@@ -169,6 +183,14 @@ export interface StoryMetrics {
        */
       pollutionRatio: number;
     };
+    /**
+     * Aggregate floor-budget overage (US-003 AC-2, AC-3).
+     * Absent when no manifests were found for this story. Present (with
+     * `overageTokens: 0`) when at least one manifest was found but no
+     * floor chunk overflowed — so consumers can distinguish "no overage"
+     * from "no context-engine activity".
+     */
+    floorOverage?: FloorOverageMetrics;
   };
   /**
    * Agent-swap (fallback) hops recorded during execution (AC-41).

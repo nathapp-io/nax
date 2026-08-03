@@ -6,7 +6,7 @@
  */
 
 import type { PackedChunk } from "./packing";
-import type { ContextManifest, ContextRequest } from "./types";
+import type { ContextBundle, ContextManifest, ContextRequest } from "./types";
 
 /** Maximum characters of chunk content retained for post-story effectiveness annotation. */
 const CHUNK_SUMMARY_CHARS = 300;
@@ -26,6 +26,8 @@ export interface ManifestInputs {
   budgetExcludedIds: string[];
   floorPackedIds: string[];
   floorOverageIds: string[];
+  /** Effective ceiling actually used by `packChunks` (US-003). */
+  effectiveBudget: number;
 }
 
 /**
@@ -49,6 +51,7 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     budgetExcludedIds,
     floorPackedIds,
     floorOverageIds,
+    effectiveBudget,
   } = inputs;
 
   // Amendment A: stale chunk IDs and content summaries for post-story
@@ -62,11 +65,20 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     chunkTokens[c.id] = c.tokens;
   }
 
+  // US-001: manifest.usedTokens accounts the digest actually carried in the
+  // rendered prompt (request.priorStageDigest). The produced digest is recorded
+  // separately in `digestTokens` and threaded forward to the next stage.
+  // renderChunks omits a whitespace-only priorStageDigest (it requires .trim()
+  // to be non-empty), so buildManifest must match that to keep AC-6 truthful.
+  const priorStageDigest = request.priorStageDigest?.trim();
+  const priorStageDigestTokens = priorStageDigest ? Math.ceil(priorStageDigest.length / 4) : 0;
+
   return {
     requestId,
     stage: request.stage,
     totalBudgetTokens: request.budgetTokens,
-    usedTokens: usedTokens + digestTokens,
+    effectiveBudget,
+    usedTokens: usedTokens + priorStageDigestTokens,
     includedChunks: packed.map((c) => c.id),
     excludedChunks: [
       ...roleFiltered.map((c) => ({ id: c.id, reason: "role-filter" as const })),
@@ -85,4 +97,33 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     ...(Object.keys(chunkTokens).length > 0 && { chunkTokens }),
     ...(staleChunkIds.length > 0 && { staleChunks: staleChunkIds }),
   };
+}
+
+/**
+ * Compute the rebuilt manifest's `usedTokens` under US-001 accounting.
+ *
+ * `usedTokens = packed chunk tokens + prior-digest tokens`, where the
+ * prior-digest contribution reflects exactly what `rebuildForAgent` renders:
+ * `renderChunks`/`renderForAgent` only emit the "Prior Stage Summary" section
+ * when `newPriorStageDigest` (trimmed) is non-empty — they never fall back to
+ * whatever digest the PRIOR assemble() call rendered. So this must not fall
+ * back to the prior bundle's digest contribution either, or manifest.usedTokens
+ * would count tokens for a section that isn't in pushMarkdown (AC-6).
+ *
+ * `extraTokens` is the sum of tokens for chunks added by the rebuild that
+ * weren't in the prior bundle (typically the failure-note chunk on agent swap).
+ */
+export function rebuildUsedTokens(
+  prior: ContextBundle,
+  packed: PackedChunk[],
+  newPriorStageDigest: string | undefined,
+): number {
+  const priorChunksTokens = prior.chunks.reduce((sum, c) => sum + c.tokens, 0);
+  const extraTokens = packed
+    .filter((c) => !prior.chunks.some((pc) => pc.id === c.id))
+    .reduce((sum, c) => sum + c.tokens, 0);
+  const packedTokens = priorChunksTokens + extraTokens;
+  const newDigestContent = newPriorStageDigest?.trim();
+  const newDigestContribution = newDigestContent ? Math.ceil(newDigestContent.length / 4) : 0;
+  return Math.max(0, packedTokens + newDigestContribution);
 }

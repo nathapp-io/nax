@@ -10,7 +10,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { NaxError } from "@/errors";
 import { lintForNeutrality } from "../../../src/context/rules/canonical-loader";
-import { withTempDir } from "@test/helpers";
+import { makeLogger, withTempDir } from "@test/helpers";
 import {
   neutralizeContent,
   rulesExportCommand,
@@ -32,6 +32,7 @@ let origGlobInDir: typeof _rulesCLIDeps.globInDir;
 let origGlobCanonicalRuleFiles: typeof _rulesCLIDeps.globCanonicalRuleFiles;
 let origMkdir: typeof _rulesCLIDeps.mkdir;
 let origLoadCanonicalRules: typeof _rulesCLIDeps.loadCanonicalRules;
+let origGetLogger: typeof _rulesCLIDeps.getLogger;
 
 const written: Record<string, string> = {};
 
@@ -43,6 +44,7 @@ beforeEach(() => {
   origGlobCanonicalRuleFiles = _rulesCLIDeps.globCanonicalRuleFiles;
   origMkdir = _rulesCLIDeps.mkdir;
   origLoadCanonicalRules = _rulesCLIDeps.loadCanonicalRules;
+  origGetLogger = _rulesCLIDeps.getLogger;
 
   Object.keys(written).forEach((k) => delete written[k]);
 
@@ -63,6 +65,7 @@ afterEach(() => {
   _rulesCLIDeps.globCanonicalRuleFiles = origGlobCanonicalRuleFiles;
   _rulesCLIDeps.mkdir = origMkdir;
   _rulesCLIDeps.loadCanonicalRules = origLoadCanonicalRules;
+  _rulesCLIDeps.getLogger = origGetLogger;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -327,6 +330,55 @@ describe("rulesLintCommand", () => {
       expect(calls).toContain(join(workdir, "packages", "api"));
     });
   });
+
+  test("[US-004 AC 4] warns (does not throw) naming the rule file and pattern when an appliesTo glob matches zero files", async () => {
+    const logger = makeLogger();
+    _rulesCLIDeps.getLogger = () => logger as unknown as ReturnType<typeof _rulesCLIDeps.getLogger>;
+    _rulesCLIDeps.loadCanonicalRules = origLoadCanonicalRules;
+    _rulesCLIDeps.globCanonicalRuleFiles = origGlobCanonicalRuleFiles;
+
+    await withTempDir(async (workdir) => {
+      await mkdir(join(workdir, ".nax", "rules"), { recursive: true });
+      await Bun.write(
+        join(workdir, ".nax", "rules", "dead-glob.md"),
+        ["---", "appliesTo:", '  - "no/such/path/**"', "---", "", "Body."].join("\n"),
+      );
+      await Bun.write(join(workdir, "real-file.ts"), "export const x = 1;\n");
+
+      await expect(rulesLintCommand({ dir: workdir })).resolves.toBeUndefined();
+
+      const warnings = logger.calls.filter((c) => c.level === "warn");
+      expect(warnings.length).toBeGreaterThan(0);
+      const combined = warnings.map((c) => `${c.message} ${JSON.stringify(c.data ?? {})}`).join(" | ");
+      expect(combined).toContain("dead-glob.md");
+      expect(combined).toContain("no/such/path/**");
+    });
+  });
+
+  test("[US-004 AC 4] does not warn when an appliesTo glob only matches dotfiles", async () => {
+    // Bun.Glob.scanSync skips dotfiles/dot-directories unless dot:true is
+    // passed, so a pattern that legitimately targets a hidden path (e.g.
+    // .github/**) must not be reported as a dead glob.
+    const logger = makeLogger();
+    _rulesCLIDeps.getLogger = () => logger as unknown as ReturnType<typeof _rulesCLIDeps.getLogger>;
+    _rulesCLIDeps.loadCanonicalRules = origLoadCanonicalRules;
+    _rulesCLIDeps.globCanonicalRuleFiles = origGlobCanonicalRuleFiles;
+
+    await withTempDir(async (workdir) => {
+      await mkdir(join(workdir, ".nax", "rules"), { recursive: true });
+      await mkdir(join(workdir, ".github", "workflows"), { recursive: true });
+      await Bun.write(
+        join(workdir, ".nax", "rules", "ci-scope.md"),
+        ["---", "appliesTo:", '  - ".github/**"', "---", "", "Body."].join("\n"),
+      );
+      await Bun.write(join(workdir, ".github", "workflows", "ci.yml"), "name: ci\n");
+
+      await expect(rulesLintCommand({ dir: workdir })).resolves.toBeUndefined();
+
+      const warnings = logger.calls.filter((c) => c.level === "warn");
+      expect(warnings).toHaveLength(0);
+    });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -408,6 +460,40 @@ describe("translateLegacyFrontmatter", () => {
     const { translated } = translateLegacyFrontmatter(src);
     expect(translated).toBe(false);
   });
+
+  test("rewrites a legacy `paths:` block using CRLF line endings", () => {
+    const src = ['---', 'paths:', '  - "test/**/*.test.ts"', '---', '', '# Test Architecture', ''].join("\r\n");
+    const { content, translated } = translateLegacyFrontmatter(src);
+    expect(translated).toBe(true);
+    expect(content).toContain("appliesTo:");
+    expect(content).not.toContain("paths:");
+    expect(content.startsWith("---\r\n")).toBe(true);
+  });
+
+  test("wraps a scalar `paths:` value into a single-element appliesTo list", () => {
+    // `paths` accepts a bare scalar (canonical-loader.ts); `appliesTo` only accepts a
+    // list (spec AC US-004.2). A verbatim key rename would migrate a scalar `paths:`
+    // into a scalar `appliesTo:` that loadCanonicalRules rejects as malformed.
+    const src = ['---', 'paths: "src/agents/**/*.ts"', '---', '', 'body'].join("\n");
+    const { content, translated } = translateLegacyFrontmatter(src);
+    expect(translated).toBe(true);
+    expect(content).toContain('appliesTo: ["src/agents/**/*.ts"]');
+    expect(content).not.toContain("paths:");
+  });
+
+  test("wraps an unquoted scalar `paths:` value without producing a YAML alias", () => {
+    // An unquoted flow-sequence element starting with `*` (e.g. `[**/*.ts]`) parses as
+    // a YAML alias reference, not a glob string — the wrapper must always quote.
+    const src = ['---', "paths: **/*.ts", '---', '', 'body'].join("\n");
+    const { content } = translateLegacyFrontmatter(src);
+    expect(content).toContain('appliesTo: ["**/*.ts"]');
+  });
+
+  test("leaves an inline `paths: [...]` list as a plain key rename", () => {
+    const src = ['---', 'paths: ["src/**", "apps/**"]', '---', '', 'body'].join("\n");
+    const { content } = translateLegacyFrontmatter(src);
+    expect(content).toContain('appliesTo: ["src/**", "apps/**"]');
+  });
 });
 
 describe("rulesMigrateCommand — legacy scope translation", () => {
@@ -463,5 +549,25 @@ describe("withReviewNotice", () => {
     expect(out).toContain("appliesTo:");
     expect(out).toContain("<!-- NOTE:");
     expect(/^---\n[\s\S]*?\n---\n/.test(out)).toBe(true);
+  });
+
+  test("a CRLF-authored legacy rule keeps its translated scope readable after neutralization", async () => {
+    // Regression: translateLegacyFrontmatter/withReviewNotice previously only
+    // recognised LF frontmatter delimiters, so a CRLF-authored source file
+    // skipped translation and then had the notice pushed in front of the
+    // still-untouched block, losing the scope on read-back.
+    _rulesCLIDeps.globInDir = () => ["/repo/.claude/rules/crlf-rule.md"];
+    _rulesCLIDeps.fileExists = async (p: string) => p.startsWith("/repo/.claude/");
+    _rulesCLIDeps.readFile = async () =>
+      ['---', 'paths:', '  - "src/agents/**/*.ts"', '---', '', '# CRLF Rule', '', 'IMPORTANT: see CLAUDE.md.'].join(
+        "\r\n",
+      );
+
+    await rulesMigrateCommand({ dir: "/repo" });
+
+    const out = written["/repo/.nax/rules/crlf-rule.md"];
+    expect(out).toContain("appliesTo:");
+    expect(out).toContain("<!-- NOTE:");
+    expect(/^---\r?\n[\s\S]*?\r?\n---\r?\n/.test(out)).toBe(true);
   });
 });

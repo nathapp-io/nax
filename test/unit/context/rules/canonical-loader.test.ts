@@ -7,6 +7,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { NaxError } from "../../../../src/errors";
+import { translateLegacyFrontmatter, withReviewNotice } from "@/cli";
 import {
   applyCanonicalRulesBudget,
   lintForNeutrality,
@@ -285,6 +286,100 @@ ${"C".repeat(800)}`,
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// US-004: frontmatter key validation (AC 1-3) + scope round trip (AC 5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("loadCanonicalRules — frontmatter key validation (US-004)", () => {
+  test("[US-004 AC 1] throws RulesFrontmatterError naming the offending file for an unknown top-level key", async () => {
+    setupFiles({
+      "/project/.nax/rules/bad.md": ["---", "priority: 10", "scope: everywhere", "---", "", "Body."].join("\n"),
+    });
+    let threw: unknown;
+    try {
+      await loadCanonicalRules("/project");
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toBeInstanceOf(RulesFrontmatterError);
+    expect((threw as RulesFrontmatterError).context?.filePath).toBe("/project/.nax/rules/bad.md");
+  });
+
+  test.each([
+    ["not a string or array", "---\nappliesTo: 42\n---\nBody."],
+    ["an array containing a non-string entry", '---\nappliesTo:\n  - "src/**"\n  - 7\n---\nBody.'],
+  ])("[US-004 AC 2] throws RulesFrontmatterError naming the offending file when appliesTo is %s", async (_label, content) => {
+    setupFiles({ "/project/.nax/rules/bad.md": content });
+    let threw: unknown;
+    try {
+      await loadCanonicalRules("/project");
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toBeInstanceOf(RulesFrontmatterError);
+    expect((threw as RulesFrontmatterError).context?.filePath).toBe("/project/.nax/rules/bad.md");
+  });
+
+  test("[US-004 AC 3] resolves normally when a rule declares priority, paths, and appliesTo together", async () => {
+    setupFiles({
+      "/project/.nax/rules/agents.md": [
+        "---",
+        "priority: 60",
+        "paths:",
+        '  - "packages/api/**"',
+        "appliesTo:",
+        '  - "src/agents/**/*.ts"',
+        "---",
+        "",
+        "Only for agent files.",
+      ].join("\n"),
+    });
+    let threw: unknown;
+    let rules: Awaited<ReturnType<typeof loadCanonicalRules>> = [];
+    try {
+      rules = await loadCanonicalRules("/project");
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toBeUndefined();
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.priority).toBe(60);
+    expect(rules[0]?.paths).toEqual(["packages/api/**"]);
+    expect(rules[0]?.appliesTo).toEqual(["src/agents/**/*.ts"]);
+  });
+
+  test("[US-004 AC 5] loadCanonicalRules reads back the appliesTo value translated from a legacy paths: rule", async () => {
+    const legacy = ["---", "paths:", '  - "test/**/*.test.ts"', "---", "", "# Test Rule", ""].join("\n");
+    const { content: translated, translated: didTranslate } = translateLegacyFrontmatter(legacy);
+    expect(didTranslate).toBe(true);
+    const finalContent = withReviewNotice(translated, 2);
+
+    setupFiles({ "/project/.nax/rules/legacy.md": finalContent });
+    const rules = await loadCanonicalRules("/project");
+
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.appliesTo).toEqual(["test/**/*.test.ts"]);
+    expect(rules[0]?.paths).toBeUndefined();
+  });
+
+  test("[US-004 AC 5] loadCanonicalRules reads back appliesTo translated from a scalar legacy paths: rule", async () => {
+    // `paths` accepts a bare scalar (canonical-loader.ts), but `appliesTo` only accepts
+    // a list (AC 2) — a naive key rename would migrate this into a scalar appliesTo that
+    // loadCanonicalRules rejects with RulesFrontmatterError.
+    const legacy = ["---", 'paths: "src/agents/**/*.ts"', "---", "", "# Test Rule", ""].join("\n");
+    const { content: translated, translated: didTranslate } = translateLegacyFrontmatter(legacy);
+    expect(didTranslate).toBe(true);
+    const finalContent = withReviewNotice(translated, 0);
+
+    setupFiles({ "/project/.nax/rules/legacy.md": finalContent });
+    const rules = await loadCanonicalRules("/project");
+
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.appliesTo).toEqual(["src/agents/**/*.ts"]);
+    expect(rules[0]?.paths).toBeUndefined();
+  });
+});
+
 describe("applyCanonicalRulesBudget", () => {
   test("keeps higher-priority rules first when truncating", () => {
     const rules = [
@@ -296,6 +391,56 @@ describe("applyCanonicalRulesBudget", () => {
     expect(result.rules).toHaveLength(2);
     expect(result.rules.map((r) => r.id)).toEqual(["a", "b"]);
     expect(result.droppedCount).toBe(1);
+  });
+
+  test("[US-002 AC 1] returns empty when the first priority-ordered rule alone exceeds budget, even if a later smaller rule would fit", () => {
+    const rules = [
+      { fileName: "huge.md", id: "huge", content: "H".repeat(4000), tokens: 1000, priority: 1 },
+      { fileName: "tiny.md", id: "tiny", content: "T".repeat(40), tokens: 10, priority: 2 },
+      { fileName: "tiny2.md", id: "tiny2", content: "T2".repeat(40), tokens: 10, priority: 3 },
+    ];
+    const result = applyCanonicalRulesBudget(rules, 500);
+    expect(result.rules).toEqual([]);
+    expect(result.usedTokens).toBe(0);
+    expect(result.droppedCount).toBe(3);
+  });
+
+  test("[US-002 AC 2] returns the longest leading priority-ordered run that fits and reports droppedCount as the number of following rules", () => {
+    const rules = [
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 10, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(400), tokens: 100, priority: 3 },
+      { fileName: "d.md", id: "d", content: "D".repeat(40), tokens: 10, priority: 4 },
+    ];
+    const result = applyCanonicalRulesBudget(rules, 30);
+    // a fits (10), b would push to 20 (fits), c would push to 120 (doesn't fit) → c,d dropped
+    expect(result.rules.map((r) => r.id)).toEqual(["a", "b"]);
+    expect(result.usedTokens).toBe(20);
+    expect(result.droppedCount).toBe(2);
+  });
+
+  test("[US-002 AC 3] returns every input rule with droppedCount 0 and usedTokens equal to totalTokens when budgetTokens fits all rules", () => {
+    const rules = [
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 10, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 10, priority: 3 },
+    ];
+    const result = applyCanonicalRulesBudget(rules, 100);
+    expect(result.rules).toEqual(rules);
+    expect(result.droppedCount).toBe(0);
+    expect(result.usedTokens).toBe(30);
+    expect(result.usedTokens).toBe(result.totalTokens);
+  });
+
+  test("[US-002 AC 4] returns rules=[], usedTokens=0, and totalTokens equal to the summed input estimate when budgetTokens is 0", () => {
+    const rules = [
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(80), tokens: 20, priority: 2 },
+    ];
+    const result = applyCanonicalRulesBudget(rules, 0);
+    expect(result.rules).toEqual([]);
+    expect(result.usedTokens).toBe(0);
+    expect(result.totalTokens).toBe(30);
   });
 });
 

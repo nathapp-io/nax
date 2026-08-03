@@ -23,9 +23,14 @@
 
 import { mkdir } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { globToRegex, normalizePath } from "../context/engine";
 import { CANONICAL_RULES_DIR, NEUTRALITY_RULES, loadCanonicalRules } from "../context/rules/canonical-loader";
 import { NaxError } from "../errors";
+import { getLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
+
+/** Cap on the dead-glob validation scan — mirrors MAX_CANONICAL_RULE_GLOB_FILES below. */
+const MAX_DEAD_GLOB_SCAN_FILES = 2000;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps
@@ -67,7 +72,25 @@ export const _rulesCLIDeps = {
       return [];
     }
   },
+  // Matches via globToRegex/normalizePath — the SAME matcher ruleMatchesTouchedFiles uses
+  // at runtime (static-rules.ts) — rather than Bun.Glob's own semantics, so a pattern that
+  // lints as "has matches" is guaranteed to actually match at runtime, and vice versa.
+  globHasMatch: (pattern: string, cwd: string): boolean => {
+    try {
+      const regex = globToRegex(normalizePath(pattern));
+      let scanned = 0;
+      for (const file of new Bun.Glob("**/*").scanSync({ cwd, absolute: false, dot: true })) {
+        if (scanned >= MAX_DEAD_GLOB_SCAN_FILES) break;
+        scanned++;
+        if (regex.test(normalizePath(file))) return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  },
   loadCanonicalRules,
+  getLogger,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -199,18 +222,41 @@ export function neutralizeContent(content: string): { content: string; replaceme
  * untouched rather than given two competing scope keys, which also makes a
  * re-run of `nax rules migrate --force` idempotent.
  */
-export function translateLegacyFrontmatter(content: string): { content: string; translated: boolean } {
-  const fm = /^---\n([\s\S]*?)\n---\n/.exec(content);
-  if (!fm?.[1]) return { content, translated: false };
+/**
+ * Wrap a scalar YAML value into a single-element flow-sequence literal, e.g.
+ * `src/agents/**` or `"src/agents/**"` -> `["src/agents/**"]`. Always emits a
+ * double-quoted element (via JSON.stringify) regardless of the source
+ * quoting, since an unquoted glob starting with `*` would otherwise be
+ * misparsed as a YAML alias inside the new flow sequence.
+ */
+function toYamlListLiteral(scalar: string): string {
+  const trimmed = scalar.trim();
+  const unquoted = trimmed.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
+  return `[${JSON.stringify(unquoted)}]`;
+}
 
-  const block = fm[1];
+export function translateLegacyFrontmatter(content: string): { content: string; translated: boolean } {
+  const fm = /^---(\r?\n)([\s\S]*?)\r?\n---\r?\n/.exec(content);
+  if (!fm?.[2]) return { content, translated: false };
+
+  const eol = fm[1] ?? "\n";
+  const block = fm[2];
   // Top-level keys only: an indented `paths:` belongs to a nested mapping.
   if (!/^paths:/m.test(block) || /^appliesTo:/m.test(block)) return { content, translated: false };
 
-  const rewritten = block.replace(/^paths:/m, "appliesTo:");
+  // `paths` accepts a bare scalar string (canonical-loader.ts), but `appliesTo` only
+  // accepts a list (spec AC US-004.2) — so a scalar `paths: "src/agents/**"` must become
+  // a single-element list, not a scalar `appliesTo:`, or loadCanonicalRules rejects the
+  // migrated file with RulesFrontmatterError on every subsequent run.
+  const scalarMatch = /^paths:[ \t]*(\S.*)$/m.exec(block);
+  const isInlineList = scalarMatch?.[1]?.trim().startsWith("[") ?? false;
+  const rewritten =
+    scalarMatch && !isInlineList
+      ? block.replace(/^paths:[ \t]*(\S.*)$/m, `appliesTo: ${toYamlListLiteral(scalarMatch[1])}`)
+      : block.replace(/^paths:/m, "appliesTo:");
   const head = content.slice(0, fm.index);
   const tail = content.slice(fm.index + fm[0].length);
-  return { content: `${head}---\n${rewritten}\n---\n${tail}`, translated: true };
+  return { content: `${head}---${eol}${rewritten}${eol}---${eol}${tail}`, translated: true };
 }
 
 /**
@@ -225,9 +271,9 @@ export function translateLegacyFrontmatter(content: string): { content: string; 
 export function withReviewNotice(content: string, replacements: number): string {
   if (replacements <= 0) return content;
   const notice = `<!-- NOTE: ${replacements} neutralization(s) applied — review before committing -->\n\n`;
-  const fm = /^---\n[\s\S]*?\n---\n/.exec(content);
+  const fm = /^---\r?\n[\s\S]*?\r?\n---\r?\n/.exec(content);
   if (!fm) return notice + content;
-  return content.slice(0, fm[0].length) + notice + content.slice(fm[0].length).replace(/^\n+/, "");
+  return content.slice(0, fm[0].length) + notice + content.slice(fm[0].length).replace(/^(?:\r?\n)+/, "");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -380,11 +426,22 @@ function collectCanonicalRuleRoots(workdir: string): string[] {
 export async function rulesLintCommand(options: RulesLintOptions): Promise<void> {
   const workdir = options.dir ?? process.cwd();
   const roots = collectCanonicalRuleRoots(workdir);
+  const logger = _rulesCLIDeps.getLogger();
 
   let totalRuleFiles = 0;
   for (const root of roots) {
     const rules = await _rulesCLIDeps.loadCanonicalRules(root);
     totalRuleFiles += rules.length;
+    for (const rule of rules) {
+      for (const pattern of rule.appliesTo ?? []) {
+        if (_rulesCLIDeps.globHasMatch(pattern, root)) continue;
+        logger.warn("rules-lint", "Canonical rule appliesTo glob matches no files in the linted repository", {
+          file: rule.path ?? rule.fileName,
+          pattern,
+          root,
+        });
+      }
+    }
   }
 
   const scopeLabel = roots.length === 1 ? "repo root" : `${roots.length} rule roots`;

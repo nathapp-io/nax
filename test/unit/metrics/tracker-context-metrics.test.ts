@@ -239,3 +239,114 @@ describe("collectStoryMetrics — AC-18 context.providers", () => {
     expect(metrics.context?.providers["code-neighbor"]?.tokensProduced).toBe(220);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-003: floor overage in StoryMetrics.context (AC-2, AC-3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("collectStoryMetrics — US-003 context.floorOverage (AC-2, AC-3)", () => {
+  test("AC-2: context.floorOverage records the *delta* over the effective budget (not the sum of overflowing chunks)", async () => {
+    // Two floor chunks totaling 13,000 tokens packed against an effective
+    // budget of 8,000. The overage is 13,000 - 8,000 = 5,000 — NOT the sum
+    // of the floor chunks themselves. A test that asserted the floor total
+    // would overstate the overage by exactly the budget amount.
+    mockManifests({
+      [`${FEATURE}/execution`]: makeManifest({
+        stage: "execution",
+        totalBudgetTokens: 8_000,
+        effectiveBudget: 8_000,
+        providerResults: [
+          { providerId: "static-rules", status: "ok", chunkCount: 2, durationMs: 50, tokensProduced: 13_000 },
+        ],
+        includedChunks: ["static-rules:a:001", "static-rules:b:002"],
+        floorItems: ["static-rules:a:001", "static-rules:b:002"],
+        floorOverageItems: ["static-rules:a:001", "static-rules:b:002"],
+        chunkTokens: { "static-rules:a:001": 9_000, "static-rules:b:002": 4_000 },
+      }),
+    });
+    const ctx = makeCtx();
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+    expect(metrics.context?.floorOverage).toBeDefined();
+    expect(metrics.context?.floorOverage?.overageTokens).toBe(5_000);
+  });
+
+  test("AC-3: context.floorOverage records 0 overage tokens when floor chunks fit within effective budget", async () => {
+    // Floor items are present but the sum (200) is well under the
+    // effectiveBudget (1,000); floorOverageItems is absent on the manifest.
+    mockManifests({
+      [`${FEATURE}/execution`]: makeManifest({
+        stage: "execution",
+        totalBudgetTokens: 1_000,
+        effectiveBudget: 1_000,
+        providerResults: [
+          { providerId: "static-rules", status: "ok", chunkCount: 1, durationMs: 10, tokensProduced: 200 },
+        ],
+        includedChunks: ["static-rules:a:001"],
+        floorItems: ["static-rules:a:001"],
+        // no floorOverageItems — floor fit within budget
+        chunkTokens: { "static-rules:a:001": 200 },
+      }),
+    });
+    const ctx = makeCtx();
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+    expect(metrics.context?.floorOverage).toBeDefined();
+    expect(metrics.context?.floorOverage?.overageTokens).toBe(0);
+  });
+
+  test("context.floorOverage aggregates per-stage deltas across multiple stages (does NOT sum floor totals)", async () => {
+    // Two stages, each contributing a 1,000-token overage:
+    //   stage A: floor=5,000, effective=4,000 → overage=1,000
+    //   stage B: floor=7,000, effective=6,000 → overage=1,000
+    // Total overage = 2,000. A naive "sum floor tokens" would report 12,000.
+    mockManifests({
+      [`${FEATURE}/execution`]: makeManifest({
+        stage: "execution",
+        totalBudgetTokens: 4_000,
+        effectiveBudget: 4_000,
+        providerResults: [
+          { providerId: "static-rules", status: "ok", chunkCount: 1, durationMs: 10, tokensProduced: 5_000 },
+        ],
+        includedChunks: ["static-rules:a:001"],
+        floorItems: ["static-rules:a:001"],
+        floorOverageItems: ["static-rules:a:001"],
+        chunkTokens: { "static-rules:a:001": 5_000 },
+      }),
+      [`${FEATURE}/verify`]: makeManifest({
+        stage: "verify",
+        totalBudgetTokens: 6_000,
+        effectiveBudget: 6_000,
+        providerResults: [
+          { providerId: "static-rules", status: "ok", chunkCount: 1, durationMs: 5, tokensProduced: 7_000 },
+        ],
+        includedChunks: ["static-rules:b:002"],
+        floorItems: ["static-rules:b:002"],
+        floorOverageItems: ["static-rules:b:002"],
+        chunkTokens: { "static-rules:b:002": 7_000 },
+      }),
+    });
+    const ctx = makeCtx();
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+    expect(metrics.context?.floorOverage?.overageTokens).toBe(2_000);
+  });
+
+  test("manifest without effectiveBudget contributes 0 (legacy write)", async () => {
+    // Manifests written before US-003 lack effectiveBudget; they must not
+    // contribute a wrong number based on totalBudgetTokens alone.
+    mockManifests({
+      [`${FEATURE}/execution`]: makeManifest({
+        stage: "execution",
+        // totalBudgetTokens: 8_000, effectiveBudget omitted
+        providerResults: [
+          { providerId: "static-rules", status: "ok", chunkCount: 1, durationMs: 10, tokensProduced: 9_000 },
+        ],
+        includedChunks: ["static-rules:a:001"],
+        floorItems: ["static-rules:a:001"],
+        floorOverageItems: ["static-rules:a:001"],
+        chunkTokens: { "static-rules:a:001": 9_000 },
+      }),
+    });
+    const ctx = makeCtx();
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+    expect(metrics.context?.floorOverage?.overageTokens).toBe(0);
+  });
+});

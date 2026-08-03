@@ -41,6 +41,8 @@ function makeProvider(id: string, result: Partial<ContextProviderResult> = {}): 
 
 function makeChunkResult(overrides: {
   id: string;
+  kind?: string;
+  scope?: string;
   content?: string;
   tokens?: number;
   rawScore?: number;
@@ -49,8 +51,8 @@ function makeChunkResult(overrides: {
   return {
     chunks: [{
       id: overrides.id,
-      kind: "feature",
-      scope: "feature",
+      kind: overrides.kind ?? "feature",
+      scope: overrides.scope ?? "feature",
       role: overrides.role ?? ["implementer"],
       content: overrides.content ?? "feature context content",
       tokens: overrides.tokens ?? 200,
@@ -96,7 +98,11 @@ describe("ContextOrchestrator.assemble()", () => {
     expect(bundle.manifest.chunkTokens).toEqual({ "c:1": 412, "c:2": 1180 });
   });
 
-  test("chunkTokens covers exactly the included chunks and sums to usedTokens minus the digest", async () => {
+  test("chunkTokens covers exactly the included chunks and sums to usedTokens minus the prior-stage digest", async () => {
+    // US-001 corrected accounting:
+    //   manifest.usedTokens = packed chunk tokens + priorStageDigest tokens
+    //   manifest.digestTokens = produced digest (this stage, threaded forward)
+    // BASE_REQUEST supplies no priorStageDigest, so the prior-digest token count is 0.
     const orch = new ContextOrchestrator([
       makeProvider("p1", makeChunkResult({ id: "c:1", tokens: 300, content: "alpha content" })),
       makeProvider("p2", makeChunkResult({ id: "c:2", tokens: 700, content: "beta content" })),
@@ -106,7 +112,10 @@ describe("ContextOrchestrator.assemble()", () => {
     expect(bundle.manifest.includedChunks).toHaveLength(2);
     expect(Object.keys(tokenMap).sort()).toEqual([...bundle.manifest.includedChunks].sort());
     const summed = Object.values(tokenMap).reduce((a, b) => a + b, 0);
-    expect(summed).toBe(bundle.manifest.usedTokens - bundle.manifest.digestTokens);
+    // The new invariant: summed = usedTokens - priorDigestTokens. BASE_REQUEST
+    // has no priorStageDigest, so priorDigestTokens = 0 and summed === usedTokens.
+    const priorDigestTokens = 0;
+    expect(summed).toBe(bundle.manifest.usedTokens - priorDigestTokens);
   });
 
   test("manifest omits chunkTokens when nothing was packed", async () => {
@@ -500,5 +509,278 @@ describe("ContextOrchestrator — repoRoot + packageDir (Amendment C AC-54/AC-60
     const rebuilt = orch.rebuildForAgent(prior, { newAgentId: "codex" });
     expect(rebuilt.manifest.repoRoot).toBe("/repo");
     expect(rebuilt.manifest.packageDir).toBe("/repo/packages/web");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-001 — context-budget arithmetic
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("US-001 — ContextOrchestrator budget arithmetic", () => {
+  test("AC-5: packed non-floor chunks total ≤ stage budget − DIGEST_RESERVE_TOKENS", async () => {
+    // Boundary-sized fixture: floor is kept small (100 tokens total) so the
+    // non-floor room is large enough to approach the bound. non-floor:1 (200
+    // tokens, higher density) packs first; non-floor:2 (1600 tokens) is sized
+    // so it fits ONLY if DIGEST_RESERVE_TOKENS (~250) is NOT subtracted from
+    // the effective budget — i.e. if the reserve subtraction regressed, both
+    // chunks would pack and their 1800-token total would exceed the
+    // 1750-token bound (stageBudget − DIGEST_RESERVE_TOKENS), failing this
+    // assertion. With the reserve correctly applied, only non-floor:1 packs.
+    const FLOOR_KIND = "static";
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "floor:1", kind: FLOOR_KIND, tokens: 50, content: "rules content a" })),
+      makeProvider("p2", makeChunkResult({ id: "floor:2", kind: "feature", tokens: 50, content: "rules content b" })),
+      makeProvider("p3", makeChunkResult({ id: "non-floor:1", kind: "session", tokens: 200, content: "sess content a" })),
+      makeProvider("p4", makeChunkResult({ id: "non-floor:2", kind: "history", tokens: 1_600, content: "hist content a" })),
+    ]);
+    const stageBudget = 2_000;
+    // BASE_REQUEST.providerIds omits p1-p4 — override explicitly so all four
+    // fixture chunks actually reach the packer (see BASE_REQUEST comment).
+    const bundle = await orch.assemble({
+      ...BASE_REQUEST,
+      budgetTokens: stageBudget,
+      providerIds: ["p1", "p2", "p3", "p4"],
+    });
+    const nonFloorPacked = bundle.chunks
+      .filter((c) => c.kind !== "static" && c.kind !== "feature" && c.kind !== "test-coverage")
+      .reduce((sum, c) => sum + c.tokens, 0);
+    // Only the 200-token chunk should fit under the reserved budget — the
+    // 1600-token chunk must be excluded, proving the reserve was subtracted.
+    expect(bundle.manifest.includedChunks).not.toContain("non-floor:2");
+    const { DIGEST_RESERVE_TOKENS } = await import("@/context");
+    expect(nonFloorPacked).toBeLessThanOrEqual(stageBudget - DIGEST_RESERVE_TOKENS);
+  });
+
+  test("AC-6: manifest.usedTokens equals packed chunk tokens plus priorStageDigest tokens", async () => {
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "c:1", tokens: 300, content: "alpha content" })),
+      makeProvider("p2", makeChunkResult({ id: "c:2", tokens: 700, content: "beta content" })),
+    ]);
+    const priorDigest = "Prior stage summary line.";
+    const expectedPriorDigestTokens = Math.ceil(priorDigest.length / 4);
+    const bundle = await orch.assemble({ ...BASE_REQUEST, priorStageDigest: priorDigest });
+    const tokenMap = bundle.manifest.chunkTokens ?? {};
+    const packedSum = Object.values(tokenMap).reduce((a, b) => a + b, 0);
+    expect(bundle.manifest.usedTokens).toBe(packedSum + expectedPriorDigestTokens);
+  });
+
+  test("AC-6: whitespace-only priorStageDigest does not inflate manifest.usedTokens", async () => {
+    // renderChunks omits whitespace-only priorStageDigest (requires .trim() non-empty),
+    // so buildManifest must NOT count tokens for it — or manifest.usedTokens overstates
+    // what was actually carried in the rendered prompt.
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "c:1", tokens: 500, content: "alpha content" })),
+      makeProvider("p2", makeChunkResult({ id: "c:2", tokens: 500, content: "beta content" })),
+    ]);
+    const bundle = await orch.assemble({ ...BASE_REQUEST, priorStageDigest: "  \n\t " });
+    const tokenMap = bundle.manifest.chunkTokens ?? {};
+    const packedSum = Object.values(tokenMap).reduce((a, b) => a + b, 0);
+    // Whitespace-only digest is not rendered — manifest.usedTokens = packedSum only.
+    expect(bundle.manifest.usedTokens).toBe(packedSum);
+    // The push markdown must not contain the prior-stage heading (renderChunks skips it).
+    expect(bundle.pushMarkdown).not.toContain("Prior Stage Summary");
+  });
+
+  test("AC-7: rendered markdown estimated token count does not exceed request.budgetTokens when no floor overflows", async () => {
+    // Small chunks with no floor overage: rendered push markdown must fit within
+    // the stage budget (the digest reserve is subtracted before packing, and
+    // nothing floor-overflows here, so the rendered output stays within budget).
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "floor:1", kind: "static", tokens: 200, content: "rules short" })),
+      makeProvider("p2", makeChunkResult({ id: "feat:1", kind: "feature", tokens: 200, content: "feature short" })),
+      makeProvider("p3", makeChunkResult({ id: "sess:1", kind: "session", tokens: 200, content: "session short" })),
+    ]);
+    const stageBudget = 5_000;
+    const bundle = await orch.assemble({ ...BASE_REQUEST, budgetTokens: stageBudget });
+    // No floor overflow → no floorOverageItems.
+    expect(bundle.manifest.floorOverageItems ?? []).toEqual([]);
+    const renderedTokens = Math.ceil(bundle.pushMarkdown.length / 4);
+    expect(renderedTokens).toBeLessThanOrEqual(stageBudget);
+  });
+
+  test("AC-7: rendered markdown stays within budget under tight stage budgets with full prior digest", async () => {
+    // Tight stage budget with a full prior digest: the rendered markdown (which
+    // includes the prior heading, the prior digest body, scope headers, and chunk
+    // content) must still fit within the stage budget when no floor overflows.
+    // Catches the gap where only DIGEST_RESERVE was subtracted (the markdown
+    // framing overhead — prior heading + scope headers — was not reserved).
+    //
+    // Scenario: stageBudget fits the prior digest (250 tokens), the digest this
+    // stage produces (250 tokens), markdown framing overhead, and one non-floor
+    // chunk. Without the prior-digest and overhead reserves, the rendered output
+    // exceeds the stage budget.
+    const priorDigest = "x".repeat(1_000); // full MAX_DIGEST_CHARS digest
+    // Session-kind chunk (NOT a floor kind) sized to consume the remaining ceiling.
+    const sessionProvider: IContextProvider = {
+      id: "p3",
+      kind: "feature",
+      fetch: async () => ({
+        chunks: [
+          {
+            id: "sess:1",
+            kind: "session",
+            scope: "feature",
+            role: ["implementer"],
+            content: "z".repeat(840),
+            tokens: 210,
+            rawScore: 0.9,
+          },
+        ],
+        pullTools: [],
+      }),
+    };
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "floor:1", kind: "static", tokens: 20, content: "x".repeat(80) })),
+      makeProvider("p2", makeChunkResult({ id: "feat:1", kind: "feature", tokens: 20, content: "y".repeat(80) })),
+      sessionProvider,
+    ]);
+    // Budget large enough to fit prior (250) + digest reserve (250) + framing
+    // overhead (~136) + floor (40) + non-floor chunk (210) = ~886. Use 1000 to
+    // give the chunk room and still test the tight case.
+    const stageBudget = 1_000;
+    const bundle = await orch.assemble({
+      ...BASE_REQUEST,
+      budgetTokens: stageBudget,
+      priorStageDigest: priorDigest,
+      providerIds: ["p1", "p2", "p3"],
+    });
+    expect(bundle.manifest.floorOverageItems ?? []).toEqual([]);
+    const renderedTokens = Math.ceil(bundle.pushMarkdown.length / 4);
+    expect(renderedTokens).toBeLessThanOrEqual(stageBudget);
+  });
+
+  test("AC-7: per-chunk separator overhead is reserved so rendered fits with many same-scope chunks", async () => {
+    // Catches the gap where per-chunk separators (\n\n---\n\n between chunks in the
+    // same scope) were not reserved. With many small chunks in one scope, the
+    // accumulated separator length pushes the rendered markdown over the budget
+    // even when packed chunk tokens fit. The reserve must scale with the packing
+    // budget so this stays in budget.
+    const priorDigest = "x".repeat(1_000);
+    // 60 small session chunks in one scope (5 tokens each) → 59 intra-scope
+    // separators × 7 chars = 413 chars ≈ 104 tokens of separator overhead on top
+    // of packed chunk content and the prior digest.
+    const smallChunks = Array.from({ length: 60 }, (_, i) => ({
+      id: `sess:${i}`,
+      kind: "session" as const,
+      scope: "feature" as const,
+      role: ["implementer"] as ("implementer")[],
+      content: `chunk ${i} bytes ${String.fromCharCode(65 + (i % 26)).repeat(8 + (i % 3))}`,
+      tokens: 5,
+      rawScore: 0.9 - i * 0.005,
+    }));
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "floor:1", kind: "static", tokens: 10, content: "rules" })),
+      { id: "p3", kind: "feature", fetch: async () => ({ chunks: smallChunks, pullTools: [] }) } as IContextProvider,
+    ]);
+    // Budget sized so prior (250) + digest reserve (250) + framing overhead
+    // (~200) + floor (10) + enough non-floor room for many small chunks fits.
+    const stageBudget = 1_500;
+    const bundle = await orch.assemble({
+      ...BASE_REQUEST,
+      budgetTokens: stageBudget,
+      priorStageDigest: priorDigest,
+      providerIds: ["p1", "p3"],
+    });
+    expect(bundle.manifest.floorOverageItems ?? []).toEqual([]);
+    const renderedTokens = Math.ceil(bundle.pushMarkdown.length / 4);
+    expect(renderedTokens).toBeLessThanOrEqual(stageBudget);
+  });
+
+  test("AC-7: prior-stage digest tokens are reserved from the effective budget (accurate separator overhead)", async () => {
+    // The prior-stage digest (250 tokens when full) is subtracted from the effective
+    // budget alongside the digest reserve and fixed framing overhead. The per-chunk
+    // separator overhead is computed from the ACTUAL kept chunks after min-score
+    // filtering (not an assumed minimum), so only 2 chunks in one scope → 2 token
+    // separator reserve. With a stage budget of 1000 and the actual overhead, the
+    // non-floor session chunk fits, and the rendered markdown stays within budget.
+    const priorDigest = "x".repeat(1_000); // full MAX_DIGEST_CHARS digest (250 tokens)
+    // Session chunk at 300 tokens fits: prior (250) + digest-reserve (250) + fixed
+    // framing (50) + separator overhead (2) + floor (40) + session (300) = 892,
+    // leaving 108 tokens of headroom below the 1000-token stage budget.
+    const sessionProvider: IContextProvider = {
+      id: "p3",
+      kind: "feature",
+      fetch: async () => ({
+        chunks: [
+          {
+            id: "sess:1",
+            kind: "session",
+            scope: "feature",
+            role: ["implementer"],
+            content: "z".repeat(1_200),  // ~300 tokens
+            tokens: 300,
+            rawScore: 0.9,
+          },
+        ],
+        pullTools: [],
+      }),
+    };
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "floor:1", kind: "static", tokens: 20, content: "x".repeat(80) })),
+      makeProvider("p2", makeChunkResult({ id: "feat:1", kind: "feature", tokens: 20, content: "y".repeat(80) })),
+      sessionProvider,
+    ]);
+    const stageBudget = 1_000;
+    const bundle = await orch.assemble({
+      ...BASE_REQUEST,
+      budgetTokens: stageBudget,
+      priorStageDigest: priorDigest,
+      providerIds: ["p1", "p2", "p3"],
+    });
+    expect(bundle.manifest.floorOverageItems ?? []).toEqual([]);
+    // With accurate (actual-chunk) separator overhead the session chunk fits.
+    expect(bundle.chunks.some((c) => c.id === "sess:1")).toBe(true);
+    // Rendered markdown (in tokens) does not exceed the stage budget.
+    const renderedTokens = Math.ceil(bundle.pushMarkdown.length / 4);
+    expect(renderedTokens).toBeLessThanOrEqual(stageBudget);
+  });
+
+  test("AC-7: separator overhead is reserved across ALL scopes, not just the largest one", async () => {
+    // Boundary-sized fixture, verified by temporarily reverting
+    // separatorOverheadTokens() to its old (max-scope-only) formula: at
+    // stageBudget=374 that buggy formula reserves only 1 scope's separators
+    // (4 chunks -> 3 separators) and ends up including "marginal" too, which
+    // then overflows the budget. The correct formula sums separators across
+    // BOTH non-empty scopes (5+5 chunks -> 4+4=8 separators), leaving no room
+    // for "marginal" — it must be excluded.
+    const scopeA = Array.from({ length: 5 }, (_, i) => ({
+      id: `a:${i}`,
+      kind: "session" as const,
+      scope: "session" as const,
+      role: ["implementer" as const],
+      content: `alpha ${i} ${String.fromCharCode(65 + i).repeat(8)}`,
+      tokens: 5,
+      rawScore: 0.95 - i * 0.001,
+    }));
+    const scopeB = Array.from({ length: 5 }, (_, i) => ({
+      id: `b:${i}`,
+      kind: "session" as const,
+      scope: "story" as const,
+      role: ["implementer" as const],
+      content: `beta ${i} ${String.fromCharCode(97 + i).repeat(8)}`,
+      tokens: 5,
+      rawScore: 0.95 - i * 0.001,
+    }));
+    const marginal = {
+      id: "marginal",
+      kind: "session" as const,
+      scope: "story" as const,
+      role: ["implementer" as const],
+      content: `marginal content ${"m".repeat(22)}`,
+      tokens: 10,
+      rawScore: 0.5,
+    };
+    const orch = new ContextOrchestrator([
+      { id: "p1", kind: "feature", fetch: async () => ({ chunks: [...scopeA, ...scopeB, marginal], pullTools: [] }) } as IContextProvider,
+    ]);
+    const stageBudget = 374;
+    const bundle = await orch.assemble({ ...BASE_REQUEST, budgetTokens: stageBudget, providerIds: ["p1"] });
+    expect(bundle.manifest.floorOverageItems ?? []).toEqual([]);
+    // All 10 fixed chunks fit, but the marginal 11th does not — proving the
+    // reserve accounts for separators in BOTH scopes, not just the larger one.
+    expect(bundle.manifest.includedChunks).toHaveLength(10);
+    expect(bundle.manifest.includedChunks).not.toContain("marginal");
+    const renderedTokens = Math.ceil(bundle.pushMarkdown.length / 4);
+    expect(renderedTokens).toBeLessThanOrEqual(stageBudget);
   });
 });

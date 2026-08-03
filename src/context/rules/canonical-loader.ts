@@ -157,6 +157,7 @@ export const NEUTRALITY_RULES: NeutralityRule[] = [
   },
 ];
 
+const KNOWN_FRONTMATTER_KEYS = new Set(["priority", "paths", "appliesTo"]);
 const FRONTMATTER_PRIORITY_DEFAULT = 100;
 export const DEFAULT_CANONICAL_RULES_BUDGET_TOKENS = 8_192;
 const RULES_BUDGET_WARNING_RATIO = 0.75;
@@ -301,6 +302,14 @@ function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatter {
   }
 
   const doc = (parsed ?? {}) as Record<string, unknown>;
+  const unknownKeys = Object.keys(doc).filter((key) => !KNOWN_FRONTMATTER_KEYS.has(key));
+  if (unknownKeys.length > 0) {
+    throw new RulesFrontmatterError(
+      `Canonical rule frontmatter declares unknown key(s): ${unknownKeys.join(", ")}. Only priority, paths, and appliesTo are recognised.`,
+      filePath,
+    );
+  }
+
   const priorityRaw = doc.priority;
   let priority = FRONTMATTER_PRIORITY_DEFAULT;
   if (priorityRaw !== undefined) {
@@ -327,14 +336,10 @@ function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatter {
   const appliesRaw = doc.appliesTo;
   let appliesTo: string[] | undefined;
   if (appliesRaw !== undefined) {
-    if (typeof appliesRaw === "string") {
-      const trimmed = appliesRaw.trim();
-      if (!trimmed) throw new RulesFrontmatterError("frontmatter.appliesTo cannot be empty", filePath);
-      appliesTo = [trimmed];
-    } else if (Array.isArray(appliesRaw) && appliesRaw.every((v) => typeof v === "string" && v.trim())) {
+    if (Array.isArray(appliesRaw) && appliesRaw.every((v) => typeof v === "string" && v.trim())) {
       appliesTo = appliesRaw.map((v) => v.trim());
     } else {
-      throw new RulesFrontmatterError("frontmatter.appliesTo must be a string or string[]", filePath);
+      throw new RulesFrontmatterError("frontmatter.appliesTo must be a list of strings", filePath);
     }
   }
 
@@ -361,8 +366,11 @@ export interface CanonicalRulesBudgetResult {
  * Apply tail-biased truncation using canonical ordering:
  * lower priority first, then rule id/path alphabetical.
  *
- * Rules that exceed budget are dropped from the tail so higher-priority rules
- * survive whenever possible.
+ * Rules are processed in priority order. The first rule that does not fit
+ * starts a contiguous dropped tail — every following rule is dropped as well,
+ * even if individually it would have fit. This guarantees that the result is
+ * the longest leading priority-ordered run whose summed token estimate fits
+ * inside `budgetTokens`.
  */
 export function applyCanonicalRulesBudget(rules: CanonicalRule[], budgetTokens: number): CanonicalRulesBudgetResult {
   if (!Number.isFinite(budgetTokens) || budgetTokens <= 0) {
@@ -380,7 +388,7 @@ export function applyCanonicalRulesBudget(rules: CanonicalRule[], budgetTokens: 
 
   for (const rule of rules) {
     const tokens = rule.tokens ?? estimateTokens(rule.content);
-    if (usedTokens + tokens > budgetTokens) continue;
+    if (usedTokens + tokens > budgetTokens) break;
     kept.push(rule);
     usedTokens += tokens;
   }

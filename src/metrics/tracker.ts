@@ -11,7 +11,7 @@ import { loadContextManifests } from "../context/engine/manifest-store";
 import { computePollutionMetrics } from "../context/engine/pollution";
 import type { PipelineContext } from "../pipeline/types";
 import { loadJsonFile, saveJsonFile } from "../utils/json-file";
-import type { ContextProviderMetrics, RunMetrics, StoryMetrics } from "./types";
+import type { ContextProviderMetrics, FloorOverageMetrics, RunMetrics, StoryMetrics } from "./types";
 import { TokenUsage } from "./types";
 
 /**
@@ -87,7 +87,45 @@ async function deriveContextMetrics(
     pollution.contradictedChunks > 0 ||
     pollution.ignoredChunks > 0;
 
-  return { providers, ...(hasPollution && { pollution }) };
+  // US-003: floor overage — see computeFloorOverage's docstring for the exact
+  // computation (sum of ALL floor-item tokens minus effectiveBudget, floored at 0).
+  // Only emitted here when at least one provider manifest exists (the early return
+  // above); a manifest set with no providers never reaches this line.
+  const floorOverage = computeFloorOverage(stored);
+
+  return { providers, ...(hasPollution && { pollution }), floorOverage };
+}
+
+/**
+ * Sum per-stage floor-budget overage across the persisted stage manifests.
+ *
+ * For each stage manifest, the overage is
+ * `max(0, sum(tokens of all floor chunks packed) - effectiveBudget)` —
+ * the amount by which the floor alone pushed the bundle past the ceiling
+ * that `packChunks` actually used (which may be smaller than
+ * `totalBudgetTokens` due to `availableBudgetTokens`). Summing per-stage
+ * overflow chunk tokens without subtracting the ceiling (the previous
+ * behaviour) overstates the overage by the budget amount and compounds
+ * across stages.
+ *
+ * Manifests without `effectiveBudget` (legacy writes predating US-003)
+ * contribute 0 to the total rather than fall back to a wrong answer.
+ */
+function computeFloorOverage(stored: Awaited<ReturnType<typeof loadContextManifests>>): FloorOverageMetrics {
+  let overageTokens = 0;
+  for (const { manifest } of stored) {
+    if (typeof manifest.effectiveBudget !== "number") continue;
+    const floorIds = manifest.floorItems ?? [];
+    if (floorIds.length === 0) continue;
+    const chunkTokens = manifest.chunkTokens ?? {};
+    let floorTotal = 0;
+    for (const id of floorIds) {
+      const tokens = chunkTokens[id];
+      if (typeof tokens === "number") floorTotal += tokens;
+    }
+    overageTokens += Math.max(0, floorTotal - manifest.effectiveBudget);
+  }
+  return { overageTokens };
 }
 
 export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string): Promise<StoryMetrics> {
