@@ -1,4 +1,5 @@
-export { callOp, newCorrelationId, _callOpDeps, _runPostParseForTest } from "./call";
+export { callOp, _callOpDeps, _runPostParseForTest } from "./call";
+export { newCorrelationId } from "./call-resolvers";
 export { classifyEmptyOutputFailure } from "./turn-failure-classification";
 export { planInteractiveOp } from "./plan";
 export type { PlanInteractiveInput } from "./plan";
