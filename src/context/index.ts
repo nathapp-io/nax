@@ -32,6 +32,7 @@ export {
   ContextOrchestrator,
   _orchestratorDeps,
   DIGEST_RESERVE_TOKENS,
+  FIXED_RENDER_OVERHEAD_TOKENS,
   estimateAvailableBudgetTokens,
   rebuildUsedTokens,
 } from "./engine";

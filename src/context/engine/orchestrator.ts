@@ -215,10 +215,17 @@ export class ContextOrchestrator {
     }
 
     // AC-32 + US-001: reserve digest + prior digest + fixed framing; per-chunk separator from kept below.
+    // availableBudgetTokens (the caller's remaining-window ceiling) is folded in here, before the
+    // reserve subtractions, so a binding remaining-window value cannot bypass the reserves — it must
+    // shrink alongside budgetTokens/profileBudget, not compete with the already-reserved result.
     const profileBudget = agentProfile.caps.preferredPromptTokens;
-    const stageCeiling = Math.min(request.budgetTokens, profileBudget);
-    const d = request.priorStageDigest?.trim();
-    const priorDigestTokens = d ? Math.ceil(d.length / 4) : 0;
+    const stageCeiling = Math.min(
+      request.budgetTokens,
+      profileBudget,
+      request.availableBudgetTokens ?? Number.POSITIVE_INFINITY,
+    );
+    const trimmedPriorDigest = request.priorStageDigest?.trim();
+    const priorDigestTokens = trimmedPriorDigest ? Math.ceil(trimmedPriorDigest.length / 4) : 0;
     let effectiveBudgetTokens = Math.max(
       0,
       stageCeiling - DIGEST_RESERVE_TOKENS - priorDigestTokens - FIXED_RENDER_OVERHEAD_TOKENS,
@@ -388,11 +395,12 @@ export class ContextOrchestrator {
     const kept = postRoleFilter.filter((c) => !c.roleFiltered && (!c.belowMinScore || FLOOR_KINDS.includes(c.kind)));
 
     effectiveBudgetTokens = Math.max(0, effectiveBudgetTokens - separatorOverheadTokens(kept));
-    // Step 7: greedy pack — agent-profile ceiling applied at packing.
+    // Step 7: greedy pack. availableBudgetTokens is already folded into effectiveBudgetTokens
+    // above (before the reserve subtractions), so no third ceiling argument is passed here —
+    // passing it separately would let it bypass the reserves via packChunks' own Math.min.
     const { packed, budgetExcludedIds, usedTokens, floorPackedIds, floorOverageIds, effectiveBudget } = packChunks(
       kept,
       effectiveBudgetTokens,
-      request.availableBudgetTokens,
     );
 
     // US-003 AC-4: surface floor overage observability. Floor-kind chunks still
@@ -535,6 +543,10 @@ export class ContextOrchestrator {
 
     const usedTokens = rebuildUsedTokens(prior, packedChunks, priorStageDigest);
 
+    // AC-33: strip pull tools if the new agent cannot invoke tool calls.
+    const targetProfile = getAgentProfile(targetAgentId).profile;
+    const rebuiltPullTools = targetProfile.caps.supportsToolCalls ? prior.pullTools : [];
+
     const manifest: ContextManifest = {
       ...prior.manifest,
       requestId: _orchestratorDeps.uuid(),
@@ -546,11 +558,16 @@ export class ContextOrchestrator {
       digestTokens: dTokens,
       buildMs: 0,
       rebuildInfo,
+      // Re-tighten to the target agent's own ceiling on an agent swap — the spread above
+      // otherwise carries the PRIOR agent's effectiveBudget forward alongside the new
+      // agent's content (and any injected failure-note chunk), which would make
+      // computeFloorOverage (src/metrics/tracker.ts) compute overage against the wrong
+      // ceiling for every swapped story.
+      effectiveBudget: Math.min(
+        prior.manifest.effectiveBudget ?? Number.POSITIVE_INFINITY,
+        targetProfile.caps.preferredPromptTokens,
+      ),
     };
-
-    // AC-33: strip pull tools if the new agent cannot invoke tool calls.
-    const targetProfile = getAgentProfile(targetAgentId).profile;
-    const rebuiltPullTools = targetProfile.caps.supportsToolCalls ? prior.pullTools : [];
 
     return {
       pushMarkdown,

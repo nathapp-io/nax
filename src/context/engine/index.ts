@@ -16,7 +16,7 @@ export { rebuildUsedTokens } from "./manifest-builder";
 export { estimateAvailableBudgetTokens } from "./available-budget";
 export { getStageContextConfig, STAGE_CONTEXT_MAP, DEFAULT_STAGE_CONFIG } from "./stage-config";
 export type { StageContextConfig } from "./stage-config";
-export { StaticRulesProvider, _staticRulesDeps } from "./providers/static-rules";
+export { StaticRulesProvider, _staticRulesDeps, globToRegex, normalizePath } from "./providers/static-rules";
 export { FeatureContextProviderV2, _featureContextV2Deps } from "./providers/feature-context";
 export { SessionScratchProvider, _sessionScratchDeps } from "./providers/session-scratch";
 export { GitHistoryProvider, _gitHistoryDeps } from "./providers/git-history";

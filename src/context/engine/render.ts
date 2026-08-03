@@ -49,9 +49,14 @@ export const FIXED_RENDER_OVERHEAD_TOKENS = Math.ceil(FIXED_RENDER_OVERHEAD_CHAR
  * section — not just the largest one. The total is the sum of (count - 1)
  * separators across all non-empty scope groups.
  *
- * Called by the orchestrator AFTER min-score filtering (when the actual chunk
- * set is known) so the reserved overhead matches reality — no assumed-minimum
- * heuristic that sub-10-token chunks can defeat.
+ * Called by the orchestrator AFTER min-score filtering, over `kept` — every chunk
+ * that survived the filter, not only the (smaller) set that ends up packed. This
+ * is a conservative UPPER BOUND on the real separator cost, not an exact measure:
+ * chunks packing excludes still reduce the reserve, shrinking the effective budget
+ * by more than the separators actually rendered will cost. That is deliberately
+ * safe (never under-reserves), but it is not "no assumed-minimum heuristic" — it
+ * assumes every kept chunk packs. A tighter reserve would need to run after
+ * packing, which chicken-and-eggs against the ceiling packing itself consumes.
  */
 export function separatorOverheadTokens(chunks: PackedChunk[]): number {
   if (chunks.length === 0) return 0;

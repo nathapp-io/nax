@@ -361,6 +361,23 @@ describe("loadCanonicalRules — frontmatter key validation (US-004)", () => {
     expect(rules[0]?.appliesTo).toEqual(["test/**/*.test.ts"]);
     expect(rules[0]?.paths).toBeUndefined();
   });
+
+  test("[US-004 AC 5] loadCanonicalRules reads back appliesTo translated from a scalar legacy paths: rule", async () => {
+    // `paths` accepts a bare scalar (canonical-loader.ts), but `appliesTo` only accepts
+    // a list (AC 2) — a naive key rename would migrate this into a scalar appliesTo that
+    // loadCanonicalRules rejects with RulesFrontmatterError.
+    const legacy = ["---", 'paths: "src/agents/**/*.ts"', "---", "", "# Test Rule", ""].join("\n");
+    const { content: translated, translated: didTranslate } = translateLegacyFrontmatter(legacy);
+    expect(didTranslate).toBe(true);
+    const finalContent = withReviewNotice(translated, 0);
+
+    setupFiles({ "/project/.nax/rules/legacy.md": finalContent });
+    const rules = await loadCanonicalRules("/project");
+
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.appliesTo).toEqual(["src/agents/**/*.ts"]);
+    expect(rules[0]?.paths).toBeUndefined();
+  });
 });
 
 describe("applyCanonicalRulesBudget", () => {

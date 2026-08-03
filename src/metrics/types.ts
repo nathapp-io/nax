@@ -55,9 +55,11 @@ export class TokenUsage {
 /**
  * Aggregated floor-budget overage across all pipeline stages for a story (US-003).
  *
- * `overageTokens` is the sum of per-chunk tokens for chunks in
- * `ContextManifest.floorOverageItems`. These are floor-kind chunks whose inclusion
- * pushed `usedTokens` past the stage's effective budget. Zero when the floor fit
+ * `overageTokens` is, per stage, `max(0, sum(tokens of ALL floor-kind chunks in
+ * ContextManifest.floorItems) - effectiveBudget)`, summed across every persisted
+ * stage manifest — not merely the tokens of `floorOverageItems` (the subset that
+ * individually caused the overflow); see `computeFloorOverage` in
+ * `src/metrics/tracker.ts` for the exact computation. Zero when the floor fit
  * within the effective budget for every stage this story ran.
  */
 export interface FloorOverageMetrics {

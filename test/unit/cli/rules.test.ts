@@ -469,6 +469,31 @@ describe("translateLegacyFrontmatter", () => {
     expect(content).not.toContain("paths:");
     expect(content.startsWith("---\r\n")).toBe(true);
   });
+
+  test("wraps a scalar `paths:` value into a single-element appliesTo list", () => {
+    // `paths` accepts a bare scalar (canonical-loader.ts); `appliesTo` only accepts a
+    // list (spec AC US-004.2). A verbatim key rename would migrate a scalar `paths:`
+    // into a scalar `appliesTo:` that loadCanonicalRules rejects as malformed.
+    const src = ['---', 'paths: "src/agents/**/*.ts"', '---', '', 'body'].join("\n");
+    const { content, translated } = translateLegacyFrontmatter(src);
+    expect(translated).toBe(true);
+    expect(content).toContain('appliesTo: ["src/agents/**/*.ts"]');
+    expect(content).not.toContain("paths:");
+  });
+
+  test("wraps an unquoted scalar `paths:` value without producing a YAML alias", () => {
+    // An unquoted flow-sequence element starting with `*` (e.g. `[**/*.ts]`) parses as
+    // a YAML alias reference, not a glob string — the wrapper must always quote.
+    const src = ['---', "paths: **/*.ts", '---', '', 'body'].join("\n");
+    const { content } = translateLegacyFrontmatter(src);
+    expect(content).toContain('appliesTo: ["**/*.ts"]');
+  });
+
+  test("leaves an inline `paths: [...]` list as a plain key rename", () => {
+    const src = ['---', 'paths: ["src/**", "apps/**"]', '---', '', 'body'].join("\n");
+    const { content } = translateLegacyFrontmatter(src);
+    expect(content).toContain('appliesTo: ["src/**", "apps/**"]');
+  });
 });
 
 describe("rulesMigrateCommand — legacy scope translation", () => {

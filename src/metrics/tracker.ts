@@ -87,10 +87,10 @@ async function deriveContextMetrics(
     pollution.contradictedChunks > 0 ||
     pollution.ignoredChunks > 0;
 
-  // US-003: floor overage — sum per-chunk tokens for chunks listed in
-  // manifest.floorOverageItems across every persisted stage manifest.
-  // Always emit the field (even when 0) when at least one manifest exists,
-  // so AC-3's "0 tokens when floor fits" is observable alongside providers.
+  // US-003: floor overage — see computeFloorOverage's docstring for the exact
+  // computation (sum of ALL floor-item tokens minus effectiveBudget, floored at 0).
+  // Only emitted here when at least one provider manifest exists (the early return
+  // above); a manifest set with no providers never reaches this line.
   const floorOverage = computeFloorOverage(stored);
 
   return { providers, ...(hasPollution && { pollution }), floorOverage };

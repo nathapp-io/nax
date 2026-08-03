@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { ContextOrchestrator, _orchestratorDeps } from "@/context";
+import { ContextOrchestrator, DIGEST_RESERVE_TOKENS, FIXED_RENDER_OVERHEAD_TOKENS, _orchestratorDeps } from "@/context";
 import type { ContextProviderResult, ContextRequest, IContextProvider } from "@/context/engine/types";
 import { makeLogger, type MockLogger } from "@test/helpers";
 
@@ -121,11 +121,13 @@ describe("ContextOrchestrator.assemble() — US-003 floor overage warn log (AC-4
     expect(floorWarn).toBeUndefined();
   });
 
-  test("warn effectiveBudget reflects the post-availableBudgetTokens ceiling, not request.budgetTokens", async () => {
-    // request.budgetTokens = 50_000 but request.availableBudgetTokens = 200.
-    // packChunks uses min(50_000, 200) = 200 as the effective ceiling, so the
-    // warn log must report 200 — not 50_000. Catches the regression where
-    // the log was wired to the pre-ceiling request value.
+  test("warn effectiveBudget reflects the post-availableBudgetTokens ceiling minus reserves, not request.budgetTokens or the raw ceiling", async () => {
+    // request.budgetTokens = 50_000 but request.availableBudgetTokens = 400 — the caller's
+    // remaining-window value is the binding constraint. It must be folded into the ceiling
+    // BEFORE the digest/render reserves are subtracted (not passed straight through to
+    // packChunks as a second, unreserved ceiling), so the reported effectiveBudget is
+    // 400 - DIGEST_RESERVE_TOKENS - FIXED_RENDER_OVERHEAD_TOKENS, not 400 or 50_000. This
+    // catches the regression where availableBudgetTokens bypassed every reserve.
     const orch = new ContextOrchestrator([
       makeProvider("test-provider", {
         chunks: [
@@ -138,7 +140,7 @@ describe("ContextOrchestrator.assemble() — US-003 floor overage warn log (AC-4
     await orch.assemble({
       ...BASE_REQUEST,
       budgetTokens: 50_000,
-      availableBudgetTokens: 200,
+      availableBudgetTokens: 400,
       providerIds: ["test-provider"],
     });
 
@@ -146,6 +148,9 @@ describe("ContextOrchestrator.assemble() — US-003 floor overage warn log (AC-4
     const floorWarn = warnCalls.find((c) => c.message.includes("floor") || c.stage.includes("floor"));
     expect(floorWarn).toBeDefined();
     const data = floorWarn!.data as Record<string, unknown>;
-    expect(data.effectiveBudget).toBe(200);
+    // Single chunk, no prior digest → no separator overhead, no prior-digest reserve.
+    const expectedEffectiveBudget = 400 - DIGEST_RESERVE_TOKENS - FIXED_RENDER_OVERHEAD_TOKENS;
+    expect(data.effectiveBudget).toBe(expectedEffectiveBudget);
+    expect(data.effectiveBudget).toBeLessThan(400);
   });
 });

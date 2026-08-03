@@ -92,11 +92,11 @@ function canonicalRulePriority(rule: CanonicalRule): number {
   return rule.priority ?? 100;
 }
 
-function normalizePath(path: string): string {
+export function normalizePath(path: string): string {
   return path.replaceAll("\\", "/").replace(/^\.\//, "");
 }
 
-function globToRegex(pattern: string): RegExp {
+export function globToRegex(pattern: string): RegExp {
   let regex = "";
   let i = 0;
   while (i < pattern.length) {
