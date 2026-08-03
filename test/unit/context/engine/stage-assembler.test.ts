@@ -227,6 +227,12 @@ function makeCtx(overrides: {
   projectDir?: string;
   /** Override story.workdir (relative sub-package path). */
   storyWorkdir?: string;
+  /** ADR-009 resolved test-file patterns carried on the pipeline context. */
+  resolvedTestPatterns?: unknown;
+  /** Pre-built .naxignore index carried on the pipeline context. */
+  naxIgnoreIndex?: unknown;
+  /** Per-stage v2 overrides (config.context.v2.stages). */
+  stages?: Record<string, { budgetTokens?: number; extraProviderIds?: string[] }>;
 } = {}): PipelineContext {
   return {
     config: {
@@ -235,10 +241,13 @@ function makeCtx(overrides: {
           enabled: true,
           pluginProviders: [],
           deterministic: overrides.deterministic,
+          ...(overrides.stages && { stages: overrides.stages }),
         },
       },
       autoMode: { defaultAgent: "claude" },
     },
+    ...(overrides.resolvedTestPatterns !== undefined && { resolvedTestPatterns: overrides.resolvedTestPatterns }),
+    ...(overrides.naxIgnoreIndex !== undefined && { naxIgnoreIndex: overrides.naxIgnoreIndex }),
     rootConfig: { autoMode: { defaultAgent: "claude" } },
     prd: { feature: "test-feature", userStories: [] },
     story: { id: "US-001", ...(overrides.storyWorkdir && { workdir: overrides.storyWorkdir }) },
@@ -349,6 +358,50 @@ describe("assembleForStage — AC-24/AC-51 ContextRequest propagation", () => {
     await assembleForStage(makeCtx({ testStrategy: "tdd-simple" }), "execution");
 
     expect(mock.ref.captured?.availableBudgetTokens).toBeGreaterThan(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Gap finding 6 — resolvedTestPatterns / naxIgnoreIndex never reached
+// assembleForStage, so every stage it serves (tdd-test-writer, tdd-implementer,
+// rectify, single-session, batch) lost sibling-test hinting and .naxignore
+// filtering. The context stage set resolvedTestPatterns; nothing else did.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("assembleForStage — ADR-009 / .naxignore threading", () => {
+  const origCreate = _stageAssemblerDeps.createOrchestrator;
+  afterEach(() => {
+    _stageAssemblerDeps.createOrchestrator = origCreate;
+  });
+
+  test("threads resolvedTestPatterns from the pipeline context into the request", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    const patterns = { regex: [/\.test\.ts$/], globs: ["test/**/*.test.ts"], testDirs: ["test"], pathspec: [] };
+
+    await assembleForStage(makeCtx({ resolvedTestPatterns: patterns }), "tdd-test-writer");
+
+    expect(mock.ref.captured?.resolvedTestPatterns).toBe(patterns);
+  });
+
+  test("threads naxIgnoreIndex from the pipeline context into the request", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    const index = { getMatchers: () => [] };
+
+    await assembleForStage(makeCtx({ naxIgnoreIndex: index }), "tdd-implementer");
+
+    expect(mock.ref.captured?.naxIgnoreIndex).toBe(index);
+  });
+
+  test("leaves both undefined when the pipeline context carries neither", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+
+    await assembleForStage(makeCtx(), "execution");
+
+    expect(mock.ref.captured?.resolvedTestPatterns).toBeUndefined();
+    expect(mock.ref.captured?.naxIgnoreIndex).toBeUndefined();
   });
 });
 

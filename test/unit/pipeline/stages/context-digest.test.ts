@@ -259,3 +259,86 @@ describe("context stage — Phase 2 digest threading", () => {
     expect(capturedRequest?.availableBudgetTokens).toBeGreaterThan(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Gap finding 5 — the context stage read featureEngine.budgetTokens and never
+// consulted config.context.v2.stages.context, so the per-stage budget and
+// extraProviderIds were inert on the first (and largest) assembly of a story.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("contextStage — v2.stages.context overrides", () => {
+  function ctxWithStages(stage: { budgetTokens?: number; extraProviderIds?: string[] }): PipelineContext {
+    return makeCtx({
+      config: {
+        context: {
+          v2: { enabled: true, stages: { context: stage } },
+          featureEngine: { budgetTokens: 8_000 },
+        },
+      } as unknown as PipelineContext["config"],
+    });
+  }
+
+  test("uses v2.stages.context.budgetTokens in preference to featureEngine.budgetTokens", async () => {
+    _contextStageDeps.readDigest = async () => "";
+    _contextStageDeps.writeDigest = async () => {};
+    let capturedRequest: ContextRequest | undefined;
+    mockOrchestrator(makeBundle(), (req) => {
+      capturedRequest = req;
+    });
+
+    await contextStage.execute(ctxWithStages({ budgetTokens: 12_345 }));
+
+    expect(capturedRequest?.budgetTokens).toBe(12_345);
+  });
+
+  test("falls back to featureEngine.budgetTokens when v2.stages.context is absent", async () => {
+    _contextStageDeps.readDigest = async () => "";
+    _contextStageDeps.writeDigest = async () => {};
+    let capturedRequest: ContextRequest | undefined;
+    mockOrchestrator(makeBundle(), (req) => {
+      capturedRequest = req;
+    });
+
+    await contextStage.execute(makeCtx());
+
+    expect(capturedRequest?.budgetTokens).toBe(8_000);
+  });
+
+  test("threads extraProviderIds from v2.stages.context", async () => {
+    _contextStageDeps.readDigest = async () => "";
+    _contextStageDeps.writeDigest = async () => {};
+    let capturedRequest: ContextRequest | undefined;
+    mockOrchestrator(makeBundle(), (req) => {
+      capturedRequest = req;
+    });
+
+    await contextStage.execute(ctxWithStages({ extraProviderIds: ["rag"] }));
+
+    expect(capturedRequest?.extraProviderIds).toEqual(["rag"]);
+  });
+
+  test("threads naxIgnoreIndex from the pipeline context into the request", async () => {
+    _contextStageDeps.readDigest = async () => "";
+    _contextStageDeps.writeDigest = async () => {};
+    let capturedRequest: ContextRequest | undefined;
+    mockOrchestrator(makeBundle(), (req) => {
+      capturedRequest = req;
+    });
+    const index = { getMatchers: () => [] } as unknown as PipelineContext["naxIgnoreIndex"];
+
+    await contextStage.execute(makeCtx({ naxIgnoreIndex: index }));
+
+    expect(capturedRequest?.naxIgnoreIndex).toBe(index);
+  });
+
+  test("publishes resolved test patterns onto the pipeline context for later stages", async () => {
+    _contextStageDeps.readDigest = async () => "";
+    _contextStageDeps.writeDigest = async () => {};
+    mockOrchestrator(makeBundle());
+
+    const ctx = makeCtx();
+    await contextStage.execute(ctx);
+
+    expect(ctx.resolvedTestPatterns).toBeDefined();
+  });
+});

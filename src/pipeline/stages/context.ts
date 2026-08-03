@@ -117,6 +117,15 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
       error: errorMessage(err),
     });
   }
+  // Publish onto the pipeline context so later assemblies (assembleForStage:
+  // execution, rectify, tdd-*, review-*) reuse this resolution instead of
+  // skipping sibling-test hinting or repeating the I/O.
+  if (resolvedTestPatterns) ctx.resolvedTestPatterns = resolvedTestPatterns;
+
+  // Honour the per-stage v2 config for this stage exactly as assembleForStage
+  // does. Without this, `v2.stages.context.budgetTokens` and `extraProviderIds`
+  // were inert on the first — and largest — assembly of every story.
+  const stageOverrides = ctx.config.context?.v2?.stages?.context;
 
   const request: ContextRequest = {
     storyId: ctx.story.id,
@@ -127,7 +136,8 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     packageDir: ctx.workdir,
     stage: "context", // initial assembly; execution stage overrides to "execution"
     role: "implementer",
-    budgetTokens: ctx.config.context.featureEngine?.budgetTokens ?? 8_000,
+    budgetTokens: stageOverrides?.budgetTokens ?? ctx.config.context.featureEngine?.budgetTokens ?? 8_000,
+    extraProviderIds: stageOverrides?.extraProviderIds ?? [],
     minScore: ctx.config.context.v2.minScore,
     storyScratchDirs,
     priorStageDigest,
@@ -149,6 +159,10 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     // single-session, tdd-simple, no-test, and batch strategies declare planDigestBoost >= 1.5.
     planDigestBoost: getStageContextConfig(ctx.routing?.testStrategy ?? "").planDigestBoost,
     ...(resolvedTestPatterns && { resolvedTestPatterns }),
+    // Same .naxignore index the verify/review paths already honour — without it
+    // the neighbour scan walks user-ignored files and session-scratch re-reads
+    // patterns from disk on every fetch.
+    ...(ctx.naxIgnoreIndex && { naxIgnoreIndex: ctx.naxIgnoreIndex }),
   };
 
   // Phase 7: load any plugin providers (RAG, graph, KB) configured for this project.

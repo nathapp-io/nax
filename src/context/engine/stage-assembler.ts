@@ -209,6 +209,15 @@ export async function assembleForStage(
       // AC-51: propagate planDigestBoost from the routing test strategy so the boost applies
       // in every stage that assembleForStage() serves (execution, rectify, tdd-*, review-*, etc.).
       planDigestBoost: getStageContextConfig(ctx.routing?.testStrategy ?? "").planDigestBoost,
+      // ADR-009 SSOT: forward the test-file patterns the context stage resolved so
+      // CodeNeighborProvider can hint sibling tests here too. Without this the
+      // tdd-test-writer stage — the one that most needs sibling tests — was the
+      // only consumer that never received them.
+      ...(ctx.resolvedTestPatterns && { resolvedTestPatterns: ctx.resolvedTestPatterns }),
+      // Forward the run-scoped .naxignore index so user-ignored paths are excluded
+      // from the reverse-dep scan and the session-scratch read, as they already are
+      // on the verify/review paths.
+      ...(ctx.naxIgnoreIndex && { naxIgnoreIndex: ctx.naxIgnoreIndex }),
     };
 
     const bundle = await orchestrator.assemble(request);
