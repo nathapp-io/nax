@@ -1,13 +1,12 @@
 {
-  "updatedAt": "2026-08-02T02:59:58.753Z",
+  "updatedAt": "2026-08-03T10:11:18.793Z",
   "byFile": {
     "src/agents/acp/adapter.ts": 629,
     "src/agents/acp/spawn-client.ts": 734,
-    "src/agents/manager.ts": 792,
+    "src/agents/manager.ts": 790,
     "src/config/runtime-types.ts": 606,
     "src/context/engine/providers/code-neighbor.ts": 613,
     "src/execution/unified-executor.ts": 689,
-    "src/operations/call.ts": 628,
     "src/prompts/builders/rectifier-builder.ts": 902,
     "src/session/manager.ts": 707,
     "test/unit/cli/plan.test.ts": 1087,

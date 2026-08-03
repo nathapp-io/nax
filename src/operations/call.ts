@@ -13,6 +13,16 @@ import { composeSections, join } from "../prompts/compose";
 import { cancellableDelay } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
 import { buildHopCallback } from "./build-hop-callback";
+import {
+  MAX_COMPLETE_RETRY_ATTEMPTS,
+  newCorrelationId,
+  normalizeRunOutcome,
+  normalizeSelector,
+  resolveOpModel,
+  resolveOpRetry,
+  resolveTimeoutMs,
+  synthesizeStory,
+} from "./call-resolvers";
 import { classifyEmptyOutputFailure } from "./turn-failure-classification";
 import type {
   BuildContext,
@@ -32,94 +42,6 @@ export const _callOpDeps = {
       .text()
       .catch(() => null),
 };
-
-/** Hard ceiling for injected RetryStrategy instances that may not self-terminate. */
-const MAX_COMPLETE_RETRY_ATTEMPTS = 20;
-
-/**
- * Generates a per-invocation correlation id (≤16 chars, /^[0-9a-z]+-[0-9a-z]+$/).
- * Exported for unit-testing uniqueness and format guarantees.
- */
-export function newCorrelationId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function normalizeRunOutcome(outcome: AgentRunOutcome): AgentRunOutcome {
-  return outcome;
-}
-
-function normalizeSelector<C>(s: ConfigSelector<C> | readonly (keyof NaxConfig)[], opName: string): ConfigSelector<C> {
-  if (Array.isArray(s)) {
-    return pickSelector(`anonymous:${opName}`, ...(s as readonly (keyof NaxConfig)[])) as unknown as ConfigSelector<C>;
-  }
-  return s as ConfigSelector<C>;
-}
-
-function resolveOpModel<I, O, C>(
-  op: Operation<I, O, C>,
-  input: I,
-  buildCtx: BuildContext<C>,
-): ConfiguredModel | undefined {
-  const m = (op as { model?: ConfiguredModel | ((i: I, ctx: BuildContext<C>) => ConfiguredModel | undefined) }).model;
-  if (typeof m === "function") return m(input, buildCtx);
-  return m;
-}
-
-function resolveTimeoutMs<I, O, C>(op: Operation<I, O, C>, input: I, buildCtx: BuildContext<C>): number | undefined {
-  const timeoutMs = op.timeoutMs?.(input, buildCtx);
-  if (timeoutMs === undefined) return undefined;
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    throw new NaxError(`callOp[${op.name}]: invalid timeoutMs (${String(timeoutMs)})`, "CALL_OP_INVALID_TIMEOUT", {
-      stage: op.stage,
-      timeoutMs,
-    });
-  }
-  return timeoutMs;
-}
-
-function resolveOpRetry<I, O, C>(op: Operation<I, O, C>, input: I, buildCtx: BuildContext<C>): RetryStrategy | null {
-  const retry = (
-    op as {
-      retry?: RetryPreset | RetryStrategy | ((i: I, ctx: BuildContext<C>) => RetryPreset | RetryStrategy | undefined);
-    }
-  ).retry;
-  if (!retry) return null;
-  if (typeof retry === "function") {
-    const resolved = retry(input, buildCtx);
-    if (!resolved) return null;
-    if ("shouldRetry" in resolved) return resolved as RetryStrategy;
-    return resolveRetryPreset(resolved as RetryPreset);
-  }
-  if ("shouldRetry" in retry) return retry as RetryStrategy;
-  return resolveRetryPreset(retry as RetryPreset);
-}
-
-/**
- * Synthesize a minimal UserStory for callOp use cases that don't carry a real
- * one (CLI ad-hoc calls, debate runners, simple op invocations). Only the `id`
- * field is read by buildHopCallback's active code paths when no context bundle
- * is provided — the other fields are zero-value placeholders.
- *
- * Uses `satisfies` (not `as`) so any future required field on UserStory breaks
- * compile here, forcing an explicit decision rather than silently producing an
- * empty default. If a downstream provider starts reading e.g. `acceptanceCriteria`
- * for these stub stories, that's a bug — the synthesis path shouldn't run for
- * any op that consumes story data beyond `id`.
- */
-function synthesizeStory(storyId: string | undefined): UserStory {
-  return {
-    id: storyId ?? "",
-    title: "",
-    description: "",
-    acceptanceCriteria: [],
-    tags: [],
-    dependencies: [],
-    status: "pending",
-    passes: false,
-    escalations: [],
-    attempts: 0,
-  } satisfies UserStory;
-}
 
 export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, input: I): Promise<O> {
   // Deterministic ops bypass all LLM dispatch, cost tracking, and session management.
