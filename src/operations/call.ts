@@ -37,6 +37,12 @@ import type {
 /** Injectable deps for testability — mirrors _agentManagerDeps pattern. */
 export const _callOpDeps = {
   sleep: (ms: number, signal?: AbortSignal) => cancellableDelay(ms, signal),
+  /**
+   * Seam over buildHopCallback so tests can observe the hopCtx literal this
+   * function assembles. Without it nothing pins what callOp forwards — the
+   * contextToolRunCounter threading was silently absent for exactly that reason.
+   */
+  buildHopCallback,
   readFileOutput: async (path: string) =>
     Bun.file(path)
       .text()
@@ -206,6 +212,9 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     projectDir: ctx.runtime.projectDir,
     featureName: ctx.featureName ?? "",
     workdir: ctx.packageDir,
+    // Run-scoped pull counter: keeps pull.maxCallsPerRun a real per-run ceiling
+    // instead of resetting each hop, and carries AC-18's invocation records.
+    ...(ctx.contextToolRunCounter ? { contextToolRunCounter: ctx.contextToolRunCounter } : {}),
     effectiveTier,
     defaultAgent,
     pipelineStage: op.stage,
@@ -353,7 +362,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   // without losing the middleware envelope. dispatchAgent roots the chain at
   // the resolved agent, which may differ from ctx.agentName when op.model
   // pins a specific `{ agent, model }`.
-  const executeHop = buildHopCallback(
+  const executeHop = _callOpDeps.buildHopCallback(
     {
       ...hopCtx,
       hopBody: effectiveHopBody as NonNullable<import("./build-hop-callback").BuildHopCallbackContext["hopBody"]>,

@@ -7,11 +7,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import { _manifestStoreDeps } from "../../../src/context/engine/manifest-store";
+import type { ContextManifest } from "../../../src/context/engine/types";
 import { collectStoryMetrics } from "../../../src/metrics/tracker";
 import type { PipelineContext } from "../../../src/pipeline/types";
-import type { ContextManifest } from "../../../src/context/engine/types";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { PRD, UserStory } from "../../../src/prd";
 import { makeStory } from "../../helpers";
 import { makeMockRuntime } from "../../helpers/runtime";
@@ -182,7 +182,14 @@ describe("collectStoryMetrics — AC-18 context.providers", () => {
     mockManifests({
       [`${FEATURE}/execution`]: makeManifest({
         providerResults: [
-          { providerId: "plugin-rag", status: "failed", chunkCount: 0, durationMs: 20, tokensProduced: 0, error: "oops" },
+          {
+            providerId: "plugin-rag",
+            status: "failed",
+            chunkCount: 0,
+            durationMs: 20,
+            tokensProduced: 0,
+            error: "oops",
+          },
         ],
         includedChunks: [],
       }),
@@ -214,8 +221,8 @@ describe("collectStoryMetrics — AC-18 context.providers", () => {
     const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
     const p = metrics.context?.providers["static-rules"];
     expect(p?.chunksProduced).toBe(4); // 2 + 2
-    expect(p?.chunksKept).toBe(3);     // 2 + 1
-    expect(p?.wallClockMs).toBe(75);   // 40 + 35
+    expect(p?.chunksKept).toBe(3); // 2 + 1
+    expect(p?.wallClockMs).toBe(75); // 40 + 35
     expect(p?.tokensProduced).toBe(400); // 200 + 200
   });
 
@@ -348,5 +355,60 @@ describe("collectStoryMetrics — US-003 context.floorOverage (AC-2, AC-3)", () 
     const ctx = makeCtx();
     const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
     expect(metrics.context?.floorOverage?.overageTokens).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Spec AC-18: StoryMetrics.context.pullCalls tracks invocations. Sourced from
+// the run-scoped counter threaded through CallContext, so it reflects what the
+// agent actually asked for rather than what was offered.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("collectStoryMetrics — context.pullCalls (AC-18)", () => {
+  const CALL = {
+    tool: "query_neighbor",
+    query: "src/a.ts",
+    at: "2026-08-03T00:00:00.000Z",
+    tokensReturned: 42,
+    chunkIds: ["code-neighbor:a:001"],
+  };
+
+  function ctxWithCalls(calls: unknown[]) {
+    const ctx = makeCtx() as unknown as { contextToolRunCounter?: unknown };
+    ctx.contextToolRunCounter = { count: calls.length, calls };
+    return ctx as never;
+  }
+
+  test("surfaces the recorded invocations on the story's context metrics", async () => {
+    mockManifests({
+      [`${FEATURE}/execution`]: makeManifest({
+        stage: "execution",
+        providerResults: [
+          { providerId: "code-neighbor", status: "ok", chunkCount: 1, durationMs: 10, tokensProduced: 100 },
+        ],
+        includedChunks: ["code-neighbor:a:001"],
+      }),
+    });
+
+    const metrics = await collectStoryMetrics(ctxWithCalls([CALL]), new Date().toISOString());
+
+    expect(metrics.context?.pullCalls).toHaveLength(1);
+    expect(metrics.context?.pullCalls?.[0]).toMatchObject({ tool: "query_neighbor", query: "src/a.ts" });
+  });
+
+  test("omits pullCalls entirely when the story made none", async () => {
+    mockManifests({
+      [`${FEATURE}/execution`]: makeManifest({
+        stage: "execution",
+        providerResults: [
+          { providerId: "code-neighbor", status: "ok", chunkCount: 1, durationMs: 10, tokensProduced: 100 },
+        ],
+        includedChunks: ["code-neighbor:a:001"],
+      }),
+    });
+
+    const metrics = await collectStoryMetrics(ctxWithCalls([]), new Date().toISOString());
+
+    expect(metrics.context?.pullCalls).toBeUndefined();
   });
 });

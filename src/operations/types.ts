@@ -16,6 +16,12 @@ export interface CallContext {
   readonly runtime: NaxRuntime;
   readonly packageView: PackageView;
   readonly packageDir: string;
+  /**
+   * Run-scoped pull-tool counter, created by the context stage. Threaded so
+   * `pull.maxCallsPerRun` is enforced once per run instead of resetting on
+   * every hop, and so AC-18's per-invocation records survive to metrics.
+   */
+  readonly contextToolRunCounter?: import("../context/engine").RunCallCounter;
   readonly storyId?: string;
   readonly featureName?: string;
   /**

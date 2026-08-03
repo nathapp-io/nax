@@ -45,7 +45,7 @@ export {
   handleQueryNeighbor,
   handleQueryFeatureContext,
 } from "./pull-tools";
-export type { RunCallCounter } from "./pull-tools";
+export type { PullCallRecord, RunCallCounter } from "./pull-tools";
 
 export { getAgentProfile, AGENT_PROFILES, CONSERVATIVE_DEFAULT_PROFILE } from "./agent-profiles";
 export type { AgentCapabilities, AgentProfile } from "./agent-profiles";

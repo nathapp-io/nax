@@ -90,6 +90,7 @@ export const executionStage: PipelineStage = {
       runtime: ctx.runtime,
       packageView,
       packageDir: ctx.workdir,
+      ...(ctx.contextToolRunCounter ? { contextToolRunCounter: ctx.contextToolRunCounter } : {}),
       agentName: resolved.agentName,
       storyId: ctx.story.id,
       featureName: ctx.prd.feature,

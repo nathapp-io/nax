@@ -7,23 +7,23 @@
  * Feature context reads are intercepted via _featureContextV2Deps injection.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { NaxError } from "../../../../src/errors";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { NaxConfig } from "../../../../src/config/types";
 import { _codeNeighborDeps } from "../../../../src/context/engine/providers/code-neighbor";
 import { _featureContextV2Deps } from "../../../../src/context/engine/providers/feature-context";
 import {
-  QUERY_NEIGHBOR_DESCRIPTOR,
-  QUERY_FEATURE_CONTEXT_DESCRIPTOR,
   PULL_TOOL_REGISTRY,
   PullToolBudget,
-  createRunCallCounter,
-  handleQueryNeighbor,
-  handleQueryFeatureContext,
+  QUERY_FEATURE_CONTEXT_DESCRIPTOR,
+  QUERY_NEIGHBOR_DESCRIPTOR,
   _pullToolsDeps,
+  createRunCallCounter,
+  handleQueryFeatureContext,
+  handleQueryNeighbor,
 } from "../../../../src/context/engine/pull-tools";
-import { makeLogger } from "../../../../test/helpers";
-import type { NaxConfig } from "../../../../src/config/types";
+import { NaxError } from "../../../../src/errors";
 import type { UserStory } from "../../../../src/prd";
+import { makeLogger } from "../../../../test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals for dep injection
@@ -46,9 +46,10 @@ beforeEach(() => {
   _codeNeighborDeps.readFile = async () => "";
   _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
   // Default: feature context returns null (no context.md)
-  _featureContextV2Deps.createV1Provider = () => ({
-    getContext: async () => null,
-  }) as ReturnType<typeof origCreateV1Provider>;
+  _featureContextV2Deps.createV1Provider = () =>
+    ({
+      getContext: async () => null,
+    }) as ReturnType<typeof origCreateV1Provider>;
   // Default: no-op logger (real logger is used)
   _pullToolsDeps.getLogger = () => makeLogger() as any;
 });
@@ -163,6 +164,60 @@ describe("PullToolBudget", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // handleQueryNeighbor
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Gap finding 7 / spec AC-18: pull-tool invocations were never recorded.
+// SPEC-context-engine-v2.md:245 declares ContextManifest.pullCalls and AC-18
+// declares StoryMetrics.context.pullCalls; `grep -rn pullCalls src/` returned
+// zero hits, so the Phase-4 exit gate ("budget respected, cost within
+// envelope") was unevaluable.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("pull-call recording", () => {
+  function makeBudget(sessionLimit = 5, runLimit = 50, counter = createRunCallCounter()) {
+    return { budget: new PullToolBudget(sessionLimit, runLimit, counter), counter };
+  }
+
+  test("records one entry per invocation with the spec'd shape", async () => {
+    const { budget, counter } = makeBudget();
+    _codeNeighborDeps.fileExists = async () => false;
+    _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
+
+    await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", budget, 100, undefined, "US-001");
+
+    expect(counter.calls).toHaveLength(1);
+    const c = counter.calls[0];
+    expect(c?.tool).toBe("query_neighbor");
+    expect(c?.query).toBe("src/a.ts");
+    expect(typeof c?.at).toBe("string");
+    expect(typeof c?.tokensReturned).toBe("number");
+    expect(Array.isArray(c?.chunkIds)).toBe(true);
+  });
+
+  test("accumulates across calls on the shared run counter", async () => {
+    const { budget, counter } = makeBudget();
+    _codeNeighborDeps.fileExists = async () => false;
+    _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
+
+    await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", budget, 100);
+    await handleQueryNeighbor({ filePath: "src/b.ts" }, "/repo", budget, 100);
+
+    expect(counter.calls.map((c) => c.query)).toEqual(["src/a.ts", "src/b.ts"]);
+    expect(counter.count).toBe(2);
+  });
+
+  test("records nothing when the budget rejects the call", async () => {
+    const { budget, counter } = makeBudget(0, 50);
+    let threw = false;
+    try {
+      await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", budget, 100);
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(true);
+    expect(counter.calls).toHaveLength(0);
+  });
+});
 
 describe("handleQueryNeighbor", () => {
   function makeBudget(sessionLimit = 5, runLimit = 50) {
@@ -331,7 +386,9 @@ describe("handleQueryFeatureContext", () => {
     expect(await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", makeBudget())).toBe("");
 
     mockV1Provider("## Conventions\nUse async/await.\n\n## Security\nNever log tokens.");
-    expect(await handleQueryFeatureContext({ filter: "nonexistent-keyword-xyz" }, STORY, CONFIG, "/repo", makeBudget())).toBe("");
+    expect(
+      await handleQueryFeatureContext({ filter: "nonexistent-keyword-xyz" }, STORY, CONFIG, "/repo", makeBudget()),
+    ).toBe("");
   });
 
   test("filter returns matching sections (case-insensitive)", async () => {
@@ -348,13 +405,7 @@ describe("handleQueryFeatureContext", () => {
 
   test("filter with no ## headings returns full content (flat context.md)", async () => {
     mockV1Provider("Flat content without any headings.\nSome conventions here.");
-    const result = await handleQueryFeatureContext(
-      { filter: "conventions" },
-      STORY,
-      CONFIG,
-      "/repo",
-      makeBudget(),
-    );
+    const result = await handleQueryFeatureContext({ filter: "conventions" }, STORY, CONFIG, "/repo", makeBudget());
     // No ## headings — section-filter not possible; full content returned
     expect(result).toContain("Flat content");
     expect(result).toContain("conventions");
@@ -364,14 +415,7 @@ describe("handleQueryFeatureContext", () => {
     const longContent = "## Section\n" + "x".repeat(500);
     mockV1Provider(longContent);
     const maxTokensPerCall = 20; // tiny cap → 80 chars max
-    const result = await handleQueryFeatureContext(
-      {},
-      STORY,
-      CONFIG,
-      "/repo",
-      makeBudget(),
-      maxTokensPerCall,
-    );
+    const result = await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", makeBudget(), maxTokensPerCall);
     expect(result.length).toBeLessThanOrEqual(maxTokensPerCall * 4);
   });
 

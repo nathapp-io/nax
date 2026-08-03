@@ -131,13 +131,35 @@ export const PULL_TOOL_REGISTRY: Record<string, ToolDescriptor> = {
  * One RunCallCounter is created per nax run and passed to every PullToolBudget
  * instance so they all draw from the same pool.
  */
+/**
+ * One recorded pull-tool invocation. Shape is fixed by
+ * SPEC-context-engine-v2.md:245 (ContextManifest.pullCalls).
+ */
+export interface PullCallRecord {
+  /** Tool name, e.g. "query_neighbor" */
+  tool: string;
+  /** The tool's primary argument — the file path or filter the agent asked for */
+  query: string;
+  /** ISO timestamp of the invocation */
+  at: string;
+  /** Estimated tokens in the (possibly truncated) response */
+  tokensReturned: number;
+  /** Ids of the chunks the provider returned for this call */
+  chunkIds: string[];
+}
+
 export interface RunCallCounter {
   count: number;
+  /**
+   * Per-invocation records (AC-18). Shares the counter's lifetime, so it is
+   * run-scoped exactly as `count` is and needs no separate threading.
+   */
+  calls: PullCallRecord[];
 }
 
 /** Create a fresh RunCallCounter for the start of a run. */
 export function createRunCallCounter(): RunCallCounter {
-  return { count: 0 };
+  return { count: 0, calls: [] };
 }
 
 /**
@@ -176,6 +198,14 @@ export class PullToolBudget {
     }
     this.sessionCalls += 1;
     this.runCounter.count += 1;
+  }
+
+  /**
+   * Record a completed invocation. Called by handlers AFTER the response is
+   * known, so `consume()`'s throw path can never leave a phantom record.
+   */
+  record(entry: PullCallRecord): void {
+    this.runCounter.calls.push(entry);
   }
 
   isSessionExhausted(): boolean {
@@ -243,6 +273,14 @@ export async function handleQueryNeighbor(
   const maxChars = maxTokensPerCall * 4;
   const truncated = content.length > maxChars;
   const finalContent = truncated ? content.slice(0, maxChars) : content;
+
+  budget.record({
+    tool: "query_neighbor",
+    query: input.filePath,
+    at: new Date().toISOString(),
+    tokensReturned: Math.ceil(finalContent.length / 4),
+    chunkIds: result.chunks.map((c) => c.id),
+  });
 
   const logger = _pullToolsDeps.getLogger();
   const logData: Record<string, unknown> = {
@@ -328,6 +366,14 @@ export async function handleQueryFeatureContext(
 
   const maxChars = maxTokensPerCall * 4;
   const finalContent = content.length > maxChars ? content.slice(0, maxChars) : content;
+
+  budget.record({
+    tool: "query_feature_context",
+    query: input.filter ?? "",
+    at: new Date().toISOString(),
+    tokensReturned: Math.ceil(finalContent.length / 4),
+    chunkIds: result.chunks.map((c) => c.id),
+  });
 
   const logger = _pullToolsDeps.getLogger();
   logger.info("pull-tool", "invoked", {
