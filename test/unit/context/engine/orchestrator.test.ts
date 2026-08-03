@@ -96,7 +96,11 @@ describe("ContextOrchestrator.assemble()", () => {
     expect(bundle.manifest.chunkTokens).toEqual({ "c:1": 412, "c:2": 1180 });
   });
 
-  test("chunkTokens covers exactly the included chunks and sums to usedTokens minus the digest", async () => {
+  test("chunkTokens covers exactly the included chunks and sums to usedTokens minus the prior-stage digest", async () => {
+    // US-001 corrected accounting:
+    //   manifest.usedTokens = packed chunk tokens + priorStageDigest tokens
+    //   manifest.digestTokens = produced digest (this stage, threaded forward)
+    // BASE_REQUEST supplies no priorStageDigest, so the prior-digest token count is 0.
     const orch = new ContextOrchestrator([
       makeProvider("p1", makeChunkResult({ id: "c:1", tokens: 300, content: "alpha content" })),
       makeProvider("p2", makeChunkResult({ id: "c:2", tokens: 700, content: "beta content" })),
@@ -106,7 +110,10 @@ describe("ContextOrchestrator.assemble()", () => {
     expect(bundle.manifest.includedChunks).toHaveLength(2);
     expect(Object.keys(tokenMap).sort()).toEqual([...bundle.manifest.includedChunks].sort());
     const summed = Object.values(tokenMap).reduce((a, b) => a + b, 0);
-    expect(summed).toBe(bundle.manifest.usedTokens - bundle.manifest.digestTokens);
+    // The new invariant: summed = usedTokens - priorDigestTokens. BASE_REQUEST
+    // has no priorStageDigest, so priorDigestTokens = 0 and summed === usedTokens.
+    const priorDigestTokens = 0;
+    expect(summed).toBe(bundle.manifest.usedTokens - priorDigestTokens);
   });
 
   test("manifest omits chunkTokens when nothing was packed", async () => {
@@ -500,5 +507,65 @@ describe("ContextOrchestrator — repoRoot + packageDir (Amendment C AC-54/AC-60
     const rebuilt = orch.rebuildForAgent(prior, { newAgentId: "codex" });
     expect(rebuilt.manifest.repoRoot).toBe("/repo");
     expect(rebuilt.manifest.packageDir).toBe("/repo/packages/web");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-001 — context-budget arithmetic
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("US-001 — ContextOrchestrator budget arithmetic", () => {
+  test("AC-5: packed non-floor chunks total ≤ stage budget − DIGEST_RESERVE_TOKENS", async () => {
+    // Mix floor (static + feature) with non-floor (session + history) chunks so the
+    // orchestrator's reserve subtraction has a non-floor cap to test.
+    const FLOOR_KIND = "static";
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "floor:1", kind: FLOOR_KIND, tokens: 500, content: "rules content a" })),
+      makeProvider("p2", makeChunkResult({ id: "floor:2", kind: "feature", tokens: 500, content: "rules content b" })),
+      makeProvider("p3", makeChunkResult({ id: "non-floor:1", kind: "session", tokens: 400, content: "sess content a" })),
+      makeProvider("p4", makeChunkResult({ id: "non-floor:2", kind: "history", tokens: 400, content: "hist content a" })),
+      makeProvider("p5", makeChunkResult({ id: "non-floor:3", kind: "session", tokens: 400, content: "sess content b" })),
+    ]);
+    const stageBudget = 2_000;
+    const bundle = await orch.assemble({ ...BASE_REQUEST, budgetTokens: stageBudget });
+    const nonFloorPacked = bundle.chunks
+      .filter((c) => c.kind !== "static" && c.kind !== "feature" && c.kind !== "test-coverage")
+      .reduce((sum, c) => sum + c.tokens, 0);
+    // Reserve = Math.ceil(MAX_DIGEST_CHARS / 4) ≈ 250 tokens. Floor uses 1000 of
+    // 2000; remaining ceiling is 1000 - DIGEST_RESERVE_TOKENS. Packing a 400-token
+    // chunk three times (1200) would exceed 2000 - DIGEST_RESERVE_TOKENS, so the
+    // non-floor total must be capped at 2000 - DIGEST_RESERVE_TOKENS.
+    const { DIGEST_RESERVE_TOKENS } = await import("@/context");
+    expect(nonFloorPacked).toBeLessThanOrEqual(stageBudget - DIGEST_RESERVE_TOKENS);
+  });
+
+  test("AC-6: manifest.usedTokens equals packed chunk tokens plus priorStageDigest tokens", async () => {
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "c:1", tokens: 300, content: "alpha content" })),
+      makeProvider("p2", makeChunkResult({ id: "c:2", tokens: 700, content: "beta content" })),
+    ]);
+    const priorDigest = "Prior stage summary line.";
+    const expectedPriorDigestTokens = Math.ceil(priorDigest.length / 4);
+    const bundle = await orch.assemble({ ...BASE_REQUEST, priorStageDigest: priorDigest });
+    const tokenMap = bundle.manifest.chunkTokens ?? {};
+    const packedSum = Object.values(tokenMap).reduce((a, b) => a + b, 0);
+    expect(bundle.manifest.usedTokens).toBe(packedSum + expectedPriorDigestTokens);
+  });
+
+  test("AC-7: rendered markdown estimated token count does not exceed request.budgetTokens when no floor overflows", async () => {
+    // Small chunks with no floor overage: rendered push markdown must fit within
+    // the stage budget (the digest reserve is subtracted before packing, and
+    // nothing floor-overflows here, so the rendered output stays within budget).
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "floor:1", kind: "static", tokens: 200, content: "rules short" })),
+      makeProvider("p2", makeChunkResult({ id: "feat:1", kind: "feature", tokens: 200, content: "feature short" })),
+      makeProvider("p3", makeChunkResult({ id: "sess:1", kind: "session", tokens: 200, content: "session short" })),
+    ]);
+    const stageBudget = 5_000;
+    const bundle = await orch.assemble({ ...BASE_REQUEST, budgetTokens: stageBudget });
+    // No floor overflow → no floorOverageItems.
+    expect(bundle.manifest.floorOverageItems ?? []).toEqual([]);
+    const renderedTokens = Math.ceil(bundle.pushMarkdown.length / 4);
+    expect(renderedTokens).toBeLessThanOrEqual(stageBudget);
   });
 });

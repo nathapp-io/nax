@@ -6,7 +6,7 @@
  */
 
 import type { PackedChunk } from "./packing";
-import type { ContextManifest, ContextRequest } from "./types";
+import type { ContextBundle, ContextManifest, ContextRequest } from "./types";
 
 /** Maximum characters of chunk content retained for post-story effectiveness annotation. */
 const CHUNK_SUMMARY_CHARS = 300;
@@ -62,11 +62,16 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     chunkTokens[c.id] = c.tokens;
   }
 
+  // US-001: manifest.usedTokens accounts the digest actually carried in the
+  // rendered prompt (request.priorStageDigest). The produced digest is recorded
+  // separately in `digestTokens` and threaded forward to the next stage.
+  const priorStageDigestTokens = request.priorStageDigest ? Math.ceil(request.priorStageDigest.length / 4) : 0;
+
   return {
     requestId,
     stage: request.stage,
     totalBudgetTokens: request.budgetTokens,
-    usedTokens: usedTokens + digestTokens,
+    usedTokens: usedTokens + priorStageDigestTokens,
     includedChunks: packed.map((c) => c.id),
     excludedChunks: [
       ...roleFiltered.map((c) => ({ id: c.id, reason: "role-filter" as const })),
@@ -85,4 +90,29 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     ...(Object.keys(chunkTokens).length > 0 && { chunkTokens }),
     ...(staleChunkIds.length > 0 && { staleChunks: staleChunkIds }),
   };
+}
+
+/**
+ * Compute the rebuilt manifest's `usedTokens` under US-001 accounting.
+ *
+ * `usedTokens = packed chunk tokens + prior-digest tokens`. The rebuild keeps
+ * the prior's prior-digest contribution unless `newPriorStageDigest` is supplied
+ * (then it replaces the prior's contribution).
+ *
+ * `extraTokens` is the sum of tokens for chunks added by the rebuild that
+ * weren't in the prior bundle (typically the failure-note chunk on agent swap).
+ */
+export function rebuildUsedTokens(
+  prior: ContextBundle,
+  packed: PackedChunk[],
+  newPriorStageDigest: string | undefined,
+): number {
+  const priorChunksTokens = prior.chunks.reduce((sum, c) => sum + c.tokens, 0);
+  const extraTokens = packed
+    .filter((c) => !prior.chunks.some((pc) => pc.id === c.id))
+    .reduce((sum, c) => sum + c.tokens, 0);
+  const packedTokens = priorChunksTokens + extraTokens;
+  const priorDigestContribution = Math.max(0, prior.manifest.usedTokens - priorChunksTokens);
+  const newDigestContribution = newPriorStageDigest ? Math.ceil(newPriorStageDigest.length / 4) : 0;
+  return Math.max(0, packedTokens + (newDigestContribution > 0 ? newDigestContribution : priorDigestContribution));
 }

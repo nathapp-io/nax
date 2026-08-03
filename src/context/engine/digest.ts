@@ -24,6 +24,17 @@ import type { ChunkScope } from "./types";
 /** Hard character limit for the digest (≈250 tokens × 4 chars/token) */
 const MAX_DIGEST_CHARS = 1_000;
 
+/**
+ * Token reserve carved out of the orchestrator's effective budget to hold the
+ * digest this stage will produce (which is then threaded forward via
+ * ContextRequest.priorStageDigest). Derived from MAX_DIGEST_CHARS at 4 chars/token.
+ *
+ * Subtracted from the orchestrator's effective budget before provider fetch
+ * and before packChunks so the rendered markdown plus digest never exceeds
+ * the stage budget.
+ */
+export const DIGEST_RESERVE_TOKENS = Math.ceil(MAX_DIGEST_CHARS / 4);
+
 const SCOPE_ORDER: ChunkScope[] = ["project", "feature", "story", "session", "retrieved"];
 
 // ─────────────────────────────────────────────────────────────────────────────

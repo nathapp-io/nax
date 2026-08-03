@@ -178,4 +178,44 @@ describe("packChunks — availableBudgetTokens", () => {
     const result = packChunks([], 500, 2000);
     expect(result.effectiveBudget).toBe(500);
   });
+
+  test("availableBudgetTokens=0 packs every floor chunk and no non-floor chunks", () => {
+    const chunks = [
+      makeScored({ id: "rules:1", kind: "static", tokens: 200, score: 1.0 }),
+      makeScored({ id: "feat:1", kind: "feature", tokens: 300, score: 1.0 }),
+      makeScored({ id: "tc:1", kind: "test-coverage", tokens: 150, score: 1.0 }),
+      makeScored({ id: "sess:1", kind: "session", tokens: 100, score: 0.9 }),
+      makeScored({ id: "hist:1", kind: "history", tokens: 400, score: 0.8 }),
+    ];
+    const result = packChunks(chunks, 5000, 0);
+    const packedIds = result.packed.map((c) => c.id);
+    // Every floor-kind chunk is packed even when ceiling is 0.
+    expect(packedIds).toContain("rules:1");
+    expect(packedIds).toContain("feat:1");
+    expect(packedIds).toContain("tc:1");
+    // Non-floor chunks are dropped.
+    expect(packedIds).not.toContain("sess:1");
+    expect(packedIds).not.toContain("hist:1");
+    // Floor items are all marked as overage (since 0 ceiling < their tokens).
+    expect(result.floorOverageIds).toEqual(expect.arrayContaining(["rules:1", "feat:1", "tc:1"]));
+    expect(result.budgetExcludedIds).toEqual(expect.arrayContaining(["sess:1", "hist:1"]));
+  });
+
+  test("availableBudgetTokens=undefined uses budgetTokens as ceiling and packs the same as a single-arg call", () => {
+    const chunks = [
+      makeScored({ id: "rules:1", kind: "static", tokens: 200, score: 1.0 }),
+      makeScored({ id: "feat:1", kind: "feature", tokens: 200, score: 1.0 }),
+      makeScored({ id: "sess:1", kind: "session", tokens: 200, score: 0.9 }),
+      makeScored({ id: "hist:1", kind: "history", tokens: 500, score: 0.8 }),
+    ];
+    const budget = 700;
+    const withOmitted = packChunks(chunks, budget);
+    const withUndefined = packChunks(chunks, budget, undefined);
+    // effectiveBudget equals budgetTokens when availableBudgetTokens is omitted.
+    expect(withOmitted.effectiveBudget).toBe(budget);
+    expect(withUndefined.effectiveBudget).toBe(budget);
+    // Packed set is identical to the single-arg form.
+    expect(withUndefined.packed.map((c) => c.id)).toEqual(withOmitted.packed.map((c) => c.id));
+    expect(withUndefined.budgetExcludedIds.sort()).toEqual(withOmitted.budgetExcludedIds.sort());
+  });
 });

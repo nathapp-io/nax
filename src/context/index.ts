@@ -28,7 +28,11 @@ export {
 } from "./builder";
 
 export { estimateTokens } from "../optimizer/types";
-export { ContextOrchestrator } from "./engine";
+export {
+  ContextOrchestrator,
+  DIGEST_RESERVE_TOKENS,
+  estimateAvailableBudgetTokens,
+} from "./engine";
 export type { AdapterFailure } from "./engine/types";
 export { NeutralityLintError } from "./rules/canonical-loader";
 

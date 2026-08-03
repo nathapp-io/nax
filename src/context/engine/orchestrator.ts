@@ -20,8 +20,8 @@ import { NeutralityLintError } from "../rules/canonical-loader";
 import { AGENT_PROFILES, getAgentProfile } from "./agent-profiles";
 import { renderForAgent } from "./agent-renderer";
 import { dedupeChunks } from "./dedupe";
-import { buildDigest, digestTokens } from "./digest";
-import { buildManifest } from "./manifest-builder";
+import { DIGEST_RESERVE_TOKENS, buildDigest, digestTokens } from "./digest";
+import { buildManifest, rebuildUsedTokens } from "./manifest-builder";
 import { FLOOR_KINDS, packChunks } from "./packing";
 import type { PackedChunk } from "./packing";
 import { PULL_TOOL_REGISTRY } from "./pull-tools";
@@ -263,10 +263,11 @@ export class ContextOrchestrator {
       });
     }
 
-    // AC-32: agent profile tightens the budget ceiling. Effective budget is
-    // min(stage budget, agent preferred prompt tokens, caller availableBudget).
+    // AC-32 + US-001: effective budget = min(stage, profile) − DIGEST_RESERVE_TOKENS.
+    // The reserve is subtracted before provider fetch and before packChunks so the
+    // rendered markdown plus this stage's produced digest stays within the stage budget.
     const profileBudget = agentProfile.caps.preferredPromptTokens;
-    const effectiveBudgetTokens = Math.min(request.budgetTokens, profileBudget);
+    const effectiveBudgetTokens = Math.max(0, Math.min(request.budgetTokens, profileBudget) - DIGEST_RESERVE_TOKENS);
 
     // Step 1: filter providers to those applicable for this stage.
     // request.providerIds (test-only override) takes precedence; otherwise stageConfig.providerIds.
@@ -562,10 +563,8 @@ export class ContextOrchestrator {
           }
         : undefined;
 
-    // Recompute token delta: failure-note chunk adds tokens not present in prior bundle.
-    const extraTokens = packedChunks
-      .filter((c) => !prior.chunks.some((pc) => pc.id === c.id))
-      .reduce((sum, c) => sum + c.tokens, 0);
+    // US-001: usedTokens = packed chunk tokens + prior-digest tokens (see manifest-builder).
+    const usedTokens = rebuildUsedTokens(prior, packedChunks, priorStageDigest);
 
     const manifest: ContextManifest = {
       ...prior.manifest,
@@ -576,7 +575,7 @@ export class ContextOrchestrator {
       // that the prior map has no entry for, which would make the curator record
       // tokens:0 for it — the exact placeholder #1421 removed.
       chunkTokens: Object.fromEntries(packedChunks.map((c) => [c.id, c.tokens])),
-      usedTokens: Math.max(0, prior.manifest.usedTokens - prior.manifest.digestTokens + dTokens + extraTokens),
+      usedTokens,
       digestTokens: dTokens,
       buildMs: 0,
       rebuildInfo,
