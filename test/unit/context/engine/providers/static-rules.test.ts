@@ -495,9 +495,70 @@ describe("StaticRulesProvider — real .nax/rules store scope filtering (US-004)
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-writing:"))).toBe(true);
   });
 
-  test("[US-004 AC 8] emits no static-rules:adapter-wiring: chunk when touchedFiles are outside src/agents and src/operations", async () => {
+  // US-004 AC 8, corrected. The shipped version asserted adapter-wiring does NOT
+  // load for `src/pipeline/stages/verify.ts` — but src/pipeline is one of the 13
+  // directories the rule declares. The original spec transcribed only the first
+  // two globs (a truncated read of the source), the restore matched the spec, and
+  // this test then codified the narrowed scope as intended behaviour.
+  test("[US-004 AC 8] emits no static-rules:adapter-wiring: chunk for a path outside every declared glob", async () => {
+    const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, touchedFiles: ["src/config/loader.ts"] });
+    expect(result.chunks.some((c) => c.id.startsWith("static-rules:adapter-wiring:"))).toBe(false);
+  });
+
+  test("[US-004 AC 8] emits a static-rules:adapter-wiring: chunk for src/pipeline, which the rule declares", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
     const result = await provider.fetch({ ...REAL_REPO_REQUEST, touchedFiles: ["src/pipeline/stages/verify.ts"] });
-    expect(result.chunks.some((c) => c.id.startsWith("static-rules:adapter-wiring:"))).toBe(false);
+    expect(result.chunks.some((c) => c.id.startsWith("static-rules:adapter-wiring:"))).toBe(true);
+  });
+
+  test("emits a static-rules:retry-strategy: chunk for src/operations, which the rule declares", async () => {
+    const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, touchedFiles: ["src/operations/call.ts"] });
+    expect(result.chunks.some((c) => c.id.startsWith("static-rules:retry-strategy:"))).toBe(true);
+  });
+
+  test("emits a static-rules:test-helpers: chunk for a test file, which the rule declares", async () => {
+    const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, touchedFiles: ["test/unit/context/engine/packing.test.ts"] });
+    expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-helpers:"))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scoping-drift guard.
+//
+// `.nax/rules/` (nax engine) and `.claude/rules/` (Claude Code, natively) must
+// declare the same file globs for the same rule, or a rule silently reaches one
+// consumer and not the other. This exact drift shipped once: adapter-wiring lost
+// 11 of 13 globs and retry-strategy / test-helpers lost theirs entirely, because
+// the spec transcribed a truncated read of the source. Nothing detected it.
+//
+// nax spells the file glob `appliesTo:`; Claude spells it `paths:`. nax's own
+// `paths:` means PACKAGE scope and has no Claude equivalent, so it is ignored here.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("rule scoping parity — .nax/rules vs .claude/rules", () => {
+  function fileGlobs(text: string, key: string): string[] {
+    const fm = /^---\n([\s\S]*?)\n---\n/.exec(text);
+    if (!fm?.[1]) return [];
+    const block = new RegExp(`^${key}:\\n((?:\\s*-\\s*".*"\\n?)+)`, "m").exec(fm[1]);
+    if (!block?.[1]) return [];
+    return [...block[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort();
+  }
+
+  test("every rule present in both stores declares the same file globs", async () => {
+    const naxDir = new Bun.Glob("*.md");
+    const mismatches: string[] = [];
+    for (const name of [...naxDir.scanSync({ cwd: ".nax/rules", absolute: false })].sort()) {
+      const claudePath = `.claude/rules/${name}`;
+      if (!(await Bun.file(claudePath).exists())) continue;
+      const nax = fileGlobs(await Bun.file(`.nax/rules/${name}`).text(), "appliesTo");
+      const claude = fileGlobs(await Bun.file(claudePath).text(), "paths");
+      if (JSON.stringify(nax) !== JSON.stringify(claude)) {
+        mismatches.push(`${name}: .nax/rules appliesTo=[${nax}] vs .claude/rules paths=[${claude}]`);
+      }
+    }
+    expect(mismatches).toEqual([]);
   });
 });

@@ -1,5 +1,7 @@
 ---
 priority: 70
+appliesTo:
+  - "test/**/*.test.ts"
 ---
 
 # Test Helpers — Shared Mock Factories
