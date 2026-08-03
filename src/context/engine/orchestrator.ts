@@ -20,12 +20,12 @@ import { NeutralityLintError } from "../rules/canonical-loader";
 import { AGENT_PROFILES, getAgentProfile } from "./agent-profiles";
 import { renderForAgent } from "./agent-renderer";
 import { dedupeChunks } from "./dedupe";
-import { DIGEST_RESERVE_TOKENS, buildDigest, digestTokens, renderOverheadTokens } from "./digest";
+import { DIGEST_RESERVE_TOKENS, buildDigest, digestTokens } from "./digest";
 import { buildManifest, rebuildUsedTokens } from "./manifest-builder";
 import { FLOOR_KINDS, packChunks } from "./packing";
 import type { PackedChunk } from "./packing";
 import { PULL_TOOL_REGISTRY } from "./pull-tools";
-import { renderChunks } from "./render";
+import { FIXED_RENDER_OVERHEAD_TOKENS, renderChunks, separatorOverheadTokens } from "./render";
 import { MIN_SCORE, scoreChunks } from "./scoring";
 import { neutralizeForAgent } from "./scratch-neutralizer";
 import { getStageContextConfig } from "./stage-config";
@@ -263,13 +263,17 @@ export class ContextOrchestrator {
       });
     }
 
-    // AC-32 + US-001: reserve digest + prior digest + per-chunk markdown overhead so rendered markdown fits when no floor overflows (AC-7).
+    // AC-32 + US-001: reserve digest + prior digest + fixed markdown framing
+    // overhead so rendered markdown fits when no floor overflows (AC-7).
+    // Per-chunk separator overhead is computed from the actual kept chunks
+    // after min-score filtering (below), closing the ASSUMED_MIN_CHUNK_TOKENS
+    // gap — chunks smaller than 10 tokens cannot defeat the reserve.
     const profileBudget = agentProfile.caps.preferredPromptTokens;
     const stageCeiling = Math.min(request.budgetTokens, profileBudget);
     const priorDigestTokens = request.priorStageDigest ? Math.ceil(request.priorStageDigest.length / 4) : 0;
-    const effectiveBudgetTokens = Math.max(
+    let effectiveBudgetTokens = Math.max(
       0,
-      stageCeiling - DIGEST_RESERVE_TOKENS - priorDigestTokens - renderOverheadTokens(stageCeiling),
+      stageCeiling - DIGEST_RESERVE_TOKENS - priorDigestTokens - FIXED_RENDER_OVERHEAD_TOKENS,
     );
 
     // Step 1: filter providers to those applicable for this stage.
@@ -434,6 +438,10 @@ export class ContextOrchestrator {
     // Floor kinds (static, feature, test-coverage) bypass the filter regardless of score.
     const belowMin = postRoleFilter.filter((c) => !c.roleFiltered && c.belowMinScore && !FLOOR_KINDS.includes(c.kind));
     const kept = postRoleFilter.filter((c) => !c.roleFiltered && (!c.belowMinScore || FLOOR_KINDS.includes(c.kind)));
+
+    // US-001: reserve per-chunk separator overhead based on the ACTUAL chunks
+    // that survived min-score filtering (closes the ASSUMED_MIN_CHUNK_TOKENS gap).
+    effectiveBudgetTokens = Math.max(0, effectiveBudgetTokens - separatorOverheadTokens(kept));
 
     // Step 7: greedy pack. Apply agent-profile ceiling to the stage budget so
     // the final budget is min(stage, profile, caller availableBudget).

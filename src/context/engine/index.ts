@@ -10,7 +10,7 @@ export type { ScoredChunk } from "./scoring";
 export { dedupeChunks, SIMILARITY_THRESHOLD } from "./dedupe";
 export { packChunks } from "./packing";
 export type { PackedChunk, PackResult } from "./packing";
-export { renderChunks } from "./render";
+export { renderChunks, separatorOverheadTokens, FIXED_RENDER_OVERHEAD_TOKENS } from "./render";
 export { buildDigest, DIGEST_RESERVE_TOKENS, digestTokens, renderOverheadTokens } from "./digest";
 export { estimateAvailableBudgetTokens } from "./available-budget";
 export { getStageContextConfig, STAGE_CONTEXT_MAP, DEFAULT_STAGE_CONFIG } from "./stage-config";

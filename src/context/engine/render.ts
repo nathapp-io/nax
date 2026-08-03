@@ -37,6 +37,9 @@ const ASSUMED_MIN_CHUNK_TOKENS = 10;
 /** Fixed framing overhead for the markdown-sections style (headings + section separators). */
 const FIXED_RENDER_OVERHEAD_CHARS = 200;
 
+/** Fixed framing overhead in tokens (chars / 4, ceiling). */
+export const FIXED_RENDER_OVERHEAD_TOKENS = Math.ceil(FIXED_RENDER_OVERHEAD_CHARS / 4);
+
 /**
  * Worst-case markdown framing overhead (in characters) for a given packing budget
  * using the markdown-sections style that `assemble()` uses via `renderChunks()`.
@@ -60,6 +63,30 @@ export function renderOverheadChars(budgetTokens: number): number {
   const maxChunks = Math.max(1, Math.ceil(budgetTokens / ASSUMED_MIN_CHUNK_TOKENS));
   const separatorChars = (maxChunks - 1) * CHUNK_SEPARATOR_CHARS;
   return FIXED_RENDER_OVERHEAD_CHARS + separatorChars;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Actual-chunk overhead (closes the ASSUMED_MIN_CHUNK_TOKENS gap)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Compute the per-chunk separator overhead in tokens from actual chunks.
+ *
+ * The markdown-sections renderer inserts `CHUNK_SEPARATOR` (\n\n---\n\n, 7 chars)
+ * between every pair of chunks in the same scope. The worst-case scope is the
+ * one with the most chunks; all others use fewer separators.
+ *
+ * Called by the orchestrator AFTER min-score filtering (when the actual chunk
+ * set is known) so the reserved overhead matches reality — no assumed-minimum
+ * heuristic that sub-10-token chunks can defeat.
+ */
+export function separatorOverheadTokens(chunks: PackedChunk[]): number {
+  if (chunks.length === 0) return 0;
+  const byScope = groupByScope(chunks);
+  let maxInScope = 0;
+  for (const group of byScope.values()) maxInScope = Math.max(maxInScope, group.length);
+  const separatorChars = (maxInScope - 1) * CHUNK_SEPARATOR_CHARS;
+  return Math.ceil(separatorChars / 4);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
