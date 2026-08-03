@@ -361,8 +361,11 @@ export interface CanonicalRulesBudgetResult {
  * Apply tail-biased truncation using canonical ordering:
  * lower priority first, then rule id/path alphabetical.
  *
- * Rules that exceed budget are dropped from the tail so higher-priority rules
- * survive whenever possible.
+ * Rules are processed in priority order. The first rule that does not fit
+ * starts a contiguous dropped tail — every following rule is dropped as well,
+ * even if individually it would have fit. This guarantees that the result is
+ * the longest leading priority-ordered run whose summed token estimate fits
+ * inside `budgetTokens`.
  */
 export function applyCanonicalRulesBudget(rules: CanonicalRule[], budgetTokens: number): CanonicalRulesBudgetResult {
   if (!Number.isFinite(budgetTokens) || budgetTokens <= 0) {
@@ -380,7 +383,7 @@ export function applyCanonicalRulesBudget(rules: CanonicalRule[], budgetTokens: 
 
   for (const rule of rules) {
     const tokens = rule.tokens ?? estimateTokens(rule.content);
-    if (usedTokens + tokens > budgetTokens) continue;
+    if (usedTokens + tokens > budgetTokens) break;
     kept.push(rule);
     usedTokens += tokens;
   }

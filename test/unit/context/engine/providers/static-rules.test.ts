@@ -162,6 +162,18 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
     expect(result.chunks[1]?.id).toContain("b");
   });
 
+  test("[US-002 AC 5] emits chunks only for the surviving leading run and none for the dropped tail when budget is smaller than the store", async () => {
+    setupCanonical([
+      { fileName: "huge.md", id: "huge", content: "H".repeat(4000), tokens: 1000, priority: 1 },
+      { fileName: "tiny.md", id: "tiny", content: "T".repeat(40), tokens: 10, priority: 2 },
+      { fileName: "tiny2.md", id: "tiny2", content: "T2".repeat(40), tokens: 10, priority: 3 },
+    ]);
+    const provider = new StaticRulesProvider({ budgetTokens: 500 });
+    const result = await provider.fetch(BASE_REQUEST);
+    // huge is the first rule; it doesn't fit; tail starts at huge → nothing kept
+    expect(result.chunks).toEqual([]);
+  });
+
   test("propagates NeutralityLintError without falling back to legacy", async () => {
     _staticRulesDeps.loadCanonicalRules = async () => {
       throw new NeutralityLintError([

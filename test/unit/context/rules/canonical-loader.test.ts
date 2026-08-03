@@ -297,6 +297,56 @@ describe("applyCanonicalRulesBudget", () => {
     expect(result.rules.map((r) => r.id)).toEqual(["a", "b"]);
     expect(result.droppedCount).toBe(1);
   });
+
+  test("[US-002 AC 1] returns empty when the first priority-ordered rule alone exceeds budget, even if a later smaller rule would fit", () => {
+    const rules = [
+      { fileName: "huge.md", id: "huge", content: "H".repeat(4000), tokens: 1000, priority: 1 },
+      { fileName: "tiny.md", id: "tiny", content: "T".repeat(40), tokens: 10, priority: 2 },
+      { fileName: "tiny2.md", id: "tiny2", content: "T2".repeat(40), tokens: 10, priority: 3 },
+    ];
+    const result = applyCanonicalRulesBudget(rules, 500);
+    expect(result.rules).toEqual([]);
+    expect(result.usedTokens).toBe(0);
+    expect(result.droppedCount).toBe(3);
+  });
+
+  test("[US-002 AC 2] returns the longest leading priority-ordered run that fits and reports droppedCount as the number of following rules", () => {
+    const rules = [
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 10, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(400), tokens: 100, priority: 3 },
+      { fileName: "d.md", id: "d", content: "D".repeat(40), tokens: 10, priority: 4 },
+    ];
+    const result = applyCanonicalRulesBudget(rules, 30);
+    // a fits (10), b would push to 20 (fits), c would push to 120 (doesn't fit) → c,d dropped
+    expect(result.rules.map((r) => r.id)).toEqual(["a", "b"]);
+    expect(result.usedTokens).toBe(20);
+    expect(result.droppedCount).toBe(2);
+  });
+
+  test("[US-002 AC 3] returns every input rule with droppedCount 0 and usedTokens equal to totalTokens when budgetTokens fits all rules", () => {
+    const rules = [
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 10, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 10, priority: 3 },
+    ];
+    const result = applyCanonicalRulesBudget(rules, 100);
+    expect(result.rules).toHaveLength(3);
+    expect(result.droppedCount).toBe(0);
+    expect(result.usedTokens).toBe(30);
+    expect(result.usedTokens).toBe(result.totalTokens);
+  });
+
+  test("[US-002 AC 4] returns rules=[], usedTokens=0, and totalTokens equal to the summed input estimate when budgetTokens is 0", () => {
+    const rules = [
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(80), tokens: 20, priority: 2 },
+    ];
+    const result = applyCanonicalRulesBudget(rules, 0);
+    expect(result.rules).toEqual([]);
+    expect(result.usedTokens).toBe(0);
+    expect(result.totalTokens).toBe(30);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
