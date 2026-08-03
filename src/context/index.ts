@@ -32,9 +32,10 @@ export {
   ContextOrchestrator,
   DIGEST_RESERVE_TOKENS,
   estimateAvailableBudgetTokens,
-  renderOverheadTokens,
+  rebuildUsedTokens,
 } from "./engine";
-export type { AdapterFailure } from "./engine/types";
+export type { AdapterFailure, ContextBundle, ContextChunk } from "./engine/types";
+export type { PackedChunk } from "./engine/packing";
 export { NeutralityLintError } from "./rules/canonical-loader";
 
 export {

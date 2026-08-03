@@ -734,4 +734,53 @@ describe("US-001 — ContextOrchestrator budget arithmetic", () => {
     const renderedTokens = Math.ceil(bundle.pushMarkdown.length / 4);
     expect(renderedTokens).toBeLessThanOrEqual(stageBudget);
   });
+
+  test("AC-7: separator overhead is reserved across ALL scopes, not just the largest one", async () => {
+    // Boundary-sized fixture, verified by temporarily reverting
+    // separatorOverheadTokens() to its old (max-scope-only) formula: at
+    // stageBudget=374 that buggy formula reserves only 1 scope's separators
+    // (4 chunks -> 3 separators) and ends up including "marginal" too, which
+    // then overflows the budget. The correct formula sums separators across
+    // BOTH non-empty scopes (5+5 chunks -> 4+4=8 separators), leaving no room
+    // for "marginal" — it must be excluded.
+    const scopeA = Array.from({ length: 5 }, (_, i) => ({
+      id: `a:${i}`,
+      kind: "session" as const,
+      scope: "session" as const,
+      role: ["implementer" as const],
+      content: `alpha ${i} ${String.fromCharCode(65 + i).repeat(8)}`,
+      tokens: 5,
+      rawScore: 0.95 - i * 0.001,
+    }));
+    const scopeB = Array.from({ length: 5 }, (_, i) => ({
+      id: `b:${i}`,
+      kind: "session" as const,
+      scope: "story" as const,
+      role: ["implementer" as const],
+      content: `beta ${i} ${String.fromCharCode(97 + i).repeat(8)}`,
+      tokens: 5,
+      rawScore: 0.95 - i * 0.001,
+    }));
+    const marginal = {
+      id: "marginal",
+      kind: "session" as const,
+      scope: "story" as const,
+      role: ["implementer" as const],
+      content: `marginal content ${"m".repeat(22)}`,
+      tokens: 10,
+      rawScore: 0.5,
+    };
+    const orch = new ContextOrchestrator([
+      { id: "p1", kind: "feature", fetch: async () => ({ chunks: [...scopeA, ...scopeB, marginal], pullTools: [] }) } as IContextProvider,
+    ]);
+    const stageBudget = 374;
+    const bundle = await orch.assemble({ ...BASE_REQUEST, budgetTokens: stageBudget, providerIds: ["p1"] });
+    expect(bundle.manifest.floorOverageItems ?? []).toEqual([]);
+    // All 10 fixed chunks fit, but the marginal 11th does not — proving the
+    // reserve accounts for separators in BOTH scopes, not just the larger one.
+    expect(bundle.manifest.includedChunks).toHaveLength(10);
+    expect(bundle.manifest.includedChunks).not.toContain("marginal");
+    const renderedTokens = Math.ceil(bundle.pushMarkdown.length / 4);
+    expect(renderedTokens).toBeLessThanOrEqual(stageBudget);
+  });
 });

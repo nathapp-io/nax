@@ -98,9 +98,13 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
 /**
  * Compute the rebuilt manifest's `usedTokens` under US-001 accounting.
  *
- * `usedTokens = packed chunk tokens + prior-digest tokens`. The rebuild keeps
- * the prior's prior-digest contribution unless `newPriorStageDigest` is supplied
- * (then it replaces the prior's contribution).
+ * `usedTokens = packed chunk tokens + prior-digest tokens`, where the
+ * prior-digest contribution reflects exactly what `rebuildForAgent` renders:
+ * `renderChunks`/`renderForAgent` only emit the "Prior Stage Summary" section
+ * when `newPriorStageDigest` (trimmed) is non-empty — they never fall back to
+ * whatever digest the PRIOR assemble() call rendered. So this must not fall
+ * back to the prior bundle's digest contribution either, or manifest.usedTokens
+ * would count tokens for a section that isn't in pushMarkdown (AC-6).
  *
  * `extraTokens` is the sum of tokens for chunks added by the rebuild that
  * weren't in the prior bundle (typically the failure-note chunk on agent swap).
@@ -115,8 +119,7 @@ export function rebuildUsedTokens(
     .filter((c) => !prior.chunks.some((pc) => pc.id === c.id))
     .reduce((sum, c) => sum + c.tokens, 0);
   const packedTokens = priorChunksTokens + extraTokens;
-  const priorDigestContribution = Math.max(0, prior.manifest.usedTokens - priorChunksTokens);
   const newDigestContent = newPriorStageDigest?.trim();
   const newDigestContribution = newDigestContent ? Math.ceil(newDigestContent.length / 4) : 0;
-  return Math.max(0, packedTokens + (newDigestContribution > 0 ? newDigestContribution : priorDigestContribution));
+  return Math.max(0, packedTokens + newDigestContribution);
 }
