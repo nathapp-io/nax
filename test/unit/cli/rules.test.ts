@@ -354,6 +354,31 @@ describe("rulesLintCommand", () => {
       expect(combined).toContain("no/such/path/**");
     });
   });
+
+  test("[US-004 AC 4] does not warn when an appliesTo glob only matches dotfiles", async () => {
+    // Bun.Glob.scanSync skips dotfiles/dot-directories unless dot:true is
+    // passed, so a pattern that legitimately targets a hidden path (e.g.
+    // .github/**) must not be reported as a dead glob.
+    const logger = makeLogger();
+    _rulesCLIDeps.getLogger = () => logger as unknown as ReturnType<typeof _rulesCLIDeps.getLogger>;
+    _rulesCLIDeps.loadCanonicalRules = origLoadCanonicalRules;
+    _rulesCLIDeps.globCanonicalRuleFiles = origGlobCanonicalRuleFiles;
+
+    await withTempDir(async (workdir) => {
+      await mkdir(join(workdir, ".nax", "rules"), { recursive: true });
+      await mkdir(join(workdir, ".github", "workflows"), { recursive: true });
+      await Bun.write(
+        join(workdir, ".nax", "rules", "ci-scope.md"),
+        ["---", "appliesTo:", '  - ".github/**"', "---", "", "Body."].join("\n"),
+      );
+      await Bun.write(join(workdir, ".github", "workflows", "ci.yml"), "name: ci\n");
+
+      await expect(rulesLintCommand({ dir: workdir })).resolves.toBeUndefined();
+
+      const warnings = logger.calls.filter((c) => c.level === "warn");
+      expect(warnings).toHaveLength(0);
+    });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -70,7 +70,7 @@ export const _rulesCLIDeps = {
   },
   globHasMatch: (pattern: string, cwd: string): boolean => {
     try {
-      for (const _match of new Bun.Glob(pattern).scanSync({ cwd, absolute: false })) {
+      for (const _match of new Bun.Glob(pattern).scanSync({ cwd, absolute: false, dot: true })) {
         return true;
       }
       return false;
