@@ -20,7 +20,7 @@ import { NeutralityLintError } from "../rules/canonical-loader";
 import { AGENT_PROFILES, getAgentProfile } from "./agent-profiles";
 import { renderForAgent } from "./agent-renderer";
 import { dedupeChunks } from "./dedupe";
-import { DIGEST_RESERVE_TOKENS, buildDigest, digestTokens } from "./digest";
+import { DIGEST_RESERVE_TOKENS, RENDER_OVERHEAD_TOKENS, buildDigest, digestTokens } from "./digest";
 import { buildManifest, rebuildUsedTokens } from "./manifest-builder";
 import { FLOOR_KINDS, packChunks } from "./packing";
 import type { PackedChunk } from "./packing";
@@ -263,11 +263,12 @@ export class ContextOrchestrator {
       });
     }
 
-    // AC-32 + US-001: effective budget = min(stage, profile) − DIGEST_RESERVE_TOKENS.
-    // The reserve is subtracted before provider fetch and before packChunks so the
-    // rendered markdown plus this stage's produced digest stays within the stage budget.
+    // AC-32 + US-001: reserve digest + markdown framing overhead against min(stage, profile) so rendered markdown fits when no floor overflows (AC-7).
     const profileBudget = agentProfile.caps.preferredPromptTokens;
-    const effectiveBudgetTokens = Math.max(0, Math.min(request.budgetTokens, profileBudget) - DIGEST_RESERVE_TOKENS);
+    const effectiveBudgetTokens = Math.max(
+      0,
+      Math.min(request.budgetTokens, profileBudget) - DIGEST_RESERVE_TOKENS - RENDER_OVERHEAD_TOKENS,
+    );
 
     // Step 1: filter providers to those applicable for this stage.
     // request.providerIds (test-only override) takes precedence; otherwise stageConfig.providerIds.
@@ -563,7 +564,7 @@ export class ContextOrchestrator {
           }
         : undefined;
 
-    // US-001: usedTokens = packed chunk tokens + prior-digest tokens (see manifest-builder).
+    // US-001 usedTokens = packed + prior-digest (see manifest-builder).
     const usedTokens = rebuildUsedTokens(prior, packedChunks, priorStageDigest);
 
     const manifest: ContextManifest = {

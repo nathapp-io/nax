@@ -28,6 +28,22 @@ const SCOPE_HEADERS: Record<ChunkScope, string> = {
   retrieved: "## Retrieved Context",
 };
 
+/**
+ * Worst-case markdown framing overhead (in characters) for the
+ * markdown-sections style that `assemble()` uses via `renderChunks()`.
+ *
+ * Upper bound across all possible non-empty sections:
+ *   - 1 prior-stage heading   ("## Prior Stage Summary\n\n" = 25 chars)
+ *   - up to 5 scope headings  ("## <Label>\n\n", max 23 chars each = 115 chars)
+ *   - 6 section separators    ("\n\n" = 2 chars each = 12 chars)
+ *
+ * Total: 152 chars. Rounded up to 200 so the reserve is slightly conservative.
+ * Subtracted (as tokens) from the orchestrator's effective budget so the
+ * rendered push markdown stays within the stage budget when no floor chunk
+ * overflows (AC-7).
+ */
+export const RENDER_OVERHEAD_CHARS = 200;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Renderer
 // ─────────────────────────────────────────────────────────────────────────────

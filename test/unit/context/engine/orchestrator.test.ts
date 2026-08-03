@@ -568,4 +568,54 @@ describe("US-001 — ContextOrchestrator budget arithmetic", () => {
     const renderedTokens = Math.ceil(bundle.pushMarkdown.length / 4);
     expect(renderedTokens).toBeLessThanOrEqual(stageBudget);
   });
+
+  test("AC-7: rendered markdown stays within budget under tight stage budgets with full prior digest", async () => {
+    // Tight stage budget with a full prior digest: the rendered markdown (which
+    // includes the prior heading, the prior digest body, scope headers, and chunk
+    // content) must still fit within the stage budget when no floor overflows.
+    // Catches the gap where only DIGEST_RESERVE was subtracted (the markdown
+    // framing overhead — prior heading + scope headers — was not reserved).
+    //
+    // Scenario: stageBudget=500, priorDigest=1000 chars (full), one non-floor chunk
+    // sized to fill the effective packing ceiling. With only DIGEST_RESERVE reserved
+    // (no RENDER_OVERHEAD), packed content fills to budget-250 and the total
+    // rendered output (packed + prior + scope header + section separator)
+    // exceeds the stage budget by ~40 tokens — the size of the headings.
+    const priorDigest = "x".repeat(1_000); // full MAX_DIGEST_CHARS digest
+    // Session-kind chunk (NOT a floor kind) sized to fill the 250-token effective
+    // ceiling under the unfixed implementation.
+    const sessionProvider: IContextProvider = {
+      id: "p3",
+      kind: "feature",
+      fetch: async () => ({
+        chunks: [
+          {
+            id: "sess:1",
+            kind: "session",
+            scope: "feature",
+            role: ["implementer"],
+            content: "z".repeat(840),
+            tokens: 210,
+            rawScore: 0.9,
+          },
+        ],
+        pullTools: [],
+      }),
+    };
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "floor:1", kind: "static", tokens: 20, content: "x".repeat(80) })),
+      makeProvider("p2", makeChunkResult({ id: "feat:1", kind: "feature", tokens: 20, content: "y".repeat(80) })),
+      sessionProvider,
+    ]);
+    const stageBudget = 500;
+    const bundle = await orch.assemble({
+      ...BASE_REQUEST,
+      budgetTokens: stageBudget,
+      priorStageDigest: priorDigest,
+      providerIds: ["p1", "p2", "p3"],
+    });
+    expect(bundle.manifest.floorOverageItems ?? []).toEqual([]);
+    const renderedTokens = Math.ceil(bundle.pushMarkdown.length / 4);
+    expect(renderedTokens).toBeLessThanOrEqual(stageBudget);
+  });
 });

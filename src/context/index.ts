@@ -31,6 +31,7 @@ export { estimateTokens } from "../optimizer/types";
 export {
   ContextOrchestrator,
   DIGEST_RESERVE_TOKENS,
+  RENDER_OVERHEAD_TOKENS,
   estimateAvailableBudgetTokens,
 } from "./engine";
 export type { AdapterFailure } from "./engine/types";
