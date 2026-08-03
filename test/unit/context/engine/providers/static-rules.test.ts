@@ -462,3 +462,42 @@ describe("StaticRulesProvider — AC-57 per-package overlay", () => {
     expect(ids[0]).not.toBe(ids[1]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-004 AC 6-8: real .nax/rules store scope filtering by touchedFiles
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("StaticRulesProvider — real .nax/rules store scope filtering (US-004)", () => {
+  // A large explicit budget isolates the scoping behavior under test from
+  // priority-ordered budget trimming, which is a separate, out-of-scope concern.
+  const REAL_REPO_REQUEST: ContextRequest = {
+    storyId: "US-004",
+    repoRoot: process.cwd(),
+    packageDir: process.cwd(),
+    stage: "execution",
+    role: "implementer",
+    budgetTokens: 8000,
+  };
+
+  beforeEach(() => {
+    _staticRulesDeps.loadCanonicalRules = origLoadCanonicalRules;
+  });
+
+  test("[US-004 AC 6] emits no static-rules:test-writing: chunk when touchedFiles are non-test source files", async () => {
+    const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, touchedFiles: ["src/context/rules/canonical-loader.ts"] });
+    expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-writing:"))).toBe(false);
+  });
+
+  test("[US-004 AC 7] emits a static-rules:test-writing: chunk when touchedFiles include a path under test/", async () => {
+    const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, touchedFiles: ["test/unit/context/rules/canonical-loader.test.ts"] });
+    expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-writing:"))).toBe(true);
+  });
+
+  test("[US-004 AC 8] emits no static-rules:adapter-wiring: chunk when touchedFiles are outside src/agents and src/operations", async () => {
+    const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, touchedFiles: ["src/pipeline/stages/verify.ts"] });
+    expect(result.chunks.some((c) => c.id.startsWith("static-rules:adapter-wiring:"))).toBe(false);
+  });
+});

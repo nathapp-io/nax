@@ -7,6 +7,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { NaxError } from "../../../../src/errors";
+import { translateLegacyFrontmatter, withReviewNotice } from "@/cli";
 import {
   applyCanonicalRulesBudget,
   lintForNeutrality,
@@ -282,6 +283,83 @@ ${"C".repeat(800)}`,
     const rules = await loadCanonicalRules("/project", { budgetTokens: 200 });
     expect(rules.length).toBeGreaterThan(0);
     expect(rules.length).toBeLessThan(3);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-004: frontmatter key validation (AC 1-3) + scope round trip (AC 5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("loadCanonicalRules — frontmatter key validation (US-004)", () => {
+  test("[US-004 AC 1] throws RulesFrontmatterError naming the offending file for an unknown top-level key", async () => {
+    setupFiles({
+      "/project/.nax/rules/bad.md": ["---", "priority: 10", "scope: everywhere", "---", "", "Body."].join("\n"),
+    });
+    let threw: unknown;
+    try {
+      await loadCanonicalRules("/project");
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toBeInstanceOf(RulesFrontmatterError);
+    expect((threw as RulesFrontmatterError).context?.filePath).toBe("/project/.nax/rules/bad.md");
+  });
+
+  test.each([
+    ["not a string or array", "---\nappliesTo: 42\n---\nBody."],
+    ["an array containing a non-string entry", '---\nappliesTo:\n  - "src/**"\n  - 7\n---\nBody.'],
+  ])("[US-004 AC 2] throws RulesFrontmatterError naming the offending file when appliesTo is %s", async (_label, content) => {
+    setupFiles({ "/project/.nax/rules/bad.md": content });
+    let threw: unknown;
+    try {
+      await loadCanonicalRules("/project");
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toBeInstanceOf(RulesFrontmatterError);
+    expect((threw as RulesFrontmatterError).context?.filePath).toBe("/project/.nax/rules/bad.md");
+  });
+
+  test("[US-004 AC 3] resolves normally when a rule declares priority, paths, and appliesTo together", async () => {
+    setupFiles({
+      "/project/.nax/rules/agents.md": [
+        "---",
+        "priority: 60",
+        "paths:",
+        '  - "packages/api/**"',
+        "appliesTo:",
+        '  - "src/agents/**/*.ts"',
+        "---",
+        "",
+        "Only for agent files.",
+      ].join("\n"),
+    });
+    let threw: unknown;
+    let rules: Awaited<ReturnType<typeof loadCanonicalRules>> = [];
+    try {
+      rules = await loadCanonicalRules("/project");
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toBeUndefined();
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.priority).toBe(60);
+    expect(rules[0]?.paths).toEqual(["packages/api/**"]);
+    expect(rules[0]?.appliesTo).toEqual(["src/agents/**/*.ts"]);
+  });
+
+  test("[US-004 AC 5] loadCanonicalRules reads back the appliesTo value translated from a legacy paths: rule", async () => {
+    const legacy = ["---", "paths:", '  - "test/**/*.test.ts"', "---", "", "# Test Rule", ""].join("\n");
+    const { content: translated, translated: didTranslate } = translateLegacyFrontmatter(legacy);
+    expect(didTranslate).toBe(true);
+    const finalContent = withReviewNotice(translated, 2);
+
+    setupFiles({ "/project/.nax/rules/legacy.md": finalContent });
+    const rules = await loadCanonicalRules("/project");
+
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.appliesTo).toEqual(["test/**/*.test.ts"]);
+    expect(rules[0]?.paths).toBeUndefined();
   });
 });
 

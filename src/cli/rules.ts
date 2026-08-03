@@ -25,6 +25,7 @@ import { mkdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { CANONICAL_RULES_DIR, NEUTRALITY_RULES, loadCanonicalRules } from "../context/rules/canonical-loader";
 import { NaxError } from "../errors";
+import { getLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -68,6 +69,7 @@ export const _rulesCLIDeps = {
     }
   },
   loadCanonicalRules,
+  getLogger,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -10,7 +10,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { NaxError } from "@/errors";
 import { lintForNeutrality } from "../../../src/context/rules/canonical-loader";
-import { withTempDir } from "@test/helpers";
+import { makeLogger, withTempDir } from "@test/helpers";
 import {
   neutralizeContent,
   rulesExportCommand,
@@ -32,6 +32,7 @@ let origGlobInDir: typeof _rulesCLIDeps.globInDir;
 let origGlobCanonicalRuleFiles: typeof _rulesCLIDeps.globCanonicalRuleFiles;
 let origMkdir: typeof _rulesCLIDeps.mkdir;
 let origLoadCanonicalRules: typeof _rulesCLIDeps.loadCanonicalRules;
+let origGetLogger: typeof _rulesCLIDeps.getLogger;
 
 const written: Record<string, string> = {};
 
@@ -43,6 +44,7 @@ beforeEach(() => {
   origGlobCanonicalRuleFiles = _rulesCLIDeps.globCanonicalRuleFiles;
   origMkdir = _rulesCLIDeps.mkdir;
   origLoadCanonicalRules = _rulesCLIDeps.loadCanonicalRules;
+  origGetLogger = _rulesCLIDeps.getLogger;
 
   Object.keys(written).forEach((k) => delete written[k]);
 
@@ -63,6 +65,7 @@ afterEach(() => {
   _rulesCLIDeps.globCanonicalRuleFiles = origGlobCanonicalRuleFiles;
   _rulesCLIDeps.mkdir = origMkdir;
   _rulesCLIDeps.loadCanonicalRules = origLoadCanonicalRules;
+  _rulesCLIDeps.getLogger = origGetLogger;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -325,6 +328,30 @@ describe("rulesLintCommand", () => {
 
       expect(calls).toContain(workdir);
       expect(calls).toContain(join(workdir, "packages", "api"));
+    });
+  });
+
+  test("[US-004 AC 4] warns (does not throw) naming the rule file and pattern when an appliesTo glob matches zero files", async () => {
+    const logger = makeLogger();
+    _rulesCLIDeps.getLogger = () => logger as unknown as ReturnType<typeof _rulesCLIDeps.getLogger>;
+    _rulesCLIDeps.loadCanonicalRules = origLoadCanonicalRules;
+    _rulesCLIDeps.globCanonicalRuleFiles = origGlobCanonicalRuleFiles;
+
+    await withTempDir(async (workdir) => {
+      await mkdir(join(workdir, ".nax", "rules"), { recursive: true });
+      await Bun.write(
+        join(workdir, ".nax", "rules", "dead-glob.md"),
+        ["---", "appliesTo:", '  - "no/such/path/**"', "---", "", "Body."].join("\n"),
+      );
+      await Bun.write(join(workdir, "real-file.ts"), "export const x = 1;\n");
+
+      await expect(rulesLintCommand({ dir: workdir })).resolves.toBeUndefined();
+
+      const warnings = logger.calls.filter((c) => c.level === "warn");
+      expect(warnings.length).toBeGreaterThan(0);
+      const combined = warnings.map((c) => `${c.message} ${JSON.stringify(c.data ?? {})}`).join(" | ");
+      expect(combined).toContain("dead-glob.md");
+      expect(combined).toContain("no/such/path/**");
     });
   });
 });

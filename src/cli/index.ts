@@ -62,6 +62,8 @@ export {
   rulesLintCommand,
   rulesMigrateCommand,
   neutralizeContent,
+  translateLegacyFrontmatter,
+  withReviewNotice,
   type RulesExportOptions,
   type RulesLintOptions,
   type RulesMigrateOptions,
