@@ -128,7 +128,7 @@ export const PULL_TOOL_REGISTRY: Record<string, ToolDescriptor> = {
 
 /**
  * Shared mutable counter for the per-run call ceiling.
- * One RunCallCounter is created per nax run and passed to every PullToolBudget
+ * One RunCallCounter is created per story attempt (not per run, despite the name) and passed to every PullToolBudget
  * instance so they all draw from the same pool.
  */
 /**
@@ -152,7 +152,8 @@ export interface RunCallCounter {
   count: number;
   /**
    * Per-invocation records (AC-18). Shares the counter's lifetime, so it is
-   * run-scoped exactly as `count` is and needs no separate threading.
+   * scoped exactly as `count` is and needs no separate threading. Bounded by
+   * `maxCallsPerRun`, since `record()` is only reachable after `consume()`.
    */
   calls: PullCallRecord[];
 }

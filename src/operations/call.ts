@@ -212,8 +212,12 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     projectDir: ctx.runtime.projectDir,
     featureName: ctx.featureName ?? "",
     workdir: ctx.packageDir,
-    // Run-scoped pull counter: keeps pull.maxCallsPerRun a real per-run ceiling
-    // instead of resetting each hop, and carries AC-18's invocation records.
+    // Pull counter for this story attempt. Forwarding it stops
+    // pull.maxCallsPerRun resetting on every hop, and carries AC-18's
+    // invocation records through to metrics. NOTE: despite the config key's
+    // name the ceiling is per story ATTEMPT, not per run — PipelineContext is
+    // constructed fresh per iteration (iteration-runner.ts) and per parallel
+    // story (parallel-worker.ts), so each gets its own counter.
     ...(ctx.contextToolRunCounter ? { contextToolRunCounter: ctx.contextToolRunCounter } : {}),
     effectiveTier,
     defaultAgent,

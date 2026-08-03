@@ -1,10 +1,10 @@
 /**
  * callOp — run-scoped pull-tool counter threading.
  *
- * Split into its own file rather than appended to call.test.ts, which is
- * grandfathered at 972 lines against an 800 limit; the ratchet forbids growth.
- * Matches the existing call-*.test.ts topical split (call-correlation,
- * call-fail-timeout, call-op-retry, ...).
+ * Own file rather than appended to call.test.ts, matching the existing
+ * call-*.test.ts topical split (call-correlation, call-fail-timeout,
+ * call-op-retry, ...). call.test.ts is 736 lines against an 800 limit, so the
+ * split is by convention, not because the ratchet forced it.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -38,7 +38,6 @@ const runEchoOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONF
 
 describe("callOp — contextToolRunCounter threading", () => {
   test("forwards ctx.contextToolRunCounter into the hop context", async () => {
-    const { _callOpDeps } = await import("@/operations");
     const orig = _callOpDeps.buildHopCallback;
     let seen: unknown;
     let stubCalled = false;

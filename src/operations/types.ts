@@ -17,9 +17,10 @@ export interface CallContext {
   readonly packageView: PackageView;
   readonly packageDir: string;
   /**
-   * Run-scoped pull-tool counter, created by the context stage. Threaded so
-   * `pull.maxCallsPerRun` is enforced once per run instead of resetting on
-   * every hop, and so AC-18's per-invocation records survive to metrics.
+   * Pull-tool counter for this story attempt, created by the context stage.
+   * Threaded so `pull.maxCallsPerRun` stops resetting on every hop, and so
+   * AC-18's per-invocation records survive to metrics. The ceiling is per
+   * story attempt despite the key's name — see the note in call.ts.
    */
   readonly contextToolRunCounter?: import("../context/engine").RunCallCounter;
   readonly storyId?: string;
