@@ -3,12 +3,12 @@
   "feature": "context-budget-truth",
   "branchName": "feat/context-budget-truth",
   "createdAt": "2026-08-03T02:11:58Z",
-  "updatedAt": "2026-08-03T02:15:18.609Z",
+  "updatedAt": "2026-08-03T04:49:20.925Z",
   "userStories": [
     {
       "id": "US-001",
       "title": "Make context-budget arithmetic truthful",
-      "description": "**Goal** \u2014 Make the context ceiling, digest reserve, rendered-prompt accounting, and manifest usage agree.\n\n**Motivation** \u2014 The remaining-room estimate inverts under pressure, digest tokens are never reserved, and manifest usage counts the digest this stage produces instead of the digest the prompt carries.\n\n**Approach** \u2014 Restore scope before trimming. Scoping removes rules that do **not** apply to a story; trimming removes rules that **do**. Both mechanisms already exist in the codebase \u2014 this spec fixes the arithmetic of one and supplies the missing data for the other. No new packing algorithm, no new provider, no change to `packChunks`' floor semantics.\n\n**Scope** \u2014 In: return a numeric zero ceiling on exhausted windows; derive and export the digest reserve from `MAX_DIGEST_CHARS`; subtract it from the orchestrator effective budget before provider fetch and `packChunks`; account `priorStageDigest` in the manifest; and update the existing test \"chunkTokens covers exactly the included chunks and sums to usedTokens minus the digest\" in `test/unit/context/engine/orchestrator.test.ts` (:99-110), whose assertion `summed === manifest.usedTokens - manifest.digestTokens` no longer holds under the corrected accounting \u2014 its BASE_REQUEST supplies no `priorStageDigest`, so the new invariant is that `summed` equals `usedTokens` minus the PRIOR-stage digest tokens (zero here). Update that assertion; do not revert the accounting change to make it pass. Out: floor-share trimming, legacy fallback budgeting, provider soft-budget signatures, and changes to `packChunks` floor semantics.\n\n**Interface**\n```typescript\nestimateAvailableBudgetTokens(agentId: string, existingPrompt?: string): number\npackChunks(chunks, budgetTokens, availableBudgetTokens?)\nexport const DIGEST_RESERVE_TOKENS: number\nbuildManifest(inputs: ManifestInputs): ContextManifest\n```\n\n`availableBudgetTokens === undefined` must continue to mean \"no caller ceiling\"; the value `0` must mean a real ceiling of zero. The digest reserve is subtracted from `Math.min(request.budgetTokens, agentProfile.caps.preferredPromptTokens)` before the provider fetch loop and before `packChunks`. `buildManifest` must account the digest actually carried in the rendered prompt (`request.priorStageDigest`), leaving the `digestTokens` field itself as the produced digest that is threaded forward.",
+      "description": "**Goal** — Make the context ceiling, digest reserve, rendered-prompt accounting, and manifest usage agree.\n\n**Motivation** — The remaining-room estimate inverts under pressure, digest tokens are never reserved, and manifest usage counts the digest this stage produces instead of the digest the prompt carries.\n\n**Approach** — Restore scope before trimming. Scoping removes rules that do **not** apply to a story; trimming removes rules that **do**. Both mechanisms already exist in the codebase — this spec fixes the arithmetic of one and supplies the missing data for the other. No new packing algorithm, no new provider, no change to `packChunks`' floor semantics.\n\n**Scope** — In: return a numeric zero ceiling on exhausted windows; derive and export the digest reserve from `MAX_DIGEST_CHARS`; subtract it from the orchestrator effective budget before provider fetch and `packChunks`; account `priorStageDigest` in the manifest; and update the existing test \"chunkTokens covers exactly the included chunks and sums to usedTokens minus the digest\" in `test/unit/context/engine/orchestrator.test.ts` (:99-110), whose assertion `summed === manifest.usedTokens - manifest.digestTokens` no longer holds under the corrected accounting — its BASE_REQUEST supplies no `priorStageDigest`, so the new invariant is that `summed` equals `usedTokens` minus the PRIOR-stage digest tokens (zero here). Update that assertion; do not revert the accounting change to make it pass. Out: floor-share trimming, legacy fallback budgeting, provider soft-budget signatures, and changes to `packChunks` floor semantics.\n\n**Interface**\n```typescript\nestimateAvailableBudgetTokens(agentId: string, existingPrompt?: string): number\npackChunks(chunks, budgetTokens, availableBudgetTokens?)\nexport const DIGEST_RESERVE_TOKENS: number\nbuildManifest(inputs: ManifestInputs): ContextManifest\n```\n\n`availableBudgetTokens === undefined` must continue to mean \"no caller ceiling\"; the value `0` must mean a real ceiling of zero. The digest reserve is subtracted from `Math.min(request.budgetTokens, agentProfile.caps.preferredPromptTokens)` before the provider fetch loop and before `packChunks`. `buildManifest` must account the digest actually carried in the rendered prompt (`request.priorStageDigest`), leaving the `digestTokens` field itself as the produced digest that is threaded forward.",
       "acceptanceCriteria": [
         "[estimateAvailableBudgetTokens] returns 0 when the existing prompt leaves the agent profile with non-positive remaining context room.",
         "[estimateAvailableBudgetTokens] returns a positive value smaller than the agent profile's maxContextTokens when called with a short prompt.",
@@ -28,17 +28,36 @@
       "status": "pending",
       "passes": false,
       "attempts": 0,
-      "escalations": [],
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "fromAgent": "opencode",
+          "toAgent": "opencode",
+          "reason": "Rectification exhausted with unfixed findings",
+          "timestamp": "2026-08-03T03:52:59.903Z"
+        },
+        {
+          "fromTier": "powerful",
+          "toTier": "balanced",
+          "fromAgent": "opencode",
+          "toAgent": "claude",
+          "reason": "agent session failed (exit 0); phases=rectification,adversarial-review",
+          "timestamp": "2026-08-03T04:49:18.890Z"
+        }
+      ],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
         "reasoning": "Four established engine modules require coordinated arithmetic and manifest assertions, but no new abstraction or concurrency behavior is introduced.",
         "agentProfileId": "opencode-medium",
-        "agent": "opencode",
+        "agent": "claude",
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/context/engine/available-budget.ts",
@@ -50,14 +69,39 @@
       "expectedFiles": [
         "test/unit/context/engine/available-budget.test.ts"
       ],
-      "outOfScope": [
-        "Floor-share trimming \u2014 capping the rules floor at a configured fraction of the stage budget (e.g. `floorShareRatio: 0.7`) \u2014 is deferred until the effect of restored rule scoping can be measured."
-      ]
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Rectification exhausted with unfixed findings",
+        "Attempt 1 failed with model tier: powerful: agent session failed (exit 0); phases=rectification,adversarial-review"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Tier balanced: Rectification exhausted with unfixed findings",
+          "cost": 10.8515145,
+          "timestamp": "2026-08-03T03:52:59.903Z",
+          "agent": "opencode",
+          "agentProfileId": "opencode-medium"
+        },
+        {
+          "attempt": 1,
+          "modelTier": "powerful",
+          "stage": "escalation",
+          "summary": "Tier powerful: agent session failed (exit 0); phases=rectification,adversarial-review",
+          "cost": 1.360835657,
+          "timestamp": "2026-08-03T04:49:18.890Z",
+          "agent": "opencode",
+          "agentProfileId": "opencode-medium"
+        }
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "a342185836fcab017736e10de7d4ee6634bf0a86"
     },
     {
       "id": "US-002",
       "title": "Restore tail-biased canonical-rule truncation",
-      "description": "**Goal** \u2014 Ensure the canonical rules budget retains only the longest leading priority-ordered run that fits.\n\n**Motivation** \u2014 Rules truncation is best-fit, not tail-biased: a large `priority: 10` rule is dropped while small `priority: 900` rules survive.\n\n**Approach** \u2014 Restore scope before trimming. Scoping removes rules that do **not** apply to a story; trimming removes rules that **do**. Both mechanisms already exist in the codebase \u2014 this spec fixes the arithmetic of one and supplies the missing data for the other. No new packing algorithm, no new provider, no change to `packChunks`' floor semantics.\n\n**Scope** \u2014 In: change only `applyCanonicalRulesBudget` loop continuation behavior and prove the static provider emits the surviving leading run. Out: changing the result shape, zero/negative-budget early return, provider interface, or global packing heuristic.\n\n**Interface**\n```typescript\napplyCanonicalRulesBudget(rules, budgetTokens)\n// returns CanonicalRulesBudgetResult { rules, totalTokens, usedTokens, droppedCount }\n```\n\nOnly the loop-continuation behaviour changes; the result shape and the zero/negative-budget early return are untouched. Rules are priority ordered, so the first rule that does not fit starts the dropped contiguous tail.",
+      "description": "**Goal** — Ensure the canonical rules budget retains only the longest leading priority-ordered run that fits.\n\n**Motivation** — Rules truncation is best-fit, not tail-biased: a large `priority: 10` rule is dropped while small `priority: 900` rules survive.\n\n**Approach** — Restore scope before trimming. Scoping removes rules that do **not** apply to a story; trimming removes rules that **do**. Both mechanisms already exist in the codebase — this spec fixes the arithmetic of one and supplies the missing data for the other. No new packing algorithm, no new provider, no change to `packChunks`' floor semantics.\n\n**Scope** — In: change only `applyCanonicalRulesBudget` loop continuation behavior and prove the static provider emits the surviving leading run. Out: changing the result shape, zero/negative-budget early return, provider interface, or global packing heuristic.\n\n**Interface**\n```typescript\napplyCanonicalRulesBudget(rules, budgetTokens)\n// returns CanonicalRulesBudgetResult { rules, totalTokens, usedTokens, droppedCount }\n```\n\nOnly the loop-continuation behaviour changes; the result shape and the zero/negative-budget early return are untouched. Rules are priority ordered, so the first rule that does not fit starts the dropped contiguous tail.",
       "acceptanceCriteria": [
         "[applyCanonicalRulesBudget] returns an empty rules array when its first priority-ordered rule alone exceeds budgetTokens, rather than retaining a later smaller rule.",
         "[applyCanonicalRulesBudget] returns the longest leading priority-ordered run that fits budgetTokens and reports droppedCount as the number of following rules.",
@@ -92,12 +136,15 @@
         "src/context/engine/providers/static-rules.ts",
         "test/unit/context/rules/canonical-loader.test.ts",
         "test/unit/context/engine/providers/static-rules.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
       "title": "Expose floor-budget overage in logs and story metrics",
-      "description": "**Goal** \u2014 Make fail-open floor overage observable without changing which chunks are included.\n\n**Motivation** \u2014 Floor overage is silent: non-floor chunks are excluded with no log and no metric, leaving only `reason: \"budget-exceeded-by-floor\"` in the manifest.\n\n**Approach** \u2014 Restore scope before trimming. Scoping removes rules that do **not** apply to a story; trimming removes rules that **do**. Both mechanisms already exist in the codebase \u2014 this spec fixes the arithmetic of one and supplies the missing data for the other. No new packing algorithm, no new provider, no change to `packChunks`' floor semantics.\n\n**Scope** \u2014 In: consume existing `PackResult.floorOverageIds`, calculate the overage in the assembly/metrics path, add a warn log, and add optional `StoryMetrics.context.floorOverage`. Out: enforcing a floor ceiling, trimming static rules by share, or changing packed content.\n\n**Interface**\n```typescript\nPackResult.floorOverageIds: string[]\nStoryMetrics.context?: {\n  providers: Record<string, ContextProviderMetrics>\n  pollution?: { /* existing shape */ }\n  floorOverage?: { /* optional-object shape parallel to pollution */ }\n}\n```\n\nFloor-kind chunks still always pack. Whenever they push a bundle past the effective budget, log a warn-level record and record the overage token count; the run never blocks. The warn data object begins with `storyId` and carries the stage, effective budget, and the number of non-floor chunks excluded as a result.",
+      "description": "**Goal** — Make fail-open floor overage observable without changing which chunks are included.\n\n**Motivation** — Floor overage is silent: non-floor chunks are excluded with no log and no metric, leaving only `reason: \"budget-exceeded-by-floor\"` in the manifest.\n\n**Approach** — Restore scope before trimming. Scoping removes rules that do **not** apply to a story; trimming removes rules that **do**. Both mechanisms already exist in the codebase — this spec fixes the arithmetic of one and supplies the missing data for the other. No new packing algorithm, no new provider, no change to `packChunks`' floor semantics.\n\n**Scope** — In: consume existing `PackResult.floorOverageIds`, calculate the overage in the assembly/metrics path, add a warn log, and add optional `StoryMetrics.context.floorOverage`. Out: enforcing a floor ceiling, trimming static rules by share, or changing packed content.\n\n**Interface**\n```typescript\nPackResult.floorOverageIds: string[]\nStoryMetrics.context?: {\n  providers: Record<string, ContextProviderMetrics>\n  pollution?: { /* existing shape */ }\n  floorOverage?: { /* optional-object shape parallel to pollution */ }\n}\n```\n\nFloor-kind chunks still always pack. Whenever they push a bundle past the effective budget, log a warn-level record and record the overage token count; the run never blocks. The warn data object begins with `storyId` and carries the stage, effective budget, and the number of non-floor chunks excluded as a result.",
       "acceptanceCriteria": [
         "[packChunks] returns every overflowing floor-kind chunk id in floorOverageIds while retaining every floor-kind chunk in packed.",
         "Given a manifest persisted from ContextOrchestrator.assemble whose floor chunks exceed its effective budget, when collectStoryMetrics derives StoryMetrics, then context.floorOverage records the overage token count.",
@@ -135,14 +182,14 @@
         "src/metrics/tracker.ts",
         "test/unit/context/engine/orchestrator.test.ts"
       ],
-      "outOfScope": [
-        "Floor-share trimming \u2014 capping the rules floor at a configured fraction of the stage budget (e.g. `floorShareRatio: 0.7`) \u2014 is deferred until the effect of restored rule scoping can be measured."
-      ]
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
       "title": "Validate and restore canonical-rule file scope",
-      "description": "**Goal** \u2014 Reject malformed rule-scope frontmatter, warn on dead file globs, preserve migrated scope, and restore the three provably lost scopes.\n\n**Motivation** \u2014 The engine already filters rules per story, but no `.nax/rules/` file declares `appliesTo:` or `paths:`, making the scope filter inert and injecting inapplicable rules.\n\n**Approach** \u2014 Restore scope before trimming. Scoping removes rules that do **not** apply to a story; trimming removes rules that **do**. Both mechanisms already exist in the codebase \u2014 this spec fixes the arithmetic of one and supplies the missing data for the other. No new packing algorithm, no new provider, no change to `packChunks`' floor semantics.\n\n**Scope** \u2014 In: recognise only `priority`, `paths`, and `appliesTo`; reject unknown keys and non-list appliesTo values with `RulesFrontmatterError`; warn through the project logger when a valid `appliesTo` glob matches no repository file; cover migrate-notice round trip; add the preserved file scopes to exactly three rule files. Out: syntactic glob validation, a full forced migration, scope auditing of the other eight rules, CI enforcement, package-path semantic changes, or legacy fallback budgeting.\n\n**Interface**\n```yaml\n---\npriority: 60\nappliesTo:\n  - \"src/agents/**/*.ts\"\n  - \"src/operations/**/*.ts\"\npaths:\n  - \"packages/core/**\"\n---\n```\n\n`appliesTo` is a **file** glob matched against `request.touchedFiles`. `paths` is a **package** glob matched against the story's package dir, and `ruleMatchesPackage` short-circuits to `true` whenever `packageDir === repoRoot` \u2014 so in a single-package repo `paths` has no effect. `translateLegacyFrontmatter` rewrites legacy file-glob `paths:` to `appliesTo:`; `withReviewNotice` must retain the leading frontmatter at byte 0. `rulesLintCommand(options)` returns `Promise<void>`, propagates loader failures, and treats dead-glob reporting as a warning rather than a throw.",
+      "description": "**Goal** — Reject malformed rule-scope frontmatter, warn on dead file globs, preserve migrated scope, and restore the three provably lost scopes.\n\n**Motivation** — The engine already filters rules per story, but no `.nax/rules/` file declares `appliesTo:` or `paths:`, making the scope filter inert and injecting inapplicable rules.\n\n**Approach** — Restore scope before trimming. Scoping removes rules that do **not** apply to a story; trimming removes rules that **do**. Both mechanisms already exist in the codebase — this spec fixes the arithmetic of one and supplies the missing data for the other. No new packing algorithm, no new provider, no change to `packChunks`' floor semantics.\n\n**Scope** — In: recognise only `priority`, `paths`, and `appliesTo`; reject unknown keys and non-list appliesTo values with `RulesFrontmatterError`; warn through the project logger when a valid `appliesTo` glob matches no repository file; cover migrate-notice round trip; add the preserved file scopes to exactly three rule files. Out: syntactic glob validation, a full forced migration, scope auditing of the other eight rules, CI enforcement, package-path semantic changes, or legacy fallback budgeting.\n\n**Interface**\n```yaml\n---\npriority: 60\nappliesTo:\n  - \"src/agents/**/*.ts\"\n  - \"src/operations/**/*.ts\"\npaths:\n  - \"packages/core/**\"\n---\n```\n\n`appliesTo` is a **file** glob matched against `request.touchedFiles`. `paths` is a **package** glob matched against the story's package dir, and `ruleMatchesPackage` short-circuits to `true` whenever `packageDir === repoRoot` — so in a single-package repo `paths` has no effect. `translateLegacyFrontmatter` rewrites legacy file-glob `paths:` to `appliesTo:`; `withReviewNotice` must retain the leading frontmatter at byte 0. `rulesLintCommand(options)` returns `Promise<void>`, propagates loader failures, and treats dead-glob reporting as a warning rather than a throw.",
       "acceptanceCriteria": [
         "[loadCanonicalRules] throws RulesFrontmatterError naming the offending file when frontmatter declares a top-level key other than priority, paths, or appliesTo.",
         "[loadCanonicalRules] throws RulesFrontmatterError naming the offending file when appliesTo is present but is not a list of strings.",
@@ -183,26 +230,25 @@
         ".claude/rules/test-writing.md",
         "test/unit/cli/rules.test.ts"
       ],
-      "outOfScope": [
-        "Regenerating the whole `.nax/rules` store with `nax rules migrate --force` is deferred; it would emit `appliesTo` correctly but discard the hand-added `priority` values, which the `.claude/rules` sources do not carry.",
-        "Auditing the eight rule files that never declared scope, to decide whether any of them should gain an `appliesTo` glob, is deferred to a human judgement pass; only the three files with a provable pre-migration scope are restored here."
-      ]
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "This is an enhancement to Context Engine v2, not a greenfield feature. The ceiling estimator currently returns `number | undefined` and maps non-positive remaining context to `undefined` (`src/context/engine/available-budget.ts:12-19`); its two stage/request-builder callers can accept the narrowed numeric return type. `packChunks` already distinguishes an omitted ceiling from a literal zero with `availableBudgetTokens !== undefined`, and already exposes `effectiveBudget`, `floorPackedIds`, and `floorOverageIds` (`src/context/engine/packing.ts:63-100`), so the correct migration is to return zero rather than alter floor semantics. The orchestrator derives its effective budget before provider fetches, passes it to packing, then renders the prior-stage digest and only afterwards builds the new digest (`src/context/engine/orchestrator.ts:266-269,430-466`). This is the single cross-module seam for reserving the digest before packing, floor-overage logging, and forwarding the metric. `digest.ts` declares the existing `MAX_DIGEST_CHARS = 1_000` but does not export it or a reserve (`src/context/engine/digest.ts:22-27`); derive `DIGEST_RESERVE_TOKENS` from this constant to avoid competing literals. Manifest accounting currently adds the newly-produced digest token count to packed chunk tokens (`src/context/engine/manifest-builder.ts:37-88`) despite `renderChunks` carrying `request.priorStageDigest`; changing this accounting must retain `digestTokens` as the produced, threaded-forward digest. Existing orchestrator, packing, digest, render, and plan-digest tests provide fixtures for these interactions, especially `test/unit/context/engine/orchestrator.test.ts` and `test/unit/context/engine/packing.test.ts`; US-001 creates the first focused available-budget test file.\n\nRules already have the intended two-stage filtering: package `paths` are filtered first and `appliesTo` is matched against `request.touchedFiles` before `applyCanonicalRulesBudget` (`src/context/engine/providers/static-rules.ts:180-260`). The provider sorts canonical rules by priority and id, but `applyCanonicalRulesBudget` currently continues after an over-budget rule, contradicting its own tail-biased contract (`src/context/rules/canonical-loader.ts:346-390`). The safe behavior is to stop at the first non-fitting ordered rule, preserving the result object and zero/negative-budget early return. The loader already parses frontmatter and throws `RulesFrontmatterError` for invalid values, while its unit tests already cover valid priority/paths/appliesTo parsing and dependency injection through `_canonicalLoaderDeps` (`src/context/rules/canonical-loader.ts:305-455`, `test/unit/context/rules/canonical-loader.test.ts`). Extend that parser to reject unknown top-level keys and non-list `appliesTo`, without changing the existing package-glob meaning of `paths`. The CLI lint command currently loads every root and prints a conventional `[OK]` line (`src/cli/rules.ts:373-385`); it needs injected repository/glob traversal and project-logger warning support for unmatched `appliesTo` patterns, while preserving fail-closed propagation from the loader. `translateLegacyFrontmatter` and `withReviewNotice` already preserve byte-zero frontmatter (`src/cli/rules.ts:202-231`), so only round-trip coverage is required there. Restore `appliesTo` data directly in `.nax/rules/test-writing.md`, `.nax/rules/test-architecture.md`, and `.nax/rules/adapter-wiring.md`; do not mass-migrate because the current store carries hand-added priorities.\n\nFloor overage is intentionally fail-open: `packChunks` includes all floor kinds and records which crossed the budget (`src/context/engine/packing.ts:82-100`). Add an optional sibling `floorOverage` object to `StoryMetrics.context` alongside `pollution` (`src/metrics/types.ts:150-172`), derive it from assemble manifests in the existing metrics tracker flow (`src/metrics/tracker.ts:44-175`), and emit an orchestrator warn record whose data begins with `storyId` and contains stage, effective budget, and excluded non-floor count. This is backward-compatible because `context` and its new sibling are optional; consumers must tolerate manifests produced before this field. Risks are primarily arithmetic double-counting (prior digest may also be represented as a boosted chunk for some stages), ambiguity between floor overage and produced digest reserve, and broad rule scoping accidentally treating `paths` as file globs. Mitigate with exact manifest/render assertions, real-assemble integration tests, loader/CLI DI tests, and repository-store scope tests. Dependencies are US-001 before US-003 because US-003 must observe the corrected effective budget; US-002 and US-004 are independent. No config schema, provider signature, legacy fallback, or packing heuristic migration is planned.",
   "outOfScope": [
-    "Floor-share trimming \u2014 capping the rules floor at a configured fraction of the stage budget (e.g. `floorShareRatio: 0.7`) \u2014 is deferred until the effect of restored rule scoping can be measured.",
+    "Floor-share trimming — capping the rules floor at a configured fraction of the stage budget (e.g. `floorShareRatio: 0.7`) — is deferred until the effect of restored rule scoping can be measured.",
     "Budgeting the legacy fallback path in `StaticRulesProvider.fetchLegacy`, which loads CLAUDE.md, `.cursorrules`, AGENTS.md and every `.claude/rules/**` file without applying any token budget, is deferred; the unbudgeted path remains live for repositories that have not migrated to `.nax/rules/`.",
     "Correcting `fetchLegacy`'s log line, which claims it prefers the first candidate file while it in fact loads all of them, is deferred.",
-    "Satisfying spec AC-7's \"packing within 5% of brute-force optimal\" bound \u2014 via a knapsack-repair step or the property test the spec calls for \u2014 is deferred; density-greedy remains the packing heuristic.",
+    "Satisfying spec AC-7's \"packing within 5% of brute-force optimal\" bound — via a knapsack-repair step or the property test the spec calls for — is deferred; density-greedy remains the packing heuristic.",
     "Pull-based rule delivery, where the agent requests rule bodies on demand instead of receiving them in every prompt, is deferred and requires its own design.",
-    "The general per-provider soft budget \u2014 the spec'd `fetch(request, softBudgetTokens)` provider signature and its proportional-allocation policy \u2014 is deferred; only the rules provider's own budget is addressed here.",
-    "Scoring-axis drift from the context-engine gap analysis \u2014 role weights, the absent `freshness` axis, per-stage kind weights, and the semantic kind taxonomy \u2014 is deferred.",
+    "The general per-provider soft budget — the spec'd `fetch(request, softBudgetTokens)` provider signature and its proportional-allocation policy — is deferred; only the rules provider's own budget is addressed here.",
+    "Scoring-axis drift from the context-engine gap analysis — role weights, the absent `freshness` axis, per-stage kind weights, and the semantic kind taxonomy — is deferred.",
     "Auditing the eight rule files that never declared scope, to decide whether any of them should gain an `appliesTo` glob, is deferred to a human judgement pass; only the three files with a provable pre-migration scope are restored here.",
     "Regenerating the whole `.nax/rules` store with `nax rules migrate --force` is deferred; it would emit `appliesTo` correctly but discard the hand-added `priority` values, which the `.claude/rules` sources do not carry.",
     "Enforcing `nax rules lint` in CI or in `bun run lint` is deferred; this spec only makes the command validate more.",
-    "US-001 only: the case where an agent profile reports a `maxContextTokens` smaller than the reserved non-context allowance \u2014 the resulting negative remainder is covered by AC 1's zero return, and no separate error path is specified.",
-    "US-004 only: validating that an `appliesTo` glob is syntactically well-formed beyond being a string \u2014 a malformed pattern that compiles to a regex matching nothing is reported by AC 4's dead-glob warning rather than a distinct error."
+    "US-001 only: the case where an agent profile reports a `maxContextTokens` smaller than the reserved non-context allowance — the resulting negative remainder is covered by AC 1's zero return, and no separate error path is specified.",
+    "US-004 only: validating that an `appliesTo` glob is syntactically well-formed beyond being a string — a malformed pattern that compiles to a regex matching nothing is reported by AC 4's dead-glob warning rather than a distinct error."
   ],
   "routingProfile": "cross-agent"
 }
