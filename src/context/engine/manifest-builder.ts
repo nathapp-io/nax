@@ -65,7 +65,10 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
   // US-001: manifest.usedTokens accounts the digest actually carried in the
   // rendered prompt (request.priorStageDigest). The produced digest is recorded
   // separately in `digestTokens` and threaded forward to the next stage.
-  const priorStageDigestTokens = request.priorStageDigest ? Math.ceil(request.priorStageDigest.length / 4) : 0;
+  // renderChunks omits a whitespace-only priorStageDigest (it requires .trim()
+  // to be non-empty), so buildManifest must match that to keep AC-6 truthful.
+  const priorStageDigest = request.priorStageDigest?.trim();
+  const priorStageDigestTokens = priorStageDigest ? Math.ceil(priorStageDigest.length / 4) : 0;
 
   return {
     requestId,
@@ -113,6 +116,7 @@ export function rebuildUsedTokens(
     .reduce((sum, c) => sum + c.tokens, 0);
   const packedTokens = priorChunksTokens + extraTokens;
   const priorDigestContribution = Math.max(0, prior.manifest.usedTokens - priorChunksTokens);
-  const newDigestContribution = newPriorStageDigest ? Math.ceil(newPriorStageDigest.length / 4) : 0;
+  const newDigestContent = newPriorStageDigest?.trim();
+  const newDigestContribution = newDigestContent ? Math.ceil(newDigestContent.length / 4) : 0;
   return Math.max(0, packedTokens + (newDigestContribution > 0 ? newDigestContribution : priorDigestContribution));
 }

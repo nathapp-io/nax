@@ -552,6 +552,23 @@ describe("US-001 — ContextOrchestrator budget arithmetic", () => {
     expect(bundle.manifest.usedTokens).toBe(packedSum + expectedPriorDigestTokens);
   });
 
+  test("AC-6: whitespace-only priorStageDigest does not inflate manifest.usedTokens", async () => {
+    // renderChunks omits whitespace-only priorStageDigest (requires .trim() non-empty),
+    // so buildManifest must NOT count tokens for it — or manifest.usedTokens overstates
+    // what was actually carried in the rendered prompt.
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "c:1", tokens: 500, content: "alpha content" })),
+      makeProvider("p2", makeChunkResult({ id: "c:2", tokens: 500, content: "beta content" })),
+    ]);
+    const bundle = await orch.assemble({ ...BASE_REQUEST, priorStageDigest: "  \n\t " });
+    const tokenMap = bundle.manifest.chunkTokens ?? {};
+    const packedSum = Object.values(tokenMap).reduce((a, b) => a + b, 0);
+    // Whitespace-only digest is not rendered — manifest.usedTokens = packedSum only.
+    expect(bundle.manifest.usedTokens).toBe(packedSum);
+    // The push markdown must not contain the prior-stage heading (renderChunks skips it).
+    expect(bundle.pushMarkdown).not.toContain("Prior Stage Summary");
+  });
+
   test("AC-7: rendered markdown estimated token count does not exceed request.budgetTokens when no floor overflows", async () => {
     // Small chunks with no floor overage: rendered push markdown must fit within
     // the stage budget (the digest reserve is subtracted before packing, and

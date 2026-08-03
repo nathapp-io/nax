@@ -263,14 +263,11 @@ export class ContextOrchestrator {
       });
     }
 
-    // AC-32 + US-001: reserve digest + prior digest + fixed markdown framing
-    // overhead so rendered markdown fits when no floor overflows (AC-7).
-    // Per-chunk separator overhead is computed from the actual kept chunks
-    // after min-score filtering (below), closing the ASSUMED_MIN_CHUNK_TOKENS
-    // gap — chunks smaller than 10 tokens cannot defeat the reserve.
+    // AC-32 + US-001: reserve digest + prior digest + fixed framing; per-chunk separator from kept below.
     const profileBudget = agentProfile.caps.preferredPromptTokens;
     const stageCeiling = Math.min(request.budgetTokens, profileBudget);
-    const priorDigestTokens = request.priorStageDigest ? Math.ceil(request.priorStageDigest.length / 4) : 0;
+    const d = request.priorStageDigest?.trim();
+    const priorDigestTokens = d ? Math.ceil(d.length / 4) : 0;
     let effectiveBudgetTokens = Math.max(
       0,
       stageCeiling - DIGEST_RESERVE_TOKENS - priorDigestTokens - FIXED_RENDER_OVERHEAD_TOKENS,
@@ -439,12 +436,8 @@ export class ContextOrchestrator {
     const belowMin = postRoleFilter.filter((c) => !c.roleFiltered && c.belowMinScore && !FLOOR_KINDS.includes(c.kind));
     const kept = postRoleFilter.filter((c) => !c.roleFiltered && (!c.belowMinScore || FLOOR_KINDS.includes(c.kind)));
 
-    // US-001: reserve per-chunk separator overhead based on the ACTUAL chunks
-    // that survived min-score filtering (closes the ASSUMED_MIN_CHUNK_TOKENS gap).
     effectiveBudgetTokens = Math.max(0, effectiveBudgetTokens - separatorOverheadTokens(kept));
-
-    // Step 7: greedy pack. Apply agent-profile ceiling to the stage budget so
-    // the final budget is min(stage, profile, caller availableBudget).
+    // Step 7: greedy pack — agent-profile ceiling applied at packing.
     const { packed, budgetExcludedIds, usedTokens, floorPackedIds, floorOverageIds } = packChunks(
       kept,
       effectiveBudgetTokens,
