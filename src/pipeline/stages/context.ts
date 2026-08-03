@@ -149,6 +149,11 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     budgetTokens: stageOverrides?.budgetTokens ?? ctx.config.context.featureEngine?.budgetTokens ?? 8_000,
     extraProviderIds: stageOverrides?.extraProviderIds ?? [],
     minScore: ctx.config.context.v2.minScore,
+    // Per-stage override wins, then the engine-wide key; absent leaves the
+    // orchestrator's own default in place.
+    ...((stageOverrides?.providerTimeoutMs ?? ctx.config.context.v2.providerTimeoutMs) !== undefined && {
+      providerTimeoutMs: stageOverrides?.providerTimeoutMs ?? ctx.config.context.v2.providerTimeoutMs,
+    }),
     storyScratchDirs,
     priorStageDigest,
     ...(touchedFiles.length > 0 && { touchedFiles }),

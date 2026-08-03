@@ -384,6 +384,28 @@ describe("assembleForStage — ADR-009 / .naxignore threading", () => {
     _stageAssemblerDeps.createOrchestrator = origCreate;
   });
 
+  test("threads the engine-wide providerTimeoutMs from config into the request", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+
+    const ctx = makeCtx();
+    (ctx.config as unknown as { context: { v2: Record<string, unknown> } }).context.v2.providerTimeoutMs = 9000;
+    await assembleForStage(ctx, "execution");
+
+    expect(mock.ref.captured?.providerTimeoutMs).toBe(9000);
+  });
+
+  test("a per-stage providerTimeoutMs override wins over the engine-wide value", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+
+    const ctx = makeCtx({ stages: { execution: { providerTimeoutMs: 2000 } } });
+    (ctx.config as unknown as { context: { v2: Record<string, unknown> } }).context.v2.providerTimeoutMs = 9000;
+    await assembleForStage(ctx, "execution");
+
+    expect(mock.ref.captured?.providerTimeoutMs).toBe(2000);
+  });
+
   test("threads resolvedTestPatterns from the pipeline context into the request", async () => {
     const mock = makeMockOrchestrator();
     _stageAssemblerDeps.createOrchestrator = () =>
