@@ -435,6 +435,15 @@ describe("translateLegacyFrontmatter", () => {
     const { translated } = translateLegacyFrontmatter(src);
     expect(translated).toBe(false);
   });
+
+  test("rewrites a legacy `paths:` block using CRLF line endings", () => {
+    const src = ['---', 'paths:', '  - "test/**/*.test.ts"', '---', '', '# Test Architecture', ''].join("\r\n");
+    const { content, translated } = translateLegacyFrontmatter(src);
+    expect(translated).toBe(true);
+    expect(content).toContain("appliesTo:");
+    expect(content).not.toContain("paths:");
+    expect(content.startsWith("---\r\n")).toBe(true);
+  });
 });
 
 describe("rulesMigrateCommand — legacy scope translation", () => {
@@ -490,5 +499,25 @@ describe("withReviewNotice", () => {
     expect(out).toContain("appliesTo:");
     expect(out).toContain("<!-- NOTE:");
     expect(/^---\n[\s\S]*?\n---\n/.test(out)).toBe(true);
+  });
+
+  test("a CRLF-authored legacy rule keeps its translated scope readable after neutralization", async () => {
+    // Regression: translateLegacyFrontmatter/withReviewNotice previously only
+    // recognised LF frontmatter delimiters, so a CRLF-authored source file
+    // skipped translation and then had the notice pushed in front of the
+    // still-untouched block, losing the scope on read-back.
+    _rulesCLIDeps.globInDir = () => ["/repo/.claude/rules/crlf-rule.md"];
+    _rulesCLIDeps.fileExists = async (p: string) => p.startsWith("/repo/.claude/");
+    _rulesCLIDeps.readFile = async () =>
+      ['---', 'paths:', '  - "src/agents/**/*.ts"', '---', '', '# CRLF Rule', '', 'IMPORTANT: see CLAUDE.md.'].join(
+        "\r\n",
+      );
+
+    await rulesMigrateCommand({ dir: "/repo" });
+
+    const out = written["/repo/.nax/rules/crlf-rule.md"];
+    expect(out).toContain("appliesTo:");
+    expect(out).toContain("<!-- NOTE:");
+    expect(/^---\r?\n[\s\S]*?\r?\n---\r?\n/.test(out)).toBe(true);
   });
 });

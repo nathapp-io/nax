@@ -212,17 +212,18 @@ export function neutralizeContent(content: string): { content: string; replaceme
  * re-run of `nax rules migrate --force` idempotent.
  */
 export function translateLegacyFrontmatter(content: string): { content: string; translated: boolean } {
-  const fm = /^---\n([\s\S]*?)\n---\n/.exec(content);
-  if (!fm?.[1]) return { content, translated: false };
+  const fm = /^---(\r?\n)([\s\S]*?)\r?\n---\r?\n/.exec(content);
+  if (!fm?.[2]) return { content, translated: false };
 
-  const block = fm[1];
+  const eol = fm[1] ?? "\n";
+  const block = fm[2];
   // Top-level keys only: an indented `paths:` belongs to a nested mapping.
   if (!/^paths:/m.test(block) || /^appliesTo:/m.test(block)) return { content, translated: false };
 
   const rewritten = block.replace(/^paths:/m, "appliesTo:");
   const head = content.slice(0, fm.index);
   const tail = content.slice(fm.index + fm[0].length);
-  return { content: `${head}---\n${rewritten}\n---\n${tail}`, translated: true };
+  return { content: `${head}---${eol}${rewritten}${eol}---${eol}${tail}`, translated: true };
 }
 
 /**
@@ -237,9 +238,9 @@ export function translateLegacyFrontmatter(content: string): { content: string; 
 export function withReviewNotice(content: string, replacements: number): string {
   if (replacements <= 0) return content;
   const notice = `<!-- NOTE: ${replacements} neutralization(s) applied — review before committing -->\n\n`;
-  const fm = /^---\n[\s\S]*?\n---\n/.exec(content);
+  const fm = /^---\r?\n[\s\S]*?\r?\n---\r?\n/.exec(content);
   if (!fm) return notice + content;
-  return content.slice(0, fm[0].length) + notice + content.slice(fm[0].length).replace(/^\n+/, "");
+  return content.slice(0, fm[0].length) + notice + content.slice(fm[0].length).replace(/^(?:\r?\n)+/, "");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
