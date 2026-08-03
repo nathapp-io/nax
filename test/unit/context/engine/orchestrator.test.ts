@@ -618,4 +618,39 @@ describe("US-001 — ContextOrchestrator budget arithmetic", () => {
     const renderedTokens = Math.ceil(bundle.pushMarkdown.length / 4);
     expect(renderedTokens).toBeLessThanOrEqual(stageBudget);
   });
+
+  test("AC-7: per-chunk separator overhead is reserved so rendered fits with many same-scope chunks", async () => {
+    // Catches the gap where per-chunk separators (\n\n---\n\n between chunks in the
+    // same scope) were not reserved. With many small chunks in one scope, the
+    // accumulated separator length pushes the rendered markdown over the budget
+    // even when packed chunk tokens fit. The reserve must scale with the packing
+    // budget so this stays in budget.
+    const priorDigest = "x".repeat(1_000);
+    // 60 small session chunks in one scope (5 tokens each) → 59 intra-scope
+    // separators × 7 chars = 413 chars ≈ 104 tokens of separator overhead on top
+    // of packed chunk content and the prior digest.
+    const smallChunks = Array.from({ length: 60 }, (_, i) => ({
+      id: `sess:${i}`,
+      kind: "session" as const,
+      scope: "feature" as const,
+      role: ["implementer"] as ("implementer")[],
+      content: `chunk ${i} bytes ${String.fromCharCode(65 + (i % 26)).repeat(8 + (i % 3))}`,
+      tokens: 5,
+      rawScore: 0.9 - i * 0.005,
+    }));
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "floor:1", kind: "static", tokens: 10, content: "rules" })),
+      { id: "p3", kind: "feature", fetch: async () => ({ chunks: smallChunks, pullTools: [] }) } as IContextProvider,
+    ]);
+    const stageBudget = 700;
+    const bundle = await orch.assemble({
+      ...BASE_REQUEST,
+      budgetTokens: stageBudget,
+      priorStageDigest: priorDigest,
+      providerIds: ["p1", "p3"],
+    });
+    expect(bundle.manifest.floorOverageItems ?? []).toEqual([]);
+    const renderedTokens = Math.ceil(bundle.pushMarkdown.length / 4);
+    expect(renderedTokens).toBeLessThanOrEqual(stageBudget);
+  });
 });

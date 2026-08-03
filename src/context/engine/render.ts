@@ -28,21 +28,39 @@ const SCOPE_HEADERS: Record<ChunkScope, string> = {
   retrieved: "## Retrieved Context",
 };
 
+/** Length of CHUNK_SEPARATOR ("\n\n---\n\n") used between chunks in the same scope. */
+const CHUNK_SEPARATOR_CHARS = 7;
+
+/** Conservative minimum chunk size used to bound the worst-case separator count. */
+const ASSUMED_MIN_CHUNK_TOKENS = 10;
+
+/** Fixed framing overhead for the markdown-sections style (headings + section separators). */
+const FIXED_RENDER_OVERHEAD_CHARS = 200;
+
 /**
- * Worst-case markdown framing overhead (in characters) for the
- * markdown-sections style that `assemble()` uses via `renderChunks()`.
+ * Worst-case markdown framing overhead (in characters) for a given packing budget
+ * using the markdown-sections style that `assemble()` uses via `renderChunks()`.
  *
- * Upper bound across all possible non-empty sections:
- *   - 1 prior-stage heading   ("## Prior Stage Summary\n\n" = 25 chars)
- *   - up to 5 scope headings  ("## <Label>\n\n", max 23 chars each = 115 chars)
- *   - 6 section separators    ("\n\n" = 2 chars each = 12 chars)
+ * Components:
+ *   - FIXED_RENDER_OVERHEAD_CHARS (200):
+ *       1 prior-stage heading ("## Prior Stage Summary\n\n" = 25 chars)
+ *       up to 5 scope headings  ("## <Label>\n\n", max 23 chars each = 115 chars)
+ *       6 section separators    ("\n\n" = 2 chars each = 12 chars)
+ *       48 chars margin
+ *   - per-chunk separator overhead:
+ *       worst case max chunks = ceil(budgetTokens / ASSUMED_MIN_CHUNK_TOKENS)
+ *       each separator adds CHUNK_SEPARATOR_CHARS = 7 chars between chunks
+ *       (n-1) separators for n chunks in the worst-case scope
  *
- * Total: 152 chars. Rounded up to 200 so the reserve is slightly conservative.
  * Subtracted (as tokens) from the orchestrator's effective budget so the
  * rendered push markdown stays within the stage budget when no floor chunk
  * overflows (AC-7).
  */
-export const RENDER_OVERHEAD_CHARS = 200;
+export function renderOverheadChars(budgetTokens: number): number {
+  const maxChunks = Math.max(1, Math.ceil(budgetTokens / ASSUMED_MIN_CHUNK_TOKENS));
+  const separatorChars = (maxChunks - 1) * CHUNK_SEPARATOR_CHARS;
+  return FIXED_RENDER_OVERHEAD_CHARS + separatorChars;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Renderer

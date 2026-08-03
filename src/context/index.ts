@@ -31,8 +31,8 @@ export { estimateTokens } from "../optimizer/types";
 export {
   ContextOrchestrator,
   DIGEST_RESERVE_TOKENS,
-  RENDER_OVERHEAD_TOKENS,
   estimateAvailableBudgetTokens,
+  renderOverheadTokens,
 } from "./engine";
 export type { AdapterFailure } from "./engine/types";
 export { NeutralityLintError } from "./rules/canonical-loader";

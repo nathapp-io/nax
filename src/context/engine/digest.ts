@@ -15,7 +15,7 @@
  */
 
 import type { PackedChunk } from "./packing";
-import { RENDER_OVERHEAD_CHARS } from "./render";
+import { renderOverheadChars } from "./render";
 import type { ChunkScope } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -38,13 +38,15 @@ export const DIGEST_RESERVE_TOKENS = Math.ceil(MAX_DIGEST_CHARS / 4);
 
 /**
  * Token reserve carved out for the worst-case markdown framing overhead
- * (prior-stage heading + scope headers + section separators). Derived from
- * RENDER_OVERHEAD_CHARS at 4 chars/token. Subtracted alongside
- * DIGEST_RESERVE_TOKENS so the rendered markdown (whose size is chunk content
- * plus overhead plus digest) stays within the stage budget when no floor
- * chunk overflows (AC-7).
+ * (prior-stage heading + scope headers + section separators + per-chunk
+ * separators), parameterized by the packing budget so it scales with the
+ * number of chunks that could fit. Derived from `renderOverheadChars()` at
+ * 4 chars/token. Subtracted alongside DIGEST_RESERVE_TOKENS so the rendered
+ * markdown stays within the stage budget when no floor chunk overflows (AC-7).
  */
-export const RENDER_OVERHEAD_TOKENS = Math.ceil(RENDER_OVERHEAD_CHARS / 4);
+export function renderOverheadTokens(budgetTokens: number): number {
+  return Math.ceil(renderOverheadChars(budgetTokens) / 4);
+}
 
 const SCOPE_ORDER: ChunkScope[] = ["project", "feature", "story", "session", "retrieved"];
 
