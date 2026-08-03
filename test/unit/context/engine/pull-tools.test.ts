@@ -170,13 +170,17 @@ describe("handleQueryNeighbor", () => {
     return new PullToolBudget(sessionLimit, runLimit, createRunCallCounter());
   }
 
-  // Gap finding 7 — the pull path hardcoded packageDir: repoRoot, ignoring the
-  // monorepo scoping the push path honours.
-  test("scopes the request to the story's package when packageDir is supplied", async () => {
-    const mockLogger = makeLogger();
-    _pullToolsDeps.getLogger = () => mockLogger as any;
+  // Gap finding 7 — the pull path hardcoded packageDir: repoRoot. These assert
+  // the scan root the provider actually receives, NOT the log line: the request
+  // and the log are separate statements, so a log-only assertion passes even if
+  // the ContextRequest is left unscoped.
+  test("scans the story's package, not the repo root, when packageDir is supplied", async () => {
+    const scanRoots: string[] = [];
     _codeNeighborDeps.fileExists = async () => false;
-    _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
+    _codeNeighborDeps.glob = (_pattern: unknown, workdir: string) => {
+      scanRoots.push(workdir);
+      return { files: [], truncated: false };
+    };
 
     await handleQueryNeighbor(
       { filePath: "src/a.ts" },
@@ -189,20 +193,23 @@ describe("handleQueryNeighbor", () => {
       "/repo/packages/api",
     );
 
-    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
-    expect(call?.data?.packageDir).toBe("/repo/packages/api");
+    // The provider also scans the repo root for cross-package reverse deps, so
+    // the discriminating assertion is that the PACKAGE dir is scanned at all —
+    // before the fix, packageDir defaulted to repoRoot and never appeared here.
+    expect(scanRoots).toContain("/repo/packages/api");
   });
 
-  test("falls back to the repo root when no packageDir is supplied (single-package)", async () => {
-    const mockLogger = makeLogger();
-    _pullToolsDeps.getLogger = () => mockLogger as any;
+  test("scans the repo root when no packageDir is supplied (single-package)", async () => {
+    const scanRoots: string[] = [];
     _codeNeighborDeps.fileExists = async () => false;
-    _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
+    _codeNeighborDeps.glob = (_pattern: unknown, workdir: string) => {
+      scanRoots.push(workdir);
+      return { files: [], truncated: false };
+    };
 
     await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget());
 
-    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
-    expect(call?.data?.packageDir).toBe("/repo");
+    expect(scanRoots).toContain("/repo");
   });
 
   test("calls budget.consume() before fetching; propagates NaxError from exhausted budget", async () => {

@@ -228,10 +228,12 @@ export async function handleQueryNeighbor(
   budget.consume();
 
   const provider = new CodeNeighborProvider(providerOptions ?? {});
+  // One source of truth so the request and the log provably cannot diverge.
+  const resolvedPackageDir = packageDir ?? repoRoot;
   const request: ContextRequest = {
     storyId: storyId ?? "_pull-tool",
     repoRoot,
-    packageDir: packageDir ?? repoRoot,
+    packageDir: resolvedPackageDir,
     stage: "pull-tool",
     role: "implementer",
     budgetTokens: maxTokensPerCall,
@@ -250,7 +252,7 @@ export async function handleQueryNeighbor(
     storyId: storyId ?? "_pull-tool",
     tool: "query_neighbor",
     filePath: input.filePath,
-    packageDir: packageDir ?? repoRoot,
+    packageDir: resolvedPackageDir,
     resultCount: result.chunks.length,
     resultBytes: finalContent.length,
   };

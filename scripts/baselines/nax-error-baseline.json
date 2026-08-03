@@ -1,6 +1,6 @@
 {
-  "count": 112,
-  "updatedAt": "2026-06-19T15:50:21.967Z",
+  "count": 110,
+  "updatedAt": "2026-08-03T03:51:18.569Z",
   "byFile": {
     "src/interaction/init.ts": 1,
     "src/interaction/plugins/auto.ts": 2,
@@ -44,7 +44,6 @@
     "src/logger/logger.ts": 1,
     "src/context/generator.ts": 1,
     "src/context/builder.ts": 1,
-    "src/context/engine/tool-runtime.ts": 2,
     "src/context/engine/providers/plugin-loader.ts": 2,
     "src/pipeline/runner.ts": 1
   }
