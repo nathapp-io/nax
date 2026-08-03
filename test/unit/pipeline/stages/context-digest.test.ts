@@ -5,11 +5,12 @@
  * the new digest after. Tests use _contextStageDeps injection — no mock.module().
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { contextStage, _contextStageDeps } from "../../../../src/pipeline/stages/context";
-import type { PipelineContext } from "../../../../src/pipeline/types";
+import { NaxError } from "@/errors";
 import type { ContextBundle, ContextRequest } from "../../../../src/context/engine";
+import { _contextStageDeps, contextStage } from "../../../../src/pipeline/stages/context";
+import type { PipelineContext } from "../../../../src/pipeline/types";
 import { cleanupTempDir, makeTempDir } from "../../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -208,7 +209,8 @@ describe("context stage — Phase 2 digest threading", () => {
     _contextStageDeps.writeDigest = async (dir) => {
       writeDir = dir;
     };
-    _contextStageDeps.uuid = () => "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" as `${string}-${string}-${string}-${string}-${string}`;
+    _contextStageDeps.uuid = () =>
+      "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" as `${string}-${string}-${string}-${string}-${string}`;
     mockOrchestrator(makeBundle("some digest"));
 
     const ctx = makeCtx({ sessionScratchDir: undefined, sessionId: undefined });
@@ -329,6 +331,28 @@ describe("contextStage — v2.stages.context overrides", () => {
     await contextStage.execute(makeCtx({ naxIgnoreIndex: index }));
 
     expect(capturedRequest?.naxIgnoreIndex).toBe(index);
+  });
+
+  test("rethrows CONTEXT_UNKNOWN_PROVIDER_IDS instead of degrading to no v2 context", async () => {
+    _contextStageDeps.readDigest = async () => "";
+    _contextStageDeps.writeDigest = async () => {};
+    _contextStageDeps.createOrchestrator = () =>
+      ({
+        async assemble() {
+          throw new NaxError("Unknown context provider ID(s): rgu", "CONTEXT_UNKNOWN_PROVIDER_IDS", {
+            stage: "context",
+          });
+        },
+        rebuildForAgent: () => makeBundle(),
+      }) as unknown as ReturnType<typeof _contextStageDeps.createOrchestrator>;
+
+    let threw: unknown;
+    try {
+      await contextStage.execute(ctxWithStages({ extraProviderIds: ["rgu"] }));
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toMatchObject({ code: "CONTEXT_UNKNOWN_PROVIDER_IDS" });
   });
 
   test("publishes resolved test patterns onto the pipeline context for later stages", async () => {

@@ -218,22 +218,24 @@ describe("discoverSessionScratchDirsOnDisk — Finding 2", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Minimal PipelineContext for assembleForStage tests */
-function makeCtx(overrides: {
-  deterministic?: boolean;
-  testStrategy?: string;
-  /** Override the agent-spawn workdir (ctx.workdir). Defaults to "/repo". */
-  workdir?: string;
-  /** Override the repo root (ctx.projectDir). Defaults to undefined to suppress manifest writes. */
-  projectDir?: string;
-  /** Override story.workdir (relative sub-package path). */
-  storyWorkdir?: string;
-  /** ADR-009 resolved test-file patterns carried on the pipeline context. */
-  resolvedTestPatterns?: unknown;
-  /** Pre-built .naxignore index carried on the pipeline context. */
-  naxIgnoreIndex?: unknown;
-  /** Per-stage v2 overrides (config.context.v2.stages). */
-  stages?: Record<string, { budgetTokens?: number; extraProviderIds?: string[] }>;
-} = {}): PipelineContext {
+function makeCtx(
+  overrides: {
+    deterministic?: boolean;
+    testStrategy?: string;
+    /** Override the agent-spawn workdir (ctx.workdir). Defaults to "/repo". */
+    workdir?: string;
+    /** Override the repo root (ctx.projectDir). Defaults to undefined to suppress manifest writes. */
+    projectDir?: string;
+    /** Override story.workdir (relative sub-package path). */
+    storyWorkdir?: string;
+    /** ADR-009 resolved test-file patterns carried on the pipeline context. */
+    resolvedTestPatterns?: unknown;
+    /** Pre-built .naxignore index carried on the pipeline context. */
+    naxIgnoreIndex?: unknown;
+    /** Per-stage v2 overrides (config.context.v2.stages). */
+    stages?: Record<string, { budgetTokens?: number; extraProviderIds?: string[] }>;
+  } = {},
+): PipelineContext {
   return {
     config: {
       context: {
@@ -296,7 +298,9 @@ describe("assembleForStage — AC-24/AC-51 ContextRequest propagation", () => {
     origReadDescriptor = _stageAssemblerDeps.readDescriptor;
     origCreateOrchestrator = _stageAssemblerDeps.createOrchestrator;
     // Suppress disk discovery
-    _stageAssemblerDeps.readdir = async () => { throw new Error("ENOENT"); };
+    _stageAssemblerDeps.readdir = async () => {
+      throw new Error("ENOENT");
+    };
     _stageAssemblerDeps.readDescriptor = async () => null;
   });
 
@@ -308,7 +312,8 @@ describe("assembleForStage — AC-24/AC-51 ContextRequest propagation", () => {
 
   test("AC-24: passes deterministic:true when config flag is set", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () =>
+      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
 
     await assembleForStage(makeCtx({ deterministic: true }), "execution");
 
@@ -317,7 +322,8 @@ describe("assembleForStage — AC-24/AC-51 ContextRequest propagation", () => {
 
   test("AC-24: passes deterministic:false when config flag is unset", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () =>
+      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
 
     await assembleForStage(makeCtx({ deterministic: false }), "execution");
 
@@ -326,7 +332,8 @@ describe("assembleForStage — AC-24/AC-51 ContextRequest propagation", () => {
 
   test("AC-51: passes planDigestBoost from routing testStrategy (tdd-simple → 1.5)", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () =>
+      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
 
     await assembleForStage(makeCtx({ testStrategy: "tdd-simple" }), "execution");
 
@@ -335,7 +342,8 @@ describe("assembleForStage — AC-24/AC-51 ContextRequest propagation", () => {
 
   test("AC-51: planDigestBoost is undefined for three-session-tdd (uses multi-session digest)", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () =>
+      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
 
     await assembleForStage(makeCtx({ testStrategy: "three-session-tdd" }), "tdd-implementer");
 
@@ -344,7 +352,8 @@ describe("assembleForStage — AC-24/AC-51 ContextRequest propagation", () => {
 
   test("AC-51: planDigestBoost 1.5 for no-test strategy", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () =>
+      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
 
     await assembleForStage(makeCtx({ testStrategy: "no-test" }), "execution");
 
@@ -353,7 +362,8 @@ describe("assembleForStage — AC-24/AC-51 ContextRequest propagation", () => {
 
   test("threads availableBudgetTokens from stage assembly call site", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () =>
+      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
 
     await assembleForStage(makeCtx({ testStrategy: "tdd-simple" }), "execution");
 
@@ -376,7 +386,8 @@ describe("assembleForStage — ADR-009 / .naxignore threading", () => {
 
   test("threads resolvedTestPatterns from the pipeline context into the request", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () =>
+      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
     const patterns = { regex: [/\.test\.ts$/], globs: ["test/**/*.test.ts"], testDirs: ["test"], pathspec: [] };
 
     await assembleForStage(makeCtx({ resolvedTestPatterns: patterns }), "tdd-test-writer");
@@ -386,7 +397,8 @@ describe("assembleForStage — ADR-009 / .naxignore threading", () => {
 
   test("threads naxIgnoreIndex from the pipeline context into the request", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () =>
+      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
     const index = { getMatchers: () => [] };
 
     await assembleForStage(makeCtx({ naxIgnoreIndex: index }), "tdd-implementer");
@@ -396,7 +408,8 @@ describe("assembleForStage — ADR-009 / .naxignore threading", () => {
 
   test("leaves both undefined when the pipeline context carries neither", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () =>
+      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
 
     await assembleForStage(makeCtx(), "execution");
 
@@ -423,7 +436,9 @@ describe("assembleForStage — Issue #556 monorepo workdir contamination", () =>
     origReaddir = _stageAssemblerDeps.readdir;
     origReadDescriptor = _stageAssemblerDeps.readDescriptor;
     origCreateOrchestrator = _stageAssemblerDeps.createOrchestrator;
-    _stageAssemblerDeps.readdir = async () => { throw new Error("ENOENT"); };
+    _stageAssemblerDeps.readdir = async () => {
+      throw new Error("ENOENT");
+    };
     _stageAssemblerDeps.readDescriptor = async () => null;
   });
 

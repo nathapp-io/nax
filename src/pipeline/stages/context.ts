@@ -16,6 +16,8 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { NaxError } from "@/errors";
+import { packageDirRelative } from "@/utils/paths";
 import { NeutralityLintError, createDefaultOrchestrator, createRunCallCounter } from "../../context/engine";
 import type { ContextRequest, IContextProvider } from "../../context/engine";
 import { estimateAvailableBudgetTokens } from "../../context/engine/available-budget";
@@ -108,7 +110,14 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   // Failure is non-fatal — providers degrade by skipping sibling-test hinting.
   let resolvedTestPatterns: import("../../test-runners/resolver").ResolvedTestPatterns | undefined;
   try {
-    resolvedTestPatterns = await resolveTestFilePatterns(ctx.config, ctx.workdir, ctx.story.workdir || undefined, {
+    // Anchors must match routing.ts:113-115 — resolveTestFilePatterns takes the
+    // absolute project ROOT plus a package path RELATIVE to it. In monorepo mode
+    // ctx.workdir is already join(projectDir, story.workdir), so passing it as the
+    // root together with story.workdir doubles the package segment: the per-package
+    // .nax/mono/<pkg>/config.json lookup misses and detection scans a path that does
+    // not exist, silently falling through to DEFAULT_TEST_FILE_PATTERNS.
+    const root = ctx.projectDir ?? ctx.workdir;
+    resolvedTestPatterns = await resolveTestFilePatterns(ctx.config, root, packageDirRelative(root, ctx.workdir), {
       storyId: ctx.story.id,
     });
   } catch (err) {
@@ -117,9 +126,10 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
       error: errorMessage(err),
     });
   }
-  // Publish onto the pipeline context so later assemblies (assembleForStage:
-  // execution, rectify, tdd-*, review-*) reuse this resolution instead of
-  // skipping sibling-test hinting or repeating the I/O.
+  // Publish onto the pipeline context so later assemblies via assembleForStage
+  // (today the batch / no-test / single-session execution bundles built by
+  // promptStage) reuse this resolution instead of skipping sibling-test hinting
+  // or repeating the I/O.
   if (resolvedTestPatterns) ctx.resolvedTestPatterns = resolvedTestPatterns;
 
   // Honour the per-stage v2 config for this stage exactly as assembleForStage
@@ -227,6 +237,15 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
       });
       await runV1Path(ctx);
       return;
+    }
+
+    // A typo in v2.stages.context.extraProviderIds is a config error, not a
+    // runtime hiccup — fail closed exactly as assembleForStage does
+    // (stage-assembler.ts). Swallowing it here would silently drop v2 context
+    // for the whole story on strategies where promptStage never re-assembles,
+    // contradicting the documented "typos surface immediately" contract.
+    if (err instanceof NaxError && err.code === "CONTEXT_UNKNOWN_PROVIDER_IDS") {
+      throw err;
     }
 
     // Soft failure — v2 context is not required for agent to proceed
