@@ -21,13 +21,13 @@ Three of them had file scoping before migration and lost it:
 
 | File | `.claude/rules/` | `.nax/rules/` |
 |:--|:--|:--|
-| `test-writing.md` | `paths: ["test/**/*.test.ts"]` | `priority: 100` |
-| `test-architecture.md` | `paths: ["test/**/*.test.ts"]` | `priority: 50` |
-| `adapter-wiring.md` | `paths: ["src/agents/**/*.ts", "src/operations/**/*.ts"]` | `priority: 60` |
+| `.nax/rules/test-writing.md` | `paths: ["test/**/*.test.ts"]` | `priority: 100` |
+| `.nax/rules/test-architecture.md` | `paths: ["test/**/*.test.ts"]` | `priority: 50` |
+| `.nax/rules/adapter-wiring.md` | `paths: ["src/agents/**/*.ts", "src/operations/**/*.ts"]` | `priority: 60` |
 
 The migrator bug is already fixed — `withReviewNotice` (`cli/rules.ts:216-231`) documents it exactly: the review notice is an HTML comment, frontmatter is recognised only at byte 0, so emitting the notice first displaced the frontmatter and it parsed as body text, losing the scope key on every file that both needed neutralizing and carried one. `translateLegacyFrontmatter` (`:202-214`) correctly rewrites legacy file-glob `paths:` to nax's `appliesTo:`. The store on disk was produced by the pre-fix migrator and never regenerated, and nothing in `nax rules lint` would notice.
 
-Consequence today: a story touching `src/config/loader.ts` is handed all four testing rules plus `adapter-wiring.md` — roughly 17k bytes ≈ 4.3k tokens of inapplicable text, on every stage.
+Consequence today: a story touching `src/config/loader.ts` is handed all four testing rules plus `.nax/rules/adapter-wiring.md` — roughly 17k bytes ≈ 4.3k tokens of inapplicable text, on every stage.
 
 ## Design
 
@@ -35,7 +35,7 @@ Consequence today: a story touching `src/config/loader.ts` is handed all four te
 
 Restore scope before trimming. Scoping removes rules that do **not** apply to a story; trimming removes rules that **do**. Both mechanisms already exist in the codebase — this spec fixes the arithmetic of one and supplies the missing data for the other. No new packing algorithm, no new provider, no change to `packChunks`' floor semantics.
 
-Scope boundary, stated plainly so it is not overread: after this spec the budget is **truthfully accounted and visibly exceeded**, not enforced against the floor. Floor chunks are still always included (spec AC-6 of `SPEC-context-engine-v2.md`). Enforcing a ceiling on the floor is deferred (see Out of Scope).
+Scope boundary, stated plainly so it is not overread: after this spec the budget is **truthfully accounted and visibly exceeded**, not enforced against the floor. Floor chunks are still always included (spec AC-6 of `docs/specs/SPEC-context-engine-v2.md`). Enforcing a ceiling on the floor is deferred (see Out of Scope).
 
 ### Integration
 
@@ -54,7 +54,7 @@ Verified against `main` @ `5cb48bd4`.
 - **`translateLegacyFrontmatter(content)` / `withReviewNotice(content, replacements)`** — `cli/rules.ts:202` and `:225`. Both already carry the fix; this spec adds the round-trip coverage that would have caught the original loss.
 - **`StaticRulesProvider.fetch(request)`** — `src/context/engine/providers/static-rules.ts:180`. The scope filter at `:234` and the package filter at `:186-188` are unchanged; the restored frontmatter is what activates them.
 
-Existing patterns to mirror: `test/unit/context/engine/packing.test.ts` and `test/unit/context/rules/` for provider and loader tests; `test/unit/cli/rules.test.ts` for lint-command tests. Dependency injection follows the established `_deps` pattern (`_canonicalLoaderDeps`, `_staticRulesDeps`, `_rulesCLIDeps`).
+Existing patterns to mirror: `test/unit/context/engine/packing.test.ts` and `test/unit/context/rules/canonical-loader.test.ts` for engine and loader tests; `test/unit/cli/rules.test.ts` for lint-command tests. Dependency injection follows the established `_deps` pattern (`_canonicalLoaderDeps`, `_staticRulesDeps`, `_rulesCLIDeps`).
 
 ### Rule frontmatter shape
 
@@ -115,7 +115,7 @@ paths:                              # optional, list of package globs
 **US-002**
 - `src/context/rules/canonical-loader.ts` — `applyCanonicalRulesBudget` and the priority sort
 - `src/context/engine/providers/static-rules.ts` — the provider call site and its warn logs
-- `test/unit/context/rules/` — existing loader-test patterns
+- `test/unit/context/rules/canonical-loader.test.ts` — existing loader-test patterns, including the current `applyCanonicalRulesBudget` test
 
 **US-003**
 - `src/context/engine/packing.ts` — `floorOverageIds` production
@@ -142,7 +142,7 @@ paths:                              # optional, list of package globs
 
 ### Seams
 
-- **US-001** `DIGEST_RESERVE_TOKENS` is newly exported from `digest.ts` and consumed by the orchestrator's budget computation. Seam anchor: AC US-001.5 asserts that assembling with a stage budget packs non-floor chunks totalling at most that budget minus the reserve — proving the constant is wired into the effective-budget path, not merely defined.
+- **US-001** `DIGEST_RESERVE_TOKENS` is newly exported from `src/context/engine/digest.ts` and consumed by the orchestrator's budget computation. Seam anchor: AC US-001.5 asserts that assembling with a stage budget packs non-floor chunks totalling at most that budget minus the reserve — proving the constant is wired into the effective-budget path, not merely defined.
 - **US-003** `StoryMetrics.context.floorOverage` is newly produced by the assemble path and consumed by metrics reporting. Seam anchor: AC US-003.2 asserts a real assemble populates the field, and AC US-003.3 asserts the non-overage case leaves it at zero.
 
 ## Acceptance Criteria
@@ -181,8 +181,8 @@ paths:                              # optional, list of package globs
 3. `[unit]` `loadCanonicalRules` resolves normally for a rule declaring `priority`, `paths`, and `appliesTo` together.
 4. `[unit]` `rulesLintCommand` emits a warn-level record through the project logger naming the rule file and the unmatched pattern when an `appliesTo` glob matches zero files in the linted repository, and completes without throwing.
 5. `[unit]` applying `withReviewNotice` to the output of `translateLegacyFrontmatter` for a legacy rule declaring `paths` yields content from which `loadCanonicalRules` reads back the translated `appliesTo` value.
-6. `[unit]` `StaticRulesProvider.fetch` reading the repository's own `.nax/rules` store with `touchedFiles` containing only non-test source paths emits no chunk whose source is `test-writing.md`.
-7. `[unit]` `StaticRulesProvider.fetch` reading the repository's own `.nax/rules` store with `touchedFiles` containing a path under `test/` emits a chunk whose source is `test-writing.md`.
-8. `[unit]` `StaticRulesProvider.fetch` reading the repository's own `.nax/rules` store with `touchedFiles` containing only paths outside `src/agents` and `src/operations` emits no chunk whose source is `adapter-wiring.md`.
+6. `[unit]` `StaticRulesProvider.fetch` reading the repository's own `.nax/rules` store with `touchedFiles` containing only non-test source paths emits no chunk whose id begins with `static-rules:test-writing:`.
+7. `[unit]` `StaticRulesProvider.fetch` reading the repository's own `.nax/rules` store with `touchedFiles` containing a path under `test/` emits a chunk whose id begins with `static-rules:test-writing:`.
+8. `[unit]` `StaticRulesProvider.fetch` reading the repository's own `.nax/rules` store with `touchedFiles` containing only paths outside `src/agents` and `src/operations` emits no chunk whose id begins with `static-rules:adapter-wiring:`.
 
 **Out of scope:** validating that an `appliesTo` glob is syntactically well-formed beyond being a string — a malformed pattern that compiles to a regex matching nothing is reported by AC 4's dead-glob warning rather than a distinct error.
