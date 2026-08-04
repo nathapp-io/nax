@@ -8,6 +8,7 @@
  */
 
 import { NaxError } from "@/errors";
+import { STAGE_CONTEXT_MAP } from "../engine/stage-config";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -17,36 +18,10 @@ export const KNOWN_FRONTMATTER_KEYS = new Set(["priority", "paths", "appliesTo",
 export const FRONTMATTER_PRIORITY_DEFAULT = 100;
 
 /**
- * Known stage names for frontmatter `stages:` validation.
- *
- * Advisory-only — an unknown stage name emits a warning but does not reject the
- * rule. This set combines STAGE_CONTEXT_MAP keys (per-stage context config) and
- * pipeline stage names that lack custom context config, so every real pipeline
- * stage is recognised.
+ * Pipeline stage / operation names that are valid `stages:` entries but have
+ * no entry in STAGE_CONTEXT_MAP (no custom per-stage context config).
  */
-const KNOWN_VALID_STAGES = new Set([
-  // STAGE_CONTEXT_MAP keys
-  "context",
-  "execution",
-  "tdd-test-writer",
-  "tdd-implementer",
-  "tdd-verifier",
-  "verify",
-  "rectify",
-  "review",
-  "review-semantic",
-  "review-adversarial",
-  "autofix",
-  "acceptance",
-  "plan",
-  "single-session",
-  "tdd-simple",
-  "no-test",
-  "batch",
-  "route",
-  "review-dialogue",
-  "debate",
-  // Pipeline stage names NOT in STAGE_CONTEXT_MAP
+const EXTRA_KNOWN_STAGES = [
   "queue-check",
   "routing",
   "constitution",
@@ -57,7 +32,17 @@ const KNOWN_VALID_STAGES = new Set([
   "regression",
   // Operation names (src/operations/*) recognised as stage identifiers
   "decompose",
-]);
+];
+
+/**
+ * Known stage names for frontmatter `stages:` validation.
+ *
+ * Advisory-only — an unknown stage name emits a warning but does not reject the
+ * rule. Derived from STAGE_CONTEXT_MAP keys (per-stage context config) plus
+ * EXTRA_KNOWN_STAGES (pipeline stage names that lack custom context config),
+ * so this set never drifts from the real stage registry.
+ */
+const KNOWN_VALID_STAGES = new Set([...Object.keys(STAGE_CONTEXT_MAP), ...EXTRA_KNOWN_STAGES]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Error type
@@ -105,19 +90,22 @@ export interface ParsedFrontmatter {
 export function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatter {
   const warnings: string[] = [];
   let effectiveContent = raw;
+  let displacedReason: string | undefined;
 
   // AC10: detect UTF-8 BOM before frontmatter opening delimiter
   if (raw.startsWith("\uFEFF")) {
-    warnings.push(`Frontmatter is displaced — file begins with a UTF-8 BOM before '---' (${filePath})`);
+    displacedReason = `Frontmatter is displaced — file begins with a UTF-8 BOM before '---' (${filePath})`;
     effectiveContent = raw.slice(1);
   }
-  // AC11: detect leading blank line before frontmatter opening delimiter
-  else if (raw.startsWith("\r\n")) {
-    warnings.push(`Frontmatter is displaced — file begins with a blank line before '---' (${filePath})`);
-    effectiveContent = raw.slice(2);
-  } else if (raw.startsWith("\n")) {
-    warnings.push(`Frontmatter is displaced — file begins with a blank line before '---' (${filePath})`);
-    effectiveContent = raw.slice(1);
+
+  // AC11: detect leading blank line(s) before frontmatter opening delimiter
+  while (effectiveContent.startsWith("\r\n") || effectiveContent.startsWith("\n")) {
+    displacedReason ??= `Frontmatter is displaced — file begins with a blank line before '---' (${filePath})`;
+    effectiveContent = effectiveContent.startsWith("\r\n") ? effectiveContent.slice(2) : effectiveContent.slice(1);
+  }
+
+  if (displacedReason && effectiveContent.startsWith("---")) {
+    warnings.push(displacedReason);
   }
 
   if (!effectiveContent.startsWith("---\n") && !effectiveContent.startsWith("---\r\n")) {
@@ -196,16 +184,14 @@ export function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatt
     if (!Array.isArray(stagesRaw)) {
       throw new RulesFrontmatterError("frontmatter.stages must be a list of strings", filePath);
     }
-    // AC3: empty list → undefined
-    if (stagesRaw.length === 0) {
-      stages = undefined;
-    } else {
+    // AC3: empty list → undefined (falls through to the no-op below)
+    if (stagesRaw.length > 0) {
       for (const v of stagesRaw) {
-        if (typeof v !== "string") {
+        if (typeof v !== "string" || !v.trim()) {
           throw new RulesFrontmatterError("frontmatter.stages must be a list containing only strings", filePath);
         }
       }
-      stages = stagesRaw as string[];
+      stages = stagesRaw.map((v) => v.trim());
       // AC8/AC9: advisory warning for unknown stage names
       for (const s of stages) {
         if (!KNOWN_VALID_STAGES.has(s)) {

@@ -40,6 +40,10 @@ export const _rulesLintDeps = {
       return [];
     }
   },
+  // Deliberately reuses globToRegex/normalizePath — the SAME matcher
+  // ruleMatchesScopeFiles (src/context/engine/providers/static-rules.ts) uses
+  // at runtime — so a pattern that lints as "has matches" is guaranteed to
+  // actually match at runtime.
   globHasMatch: (pattern: string, cwd: string): boolean => {
     try {
       const regex = globToRegex(normalizePath(pattern));
@@ -106,14 +110,16 @@ export async function rulesLintCommand(options: RulesLintOptions, deps: RulesLin
   const logger = deps.getLogger();
 
   let totalRuleFiles = 0;
+  let warningCount = 0;
   for (const root of roots) {
     const rules = await deps.loadCanonicalRules(root);
     totalRuleFiles += rules.length;
     for (const rule of rules) {
       // Re-emit parser/loader warnings (unrecognised stages, displaced frontmatter)
       // through the lint command's own logger so `nax rules lint` is observable
-      // without depending on the loader's runtime logger.
+      // as a standalone CLI invocation, independent of the loader's runtime logger.
       for (const warning of rule.warnings ?? []) {
+        warningCount++;
         logger.warn("rules-lint", `Rule frontmatter warning: ${warning}`, {
           file: rule.path ?? rule.fileName,
           root,
@@ -121,6 +127,7 @@ export async function rulesLintCommand(options: RulesLintOptions, deps: RulesLin
       }
       for (const pattern of rule.appliesTo ?? []) {
         if (deps.globHasMatch(pattern, root)) continue;
+        warningCount++;
         logger.warn("rules-lint", "Canonical rule appliesTo glob matches no files in the linted repository", {
           file: rule.path ?? rule.fileName,
           pattern,
@@ -131,5 +138,11 @@ export async function rulesLintCommand(options: RulesLintOptions, deps: RulesLin
   }
 
   const scopeLabel = roots.length === 1 ? "repo root" : `${roots.length} rule roots`;
-  console.log(`[OK] Canonical rules lint passed (${totalRuleFiles} file(s) across ${scopeLabel}).`);
+  if (warningCount > 0) {
+    console.log(
+      `[WARN] Canonical rules lint completed with ${warningCount} warning(s) (${totalRuleFiles} file(s) across ${scopeLabel}).`,
+    );
+  } else {
+    console.log(`[OK] Canonical rules lint passed (${totalRuleFiles} file(s) across ${scopeLabel}).`);
+  }
 }

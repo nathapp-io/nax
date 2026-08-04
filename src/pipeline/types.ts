@@ -102,6 +102,12 @@ export interface PipelineContext extends DispatchContext {
    * skipping sibling-test hinting).
    */
   resolvedTestPatterns?: import("../test-runners/resolver").ResolvedTestPatterns;
+  /**
+   * Story-scoped scope-file evidence set, resolved once by the context stage
+   * and reused by the prompt stage so `resolveScopeFiles` (git diff + ref
+   * resolution) does not run twice per story.
+   */
+  scopeFiles?: string[];
   /** Dependency-preparation context for worktree execution, if one was created. */
   worktreeDependencyContext?: import("../worktree/types").WorktreeDependencyContext;
   /** Absolute path to the prd.json file (used by routing stage to persist initial classification) */

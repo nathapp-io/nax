@@ -33,7 +33,16 @@ export const _scopeFilesDeps = {
 export async function resolveScopeFiles(ctx: PipelineContext): Promise<string[]> {
   const declared = [...getContextFiles(ctx.story), ...getExpectedFiles(ctx.story)];
 
-  const ref = await _scopeFilesDeps.resolveEffectiveRef(ctx.workdir, ctx.story.storyGitRef, ctx.story.id);
+  let ref: string | undefined;
+  try {
+    ref = await _scopeFilesDeps.resolveEffectiveRef(ctx.workdir, ctx.story.storyGitRef, ctx.story.id);
+  } catch (err) {
+    getLogger().warn("scope-files", "resolveEffectiveRef failed — degrading to declared sources", {
+      storyId: ctx.story.id,
+      error: errorMessage(err),
+    });
+    return [...new Set(declared)].sort();
+  }
   if (!ref) return [...new Set(declared)].sort();
 
   let diffFiles: string[] | undefined;

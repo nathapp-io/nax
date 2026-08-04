@@ -40,7 +40,7 @@ export {
   type RulesLintOptions,
 } from "./rules-lint";
 
-import { type RulesLintDeps, rulesLintCommand as _rulesLintCommandImpl, _rulesLintDeps } from "./rules-lint";
+import { rulesLintCommand as _rulesLintCommandImpl, _rulesLintDeps } from "./rules-lint";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps
@@ -62,8 +62,11 @@ export const _rulesCLIDeps = {
   mkdir: async (path: string): Promise<void> => {
     await mkdir(path, { recursive: true });
   },
-  globCanonicalRuleFiles: _rulesLintDeps.globCanonicalRuleFiles,
-  globHasMatch: _rulesLintDeps.globHasMatch,
+  // Delegate lazily (not a value-copy) so overriding _rulesLintDeps.* is
+  // observed here too — a plain field copy at module-eval time would silently
+  // diverge from whatever `nax rules lint` actually runs.
+  globCanonicalRuleFiles: (workdir: string): string[] => _rulesLintDeps.globCanonicalRuleFiles(workdir),
+  globHasMatch: (pattern: string, cwd: string): boolean => _rulesLintDeps.globHasMatch(pattern, cwd),
   loadCanonicalRules,
   getLogger,
 };

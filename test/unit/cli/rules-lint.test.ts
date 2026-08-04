@@ -17,7 +17,7 @@ import {
   rulesLintCommandDirect as rulesLintCommandFromLint,
   rulesLintCommand as rulesLintCommandFromRules,
 } from "@/cli";
-import type { CanonicalRule } from "@/context/rules";
+import type { CanonicalRule } from "@/context/rules/canonical-loader";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers

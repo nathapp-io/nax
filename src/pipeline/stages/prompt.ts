@@ -77,7 +77,7 @@ export const promptStage: PipelineStage = {
     // the correct role/provider/budget context (Finding 1 fix).  Falls back to null when
     // v2 is disabled; getBundleMarkdown() then returns ctx.featureContextMarkdown.
     const execStage = isBatch ? "batch" : ctx.routing.testStrategy === "no-test" ? "no-test" : "single-session";
-    const scopeFiles = await resolveScopeFiles(ctx);
+    const scopeFiles = ctx.scopeFiles ?? (await resolveScopeFiles(ctx));
     const execBundle = await assembleForStage(ctx, execStage, {
       ...(scopeFiles.length > 0 && { scopeFiles }),
     });

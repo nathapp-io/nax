@@ -12,10 +12,10 @@
  * invoke it for each test.
  */
 
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { StaticRulesProvider, _staticRulesDeps } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
-import { loadCanonicalRules } from "@/context/rules";
+import { loadCanonicalRules } from "../../../../../src/context/rules/canonical-loader";
 
 describe("StaticRulesProvider — US-006 real .nax/rules store stage scoping", () => {
   const REAL_REPO_REQUEST: ContextRequest = {
@@ -27,8 +27,15 @@ describe("StaticRulesProvider — US-006 real .nax/rules store stage scoping", (
     budgetTokens: 8000,
   };
 
+  let origLoadCanonicalRules: typeof _staticRulesDeps.loadCanonicalRules;
+
   beforeEach(() => {
+    origLoadCanonicalRules = _staticRulesDeps.loadCanonicalRules;
     _staticRulesDeps.loadCanonicalRules = async (workdir: string) => loadCanonicalRules(workdir);
+  });
+
+  afterEach(() => {
+    _staticRulesDeps.loadCanonicalRules = origLoadCanonicalRules;
   });
 
   test("[US-006 AC 3] emits no static-rules:test-writing: chunk when request.stage is plan", async () => {

@@ -107,8 +107,10 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   const touchedFiles = getContextFiles(ctx.story);
 
   // Resolve the complete evidence set of files a story touches for SCOPING
-  // decisions. Live in test-injected side-effect scope — never throws.
+  // decisions — never throws (fails open to declared sources). Cached on ctx
+  // so the prompt stage reuses this result instead of re-resolving.
   const scopeFiles = await resolveScopeFiles(ctx);
+  ctx.scopeFiles = scopeFiles;
 
   // ADR-009 SSOT: resolve test-file patterns once per request and thread them
   // through so providers never classify test files via inline regex.

@@ -1,6 +1,6 @@
 {
-  "count": 2846,
-  "updatedAt": "2026-08-04T03:40:19.077Z",
+  "count": 2849,
+  "updatedAt": "2026-08-04T10:02:01.233Z",
   "byFile": {
     "src/pipeline/stages/acceptance-setup.ts": 1,
     "src/pipeline/stages/prompt.ts": 5,
@@ -157,6 +157,7 @@
     "test/unit/context/context-format.test.ts": 4,
     "test/unit/context/fail-stale-rebuild.test.ts": 1,
     "test/unit/context/rules/canonical-loader.test.ts": 2,
+    "test/unit/context/rules/rules-frontmatter.test.ts": 2,
     "test/unit/context/parent-context.test.ts": 2,
     "test/unit/context/context-core.test.ts": 3,
     "test/unit/context/engine/tool-runtime.test.ts": 5,
@@ -177,6 +178,7 @@
     "test/unit/context/engine/providers/code-neighbor-cap.test.ts": 4,
     "test/unit/context/engine/providers/session-scratch.test.ts": 3,
     "test/unit/context/engine/providers/plugin-loader.test.ts": 3,
+    "test/unit/context/engine/providers/static-rules-us006.test.ts": 1,
     "test/unit/context/engine/agent-renderer.test.ts": 2,
     "test/unit/context/engine/effectiveness.test.ts": 2,
     "test/unit/context/engine/stage-assembler-extra-provider-ids.test.ts": 4,
