@@ -18,6 +18,27 @@ export interface ChunkEffectiveness {
   evidence?: string;
 }
 
+/**
+ * A provider's own budget pressure — how far over its token budget it
+ * went, and (when the budget is enforced) what it discarded to fit.
+ *
+ * Emitted on `ContextProviderResult.budgetPressure` by providers that have
+ * a token budget and can lose information when they exceed it. Omitted
+ * (undefined) when the provider fits inside its budget — no pressure to
+ * report. Used by the manifest/curator to surface silent loss that
+ * would otherwise be invisible.
+ */
+export interface ProviderBudgetPressure {
+  /** max(0, produced - providerBudget). Non-zero whenever the provider is over. */
+  overageTokens: number;
+  /** Items discarded to satisfy the budget. Zero unless the budget is enforced. */
+  droppedCount: number;
+  /** Token total of discarded items. Zero unless the budget is enforced. */
+  droppedTokens: number;
+  /** Stable ids of discarded items, for manifest-level debugging. */
+  droppedIds: string[];
+}
+
 /** A single context chunk produced by a provider and packed into the bundle. */
 export interface ContextChunk {
   /** Stable id: `<providerId>:<contentHash8>` */

@@ -124,8 +124,8 @@ export type ChunkRole = "implementer" | "reviewer" | "tdd" | "all";
 // Manifest types (extracted to manifest-types.ts)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { ChunkEffectiveness, ContextChunk, ContextManifest } from "./manifest-types";
-export type { ChunkEffectiveness, ContextChunk, ContextManifest };
+import type { ChunkEffectiveness, ContextChunk, ContextManifest, ProviderBudgetPressure } from "./manifest-types";
+export type { ChunkEffectiveness, ContextChunk, ContextManifest, ProviderBudgetPressure };
 
 /**
  * Output of ContextOrchestrator.assemble() and .rebuildForAgent().
@@ -386,6 +386,12 @@ export interface ContextProviderResult {
    * descriptors from the stage config TOOL_REGISTRY (Phase 4).
    */
   pullTools?: ToolDescriptor[];
+  /**
+   * Budget pressure reported by the provider when it exceeded its own token
+   * budget. Omitted when the provider fit inside its budget. When set, surfaces
+   * silent loss that would otherwise be invisible downstream (US-003).
+   */
+  budgetPressure?: ProviderBudgetPressure;
 }
 
 /**

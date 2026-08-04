@@ -42,8 +42,9 @@ export function createDefaultOrchestrator(
 ): ContextOrchestrator {
   const allowLegacyClaudeMd = config.context?.v2?.rules?.allowLegacyClaudeMd ?? false;
   const rulesBudgetTokens = config.context?.v2?.rules?.budgetTokens ?? DEFAULT_CANONICAL_RULES_BUDGET_TOKENS;
+  const enforceBudget = config.context?.v2?.rules?.enforceBudget ?? false;
   const providers: IContextProvider[] = [
-    new StaticRulesProvider({ allowLegacyClaudeMd, budgetTokens: rulesBudgetTokens }),
+    new StaticRulesProvider({ allowLegacyClaudeMd, budgetTokens: rulesBudgetTokens, enforceBudget }),
     new FeatureContextProviderV2(story, config),
   ];
   // TestCoverageProvider is always registered — provider itself gates via enabled flag.
