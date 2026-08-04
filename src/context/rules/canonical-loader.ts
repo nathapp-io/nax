@@ -386,8 +386,10 @@ export interface ApplyCanonicalRulesBudgetOptions {
  * reporting bound: every supplied rule is preserved, `usedTokens` equals
  * `totalTokens`, `droppedCount` is 0, and `overageTokens` is
  * `max(0, totalTokens - budgetTokens)`. Soft-by-default removes the legacy
- * silent truncation cliff for floor-kind rules — the packer downstream still
- * sees the full corpus and decides what to do.
+ * silent truncation cliff for floor-kind rules — nothing downstream currently
+ * enforces a ceiling on these chunks either, so the overage is reported, not
+ * capped; `overageTokens` is the only signal a caller has that the corpus is
+ * over budget.
  *
  * In **enforced mode** (`enforce` true) the legacy contiguous-tail
  * truncation is preserved: rules are processed in priority order, the first
@@ -419,7 +421,7 @@ export function applyCanonicalRulesBudget(
 
   if (!enforce) {
     return {
-      rules,
+      rules: [...rules],
       totalTokens,
       usedTokens: totalTokens,
       droppedCount: 0,
@@ -447,8 +449,10 @@ export function applyCanonicalRulesBudget(
 }
 
 export interface LoadCanonicalRulesOptions {
-  /** Optional ceiling for loaded canonical rules. When omitted, no truncation is applied. */
+  /** Optional ceiling for loaded canonical rules. When omitted, no budget is applied. */
   budgetTokens?: number;
+  /** Enforce `budgetTokens` via contiguous-tail truncation. Default false (soft/reporting-only). */
+  enforce?: boolean;
 }
 
 /**
@@ -545,7 +549,9 @@ export async function loadCanonicalRules(
     return rules;
   }
 
-  const budgetResult = applyCanonicalRulesBudget(rules, options.budgetTokens);
+  const budgetResult = applyCanonicalRulesBudget(rules, options.budgetTokens, {
+    enforce: options.enforce,
+  });
   const warningThreshold = Math.floor(options.budgetTokens * RULES_BUDGET_WARNING_RATIO);
   if (budgetResult.totalTokens >= warningThreshold) {
     logger.warn("canonical-loader", "Canonical rules are approaching/exceeding budget", {

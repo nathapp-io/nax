@@ -70,11 +70,8 @@ const ContextV2RulesConfigSchema = z
     /**
      * When true, `applyCanonicalRulesBudget` enforces the ceiling via
      * contiguous-tail truncation (legacy behaviour). When false (default),
-     * the ceiling is reported as pressure and every rule is preserved so the
-     * packer downstream still sees the full corpus.
-     *
-     * NOTE: schema/resolution is US-002; plumbing this into
-     * `StaticRulesProvider` and the orchestrator is US-003.
+     * the ceiling is reported as pressure and every rule is preserved.
+     * Resolved by the default orchestrator and wired into `StaticRulesProvider`.
      */
     enforceBudget: z.boolean().default(false),
   })

@@ -42,35 +42,6 @@ import { TokenUsage } from "./types";
  * // }
  * ```
  */
-/**
- * Sanitize a persisted budgetPressure object.
- *
- * Persisted JSON may be hand-edited, legacy, or partially corrupt — values
- * can be NaN, negative, non-number, or fields can be missing. Aggregating
- * those directly produces NaN or string-coerced values that break consumers
- * (e.g. `nax status`). Treat any non-finite-nonnegative-number field as 0;
- * if nothing valid remains, return undefined so the aggregator omits
- * `budgetPressure` (matching AC-7's "legacy contributes zero" rule).
- */
-function sanitizeProviderPressure(
-  raw: unknown,
-): { overageTokens: number; droppedCount: number; droppedTokens: number } | undefined {
-  if (raw === null || typeof raw !== "object") return undefined;
-  const obj = raw as Record<string, unknown>;
-  const fields = ["overageTokens", "droppedCount", "droppedTokens"] as const;
-  let sanitized: { overageTokens: number; droppedCount: number; droppedTokens: number } | null = null;
-  for (const field of fields) {
-    const v = obj[field];
-    if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
-      if (!sanitized) {
-        sanitized = { overageTokens: 0, droppedCount: 0, droppedTokens: 0 };
-      }
-      sanitized[field] = v;
-    }
-  }
-  return sanitized ?? undefined;
-}
-
 async function deriveContextMetrics(
   projectDir: string,
   storyId: string,
@@ -175,6 +146,33 @@ function computeFloorOverage(stored: Awaited<ReturnType<typeof loadContextManife
     overageTokens += Math.max(0, floorTotal - manifest.effectiveBudget);
   }
   return { overageTokens };
+}
+
+/**
+ * Sanitize a persisted budgetPressure object.
+ *
+ * Persisted JSON may be hand-edited, legacy, or partially corrupt — values
+ * can be NaN, negative, non-number, or fields can be missing. Aggregating
+ * those directly produces NaN or string-coerced values that break consumers
+ * (e.g. `nax status`). Treat any non-finite-nonnegative-number field as 0;
+ * if nothing valid remains, return undefined so the aggregator omits
+ * `budgetPressure` (matching AC-7's "legacy contributes zero" rule).
+ */
+function sanitizeProviderPressure(raw: unknown): NonNullable<ContextProviderMetrics["budgetPressure"]> | undefined {
+  if (raw === null || typeof raw !== "object") return undefined;
+  const obj = raw as Record<string, unknown>;
+  const fields = ["overageTokens", "droppedCount", "droppedTokens"] as const;
+  let sanitized: NonNullable<ContextProviderMetrics["budgetPressure"]> | null = null;
+  for (const field of fields) {
+    const v = obj[field];
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
+      if (!sanitized) {
+        sanitized = { overageTokens: 0, droppedCount: 0, droppedTokens: 0 };
+      }
+      sanitized[field] = v;
+    }
+  }
+  return sanitized ?? undefined;
 }
 
 export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string): Promise<StoryMetrics> {

@@ -58,11 +58,6 @@ export interface ContextV2RulesConfig {
    * contiguous-tail truncation. When false (default), the ceiling is reported
    * as pressure and every rule is preserved so the packer downstream still
    * sees the full corpus.
-   *
-   * NOTE: this field is the resolved-config contract (US-002). Wiring it into
-   * `StaticRulesProvider` and resolving it inside the default orchestrator is
-   * US-003's scope — until US-003 lands, `StaticRulesProvider` hard-codes
-   * `enforce: true` to preserve its legacy truncation behaviour.
    */
   enforceBudget: boolean;
 }

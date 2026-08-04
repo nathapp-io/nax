@@ -87,7 +87,7 @@ function listBarrelDirs(rootDir: string, subdir: string, prefix: string): Set<st
     if (hasIndex) {
       dirs.add(`${prefix}/${entry}`);
     }
-    for (const nested of listBarrelDirs(rootDir, full.slice(rootDir.length + 1), `${prefix}/${entry}`)) {
+    for (const nested of listBarrelDirs(rootDir, join(subdir, entry), `${prefix}/${entry}`)) {
       dirs.add(nested);
     }
   }
