@@ -3,7 +3,7 @@
   "feature": "rules-budget-truncation",
   "branchName": "feat/rules-budget-truncation",
   "createdAt": "2026-08-04T10:51:18+08:00",
-  "updatedAt": "2026-08-04T03:43:00.983Z",
+  "updatedAt": "2026-08-04T03:51:31.698Z",
   "userStories": [
     {
       "id": "US-001",
@@ -100,8 +100,8 @@
         "rules"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -169,7 +169,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/context/engine/providers/static-rules.ts",
@@ -180,7 +182,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4e8b7283e0d5c2644ff38a6e011c37e92aa793ad"
     },
     {
       "id": "US-004",
