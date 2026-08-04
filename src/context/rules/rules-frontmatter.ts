@@ -110,7 +110,10 @@ export function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatt
     effectiveContent = raw.slice(1);
   }
   // AC11: detect leading blank line before frontmatter opening delimiter
-  else if (raw.startsWith("\n")) {
+  else if (raw.startsWith("\r\n")) {
+    warnings.push(`Frontmatter is displaced — file begins with a blank line before '---' (${filePath})`);
+    effectiveContent = raw.slice(2);
+  } else if (raw.startsWith("\n")) {
     warnings.push(`Frontmatter is displaced — file begins with a blank line before '---' (${filePath})`);
     effectiveContent = raw.slice(1);
   }

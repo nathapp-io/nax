@@ -317,6 +317,13 @@ describe("parseFrontmatter — AC11 leading blank line displaced frontmatter", (
     const result = parseFrontmatter(content, "/project/.nax/rules/leading-blank.md");
     expect(result.warnings.some((w) => /displaced|blank|first line/i.test(w))).toBe(true);
   });
+
+  test("[AC11] returns a displaced-frontmatter warning when content begins with a CRLF blank line followed by ---", () => {
+    const content = "\r\n---\r\npriority: 100\r\n---\r\nBody.";
+    const result = parseFrontmatter(content, "/project/.nax/rules/leading-blank-crlf.md");
+    expect(result.warnings.some((w) => /displaced|blank|first line/i.test(w))).toBe(true);
+    expect(result.priority).toBe(100);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
