@@ -66,6 +66,16 @@ async function deriveContextMetrics(
         if (pr.status === "timeout") existing.timedOut = true;
         if (pr.status === "failed") existing.failed = true;
         if (pr.costUsd) existing.costUsd = (existing.costUsd ?? 0) + pr.costUsd;
+        if (pr.budgetPressure) {
+          existing.budgetPressure = existing.budgetPressure ?? {
+            overageTokens: 0,
+            droppedCount: 0,
+            droppedTokens: 0,
+          };
+          existing.budgetPressure.overageTokens += pr.budgetPressure.overageTokens;
+          existing.budgetPressure.droppedCount += pr.budgetPressure.droppedCount;
+          existing.budgetPressure.droppedTokens += pr.budgetPressure.droppedTokens;
+        }
       } else {
         providers[pr.providerId] = {
           tokensProduced: pr.tokensProduced,
@@ -75,6 +85,15 @@ async function deriveContextMetrics(
           timedOut: pr.status === "timeout",
           failed: pr.status === "failed",
           ...(pr.costUsd ? { costUsd: pr.costUsd } : {}),
+          ...(pr.budgetPressure
+            ? {
+                budgetPressure: {
+                  overageTokens: pr.budgetPressure.overageTokens,
+                  droppedCount: pr.budgetPressure.droppedCount,
+                  droppedTokens: pr.budgetPressure.droppedTokens,
+                },
+              }
+            : {}),
         };
       }
     }

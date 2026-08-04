@@ -295,6 +295,7 @@ export class ContextOrchestrator {
               durationMs,
               tokensProduced,
               ...(rawCostUsd > 0 && { costUsd: rawCostUsd }),
+              ...(result.budgetPressure && { budgetPressure: result.budgetPressure }),
             },
           };
         } catch (err) {

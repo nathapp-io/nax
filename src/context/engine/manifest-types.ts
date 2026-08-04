@@ -148,6 +148,13 @@ export interface ContextManifest {
      * reported no chunk costs (i.e. free providers such as git or file-scan).
      */
     costUsd?: number;
+    /**
+     * Provider-reported budget pressure (US-004).
+     * Persisted verbatim from `ContextProviderResult.budgetPressure`. Omitted
+     * (not present as a property) when the provider fits inside its own budget
+     * or when it does not report pressure.
+     */
+    budgetPressure?: ProviderBudgetPressure;
     error?: string;
   }>;
   /**
