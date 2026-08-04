@@ -18,8 +18,10 @@
  * not throw.
  */
 
+import { getLogger } from "../logger";
 import { getContextFiles, getExpectedFiles } from "../prd/types";
 import { collectDiffFileList, resolveEffectiveRef } from "../review/diff-utils";
+import { errorMessage } from "../utils/errors";
 import type { PipelineContext } from "./types";
 
 export const _scopeFilesDeps = {
@@ -37,7 +39,11 @@ export async function resolveScopeFiles(ctx: PipelineContext): Promise<string[]>
   let diffFiles: string[] | undefined;
   try {
     diffFiles = await _scopeFilesDeps.collectDiffFileList(ctx.workdir, ref);
-  } catch {
+  } catch (err) {
+    getLogger().warn("scope-files", "collectDiffFileList failed — degrading to declared sources", {
+      storyId: ctx.story.id,
+      error: errorMessage(err),
+    });
     return [...new Set(declared)].sort();
   }
 
@@ -45,5 +51,3 @@ export async function resolveScopeFiles(ctx: PipelineContext): Promise<string[]>
 
   return [...new Set([...declared, ...diffFiles])].sort();
 }
-
-export { getContextFiles, getExpectedFiles };
