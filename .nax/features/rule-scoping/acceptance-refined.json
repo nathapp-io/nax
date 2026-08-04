@@ -1,0 +1,394 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "parseFrontmatter() imported from src/context/rules/rules-frontmatter returns priority 100 when supplied content has no frontmatter block.",
+    "refined": "parseFrontmatter('no frontmatter content here') returns { priority: 100, paths: [], warnings: [] } when content contains no --- fences",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "loadCanonicalRules() returns a CanonicalRule with priority 35 when its rule file declares priority: 35.",
+    "refined": "loadCanonicalRules(tmpRuleFile({ content: 'priority: 35\\npaths:\\n  - rule1' })) resolves to CanonicalRule where rule.priority === 35",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "loadCanonicalRules() returns a CanonicalRule with paths [\"apps/api\"] when its rule file declares paths: [\"apps/api\"].",
+    "refined": "loadCanonicalRules(tmpRuleFile({ content: 'paths:\\n  - apps/api' })) resolves to CanonicalRule where JSON.stringify(rule.paths) === '[\"apps/api\"]'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "loadCanonicalRules() throws RulesFrontmatterError when a rule file opens with --- and has no closing ---.",
+    "refined": "loadCanonicalRules(tmpRuleFile({ content: '---\\nbroken frontmatter\\nno closing fence' })) rejects with RulesFrontmatterError instance",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "NeutralityLintError remains importable from src/context after the split.",
+    "refined": "await import('src/context') returns an object with property NeutralityLintError that is a constructor extending Error",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "rulesLintCommand() imported from src/cli/rules-lint resolves without throwing against a repository containing no canonical rule files.",
+    "refined": "rulesLintCommand({ cwd: emptyDir }) resolves to { exitCode: 0, stdout: '', stderr: '' } when no .nax/rules/**/*.md files exist",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "rulesLintCommand remains importable from src/cli/rules via re-export.",
+    "refined": "await import('src/cli/rules') returns an object where rulesLintCommand === reExportedRulesLintCommand (same reference as src/cli/rules-lint)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "parseFrontmatter() returns stages [\"execution\", \"review\"] when a rule declares those YAML-list values.",
+    "refined": "parseFrontmatter('---\\npriority: 1\\nstages:\\n  - execution\\n  - review\\n---').stages equals ['execution', 'review']",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "parseFrontmatter() returns stages undefined when the stages key is absent.",
+    "refined": "parseFrontmatter('---\\npriority: 1\\n---').stages is undefined",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "parseFrontmatter() returns stages undefined when stages is an empty list.",
+    "refined": "parseFrontmatter('---\\nstages: []\\n---').stages is undefined",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "parseFrontmatter() throws RulesFrontmatterError when stages is a list containing a non-string entry.",
+    "refined": "parseFrontmatter('---\\nstages:\\n  - execution\\n  - 123\\n---') throws RulesFrontmatterError",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "parseFrontmatter() does not throw an unknown-key RulesFrontmatterError when stages is the only frontmatter key.",
+    "refined": "parseFrontmatter('---\\nstages:\\n  - execution\\n---') does not throw",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "parseFrontmatter() throws RulesFrontmatterError naming the offending key when a rule declares a key other than priority, paths, appliesTo, or stages.",
+    "refined": "parseFrontmatter('---\\nunknownKey: value\\n---') throws RulesFrontmatterError with message containing 'unknownKey'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "loadCanonicalRules() returns a CanonicalRule with stages [\"plan\"] when its disk rule declares that value.",
+    "refined": "loadCanonicalRules() returns CanonicalRule where rule.stages equals ['plan'] when rule file contains 'stages:\\n  - plan'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "parseFrontmatter() returns a warning naming not-a-real-stage and retains stages [\"not-a-real-stage\"] when that declared stage matches neither STAGE_CONTEXT_MAP nor known stage literals.",
+    "refined": "parseFrontmatter('---\\nstages:\\n  - not-a-real-stage\\n---').warnings includes 'not-a-real-stage' and .stages equals ['not-a-real-stage']",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "parseFrontmatter() returns an empty warnings list for stages: [\"acceptance-setup\"].",
+    "refined": "parseFrontmatter('---\\nstages:\\n  - acceptance-setup\\n---').warnings is an empty Array",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "parseFrontmatter() returns a displaced-frontmatter warning when content begins with a UTF-8 BOM followed by ---.",
+    "refined": "parseFrontmatter('\\uFEFF---\\n---').warnings includes 'displaced' or ' BOM' or similar displaced-frontmatter indicator",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "parseFrontmatter() returns a displaced-frontmatter warning when content begins with a blank line followed by ---.",
+    "refined": "parseFrontmatter('\\n\\n---').warnings includes displaced-frontmatter warning text",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "parseFrontmatter() returns priority 100 and paths undefined when a frontmatter block is preceded by a blank line.",
+    "refined": "parseFrontmatter('\\n\\n---\\npriority: 100\\n---').priority equals 100 and .paths is undefined",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "loadCanonicalRules() returns a CanonicalRule whose warnings include the parser displaced-frontmatter entry for a disk rule beginning with a blank line followed by ---.",
+    "refined": "loadCanonicalRules() returns CanonicalRule where rule.warnings includes displaced-frontmatter warning for a rule file starting with '\\n---'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "loadCanonicalRules() emits a warning through _canonicalLoaderDeps.getLogger() when a rule file has a displaced frontmatter block.",
+    "refined": "loadCanonicalRules() with displaced-frontmatter rule causes _canonicalLoaderDeps.getLogger().warn to be called once with message containing 'displaced' or ' BOM'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "resolveScopeFiles() returns the union of a story's contextFiles and expectedFiles when the git diff yields no additional files.",
+    "refined": "Given a story with contextFiles=['a.ts','b.ts'] and expectedFiles=['c.ts'], when collectDiffFileList() returns [], then resolveScopeFiles(ctx) returns an array containing exactly ['a.ts','b.ts','c.ts'] in any order.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "resolveScopeFiles() returns no duplicate entries when a path appears in both contextFiles and the git diff.",
+    "refined": "Given contextFiles=['a.ts'] and collectDiffFileList() returns ['a.ts'], when resolveScopeFiles(ctx) is called, the result array has length 1 and result[0] === 'a.ts'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "resolveScopeFiles() returns entries in ascending lexicographic order.",
+    "refined": "When resolveScopeFiles(ctx) returns an array R, for all indices i where i < R.length-1, R[i] <= R[i+1] (using localeCompare).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "resolveScopeFiles() includes a collectDiffFileList() path absent from contextFiles and expectedFiles.",
+    "refined": "Given contextFiles=['a.ts'], expectedFiles=['b.ts'], and collectDiffFileList() returns ['new.ts'], when resolveScopeFiles(ctx) is called, the result array contains 'new.ts'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "resolveScopeFiles() returns only declared contextFiles and expectedFiles without throwing when resolveEffectiveRef() resolves undefined.",
+    "refined": "Given contextFiles=['a.ts'], expectedFiles=['b.ts'], and resolveEffectiveRef(workdir, ref, id) returns undefined, when resolveScopeFiles(ctx) is called, it returns an array with exactly ['a.ts','b.ts'] without throwing.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "resolveScopeFiles() returns only declared contextFiles and expectedFiles without throwing when collectDiffFileList() resolves undefined.",
+    "refined": "Given contextFiles=['a.ts'], expectedFiles=['b.ts'], and collectDiffFileList(workdir, undefinedRef) returns undefined, when resolveScopeFiles(ctx) is called, it returns an array with exactly ['a.ts','b.ts'] without throwing.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "resolveScopeFiles() returns only declared contextFiles and expectedFiles without throwing when collectDiffFileList() rejects.",
+    "refined": "Given contextFiles=['a.ts'], expectedFiles=['b.ts'], and collectDiffFileList(workdir, ref) throws an Error, when resolveScopeFiles(ctx) is called, it returns an array with exactly ['a.ts','b.ts'] and does not throw.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When contextStage.execute(ctx) runs with context.v2.enabled true and a stub provider, then its fetch request scopeFiles equals resolveScopeFiles(ctx)'s result.",
+    "refined": "After calling contextStage.execute(ctx) with ctx.v2.enabled=true and a stub provider, expect(fetchRequest.scopeFiles).toEqual(resolveScopeFiles(ctx)) returns true.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When promptStage.execute(ctx) runs with context.v2.enabled true and a stub provider, then its fetch request scopeFiles equals resolveScopeFiles(ctx)'s result.",
+    "refined": "After calling promptStage.execute(ctx) with ctx.v2.enabled=true and a stub provider, expect(fetchRequest.scopeFiles).toEqual(resolveScopeFiles(ctx)) returns true.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "assembleForStage() builds a ContextRequest whose scopeFiles equals StageAssembleOptions.scopeFiles.",
+    "refined": "Given StageAssembleOptions with scopeFiles=['x.ts','y.ts'], when assembleForStage(options) is called, the returned ContextRequest.scopeFiles array equals ['x.ts','y.ts'] exactly.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-32",
+    "original": "assembleForStage() preserves touchedFiles equal to getContextFiles(story) when scopeFiles is supplied.",
+    "refined": "Given a story where getContextFiles(story) returns ['a.ts','b.ts'], and StageAssembleOptions with scopeFiles=['x.ts'], when assembleForStage(options) is called, the returned ContextRequest.touchedFiles equals ['a.ts','b.ts'].",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-33",
+    "original": "StaticRulesProvider.fetch() returns no chunk for a rule with stages [\"plan\"] when request.stage is execution.",
+    "refined": "When StaticRulesProvider.fetch({ stage: 'execution', ... }) is called, the returned chunks array must not contain any chunk whose rule has stages: ['plan'] in its declaration.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "StaticRulesProvider.fetch() returns a chunk for a rule with stages [\"plan\"] when request.stage is plan.",
+    "refined": "When StaticRulesProvider.fetch({ stage: 'plan', ... }) is called, the returned chunks array must contain at least one chunk whose rule has stages: ['plan'].",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "StaticRulesProvider.fetch() returns a chunk for a rule with no stages key for every request stage.",
+    "refined": "When StaticRulesProvider.fetch() is called with stage set to any value (e.g., 'execution', 'plan', 'implement', 'review'), rules declared without a stages key must appear in the returned chunks.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-36",
+    "original": "StaticRulesProvider.fetch() returns no chunk for appliesTo [\"test/**/*.test.ts\"] when scopeFiles contains only src/foo.ts.",
+    "refined": "When StaticRulesProvider.fetch({ scopeFiles: ['src/foo.ts'], ... }) is called, the returned chunks array must not contain any chunk whose rule has appliesTo: ['test/**/*.test.ts'].",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-37",
+    "original": "StaticRulesProvider.fetch() returns a chunk for appliesTo [\"test/**/*.test.ts\"] when scopeFiles contains test/unit/foo.test.ts and touchedFiles is empty.",
+    "refined": "When StaticRulesProvider.fetch({ scopeFiles: ['test/unit/foo.test.ts'], touchedFiles: [], ... }) is called, the returned chunks array must contain at least one chunk whose rule has appliesTo: ['test/**/*.test.ts'].",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-38",
+    "original": "StaticRulesProvider.fetch() returns a chunk for a rule declaring appliesTo when scopeFiles is empty.",
+    "refined": "When StaticRulesProvider.fetch({ scopeFiles: [], ... }) is called, rules that declare appliesTo must appear in the returned chunks (fail-open behavior preserved).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-39",
+    "original": "StaticRulesProvider.fetch() returns scopingReport.appliesToInertCount 1 when one rule declares appliesTo and scopeFiles is empty.",
+    "refined": "When StaticRulesProvider.fetch({ scopeFiles: [], ... }) is called with a ruleset containing exactly one rule with an appliesTo declaration, result.scopingReport.appliesToInertCount must equal 1.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-40",
+    "original": "StaticRulesProvider.fetch() returns scopingReport.appliesToInertCount 0 when scopeFiles is non-empty.",
+    "refined": "When StaticRulesProvider.fetch({ scopeFiles: ['src/foo.ts'], ... }) is called with scopeFiles having at least one entry, result.scopingReport.appliesToInertCount must equal 0.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-41",
+    "original": "StaticRulesProvider.fetch() returns a scopingReport.stageFilteredIds containing the ID of a stage-filtered rule.",
+    "refined": "When a rule with stages: ['plan'] exists and StaticRulesProvider.fetch({ stage: 'execution', ... }) is called, result.scopingReport.stageFilteredIds must include that rule's stable id.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-42",
+    "original": "StaticRulesProvider.fetch() returns a scopingReport.appliesToFilteredIds containing the ID of an appliesTo-filtered rule.",
+    "refined": "When a rule with appliesTo: ['test/**/*.test.ts'] exists and StaticRulesProvider.fetch({ scopeFiles: ['src/foo.ts'], ... }) is called, result.scopingReport.appliesToFilteredIds must include that rule's stable id.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-43",
+    "original": "StaticRulesProvider.fetch() returns scopingReport.scopeFileCount equal to request.scopeFiles length.",
+    "refined": "When StaticRulesProvider.fetch({ scopeFiles: ['a.ts', 'b.ts', 'c.ts'], ... }) is called, result.scopingReport.scopeFileCount must equal 3.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-44",
+    "original": "StaticRulesProvider.fetch() returns budgetPressure unaffected by rules removed by either scoping filter.",
+    "refined": "When the same ruleset is fetched with and without stage/applyTo filters that remove rules, result.budgetPressure must be identical in both calls (unchanged by scoping filters).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-45",
+    "original": "When an orchestrator assembles with StaticRulesProvider registered, then the static-rules manifest providerResults entry carries the provider's scopingReport.",
+    "refined": "After orchestrator assembly with StaticRulesProvider registered, the resulting manifest.providerResults['static-rules'].scopingReport must be defined and must equal the scopingReport returned by the provider's fetch() call.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-46",
+    "original": "rulesLintCommand() emits a warning through _rulesCLIDeps.getLogger() naming the rule file when it declares a stage matching neither STAGE_CONTEXT_MAP nor known stage literals.",
+    "refined": "When rulesLintCommand() processes a rule file declaring stage: [\"invalid-stage-xyz\"], then _rulesCLIDeps.getLogger().warn is called exactly once with an object where message includes 'unrecognised stage' OR 'invalid-stage-xyz' AND the object's ruleFile property equals the rule file's absolute path.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-47",
+    "original": "rulesLintCommand() emits no unrecognised-stage warning through _rulesCLIDeps.getLogger() when every declared stage is recognised.",
+    "refined": "When rulesLintCommand() processes a rule file declaring stage: [\"implement\", \"review\"], then _rulesCLIDeps.getLogger().warn is never called with a message containing 'unrecognised stage' for that rule file.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-48",
+    "original": "rulesLintCommand() emits a warning through _rulesCLIDeps.getLogger() naming the rule file when it begins with a blank line followed by ---.",
+    "refined": "When rulesLintCommand() processes a rule file whose content starts with '\\n---\\n' (blank line before frontmatter delimiter), then _rulesCLIDeps.getLogger().warn is called exactly once with an object where message contains 'displaced' OR 'frontmatter' AND the object's ruleFile property equals the rule file's absolute path.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-49",
+    "original": "rulesLintCommand() resolves without throwing when a rule file carries displaced frontmatter.",
+    "refined": "When rulesLintCommand() is called with a rules directory containing a rule file with displaced frontmatter (blank line before ---), the returned Promise resolves with undefined and does not reject.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-50",
+    "original": "rulesLintCommand() still reports the existing dead-glob warning when a rule's appliesTo glob matches no file in the linted repository.",
+    "refined": "When rulesLintCommand() processes a rule file with appliesTo: [\"**/nonexistent-path-xyz/**\"] where no files match, then _rulesCLIDeps.getLogger().warn is called with an object where message contains 'dead-glob' OR 'no files matched' OR 'appliesTo' and the object's ruleFile property equals the rule file's absolute path.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-51",
+    "original": "loadCanonicalRules() over the repository .nax/rules directory returns test-writing.md with stages that exclude plan.",
+    "refined": "When loadCanonicalRules() is invoked on the repository .nax/rules directory, the CanonicalRule object whose file property ends with 'test-writing.md' must have a stages property that is an array NOT containing 'plan'.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-52",
+    "original": "loadCanonicalRules() over the repository .nax/rules directory returns forbidden-patterns.md with stages undefined.",
+    "refined": "When loadCanonicalRules() is invoked on the repository .nax/rules directory, the CanonicalRule object whose file property ends with 'forbidden-patterns.md' must NOT have a stages property (or stages must be undefined/null).",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-53",
+    "original": "StaticRulesProvider.fetch() over repository .nax/rules returns no chunk derived from test-writing.md when request.stage is plan.",
+    "refined": "When StaticRulesProvider.fetch() is called with request.stage === 'plan' against the repository .nax/rules directory, the returned array of RuleChunk objects must have zero items where chunk.sourceFile ends with 'test-writing.md'.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-54",
+    "original": "StaticRulesProvider.fetch() over repository .nax/rules returns a chunk derived from forbidden-patterns.md when request.stage is plan.",
+    "refined": "When StaticRulesProvider.fetch() is called with request.stage === 'plan' against the repository .nax/rules directory, the returned array of RuleChunk objects must have at least one item where chunk.sourceFile ends with 'forbidden-patterns.md'.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-55",
+    "original": "StaticRulesProvider.fetch() over repository .nax/rules returns a chunk derived from test-writing.md when request.stage is tdd-test-writer.",
+    "refined": "When StaticRulesProvider.fetch() is called with request.stage === 'tdd-test-writer' against the repository .nax/rules directory, the returned array of RuleChunk objects must have at least one item where chunk.sourceFile ends with 'test-writing.md'.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-56",
+    "original": "loadCanonicalRules() over the repository .nax/rules directory returns every CanonicalRule with an empty warnings list.",
+    "refined": "When loadCanonicalRules() is invoked on the repository .nax/rules directory, every CanonicalRule in the returned array must have a warnings property that is an empty array (length === 0).",
+    "testable": true,
+    "storyId": "US-006"
+  }
+]

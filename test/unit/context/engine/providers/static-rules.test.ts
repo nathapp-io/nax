@@ -118,20 +118,20 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
     expect(r1.chunks[0]?.id).toBe(r2.chunks[0]?.id);
   });
 
-  test("appliesTo: filters out non-matching touchedFiles; includes scoped rule when touchedFiles match", async () => {
+  test("appliesTo: filters out non-matching scopeFiles; includes scoped rule when scopeFiles match", async () => {
     // Non-matching: only global rule included
     setupCanonical([
       { fileName: "agents.md", content: "Agent-specific coding rules", appliesTo: ["src/agents/**"] },
       { fileName: "global.md", content: "Global rules" },
     ]);
     const provider = new StaticRulesProvider();
-    const r1 = await provider.fetch({ ...BASE_REQUEST, touchedFiles: ["src/review/runner.ts"] });
+    const r1 = await provider.fetch({ ...BASE_REQUEST, scopeFiles: ["src/review/runner.ts"] });
     expect(r1.chunks).toHaveLength(1);
     expect(r1.chunks[0]?.content).toContain("Global rules");
 
     // Matching: scoped rule included
     setupCanonical([{ fileName: "agents.md", content: "Agent-specific coding rules", appliesTo: ["src/agents/**"] }]);
-    const r2 = await provider.fetch({ ...BASE_REQUEST, touchedFiles: ["src/agents/acp/adapter.ts"] });
+    const r2 = await provider.fetch({ ...BASE_REQUEST, scopeFiles: ["src/agents/acp/adapter.ts"] });
     expect(r2.chunks).toHaveLength(1);
     expect(r2.chunks[0]?.content).toContain("Agent-specific coding rules");
   });
@@ -471,7 +471,7 @@ describe("StaticRulesProvider — AC-57 per-package overlay", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// US-004 AC 6-8: real .nax/rules store scope filtering by touchedFiles
+// US-004 AC 6-8: real .nax/rules store scope filtering by scopeFiles
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("StaticRulesProvider — real .nax/rules store scope filtering (US-004)", () => {
@@ -490,20 +490,20 @@ describe("StaticRulesProvider — real .nax/rules store scope filtering (US-004)
     _staticRulesDeps.loadCanonicalRules = origLoadCanonicalRules;
   });
 
-  test("[US-004 AC 6] emits no static-rules:test-writing: chunk when touchedFiles are non-test source files", async () => {
+  test("[US-004 AC 6] emits no static-rules:test-writing: chunk when scopeFiles are non-test source files", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
     const result = await provider.fetch({
       ...REAL_REPO_REQUEST,
-      touchedFiles: ["src/context/rules/canonical-loader.ts"],
+      scopeFiles: ["src/context/rules/canonical-loader.ts"],
     });
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-writing:"))).toBe(false);
   });
 
-  test("[US-004 AC 7] emits a static-rules:test-writing: chunk when touchedFiles include a path under test/", async () => {
+  test("[US-004 AC 7] emits a static-rules:test-writing: chunk when scopeFiles include a path under test/", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
     const result = await provider.fetch({
       ...REAL_REPO_REQUEST,
-      touchedFiles: ["test/unit/context/rules/canonical-loader.test.ts"],
+      scopeFiles: ["test/unit/context/rules/canonical-loader.test.ts"],
     });
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-writing:"))).toBe(true);
   });
@@ -515,19 +515,19 @@ describe("StaticRulesProvider — real .nax/rules store scope filtering (US-004)
   // this test then codified the narrowed scope as intended behaviour.
   test("[US-004 AC 8] emits no static-rules:adapter-wiring: chunk for a path outside every declared glob", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
-    const result = await provider.fetch({ ...REAL_REPO_REQUEST, touchedFiles: ["src/config/loader.ts"] });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, scopeFiles: ["src/config/loader.ts"] });
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:adapter-wiring:"))).toBe(false);
   });
 
   test("[US-004 AC 8] emits a static-rules:adapter-wiring: chunk for src/pipeline, which the rule declares", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
-    const result = await provider.fetch({ ...REAL_REPO_REQUEST, touchedFiles: ["src/pipeline/stages/verify.ts"] });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, scopeFiles: ["src/pipeline/stages/verify.ts"] });
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:adapter-wiring:"))).toBe(true);
   });
 
   test("emits a static-rules:retry-strategy: chunk for src/operations, which the rule declares", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
-    const result = await provider.fetch({ ...REAL_REPO_REQUEST, touchedFiles: ["src/operations/call.ts"] });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, scopeFiles: ["src/operations/call.ts"] });
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:retry-strategy:"))).toBe(true);
   });
 
@@ -535,24 +535,24 @@ describe("StaticRulesProvider — real .nax/rules store scope filtering (US-004)
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
     const result = await provider.fetch({
       ...REAL_REPO_REQUEST,
-      touchedFiles: ["test/unit/context/engine/packing.test.ts"],
+      scopeFiles: ["test/unit/context/engine/packing.test.ts"],
     });
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-helpers:"))).toBe(true);
   });
 
   // The positive cases above pass whether the rule is correctly scoped OR has no
-  // scope at all — ruleMatchesTouchedFiles early-returns true for an unscoped
+  // scope at all — ruleMatchesScopeFiles early-returns true for an unscoped
   // rule, so it loads everywhere. These negatives are what actually pin scope,
   // and they fail on the exact regression this change repairs.
   test("emits no static-rules:retry-strategy: chunk for a path outside its declared globs", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
-    const result = await provider.fetch({ ...REAL_REPO_REQUEST, touchedFiles: ["src/config/loader.ts"] });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, scopeFiles: ["src/config/loader.ts"] });
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:retry-strategy:"))).toBe(false);
   });
 
   test("emits no static-rules:test-helpers: chunk for a non-test source path", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
-    const result = await provider.fetch({ ...REAL_REPO_REQUEST, touchedFiles: ["src/agents/manager.ts"] });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, scopeFiles: ["src/agents/manager.ts"] });
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-helpers:"))).toBe(false);
   });
 });

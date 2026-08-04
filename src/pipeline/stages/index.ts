@@ -56,7 +56,7 @@ export const preRunPipeline: PipelineStage[] = [acceptanceSetupStage];
 export { queueCheckStage } from "./queue-check";
 export { routingStage } from "./routing";
 export { constitutionStage } from "./constitution";
-export { contextStage } from "./context";
+export { contextStage, _contextStageDeps } from "./context";
 export { promptStage } from "./prompt";
 export { optimizerStage } from "./optimizer";
 export { executionStage, _executionDeps } from "./execution";

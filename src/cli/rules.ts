@@ -25,25 +25,26 @@
 
 import { mkdir } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
-import { globToRegex, normalizePath } from "../context/engine";
 import { CANONICAL_RULES_DIR, NEUTRALITY_RULES, loadCanonicalRules } from "../context/rules/canonical-loader";
 import type { CanonicalRule } from "../context/rules/canonical-loader";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 
-/** Cap on the dead-glob validation scan — mirrors MAX_CANONICAL_RULE_GLOB_FILES below. */
-const MAX_DEAD_GLOB_SCAN_FILES = 2000;
+export {
+  collectCanonicalRuleRoots,
+  MAX_DEAD_GLOB_SCAN_FILES,
+  MAX_CANONICAL_RULE_GLOB_FILES,
+  CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS,
+  _rulesLintDeps,
+  type RulesLintOptions,
+} from "./rules-lint";
+
+import { rulesLintCommand as _rulesLintCommandImpl, _rulesLintDeps } from "./rules-lint";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Cap on the package-overlay glob scan (monorepo-awareness.md §6). */
-const MAX_CANONICAL_RULE_GLOB_FILES = 500;
-
-/** Directories that never legitimately contain a `.nax/rules` overlay root. */
-const CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS = ["/node_modules/", "/.git/"];
 
 export const _rulesCLIDeps = {
   readFile: async (path: string): Promise<string> => Bun.file(path).text(),
@@ -61,40 +62,27 @@ export const _rulesCLIDeps = {
   mkdir: async (path: string): Promise<void> => {
     await mkdir(path, { recursive: true });
   },
-  globCanonicalRuleFiles: (workdir: string): string[] => {
-    try {
-      const found: string[] = [];
-      for (const file of new Bun.Glob("**/.nax/rules/**/*.md").scanSync({ cwd: workdir, absolute: false, dot: true })) {
-        if (found.length >= MAX_CANONICAL_RULE_GLOB_FILES) break;
-        const normalized = `/${file}/`;
-        if (CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS.some((seg) => normalized.includes(seg))) continue;
-        found.push(file);
-      }
-      return found.sort();
-    } catch {
-      return [];
-    }
-  },
-  // Matches via globToRegex/normalizePath — the SAME matcher ruleMatchesTouchedFiles uses
-  // at runtime (static-rules.ts) — rather than Bun.Glob's own semantics, so a pattern that
-  // lints as "has matches" is guaranteed to actually match at runtime, and vice versa.
-  globHasMatch: (pattern: string, cwd: string): boolean => {
-    try {
-      const regex = globToRegex(normalizePath(pattern));
-      let scanned = 0;
-      for (const file of new Bun.Glob("**/*").scanSync({ cwd, absolute: false, dot: true })) {
-        if (scanned >= MAX_DEAD_GLOB_SCAN_FILES) break;
-        scanned++;
-        if (regex.test(normalizePath(file))) return true;
-      }
-      return false;
-    } catch {
-      return false;
-    }
-  },
+  // Delegate lazily (not a value-copy) so overriding _rulesLintDeps.* is
+  // observed here too — a plain field copy at module-eval time would silently
+  // diverge from whatever `nax rules lint` actually runs.
+  globCanonicalRuleFiles: (workdir: string): string[] => _rulesLintDeps.globCanonicalRuleFiles(workdir),
+  globHasMatch: (pattern: string, cwd: string): boolean => _rulesLintDeps.globHasMatch(pattern, cwd),
   loadCanonicalRules,
   getLogger,
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// rules lint command (uses _rulesCLIDeps for testability)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function rulesLintCommand(options: Parameters<typeof _rulesLintCommandImpl>[0]): Promise<void> {
+  return _rulesLintCommandImpl(options, {
+    globCanonicalRuleFiles: _rulesCLIDeps.globCanonicalRuleFiles,
+    loadCanonicalRules: _rulesCLIDeps.loadCanonicalRules,
+    globHasMatch: _rulesCLIDeps.globHasMatch,
+    getLogger: _rulesCLIDeps.getLogger,
+  });
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Agent → shim file mapping
@@ -437,11 +425,6 @@ export interface RulesMigrateOptions {
   dryRun?: boolean;
 }
 
-export interface RulesLintOptions {
-  /** Project working directory (default: process.cwd()) */
-  dir?: string;
-}
-
 interface MigrateSource {
   sourcePath: string;
   targetFileName: string;
@@ -548,50 +531,4 @@ export async function rulesMigrateCommand(options: RulesMigrateOptions): Promise
       );
     }
   }
-}
-
-function collectCanonicalRuleRoots(workdir: string): string[] {
-  const roots = new Set<string>([workdir]);
-  const files = _rulesCLIDeps.globCanonicalRuleFiles(workdir);
-  for (const rel of files) {
-    const normalized = rel.replaceAll("\\", "/");
-    const marker = "/.nax/rules/";
-    const idx = normalized.indexOf(marker);
-    if (idx <= 0) continue; // root rules stay mapped to workdir
-    const packageRel = normalized.slice(0, idx);
-    if (!packageRel) continue;
-    roots.add(join(workdir, packageRel));
-  }
-  return [...roots].sort();
-}
-
-/**
- * `nax rules lint`
- *
- * Validates canonical rules neutrality/frontmatter for the repository root
- * and any package-local `.nax/rules/` stores found under the workdir.
- */
-export async function rulesLintCommand(options: RulesLintOptions): Promise<void> {
-  const workdir = options.dir ?? process.cwd();
-  const roots = collectCanonicalRuleRoots(workdir);
-  const logger = _rulesCLIDeps.getLogger();
-
-  let totalRuleFiles = 0;
-  for (const root of roots) {
-    const rules = await _rulesCLIDeps.loadCanonicalRules(root);
-    totalRuleFiles += rules.length;
-    for (const rule of rules) {
-      for (const pattern of rule.appliesTo ?? []) {
-        if (_rulesCLIDeps.globHasMatch(pattern, root)) continue;
-        logger.warn("rules-lint", "Canonical rule appliesTo glob matches no files in the linted repository", {
-          file: rule.path ?? rule.fileName,
-          pattern,
-          root,
-        });
-      }
-    }
-  }
-
-  const scopeLabel = roots.length === 1 ? "repo root" : `${roots.length} rule roots`;
-  console.log(`[OK] Canonical rules lint passed (${totalRuleFiles} file(s) across ${scopeLabel}).`);
 }

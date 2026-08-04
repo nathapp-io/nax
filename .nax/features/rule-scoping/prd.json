@@ -1,0 +1,361 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "rule-scoping",
+  "branchName": "feat/rule-scoping",
+  "createdAt": "2026-08-04T00:00:00+08:00",
+  "updatedAt": "2026-08-04T09:31:24.338Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Split canonical frontmatter and rules lint modules",
+      "description": "**Goal** — Extract the near-limit frontmatter and rules-lint units while preserving every existing public leaf-path import.\n\n**Motivation** — The loader and CLI files are respectively 576 and 597 lines against the 600-line gate, so later correct changes cannot safely land before this split.\n\n**Approach** — Two pure moves, no behaviour change. Move the frontmatter block — `KNOWN_FRONTMATTER_KEYS`, `FRONTMATTER_PRIORITY_DEFAULT`, `RulesFrontmatterError`, `CanonicalRule`, `ParsedFrontmatter`, `parseFrontmatter` — from `canonical-loader.ts` into a new `src/context/rules/rules-frontmatter.ts`, re-exported from `canonical-loader.ts` so existing importers are unaffected. Move `collectCanonicalRuleRoots`, `rulesLintCommand` and the dead-glob constants from `cli/rules.ts` into a new `src/cli/rules-lint.ts`, re-exported from `cli/rules.ts`.\n\n**Scope** — In: pure module moves, compatibility re-exports, and the size-baseline update. Out: adding `stages:` parsing and warnings (US-002 and US-005); scope-file resolution and provider filtering (US-003 and US-004); introducing a new rules barrel.\n\n**Interface** — Existing imports stay valid from `src/context/rules/canonical-loader` and `src/cli/rules`; the moved parser is additionally importable from `src/context/rules/rules-frontmatter`, and `rulesLintCommand` from `src/cli/rules-lint`.",
+      "acceptanceCriteria": [
+        "parseFrontmatter() imported from src/context/rules/rules-frontmatter returns priority 100 when supplied content has no frontmatter block.",
+        "loadCanonicalRules() returns a CanonicalRule with priority 35 when its rule file declares priority: 35.",
+        "loadCanonicalRules() returns a CanonicalRule with paths [\"apps/api\"] when its rule file declares paths: [\"apps/api\"].",
+        "loadCanonicalRules() throws RulesFrontmatterError when a rule file opens with --- and has no closing ---.",
+        "NeutralityLintError remains importable from src/context after the split.",
+        "rulesLintCommand() imported from src/cli/rules-lint resolves without throwing against a repository containing no canonical rule files.",
+        "rulesLintCommand remains importable from src/cli/rules via re-export."
+      ],
+      "tags": [
+        "refactor",
+        "context",
+        "cli"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two coordinated source extractions with public import compatibility and hard file-size constraints.",
+        "agentProfileId": "opencode-structural",
+        "agent": "opencode",
+        "profileModelTier": "fast",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-structural",
+        "initialModelTier": "fast",
+        "initialComplexity": "medium",
+        "modelTier": "fast"
+      },
+      "contextFiles": [
+        "src/context/rules/canonical-loader.ts",
+        "src/cli/rules.ts",
+        "src/context/index.ts",
+        "src/context/engine/providers/static-rules.ts",
+        "test/unit/context/rules/canonical-loader.test.ts"
+      ],
+      "expectedFiles": [
+        "src/context/rules/rules-frontmatter.ts",
+        "src/cli/rules-lint.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8be8e37698d4b549b458b7c2d4a641880e3e6966"
+    },
+    {
+      "id": "US-002",
+      "title": "Parse stages frontmatter and report parser warnings",
+      "description": "**Goal** — Extend canonical frontmatter with validated `stages:` and non-fatal warnings for unrecognised stages and displaced opening delimiters.\n\n**Motivation** — `ContextRequest` already carries `stage`, but the canonical loader reads it nowhere and malformed placement silently discards declarations.\n\n**Approach** — `parseFrontmatter` is a pure synchronous function that takes no logger and signals failure only by throwing `RulesFrontmatterError`. The two new diagnostics — unrecognised stage name, displaced frontmatter — are non-fatal, so they cannot use that channel, and adding a logger call inside the parser would make them untestable without global capture. Instead: (1) `parseFrontmatter` returns them on `ParsedFrontmatter.warnings`; (2) `loadCanonicalRules` logs each one via the already-injectable `_canonicalLoaderDeps.getLogger()`, giving runtime visibility on every run; (3) the warnings ride on `CanonicalRule.warnings`, so `rulesLintCommand` reports them per file without duplicating the detection.\n\n**Scope** — In: `stages` key recognition/validation, advisory stage-name validation, displaced-frontmatter detection, warnings propagation and loader logging. Out: CLI warning presentation (US-005), stage filtering/reporting (US-004), and repairing displaced frontmatter.\n\n**Interface** — `CanonicalRule` gains `stages?: string[]` and `warnings?: string[]`; module-private `ParsedFrontmatter` gains `warnings: string[]`. `stages:` is a list of non-empty strings; absent or empty means the rule applies to every stage. Filtering remains plain string comparison, so an advisory-warning name stays present in `stages`.\n\n**Test placement** — `test/unit/context/rules/canonical-loader.test.ts` is 579 lines against the 800-line test gate enforced by `bun run check:file-sizes`. Put the frontmatter tests in a new `test/unit/context/rules/rules-frontmatter.test.ts`, mirroring the source module they cover. Do not grow the loader test file.",
+      "acceptanceCriteria": [
+        "parseFrontmatter() returns stages [\"execution\", \"review\"] when a rule declares those YAML-list values.",
+        "parseFrontmatter() returns stages undefined when the stages key is absent.",
+        "parseFrontmatter() returns stages undefined when stages is an empty list.",
+        "parseFrontmatter() throws RulesFrontmatterError when stages is a list containing a non-string entry.",
+        "parseFrontmatter() does not throw an unknown-key RulesFrontmatterError when stages is the only frontmatter key.",
+        "parseFrontmatter() throws RulesFrontmatterError naming the offending key when a rule declares a key other than priority, paths, appliesTo, or stages.",
+        "loadCanonicalRules() returns a CanonicalRule with stages [\"plan\"] when its disk rule declares that value.",
+        "parseFrontmatter() returns a warning naming not-a-real-stage and retains stages [\"not-a-real-stage\"] when that declared stage matches neither STAGE_CONTEXT_MAP nor known stage literals.",
+        "parseFrontmatter() returns an empty warnings list for stages: [\"acceptance-setup\"].",
+        "parseFrontmatter() returns a displaced-frontmatter warning when content begins with a UTF-8 BOM followed by ---.",
+        "parseFrontmatter() returns a displaced-frontmatter warning when content begins with a blank line followed by ---.",
+        "parseFrontmatter() returns priority 100 and paths undefined when a frontmatter block is preceded by a blank line.",
+        "loadCanonicalRules() returns a CanonicalRule whose warnings include the parser displaced-frontmatter entry for a disk rule beginning with a blank line followed by ---.",
+        "loadCanonicalRules() emits a warning through _canonicalLoaderDeps.getLogger() when a rule file has a displaced frontmatter block."
+      ],
+      "tags": [
+        "feature",
+        "context",
+        "parsing"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [
+        {
+          "fromTier": "powerful",
+          "toTier": "balanced",
+          "fromAgent": "opencode",
+          "toAgent": "claude",
+          "reason": "TDD tests-failing",
+          "timestamp": "2026-08-04T08:05:58.281Z"
+        }
+      ],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Extends a shared parser contract with nuanced fail-open diagnostics and stage-domain recognition.",
+        "agentProfileId": "opencode-balanced",
+        "agent": "claude",
+        "profileModelTier": "powerful",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-balanced",
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/context/rules/rules-frontmatter.ts",
+        "src/context/rules/canonical-loader.ts",
+        "src/context/engine/stage-config.ts",
+        "test/unit/context/rules/canonical-loader.test.ts"
+      ],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: powerful: TDD tests-failing"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "powerful",
+          "stage": "escalation",
+          "summary": "Tier powerful [tests-failing]: TDD tests-failing",
+          "cost": 0.6715087356000001,
+          "timestamp": "2026-08-04T08:05:58.281Z",
+          "agent": "opencode",
+          "agentProfileId": "opencode-balanced"
+        }
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "e6b1e2e23173b57184cb9716fdbee665e3c5cf07"
+    },
+    {
+      "id": "US-003",
+      "title": "Resolve and thread complete scope files",
+      "description": "**Goal** — Resolve a stable complete scope-file evidence set and pass it through both v2 request producers without changing curated touched files.\n\n**Motivation** — `appliesTo:` is structurally inert because its only input is populated solely from story-declared `contextFiles`.\n\n**Approach** — Where the scope-file resolver may live — a hard constraint, not a preference. `src/review/adversarial.ts:18` and `src/review/semantic.ts:12` value-import `filterContextByRole` from `../context`. A module under `src/context/` that value-imported `@/review` to reach `collectDiffFileList` would therefore close a genuine circular import. The resolver is placed in `src/pipeline/` instead, which may import `review` freely (`src/review/` imports nothing from `src/pipeline/`). Both request producers already live in `src/pipeline/stages/`, and `assembleForStage` receives the resolved list through `StageAssembleOptions` rather than resolving it itself — so `src/context/engine/` gains no dependency on `src/review/`.\n\n**Scope** — In: declared context/expected files plus diff composition, stable dedupe/sort, fail-open git handling, and v2 producer/assembler wiring. Out: provider filtering (US-004), persisting the full list, parsing prose, and changing `touchedFiles` or its caps.\n\n**Interface**\n```typescript\n/**\n * Resolves the complete evidence set of files a story touches, for SCOPING\n * decisions only. Never used to fetch content — see ContextRequest.touchedFiles\n * for the curated, capped list the content-fetching providers consume.\n */\nexport async function resolveScopeFiles(ctx: PipelineContext): Promise<string[]>;\n```\n\nComposition reuses `getContextFiles(story)`, `getExpectedFiles(story)`, `resolveEffectiveRef(workdir, story.storyGitRef, story.id)`, and `collectDiffFileList(workdir, ref)`; the union is deduped and sorted. If the ref is unresolvable or diff collection returns undefined or throws, return declared sources and do not throw.",
+      "acceptanceCriteria": [
+        "resolveScopeFiles() returns the union of a story's contextFiles and expectedFiles when the git diff yields no additional files.",
+        "resolveScopeFiles() returns no duplicate entries when a path appears in both contextFiles and the git diff.",
+        "resolveScopeFiles() returns entries in ascending lexicographic order.",
+        "resolveScopeFiles() includes a collectDiffFileList() path absent from contextFiles and expectedFiles.",
+        "resolveScopeFiles() returns only declared contextFiles and expectedFiles without throwing when resolveEffectiveRef() resolves undefined.",
+        "resolveScopeFiles() returns only declared contextFiles and expectedFiles without throwing when collectDiffFileList() resolves undefined.",
+        "resolveScopeFiles() returns only declared contextFiles and expectedFiles without throwing when collectDiffFileList() rejects.",
+        "When contextStage.execute(ctx) runs with context.v2.enabled true and a stub provider, then its fetch request scopeFiles equals resolveScopeFiles(ctx)'s result.",
+        "When promptStage.execute(ctx) runs with context.v2.enabled true and a stub provider, then its fetch request scopeFiles equals resolveScopeFiles(ctx)'s result.",
+        "assembleForStage() builds a ContextRequest whose scopeFiles equals StageAssembleOptions.scopeFiles.",
+        "assembleForStage() preserves touchedFiles equal to getContextFiles(story) when scopeFiles is supplied."
+      ],
+      "tags": [
+        "feature",
+        "pipeline",
+        "context",
+        "integration"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "New cross-module resolver and two producer paths with circular-dependency and fail-open constraints.",
+        "agentProfileId": "opencode-balanced",
+        "agent": "opencode",
+        "profileModelTier": "powerful",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-balanced",
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/context.ts",
+        "src/pipeline/stages/prompt.ts",
+        "src/context/engine/stage-assembler.ts",
+        "src/review/diff-utils.ts",
+        "src/prd/types.ts"
+      ],
+      "expectedFiles": [
+        "src/pipeline/context-scope.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ec005358b9973c1c15732e1051b79ad9aeac8487"
+    },
+    {
+      "id": "US-004",
+      "title": "Apply rule scoping and persist provider report",
+      "description": "**Goal** — Filter canonical rules by stage then effective scope files, and persist an auditable provider scoping report.\n\n**Motivation** — Every rule is broadcast to all 20 stages and `appliesTo:` is inert for most stories.\n\n**Approach** — Filtering is declarative frontmatter evaluated in the provider, not a scoring adjustment and not an LLM decision. Two new filter passes join the two that exist, in this order:\n\n```\nloadCanonicalRules(repoRoot)\n  -> filter by paths:      (package scope — unchanged)\n  -> overlay package rules (monorepo — unchanged)\n  -> sort by priority      (unchanged)\n  -> filter by stages:     NEW — keyed on request.stage\n  -> filter by appliesTo:  unchanged code, now fed request.scopeFiles\n  -> applyCanonicalRulesBudget (unchanged)\n  -> chunks + scopingReport   NEW\n```\n\nFail-open is preserved deliberately. Neither axis drops a rule when its input is absent: a rule with no `stages:` applies to every stage, and `appliesTo:` still loads when the scope set is empty. Making absence destructive would gut the rulebook on exactly the stories that forgot to declare files. The credibility gap is closed by reporting inert declarations, not by enforcing them.\n\n**Scope** — In: request/result/manifest type extension, stage/apply filters, independent scoping report, and manifest propagation. Out: strict appliesTo enforcement, role/scoring changes, budget/packing changes, and scope resolution (US-003).\n\n**Interface**\n```typescript\nexport interface ProviderScopingReport {\n  /** Stable ids of rules dropped because request.stage was not in their `stages:` list. */\n  stageFilteredIds: string[];\n  /** Stable ids of rules dropped because no scope file matched their `appliesTo:` globs. */\n  appliesToFilteredIds: string[];\n  /**\n   * Rules that declared `appliesTo:` but were admitted unconditionally because the\n   * scope set was empty. Non-zero means the declaration had no effect for this request.\n   */\n  appliesToInertCount: number;\n  /** Size of the scope set the filters ran against. The list itself is not persisted. */\n  scopeFileCount: number;\n}\n```\n\nAdd `scopeFiles?: string[]` to `ContextRequest`, and `scopingReport?: ProviderScopingReport` to `ContextProviderResult` and manifest provider results. Keep `scopingReport` separate from `budgetPressure`.\n\n**Test placement** — `test/unit/context/engine/providers/static-rules.test.ts` is 783 lines against the 800-line test gate enforced by `bun run check:file-sizes`, leaving 17 lines. Do NOT append there; add `test/unit/context/engine/providers/static-rules-scoping.test.ts`, mirroring the existing `static-rules-paths.test.ts` split.",
+      "acceptanceCriteria": [
+        "StaticRulesProvider.fetch() returns no chunk for a rule with stages [\"plan\"] when request.stage is execution.",
+        "StaticRulesProvider.fetch() returns a chunk for a rule with stages [\"plan\"] when request.stage is plan.",
+        "StaticRulesProvider.fetch() returns a chunk for a rule with no stages key for every request stage.",
+        "StaticRulesProvider.fetch() returns no chunk for appliesTo [\"test/**/*.test.ts\"] when scopeFiles contains only src/foo.ts.",
+        "StaticRulesProvider.fetch() returns a chunk for appliesTo [\"test/**/*.test.ts\"] when scopeFiles contains test/unit/foo.test.ts and touchedFiles is empty.",
+        "StaticRulesProvider.fetch() returns a chunk for a rule declaring appliesTo when scopeFiles is empty.",
+        "StaticRulesProvider.fetch() returns scopingReport.appliesToInertCount 1 when one rule declares appliesTo and scopeFiles is empty.",
+        "StaticRulesProvider.fetch() returns scopingReport.appliesToInertCount 0 when scopeFiles is non-empty.",
+        "StaticRulesProvider.fetch() returns a scopingReport.stageFilteredIds containing the ID of a stage-filtered rule.",
+        "StaticRulesProvider.fetch() returns a scopingReport.appliesToFilteredIds containing the ID of an appliesTo-filtered rule.",
+        "StaticRulesProvider.fetch() returns scopingReport.scopeFileCount equal to request.scopeFiles length.",
+        "StaticRulesProvider.fetch() returns budgetPressure unaffected by rules removed by either scoping filter.",
+        "When an orchestrator assembles with StaticRulesProvider registered, then the static-rules manifest providerResults entry carries the provider's scopingReport."
+      ],
+      "tags": [
+        "feature",
+        "context",
+        "provider",
+        "manifest"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-cutting provider, type, and artifact-schema change with strict ordering and compatibility semantics.",
+        "agentProfileId": "claude-final",
+        "agent": "claude",
+        "profileModelTier": "balanced",
+        "initialAgent": "claude",
+        "initialProfileId": "claude-final",
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/context/engine/providers/static-rules.ts",
+        "src/context/engine/types.ts",
+        "src/context/engine/manifest-types.ts",
+        "src/context/engine/orchestrator.ts",
+        "src/context/rules/rules-frontmatter.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "fc28a7a25c9b5c66e76810b9c61fab647284d38d"
+    },
+    {
+      "id": "US-005",
+      "title": "Expose scoping warnings in rules lint",
+      "description": "**Goal** — Make `nax rules lint` surface the parser's per-rule scoping diagnostics without reimplementing detection.\n\n**Motivation** — A scoping declaration must never again look like it works while doing nothing.\n\n**Approach** — One detection, three surfaces, and each is assertable — the parser by return value, the loader and the lint command through their existing injectable loggers. `rulesLintCommand` warns on unrecognised `stages:` values and on displaced frontmatter, reusing the detection from US-002. The existing dead-glob warning is unchanged.\n\n**Scope** — In: per-file warnings from `CanonicalRule.warnings` through `_rulesCLIDeps.getLogger()`, preserving dead-glob lint behaviour. Out: parser detection and loader logging (US-002), frontmatter moves (US-001), and automatic repair of malformed placement.\n\n**Interface** — `rulesLintCommand(options: RulesLintOptions): Promise<void>` consumes `CanonicalRule.warnings` produced by the loader and attributes every warning to the linted rule file.\n\n**Test placement** — `test/unit/cli/rules.test.ts` is 747 lines against the 800-line test gate enforced by `bun run check:file-sizes`, leaving 53 lines. Do NOT append there; add `test/unit/cli/rules-lint.test.ts`, mirroring the `rules-lint.ts` source split.",
+      "acceptanceCriteria": [
+        "rulesLintCommand() emits a warning through _rulesCLIDeps.getLogger() naming the rule file when it declares a stage matching neither STAGE_CONTEXT_MAP nor known stage literals.",
+        "rulesLintCommand() emits no unrecognised-stage warning through _rulesCLIDeps.getLogger() when every declared stage is recognised.",
+        "rulesLintCommand() emits a warning through _rulesCLIDeps.getLogger() naming the rule file when it begins with a blank line followed by ---.",
+        "rulesLintCommand() resolves without throwing when a rule file carries displaced frontmatter.",
+        "rulesLintCommand() still reports the existing dead-glob warning when a rule's appliesTo glob matches no file in the linted repository."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "lint"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Extends an existing injectable CLI warning path with parser-produced metadata.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/cli/rules-lint.ts",
+        "src/context/rules/rules-frontmatter.ts",
+        "test/unit/cli/rules.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d31926a20aefd390bbb616aadb240ed057fb00be"
+    },
+    {
+      "id": "US-006",
+      "title": "Scope canonical test-authoring rules by stage",
+      "description": "**Goal** — Author recognized `stages:` declarations for canonical rules that are not useful at planning, acceptance, or routing stages.\n\n**Motivation** — The full corpus now enters every stage as static floor chunks, and scoping is the only pre-budget mechanism that can reduce payload where rules do not belong.\n\n**Approach** — Add `stages:` frontmatter to the rules in `.nax/rules/` that are stage-specific. Test-authoring rules (`test-writing.md`, `test-architecture.md`, `test-helpers.md`, `testing-commands.md`) decline the stages that never author or run tests — `plan`, `acceptance`, `route`. Rules that genuinely apply everywhere (`forbidden-patterns.md`, `project-conventions.md`) declare no `stages:` key.\n\n**Scope** — In: canonical-rule frontmatter authoring and real-store integration coverage. Out: changing parser/provider semantics (US-002 and US-004), adding stages to rules that genuinely apply everywhere, role/scoring changes, and any full-list manifest persistence.\n\n**Interface** — The existing rule-file YAML frontmatter gains `stages:` lists only for stage-specific rules; absent `stages:` continues to mean every stage.",
+      "acceptanceCriteria": [
+        "loadCanonicalRules() over the repository .nax/rules directory returns test-writing.md with stages that exclude plan.",
+        "loadCanonicalRules() over the repository .nax/rules directory returns forbidden-patterns.md with stages undefined.",
+        "StaticRulesProvider.fetch() over repository .nax/rules returns no chunk derived from test-writing.md when request.stage is plan.",
+        "StaticRulesProvider.fetch() over repository .nax/rules returns a chunk derived from forbidden-patterns.md when request.stage is plan.",
+        "StaticRulesProvider.fetch() over repository .nax/rules returns a chunk derived from test-writing.md when request.stage is tdd-test-writer.",
+        "loadCanonicalRules() over the repository .nax/rules directory returns every CanonicalRule with an empty warnings list."
+      ],
+      "tags": [
+        "feature",
+        "rules",
+        "configuration"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A bounded canonical-rule configuration change whose correctness depends on real parser/provider integration.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        ".nax/rules/test-writing.md",
+        ".nax/rules/test-architecture.md",
+        ".nax/rules/forbidden-patterns.md",
+        "src/context/engine/providers/static-rules.ts",
+        "src/context/rules/rules-frontmatter.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "14afc7d8e644b1583db94992ea511d69e917d292"
+    }
+  ],
+  "analysis": "Existing context-engine v2 already has the two key seams this feature needs. `src/context/rules/canonical-loader.ts:160-353` owns the canonical-rule frontmatter constants, `RulesFrontmatterError`, `CanonicalRule`, `ParsedFrontmatter`, and `parseFrontmatter`; its loader reads rules through injectable `_canonicalLoaderDeps`, so parser diagnostics can be returned and then logged without global capture. The file is already near the 600-line hard limit, making the US-001 extraction a prerequisite for subsequent loader edits. Existing consumers import loader symbols by leaf path (`src/context/engine/providers/static-rules.ts:24-25`) and `src/context/index.ts:41` re-exports `NeutralityLintError`, so canonical-loader must re-export the extracted frontmatter symbols; no new rules barrel should be added. `src/cli/rules.ts:553-597` likewise contains `collectCanonicalRuleRoots` and `rulesLintCommand` near the size cap, and its injectable `_rulesCLIDeps` plus `loadCanonicalRules` are the established lint-warning seam.\n\n`StaticRulesProvider.fetch` in `src/context/engine/providers/static-rules.ts:228-284` loads repo rules, applies unchanged package `paths:` filtering, overlays package rules, sorts by priority, applies `ruleMatchesTouchedFiles`, and only then applies the canonical-rules budget. Its touched-file predicate deliberately fails open for absent/empty input. The implementation must preserve that posture but feed `request.scopeFiles`, insert a stage predicate before appliesTo filtering, retain the current ordering and budget behaviour, and return a separate report. Provider unit coverage is already organized in `test/unit/context/engine/providers/static-rules.test.ts`, with adjacent paths/legacy-default suites; use `_staticRulesDeps.loadCanonicalRules` for focused rule fixtures and disk-backed cases where parsing-to-provider seams must be proven.\n\n`ContextRequest` and `ContextProviderResult` live in `src/context/engine/types.ts:190-420`; `touchedFiles` is presently the curated list and must remain independent. `ProviderBudgetPressure` and the persisted `ContextManifest.providerResults` entry live in `src/context/engine/manifest-types.ts:20-159`; a sibling `ProviderScopingReport` should be declared there and copied verbatim by the existing orchestrator mapping at `src/context/engine/orchestrator.ts:298`. `StageAssembleOptions` and `assembleForStage` in `src/context/engine/stage-assembler.ts:49,193` already forward optional assembly inputs into a request; add `scopeFiles` there, without importing review code into the context engine.\n\nThere are two request producers. `src/pipeline/stages/context.ts:145-159` directly creates the initial request and currently conditionally includes `touchedFiles`; `src/pipeline/stages/prompt.ts:62-79` obtains later bundles through `assembleForStage` with no options. Both are v2-only paths: `context.v2.enabled` defaults false, so producer integration fixtures must enable it. Scope resolution belongs in new `src/pipeline/context-scope.ts`, because review modules value-import from `../context`; importing review from under `src/context/` would create a cycle. The resolver should reuse `getContextFiles` and `getExpectedFiles` from `src/prd/types.ts:214-225`, plus `resolveEffectiveRef` and `collectDiffFileList` from `src/review/diff-utils.ts`, dedupe/sort output for manifest stability, and fail open on ref/diff problems. Tests should use its own injectable dependency seam if needed rather than live git.\n\nStage recognition must be advisory. `src/context/engine/stage-config.ts:109` exposes `STAGE_CONTEXT_MAP`, but real pipeline values including `acceptance-setup` and `queue-check` are not necessarily mapped; filtering is ordinary string comparison and warnings must recognize mapped values plus known pipeline literals. Existing parser, loader, provider, assembler, context-stage, prompt-stage, orchestrator, and CLI tests provide the natural mirrored test locations. Migration is backward-compatible: absent `stages`, absent `scopeFiles`, and empty scope sets retain current fail-open/global behaviour; the only artifact schema addition is optional `scopingReport`, and resolved file lists are intentionally not persisted. The repository’s real `.nax/rules` store is changed only after parser/provider support lands, so its authored stages can be verified end-to-end.",
+  "outOfScope": [
+    "Strict `appliesTo:` enforcement — a rule declaring `appliesTo:` still loads when the scope set is empty, and this spec adds no configuration to change that.",
+    "A `roles:` frontmatter axis, and any change to chunk `role` assignment or to `src/context/engine/scoring.ts`.",
+    "Any hard ceiling, cap, or eviction applied to `static` floor-kind chunks during packing; `packChunks` floor behaviour is unchanged.",
+    "Changing `ContextRequest.touchedFiles`, its population from `getContextFiles`, or the `MAX_FILES = 10` caps in `git-history.ts` and `code-neighbor.ts`.",
+    "Relocating context manifests out of `<projectDir>/.nax/features/` into the global `~/.nax/` artifact store.",
+    "Auto-repairing displaced frontmatter — a BOM or leading blank line is reported, never silently corrected.",
+    "Persisting the resolved scope-file list itself into `context-manifest-<stage>.json`; only counts and dropped ids are recorded.",
+    "Parsing story descriptions or acceptance-criteria prose to infer additional scope files."
+  ],
+  "routingProfile": "cross-agent"
+}

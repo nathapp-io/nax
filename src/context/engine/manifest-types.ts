@@ -39,6 +39,30 @@ export interface ProviderBudgetPressure {
   droppedIds: string[];
 }
 
+/**
+ * A provider's rule-scoping report — records which canonical rules were
+ * dropped by the stage/appliesTo filters and whether an appliesTo
+ * declaration had no effect (US — rule-scoping).
+ *
+ * Emitted on `ContextProviderResult.scopingReport`. Both filters are
+ * fail-open: a rule with no `stages:` applies to every stage, and
+ * `appliesTo:` still loads when the scope set is empty (reported via
+ * `appliesToInertCount`, not enforced).
+ */
+export interface ProviderScopingReport {
+  /** Stable ids of rules dropped because request.stage was not in their `stages:` list. */
+  stageFilteredIds: string[];
+  /** Stable ids of rules dropped because no scope file matched their `appliesTo:` globs. */
+  appliesToFilteredIds: string[];
+  /**
+   * Rules that declared `appliesTo:` but were admitted unconditionally because the
+   * scope set was empty. Non-zero means the declaration had no effect for this request.
+   */
+  appliesToInertCount: number;
+  /** Size of the scope set the filters ran against. The list itself is not persisted. */
+  scopeFileCount: number;
+}
+
 /** A single context chunk produced by a provider and packed into the bundle. */
 export interface ContextChunk {
   /** Stable id: `<providerId>:<contentHash8>` */
@@ -155,6 +179,12 @@ export interface ContextManifest {
      * or when it does not report pressure.
      */
     budgetPressure?: ProviderBudgetPressure;
+    /**
+     * Provider-reported rule-scoping outcome (US — rule-scoping).
+     * Persisted verbatim from `ContextProviderResult.scopingReport`. Omitted
+     * when the provider does not report scoping (e.g. non-rules providers).
+     */
+    scopingReport?: ProviderScopingReport;
     error?: string;
   }>;
   /**

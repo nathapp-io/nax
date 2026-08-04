@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-08-04T06-38-28-875Z",
+    "feature": "rule-scoping",
+    "startedAt": "2026-08-04T06:38:28.875Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 80016
+  },
+  "progress": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 21.984657455200004,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 8,
+  "updatedAt": "2026-08-04T09:33:56.573Z",
+  "durationMs": 10527698,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-08-04T09:33:28.112Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-08-04T09:33:55.306Z"
+    }
+  }
+}

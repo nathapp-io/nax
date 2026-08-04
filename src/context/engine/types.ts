@@ -124,8 +124,14 @@ export type ChunkRole = "implementer" | "reviewer" | "tdd" | "all";
 // Manifest types (extracted to manifest-types.ts)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { ChunkEffectiveness, ContextChunk, ContextManifest, ProviderBudgetPressure } from "./manifest-types";
-export type { ChunkEffectiveness, ContextChunk, ContextManifest, ProviderBudgetPressure };
+import type {
+  ChunkEffectiveness,
+  ContextChunk,
+  ContextManifest,
+  ProviderBudgetPressure,
+  ProviderScopingReport,
+} from "./manifest-types";
+export type { ChunkEffectiveness, ContextChunk, ContextManifest, ProviderBudgetPressure, ProviderScopingReport };
 
 /**
  * Output of ContextOrchestrator.assemble() and .rebuildForAgent().
@@ -265,6 +271,13 @@ export interface ContextRequest {
    */
   touchedFiles?: string[];
   /**
+   * Complete evidence set of files a story touches (PRD contextFiles +
+   * expectedFiles + git diff). Used by SCOPING decisions only — providers
+   * that fetch content read `touchedFiles` instead. Resolved by
+   * `resolveScopeFiles(ctx)` and threaded through `StageAssembleOptions.scopeFiles`.
+   */
+  scopeFiles?: string[];
+  /**
    * Pull tool configuration for this assembly call (Phase 4+).
    * When absent or disabled, assemble() returns an empty pullTools array.
    * Derived by the pipeline stage from config.context.v2.pull.
@@ -392,6 +405,12 @@ export interface ContextProviderResult {
    * silent loss that would otherwise be invisible downstream (US-003).
    */
   budgetPressure?: ProviderBudgetPressure;
+  /**
+   * Rule-scoping outcome reported by providers that apply stage/appliesTo
+   * filters to canonical rules (US — rule-scoping). Omitted by providers
+   * that don't scope rules.
+   */
+  scopingReport?: ProviderScopingReport;
 }
 
 /**
