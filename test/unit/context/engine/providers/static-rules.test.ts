@@ -153,7 +153,7 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
       { fileName: "b.md", id: "b", content: "B".repeat(800), tokens: 200, priority: 2 },
       { fileName: "c.md", id: "c", content: "C".repeat(800), tokens: 200, priority: 3 },
     ]);
-    const provider = new StaticRulesProvider({ budgetTokens: 400 });
+    const provider = new StaticRulesProvider({ budgetTokens: 400, enforceBudget: true });
     const result = await provider.fetch(BASE_REQUEST);
     expect(result.chunks).toHaveLength(2);
     expect(result.chunks[0]?.id).toContain("a");
@@ -167,7 +167,7 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
       { fileName: "tiny.md", id: "tiny", content: "T".repeat(40), tokens: 10, priority: 2 },
       { fileName: "tiny2.md", id: "tiny2", content: "T2".repeat(40), tokens: 10, priority: 3 },
     ]);
-    const provider = new StaticRulesProvider({ budgetTokens: 500 });
+    const provider = new StaticRulesProvider({ budgetTokens: 500, enforceBudget: true });
     const r1 = await provider.fetch(BASE_REQUEST);
     expect(r1.chunks).toEqual([]);
 
@@ -178,7 +178,7 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
       { fileName: "c.md", id: "c", content: "C".repeat(400), tokens: 100, priority: 3 },
       { fileName: "d.md", id: "d", content: "D".repeat(40), tokens: 10, priority: 4 },
     ]);
-    const provider2 = new StaticRulesProvider({ budgetTokens: 30 });
+    const provider2 = new StaticRulesProvider({ budgetTokens: 30, enforceBudget: true });
     const r2 = await provider2.fetch(BASE_REQUEST);
     // Extract the rule-id segment from each chunk id (format: static-rules:<ruleId>:<hash>)
     const ruleIds = r2.chunks.map((c) => c.id.split(":")[1]);
@@ -612,5 +612,172 @@ describe("rule scoping parity — .nax/rules vs .claude/rules", () => {
     // or renamed — the loop would compare nothing and stay green forever.
     expect(compared).toBeGreaterThan(0);
     expect(scopedPairs).toBeGreaterThan(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-003: provider budget pressure — surface canonical-rule budget pressure
+// via ContextProviderResult.budgetPressure.
+//
+// The pressure object is ProviderBudgetPressure (declared in manifest-types.ts):
+//   { overageTokens, droppedCount, droppedTokens, droppedIds }
+// Pressure is emitted in soft mode (overage only, no drops) and in enforced
+// mode (full drops + ids). It is OMITTED when the canonical-rule total fits
+// inside budgetTokens. NeutralityLintError still propagates unchanged.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("StaticRulesProvider — US-003 budget pressure (soft, enforceBudget=false)", () => {
+  test("[US-003 AC 1] returns one chunk per canonical rule, including rules beyond the budget", async () => {
+    setupCanonical([
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 200, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 200, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 200, priority: 3 },
+    ]);
+    const provider = new StaticRulesProvider({ budgetTokens: 400 });
+    const result = await provider.fetch(BASE_REQUEST);
+    expect(result.chunks).toHaveLength(3);
+  });
+
+  test("[US-003 AC 2] budgetPressure.overageTokens equals store total minus budgetTokens", async () => {
+    setupCanonical([
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 200, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 200, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 200, priority: 3 },
+    ]);
+    const provider = new StaticRulesProvider({ budgetTokens: 400 });
+    const result = await provider.fetch(BASE_REQUEST);
+    expect(result.budgetPressure).toBeDefined();
+    expect(result.budgetPressure?.overageTokens).toBe(200); // 600 total − 400 budget
+  });
+
+  test("[US-003 AC 3] budgetPressure.droppedCount equals 0 in soft mode", async () => {
+    setupCanonical([
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 200, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 200, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 200, priority: 3 },
+    ]);
+    const provider = new StaticRulesProvider({ budgetTokens: 400 });
+    const result = await provider.fetch(BASE_REQUEST);
+    expect(result.budgetPressure?.droppedCount).toBe(0);
+  });
+});
+
+describe("StaticRulesProvider — US-003 budget pressure (enforced, enforceBudget=true)", () => {
+  test("[US-003 AC 4] budgetPressure.droppedCount equals the number of rules omitted from chunks", async () => {
+    setupCanonical([
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 10, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(400), tokens: 100, priority: 3 },
+      { fileName: "d.md", id: "d", content: "D".repeat(40), tokens: 10, priority: 4 },
+    ]);
+    const provider = new StaticRulesProvider({ budgetTokens: 30, enforceBudget: true });
+    const result = await provider.fetch(BASE_REQUEST);
+    // Leading run that fits inside 30: a(10) + b(10) → kept. c would push past → drop.
+    // Dropped tail: c, d.
+    expect(result.budgetPressure?.droppedCount).toBe(2);
+    expect(result.chunks).toHaveLength(2);
+  });
+
+  test("[US-003 AC 5] budgetPressure.droppedTokens equals the token total of rules omitted from chunks", async () => {
+    setupCanonical([
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 10, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(400), tokens: 100, priority: 3 },
+      { fileName: "d.md", id: "d", content: "D".repeat(40), tokens: 10, priority: 4 },
+    ]);
+    const provider = new StaticRulesProvider({ budgetTokens: 30, enforceBudget: true });
+    const result = await provider.fetch(BASE_REQUEST);
+    expect(result.budgetPressure?.droppedTokens).toBe(110); // c(100) + d(10)
+  });
+
+  test("[US-003 AC 6] budgetPressure.droppedIds contains the canonical rule id of every omitted rule", async () => {
+    setupCanonical([
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 10, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(400), tokens: 100, priority: 3 },
+      { fileName: "d.md", id: "d", content: "D".repeat(40), tokens: 10, priority: 4 },
+    ]);
+    const provider = new StaticRulesProvider({ budgetTokens: 30, enforceBudget: true });
+    const result = await provider.fetch(BASE_REQUEST);
+    expect(result.budgetPressure?.droppedIds).toEqual(["c", "d"]);
+  });
+});
+
+describe("StaticRulesProvider — US-003 budget pressure (within budget)", () => {
+  test("[US-003 AC 7] omits budgetPressure when canonical-rule total is within budgetTokens", async () => {
+    setupCanonical([
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 50, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 50, priority: 2 },
+    ]);
+    const provider = new StaticRulesProvider({ budgetTokens: 1000 });
+    const result = await provider.fetch(BASE_REQUEST);
+    expect(result.budgetPressure).toBeUndefined();
+    expect(result.chunks).toHaveLength(2);
+  });
+});
+
+describe("StaticRulesProvider — US-003 NeutralityLintError propagation", () => {
+  test("[US-003 AC 8] throws NeutralityLintError instead of returning an empty chunk list", async () => {
+    _staticRulesDeps.loadCanonicalRules = async () => {
+      throw new NeutralityLintError([
+        { file: "bad.md", lineNumber: 1, line: "CLAUDE.md", ruleId: "claude-reference", pattern: "agent-specific" },
+      ]);
+    };
+    const provider = new StaticRulesProvider();
+    let threw: unknown;
+    try {
+      await provider.fetch(BASE_REQUEST);
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toBeInstanceOf(NeutralityLintError);
+    expect((threw as NaxError).code).toBe("NEUTRALITY_LINT_FAILED");
+    expect((threw as NaxError).context?.stage).toBe("canonical-loader");
+  });
+});
+
+describe("StaticRulesProvider — US-003 real .nax/rules store under default configuration", () => {
+  // Use a real temp directory so the canonical loader's file/glob path runs end-to-end
+  // (not just the mocked one). The default budget is 8192.
+  const REAL_REPO_REQUEST: ContextRequest = {
+    storyId: "US-003",
+    repoRoot: process.cwd(),
+    packageDir: process.cwd(),
+    stage: "execution",
+    role: "implementer",
+    budgetTokens: 8000,
+  };
+
+  test("[US-003 AC 9] returns one chunk per rule file in .nax/rules/ under default configuration", async () => {
+    _staticRulesDeps.loadCanonicalRules = origLoadCanonicalRules;
+    const provider = new StaticRulesProvider();
+    const result = await provider.fetch(REAL_REPO_REQUEST);
+    const expectedCount = [
+      ...new Bun.Glob("*.md").scanSync({ cwd: ".nax/rules", absolute: false }),
+    ].length;
+    expect(expectedCount).toBeGreaterThan(0);
+    expect(result.chunks).toHaveLength(expectedCount);
+  });
+
+  test("[US-003 AC 10] budgetPressure.droppedCount equals 0 under default configuration", async () => {
+    _staticRulesDeps.loadCanonicalRules = origLoadCanonicalRules;
+    const provider = new StaticRulesProvider();
+    const result = await provider.fetch(REAL_REPO_REQUEST);
+    // Default budget (8192) is above the total rule-file size, so no drops are expected.
+    expect(result.budgetPressure?.droppedCount ?? 0).toBe(0);
+  });
+});
+
+describe("StaticRulesProvider — US-003 empty canonical store with allowLegacyClaudeMd=false", () => {
+  test("[US-003 AC 11] returns an empty chunk list and does not use legacy rule files", async () => {
+    setupCanonical([]);
+    setupLegacyFiles({
+      "/project/CLAUDE.md": "Legacy rules.",
+      "/project/.claude/rules/testing.md": "Legacy testing.",
+    });
+    const provider = new StaticRulesProvider({ allowLegacyClaudeMd: false });
+    const result = await provider.fetch(BASE_REQUEST);
+    expect(result.chunks).toHaveLength(0);
+    expect(result.budgetPressure).toBeUndefined();
   });
 });

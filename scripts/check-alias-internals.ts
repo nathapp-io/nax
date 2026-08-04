@@ -76,11 +76,19 @@ function listBarrelDirs(rootDir: string, subdir: string, prefix: string): Set<st
       continue;
     }
     if (!st.isDirectory()) continue;
+    if (entry === "node_modules" || entry.startsWith(".")) continue;
+    let hasIndex = false;
     try {
       statSync(join(full, "index.ts"));
-      dirs.add(`${prefix}/${entry}`);
+      hasIndex = true;
     } catch {
-      // no barrel — internal import paths are unavoidable here
+      // no barrel at this level — recurse to find nested barrels
+    }
+    if (hasIndex) {
+      dirs.add(`${prefix}/${entry}`);
+    }
+    for (const nested of listBarrelDirs(rootDir, join(subdir, entry), `${prefix}/${entry}`)) {
+      dirs.add(nested);
     }
   }
   return dirs;
@@ -117,11 +125,16 @@ function* walk(dir: string): Generator<string> {
 }
 
 function classify(importPath: string, barrels: Set<string>): { barrel: string } | null {
+  let bestMatch: { barrel: string; length: number } | null = null;
   for (const barrel of barrels) {
     if (importPath === barrel) return null;
-    if (importPath.startsWith(`${barrel}/`)) return { barrel };
+    if (importPath.startsWith(`${barrel}/`)) {
+      if (!bestMatch || barrel.length > bestMatch.length) {
+        bestMatch = { barrel, length: barrel.length };
+      }
+    }
   }
-  return null;
+  return bestMatch ? { barrel: bestMatch.barrel } : null;
 }
 
 export function scanFileForAliasInternals(

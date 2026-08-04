@@ -4,6 +4,8 @@
  * Structured cost and performance metrics for tracking agent execution.
  */
 
+import type { ProviderBudgetPressure } from "../context/engine/manifest-types";
+
 /**
  * Token usage metrics for LLM calls
  */
@@ -81,6 +83,18 @@ export interface ContextProviderMetrics {
    * Absent when the provider reported no chunk costs (free providers).
    */
   costUsd?: number;
+  /**
+   * Aggregated provider budget pressure across all pipeline stages (US-004).
+   * Sums `overageTokens`, `droppedCount`, and `droppedTokens` across every
+   * persisted stage manifest that carried this provider's `budgetPressure`.
+   * Absent when no stage manifest for this provider reported pressure (and
+   * absent for legacy manifests that pre-date the field).
+   *
+   * `droppedIds` is intentionally NOT carried here — aggregating IDs across
+   * stages grows unbounded. The full shape (with `droppedIds`) stays on
+   * `ContextManifest.providerResults[i].budgetPressure` for per-stage debugging.
+   */
+  budgetPressure?: Omit<ProviderBudgetPressure, "droppedIds">;
 }
 
 /**

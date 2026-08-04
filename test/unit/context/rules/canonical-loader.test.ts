@@ -265,7 +265,7 @@ Only for agent files.`,
     await expect(loadCanonicalRules("/project")).rejects.toBeInstanceOf(RulesFrontmatterError);
   });
 
-  test("applies budget truncation when budgetTokens is provided", async () => {
+  test("[US-002] soft-by-default: loadCanonicalRules keeps every rule when budgetTokens is provided but enforcement is off", async () => {
     setupFiles({
       "/project/.nax/rules/a.md": `---
 priority: 1
@@ -281,8 +281,7 @@ priority: 3
 ${"C".repeat(800)}`,
     });
     const rules = await loadCanonicalRules("/project", { budgetTokens: 200 });
-    expect(rules.length).toBeGreaterThan(0);
-    expect(rules.length).toBeLessThan(3);
+    expect(rules).toHaveLength(3);
   });
 });
 
@@ -381,66 +380,149 @@ describe("loadCanonicalRules — frontmatter key validation (US-004)", () => {
 });
 
 describe("applyCanonicalRulesBudget", () => {
-  test("keeps higher-priority rules first when truncating", () => {
+  test("keeps higher-priority rules first when enforcing and truncating", () => {
     const rules = [
       { fileName: "a.md", id: "a", content: "A".repeat(400), tokens: 100, priority: 1 },
       { fileName: "b.md", id: "b", content: "B".repeat(400), tokens: 100, priority: 2 },
       { fileName: "c.md", id: "c", content: "C".repeat(400), tokens: 100, priority: 3 },
     ];
-    const result = applyCanonicalRulesBudget(rules, 200);
+    const result = applyCanonicalRulesBudget(rules, 200, { enforce: true });
     expect(result.rules).toHaveLength(2);
     expect(result.rules.map((r) => r.id)).toEqual(["a", "b"]);
     expect(result.droppedCount).toBe(1);
   });
 
-  test("[US-002 AC 1] returns empty when the first priority-ordered rule alone exceeds budget, even if a later smaller rule would fit", () => {
+  test("[US-002 AC 1] keeps every rule and reports overageTokens when total exceeds budget in soft mode (enforce false)", () => {
     const rules = [
-      { fileName: "huge.md", id: "huge", content: "H".repeat(4000), tokens: 1000, priority: 1 },
-      { fileName: "tiny.md", id: "tiny", content: "T".repeat(40), tokens: 10, priority: 2 },
-      { fileName: "tiny2.md", id: "tiny2", content: "T2".repeat(40), tokens: 10, priority: 3 },
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 100, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 150, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 200, priority: 3 },
     ];
-    const result = applyCanonicalRulesBudget(rules, 500);
-    expect(result.rules).toEqual([]);
-    expect(result.usedTokens).toBe(0);
-    expect(result.droppedCount).toBe(3);
+    const result = applyCanonicalRulesBudget(rules, 300, { enforce: false });
+    expect(result.rules).toEqual(rules);
+    expect(result.totalTokens).toBe(450);
   });
 
-  test("[US-002 AC 2] returns the longest leading priority-ordered run that fits and reports droppedCount as the number of following rules", () => {
+  test("[US-002 AC 2] reports droppedCount 0 when total exceeds budget in soft mode (enforce false)", () => {
+    const rules = [
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 100, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 150, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 200, priority: 3 },
+    ];
+    const result = applyCanonicalRulesBudget(rules, 300, { enforce: false });
+    expect(result.droppedCount).toBe(0);
+  });
+
+  test("[US-002 AC 3] reports overageTokens = totalTokens - budgetTokens when total exceeds budget in soft mode (enforce false)", () => {
+    const rules = [
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 100, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 150, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 200, priority: 3 },
+    ];
+    const result = applyCanonicalRulesBudget(rules, 300, { enforce: false });
+    expect(result.overageTokens).toBe(result.totalTokens - 300);
+    expect(result.overageTokens).toBe(150);
+  });
+
+  test("[US-002 AC 4] reports usedTokens equal to totalTokens when total exceeds budget in soft mode (enforce false)", () => {
+    const rules = [
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 100, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 150, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 200, priority: 3 },
+    ];
+    const result = applyCanonicalRulesBudget(rules, 300, { enforce: false });
+    expect(result.usedTokens).toBe(result.totalTokens);
+    expect(result.usedTokens).toBe(450);
+  });
+
+  test("[US-002 AC 5] enforces: returns only leading rules whose cumulative tokens fit when enforce is true", () => {
     const rules = [
       { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
       { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 10, priority: 2 },
       { fileName: "c.md", id: "c", content: "C".repeat(400), tokens: 100, priority: 3 },
       { fileName: "d.md", id: "d", content: "D".repeat(40), tokens: 10, priority: 4 },
     ];
-    const result = applyCanonicalRulesBudget(rules, 30);
+    const result = applyCanonicalRulesBudget(rules, 30, { enforce: true });
     // a fits (10), b would push to 20 (fits), c would push to 120 (doesn't fit) → c,d dropped
     expect(result.rules.map((r) => r.id)).toEqual(["a", "b"]);
     expect(result.usedTokens).toBe(20);
-    expect(result.droppedCount).toBe(2);
   });
 
-  test("[US-002 AC 3] returns every input rule with droppedCount 0 and usedTokens equal to totalTokens when budgetTokens fits all rules", () => {
+  test("[US-002 AC 6] enforces: droppedCount equals the number of remaining rules after the first non-fitting rule", () => {
     const rules = [
       { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
       { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 10, priority: 2 },
-      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 10, priority: 3 },
+      { fileName: "c.md", id: "c", content: "C".repeat(400), tokens: 100, priority: 3 },
+      { fileName: "d.md", id: "d", content: "D".repeat(40), tokens: 10, priority: 4 },
     ];
-    const result = applyCanonicalRulesBudget(rules, 100);
-    expect(result.rules).toEqual(rules);
-    expect(result.droppedCount).toBe(0);
-    expect(result.usedTokens).toBe(30);
-    expect(result.usedTokens).toBe(result.totalTokens);
+    const result = applyCanonicalRulesBudget(rules, 30, { enforce: true });
+    expect(result.droppedCount).toBe(2);
   });
 
-  test("[US-002 AC 4] returns rules=[], usedTokens=0, and totalTokens equal to the summed input estimate when budgetTokens is 0", () => {
+  test("[US-002 AC 7] reports overageTokens = 0 when totalTokens is less than or equal to budgetTokens (soft mode)", () => {
+    const rules = [
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 20, priority: 2 },
+    ];
+    const underResult = applyCanonicalRulesBudget(rules, 100, { enforce: false });
+    expect(underResult.overageTokens).toBe(0);
+
+    const exactRules = [
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 30, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 70, priority: 2 },
+    ];
+    const exactResult = applyCanonicalRulesBudget(exactRules, 100, { enforce: false });
+    expect(exactResult.overageTokens).toBe(0);
+  });
+
+  test("[US-002 AC 8] returns no rules and droppedCount equals supplied rule count when budgetTokens is 0", () => {
     const rules = [
       { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
       { fileName: "b.md", id: "b", content: "B".repeat(80), tokens: 20, priority: 2 },
     ];
-    const result = applyCanonicalRulesBudget(rules, 0);
+    const result = applyCanonicalRulesBudget(rules, 0, { enforce: false });
     expect(result.rules).toEqual([]);
     expect(result.usedTokens).toBe(0);
+    expect(result.droppedCount).toBe(2);
     expect(result.totalTokens).toBe(30);
+  });
+
+  test("[US-002 AC 9] returns no rules and droppedCount equals supplied rule count when budgetTokens is negative", () => {
+    const rules = [
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(80), tokens: 20, priority: 2 },
+    ];
+    const result = applyCanonicalRulesBudget(rules, -5, { enforce: false });
+    expect(result.rules).toEqual([]);
+    expect(result.usedTokens).toBe(0);
+    expect(result.droppedCount).toBe(2);
+  });
+
+  test("[US-002 AC 10] returns no rules and droppedCount equals supplied rule count when budgetTokens is non-finite (NaN, Infinity)", () => {
+    const rules = [
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(80), tokens: 20, priority: 2 },
+    ];
+    const nanResult = applyCanonicalRulesBudget(rules, Number.NaN, { enforce: false });
+    expect(nanResult.rules).toEqual([]);
+    expect(nanResult.usedTokens).toBe(0);
+    expect(nanResult.droppedCount).toBe(2);
+
+    const infinityResult = applyCanonicalRulesBudget(rules, Number.POSITIVE_INFINITY, { enforce: false });
+    expect(infinityResult.rules).toEqual([]);
+    expect(infinityResult.usedTokens).toBe(0);
+    expect(infinityResult.droppedCount).toBe(2);
+  });
+
+  test("[US-002] soft mode is the default when options is omitted", () => {
+    const rules = [
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 100, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 150, priority: 2 },
+    ];
+    const result = applyCanonicalRulesBudget(rules, 100);
+    expect(result.rules).toEqual(rules);
+    expect(result.droppedCount).toBe(0);
+    expect(result.overageTokens).toBe(150);
   });
 });
 

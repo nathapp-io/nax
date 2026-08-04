@@ -43,6 +43,10 @@ describe("manifest-store", () => {
       buildMs: 15,
       repoRoot: "/repo",
       packageDir: "/repo/apps/api",
+      providerResults: [
+        { providerId: "static-rules", status: "ok", chunkCount: 5, durationMs: 23, tokensProduced: 890 },
+        { providerId: "git-history", status: "ok", chunkCount: 2, durationMs: 5, tokensProduced: 310 },
+      ],
     });
 
     const persistedRaw = writes.get("/repo/.nax/features/feat-auth/stories/US-001/context-manifest-review-semantic.json");
@@ -55,6 +59,10 @@ describe("manifest-store", () => {
     expect(manifests[0]?.featureId).toBe("feat-auth");
     expect(manifests[0]?.stage).toBe("review-semantic");
     expect(manifests[0]?.manifest.includedChunks).toEqual(["chunk:1"]);
+    expect(manifests[0]?.manifest.providerResults).toEqual([
+      { providerId: "static-rules", status: "ok", chunkCount: 5, durationMs: 23, tokensProduced: 890 },
+      { providerId: "git-history", status: "ok", chunkCount: 2, durationMs: 5, tokensProduced: 310 },
+    ]);
     expect(manifests[0]?.manifest.repoRoot).toBe("/repo");
     expect(manifests[0]?.manifest.packageDir).toBe("/repo/apps/api");
   });
@@ -127,6 +135,28 @@ describe("manifest-store", () => {
     expect(manifests).toHaveLength(1);
     expect(manifests[0]?.manifest.repoRoot).toBe("/repo");
     expect(manifests[0]?.manifest.packageDir).toBe("/repo");
+  });
+
+  test("writeContextManifest rejects when writeFile rejects", async () => {
+    const writeError = new Error("disk full");
+    _manifestStoreDeps.mkdirp = async () => undefined;
+    _manifestStoreDeps.writeFile = async () => {
+      throw writeError;
+    };
+
+    await expect(
+      writeContextManifest("/repo", "feat-auth", "US-001", "review-semantic", {
+        requestId: "req-1",
+        stage: "review-semantic",
+        totalBudgetTokens: 8_000,
+        usedTokens: 1_200,
+        includedChunks: ["chunk:1"],
+        excludedChunks: [],
+        floorItems: [],
+        digestTokens: 120,
+        buildMs: 15,
+      }),
+    ).rejects.toBe(writeError);
   });
 
   test("writeRebuildManifest appends rebuild events into rebuild-manifest.json", async () => {

@@ -23,6 +23,7 @@ import {
   loadCanonicalRules,
 } from "../../rules/canonical-loader";
 import type { CanonicalRule } from "../../rules/canonical-loader";
+import type { ProviderBudgetPressure } from "../manifest-types";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,6 +67,16 @@ export interface StaticRulesProviderOptions {
   allowLegacyClaudeMd?: boolean;
   /** Token budget for static rules chunk emission. Default: 8192 */
   budgetTokens?: number;
+  /**
+   * When true, enforce the budget via contiguous-tail truncation (legacy
+   * behaviour) — rules that don't fit are dropped and reported as pressure.
+   * When false (default), every rule is preserved and the gap over the
+   * budget is reported as `overageTokens` pressure only.
+   *
+   * Wired from `config.context.v2.rules.enforceBudget` by the default
+   * orchestrator. See US-003.
+   */
+  enforceBudget?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -162,6 +173,39 @@ function ruleMatchesPackage(paths: string[] | undefined, repoRoot: string, packa
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Budget pressure helper (US-003)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build a `ProviderBudgetPressure` from the budget function's output, or
+ * return `null` when the canonical-rule total fits inside the budget and
+ * there is nothing to report. Always called with the rules the budget was
+ * applied to (scoped, pre-truncation) so dropped ids/indexes line up.
+ */
+function buildBudgetPressure(
+  scopedRules: CanonicalRule[],
+  budgetResult: ReturnType<typeof applyCanonicalRulesBudget>,
+): ProviderBudgetPressure | null {
+  const overageTokens = budgetResult.overageTokens;
+  const droppedCount = budgetResult.droppedCount;
+  if (overageTokens <= 0 && droppedCount <= 0) return null;
+
+  let droppedTokens = 0;
+  const droppedIds: string[] = [];
+  if (droppedCount > 0) {
+    const kept = new Set(budgetResult.rules);
+    for (const rule of scopedRules) {
+      if (!kept.has(rule)) {
+        droppedTokens += rule.tokens ?? estimateTokens(rule.content);
+        droppedIds.push(canonicalRuleId(rule));
+      }
+    }
+  }
+
+  return { overageTokens, droppedCount, droppedTokens, droppedIds };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Provider
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -171,10 +215,12 @@ export class StaticRulesProvider implements IContextProvider {
 
   private readonly allowLegacyClaudeMd: boolean;
   private readonly budgetTokens: number;
+  private readonly enforceBudget: boolean;
 
   constructor(options: StaticRulesProviderOptions = {}) {
     this.allowLegacyClaudeMd = options.allowLegacyClaudeMd ?? false;
     this.budgetTokens = options.budgetTokens ?? DEFAULT_CANONICAL_RULES_BUDGET_TOKENS;
+    this.enforceBudget = options.enforceBudget ?? false;
   }
 
   async fetch(request: ContextRequest): Promise<ContextProviderResult> {
@@ -232,7 +278,9 @@ export class StaticRulesProvider implements IContextProvider {
 
       if (mergedRules.length > 0) {
         const scopedRules = mergedRules.filter((rule) => ruleMatchesTouchedFiles(rule.appliesTo, request.touchedFiles));
-        const budgetResult = applyCanonicalRulesBudget(scopedRules, this.budgetTokens);
+        const budgetResult = applyCanonicalRulesBudget(scopedRules, this.budgetTokens, {
+          enforce: this.enforceBudget,
+        });
         if (budgetResult.totalTokens >= Math.floor(this.budgetTokens * 0.75)) {
           logger.warn("static-rules", "Canonical rules are approaching/exceeding static rules budget", {
             storyId: request.storyId,
@@ -258,7 +306,13 @@ export class StaticRulesProvider implements IContextProvider {
             budgetTokens: this.budgetTokens,
             totalScopedRules: scopedRules.length,
           });
-          return { chunks: [], pullTools: [] };
+          // Even with zero chunks, still report pressure so the orchestrator can
+          // observe the overage. The provider emits `droppedTokens`/`droppedIds`
+          // for the full input — the budget function did the truncation above.
+          const emptyPressure = buildBudgetPressure(scopedRules, budgetResult);
+          return emptyPressure
+            ? { chunks: [], pullTools: [], budgetPressure: emptyPressure }
+            : { chunks: [], pullTools: [] };
         }
         const chunks = effectiveRules.map((rule) => {
           const ruleId = canonicalRuleId(rule);
@@ -286,7 +340,8 @@ export class StaticRulesProvider implements IContextProvider {
           files: effectiveRules.map((r) => canonicalRulePath(r)),
         });
 
-        return { chunks, pullTools: [] };
+        const pressure = buildBudgetPressure(scopedRules, budgetResult);
+        return pressure ? { chunks, pullTools: [], budgetPressure: pressure } : { chunks, pullTools: [] };
       }
     } catch (err) {
       // NeutralityLintError or other loader error — propagate so the operator sees it

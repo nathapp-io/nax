@@ -67,6 +67,7 @@ export type { StoredContextManifest, RebuildManifestEntry } from "./manifest-sto
 
 export type {
   AdapterFailure,
+  ChunkEffectiveness,
   ChunkKind,
   ChunkScope,
   ChunkRole,
@@ -77,6 +78,7 @@ export type {
   RawChunk,
   ContextProviderResult,
   IContextProvider,
+  ProviderBudgetPressure,
   ToolDescriptor,
   JSONSchema,
 } from "./types";
