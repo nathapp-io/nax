@@ -416,6 +416,11 @@ export async function loadCanonicalRules(
     const parsed = parseFrontmatter(content, filePath);
     if (!parsed.content) continue;
 
+    // [stub] AC14 — implementer fills in warning formatting; pass-through keeps parsed.warnings intact
+    for (const warning of parsed.warnings) {
+      logger.warn("canonical-loader", `Rule frontmatter warning: ${warning}`, { file: filePath });
+    }
+
     const violations = lintForNeutrality(parsed.content, fileName);
     if (violations.length > 0) {
       allViolations.push(...violations);
@@ -431,6 +436,8 @@ export async function loadCanonicalRules(
       priority: parsed.priority,
       ...(parsed.paths && { paths: parsed.paths }),
       ...(parsed.appliesTo && { appliesTo: parsed.appliesTo }),
+      ...(parsed.stages && { stages: parsed.stages }),
+      ...(parsed.warnings.length > 0 && { warnings: parsed.warnings }),
     });
   }
 
