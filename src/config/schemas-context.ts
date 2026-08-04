@@ -72,6 +72,9 @@ const ContextV2RulesConfigSchema = z
      * contiguous-tail truncation (legacy behaviour). When false (default),
      * the ceiling is reported as pressure and every rule is preserved so the
      * packer downstream still sees the full corpus.
+     *
+     * NOTE: schema/resolution is US-002; plumbing this into
+     * `StaticRulesProvider` and the orchestrator is US-003.
      */
     enforceBudget: z.boolean().default(false),
   })
