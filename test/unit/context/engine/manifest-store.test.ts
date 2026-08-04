@@ -129,6 +129,28 @@ describe("manifest-store", () => {
     expect(manifests[0]?.manifest.packageDir).toBe("/repo");
   });
 
+  test("writeContextManifest rejects when writeFile rejects", async () => {
+    const writeError = new Error("disk full");
+    _manifestStoreDeps.mkdirp = async () => undefined;
+    _manifestStoreDeps.writeFile = async () => {
+      throw writeError;
+    };
+
+    await expect(
+      writeContextManifest("/repo", "feat-auth", "US-001", "review-semantic", {
+        requestId: "req-1",
+        stage: "review-semantic",
+        totalBudgetTokens: 8_000,
+        usedTokens: 1_200,
+        includedChunks: ["chunk:1"],
+        excludedChunks: [],
+        floorItems: [],
+        digestTokens: 120,
+        buildMs: 15,
+      }),
+    ).rejects.toThrow("disk full");
+  });
+
   test("writeRebuildManifest appends rebuild events into rebuild-manifest.json", async () => {
     const writes = new Map<string, string>();
     _manifestStoreDeps.mkdirp = async () => undefined;
