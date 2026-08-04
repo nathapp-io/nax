@@ -110,6 +110,15 @@ export async function rulesLintCommand(options: RulesLintOptions, deps: RulesLin
     const rules = await deps.loadCanonicalRules(root);
     totalRuleFiles += rules.length;
     for (const rule of rules) {
+      // Re-emit parser/loader warnings (unrecognised stages, displaced frontmatter)
+      // through the lint command's own logger so `nax rules lint` is observable
+      // without depending on the loader's runtime logger.
+      for (const warning of rule.warnings ?? []) {
+        logger.warn("rules-lint", `Rule frontmatter warning: ${warning}`, {
+          file: rule.path ?? rule.fileName,
+          root,
+        });
+      }
       for (const pattern of rule.appliesTo ?? []) {
         if (deps.globHasMatch(pattern, root)) continue;
         logger.warn("rules-lint", "Canonical rule appliesTo glob matches no files in the linted repository", {
