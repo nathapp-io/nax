@@ -257,6 +257,19 @@ on US-001, or parallel execution can run it before the split and breach the gate
 implementation. `src/context/engine/orchestrator.ts` is at 584 lines: US-004's change there is the
 two-line spread of `scopingReport` at `:298` and must not grow beyond it.
 
+**The same gate applies to test files at `TEST_LIMIT = 800`, and two of the natural homes are
+already close to it.** `bun run check:file-sizes` scans `test/**/*.test.ts`; a file under the limit
+today is not grandfathered and may not cross it. Current sizes and the consequence per story:
+
+| Test file | Lines | Headroom | Rule |
+|:---|---:|---:|:---|
+| `test/unit/context/engine/providers/static-rules.test.ts` | 783 | 17 | US-004 must **not** append here — add `static-rules-scoping.test.ts` beside it, mirroring the existing `static-rules-paths.test.ts` split |
+| `test/unit/cli/rules.test.ts` | 747 | 53 | US-005 must **not** append here — add `test/unit/cli/rules-lint.test.ts`, mirroring the `rules-lint.ts` source split |
+| `test/unit/context/rules/canonical-loader.test.ts` | 579 | 221 | US-002 puts its frontmatter tests in a new `test/unit/context/rules/rules-frontmatter.test.ts`, matching the source module it covers |
+
+Per `test-architecture.md`, a test file mirrors its source file name, so each new module created by
+US-001 gets its own test file rather than growing the file it was split out of.
+
 ### US-001: Split `canonical-loader.ts` and `cli/rules.ts`
 
 Two pure moves, no behaviour change. Move the frontmatter block —
