@@ -195,7 +195,7 @@ collectStoryMetrics() -> deriveContextMetrics() (tracker.ts:58-80)
 
 1. **US-001: Extract manifest types to create file-size headroom** — no dependencies
 2. **US-002: Soft canonical-rules budget with opt-in enforcement** — no dependencies
-3. **US-003: Static-rules provider reports budget pressure** — depends on US-002
+3. **US-003: Static-rules provider reports budget pressure** — depends on US-001 and US-002
 4. **US-004: Budget pressure reaches the manifest and story metrics** — depends on US-001 and US-003
 
 US-001 is a **pure move** — no behaviour change, no new code. It relocates the
