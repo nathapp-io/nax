@@ -416,7 +416,7 @@ export async function loadCanonicalRules(
     const parsed = parseFrontmatter(content, filePath);
     if (!parsed.content) continue;
 
-    // [stub] AC14 — implementer fills in warning formatting; pass-through keeps parsed.warnings intact
+    // AC14: emit each parser warning through the injectable logger for runtime visibility
     for (const warning of parsed.warnings) {
       logger.warn("canonical-loader", `Rule frontmatter warning: ${warning}`, { file: filePath });
     }
