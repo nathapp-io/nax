@@ -55,6 +55,8 @@ const KNOWN_VALID_STAGES = new Set([
   "completion",
   "acceptance-setup",
   "regression",
+  // Operation names (src/operations/*) recognised as stage identifiers
+  "decompose",
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────
