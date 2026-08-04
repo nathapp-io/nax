@@ -148,7 +148,7 @@ describe("manifest-store", () => {
         digestTokens: 120,
         buildMs: 15,
       }),
-    ).rejects.toThrow("disk full");
+    ).rejects.toBe(writeError);
   });
 
   test("writeRebuildManifest appends rebuild events into rebuild-manifest.json", async () => {
