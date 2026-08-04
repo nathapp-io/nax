@@ -3,7 +3,7 @@
   "feature": "rule-scoping",
   "branchName": "feat/rule-scoping",
   "createdAt": "2026-08-04T00:00:00+08:00",
-  "updatedAt": "2026-08-04T08:06:00.314Z",
+  "updatedAt": "2026-08-04T08:24:38.691Z",
   "userStories": [
     {
       "id": "US-001",
@@ -85,8 +85,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [
         {
@@ -172,7 +172,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-balanced",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/pipeline/stages/context.ts",
@@ -186,7 +188,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ec005358b9973c1c15732e1051b79ad9aeac8487"
     },
     {
       "id": "US-004",

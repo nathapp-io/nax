@@ -1,1 +1,2 @@
 [2026-08-04T07:24:36.591Z] US-001 — PASSED — Split canonical frontmatter and rules lint modules — Cost: $6.8191
+[2026-08-04T08:24:34.999Z] US-002 — PASSED — Parse stages frontmatter and report parser warnings — Cost: $7.0769
