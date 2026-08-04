@@ -359,6 +359,140 @@ describe("collectStoryMetrics — US-003 context.floorOverage (AC-2, AC-3)", () 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// US-004: provider budget pressure in StoryMetrics.context.providers
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("collectStoryMetrics — US-004 context.providers[].budgetPressure", () => {
+  function providerResultWithPressure(pressure: Record<string, unknown>) {
+    return [
+      {
+        providerId: "static-rules",
+        status: "ok" as const,
+        chunkCount: 1,
+        durationMs: 10,
+        tokensProduced: 100,
+        budgetPressure: pressure,
+      },
+    ];
+  }
+
+  test("AC-3: budgetPressure.overageTokens sums across stage manifests for the same provider", async () => {
+    mockManifests({
+      [`${FEATURE}/execution`]: makeManifest({
+        stage: "execution",
+        providerResults: providerResultWithPressure({ overageTokens: 200, droppedCount: 0, droppedTokens: 0 }),
+        includedChunks: ["static-rules:a:001"],
+      }),
+      [`${FEATURE}/verify`]: makeManifest({
+        stage: "verify",
+        providerResults: providerResultWithPressure({ overageTokens: 300, droppedCount: 0, droppedTokens: 0 }),
+        includedChunks: ["static-rules:a:001"],
+      }),
+    });
+    const ctx = makeCtx();
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.context?.providers["static-rules"]?.budgetPressure?.overageTokens).toBe(500);
+  });
+
+  test("AC-4: budgetPressure.droppedCount sums across stage manifests for the same provider", async () => {
+    mockManifests({
+      [`${FEATURE}/execution`]: makeManifest({
+        stage: "execution",
+        providerResults: providerResultWithPressure({ overageTokens: 0, droppedCount: 3, droppedTokens: 0 }),
+        includedChunks: ["static-rules:a:001"],
+      }),
+      [`${FEATURE}/verify`]: makeManifest({
+        stage: "verify",
+        providerResults: providerResultWithPressure({ overageTokens: 0, droppedCount: 7, droppedTokens: 0 }),
+        includedChunks: ["static-rules:a:001"],
+      }),
+    });
+    const ctx = makeCtx();
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.context?.providers["static-rules"]?.budgetPressure?.droppedCount).toBe(10);
+  });
+
+  test("AC-5: budgetPressure.droppedTokens sums across stage manifests for the same provider", async () => {
+    mockManifests({
+      [`${FEATURE}/execution`]: makeManifest({
+        stage: "execution",
+        providerResults: providerResultWithPressure({ overageTokens: 0, droppedCount: 0, droppedTokens: 1_000 }),
+        includedChunks: ["static-rules:a:001"],
+      }),
+      [`${FEATURE}/verify`]: makeManifest({
+        stage: "verify",
+        providerResults: providerResultWithPressure({ overageTokens: 0, droppedCount: 0, droppedTokens: 2_000 }),
+        includedChunks: ["static-rules:a:001"],
+      }),
+    });
+    const ctx = makeCtx();
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.context?.providers["static-rules"]?.budgetPressure?.droppedTokens).toBe(3_000);
+  });
+
+  test("AC-6: budgetPressure is omitted when the provider's manifest entry carries no budgetPressure field", async () => {
+    mockManifests({
+      [`${FEATURE}/execution`]: makeManifest({
+        stage: "execution",
+        providerResults: [
+          { providerId: "static-rules", status: "ok", chunkCount: 1, durationMs: 10, tokensProduced: 100 },
+        ],
+        includedChunks: ["static-rules:a:001"],
+      }),
+    });
+    const ctx = makeCtx();
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.context?.providers["static-rules"]?.budgetPressure).toBeUndefined();
+  });
+
+  test("AC-7: a legacy manifest with no budgetPressure on any provider yields budgetPressure=undefined for every provider", async () => {
+    mockManifests({
+      [`${FEATURE}/execution`]: makeManifest({
+        stage: "execution",
+        providerResults: [
+          { providerId: "static-rules", status: "ok", chunkCount: 1, durationMs: 10, tokensProduced: 100 },
+          { providerId: "git-history", status: "ok", chunkCount: 1, durationMs: 5, tokensProduced: 50 },
+        ],
+        includedChunks: ["static-rules:a:001", "git-history:b:002"],
+      }),
+    });
+    const ctx = makeCtx();
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.context?.providers["static-rules"]?.budgetPressure).toBeUndefined();
+    expect(metrics.context?.providers["git-history"]?.budgetPressure).toBeUndefined();
+  });
+
+  test("AC-8: the aggregated budgetPressure never carries a droppedIds property, even if the stored manifest had one", async () => {
+    mockManifests({
+      [`${FEATURE}/execution`]: makeManifest({
+        stage: "execution",
+        providerResults: providerResultWithPressure({
+          overageTokens: 50,
+          droppedCount: 2,
+          droppedTokens: 200,
+          droppedIds: ["id1", "id2"],
+        }),
+        includedChunks: ["static-rules:a:001"],
+      }),
+    });
+    const ctx = makeCtx();
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+    const pressure = metrics.context?.providers["static-rules"]?.budgetPressure;
+
+    expect(pressure).toBeDefined();
+    expect(Object.prototype.hasOwnProperty.call(pressure ?? {}, "droppedIds")).toBe(false);
+    expect(pressure?.overageTokens).toBe(50);
+    expect(pressure?.droppedCount).toBe(2);
+    expect(pressure?.droppedTokens).toBe(200);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Spec AC-18: StoryMetrics.context.pullCalls tracks invocations. Sourced from
 // the run-scoped counter threaded through CallContext, so it reflects what the
 // agent actually asked for rather than what was offered.
