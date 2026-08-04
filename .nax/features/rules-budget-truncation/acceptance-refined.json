@@ -1,0 +1,247 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `ContextManifest` is imported from `src/context/engine/types.ts`, then a manifest value constructed against it is accepted by `writeContextManifest` without error.",
+    "refined": "Given `ContextManifest` is imported from `src/context/engine/types.ts` and a manifest object conforming to that type is constructed with required fields (`id: string`, `conversationId: string`, `includedChunks: ContextChunk[]`, `providerResults: Record<string, unknown>`, `createdAt: number`), when that manifest is passed to `writeContextManifest`, then the call resolves without throwing an error.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When a manifest is written through `writeContextManifest` and read through `loadContextManifests`, then its `includedChunks` equals the written value.",
+    "refined": "Given a manifest with `includedChunks` containing exactly N chunks (where N >= 1) is written via `writeContextManifest`, when that manifest is read back via `loadContextManifests`, then the returned manifest's `includedChunks` array has length N and each chunk's `id` and `contentHash` match the written chunks in order.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When a manifest is written through `writeContextManifest` and read through `loadContextManifests`, then its `providerResults` equals the written value.",
+    "refined": "Given a manifest with `providerResults` set to a specific object value (e.g., `{ key: 'value', nested: { foo: 1 } }`) is written via `writeContextManifest`, when that manifest is read back via `loadContextManifests`, then the returned manifest's `providerResults` object is deep-equal to the written value.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When the injected manifest-store `writeFile` rejects during `writeContextManifest`, then `writeContextManifest` rejects with that failure after the type move.",
+    "refined": "Given `writeContextManifest` is called with a valid manifest and the injected `writeFile` function rejects with a specific error (e.g., `Error('disk full')` or a custom `ManifestStoreError`), then `writeContextManifest` rejects with an error whose `message` or `cause.message` equals the injected error's message, and the error is propagated without being caught or transformed into a different error type.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `applyCanonicalRulesBudget` receives rules whose total exceeds `budgetTokens` and `enforce` is false, then it returns every supplied rule.",
+    "refined": "Given an input array of N rules with totalTokens > budgetTokens and options.enforce === false, the returned rules array has length equal to N.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When `applyCanonicalRulesBudget` receives rules whose total exceeds `budgetTokens` and `enforce` is false, then it returns `droppedCount` equal to 0.",
+    "refined": "Given an input array of N rules with totalTokens > budgetTokens and options.enforce === false, the returned droppedCount equals 0.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When `applyCanonicalRulesBudget` receives rules whose total exceeds `budgetTokens` and `enforce` is false, then it returns `overageTokens` equal to total rule tokens minus `budgetTokens`.",
+    "refined": "Given an input with totalTokens > budgetTokens and options.enforce === false, the returned overageTokens equals totalTokens - budgetTokens.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When `applyCanonicalRulesBudget` receives rules whose total exceeds `budgetTokens` and `enforce` is false, then it returns `usedTokens` equal to `totalTokens`.",
+    "refined": "Given an input with totalTokens > budgetTokens and options.enforce === false, the returned usedTokens equals totalTokens.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When `applyCanonicalRulesBudget` receives rules exceeding `budgetTokens` with `enforce` true, then it returns only leading rules whose cumulative tokens fit within `budgetTokens`.",
+    "refined": "Given an input array of rules with totalTokens > budgetTokens and options.enforce === true, the returned rules array contains the longest prefix where cumulativeTokenCount <= budgetTokens.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `applyCanonicalRulesBudget` receives rules exceeding `budgetTokens` with `enforce` true, then it returns `droppedCount` equal to the number of remaining rules.",
+    "refined": "Given an input array of N rules with totalTokens > budgetTokens and options.enforce === true, the returned droppedCount equals N minus the returned rules array length.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When `applyCanonicalRulesBudget` receives rules whose total is less than or equal to `budgetTokens`, then it returns `overageTokens` equal to 0.",
+    "refined": "Given an input with totalTokens <= budgetTokens (positive budget), the returned overageTokens equals 0.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When `applyCanonicalRulesBudget` receives `budgetTokens` of 0, then it returns no rules and `droppedCount` equal to the number of supplied rules.",
+    "refined": "Given budgetTokens === 0 and an input array of N rules, the returned rules array has length 0 and droppedCount equals N.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When `applyCanonicalRulesBudget` receives a negative `budgetTokens`, then it returns no rules and `droppedCount` equal to the number of supplied rules.",
+    "refined": "Given budgetTokens < 0 and an input array of N rules, the returned rules array has length 0 and droppedCount equals N.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When `applyCanonicalRulesBudget` receives a non-finite `budgetTokens`, then it returns no rules and `droppedCount` equal to the number of supplied rules.",
+    "refined": "Given budgetTokens is Infinity, -Infinity, or NaN, and an input array of N rules, the returned rules array has length 0 and droppedCount equals N.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When `context.v2.rules.enforceBudget` is unset while resolving nax config, then the resolved `enforceBudget` equals false.",
+    "refined": "When resolvePermissions or config resolution is called with context.v2.rules.enforceBudget === undefined, the returned enforceBudget property of the resolved config object equals false.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When `context.v2.rules.enforceBudget` is true while resolving nax config, then the resolved `enforceBudget` equals true.",
+    "refined": "When resolvePermissions or config resolution is called with context.v2.rules.enforceBudget === true, the returned enforceBudget property of the resolved config object equals true.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When `StaticRulesProvider.fetch` reads a canonical store exceeding its `budgetTokens` with `enforceBudget` false, then it returns one chunk per canonical rule, including rules beyond the budget.",
+    "refined": "When fetch() is invoked with a canonical store containing N rules whose combined token count exceeds budgetTokens and enforceBudget=false, the returned ContextProviderResult contains exactly N chunks, with chunk[i].content containing the full text of rule i.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When `StaticRulesProvider.fetch` reads a canonical store exceeding its `budgetTokens` with `enforceBudget` false, then `budgetPressure.overageTokens` equals the store total minus `budgetTokens`.",
+    "refined": "When fetch() is invoked with enforceBudget=false and the canonical store total token count (T) exceeds budgetTokens (B), result.budgetPressure.overageTokens === T - B.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When `StaticRulesProvider.fetch` reads a canonical store exceeding its `budgetTokens` with `enforceBudget` false, then `budgetPressure.droppedCount` equals 0.",
+    "refined": "When fetch() is invoked with enforceBudget=false, result.budgetPressure.droppedCount === 0.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When `StaticRulesProvider.fetch` reads a canonical store exceeding its `budgetTokens` with `enforceBudget` true, then `budgetPressure.droppedCount` equals the number of rules omitted from its chunks.",
+    "refined": "When fetch() is invoked with enforceBudget=true and M rules are omitted to satisfy budgetTokens, result.budgetPressure.droppedCount === M and result.chunks.length === totalRules - M.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When `StaticRulesProvider.fetch` reads a canonical store exceeding its `budgetTokens` with `enforceBudget` true, then `budgetPressure.droppedTokens` equals the token total of rules omitted from its chunks.",
+    "refined": "When fetch() is invoked with enforceBudget=true and rules with combined tokens D are omitted, result.budgetPressure.droppedTokens === D and result.budgetPressure.droppedCount === count of omitted rules.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When `StaticRulesProvider.fetch` reads a canonical store exceeding its `budgetTokens` with `enforceBudget` true, then `budgetPressure.droppedIds` contains the canonical rule ID of every omitted rule.",
+    "refined": "When fetch() is invoked with enforceBudget=true and rules with IDs [id1, id2, ...] are omitted, result.budgetPressure.droppedIds contains exactly those IDs and droppedIds.length === number of omitted rules.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When `StaticRulesProvider.fetch` reads canonical rules whose total is within `budgetTokens`, then its result omits `budgetPressure`.",
+    "refined": "When fetch() is invoked and canonical store total token count T <= budgetTokens, result.budgetPressure is undefined.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When the canonical loader raises `NeutralityLintError` during `StaticRulesProvider.fetch`, then `fetch` throws that error instead of returning an empty chunk list.",
+    "refined": "When fetch() is invoked and the canonical loader throws NeutralityLintError, the error propagates (is not caught) and result is never returned.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When `StaticRulesProvider.fetch` reads this repository's `.nax/rules/` store under default configuration, then it returns one chunk per rule file in that store.",
+    "refined": "When fetch() is invoked with default config (no explicit budgetTokens or enforceBudget override), the result contains one chunk per .md rule file in .nax/rules/, and chunks.length === count of .md files in .nax/rules/.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When `StaticRulesProvider.fetch` reads this repository's `.nax/rules/` store under default configuration, then `budgetPressure.droppedCount` equals 0.",
+    "refined": "When fetch() is invoked with default config against .nax/rules/ containing rules with total tokens T and configured budgetTokens B, if T <= B then result.budgetPressure is undefined; if T > B and enforceBudget=false then result.budgetPressure.droppedCount === 0.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When no canonical rules exist and `allowLegacyClaudeMd` is false, then `StaticRulesProvider.fetch` returns an empty chunk list and does not use legacy rule files.",
+    "refined": "When fetch() is invoked with allowLegacyClaudeMd=false and the canonical store is empty, result.chunks is an empty array and no legacy files (.claude.md, CLAUDE.md) are read.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "Given a registered context provider whose `fetch` returns `budgetPressure`, when `assemble()` runs, then the returned bundle's `manifest.providerResults` entry for that provider has `budgetPressure` equal to the provider-returned value.",
+    "refined": "Call `assemble()` with a provider registered that returns `{ overageTokens: 100, droppedCount: 5, droppedTokens: 500 }` as `budgetPressure`. Assert `bundle.manifest.providerResults[providerId].budgetPressure` exists and equals `{ overageTokens: 100, droppedCount: 5, droppedTokens: 500 }` (deep equality on all three fields).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-29",
+    "original": "Given a registered context provider whose `fetch` returns no `budgetPressure`, when `assemble()` runs, then the returned bundle's `manifest.providerResults` entry for that provider omits `budgetPressure`.",
+    "refined": "Call `assemble()` with a provider registered that returns `undefined` for `budgetPressure`. Assert `bundle.manifest.providerResults[providerId].budgetPressure` is `undefined` or the key is absent (use `hasOwnProperty` or `in` operator to confirm the field does not exist on the object).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When `collectStoryMetrics` reads stored stage manifests for a provider with `budgetPressure`, then `context.providers[providerId].budgetPressure.overageTokens` equals the sum of that provider's stored `overageTokens`.",
+    "refined": "Write two stage manifests to the store for the same `providerId` with `budgetPressure.overageTokens` values `200` and `300` respectively. Call `collectStoryMetrics()`. Assert `result.context.providers[providerId].budgetPressure.overageTokens === 500`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When `collectStoryMetrics` reads stored stage manifests for a provider with `budgetPressure`, then `context.providers[providerId].budgetPressure.droppedCount` equals the sum of that provider's stored `droppedCount`.",
+    "refined": "Write two stage manifests to the store for the same `providerId` with `budgetPressure.droppedCount` values `3` and `7` respectively. Call `collectStoryMetrics()`. Assert `result.context.providers[providerId].budgetPressure.droppedCount === 10`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When `collectStoryMetrics` reads stored stage manifests for a provider with `budgetPressure`, then `context.providers[providerId].budgetPressure.droppedTokens` equals the sum of that provider's stored `droppedTokens`.",
+    "refined": "Write two stage manifests to the store for the same `providerId` with `budgetPressure.droppedTokens` values `1000` and `2000` respectively. Call `collectStoryMetrics()`. Assert `result.context.providers[providerId].budgetPressure.droppedTokens === 3000`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When `collectStoryMetrics` reads stored manifests whose entries for a provider carry no `budgetPressure`, then `context.providers[providerId]` omits `budgetPressure`.",
+    "refined": "Write a stage manifest where `providerResults[providerId]` exists but has no `budgetPressure` field (key absent or explicitly `undefined`). Call `collectStoryMetrics()`. Assert `result.context.providers[providerId].budgetPressure` is `undefined` or the key does not exist on the object.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When `collectStoryMetrics` reads legacy stored manifests with no `budgetPressure`, then it contributes zero provider budget pressure rather than inferring one.",
+    "refined": "Write a legacy stage manifest (without any `budgetPressure` field on any `providerResults` entry) to the store. Call `collectStoryMetrics()`. Assert every `result.context.providers[providerId].budgetPressure` is `undefined` (i.e., no pressure is inferred or synthesized for any provider).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "When `collectStoryMetrics` reads stored manifest pressure entries containing `droppedIds`, then `context.providers[providerId].budgetPressure` has no `droppedIds` property.",
+    "refined": "Write a stage manifest with `providerResults[providerId].budgetPressure` containing `{ overageTokens: 50, droppedCount: 2, droppedTokens: 200, droppedIds: ['id1', 'id2'] }`. Call `collectStoryMetrics()`. Assert `result.context.providers[providerId].budgetPressure` does not have a `droppedIds` property (use `hasOwnProperty('droppedIds')` or `in` operator and assert `false`). Assert `overageTokens`, `droppedCount`, and `droppedTokens` are still present with correct aggregated values.",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]
