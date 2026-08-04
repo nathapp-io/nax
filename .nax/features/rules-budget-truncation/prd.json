@@ -3,7 +3,7 @@
   "feature": "rules-budget-truncation",
   "branchName": "feat/rules-budget-truncation",
   "createdAt": "2026-08-04T10:51:18+08:00",
-  "updatedAt": "2026-08-04T03:51:31.698Z",
+  "updatedAt": "2026-08-04T04:02:47.937Z",
   "userStories": [
     {
       "id": "US-001",
@@ -156,8 +156,8 @@
         "US-001",
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -223,7 +223,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/context/engine/manifest-types.ts",
@@ -234,7 +236,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "903c9f4ea366a6e69fe6d7c2e240ec4cafa626b6"
     }
   ],
   "analysis": "The affected code is an existing Context Engine v2 flow, not a greenfield build. `applyCanonicalRulesBudget` in src/context/rules/canonical-loader.ts:375-402 currently accepts two parameters, drops the contiguous tail whenever accumulated tokens exceed the cap, and returns rules/totalTokens/usedTokens/droppedCount. It has two callers, including `StaticRulesProvider.fetch`. StaticRulesProvider loads, package-filters, overlays, priority-sorts, touched-file-filters, then budgets canonical rules before turning them into static floor chunks (src/context/engine/providers/static-rules.ts:183-294); its options currently expose only legacy fallback and budgetTokens (src/context/engine/providers/static-rules.ts:55-66). The default orchestrator resolves rules config and constructs that provider at src/context/engine/orchestrator-factory.ts:40-44, so enforceBudget must be resolved there and passed explicitly.\n\nConfiguration is schema-first: ContextV2RulesConfigSchema defines allowLegacyClaudeMd and budgetTokens and has an object default at src/config/schemas-context.ts:54-68; the root DEFAULT_CONFIG literal independently supplies the same nested object at src/config/schemas.ts:321. Runtime consumers receive ContextV2RulesConfig from src/config/runtime-types-context.ts:48-56. Both default literals must include enforceBudget because Zod object defaults are not re-parsed.\n\nManifest types and provider contracts are centralized in src/context/engine/types.ts. ContextManifest.providerResults is an optional persisted array at src/context/engine/types.ts:225-267, while ContextProviderResult contains chunks and optional pullTools at src/context/engine/types.ts:543-552. The manifest block begins at src/context/engine/types.ts:123 and the file is near the 600-line source limit, so US-001 must relocate the designated chunk/manifest declarations to manifest-types.ts and re-export them before US-004 adds new documented fields. Consumers include manifest-store (writeContextManifest at src/context/engine/manifest-store.ts:64-74), orchestrator, and tests importing ContextManifest from types.ts; preserving the barrel re-export avoids import-site migration and preserves the persisted JSON schema.\n\nThe orchestrator concurrently fetches providers then maps provider status into providerResults (src/context/engine/orchestrator.ts:320-370). It must copy an optional budgetPressure without inventing it for providers that do not report one. Metrics flow is persisted-manifest based: collectStoryMetrics calls module-private deriveContextMetrics when projectDir and feature are available (src/metrics/tracker.ts:138-222); deriveContextMetrics loops every manifest provider result and sums standard provider values (src/metrics/tracker.ts:45-80). ContextProviderMetrics currently carries aggregate production/status/cost fields at src/metrics/types.ts:72-89. Add a bounded aggregate budgetPressure there and sum it only when present; legacy manifests must contribute zero and must not get inferred pressure. The existing computeFloorOverage precedent in src/metrics/tracker.ts:121-136 shows the correct compatibility rule: missing historical fields contribute zero rather than a fabricated fallback. Provider pressure is deliberately distinct from floor overage: provider pressure measures produced content above a provider threshold before packing, whereas floor overage measures floor chunks packed beyond effective stage budget.\n\nExisting test anchors are test/unit/context/rules/canonical-loader.test.ts (canonical budget and loader behaviors), test/unit/context/engine/providers/static-rules.test.ts (provider fixtures and injectable canonical-loader dependency), test/unit/context/engine/manifest-store.test.ts (manifest persistence), test/unit/context/engine/orchestrator.test.ts (assemble/provider integration), test/unit/context/engine/orchestrator-factory.test.ts (config wiring), and test/unit/metrics/tracker-context-metrics.test.ts (multi-stage manifest aggregation using manifest-store dependency injection). Risks are behaviorally intentional default expansion of rules, inadvertent loss of fail-closed NeutralityLintError propagation, omission of either config default literal, conflating two unrelated overage metrics, and breaking old manifest parsing/import compatibility during the type move. Migration is additive and wire-compatible: absent optional budgetPressure represents no recorded pressure; no stored manifest rewrite is required. The dependency order is essential: first make type-file headroom (US-001), independently introduce soft budget/config semantics (US-002), then emit provider pressure (US-003), and finally persist and aggregate it (US-004).",
