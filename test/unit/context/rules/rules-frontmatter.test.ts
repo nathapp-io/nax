@@ -4,12 +4,14 @@
  * Covers parseFrontmatter and RulesFrontmatterError from the split.
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import {
   FRONTMATTER_PRIORITY_DEFAULT,
   KNOWN_FRONTMATTER_KEYS,
   parseFrontmatter,
   RulesFrontmatterError,
+  loadCanonicalRules,
+  _canonicalLoaderDeps,
 } from "@/context/rules";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -153,5 +155,317 @@ describe("RulesFrontmatterError", () => {
   test("includes filePath in context", () => {
     const error = new RulesFrontmatterError("test error", "/path/to/file.md");
     expect(error.context?.filePath).toBe("/path/to/file.md");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC1: parseFrontmatter() returns stages ["execution", "review"] for YAML list
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("parseFrontmatter — AC1 stages list parsing", () => {
+  test("[AC1] returns stages ['execution', 'review'] from a YAML list", () => {
+    const content = ["---", "stages:", '  - "execution"', '  - "review"', "---", "", "Body."].join("\n");
+    const result = parseFrontmatter(content, "/project/.nax/rules/multi.md");
+    expect(result.stages).toEqual(["execution", "review"]);
+  });
+
+  test("[AC1] returns stages as a string[] (not e.g. object/Set)", () => {
+    const content = ["---", "stages:", '  - "plan"', "---", "", "Body."].join("\n");
+    const result = parseFrontmatter(content, "/project/.nax/rules/plan.md");
+    expect(Array.isArray(result.stages)).toBe(true);
+    expect(result.stages?.[0]).toBe("plan");
+  });
+
+  test("[AC1] a single-element stages list round-trips", () => {
+    const content = ["---", "stages:", '  - "execution"', "---", "", "Body."].join("\n");
+    const result = parseFrontmatter(content, "/project/.nax/rules/exec.md");
+    expect(result.stages).toEqual(["execution"]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC2: stages undefined when stages key absent
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("parseFrontmatter — AC2 stages absent", () => {
+  test("[AC2] returns stages undefined when the stages key is absent", () => {
+    const content = ["---", "priority: 50", "---", "", "Body."].join("\n");
+    const result = parseFrontmatter(content, "/project/.nax/rules/no-stages.md");
+    expect(result.stages).toBeUndefined();
+  });
+
+  test("[AC2] returns stages undefined when there is no frontmatter at all", () => {
+    const result = parseFrontmatter("Just body content, no frontmatter.", "/project/.nax/rules/plain.md");
+    expect(result.stages).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC3: stages undefined when stages is empty list
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("parseFrontmatter — AC3 stages empty list", () => {
+  test("[AC3] returns stages undefined when stages is an empty YAML list", () => {
+    const content = ["---", "stages: []", "---", "", "Body."].join("\n");
+    const result = parseFrontmatter(content, "/project/.nax/rules/empty-stages.md");
+    expect(result.stages).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC4: throws RulesFrontmatterError when stages contains a non-string entry
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("parseFrontmatter — AC4 stages type validation", () => {
+  test("[AC4] throws RulesFrontmatterError when stages contains a non-string entry", () => {
+    const content = ["---", "stages:", '  - "execution"', "  - 7", "---", "", "Body."].join("\n");
+    let threw: unknown;
+    try {
+      parseFrontmatter(content, "/project/.nax/rules/bad-stages.md");
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toBeInstanceOf(RulesFrontmatterError);
+    expect((threw as RulesFrontmatterError).message).toContain("stages");
+    expect((threw as RulesFrontmatterError).context?.filePath).toBe("/project/.nax/rules/bad-stages.md");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC5: does not throw unknown-key error when stages is the only frontmatter key
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("parseFrontmatter — AC5 stages is a known key", () => {
+  test("[AC5] does not throw unknown-key RulesFrontmatterError when stages is the only key", () => {
+    const content = ["---", "stages:", '  - "execution"', "---", "", "Body."].join("\n");
+    let threw: unknown;
+    try {
+      parseFrontmatter(content, "/project/.nax/rules/stages-only.md");
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toBeUndefined();
+  });
+
+  test("[AC5] KNOWN_FRONTMATTER_KEYS includes 'stages'", () => {
+    expect(KNOWN_FRONTMATTER_KEYS.has("stages")).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC6: throws RulesFrontmatterError naming the offending key
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("parseFrontmatter — AC6 unknown key", () => {
+  test("[AC6] throws RulesFrontmatterError naming the offending key when a rule declares a key other than priority/paths/appliesTo/stages", () => {
+    const content = ["---", "stages:", '  - "execution"', "scope: everywhere", "---", "", "Body."].join("\n");
+    let threw: unknown;
+    try {
+      parseFrontmatter(content, "/project/.nax/rules/bad-key.md");
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toBeInstanceOf(RulesFrontmatterError);
+    expect((threw as RulesFrontmatterError).message).toContain("scope");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC8: parseFrontmatter warns on unknown stage names; stages retained
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("parseFrontmatter — AC8 unknown stage warning", () => {
+  test("[AC8] returns a warning naming 'not-a-real-stage' and retains stages ['not-a-real-stage']", () => {
+    const content = ["---", "stages:", '  - "not-a-real-stage"', "---", "", "Body."].join("\n");
+    const result = parseFrontmatter(content, "/project/.nax/rules/unknown-stage.md");
+    expect(result.stages).toEqual(["not-a-real-stage"]);
+    expect(result.warnings.some((w) => w.includes("not-a-real-stage"))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC9: empty warnings list for known stage
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("parseFrontmatter — AC9 known stage no warning", () => {
+  test("[AC9] returns an empty warnings list for stages: ['acceptance-setup']", () => {
+    const content = ["---", "stages:", '  - "acceptance-setup"', "---", "", "Body."].join("\n");
+    const result = parseFrontmatter(content, "/project/.nax/rules/known-stage.md");
+    expect(result.warnings).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC10: BOM + --- emits displaced-frontmatter warning
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("parseFrontmatter — AC10 BOM displaced frontmatter", () => {
+  test("[AC10] returns a displaced-frontmatter warning when content begins with a UTF-8 BOM followed by ---", () => {
+    const content = "\uFEFF---\npriority: 100\n---\nBody.";
+    const result = parseFrontmatter(content, "/project/.nax/rules/bom.md");
+    expect(result.warnings.some((w) => /displaced|BOM|first line/i.test(w))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC11: blank line + --- emits displaced-frontmatter warning
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("parseFrontmatter — AC11 leading blank line displaced frontmatter", () => {
+  test("[AC11] returns a displaced-frontmatter warning when content begins with a blank line followed by ---", () => {
+    const content = "\n---\npriority: 100\n---\nBody.";
+    const result = parseFrontmatter(content, "/project/.nax/rules/leading-blank.md");
+    expect(result.warnings.some((w) => /displaced|blank|first line/i.test(w))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC12: displaced frontmatter still parses priority and paths
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("parseFrontmatter — AC12 displaced frontmatter still parses", () => {
+  test("[AC12] returns priority 100 and paths undefined when a frontmatter block is preceded by a blank line", () => {
+    const content = "\n---\n---\nBody.";
+    const result = parseFrontmatter(content, "/project/.nax/rules/blank-no-prio.md");
+    expect(result.priority).toBe(FRONTMATTER_PRIORITY_DEFAULT);
+    expect(result.priority).toBe(100);
+    expect(result.paths).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC7: loadCanonicalRules propagates stages ["plan"] from disk rule
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("loadCanonicalRules — AC7 stages propagation", () => {
+  let origGlobInDir: typeof _canonicalLoaderDeps.globInDir;
+  let origReadFile: typeof _canonicalLoaderDeps.readFile;
+  let origGetLogger: typeof _canonicalLoaderDeps.getLogger;
+
+  beforeEach(() => {
+    origGlobInDir = _canonicalLoaderDeps.globInDir;
+    origReadFile = _canonicalLoaderDeps.readFile;
+    origGetLogger = _canonicalLoaderDeps.getLogger;
+    _canonicalLoaderDeps.globInDir = () => [];
+    _canonicalLoaderDeps.readFile = async () => "";
+    _canonicalLoaderDeps.getLogger = () => ({ warn: () => {}, debug: () => {}, info: () => {}, error: () => {} }) as unknown as ReturnType<typeof _canonicalLoaderDeps.getLogger>;
+  });
+
+  afterEach(() => {
+    _canonicalLoaderDeps.globInDir = origGlobInDir;
+    _canonicalLoaderDeps.readFile = origReadFile;
+    _canonicalLoaderDeps.getLogger = origGetLogger;
+  });
+
+  test("[AC7] returns a CanonicalRule with stages ['plan'] when its disk rule declares that value", async () => {
+    const filePath = "/project/.nax/rules/plan-rule.md";
+    _canonicalLoaderDeps.globInDir = () => [filePath];
+    _canonicalLoaderDeps.readFile = async (p: string) => {
+      if (p === filePath) {
+        return ["---", "stages:", '  - "plan"', "---", "", "Plan-stage body."].join("\n");
+      }
+      throw new Error(`unexpected file: ${p}`);
+    };
+
+    const rules = await loadCanonicalRules("/project");
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.stages).toEqual(["plan"]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC13: loadCanonicalRules rule.warnings carries parser displaced-frontmatter entry
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("loadCanonicalRules — AC13 displaced-frontmatter warning propagation", () => {
+  let origGlobInDir: typeof _canonicalLoaderDeps.globInDir;
+  let origReadFile: typeof _canonicalLoaderDeps.readFile;
+  let origGetLogger: typeof _canonicalLoaderDeps.getLogger;
+
+  beforeEach(() => {
+    origGlobInDir = _canonicalLoaderDeps.globInDir;
+    origReadFile = _canonicalLoaderDeps.readFile;
+    origGetLogger = _canonicalLoaderDeps.getLogger;
+    _canonicalLoaderDeps.globInDir = () => [];
+    _canonicalLoaderDeps.readFile = async () => "";
+    _canonicalLoaderDeps.getLogger = () => ({ warn: () => {}, debug: () => {}, info: () => {}, error: () => {} }) as unknown as ReturnType<typeof _canonicalLoaderDeps.getLogger>;
+  });
+
+  afterEach(() => {
+    _canonicalLoaderDeps.globInDir = origGlobInDir;
+    _canonicalLoaderDeps.readFile = origReadFile;
+    _canonicalLoaderDeps.getLogger = origGetLogger;
+  });
+
+  test("[AC13] returns a CanonicalRule whose warnings include the parser displaced-frontmatter entry for a disk rule beginning with a blank line followed by ---", async () => {
+    const filePath = "/project/.nax/rules/displaced.md";
+    _canonicalLoaderDeps.globInDir = () => [filePath];
+    _canonicalLoaderDeps.readFile = async (p: string) => {
+      if (p === filePath) {
+        return "\n---\n---\nBody.";
+      }
+      throw new Error(`unexpected file: ${p}`);
+    };
+
+    const rules = await loadCanonicalRules("/project");
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.warnings).toBeDefined();
+    expect(rules[0]?.warnings?.some((w) => /displaced|blank|first line/i.test(w))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC14: loadCanonicalRules logger.warn fires for displaced-frontmatter
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("loadCanonicalRules — AC14 displaced-frontmatter logger warning", () => {
+  let origGlobInDir: typeof _canonicalLoaderDeps.globInDir;
+  let origReadFile: typeof _canonicalLoaderDeps.readFile;
+  let origGetLogger: typeof _canonicalLoaderDeps.getLogger;
+
+  beforeEach(() => {
+    origGlobInDir = _canonicalLoaderDeps.globInDir;
+    origReadFile = _canonicalLoaderDeps.readFile;
+    origGetLogger = _canonicalLoaderDeps.getLogger;
+    _canonicalLoaderDeps.globInDir = () => [];
+    _canonicalLoaderDeps.readFile = async () => "";
+  });
+
+  afterEach(() => {
+    _canonicalLoaderDeps.globInDir = origGlobInDir;
+    _canonicalLoaderDeps.readFile = origReadFile;
+    _canonicalLoaderDeps.getLogger = origGetLogger;
+  });
+
+  function makeWarnSpy(warnData: Array<Record<string, unknown>>) {
+    return () =>
+      ({
+        warn: (_stage: string, _msg: string, data: Record<string, unknown>) => warnData.push(data),
+        debug: () => {},
+        info: () => {},
+        error: () => {},
+      }) as unknown as ReturnType<typeof _canonicalLoaderDeps.getLogger>;
+  }
+
+  test("[AC14] emits a warning through _canonicalLoaderDeps.getLogger() when a rule file has a displaced frontmatter block", async () => {
+    const warnData: Array<Record<string, unknown>> = [];
+    _canonicalLoaderDeps.getLogger = makeWarnSpy(warnData);
+
+    const filePath = "/project/.nax/rules/displaced.md";
+    _canonicalLoaderDeps.globInDir = () => [filePath];
+    _canonicalLoaderDeps.readFile = async (p: string) => {
+      if (p === filePath) {
+        return "\n---\n---\nBody.";
+      }
+      throw new Error(`unexpected file: ${p}`);
+    };
+
+    await loadCanonicalRules("/project");
+
+    const hasDisplacedWarning = warnData.some((entry) => {
+      const file = entry.file;
+      return typeof file === "string" && file === filePath;
+    });
+    expect(hasDisplacedWarning).toBe(true);
   });
 });
