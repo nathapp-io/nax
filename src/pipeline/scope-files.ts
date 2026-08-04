@@ -28,17 +28,22 @@ export const _scopeFilesDeps = {
   collectDiffFileList: (workdir: string, ref: string) => collectDiffFileList(workdir, ref),
 };
 
-/**
- * Stub implementation. The implementer replaces the body with the
- * union-and-dedupe-and-sort composition described in the file header.
- *
- * Returns the deduped, sorted union of declared sources (contextFiles +
- * expectedFiles) — sufficient to keep tests compileable; tests asserting
- * that collectDiffFileList() output is merged in will fail at assertion.
- */
 export async function resolveScopeFiles(ctx: PipelineContext): Promise<string[]> {
   const declared = [...getContextFiles(ctx.story), ...getExpectedFiles(ctx.story)];
-  return [...new Set(declared)].sort();
+
+  const ref = await _scopeFilesDeps.resolveEffectiveRef(ctx.workdir, ctx.story.storyGitRef, ctx.story.id);
+  if (!ref) return [...new Set(declared)].sort();
+
+  let diffFiles: string[] | undefined;
+  try {
+    diffFiles = await _scopeFilesDeps.collectDiffFileList(ctx.workdir, ref);
+  } catch {
+    return [...new Set(declared)].sort();
+  }
+
+  if (!diffFiles) return [...new Set(declared)].sort();
+
+  return [...new Set([...declared, ...diffFiles])].sort();
 }
 
 export { getContextFiles, getExpectedFiles };
