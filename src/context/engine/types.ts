@@ -265,6 +265,13 @@ export interface ContextRequest {
    */
   touchedFiles?: string[];
   /**
+   * Complete evidence set of files a story touches (PRD contextFiles +
+   * expectedFiles + git diff). Used by SCOPING decisions only — providers
+   * that fetch content read `touchedFiles` instead. Resolved by
+   * `resolveScopeFiles(ctx)` and threaded through `StageAssembleOptions.scopeFiles`.
+   */
+  scopeFiles?: string[];
+  /**
    * Pull tool configuration for this assembly call (Phase 4+).
    * When absent or disabled, assemble() returns an empty pullTools array.
    * Derived by the pipeline stage from config.context.v2.pull.

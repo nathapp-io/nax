@@ -50,6 +50,12 @@ export interface StageAssembleOptions {
   priorStageDigest?: string;
   storyScratchDirs?: string[];
   touchedFiles?: string[];
+  /**
+   * Complete evidence-set of files a story touches for SCOPING only.
+   * Resolved by `resolveScopeFiles(ctx)` upstream and threaded through
+   * unchanged — `assembleForStage()` does not resolve this itself.
+   */
+  scopeFiles?: string[];
 }
 
 function dedupeScratchDirs(dirs: Array<string | undefined>): string[] {
@@ -191,6 +197,7 @@ export async function assembleForStage(
       budgetTokens: stageOverrides?.budgetTokens ?? stageConfig.budgetTokens,
       extraProviderIds: stageOverrides?.extraProviderIds ?? [],
       touchedFiles: options.touchedFiles ?? getContextFiles(ctx.story),
+      ...(options.scopeFiles !== undefined && { scopeFiles: options.scopeFiles }),
       storyScratchDirs,
       priorStageDigest: options.priorStageDigest ?? ctx.contextBundle?.digest,
       minScore: ctx.config.context.v2.minScore,

@@ -32,6 +32,7 @@ import { getContextFiles } from "../../prd";
 import { readDigestFile, writeDigestFile } from "../../session/scratch-writer";
 import { resolveTestFilePatterns } from "../../test-runners/resolver";
 import { errorMessage } from "../../utils/errors";
+import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -105,6 +106,10 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   // Phase 3: derive files touched by this story for git history + neighbor providers.
   const touchedFiles = getContextFiles(ctx.story);
 
+  // Resolve the complete evidence set of files a story touches for SCOPING
+  // decisions. Live in test-injected side-effect scope — never throws.
+  const scopeFiles = await resolveScopeFiles(ctx);
+
   // ADR-009 SSOT: resolve test-file patterns once per request and thread them
   // through so providers never classify test files via inline regex.
   // Failure is non-fatal — providers degrade by skipping sibling-test hinting.
@@ -157,6 +162,7 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     storyScratchDirs,
     priorStageDigest,
     ...(touchedFiles.length > 0 && { touchedFiles }),
+    ...(scopeFiles.length > 0 && { scopeFiles }),
     // Defensive check: test fixtures may bypass Zod and omit `pull`.
     // In production configs this is always present (required by schema).
     pullConfig: ctx.config.context.v2.pull

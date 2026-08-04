@@ -52,7 +52,7 @@ export type { AgentCapabilities, AgentProfile } from "./agent-profiles";
 export { renderForAgent } from "./agent-renderer";
 export type { AgentRenderOptions } from "./agent-renderer";
 
-export { assembleForStage, getBundleMarkdown } from "./stage-assembler";
+export { assembleForStage, getBundleMarkdown, _stageAssemblerDeps } from "./stage-assembler";
 export type { StageAssembleOptions } from "./stage-assembler";
 export { createContextToolRuntime, createSessionToolBudgets } from "./tool-runtime";
 export type { ContextToolRuntime, SessionToolBudgets } from "./tool-runtime";
