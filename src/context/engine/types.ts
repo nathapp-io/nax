@@ -124,8 +124,14 @@ export type ChunkRole = "implementer" | "reviewer" | "tdd" | "all";
 // Manifest types (extracted to manifest-types.ts)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { ChunkEffectiveness, ContextChunk, ContextManifest, ProviderBudgetPressure } from "./manifest-types";
-export type { ChunkEffectiveness, ContextChunk, ContextManifest, ProviderBudgetPressure };
+import type {
+  ChunkEffectiveness,
+  ContextChunk,
+  ContextManifest,
+  ProviderBudgetPressure,
+  ProviderScopingReport,
+} from "./manifest-types";
+export type { ChunkEffectiveness, ContextChunk, ContextManifest, ProviderBudgetPressure, ProviderScopingReport };
 
 /**
  * Output of ContextOrchestrator.assemble() and .rebuildForAgent().
@@ -399,6 +405,12 @@ export interface ContextProviderResult {
    * silent loss that would otherwise be invisible downstream (US-003).
    */
   budgetPressure?: ProviderBudgetPressure;
+  /**
+   * Rule-scoping outcome reported by providers that apply stage/appliesTo
+   * filters to canonical rules (US — rule-scoping). Omitted by providers
+   * that don't scope rules.
+   */
+  scopingReport?: ProviderScopingReport;
 }
 
 /**

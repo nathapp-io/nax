@@ -79,6 +79,7 @@ export type {
   ContextProviderResult,
   IContextProvider,
   ProviderBudgetPressure,
+  ProviderScopingReport,
   ToolDescriptor,
   JSONSchema,
 } from "./types";
