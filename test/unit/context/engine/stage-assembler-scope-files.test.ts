@@ -17,6 +17,7 @@ import type { ContextBundle, ContextRequest } from "@/context/engine";
 import { _stageAssemblerDeps, assembleForStage } from "@/context/engine";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
+import { makeStory as makeBaseStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals
@@ -50,21 +51,7 @@ afterEach(() => {
 const PROJECT_DIR = "/repo";
 const STORY_ID = "US-005";
 
-function makeStory(overrides: Partial<UserStory> = {}): UserStory {
-  return {
-    id: STORY_ID,
-    title: "story",
-    description: "description",
-    acceptanceCriteria: ["a"],
-    tags: [],
-    dependencies: [],
-    status: "in-progress",
-    passes: false,
-    escalations: [],
-    attempts: 1,
-    ...overrides,
-  } as UserStory;
-}
+const makeStory = (overrides: Partial<UserStory> = {}): UserStory => makeBaseStory({ id: STORY_ID, ...overrides });
 
 function makeCtx(story: UserStory): PipelineContext {
   return {

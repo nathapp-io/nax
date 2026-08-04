@@ -19,6 +19,7 @@ import { _contextStageDeps, contextStage } from "@/pipeline/stages";
 import { _scopeFilesDeps, resolveScopeFiles } from "@/pipeline";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
+import { makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals
@@ -71,22 +72,6 @@ function makeBundle(): ContextBundle {
     },
     chunks: [],
   };
-}
-
-function makeStory(overrides: Partial<UserStory> = {}): UserStory {
-  return {
-    id: "US-001",
-    title: "story",
-    description: "description",
-    acceptanceCriteria: ["a"],
-    tags: [],
-    dependencies: [],
-    status: "in-progress",
-    passes: false,
-    escalations: [],
-    attempts: 1,
-    ...overrides,
-  } as UserStory;
 }
 
 function makeCtx(story: UserStory): PipelineContext {

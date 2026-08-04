@@ -19,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { PipelineContext } from "@/pipeline";
 import { _scopeFilesDeps, resolveScopeFiles } from "@/pipeline";
 import type { UserStory } from "@/prd/types";
+import { makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals (restored per test)
@@ -40,22 +41,6 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
-
-function makeStory(overrides: Partial<UserStory> = {}): UserStory {
-  return {
-    id: "US-001",
-    title: "story",
-    description: "description",
-    acceptanceCriteria: ["a"],
-    tags: [],
-    dependencies: [],
-    status: "in-progress",
-    passes: false,
-    escalations: [],
-    attempts: 1,
-    ...overrides,
-  } as UserStory;
-}
 
 function makeCtx(story: UserStory, workdir = "/repo"): PipelineContext {
   return {
