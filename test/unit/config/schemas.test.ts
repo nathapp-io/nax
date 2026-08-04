@@ -516,3 +516,52 @@ describe("autoRoute config foundation (US-001)", () => {
     expect(overResult.success).toBe(false);
   });
 });
+
+describe("ContextV2RulesConfigSchema — enforceBudget (US-002)", () => {
+  function rulesConfig(rules: Record<string, unknown> | undefined) {
+    const base = { ...(DEFAULT_CONFIG as Record<string, unknown>) };
+    if (rules !== undefined) {
+      const context = base.context as Record<string, unknown>;
+      const v2 = { ...(context.v2 as Record<string, unknown>), rules };
+      base.context = { ...context, v2 };
+    }
+    return base;
+  }
+
+  test("[US-002 AC 11] enforceBudget defaults to false when context.v2.rules is omitted", () => {
+    const config = NaxConfigSchema.parse(rulesConfig(undefined));
+    const context = config.context as Record<string, unknown>;
+    const v2 = context.v2 as Record<string, unknown>;
+    const rules = v2.rules as Record<string, unknown>;
+    expect(rules["enforceBudget"]).toBe(false);
+  });
+
+  test("[US-002 AC 11] enforceBudget defaults to false when context.v2.rules is supplied without enforceBudget", () => {
+    const config = NaxConfigSchema.parse(rulesConfig({ budgetTokens: 4096 }));
+    const context = config.context as Record<string, unknown>;
+    const v2 = context.v2 as Record<string, unknown>;
+    const rules = v2.rules as Record<string, unknown>;
+    expect(rules["enforceBudget"]).toBe(false);
+  });
+
+  test("[US-002 AC 12] enforceBudget resolves to true when explicitly set true via context.v2.rules.enforceBudget", () => {
+    const config = NaxConfigSchema.parse(rulesConfig({ enforceBudget: true }));
+    const context = config.context as Record<string, unknown>;
+    const v2 = context.v2 as Record<string, unknown>;
+    const rules = v2.rules as Record<string, unknown>;
+    expect(rules["enforceBudget"]).toBe(true);
+  });
+
+  test("enforceBudget: false is accepted as an explicit override", () => {
+    const config = NaxConfigSchema.parse(rulesConfig({ enforceBudget: false }));
+    const context = config.context as Record<string, unknown>;
+    const v2 = context.v2 as Record<string, unknown>;
+    const rules = v2.rules as Record<string, unknown>;
+    expect(rules["enforceBudget"]).toBe(false);
+  });
+
+  test("enforceBudget rejects non-boolean values", () => {
+    const result = NaxConfigSchema.safeParse(rulesConfig({ enforceBudget: "yes" }));
+    expect(result.success).toBe(false);
+  });
+});

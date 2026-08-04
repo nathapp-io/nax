@@ -360,29 +360,73 @@ export interface CanonicalRulesBudgetResult {
   totalTokens: number;
   usedTokens: number;
   droppedCount: number;
+  /**
+   * `max(0, totalTokens - budgetTokens)` for valid thresholds. When the budget
+   * is invalid (zero, negative, non-finite), `overageTokens` mirrors
+   * `totalTokens` so callers can still report pressure without treating the
+   * budget as a usable cap.
+   */
+  overageTokens: number;
+}
+
+export interface ApplyCanonicalRulesBudgetOptions {
+  /**
+   * When true, restore the legacy contiguous-tail truncation:
+   * keep the longest leading priority-ordered run whose cumulative tokens
+   * fit inside `budgetTokens`. When false (default), keep every supplied rule
+   * and report pressure via `overageTokens` instead of dropping anything.
+   */
+  enforce?: boolean;
 }
 
 /**
- * Apply tail-biased truncation using canonical ordering:
- * lower priority first, then rule id/path alphabetical.
+ * Apply the canonical-rules budget to a priority-ordered rules array.
  *
- * Rules are processed in priority order. The first rule that does not fit
- * starts a contiguous dropped tail — every following rule is dropped as well,
- * even if individually it would have fit. This guarantees that the result is
- * the longest leading priority-ordered run whose summed token estimate fits
- * inside `budgetTokens`.
+ * In **soft mode** (`enforce` false / unset) the threshold is treated as a
+ * reporting bound: every supplied rule is preserved, `usedTokens` equals
+ * `totalTokens`, `droppedCount` is 0, and `overageTokens` is
+ * `max(0, totalTokens - budgetTokens)`. Soft-by-default removes the legacy
+ * silent truncation cliff for floor-kind rules — the packer downstream still
+ * sees the full corpus and decides what to do.
+ *
+ * In **enforced mode** (`enforce` true) the legacy contiguous-tail
+ * truncation is preserved: rules are processed in priority order, the first
+ * rule that does not fit starts a dropped tail, and every following rule is
+ * dropped as well so the result is the longest leading run that fits inside
+ * `budgetTokens`.
+ *
+ * Invalid budgets (zero, negative, or non-finite `budgetTokens`) always
+ * return an empty rules array regardless of `enforce`, matching the prior
+ * contract for callers that probe the function without a usable threshold.
  */
-export function applyCanonicalRulesBudget(rules: CanonicalRule[], budgetTokens: number): CanonicalRulesBudgetResult {
+export function applyCanonicalRulesBudget(
+  rules: CanonicalRule[],
+  budgetTokens: number,
+  options: ApplyCanonicalRulesBudgetOptions = {},
+): CanonicalRulesBudgetResult {
+  const enforce = options.enforce === true;
+  const totalTokens = rules.reduce((sum, r) => sum + (r.tokens ?? estimateTokens(r.content)), 0);
+
   if (!Number.isFinite(budgetTokens) || budgetTokens <= 0) {
     return {
       rules: [],
-      totalTokens: rules.reduce((sum, r) => sum + (r.tokens ?? estimateTokens(r.content)), 0),
+      totalTokens,
       usedTokens: 0,
       droppedCount: rules.length,
+      overageTokens: totalTokens,
     };
   }
 
-  const totalTokens = rules.reduce((sum, rule) => sum + (rule.tokens ?? estimateTokens(rule.content)), 0);
+  if (!enforce) {
+    return {
+      rules,
+      totalTokens,
+      usedTokens: totalTokens,
+      droppedCount: 0,
+      overageTokens: Math.max(0, totalTokens - budgetTokens),
+    };
+  }
+
   let usedTokens = 0;
   const kept: CanonicalRule[] = [];
 
@@ -398,6 +442,7 @@ export function applyCanonicalRulesBudget(rules: CanonicalRule[], budgetTokens: 
     totalTokens,
     usedTokens,
     droppedCount: Math.max(0, rules.length - kept.length),
+    overageTokens: Math.max(0, totalTokens - budgetTokens),
   };
 }
 

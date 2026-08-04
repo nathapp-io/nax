@@ -60,12 +60,22 @@ const ContextV2RulesConfigSchema = z
      */
     allowLegacyClaudeMd: z.boolean().default(false),
     /**
-     * Token ceiling for canonical rules. Lower-priority rules are tail-truncated
-     * when this budget is exceeded.
+     * Token ceiling for canonical rules. Soft-by-default: when the total exceeds
+     * this threshold and `enforceBudget` is false, every rule is preserved and
+     * the gap is reported through pressure metrics instead of being silently
+     * truncated. Set `enforceBudget: true` to restore the legacy contiguous-tail
+     * truncation behaviour.
      */
     budgetTokens: z.number().int().min(512).default(8192),
+    /**
+     * When true, `applyCanonicalRulesBudget` enforces the ceiling via
+     * contiguous-tail truncation (legacy behaviour). When false (default),
+     * the ceiling is reported as pressure and every rule is preserved so the
+     * packer downstream still sees the full corpus.
+     */
+    enforceBudget: z.boolean().default(false),
   })
-  .default(() => ({ allowLegacyClaudeMd: false, budgetTokens: 8192 }));
+  .default(() => ({ allowLegacyClaudeMd: false, budgetTokens: 8192, enforceBudget: false }));
 
 // Context Engine plugin provider config (Phase 7)
 const ContextPluginProviderConfigSchema = z.object({
@@ -223,7 +233,7 @@ export const ContextV2ConfigSchema = z
     minScore: 0.1,
     providerTimeoutMs: 5000,
     pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
-    rules: { allowLegacyClaudeMd: false, budgetTokens: 8192 },
+    rules: { allowLegacyClaudeMd: false, budgetTokens: 8192, enforceBudget: false },
     pluginProviders: [],
     stages: {},
     deterministic: false,

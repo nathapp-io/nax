@@ -318,7 +318,7 @@ export const NaxConfigSchema = z
         minScore: 0.1,
         providerTimeoutMs: 5000,
         pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
-        rules: { allowLegacyClaudeMd: false, budgetTokens: 8192 },
+        rules: { allowLegacyClaudeMd: false, budgetTokens: 8192, enforceBudget: false },
         pluginProviders: [],
         stages: {},
         deterministic: false,

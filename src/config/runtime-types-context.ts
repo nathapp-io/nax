@@ -53,6 +53,13 @@ export interface ContextV2RulesConfig {
   allowLegacyClaudeMd: boolean;
   /** Token budget ceiling for canonical rules chunks. */
   budgetTokens: number;
+  /**
+   * When true, `applyCanonicalRulesBudget` enforces the ceiling via
+   * contiguous-tail truncation. When false (default), the ceiling is reported
+   * as pressure and every rule is preserved so the packer downstream still
+   * sees the full corpus.
+   */
+  enforceBudget: boolean;
 }
 
 /**

@@ -232,7 +232,7 @@ export class StaticRulesProvider implements IContextProvider {
 
       if (mergedRules.length > 0) {
         const scopedRules = mergedRules.filter((rule) => ruleMatchesTouchedFiles(rule.appliesTo, request.touchedFiles));
-        const budgetResult = applyCanonicalRulesBudget(scopedRules, this.budgetTokens);
+        const budgetResult = applyCanonicalRulesBudget(scopedRules, this.budgetTokens, { enforce: true });
         if (budgetResult.totalTokens >= Math.floor(this.budgetTokens * 0.75)) {
           logger.warn("static-rules", "Canonical rules are approaching/exceeding static rules budget", {
             storyId: request.storyId,
