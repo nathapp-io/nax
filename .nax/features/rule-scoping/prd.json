@@ -3,7 +3,7 @@
   "feature": "rule-scoping",
   "branchName": "feat/rule-scoping",
   "createdAt": "2026-08-04T00:00:00+08:00",
-  "updatedAt": "2026-08-04T06:30:40.376Z",
+  "updatedAt": "2026-08-04T06:49:17.073Z",
   "userStories": [
     {
       "id": "US-001",
@@ -37,7 +37,9 @@
         "profileModelTier": "fast",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-structural",
-        "initialModelTier": "fast"
+        "initialModelTier": "fast",
+        "initialComplexity": "medium",
+        "modelTier": "fast"
       },
       "contextFiles": [
         "src/context/rules/canonical-loader.ts",
@@ -49,7 +51,11 @@
       "expectedFiles": [
         "src/context/rules/rules-frontmatter.ts",
         "src/cli/rules-lint.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8be8e37698d4b549b458b7c2d4a641880e3e6966"
     },
     {
       "id": "US-002",
@@ -99,7 +105,10 @@
         "src/context/rules/canonical-loader.ts",
         "src/context/engine/stage-config.ts",
         "test/unit/context/rules/canonical-loader.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -150,11 +159,9 @@
       "expectedFiles": [
         "src/pipeline/context-scope.ts"
       ],
-      "outOfScope": [
-        "Changing `ContextRequest.touchedFiles`, its population from `getContextFiles`, or the `MAX_FILES = 10` caps in `git-history.ts` and `code-neighbor.ts`.",
-        "Persisting the resolved scope-file list itself into `context-manifest-<stage>.json`; only counts and dropped ids are recorded.",
-        "Parsing story descriptions or acceptance-criteria prose to infer additional scope files."
-      ]
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -207,12 +214,9 @@
         "src/context/engine/orchestrator.ts",
         "src/context/rules/rules-frontmatter.ts"
       ],
-      "outOfScope": [
-        "Strict `appliesTo:` enforcement — a rule declaring `appliesTo:` still loads when the scope set is empty, and this spec adds no configuration to change that.",
-        "A `roles:` frontmatter axis, and any change to chunk `role` assignment or to `src/context/engine/scoring.ts`.",
-        "Any hard ceiling, cap, or eviction applied to `static` floor-kind chunks during packing; `packChunks` floor behaviour is unchanged.",
-        "Persisting the resolved scope-file list itself into `context-manifest-<stage>.json`; only counts and dropped ids are recorded."
-      ]
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -254,9 +258,9 @@
         "src/context/rules/rules-frontmatter.ts",
         "test/unit/cli/rules.test.ts"
       ],
-      "outOfScope": [
-        "Auto-repairing displaced frontmatter — a BOM or leading blank line is reported, never silently corrected."
-      ]
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -299,7 +303,10 @@
         ".nax/rules/forbidden-patterns.md",
         "src/context/engine/providers/static-rules.ts",
         "src/context/rules/rules-frontmatter.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Existing context-engine v2 already has the two key seams this feature needs. `src/context/rules/canonical-loader.ts:160-353` owns the canonical-rule frontmatter constants, `RulesFrontmatterError`, `CanonicalRule`, `ParsedFrontmatter`, and `parseFrontmatter`; its loader reads rules through injectable `_canonicalLoaderDeps`, so parser diagnostics can be returned and then logged without global capture. The file is already near the 600-line hard limit, making the US-001 extraction a prerequisite for subsequent loader edits. Existing consumers import loader symbols by leaf path (`src/context/engine/providers/static-rules.ts:24-25`) and `src/context/index.ts:41` re-exports `NeutralityLintError`, so canonical-loader must re-export the extracted frontmatter symbols; no new rules barrel should be added. `src/cli/rules.ts:553-597` likewise contains `collectCanonicalRuleRoots` and `rulesLintCommand` near the size cap, and its injectable `_rulesCLIDeps` plus `loadCanonicalRules` are the established lint-warning seam.\n\n`StaticRulesProvider.fetch` in `src/context/engine/providers/static-rules.ts:228-284` loads repo rules, applies unchanged package `paths:` filtering, overlays package rules, sorts by priority, applies `ruleMatchesTouchedFiles`, and only then applies the canonical-rules budget. Its touched-file predicate deliberately fails open for absent/empty input. The implementation must preserve that posture but feed `request.scopeFiles`, insert a stage predicate before appliesTo filtering, retain the current ordering and budget behaviour, and return a separate report. Provider unit coverage is already organized in `test/unit/context/engine/providers/static-rules.test.ts`, with adjacent paths/legacy-default suites; use `_staticRulesDeps.loadCanonicalRules` for focused rule fixtures and disk-backed cases where parsing-to-provider seams must be proven.\n\n`ContextRequest` and `ContextProviderResult` live in `src/context/engine/types.ts:190-420`; `touchedFiles` is presently the curated list and must remain independent. `ProviderBudgetPressure` and the persisted `ContextManifest.providerResults` entry live in `src/context/engine/manifest-types.ts:20-159`; a sibling `ProviderScopingReport` should be declared there and copied verbatim by the existing orchestrator mapping at `src/context/engine/orchestrator.ts:298`. `StageAssembleOptions` and `assembleForStage` in `src/context/engine/stage-assembler.ts:49,193` already forward optional assembly inputs into a request; add `scopeFiles` there, without importing review code into the context engine.\n\nThere are two request producers. `src/pipeline/stages/context.ts:145-159` directly creates the initial request and currently conditionally includes `touchedFiles`; `src/pipeline/stages/prompt.ts:62-79` obtains later bundles through `assembleForStage` with no options. Both are v2-only paths: `context.v2.enabled` defaults false, so producer integration fixtures must enable it. Scope resolution belongs in new `src/pipeline/context-scope.ts`, because review modules value-import from `../context`; importing review from under `src/context/` would create a cycle. The resolver should reuse `getContextFiles` and `getExpectedFiles` from `src/prd/types.ts:214-225`, plus `resolveEffectiveRef` and `collectDiffFileList` from `src/review/diff-utils.ts`, dedupe/sort output for manifest stability, and fail open on ref/diff problems. Tests should use its own injectable dependency seam if needed rather than live git.\n\nStage recognition must be advisory. `src/context/engine/stage-config.ts:109` exposes `STAGE_CONTEXT_MAP`, but real pipeline values including `acceptance-setup` and `queue-check` are not necessarily mapped; filtering is ordinary string comparison and warnings must recognize mapped values plus known pipeline literals. Existing parser, loader, provider, assembler, context-stage, prompt-stage, orchestrator, and CLI tests provide the natural mirrored test locations. Migration is backward-compatible: absent `stages`, absent `scopeFiles`, and empty scope sets retain current fail-open/global behaviour; the only artifact schema addition is optional `scopingReport`, and resolved file lists are intentionally not persisted. The repository’s real `.nax/rules` store is changed only after parser/provider support lands, so its authored stages can be verified end-to-end.",

@@ -58,6 +58,7 @@ export { configCommand, type ConfigCommandOptions } from "./config";
 export { agentsListCommand } from "./agents";
 export { contextInspectCommand, type ContextInspectOptions } from "./context";
 export {
+  _rulesCLIDeps,
   rulesExportCommand,
   rulesLintCommand,
   rulesMigrateCommand,
@@ -68,6 +69,15 @@ export {
   type RulesLintOptions,
   type RulesMigrateOptions,
 } from "./rules";
+export {
+  _rulesLintDeps,
+  collectCanonicalRuleRoots,
+  rulesLintCommand as rulesLintCommandDirect,
+  MAX_DEAD_GLOB_SCAN_FILES,
+  MAX_CANONICAL_RULE_GLOB_FILES,
+  CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS,
+  type RulesLintOptions as RulesLintOptionsFromLint,
+} from "./rules-lint";
 export { resolveRunProfileOverride } from "./resolve-run-profile";
 export { resolveFeatureSpec } from "./features-resolve";
 export type { ResolveResult, ResolveStatus, SpecSource, SpecSourceKind } from "./features-resolve";

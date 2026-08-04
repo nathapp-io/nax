@@ -24,6 +24,22 @@ import { basename, join } from "node:path";
 import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 
+export {
+  KNOWN_FRONTMATTER_KEYS,
+  FRONTMATTER_PRIORITY_DEFAULT,
+  RulesFrontmatterError,
+  parseFrontmatter,
+} from "./rules-frontmatter";
+export type { CanonicalRule, ParsedFrontmatter } from "./rules-frontmatter";
+
+import {
+  type CanonicalRule,
+  FRONTMATTER_PRIORITY_DEFAULT,
+  KNOWN_FRONTMATTER_KEYS,
+  RulesFrontmatterError,
+  parseFrontmatter,
+} from "./rules-frontmatter";
+
 // storyId omission note: canonical-rules loading is a project-level operation
 // that runs outside any story context (project-conventions.md §Logging scopes
 // "pipeline/stages/ and review/" — this module is neither). Logger calls here
@@ -157,8 +173,6 @@ export const NEUTRALITY_RULES: NeutralityRule[] = [
   },
 ];
 
-const KNOWN_FRONTMATTER_KEYS = new Set(["priority", "paths", "appliesTo"]);
-const FRONTMATTER_PRIORITY_DEFAULT = 100;
 export const DEFAULT_CANONICAL_RULES_BUDGET_TOKENS = 8_192;
 const RULES_BUDGET_WARNING_RATIO = 0.75;
 const RULE_ALLOW_MARKER = /<!--\s*nax-rules-allow:\s*([a-z0-9,\s-]+)\s*-->/gi;
@@ -238,118 +252,8 @@ export class NeutralityLintError extends NaxError {
   }
 }
 
-export class RulesFrontmatterError extends NaxError {
-  constructor(message: string, filePath: string) {
-    super(message, "RULES_FRONTMATTER_INVALID", {
-      stage: "canonical-loader",
-      filePath,
-    });
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Loader
-// ─────────────────────────────────────────────────────────────────────────────
-
-export interface CanonicalRule {
-  /** Rule identifier (relative path without extension, e.g. "frontend/style") */
-  id?: string;
-  /** Filename (e.g. "coding-style.md") */
-  fileName: string;
-  /** Relative path under .nax/rules (e.g. "frontend/style.md") */
-  path?: string;
-  /** Full content of the file */
-  content: string;
-  /** Approximate token count for this rule */
-  tokens?: number;
-  /** Priority for truncation/sorting (lower = more important) */
-  priority?: number;
-  /** Package-scope filter: glob patterns matched against relative(repoRoot, packageDir). No value = applies everywhere. */
-  paths?: string[];
-  /** Touched-file filter: glob patterns matched against changed files in the story's git diff. No value = always applies. */
-  appliesTo?: string[];
-}
-
-interface ParsedFrontmatter {
-  content: string;
-  priority: number;
-  paths?: string[];
-  appliesTo?: string[];
-}
-
-function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatter {
-  if (!raw.startsWith("---\n") && !raw.startsWith("---\r\n")) {
-    return { content: raw.trim(), priority: FRONTMATTER_PRIORITY_DEFAULT };
-  }
-
-  const close = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
-  if (!close) {
-    throw new RulesFrontmatterError("Canonical rule frontmatter is missing closing '---'", filePath);
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = Bun.YAML.parse(close[1] ?? "");
-  } catch (err) {
-    throw new RulesFrontmatterError(
-      `Failed to parse YAML frontmatter: ${err instanceof Error ? err.message : String(err)}`,
-      filePath,
-    );
-  }
-
-  if (parsed !== null && (typeof parsed !== "object" || Array.isArray(parsed))) {
-    throw new RulesFrontmatterError("Frontmatter must be a YAML object", filePath);
-  }
-
-  const doc = (parsed ?? {}) as Record<string, unknown>;
-  const unknownKeys = Object.keys(doc).filter((key) => !KNOWN_FRONTMATTER_KEYS.has(key));
-  if (unknownKeys.length > 0) {
-    throw new RulesFrontmatterError(
-      `Canonical rule frontmatter declares unknown key(s): ${unknownKeys.join(", ")}. Only priority, paths, and appliesTo are recognised.`,
-      filePath,
-    );
-  }
-
-  const priorityRaw = doc.priority;
-  let priority = FRONTMATTER_PRIORITY_DEFAULT;
-  if (priorityRaw !== undefined) {
-    if (typeof priorityRaw !== "number" || !Number.isFinite(priorityRaw)) {
-      throw new RulesFrontmatterError("frontmatter.priority must be a number", filePath);
-    }
-    priority = Math.trunc(priorityRaw);
-  }
-
-  const pathsRaw = doc.paths;
-  let paths: string[] | undefined;
-  if (pathsRaw !== undefined) {
-    if (typeof pathsRaw === "string") {
-      const trimmed = pathsRaw.trim();
-      if (!trimmed) throw new RulesFrontmatterError("frontmatter.paths cannot be empty", filePath);
-      paths = [trimmed];
-    } else if (Array.isArray(pathsRaw) && pathsRaw.every((v) => typeof v === "string" && v.trim())) {
-      paths = pathsRaw.map((v) => v.trim());
-    } else {
-      throw new RulesFrontmatterError("frontmatter.paths must be a string or string[]", filePath);
-    }
-  }
-
-  const appliesRaw = doc.appliesTo;
-  let appliesTo: string[] | undefined;
-  if (appliesRaw !== undefined) {
-    if (Array.isArray(appliesRaw) && appliesRaw.every((v) => typeof v === "string" && v.trim())) {
-      appliesTo = appliesRaw.map((v) => v.trim());
-    } else {
-      throw new RulesFrontmatterError("frontmatter.appliesTo must be a list of strings", filePath);
-    }
-  }
-
-  return {
-    content: raw.slice(close[0].length).trim(),
-    priority,
-    ...(paths && { paths }),
-    ...(appliesTo && { appliesTo }),
-  };
-}
+// RulesFrontmatterError, CanonicalRule, ParsedFrontmatter, and parseFrontmatter
+// are re-exported from ./rules-frontmatter.ts
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
