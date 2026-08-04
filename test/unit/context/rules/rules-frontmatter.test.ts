@@ -293,6 +293,12 @@ describe("parseFrontmatter — AC9 known stage no warning", () => {
     const result = parseFrontmatter(content, "/project/.nax/rules/known-stage.md");
     expect(result.warnings).toEqual([]);
   });
+
+  test("[AC9] returns an empty warnings list for stages: ['decompose'], a real pipeline stage (decomposeOp.name)", () => {
+    const content = ["---", "stages:", '  - "decompose"', "---", "", "Body."].join("\n");
+    const result = parseFrontmatter(content, "/project/.nax/rules/decompose-stage.md");
+    expect(result.warnings).toEqual([]);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
