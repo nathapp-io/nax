@@ -42,6 +42,35 @@ import { TokenUsage } from "./types";
  * // }
  * ```
  */
+/**
+ * Sanitize a persisted budgetPressure object.
+ *
+ * Persisted JSON may be hand-edited, legacy, or partially corrupt — values
+ * can be NaN, negative, non-number, or fields can be missing. Aggregating
+ * those directly produces NaN or string-coerced values that break consumers
+ * (e.g. `nax status`). Treat any non-finite-nonnegative-number field as 0;
+ * if nothing valid remains, return undefined so the aggregator omits
+ * `budgetPressure` (matching AC-7's "legacy contributes zero" rule).
+ */
+function sanitizeProviderPressure(
+  raw: unknown,
+): { overageTokens: number; droppedCount: number; droppedTokens: number } | undefined {
+  if (raw === null || typeof raw !== "object") return undefined;
+  const obj = raw as Record<string, unknown>;
+  const fields = ["overageTokens", "droppedCount", "droppedTokens"] as const;
+  let sanitized: { overageTokens: number; droppedCount: number; droppedTokens: number } | null = null;
+  for (const field of fields) {
+    const v = obj[field];
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
+      if (!sanitized) {
+        sanitized = { overageTokens: 0, droppedCount: 0, droppedTokens: 0 };
+      }
+      sanitized[field] = v;
+    }
+  }
+  return sanitized ?? undefined;
+}
+
 async function deriveContextMetrics(
   projectDir: string,
   storyId: string,
@@ -58,6 +87,8 @@ async function deriveContextMetrics(
     for (const pr of manifest.providerResults) {
       const existing = providers[pr.providerId];
       const kept = manifest.includedChunks.filter((id) => id.startsWith(`${pr.providerId}:`)).length;
+      // Sanitize once per entry — applied uniformly to merge and init paths.
+      const sanitizedPressure = sanitizeProviderPressure(pr.budgetPressure);
       if (existing) {
         existing.tokensProduced += pr.tokensProduced;
         existing.chunksProduced += pr.chunkCount;
@@ -66,15 +97,15 @@ async function deriveContextMetrics(
         if (pr.status === "timeout") existing.timedOut = true;
         if (pr.status === "failed") existing.failed = true;
         if (pr.costUsd) existing.costUsd = (existing.costUsd ?? 0) + pr.costUsd;
-        if (pr.budgetPressure) {
+        if (sanitizedPressure) {
           existing.budgetPressure = existing.budgetPressure ?? {
             overageTokens: 0,
             droppedCount: 0,
             droppedTokens: 0,
           };
-          existing.budgetPressure.overageTokens += pr.budgetPressure.overageTokens;
-          existing.budgetPressure.droppedCount += pr.budgetPressure.droppedCount;
-          existing.budgetPressure.droppedTokens += pr.budgetPressure.droppedTokens;
+          existing.budgetPressure.overageTokens += sanitizedPressure.overageTokens;
+          existing.budgetPressure.droppedCount += sanitizedPressure.droppedCount;
+          existing.budgetPressure.droppedTokens += sanitizedPressure.droppedTokens;
         }
       } else {
         providers[pr.providerId] = {
@@ -85,15 +116,7 @@ async function deriveContextMetrics(
           timedOut: pr.status === "timeout",
           failed: pr.status === "failed",
           ...(pr.costUsd ? { costUsd: pr.costUsd } : {}),
-          ...(pr.budgetPressure
-            ? {
-                budgetPressure: {
-                  overageTokens: pr.budgetPressure.overageTokens,
-                  droppedCount: pr.budgetPressure.droppedCount,
-                  droppedTokens: pr.budgetPressure.droppedTokens,
-                },
-              }
-            : {}),
+          ...(sanitizedPressure ? { budgetPressure: sanitizedPressure } : {}),
         };
       }
     }

@@ -490,6 +490,71 @@ describe("collectStoryMetrics — US-004 context.providers[].budgetPressure", ()
     expect(pressure?.droppedCount).toBe(2);
     expect(pressure?.droppedTokens).toBe(200);
   });
+
+  // Adversarial review — malformed persisted JSON must not corrupt aggregates
+  test("malformed pressure (NaN, negative, non-number, missing field) contributes zero, not a corrupted value", async () => {
+    // Mirrors AC-7's "legacy contributes zero rather than inferring" rule: a
+    // stage manifest whose pressure fields are not finite nonnegative numbers
+    // contributes zero for that field, never NaN/negative/string.
+    mockManifests({
+      [`${FEATURE}/execution`]: makeManifest({
+        stage: "execution",
+        providerResults: providerResultWithPressure({
+          overageTokens: Number.NaN,
+          droppedCount: -5,
+          droppedTokens: "lots",
+        }),
+        includedChunks: ["static-rules:a:001"],
+      }),
+      [`${FEATURE}/verify`]: makeManifest({
+        stage: "verify",
+        providerResults: providerResultWithPressure({
+          // droppedCount missing entirely — should be treated as 0
+          overageTokens: 100,
+          droppedTokens: 50,
+        }),
+        includedChunks: ["static-rules:a:001"],
+      }),
+    });
+    const ctx = makeCtx();
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+    const pressure = metrics.context?.providers["static-rules"]?.budgetPressure;
+
+    expect(pressure).toBeDefined();
+    expect(pressure?.overageTokens).toBe(100); // NaN→0, then +100
+    expect(pressure?.droppedCount).toBe(0); // -5→0, missing→0
+    expect(pressure?.droppedTokens).toBe(50); // "lots"→0, then +50
+    // All fields must remain finite numbers, never NaN / Infinity / string
+    expect(Number.isFinite(pressure?.overageTokens)).toBe(true);
+    expect(Number.isFinite(pressure?.droppedCount)).toBe(true);
+    expect(Number.isFinite(pressure?.droppedTokens)).toBe(true);
+  });
+
+  test("a manifest with an entirely non-object budgetPressure contributes zero (not a thrown error)", async () => {
+    // Defense against hand-edited / corrupt JSON: budgetPressure is not an
+    // object at all — aggregate stays clean (no pressure surfaced) rather
+    // than crashing or producing NaN.
+    mockManifests({
+      [`${FEATURE}/execution`]: makeManifest({
+        stage: "execution",
+        providerResults: [
+          {
+            providerId: "static-rules",
+            status: "ok" as const,
+            chunkCount: 1,
+            durationMs: 10,
+            tokensProduced: 100,
+            budgetPressure: "not-an-object" as unknown as Record<string, unknown>,
+          },
+        ],
+        includedChunks: ["static-rules:a:001"],
+      }),
+    });
+    const ctx = makeCtx();
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.context?.providers["static-rules"]?.budgetPressure).toBeUndefined();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
