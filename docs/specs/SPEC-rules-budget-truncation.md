@@ -97,6 +97,15 @@ literals leaves it `undefined` at runtime:
 - `src/config/schemas-context.ts:68` — `.default(() => ({ allowLegacyClaudeMd: false, budgetTokens: 8192 }))`
 - `src/config/schemas.ts:321` — `rules: { allowLegacyClaudeMd: false, budgetTokens: 8192 }`
 
+**File-size constraint — this is why US-001 exists.** `bun run lint` runs
+`scripts/check-file-sizes.ts`, which fails when a source file exceeds 600 lines
+(`SRC_LIMIT`). `src/context/engine/types.ts` is at **590 lines**, leaving 10
+lines of headroom, and this feature adds an import plus two documented optional
+fields there. Landing the feature without first relieving that file would fail
+the lint gate on the last story. Precedent: PR #1460 split `src/operations/call.ts`
+(628 lines) purely to unblock #1461. `orchestrator.ts` at 583 lines has enough
+headroom for its ~8-line change and needs no split.
+
 Patterns to follow:
 
 - `FloorOverageMetrics` and `computeFloorOverage` (`src/metrics/tracker.ts:121`,
@@ -180,15 +189,38 @@ collectStoryMetrics() -> deriveContextMetrics() (tracker.ts:58-80)
 - Changes to the effectiveness classifier, `pollutionRatio`, or the Context Engine v2 write path are deferred.
 - Changes to `packChunks`, `FLOOR_KINDS` membership, floor-overflow semantics, or any per-stage `budgetTokens` value in `stage-config.ts` are deferred.
 - Reducing the token size of any rule file's content is deferred.
-- US-003 only: making context-manifest writes atomic against concurrent readers is deferred; this feature adds a field to an existing manifest write and does not change its concurrency behaviour.
+- US-004 only: making context-manifest writes atomic against concurrent readers is deferred; this feature adds a field to an existing manifest write and does not change its concurrency behaviour.
 
 ## Stories
 
-1. **US-001: Soft canonical-rules budget with opt-in enforcement** — no dependencies
-2. **US-002: Static-rules provider reports budget pressure** — depends on US-001
-3. **US-003: Budget pressure reaches the manifest and story metrics** — depends on US-002
+1. **US-001: Extract manifest types to create file-size headroom** — no dependencies
+2. **US-002: Soft canonical-rules budget with opt-in enforcement** — no dependencies
+3. **US-003: Static-rules provider reports budget pressure** — depends on US-002
+4. **US-004: Budget pressure reaches the manifest and story metrics** — depends on US-001 and US-003
+
+US-001 is a **pure move** — no behaviour change, no new code. It relocates the
+manifest/chunk type block (`ChunkEffectiveness`, `ContextChunk`,
+`ContextManifest`, lines 123-320) out of `src/context/engine/types.ts` into a
+new `src/context/engine/manifest-types.ts`, re-exported from `types.ts` so no
+import site changes. This drops `types.ts` to roughly 395 lines, giving US-004
+room to add its fields.
+
+**US-001 verification note:** the move is verified by the build/static gate —
+`bun run typecheck` (the compiler rejects any unresolved import) and
+`bun run lint` (which runs `scripts/check-file-sizes.ts`). No runtime AC asserts
+the file length; that would be a meta-AC.
 
 ### US-001 — Context Files
+
+- `src/context/engine/types.ts` — the block to move and the re-export site
+- `src/context/engine/manifest-store.ts` — the largest consumer of the moved types
+- `src/context/engine/orchestrator.ts` — consumer of `ContextManifest`
+
+### US-001 — Creates
+
+- `src/context/engine/manifest-types.ts` — relocated manifest and chunk type declarations
+
+### US-002 — Context Files
 
 - `src/context/rules/canonical-loader.ts` — `applyCanonicalRulesBudget`, `CanonicalRulesBudgetResult`, `DEFAULT_CANONICAL_RULES_BUDGET_TOKENS`
 - `src/config/schemas-context.ts` — `ContextV2RulesConfigSchema` and its default literal
@@ -196,14 +228,14 @@ collectStoryMetrics() -> deriveContextMetrics() (tracker.ts:58-80)
 - `src/config/runtime-types-context.ts` — runtime rules-config type
 - `test/unit/context/rules/canonical-loader.test.ts` — existing budget test patterns
 
-### US-002 — Context Files
+### US-003 — Context Files
 
 - `src/context/engine/providers/static-rules.ts` — the `applyCanonicalRulesBudget` call site
 - `src/context/engine/types.ts` — `ContextProviderResult`
 - `src/context/engine/orchestrator-factory.ts` — where the rules budget is resolved and passed to the provider
 - `test/unit/context/engine/providers/static-rules.test.ts` — existing provider test patterns and canonical-store fixtures
 
-### US-003 — Context Files
+### US-004 — Context Files
 
 - `src/context/engine/orchestrator.ts` — provider loop and `providerResults` construction
 - `src/context/engine/types.ts` — `ContextManifest.providerResults`
@@ -213,12 +245,22 @@ collectStoryMetrics() -> deriveContextMetrics() (tracker.ts:58-80)
 
 ### Seams
 
-- **S1 (US-001 → US-002):** `applyCanonicalRulesBudget` gains `overageTokens` and the `enforce` option in US-001; US-002 must pass the resolved config through and surface the result. Declared as a behavioural AC in US-002 (config value changes observable provider output).
-- **S2 (US-002 → US-003):** `ContextProviderResult.budgetPressure` is produced in US-002 and consumed by the orchestrator in US-003. Declared as an integration seam AC in US-003 that stubs a provider and enters at `assemble()`.
+- **S1 (US-002 → US-003):** `applyCanonicalRulesBudget` gains `overageTokens` and the `enforce` option in US-002; US-003 must pass the resolved config through and surface the result. Declared as a behavioural AC in US-003 (config value changes observable provider output).
+- **S2 (US-003 → US-004):** `ContextProviderResult.budgetPressure` is produced in US-003 and consumed by the orchestrator in US-004. Declared as an integration seam AC in US-004 that stubs a provider and enters at `assemble()`.
 
 ## Acceptance Criteria
 
-### US-001: Soft canonical-rules budget with opt-in enforcement
+### US-001: Extract manifest types to create file-size headroom
+
+**Verification note:** the move itself is verified by the build/static gate —
+`bun run typecheck` (the compiler rejects any unresolved import of a moved type)
+and `bun run lint` (which runs `scripts/check-file-sizes.ts`). No AC asserts a
+file's line count; that would be a meta-AC.
+
+- [unit] `ContextManifest` remains importable from `src/context/engine/types.ts` after the move, and a manifest value constructed against it is accepted by `writeContextManifest` without error.
+- [integration] Writing a manifest through `writeContextManifest` and reading it back through `loadContextManifests` returns a manifest whose `includedChunks` and `providerResults` equal what was written.
+
+### US-002: Soft canonical-rules budget with opt-in enforcement
 
 - [unit] `applyCanonicalRulesBudget` returns every rule it was given when the rules total exceeds `budgetTokens` and `enforce` is false.
 - [unit] `applyCanonicalRulesBudget` returns `droppedCount` of 0 when the rules total exceeds `budgetTokens` and `enforce` is false.
@@ -230,7 +272,7 @@ collectStoryMetrics() -> deriveContextMetrics() (tracker.ts:58-80)
 - [unit] Resolving the nax config with `context.v2.rules.enforceBudget` unset yields `enforceBudget` equal to false.
 - [unit] Resolving the nax config with `context.v2.rules.enforceBudget` set to true yields `enforceBudget` equal to true.
 
-### US-002: Static-rules provider reports budget pressure
+### US-003: Static-rules provider reports budget pressure
 
 - [unit] `StaticRulesProvider.fetch` returns one chunk per canonical rule, including rules beyond the budget, when the store exceeds the provider's `budgetTokens` and `enforceBudget` is false.
 - [unit] `StaticRulesProvider.fetch` returns `budgetPressure.overageTokens` equal to the store total minus the provider's `budgetTokens` when the store exceeds it and `enforceBudget` is false.
@@ -241,7 +283,7 @@ collectStoryMetrics() -> deriveContextMetrics() (tracker.ts:58-80)
 - [unit] `StaticRulesProvider.fetch` propagates `NeutralityLintError` to its caller when the canonical loader raises it, rather than returning an empty chunk list.
 - [integration] `StaticRulesProvider.fetch` reading this repository's own `.nax/rules/` store under default configuration returns one chunk per rule file present in that store and reports `budgetPressure.droppedCount` of 0.
 
-### US-003: Budget pressure reaches the manifest and story metrics
+### US-004: Budget pressure reaches the manifest and story metrics
 
 - [integration] Given a registered context provider whose `fetch` returns `budgetPressure`, calling `assemble()` writes a `providerResults` entry for that provider whose `budgetPressure` equals the value the provider returned.
 - [integration] Given a registered context provider whose `fetch` returns no `budgetPressure`, calling `assemble()` writes a `providerResults` entry for that provider with `budgetPressure` absent.
