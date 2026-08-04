@@ -23,7 +23,7 @@ import {
   loadCanonicalRules,
 } from "../../rules/canonical-loader";
 import type { CanonicalRule } from "../../rules/canonical-loader";
-import type { ProviderBudgetPressure } from "../manifest-types";
+import type { ProviderBudgetPressure, ProviderScopingReport } from "../manifest-types";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -147,13 +147,31 @@ export function globToRegex(pattern: string): RegExp {
   return new RegExp(`(?:^|/)${regex}$`);
 }
 
-function ruleMatchesTouchedFiles(appliesTo: string[] | undefined, touchedFiles: string[] | undefined): boolean {
+/**
+ * Returns true when the rule's `appliesTo:` frontmatter (file-scope filter) matches
+ * at least one entry in the effective scope-file set. Fail-open: a rule with no
+ * `appliesTo:` always matches, and an empty/absent scope set admits every rule
+ * unconditionally (see ProviderScopingReport.appliesToInertCount for visibility).
+ *
+ * Keyed on `request.scopeFiles` (US — rule-scoping), not `request.touchedFiles` —
+ * scopeFiles is the resolved evidence set (US-003), touchedFiles is content-fetch input.
+ */
+function ruleMatchesScopeFiles(appliesTo: string[] | undefined, scopeFiles: string[] | undefined): boolean {
   if (!appliesTo || appliesTo.length === 0) return true;
-  if (!touchedFiles || touchedFiles.length === 0) return true;
+  if (!scopeFiles || scopeFiles.length === 0) return true;
 
-  const files = touchedFiles.map((f) => normalizePath(f));
+  const files = scopeFiles.map((f) => normalizePath(f));
   const patterns = appliesTo.map((p) => globToRegex(normalizePath(p)));
   return files.some((file) => patterns.some((pattern) => pattern.test(file)));
+}
+
+/**
+ * Returns true when the rule's `stages:` frontmatter includes request.stage.
+ * Fail-open: a rule with no `stages:` key applies to every stage.
+ */
+function ruleMatchesStage(stages: string[] | undefined, stage: string): boolean {
+  if (!stages || stages.length === 0) return true;
+  return stages.includes(stage);
 }
 
 /**
@@ -277,7 +295,31 @@ export class StaticRulesProvider implements IContextProvider {
       }
 
       if (mergedRules.length > 0) {
-        const scopedRules = mergedRules.filter((rule) => ruleMatchesTouchedFiles(rule.appliesTo, request.touchedFiles));
+        const stageFilteredIds: string[] = [];
+        const stageMatchedRules = mergedRules.filter((rule) => {
+          if (ruleMatchesStage(rule.stages, request.stage)) return true;
+          stageFilteredIds.push(canonicalRuleId(rule));
+          return false;
+        });
+
+        const appliesToFilteredIds: string[] = [];
+        let appliesToInertCount = 0;
+        const scopedRules = stageMatchedRules.filter((rule) => {
+          if (rule.appliesTo && rule.appliesTo.length > 0 && (!request.scopeFiles || request.scopeFiles.length === 0)) {
+            appliesToInertCount++;
+          }
+          if (ruleMatchesScopeFiles(rule.appliesTo, request.scopeFiles)) return true;
+          appliesToFilteredIds.push(canonicalRuleId(rule));
+          return false;
+        });
+
+        const scopingReport: ProviderScopingReport = {
+          stageFilteredIds,
+          appliesToFilteredIds,
+          appliesToInertCount,
+          scopeFileCount: request.scopeFiles?.length ?? 0,
+        };
+
         const budgetResult = applyCanonicalRulesBudget(scopedRules, this.budgetTokens, {
           enforce: this.enforceBudget,
         });
@@ -310,9 +352,12 @@ export class StaticRulesProvider implements IContextProvider {
           // observe the overage. The provider emits `droppedTokens`/`droppedIds`
           // for the full input — the budget function did the truncation above.
           const emptyPressure = buildBudgetPressure(scopedRules, budgetResult);
-          return emptyPressure
-            ? { chunks: [], pullTools: [], budgetPressure: emptyPressure }
-            : { chunks: [], pullTools: [] };
+          return {
+            chunks: [],
+            pullTools: [],
+            ...(emptyPressure && { budgetPressure: emptyPressure }),
+            scopingReport,
+          };
         }
         const chunks = effectiveRules.map((rule) => {
           const ruleId = canonicalRuleId(rule);
@@ -341,7 +386,12 @@ export class StaticRulesProvider implements IContextProvider {
         });
 
         const pressure = buildBudgetPressure(scopedRules, budgetResult);
-        return pressure ? { chunks, pullTools: [], budgetPressure: pressure } : { chunks, pullTools: [] };
+        return {
+          chunks,
+          pullTools: [],
+          ...(pressure && { budgetPressure: pressure }),
+          scopingReport,
+        };
       }
     } catch (err) {
       // NeutralityLintError or other loader error — propagate so the operator sees it
