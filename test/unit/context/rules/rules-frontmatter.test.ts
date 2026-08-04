@@ -4,28 +4,13 @@
  * Covers parseFrontmatter and RulesFrontmatterError from the split.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect } from "bun:test";
 import {
-  _canonicalLoaderDeps,
   FRONTMATTER_PRIORITY_DEFAULT,
   KNOWN_FRONTMATTER_KEYS,
   parseFrontmatter,
   RulesFrontmatterError,
 } from "@/context/rules";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Dep injection helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-let origGetLogger: typeof _canonicalLoaderDeps.getLogger;
-
-beforeEach(() => {
-  origGetLogger = _canonicalLoaderDeps.getLogger;
-});
-
-afterEach(() => {
-  _canonicalLoaderDeps.getLogger = origGetLogger;
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC1: parseFrontmatter() returns priority 100 when content has no frontmatter block
