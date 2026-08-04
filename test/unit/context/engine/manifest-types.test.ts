@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { writeContextManifest } from "../../../../src/context/engine";
+import { writeContextManifest } from "@/context/engine";
 import type {
   ChunkEffectiveness as ChunkEffectivenessFromTypes,
   ContextChunk as ContextChunkFromTypes,
