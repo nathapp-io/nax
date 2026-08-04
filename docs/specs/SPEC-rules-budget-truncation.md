@@ -285,8 +285,8 @@ file's line count; that would be a meta-AC.
 
 ### US-004: Budget pressure reaches the manifest and story metrics
 
-- [integration] Given a registered context provider whose `fetch` returns `budgetPressure`, calling `assemble()` writes a `providerResults` entry for that provider whose `budgetPressure` equals the value the provider returned.
-- [integration] Given a registered context provider whose `fetch` returns no `budgetPressure`, calling `assemble()` writes a `providerResults` entry for that provider with `budgetPressure` absent.
+- [integration] Given a registered context provider whose `fetch` returns `budgetPressure`, calling `assemble()` returns a bundle whose `manifest.providerResults` entry for that provider has `budgetPressure` equal to the value the provider returned.
+- [integration] Given a registered context provider whose `fetch` returns no `budgetPressure`, calling `assemble()` returns a bundle whose `manifest.providerResults` entry for that provider omits `budgetPressure`.
 - [unit] `collectStoryMetrics` returns `context.providers` for a provider whose `budgetPressure.overageTokens` equals the sum of that provider's `overageTokens` across every stored stage manifest for the story.
 - [unit] `collectStoryMetrics` returns `context.providers` for a provider whose `budgetPressure.droppedCount` equals the sum of that provider's `droppedCount` across every stored stage manifest for the story.
 - [unit] `collectStoryMetrics` returns `context.providers` for a provider whose `budgetPressure.droppedTokens` equals the sum of that provider's `droppedTokens` across every stored stage manifest for the story.
