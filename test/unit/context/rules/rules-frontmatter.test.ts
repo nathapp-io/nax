@@ -482,3 +482,67 @@ describe("loadCanonicalRules — AC14 displaced-frontmatter logger warning", () 
     expect(hasDisplacedWarning).toBe(true);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-006: stage scoping for canonical rules in the real .nax/rules store.
+// The four test-authoring rules (test-writing.md, test-architecture.md,
+// test-helpers.md, testing-commands.md) declare a `stages:` list that excludes
+// plan, acceptance, and route. Rules that genuinely apply everywhere
+// (forbidden-patterns.md, project-conventions.md) declare no `stages:` key.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("loadCanonicalRules — US-006 real .nax/rules store stage scoping", () => {
+  test("[US-006 AC 1] returns test-writing.md with stages that exclude plan", async () => {
+    const rules = await loadCanonicalRules(process.cwd());
+    const rule = rules.find((r) => r.path === "test-writing.md" || r.fileName === "test-writing.md");
+    expect(rule).toBeDefined();
+    expect(rule?.stages).toBeDefined();
+    expect(rule?.stages).not.toContain("plan");
+  });
+
+  test("[US-006 AC 1] returns test-architecture.md with stages that exclude plan", async () => {
+    const rules = await loadCanonicalRules(process.cwd());
+    const rule = rules.find((r) => r.path === "test-architecture.md" || r.fileName === "test-architecture.md");
+    expect(rule).toBeDefined();
+    expect(rule?.stages).toBeDefined();
+    expect(rule?.stages).not.toContain("plan");
+  });
+
+  test("[US-006 AC 1] returns test-helpers.md with stages that exclude plan", async () => {
+    const rules = await loadCanonicalRules(process.cwd());
+    const rule = rules.find((r) => r.path === "test-helpers.md" || r.fileName === "test-helpers.md");
+    expect(rule).toBeDefined();
+    expect(rule?.stages).toBeDefined();
+    expect(rule?.stages).not.toContain("plan");
+  });
+
+  test("[US-006 AC 1] returns testing-commands.md with stages that exclude plan", async () => {
+    const rules = await loadCanonicalRules(process.cwd());
+    const rule = rules.find((r) => r.path === "testing-commands.md" || r.fileName === "testing-commands.md");
+    expect(rule).toBeDefined();
+    expect(rule?.stages).toBeDefined();
+    expect(rule?.stages).not.toContain("plan");
+  });
+
+  test("[US-006 AC 2] returns forbidden-patterns.md with stages undefined", async () => {
+    const rules = await loadCanonicalRules(process.cwd());
+    const rule = rules.find((r) => r.path === "forbidden-patterns.md" || r.fileName === "forbidden-patterns.md");
+    expect(rule).toBeDefined();
+    expect(rule?.stages).toBeUndefined();
+  });
+
+  test("[US-006 AC 2] returns project-conventions.md with stages undefined", async () => {
+    const rules = await loadCanonicalRules(process.cwd());
+    const rule = rules.find((r) => r.path === "project-conventions.md" || r.fileName === "project-conventions.md");
+    expect(rule).toBeDefined();
+    expect(rule?.stages).toBeUndefined();
+  });
+
+  test("[US-006 AC 6] every CanonicalRule has an empty warnings list under the real .nax/rules store", async () => {
+    const rules = await loadCanonicalRules(process.cwd());
+    expect(rules.length).toBeGreaterThan(0);
+    for (const rule of rules) {
+      expect(rule.warnings ?? []).toEqual([]);
+    }
+  });
+});

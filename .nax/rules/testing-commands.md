@@ -1,5 +1,32 @@
 ---
 priority: 45
+stages:
+  - "context"
+  - "execution"
+  - "tdd-test-writer"
+  - "tdd-implementer"
+  - "tdd-verifier"
+  - "verify"
+  - "rectify"
+  - "review"
+  - "review-semantic"
+  - "review-adversarial"
+  - "autofix"
+  - "single-session"
+  - "tdd-simple"
+  - "no-test"
+  - "batch"
+  - "review-dialogue"
+  - "debate"
+  - "queue-check"
+  - "routing"
+  - "constitution"
+  - "prompt"
+  - "optimizer"
+  - "completion"
+  - "acceptance-setup"
+  - "regression"
+  - "decompose"
 ---
 
 # Testing Commands — Mandatory `timeout` Wrapper
