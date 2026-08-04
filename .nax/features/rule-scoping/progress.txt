@@ -1,2 +1,4 @@
 [2026-08-04T07:24:36.591Z] US-001 — PASSED — Split canonical frontmatter and rules lint modules — Cost: $6.8191
 [2026-08-04T08:24:34.999Z] US-002 — PASSED — Parse stages frontmatter and report parser warnings — Cost: $7.0769
+[2026-08-04T08:51:26.518Z] US-003 — PASSED — Resolve and thread complete scope files — Cost: $0.9430
+[2026-08-04T09:08:54.646Z] US-004 — PASSED — Apply rule scoping and persist provider report — Cost: $5.7987
