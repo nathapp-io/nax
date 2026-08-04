@@ -3,3 +3,4 @@
 [2026-08-04T08:51:26.518Z] US-003 — PASSED — Resolve and thread complete scope files — Cost: $0.9430
 [2026-08-04T09:08:54.646Z] US-004 — PASSED — Apply rule scoping and persist provider report — Cost: $5.7987
 [2026-08-04T09:17:21.991Z] US-005 — PASSED — Expose scoping warnings in rules lint — Cost: $0.2605
+[2026-08-04T09:31:24.337Z] US-006 — PASSED — Scope canonical test-authoring rules by stage — Cost: $1.0052
