@@ -43,7 +43,9 @@ export function createDefaultOrchestrator(
   const allowLegacyClaudeMd = config.context?.v2?.rules?.allowLegacyClaudeMd ?? false;
   const rulesBudgetTokens = config.context?.v2?.rules?.budgetTokens ?? DEFAULT_CANONICAL_RULES_BUDGET_TOKENS;
   const rulesShare = config.context?.v2?.rules?.rulesShare ?? 0.4;
-  const enforceBudget = config.context?.v2?.rules?.enforceBudget ?? false;
+  // Schema default is `true`; mirror it so the orchestrator matches production
+  // resolved config when callers pass partial configs that omit the rules sub-object.
+  const enforceBudget = config.context?.v2?.rules?.enforceBudget ?? true;
   const providers: IContextProvider[] = [
     new StaticRulesProvider({
       allowLegacyClaudeMd,
