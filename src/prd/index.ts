@@ -40,6 +40,8 @@ export type { SpecModifiedFile } from "./modifies-extract";
 export { MAX_MODIFIED_FILES, extractSpecModifiedFiles } from "./modifies-extract";
 export type { ApplyModifiedFilesResult } from "./modifies";
 export { applyModifiedFiles } from "./modifies";
+export type { SpecContextFile } from "./context-files-extract";
+export { MAX_SPEC_CONTEXT_FILES, extractSpecContextFiles } from "./context-files-extract";
 export type { FailureCategory } from "../tdd/types";
 export { validateInjectedStory, deriveNextStoryId } from "./inject";
 

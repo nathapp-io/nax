@@ -11,8 +11,10 @@ import {
   applyModifiedFiles,
   applyOutOfScopeFallback,
   demoteStoryScopedOutOfScope,
+  extractSpecContextFiles,
   findMissingOutOfScope,
   findSpecDriftViolations,
+  getContextFiles,
 } from "../prd";
 import type { PRD } from "../prd/types";
 
@@ -85,14 +87,59 @@ export function backfillModifiedFiles(prd: PRD, specContent: string, featureName
 }
 
 /**
+ * Warn when a spec-declared `### Context Files` entry is absent from the story
+ * it was attributed to (#1466). Observability only — no PRD mutation.
+ *
+ * Unlike out-of-scope and `### Modifies`, `contextFiles` is intentionally
+ * planner-chosen: the LLM reasons about what it needs to read, and injection is
+ * capped at `FILE_INJECTION_MAX_FILES` (`src/context/builder.ts`). A dropped
+ * entry may be a correct eviction under that cap rather than a bug, and
+ * reconciling spec-declared vs. planner-inferred reads needs a priority rule
+ * that does not exist yet — so this only makes the drop frequency measurable,
+ * exactly as #1466's suggested first step, rather than backfilling a fallback
+ * the way `backfillOutOfScope` / `backfillModifiedFiles` do.
+ */
+export function warnOnDroppedContextFiles(prd: PRD, specContent: string, featureName: string): void {
+  const declared = extractSpecContextFiles(specContent);
+  if (declared.length === 0) return;
+
+  const byStory = new Map<string, typeof declared>();
+  for (const entry of declared) {
+    if (!entry.storyId) continue;
+    const list = byStory.get(entry.storyId) ?? [];
+    list.push(entry);
+    byStory.set(entry.storyId, list);
+  }
+
+  for (const story of prd.userStories) {
+    const storyDeclared = byStory.get(story.id);
+    if (!storyDeclared || storyDeclared.length === 0) continue;
+    const present = new Set(getContextFiles(story));
+    const dropped = storyDeclared.filter((entry) => !present.has(entry.path));
+    if (dropped.length === 0) continue;
+    getSafeLogger()?.warn("plan", "Spec Context Files entries absent from the resulting story — not backfilled", {
+      featureName,
+      storyId: story.id,
+      droppedCount: dropped.length,
+      dropped: dropped.map((entry) => entry.path),
+    });
+  }
+}
+
+/**
  * Every deterministic spec→PRD fidelity repair, in the order they must run.
  *
  * One entry point so the four plan strategies (single, refine, pipeline, debate)
  * cannot drift on which repairs they apply — the class of bug that let
  * `### Modifies` reach only some paths would otherwise recur per-field.
+ *
+ * `warnOnDroppedContextFiles` runs last — it is observability, not a repair,
+ * so it inspects the fully-repaired PRD without changing what is returned.
  */
 export function applyPlanFidelity(prd: PRD, specContent: string, featureName: string): PRD {
-  return backfillModifiedFiles(backfillOutOfScope(prd, specContent, featureName), specContent, featureName);
+  const scoped = backfillModifiedFiles(backfillOutOfScope(prd, specContent, featureName), specContent, featureName);
+  warnOnDroppedContextFiles(scoped, specContent, featureName);
+  return scoped;
 }
 
 /**

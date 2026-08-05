@@ -7,7 +7,12 @@ export { planRefineOp, _planRefineDeps, normalizeCreatedContextFiles } from "./p
 export type { PlanRefineInput } from "./plan-refine";
 export { makeSelfHealStep, runSelfHealChain } from "./self-heal";
 export type { SelfHealStep, SelfHealSpec } from "./self-heal";
-export { applyPlanFidelity, backfillModifiedFiles, backfillOutOfScope } from "./plan-fidelity";
+export {
+  applyPlanFidelity,
+  backfillModifiedFiles,
+  backfillOutOfScope,
+  warnOnDroppedContextFiles,
+} from "./plan-fidelity";
 export { decomposeOp } from "./decompose";
 export type { DecomposeOpInput, DecomposeOpOutput } from "./decompose";
 export { buildHopCallback, _buildHopCallbackDeps } from "./build-hop-callback";
