@@ -1,1 +1,2 @@
 [2026-08-05T04:25:59.546Z] US-001 — PASSED — Detect HTML-comment-displaced rule frontmatter — Cost: $1.9702
+[2026-08-05T04:40:17.526Z] US-002 — PASSED — Warn lint users about inert paths scoping — Cost: $1.7815
