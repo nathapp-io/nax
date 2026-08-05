@@ -1,0 +1,289 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `@/context/rules/rule-sections` is imported, then it exposes splitRuleIntoSections().",
+    "refined": "Importing '@/context/rules/rule-sections' yields an object containing a function property 'splitRuleIntoSections' that is a Function.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When splitRuleIntoSections() receives a CanonicalRule containing three `## ` headings, then it returns three sections.",
+    "refined": "Calling splitRuleIntoSections() with a CanonicalRule whose content contains three '## ' substrings returns an array with length exactly 3.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When splitRuleIntoSections() receives content with three `## ` headings, then returned ordinals are 0, 1, and 2 in document order.",
+    "refined": "Calling splitRuleIntoSections() with content containing three '## ' headings returns an array where the section at index 0 has ordinal 0, index 1 has ordinal 1, and index 2 has ordinal 2.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When content precedes the first `## ` heading, then splitRuleIntoSections() returns that preamble as ordinal 0 with heading undefined.",
+    "refined": "Calling splitRuleIntoSections() with content 'preamble text\\n## Heading' returns an array where the first section has ordinal 0, heading property is undefined, and content starts with 'preamble text'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When a CanonicalRule has no `## ` heading, then splitRuleIntoSections() returns exactly one section whose content equals the rule content.",
+    "refined": "Calling splitRuleIntoSections() with a CanonicalRule whose content has no '## ' substring returns an array with length 1, and that single section's content property strictly equals the original rule content.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When a CanonicalRule declares priority 45, then every returned section has priority 45.",
+    "refined": "Calling splitRuleIntoSections() with a CanonicalRule where rule.priority === 45 returns an array where every section has priority === 45.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When a CanonicalRule declares appliesTo `[\"src/**\"]` and stages `[\"execution\"]`, then every returned section carries those appliesTo and stages values.",
+    "refined": "Calling splitRuleIntoSections() with a CanonicalRule where rule.appliesTo === ['src/**'] and rule.stages === ['execution'] returns an array where every section has appliesTo === ['src/**'] and stages === ['execution'].",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When a heading is `## Prompt Builder Convention`, then its returned section has slug `prompt-builder-convention`.",
+    "refined": "Calling splitRuleIntoSections() with content containing '## Prompt Builder Convention' returns a section whose slug property strictly equals 'prompt-builder-convention' (lowercase, hyphenated, no spaces).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When the same `## ` heading appears twice, then splitRuleIntoSections() returns two sections with different slug values.",
+    "refined": "Calling splitRuleIntoSections() with content containing '## Same Heading' twice returns an array of length 2 where the two sections have distinct slug string values.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When a section body contains a `### ` heading, then that heading remains in the section content and does not start another section.",
+    "refined": "Calling splitRuleIntoSections() with content '## H2\\n### H3 content' returns an array of length 1 where the single section's content string contains '### H3 content'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When splitRuleIntoSections() returns a section, then its tokens equal the token estimate of its own content.",
+    "refined": "For each section returned by splitRuleIntoSections(), calling a token-estimation function on the section's content property returns a number equal to the section's tokens property.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When `@/context/rules/rule-budget` is imported, then it exposes applySectionBudget().",
+    "refined": "Import `@/context/rules/rule-budget` and assert that `typeof applySectionBudget === 'function'` is true.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When applySectionBudget() receives sections whose total tokens are below the budget, then it returns every supplied section.",
+    "refined": "Call `applySectionBudget(sections, budgetTokens)` where `sections` is an array of RuleSection objects with totalTokens summing to less than budgetTokens. Assert that `result.retainedSections.length === sections.length`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When sections from two rules fit the budget, then applySectionBudget() returns them ordered by ascending priority and then ascending ordinal.",
+    "refined": "Call applySectionBudget with sections from two rules having different priorities and ordinals, where all fit within budget. Assert `result.retainedSections[i].priority <= result.retainedSections[i+1].priority` for all i, and when priorities are equal, `result.retainedSections[i].ordinal <= result.retainedSections[i+1].ordinal`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When a budget accommodates only the first two of a rule's four sections, then applySectionBudget() returns those two sections and omits the remaining two.",
+    "refined": "Call applySectionBudget with a rule containing 4 sections where only the first 2 fit within budgetTokens. Assert `result.retainedSections.length === 2`, `result.retainedSections[0].sectionId === 'first'` and `result.retainedSections[1].sectionId === 'second'`, and `result.droppedIds` contains the other two section identifiers.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When a budget is exhausted partway through the first rule, then applySectionBudget() omits every section of every lower-priority rule even if one would fit in remaining space.",
+    "refined": "Call applySectionBudget with two rules (priority 1 and priority 2) where budgetTokens is exhausted after the first rule's partial sections. Assert `result.droppedIds` includes all sections from the priority-2 rule (none are retained), even when a single priority-2 section could physically fit in remaining budget.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When a single section exceeds the budget by itself, then applySectionBudget() returns that section and reports overageTokens greater than zero.",
+    "refined": "Call applySectionBudget with a single section whose `totalTokens` exceeds budgetTokens. Assert `result.retainedSections.length === 1` and `result.overageTokens === section.totalTokens - budgetTokens` where `result.overageTokens > 0`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When sections do not all fit, then applySectionBudget() returns droppedIds containing every omitted section identifier.",
+    "refined": "Call applySectionBudget with sections where not all fit within budgetTokens. Assert `result.droppedIds` is an array containing exactly the sectionIds of all sections that were not retained, with no overlap between `result.droppedIds` and `result.retainedSections.map(s => s.sectionId)`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When applySectionBudget() receives an empty section array, then it returns an empty section list and overageTokens of zero.",
+    "refined": "Call `applySectionBudget([], budgetTokens)`. Assert `result.retainedSections.length === 0` and `result.overageTokens === 0`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When budgetTokens is zero, then applySectionBudget() returns an empty section list and overageTokens equal to the supplied sections' total tokens.",
+    "refined": "Call applySectionBudget with an array of sections totaling N tokens and budgetTokens = 0. Assert `result.retainedSections.length === 0` and `result.overageTokens === N`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When budgetTokens is non-finite, then applySectionBudget() returns an empty section list without throwing.",
+    "refined": "Call applySectionBudget with sections and budgetTokens set to `Infinity`. Assert the function does not throw (no exception is raised) and returns an object with `retainedSections` and `droppedIds` properties.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When context.v2.rules.rulesShare is unset, then resolved nax configuration has rulesShare 0.4.",
+    "refined": "Parse context schema with rulesShare field absent, then assert the resolved config object has rulesShare === 0.4.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When context.v2.rules.enforceBudget is unset, then resolved nax configuration has enforceBudget true.",
+    "refined": "Parse context schema with enforceBudget field absent, then assert the resolved config object has enforceBudget === true.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When context.v2.rules.rulesShare is 1.5, then configuration validation rejects it.",
+    "refined": "Parse context schema with rulesShare set to 1.5, then assert the Zod parse or validate call throws or returns an error result containing a validation failure for rulesShare.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When context.v2.rules.rulesShare is -0.1, then configuration validation rejects it.",
+    "refined": "Parse context schema with rulesShare set to -0.1, then assert the Zod parse or validate call throws or returns an error result containing a validation failure for rulesShare.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When StaticRulesProvider.fetch() receives request.budgetTokens 4000 with rulesShare 0.4 and global budgetTokens 8192, then it applies an effective rules budget of 1600.",
+    "refined": "Instantiate StaticRulesProvider with rulesShare=0.4 and budgetTokens=8192; call fetch() with a request object whose budgetTokens=4000; assert the effective budget used in the internal rules load is Math.min(0.4 * 4000, 8192) === 1600.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When StaticRulesProvider.fetch() receives request.budgetTokens 12000 with rulesShare 0.9, then it applies an effective rules budget of 8192 rather than 10800.",
+    "refined": "Instantiate StaticRulesProvider with rulesShare=0.9 and budgetTokens=8192; call fetch() with a request object whose budgetTokens=12000; assert the effective budget used in the internal rules load is Math.min(0.9 * 12000, 8192) === 8192 (not 10800).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When StaticRulesProvider.fetch() runs against a repository root without '.nax/rules/', then it returns an empty chunk list without throwing.",
+    "refined": "Create a temporary directory with no .nax/rules/ subdirectory; instantiate StaticRulesProvider pointing at that root; call fetch(); assert the returned value is a list with length 0 and no exception is thrown.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When StaticRulesProvider is constructed without enforceBudget and its configured budgetTokens is smaller than the corpus, then fetch() returns one chunk per canonical rule.",
+    "refined": "Construct StaticRulesProvider with enforceBudget omitted (so it defaults to constructor false), budgetTokens set to a value smaller than the combined size of all canonical rules in the corpus; call fetch(); assert returned chunks.length equals the number of canonical rules (each rule emits exactly one chunk).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When _staticRulesDeps.splitRuleIntoSections is stubbed and StaticRulesProvider.fetch() loads canonical rules, then the stub is called once for each loaded canonical rule.",
+    "refined": "Verify splitRuleIntoSections stub call count equals the number of canonical rules loaded, where each call receives one Rule and returns an array of RuleSection objects.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When _staticRulesDeps.applySectionBudget is stubbed and fetch() receives request.budgetTokens 4000, then the stub receives budgetTokens 1600.",
+    "refined": "Verify applySectionBudget stub is called with budgetTokens === 1600 (budgetTokens * 0.4) when request.budgetTokens === 4000.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When a corpus has one rule file with two `## ` sections, then StaticRulesProvider.fetch() returns two chunks with different ids.",
+    "refined": "Verify fetch() returns an array of length 2 where chunk[0].id !== chunk[1].id, and both chunks originate from the same rule file.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When StaticRulesProvider.fetch() emits section chunks, then every chunk id incorporates its owning section slug.",
+    "refined": "Verify every chunk.id contains the slug string derived from its section header (e.g., id matches pattern /^section-slug-/ or id.includes('section-slug')).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When StaticRulesProvider.fetch() emits a rule section, then its chunk kind is `static`.",
+    "refined": "Verify all chunks emitted by fetch() have kind === 'static'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "When StaticRulesProvider.fetch() emits a rule section, then its chunk rawScore is 1.0.",
+    "refined": "Verify all chunks emitted by fetch() have rawScore === 1.0.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-36",
+    "original": "When the corpus exceeds the effective rules budget, then fetch().budgetPressure.droppedCount equals the number of omitted sections.",
+    "refined": "Verify fetch() return object includes budgetPressure.droppedCount === N where N equals the count of sections omitted because they exceeded budget.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-37",
+    "original": "When the corpus exceeds the effective rules budget, then fetch().budgetPressure.droppedTokens equals the summed tokens of omitted sections.",
+    "refined": "Verify fetch() return object includes budgetPressure.droppedTokens === sum of tokens from all omitted sections.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-38",
+    "original": "When StaticRulesProvider.fetch() completes filtering, then scopingReport.sectionCount equals the sections remaining after stage and appliesTo filtering.",
+    "refined": "Verify scopingReport.sectionCount === count of sections that passed both stage and appliesTo filtering predicates.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-39",
+    "original": "When request.stage is excluded by a rule's stages list, then StaticRulesProvider.fetch() returns no chunk originating from that rule.",
+    "refined": "Verify fetch() returns an empty array for chunks from any rule whose stages list does not contain request.stage.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-40",
+    "original": "When _staticRulesDeps.applySectionBudget is stubbed and request.stage excludes a rule, then fetch() passes no section from that rule to the stub.",
+    "refined": "Verify applySectionBudget stub receives zero sections from any rule whose stages list excludes request.stage.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-41",
+    "original": "When canonical rules are loaded after the corpus cleanup, then `forbidden-patterns-source.md` and `forbidden-patterns-tests.md` are separately discoverable canonical rules.",
+    "refined": "After corpus cleanup: (1) file `.nax/rules/forbidden-patterns-source.md` exists and has valid frontmatter with `priority` field; (2) file `.nax/rules/forbidden-patterns-tests.md` exists and has valid frontmatter with `priority` field; (3) original file `.nax/rules/forbidden-patterns.md` does not exist; (4) the rules loader returns exactly 2 separate rule entries when scanning `.nax/rules/` with names matching `forbidden-patterns-source` and `forbidden-patterns-tests`.",
+    "testable": true,
+    "storyId": "US-005"
+  }
+]

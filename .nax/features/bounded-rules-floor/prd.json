@@ -1,0 +1,324 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "bounded-rules-floor",
+  "branchName": "feat/bounded-rules-floor",
+  "createdAt": "2026-08-05T18:27:22+08:00",
+  "updatedAt": "2026-08-05T10:30:31.267Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Section-level rule chunking",
+      "description": "**Goal** — Add a rule-section model and splitter that turns each canonical rule into independently budgetable H2 sections while preserving its inherited metadata.\n\n**Motivation** — The repo's largest and highest-priority rule is 3,485 tokens, so file-granularity caps cannot protect non-floor context without discarding that rule wholesale.\n\n**Approach** — Sections split at `## ` (H2) only. Content preceding the first H2 becomes an ordinal-0 preamble section. H3 and deeper headings stay inside their parent section. A file with no H2 yields exactly one section, preserving today's behaviour for simple rule files.\n\n**Scope** — In: `CanonicalRule` section splitting, inherited metadata, deterministic unique slugs, own-content token estimation, and focused unit tests. Out: section budgeting and provider chunk emission (US-002 and US-004); splitting below H2 level.\n\n**Interface**\n```typescript\nsplitRuleIntoSections(rule: CanonicalRule): RuleSection[]\n```\n\nThe section type must retain the owning rule identity/path plus `content`, `tokens`, `priority`, `paths`, `appliesTo`, `stages`, `ordinal`, optional `heading`, and a stable `slug` usable in provider chunk identifiers.",
+      "acceptanceCriteria": [
+        "When `@/context/rules/rule-sections` is imported, then it exposes splitRuleIntoSections().",
+        "When splitRuleIntoSections() receives a CanonicalRule containing three `## ` headings, then it returns three sections.",
+        "When splitRuleIntoSections() receives content with three `## ` headings, then returned ordinals are 0, 1, and 2 in document order.",
+        "When content precedes the first `## ` heading, then splitRuleIntoSections() returns that preamble as ordinal 0 with heading undefined.",
+        "When a CanonicalRule has no `## ` heading, then splitRuleIntoSections() returns exactly one section whose content equals the rule content.",
+        "When a CanonicalRule declares priority 45, then every returned section has priority 45.",
+        "When a CanonicalRule declares appliesTo `[\"src/**\"]` and stages `[\"execution\"]`, then every returned section carries those appliesTo and stages values.",
+        "When a heading is `## Prompt Builder Convention`, then its returned section has slug `prompt-builder-convention`.",
+        "When the same `## ` heading appears twice, then splitRuleIntoSections() returns two sections with different slug values.",
+        "When a section body contains a `### ` heading, then that heading remains in the section content and does not start another section.",
+        "When splitRuleIntoSections() returns a section, then its tokens equal the token estimate of its own content."
+      ],
+      "tags": [
+        "feature",
+        "context",
+        "rules",
+        "algorithm"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A new pure domain module with deterministic parsing, identifiers, and inherited metadata; no production integration yet.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/context/rules/canonical-loader.ts",
+        "src/context/rules/rules-frontmatter.ts",
+        "src/optimizer/types.ts",
+        "test/unit/context/rules/canonical-loader.test.ts",
+        "src/context/engine/providers/static-rules.ts"
+      ],
+      "expectedFiles": [
+        "src/context/rules/rule-sections.ts",
+        "test/unit/context/rules/rule-sections.test.ts"
+      ],
+      "outOfScope": [
+        "Splitting rule files below the H2 heading level is not part of this spec; a single H2 section is the smallest indivisible unit."
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Section-aware boundary budget",
+      "description": "**Goal** — Add a section-budget function that preserves the current priority-contiguous-tail contract while retaining leading sections of the boundary rule.\n\n**Motivation** — Section granularity makes an enforced cap survivable because truncation can land mid-file instead of destroying the highest-priority rule.\n\n**Approach** — Truncation retains the contiguous-tail contract — longest leading run that fits, everything after dropped — with one refinement sections make possible: the boundary file contributes its leading sections instead of being dropped whole.\n\n**Scope** — In: deterministic priority/ordinal ordering, enforced section truncation, invalid-budget behavior, overage and omitted-section telemetry inputs. Out: config-derived budget selection (US-003) and provider wiring/manifest reporting (US-004).\n\n**Interface**\n```typescript\napplySectionBudget(sections: RuleSection[], budgetTokens: number): SectionBudgetResult\n```\n\nThe result must expose retained sections, totals/used tokens, overage, and stable identifiers for every omitted section.",
+      "acceptanceCriteria": [
+        "When `@/context/rules/rule-budget` is imported, then it exposes applySectionBudget().",
+        "When applySectionBudget() receives sections whose total tokens are below the budget, then it returns every supplied section.",
+        "When sections from two rules fit the budget, then applySectionBudget() returns them ordered by ascending priority and then ascending ordinal.",
+        "When a budget accommodates only the first two of a rule's four sections, then applySectionBudget() returns those two sections and omits the remaining two.",
+        "When a budget is exhausted partway through the first rule, then applySectionBudget() omits every section of every lower-priority rule even if one would fit in remaining space.",
+        "When a single section exceeds the budget by itself, then applySectionBudget() returns that section and reports overageTokens greater than zero.",
+        "When sections do not all fit, then applySectionBudget() returns droppedIds containing every omitted section identifier.",
+        "When applySectionBudget() receives an empty section array, then it returns an empty section list and overageTokens of zero.",
+        "When budgetTokens is zero, then applySectionBudget() returns an empty section list and overageTokens equal to the supplied sections' total tokens.",
+        "When budgetTokens is non-finite, then applySectionBudget() returns an empty section list without throwing."
+      ],
+      "tags": [
+        "feature",
+        "context",
+        "rules",
+        "budget"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A new deterministic budget algorithm with boundary and invalid-input semantics, isolated from provider integration.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/context/rules/canonical-loader.ts",
+        "src/context/rules/rule-sections.ts",
+        "test/unit/context/rules/rule-sections.test.ts"
+      ],
+      "expectedFiles": [
+        "src/context/rules/rule-budget.ts",
+        "test/unit/context/rules/rule-budget.test.ts"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Derive per-stage rules budget and enforce config default",
+      "description": "**Goal** — Add rulesShare and make resolved production configuration enforce the bounded rules floor while preserving direct-provider soft compatibility.\n\n**Motivation** — StaticRulesProvider currently receives enforceBudget defaulting to false, so canonical rules report overage and truncate nothing.\n\n**Approach** — The provider's budget becomes `min(rulesShare * request.budgetTokens, rules.budgetTokens)`, where `request.budgetTokens` is the stage budget. The existing global `rules.budgetTokens` becomes an absolute upper bound so current configuration keeps its meaning.\n\nSchema default and constructor default are separate, and only the schema flips. `ContextV2RulesConfigSchema.enforceBudget` changes from `false` to `true`, so every production assembly enforces the cap — the orchestrator reads the resolved config at `orchestrator-factory.ts:45` and passes it in. The provider's own constructor fallback at `static-rules.ts:241` (`options.enforceBudget ?? false`) is deliberately left at `false`, so a directly-constructed `StaticRulesProvider` that names no option keeps today's soft behaviour.\n\n**Scope** — In: schema/runtime/default literals, provider option/factory wiring, effective-budget calculation, and targeted config/provider tests. Out: section chunk emission and section telemetry (US-004).\n\n**Interface**\n```typescript\ninterface ContextV2RulesConfig {\n  budgetTokens: number;\n  rulesShare: number;\n  enforceBudget: boolean;\n}\n```\n\n**Modification authority** — This story is authorised to edit the following EXISTING files, each for the stated reason. This list comes from the spec's `### Modifies` block.\n- `src/config/schemas-context.ts` — add `rulesShare`; flip the `enforceBudget` default to `true`; update both nested default literals at lines 78 and 236.\n- `src/config/schemas.ts` — update the nested rules default literal at line 321.\n- `src/config/runtime-types-context.ts` — add `rulesShare` to the resolved rules config type.\n- `src/context/engine/providers/static-rules.ts` — derive the effective budget from `request.budgetTokens` and the configured `rulesShare`.\n- `test/unit/config/schemas.test.ts` — **required.** The two tests at lines 531 and 539 assert `enforceBudget` resolves to `false` when unset. Both MUST be updated to assert `true`. Without this edit a correct implementation fails these existing tests and the story deadlocks. Do not revert the implementation to make them pass.",
+      "acceptanceCriteria": [
+        "When context.v2.rules.rulesShare is unset, then resolved nax configuration has rulesShare 0.4.",
+        "When context.v2.rules.enforceBudget is unset, then resolved nax configuration has enforceBudget true.",
+        "When context.v2.rules.rulesShare is 1.5, then configuration validation rejects it.",
+        "When context.v2.rules.rulesShare is -0.1, then configuration validation rejects it.",
+        "When StaticRulesProvider.fetch() receives request.budgetTokens 4000 with rulesShare 0.4 and global budgetTokens 8192, then it applies an effective rules budget of 1600.",
+        "When StaticRulesProvider.fetch() receives request.budgetTokens 12000 with rulesShare 0.9, then it applies an effective rules budget of 8192 rather than 10800.",
+        "When StaticRulesProvider.fetch() runs against a repository root without `.nax/rules/`, then it returns an empty chunk list without throwing.",
+        "When StaticRulesProvider is constructed without enforceBudget and its configured budgetTokens is smaller than the corpus, then fetch() returns one chunk per canonical rule."
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "context",
+        "budget"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a standard five-file configuration-to-provider wiring change with bounded arithmetic and explicit regression coverage for the direct-construction soft fallback.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/config/schemas-context.ts",
+        "src/config/schemas.ts",
+        "src/config/runtime-types-context.ts",
+        "src/context/engine/orchestrator-factory.ts",
+        "src/context/engine/providers/static-rules.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/context/engine/providers/static-rules-budget-derivation.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/config/schemas-context.ts",
+          "reason": "Add rulesShare to ContextV2RulesConfigSchema; flip the enforceBudget default to true; update both nested default literals at lines 78 and 236."
+        },
+        {
+          "path": "src/config/schemas.ts",
+          "reason": "Update the nested rules default literal at line 321 to carry rulesShare and the new enforceBudget default."
+        },
+        {
+          "path": "src/config/runtime-types-context.ts",
+          "reason": "Add rulesShare to the resolved rules config type."
+        },
+        {
+          "path": "src/context/engine/providers/static-rules.ts",
+          "reason": "Derive the effective budget from request.budgetTokens and the configured rulesShare."
+        },
+        {
+          "path": "test/unit/config/schemas.test.ts",
+          "reason": "The two tests at lines 531 and 539 assert enforceBudget resolves to false when unset. Both must be updated to assert true. Without this edit the story cannot pass with a correct implementation."
+        }
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Emit budgeted section chunks and section telemetry",
+      "description": "**Goal** — Wire section splitting and section budgeting through StaticRulesProvider.fetch so static chunks and manifest telemetry are section-granular.\n\n**Motivation** — packChunks admits every floor-kind chunk unconditionally, so enforcing the static provider before packing is necessary to reserve context for non-floor chunks.\n\n**Approach** — `rawScore` stays flat at `1.0` for every emitted rule chunk. Differential scoring depends on the effectiveness classifier, which is out of scope.\n\nBoth seam ACs enter at `StaticRulesProvider.fetch(request)` — the provider's outermost production entry point, the method the orchestrator calls generically for every registered provider. Neither stubs an intermediate helper this spec introduces. Both symbols are new (created by US-001 and US-002), so the call path is one this spec creates rather than one that must already reach them.\n\n**Scope** — In: inject splitRuleIntoSections/applySectionBudget through `_staticRulesDeps`, filter before budgeting, generate section-specific static IDs, retain static/rawScore values, derive budget pressure from omitted sections, and add scopingReport.sectionCount. Out: alteration of feature/test-coverage packing floors or effectiveness scoring.\n\n**Interface**\n```typescript\n_staticRulesDeps.splitRuleIntoSections(rule: CanonicalRule): RuleSection[]\n_staticRulesDeps.applySectionBudget(sections: RuleSection[], budgetTokens: number): SectionBudgetResult\ninterface ProviderScopingReport { sectionCount: number; }\n```",
+      "acceptanceCriteria": [
+        "When _staticRulesDeps.splitRuleIntoSections is stubbed and StaticRulesProvider.fetch() loads canonical rules, then the stub is called once for each loaded canonical rule.",
+        "When _staticRulesDeps.applySectionBudget is stubbed and fetch() receives request.budgetTokens 4000, then the stub receives budgetTokens 1600.",
+        "When a corpus has one rule file with two `## ` sections, then StaticRulesProvider.fetch() returns two chunks with different ids.",
+        "When StaticRulesProvider.fetch() emits section chunks, then every chunk id incorporates its owning section slug.",
+        "When StaticRulesProvider.fetch() emits a rule section, then its chunk kind is `static`.",
+        "When StaticRulesProvider.fetch() emits a rule section, then its chunk rawScore is 1.0.",
+        "When the corpus exceeds the effective rules budget, then fetch().budgetPressure.droppedCount equals the number of omitted sections.",
+        "When the corpus exceeds the effective rules budget, then fetch().budgetPressure.droppedTokens equals the summed tokens of omitted sections.",
+        "When StaticRulesProvider.fetch() completes filtering, then scopingReport.sectionCount equals the sections remaining after stage and appliesTo filtering.",
+        "When request.stage is excluded by a rule's stages list, then StaticRulesProvider.fetch() returns no chunk originating from that rule.",
+        "When _staticRulesDeps.applySectionBudget is stubbed and request.stage excludes a rule, then fetch() passes no section from that rule to the stub."
+      ],
+      "tags": [
+        "feature",
+        "context",
+        "provider",
+        "telemetry",
+        "integration"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Integrates two new algorithms into production filtering, identifiers, telemetry, and test seams while preserving legacy fallback behavior.",
+        "agentProfileId": "opencode-balanced",
+        "agent": "opencode",
+        "profileModelTier": "powerful",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-balanced",
+        "initialModelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/context/engine/providers/static-rules.ts",
+        "src/context/engine/manifest-types.ts",
+        "src/context/rules/rule-sections.ts",
+        "src/context/rules/rule-budget.ts",
+        "src/context/engine/manifest-builder.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/context/engine/providers/static-rules-sections.test.ts"
+      ],
+      "outOfScope": [
+        "Bounding the `feature` and `test-coverage` floor kinds inside `packChunks` is not part of this spec; only the `static` kind is bounded, and it is bounded at the provider rather than in packing.",
+        "Differential scoring of rule chunks is not part of this spec; every emitted rule chunk keeps `rawScore: 1.0`."
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Clean and scope the canonical rules corpus",
+      "description": "**Goal** — Split the mixed source/test rule, add missing scope metadata, and rebalance canonical-rule priorities for predictable bounded delivery.\n\n**Motivation** — The measured corpus is roughly 17,200 tokens across 11 files, so a 4,000-token stage ships around four times its declared budget and starves non-floor chunks.\n\n**Approach** — Splits the mixed-concern rule file, adds scoping frontmatter to the files that declare none, and rebalances priorities so that lowest numbers are small files. Deletion and rename only; no new code.\n\n**Scope** — In: replace `.nax/rules/forbidden-patterns.md` with source/test files and add appropriate scoping frontmatter to monorepo-awareness, project-conventions, config-patterns, and error-handling. Out: production TypeScript and runtime acceptance behavior; adding a rules barrel or changing priority semantics.\n\n**Interface** — Canonical Markdown frontmatter remains compatible with the existing loader: `priority: <number>`, `paths: <string[]>`, `appliesTo: <string[]>`, and `stages: <string[]>`.",
+      "acceptanceCriteria": [
+        "When canonical rules are loaded after the corpus cleanup, then `forbidden-patterns-source.md` and `forbidden-patterns-tests.md` are separately discoverable canonical rules."
+      ],
+      "tags": [
+        "chore",
+        "rules",
+        "corpus",
+        "refactor"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "no-test",
+        "reasoning": "A scoped structural corpus migration with exact content and frontmatter preservation requirements.",
+        "noTestJustification": "This is deletion, rename, and canonical Markdown frontmatter cleanup only; existing loader and rules-lint behavior verify the structure, with no new runtime code path.",
+        "agentProfileId": "opencode-structural",
+        "agent": "opencode",
+        "profileModelTier": "fast",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-structural",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        ".nax/rules/forbidden-patterns.md",
+        ".nax/rules/monorepo-awareness.md",
+        ".nax/rules/project-conventions.md",
+        ".nax/rules/config-patterns.md",
+        ".nax/rules/error-handling.md"
+      ],
+      "expectedFiles": [
+        ".nax/rules/forbidden-patterns-source.md",
+        ".nax/rules/forbidden-patterns-tests.md"
+      ],
+      "outOfScope": [
+        "Adding a barrel `index.ts` to `src/context/rules/` and migrating its six existing import sites is not part of this spec, even though the directory violates the project's \"2+ exports gets a barrel\" convention.",
+        "Changing the meaning of the `priority:` frontmatter field or the ascending sort order is not part of this spec."
+      ],
+      "modifiedFiles": [
+        {
+          "path": ".nax/rules/forbidden-patterns.md",
+          "reason": "Deleted as part of the source/test split into forbidden-patterns-source.md and forbidden-patterns-tests.md."
+        },
+        {
+          "path": ".nax/rules/monorepo-awareness.md",
+          "reason": "Add paths: scoping frontmatter."
+        },
+        {
+          "path": ".nax/rules/project-conventions.md",
+          "reason": "Add scoping frontmatter."
+        },
+        {
+          "path": ".nax/rules/config-patterns.md",
+          "reason": "Add scoping frontmatter."
+        },
+        {
+          "path": ".nax/rules/error-handling.md",
+          "reason": "Add scoping frontmatter."
+        }
+      ]
+    }
+  ],
+  "analysis": "This is an enhancement to the Context Engine v2 static-rules path, not a greenfield feature. CanonicalRule is declared in src/context/rules/rules-frontmatter.ts:52-63 and re-exported by canonical-loader.ts; canonical-loader.ts:308-367 currently implements file-level budgeting with soft mode as the default, priority-ordered contiguous-tail enforcement, and invalid-budget empty results. StaticRulesProvider.fetch() loads repo/package rules, applies package, stage, and appliesTo filters, then budgets and emits one static chunk per rule (src/context/engine/providers/static-rules.ts:253-415). Its constructor deliberately defaults enforceBudget to false (line 242), while the default factory currently forwards the resolved config at orchestrator-factory.ts:43-47. Provider budget telemetry is ProviderBudgetPressure in manifest-types.ts:27-40 and scoping telemetry is ProviderScopingReport at manifest-types.ts:42-64; the latter needs a sectionCount field without disturbing manifest-builder pass-through. ContextRequest already carries stage and budgetTokens (the test base request confirms both, static-rules.test.ts:52-55). packChunks still floor-admits static chunks unconditionally (src/context/engine/packing.ts:97-105), so bounding must happen before packing and only for static rules; feature/test-coverage floors remain unchanged. The resolved rules schema currently has only allowLegacyClaudeMd, budgetTokens, and enforceBudget=false (src/config/schemas-context.ts:55-78), mirrors a complete default at lines 232-247, has a third literal in schemas.ts:321, and is represented in ContextV2RulesConfig at runtime-types-context.ts:49-63. Existing schema tests assert the old false default (test/unit/config/schemas.test.ts:526-547) and static-rules.test.ts contains soft and enforced budget-pressure fixtures plus injectable _staticRulesDeps seams (not mock.module). Existing static-rule IDs are file-based static-rules:<ruleId>:<hash>; section IDs must add an owner-section slug so identical headings are uniquely disambiguated. New rule sections should own their inherited metadata, identifiers, token estimates, ordinal, heading and slug; new rule-budget should own contiguous section truncation, preserving source priority then ordinal. The new modules must use @/context/rules/rule-sections and @/context/rules/rule-budget from the provider: a deep relative import would increase the deep-relative ratchet, and src/context/rules has no barrel so this alias does not violate the alias-internals ratchet. canonical-loader.ts (487 lines) and static-rules.ts (521 lines) are near the 600-line hard limit, so do not grow either with the new capabilities. Migration is configuration-compatible: existing explicit enforceBudget:false continues to opt into soft behavior and direct providers without enforceBudget retain their soft constructor fallback; only schema-resolved production defaults change to true. Corpus hygiene is terminal because it assumes section-aware delivery and alters canonical files: split forbidden-patterns, delete the original, add missing scoping, and rebalance priorities; the current corpus confirms many H2 boundaries and forbidden-patterns mixes source and test rules. Risks are loss of high-priority rule text at an incorrect split boundary, non-deterministic duplicate-heading identifiers, changing priority ordering, reporting file rather than section pressure, accidentally applying a stage budget to legacy fallback, and breaking current soft-mode consumers. Tests should mirror source paths under test/unit, use _deps replacement/restoration, and verify provider.fetch rather than stubbing newly introduced intermediate call paths except for the two specified seam tests.",
+  "outOfScope": [
+    "Implementing `roles:` frontmatter filtering (the remaining half of issue #822) is not part of this spec; only `appliesTo:`, `stages:`, and `paths:` scoping are used.",
+    "Bounding the `feature` and `test-coverage` floor kinds inside `packChunks` is not part of this spec; only the `static` kind is bounded, and it is bounded at the provider rather than in packing.",
+    "Differential scoring of rule chunks is not part of this spec; every emitted rule chunk keeps `rawScore: 1.0`.",
+    "Modifying the context-engine effectiveness classifier or its `pollutionRatio` computation is not part of this spec.",
+    "Implementing the context-engine v2 write path (capture, extract, summarize, promote) or the `query_scratch` pull tool is not part of this spec.",
+    "Updating the `rules-setup` skill in the `nax-toolkit-skills` repository is not part of this spec; it is a follow-on change in a separate repository.",
+    "Splitting rule files below the H2 heading level is not part of this spec; a single H2 section is the smallest indivisible unit.",
+    "Changing the meaning of the `priority:` frontmatter field or the ascending sort order is not part of this spec.",
+    "Adding a barrel `index.ts` to `src/context/rules/` and migrating its six existing import sites is not part of this spec, even though the directory violates the project's \"2+ exports gets a barrel\" convention."
+  ],
+  "routingProfile": "cross-agent"
+}
