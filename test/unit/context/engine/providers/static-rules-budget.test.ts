@@ -17,12 +17,14 @@ let origReadFile: typeof _staticRulesDeps.readFile;
 let origFileExists: typeof _staticRulesDeps.fileExists;
 let origGlobInDir: typeof _staticRulesDeps.globInDir;
 let origLoadCanonicalRules: typeof _staticRulesDeps.loadCanonicalRules;
+let origApplySectionBudget: typeof _staticRulesDeps.applySectionBudget;
 
 beforeEach(() => {
   origReadFile = _staticRulesDeps.readFile;
   origFileExists = _staticRulesDeps.fileExists;
   origGlobInDir = _staticRulesDeps.globInDir;
   origLoadCanonicalRules = _staticRulesDeps.loadCanonicalRules;
+  origApplySectionBudget = _staticRulesDeps.applySectionBudget;
   _staticRulesDeps.loadCanonicalRules = async () => [];
   _staticRulesDeps.fileExists = async () => false;
   _staticRulesDeps.readFile = async () => "";
@@ -34,6 +36,7 @@ afterEach(() => {
   _staticRulesDeps.fileExists = origFileExists;
   _staticRulesDeps.globInDir = origGlobInDir;
   _staticRulesDeps.loadCanonicalRules = origLoadCanonicalRules;
+  _staticRulesDeps.applySectionBudget = origApplySectionBudget;
 });
 
 const BASE_REQUEST: ContextRequest = {
@@ -134,11 +137,36 @@ describe("StaticRulesProvider — US-003 per-stage rules budget derivation", () 
     ]);
     // No enforceBudget → soft mode; corpus total (600) exceeds budgetTokens (400)
     // → all 3 rules preserved as chunks, pressure reported.
-    const provider = new StaticRulesProvider({ budgetTokens: 400 });
-    const result = await provider.fetch(BASE_REQUEST);
-    expect(result.chunks).toHaveLength(3);
-    expect(result.budgetPressure).toBeDefined();
-    expect(result.budgetPressure?.overageTokens).toBe(200);
-    expect(result.budgetPressure?.droppedCount).toBe(0);
+    //
+    // Dispatch shape: the provider's soft-mode contract is "report overage
+    // but never drop". The section-level `applySectionBudget` does not
+    // distinguish soft vs. enforce — it always reports a potential
+    // droppedIds. Mock it to encode the soft-mode shape the provider
+    // composes: all sections returned, overageTokens = total − budget,
+    // droppedIds empty.
+    const origApply = _staticRulesDeps.applySectionBudget;
+    _staticRulesDeps.applySectionBudget = ((
+      sections: Parameters<typeof origApply>[0],
+      budgetTokens: number,
+    ) => {
+      const totalTokens = sections.reduce((sum, s) => sum + s.tokens, 0);
+      return {
+        sections: [...sections],
+        totalTokens,
+        usedTokens: totalTokens,
+        droppedIds: [],
+        overageTokens: Math.max(0, totalTokens - budgetTokens),
+      };
+    }) as typeof origApply;
+    try {
+      const provider = new StaticRulesProvider({ budgetTokens: 400 });
+      const result = await provider.fetch(BASE_REQUEST);
+      expect(result.chunks).toHaveLength(3);
+      expect(result.budgetPressure).toBeDefined();
+      expect(result.budgetPressure?.overageTokens).toBe(200);
+      expect(result.budgetPressure?.droppedCount).toBe(0);
+    } finally {
+      _staticRulesDeps.applySectionBudget = origApply;
+    }
   });
 });

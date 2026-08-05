@@ -641,13 +641,14 @@ describe("StaticRulesProvider — US-003 budget pressure (soft, enforceBudget=fa
   });
 
   test("[US-003 AC 2] budgetPressure.overageTokens equals store total minus budgetTokens", async () => {
-    // Section-level tokens are estimateTokens(content) ≈ ceil(content.length/4).
-    // Three rules of 40 chars → three sections of ~10 tokens → 30 total.
+    // Section-level tokens inherit rule.tokens proportionally (each rule with no
+    // H2 splits into a single section, so section.tokens === rule.tokens).
+    // Three rules of tokens 10 → three sections of 10 tokens → 30 total.
     // Budget 20 → overage 10, and one section is reported as dropped.
     setupCanonical([
-      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 200, priority: 1 },
-      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 200, priority: 2 },
-      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 200, priority: 3 },
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 10, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 10, priority: 3 },
     ]);
     const provider = new StaticRulesProvider({ budgetTokens: 20 });
     const result = await provider.fetch(BASE_REQUEST);
@@ -658,10 +659,13 @@ describe("StaticRulesProvider — US-003 budget pressure (soft, enforceBudget=fa
   });
 
   test("[US-003 AC 3] budgetPressure.droppedCount reflects section-level potential drops in soft mode", async () => {
+    // Sections inherit rule.tokens proportionally. With 3 rules of 10, 10, 20
+    // and budget 20: section a(10) and b(10) fit (10 + 10 = 20 ≤ 20), section
+    // c(20) overflows → dropped. droppedCount=1, soft mode keeps all 3 chunks.
     setupCanonical([
-      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 200, priority: 1 },
-      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 200, priority: 2 },
-      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 200, priority: 3 },
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 10, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 20, priority: 3 },
     ]);
     const provider = new StaticRulesProvider({ budgetTokens: 20 });
     const result = await provider.fetch(BASE_REQUEST);
