@@ -2,7 +2,7 @@
 priority: 40
 appliesTo:
   - "src/**/*.ts"
-  - "bin/**/*.ts"
+  - "bin/*.ts"
 stages:
   - "context"
   - "execution"
@@ -70,7 +70,7 @@ const workdir = options.dir ?? process.cwd();
 
 ### 2. No hardcoded test-file patterns
 
-Covered by [forbidden-patterns.md](./forbidden-patterns.md) → **Test-File Classification Convention**. Summary: all `.test.ts` / `.spec.ts` / `_test.go` / `test/unit/` literals outside `src/test-runners/` are banned. Use `resolveTestFilePatterns(config, workdir, packageDir)` (ADR-009 SSOT). Per-package overrides live in `.nax/mono/<packageDir>/config.json`.
+Covered by [forbidden-patterns-tests.md](./forbidden-patterns-tests.md) → **Test-File Classification Convention**. Summary: all `.test.ts` / `.spec.ts` / `_test.go` / `test/unit/` literals outside `src/test-runners/` are banned. Use `resolveTestFilePatterns(config, workdir, packageDir)` (ADR-009 SSOT). Per-package overrides live in `.nax/mono/<packageDir>/config.json`.
 
 ### 3. No hardcoded test runner commands
 
@@ -224,7 +224,7 @@ Do not add new violations to this table — open a GitHub issue and reference it
 
 - ADR-009 — Test-file pattern SSOT (`docs/adr/ADR-009-test-file-pattern-ssot.md`)
 - Amendment C AC-54 — Dual workdir scoping (`docs/specs/SPEC-context-engine-v2.md`)
-- [forbidden-patterns.md](./forbidden-patterns.md) — Full banned-pattern list
+- [forbidden-patterns-source.md](./forbidden-patterns-source.md) / [forbidden-patterns-tests.md](./forbidden-patterns-tests.md) — Full banned-pattern list
 - [config-patterns.md](./config-patterns.md) — Per-package config layering
 - Resolver: `src/test-runners/resolver.ts`
 - Detectors: `src/project/detector.ts`, `src/test-runners/detect/`

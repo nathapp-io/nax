@@ -612,7 +612,8 @@ describe("loadCanonicalRules — HTML-comment displaced-frontmatter warning prop
 // The four test-authoring rules (test-writing.md, test-architecture.md,
 // test-helpers.md, testing-commands.md) declare a `stages:` list that excludes
 // plan, acceptance, and route. Rules that genuinely apply everywhere
-// (forbidden-patterns.md, project-conventions.md) declare no `stages:` key.
+// (forbidden-patterns-source.md, forbidden-patterns-tests.md,
+// project-conventions.md) declare no `stages:` key.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("loadCanonicalRules — US-006 real .nax/rules store stage scoping", () => {
@@ -648,9 +649,23 @@ describe("loadCanonicalRules — US-006 real .nax/rules store stage scoping", ()
     expect(rule?.stages).not.toContain("plan");
   });
 
-  test("[US-006 AC 2] returns forbidden-patterns.md with stages undefined", async () => {
+  // forbidden-patterns.md was split into -source/-tests by SPEC-bounded-rules-floor
+  // US-005. Both halves keep the original "applies at every stage" semantics: they
+  // scope by `appliesTo:` only and still declare no `stages:` key.
+  test("[US-006 AC 2] returns forbidden-patterns-source.md with stages undefined", async () => {
     const rules = await loadCanonicalRules(process.cwd());
-    const rule = rules.find((r) => r.path === "forbidden-patterns.md" || r.fileName === "forbidden-patterns.md");
+    const rule = rules.find(
+      (r) => r.path === "forbidden-patterns-source.md" || r.fileName === "forbidden-patterns-source.md",
+    );
+    expect(rule).toBeDefined();
+    expect(rule?.stages).toBeUndefined();
+  });
+
+  test("[US-006 AC 2] returns forbidden-patterns-tests.md with stages undefined", async () => {
+    const rules = await loadCanonicalRules(process.cwd());
+    const rule = rules.find(
+      (r) => r.path === "forbidden-patterns-tests.md" || r.fileName === "forbidden-patterns-tests.md",
+    );
     expect(rule).toBeDefined();
     expect(rule?.stages).toBeUndefined();
   });

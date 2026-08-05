@@ -2,7 +2,7 @@
 priority: 15
 appliesTo:
   - "src/**/*.ts"
-  - "bin/**/*.ts"
+  - "bin/*.ts"
 stages:
   - "context"
   - "execution"

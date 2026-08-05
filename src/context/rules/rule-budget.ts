@@ -46,6 +46,10 @@ export interface SectionBudgetResult {
 }
 
 function sectionIdentifier(section: RuleSection): string {
+  // A caller may supply a precomputed stable id on the section; honour it when
+  // present. Not declared on `RuleSection` because it is an optional caller
+  // convention rather than part of the splitter's output contract — the
+  // feature's AC-15/16/18 fixtures rely on this precedence.
   const sectionId = (section as { sectionId?: string }).sectionId;
   if (sectionId) return sectionId;
   const owner = section.ruleId ?? section.rulePath ?? "";

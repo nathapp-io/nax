@@ -13,7 +13,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { StaticRulesProvider, _staticRulesDeps } from "../../../../../src/context/engine/providers/static-rules";
+import { StaticRulesProvider, _staticRulesDeps } from "@/context/engine";
 import type { RuleSection } from "@/context/rules/rule-sections";
 import type { SectionBudgetResult } from "@/context/rules/rule-budget";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";

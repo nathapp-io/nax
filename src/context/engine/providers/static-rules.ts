@@ -336,17 +336,23 @@ export class StaticRulesProvider implements IContextProvider {
         const sectionRuleIdMap = new Map<RuleSection, string>();
         const sectionRulePathMap = new Map<RuleSection, string>();
         for (const rule of scopedRules) {
-          const sections = _staticRulesDeps.splitRuleIntoSections(rule);
+          const rawSections = _staticRulesDeps.splitRuleIntoSections(rule);
           const ruleId = canonicalRuleId(rule);
           const rulePath = canonicalRulePath(rule);
           // When the rule declares precomputed tokens, distribute them proportionally
           // to each section so the section-level budget honours the rule-level estimate.
-          if (rule.tokens != null && rule.content.length > 0) {
-            const ruleContentLen = rule.content.length;
-            for (const section of sections) {
-              section.tokens = Math.ceil(rule.tokens * (section.content.length / ruleContentLen));
-            }
-          }
+          // Rebuild rather than mutate: `splitRuleIntoSections` is pure and
+          // `RuleSection.tokens` is documented as the estimate of the section's own
+          // content, so overwriting it in place would contradict that contract.
+          const ruleTokens = rule.tokens;
+          const ruleContentLen = rule.content.length;
+          const sections =
+            ruleTokens != null && ruleContentLen > 0
+              ? rawSections.map((section) => ({
+                  ...section,
+                  tokens: Math.ceil(ruleTokens * (section.content.length / ruleContentLen)),
+                }))
+              : rawSections;
           for (const section of sections) {
             sectionRuleIdMap.set(section, ruleId);
             sectionRulePathMap.set(section, rulePath);
