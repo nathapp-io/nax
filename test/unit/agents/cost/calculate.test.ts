@@ -149,4 +149,19 @@ describe("effort-suffix normalization (#1464)", () => {
     expect(resolvePricingSource("totally-unknown-model")).toBe("fallback-rates");
     expect(resolvePricingSource("totally-unknown-model[high]")).toBe("fallback-rates");
   });
+
+  // The defect behind #1464's placement decision was these two DISAGREEING: the
+  // number is priced upstream at the adapter from the raw spec, the label is
+  // resolved downstream in the cost middleware. Normalizing in only one of them
+  // yields a row claiming `model-rates` over a number built on the generic card.
+  // Asserting each half separately cannot catch that — this binds them.
+  test("a model reported as model-rates is genuinely NOT priced on the fallback card", () => {
+    const usage = { inputTokens: 1_000_000, outputTokens: 1_000_000 };
+    const fallbackPrice = estimateCostFromTokenUsage(usage, "totally-unknown-model");
+
+    for (const model of ["haiku[high]", "haiku", "opus[medium]"]) {
+      expect(resolvePricingSource(model)).toBe("model-rates");
+      expect(estimateCostFromTokenUsage(usage, model)).not.toBeCloseTo(fallbackPrice, 5);
+    }
+  });
 });
