@@ -1,0 +1,142 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `parseFrontmatter` receives an HTML comment immediately followed by a `---` frontmatter block, then `warnings` contains a displaced-frontmatter entry that includes the supplied `filePath`.",
+    "refined": "When `parseFrontmatter` receives an HTML comment immediately followed by a `---` frontmatter block, then `warnings` contains a displaced-frontmatter entry that includes the supplied `filePath`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `parseFrontmatter` receives an HTML comment immediately followed by a block declaring `priority: 90`, then `priority` equals `FRONTMATTER_PRIORITY_DEFAULT`.",
+    "refined": "When `parseFrontmatter` receives an HTML comment immediately followed by a block declaring `priority: 90`, then `priority` equals `FRONTMATTER_PRIORITY_DEFAULT`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `parseFrontmatter` receives an HTML comment immediately followed by a frontmatter block declaring `paths`, then `paths` is undefined.",
+    "refined": "When `parseFrontmatter` receives an HTML comment immediately followed by a frontmatter block declaring `paths`, then `paths` is undefined.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `parseFrontmatter` receives an HTML comment immediately followed by a frontmatter block declaring `appliesTo`, then `appliesTo` is undefined.",
+    "refined": "When `parseFrontmatter` receives an HTML comment immediately followed by a frontmatter block declaring `appliesTo`, then `appliesTo` is undefined.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `parseFrontmatter` receives a multi-line leading HTML comment followed by a `---` frontmatter block, then `warnings` contains a displaced-frontmatter entry.",
+    "refined": "When `parseFrontmatter` receives a multi-line leading HTML comment followed by a `---` frontmatter block, then `warnings` contains a displaced-frontmatter entry.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When `parseFrontmatter` receives a leading HTML comment with no `---` block anywhere in the content, then `warnings` is an empty array.",
+    "refined": "When `parseFrontmatter` receives a leading HTML comment with no `---` block anywhere in the content, then `warnings` is an empty array.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When `parseFrontmatter` receives a leading HTML comment, ordinary prose, and a later Markdown `---` horizontal rule, then `warnings` is an empty array.",
+    "refined": "When `parseFrontmatter` receives a leading HTML comment, ordinary prose, and a later Markdown `---` horizontal rule, then `warnings` is an empty array.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When `parseFrontmatter` receives a blank line, then a leading HTML comment, then a `---` block, then `warnings` contains exactly one entry.",
+    "refined": "When `parseFrontmatter` receives a blank line, then a leading HTML comment, then a `---` block, then `warnings` contains exactly one entry.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When `parseFrontmatter` receives a `---` frontmatter block beginning at byte 0, then `warnings` is an empty array.",
+    "refined": "When `parseFrontmatter` receives a `---` frontmatter block beginning at byte 0, then `warnings` is an empty array.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `parseFrontmatter` receives a leading blank line directly followed by a valid frontmatter block declaring `priority: 90`, then it returns priority `90` and exactly one displaced-frontmatter warning.",
+    "refined": "When `parseFrontmatter` receives a leading blank line directly followed by a valid frontmatter block declaring `priority: 90`, then it returns priority `90` and exactly one displaced-frontmatter warning.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When `loadCanonicalRules` reads a rule store containing a file whose frontmatter is preceded by an HTML comment, then the returned rule's `warnings` include the displaced-frontmatter entry.",
+    "refined": "When `loadCanonicalRules` reads a rule store containing a file whose frontmatter is preceded by an HTML comment, then the returned rule's `warnings` include the displaced-frontmatter entry.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When `rulesLintCommand` loads a rule carrying an HTML-comment-displaced-frontmatter parser warning, then its `rules-lint` logger warning message includes that displaced-frontmatter text.",
+    "refined": "Given a rule file at `<cwd>/.nax/rules/<name>.md` containing a leading HTML comment (e.g. `<!-- text -->`) before any `---` frontmatter delimiter, when `rulesLintCommand({ cwd, logger, discoverWorkspacePackages: async () => [] })` resolves, then `logger.warn` was called with first argument `\"rules-lint\"` and second argument an object containing `displacedFrontmatter: \"<HTML comment text>\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When `discoverWorkspacePackages` resolves to `[]` and a loaded rule declares `paths`, then `rulesLintCommand` emits a `rules-lint` warning whose structured `file` field names that rule's file path.",
+    "refined": "Given a rule file at `<cwd>/.nax/rules/<name>.md` containing `paths: [\"*.ts\"]` and no leading HTML-comment displacement, when `rulesLintCommand({ cwd, logger, discoverWorkspacePackages: async () => [] })` resolves, then `logger.warn` was called where the second argument is an object with field `file` equal to the absolute path of that rule file, and field `code` equal to `\"INERT_PATHS\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When `rulesLintCommand` emits an inert-`paths:` warning, then the warning message names `appliesTo` as the alternative for file globs.",
+    "refined": "When `logger.warn` is called with second argument containing `code: \"INERT_PATHS\"`, then the third argument (message string) contains the identifier `appliesTo`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When `discoverWorkspacePackages` resolves to a non-empty package list and a loaded rule declares `paths`, then `rulesLintCommand` emits no inert-`paths:` warning for that rule.",
+    "refined": "Given a rule file containing `paths: [\"*.ts\"]` and `discoverWorkspacePackages: async () => [\"pkg/a\", \"pkg/b\"]`, when `rulesLintCommand({ cwd, logger, discoverWorkspacePackages })` resolves, then `logger.warn` was never called with a second argument containing `code: \"INERT_PATHS\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When `discoverWorkspacePackages` resolves to `[]` and a loaded rule declares no `paths` key, then `rulesLintCommand` emits no inert-`paths:` warning for that rule.",
+    "refined": "Given a rule file containing no `paths` key and `discoverWorkspacePackages: async () => []`, when `rulesLintCommand({ cwd, logger, discoverWorkspacePackages })` resolves, then `logger.warn` was never called with a second argument containing `code: \"INERT_PATHS\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When `rulesLintCommand` emits only warnings, then it resolves without setting a non-zero process exit code.",
+    "refined": "When `rulesLintCommand` resolves (without throwing), `process.exitCode` is `undefined` or `0`. The implementation must not set `process.exitCode` to any positive integer when warnings are the only deviations.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When an inert-`paths:` warning is emitted, then the final stdout `[WARN] Canonical rules lint completed with N warning(s)` summary includes that warning in `N`.",
+    "refined": "When `logger.warn` is called with a second argument containing `code: \"INERT_PATHS\"`, then stdout contains the string `\"[WARN] Canonical rules lint completed with N warning(s)\"` where N is at least 1, and the stderr output (via logger) includes a `warningCount` field equal to N.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When `discoverWorkspacePackages` rejects, then `rulesLintCommand` emits no inert-`paths:` warning.",
+    "refined": "Given `discoverWorkspacePackages: async () => Promise.reject(new Error(\"failed\"))`, when `rulesLintCommand({ cwd, logger, discoverWorkspacePackages })` resolves (does not throw), then `logger.warn` was never called with a second argument containing `code: \"INERT_PATHS\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When `discoverWorkspacePackages` rejects, then `rulesLintCommand` still emits its final stdout summary line.",
+    "refined": "Given `discoverWorkspacePackages: async () => Promise.reject(new Error(\"failed\"))`, when `rulesLintCommand({ cwd, logger, discoverWorkspacePackages })` resolves, then stdout contains either `\"[WARN] Canonical rules lint completed with N warning(s)\"` or `\"[OK] Canonical rules lint passed\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  }
+]
