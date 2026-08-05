@@ -78,7 +78,7 @@ function sectionOf(rule: CanonicalRule, partial: Partial<RuleSection> & { slug: 
     ruleId: rule.id ?? rule.fileName.replace(/\.md$/i, ""),
     rulePath: rule.path ?? rule.fileName,
     content: partial.content,
-    tokens: Math.max(1, Math.ceil(partial.content.length / 4)),
+    tokens: partial.tokens ?? Math.max(1, Math.ceil(partial.content.length / 4)),
     priority: rule.priority,
     paths: rule.paths,
     appliesTo: rule.appliesTo,

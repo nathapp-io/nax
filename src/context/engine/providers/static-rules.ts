@@ -15,14 +15,14 @@
 
 import { createHash } from "node:crypto";
 import { join, relative } from "node:path";
-import { NaxError } from "../../../errors";
-import { getLogger } from "../../../logger";
-import { errorMessage } from "../../../utils/errors";
-import {
-  DEFAULT_CANONICAL_RULES_BUDGET_TOKENS,
-  applyCanonicalRulesBudget,
-  loadCanonicalRules,
-} from "../../rules/canonical-loader";
+import { applySectionBudget } from "@/context";
+import type { SectionBudgetResult } from "@/context";
+import { splitRuleIntoSections } from "@/context";
+import type { RuleSection } from "@/context";
+import { NaxError } from "@/errors";
+import { getLogger } from "@/logger";
+import { errorMessage } from "@/utils/errors";
+import { DEFAULT_CANONICAL_RULES_BUDGET_TOKENS, loadCanonicalRules } from "../../rules/canonical-loader";
 import type { CanonicalRule } from "../../rules/canonical-loader";
 import type { ProviderBudgetPressure, ProviderScopingReport } from "../manifest-types";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
@@ -42,19 +42,8 @@ export const _staticRulesDeps = {
     }
   },
   loadCanonicalRules,
-  // US-004: section-level chunking seams. Stubs throw so a misconfigured
-  // call site fails loudly; the implementer wires the real
-  // splitRuleIntoSections / applySectionBudget functions here.
-  splitRuleIntoSections: (() => {
-    throw new NaxError("US-004 stub: splitRuleIntoSections not wired", "STATIC_RULES_STUB_UNWIRED", {
-      stage: "static-rules",
-    });
-  }) as typeof import("../../rules/rule-sections").splitRuleIntoSections,
-  applySectionBudget: (() => {
-    throw new NaxError("US-004 stub: applySectionBudget not wired", "STATIC_RULES_STUB_UNWIRED", {
-      stage: "static-rules",
-    });
-  }) as typeof import("../../rules/rule-budget").applySectionBudget,
+  splitRuleIntoSections,
+  applySectionBudget,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -215,28 +204,22 @@ function ruleMatchesPackage(paths: string[] | undefined, repoRoot: string, packa
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Build a `ProviderBudgetPressure` from the budget function's output, or
- * return `null` when the canonical-rule total fits inside the budget and
- * there is nothing to report. Always called with the rules the budget was
- * applied to (scoped, pre-truncation) so dropped ids/indexes line up.
+ * Build a `ProviderBudgetPressure` from the section budget result, or
+ * return `null` when there is no overage and nothing was dropped.
  */
-function buildBudgetPressure(
-  scopedRules: CanonicalRule[],
-  budgetResult: ReturnType<typeof applyCanonicalRulesBudget>,
+function buildSectionBudgetPressure(
+  allSections: RuleSection[],
+  budgetResult: SectionBudgetResult,
 ): ProviderBudgetPressure | null {
-  const overageTokens = budgetResult.overageTokens;
-  const droppedCount = budgetResult.droppedCount;
-  if (overageTokens <= 0 && droppedCount <= 0) return null;
+  const { droppedIds, overageTokens } = budgetResult;
+  const droppedCount = droppedIds.length;
+  if (droppedCount === 0 && overageTokens <= 0) return null;
 
+  const kept = new Set(budgetResult.sections);
   let droppedTokens = 0;
-  const droppedIds: string[] = [];
-  if (droppedCount > 0) {
-    const kept = new Set(budgetResult.rules);
-    for (const rule of scopedRules) {
-      if (!kept.has(rule)) {
-        droppedTokens += rule.tokens ?? estimateTokens(rule.content);
-        droppedIds.push(canonicalRuleId(rule));
-      }
+  for (const section of allSections) {
+    if (!kept.has(section)) {
+      droppedTokens += section.tokens;
     }
   }
 
@@ -343,41 +326,55 @@ export class StaticRulesProvider implements IContextProvider {
           appliesToFilteredIds,
           appliesToInertCount,
           scopeFileCount: request.scopeFiles?.length ?? 0,
+          sectionCount: 0,
         };
 
         const effectiveBudget = Math.min(this.rulesShare * request.budgetTokens, this.budgetTokens);
-        const budgetResult = applyCanonicalRulesBudget(scopedRules, effectiveBudget, {
-          enforce: this.enforceBudget,
-        });
+
+        // Split each scoped rule into sections, pairing each section with its parent
+        // rule identity so chunk ids/content labels preserve the owning rule's fileName.
+        const allSections: RuleSection[] = [];
+        const sectionRuleIdMap = new Map<RuleSection, string>();
+        const sectionRulePathMap = new Map<RuleSection, string>();
+        for (const rule of scopedRules) {
+          const sections = _staticRulesDeps.splitRuleIntoSections(rule);
+          const ruleId = canonicalRuleId(rule);
+          const rulePath = canonicalRulePath(rule);
+          for (const section of sections) {
+            sectionRuleIdMap.set(section, ruleId);
+            sectionRulePathMap.set(section, rulePath);
+          }
+          allSections.push(...sections);
+        }
+        scopingReport.sectionCount = allSections.length;
+
+        const budgetResult = _staticRulesDeps.applySectionBudget(allSections, effectiveBudget);
         if (budgetResult.totalTokens >= Math.floor(effectiveBudget * 0.75)) {
           logger.warn("static-rules", "Canonical rules are approaching/exceeding static rules budget", {
             storyId: request.storyId,
             totalTokens: budgetResult.totalTokens,
             budgetTokens: effectiveBudget,
-            droppedCount: budgetResult.droppedCount,
+            droppedCount: budgetResult.droppedIds.length,
           });
         }
-        if (budgetResult.droppedCount > 0) {
-          logger.warn("static-rules", "Canonical rules truncated by static rules budget", {
+        if (budgetResult.droppedIds.length > 0) {
+          logger.warn("static-rules", "Rule sections truncated by static rules budget", {
             storyId: request.storyId,
             totalTokens: budgetResult.totalTokens,
             usedTokens: budgetResult.usedTokens,
             budgetTokens: effectiveBudget,
-            droppedCount: budgetResult.droppedCount,
+            droppedCount: budgetResult.droppedIds.length,
           });
         }
 
-        const effectiveRules = budgetResult.rules;
-        if (effectiveRules.length === 0) {
-          logger.warn("static-rules", "No canonical rules fit in static rules budget", {
+        const effectiveSections = this.enforceBudget ? budgetResult.sections : allSections;
+        if (effectiveSections.length === 0) {
+          logger.warn("static-rules", "No rule sections fit in static rules budget", {
             storyId: request.storyId,
             budgetTokens: effectiveBudget,
-            totalScopedRules: scopedRules.length,
+            totalScopedSections: allSections.length,
           });
-          // Even with zero chunks, still report pressure so the orchestrator can
-          // observe the overage. The provider emits `droppedTokens`/`droppedIds`
-          // for the full input — the budget function did the truncation above.
-          const emptyPressure = buildBudgetPressure(scopedRules, budgetResult);
+          const emptyPressure = buildSectionBudgetPressure(allSections, budgetResult);
           return {
             chunks: [],
             pullTools: [],
@@ -385,16 +382,14 @@ export class StaticRulesProvider implements IContextProvider {
             scopingReport,
           };
         }
-        const chunks = effectiveRules.map((rule) => {
-          const ruleId = canonicalRuleId(rule);
-          const rulePath = canonicalRulePath(rule);
-          const content = `### ${rulePath}\n\n${rule.content}`;
+        const chunks = effectiveSections.map((section) => {
+          const ruleId = sectionRuleIdMap.get(section) ?? section.ruleId ?? "unknown";
+          const rulePath = sectionRulePathMap.get(section) ?? section.rulePath ?? ruleId;
+          const content = `### ${rulePath}\n\n${section.content}`;
           const tokens = estimateTokens(content);
-          const hash = contentHash8(rule.content);
+          const hash = contentHash8(section.content);
           return {
-            // Include fileName so two rules with identical content but different names
-            // are not deduplicated by the packing stage (content-hash collision).
-            id: `static-rules:${ruleId}:${hash}`,
+            id: `static-rules:${ruleId}:${section.slug}:${hash}`,
             kind: "static" as const,
             scope: "project" as const,
             role: ["all"] as ["all"],
@@ -406,12 +401,12 @@ export class StaticRulesProvider implements IContextProvider {
 
         logger.debug("static-rules", "Loaded canonical rules", {
           storyId: request.storyId,
-          fileCount: effectiveRules.length,
+          sectionCount: effectiveSections.length,
           totalCanonicalRules: mergedRules.length,
-          files: effectiveRules.map((r) => canonicalRulePath(r)),
+          files: effectiveSections.map((s) => s.rulePath ?? "unknown"),
         });
 
-        const pressure = buildBudgetPressure(scopedRules, budgetResult);
+        const pressure = buildSectionBudgetPressure(allSections, budgetResult);
         return {
           chunks,
           pullTools: [],

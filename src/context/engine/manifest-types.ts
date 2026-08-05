@@ -61,6 +61,8 @@ export interface ProviderScopingReport {
   appliesToInertCount: number;
   /** Size of the scope set the filters ran against. The list itself is not persisted. */
   scopeFileCount: number;
+  /** Number of rule sections remaining after stage + appliesTo filtering (US-004). */
+  sectionCount: number;
 }
 
 /** A single context chunk produced by a provider and packed into the bundle. */
