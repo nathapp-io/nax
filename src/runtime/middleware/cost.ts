@@ -14,17 +14,28 @@ import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus, OperationCom
  *     so a row *without* this field must be read as model-unattributed rather
  *     than treating its "unknown" as a value.
  *
- * 2 — current. Guarantees, on every row: `model` (falling back to "unknown"
+ * 2 — Guarantees, on every row: `model` (falling back to "unknown"
  *     only when the dispatch resolved none), `sessionRole`, `pricingSource`,
  *     `schemaVersion`, and `projectKey` when the runtime supplied one.
  *     `modelTier` is present only when a tier selected the model — an explicit
  *     `{ agent, model }` pin reports none rather than a fabricated tier.
  *     Error rows additionally carry `kind: "error"`.
  *
+ * 3 — current (#1464). `model` is now the bare id with any `[effort]` suffix
+ *     stripped, so rate cards keyed on the bare id (e.g. `gpt-5.6-luna`) apply
+ *     to `MODEL_PRICING` lookups that previously could never match the
+ *     composite string. `effort` is present when the resolved model spec named
+ *     a reasoning effort, omitted otherwise.
+ *
+ *     IMPORTANT: v2 rows carry COMPOSITE models (`gpt-5.6-luna[high]`). A
+ *     consumer aggregating across the v2/v3 boundary will see
+ *     `gpt-5.6-luna[high]` and `gpt-5.6-luna` as distinct keys unless it
+ *     normalizes v2 rows itself.
+ *
  * Bump this when adding or changing a field consumers key on, and extend the
  * list above — the constant is how a reader learns what a row guarantees.
  */
-export const COST_ROW_SCHEMA_VERSION = 2;
+export const COST_ROW_SCHEMA_VERSION = 3;
 
 export function attachCostSubscriber(
   bus: IDispatchEventBus,
@@ -59,6 +70,7 @@ export function attachCostSubscriber(
       // resolved model, but that is now a real signal rather than a constant.
       model: event.model ?? "unknown",
       ...(event.modelTier !== undefined ? { modelTier: event.modelTier } : {}),
+      ...(event.effort !== undefined ? { effort: event.effort } : {}),
       ...(event.profile !== undefined ? { profile: event.profile } : {}),
       stage: event.stage,
       // Both already on the event and previously discarded. sessionRole is the

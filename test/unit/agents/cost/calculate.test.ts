@@ -109,3 +109,44 @@ describe("resolvePricingSource", () => {
     expect(estimateCostFromTokenUsage(usage, "haiku")).toBeCloseTo(4.8, 5);
   });
 });
+
+// ─── #1464: effort-suffix normalization before the rate-card lookup ─────────
+//
+// nax profiles name codex models with a reasoning-effort suffix, e.g.
+// "claude-sonnet-4[high]". Both pricing functions must decompose that suffix
+// via parseModelSpec before keying MODEL_PRICING, so a rate card added for
+// the bare model id actually takes effect.
+
+describe("effort-suffix normalization (#1464)", () => {
+  test("estimateCostFromTokenUsage prices a suffixed model identically to its bare id", () => {
+    const usage = { inputTokens: 1_000_000, outputTokens: 1_000_000 };
+    const bare = estimateCostFromTokenUsage(usage, "claude-sonnet-4");
+    const suffixed = estimateCostFromTokenUsage(usage, "claude-sonnet-4[high]");
+    expect(suffixed).toBeCloseTo(bare, 10);
+  });
+
+  test("a suffixed known model prices differently from a suffixed unpriced model", () => {
+    // haiku ($0.8/$4 per 1M) diverges from the generic fallback card ($3/$15
+    // per 1M) — unlike claude-sonnet-4, which happens to match it, so this
+    // proves the real rate card was hit rather than the fallback.
+    const usage = { inputTokens: 1_000_000, outputTokens: 1_000_000 };
+    const known = estimateCostFromTokenUsage(usage, "haiku[high]");
+    const unpriced = estimateCostFromTokenUsage(usage, "totally-unknown-model[high]");
+    expect(known).not.toBeCloseTo(unpriced, 5);
+  });
+
+  test("resolvePricingSource reports model-rates for a suffixed known model", () => {
+    expect(resolvePricingSource("claude-sonnet-4[high]")).toBe("model-rates");
+  });
+
+  test("resolvePricingSource still reports unknown-model for undefined, empty, and 'unknown'", () => {
+    expect(resolvePricingSource(undefined)).toBe("unknown-model");
+    expect(resolvePricingSource("")).toBe("unknown-model");
+    expect(resolvePricingSource("unknown")).toBe("unknown-model");
+  });
+
+  test("resolvePricingSource reports fallback-rates for a genuinely unknown model, suffixed or not", () => {
+    expect(resolvePricingSource("totally-unknown-model")).toBe("fallback-rates");
+    expect(resolvePricingSource("totally-unknown-model[high]")).toBe("fallback-rates");
+  });
+});

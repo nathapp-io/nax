@@ -16,26 +16,35 @@ import { NaxError } from "../errors";
 import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "../runtime/dispatch-events";
 import type { SessionRole } from "../runtime/session-role";
 import { errorMessage } from "../utils/errors";
+import { parseModelSpec } from "./acp/model-spec";
 import type { RunAsSessionOpts } from "./manager-types";
 import type { CompleteOptions, SessionHandle, TurnResult } from "./types";
 
 /**
- * Model attribution fields for a dispatch event (#1433).
+ * Model attribution fields for a dispatch event (#1433, #1464).
  *
- * Both keys are omitted rather than set to `undefined` when unknown: a cost row
+ * All keys are omitted rather than set to `undefined` when unknown: a cost row
  * that says `model: "unknown"` because nothing resolved a model must stay
  * distinguishable from one that was never attributed at all.
  *
  * `modelTier` is absent whenever an explicit `{ agent, model }` pin bypassed
  * tier resolution — reporting a tier there would claim a tier that never
  * selected the model.
+ *
+ * `model` is decomposed via `parseModelSpec` before it is stamped, so the
+ * event always carries the bare model id — never the `model[effort]`
+ * composite nax profiles use to name codex reasoning effort. `effort` carries
+ * the suffix when the spec had one, and is omitted (not `undefined`) when it
+ * did not, for the same reason `modelTier` is omitted rather than nulled.
  */
 function modelAttribution(src: {
   modelDef?: ModelDef;
   modelTier?: ModelTier;
-}): { model?: string; modelTier?: string } {
+}): { model?: string; effort?: string; modelTier?: string } {
+  const spec = src.modelDef?.model !== undefined ? parseModelSpec(src.modelDef.model) : undefined;
   return {
-    ...(src.modelDef?.model !== undefined ? { model: src.modelDef.model } : {}),
+    ...(spec !== undefined ? { model: spec.model } : {}),
+    ...(spec?.effort !== undefined ? { effort: spec.effort } : {}),
     ...(src.modelTier !== undefined ? { modelTier: src.modelTier } : {}),
   };
 }

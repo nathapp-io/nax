@@ -531,3 +531,53 @@ describe("dispatch events carry the model (#1433)", () => {
     expect(received[0]?.profile).toBe("cc-acceptance");
   });
 });
+
+// ─── #1464: modelAttribution decomposes the effort suffix ──────────────────
+
+describe("dispatch events decompose the effort suffix (#1464)", () => {
+  test("runAsSession emits the bare model plus effort for a suffixed spec", async () => {
+    const bus = new DispatchEventBus();
+    const manager = new AgentManager(DEFAULT_CONFIG, undefined, {
+      sendPrompt: mock(async () => makeTurnResult("hello")),
+      dispatchEvents: bus,
+    });
+
+    const received: SessionTurnDispatchEvent[] = [];
+    bus.onDispatch((e) => {
+      if (e.kind === "session-turn") received.push(e);
+    });
+
+    const handle: SessionHandle = {
+      id: "nax-test-handle",
+      agentName: "codex",
+      modelDef: { provider: "openai", model: "gpt-5.6-luna[high]" },
+    };
+    await manager.runAsSession("codex", handle, "p", { pipelineStage: "run", storyId: "US-006" });
+
+    expect(received[0]?.model).toBe("gpt-5.6-luna");
+    expect(received[0]?.effort).toBe("high");
+  });
+
+  test("runAsSession omits effort entirely for a bare model spec", async () => {
+    const bus = new DispatchEventBus();
+    const manager = new AgentManager(DEFAULT_CONFIG, undefined, {
+      sendPrompt: mock(async () => makeTurnResult("hello")),
+      dispatchEvents: bus,
+    });
+
+    const received: SessionTurnDispatchEvent[] = [];
+    bus.onDispatch((e) => {
+      if (e.kind === "session-turn") received.push(e);
+    });
+
+    const handle: SessionHandle = {
+      id: "nax-test-handle",
+      agentName: "claude",
+      modelDef: { provider: "anthropic", model: "haiku" },
+    };
+    await manager.runAsSession("claude", handle, "p", { pipelineStage: "run", storyId: "US-007" });
+
+    expect(received[0]?.model).toBe("haiku");
+    expect("effort" in (received[0] ?? {})).toBe(false);
+  });
+});

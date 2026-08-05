@@ -29,6 +29,13 @@ export interface DispatchEventBase {
   /** Tier `model` resolved from, when it came from one. Attribution only. */
   readonly modelTier?: string;
   /**
+   * Reasoning effort from a nax-level `model[effort]` profile suffix
+   * (`parseModelSpec`), when the resolved model spec carried one. Absent for
+   * bare model ids — currently only codex profiles carry a suffix. Attribution
+   * only; subscribers record it, never branch on it.
+   */
+  readonly effort?: string;
+  /**
    * Resolved run-profile chain as a display string ("cc-acceptance", "a+b", or
    * "default"). Profiles repoint agent and model per stage but appear nowhere
    * else in run artifacts, so without this a cost row cannot distinguish a
