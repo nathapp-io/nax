@@ -42,9 +42,17 @@ export function createDefaultOrchestrator(
 ): ContextOrchestrator {
   const allowLegacyClaudeMd = config.context?.v2?.rules?.allowLegacyClaudeMd ?? false;
   const rulesBudgetTokens = config.context?.v2?.rules?.budgetTokens ?? DEFAULT_CANONICAL_RULES_BUDGET_TOKENS;
-  const enforceBudget = config.context?.v2?.rules?.enforceBudget ?? false;
+  const rulesShare = config.context?.v2?.rules?.rulesShare ?? 0.4;
+  // Schema default is `true`; mirror it so the orchestrator matches production
+  // resolved config when callers pass partial configs that omit the rules sub-object.
+  const enforceBudget = config.context?.v2?.rules?.enforceBudget ?? true;
   const providers: IContextProvider[] = [
-    new StaticRulesProvider({ allowLegacyClaudeMd, budgetTokens: rulesBudgetTokens, enforceBudget }),
+    new StaticRulesProvider({
+      allowLegacyClaudeMd,
+      budgetTokens: rulesBudgetTokens,
+      rulesShare,
+      enforceBudget,
+    }),
     new FeatureContextProviderV2(story, config),
   ];
   // TestCoverageProvider is always registered — provider itself gates via enabled flag.

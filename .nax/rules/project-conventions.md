@@ -1,5 +1,8 @@
 ---
-priority: 35
+priority: 30
+appliesTo:
+  - "src/**/*.ts"
+  - "bin/*.ts"
 ---
 
 # Project Conventions
@@ -24,7 +27,7 @@ Quick rules of thumb:
 
 ## File Size
 
-- **600-line hard limit** for source files; **800-line hard limit** for test files (per `forbidden-patterns.md`).
+- **600-line hard limit** for source files (per `forbidden-patterns-source.md`); **800-line hard limit** for test files (per `forbidden-patterns-tests.md`).
 - If a file approaches its limit, split it before adding more code.
 - Split by logical concern (one function/class per file when possible).
 - **Enforced** by `bun run check:file-sizes` (part of `bun run lint`). It ratchets against a baseline: existing oversized files are grandfathered but may not grow, and new files must be under the limit. After splitting a grandfathered file, lower the baseline with `bun run check:file-sizes:update`.
@@ -100,7 +103,7 @@ logger.error("acceptance", "Tests failed", { failedACs, packageDir, storyId: ctx
 
 - **All LLM prompt-building logic lives in `src/prompts/builders/`.** Never write `build*Prompt` functions in pipeline stages, verification, execution, review, or any other subsystem directory.
 - Import from the barrel (`src/prompts`), never from internal paths (`src/prompts/builders/rectifier-builder`).
-- See `forbidden-patterns.md` → **Prompt Builder Convention** for the full builder registry and examples.
+- See `forbidden-patterns-source.md` → **Prompt Builder Convention** for the full builder registry and examples.
 
 ## Runtime Layering
 

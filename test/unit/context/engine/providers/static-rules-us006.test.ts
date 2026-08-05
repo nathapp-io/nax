@@ -62,10 +62,18 @@ describe("StaticRulesProvider — US-006 real .nax/rules store stage scoping", (
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:testing-commands:"))).toBe(false);
   });
 
-  test("[US-006 AC 4] emits a static-rules:forbidden-patterns: chunk when request.stage is plan", async () => {
+  // Split into -source/-tests by SPEC-bounded-rules-floor US-005; the plan-stage
+  // emission contract holds for both halves.
+  test("[US-006 AC 4] emits a static-rules:forbidden-patterns-source: chunk when request.stage is plan", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
     const result = await provider.fetch({ ...REAL_REPO_REQUEST, stage: "plan" });
-    expect(result.chunks.some((c) => c.id.startsWith("static-rules:forbidden-patterns:"))).toBe(true);
+    expect(result.chunks.some((c) => c.id.startsWith("static-rules:forbidden-patterns-source:"))).toBe(true);
+  });
+
+  test("[US-006 AC 4] emits a static-rules:forbidden-patterns-tests: chunk when request.stage is plan", async () => {
+    const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, stage: "plan" });
+    expect(result.chunks.some((c) => c.id.startsWith("static-rules:forbidden-patterns-tests:"))).toBe(true);
   });
 
   test("[US-006 AC 4] emits a static-rules:project-conventions: chunk when request.stage is plan", async () => {

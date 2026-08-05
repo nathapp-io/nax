@@ -161,7 +161,8 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
   });
 
   test("[US-002 AC 5] emits chunks only for the surviving leading run and none for the dropped tail when budget is smaller than the store", async () => {
-    // Case 1: the first rule alone exceeds the budget → no chunk is emitted
+    // Case 1: the first rule alone exceeds the budget — section-level fail-open keeps
+    // the first section whole even when it exceeds the budget, so one chunk is emitted.
     setupCanonical([
       { fileName: "huge.md", id: "huge", content: "H".repeat(4000), tokens: 1000, priority: 1 },
       { fileName: "tiny.md", id: "tiny", content: "T".repeat(40), tokens: 10, priority: 2 },
@@ -169,7 +170,8 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
     ]);
     const provider = new StaticRulesProvider({ budgetTokens: 500, enforceBudget: true });
     const r1 = await provider.fetch(BASE_REQUEST);
-    expect(r1.chunks).toEqual([]);
+    expect(r1.chunks).toHaveLength(1);
+    expect(r1.chunks[0]?.id).toContain("huge");
 
     // Case 2: a non-empty leading run survives, the dropped tail is excluded
     setupCanonical([
@@ -639,26 +641,37 @@ describe("StaticRulesProvider — US-003 budget pressure (soft, enforceBudget=fa
   });
 
   test("[US-003 AC 2] budgetPressure.overageTokens equals store total minus budgetTokens", async () => {
+    // Section-level tokens inherit rule.tokens proportionally (each rule with no
+    // H2 splits into a single section, so section.tokens === rule.tokens).
+    // Three rules of tokens 10 → three sections of 10 tokens → 30 total.
+    // Budget 20 → overage 10, and one section is reported as dropped.
     setupCanonical([
-      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 200, priority: 1 },
-      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 200, priority: 2 },
-      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 200, priority: 3 },
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 10, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 10, priority: 3 },
     ]);
-    const provider = new StaticRulesProvider({ budgetTokens: 400 });
+    const provider = new StaticRulesProvider({ budgetTokens: 20 });
     const result = await provider.fetch(BASE_REQUEST);
     expect(result.budgetPressure).toBeDefined();
-    expect(result.budgetPressure?.overageTokens).toBe(200); // 600 total − 400 budget
+    expect(result.budgetPressure?.overageTokens).toBe(10); // 30 total − 20 budget
+    // Soft mode — all sections still emitted as chunks
+    expect(result.chunks).toHaveLength(3);
   });
 
-  test("[US-003 AC 3] budgetPressure.droppedCount equals 0 in soft mode", async () => {
+  test("[US-003 AC 3] budgetPressure.droppedCount reflects section-level potential drops in soft mode", async () => {
+    // Sections inherit rule.tokens proportionally. With 3 rules of 10, 10, 20
+    // and budget 20: section a(10) and b(10) fit (10 + 10 = 20 ≤ 20), section
+    // c(20) overflows → dropped. droppedCount=1, soft mode keeps all 3 chunks.
     setupCanonical([
-      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 200, priority: 1 },
-      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 200, priority: 2 },
-      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 200, priority: 3 },
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 10, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 10, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 20, priority: 3 },
     ]);
-    const provider = new StaticRulesProvider({ budgetTokens: 400 });
+    const provider = new StaticRulesProvider({ budgetTokens: 20 });
     const result = await provider.fetch(BASE_REQUEST);
-    expect(result.budgetPressure?.droppedCount).toBe(0);
+    // Soft mode: applySectionBudget reports 1 potential drop, but all 3 chunks are emitted
+    expect(result.budgetPressure?.droppedCount).toBe(1);
+    expect(result.chunks).toHaveLength(3);
   });
 });
 
@@ -699,7 +712,7 @@ describe("StaticRulesProvider — US-003 budget pressure (enforced, enforceBudge
     ]);
     const provider = new StaticRulesProvider({ budgetTokens: 30, enforceBudget: true });
     const result = await provider.fetch(BASE_REQUEST);
-    expect(result.budgetPressure?.droppedIds).toEqual(["c", "d"]);
+    expect(result.budgetPressure?.droppedIds).toEqual(["c#c", "d#d"]);
   });
 });
 
@@ -748,22 +761,22 @@ describe("StaticRulesProvider — US-003 real .nax/rules store under default con
     budgetTokens: 8000,
   };
 
-  test("[US-003 AC 9] returns one chunk per rule file in .nax/rules/ under default configuration", async () => {
+  test("[US-003 AC 9] returns one chunk per rule section (not per rule file) under default configuration", async () => {
     _staticRulesDeps.loadCanonicalRules = origLoadCanonicalRules;
-    const provider = new StaticRulesProvider();
-    const result = await provider.fetch(REAL_REPO_REQUEST);
-    const expectedCount = [
-      ...new Bun.Glob("*.md").scanSync({ cwd: ".nax/rules", absolute: false }),
-    ].length;
-    expect(expectedCount).toBeGreaterThan(0);
-    expect(result.chunks).toHaveLength(expectedCount);
+    const provider = new StaticRulesProvider({ budgetTokens: 100_000_000 });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, budgetTokens: 100_000_000 });
+    const ruleCount = [...new Bun.Glob("*.md").scanSync({ cwd: ".nax/rules", absolute: false })].length;
+    expect(ruleCount).toBeGreaterThan(0);
+    // Section-level chunking: one chunk per section, which is ≥ rule count
+    expect(result.chunks.length).toBeGreaterThanOrEqual(ruleCount);
+    // scopingReport.sectionCount should match chunks (within budget, all sections emitted)
+    expect(result.scopingReport?.sectionCount).toBe(result.chunks.length);
   });
 
-  test("[US-003 AC 10] budgetPressure.droppedCount equals 0 under default configuration", async () => {
+  test("[US-003 AC 10] no sections dropped under generous budget", async () => {
     _staticRulesDeps.loadCanonicalRules = origLoadCanonicalRules;
-    const provider = new StaticRulesProvider();
-    const result = await provider.fetch(REAL_REPO_REQUEST);
-    // Default budget (8192) is above the total rule-file size, so no drops are expected.
+    const provider = new StaticRulesProvider({ budgetTokens: 100_000_000 });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, budgetTokens: 100_000_000 });
     expect(result.budgetPressure?.droppedCount ?? 0).toBe(0);
   });
 });

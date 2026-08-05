@@ -51,11 +51,17 @@ export interface ContextV2RulesConfig {
    * Default true during migration period; set false to enforce canonical-only.
    */
   allowLegacyClaudeMd: boolean;
-  /** Token budget ceiling for canonical rules chunks. */
+  /** Token budget ceiling for canonical rules chunks (absolute upper bound on the effective budget). */
   budgetTokens: number;
   /**
-   * When true, `applyCanonicalRulesBudget` enforces the ceiling via
-   * contiguous-tail truncation. When false (default), the ceiling is reported
+   * Per-stage share of `ContextRequest.budgetTokens` reserved for canonical rules.
+   * The provider derives an effective budget of `min(rulesShare * request.budgetTokens, budgetTokens)`.
+   * Default: 0.4.
+   */
+  rulesShare: number;
+  /**
+   * When true (default), `applyCanonicalRulesBudget` enforces the ceiling via
+   * contiguous-tail truncation. When false, the ceiling is reported
    * as pressure and every rule is preserved so the packer downstream still
    * sees the full corpus.
    */
