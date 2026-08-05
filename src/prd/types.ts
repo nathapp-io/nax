@@ -14,6 +14,17 @@ export interface ContextFileEntry {
   factId?: string;
 }
 
+/**
+ * An existing file a story is authorised to change, and the spec's stated
+ * reason. `reason` carries the spec's wording verbatim and may be empty when the
+ * author listed a bare path — an authorisation without a rationale is still an
+ * authorisation, and dropping it would reinstate the deadlock it prevents.
+ */
+export interface ModifiedFileEntry {
+  path: string;
+  reason: string;
+}
+
 /** User story status */
 export type StoryStatus =
   | "pending"
@@ -166,6 +177,19 @@ export interface UserStory {
   intent?: boolean;
   /** Files that must exist after execution (pre-flight gate) */
   expectedFiles?: string[];
+  /**
+   * Existing files this story is explicitly authorised to change, with the
+   * spec's own reason for each. Extracted deterministically from the spec's
+   * `### Modifies` section (see `./modifies-extract`) — never asked of the
+   * planner, because the value here is the verbatim specificity (which test,
+   * which assertion, what the new invariant is) that a paraphrase destroys.
+   *
+   * Distinct from `contextFiles` (read) and `expectedFiles` (create): this is
+   * the authorisation an implementer needs when its own correct change makes an
+   * existing assertion fail. Without it the implementer's remaining option is to
+   * revert until the assertion passes.
+   */
+  modifiedFiles?: ModifiedFileEntry[];
   /** Prior error messages from failed attempts */
   priorErrors?: string[];
   /** Structured failure context for escalated tiers */

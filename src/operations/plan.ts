@@ -6,7 +6,7 @@ import { validatePlanOutput } from "../prd/schema";
 import type { PRD } from "../prd/types";
 import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
-import { backfillOutOfScope } from "./plan-fidelity";
+import { applyPlanFidelity } from "./plan-fidelity";
 import type { RunOperation } from "./types";
 
 export interface PlanInteractiveInput {
@@ -76,7 +76,7 @@ export const planInteractiveOp: RunOperation<PlanInteractiveInput, PRD, PlanConf
     if (!parsed.userStories || parsed.userStories.length === 0) return null;
     // Feature-level exclusions have one home, so a drop is repairable rather
     // than merely reportable — backfill instead of warning-and-continuing.
-    return backfillOutOfScope(parsed, input.specContent, input.featureName);
+    return applyPlanFidelity(parsed, input.specContent, input.featureName);
   },
   recover: async (input, ctx) => {
     const content = await ctx.readFile(input.outputPath);

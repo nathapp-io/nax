@@ -1,6 +1,6 @@
 import type { DebateStageConfig } from "@/debate/types";
 import { NaxError } from "@/errors";
-import { backfillOutOfScope, callOp, planInteractiveOp } from "@/operations";
+import { applyPlanFidelity, callOp, planInteractiveOp } from "@/operations";
 import type { CallContext, PlanInteractiveInput } from "@/operations";
 import { validatePlanOutput } from "@/prd";
 import type { PRD } from "@/prd/types";
@@ -83,7 +83,7 @@ export class DebatePlanStrategy implements IPlanStrategy {
         // Debate synthesis merges debater candidates and can drop a feature-level
         // exclusion. Repairable rather than merely reportable — an exclusion has
         // exactly one home, so restore it. spec-review --prd remains the gate.
-        const scoped = backfillOutOfScope(prd, ctx.specContent, ctx.options.feature);
+        const scoped = applyPlanFidelity(prd, ctx.specContent, ctx.options.feature);
         const withProject = { ...scoped, project: ctx.projectName } satisfies PRD;
         return _debatePlanDeps.writeOrRecoverPrd(ctx, withProject);
       }

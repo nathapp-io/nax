@@ -397,6 +397,52 @@ describe("validatePlanOutput — expectedFiles parsing", () => {
 });
 
 // ---------------------------------------------------------------------------
+// modifiedFiles (existing files the story may change) — issue #1450
+// ---------------------------------------------------------------------------
+
+describe("validatePlanOutput — modifiedFiles parsing", () => {
+  test("survives the round-trip with path and reason intact", () => {
+    const story = makeStory({
+      modifiedFiles: [{ path: "test/unit/engine/orchestrator.test.ts", reason: "the identity no longer holds" }],
+    });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    expect(prd.userStories[0].modifiedFiles).toEqual([
+      { path: "test/unit/engine/orchestrator.test.ts", reason: "the identity no longer holds" },
+    ]);
+  });
+
+  test("keeps an entry whose reason is missing rather than dropping the authorisation", () => {
+    const story = makeStory({ modifiedFiles: [{ path: "src/bare.ts" } as never] });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    expect(prd.userStories[0].modifiedFiles).toEqual([{ path: "src/bare.ts", reason: "" }]);
+  });
+
+  test("filters entries that are not objects or carry no path", () => {
+    const story = makeStory({
+      modifiedFiles: ["src/str.ts", 42, null, { reason: "no path" }, { path: "  " }, { path: "src/ok.ts" }] as never,
+    });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    expect(prd.userStories[0].modifiedFiles).toEqual([{ path: "src/ok.ts", reason: "" }]);
+  });
+
+  test.each([
+    ["not present on story", makeStory()],
+    ["empty array", makeStory({ modifiedFiles: [] })],
+  ])("omits modifiedFiles when %s", (_label, story) => {
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    expect(prd.userStories[0].modifiedFiles).toBeUndefined();
+  });
+
+  test.each([
+    ["contains '..'", "../../../etc/passwd", /modifiedFiles.*\.\./i],
+    ["is an absolute path", "/etc/passwd", /modifiedFiles.*absolute/i],
+  ])("throws when a modifiedFiles entry %s", (_label, path, pattern) => {
+    const story = makeStory({ modifiedFiles: [{ path, reason: "r" }] });
+    expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(pattern);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // suggestedCriteria validation
 // ---------------------------------------------------------------------------
 

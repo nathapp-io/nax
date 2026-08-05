@@ -5,6 +5,7 @@
  */
 
 import type { UserStory } from "../../prd/types";
+import { buildModifiedFilesLines } from "./modified-files";
 import { buildOutOfScopeLines } from "./out-of-scope";
 
 /**
@@ -14,6 +15,16 @@ import { buildOutOfScopeLines } from "./out-of-scope";
  */
 function outOfScopeLines(story: UserStory): string[] {
   return buildOutOfScopeLines(story.outOfScope);
+}
+
+/**
+ * Existing files the spec authorises this story to change (see
+ * src/prd/modifies.ts). Ordered after the exclusions so the two boundary blocks
+ * read together: what this story must not do, then what it is permitted to
+ * touch despite the file already existing.
+ */
+function modifiedFilesLines(story: UserStory): string[] {
+  return buildModifiedFilesLines(story.modifiedFiles);
 }
 
 export function buildBatchStorySection(stories: UserStory[]): string {
@@ -27,6 +38,7 @@ export function buildBatchStorySection(stories: UserStory[]): string {
       "**Acceptance Criteria:**",
       criteria,
       ...outOfScopeLines(story),
+      ...modifiedFilesLines(story),
     ].join("\n");
   });
 
@@ -65,6 +77,7 @@ export function buildStoryReminderSection(story: UserStory): string {
     "**Acceptance Criteria:**",
     criteria,
     ...outOfScopeLines(story),
+    ...modifiedFilesLines(story),
     "",
     "<!-- END USER-SUPPLIED DATA -->",
   ].join("\n");
@@ -88,6 +101,7 @@ export function buildStorySection(story: UserStory): string {
     "**Acceptance Criteria:**",
     criteria,
     ...outOfScopeLines(story),
+    ...modifiedFilesLines(story),
     "",
     "<!-- END USER-SUPPLIED DATA -->",
   ].join("\n");

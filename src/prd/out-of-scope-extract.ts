@@ -22,6 +22,8 @@
  * backticks stripped, lowercased) and by substring, never by equality.
  */
 
+import { ANY_HEADING, FENCE, LIST_ITEM_START, fencedLineIndices, stripBullet, stripEmphasis } from "./markdown-scan";
+
 /** An extracted item plus the line its declaration started on. */
 interface PlacedItem {
   readonly lineIndex: number;
@@ -48,12 +50,6 @@ const OUT_OF_SCOPE_TITLE = /^(?:out[\s-]?of[\s-]?scope|non[\s-]?goals?|not[\s-]i
 /** `## Out of Scope`, `### Non-Goals`, `## Not in scope`, `## Out-of-scope`, … */
 const OUT_OF_SCOPE_HEADING = /^(#{1,6})\s*(?:out[\s-]?of[\s-]?scope|non[\s-]?goals?|not[\s-]in[\s-]scope)\b/i;
 
-/** Any markdown ATX heading, captured so section nesting can be compared. */
-const ANY_HEADING = /^(#{1,6})\s/;
-
-/** A fenced code block delimiter (``` or ~~~), with optional info string. */
-const FENCE = /^\s*(?:```|~~~)/;
-
 /** A markdown table separator row: `|---|:--:|`. Carries no content. */
 const TABLE_SEPARATOR = /^\s*\|?[\s:|-]+\|[\s:|-]*$/;
 
@@ -75,16 +71,6 @@ const STORY_ID_HEADING = /^#{1,6}\s.*\b(US-\d+)\b/i;
 
 /** A setext underline — `===` (H1) or `---` (H2) beneath a title line. */
 const SETEXT_UNDERLINE = /^\s*(?:=+|-+)\s*$/;
-
-/**
- * Strip inline emphasis/backticks so heading matching is not defeated by
- * formatting. `## **Out of Scope**` and `## \`Out of Scope\`` are the same
- * heading as `## Out of Scope` — treating them differently silently drops the
- * entire section, which is the exact failure this module exists to prevent.
- */
-function stripEmphasis(text: string): string {
-  return text.replace(/\*\*/g, "").replace(/[*`_]/g, "");
-}
 
 /**
  * Heading level when `line` opens an out-of-scope section, else null.
@@ -120,17 +106,9 @@ function isSetextUnderline(lines: string[], index: number): boolean {
  */
 export const INLINE_MARKER = /^\s*(?:[-*]\s*)?\*\*\s*(?:out[\s-]?of[\s-]?scope|non[\s-]?goals?)[^*]*\*\*\s*:?\s*/i;
 
-/** A list item — used both to split bullets and to bound folded prose. */
-const LIST_ITEM_START = /^\s*(?:[-*+\u2022\u2023\u25E6\u2043\u2219]|\d+\.)\s+/;
-
 /** Collapse whitespace, strip backticks, lowercase — the comparison form. */
 export function canonical(text: string): string {
   return text.replace(/`/g, "").replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-/** Strip a leading `-`/`*`/`1.` bullet marker. */
-function stripBullet(line: string): string {
-  return line.replace(LIST_ITEM_START, "").trim();
 }
 
 /**
@@ -240,29 +218,6 @@ function itemsFromSection(body: string[]): string[] {
   }
   flush();
   return items;
-}
-
-/**
- * Indices of every line inside a fenced code block.
- *
- * Fenced content is illustrative — a spec documenting markdown (which spec-kit
- * specs routinely do) contains a literal `## Out of Scope` example. Treating it
- * as a real declaration fabricates an exclusion that is then backfilled into the
- * PRD, pushed onto every story, and rendered to the implementer as a hard
- * boundary. Every scan over raw lines must consult this.
- */
-function fencedLineIndices(lines: string[]): Set<number> {
-  const fenced = new Set<number>();
-  let inFence = false;
-  for (const [i, line] of lines.entries()) {
-    if (FENCE.test(line)) {
-      fenced.add(i);
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) fenced.add(i);
-  }
-  return fenced;
 }
 
 /**
