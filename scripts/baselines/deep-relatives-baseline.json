@@ -1,6 +1,6 @@
 {
-  "count": 2849,
-  "updatedAt": "2026-08-04T10:02:01.233Z",
+  "count": 2853,
+  "updatedAt": "2026-08-05T11:37:17.715Z",
   "byFile": {
     "src/pipeline/stages/acceptance-setup.ts": 1,
     "src/pipeline/stages/prompt.ts": 5,
@@ -16,7 +16,7 @@
     "src/pipeline/subscribers/hooks.ts": 3,
     "src/context/engine/providers/session-scratch.ts": 3,
     "src/context/engine/providers/test-coverage.ts": 9,
-    "src/context/engine/providers/static-rules.ts": 4,
+    "src/context/engine/providers/static-rules.ts": 7,
     "src/context/engine/providers/git-history.ts": 2,
     "src/context/engine/providers/feature-context.ts": 6,
     "src/context/engine/providers/plugin-loader.ts": 2,
@@ -178,6 +178,7 @@
     "test/unit/context/engine/providers/code-neighbor-cap.test.ts": 4,
     "test/unit/context/engine/providers/session-scratch.test.ts": 3,
     "test/unit/context/engine/providers/plugin-loader.test.ts": 3,
+    "test/unit/context/engine/providers/static-rules-us-004.test.ts": 1,
     "test/unit/context/engine/providers/static-rules-us006.test.ts": 1,
     "test/unit/context/engine/agent-renderer.test.ts": 2,
     "test/unit/context/engine/effectiveness.test.ts": 2,

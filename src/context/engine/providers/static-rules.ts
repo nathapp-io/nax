@@ -15,6 +15,7 @@
 
 import { createHash } from "node:crypto";
 import { join, relative } from "node:path";
+import { NaxError } from "../../../errors";
 import { getLogger } from "../../../logger";
 import { errorMessage } from "../../../utils/errors";
 import {
@@ -41,6 +42,19 @@ export const _staticRulesDeps = {
     }
   },
   loadCanonicalRules,
+  // US-004: section-level chunking seams. Stubs throw so a misconfigured
+  // call site fails loudly; the implementer wires the real
+  // splitRuleIntoSections / applySectionBudget functions here.
+  splitRuleIntoSections: (() => {
+    throw new NaxError("US-004 stub: splitRuleIntoSections not wired", "STATIC_RULES_STUB_UNWIRED", {
+      stage: "static-rules",
+    });
+  }) as typeof import("../../rules/rule-sections").splitRuleIntoSections,
+  applySectionBudget: (() => {
+    throw new NaxError("US-004 stub: applySectionBudget not wired", "STATIC_RULES_STUB_UNWIRED", {
+      stage: "static-rules",
+    });
+  }) as typeof import("../../rules/rule-budget").applySectionBudget,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
