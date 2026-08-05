@@ -36,6 +36,10 @@ export {
   propagateOutOfScopeToStories,
   stripPropagatedOutOfScope,
 } from "./out-of-scope";
+export type { SpecModifiedFile } from "./modifies-extract";
+export { MAX_MODIFIED_FILES, extractSpecModifiedFiles } from "./modifies-extract";
+export type { ApplyModifiedFilesResult } from "./modifies";
+export { applyModifiedFiles } from "./modifies";
 export type { FailureCategory } from "../tdd/types";
 export { validateInjectedStory, deriveNextStoryId } from "./inject";
 

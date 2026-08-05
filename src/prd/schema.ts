@@ -10,7 +10,7 @@ import { NaxError } from "../errors";
 import { extractJsonFromMarkdown, extractJsonObject, stripTrailingCommas } from "../utils/llm-json";
 export { extractJsonFromMarkdown };
 import { normalizeOutOfScopeList } from "./out-of-scope";
-import type { ContextFileEntry, PRD, UserStory } from "./types";
+import type { ContextFileEntry, ModifiedFileEntry, PRD, UserStory } from "./types";
 import { validateStoryId } from "./validate";
 
 // ---------------------------------------------------------------------------
@@ -336,6 +336,40 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
     }
   }
 
+  // modifiedFiles — optional list of EXISTING files this story is authorised to
+  // change, each with the spec's reason. Same path rules as contextFiles.
+  // Populated deterministically from the spec's `### Modifies` section rather
+  // than by the planner (see ./modifies-extract), but validated here all the
+  // same: a prd.json edited by hand reaches this path too.
+  const rawModifiedFiles = s.modifiedFiles;
+  const modifiedFiles: ModifiedFileEntry[] = [];
+  if (Array.isArray(rawModifiedFiles)) {
+    for (const f of rawModifiedFiles as unknown[]) {
+      if (typeof f !== "object" || f === null) continue; // non-object entries silently filtered
+      const obj = f as Record<string, unknown>;
+      if (typeof obj.path !== "string") continue;
+      const path = obj.path.trim();
+      if (path === "") continue;
+      if (path.startsWith("/")) {
+        throw new NaxError(
+          `[schema] story[${index}].modifiedFiles entry must be relative (no absolute paths): "${path}"`,
+          "SCHEMA_VALIDATION_FAILED",
+          { stage: "schema", index, filePath: path },
+        );
+      }
+      if (path.includes("..")) {
+        throw new NaxError(
+          `[schema] story[${index}].modifiedFiles entry must not contain '..': "${path}"`,
+          "SCHEMA_VALIDATION_FAILED",
+          { stage: "schema", index, filePath: path },
+        );
+      }
+      // An empty reason is legitimate — the spec author listed a bare path, and
+      // an authorisation without a rationale still clears the deadlock.
+      modifiedFiles.push({ path, reason: typeof obj.reason === "string" ? obj.reason.trim() : "" });
+    }
+  }
+
   // verifiedBy — optional citation anchor (Phase 2)
   const VALID_VERIFIED_BY_KINDS = ["test", "symbol", "file"] as const;
   type VerifiedByKind = (typeof VALID_VERIFIED_BY_KINDS)[number];
@@ -386,6 +420,7 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
     ...(workdir !== undefined ? { workdir } : {}),
     ...(contextFiles.length > 0 ? { contextFiles } : {}),
     ...(expectedFiles.length > 0 ? { expectedFiles } : {}),
+    ...(modifiedFiles.length > 0 ? { modifiedFiles } : {}),
     ...(suggestedCriteria !== undefined ? { suggestedCriteria } : {}),
     ...(storyOutOfScope !== undefined ? { outOfScope: storyOutOfScope } : {}),
     ...(verifiedBy !== undefined ? { verifiedBy } : {}),

@@ -15,7 +15,7 @@ import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
 import type { SessionRole } from "../session/types";
 import { errorMessage } from "../utils/errors";
-import { backfillOutOfScope, warnOnSpecDrift } from "./plan-fidelity";
+import { applyPlanFidelity, warnOnSpecDrift } from "./plan-fidelity";
 import { type SelfHealStep, makeSelfHealStep, runSelfHealChain } from "./self-heal";
 import type { RunOperation } from "./types";
 
@@ -407,7 +407,7 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
     }
     // Last line of defence after the out-of-scope self-heal turn: anything the
     // repair turn still missed is restored verbatim from the spec.
-    const scoped = backfillOutOfScope(validated, input.specContent, input.featureName);
+    const scoped = applyPlanFidelity(validated, input.specContent, input.featureName);
     return await normalizeCreatedContextFiles(scoped, input.workdir, ctx.fileExists);
   },
   recover: async (input, ctx) => {

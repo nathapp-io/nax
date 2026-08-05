@@ -8,6 +8,7 @@
  */
 import { getSafeLogger } from "../logger";
 import {
+  applyModifiedFiles,
   applyOutOfScopeFallback,
   demoteStoryScopedOutOfScope,
   findMissingOutOfScope,
@@ -48,6 +49,50 @@ export function backfillOutOfScope(prd: PRD, specContent: string, featureName: s
     missing,
   });
   return applyOutOfScopeFallback(scoped, specContent);
+}
+
+/**
+ * Carry the spec's `### Modifies` entries onto the stories that declared them.
+ *
+ * Unlike the out-of-scope backfill there is nothing to reconcile: the planner is
+ * never asked for this field, because the value is the spec's verbatim
+ * specificity — which test, which assertion, what the new invariant is — and a
+ * paraphrase ("update affected engine tests") is the exact loss #1450 records.
+ * So this is a pure carry, not a repair.
+ *
+ * Orphans (an entry naming no story, or one absent from the PRD) are warned
+ * about and dropped rather than broadcast. Attaching an unowned authorisation to
+ * every story would tell four implementers they may rewrite a test that only one
+ * of them should touch.
+ */
+export function backfillModifiedFiles(prd: PRD, specContent: string, featureName: string): PRD {
+  const { prd: applied, orphans, invalidPaths } = applyModifiedFiles(prd, specContent);
+  if (invalidPaths.length > 0) {
+    getSafeLogger()?.warn("plan", "Spec Modifies entries declare an absolute or traversing path — rejected", {
+      featureName,
+      rejectedCount: invalidPaths.length,
+      rejected: invalidPaths.map((entry) => ({ storyId: entry.storyId, path: entry.path })),
+    });
+  }
+  if (orphans.length > 0) {
+    getSafeLogger()?.warn("plan", "Spec Modifies entries name no story in the PRD — dropped, not applied", {
+      featureName,
+      orphanCount: orphans.length,
+      orphans: orphans.map((entry) => ({ storyId: entry.storyId, path: entry.path })),
+    });
+  }
+  return applied;
+}
+
+/**
+ * Every deterministic spec→PRD fidelity repair, in the order they must run.
+ *
+ * One entry point so the four plan strategies (single, refine, pipeline, debate)
+ * cannot drift on which repairs they apply — the class of bug that let
+ * `### Modifies` reach only some paths would otherwise recur per-field.
+ */
+export function applyPlanFidelity(prd: PRD, specContent: string, featureName: string): PRD {
+  return backfillModifiedFiles(backfillOutOfScope(prd, specContent, featureName), specContent, featureName);
 }
 
 /**
