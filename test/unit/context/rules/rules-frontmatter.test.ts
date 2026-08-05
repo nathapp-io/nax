@@ -483,6 +483,131 @@ describe("loadCanonicalRules — AC14 displaced-frontmatter logger warning", () 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// AC1: HTML comment + --- emits displaced-frontmatter warning including filePath
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("parseFrontmatter — HTML-comment displaced frontmatter", () => {
+  const filePath = "/project/.nax/rules/comment-displaced.md";
+
+  test("[AC1] returns a displaced-frontmatter warning naming the file when a single-line HTML comment precedes ---", () => {
+    const content = "<!-- review notice -->\n---\npriority: 100\n---\nBody.";
+    const result = parseFrontmatter(content, filePath);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toContain(filePath);
+    expect(result.warnings[0]).toMatch(/displaced|comment/i);
+  });
+
+  test("[AC2] returns priority FRONTMATTER_PRIORITY_DEFAULT when an HTML comment precedes a block declaring priority: 90", () => {
+    const content = "<!-- review notice -->\n---\npriority: 90\n---\nBody.";
+    const result = parseFrontmatter(content, filePath);
+    expect(result.priority).toBe(FRONTMATTER_PRIORITY_DEFAULT);
+  });
+
+  test("[AC3] returns paths undefined when an HTML comment precedes a block declaring paths", () => {
+    const content = '<!-- review notice -->\n---\npaths:\n  - "apps/api"\n---\nBody.';
+    const result = parseFrontmatter(content, filePath);
+    expect(result.paths).toBeUndefined();
+  });
+
+  test("[AC4] returns appliesTo undefined when an HTML comment precedes a block declaring appliesTo", () => {
+    const content = '<!-- review notice -->\n---\nappliesTo:\n  - "src/**"\n---\nBody.';
+    const result = parseFrontmatter(content, filePath);
+    expect(result.appliesTo).toBeUndefined();
+  });
+
+  test("[AC5] returns a displaced-frontmatter warning for a multi-line leading HTML comment followed by ---", () => {
+    const content = "<!--\n  review notice spanning\n  multiple lines\n-->\n---\npriority: 100\n---\nBody.";
+    const result = parseFrontmatter(content, filePath);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toContain(filePath);
+    expect(result.warnings[0]).toMatch(/displaced|comment/i);
+  });
+
+  test("[AC6] returns an empty warnings array for a leading HTML comment with no --- block anywhere in the content", () => {
+    const content = "<!-- review notice -->\nJust a regular markdown file, no frontmatter here.";
+    const result = parseFrontmatter(content, filePath);
+    expect(result.warnings).toEqual([]);
+  });
+
+  test("[AC7] returns an empty warnings array for a leading HTML comment, ordinary prose, and a later Markdown --- horizontal rule", () => {
+    const content = [
+      "<!-- review notice -->",
+      "",
+      "Some prose before a horizontal rule.",
+      "",
+      "---",
+      "",
+      "More prose.",
+    ].join("\n");
+    const result = parseFrontmatter(content, filePath);
+    expect(result.warnings).toEqual([]);
+  });
+
+  test("[AC8] returns exactly one warning for blank line + leading HTML comment + --- block", () => {
+    const content = "\n<!-- review notice -->\n---\npriority: 100\n---\nBody.";
+    const result = parseFrontmatter(content, filePath);
+    expect(result.warnings).toHaveLength(1);
+  });
+
+  test("[AC9] returns an empty warnings array when a --- frontmatter block begins at byte 0", () => {
+    const content = "---\npriority: 100\n---\nBody.";
+    const result = parseFrontmatter(content, filePath);
+    expect(result.warnings).toEqual([]);
+  });
+
+  test("[AC10] returns priority 90 and exactly one displaced-frontmatter warning for a leading blank line directly followed by --- with priority: 90", () => {
+    const content = "\n---\npriority: 90\n---\nBody.";
+    const result = parseFrontmatter(content, filePath);
+    expect(result.priority).toBe(90);
+    expect(result.warnings).toHaveLength(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC11: loadCanonicalRules propagates HTML-comment displaced-frontmatter warning
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("loadCanonicalRules — HTML-comment displaced-frontmatter warning propagation", () => {
+  let origGlobInDir: typeof _canonicalLoaderDeps.globInDir;
+  let origReadFile: typeof _canonicalLoaderDeps.readFile;
+  let origGetLogger: typeof _canonicalLoaderDeps.getLogger;
+
+  beforeEach(() => {
+    origGlobInDir = _canonicalLoaderDeps.globInDir;
+    origReadFile = _canonicalLoaderDeps.readFile;
+    origGetLogger = _canonicalLoaderDeps.getLogger;
+    _canonicalLoaderDeps.globInDir = () => [];
+    _canonicalLoaderDeps.readFile = async () => "";
+    _canonicalLoaderDeps.getLogger = () =>
+      ({ warn: () => {}, debug: () => {}, info: () => {}, error: () => {} }) as unknown as ReturnType<
+        typeof _canonicalLoaderDeps.getLogger
+      >;
+  });
+
+  afterEach(() => {
+    _canonicalLoaderDeps.globInDir = origGlobInDir;
+    _canonicalLoaderDeps.readFile = origReadFile;
+    _canonicalLoaderDeps.getLogger = origGetLogger;
+  });
+
+  test("[AC11] returns a CanonicalRule whose warnings include a displaced-frontmatter entry when its disk rule is preceded by an HTML comment", async () => {
+    const filePath = "/project/.nax/rules/comment-displaced.md";
+    _canonicalLoaderDeps.globInDir = () => [filePath];
+    _canonicalLoaderDeps.readFile = async (p: string) => {
+      if (p === filePath) {
+        return "<!-- review notice -->\n---\npriority: 100\n---\nBody.";
+      }
+      throw new Error(`unexpected file: ${p}`);
+    };
+
+    const rules = await loadCanonicalRules("/project");
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.warnings).toBeDefined();
+    expect(rules[0]?.warnings?.some((w) => /displaced|comment/i.test(w))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // US-006: stage scoping for canonical rules in the real .nax/rules store.
 // The four test-authoring rules (test-writing.md, test-architecture.md,
 // test-helpers.md, testing-commands.md) declare a `stages:` list that excludes
