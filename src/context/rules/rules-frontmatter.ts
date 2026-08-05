@@ -120,15 +120,22 @@ export function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatt
   // — never scan further into the file, because Markdown horizontal rules
   // ('---') inside rule bodies would otherwise produce false positives.
   let strippedAnyComment = false;
+  const strippedComments: string[] = [];
   while (effectiveContent.startsWith("<!--")) {
     const closeIdx = effectiveContent.indexOf("-->");
     if (closeIdx < 0) break;
+    strippedComments.push(effectiveContent.slice(0, closeIdx + 3));
     effectiveContent = stripLeadingBlankLines(effectiveContent.slice(closeIdx + 3));
     strippedAnyComment = true;
   }
   let commentDisplacedReason: string | undefined;
   if (strippedAnyComment) {
-    commentDisplacedReason = `Frontmatter is displaced — file begins with an HTML comment before '---' (${filePath})`;
+    // Include the stripped HTML comment text in the warning so downstream
+    // consumers (e.g. `nax rules lint`) can surface the actual offending
+    // content alongside the file path. Concatenated with a single space so
+    // multi-line comments stay on one log line.
+    const commentsText = strippedComments.join(" ");
+    commentDisplacedReason = `Frontmatter is displaced — file begins with an HTML comment before '---' (${filePath}): ${commentsText}`;
     displacedReason ??= commentDisplacedReason;
   }
 

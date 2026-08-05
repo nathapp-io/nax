@@ -9,8 +9,9 @@
 
 import { join } from "node:path";
 import { globToRegex, normalizePath } from "../context/engine";
-import { loadCanonicalRules } from "../context/rules/canonical-loader";
+import { CANONICAL_RULES_DIR, loadCanonicalRules } from "../context/rules/canonical-loader";
 import { getLogger } from "../logger";
+import { discoverWorkspacePackages } from "../test-runners/detect/workspace";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps
@@ -60,6 +61,12 @@ export const _rulesLintDeps = {
   },
   loadCanonicalRules,
   getLogger,
+  // Repo-shape detector (US-002): a non-empty package list means `paths:` is
+  // meaningful package scope; an empty list in a single-package repo means any
+  // declared `paths:` is inert. Stubbed via deps so tests don't need fixture
+  // monorepos. Per monorepo-awareness.md §5, this is the single resolver for
+  // "what packages does this repo have?" — never a hand-rolled manifest check.
+  discoverWorkspacePackages: (workdir: string): Promise<string[]> => discoverWorkspacePackages(workdir),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -98,6 +105,7 @@ export interface RulesLintDeps {
   loadCanonicalRules: typeof loadCanonicalRules;
   globHasMatch: (pattern: string, cwd: string) => boolean;
   getLogger: typeof getLogger;
+  discoverWorkspacePackages: (workdir: string) => Promise<string[]>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -108,6 +116,18 @@ export async function rulesLintCommand(options: RulesLintOptions, deps: RulesLin
   const workdir = options.dir ?? process.cwd();
   const roots = collectCanonicalRuleRoots(workdir, deps.globCanonicalRuleFiles);
   const logger = deps.getLogger();
+
+  // US-002: a rule's `paths:` is meaningful package scope only when the repo
+  // is a workspace monorepo. In a single-package repo every migrated `paths:`
+  // block is inert — silently passing lint while scoping never applies. Fail-
+  // open: a rejecting workspace resolver skips this check entirely; a false
+  // "your scoping is broken" warning is worse than a missing one.
+  let isSinglePackageRepo = true;
+  try {
+    isSinglePackageRepo = (await deps.discoverWorkspacePackages(workdir)).length === 0;
+  } catch {
+    isSinglePackageRepo = false;
+  }
 
   let totalRuleFiles = 0;
   let warningCount = 0;
@@ -123,6 +143,7 @@ export async function rulesLintCommand(options: RulesLintOptions, deps: RulesLin
         logger.warn("rules-lint", `Rule frontmatter warning: ${warning}`, {
           file: rule.path ?? rule.fileName,
           root,
+          warningCount,
         });
       }
       for (const pattern of rule.appliesTo ?? []) {
@@ -132,7 +153,28 @@ export async function rulesLintCommand(options: RulesLintOptions, deps: RulesLin
           file: rule.path ?? rule.fileName,
           pattern,
           root,
+          warningCount,
         });
+      }
+      // US-002: warn when a rule declares `paths:` in a single-package repo.
+      // nax's `paths:` is package scope (matched against the story's package
+      // dir), so in a single-package repo it always short-circuits to true
+      // and the scoping never narrows the rule's reach. The alternative for
+      // FILE globs is `appliesTo:` — which is what the migration translation
+      // produces from Claude's `paths:` frontmatter.
+      if (isSinglePackageRepo && rule.paths && rule.paths.length > 0) {
+        warningCount++;
+        logger.warn(
+          "rules-lint",
+          "Canonical rule declares paths: but the repository has no workspace packages — paths: is inert in single-package repos. Use appliesTo: for file globs.",
+          {
+            file: join(root, CANONICAL_RULES_DIR, rule.path ?? rule.fileName),
+            code: "INERT_PATHS",
+            paths: rule.paths,
+            root,
+            warningCount,
+          },
+        );
       }
     }
   }
