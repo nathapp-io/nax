@@ -12,6 +12,7 @@ import {
   DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS,
   MAX_CANONICAL_RULE_GLOB_FILES,
   MAX_DEAD_GLOB_SCAN_FILES,
+  MAX_DEAD_GLOB_SCAN_TOTAL_ENTRIES,
   type RulesLintOptions,
   _rulesCLIDeps,
   _rulesLintDeps,
@@ -205,6 +206,36 @@ describe("globHasMatch — #1471 scan-cap false negative", () => {
     await writeFile(join(binDir, "nax.ts"), "");
 
     expect(_rulesLintDeps.globHasMatch("bin/*.ts", tempDir)).toBe(true);
+  });
+
+  test("finds a match under bin/ even when node_modules/ and .git/ are nested inside package subdirectories", async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+
+    // Exclude segments must be matched anywhere in the path, not just at the
+    // repo root — a monorepo package's own node_modules/.git are just as
+    // capable of exhausting the cap as a root-level one.
+    const nestedNodeModules = join(tempDir, "packages", "pkg-a", "node_modules", "some-pkg");
+    await mkdir(nestedNodeModules, { recursive: true });
+    const noiseCount = MAX_DEAD_GLOB_SCAN_FILES + 500;
+    for (let i = 0; i < noiseCount; i++) {
+      await writeFile(join(nestedNodeModules, `file-${i}.js`), "");
+    }
+
+    const nestedGit = join(tempDir, "packages", "pkg-b", ".git", "objects");
+    await mkdir(nestedGit, { recursive: true });
+    await writeFile(join(nestedGit, "pack.idx"), "");
+
+    const binDir = join(tempDir, "bin");
+    await mkdir(binDir, { recursive: true });
+    await writeFile(join(binDir, "nax.ts"), "");
+
+    expect(_rulesLintDeps.globHasMatch("bin/*.ts", tempDir)).toBe(true);
+  });
+
+  test("MAX_DEAD_GLOB_SCAN_TOTAL_ENTRIES bounds worst-case wall time for exclude-heavy trees", () => {
+    // Documents the safety-valve relationship rather than re-running a
+    // 50k+-file scan (already exercised at smaller scale by the tests above).
+    expect(MAX_DEAD_GLOB_SCAN_TOTAL_ENTRIES).toBe(MAX_DEAD_GLOB_SCAN_FILES * 25);
   });
 });
 
