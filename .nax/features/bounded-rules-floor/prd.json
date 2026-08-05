@@ -3,7 +3,7 @@
   "feature": "bounded-rules-floor",
   "branchName": "feat/bounded-rules-floor",
   "createdAt": "2026-08-05T18:27:22+08:00",
-  "updatedAt": "2026-08-05T11:12:59.737Z",
+  "updatedAt": "2026-08-05T11:31:37.440Z",
   "userStories": [
     {
       "id": "US-001",
@@ -141,8 +141,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -235,7 +235,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-balanced",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/context/engine/providers/static-rules.ts",
@@ -249,7 +251,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ef7df287d70e4ca00e3077d16c00391f56ae610f"
     },
     {
       "id": "US-005",

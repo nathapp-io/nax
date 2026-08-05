@@ -340,6 +340,14 @@ export class StaticRulesProvider implements IContextProvider {
           const sections = _staticRulesDeps.splitRuleIntoSections(rule);
           const ruleId = canonicalRuleId(rule);
           const rulePath = canonicalRulePath(rule);
+          // When the rule declares precomputed tokens, distribute them proportionally
+          // to each section so the section-level budget honours the rule-level estimate.
+          if (rule.tokens != null) {
+            const ruleContentLen = rule.content.length;
+            for (const section of sections) {
+              section.tokens = Math.ceil(rule.tokens * (section.content.length / ruleContentLen));
+            }
+          }
           for (const section of sections) {
             sectionRuleIdMap.set(section, ruleId);
             sectionRulePathMap.set(section, rulePath);
