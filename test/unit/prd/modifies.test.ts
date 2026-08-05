@@ -107,6 +107,50 @@ describe("extractSpecModifiedFiles", () => {
     expect(extractSpecModifiedFiles(spec)).toEqual([{ storyId: "US-001", path: "src/bare.ts", reason: "" }]);
   });
 
+  // A story heading at the section's OWN level is a sibling section, not a group.
+  // Exempting it would read `## US-002` as a group and turn every bullet beneath
+  // it into a fabricated authorisation.
+  test("stops at a same-level story heading instead of swallowing it as a group", () => {
+    const spec = [
+      "## Modifies",
+      "",
+      "**US-001**",
+      "- `src/real.ts` — genuinely authorised",
+      "",
+      "## US-002: Second story",
+      "",
+      "- `src/not-authorised.ts` — this is a story bullet, not a Modifies entry",
+    ].join("\n");
+
+    const entries = extractSpecModifiedFiles(spec);
+
+    expect(entries).toEqual([{ storyId: "US-001", path: "src/real.ts", reason: "genuinely authorised" }]);
+  });
+
+  test("still reads a DEEPER story heading as a group lead-in", () => {
+    const spec = ["### Modifies", "", "#### US-004", "- `src/deep.ts` — grouped by a heading, not bold"].join("\n");
+
+    expect(extractSpecModifiedFiles(spec)).toEqual([
+      { storyId: "US-004", path: "src/deep.ts", reason: "grouped by a heading, not bold" },
+    ]);
+  });
+
+  // Without a path-shape check the first word of a prose bullet becomes a file
+  // the implementer is told it may change.
+  test("drops a prose bullet instead of inventing a path from its first word", () => {
+    const spec = ["### Modifies", "", "**US-001**", "- see the notes below for details"].join("\n");
+
+    expect(extractSpecModifiedFiles(spec)).toEqual([]);
+  });
+
+  test("accepts an unbackticked path-shaped token", () => {
+    const spec = ["### Modifies", "", "**US-001**", "- src/plain.ts — no backticks here"].join("\n");
+
+    expect(extractSpecModifiedFiles(spec)).toEqual([
+      { storyId: "US-001", path: "src/plain.ts", reason: "no backticks here" },
+    ]);
+  });
+
   test("returns an empty list for a spec with no Modifies section", () => {
     expect(extractSpecModifiedFiles("# Feature\n\n## Design\n\n- nothing here")).toEqual([]);
     expect(extractSpecModifiedFiles("")).toEqual([]);
@@ -222,6 +266,19 @@ describe("applyModifiedFiles", () => {
     const { prd } = applyModifiedFiles(input, "### Modifies\n\n- `src/orphan.ts` — unowned");
 
     expect(prd).toBe(input);
+  });
+
+  test("lets the spec's reason win over a stale one already in the PRD", () => {
+    const input = makePRD({
+      userStories: [
+        makeStory({ id: "US-001", modifiedFiles: [{ path: "src/x.ts", reason: "stale reason from a prior plan" }] }),
+        makeStory({ id: "US-002" }),
+      ],
+    });
+
+    const { prd } = applyModifiedFiles(input, "### Modifies\n\n**US-001**\n- `src/x.ts` — the spec's current reason");
+
+    expect(prd.userStories[0].modifiedFiles).toEqual([{ path: "src/x.ts", reason: "the spec's current reason" }]);
   });
 
   test("preserves modifiedFiles the PRD already carried for an untouched story", () => {

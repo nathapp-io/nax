@@ -80,6 +80,9 @@ const PATH_REASON_SEPARATOR = /^\s*[—–-]\s*/;
 /** A leading backticked span — the canonical way a spec writes the path. */
 const BACKTICKED_PATH = /^`([^`]+)`/;
 
+/** Minimum evidence that an unbackticked token is a path and not the first word of a sentence. */
+const PATH_SHAPED = /[/.]/;
+
 /**
  * Lines belonging to the `Modifies` section starting at `startIndex`.
  *
@@ -88,14 +91,20 @@ const BACKTICKED_PATH = /^`([^`]+)`/;
  * never absorbed. The `level === 1` guard is a safety rail: when the section
  * heading is H1 every other section nests under it, and folding the whole
  * document in would fabricate authorisations from unrelated prose.
+ *
+ * A story heading is deliberately NOT exempted from the boundary. A DEEPER one
+ * (`#### US-001` under `### Modifies`) already survives — it fails the level
+ * test and is collected, then read as a group lead-in. Exempting a heading at
+ * the section's own level would only ever swallow a sibling section: `## US-002:
+ * Second story` following `## Modifies` would be read as a group, and every
+ * bullet beneath it would become a fabricated authorisation.
  */
 function sectionLines(lines: readonly string[], startIndex: number, level: number, fenced: Set<number>): string[] {
   const collected: string[] = [];
   for (let i = startIndex + 1; i < lines.length; i++) {
     if (fenced.has(i)) continue;
     const heading = lines[i].match(ANY_HEADING);
-    // A story heading is a group lead-in, not a section boundary — keep it.
-    if (heading && !STORY_HEADING.test(lines[i]) && (heading[1].length <= level || level === 1)) break;
+    if (heading && (heading[1].length <= level || level === 1)) break;
     collected.push(lines[i]);
   }
   return collected;
@@ -104,20 +113,30 @@ function sectionLines(lines: readonly string[], startIndex: number, level: numbe
 /**
  * Split one bullet's folded text into a path and the reason behind it.
  *
- * The path is the leading backticked span when present, else the first
- * whitespace-delimited token — so an author who omits backticks still gets a
- * usable entry rather than a silent drop. Returns null when nothing path-shaped
- * leads the item, which is how a stray prose bullet inside the section is
- * rejected instead of being written into the PRD as a file path.
+ * A leading backticked span is taken as the path verbatim — the author marked it
+ * explicitly, so nothing further is inferred. Without backticks the first
+ * whitespace-delimited token is accepted only when it is **path-shaped** (holds
+ * a `/` or a `.`), which is what stops a stray prose bullet inside the section —
+ * "- see the notes below" — from being written into the PRD as a file named
+ * `see` and rendered to the implementer as a file it may change. Returns null in
+ * that case, dropping the bullet.
+ *
+ * The cost of the rule is a bare extensionless filename (`Makefile`) written
+ * without backticks, which is rejected. That is the right trade: spec-writing
+ * tells authors to backtick paths, and fabricating an authorisation is worse
+ * than declining an ambiguous one.
  */
 function parseEntry(text: string): { path: string; reason: string } | null {
   const backticked = text.match(BACKTICKED_PATH);
-  const [path, rest] = backticked
-    ? [backticked[1].trim(), text.slice(backticked[0].length)]
-    : [(text.match(/^\S+/)?.[0] ?? "").trim(), text.replace(/^\S+/, "")];
+  if (backticked) {
+    const path = backticked[1].trim();
+    if (!path) return null;
+    return { path, reason: text.slice(backticked[0].length).replace(PATH_REASON_SEPARATOR, "").trim() };
+  }
 
-  if (!path) return null;
-  return { path, reason: rest.replace(PATH_REASON_SEPARATOR, "").trim() };
+  const candidate = text.match(/^\S+/)?.[0]?.trim() ?? "";
+  if (!candidate || !PATH_SHAPED.test(candidate)) return null;
+  return { path: candidate, reason: text.replace(/^\S+/, "").replace(PATH_REASON_SEPARATOR, "").trim() };
 }
 
 /**

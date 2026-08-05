@@ -51,10 +51,21 @@ function isSafeRelativePath(path: string): boolean {
   return !path.startsWith("/") && !path.includes("..");
 }
 
-/** Merge new entries into a story's existing list, first-seen path winning. */
+/**
+ * Merge spec entries into whatever the story already carried, deduplicating on
+ * path.
+ *
+ * Spec entries are ordered first, so on a collision the **spec's** reason wins.
+ * That is the module's whole premise: the spec is the authority and its wording
+ * is carried verbatim. Letting a `prd.json` value survive would mean an edited
+ * spec silently failed to update the authorisation it owns.
+ *
+ * Within one side, first-seen wins — a spec that lists the same path twice keeps
+ * the first reason rather than the last.
+ */
 function mergeEntries(existing: readonly ModifiedFileEntry[], incoming: readonly ModifiedFileEntry[]) {
   const byPath = new Map<string, ModifiedFileEntry>();
-  for (const entry of [...existing, ...incoming]) {
+  for (const entry of [...incoming, ...existing]) {
     if (!byPath.has(entry.path)) byPath.set(entry.path, entry);
   }
   return [...byPath.values()];
