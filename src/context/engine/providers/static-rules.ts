@@ -19,7 +19,6 @@ import { applySectionBudget } from "@/context";
 import type { SectionBudgetResult } from "@/context";
 import { splitRuleIntoSections } from "@/context";
 import type { RuleSection } from "@/context";
-import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import { errorMessage } from "@/utils/errors";
 import { DEFAULT_CANONICAL_RULES_BUDGET_TOKENS, loadCanonicalRules } from "../../rules/canonical-loader";
@@ -342,7 +341,7 @@ export class StaticRulesProvider implements IContextProvider {
           const rulePath = canonicalRulePath(rule);
           // When the rule declares precomputed tokens, distribute them proportionally
           // to each section so the section-level budget honours the rule-level estimate.
-          if (rule.tokens != null) {
+          if (rule.tokens != null && rule.content.length > 0) {
             const ruleContentLen = rule.content.length;
             for (const section of sections) {
               section.tokens = Math.ceil(rule.tokens * (section.content.length / ruleContentLen));
