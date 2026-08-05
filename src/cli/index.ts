@@ -74,8 +74,10 @@ export {
   collectCanonicalRuleRoots,
   rulesLintCommand as rulesLintCommandDirect,
   MAX_DEAD_GLOB_SCAN_FILES,
+  MAX_DEAD_GLOB_SCAN_TOTAL_ENTRIES,
   MAX_CANONICAL_RULE_GLOB_FILES,
   CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS,
+  DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS,
   type RulesLintOptions as RulesLintOptionsFromLint,
 } from "./rules-lint";
 export { resolveRunProfileOverride } from "./resolve-run-profile";

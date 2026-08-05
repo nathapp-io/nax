@@ -9,8 +9,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
   CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS,
+  DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS,
   MAX_CANONICAL_RULE_GLOB_FILES,
   MAX_DEAD_GLOB_SCAN_FILES,
+  MAX_DEAD_GLOB_SCAN_TOTAL_ENTRIES,
   type RulesLintOptions,
   _rulesCLIDeps,
   _rulesLintDeps,
@@ -159,6 +161,81 @@ describe("dead-glob constants", () => {
   test("CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS contains node_modules and .git", () => {
     expect(CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS).toContain("/node_modules/");
     expect(CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS).toContain("/.git/");
+  });
+
+  test("DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS contains node_modules, .git, dist, build, and .nax", () => {
+    expect(DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS).toContain("/node_modules/");
+    expect(DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS).toContain("/.git/");
+    expect(DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS).toContain("/dist/");
+    expect(DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS).toContain("/build/");
+    expect(DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS).toContain("/.nax/");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #1471: globHasMatch must not report a live glob as dead when the scan cap
+// would otherwise be exhausted by noise directories before reaching real
+// repo source.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("globHasMatch — #1471 scan-cap false negative", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await makeTempDir("rules-lint-dead-glob-");
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(tempDir);
+  });
+
+  test("finds a match under bin/ even when node_modules/ noise exceeds the scan cap", async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+
+    // Enough node_modules noise to exceed MAX_DEAD_GLOB_SCAN_FILES on its own,
+    // planted so an unfiltered walk would exhaust the cap before reaching bin/.
+    const noiseDir = join(tempDir, "node_modules", "some-pkg");
+    await mkdir(noiseDir, { recursive: true });
+    const noiseCount = MAX_DEAD_GLOB_SCAN_FILES + 500;
+    for (let i = 0; i < noiseCount; i++) {
+      await writeFile(join(noiseDir, `file-${i}.js`), "");
+    }
+
+    const binDir = join(tempDir, "bin");
+    await mkdir(binDir, { recursive: true });
+    await writeFile(join(binDir, "nax.ts"), "");
+
+    expect(_rulesLintDeps.globHasMatch("bin/*.ts", tempDir)).toBe(true);
+  });
+
+  test("finds a match under bin/ even when node_modules/ and .git/ are nested inside package subdirectories", async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+
+    // Exclude segments must be matched anywhere in the path, not just at the
+    // repo root — a monorepo package's own node_modules/.git are just as
+    // capable of exhausting the cap as a root-level one.
+    const nestedNodeModules = join(tempDir, "packages", "pkg-a", "node_modules", "some-pkg");
+    await mkdir(nestedNodeModules, { recursive: true });
+    const noiseCount = MAX_DEAD_GLOB_SCAN_FILES + 500;
+    for (let i = 0; i < noiseCount; i++) {
+      await writeFile(join(nestedNodeModules, `file-${i}.js`), "");
+    }
+
+    const nestedGit = join(tempDir, "packages", "pkg-b", ".git", "objects");
+    await mkdir(nestedGit, { recursive: true });
+    await writeFile(join(nestedGit, "pack.idx"), "");
+
+    const binDir = join(tempDir, "bin");
+    await mkdir(binDir, { recursive: true });
+    await writeFile(join(binDir, "nax.ts"), "");
+
+    expect(_rulesLintDeps.globHasMatch("bin/*.ts", tempDir)).toBe(true);
+  });
+
+  test("MAX_DEAD_GLOB_SCAN_TOTAL_ENTRIES bounds worst-case wall time for exclude-heavy trees", () => {
+    // Documents the safety-valve relationship rather than re-running a
+    // 50k+-file scan (already exercised at smaller scale by the tests above).
+    expect(MAX_DEAD_GLOB_SCAN_TOTAL_ENTRIES).toBe(MAX_DEAD_GLOB_SCAN_FILES * 25);
   });
 });
 
