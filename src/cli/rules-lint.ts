@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { globToRegex, normalizePath } from "../context/engine";
 import { CANONICAL_RULES_DIR, loadCanonicalRules } from "../context/rules/canonical-loader";
 import { getLogger } from "../logger";
-import { discoverWorkspacePackages } from "../test-runners/detect/workspace";
+import { discoverWorkspacePackages } from "../test-runners";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps
@@ -143,7 +143,6 @@ export async function rulesLintCommand(options: RulesLintOptions, deps: RulesLin
         logger.warn("rules-lint", `Rule frontmatter warning: ${warning}`, {
           file: rule.path ?? rule.fileName,
           root,
-          warningCount,
         });
       }
       for (const pattern of rule.appliesTo ?? []) {
@@ -153,7 +152,6 @@ export async function rulesLintCommand(options: RulesLintOptions, deps: RulesLin
           file: rule.path ?? rule.fileName,
           pattern,
           root,
-          warningCount,
         });
       }
       // US-002: warn when a rule declares `paths:` in a single-package repo.
