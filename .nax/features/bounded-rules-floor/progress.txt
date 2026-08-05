@@ -1,1 +1,2 @@
 [2026-08-05T11:03:29.924Z] US-001 — PASSED — Section-level rule chunking — Cost: $3.6575
+[2026-08-05T11:12:56.155Z] US-002 — PASSED — Section-aware boundary budget — Cost: $1.4907
