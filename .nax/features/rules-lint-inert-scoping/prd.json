@@ -3,7 +3,7 @@
   "feature": "rules-lint-inert-scoping",
   "branchName": "feat/rules-lint-inert-scoping",
   "createdAt": "2026-08-05T00:00:00+08:00",
-  "updatedAt": "2026-08-05T04:16:23.614Z",
+  "updatedAt": "2026-08-05T04:26:02.954Z",
   "userStories": [
     {
       "id": "US-001",
@@ -28,8 +28,8 @@
         "rules"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -93,7 +93,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/cli/rules-lint.ts",
@@ -104,7 +106,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "fed041494dca6b34c6403371b5aaf41eae26e598"
     }
   ],
   "analysis": "This is a backwards-compatible enhancement to the existing canonical-rules parser and `nax rules lint` command. `parseFrontmatter(raw, filePath)` currently strips a UTF-8 BOM and leading CRLF/LF lines, records a displacement reason only when the remaining content begins with `---`, and otherwise returns the unparsed content with priority 100 (`src/context/rules/rules-frontmatter.ts:90-120`). It must gain the same conservative handling for one or more leading HTML comments: after removing leading comments and surrounding whitespace, emit one warning only if the immediately remaining content begins with the opening delimiter. It must not search later body content for `---`; that would misclassify ordinary Markdown horizontal rules. The existing parser warning path is already end-to-end: `loadCanonicalRules` logs and stores `parsed.warnings` on each `CanonicalRule` (`src/context/rules/canonical-loader.ts:420-440`), and `rulesLintCommand` re-emits each rule warning through `logger.warn(\"rules-lint\", ...)` while adding it to the summary count (`src/cli/rules-lint.ts:114-137`). `rulesLintCommand` also already warns for unmatched `appliesTo` patterns and retains the one-line stdout summary (`src/cli/rules-lint.ts:128-147`). The lint change should import the barrel-exported async `discoverWorkspacePackages` (`src/test-runners/index.ts:38`) and register it in both `_rulesLintDeps` and `RulesLintDeps` (`src/cli/rules-lint.ts:28-63,96-101`). The public `rulesLintCommand` wrapper in `src/cli/rules.ts` constructs the dependency object explicitly (`src/cli/rules.ts:65-83`), so its lazy `_rulesCLIDeps` forwarding seam and the object passed to the implementation must also include the resolver; otherwise the type contract and the CLI entry point diverge. Resolve repo shape once for the repository root; an empty package list is the authoritative single-package predicate. If that resolver rejects, catch the rejection and skip every inert-`paths:` check without logging a false positive, while continuing to load rules and print the normal summary. For a single-package result, each loaded rule with a non-empty `paths` list produces a structured `rules-lint` warning naming its file and directing file-glob use to `appliesTo`; non-empty package lists suppress this new warning. The runtime rationale is confirmed in `ruleMatchesPackage`: rules with `paths` always match when `packageDir === repoRoot` (`src/context/engine/providers/static-rules.ts:183-192`). No parsing semantics, priority fallback, error behavior for malformed frontmatter, exit status, or migration behavior changes. Primary tests belong in `test/unit/context/rules/rules-frontmatter.test.ts` and `test/unit/cli/rules-lint.test.ts`; the latter already stubs `_rulesLintDeps` and captures structured logger calls (`test/unit/cli/rules-lint.test.ts:23-56,184-344`). Because lint tests mutate dependency seams, add resolver dependency setup and restoration alongside the existing dependency lifecycle. No migration is required: this is advisory detection for previously migrated stores, with warning-only output and exit 0.",
