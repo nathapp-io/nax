@@ -1,3 +1,9 @@
+---
+paths:
+  - "src/**/*.ts"
+  - "bin/**/*.ts"
+---
+
 # Project Conventions
 
 > Concise directives. For detailed rationale, see `docs/architecture/conventions.md` §1–§4 and `docs/architecture/coding-standards.md` §9–§10.

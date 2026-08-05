@@ -2,3 +2,4 @@
 [2026-08-05T11:12:56.155Z] US-002 — PASSED — Section-aware boundary budget — Cost: $1.4907
 [2026-08-05T11:31:33.892Z] US-003 — PASSED — Derive per-stage rules budget and enforce config default — Cost: $1.6421
 [2026-08-05T12:11:26.623Z] US-004 — PASSED — Emit budgeted section chunks and section telemetry — Cost: $1.7091
+[2026-08-05T12:21:20.605Z] US-005 — PASSED — Clean and scope the canonical rules corpus — Cost: $0.2077

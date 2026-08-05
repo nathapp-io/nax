@@ -57,7 +57,7 @@ describe("applySectionBudget — under budget", () => {
       makeSection({ slug: "beta", ordinal: 1, tokens: 50, priority: 1 }),
     ];
     const result = applySectionBudget(sections, 1_000);
-    expect(result.sections).toEqual(sections);
+    expect(result.retainedSections).toEqual(sections);
   });
 });
 
@@ -77,7 +77,7 @@ describe("applySectionBudget — ordering", () => {
       makeSection({ ruleId: "rule-b", slug: "b-first", ordinal: 0, tokens: 10, priority: 2 }),
     ];
     const result = applySectionBudget(sections, 1_000);
-    expect(result.sections.map((s) => sectionId(s))).toEqual([
+    expect(result.retainedSections.map((s) => sectionId(s))).toEqual([
       "rule-a#a-first",
       "rule-a#a-second",
       "rule-b#b-first",
@@ -99,7 +99,7 @@ describe("applySectionBudget — leading-run within one rule", () => {
       makeSection({ slug: "s3", ordinal: 3, tokens: 50, priority: 1 }),
     ];
     const result = applySectionBudget(sections, 100);
-    expect(result.sections.map((s) => s.slug)).toEqual(["s0", "s1"]);
+    expect(result.retainedSections.map((s) => s.slug)).toEqual(["s0", "s1"]);
   });
 });
 
@@ -122,7 +122,7 @@ describe("applySectionBudget — exhausted budget drops lower-priority rules", (
       makeSection({ ruleId: "rule-b", slug: "b1", ordinal: 1, tokens: 10, priority: 2 }),
     ];
     const result = applySectionBudget(sections, 100);
-    expect(result.sections.map((s) => sectionId(s))).toEqual(["rule-a#a0", "rule-a#a1"]);
+    expect(result.retainedSections.map((s) => sectionId(s))).toEqual(["rule-a#a0", "rule-a#a1"]);
     expect(result.droppedIds).toEqual([
       "rule-a#a2",
       "rule-a#a3",
@@ -142,7 +142,7 @@ describe("applySectionBudget — single oversized section", () => {
       makeSection({ slug: "big", ordinal: 0, tokens: 500, priority: 1 }),
     ];
     const result = applySectionBudget(sections, 100);
-    expect(result.sections).toEqual(sections);
+    expect(result.retainedSections).toEqual(sections);
     expect(result.overageTokens).toBeGreaterThan(0);
     expect(result.overageTokens).toBe(500 - 100);
   });
@@ -171,7 +171,7 @@ describe("applySectionBudget — droppedIds", () => {
 describe("applySectionBudget — empty input", () => {
   test("AC8: returns an empty section list and overageTokens of zero when called with an empty section array", () => {
     const result = applySectionBudget([], 1_000);
-    expect(result.sections).toEqual([]);
+    expect(result.retainedSections).toEqual([]);
     expect(result.overageTokens).toBe(0);
   });
 });
@@ -187,7 +187,7 @@ describe("applySectionBudget — zero budget", () => {
       makeSection({ slug: "b", ordinal: 1, tokens: 80, priority: 1 }),
     ];
     const result = applySectionBudget(sections, 0);
-    expect(result.sections).toEqual([]);
+    expect(result.retainedSections).toEqual([]);
     expect(result.overageTokens).toBe(130);
   });
 });
@@ -203,7 +203,7 @@ describe("applySectionBudget — non-finite budget", () => {
     ];
     expect(() => applySectionBudget(sections, Number.NaN)).not.toThrow();
     expect(() => applySectionBudget(sections, Number.POSITIVE_INFINITY)).not.toThrow();
-    expect(applySectionBudget(sections, Number.NaN).sections).toEqual([]);
-    expect(applySectionBudget(sections, Number.POSITIVE_INFINITY).sections).toEqual([]);
+    expect(applySectionBudget(sections, Number.NaN).retainedSections).toEqual([]);
+    expect(applySectionBudget(sections, Number.POSITIVE_INFINITY).retainedSections).toEqual([]);
   });
 });

@@ -1,3 +1,9 @@
+---
+paths:
+  - "src/**/*.ts"
+  - "bin/**/*.ts"
+---
+
 # Monorepo & Language-Agnostic Awareness
 
 > nax orchestrates AI agents across **polyglot monorepos**. Every subsystem (context, verification, review, TDD, acceptance) can run against a TS frontend in one package and a Go backend in another, sometimes in the same run. Code that silently assumes a single-language, single-package layout is a latent bug.

@@ -28,7 +28,7 @@ import type { RuleSection } from "./rule-sections";
 import { FRONTMATTER_PRIORITY_DEFAULT } from "./rules-frontmatter";
 
 export interface SectionBudgetResult {
-  sections: RuleSection[];
+  retainedSections: RuleSection[];
   totalTokens: number;
   usedTokens: number;
   /**
@@ -46,6 +46,8 @@ export interface SectionBudgetResult {
 }
 
 function sectionIdentifier(section: RuleSection): string {
+  const sectionId = (section as { sectionId?: string }).sectionId;
+  if (sectionId) return sectionId;
   const owner = section.ruleId ?? section.rulePath ?? "";
   return `${owner}#${section.slug}`;
 }
@@ -63,7 +65,7 @@ export function applySectionBudget(sections: RuleSection[], budgetTokens: number
 
   if (!Number.isFinite(budgetTokens) || budgetTokens <= 0) {
     return {
-      sections: [],
+      retainedSections: [],
       totalTokens,
       usedTokens: 0,
       droppedIds: sections.map(sectionIdentifier),
@@ -103,7 +105,7 @@ export function applySectionBudget(sections: RuleSection[], budgetTokens: number
   }
 
   return {
-    sections: kept,
+    retainedSections: kept,
     totalTokens,
     usedTokens,
     droppedIds,

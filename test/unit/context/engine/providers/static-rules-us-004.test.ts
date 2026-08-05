@@ -111,7 +111,7 @@ describe("StaticRulesProvider — US-004 AC1: splitRuleIntoSections invocation",
       return [sectionOf(rule, { slug: "section", content: rule.content, ordinal: 0 })];
     }) as typeof _staticRulesDeps.splitRuleIntoSections;
     _staticRulesDeps.applySectionBudget = ((sections: RuleSection[]) => ({
-      sections,
+      retainedSections: sections,
       totalTokens: sections.reduce((sum, s) => sum + s.tokens, 0),
       usedTokens: sections.reduce((sum, s) => sum + s.tokens, 0),
       droppedIds: [],
@@ -142,7 +142,7 @@ describe("StaticRulesProvider — US-004 AC2: applySectionBudget invocation", ()
     _staticRulesDeps.applySectionBudget = ((_sections: RuleSection[], budgetTokens: number) => {
       receivedBudget = budgetTokens;
       return {
-        sections: [],
+        retainedSections: [],
         totalTokens: 0,
         usedTokens: 0,
         droppedIds: [],
@@ -172,7 +172,7 @@ describe("StaticRulesProvider — US-004 AC3/AC4/AC5/AC6: section chunk shape", 
     ];
     _staticRulesDeps.splitRuleIntoSections = (() => sections) as typeof _staticRulesDeps.splitRuleIntoSections;
     _staticRulesDeps.applySectionBudget = ((s: RuleSection[]) => ({
-      sections: s,
+      retainedSections: s,
       totalTokens: s.reduce((sum, x) => sum + x.tokens, 0),
       usedTokens: s.reduce((sum, x) => sum + x.tokens, 0),
       droppedIds: [],
@@ -194,7 +194,7 @@ describe("StaticRulesProvider — US-004 AC3/AC4/AC5/AC6: section chunk shape", 
     ];
     _staticRulesDeps.splitRuleIntoSections = (() => sections) as typeof _staticRulesDeps.splitRuleIntoSections;
     _staticRulesDeps.applySectionBudget = ((s: RuleSection[]) => ({
-      sections: s,
+      retainedSections: s,
       totalTokens: s.reduce((sum, x) => sum + x.tokens, 0),
       usedTokens: s.reduce((sum, x) => sum + x.tokens, 0),
       droppedIds: [],
@@ -216,7 +216,7 @@ describe("StaticRulesProvider — US-004 AC3/AC4/AC5/AC6: section chunk shape", 
     ];
     _staticRulesDeps.splitRuleIntoSections = (() => sections) as typeof _staticRulesDeps.splitRuleIntoSections;
     _staticRulesDeps.applySectionBudget = ((s: RuleSection[]) => ({
-      sections: s,
+      retainedSections: s,
       totalTokens: s.reduce((sum, x) => sum + x.tokens, 0),
       usedTokens: s.reduce((sum, x) => sum + x.tokens, 0),
       droppedIds: [],
@@ -239,7 +239,7 @@ describe("StaticRulesProvider — US-004 AC3/AC4/AC5/AC6: section chunk shape", 
     ];
     _staticRulesDeps.splitRuleIntoSections = (() => sections) as typeof _staticRulesDeps.splitRuleIntoSections;
     _staticRulesDeps.applySectionBudget = ((s: RuleSection[]) => ({
-      sections: s,
+      retainedSections: s,
       totalTokens: s.reduce((sum, x) => sum + x.tokens, 0),
       usedTokens: s.reduce((sum, x) => sum + x.tokens, 0),
       droppedIds: [],
@@ -272,7 +272,7 @@ describe("StaticRulesProvider — US-004 AC7/AC8: section-level budget pressure"
     _staticRulesDeps.applySectionBudget = ((s: RuleSection[]) => {
       const kept = s.filter((x) => x.slug === "a");
       return {
-        sections: kept,
+        retainedSections: kept,
         totalTokens: s.reduce((sum, x) => sum + x.tokens, 0),
         usedTokens: kept.reduce((sum, x) => sum + x.tokens, 0),
         droppedIds: s.filter((x) => x.slug !== "a").map((x) => `${x.ruleId}#${x.slug}`),
@@ -300,7 +300,7 @@ describe("StaticRulesProvider — US-004 AC7/AC8: section-level budget pressure"
     _staticRulesDeps.applySectionBudget = ((s: RuleSection[]) => {
       const kept = s.filter((x) => x.slug === "a");
       return {
-        sections: kept,
+        retainedSections: kept,
         totalTokens: s.reduce((sum, x) => sum + x.tokens, 0),
         usedTokens: kept.reduce((sum, x) => sum + x.tokens, 0),
         droppedIds: s.filter((x) => x.slug !== "a").map((x) => `${x.ruleId}#${x.slug}`),
@@ -332,7 +332,7 @@ describe("StaticRulesProvider — US-004 AC9: scopingReport.sectionCount", () =>
       return [sectionOf(filteredRule, { slug: "b", content: "## B\nbody", heading: "B", ordinal: 0 })];
     }) as typeof _staticRulesDeps.splitRuleIntoSections;
     _staticRulesDeps.applySectionBudget = ((s: RuleSection[]) => ({
-      sections: s,
+      retainedSections: s,
       totalTokens: s.reduce((sum, x) => sum + x.tokens, 0),
       usedTokens: s.reduce((sum, x) => sum + x.tokens, 0),
       droppedIds: [],
@@ -364,7 +364,7 @@ describe("StaticRulesProvider — US-004 AC10/AC11: stage filter removes rule se
       return [sectionOf(filteredRule, { slug: "b", content: "## B\nbody", heading: "B", ordinal: 0 })];
     }) as typeof _staticRulesDeps.splitRuleIntoSections;
     _staticRulesDeps.applySectionBudget = ((s: RuleSection[]) => ({
-      sections: s,
+      retainedSections: s,
       totalTokens: s.reduce((sum, x) => sum + x.tokens, 0),
       usedTokens: s.reduce((sum, x) => sum + x.tokens, 0),
       droppedIds: [],
@@ -392,7 +392,7 @@ describe("StaticRulesProvider — US-004 AC10/AC11: stage filter removes rule se
     _staticRulesDeps.applySectionBudget = ((s: RuleSection[]) => {
       receivedOwners = s.map((x) => x.ruleId ?? "");
       return {
-        sections: s,
+        retainedSections: s,
         totalTokens: s.reduce((sum, x) => sum + x.tokens, 0),
         usedTokens: s.reduce((sum, x) => sum + x.tokens, 0),
         droppedIds: [],

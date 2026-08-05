@@ -1,3 +1,8 @@
+---
+paths:
+  - "src/**/*.ts"
+---
+
 # Error Handling Patterns
 
 > Project-specific error handling conventions for nax.

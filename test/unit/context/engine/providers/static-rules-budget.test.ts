@@ -151,7 +151,7 @@ describe("StaticRulesProvider — US-003 per-stage rules budget derivation", () 
     ) => {
       const totalTokens = sections.reduce((sum, s) => sum + s.tokens, 0);
       return {
-        sections: [...sections],
+        retainedSections: [...sections],
         totalTokens,
         usedTokens: totalTokens,
         droppedIds: [],

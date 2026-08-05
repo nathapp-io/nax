@@ -1,3 +1,9 @@
+---
+paths:
+  - "src/**/*.ts"
+  - "bin/**/*.ts"
+---
+
 # Config Patterns
 
 > Project-specific configuration patterns for nax. SSOT for config conventions — no equivalent section in `docs/architecture/`.

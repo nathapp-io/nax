@@ -214,7 +214,7 @@ function buildSectionBudgetPressure(
   const droppedCount = droppedIds.length;
   if (droppedCount === 0 && overageTokens <= 0) return null;
 
-  const kept = new Set(budgetResult.sections);
+  const kept = new Set(budgetResult.retainedSections);
   let droppedTokens = 0;
   for (const section of allSections) {
     if (!kept.has(section)) {
@@ -374,7 +374,7 @@ export class StaticRulesProvider implements IContextProvider {
           });
         }
 
-        const effectiveSections = this.enforceBudget ? budgetResult.sections : allSections;
+        const effectiveSections = this.enforceBudget ? budgetResult.retainedSections : allSections;
         if (effectiveSections.length === 0) {
           logger.warn("static-rules", "No rule sections fit in static rules budget", {
             storyId: request.storyId,
