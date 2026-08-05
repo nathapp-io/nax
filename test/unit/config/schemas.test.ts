@@ -528,20 +528,20 @@ describe("ContextV2RulesConfigSchema — enforceBudget (US-002)", () => {
     return base;
   }
 
-  test("[US-002 AC 11] enforceBudget defaults to false when context.v2.rules is omitted", () => {
+  test("[US-002 AC 11] enforceBudget defaults to true when context.v2.rules is omitted (US-003 flipped default)", () => {
     const config = NaxConfigSchema.parse(rulesConfig(undefined));
     const context = config.context as Record<string, unknown>;
     const v2 = context.v2 as Record<string, unknown>;
     const rules = v2.rules as Record<string, unknown>;
-    expect(rules["enforceBudget"]).toBe(false);
+    expect(rules["enforceBudget"]).toBe(true);
   });
 
-  test("[US-002 AC 11] enforceBudget defaults to false when context.v2.rules is supplied without enforceBudget", () => {
+  test("[US-002 AC 11] enforceBudget defaults to true when context.v2.rules is supplied without enforceBudget (US-003 flipped default)", () => {
     const config = NaxConfigSchema.parse(rulesConfig({ budgetTokens: 4096 }));
     const context = config.context as Record<string, unknown>;
     const v2 = context.v2 as Record<string, unknown>;
     const rules = v2.rules as Record<string, unknown>;
-    expect(rules["enforceBudget"]).toBe(false);
+    expect(rules["enforceBudget"]).toBe(true);
   });
 
   test("[US-002 AC 12] enforceBudget resolves to true when explicitly set true via context.v2.rules.enforceBudget", () => {
@@ -562,6 +562,54 @@ describe("ContextV2RulesConfigSchema — enforceBudget (US-002)", () => {
 
   test("enforceBudget rejects non-boolean values", () => {
     const result = NaxConfigSchema.safeParse(rulesConfig({ enforceBudget: "yes" }));
+    expect(result.success).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-003: rulesShare + flipped enforceBudget default
+//
+// Acceptance criteria covered here:
+//   AC 1 — rulesShare defaults to 0.4 when unset
+//   AC 2 — enforceBudget defaults to true when unset (covered above)
+//   AC 3 — rulesShare rejects values > 1
+//   AC 4 — rulesShare rejects values < 0
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("ContextV2RulesConfigSchema — rulesShare (US-003)", () => {
+  function rulesConfig(rules: Record<string, unknown> | undefined) {
+    const base = { ...(DEFAULT_CONFIG as Record<string, unknown>) };
+    if (rules !== undefined) {
+      const context = base.context as Record<string, unknown>;
+      const v2 = { ...(context.v2 as Record<string, unknown>), rules };
+      base.context = { ...context, v2 };
+    }
+    return base;
+  }
+
+  test("[US-003 AC 1] rulesShare defaults to 0.4 when context.v2.rules is omitted", () => {
+    const config = NaxConfigSchema.parse(rulesConfig(undefined));
+    const context = config.context as Record<string, unknown>;
+    const v2 = context.v2 as Record<string, unknown>;
+    const rules = v2.rules as Record<string, unknown>;
+    expect(rules["rulesShare"]).toBe(0.4);
+  });
+
+  test("[US-003 AC 1] rulesShare defaults to 0.4 when context.v2.rules is supplied without rulesShare", () => {
+    const config = NaxConfigSchema.parse(rulesConfig({ budgetTokens: 4096 }));
+    const context = config.context as Record<string, unknown>;
+    const v2 = context.v2 as Record<string, unknown>;
+    const rules = v2.rules as Record<string, unknown>;
+    expect(rules["rulesShare"]).toBe(0.4);
+  });
+
+  test("[US-003 AC 3] rulesShare rejects values above 1", () => {
+    const result = NaxConfigSchema.safeParse(rulesConfig({ rulesShare: 1.5 }));
+    expect(result.success).toBe(false);
+  });
+
+  test("[US-003 AC 4] rulesShare rejects negative values", () => {
+    const result = NaxConfigSchema.safeParse(rulesConfig({ rulesShare: -0.1 }));
     expect(result.success).toBe(false);
   });
 });

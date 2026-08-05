@@ -68,6 +68,12 @@ export interface StaticRulesProviderOptions {
   /** Token budget for static rules chunk emission. Default: 8192 */
   budgetTokens?: number;
   /**
+   * Per-stage share of `ContextRequest.budgetTokens` reserved for canonical rules.
+   * The provider derives an effective budget of `min(rulesShare * request.budgetTokens, budgetTokens)`,
+   * so `budgetTokens` becomes an absolute upper bound. Default: 0.4. US-003.
+   */
+  rulesShare?: number;
+  /**
    * When true, enforce the budget via contiguous-tail truncation (legacy
    * behaviour) — rules that don't fit are dropped and reported as pressure.
    * When false (default), every rule is preserved and the gap over the
@@ -233,11 +239,16 @@ export class StaticRulesProvider implements IContextProvider {
 
   private readonly allowLegacyClaudeMd: boolean;
   private readonly budgetTokens: number;
+  private readonly rulesShare: number;
   private readonly enforceBudget: boolean;
 
   constructor(options: StaticRulesProviderOptions = {}) {
     this.allowLegacyClaudeMd = options.allowLegacyClaudeMd ?? false;
     this.budgetTokens = options.budgetTokens ?? DEFAULT_CANONICAL_RULES_BUDGET_TOKENS;
+    this.rulesShare = options.rulesShare ?? 0.4;
+    // Schema defaults enforceBudget to true; the constructor fallback is
+    // deliberately left at false so a directly-constructed provider that
+    // names no option keeps today's soft behaviour (US-003).
     this.enforceBudget = options.enforceBudget ?? false;
   }
 
@@ -320,14 +331,15 @@ export class StaticRulesProvider implements IContextProvider {
           scopeFileCount: request.scopeFiles?.length ?? 0,
         };
 
-        const budgetResult = applyCanonicalRulesBudget(scopedRules, this.budgetTokens, {
+        const effectiveBudget = Math.min(this.rulesShare * request.budgetTokens, this.budgetTokens);
+        const budgetResult = applyCanonicalRulesBudget(scopedRules, effectiveBudget, {
           enforce: this.enforceBudget,
         });
-        if (budgetResult.totalTokens >= Math.floor(this.budgetTokens * 0.75)) {
+        if (budgetResult.totalTokens >= Math.floor(effectiveBudget * 0.75)) {
           logger.warn("static-rules", "Canonical rules are approaching/exceeding static rules budget", {
             storyId: request.storyId,
             totalTokens: budgetResult.totalTokens,
-            budgetTokens: this.budgetTokens,
+            budgetTokens: effectiveBudget,
             droppedCount: budgetResult.droppedCount,
           });
         }
@@ -336,7 +348,7 @@ export class StaticRulesProvider implements IContextProvider {
             storyId: request.storyId,
             totalTokens: budgetResult.totalTokens,
             usedTokens: budgetResult.usedTokens,
-            budgetTokens: this.budgetTokens,
+            budgetTokens: effectiveBudget,
             droppedCount: budgetResult.droppedCount,
           });
         }
@@ -345,7 +357,7 @@ export class StaticRulesProvider implements IContextProvider {
         if (effectiveRules.length === 0) {
           logger.warn("static-rules", "No canonical rules fit in static rules budget", {
             storyId: request.storyId,
-            budgetTokens: this.budgetTokens,
+            budgetTokens: effectiveBudget,
             totalScopedRules: scopedRules.length,
           });
           // Even with zero chunks, still report pressure so the orchestrator can

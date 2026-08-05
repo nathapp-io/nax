@@ -68,14 +68,20 @@ const ContextV2RulesConfigSchema = z
      */
     budgetTokens: z.number().int().min(512).default(8192),
     /**
-     * When true, `applyCanonicalRulesBudget` enforces the ceiling via
-     * contiguous-tail truncation (legacy behaviour). When false (default),
+     * Per-stage share of `ContextRequest.budgetTokens` reserved for canonical rules.
+     * The effective budget the provider applies is `min(rulesShare * request.budgetTokens, budgetTokens)`,
+     * so `budgetTokens` becomes an absolute upper bound. US-003.
+     */
+    rulesShare: z.number().min(0).max(1).default(0.4),
+    /**
+     * When true (default), `applyCanonicalRulesBudget` enforces the ceiling via
+     * contiguous-tail truncation (legacy behaviour). When false,
      * the ceiling is reported as pressure and every rule is preserved.
      * Resolved by the default orchestrator and wired into `StaticRulesProvider`.
      */
-    enforceBudget: z.boolean().default(false),
+    enforceBudget: z.boolean().default(true),
   })
-  .default(() => ({ allowLegacyClaudeMd: false, budgetTokens: 8192, enforceBudget: false }));
+  .default(() => ({ allowLegacyClaudeMd: false, budgetTokens: 8192, rulesShare: 0.4, enforceBudget: true }));
 
 // Context Engine plugin provider config (Phase 7)
 const ContextPluginProviderConfigSchema = z.object({
@@ -233,7 +239,7 @@ export const ContextV2ConfigSchema = z
     minScore: 0.1,
     providerTimeoutMs: 5000,
     pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
-    rules: { allowLegacyClaudeMd: false, budgetTokens: 8192, enforceBudget: false },
+    rules: { allowLegacyClaudeMd: false, budgetTokens: 8192, rulesShare: 0.4, enforceBudget: true },
     pluginProviders: [],
     stages: {},
     deterministic: false,
