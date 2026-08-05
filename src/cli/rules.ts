@@ -36,6 +36,7 @@ export {
   MAX_DEAD_GLOB_SCAN_FILES,
   MAX_CANONICAL_RULE_GLOB_FILES,
   CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS,
+  DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS,
   _rulesLintDeps,
   type RulesLintOptions,
 } from "./rules-lint";

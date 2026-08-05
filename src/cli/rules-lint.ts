@@ -26,6 +26,13 @@ export const MAX_CANONICAL_RULE_GLOB_FILES = 500;
 /** Directories that never legitimately contain a `.nax/rules` overlay root. */
 export const CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS = ["/node_modules/", "/.git/"];
 
+/**
+ * Directories skipped BEFORE the dead-glob scan counts toward
+ * MAX_DEAD_GLOB_SCAN_FILES (#1471) — machine-generated/vendor trees that
+ * would otherwise burn the whole cap before real repo source is reached.
+ */
+export const DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS = ["/node_modules/", "/.git/", "/dist/", "/build/", "/.nax/"];
+
 export const _rulesLintDeps = {
   globCanonicalRuleFiles: (workdir: string): string[] => {
     try {
@@ -50,6 +57,8 @@ export const _rulesLintDeps = {
       const regex = globToRegex(normalizePath(pattern));
       let scanned = 0;
       for (const file of new Bun.Glob("**/*").scanSync({ cwd, absolute: false, dot: true })) {
+        const normalized = `/${normalizePath(file)}/`;
+        if (DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS.some((seg) => normalized.includes(seg))) continue;
         if (scanned >= MAX_DEAD_GLOB_SCAN_FILES) break;
         scanned++;
         if (regex.test(normalizePath(file))) return true;
