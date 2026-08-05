@@ -1,5 +1,31 @@
 ---
-priority: 30
+priority: 50
+appliesTo:
+  - "src/**/*.ts"
+  - "bin/**/*.ts"
+stages:
+  - "context"
+  - "execution"
+  - "tdd-test-writer"
+  - "tdd-implementer"
+  - "tdd-verifier"
+  - "verify"
+  - "rectify"
+  - "review"
+  - "review-semantic"
+  - "review-adversarial"
+  - "autofix"
+  - "single-session"
+  - "tdd-simple"
+  - "no-test"
+  - "batch"
+  - "review-dialogue"
+  - "debate"
+  - "queue-check"
+  - "routing"
+  - "constitution"
+  - "prompt"
+  - "optimizer"
 ---
 
 # Forbidden Patterns
@@ -93,81 +119,3 @@ function buildSourceFixPrompt(...): string {
 // Correct — call the builder directly at the use site
 const prompt = new AcceptancePromptBuilder().buildSourceFixPrompt(...);
 ```
-
-## Test Files
-
-| Forbidden | Use Instead | Why |
-|:---|:---|:---|
-| Test files anywhere outside `test/unit/`, `test/integration/`, `test/ui/` (or `test/e2e/`, run separately via `bun run test:e2e`) | Move under the matching sanctioned directory | Orphaned files with no clear ownership — **and they silently never run.** `bun run test` walks exactly those three directories (see `scripts/run-tests.ts` PHASES), so a `.test.ts` outside them looks like coverage and is not. |
-| Fixed-duration sleeps in tests — **both** `Bun.sleep(n)` and `await new Promise(r => setTimeout(r, n))` | Waiting on a side effect → `waitForCondition` / `waitForFile`. Timer-driven code → inject `_deps` timers and drive `makeFakeClock()`. Asserting a handle is cleared → `withTimerSpy`. | Flaky under load, and additive on the suite wall clock since Bun runs files serially. Naming only `Bun.sleep` left the `new Promise` spelling to accumulate. Carve-out: a bounded poll interval *inside* a `test/helpers/` helper. See `docs/guides/testing-rules.md` §3. |
-| Standalone bug-fix test files (`*-bug026.test.ts`) | Add to existing relevant test file | Fragments test coverage, creates ownership confusion |
-| `TEST_COVERAGE_*.md` in test/ | `docs/` directory | Test dir is for test code only |
-| `rm -rf` in test cleanup | `test/helpers/temp.ts` helpers (`makeTempDir()` / `cleanupTempDir()` / `withTempDir()`) | Accidental deletion risk; temp-dir handling is centralized and portable |
-| Tests depending on alphabetical file execution order | Independent, self-contained test files | Cross-file coupling causes phantom failures |
-| Copy-pasted mock setup across files | `test/helpers/` shared factories | DRY; single place to update when interfaces change |
-| Spawning full `nax` process in tests | Mock the relevant module | Prechecks fail in temp dirs; slow; flaky |
-| Real signal sending (`process.kill`) | Mock `process.on()` | Can kill the test runner |
-| Direct real-home `.nax` paths in tests (`join(homedir(), ".nax", ...)`) except explicit path-helper fallback tests | `globalConfigDir()`, `identityPath()`, isolated global dir from `test/preload.ts` | Tests must not write to the developer's actual `~/.nax`. Enforced by `scripts/check-no-real-global-nax.ts`. |
-
-## Test-File Classification Convention
-
-**All "is this a test file?" / "where is the sibling test?" logic goes through `resolveTestFilePatterns(config, workdir, packageDir)` — no exceptions.**
-
-nax orchestrates polyglot monorepos. Hardcoding TS-centric patterns anywhere outside `src/test-runners/` will silently break Go / Python / Rust / polyglot repos and stale out when users configure custom `testFilePatterns`. Enforced by ADR-009.
-
-### Wrong — inline regex in a provider / pipeline stage / review module
-
-```typescript
-// src/context/engine/providers/code-neighbor.ts
-function siblingTestPath(filePath: string): string | null {
-  const m = filePath.match(/^src\/(.+)\.(ts|tsx|js|jsx)$/);
-  // ...
-  return `test/unit/${m[1]}.test.${m[2]}`;
-}
-
-// src/review/diff-utils.ts
-const isTest = /\.test\.ts$/.test(path);
-
-// src/pipeline/stages/foo.ts
-if (path.endsWith(".spec.ts")) { ... }
-```
-
-Banned patterns to grep for when reviewing PRs:
-- Hardcoded directory names: `test/unit/`, `test/integration/`, `__tests__/`
-- Hardcoded extensions: `.test.ts`, `.spec.ts`, `_test.go`, `_test.py`
-- Inline regex: `/\.test\.ts$/`, `/\.(test|spec)\.(tsx?|jsx?)$/`
-
-### Correct — consult the resolver SSOT
-
-```typescript
-import { resolveTestFilePatterns } from "../../test-runners/resolver";
-
-const resolved = await resolveTestFilePatterns(config, workdir, story.workdir);
-
-// Classification — use .regex
-const isTest = resolved.regex.some((re) => re.test(filePath));
-
-// Diff exclusion — use .pathspec
-const args = ["git", "diff", ...resolved.pathspec];
-
-// Directory listing — use .testDirs + .globs
-for (const glob of resolved.globs) { /* ... */ }
-```
-
-### Threading into providers
-
-`ContextRequest` carries `resolvedTestPatterns?: ResolvedTestPatterns`. Providers that need sibling-test derivation MUST read it from the request — never re-derive from `filePath` alone.
-
-### Scope
-
-Applies to `src/context/`, `src/pipeline/`, `src/review/`, `src/tdd/`, `src/verification/`, `src/acceptance/`, `src/plugins/`, `src/analyze/`. The only module permitted to hold raw patterns is `src/test-runners/`.
-
-## Test-Only Helpers
-
-The following symbols are **test-only** and must never appear in `src/` production code:
-
-| Symbol | Location | Use In |
-|:---|:---|:---|
-| `fakeAgentManager` | `test/helpers/fake-agent-manager.ts` | Unit tests that need an `IAgentManager` without booting a full runtime. Wraps a single adapter with no middleware chain and no fallback policy. |
-
-CI gate: `scripts/check-no-adapter-wrap.sh` runs in pre-commit to block `wrapAdapterAsManager` from re-entering `src/`.

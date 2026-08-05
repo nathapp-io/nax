@@ -1,5 +1,7 @@
 ---
-priority: 45
+priority: 20
+appliesTo:
+  - "test/**/*.test.ts"
 stages:
   - "context"
   - "execution"

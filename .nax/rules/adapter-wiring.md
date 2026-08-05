@@ -1,5 +1,5 @@
 ---
-priority: 60
+priority: 35
 appliesTo:
   - "src/agents/**/*.ts"
   - "src/operations/**/*.ts"

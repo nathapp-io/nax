@@ -1,5 +1,30 @@
 ---
-priority: 40
+priority: 10
+appliesTo:
+  - "src/**/*.ts"
+stages:
+  - "context"
+  - "execution"
+  - "tdd-test-writer"
+  - "tdd-implementer"
+  - "tdd-verifier"
+  - "verify"
+  - "rectify"
+  - "review"
+  - "review-semantic"
+  - "review-adversarial"
+  - "autofix"
+  - "single-session"
+  - "tdd-simple"
+  - "no-test"
+  - "batch"
+  - "review-dialogue"
+  - "debate"
+  - "queue-check"
+  - "routing"
+  - "constitution"
+  - "prompt"
+  - "optimizer"
 ---
 
 # Error Handling Patterns
