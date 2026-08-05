@@ -39,6 +39,8 @@ export {
 export type { AdapterFailure, ContextBundle, ContextChunk } from "./engine/types";
 export type { PackedChunk } from "./engine/packing";
 export { NeutralityLintError } from "./rules/canonical-loader";
+export { splitRuleIntoSections } from "./rules/rule-sections";
+export type { RuleSection } from "./rules/rule-sections";
 
 export {
   generateTestCoverageSummary,
