@@ -87,6 +87,15 @@ export interface ParsedFrontmatter {
 // Parser
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Strip one or more leading blank lines (CRLF or LF) from `content`. */
+function stripLeadingBlankLines(content: string): string {
+  let out = content;
+  while (out.startsWith("\r\n") || out.startsWith("\n")) {
+    out = out.startsWith("\r\n") ? out.slice(2) : out.slice(1);
+  }
+  return out;
+}
+
 export function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatter {
   const warnings: string[] = [];
   let effectiveContent = raw;
@@ -99,13 +108,48 @@ export function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatt
   }
 
   // AC11: detect leading blank line(s) before frontmatter opening delimiter
-  while (effectiveContent.startsWith("\r\n") || effectiveContent.startsWith("\n")) {
+  const blankStripped = stripLeadingBlankLines(effectiveContent);
+  if (blankStripped !== effectiveContent) {
     displacedReason ??= `Frontmatter is displaced — file begins with a blank line before '---' (${filePath})`;
-    effectiveContent = effectiveContent.startsWith("\r\n") ? effectiveContent.slice(2) : effectiveContent.slice(1);
+    effectiveContent = blankStripped;
+  }
+
+  // AC15: strip one or more leading HTML comments (and the whitespace between
+  // them) from the front, mirroring the BOM/blank-line precedent. We only
+  // inspect what is *immediately* before the candidate '---' opening delimiter
+  // — never scan further into the file, because Markdown horizontal rules
+  // ('---') inside rule bodies would otherwise produce false positives.
+  let strippedAnyComment = false;
+  const strippedComments: string[] = [];
+  while (effectiveContent.startsWith("<!--")) {
+    const closeIdx = effectiveContent.indexOf("-->");
+    if (closeIdx < 0) break;
+    strippedComments.push(effectiveContent.slice(0, closeIdx + 3));
+    effectiveContent = stripLeadingBlankLines(effectiveContent.slice(closeIdx + 3));
+    strippedAnyComment = true;
+  }
+  let commentDisplacedReason: string | undefined;
+  if (strippedAnyComment) {
+    // Include the stripped HTML comment text in the warning so downstream
+    // consumers (e.g. `nax rules lint`) can surface the actual offending
+    // content alongside the file path. Concatenated with a single space so
+    // multi-line comments stay on one log line.
+    const commentsText = strippedComments.join(" ");
+    commentDisplacedReason = `Frontmatter is displaced — file begins with an HTML comment before '---' (${filePath}): ${commentsText}`;
+    displacedReason ??= commentDisplacedReason;
   }
 
   if (displacedReason && effectiveContent.startsWith("---")) {
     warnings.push(displacedReason);
+  }
+
+  // Per the story: HTML-comment-displaced frontmatter is detected and warned
+  // about, but its declared priority / paths / appliesTo / stages are NOT
+  // honored. The file resolves to FRONTMATTER_PRIORITY_DEFAULT and the body
+  // content is preserved as-is. This matches the "parse result unchanged"
+  // boundary called out in the story's Out-of-Scope section.
+  if (commentDisplacedReason) {
+    return { content: raw.trim(), priority: FRONTMATTER_PRIORITY_DEFAULT, warnings };
   }
 
   if (!effectiveContent.startsWith("---\n") && !effectiveContent.startsWith("---\r\n")) {

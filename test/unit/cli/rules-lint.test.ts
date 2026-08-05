@@ -6,6 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import {
   CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS,
   MAX_CANONICAL_RULE_GLOB_FILES,
@@ -17,7 +18,9 @@ import {
   rulesLintCommandDirect as rulesLintCommandFromLint,
   rulesLintCommand as rulesLintCommandFromRules,
 } from "@/cli";
+import { loadCanonicalRules as loadCanonicalRulesImpl } from "@/context/engine";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers
@@ -340,5 +343,307 @@ describe("rulesLintCommand — AC5 dead-glob warning preserved", () => {
     expect(deadGlobWarn).toBeDefined();
     expect(deadGlobWarn?.data?.file).toBe("ghost.md");
     expect(deadGlobWarn?.data?.pattern).toBe("src/does-not-exist/**");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-002 — inert `paths:` scoping warnings + displaced-frontmatter surfacing
+// (docs/specs/SPEC-rules-lint-inert-scoping.md)
+// ─────────────────────────────────────────────────────────────────────────────
+
+let tempDirForDisplacement: string | undefined;
+
+let origCliDeps: {
+  globCanonicalRuleFiles: typeof _rulesCLIDeps.globCanonicalRuleFiles;
+  loadCanonicalRules: typeof _rulesCLIDeps.loadCanonicalRules;
+  globHasMatch: typeof _rulesCLIDeps.globHasMatch;
+  getLogger: typeof _rulesCLIDeps.getLogger;
+  discoverWorkspacePackages: typeof _rulesCLIDeps.discoverWorkspacePackages;
+};
+
+beforeEach(() => {
+  tempDirForDisplacement = makeTempDir("nax-rules-lint-displacement-");
+  origCliDeps = {
+    globCanonicalRuleFiles: _rulesCLIDeps.globCanonicalRuleFiles,
+    loadCanonicalRules: _rulesCLIDeps.loadCanonicalRules,
+    globHasMatch: _rulesCLIDeps.globHasMatch,
+    getLogger: _rulesCLIDeps.getLogger,
+    discoverWorkspacePackages: _rulesCLIDeps.discoverWorkspacePackages,
+  };
+});
+
+afterEach(() => {
+  _rulesCLIDeps.globCanonicalRuleFiles = origCliDeps.globCanonicalRuleFiles;
+  _rulesCLIDeps.loadCanonicalRules = origCliDeps.loadCanonicalRules;
+  _rulesCLIDeps.globHasMatch = origCliDeps.globHasMatch;
+  _rulesCLIDeps.getLogger = origCliDeps.getLogger;
+  _rulesCLIDeps.discoverWorkspacePackages = origCliDeps.discoverWorkspacePackages;
+
+  cleanupTempDir(tempDirForDisplacement);
+  tempDirForDisplacement = undefined;
+});
+
+function makeRule(overrides: Partial<CanonicalRule>): CanonicalRule {
+  return {
+    fileName: "rule.md",
+    path: "rule.md",
+    content: "Body.",
+    warnings: [],
+    ...overrides,
+  };
+}
+
+interface InertScopingCall {
+  level: string;
+  stage: string;
+  message: string;
+  data?: Record<string, unknown>;
+}
+
+function captureInertScopingLogger(): { calls: InertScopingCall[] } {
+  const calls: InertScopingCall[] = [];
+  const logger = {
+    warn: (stage: string, message: string, data?: Record<string, unknown>) => {
+      calls.push({ level: "warn", stage, message, data });
+    },
+    info: (stage: string, message: string, data?: Record<string, unknown>) => {
+      calls.push({ level: "info", stage, message, data });
+    },
+    debug: () => {},
+    error: () => {},
+  };
+  _rulesCLIDeps.getLogger = () => logger as unknown as ReturnType<typeof _rulesCLIDeps.getLogger>;
+  return { calls };
+}
+
+function stubInertScopingDeps(rules: CanonicalRule[]): void {
+  _rulesCLIDeps.globCanonicalRuleFiles = () => [];
+  _rulesCLIDeps.loadCanonicalRules = async () => rules;
+  _rulesCLIDeps.globHasMatch = () => true;
+}
+
+describe("US-002 rulesLintCommand — AC1 displaced-frontmatter text surfaced", () => {
+  test("[AC1] the warning message emitted for an HTML-comment-displaced rule includes the offending comment text", async () => {
+    const htmlComment = "<!-- reviewed by legacy migrate -->";
+    const content = [htmlComment, "---", "priority: 90", "---", "Body.", ""].join("\n");
+    const filePath = join(tempDirForDisplacement as string, ".nax", "rules", "displaced.md");
+    await Bun.write(filePath, content);
+
+    // Use the real loader (not stubbed) so the parser-driven warning actually
+    // captures the HTML comment text — then the lint command's re-emit should
+    // surface that text in its logger.warn call.
+    _rulesCLIDeps.globCanonicalRuleFiles = () => [];
+    _rulesCLIDeps.loadCanonicalRules = async (workdir: string) =>
+      (await loadCanonicalRulesImpl(workdir)) as CanonicalRule[];
+    _rulesCLIDeps.globHasMatch = () => true;
+    _rulesCLIDeps.discoverWorkspacePackages = async () => [];
+    const { calls } = captureInertScopingLogger();
+
+    await rulesLintCommandFromRules({ dir: tempDirForDisplacement as string });
+
+    const warn = calls.find(
+      (c) =>
+        c.level === "warn" &&
+        c.stage === "rules-lint" &&
+        typeof c.message === "string" &&
+        c.message.includes(htmlComment),
+    );
+    expect(warn).toBeDefined();
+  });
+});
+
+describe("US-002 rulesLintCommand — AC2 inert-paths warning", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = makeTempDir("nax-rules-lint-inert-scoping-");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  test("[AC2] emits a rules-lint warning naming the rule file path when discoverWorkspacePackages resolves to [] and the rule declares paths", async () => {
+    const rulePath = "scoped.md";
+    const absolutePath = join(tempDir, ".nax", "rules", rulePath);
+    stubInertScopingDeps([makeRule({ path: rulePath, fileName: rulePath, paths: ["src/**/*.ts"] })]);
+    _rulesCLIDeps.discoverWorkspacePackages = async () => [];
+    const { calls } = captureInertScopingLogger();
+
+    await rulesLintCommandFromRules({ dir: tempDir });
+
+    const inert = calls.find(
+      (c) => c.level === "warn" && c.stage === "rules-lint" && c.data?.file === absolutePath && c.data?.code === "INERT_PATHS",
+    );
+    expect(inert).toBeDefined();
+  });
+
+  test("[AC3] the inert-paths warning message names `appliesTo` as the alternative", async () => {
+    stubInertScopingDeps([makeRule({ path: "scoped.md", fileName: "scoped.md", paths: ["src/**/*.ts"] })]);
+    _rulesCLIDeps.discoverWorkspacePackages = async () => [];
+    const { calls } = captureInertScopingLogger();
+
+    await rulesLintCommandFromRules({ dir: tempDir });
+
+    const inert = calls.find((c) => c.level === "warn" && c.stage === "rules-lint" && c.data?.code === "INERT_PATHS");
+    expect(inert).toBeDefined();
+    expect(inert?.message.toLowerCase()).toContain("appliesto");
+  });
+
+  test("[AC4] emits no inert-paths warning when discoverWorkspacePackages resolves to a non-empty package list", async () => {
+    stubInertScopingDeps([makeRule({ path: "scoped.md", fileName: "scoped.md", paths: ["src/**/*.ts"] })]);
+    _rulesCLIDeps.discoverWorkspacePackages = async () => ["packages/api", "packages/web"];
+    const { calls } = captureInertScopingLogger();
+
+    await rulesLintCommandFromRules({ dir: tempDir });
+
+    const inert = calls.some((c) => c.level === "warn" && c.stage === "rules-lint" && c.data?.code === "INERT_PATHS");
+    expect(inert).toBe(false);
+  });
+
+  test("[AC5] emits no inert-paths warning for a rule declaring no paths key when discoverWorkspacePackages resolves empty", async () => {
+    stubInertScopingDeps([makeRule({ path: "unscoped.md", fileName: "unscoped.md" })]);
+    _rulesCLIDeps.discoverWorkspacePackages = async () => [];
+    const { calls } = captureInertScopingLogger();
+
+    await rulesLintCommandFromRules({ dir: tempDir });
+
+    const inert = calls.some((c) => c.level === "warn" && c.stage === "rules-lint" && c.data?.code === "INERT_PATHS");
+    expect(inert).toBe(false);
+  });
+});
+
+describe("US-002 rulesLintCommand — AC6 exit code stays 0 on warnings only", () => {
+  test("[AC6] resolves without setting a non-zero process.exitCode when the only signal is warnings", async () => {
+    stubInertScopingDeps([makeRule({ path: "scoped.md", fileName: "scoped.md", paths: ["src/**/*.ts"] })]);
+    _rulesCLIDeps.discoverWorkspacePackages = async () => [];
+    captureInertScopingLogger();
+
+    const savedExitCode = process.exitCode;
+    process.exitCode = undefined;
+    try {
+      await rulesLintCommandFromRules({ dir: "/project" });
+      expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
+    } finally {
+      process.exitCode = savedExitCode;
+    }
+  });
+});
+
+describe("US-002 rulesLintCommand — AC7 summary line counts warnings", () => {
+  test("[AC7] the final stdout [WARN] summary line includes an inert-paths warning in N", async () => {
+    stubInertScopingDeps([makeRule({ path: "scoped.md", fileName: "scoped.md", paths: ["src/**/*.ts"] })]);
+    _rulesCLIDeps.discoverWorkspacePackages = async () => [];
+    const { calls } = captureInertScopingLogger();
+
+    const originalLog = console.log;
+    const stdoutLines: string[] = [];
+    console.log = (...args: unknown[]) => {
+      stdoutLines.push(args.map((a) => String(a)).join(" "));
+    };
+    try {
+      await rulesLintCommandFromRules({ dir: "/project" });
+    } finally {
+      console.log = originalLog;
+    }
+
+    const summary = stdoutLines.find((l) => /\[WARN\] Canonical rules lint completed with \d+ warning\(s\)/.test(l));
+    expect(summary).toBeDefined();
+    const m = summary?.match(/completed with (\d+) warning\(s\)/);
+    const n = m ? Number(m[1]) : Number.NaN;
+    expect(n).toBeGreaterThanOrEqual(1);
+
+    const hasCountField = calls.some((c) => typeof c.data?.warningCount === "number");
+    expect(hasCountField).toBe(true);
+  });
+});
+
+describe("US-002 rulesLintCommand — AC8/AC9 fail-open on rejection", () => {
+  test("[AC8] emits no inert-paths warning when discoverWorkspacePackages rejects", async () => {
+    stubInertScopingDeps([makeRule({ path: "scoped.md", fileName: "scoped.md", paths: ["src/**/*.ts"] })]);
+    _rulesCLIDeps.discoverWorkspacePackages = async () => {
+      throw new Error("detection failed");
+    };
+    const { calls } = captureInertScopingLogger();
+
+    await rulesLintCommandFromRules({ dir: "/project" });
+
+    const inert = calls.some((c) => c.level === "warn" && c.stage === "rules-lint" && c.data?.code === "INERT_PATHS");
+    expect(inert).toBe(false);
+  });
+
+  test("[AC9] still emits its final stdout summary line when discoverWorkspacePackages rejects", async () => {
+    stubInertScopingDeps([makeRule({ path: "scoped.md", fileName: "scoped.md", paths: ["src/**/*.ts"] })]);
+    _rulesCLIDeps.discoverWorkspacePackages = async () => {
+      throw new Error("detection failed");
+    };
+    captureInertScopingLogger();
+
+    const originalLog = console.log;
+    const stdoutLines: string[] = [];
+    console.log = (...args: unknown[]) => {
+      stdoutLines.push(args.map((a) => String(a)).join(" "));
+    };
+    try {
+      await rulesLintCommandFromRules({ dir: "/project" });
+    } finally {
+      console.log = originalLog;
+    }
+
+    const summary = stdoutLines.find(
+      (l) =>
+        /\[WARN\] Canonical rules lint completed with \d+ warning\(s\)/.test(l) ||
+        /\[OK\] Canonical rules lint passed/.test(l),
+    );
+    expect(summary).toBeDefined();
+  });
+});
+
+describe("US-002 deps registration — discoverWorkspacePackages", () => {
+  test("_rulesLintDeps exposes discoverWorkspacePackages", () => {
+    expect(typeof _rulesLintDeps.discoverWorkspacePackages).toBe("function");
+  });
+
+  test("_rulesCLIDeps exposes discoverWorkspacePackages", () => {
+    expect(typeof _rulesCLIDeps.discoverWorkspacePackages).toBe("function");
+  });
+});
+
+describe("US-002 rulesLintCommandDirect — dep forwarding", () => {
+  test("[dep forwarding] rulesLintCommandDirect accepts a discoverWorkspacePackages override via deps", async () => {
+    // Reuse the already-stubbed _rulesCLIDeps so the rules with `paths:`
+    // actually flow through. Pass `loadCanonicalRules` explicitly via the
+    // explicit `deps` argument so it is honoured even though the lazy wrapper
+    // in src/cli/rules.ts delegates to _rulesCLIDeps (this test bypasses the
+    // wrapper to exercise the direct seam).
+    _rulesCLIDeps.globCanonicalRuleFiles = () => [];
+    _rulesCLIDeps.loadCanonicalRules = async () => [
+      makeRule({ path: "scoped.md", fileName: "scoped.md", paths: ["src/**/*.ts"] }),
+    ];
+    _rulesCLIDeps.globHasMatch = () => true;
+
+    const calls: InertScopingCall[] = [];
+    const logger = {
+      warn: (stage: string, message: string, data?: Record<string, unknown>) => {
+        calls.push({ level: "warn", stage, message, data });
+      },
+      info: () => {},
+      debug: () => {},
+      error: () => {},
+    };
+
+    await rulesLintCommandFromLint(
+      { dir: "/project" },
+      {
+        globCanonicalRuleFiles: _rulesCLIDeps.globCanonicalRuleFiles,
+        loadCanonicalRules: _rulesCLIDeps.loadCanonicalRules,
+        globHasMatch: _rulesCLIDeps.globHasMatch,
+        getLogger: () => logger as unknown as ReturnType<typeof _rulesLintDeps.getLogger>,
+        discoverWorkspacePackages: async () => [],
+      },
+    );
+
+    const inert = calls.some((c) => c.level === "warn" && c.stage === "rules-lint" && c.data?.code === "INERT_PATHS");
+    expect(inert).toBe(true);
   });
 });

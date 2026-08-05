@@ -69,6 +69,9 @@ export const _rulesCLIDeps = {
   globHasMatch: (pattern: string, cwd: string): boolean => _rulesLintDeps.globHasMatch(pattern, cwd),
   loadCanonicalRules,
   getLogger,
+  // US-002: forward the workspace resolver so the `nax rules lint` entry
+  // point keeps the same injectable seam as the inner implementation.
+  discoverWorkspacePackages: (workdir: string): Promise<string[]> => _rulesLintDeps.discoverWorkspacePackages(workdir),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,6 +84,7 @@ export async function rulesLintCommand(options: Parameters<typeof _rulesLintComm
     loadCanonicalRules: _rulesCLIDeps.loadCanonicalRules,
     globHasMatch: _rulesCLIDeps.globHasMatch,
     getLogger: _rulesCLIDeps.getLogger,
+    discoverWorkspacePackages: _rulesCLIDeps.discoverWorkspacePackages,
   });
 }
 
