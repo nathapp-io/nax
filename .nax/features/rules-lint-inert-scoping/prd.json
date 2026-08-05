@@ -1,0 +1,120 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "rules-lint-inert-scoping",
+  "branchName": "feat/rules-lint-inert-scoping",
+  "createdAt": "2026-08-05T00:00:00+08:00",
+  "updatedAt": "2026-08-05T04:06:22.610Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Detect HTML-comment-displaced rule frontmatter",
+      "description": "**Goal** — Extend canonical rule frontmatter parsing to warn when leading HTML comments displace an otherwise immediately following frontmatter block.\n\n**Motivation** — The old migrator emitted its review notice before the frontmatter, so the whole block — priority included — is dropped without any warning.\n\n**Approach** — Both checks are **deterministic string and list inspections** — no LLM call, no AST parse. The displacement check is a leading-HTML-comment test in the existing parser; the inert check is an emptiness test on the resolved workspace package list. Neither reads file content beyond what the loader already parses.\n\nThe displacement check must mirror the existing BOM/blank-line precedent exactly: strip one or more leading HTML comments (and surrounding whitespace) from the front, then require the *remaining* content to start with `---`. It must **not** scan for a `---` occurring anywhere later in the file. Markdown horizontal rules are common in rule bodies — 6 of the 11 files in this repo's own `.nax/rules/` store contain one — so an \"is there a `---` somewhere after the comment\" test would fire a false warning on every comment-led rule file that happens to use one. A false \"your frontmatter is broken\" warning is the one outcome this feature must not produce.\n\n**Scope** — In: `parseFrontmatter` warning detection for leading HTML comments and parser tests. Out: lint-level inert-`paths:` warnings and workspace discovery integration (US-002); changing the parse result for comment-displaced frontmatter — the declared `priority`, `paths`, and `appliesTo` remain unhonored, and the file continues to resolve to `FRONTMATTER_PRIORITY_DEFAULT`; detecting frontmatter displaced by leading content other than an HTML comment, a UTF-8 BOM, or blank lines; changing malformed-frontmatter error behaviour.\n\n**Interface**\n```typescript\nparseFrontmatter(raw: string, filePath: string): ParsedFrontmatter\n\ninterface ParsedFrontmatter {\n  content: string;\n  priority: number;\n  paths?: string[];\n  appliesTo?: string[];\n  stages?: string[];\n  warnings: string[];\n}\n```",
+      "acceptanceCriteria": [
+        "When `parseFrontmatter` receives an HTML comment immediately followed by a `---` frontmatter block, then `warnings` contains a displaced-frontmatter entry that includes the supplied `filePath`.",
+        "When `parseFrontmatter` receives an HTML comment immediately followed by a block declaring `priority: 90`, then `priority` equals `FRONTMATTER_PRIORITY_DEFAULT`.",
+        "When `parseFrontmatter` receives an HTML comment immediately followed by a frontmatter block declaring `paths`, then `paths` is undefined.",
+        "When `parseFrontmatter` receives an HTML comment immediately followed by a frontmatter block declaring `appliesTo`, then `appliesTo` is undefined.",
+        "When `parseFrontmatter` receives a multi-line leading HTML comment followed by a `---` frontmatter block, then `warnings` contains a displaced-frontmatter entry.",
+        "When `parseFrontmatter` receives a leading HTML comment with no `---` block anywhere in the content, then `warnings` is an empty array.",
+        "When `parseFrontmatter` receives a leading HTML comment, ordinary prose, and a later Markdown `---` horizontal rule, then `warnings` is an empty array.",
+        "When `parseFrontmatter` receives a blank line, then a leading HTML comment, then a `---` block, then `warnings` contains exactly one entry.",
+        "When `parseFrontmatter` receives a `---` frontmatter block beginning at byte 0, then `warnings` is an empty array.",
+        "When `parseFrontmatter` receives a leading blank line directly followed by a valid frontmatter block declaring `priority: 90`, then it returns priority `90` and exactly one displaced-frontmatter warning.",
+        "When `loadCanonicalRules` reads a rule store containing a file whose frontmatter is preceded by an HTML comment, then the returned rule's `warnings` include the displaced-frontmatter entry."
+      ],
+      "tags": [
+        "feature",
+        "parser",
+        "rules"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A constrained additive parser change in one source module with focused unit tests and explicit negative cases.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/context/rules/rules-frontmatter.ts",
+        "test/unit/context/rules/rules-frontmatter.test.ts",
+        "src/context/rules/canonical-loader.ts",
+        "test/unit/context/rules/canonical-loader.test.ts"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Warn lint users about inert paths scoping",
+      "description": "**Goal** — Make `nax rules lint` surface parser displacement warnings and warn when canonical rules declare inert `paths:` in a single-package repository.\n\n**Motivation** — In any single-package repo every migrated `paths:` block is inert, leaving operators with scoped-looking rules and a passing lint while scoping never applies.\n\n**Approach** — Both checks are **deterministic string and list inspections** — no LLM call, no AST parse. The displacement check is a leading-HTML-comment test in the existing parser; the inert check is an emptiness test on the resolved workspace package list. Neither reads file content beyond what the loader already parses.\n\n**Integration** — Repo-shape detection must go through `discoverWorkspacePackages`. `.nax/rules/monorepo-awareness.md` §5 makes it the single resolver for \"what packages does this repo have?\" — a hand-rolled `package.json`/`pnpm-workspace.yaml` marker check would violate that rule and duplicate detector logic. Confirmed empirically: it returns `[]` for this repo. The inert predicate is therefore **`(await discoverWorkspacePackages(root)).length === 0`**.\n\nRegister it on `_rulesLintDeps` so tests stub repo shape rather than building fixture workspaces — this is what makes US-002's monorepo and rejection ACs testable. Also forward this dependency through the existing lazy `_rulesCLIDeps` wrapper and its explicit implementation call, so the public `nax rules lint` entry point retains the same injectable behavior.\n\n**CLI Behavior** — Exit 0 in all warning cases. `rulesLintCommand` never sets `process.exitCode`; this feature does not change that. Warnings must not become errors. Warnings are emitted via `logger.warn(\"rules-lint\", …)` with structured fields, matching the two existing warning sites. Do not add new `console.log` calls (banned in `src/` by `project-conventions.md`). stdout keeps its single existing summary line, with the new warnings folded into the count: `[WARN] Canonical rules lint completed with N warning(s) (M file(s) across <scope>)`, or `[OK] Canonical rules lint passed (M file(s) across <scope>)` when the count is zero.\n\n**Failure Handling** — `discoverWorkspacePackages` rejects: **Fail-open** — skip the inert-`paths:` check entirely, emit no warning for it, and let lint complete with its summary line. A false \"your scoping is broken\" warning is worse than a missing one. Rule file has an HTML comment but no `---` block anywhere: No warning — this is an ordinary un-frontmattered rule file, not a displacement. Rule file throws `RulesFrontmatterError` (missing closing `---`): Unchanged from today; out of scope.\n\n**Scope** — In: register and forward the workspace resolver dependency, preserve the existing parser-warning re-emission seam from US-001, add warning-only inert-`paths:` detection and summary accounting, and add CLI tests. Out: parser detection logic (US-001); `nax rules migrate --repair`, or any in-place rewriting of inert `paths:` blocks or displaced frontmatter; warning about `paths:` in a workspace monorepo, where `paths:` filters correctly; warning about inert `appliesTo:` globs, which `rules-lint.ts:129` already covers; turning either new signal into a lint error, or changing any `nax rules lint` exit code.\n\n**Interface**\n```typescript\nrulesLintCommand(options, deps)\n\ndiscoverWorkspacePackages(workdir): Promise<string[]>\n```",
+      "acceptanceCriteria": [
+        "When `rulesLintCommand` loads a rule carrying an HTML-comment-displaced-frontmatter parser warning, then its `rules-lint` logger warning message includes that displaced-frontmatter text.",
+        "When `discoverWorkspacePackages` resolves to `[]` and a loaded rule declares `paths`, then `rulesLintCommand` emits a `rules-lint` warning whose structured `file` field names that rule's file path.",
+        "When `rulesLintCommand` emits an inert-`paths:` warning, then the warning message names `appliesTo` as the alternative for file globs.",
+        "When `discoverWorkspacePackages` resolves to a non-empty package list and a loaded rule declares `paths`, then `rulesLintCommand` emits no inert-`paths:` warning for that rule.",
+        "When `discoverWorkspacePackages` resolves to `[]` and a loaded rule declares no `paths` key, then `rulesLintCommand` emits no inert-`paths:` warning for that rule.",
+        "When `rulesLintCommand` emits only warnings, then it resolves without setting a non-zero process exit code.",
+        "When an inert-`paths:` warning is emitted, then the final stdout `[WARN] Canonical rules lint completed with N warning(s)` summary includes that warning in `N`.",
+        "When `discoverWorkspacePackages` rejects, then `rulesLintCommand` emits no inert-`paths:` warning.",
+        "When `discoverWorkspacePackages` rejects, then `rulesLintCommand` still emits its final stdout summary line."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "rules",
+        "lint"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A standard multi-file CLI integration that adds an async injected dependency, fail-open behavior, structured warnings, and focused unit coverage.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/cli/rules-lint.ts",
+        "src/cli/rules.ts",
+        "src/test-runners/detect/workspace.ts",
+        "src/context/rules/canonical-loader.ts",
+        "test/unit/cli/rules-lint.test.ts"
+      ],
+      "outOfScope": [
+        "`nax rules migrate --repair`, or any in-place rewriting of inert `paths:` blocks or displaced frontmatter.",
+        "Turning either new signal into a lint error, or changing any `nax rules lint` exit code.",
+        "Warning about `paths:` in a workspace monorepo, where `paths:` filters correctly.",
+        "Warning about inert `appliesTo:` globs, which `rules-lint.ts:129` already covers.",
+        "Changing how a rule file with a malformed frontmatter block (missing its closing `---`) is handled; `RulesFrontmatterError` keeps its current behaviour."
+      ]
+    }
+  ],
+  "analysis": "This is a backwards-compatible enhancement to the existing canonical-rules parser and `nax rules lint` command. `parseFrontmatter(raw, filePath)` currently strips a UTF-8 BOM and leading CRLF/LF lines, records a displacement reason only when the remaining content begins with `---`, and otherwise returns the unparsed content with priority 100 (`src/context/rules/rules-frontmatter.ts:90-120`). It must gain the same conservative handling for one or more leading HTML comments: after removing leading comments and surrounding whitespace, emit one warning only if the immediately remaining content begins with the opening delimiter. It must not search later body content for `---`; that would misclassify ordinary Markdown horizontal rules. The existing parser warning path is already end-to-end: `loadCanonicalRules` logs and stores `parsed.warnings` on each `CanonicalRule` (`src/context/rules/canonical-loader.ts:420-440`), and `rulesLintCommand` re-emits each rule warning through `logger.warn(\"rules-lint\", ...)` while adding it to the summary count (`src/cli/rules-lint.ts:114-137`). `rulesLintCommand` also already warns for unmatched `appliesTo` patterns and retains the one-line stdout summary (`src/cli/rules-lint.ts:128-147`). The lint change should import the barrel-exported async `discoverWorkspacePackages` (`src/test-runners/index.ts:38`) and register it in both `_rulesLintDeps` and `RulesLintDeps` (`src/cli/rules-lint.ts:28-63,96-101`). The public `rulesLintCommand` wrapper in `src/cli/rules.ts` constructs the dependency object explicitly (`src/cli/rules.ts:65-83`), so its lazy `_rulesCLIDeps` forwarding seam and the object passed to the implementation must also include the resolver; otherwise the type contract and the CLI entry point diverge. Resolve repo shape once for the repository root; an empty package list is the authoritative single-package predicate. If that resolver rejects, catch the rejection and skip every inert-`paths:` check without logging a false positive, while continuing to load rules and print the normal summary. For a single-package result, each loaded rule with a non-empty `paths` list produces a structured `rules-lint` warning naming its file and directing file-glob use to `appliesTo`; non-empty package lists suppress this new warning. The runtime rationale is confirmed in `ruleMatchesPackage`: rules with `paths` always match when `packageDir === repoRoot` (`src/context/engine/providers/static-rules.ts:183-192`). No parsing semantics, priority fallback, error behavior for malformed frontmatter, exit status, or migration behavior changes. Primary tests belong in `test/unit/context/rules/rules-frontmatter.test.ts` and `test/unit/cli/rules-lint.test.ts`; the latter already stubs `_rulesLintDeps` and captures structured logger calls (`test/unit/cli/rules-lint.test.ts:23-56,184-344`). Because lint tests mutate dependency seams, add resolver dependency setup and restoration alongside the existing dependency lifecycle. No migration is required: this is advisory detection for previously migrated stores, with warning-only output and exit 0.",
+  "outOfScope": [
+    "`nax rules migrate --repair`, or any in-place rewriting of inert `paths:` blocks or displaced frontmatter.",
+    "Changing the parse result for comment-displaced frontmatter — the declared `priority`, `paths`, and `appliesTo` remain unhonored, and the file continues to resolve to `FRONTMATTER_PRIORITY_DEFAULT`.",
+    "Turning either new signal into a lint error, or changing any `nax rules lint` exit code.",
+    "Detecting frontmatter displaced by leading content other than an HTML comment, a UTF-8 BOM, or blank lines.",
+    "Deprecating, removing, or migrating the `paths:` frontmatter key itself.",
+    "Warning about `paths:` in a workspace monorepo, where `paths:` filters correctly.",
+    "Warning about inert `appliesTo:` globs, which `rules-lint.ts:129` already covers.",
+    "Changing how a rule file with a malformed frontmatter block (missing its closing `---`) is handled; `RulesFrontmatterError` keeps its current behaviour."
+  ],
+  "routingProfile": "cross-agent"
+}
