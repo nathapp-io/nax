@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { splitRuleIntoSections, type CanonicalRule } from "@/context";
+import { type CanonicalRule, estimateTokens, splitRuleIntoSections } from "@/context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -77,6 +77,25 @@ describe("splitRuleIntoSections — preamble", () => {
     expect(sections[0]?.content).toContain("preamble line 1");
     expect(sections[1]?.ordinal).toBe(1);
     expect(sections[1]?.heading).toBe("First");
+  });
+
+  test("whitespace-only preamble still emits a preamble section (current behaviour pinned)", () => {
+    // Content: "\n\n## A\nbody" — two blank lines before the first H2.
+    // AC4 says "When content precedes the first ## heading" — whitespace-only
+    // lines still constitute "preceding content" under the current
+    // implementation: a preamble section is emitted with that whitespace as
+    // its `content`. This test pins that behaviour so any future change must
+    // update both the source and the test in lockstep.
+    const content = "\n\n## A\nbody";
+    const sections = splitRuleIntoSections(makeRule({ content }));
+    expect(sections).toHaveLength(2);
+    expect(sections[0]?.ordinal).toBe(0);
+    expect(sections[0]?.heading).toBeUndefined();
+    expect(sections[0]?.content).toBe("\n");
+    expect(sections[0]?.tokens).toBe(estimateTokens("\n"));
+    expect(sections[0]?.slug).toBe("preamble");
+    expect(sections[1]?.heading).toBe("A");
+    expect(sections[1]?.ordinal).toBe(1);
   });
 });
 
@@ -181,6 +200,22 @@ describe("splitRuleIntoSections — slug uniqueness", () => {
     expect(sections).toHaveLength(2);
     expect(sections[0]?.slug).not.toBe(sections[1]?.slug);
   });
+
+  test("two non-ASCII headings still produce unique slugs (lossy fallback pinned)", () => {
+    // The slug normaliser strips non-ASCII letters, so Unicode-only headings
+    // collapse to the "section" fallback. The duplicate-suffix machinery in
+    // rule-sections.ts must still kick in to keep them unique. This test
+    // pins the documented behaviour: distinct Unicode headings -> distinct
+    // slugs (the fallback plus an ordinal suffix).
+    const rule = makeRule({
+      content: ["## 中文标题", "first body", "## 日本語見出し", "second body"].join("\n"),
+    });
+    const sections = splitRuleIntoSections(rule);
+    expect(sections).toHaveLength(2);
+    expect(sections[0]?.slug).toBe("section");
+    expect(sections[1]?.slug).toBe("section-2");
+    expect(sections[0]?.slug).not.toBe(sections[1]?.slug);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -234,7 +269,7 @@ describe("splitRuleIntoSections — own-content tokens", () => {
     const sections = splitRuleIntoSections(rule);
     expect(sections.length).toBeGreaterThan(0);
     for (const section of sections) {
-      expect(section.tokens).toBe(Math.ceil(section.content.length / 4));
+      expect(section.tokens).toBe(estimateTokens(section.content));
     }
   });
 });
