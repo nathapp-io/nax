@@ -27,10 +27,18 @@ export type SpecContextFile = GroupedPathEntry;
 export const MAX_SPEC_CONTEXT_FILES = 200;
 
 /**
- * `### Context Files`, `### Context Files (per story)` …
+ * `### Context Files`, `#### Context Files (per story)` …
  *
  * The trailing `\b` admits the parenthetical suffix real specs use, mirroring
  * `MODIFIES_HEADING` in `./modifies-extract`.
+ *
+ * Deliberately narrow, matching only an ATX heading (`#{1,6} Context Files`).
+ * A bold pseudo-heading (`**Context Files:**`) or an inline list item
+ * (`- Context Files: \`a.ts\`, \`b.ts\``) are NOT matched — both appear in a
+ * handful of older specs in this repo, predating spec-writing's current
+ * template. Widening the regex to catch them risks false-matching prose that
+ * merely mentions "context files" in a sentence; the current heading-only
+ * match trades those specs' coverage for that safety.
  */
 const CONTEXT_FILES_HEADING = /^(#{1,6})\s*context\s*files\b/i;
 

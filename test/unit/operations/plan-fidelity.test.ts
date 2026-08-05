@@ -128,13 +128,16 @@ describe("warnOnDroppedContextFiles — #1466", () => {
     expect(entries.filter((e) => e.level === "warn" && e.stage === "plan")).toHaveLength(0);
   });
 
-  test("ignores entries naming a story the PRD does not contain", () => {
+  test("reports an entry naming a story the PRD does not contain as an orphan, not a per-story drop", () => {
     const prd = makePRD({ userStories: [makeStory({ id: "US-001", contextFiles: [] })] });
     const spec = ["### Context Files", "", "**US-404**", "- `src/ghost.ts` — owned by nobody here"].join("\n");
 
     warnOnDroppedContextFiles(prd, spec, "feat");
 
-    expect(entries.filter((e) => e.level === "warn" && e.stage === "plan")).toHaveLength(0);
+    const warnings = entries.filter((e) => e.level === "warn" && e.stage === "plan");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].message).toContain("name no story in the PRD");
+    expect(warnings[0].data).toMatchObject({ orphanCount: 1, orphans: [{ storyId: "US-404", path: "src/ghost.ts" }] });
   });
 
   test("applyPlanFidelity surfaces the warning without changing the returned PRD's contextFiles", () => {
@@ -144,6 +147,70 @@ describe("warnOnDroppedContextFiles — #1466", () => {
 
     expect(result.userStories[0].contextFiles).toEqual(["src/a.ts"]);
     expect(entries.some((e) => e.level === "warn" && e.stage === "plan" && e.data?.storyId === "US-001")).toBe(true);
+  });
+
+  test("resolves a contextFiles entry stored as a {path, factId} object, not just a plain string", () => {
+    const prd = makePRD({
+      userStories: [makeStory({ id: "US-001", contextFiles: [{ path: "src/a.ts", factId: "fact-1" }] })],
+    });
+
+    warnOnDroppedContextFiles(prd, CONTEXT_FILES_SPEC, "feat");
+
+    const warning = entries.find((e) => e.level === "warn" && e.stage === "plan" && e.data?.storyId === "US-001");
+    expect(warning?.data).toMatchObject({ dropped: ["src/b.ts"] });
+  });
+
+  test("normalizes a leading ./ so it does not read as a drop", () => {
+    const spec = ["### Context Files", "", "**US-001**", "- `src/a.ts` — a", "- `src/b.ts` — b"].join("\n");
+    const prd = makePRD({ userStories: [makeStory({ id: "US-001", contextFiles: ["./src/a.ts", "./src/b.ts"] })] });
+
+    warnOnDroppedContextFiles(prd, spec, "feat");
+
+    expect(entries.filter((e) => e.level === "warn" && e.stage === "plan")).toHaveLength(0);
+  });
+
+  test("dedupes a spec-declared path listed twice for the same story instead of double-counting the drop", () => {
+    const spec = ["### Context Files", "", "**US-001**", "- `src/b.ts` — first", "- `src/b.ts` — again"].join("\n");
+    const prd = makePRD({ userStories: [makeStory({ id: "US-001", contextFiles: [] })] });
+
+    warnOnDroppedContextFiles(prd, spec, "feat");
+
+    const warning = entries.find((e) => e.level === "warn" && e.stage === "plan" && e.data?.storyId === "US-001");
+    expect(warning?.data).toMatchObject({ declaredCount: 1, droppedCount: 1, dropped: ["src/b.ts"] });
+  });
+
+  test("emits a separate warning per story when more than one drops an entry", () => {
+    const prd = makePRD({
+      userStories: [
+        makeStory({ id: "US-001", contextFiles: [] }), // src/a.ts, src/b.ts dropped
+        makeStory({ id: "US-002", contextFiles: [] }), // src/c.ts dropped
+      ],
+    });
+
+    warnOnDroppedContextFiles(prd, CONTEXT_FILES_SPEC, "feat");
+
+    const warnings = entries.filter((e) => e.level === "warn" && e.stage === "plan" && e.message.includes("absent"));
+    expect(warnings.map((w) => w.data?.storyId).sort()).toEqual(["US-001", "US-002"]);
+  });
+
+  test("ignores an absolute or traversing path instead of counting it as a drop", () => {
+    const spec = [
+      "### Context Files",
+      "",
+      "**US-001**",
+      "- `/etc/passwd` — absolute",
+      "- `../outside.ts` — traversing",
+    ].join("\n");
+    const prd = makePRD({ userStories: [makeStory({ id: "US-001", contextFiles: [] })] });
+
+    warnOnDroppedContextFiles(prd, spec, "feat");
+
+    const dropWarnings = entries.filter((e) => e.level === "warn" && e.stage === "plan" && e.message.includes("absent"));
+    expect(dropWarnings).toHaveLength(0);
+    const rejectedWarning = entries.find(
+      (e) => e.level === "warn" && e.stage === "plan" && e.message.includes("absolute or traversing"),
+    );
+    expect(rejectedWarning?.data).toMatchObject({ rejectedCount: 2 });
   });
 });
 

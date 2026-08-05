@@ -111,14 +111,11 @@ const PATH_SHAPED = /[/.]/;
  * A story heading is deliberately NOT exempted from the boundary. A DEEPER one
  * (`#### US-001` under `### Modifies`) already survives — it fails the level
  * test and is collected, then read as a group lead-in. Exempting a heading at
- * the section's own level would only ever swallow a sibling section.
+ * the section's own level would only ever swallow a sibling section: `## US-002:
+ * Second story` following `## Modifies` would be read as a group, and every
+ * bullet beneath it would become a fabricated authorisation.
  */
-export function sectionLines(
-  lines: readonly string[],
-  startIndex: number,
-  level: number,
-  fenced: Set<number>,
-): string[] {
+function sectionLines(lines: readonly string[], startIndex: number, level: number, fenced: Set<number>): string[] {
   const collected: string[] = [];
   for (let i = startIndex + 1; i < lines.length; i++) {
     if (fenced.has(i)) continue;
@@ -138,6 +135,11 @@ export function sectionLines(
  * a `/` or a `.`), which is what stops a stray prose bullet inside the section —
  * "- see the notes below" — from being written into the PRD as a file named
  * `see`. Returns null in that case, dropping the bullet.
+ *
+ * The cost of the rule is a bare extensionless filename (`Makefile`) written
+ * without backticks, which is rejected. That is the right trade: spec-writing
+ * tells authors to backtick paths, and fabricating an entry is worse than
+ * declining an ambiguous one.
  */
 function parsePathEntry(text: string): { path: string; reason: string } | null {
   const backticked = text.match(BACKTICKED_PATH);
@@ -152,10 +154,43 @@ function parsePathEntry(text: string): { path: string; reason: string } | null {
   return { path: candidate, reason: text.replace(/^\S+/, "").replace(PATH_REASON_SEPARATOR, "").trim() };
 }
 
-/** One pass over a section body, tracking the group lead-in currently in force. */
-function collectGroupedPathEntries(body: readonly string[]): GroupedPathEntry[] {
+/**
+ * Nearest ancestor `### US-00N: ...` heading strictly shallower than the
+ * section heading at `headingIndex` — the section's ambient story when the
+ * section itself is nested under a per-story heading rather than declaring
+ * its own `**US-00N**` group lead-ins (e.g. `#### Context Files` written
+ * directly under `### US-001: ...`, the shape spec-writing's own template
+ * produces — see #1466).
+ *
+ * Stops at the FIRST shallower heading found, story or not: a section
+ * nested two levels under a non-story ancestor (`## Stories` → `### Design
+ * notes` → `#### Context Files`) has no story to inherit, and climbing
+ * further up would misattribute it to an unrelated ancestor.
+ */
+function enclosingStoryId(
+  lines: readonly string[],
+  headingIndex: number,
+  level: number,
+  fenced: Set<number>,
+): string | null {
+  for (let i = headingIndex - 1; i >= 0; i--) {
+    if (fenced.has(i)) continue;
+    const heading = lines[i].match(ANY_HEADING);
+    if (!heading || heading[1].length >= level) continue;
+    return lines[i].match(STORY_HEADING)?.[1]?.toUpperCase() ?? null;
+  }
+  return null;
+}
+
+/**
+ * One pass over a section body, tracking the group lead-in currently in
+ * force. `defaultStoryId` seeds attribution for a section with no explicit
+ * `**US-00N**` lead-ins of its own (see `enclosingStoryId`); an explicit
+ * lead-in inside the body still overrides it from that point on.
+ */
+function collectGroupedPathEntries(body: readonly string[], defaultStoryId: string | null = null): GroupedPathEntry[] {
   const entries: GroupedPathEntry[] = [];
-  let storyId: string | null = null;
+  let storyId: string | null = defaultStoryId;
   let current: string[] = [];
 
   const flush = () => {
@@ -189,13 +224,23 @@ function collectGroupedPathEntries(body: readonly string[]): GroupedPathEntry[] 
 }
 
 /**
- * Every entry a `**US-00N**`-grouped section declares, in document order.
+ * Every entry a `**US-00N**`-grouped OR per-story-nested section declares,
+ * in document order.
  *
  * `headingPattern` identifies the section (e.g. `### Modifies`, `### Context
  * Files`); `maxEntries` bounds total extraction so a runaway spec cannot
  * produce an unbounded list. Fenced lines are skipped entirely — spec-kit
  * specs document their own markdown by example, so a literal fenced block
  * containing the heading text would otherwise fabricate entries.
+ *
+ * Two attribution shapes are supported, since real specs use both:
+ *   1. A single section with `**US-00N**` group lead-ins per story
+ *      (`### Modifies` — always this shape in this repo's specs).
+ *   2. A section repeated once per story, nested directly under that
+ *      story's own heading (`### US-001: ...` → `#### Context Files` — the
+ *      shape spec-writing's own template produces for `Context Files`).
+ *      `enclosingStoryId` resolves the ambient story for this case; an
+ *      explicit `**US-00N**` lead-in inside the body still overrides it.
  *
  * Unattributed entries are returned with `storyId: null` — deciding what to
  * do with one is the caller's business.
@@ -214,7 +259,9 @@ export function extractGroupedPathSection(
     if (fenced.has(i)) continue;
     const heading = stripEmphasis(lines[i]).match(headingPattern);
     if (!heading) continue;
-    entries.push(...collectGroupedPathEntries(sectionLines(lines, i, heading[1].length, fenced)));
+    const level = heading[1].length;
+    const defaultStoryId = enclosingStoryId(lines, i, level, fenced);
+    entries.push(...collectGroupedPathEntries(sectionLines(lines, i, level, fenced), defaultStoryId));
   }
   return entries.slice(0, maxEntries);
 }

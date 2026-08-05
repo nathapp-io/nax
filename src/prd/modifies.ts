@@ -47,7 +47,7 @@ export interface ApplyModifiedFilesResult {
  * missing authorisation for no PRD at all. `schema.ts` still throws on the same
  * shape when a hand-edited `prd.json` is loaded.
  */
-function isSafeRelativePath(path: string): boolean {
+export function isSafeRelativePath(path: string): boolean {
   return !path.startsWith("/") && !path.includes("..");
 }
 
