@@ -3,7 +3,7 @@
   "feature": "bounded-rules-floor",
   "branchName": "feat/bounded-rules-floor",
   "createdAt": "2026-08-05T18:27:22+08:00",
-  "updatedAt": "2026-08-05T11:31:37.440Z",
+  "updatedAt": "2026-08-05T12:11:30.320Z",
   "userStories": [
     {
       "id": "US-001",
@@ -222,8 +222,8 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -284,7 +284,9 @@
         "profileModelTier": "fast",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-structural",
-        "initialModelTier": "fast"
+        "initialModelTier": "fast",
+        "initialComplexity": "medium",
+        "modelTier": "fast"
       },
       "contextFiles": [
         ".nax/rules/forbidden-patterns.md",
@@ -321,7 +323,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3ab86b0baf7676da7c8331013928344e1c570163"
     }
   ],
   "analysis": "This is an enhancement to the Context Engine v2 static-rules path, not a greenfield feature. CanonicalRule is declared in src/context/rules/rules-frontmatter.ts:52-63 and re-exported by canonical-loader.ts; canonical-loader.ts:308-367 currently implements file-level budgeting with soft mode as the default, priority-ordered contiguous-tail enforcement, and invalid-budget empty results. StaticRulesProvider.fetch() loads repo/package rules, applies package, stage, and appliesTo filters, then budgets and emits one static chunk per rule (src/context/engine/providers/static-rules.ts:253-415). Its constructor deliberately defaults enforceBudget to false (line 242), while the default factory currently forwards the resolved config at orchestrator-factory.ts:43-47. Provider budget telemetry is ProviderBudgetPressure in manifest-types.ts:27-40 and scoping telemetry is ProviderScopingReport at manifest-types.ts:42-64; the latter needs a sectionCount field without disturbing manifest-builder pass-through. ContextRequest already carries stage and budgetTokens (the test base request confirms both, static-rules.test.ts:52-55). packChunks still floor-admits static chunks unconditionally (src/context/engine/packing.ts:97-105), so bounding must happen before packing and only for static rules; feature/test-coverage floors remain unchanged. The resolved rules schema currently has only allowLegacyClaudeMd, budgetTokens, and enforceBudget=false (src/config/schemas-context.ts:55-78), mirrors a complete default at lines 232-247, has a third literal in schemas.ts:321, and is represented in ContextV2RulesConfig at runtime-types-context.ts:49-63. Existing schema tests assert the old false default (test/unit/config/schemas.test.ts:526-547) and static-rules.test.ts contains soft and enforced budget-pressure fixtures plus injectable _staticRulesDeps seams (not mock.module). Existing static-rule IDs are file-based static-rules:<ruleId>:<hash>; section IDs must add an owner-section slug so identical headings are uniquely disambiguated. New rule sections should own their inherited metadata, identifiers, token estimates, ordinal, heading and slug; new rule-budget should own contiguous section truncation, preserving source priority then ordinal. The new modules must use @/context/rules/rule-sections and @/context/rules/rule-budget from the provider: a deep relative import would increase the deep-relative ratchet, and src/context/rules has no barrel so this alias does not violate the alias-internals ratchet. canonical-loader.ts (487 lines) and static-rules.ts (521 lines) are near the 600-line hard limit, so do not grow either with the new capabilities. Migration is configuration-compatible: existing explicit enforceBudget:false continues to opt into soft behavior and direct providers without enforceBudget retain their soft constructor fallback; only schema-resolved production defaults change to true. Corpus hygiene is terminal because it assumes section-aware delivery and alters canonical files: split forbidden-patterns, delete the original, add missing scoping, and rebalance priorities; the current corpus confirms many H2 boundaries and forbidden-patterns mixes source and test rules. Risks are loss of high-priority rule text at an incorrect split boundary, non-deterministic duplicate-heading identifiers, changing priority ordering, reporting file rather than section pressure, accidentally applying a stage budget to legacy fallback, and breaking current soft-mode consumers. Tests should mirror source paths under test/unit, use _deps replacement/restoration, and verify provider.fetch rather than stubbing newly introduced intermediate call paths except for the two specified seam tests.",
