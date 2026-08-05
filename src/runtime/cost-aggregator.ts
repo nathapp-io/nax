@@ -22,6 +22,15 @@ export interface CostEvent {
   /** Tier the model resolved from, when one selected it. Absent for pinned models. */
   readonly modelTier?: string;
   /**
+   * Reasoning effort from nax's `model[effort]` profile-suffix convention
+   * (#1464) — a nax-level convention, not an upstream one. Sparse: only codex
+   * profiles currently carry a suffix, so most rows omit this field entirely
+   * rather than carrying `undefined`. If a future agent expresses reasoning
+   * effort differently, this field needs a defined cross-agent meaning rather
+   * than "whatever was in brackets" before it can represent that agent too.
+   */
+  readonly effort?: string;
+  /**
    * Resolved run-profile chain ("cc-acceptance", "a+b", "default"). Without it a
    * row cannot distinguish a deliberate profile pin from a stage ignoring its
    * configured tier — profiles live outside the run artifacts entirely.

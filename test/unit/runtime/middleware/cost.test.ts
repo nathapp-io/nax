@@ -499,4 +499,41 @@ describe("attachCostSubscriber", () => {
 
     expect(errors[0].projectKey).toBe("rs-stock");
   });
+
+  // ── #1464: effort as a dispatch dimension + schema v3 ────────────────────
+
+  test("#1464: copies effort onto the cost row when the dispatch carries one", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ model: "gpt-5.6-luna", effort: "high" }));
+
+    expect(recorded[0].model).toBe("gpt-5.6-luna");
+    expect(recorded[0].effort).toBe("high");
+  });
+
+  test("#1464: omits effort when the dispatch carries none", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ model: "haiku", effort: undefined }));
+
+    expect("effort" in recorded[0]).toBe(false);
+  });
+
+  test("#1464: rows carry schemaVersion 3", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent());
+
+    expect(recorded[0].schemaVersion).toBe(3);
+    expect(COST_ROW_SCHEMA_VERSION).toBe(3);
+  });
 });

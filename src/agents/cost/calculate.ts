@@ -3,6 +3,7 @@
  */
 
 import type { ModelTier } from "../../config/schema";
+import { parseModelSpec } from "../acp/model-spec";
 import { COST_RATES, MODEL_PRICING } from "./pricing";
 import type { CostEstimate, ModelCostRates, TokenUsage } from "./types";
 
@@ -122,7 +123,12 @@ export function addTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
  * @returns Estimated cost in USD
  */
 export function estimateCostFromTokenUsage(usage: TokenUsage, model: string): number {
-  const pricing = MODEL_PRICING[model];
+  // #1464: nax profiles name codex models with a reasoning-effort suffix
+  // ("gpt-5.6-luna[high]"); MODEL_PRICING is keyed on the bare id, so a rate
+  // card can never be hit unless the suffix is stripped first. Parsing a bare
+  // id is a no-op, so this is safe to apply unconditionally.
+  const { model: bareModel } = parseModelSpec(model);
+  const pricing = MODEL_PRICING[bareModel];
 
   if (!pricing) {
     // Fallback: use average rate for unknown models
@@ -167,5 +173,8 @@ export function estimateCostFromTokenUsage(usage: TokenUsage, model: string): nu
  */
 export function resolvePricingSource(model: string | undefined): "model-rates" | "fallback-rates" | "unknown-model" {
   if (model === undefined || model === "" || model === "unknown") return "unknown-model";
-  return MODEL_PRICING[model] ? "model-rates" : "fallback-rates";
+  // #1464: same normalization as estimateCostFromTokenUsage, so the two stay
+  // in agreement about which rate card produced the number.
+  const { model: bareModel } = parseModelSpec(model);
+  return MODEL_PRICING[bareModel] ? "model-rates" : "fallback-rates";
 }
