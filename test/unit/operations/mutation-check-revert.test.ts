@@ -365,6 +365,30 @@ describe("mutationCheckOp — leftover mutations from an interrupted run", () =>
     }
   });
 
+  test("a disabled check with a clean tree spawns no git", async () => {
+    // The feature is off by default, so every nax user would otherwise pay a
+    // `git rev-parse` subprocess per story for a feature they never enabled.
+    const dir = makeTempDir("nax-mutation-nospawn-");
+    try {
+      let gitRootCalls = 0;
+      const out = await mutationCheckOp.execute(
+        runInput(dir),
+        ctxWithConfig({ mutationCheck: { enabled: false, maxMutants: 3, timeoutSeconds: 60 } }),
+        fakeDeps({
+          getGitRoot: async () => {
+            gitRootCalls += 1;
+            return dir;
+          },
+        }),
+      );
+
+      expect(out.checked).toBe(false);
+      expect(gitRootCalls).toBe(0);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
   test("the sweep still runs when the check is disabled", async () => {
     const dir = makeTempDir("nax-mutation-leftover-off-");
     try {

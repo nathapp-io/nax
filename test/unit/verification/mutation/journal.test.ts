@@ -15,6 +15,7 @@ import {
   applyMutant,
   clearInFlight,
   journalPathFor,
+  mayHaveJournal,
   recordInFlight,
   restoreInFlight,
 } from "@/verification";
@@ -65,6 +66,18 @@ describe("mutation journal", () => {
 
     expect(await Bun.file(journalPathFor(repoRoot, "US-001")).exists()).toBe(false);
     expect(await Bun.file(journalPathFor(repoRoot, "US-002")).exists()).toBe(true);
+  });
+
+  test("mayHaveJournal reports nothing to sweep on a clean tree", async () => {
+    expect(await mayHaveJournal([repoRoot, undefined])).toBe(false);
+  });
+
+  test("mayHaveJournal finds a journal under any supplied candidate", async () => {
+    await recordInFlight(repoRoot, { ...mutant(), storyId: "US-001" });
+
+    expect(await mayHaveJournal([repoRoot])).toBe(true);
+    expect(await mayHaveJournal(["/definitely/not/here", repoRoot])).toBe(true);
+    expect(await mayHaveJournal([undefined, undefined])).toBe(false);
   });
 
   test("a story id with path separators cannot escape the journal directory", async () => {
@@ -188,6 +201,36 @@ describe("restoreInFlight — sweeping an interrupted run", () => {
     } finally {
       cleanupTempDir(otherTree);
     }
+  });
+
+  test("a symlinked root still matches its realpath — the sweep is not silently skipped", async () => {
+    // `getGitRoot` returns git's realpath (`rev-parse --show-toplevel` from
+    // /tmp/x answers /private/tmp/x), while a mutant's `file` is built from
+    // whatever path the caller supplied. Comparing them unresolved made every
+    // entry look foreign, so the sweep restored nothing and journals piled up.
+    const { symlinkSync } = await import("node:fs");
+    const linkRoot = join(repoRoot, "link-to-tree");
+    const realTree = join(repoRoot, "real-tree");
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(realTree, { recursive: true });
+    symlinkSync(realTree, linkRoot);
+
+    const file = join(realTree, "src.ts");
+    await Bun.write(file, original);
+    // Journal anchored at the REAL path, entry naming the SYMLINK path.
+    await recordInFlight(realTree, {
+      ...mutant(),
+      file: join(linkRoot, "src.ts"),
+      storyId: "US-001",
+    });
+    await applyMutant({ ...mutant(), file: join(linkRoot, "src.ts") });
+    expect(await Bun.file(file).text()).not.toBe(original);
+
+    const results = await restoreInFlight(realTree);
+
+    expect(results.map((r) => r.outcome)).toEqual(["restored"]);
+    expect(await Bun.file(file).text()).toBe(original);
+    expect(await Bun.file(journalPathFor(realTree, "US-001")).exists()).toBe(false);
   });
 
   test("no journal directory yields no work", async () => {

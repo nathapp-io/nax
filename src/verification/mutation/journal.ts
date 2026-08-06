@@ -14,7 +14,8 @@
  * One file per story, so parallel stories never contend for the same journal.
  */
 
-import { join, resolve, sep } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { revertMutant } from "./apply";
 import type { Mutant } from "./types";
 
@@ -48,6 +49,42 @@ function journalFileName(storyId: string): string {
 
 export function journalPathFor(repoRoot: string, storyId: string): string {
   return join(journalDir(repoRoot), journalFileName(storyId));
+}
+
+/**
+ * Cheap "is there anything to sweep?" probe for a set of candidate roots.
+ *
+ * The sweep must run before the mutation check's `enabled` gate, so that
+ * disabling the feature after an interrupted run cannot strand a mutation.
+ * Resolving the real anchor costs a `git rev-parse` subprocess, and the
+ * feature is off by default — so every nax user would pay a spawn per story
+ * for a feature they never turned on. A journal exists only in the window
+ * after a run died mid-mutation, so a directory check on the paths we already
+ * hold rules that out almost always, without spawning anything.
+ *
+ * Deliberately conservative: `true` means "maybe, go resolve the real anchor",
+ * never "definitely".
+ *
+ * KNOWN LIMIT: it probes only the paths given, not their ancestors, so it
+ * cannot see a journal at a git root that sits above both — the monorepo +
+ * worktree shape, where the root is the worktree and `workdir` is a package
+ * inside it. Callers must therefore use this ONLY to skip work when the
+ * feature is disabled, never to decide where to write. Missing a leftover
+ * there needs the feature to have been enabled, crashed, and then disabled,
+ * and the worktree holding it is removed on merge; paying a subprocess per
+ * story for every user who never enabled the feature is the certain cost.
+ */
+export async function mayHaveJournal(candidateRoots: ReadonlyArray<string | undefined>): Promise<boolean> {
+  const { stat } = await import("node:fs/promises");
+  for (const root of candidateRoots) {
+    if (!root) continue;
+    try {
+      if ((await stat(journalDir(root))).isDirectory()) return true;
+    } catch {
+      // Not present under this candidate — try the next.
+    }
+  }
+  return false;
 }
 
 /**
@@ -85,10 +122,35 @@ async function readEntry(path: string): Promise<MutationJournalEntry | null> {
   }
 }
 
-/** Is `filePath` inside `root`'s subtree? */
+/**
+ * Resolve symlinks so two spellings of the same location compare equal.
+ *
+ * `getGitRoot` returns git's realpath (`git rev-parse --show-toplevel` from
+ * `/tmp/repo` answers `/private/tmp/repo`), while a mutant's `file` is built
+ * from whichever path the caller supplied — often still the symlinked form.
+ * Comparing those unresolved makes every entry look foreign. Same
+ * normalisation `autoCommitIfDirty` performs for the same reason.
+ */
+function realOrRaw(p: string): string {
+  const abs = resolve(p);
+  try {
+    return realpathSync(abs);
+  } catch {
+    // The path itself is gone — a journalled file deleted since the run died.
+    // Resolve the directory instead so a symlinked root still compares equal;
+    // only fall back to the lexical form when that fails too.
+    try {
+      return join(realpathSync(dirname(abs)), basename(abs));
+    } catch {
+      return abs;
+    }
+  }
+}
+
+/** Is `filePath` inside `root`'s subtree, symlinks resolved on both sides? */
 function isInside(root: string, filePath: string): boolean {
-  const base = resolve(root);
-  const target = resolve(filePath);
+  const base = realOrRaw(root);
+  const target = realOrRaw(filePath);
   return target === base || target.startsWith(`${base}${sep}`);
 }
 

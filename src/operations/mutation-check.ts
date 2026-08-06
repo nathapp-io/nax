@@ -29,6 +29,7 @@ import {
   classifyMutant,
   clearInFlight,
   generateMutants,
+  mayHaveJournal,
   recordInFlight,
   restoreInFlight,
   revertMutant,
@@ -154,6 +155,19 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       }
     };
     const logger = getLogger();
+    // A mutation left behind by an interrupted run must still be restored if
+    // the feature is turned off afterwards, so the sweep precedes the enabled
+    // gate. Resolving the anchor costs a `git rev-parse` subprocess though, and
+    // the feature is off by default — so when it is disabled, probe the paths
+    // already in hand first and spawn nothing unless a journal might exist.
+    if (!cfg?.enabled) {
+      if (await mayHaveJournal([input.workdir, input.repoRoot])) {
+        await sweepLeftoverMutants((await deps.getGitRoot(input.workdir)) ?? input.workdir, input.storyId);
+      }
+      record(emptyOutput);
+      return { success: true as const, ...emptyOutput };
+    }
+
     // Anchor the journal to the WORKING TREE, not the project root. In parallel
     // mode every story runs in its own git worktree while `repoRoot`
     // (`ctx.projectDir`) stays the shared main repo — anchoring there gives all
@@ -161,14 +175,7 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
     // absolute paths, one story's sweep would restore another's in-flight
     // mutation mid-check. `getGitRoot` inside a worktree returns that worktree.
     const journalRoot = (await deps.getGitRoot(input.workdir)) ?? input.workdir;
-    // Sweep before the enabled check: a mutation left behind by an interrupted
-    // run must still be restored if the feature is turned off afterwards.
     await sweepLeftoverMutants(journalRoot, input.storyId);
-
-    if (!cfg?.enabled) {
-      record(emptyOutput);
-      return { success: true as const, ...emptyOutput };
-    }
 
     const packageDir = input.packageDir ?? input.workdir;
     const language = await deps.detectLanguage(packageDir);
