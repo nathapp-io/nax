@@ -5,6 +5,7 @@ import type { FinishInput, RunResult } from "@flows/nax-finish/types";
 const ok = (stdout: string): RunResult => ({ exitCode: 0, stdout, stderr: "" });
 const originalRun = _prDeps.run;
 const originalReadText = _prDeps.readText;
+const originalWarn = _prDeps.warn;
 const input = (overrides: Partial<FinishInput> = {}): FinishInput => ({
   feature: "finish-pr-body",
   workdir: "/repo",
@@ -16,6 +17,7 @@ const input = (overrides: Partial<FinishInput> = {}): FinishInput => ({
 afterEach(() => {
   _prDeps.run = originalRun;
   _prDeps.readText = originalReadText;
+  _prDeps.warn = originalWarn;
 });
 
 describe("loadFinishPrContext (US-003 AC1-AC10)", () => {
@@ -85,6 +87,21 @@ describe("loadFinishPrContext (US-003 AC1-AC10)", () => {
     expect(paths).toEqual(["/workspace/.nax/features/x/prd.json", "/workspace/.nax/features/x/status.json"]);
   });
 
+  test("US-003 keeps empty prdPath artifact reads inside workdir", async () => {
+    const paths: string[] = [];
+    _prDeps.readText = async (path) => {
+      paths.push(path);
+      return null;
+    };
+
+    await loadFinishPrContext(input({ workdir: "/workspace", prdPath: "" }), {
+      base: "main",
+      gatesRan: [],
+    });
+
+    expect(paths).toEqual(["/workspace/prd.json", "/workspace/status.json"]);
+  });
+
   test("US-003 AC6-AC10 returns status outcomes, duration, and story progress", async () => {
     _prDeps.readText = async (path) =>
       path.endsWith("status.json")
@@ -140,10 +157,13 @@ describe("loadFinishPrContext fail-open behavior (US-003 AC11-AC14)", () => {
     expect(result.regression).toBeUndefined();
   });
 
-  test("US-003 never throws when artifact reads reject", async () => {
+  test("US-003 reports unreadable artifacts while preserving fail-open results", async () => {
+    const warnings: { message: string; path: string; error: unknown }[] = [];
+    const failure = Object.assign(new Error("permission denied"), { code: "EACCES" });
     _prDeps.readText = async () => {
-      throw new Error("unreadable");
+      throw failure;
     };
+    _prDeps.warn = (message, details) => warnings.push({ message, ...details });
 
     const result = await loadFinishPrContext(input(), { base: "main", gatesRan: [] });
 
@@ -151,6 +171,18 @@ describe("loadFinishPrContext fail-open behavior (US-003 AC11-AC14)", () => {
     expect(result.outOfScope).toEqual([]);
     expect(result.acceptance).toBeUndefined();
     expect(result.regression).toBeUndefined();
+    expect(warnings).toEqual([
+      {
+        message: "[finish-pr] Failed to read PR context artifact",
+        path: "/repo/.nax/features/finish-pr-body/prd.json",
+        error: failure,
+      },
+      {
+        message: "[finish-pr] Failed to read PR context artifact",
+        path: "/repo/.nax/features/finish-pr-body/status.json",
+        error: failure,
+      },
+    ]);
   });
 });
 

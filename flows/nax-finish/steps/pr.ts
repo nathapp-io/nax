@@ -6,9 +6,14 @@ import type { FinishPrContext, FinishPrStory } from "../pr-body";
 import type { FinishInput, RunFn } from "../types";
 import { type Forge, detectForge, extractUrl, viewArgv } from "./forge";
 
-export const _prDeps: { run: RunFn; readText: (path: string) => Promise<string | null> } = {
+export const _prDeps: {
+  run: RunFn;
+  readText: (path: string) => Promise<string | null>;
+  warn: (message: string, details: { path: string; error: unknown }) => void;
+} = {
   run: runArgv,
   readText: (path) => readFile(path, "utf8"),
+  warn: (message, details) => process.emitWarning(message, { detail: `${details.path}: ${String(details.error)}` }),
 };
 
 interface PrdArtifact {
@@ -23,9 +28,16 @@ interface StatusArtifact {
 }
 
 async function readJson(path: string): Promise<unknown> {
+  let text: string | null;
   try {
-    const text = await _prDeps.readText(path);
-    return text === null ? undefined : JSON.parse(text);
+    text = await _prDeps.readText(path);
+  } catch (error) {
+    _prDeps.warn("[finish-pr] Failed to read PR context artifact", { path, error });
+    return undefined;
+  }
+  if (text === null) return undefined;
+  try {
+    return JSON.parse(text);
   } catch {
     return undefined;
   }
@@ -44,7 +56,8 @@ export async function loadFinishPrContext(
   input: FinishInput,
   args: { base: string; gatesRan: string[] },
 ): Promise<FinishPrContext> {
-  const prdPath = isAbsolute(input.prdPath) ? input.prdPath : join(input.workdir, input.prdPath);
+  const inputPrdPath = input.prdPath || "prd.json";
+  const prdPath = isAbsolute(inputPrdPath) ? inputPrdPath : join(input.workdir, inputPrdPath);
   const [prd, status] = (await Promise.all([readJson(prdPath), readJson(join(dirname(prdPath), "status.json"))])) as [
     PrdArtifact | undefined,
     StatusArtifact | undefined,
