@@ -446,12 +446,20 @@ export const NaxConfigSchema = z
              * reviewers too.
              */
             model: z.string().min(1, "model must be non-empty").nullable().default(null),
+            /**
+             * Whether the flow spends an agent turn writing the PR body's
+             * "What changed" section. Disabled → the body carries the
+             * mechanical fallback (spec §Summary) or no such section at all.
+             */
+            narrative: z.boolean().default(true),
             reviewers: z
               .object({
                 spec: z.string().nullable().default(null),
                 quality: z.string().nullable().default(null),
+                /** Profile that writes the "What changed" narrative. */
+                narrative: z.string().nullable().default(null),
               })
-              .default({ spec: null, quality: null }),
+              .default({ spec: null, quality: null, narrative: null }),
             escalate: z.object({ telegram: z.boolean().default(true) }).default({ telegram: true }),
             notify: z
               .object({ mode: z.enum(["escalation", "always", "off"]).default("escalation") })
@@ -481,7 +489,8 @@ export const NaxConfigSchema = z
             flowPath: "flows/nax-finish/nax-finish.flow.ts",
             defaultAgent: null,
             model: null,
-            reviewers: { spec: null, quality: null },
+            narrative: true,
+            reviewers: { spec: null, quality: null, narrative: null },
             escalate: { telegram: true },
             notify: { mode: "escalation" },
             timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },
@@ -493,7 +502,8 @@ export const NaxConfigSchema = z
           flowPath: "flows/nax-finish/nax-finish.flow.ts",
           defaultAgent: null,
           model: null,
-          reviewers: { spec: null, quality: null },
+          narrative: true,
+          reviewers: { spec: null, quality: null, narrative: null },
           escalate: { telegram: true },
           notify: { mode: "escalation" },
           timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },

@@ -248,6 +248,10 @@ function buildFlowEnv(cfg: FinishAutoFlowSettings): Record<string, string> {
   const env: Record<string, string> = { ...process.env } as Record<string, string>;
   if (cfg.reviewers.spec) env.NAX_FINISH_SPEC_PROFILE = cfg.reviewers.spec;
   if (cfg.reviewers.quality) env.NAX_FINISH_QUALITY_PROFILE = cfg.reviewers.quality;
+  if (cfg.reviewers.narrative) env.NAX_FINISH_NARRATIVE_PROFILE = cfg.reviewers.narrative;
+  // Only the disabled case is signalled. An unset var means enabled, so a flow
+  // invoked directly by `acpx flow run` still narrates.
+  if (!cfg.narrative) env.NAX_FINISH_NARRATIVE = "0";
   return env;
 }
 
