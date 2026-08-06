@@ -56,8 +56,10 @@ kill a multi-hour run over output nothing reads.
 or `{switch}`, so there is no error edge to route to. A fix stays inside the parse
 functions and the switch cases the flow owns, or it becomes an acpx change.
 
-**`nax-finish.flow.ts` is 599 lines** against the repo's 600-line `SRC_LIMIT`. New
-logic goes in its own module.
+**`nax-finish.flow.ts` is 599 lines** against a 600-line hard limit for source files,
+enforced by `bun run check:file-sizes` as part of `bun run lint`. Adding to it fails the
+lint gate. New logic goes in its own module — and enough existing logic must *leave* the
+flow file to buy headroom, because the additions alone would push it to ~607.
 
 **The `escalate` node is already the right sink.** It writes the result file *before*
 attempting delivery, pushes partial fixes, and notifies Telegram — built exactly so
@@ -68,9 +70,18 @@ that bypasses it.
 
 ### Architecture
 
-New module `flows/nax-finish/verdict.ts` owning both parsers, the cap constant, and the
-attempt counter. `parseVerdict` is deleted from `nax-finish.flow.ts` and replaced by two
-imports — a net line reduction, which matters at 599/600.
+New module `flows/nax-finish/verdict.ts` owning everything that turns a reviewer's reply
+into a route: both parsers, both loop caps, the attempt counter, and `routeReview`.
+
+Moving `routeReview` out is what makes the line budget work. Removing `parseVerdict`
+alone (~7 lines) against the additions (~15) would net **+8 → ~607**, over the limit.
+Taking `routeReview` and its docstring too (~31 lines) nets roughly **-35 → ~564**, with
+real headroom. It is also the cohesive split: `routeReview` consumes exactly what the
+parsers produce.
+
+`MAX_FIX_ATTEMPTS` moves with it, since `routeReview` needs it. The flow file imports it
+back for its three other users — the acceptance node and the two `quality_gates` caps.
+No cycle: `verdict.ts` imports nothing from the flow.
 
 `ReviewVerdict.route` (`types.ts:23`) widens from `"proceed" | "escalate" | "clean"` to
 include `"reprompt"`, documented the same way `clean` already is: not a model-produced
@@ -80,6 +91,7 @@ route, synthesised by `parse` so the graph can branch on it.
 
 ```ts
 // flows/nax-finish/verdict.ts
+export const MAX_FIX_ATTEMPTS = 3;      // moved from nax-finish.flow.ts
 export const MAX_REPROMPT_ATTEMPTS = 1;
 
 /** review_spec / review_quality — JSON is load-bearing; garbage routes to reprompt. */
@@ -89,8 +101,17 @@ export function parseReviewVerdict(text: string): ReviewVerdict
 export function parseFixVerdict(text: string): ReviewVerdict
 
 /** How many times this phase's review already came back unparseable. */
-export function repromptCount(ctx: StepsCtx, phase: FinishPhase): number
+export function repromptCount(ctx: StepsCtx, phase: "spec" | "quality"): number
+
+/** Moved verbatim from the flow file, plus the reprompt branch. */
+export function routeReview(ctx: OutputsCtx & StepsCtx, phase: "spec" | "quality"): {
+  route: string; escalationReason?: string; findings: Finding[]
+}
 ```
+
+`repromptCount` and `routeReview` take `"spec" | "quality"`, not `FinishPhase` — the
+latter also admits `"acceptance"` and `"gate"`, which have no review node. This matches
+`incrementalSince`'s existing signature (`flow-ctx.ts:88`).
 
 `parseReviewVerdict` keeps the existing body — `extractJsonObject`, findings array,
 `proceed`-with-zero-findings rewritten to `clean` — wrapped so a throw becomes
@@ -132,6 +153,22 @@ The review nodes' `prompt(ctx)` passes `retry: repromptCount(ctx, phase) > 0` to
 existing `JSON_CONTRACT`. Both review nodes are `session: { isolated: true }`, so each
 retry runs in a fresh session and the prompt is already self-contained — there is no
 conversational continuity to preserve.
+
+### Two interactions that are correct by construction
+
+**Returning beats throwing, and that is what makes the counter work.** Because `parse`
+now returns a verdict rather than throwing, acpx records the step as *successful* with
+`output.route === "reprompt"`. `repromptCount` can therefore see it. Had `parse` kept
+throwing, the step would be recorded `failed` with no output, and there would be nothing
+to count.
+
+**A retry is a full re-review, not a narrowed one.** `incrementalSince` scopes a
+re-review to `firstCommit.shaBefore..HEAD` by finding the first `commit_*` step after
+this phase's last `review_<phase>`. On a reprompt re-entry the steps are
+`[… review_quality, route_quality]` — no `commit_*` follows, so it returns `null` and the
+retry re-reads the whole `base...HEAD` diff. That is the right answer: the previous
+attempt produced no verdict, so there is no cleared window to skip. Worth stating
+explicitly so nobody later "optimises" the retry into an incremental review.
 
 ### Error handling
 
@@ -183,8 +220,8 @@ Invariants after this change:
 
 | file | change |
 |:--|:--|
-| `flows/nax-finish/verdict.ts` | new — both parsers, cap, counter |
-| `flows/nax-finish/nax-finish.flow.ts` | drop `parseVerdict`, import the two parsers, wire per node, reorder `routeReview`, add 2 switch cases |
+| `flows/nax-finish/verdict.ts` | new — both parsers, both caps, counter, `routeReview` |
+| `flows/nax-finish/nax-finish.flow.ts` | drop `parseVerdict`, `routeReview`, `MAX_FIX_ATTEMPTS`; import them back; wire parsers per node; add 2 switch cases; ~599 → ~564 |
 | `flows/nax-finish/types.ts` | widen `ReviewVerdict.route` with `"reprompt"` |
 | `flows/nax-finish/review-prompts.ts` | `retry` param on `buildReviewPrompt` |
 | `test/unit/flows/nax-finish/verdict.test.ts` | new |
