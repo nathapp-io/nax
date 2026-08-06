@@ -199,6 +199,35 @@ deleted file mode 100644
     expect(result.size).toBe(0);
   });
 
+  test("+++ /dev/null resets current file so subsequent hunks do not leak across", () => {
+    const diff = `diff --git a/src/a.ts b/src/a.ts
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -1 +1,2 @@
+-x
++y
+diff --git a/src/gone.ts b/src/gone.ts
+deleted file mode 100644
+--- a/src/gone.ts
++++ /dev/null
+@@ -1,3 +0,0 @@
+-x
+-y
+-z
+diff --git a/src/b.ts b/src/b.ts
+--- a/src/b.ts
++++ b/src/b.ts
+@@ -10 +10,2 @@
+-x
++y
++y
+`;
+    const result = extractDiffLineRanges(diff);
+    expect(result.get("src/a.ts")).toEqual([{ start: 1, end: 2 }]);
+    expect(result.has("src/gone.ts")).toBe(false);
+    expect(result.get("src/b.ts")).toEqual([{ start: 10, end: 11 }]);
+  });
+
   test("AC10: unrecognised lines are ignored without error", () => {
     const diff = `some preamble text that is not a diff header
 this line means nothing
