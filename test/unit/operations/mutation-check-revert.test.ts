@@ -266,6 +266,59 @@ describe("mutationCheckOp — leftover mutations from an interrupted run", () =>
     }
   });
 
+  test("a monorepo workdir still journals into the worktree root, not the package dir", async () => {
+    // `workdir` is `join(worktreePath, story.workdir)` — the PACKAGE dir, not
+    // the worktree root. Anchoring through getGitRoot is what absorbs that:
+    // `git rev-parse --show-toplevel` from inside a linked worktree returns
+    // the worktree, whatever subdirectory it is run from. This stub mimics
+    // that containment rather than echoing its argument.
+    const projectRoot = makeTempDir("nax-mutation-mono-");
+    const worktree = join(projectRoot, ".nax-wt", "US-004");
+    const packageDir = join(worktree, "packages", "api");
+    try {
+      const file = join(packageDir, "src", "a.ts");
+      await Bun.write(file, "if (a == b) { return 1; }\n");
+
+      const seen: Array<{ atWorktree: boolean; atPackage: boolean; atProjectRoot: boolean }> = [];
+      const deps = fakeDeps({
+        getGitRoot: async (dir: string) => (dir.startsWith(worktree) ? worktree : projectRoot),
+        getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 1 }]]]),
+        regression: async () => {
+          seen.push({
+            atWorktree: await Bun.file(journalPathFor(worktree, "US-004")).exists(),
+            atPackage: await Bun.file(journalPathFor(packageDir, "US-004")).exists(),
+            atProjectRoot: await Bun.file(journalPathFor(projectRoot, "US-004")).exists(),
+          });
+          return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" };
+        },
+      });
+
+      await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: packageDir,
+          storyId: "US-004",
+          storyGitRef: "abc",
+          repoRoot: projectRoot,
+          packagePrefix: "packages/api",
+          resolvedTestPatterns: PATTERNS,
+        } as any,
+        ctxWithConfig(ENABLED),
+        deps,
+      );
+
+      expect(seen.length).toBeGreaterThan(0);
+      for (const observation of seen) {
+        expect(observation.atWorktree).toBe(true);
+        expect(observation.atPackage).toBe(false);
+        expect(observation.atProjectRoot).toBe(false);
+      }
+    } finally {
+      cleanupTempDir(projectRoot);
+    }
+  });
+
   test("a sweep never reaches into a sibling worktree's journal", async () => {
     const projectRoot = makeTempDir("nax-mutation-siblings-");
     const worktreeA = join(projectRoot, ".nax-wt", "US-004");

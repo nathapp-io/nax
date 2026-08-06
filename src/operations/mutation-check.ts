@@ -265,77 +265,101 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       );
     }
     const selected = selectEvenlySpaced(mutants, cfg.maxMutants);
-    let revertFailed = false;
-    for (const mutant of selected) {
-      let outcome: MutantOutcome | undefined;
+    // Loop-invariant: every argument comes from `input`/`quality`, none from
+    // the mutant, so the scoped selection is identical on every iteration.
+    // Resolving it once turns maxMutants git-diff-plus-import-grep passes into
+    // one. Kept behind the emptiness guard because "no mutants selected" must
+    // still mean "no test selection performed".
+    let scoped: SelectScopedTestsResult | undefined;
+    if (selected.length > 0) {
       try {
-        // Journal BEFORE mutating: a crash in between must leave a record
-        // that names a mutation, never a mutation with no record.
-        await recordInFlight(journalRoot, { ...mutant, storyId: input.storyId });
-        await applyMutant(mutant);
-        try {
-          const scoped = await deps.selectScopedTests({
-            workdir: input.workdir,
-            storyId: input.storyId,
-            storyGitRef: input.storyGitRef,
-            testCommand: baseTestCommand,
-            testScopedTemplate: quality.quality?.commands?.testScoped,
-            smartRunnerConfig: quality.execution?.smartTestRunner,
-            fallbackFullSuiteCommand: baseTestCommand,
-            repoRoot: input.repoRoot,
-            packagePrefix: input.packagePrefix,
-            resolvedTestPatterns: input.resolvedTestPatterns,
-          });
-          const result = await deps.regression({
-            workdir: input.workdir,
-            command: scoped.effectiveCommand,
-            timeoutSeconds: cfg.timeoutSeconds,
-          });
-          outcome = classifyMutant(result);
-          outcomes[outcome] += 1;
-          if (outcome === "survived") {
-            survivors.push({ ...mutant, outcome: "survived" });
-          }
-        } finally {
-          const reverted = await revertMutant(mutant);
-          if (reverted.reverted) {
-            await clearInFlight(journalRoot, input.storyId);
-          } else {
-            // The line no longer holds what we wrote, so restoring it would
-            // overwrite content we cannot account for. Leave the file alone,
-            // keep the journal for the next run, and stop mutating: whatever
-            // moved the file will keep moving it.
-            revertFailed = true;
-            logger.error("mutation-check", "Could not confirm revert — worktree may still hold a mutation", {
-              storyId: input.storyId,
-              file: mutant.file,
-              line: mutant.line,
-              operatorId: mutant.operatorId,
-              reason: reverted.reason,
-              expected: mutant.after,
-              actual: reverted.actual,
-            });
-          }
-        }
-      } catch (err) {
-        // Fail-open: any error mutating/testing/reverting a single mutant is
-        // never a gate failure — log and move on to the next mutant. A mutant
-        // whose outcome was already recorded (e.g. revert failed after a
-        // successful verification) is not re-counted as errored.
-        if (outcome === undefined) {
-          outcomes.errored += 1;
-        }
-        logger.warn("mutation-check", "Error processing mutant — skipping", {
+        scoped = await deps.selectScopedTests({
+          workdir: input.workdir,
           storyId: input.storyId,
-          file: mutant.file,
-          line: mutant.line,
-          operatorId: mutant.operatorId,
+          storyGitRef: input.storyGitRef,
+          testCommand: baseTestCommand,
+          testScopedTemplate: quality.quality?.commands?.testScoped,
+          smartRunnerConfig: quality.execution?.smartTestRunner,
+          fallbackFullSuiteCommand: baseTestCommand,
+          repoRoot: input.repoRoot,
+          packagePrefix: input.packagePrefix,
+          resolvedTestPatterns: input.resolvedTestPatterns,
+        });
+      } catch (err) {
+        // Same observable outcome as when this threw per-mutant inside the
+        // loop — every selected mutant counts as errored — except now nothing
+        // was written to the worktree to get there.
+        outcomes.errored += selected.length;
+        logger.warn("mutation-check", "Scoped test selection failed — skipping mutation spot-check", {
+          storyId: input.storyId,
           error: err instanceof Error ? err.message : String(err),
         });
       }
-      // An unconfirmed revert means the worktree is in a state this op did
-      // not author. Applying more mutations on top would compound it.
-      if (revertFailed) break;
+    }
+
+    let revertFailed = false;
+    // `scoped === undefined` means selection failed above; the outcome is
+    // already recorded and nothing may be written to the worktree.
+    if (scoped !== undefined) {
+      for (const mutant of selected) {
+        let outcome: MutantOutcome | undefined;
+        try {
+          // Journal BEFORE mutating: a crash in between must leave a record
+          // that names a mutation, never a mutation with no record.
+          await recordInFlight(journalRoot, { ...mutant, storyId: input.storyId });
+          await applyMutant(mutant);
+          try {
+            const result = await deps.regression({
+              workdir: input.workdir,
+              command: scoped.effectiveCommand,
+              timeoutSeconds: cfg.timeoutSeconds,
+            });
+            outcome = classifyMutant(result);
+            outcomes[outcome] += 1;
+            if (outcome === "survived") {
+              survivors.push({ ...mutant, outcome: "survived" });
+            }
+          } finally {
+            const reverted = await revertMutant(mutant);
+            if (reverted.reverted) {
+              await clearInFlight(journalRoot, input.storyId);
+            } else {
+              // The line no longer holds what we wrote, so restoring it would
+              // overwrite content we cannot account for. Leave the file alone,
+              // keep the journal for the next run, and stop mutating: whatever
+              // moved the file will keep moving it.
+              revertFailed = true;
+              logger.error("mutation-check", "Could not confirm revert — worktree may still hold a mutation", {
+                storyId: input.storyId,
+                file: mutant.file,
+                line: mutant.line,
+                operatorId: mutant.operatorId,
+                reason: reverted.reason,
+                expected: mutant.after,
+                actual: reverted.actual,
+              });
+            }
+          }
+        } catch (err) {
+          // Fail-open: any error mutating/testing/reverting a single mutant is
+          // never a gate failure — log and move on to the next mutant. A mutant
+          // whose outcome was already recorded (e.g. revert failed after a
+          // successful verification) is not re-counted as errored.
+          if (outcome === undefined) {
+            outcomes.errored += 1;
+          }
+          logger.warn("mutation-check", "Error processing mutant — skipping", {
+            storyId: input.storyId,
+            file: mutant.file,
+            line: mutant.line,
+            operatorId: mutant.operatorId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        // An unconfirmed revert means the worktree is in a state this op did
+        // not author. Applying more mutations on top would compound it.
+        if (revertFailed) break;
+      }
     }
 
     for (const s of survivors) {

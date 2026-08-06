@@ -290,4 +290,108 @@ describe("mutationCheckOp — US-002 AC14: empty selection returns all-zero outc
       cleanupTempDir(dir);
     }
   });
+
+  test("scoped test selection is resolved once per story, not once per mutant", async () => {
+    // Every argument comes from the op's input, none from the mutant, so this
+    // is loop-invariant — N mutants used to mean N git-diff + import-grep
+    // passes for an identical answer.
+    const dir = makeTempDir("nax-mutation-test-");
+    try {
+      const file = join(dir, "src", "foo.ts");
+      await Bun.write(file, "if (a == b) { return 1; }\nif (c == d) { return 2; }\nif (e == f) { return 3; }\n");
+
+      let selectCalls = 0;
+      let regressionCalls = 0;
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 3 }]]]),
+        selectScopedTests: async () => {
+          selectCalls += 1;
+          return {
+            effectiveCommand: "bun test src/foo.test.ts",
+            isFullSuite: false,
+            thresholdFallback: false,
+            isMonorepoOrchestrator: false,
+          };
+        },
+        regression: async () => {
+          regressionCalls += 1;
+          return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" };
+        },
+      });
+
+      await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          storyGitRef: "abc",
+          repoRoot: dir,
+          resolvedTestPatterns: {
+            globs: ["**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [":!*.test.ts"],
+            testDirs: ["test"],
+          },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
+        deps,
+      );
+
+      expect(regressionCalls).toBeGreaterThan(1);
+      expect(selectCalls).toBe(1);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  test("a failed scoped selection errors every mutant without touching the worktree", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    try {
+      const file = join(dir, "src", "foo.ts");
+      const original = "if (a == b) { return 1; }\nif (c == d) { return 2; }\n";
+      await Bun.write(file, original);
+
+      let regressionCalls = 0;
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 2 }]]]),
+        selectScopedTests: async () => {
+          throw new Error("smart runner exploded");
+        },
+        regression: async () => {
+          regressionCalls += 1;
+          return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" };
+        },
+      });
+
+      const out = await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          storyGitRef: "abc",
+          repoRoot: dir,
+          resolvedTestPatterns: {
+            globs: ["**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [":!*.test.ts"],
+            testDirs: ["test"],
+          },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
+        deps,
+      );
+
+      // Fail-open, and the same outcome shape as when this threw per-mutant
+      // inside the loop — except no mutation was ever written to disk.
+      expect(out.success).toBe(true);
+      expect(out.outcomes.errored).toBeGreaterThan(0);
+      expect(out.outcomes.killed + out.outcomes.survived).toBe(0);
+      expect(regressionCalls).toBe(0);
+      expect(await Bun.file(file).text()).toBe(original);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
 });
