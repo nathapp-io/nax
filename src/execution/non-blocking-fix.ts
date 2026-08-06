@@ -218,9 +218,18 @@ export function createMeasureSourceDiff(args: CreateMeasureSourceDiffArgs): NonB
  * exhaustion. Never throws into the caller's verdict path: failure ⇒ restore ⇒
  * the story keeps its adversarial-passed state.
  */
-/** Is `workdir` inside a blocked tree, or a blocked tree inside it? */
+/**
+ * Is `workdir` the blocked working tree, or a package inside one?
+ *
+ * One-directional on purpose. `blockedWorktrees` holds working-tree ROOTS, and
+ * `isInside` already treats the root itself as inside, so this covers both the
+ * root and any package under it. The reverse test (a blocked root inside
+ * `workdir`) would fire when `workdir` is the main repo and some story's linked
+ * worktree at `<repo>/.nax-wt/<storyId>` is blocked — a separate checkout whose
+ * state says nothing about this one.
+ */
 function isBlocked(blocked: ReadonlySet<string>, workdir: string): boolean {
-  return [...blocked].some((tree) => isInside(tree, workdir) || isInside(workdir, tree));
+  return [...blocked].some((tree) => isInside(tree, workdir));
 }
 
 export async function runNonBlockingFix(

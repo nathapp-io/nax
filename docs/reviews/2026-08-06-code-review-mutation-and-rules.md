@@ -60,11 +60,17 @@ The feature being advisory justifies not *failing* the story. It does not justif
 injected mutation into a commit.
 
 **Fix applied.** `NaxRuntime` gained a `dirtyWorktrees: Set<string>` register. `mutationCheckOp`
-adds the worktree path when a revert cannot be confirmed, and `autoCommitIfDirty` takes an optional
-`blockedWorktrees` set and refuses to stage when the git root it would `git add -A` from overlaps
-one, logging an error that points at the mutation-check log. The three story-path call sites
-(`review/runner.ts`, `execution/post-run.ts`, `execution/runner-completion.ts`) pass
-`runtime.dirtyWorktrees`.
+adds the working-tree **root** (its already-resolved `journalRoot`) when a revert cannot be
+confirmed, and `autoCommitIfDirty` takes an optional `blockedWorktrees` set and refuses to stage
+when the root it would `git add -A` from *is* a blocked one, logging an error that points at the
+mutation-check log. The three story-path call sites (`review/runner.ts`, `execution/post-run.ts`,
+`execution/runner-completion.ts`) pass `runtime.dirtyWorktrees`.
+
+Roots compared by **equality**, not containment — a self-review correction. In parallel mode each
+story's worktree is a linked tree at `<repo>/.nax-wt/<storyId>`: inside the main repo by path, but a
+separate checkout that `git add -A` from the main root never stages. A containment test blocked the
+run-summary commit whenever any story's worktree was dirty. Comparing roots also still catches the
+monorepo case, since `git rev-parse --show-toplevel` from a package answers with the repo root.
 
 Two call sites were deliberately handled differently:
 

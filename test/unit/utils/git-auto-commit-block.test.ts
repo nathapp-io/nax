@@ -7,11 +7,11 @@
  * so `autoCommitIfDirty` must refuse rather than sweep it in with `git add -A`.
  */
 
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _gitDeps, autoCommitIfDirty } from "@/utils/git";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 /**
  * Spawn stub that answers each git invocation by subcommand, so the guard under
@@ -45,7 +45,7 @@ let origSpawn: typeof _gitDeps.spawn;
 const dirs: string[] = [];
 
 function makeRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), "nax-autocommit-test-"));
+  const dir = makeTempDir("nax-autocommit-test-");
   dirs.push(dir);
   mkdirSync(join(dir, "src"), { recursive: true });
   return dir;
@@ -57,7 +57,7 @@ beforeEach(() => {
 
 afterEach(() => {
   _gitDeps.spawn = origSpawn;
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  for (const dir of dirs.splice(0)) cleanupTempDir(dir);
   mock.restore();
 });
 
@@ -83,20 +83,39 @@ describe("autoCommitIfDirty — blocked worktrees", () => {
     expect(calls.some(([, sub]) => sub === "commit")).toBe(false);
   });
 
-  test("refuses when the blocked tree is a package inside the git root", async () => {
-    // Staging is `git add -A` from the git ROOT, so a blocked package deeper in
-    // the repo would still be swept into the commit.
+  test("does not block on a linked worktree nested inside the repo path", async () => {
+    // Parallel mode puts each story's worktree at `<repo>/.nax-wt/<storyId>`.
+    // It sits inside the main repo BY PATH but is a separate checkout that
+    // `git add -A` from the main root never stages, so a containment test here
+    // would block the run-summary commit whenever any story's tree was dirty.
     const repo = makeRepo();
-    const pkg = join(repo, "src");
+    const linked = join(repo, ".nax-wt", "US-002");
+    mkdirSync(linked, { recursive: true });
     const calls: string[][] = [];
     _gitDeps.spawn = makeSpawn(repo, calls);
 
-    await autoCommitIfDirty(repo, "execution", "implementer", "US-001", new Set([pkg]));
+    await autoCommitIfDirty(repo, "execution", "implementer", "US-001", new Set([linked]));
+
+    expect(calls.some(([, sub]) => sub === "add")).toBe(true);
+  });
+
+  test("blocks a commit made from inside the blocked worktree itself", async () => {
+    const repo = makeRepo();
+    const linked = join(repo, ".nax-wt", "US-002");
+    mkdirSync(linked, { recursive: true });
+    const calls: string[][] = [];
+    // `git rev-parse --show-toplevel` inside a linked worktree answers with
+    // that worktree, so this is the root the commit would stage from.
+    _gitDeps.spawn = makeSpawn(linked, calls);
+
+    await autoCommitIfDirty(linked, "execution", "implementer", "US-002", new Set([linked]));
 
     expect(calls.some(([, sub]) => sub === "add")).toBe(false);
   });
 
   test("refuses when the caller's workdir is a package under a blocked root", async () => {
+    // The monorepo case: `git rev-parse --show-toplevel` from the package still
+    // answers with the repo root, which is what the blocked set names.
     const repo = makeRepo();
     const pkg = join(repo, "src");
     const calls: string[][] = [];

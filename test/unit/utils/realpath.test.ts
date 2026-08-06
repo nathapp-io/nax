@@ -7,24 +7,22 @@
  * producing zero mutation candidates.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, symlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import { isInside, realOrRaw } from "@/utils/realpath";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const created: string[] = [];
 
 function makeDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "nax-realpath-test-"));
+  const dir = makeTempDir("nax-realpath-test-");
   created.push(dir);
   return dir;
 }
 
 afterEach(() => {
-  for (const dir of created.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  for (const dir of created.splice(0)) cleanupTempDir(dir);
 });
 
 describe("realOrRaw", () => {

@@ -363,7 +363,14 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
               // advisory — the story is not failed — but the tree now holds a
               // line this op did not author, and `autoCommitIfDirty` would
               // otherwise sweep it into a commit (and, under autoPR, a push).
-              ctx.runtime?.dirtyWorktrees?.add(input.workdir);
+              //
+              // Register the working-tree ROOT (`journalRoot`, already resolved
+              // via `getGitRoot`), not `input.workdir`. Consumers compare roots
+              // for equality: in parallel mode a story's worktree is a LINKED
+              // tree at `<repo>/.nax-wt/<storyId>`, so a path-containment test
+              // against the main repo would block the run-summary commit for
+              // every story whose worktree was dirty.
+              ctx.runtime?.dirtyWorktrees?.add(journalRoot);
               logger.error("mutation-check", "Could not confirm revert — worktree may still hold a mutation", {
                 storyId: input.storyId,
                 file: mutant.file,
