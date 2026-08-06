@@ -9,21 +9,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import flow from "@flows/nax-finish/nax-finish.flow";
 import { _gitDeps } from "@flows/nax-finish/steps/git";
 import { _resultDeps } from "@flows/nax-finish/steps/result";
-import type { FlowNodeContext } from "acpx/flows";
+import type { FlowNodeContext, FlowStepRecord } from "acpx/flows";
+import { makeFlowCtx, makeFlowSteps } from "@test/helpers";
 
 const INPUT = { feature: "x", workdir: "/repo", branch: "feat/x", prdPath: "p", escalateTelegram: false };
 
-const ctxOf = (over: {
-  outputs?: Record<string, unknown>;
-  steps?: { nodeId: string; output?: unknown }[];
-}): FlowNodeContext =>
-  ({
-    input: INPUT,
-    outputs: over.outputs ?? {},
-    results: {},
-    state: { steps: over.steps ?? [] } as never,
-    services: {},
-  }) as FlowNodeContext;
+const ctxOf = (over: { outputs?: Record<string, unknown>; steps?: FlowStepRecord[] }): FlowNodeContext =>
+  makeFlowCtx({ input: INPUT, ...over });
 
 type NodeRun<T> = { run: (ctx: FlowNodeContext) => Promise<T> | T };
 const nodeRun = <T>(id: string) => flow.nodes[id] as unknown as NodeRun<T>;
@@ -267,7 +259,7 @@ describe("review nodes — incremental scoping window", () => {
   const LOAD = { load_ctx: { base: "origin/main", specPath: "s.md" } };
 
   test("the first review of a phase reads the whole branch diff", () => {
-    expect(promptOf("review_spec", { outputs: LOAD, steps: [{ nodeId: "load_ctx" }] })).toContain(
+    expect(promptOf("review_spec", { outputs: LOAD, steps: makeFlowSteps(["load_ctx"]) })).toContain(
       "git diff origin/main...HEAD",
     );
   });
@@ -275,11 +267,7 @@ describe("review nodes — incremental scoping window", () => {
   test("one commit since the last review scopes to that commit's parent tree", () => {
     const p = promptOf("review_spec", {
       outputs: { ...LOAD, review_spec: { findings: [] } },
-      steps: [
-        { nodeId: "review_spec" },
-        { nodeId: "fix_spec" },
-        { nodeId: "commit_spec", output: { shaBefore: "sha-at-review-1" } },
-      ],
+      steps: makeFlowSteps(["review_spec", "fix_spec", ["commit_spec", { shaBefore: "sha-at-review-1" }]]),
     });
     expect(p).toContain("git diff sha-at-review-1..HEAD");
   });
@@ -290,12 +278,12 @@ describe("review nodes — incremental scoping window", () => {
   test("two commits since the last review scope from the FIRST, spanning both", () => {
     const p = promptOf("review_spec", {
       outputs: { ...LOAD, review_spec: { findings: [] } },
-      steps: [
-        { nodeId: "review_spec" },
-        { nodeId: "commit_spec", output: { shaBefore: "sha-at-review-1" } },
-        { nodeId: "acceptance" },
-        { nodeId: "commit_acceptance", output: { shaBefore: "sha-after-spec-fix" } },
-      ],
+      steps: makeFlowSteps([
+        "review_spec",
+        ["commit_spec", { shaBefore: "sha-at-review-1" }],
+        "acceptance",
+        ["commit_acceptance", { shaBefore: "sha-after-spec-fix" }],
+      ]),
     });
     expect(p).toContain("git diff sha-at-review-1..HEAD");
     expect(p).not.toContain("sha-after-spec-fix..HEAD");
@@ -304,7 +292,7 @@ describe("review nodes — incremental scoping window", () => {
   test("a commit that recorded no shaBefore falls back to a full review", () => {
     const p = promptOf("review_quality", {
       outputs: { ...LOAD, review_quality: { findings: [] } },
-      steps: [{ nodeId: "review_quality" }, { nodeId: "commit_quality", output: { shaBefore: null } }],
+      steps: makeFlowSteps(["review_quality", ["commit_quality", { shaBefore: null }]]),
     });
     expect(p).toContain("git diff origin/main...HEAD");
   });
@@ -312,7 +300,7 @@ describe("review nodes — incremental scoping window", () => {
   test("only commits AFTER the last review count — an earlier one does not scope it", () => {
     const p = promptOf("review_quality", {
       outputs: { ...LOAD, review_quality: { findings: [] } },
-      steps: [{ nodeId: "commit_quality", output: { shaBefore: "old" } }, { nodeId: "review_quality" }],
+      steps: makeFlowSteps([["commit_quality", { shaBefore: "old" }], "review_quality"]),
     });
     expect(p).toContain("git diff origin/main...HEAD");
   });
@@ -321,12 +309,12 @@ describe("review nodes — incremental scoping window", () => {
   test("the gate re-entry scopes the quality re-review to the gate commit", () => {
     const p = promptOf("review_quality", {
       outputs: { ...LOAD, review_quality: { findings: [] } },
-      steps: [
-        { nodeId: "review_quality" },
-        { nodeId: "quality_gates" },
-        { nodeId: "fix_gate" },
-        { nodeId: "commit_gate", output: { shaBefore: "sha-at-clean-review" } },
-      ],
+      steps: makeFlowSteps([
+        "review_quality",
+        "quality_gates",
+        "fix_gate",
+        ["commit_gate", { shaBefore: "sha-at-clean-review" }],
+      ]),
     });
     expect(p).toContain("git diff sha-at-clean-review..HEAD");
   });

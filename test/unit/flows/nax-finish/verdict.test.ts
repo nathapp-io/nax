@@ -7,6 +7,8 @@ import {
   repromptCount,
   routeReview,
 } from "@flows/nax-finish/verdict";
+import type { FlowStepRecord } from "acpx/flows";
+import { makeFlowStep, makeFlowSteps, reviewRounds } from "@test/helpers";
 
 // The real reply that killed flow run 2026-08-05T154112386Z-nax-finish-600cf3f3 on
 // rs-stock, with private identifiers replaced by generic equivalents — the shape
@@ -85,13 +87,14 @@ describe("parseFixVerdict", () => {
   });
 });
 
-const stepsCtx = (steps: { nodeId: string; output?: unknown }[]) => ({ state: { steps }, outputs: {} });
-const routeCtx = (verdict: unknown, steps: { nodeId: string; output?: unknown }[] = []) => ({
+const stepsCtx = (steps: FlowStepRecord[]) => ({ state: { steps }, outputs: {} });
+const routeCtx = (verdict: unknown, steps: FlowStepRecord[] = []) => ({
   outputs: { review_quality: verdict },
   state: { steps },
 });
-const REPROMPT_STEP = { nodeId: "review_quality", output: { route: "reprompt", findings: [] } };
-const CLEAN_STEP = { nodeId: "review_quality", output: { route: "clean", findings: [] } };
+const REPROMPT = { route: "reprompt", findings: [] };
+const REPROMPT_STEP = makeFlowStep("review_quality", { output: REPROMPT });
+const CLEAN_STEP = makeFlowStep("review_quality", { output: { route: "clean", findings: [] } });
 
 describe("repromptCount", () => {
   test("is zero with no steps", () => {
@@ -99,7 +102,7 @@ describe("repromptCount", () => {
   });
 
   test("ignores legitimate review re-entries that produced a real verdict", () => {
-    expect(repromptCount(stepsCtx([CLEAN_STEP, { nodeId: "commit_quality" }, CLEAN_STEP]), "quality")).toBe(0);
+    expect(repromptCount(stepsCtx([CLEAN_STEP, makeFlowStep("commit_quality"), CLEAN_STEP]), "quality")).toBe(0);
   });
 
   test("counts only steps whose output routed reprompt", () => {
@@ -122,21 +125,19 @@ describe("routeReview", () => {
     expect(r.route).toBe("reprompt");
   });
 
-  // acpx records a step's outcome (`recordFlowStepOutcome`, runtime.ts:262/499)
-  // BEFORE the next node runs, so by the time `routeReview` executes for the
-  // current round, that round's own `review_quality` step is already in
-  // `ctx.state.steps`. These two tests model that real ordering: round N's
-  // `steps` array has exactly N reprompt entries (not N-1), and would FAIL
-  // under the old `attempts < MAX_REPROMPT_ATTEMPTS` comparison — round 1
-  // would incorrectly escalate immediately instead of retrying.
+  // `reviewRounds(phase, N, …)` builds the history acpx really produces: round
+  // N carries N recorded review steps, not N-1, because the step that triggered
+  // `route_<phase>` is recorded before `route_<phase>` runs. The round-1 case
+  // FAILS under the old `attempts < MAX_REPROMPT_ATTEMPTS` comparison, which
+  // escalated on the very first unparseable reply instead of retrying.
   test("reprompts on the first unparseable reply (round 1: 1 reprompt step already recorded)", () => {
-    const steps = [REPROMPT_STEP];
+    const steps = reviewRounds("quality", 1, REPROMPT);
     const r = routeReview(routeCtx({ route: "reprompt", findings: [], raw: "some prose" }, steps), "quality");
     expect(r.route).toBe("reprompt");
   });
 
   test("escalates on the second consecutive unparseable reply, naming the raw tail", () => {
-    const steps = Array.from({ length: MAX_REPROMPT_ATTEMPTS + 1 }, () => REPROMPT_STEP);
+    const steps = reviewRounds("quality", MAX_REPROMPT_ATTEMPTS + 1, REPROMPT);
     const r = routeReview(routeCtx({ route: "reprompt", findings: [], raw: "some prose" }, steps), "quality");
     expect(r.route).toBe("escalate");
     expect(r.escalationReason).toContain("unparseable");
@@ -159,7 +160,7 @@ describe("routeReview", () => {
   });
 
   test("still escalates when findings persist past the fix cap", () => {
-    const steps = Array.from({ length: MAX_FIX_ATTEMPTS }, () => ({ nodeId: "fix_quality" }));
+    const steps = makeFlowSteps(Array.from({ length: MAX_FIX_ATTEMPTS }, () => "fix_quality"));
     const r = routeReview(routeCtx({ route: "proceed", findings: [FINDING] }, steps), "quality");
     expect(r.route).toBe("escalate");
     expect(r.escalationReason).toContain("fix attempts");
