@@ -51,6 +51,8 @@ export interface MutationCheckOutput {
   readonly success: true;
   readonly survivors: readonly SurvivingMutant[];
   readonly outcomes: MutationOutcomeSummary;
+  readonly candidates: number;
+  readonly checked: boolean;
 }
 
 export interface MutationCheckDeps {
@@ -80,11 +82,23 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
     deps: MutationCheckDeps = _mutationCheckDeps,
   ): Promise<MutationCheckOutput> {
     const cfg = ctx.packageView.select(mutationCheckConfigSelector);
-    const emptyOutput: { survivors: readonly SurvivingMutant[]; outcomes: MutationOutcomeSummary } = {
+    const emptyOutput: {
+      survivors: readonly SurvivingMutant[];
+      outcomes: MutationOutcomeSummary;
+      candidates: number;
+      checked: boolean;
+    } = {
       survivors: [],
       outcomes: { killed: 0, survived: 0, errored: 0 },
+      candidates: 0,
+      checked: false,
     };
-    const record = (result: { survivors: readonly SurvivingMutant[]; outcomes: MutationOutcomeSummary }) => {
+    const record = (result: {
+      survivors: readonly SurvivingMutant[];
+      outcomes: MutationOutcomeSummary;
+      candidates: number;
+      checked: boolean;
+    }) => {
       if (ctx.storyId) {
         ctx.runtime?.mutationSummaries?.set(ctx.storyId, { storyId: ctx.storyId, ...result });
       }
@@ -129,8 +143,8 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       logger.warn("mutation-check", "Failed to obtain changed-line ranges — skipping mutation spot-check", {
         storyId: input.storyId,
       });
-      record(emptyOutput);
-      return { success: true as const, ...emptyOutput };
+      record({ ...emptyOutput, checked: true });
+      return { success: true as const, ...emptyOutput, checked: true };
     }
 
     const survivors: SurvivingMutant[] = [];
@@ -221,8 +235,8 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       });
     }
 
-    const output = { success: true as const, survivors, outcomes };
-    record({ survivors, outcomes });
+    const output = { success: true as const, survivors, outcomes, candidates: mutants.length, checked: true };
+    record(output);
     return output;
   },
 };

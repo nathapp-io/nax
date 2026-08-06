@@ -16,6 +16,8 @@ function makeSummary(overrides: Partial<MutationStorySummary> = {}): MutationSto
       },
     ],
     outcomes: { killed: 0, survived: 1, errored: 0 },
+    candidates: 1,
+    checked: true,
     ...overrides,
   };
 }
@@ -47,6 +49,44 @@ describe("formatMutationSummary", () => {
     expect(formatMutationSummary([summary])).toBe("");
   });
 
+  test("US-004 AC9: renders NOT CHECKED for an attempted story with no candidates", () => {
+    const summary = makeSummary({ storyId: "US-010", survivors: [], candidates: 0, checked: true });
+
+    expect(formatMutationSummary([summary])).toContain("NOT CHECKED");
+    expect(formatMutationSummary([summary])).toContain("US-010");
+  });
+
+  test("US-004 AC10: omits NOT CHECKED for disabled stories", () => {
+    const summary = makeSummary({ survivors: [], candidates: 0, checked: false });
+
+    expect(formatMutationSummary([summary])).not.toContain("NOT CHECKED");
+  });
+
+  test("US-004 AC11: renders survivors before NOT CHECKED stories", () => {
+    const unchecked = makeSummary({ storyId: "US-010", survivors: [], candidates: 0, checked: true });
+
+    const output = formatMutationSummary([makeSummary(), unchecked]);
+
+    expect(output.indexOf("SURVIVING MUTANTS")).toBeLessThan(output.indexOf("NOT CHECKED"));
+  });
+
+  test("US-004 AC12: lists all attempted stories with no candidates", () => {
+    const summaries = [
+      makeSummary({ storyId: "US-010", survivors: [], candidates: 0, checked: true }),
+      makeSummary({ storyId: "US-011", survivors: [], candidates: 0, checked: true }),
+    ];
+
+    const output = formatMutationSummary(summaries);
+
+    expect(output).toContain("US-010");
+    expect(output).toContain("US-011");
+  });
+
+  test("US-004 AC13: returns empty output when every story was unchecked", () => {
+    const summary = makeSummary({ survivors: [], candidates: 0, checked: false });
+
+    expect(formatMutationSummary([summary])).toBe("");
+  });
   test("US-004 AC8: includes survivors from multiple story summaries", () => {
     const second = makeSummary({
       storyId: "US-005",

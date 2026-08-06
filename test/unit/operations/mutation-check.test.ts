@@ -80,6 +80,8 @@ describe("mutationCheckOp — AC2: disabled short-circuit", () => {
       storyId: "US-004",
       survivors: [],
       outcomes: { killed: 0, survived: 0, errored: 0 },
+      candidates: 0,
+      checked: false,
     });
   });
 
@@ -103,6 +105,8 @@ describe("mutationCheckOp — AC2: disabled short-circuit", () => {
       storyId: "US-004",
       survivors: [],
       outcomes: { killed: 0, survived: 0, errored: 0 },
+      candidates: 0,
+      checked: false,
     });
   });
 
