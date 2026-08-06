@@ -30,6 +30,7 @@ function fakeDeps(overrides: Partial<MutationCheckDeps> = {}): MutationCheckDeps
     detectLanguage: async () => "typescript" as any,
     getChangedNonTestFiles: async () => [],
     getChangedLineRanges: async () => new Map(),
+    getGitRoot: async () => null,
     selectScopedTests: async () => ({
       effectiveCommand: "bun test",
       isFullSuite: true,
