@@ -2,14 +2,15 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { _mutationCheckDeps, mutationCheckOp } from "@/operations";
 import type { MutationCheckDeps } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const FAKE_STORY = { id: "US-004", title: "mutation-check op" } as any;
 
-function ctxWithConfig(execution: Record<string, unknown> = {}): any {
+function ctxWithConfig(execution: Record<string, unknown> = {}, runtime: Partial<NaxRuntime> = {}): any {
   const config = { execution, quality: { commands: { test: "bun test" } } } as any;
   return {
-    runtime: {},
+    runtime: { mutationSummaries: new Map(), ...runtime },
     storyId: "US-004",
     packageView: {
       packageDir: "packages/agent",
@@ -153,6 +154,70 @@ describe("mutationCheckOp — AC3: surviving mutant (regression SUCCESS)", () =>
       // File must be restored after revert.
       const after = await Bun.file(file).text();
       expect(after).toBe("if (a == b) { return 1; }\n");
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+describe("mutationCheckOp — US-004 runtime collection", () => {
+  test("US-004 AC9: stores one survivor under the call-context story ID", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    const mutationSummaries = new Map();
+    try {
+      const file = join(dir, "src", "foo.ts");
+      await Bun.write(file, "if (a == b) { return 1; }\n");
+      const deps = fakeDeps({ getChangedNonTestFiles: async () => [file] });
+      const ctx = ctxWithConfig(
+        { mutationCheck: { enabled: true, maxMutants: 1, timeoutSeconds: 60 } },
+        { mutationSummaries },
+      );
+      ctx.storyId = "US-007";
+
+      await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          repoRoot: dir,
+          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+        },
+        ctx,
+        deps,
+      );
+
+      expect(mutationSummaries.get("US-007")?.survivors).toHaveLength(1);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  test("US-004 AC10: leaves the collector empty without a call-context story ID", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    const mutationSummaries = new Map();
+    try {
+      const file = join(dir, "src", "foo.ts");
+      await Bun.write(file, "if (a == b) { return 1; }\n");
+      const deps = fakeDeps({ getChangedNonTestFiles: async () => [file] });
+      const ctx = ctxWithConfig(
+        { mutationCheck: { enabled: true, maxMutants: 1, timeoutSeconds: 60 } },
+        { mutationSummaries },
+      );
+      ctx.storyId = undefined;
+
+      await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          repoRoot: dir,
+          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+        },
+        ctx,
+        deps,
+      );
+
+      expect(mutationSummaries.size).toBe(0);
     } finally {
       cleanupTempDir(dir);
     }

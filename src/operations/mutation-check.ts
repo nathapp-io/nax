@@ -188,6 +188,10 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       });
     }
 
-    return { success: true, survivors, outcomes };
+    const output = { success: true as const, survivors, outcomes };
+    if (ctx.storyId) {
+      ctx.runtime.mutationSummaries.set(ctx.storyId, { storyId: ctx.storyId, survivors, outcomes });
+    }
+    return output;
   },
 };

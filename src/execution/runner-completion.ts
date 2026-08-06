@@ -335,10 +335,22 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     });
   }
 
+  const mutationSummaries = [...(options.runtime?.mutationSummaries?.values() ?? [])];
+  const survivorCount = mutationSummaries.reduce((count, summary) => count + summary.survivors.length, 0);
+  if (survivorCount > 0) {
+    logger?.warn("mutation-check", "Surviving mutants detected at run end", {
+      storyId: "_run",
+      count: survivorCount,
+    });
+  }
+
   // Output run footer in headless mode
   if (options.headless && options.formatterMode !== "json") {
-    const { outputAdvisoryFindingsSummary, outputRunFooter } = await import("./lifecycle/headless-formatter");
+    const { outputAdvisoryFindingsSummary, outputMutationSummary, outputRunFooter } = await import(
+      "./lifecycle/headless-formatter"
+    );
     outputAdvisoryFindingsSummary(advisoryFindings, options.formatterMode);
+    outputMutationSummary(mutationSummaries, options.formatterMode);
     outputRunFooter({
       finalCounts: {
         total: finalCounts.total,

@@ -7,6 +7,8 @@
  * the `LogEntry` records consumed here.
  */
 
+export { formatMutationSummary } from "./mutation-summary.js";
+
 export {
   formatLogEntry,
   formatRunSummary,

@@ -37,6 +37,7 @@ export {
   handleRunCompletion,
   _runCompletionDeps,
   outputAdvisoryFindingsSummary,
+  outputMutationSummary,
   synthesizeBackfillMetric,
   type BackfillMetricArgs,
   type DeferredRegressionOptions,
