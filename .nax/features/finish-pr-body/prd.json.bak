@@ -1,0 +1,279 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "finish-pr-body",
+  "branchName": "feat/finish-pr-body",
+  "createdAt": "2026-08-05T00:00:00.000Z",
+  "updatedAt": "2026-08-05T15:11:06.263Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Record the fix-commit SHA on every finish round",
+      "description": "**Goal** — Preserve the commit SHA produced by each finish fix round in the live audit trail and terminal result.\n\n**Motivation** — `commitFixes()` returns `shaAfter`; the flow destructures it, uses it only for the gate route, and drops it, so \"Fixed in `<sha>`\" can only be reconstructed by matching round timestamps against `git log`.\n\n**Approach** — Extend `FinishRound` with an optional SHA and pass `shaAfter` into the existing `appendRound` payload only when the round committed. Keep the append-only JSONL contract and its best-effort failure behavior unchanged; `readRounds` and `writeResult` must continue to pass serialized round objects through unchanged.\n\n**Scope** — In: `FinishRound`, the `commit_<phase>` payload, and existing round/result tests. Out: PR body rendering and artifact loading belong to US-002 through US-004; forge writes belong to US-005.\n\n**Interface**\n```typescript\nexport interface FinishRound {\n  ts: string;\n  phase: FinishPhase;\n  attempt: number;\n  committed: boolean;\n  sha?: string;\n  findings: Finding[];\n  failing?: string[];\n}\n```",
+      "acceptanceCriteria": [
+        "When a `commit_<phase>` node runs with a dirty working tree, then its appended audit round has `sha` equal to the `HEAD` SHA reported by `git rev-parse HEAD` after the commit.",
+        "When a `commit_<phase>` node runs with a clean working tree, then its appended audit round has `committed: false` and no `sha` field.",
+        "When an audit-trail JSONL line contains `sha`, then `readRounds` returns the round with that `sha` preserved.",
+        "When `writeResult` writes a result after recorded rounds contain `sha`, then its `rounds[]` entries carry each recorded SHA."
+      ],
+      "tags": [
+        "feature",
+        "flow",
+        "audit"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A small cross-file data-contract extension using established flow and JSONL seams.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "flows/nax-finish/types.ts",
+        "flows/nax-finish/nax-finish.flow.ts",
+        "flows/nax-finish/steps/git.ts",
+        "flows/nax-finish/steps/result.ts",
+        "test/unit/flows/nax-finish/flow-commits.test.ts"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Build deterministic finish PR title and body",
+      "description": "**Goal** — Add a pure flow-local builder that deterministically renders the finish PR title and markdown body from a supplied context.\n\n**Motivation** — The finish flow currently opens with a hardcoded placeholder title and a one-sentence body, discarding every artifact the run just produced.\n\n**Approach** — The body is assembled by **deterministic string joins over on-disk artifacts** — no model call, no LLM-written narrative. Every section is reproducible from files that exist before `open_pr` runs. Mirror `escapeTableCell` in `src/plugins/builtin/auto-pr/pr-body.ts:77`; a `|` in a story title otherwise breaks the column boundary. Title — `feat: <feature>`, identical to `buildTitle` in `src/plugins/builtin/auto-pr/pr-body.ts:44`, so finish-opened and auto-PR-opened PRs read the same. The rendered PR body uses `##`-level section headings. A section whose source is empty renders **no heading at all**.\n\n**Scope** — In: pure types, title/body formatting, escaped story rows, optional section omission, review headings/findings, and summary footer. Out: reading artifacts is US-003/US-004; wiring the builder into `open_pr` is US-005; do not share code with `src/` or change auto-PR behavior.\n\n**Interface**\n```typescript\nexport interface FinishPrStory {\n  id: string;\n  title: string;\n  acCount: number;\n}\n\nexport interface FinishPrContext {\n  feature: string;\n  stories: FinishPrStory[];\n  outOfScope: string[];\n  acceptance?: string;\n  regression?: string;\n  gatesRan: string[];\n  diffstat?: string;\n  rounds: FinishRound[];\n  run: {\n    durationMs?: number;\n    storiesPassed?: number;\n    storiesTotal?: number;\n  };\n}\n\n/** Pure. No I/O. */\nexport function buildFinishTitle(ctx: FinishPrContext): string;\nexport function buildFinishBody(ctx: FinishPrContext): string;\n```",
+      "acceptanceCriteria": [
+        "When `buildFinishTitle` receives a context with feature `<feature>`, then it returns `feat: <feature>`.",
+        "When `buildFinishBody` receives stories, then it renders one `| <id> | <title> | <acCount> |` row per story.",
+        "When a story title contains `|`, then `buildFinishBody` escapes it so its table row remains three columns.",
+        "When `acceptance` is present, then `buildFinishBody` renders its Verification line.",
+        "When `regression` is present, then `buildFinishBody` renders its Verification line.",
+        "When `gatesRan` contains gate names, then `buildFinishBody` renders a Verification line listing every name.",
+        "When `diffstat` is present, then `buildFinishBody` includes its text verbatim in Verification.",
+        "When rounds are present, then `buildFinishBody` renders one heading naming each round's `phase` and `attempt`.",
+        "When a round has findings, then `buildFinishBody` renders each finding as a bullet carrying its `severity` and `title`.",
+        "When a committed round has `sha`, then `buildFinishBody` renders its abbreviated seven-character SHA in that round heading.",
+        "When a round has `committed: false`, then `buildFinishBody` renders no SHA in that round heading.",
+        "When `rounds` is empty, then `buildFinishBody` returns no `Review rounds` heading.",
+        "When `outOfScope` has entries, then `buildFinishBody` renders one unchanged-text bullet per entry.",
+        "When `outOfScope` is empty, then `buildFinishBody` returns no `Out of scope` heading.",
+        "When run counts and duration are present, then `buildFinishBody` renders one footer line as `<storiesPassed>/<storiesTotal> stories · <durationMs formatted as Nm SSs>`."
+      ],
+      "tags": [
+        "feature",
+        "flow",
+        "markdown"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A new pure formatter with precise markdown behavior and an existing builder to mirror.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/plugins/builtin/auto-pr/pr-body.ts",
+        "flows/nax-finish/types.ts"
+      ],
+      "expectedFiles": [
+        "flows/nax-finish/steps/pr-body.ts",
+        "test/unit/flows/nax-finish/steps/pr-body.test.ts"
+      ],
+      "outOfScope": [
+        "Sharing code with `src/plugins/builtin/auto-pr/pr-body.ts` is not part of this spec; `src/` and `flows/` are separate modules loaded by different runtimes, and the finish builder is a flow-local reimplementation.",
+        "A model-written \"What changed\" narrative section is not part of this spec; the body is assembled deterministically from artifacts, with no agent call in the `open_pr` path."
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Load PRD and status artifacts into the PR context",
+      "description": "**Goal** — Extend the finish PR context loader to read PRD stories/out-of-scope data and sibling status outcomes without blocking a finish run.\n\n**Motivation** — Every fact in the replacement body comes from artifacts nax has already written, but PRD and status fields are not currently assembled for `open_pr`.\n\n**Approach** — `loadFinishPrContext` is I/O and reads the artifacts below; never throws. Read `userStories[]` as id/title/acceptanceCriteria length and `outOfScope[]` from `input.prdPath`; read `postRun.acceptance.status`, `postRun.regression.status`, `durationMs`, and `progress.passed`/`progress.total` from sibling `status.json`. Resolve the sibling path against `input.workdir` when `prdPath` is relative. Missing, unreadable, or unparseable PRD yields empty stories/out-of-scope; missing, unreadable, or unparseable status leaves optional values undefined.\n\n**Scope** — In: Node read dependency injection and fail-open PRD/status parsing. Out: rounds/diffstat/gates are US-004; body formatting is US-002; forge invocation is US-005; do not add fields to either artifact schema.\n\n**Interface**\n```typescript\n/** I/O. Reads the artifacts below; never throws. */\nexport function loadFinishPrContext(\n  input: FinishInput,\n  args: { base: string; gatesRan: string[] },\n): Promise<FinishPrContext>;\n```",
+      "acceptanceCriteria": [
+        "When the PRD has `userStories[]`, then `loadFinishPrContext` returns one story per entry with its `id`, `title`, and `acceptanceCriteria` length as `acCount`.",
+        "When the PRD has `outOfScope`, then `loadFinishPrContext` returns the same array as `outOfScope`.",
+        "When called with `FinishInput.feature`, then `loadFinishPrContext` returns that value as `feature`.",
+        "When loading status, then `loadFinishPrContext` reads `status.json` in the same directory as `input.prdPath`.",
+        "When `input.prdPath` is relative, then `loadFinishPrContext` resolves its sibling status path against `input.workdir`.",
+        "When status has `postRun.acceptance.status`, then `loadFinishPrContext` returns it as `acceptance`.",
+        "When status has `postRun.regression.status`, then `loadFinishPrContext` returns it as `regression`.",
+        "When status has `durationMs`, then `loadFinishPrContext` returns it as `run.durationMs`.",
+        "When status has `progress.passed`, then `loadFinishPrContext` returns it as `run.storiesPassed`.",
+        "When status has `progress.total`, then `loadFinishPrContext` returns it as `run.storiesTotal`.",
+        "When the PRD file does not exist, then `loadFinishPrContext` does not throw and returns empty `stories` and `outOfScope`.",
+        "When the PRD file is invalid JSON, then `loadFinishPrContext` does not throw and returns empty `stories` and `outOfScope`.",
+        "When the status file does not exist, then `loadFinishPrContext` does not throw and returns `acceptance` and `regression` as undefined.",
+        "When the status file is invalid JSON, then `loadFinishPrContext` does not throw and returns `acceptance` and `regression` as undefined."
+      ],
+      "tags": [
+        "feature",
+        "flow",
+        "artifacts"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Extends the new loader with clear file shapes and fail-open parsing paths.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "flows/nax-finish/steps/pr-body.ts",
+        "test/unit/flows/nax-finish/steps/pr-body.test.ts",
+        "flows/nax-finish/steps/quality.ts",
+        "flows/nax-finish/types.ts",
+        "src/execution/status-file.ts"
+      ],
+      "outOfScope": [
+        "Adding new fields to `status.json` or `prd.json` is not part of this spec; the builder reads only fields that already exist."
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Load rounds, diffstat, and gate names into the PR context",
+      "description": "**Goal** — Complete the finish PR context with audit rounds, green gate names, and the branch diffstat.\n\n**Motivation** — The auto-created draft is composed before finish completes and therefore carries no acceptance result, gate result, or review findings.\n\n**Approach** — Pass `readRounds(input)` through to `FinishPrContext.rounds`, take `gatesRan` from the caller, and invoke `git diff --stat <base>...HEAD` through injectable `_prBodyDeps.run`. Its stdout becomes `diffstat` only on success; a non-zero diff must leave it undefined without throwing. Widen `gateOutputs` from `{ failing?: string[] }` to include `ran?: string[]` so the green `quality_gates` output is readable at `open_pr`. Keep all Node-only I/O and fail-open behavior in the flow-local builder.\n\n**Scope** — In: loader completion, diff command invocation, and `gateOutputs.ran` exposure. Out: title/body presentation is US-002; PRD/status parsing is US-003; flow and forge writes are US-005.\n\n**Interface**\n```typescript\nexport function gateOutputs(ctx: OutputsCtx): { failing?: string[]; ran?: string[] };\n\nexport function loadFinishPrContext(\n  input: FinishInput,\n  args: { base: string; gatesRan: string[] },\n): Promise<FinishPrContext>;\n```",
+      "acceptanceCriteria": [
+        "When `readRounds` returns rounds for the input, then `loadFinishPrContext` returns those rounds with each `sha` preserved.",
+        "When called with `args.gatesRan`, then `loadFinishPrContext` returns that array as `gatesRan`.",
+        "When called with a base branch, then `loadFinishPrContext` invokes `git diff --stat <base>...HEAD` using that base.",
+        "When the diffstat command succeeds, then `loadFinishPrContext` returns its stdout as `diffstat`.",
+        "When the diffstat command exits non-zero, then `loadFinishPrContext` does not throw and returns `diffstat` as undefined.",
+        "When the run audit-trail file does not exist, then `loadFinishPrContext` does not throw and returns an empty `rounds` array."
+      ],
+      "tags": [
+        "feature",
+        "flow",
+        "git",
+        "artifacts"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Completes a loader across existing audit, git, and flow-output seams with a constrained type widening.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "flows/nax-finish/steps/pr-body.ts",
+        "test/unit/flows/nax-finish/steps/pr-body.test.ts",
+        "flows/nax-finish/steps/result.ts",
+        "flows/nax-finish/steps/git.ts",
+        "flows/nax-finish/flow-ctx.ts"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Write finished title and body on every forge path",
+      "description": "**Goal** — Use the deterministic finish metadata when opening, promoting, or retaining a ready PR/MR, while preserving a fail-open PR creation path.\n\n**Motivation** — `openOrPromotePr` only runs `gh pr ready` for auto-PR drafts and never rewrites title or body, so it keeps a body composed before the run finished.\n\n**Approach** — `openOrPromotePr` keeps its `(repoRoot, branch, title, body)` signature and its `{ status, url }` return; the `promoted` and `already-ready` paths gain a title/body write. `open_pr` loads context with `loadCtxOf(ctx).base` and `gateOutputs(ctx).ran`, builds title/body, and passes them to `openOrPromotePr`. `gh pr edit` / `glab mr update` non-zero exits are non-fatal and preserve the returned promoted/already-ready status and URL. If context loading or a builder throws, fall back to `nax-finish: <feature>` and `Automated finish of `<feature>`.` and still open the PR. The `nothing-to-finish` early return remains before context loading.\n\n**Scope** — In: every normal forge path's metadata write, flow wiring, and fallback. Out: the escalation draft PR retains its existing title/body; do not alter auto-PR plugin behavior or templates.\n\n**Interface**\n```typescript\nexport async function openOrPromotePr(\n  repoRoot: string,\n  branch: string,\n  title: string,\n  body: string,\n): Promise<{ status: \"opened\" | \"promoted\" | \"already-ready\"; url?: string }>;\n```",
+      "acceptanceCriteria": [
+        "When a GitHub branch has a draft PR, then `openOrPromotePr` invokes `gh pr edit <branch> --title <title> --body <body>` after `gh pr ready`.",
+        "When a GitHub branch has a draft PR, then `openOrPromotePr` returns status `promoted`.",
+        "When a GitHub branch has a non-draft PR, then `openOrPromotePr` invokes `gh pr edit <branch> --title <title> --body <body>` and returns status `already-ready`.",
+        "When a GitHub branch has no PR, then `openOrPromotePr` invokes `gh pr create` with its received `--title` and `--body` values and returns status `opened`.",
+        "When a GitLab branch has a draft MR, then `openOrPromotePr` invokes `glab mr update <branch> --title <title> --description <body>`.",
+        "When `gh pr edit` exits non-zero after promotion, then `openOrPromotePr` does not throw and returns status `promoted` with the PR URL.",
+        "When `glab mr update` exits non-zero while writing finish metadata, then `openOrPromotePr` does not throw and returns its promoted or already-ready status with the MR URL.",
+        "When `buildFinishTitle` is stubbed to return a known string and the flow `open_pr` node runs, then it passes that string as the title to `openOrPromotePr`.",
+        "When `buildFinishBody` is stubbed to return a known string and the flow `open_pr` node runs, then it passes that string as the body to `openOrPromotePr`.",
+        "When the flow `open_pr` node sees `load_ctx.route` equal to `nothing-to-finish`, then it returns without invoking `loadFinishPrContext`.",
+        "When `loadFinishPrContext` throws in the flow `open_pr` node, then it still invokes `openOrPromotePr` with fallback title `nax-finish: <feature>`.",
+        "When `buildFinishTitle` or `buildFinishBody` throws in the flow `open_pr` node, then it still invokes `openOrPromotePr` with fallback title `nax-finish: <feature>` and fallback body `Automated finish of `<feature>`.`."
+      ],
+      "tags": [
+        "feature",
+        "flow",
+        "forge",
+        "integration"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-module flow wiring and multiple external forge state paths require isolated test, implementation, and verification passes.",
+        "agentProfileId": "claude-final",
+        "agent": "claude",
+        "profileModelTier": "balanced",
+        "initialAgent": "claude",
+        "initialProfileId": "claude-final",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "flows/nax-finish/nax-finish.flow.ts",
+        "flows/nax-finish/steps/pr.ts",
+        "flows/nax-finish/steps/pr-body.ts",
+        "test/unit/flows/nax-finish/steps/pr.test.ts",
+        "test/unit/flows/nax-finish/flow-commits.test.ts"
+      ],
+      "outOfScope": [
+        "The escalation draft PR opened by `flows/nax-finish/steps/escalate.ts:71` keeps its existing `nax-finish: <branch>` title and escalation-comment body; only the `open_pr` node's PR is retitled and rewritten.",
+        "Changing the auto-PR plugin's own title, body or template behaviour is not part of this spec."
+      ]
+    }
+  ],
+  "analysis": "This is an enhancement to the acpx-hosted `flows/nax-finish` module, not to the Bun `src/` tree. `flows/nax-finish/nax-finish.flow.ts:223-252` calls `commitFixes`, appends the live audit record, and currently discards `shaAfter`; `FinishRound` at `flows/nax-finish/types.ts:45-56` therefore cannot preserve a fix SHA, although `steps/result.ts:76-107` JSONL-serializes, reads, and embeds whole rounds in the terminal result. `flows/nax-finish/nax-finish.flow.ts:433-447` is the sole normal open_pr integration point: after `commitAndPush`, it supplies the placeholder title/body to `openOrPromotePr`. `openOrPromotePr` in `flows/nax-finish/steps/pr.ts:31-71` already has the stable four-argument contract and handles create, draft promotion, and already-ready paths, but only create receives body metadata today. Its injectable `_prDeps.run` and `test/unit/flows/nax-finish/steps/pr.test.ts` command-capture pattern are the right seams for fail-open edit tests. `flows/nax-finish/flow-ctx.ts:52-56` hides `quality_gates.ran` behind a return type exposing only `failing`; the accessor must widen without breaking existing callers. The green `quality_gates` route emits `ran` at `flows/nax-finish/nax-finish.flow.ts:403-405`, so no new gate data needs to be persisted. The new flow-local `steps/pr-body.ts` must use Node APIs and `_prBodyDeps` because flow modules execute under Node/acpx; `steps/quality.ts:10-30` demonstrates ENOENT-as-absent reads and `scripts/check-flows-no-bun.ts` statically prohibits Bun in flows. It must deliberately mirror, not import, the pure auto-PR builder in `src/plugins/builtin/auto-pr/pr-body.ts:38-107`: `buildTitle` establishes `feat: <feature>`, while `escapeTableCell` escapes backslashes, pipes, and newlines. Loader inputs are existing PRD/status artifacts plus `readRounds`, `git diff --stat <base>...HEAD`, and gate output; relative `prdPath` requires resolution from `FinishInput.workdir`. Main risks are accidentally violating the src→flows runtime boundary, blocking PR creation on optional artifact/forge-edit failures, malformed markdown from table cells, and pushing the 568-line flow over its 600-line hard cap. Keep formatting and I/O in the new module, make every artifact read and diff fail-open, use fallback literals only when builder loading/building throws, and preserve the current create/promotion error behavior except for non-fatal metadata edits. No data migration is required: `sha` is optional, old audit lines remain readable, and status/PRD schemas are read-only inputs. Existing focused coverage lives in `test/unit/flows/nax-finish/flow-commits.test.ts`, `steps/result.test.ts`, and `steps/pr.test.ts`; add a dedicated `steps/pr-body.test.ts` and extend the established flow-node harness for wiring/fallback behavior.",
+  "outOfScope": [
+    "A model-written \"What changed\" narrative section is not part of this spec; the body is assembled deterministically from artifacts, with no agent call in the `open_pr` path.",
+    "Lifting the spec's `## Summary` heading into the PR body as a narrative substitute is not part of this spec.",
+    "Honouring the repository's `.github/pull_request_template.md` in the finish-opened PR is not part of this spec; `findPrTemplate` in `src/plugins/builtin/auto-pr/template.ts` stays auto-PR-only.",
+    "Sharing code with `src/plugins/builtin/auto-pr/pr-body.ts` is not part of this spec; `src/` and `flows/` are separate modules loaded by different runtimes, and the finish builder is a flow-local reimplementation.",
+    "Changing the auto-PR plugin's own title, body or template behaviour is not part of this spec.",
+    "The escalation draft PR opened by `flows/nax-finish/steps/escalate.ts:71` keeps its existing `nax-finish: <branch>` title and escalation-comment body; only the `open_pr` node's PR is retitled and rewritten.",
+    "Adding new fields to `status.json` or `prd.json` is not part of this spec; the builder reads only fields that already exist.",
+    "The run's accumulated cost (`cost.spent` in `status.json`) is deliberately not reported anywhere in the PR body; the footer reports story counts and duration only.",
+    "Reconciling the `nax-finish` result schema with any downstream consumer other than the PR body is not part of this spec.",
+    "A section whose source is empty renders **no heading at all** — an empty \"Review rounds\" heading reads as a defect.",
+    "Body assembly is **fail-open throughout**: opening the PR must never block on it.",
+    "`prd.json` missing, unreadable, or unparseable — `stories` and `outOfScope` are empty; no throw; those sections are omitted",
+    "`status.json` missing, unreadable, or unparseable — `acceptance`, `regression` and `run.*` stay undefined; no throw; those lines are omitted",
+    "`git diff --stat` exits non-zero — `diffstat` stays undefined; no throw; the line is omitted",
+    "Rounds file absent — `rounds` is empty (already `readRounds`' contract); no \"Review rounds\" heading",
+    "`gh pr edit` / `glab mr update` exits non-zero — `openOrPromotePr` still returns its `promoted` / `already-ready` status and url; no throw",
+    "`loadFinishPrContext` or a builder throws — `open_pr` falls back to the previous literal title and body and opens the PR anyway"
+  ],
+  "routingProfile": "cross-agent-mm"
+}

@@ -1,0 +1,359 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When a `commit_<phase>` node runs with a dirty working tree, then its appended audit round has `sha` equal to the `HEAD` SHA reported by `git rev-parse HEAD` after the commit.",
+    "refined": "Given a repository with at least one unstaged file change (dirty working tree), when `commit_<phase>` executes and returns `{ success: true, shaAfter: '<sha>' }`, then the round appended via `appendRound` contains `committed: true` and `sha: '<sha>'` where `<sha>` equals the output of `git rev-parse HEAD` in that repository after the commit.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When a `commit_<phase>` node runs with a clean working tree, then its appended audit round has `committed: false` and no `sha` field.",
+    "refined": "Given a repository with no unstaged or staged changes (clean working tree verified by `git status --porcelain` returning empty), when `commit_<phase>` executes, then the round appended via `appendRound` contains `committed: false` and the `sha` field is either absent or undefined.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When an audit-trail JSONL line contains `sha`, then `readRounds` returns the round with that `sha` preserved.",
+    "refined": "Given a JSONL file containing a line `{\"ts\":\"2024-01-01T00:00:00Z\",\"phase\":\"implement\",\"attempt\":1,\"committed\":true,\"sha\":\"abc123\",\"findings\":[]}`, when `readRounds()` is called on that file, then the returned array contains an object where `sha === \"abc123\"` and all other fields are preserved exactly as written.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `writeResult` writes a result after recorded rounds contain `sha`, then its `rounds[]` entries carry each recorded SHA.",
+    "refined": "Given `writeResult` is called with a result object containing `rounds: [{ ts: '...', phase: 'implement', sha: 'sha1', ... }, { ts: '...', phase: 'verify', sha: 'sha2', ... }]`, when the function serializes and writes the result, then the output (file or stdout) contains both `sha1` and `sha2` at the expected JSON paths `result.rounds[0].sha` and `result.rounds[1].sha`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `buildFinishTitle` receives a context with feature `<feature>`, then it returns `feat: <feature>`.",
+    "refined": "buildFinishTitle({ feature: 'my-feature' }) returns the string 'feat: my-feature'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When `buildFinishBody` receives stories, then it renders one `| <id> | <title> | <acCount> |` row per story.",
+    "refined": "buildFinishBody({ stories: [{id: 's1', title: 't', acCount: 2}, {id: 's2', title: 'u', acCount: 3}] }) returns a string containing '| s1 | t | 2 |' and '| s2 | u | 3 |'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When a story title contains `|`, then `buildFinishBody` escapes it so its table row remains three columns.",
+    "refined": "buildFinishBody({ stories: [{id: 's1', title: 'foo|bar', acCount: 1}] }) returns a string where the story row has exactly 3 pipe-separated columns (the `|` in title appears as `\\|` not as a column separator)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When `acceptance` is present, then `buildFinishBody` renders its Verification line.",
+    "refined": "buildFinishBody({ acceptance: 'passed' }) includes the substring 'Verification' and 'passed'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When `regression` is present, then `buildFinishBody` renders its Verification line.",
+    "refined": "buildFinishBody({ regression: 'all green' }) includes the substring 'Verification' and 'all green'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `gatesRan` contains gate names, then `buildFinishBody` renders a Verification line listing every name.",
+    "refined": "buildFinishBody({ gatesRan: ['lint', 'typecheck', 'test'] }) includes 'lint' and 'typecheck' and 'test' in the Verification section",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When `diffstat` is present, then `buildFinishBody` includes its text verbatim in Verification.",
+    "refined": "buildFinishBody({ diffstat: '+100 -50' }) includes the exact string '+100 -50' in the output",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When rounds are present, then `buildFinishBody` renders one heading naming each round's `phase` and `attempt`.",
+    "refined": "buildFinishBody({ rounds: [{phase: 'implement', attempt: 1}] }) returns a string containing '## implement attempt 1' or '## Round 1: implement (attempt 1)' or similar heading with both phase and attempt values",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When a round has findings, then `buildFinishBody` renders each finding as a bullet carrying its `severity` and `title`.",
+    "refined": "buildFinishBody({ rounds: [{phase: 'review', attempt: 1, findings: [{severity: 'HIGH', title: 'Memory leak'}]}] }) includes a bullet point containing 'HIGH' and 'Memory leak'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When a committed round has `sha`, then `buildFinishBody` renders its abbreviated seven-character SHA in that round heading.",
+    "refined": "buildFinishBody({ rounds: [{phase: 'review', attempt: 1, sha: 'abc123def456abc'}] }) includes the substring 'abc123d' (first 7 chars of sha) in the round heading",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When a round has `committed: false`, then `buildFinishBody` renders no SHA in that round heading.",
+    "refined": "buildFinishBody({ rounds: [{phase: 'review', attempt: 1, committed: false}] }) does not contain any 7-character SHA substring in the corresponding round section",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When `rounds` is empty, then `buildFinishBody` returns no `Review rounds` heading.",
+    "refined": "buildFinishBody({ rounds: [] }) does not contain the substring 'Review rounds' or '## Review'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When `outOfScope` has entries, then `buildFinishBody` renders one unchanged-text bullet per entry.",
+    "refined": "buildFinishBody({ outOfScope: ['item1', 'item2'] }) includes exactly two bullets containing 'item1' and 'item2' respectively, with content unchanged (no additional formatting or prefix)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When `outOfScope` is empty, then `buildFinishBody` returns no `Out of scope` heading.",
+    "refined": "buildFinishBody({ outOfScope: [] }) does not contain the substring 'Out of scope'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When run counts and duration are present, then `buildFinishBody` renders one footer line as `<storiesPassed>/<storiesTotal> stories · <durationMs formatted as Nm SSs>`.",
+    "refined": "buildFinishBody({ run: { storiesPassed: 5, storiesTotal: 7, durationMs: 125000 } }) includes the exact string '5/7 stories · 2m 5s' in the output",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When the PRD has `userStories[]`, then `loadFinishPrContext` returns one story per entry with its `id`, `title`, and `acceptanceCriteria` length as `acCount`.",
+    "refined": "Given a PRD containing userStories with N entries where entry i has id, title, and acceptanceCriteria array of length M, then context.stories is an array of length N, and for each i: context.stories[i].id equals the story's id, context.stories[i].title equals the story's title, and context.stories[i].acCount equals M.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When the PRD has `outOfScope`, then `loadFinishPrContext` returns the same array as `outOfScope`.",
+    "refined": "Given a PRD containing outOfScope array with elements [e1, e2, ...], then context.outOfScope equals that exact array reference.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When called with `FinishInput.feature`, then `loadFinishPrContext` returns that value as `feature`.",
+    "refined": "When input.feature equals 'my-feature', then context.feature equals 'my-feature'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When loading status, then `loadFinishPrContext` reads `status.json` in the same directory as `input.prdPath`.",
+    "refined": "When prdPath is '/path/to/prd.json', the implementation reads status.json from '/path/to/status.json'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When `input.prdPath` is relative, then `loadFinishPrContext` resolves its sibling status path against `input.workdir`.",
+    "refined": "When prdPath is 'prd.json' and workdir is '/workdir', the implementation reads '/workdir/status.json' (not './status.json' or relative to cwd).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When status has `postRun.acceptance.status`, then `loadFinishPrContext` returns it as `acceptance`.",
+    "refined": "Given status.json with nested postRun.acceptance.status = 'passed', then context.acceptance equals 'passed'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When status has `postRun.regression.status`, then `loadFinishPrContext` returns it as `regression`.",
+    "refined": "Given status.json with nested postRun.regression.status = 'failed', then context.regression equals 'failed'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When status has `durationMs`, then `loadFinishPrContext` returns it as `run.durationMs`.",
+    "refined": "Given status.json with durationMs = 12345, then context.run.durationMs equals 12345.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When status has `progress.passed`, then `loadFinishPrContext` returns it as `run.storiesPassed`.",
+    "refined": "Given status.json with progress.passed = 5, then context.run.storiesPassed equals 5.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When status has `progress.total`, then `loadFinishPrContext` returns it as `run.storiesTotal`.",
+    "refined": "Given status.json with progress.total = 10, then context.run.storiesTotal equals 10.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When the PRD file does not exist, then `loadFinishPrContext` does not throw and returns empty `stories` and `outOfScope`.",
+    "refined": "Calling loadFinishPrContext with a non-existent prdPath does not throw an exception, and returned context.stories is an empty array and context.outOfScope is an empty array.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When the PRD file is invalid JSON, then `loadFinishPrContext` does not throw and returns empty `stories` and `outOfScope`.",
+    "refined": "Calling loadFinishPrContext with an invalid JSON prdPath does not throw an exception, and returned context.stories is an empty array and context.outOfScope is an empty array.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When the status file does not exist, then `loadFinishPrContext` does not throw and returns `acceptance` and `regression` as undefined.",
+    "refined": "When status.json does not exist at the resolved path, calling loadFinishPrContext does not throw, and context.acceptance is undefined and context.regression is undefined.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When the status file is invalid JSON, then `loadFinishPrContext` does not throw and returns `acceptance` and `regression` as undefined.",
+    "refined": "When status.json contains invalid JSON content, calling loadFinishPrContext does not throw, and context.acceptance is undefined and context.regression is undefined.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When `readRounds` returns rounds for the input, then `loadFinishPrContext` returns those rounds with each `sha` preserved.",
+    "refined": "Given a FinishInput that yields [{sha: \"abc123\", ...}, {sha: \"def456\", ...}] from readRounds, loadFinishPrContext returns a FinishPrContext where context.rounds is an array of equal length and each element's sha property equals the corresponding input sha.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "When called with `args.gatesRan`, then `loadFinishPrContext` returns that array as `gatesRan`.",
+    "refined": "Given args.gatesRan = [\"quality_gate_1\", \"security_gate\"], loadFinishPrContext resolves to an object where gatesRan is strictly equal to [\"quality_gate_1\", \"security_gate\"] (same reference or deep-equal values).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-36",
+    "original": "When called with a base branch, then `loadFinishPrContext` invokes `git diff --stat <base>...HEAD` using that base.",
+    "refined": "Given args.base = \"origin/main\", _prBodyDeps.run is called with [\"git\", \"diff\", \"--stat\", \"origin/main...HEAD\"] as arguments, and the returned diffstat matches the stdout of executing that command.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-37",
+    "original": "When the diffstat command succeeds, then `loadFinishPrContext` returns its stdout as `diffstat`.",
+    "refined": "When _prBodyDeps.run emits stdout = \"10 files changed, 5 insertions(+), 3 deletions(-)\" with exit code 0, loadFinishPrContext resolves to an object where diffstat === \"10 files changed, 5 insertions(+), 3 deletions(-)\".",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-38",
+    "original": "When the diffstat command exits non-zero, then `loadFinishPrContext` does not throw and returns `diffstat` as undefined.",
+    "refined": "When _prBodyDeps.run rejects or exits with code !== 0, loadFinishPrContext catches the error and resolves to an object where diffstat is undefined (not present), and no error propagates to the caller.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-39",
+    "original": "When the run audit-trail file does not exist, then `loadFinishPrContext` does not throw and returns an empty `rounds` array.",
+    "refined": "When _prBodyDeps.readFile throws ENOENT for the audit-trail path, loadFinishPrContext resolves to an object where rounds is an empty array (length === 0) and no error is thrown.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-40",
+    "original": "When a GitHub branch has a draft PR, then `openOrPromotePr` invokes `gh pr edit <branch> --title <title> --body <body>` after `gh pr ready`.",
+    "refined": "Given a GitHub repository at `repoRoot` with branch `branch` that has an existing draft PR, when `openOrPromotePr(repoRoot, branch, title, body)` is called, then it must invoke `gh pr ready` followed by `gh pr edit <branch> --title <title> --body <body>` via `Bun.spawn` with non-zero exit code treated as non-fatal.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-41",
+    "original": "When a GitHub branch has a draft PR, then `openOrPromotePr` returns status `promoted`.",
+    "refined": "Given the same setup as criterion 1, when `openOrPromotePr` completes successfully (or after non-fatal `gh pr edit` error), then the returned object must have `status: \"promoted\"` and may include `url: string`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-42",
+    "original": "When a GitHub branch has a non-draft PR, then `openOrPromotePr` invokes `gh pr edit <branch> --title <title> --body <body>` and returns status `already-ready`.",
+    "refined": "Given a GitHub repository at `repoRoot` with branch `branch` that has an existing non-draft PR, when `openOrPromotePr(repoRoot, branch, title, body)` is called, then it must invoke `gh pr edit <branch> --title <title> --body <body>` and return `{ status: \"already-ready\", url: string }`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-43",
+    "original": "When a GitHub branch has no PR, then `openOrPromotePr` invokes `gh pr create` with its received `--title` and `--body` values and returns status `opened`.",
+    "refined": "Given a GitHub repository at `repoRoot` with branch `branch` that has no existing PR, when `openOrPromotePr(repoRoot, branch, title, body)` is called, then it must invoke `gh pr create --title <title> --body <body>` and return `{ status: \"opened\", url: string }`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-44",
+    "original": "When a GitLab branch has a draft MR, then `openOrPromotePr` invokes `glab mr update <branch> --title <title> --description <body>`.",
+    "refined": "Given a GitLab repository at `repoRoot` with branch `branch` that has an existing draft MR, when `openOrPromotePr(repoRoot, branch, title, body)` is called, then it must invoke `glab mr update <branch> --title <title> --description <body>` via `Bun.spawn`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-45",
+    "original": "When `gh pr edit` exits non-zero after promotion, then `openOrPromotePr` does not throw and returns status `promoted` with the PR URL.",
+    "refined": "When `gh pr edit` is invoked by `openOrPromotePr` and returns a non-zero exit code, then `openOrPromotePr` must catch the error, log it, and return `{ status: \"promoted\", url: string }` without throwing.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-46",
+    "original": "When `glab mr update` exits non-zero while writing finish metadata, then `openOrPromotePr` does not throw and returns its promoted or already-ready status with the MR URL.",
+    "refined": "When `glab mr update` is invoked by `openOrPromotePr` and returns a non-zero exit code, then `openOrPromotePr` must catch the error, log it, and return `{ status: \"promoted\" | \"already-ready\", url: string }` without throwing.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-47",
+    "original": "When `buildFinishTitle` is stubbed to return a known string and the flow `open_pr` node runs, then it passes that string as the title to `openOrPromotePr`.",
+    "refined": "Given `buildFinishTitle` is mocked to return `\"stubbed-title\"` and the `open_pr` flow node is executed, then the `openOrPromotePr` call must receive `\"stubbed-title\"` as its `title` argument.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-48",
+    "original": "When `buildFinishBody` is stubbed to return a known string and the flow `open_pr` node runs, then it passes that string as the body to `openOrPromotePr`.",
+    "refined": "Given `buildFinishBody` is mocked to return `\"stubbed-body\"` and the `open_pr` flow node is executed, then the `openOrPromotePr` call must receive `\"stubbed-body\"` as its `body` argument.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-49",
+    "original": "When the flow `open_pr` node sees `load_ctx.route` equal to `nothing-to-finish`, then it returns without invoking `loadFinishPrContext`.",
+    "refined": "Given the `open_pr` flow node is executing and `load_ctx.route === \"nothing-to-finish\"`, then the function must return early with `{ status: \"already-ready\", url: undefined }` before calling `loadFinishPrContext`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-50",
+    "original": "When `loadFinishPrContext` throws in the flow `open_pr` node, then it still invokes `openOrPromotePr` with fallback title `nax-finish: <feature>`.",
+    "refined": "Given `loadFinishPrContext` is mocked to throw an error and the `open_pr` flow node is executing (and route is not `nothing-to-finish`), then `openOrPromotePr` must be called with `title === \"nax-finish: <feature>\"` where `<feature>` is extracted from the story context.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-51",
+    "original": "When `buildFinishTitle` or `buildFinishBody` throws in the flow `open_pr` node, then it still invokes `openOrPromotePr` with fallback title `nax-finish: <feature>` and fallback body `Automated finish of `<feature>`.`.",
+    "refined": "Given `buildFinishTitle` is mocked to throw and `open_pr` flow node is executing, then `openOrPromotePr` must be called with `title === \"nax-finish: <feature>\"` and `body === \"Automated finish of `<feature>`.\"`. Given `buildFinishBody` throws instead, the same fallback values must be passed.",
+    "testable": true,
+    "storyId": "US-005"
+  }
+]

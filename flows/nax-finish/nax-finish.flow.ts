@@ -53,6 +53,7 @@ import {
   commitFixes,
   detectBaseBranch,
   filesInCommit,
+  loadFinishPrContext,
   loadQualityCommands,
   openOrPromotePr,
   partitionTestFiles,
@@ -63,7 +64,19 @@ import {
   runQualityGates,
   writeResult,
 } from "./steps";
+import { _prBodyDeps, buildFinishBody, buildFinishTitle } from "./steps/pr-body";
 import type { FinishInput, FinishPhase, FinishResult, ReviewVerdict } from "./types";
+
+/**
+ * Injectable seam for the `open_pr` node's title/body assembly — tests stub
+ * these to control the fallback-vs-built-metadata paths without a real PRD or
+ * git checkout.
+ */
+export const _openPrDeps = {
+  loadFinishPrContext,
+  buildFinishTitle,
+  buildFinishBody,
+};
 
 /**
  * Cap on fix-and-reverify iterations, per phase, before escalating instead of
@@ -239,6 +252,11 @@ function commitFixNode(phase: FinishPhase) {
         committed,
         findings: findingsOf(ctx, phase),
         ...(phase === "gate" ? { failing: gateOutputs(ctx).failing ?? [] } : {}),
+        // Carry `shaAfter` onto committed rounds only: a no-op round has no
+        // commit, so no SHA to record — keeping the field absent (rather than
+        // null/undefined) lets the result-file reader distinguish "no commit"
+        // from "record lost".
+        ...(committed && shaAfter ? { sha: shaAfter } : {}),
       });
       // Only `commit_gate` routes on this; the other phases have unconditional
       // edges and ignore it.
@@ -430,19 +448,33 @@ export default defineFlow({
       nodeType: "action",
       async run(ctx) {
         const i = inputOf(ctx);
-        if (loadCtxOf(ctx).route === "nothing-to-finish") {
+        const loadCtx = loadCtxOf(ctx);
+        if (loadCtx.route === "nothing-to-finish") {
           await writeResult(i, { feature: i.feature, status: "nothing-to-finish" });
           return { route: "done", status: "nothing-to-finish" };
         }
         // Every fix node edited the working tree; without this the PR would be
         // opened from a remote branch missing all of them.
         const sync = await commitAndPush(i.workdir, i.branch, `fix(${i.feature}): nax-finish automated fixes`);
-        const r = await openOrPromotePr(
-          i.workdir,
-          i.branch,
-          `nax-finish: ${i.feature}`,
-          `Automated finish of \`${i.feature}\`.`,
-        );
+
+        const fallbackTitle = `nax-finish: ${i.feature}`;
+        const fallbackBody = `Automated finish of \`${i.feature}\`.`;
+        let title = fallbackTitle;
+        let body = fallbackBody;
+        try {
+          const prCtx = await _openPrDeps.loadFinishPrContext(i, {
+            base: loadCtx.base ?? "",
+            gatesRan: gateOutputs(ctx).ran ?? [],
+          });
+          title = _openPrDeps.buildFinishTitle(prCtx);
+          body = _openPrDeps.buildFinishBody(prCtx);
+        } catch (error) {
+          _prBodyDeps.warn("[finish-pr] Falling back to default PR title/body", { path: i.prdPath, error });
+          title = fallbackTitle;
+          body = fallbackBody;
+        }
+
+        const r = await openOrPromotePr(i.workdir, i.branch, title, body);
         await writeResult(i, { feature: i.feature, status: r.status, url: r.url });
         return { route: "done", committed: sync.committed, ...r };
       },

@@ -1,9 +1,19 @@
 import { FinishError } from "../errors";
-import { runArgv } from "../exec";
 import type { RunFn } from "../types";
 import { type Forge, detectForge, extractUrl, viewArgv } from "./forge";
+import { _prBodyDeps, loadFinishPrContext } from "./pr-body";
 
-export const _prDeps: { run: RunFn } = { run: runArgv };
+// `loadFinishPrContext` moved to `./pr-body` (the spec's stated module
+// boundary); re-exported here so consumers importing from `./pr` (or the
+// `steps` barrel, which re-exports `./pr`) keep working.
+export { loadFinishPrContext };
+
+// `_prDeps` is deliberately the *same object* as `./pr-body`'s `_prBodyDeps`,
+// not a copy — this module's `run` calls (forge CLI) and pr-body's
+// `readText`/`warn`/diffstat `run` calls share one injectable seam, so a
+// single test stub controls both. Typed to `{ run: RunFn }` here because
+// that's the only member this module actually calls.
+export const _prDeps: { run: RunFn } = _prBodyDeps;
 
 /**
  * Parse `gh pr view --json isDraft,url` / `glab mr view --output json` stdout.
@@ -64,8 +74,38 @@ export async function openOrPromotePr(
         { stage: "finish-pr", branch },
       );
     }
+    await writeFinishMetadata(forge, repoRoot, branch, title, body);
     return { status: "promoted", url };
   }
 
+  await writeFinishMetadata(forge, repoRoot, branch, title, body);
   return { status: "already-ready", url };
+}
+
+/**
+ * Write the finish title/body onto an already-promoted or already-ready PR/MR.
+ *
+ * Non-fatal by design: this runs after the PR is already open (or already
+ * ready), so a failed metadata write must not throw away that state — the
+ * caller's returned status/url stays valid either way.
+ */
+async function writeFinishMetadata(
+  forge: Forge,
+  repoRoot: string,
+  branch: string,
+  title: string,
+  body: string,
+): Promise<void> {
+  const editCmd =
+    forge === "github"
+      ? ["gh", "pr", "edit", branch, "--title", title, "--body", body]
+      : ["glab", "mr", "update", branch, "--title", title, "--description", body];
+  try {
+    const res = await _prDeps.run(editCmd, { cwd: repoRoot });
+    if (res.exitCode !== 0) {
+      _prBodyDeps.warn("[finish-pr] Failed to write PR title/body", { path: branch, error: res.stderr.trim() });
+    }
+  } catch (error) {
+    _prBodyDeps.warn("[finish-pr] Failed to write PR title/body", { path: branch, error });
+  }
 }
