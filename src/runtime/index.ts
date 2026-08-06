@@ -139,6 +139,20 @@ export interface NaxRuntime {
   readonly rectificationOscillations: Map<string, number>;
   /** Run-scoped per-story mutation-check results. */
   readonly mutationSummaries: Map<string, MutationStorySummary>;
+  /**
+   * Working trees the mutation spot-check injected a mutation into and could
+   * NOT confirm reverted — they may still hold deliberately broken source.
+   *
+   * `autoCommitIfDirty` refuses to commit anything under one of these. The
+   * spot-check is advisory and never fails a story, but "advisory" cannot mean
+   * letting an injected defect into a commit (and, with autoPR, a push).
+   *
+   * Deliberately in-memory and run-scoped rather than read back off the on-disk
+   * journal: a stale journal a sweep failed to reach would otherwise block every
+   * commit in the repo indefinitely. Only the run that actually observed the
+   * failed revert blocks anything.
+   */
+  readonly dirtyWorktrees: Set<string>;
   close(): Promise<void>;
 }
 
@@ -263,6 +277,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const semanticIterations = new Map<string, Iteration[]>();
   const rectificationOscillations = new Map<string, number>();
   const mutationSummaries = new Map<string, MutationStorySummary>();
+  const dirtyWorktrees = new Set<string>();
 
   let closed = false;
 
@@ -290,6 +305,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     semanticIterations,
     rectificationOscillations,
     mutationSummaries,
+    dirtyWorktrees,
 
     get signal() {
       return controller.signal;

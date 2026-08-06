@@ -373,7 +373,13 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
 
   // Commit status.json and any other nax runtime files left dirty at run end
   logger?.debug("execution", "Completion phase — auto-committing dirty files");
-  await autoCommitIfDirty(options.workdir, "run.complete", "run-summary", options.feature);
+  await autoCommitIfDirty(
+    options.workdir,
+    "run.complete",
+    "run-summary",
+    options.feature,
+    options.runtime?.dirtyWorktrees,
+  );
 
   // Close the NaxRuntime — flushes auditors, drains cost aggregator, aborts signal
   await options.runtime?.close();

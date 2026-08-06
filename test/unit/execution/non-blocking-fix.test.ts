@@ -54,6 +54,43 @@ describe("runNonBlockingFix keep vs restore", () => {
     rollbackToRef: async () => {},
   };
 
+  test("skips the pass when the worktree may hold an unreverted mutation", async () => {
+    // The snapshot is itself a commit — it would capture the injected defect
+    // AND leave the tree clean, so every later autoCommitIfDirty guard would
+    // see nothing to block. The check must therefore precede the snapshot.
+    let snapshots = 0;
+    const res = await runNonBlockingFix(
+      {
+        ...baseArgs,
+        phaseOutputs: {},
+        blockedWorktrees: new Set(["/tmp/x"]),
+        runRectify: async () => ({ rectificationExhausted: false }),
+      },
+      {
+        ...fakeDeps,
+        captureSnapshotRef: async () => {
+          snapshots += 1;
+          return "snap-sha";
+        },
+      },
+    );
+    expect(res).toEqual({ ran: false, kept: false, restored: false });
+    expect(snapshots).toBe(0);
+  });
+
+  test("runs normally when the blocked set names an unrelated worktree", async () => {
+    const res = await runNonBlockingFix(
+      {
+        ...baseArgs,
+        phaseOutputs: { "full-suite-gate": { success: true } },
+        blockedWorktrees: new Set(["/tmp/other-repo"]),
+        runRectify: async () => ({ rectificationExhausted: false }),
+      },
+      fakeDeps,
+    );
+    expect(res).toEqual({ ran: true, kept: true, restored: false });
+  });
+
   test("kept when harness resolves", async () => {
     const phaseOutputs: Record<string, unknown> = { "full-suite-gate": { success: true } };
     const res = await runNonBlockingFix(

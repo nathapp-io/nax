@@ -336,6 +336,7 @@ export class ExecutionPlan {
           phaseCosts,
           quarantineMemo: this.ctx.runtime.quarantineMemo,
           gateBaselineKeys: preRectGateFailureKeys,
+          blockedWorktrees: this.ctx.runtime.dirtyWorktrees,
           runRectify: (maxAttempts, nbfFlakeTriage) =>
             runRectification(this.ctx, this.state, phaseCosts, phaseOutputs, {
               initialFindings: advisoryFindings,

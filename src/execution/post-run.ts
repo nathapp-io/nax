@@ -586,7 +586,8 @@ export async function decideStageAction(
 
   // Non-TDD success → auto-commit
   if (!isTdd) {
-    await _postRunDeps.autoCommitIfDirty(ctx.workdir, "execution", "single-session", ctx.story.id);
+    const { workdir, story, runtime } = ctx;
+    await _postRunDeps.autoCommitIfDirty(workdir, "execution", "single-session", story.id, runtime?.dirtyWorktrees);
   }
 
   logger.info("execution", "Agent session complete", {
