@@ -102,11 +102,16 @@ function makeBooleanFlip(trueLit: string, falseLit: string): (snippet: string) =
   };
 }
 
+// Arithmetic flips require whitespace on both sides — the shape a real
+// binary expression takes (`a + b`), but neither a module specifier
+// (`"../config"`), a URL (`https://a/b/c`), nor a path fragment (`a/b/c`)
+// takes. Whitespace-gating prevents producing mutants that fail to parse
+// — always "killed" regardless of test quality.
 const ARITHMETIC_PAIRS: ReadonlyArray<PatternReplacement> = [
-  [/\+/g, "-"],
-  [/-/g, "+"],
-  [/\*/g, "/"],
-  [/\//g, "*"],
+  [/(?<=\s)\+(?=\s|$)/, "-"],
+  [/(?<=\s)-(?=\s|$)/, "+"],
+  [/(?<=\s)\*(?=\s|$)/, "/"],
+  [/(?<=\s)\/(?=\s|$)/, "*"],
 ];
 
 const TYPESCRIPT_OPERATORS: ReadonlyArray<MutationOperator> = [
