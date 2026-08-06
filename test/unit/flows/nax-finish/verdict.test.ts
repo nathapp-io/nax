@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { parseFixVerdict, parseReviewVerdict } from "@flows/nax-finish/verdict";
+import {
+  MAX_FIX_ATTEMPTS,
+  MAX_REPROMPT_ATTEMPTS,
+  parseFixVerdict,
+  parseReviewVerdict,
+  repromptCount,
+  routeReview,
+} from "@flows/nax-finish/verdict";
 
 // The real 927-byte reply that killed flow run 2026-08-05T154112386Z-nax-finish-600cf3f3
 // on rs-stock/pipeline-run-chat-context. Not a synthetic "not json" string: the point is
@@ -73,5 +80,72 @@ describe("parseFixVerdict", () => {
 
   test("never throws on empty output", () => {
     expect(parseFixVerdict("").route).toBe("proceed");
+  });
+});
+
+const stepsCtx = (steps: { nodeId: string; output?: unknown }[]) => ({ state: { steps }, outputs: {} });
+const routeCtx = (verdict: unknown, steps: { nodeId: string; output?: unknown }[] = []) => ({
+  outputs: { review_quality: verdict },
+  state: { steps },
+});
+const REPROMPT_STEP = { nodeId: "review_quality", output: { route: "reprompt", findings: [] } };
+const CLEAN_STEP = { nodeId: "review_quality", output: { route: "clean", findings: [] } };
+
+describe("repromptCount", () => {
+  test("is zero with no steps", () => {
+    expect(repromptCount(stepsCtx([]), "quality")).toBe(0);
+  });
+
+  test("ignores legitimate review re-entries that produced a real verdict", () => {
+    expect(repromptCount(stepsCtx([CLEAN_STEP, { nodeId: "commit_quality" }, CLEAN_STEP]), "quality")).toBe(0);
+  });
+
+  test("counts only steps whose output routed reprompt", () => {
+    expect(repromptCount(stepsCtx([CLEAN_STEP, REPROMPT_STEP]), "quality")).toBe(1);
+  });
+
+  test("does not count the other phase's reprompts", () => {
+    expect(repromptCount(stepsCtx([REPROMPT_STEP]), "spec")).toBe(0);
+  });
+});
+
+describe("routeReview", () => {
+  test("a reprompt verdict is NEVER routed clean", () => {
+    // Regression guard. A reprompt verdict has zero findings, so an ordering
+    // slip that checks `findings.length === 0` first would call an unread
+    // review "clean" and open a PR having verified nothing — a silent false
+    // green, strictly worse than the crash this change removes.
+    const r = routeReview(routeCtx({ route: "reprompt", findings: [], raw: "prose" }), "quality");
+    expect(r.route).not.toBe("clean");
+    expect(r.route).toBe("reprompt");
+  });
+
+  test("escalates once the reprompt cap is reached, naming the raw tail", () => {
+    const steps = Array.from({ length: MAX_REPROMPT_ATTEMPTS }, () => REPROMPT_STEP);
+    const r = routeReview(routeCtx({ route: "reprompt", findings: [], raw: "some prose" }, steps), "quality");
+    expect(r.route).toBe("escalate");
+    expect(r.escalationReason).toContain("unparseable");
+    expect(r.escalationReason).toContain("some prose");
+  });
+
+  test("still routes clean when there are no findings", () => {
+    expect(routeReview(routeCtx({ route: "clean", findings: [] }), "quality").route).toBe("clean");
+  });
+
+  test("still routes fix when there are findings under the cap", () => {
+    expect(routeReview(routeCtx({ route: "proceed", findings: [FINDING] }), "quality").route).toBe("fix");
+  });
+
+  test("still escalates an explicit escalate verdict", () => {
+    const r = routeReview(routeCtx({ route: "escalate", findings: [], escalationReason: "judgment" }), "quality");
+    expect(r.route).toBe("escalate");
+    expect(r.escalationReason).toBe("judgment");
+  });
+
+  test("still escalates when findings persist past the fix cap", () => {
+    const steps = Array.from({ length: MAX_FIX_ATTEMPTS }, () => ({ nodeId: "fix_quality" }));
+    const r = routeReview(routeCtx({ route: "proceed", findings: [FINDING] }, steps), "quality");
+    expect(r.route).toBe("escalate");
+    expect(r.escalationReason).toContain("fix attempts");
   });
 });

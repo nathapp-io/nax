@@ -12,6 +12,7 @@
  * `escalate` node that exists to report precisely this.
  */
 import { extractJsonObject } from "acpx/flows";
+import { type OutputsCtx, type StepsCtx, fixAttemptCount } from "./flow-ctx";
 import type { Finding, ReviewVerdict } from "./types";
 
 /** Fix rounds allowed per loop before escalating. Moved here with `routeReview`. */
@@ -69,4 +70,69 @@ export function parseFixVerdict(text: string): ReviewVerdict {
   } catch {
     return { route: "proceed", findings: [] };
   }
+}
+
+/**
+ * How many times this phase's review already came back unparseable.
+ *
+ * Counts step *outputs*, not step ids: `commit_quality → review_quality` and
+ * `commit_gate → review_quality` are legitimate re-entries in the normal fix
+ * loop, so counting bare `review_<phase>` steps would escalate a healthy run.
+ *
+ * This is observable only because `parseReviewVerdict` returns rather than
+ * throws — a returned verdict makes acpx record the step as successful with
+ * this output. A throw would record it `failed`, with nothing to count.
+ */
+export function repromptCount(ctx: StepsCtx, phase: "spec" | "quality"): number {
+  return (ctx.state.steps ?? []).filter(
+    (s) => s.nodeId === `review_${phase}` && (s.output as ReviewVerdict | undefined)?.route === "reprompt",
+  ).length;
+}
+
+/**
+ * Turn a reviewer verdict into a deterministic route.
+ *
+ * `clean` (no findings) skips the fix node entirely — prompting an agent to
+ * "apply the recommended fixes" for an empty finding list burns a turn and
+ * invites unrequested edits.
+ *
+ * The `reprompt` branch MUST come first. A reprompt verdict carries zero
+ * findings, so checking `findings.length === 0` ahead of it would route an
+ * unreadable review to `clean`, and the flow would open a PR having reviewed
+ * nothing. That silent false green is worse than the crash this replaces.
+ */
+export function routeReview(
+  ctx: OutputsCtx & StepsCtx,
+  phase: "spec" | "quality",
+): { route: string; escalationReason?: string; findings: Finding[] } {
+  const verdict = (ctx.outputs as Record<string, ReviewVerdict | undefined>)[`review_${phase}`];
+  const findings = verdict?.findings ?? [];
+  if (verdict?.route === "reprompt") {
+    const attempts = repromptCount(ctx, phase);
+    if (attempts < MAX_REPROMPT_ATTEMPTS) return { route: "reprompt", findings };
+    return {
+      route: "escalate",
+      escalationReason:
+        `${phase} reviewer returned unparseable output after ${attempts + 1} attempts. ` +
+        `Last reply: ${verdict.raw ?? "(empty)"}`,
+      findings,
+    };
+  }
+  if (verdict?.route === "escalate") {
+    return {
+      route: "escalate",
+      escalationReason: verdict.escalationReason ?? `${phase} review raised a finding needing human judgment`,
+      findings,
+    };
+  }
+  if (findings.length === 0) return { route: "clean", findings };
+  const attempts = fixAttemptCount(ctx, `fix_${phase}`);
+  if (attempts >= MAX_FIX_ATTEMPTS) {
+    return {
+      route: "escalate",
+      escalationReason: `${phase} review still reporting ${findings.length} finding(s) after ${attempts} fix attempts.`,
+      findings,
+    };
+  }
+  return { route: "fix", findings };
 }
