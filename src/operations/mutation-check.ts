@@ -42,6 +42,11 @@ export interface MutationCheckInput {
 export interface MutationCheckOutput {
   readonly success: true;
   readonly survivors: readonly SurvivingMutant[];
+  readonly outcomes: {
+    readonly killed: number;
+    readonly survived: number;
+    readonly errored: number;
+  };
 }
 
 export interface MutationCheckDeps {
@@ -70,7 +75,7 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
   ): Promise<MutationCheckOutput> {
     const cfg = ctx.packageView.select(mutationCheckConfigSelector);
     if (!cfg?.enabled) {
-      return { success: true, survivors: [] };
+      return { success: true, survivors: [], outcomes: { killed: 0, survived: 0, errored: 0 } };
     }
 
     const logger = getLogger();
@@ -86,7 +91,7 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       logger.warn("mutation-check", "No test command configured — skipping mutation spot-check", {
         storyId: input.storyId,
       });
-      return { success: true, survivors: [] };
+      return { success: true, survivors: [], outcomes: { killed: 0, survived: 0, errored: 0 } };
     }
     const changedFiles = await deps.getChangedNonTestFiles(
       input.workdir,
@@ -103,6 +108,7 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
     const absoluteChangedFiles = changedFiles.map((f) => (isAbsolute(f) ? f : join(anchor, f)));
 
     const survivors: SurvivingMutant[] = [];
+    const outcomes = { killed: 0, survived: 0, errored: 0 };
     // Per-story budget cap: cfg.maxMutants applies to the total across all
     // changed files, not per-file. Accumulate mutants until we reach the cap.
     const mutants: Mutant[] = [];
@@ -144,7 +150,9 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
             command: scoped.effectiveCommand,
             timeoutSeconds: cfg.timeoutSeconds,
           });
-          if (classifyMutant(result) === "survived") {
+          const outcome = classifyMutant(result);
+          outcomes[outcome] += 1;
+          if (outcome === "survived") {
             survivors.push({ ...mutant, outcome: "survived" });
           }
         } finally {
@@ -172,6 +180,6 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       });
     }
 
-    return { success: true, survivors };
+    return { success: true, survivors, outcomes };
   },
 };

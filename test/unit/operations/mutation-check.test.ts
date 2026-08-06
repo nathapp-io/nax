@@ -160,7 +160,7 @@ describe("mutationCheckOp — AC3: surviving mutant (regression SUCCESS)", () =>
 });
 
 describe("mutationCheckOp — AC4: TEST_FAILURE kills the mutant", () => {
-  test("returns empty survivors when regression returns TEST_FAILURE", async () => {
+  test("returns empty survivors when regression returns TEST_FAILURE with failCount = 1", async () => {
     const dir = makeTempDir("nax-mutation-test-");
     try {
       const file = join(dir, "src", "foo.ts");
@@ -179,6 +179,8 @@ describe("mutationCheckOp — AC4: TEST_FAILURE kills the mutant", () => {
           success: false,
           countsTowardEscalation: true,
           output: "1 test failed",
+          passCount: 0,
+          failCount: 1,
         }),
       });
 
@@ -207,6 +209,85 @@ describe("mutationCheckOp — AC4: TEST_FAILURE kills the mutant", () => {
     } finally {
       cleanupTempDir(dir);
     }
+  });
+});
+
+describe("mutationCheckOp — outcomes aggregation (US-003)", () => {
+  async function runWithRegression(
+    regressionResult: {
+      status: "SUCCESS" | "TEST_FAILURE" | "TIMEOUT" | "ENVIRONMENTAL_FAILURE" | "ASSET_CHECK_FAILED";
+      passCount?: number;
+      failCount?: number;
+    },
+    mutationsConfig: Record<string, unknown> = { enabled: true, maxMutants: 3, timeoutSeconds: 60 },
+  ) {
+    const dir = makeTempDir("nax-mutation-test-");
+    try {
+      const file = join(dir, "src", "foo.ts");
+      await Bun.write(file, "if (a == b) { return 1; }\n");
+
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [file],
+        selectScopedTests: async () => ({
+          effectiveCommand: "bun test src/foo.test.ts",
+          isFullSuite: false,
+          thresholdFallback: false,
+          isMonorepoOrchestrator: false,
+        }),
+        regression: async () => ({
+          ...regressionResult,
+          success: regressionResult.status === "SUCCESS",
+          countsTowardEscalation: true,
+          output: "",
+        }),
+      });
+
+      const out = await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          storyGitRef: "abc123",
+          repoRoot: dir,
+          resolvedTestPatterns: {
+            globs: ["**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [":!*.test.ts"],
+            testDirs: ["test"],
+          },
+        },
+        ctxWithConfig({ mutationCheck: mutationsConfig }),
+        deps,
+      );
+      return out;
+    } finally {
+      cleanupTempDir(dir);
+    }
+  }
+
+  test("AC9: TEST_FAILURE with both counts 0 -> outcomes.errored is 1", async () => {
+    const out = await runWithRegression({ status: "TEST_FAILURE", passCount: 0, failCount: 0 });
+    expect(out.outcomes.errored).toBe(1);
+  });
+
+  test("AC10: TEST_FAILURE with both counts 0 -> outcomes.killed is 0", async () => {
+    const out = await runWithRegression({ status: "TEST_FAILURE", passCount: 0, failCount: 0 });
+    expect(out.outcomes.killed).toBe(0);
+  });
+
+  test("AC11: TEST_FAILURE with failCount 1 -> outcomes.killed is 1", async () => {
+    const out = await runWithRegression({ status: "TEST_FAILURE", passCount: 0, failCount: 1 });
+    expect(out.outcomes.killed).toBe(1);
+  });
+
+  test("AC12: SUCCESS -> outcomes.survived is 1", async () => {
+    const out = await runWithRegression({ status: "SUCCESS" });
+    expect(out.outcomes.survived).toBe(1);
+  });
+
+  test("AC13: TEST_FAILURE with both counts 0 -> survivors has length 0", async () => {
+    const out = await runWithRegression({ status: "TEST_FAILURE", passCount: 0, failCount: 0 });
+    expect(out.survivors).toHaveLength(0);
   });
 });
 

@@ -3,6 +3,10 @@
  *
  * Covers classifyMutant — interpretation of a VerificationResult.status
  * into a MutantOutcome (killed / survived / errored).
+ *
+ * Story US-003: TEST_FAILURE is only "killed" when there is evidence
+ * tests actually executed. A non-zero exit with no pass/fail counts
+ * (compile failure, module-resolution failure, parser miss) is "errored".
  */
 
 import { describe, expect, test } from "bun:test";
@@ -17,30 +21,66 @@ function makeResult(status: VerificationResult["status"]): VerificationResult {
 }
 
 describe("classifyMutant — outcomes", () => {
-  test("AC3: TEST_FAILURE -> killed", () => {
-    expect(classifyMutant(makeResult("TEST_FAILURE"))).toBe("killed");
+  test("AC1: TEST_FAILURE with passCount 0 / failCount 0 -> errored", () => {
+    expect(
+      classifyMutant({
+        status: "TEST_FAILURE",
+        success: false,
+        countsTowardEscalation: true,
+        passCount: 0,
+        failCount: 0,
+      }),
+    ).toBe("errored");
   });
 
-  test("AC4: SUCCESS -> survived", () => {
+  test("AC2: TEST_FAILURE with both counts absent -> errored", () => {
+    expect(classifyMutant(makeResult("TEST_FAILURE"))).toBe("errored");
+  });
+
+  test("AC3: TEST_FAILURE with passCount 0 / failCount 1 -> killed", () => {
+    expect(
+      classifyMutant({
+        status: "TEST_FAILURE",
+        success: false,
+        countsTowardEscalation: true,
+        passCount: 0,
+        failCount: 1,
+      }),
+    ).toBe("killed");
+  });
+
+  test("AC4: TEST_FAILURE with passCount 5 / failCount 2 -> killed", () => {
+    expect(
+      classifyMutant({
+        status: "TEST_FAILURE",
+        success: false,
+        countsTowardEscalation: true,
+        passCount: 5,
+        failCount: 2,
+      }),
+    ).toBe("killed");
+  });
+
+  test("AC5: SUCCESS -> survived", () => {
     expect(classifyMutant(makeResult("SUCCESS"))).toBe("survived");
   });
 
-  test("AC5: ENVIRONMENTAL_FAILURE -> errored", () => {
+  test("AC6: TIMEOUT -> errored", () => {
+    expect(classifyMutant(makeResult("TIMEOUT"))).toBe("errored");
+  });
+
+  test("AC7: ENVIRONMENTAL_FAILURE -> errored", () => {
     expect(classifyMutant(makeResult("ENVIRONMENTAL_FAILURE"))).toBe("errored");
   });
 
-  test("AC5: ASSET_CHECK_FAILED -> errored", () => {
+  test("AC8: ASSET_CHECK_FAILED -> errored", () => {
     expect(classifyMutant(makeResult("ASSET_CHECK_FAILED"))).toBe("errored");
-  });
-
-  test("AC5: TIMEOUT -> errored", () => {
-    expect(classifyMutant(makeResult("TIMEOUT"))).toBe("errored");
   });
 });
 
 describe("classifyMutant — input passthrough", () => {
-  test("AC3: accepts a VerificationResult with only status populated", () => {
+  test("AC2: TEST_FAILURE with only status populated classifies as errored (no evidence of executed tests)", () => {
     const result = classifyMutant({ status: "TEST_FAILURE", success: false, countsTowardEscalation: false });
-    expect(result).toBe("killed");
+    expect(result).toBe("errored");
   });
 });

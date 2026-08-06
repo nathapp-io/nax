@@ -12,8 +12,10 @@ import type { MutantOutcome } from "./types";
 
 export function classifyMutant(result: VerificationResult): MutantOutcome {
   switch (result.status) {
-    case "TEST_FAILURE":
-      return "killed";
+    case "TEST_FAILURE": {
+      const executedTests = (result.passCount ?? 0) + (result.failCount ?? 0);
+      return executedTests > 0 ? "killed" : "errored";
+    }
     case "SUCCESS":
       return "survived";
     case "ENVIRONMENTAL_FAILURE":
