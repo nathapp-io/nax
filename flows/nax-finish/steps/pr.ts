@@ -163,8 +163,31 @@ export async function openOrPromotePr(
         { stage: "finish-pr", branch },
       );
     }
+    await writeFinishMetadata(forge, repoRoot, branch, title, body);
     return { status: "promoted", url };
   }
 
+  await writeFinishMetadata(forge, repoRoot, branch, title, body);
   return { status: "already-ready", url };
+}
+
+/**
+ * Write the finish title/body onto an already-promoted or already-ready PR/MR.
+ *
+ * Non-fatal by design: this runs after the PR is already open (or already
+ * ready), so a failed metadata write must not throw away that state — the
+ * caller's returned status/url stays valid either way.
+ */
+async function writeFinishMetadata(
+  forge: Forge,
+  repoRoot: string,
+  branch: string,
+  title: string,
+  body: string,
+): Promise<void> {
+  const editCmd =
+    forge === "github"
+      ? ["gh", "pr", "edit", branch, "--title", title, "--body", body]
+      : ["glab", "mr", "update", branch, "--title", title, "--description", body];
+  await _prDeps.run(editCmd, { cwd: repoRoot });
 }

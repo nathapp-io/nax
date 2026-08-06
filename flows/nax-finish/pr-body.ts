@@ -150,19 +150,24 @@ function buildFooter(run: FinishPrContext["run"]): string | null {
 
 export function buildFinishBody(ctx: FinishPrContext): string {
   const sections: string[] = [];
+  const stories = ctx.stories ?? [];
+  const rounds = ctx.rounds ?? [];
+  const outOfScope = ctx.outOfScope ?? [];
+  const gatesRan = ctx.gatesRan ?? [];
+  const run = ctx.run ?? {};
 
-  if (ctx.stories.length > 0) sections.push(buildStoriesSection(ctx.stories));
+  if (stories.length > 0) sections.push(buildStoriesSection(stories));
 
-  const verification = buildVerificationSection(ctx.acceptance, ctx.regression, ctx.gatesRan, ctx.diffstat);
+  const verification = buildVerificationSection(ctx.acceptance, ctx.regression, gatesRan, ctx.diffstat);
   if (verification !== null) sections.push(verification);
 
-  const rounds = buildRoundsSection(ctx.rounds);
-  if (rounds !== null) sections.push(rounds);
+  const roundsSection = buildRoundsSection(rounds);
+  if (roundsSection !== null) sections.push(roundsSection);
 
-  const outOfScope = buildOutOfScopeSection(ctx.outOfScope);
-  if (outOfScope !== null) sections.push(outOfScope);
+  const outOfScopeSection = buildOutOfScopeSection(outOfScope);
+  if (outOfScopeSection !== null) sections.push(outOfScopeSection);
 
-  const footer = buildFooter(ctx.run);
+  const footer = buildFooter(run);
   if (footer !== null) sections.push(footer);
 
   return sections.join("\n\n");

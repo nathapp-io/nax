@@ -448,19 +448,32 @@ export default defineFlow({
       nodeType: "action",
       async run(ctx) {
         const i = inputOf(ctx);
-        if (loadCtxOf(ctx).route === "nothing-to-finish") {
+        const loadCtx = loadCtxOf(ctx);
+        if (loadCtx.route === "nothing-to-finish") {
           await writeResult(i, { feature: i.feature, status: "nothing-to-finish" });
           return { route: "done", status: "nothing-to-finish" };
         }
         // Every fix node edited the working tree; without this the PR would be
         // opened from a remote branch missing all of them.
         const sync = await commitAndPush(i.workdir, i.branch, `fix(${i.feature}): nax-finish automated fixes`);
-        const r = await openOrPromotePr(
-          i.workdir,
-          i.branch,
-          `nax-finish: ${i.feature}`,
-          `Automated finish of \`${i.feature}\`.`,
-        );
+
+        const fallbackTitle = `nax-finish: ${i.feature}`;
+        const fallbackBody = `Automated finish of \`${i.feature}\`.`;
+        let title = fallbackTitle;
+        let body = fallbackBody;
+        try {
+          const prCtx = await _openPrDeps.loadFinishPrContext(i, {
+            base: loadCtx.base ?? "",
+            gatesRan: gateOutputs(ctx).ran ?? [],
+          });
+          title = _openPrDeps.buildFinishTitle(prCtx);
+          body = _openPrDeps.buildFinishBody(prCtx);
+        } catch {
+          title = fallbackTitle;
+          body = fallbackBody;
+        }
+
+        const r = await openOrPromotePr(i.workdir, i.branch, title, body);
         await writeResult(i, { feature: i.feature, status: r.status, url: r.url });
         return { route: "done", committed: sync.committed, ...r };
       },
