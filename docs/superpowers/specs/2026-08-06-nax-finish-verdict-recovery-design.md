@@ -56,10 +56,17 @@ kill a multi-hour run over output nothing reads.
 or `{switch}`, so there is no error edge to route to. A fix stays inside the parse
 functions and the switch cases the flow owns, or it becomes an acpx change.
 
-**`nax-finish.flow.ts` is 599 lines** against a 600-line hard limit for source files,
-enforced by `bun run check:file-sizes` as part of `bun run lint`. Adding to it fails the
-lint gate. New logic goes in its own module — and enough existing logic must *leave* the
-flow file to buy headroom, because the additions alone would push it to ~607.
+**`nax-finish.flow.ts` is near a 600-line hard limit** for source files, enforced by
+`bun run check:file-sizes` as part of `bun run lint`.
+
+The count depends on which branch you measure: **568 on `origin/main`**, but **599 on
+`feat/finish-pr-body`**, whose in-flight work adds 45 lines to this file. This change
+branches from `origin/main`, so the additions alone (~15) would land at ~583 and pass —
+until `feat/finish-pr-body` merges, at which point the same file would be ~614 and fail.
+
+So the headroom is not optional, it is only *deferred*. Moving `routeReview` out lands
+the file at ~533 on this branch and ~564 after that merge — under the limit in both
+worlds, in whichever order they land.
 
 **The `escalate` node is already the right sink.** It writes the result file *before*
 attempting delivery, pushes partial fixes, and notifies Telegram — built exactly so
@@ -73,11 +80,11 @@ that bypasses it.
 New module `flows/nax-finish/verdict.ts` owning everything that turns a reviewer's reply
 into a route: both parsers, both loop caps, the attempt counter, and `routeReview`.
 
-Moving `routeReview` out is what makes the line budget work. Removing `parseVerdict`
-alone (~7 lines) against the additions (~15) would net **+8 → ~607**, over the limit.
-Taking `routeReview` and its docstring too (~31 lines) nets roughly **-35 → ~564**, with
-real headroom. It is also the cohesive split: `routeReview` consumes exactly what the
-parsers produce.
+Moving `routeReview` out is what makes the line budget survive the
+`feat/finish-pr-body` merge (see Constraints). Removing `parseVerdict` alone (~7 lines)
+against the additions (~15) nets **+8**; taking `routeReview` and its docstring too
+(~31 lines) nets roughly **-35**. It is also the cohesive split: `routeReview` consumes
+exactly what the parsers produce.
 
 `MAX_FIX_ATTEMPTS` moves with it, since `routeReview` needs it. The flow file imports it
 back for its three other users — the acceptance node and the two `quality_gates` caps.
@@ -221,7 +228,7 @@ Invariants after this change:
 | file | change |
 |:--|:--|
 | `flows/nax-finish/verdict.ts` | new — both parsers, both caps, counter, `routeReview` |
-| `flows/nax-finish/nax-finish.flow.ts` | drop `parseVerdict`, `routeReview`, `MAX_FIX_ATTEMPTS`; import them back; wire parsers per node; add 2 switch cases; ~599 → ~564 |
+| `flows/nax-finish/nax-finish.flow.ts` | drop `parseVerdict`, `routeReview`, `MAX_FIX_ATTEMPTS`; import them back; wire parsers per node; add 2 switch cases; 568 → ~533 |
 | `flows/nax-finish/types.ts` | widen `ReviewVerdict.route` with `"reprompt"` |
 | `flows/nax-finish/review-prompts.ts` | `retry` param on `buildReviewPrompt` |
 | `test/unit/flows/nax-finish/verdict.test.ts` | new |
