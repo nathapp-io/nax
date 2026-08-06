@@ -144,3 +144,84 @@ describe("revertMutant", () => {
     expect(Buffer.from(originalBuffer).equals(Buffer.from(restored))).toBe(true);
   });
 });
+
+describe("revertMutant — verified, never positional", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = makeTempDir("nax-revert-verified-");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  const mutantAt = (filePath: string, line: number): Mutant => ({
+    file: filePath,
+    line,
+    before: "const y = 2;",
+    after: "const y = 99;",
+    operatorId: "ts:literal-flip",
+  });
+
+  test("reverting a line that holds the mutant reports success", async () => {
+    const filePath = join(tempDir, "clean.ts");
+    await Bun.write(filePath, "const x = 1;\nconst y = 2;\n");
+    const mutant = mutantAt(filePath, 2);
+
+    await applyMutant(mutant);
+
+    expect(await revertMutant(mutant)).toEqual({ reverted: true });
+  });
+
+  test("a line rewritten since apply is reported, not overwritten", async () => {
+    const filePath = join(tempDir, "shifted.ts");
+    await Bun.write(filePath, "const x = 1;\nconst y = 2;\n");
+    const mutant = mutantAt(filePath, 2);
+
+    await applyMutant(mutant);
+    // Something else — a formatter, codegen, the agent — rewrites the line.
+    const rewritten = "const x = 1;\nconst y = someoneElsesEdit();\n";
+    await Bun.write(filePath, rewritten);
+
+    const result = await revertMutant(mutant);
+
+    expect(result).toEqual({
+      reverted: false,
+      reason: "content-mismatch",
+      actual: "const y = someoneElsesEdit();",
+    });
+    // The whole point: the foreign edit survives untouched.
+    expect(await Bun.file(filePath).text()).toBe(rewritten);
+  });
+
+  test("a file that lost the line is reported, not extended", async () => {
+    const filePath = join(tempDir, "truncated.ts");
+    await Bun.write(filePath, "const x = 1;\nconst y = 2;\n");
+    const mutant = mutantAt(filePath, 2);
+
+    await applyMutant(mutant);
+    const truncated = "const x = 1;";
+    await Bun.write(filePath, truncated);
+
+    const result = await revertMutant(mutant);
+
+    expect(result).toEqual({ reverted: false, reason: "out-of-range", actual: null });
+    expect(await Bun.file(filePath).text()).toBe(truncated);
+  });
+
+  test("reverting twice is not a second write — the line no longer holds the mutant", async () => {
+    const filePath = join(tempDir, "double.ts");
+    const original = "const x = 1;\nconst y = 2;\n";
+    await Bun.write(filePath, original);
+    const mutant = mutantAt(filePath, 2);
+
+    await applyMutant(mutant);
+    expect(await revertMutant(mutant)).toEqual({ reverted: true });
+
+    const second = await revertMutant(mutant);
+
+    expect(second.reverted).toBe(false);
+    expect(await Bun.file(filePath).text()).toBe(original);
+  });
+});

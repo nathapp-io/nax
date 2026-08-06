@@ -60,6 +60,7 @@ TEST_SUMMARY_*.md
 .nax-pids
 .nax/metrics.json
 .nax/finish-audit/
+.nax/mutation-journal/
 
 .nax/**/runs/
 
