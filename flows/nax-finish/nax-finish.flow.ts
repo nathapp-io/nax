@@ -41,7 +41,7 @@
  *   that is killed or times out — no terminal node runs on that path, and a
  *   crashed finish is exactly when the record of what it changed matters most.
  */
-import { defineFlow, extractJsonObject } from "acpx/flows";
+import { defineFlow } from "acpx/flows";
 import { buildFixCommitMessage } from "./commit-message";
 import { findingsOf, fixAttemptCount, gateOutputs, incrementalSince, inputOf, loadCtxOf } from "./flow-ctx";
 import { buildReviewPrompt, fixPrompt } from "./review-prompts";
@@ -66,6 +66,7 @@ import {
 } from "./steps";
 import { _prBodyDeps, buildFinishBody, buildFinishTitle } from "./steps/pr-body";
 import type { FinishInput, FinishPhase, FinishResult, ReviewVerdict } from "./types";
+import { MAX_FIX_ATTEMPTS, parseFixVerdict, parseReviewVerdict, repromptCount, routeReview } from "./verdict";
 
 /**
  * Injectable seam for the `open_pr` node's title/body assembly — tests stub
@@ -77,14 +78,6 @@ export const _openPrDeps = {
   buildFinishTitle,
   buildFinishBody,
 };
-
-/**
- * Cap on fix-and-reverify iterations, per phase, before escalating instead of
- * looping forever. acpx's flow engine has no built-in cycle guard, so without
- * this cap a stubborn failure (LLM can't fix it, or fixes something else each
- * time) hangs `acpx flow run` — and the post-run plugin awaits that subprocess.
- */
-const MAX_FIX_ATTEMPTS = 3;
 
 /**
  * Re-run the acceptance gate, routing on the shared fix-cap rules.
@@ -137,38 +130,6 @@ async function acceptanceGateNode(ctx: {
     };
   }
   return { route: "fix", output: r.output };
-}
-
-/**
- * Turn a reviewer verdict into a deterministic route.
- *
- * `clean` (no findings) skips the fix node entirely — prompting an agent to
- * "apply the recommended fixes" for an empty finding list burns a turn and
- * invites unrequested edits.
- */
-function routeReview(
-  ctx: { outputs: unknown; state: { steps: { nodeId: string }[] } },
-  phase: "spec" | "quality",
-): { route: string; escalationReason?: string; findings: ReviewVerdict["findings"] } {
-  const verdict = (ctx.outputs as Record<string, ReviewVerdict | undefined>)[`review_${phase}`];
-  const findings = verdict?.findings ?? [];
-  if (verdict?.route === "escalate") {
-    return {
-      route: "escalate",
-      escalationReason: verdict.escalationReason ?? `${phase} review raised a finding needing human judgment`,
-      findings,
-    };
-  }
-  if (findings.length === 0) return { route: "clean", findings };
-  const attempts = fixAttemptCount(ctx, `fix_${phase}`);
-  if (attempts >= MAX_FIX_ATTEMPTS) {
-    return {
-      route: "escalate",
-      escalationReason: `${phase} review still reporting ${findings.length} finding(s) after ${attempts} fix attempts.`,
-      findings,
-    };
-  }
-  return { route: "fix", findings };
 }
 
 /**
@@ -271,14 +232,6 @@ function commitFixNode(phase: FinishPhase) {
   };
 }
 
-/** Normalise a reviewer's JSON, rewriting a findings-free `proceed` to `clean`. */
-function parseVerdict(text: string): ReviewVerdict {
-  const raw = extractJsonObject(text) as Partial<ReviewVerdict>;
-  const findings = Array.isArray(raw.findings) ? raw.findings : [];
-  const route = raw.route === "escalate" ? "escalate" : findings.length === 0 ? "clean" : "proceed";
-  return { route, findings, escalationReason: raw.escalationReason };
-}
-
 export default defineFlow({
   name: "nax-finish",
   permissions: {
@@ -313,7 +266,7 @@ export default defineFlow({
     fix_acceptance: {
       nodeType: "acp",
       prompt: (ctx) => fixPrompt("acceptance", ctx),
-      parse: parseVerdict,
+      parse: parseFixVerdict,
     },
     commit_acceptance: commitFixNode("acceptance"),
     review_spec: {
@@ -327,9 +280,10 @@ export default defineFlow({
           specPath: outs.specPath ?? "",
           since: incrementalSince(ctx, "spec"),
           priorFindings: findingsOf(ctx, "spec"),
+          retry: repromptCount(ctx, "spec") > 0,
         });
       },
-      parse: parseVerdict,
+      parse: parseReviewVerdict,
     },
     route_spec: {
       nodeType: "compute",
@@ -338,7 +292,7 @@ export default defineFlow({
     fix_spec: {
       nodeType: "acp",
       prompt: (ctx) => fixPrompt("spec", ctx),
-      parse: parseVerdict,
+      parse: parseFixVerdict,
     },
     commit_spec: commitFixNode("spec"),
     review_quality: {
@@ -352,9 +306,10 @@ export default defineFlow({
           specPath: outs.specPath ?? "",
           since: incrementalSince(ctx, "quality"),
           priorFindings: findingsOf(ctx, "quality"),
+          retry: repromptCount(ctx, "quality") > 0,
         });
       },
-      parse: parseVerdict,
+      parse: parseReviewVerdict,
     },
     route_quality: {
       nodeType: "compute",
@@ -363,13 +318,13 @@ export default defineFlow({
     fix_quality: {
       nodeType: "acp",
       prompt: (ctx) => fixPrompt("quality", ctx),
-      parse: parseVerdict,
+      parse: parseFixVerdict,
     },
     commit_quality: commitFixNode("quality"),
     fix_gate: {
       nodeType: "acp",
       prompt: (ctx) => fixPrompt("gate", ctx),
-      parse: parseVerdict,
+      parse: parseFixVerdict,
     },
     commit_gate: commitFixNode("gate"),
     quality_gates: {
@@ -557,7 +512,10 @@ export default defineFlow({
     { from: "review_spec", to: "route_spec" },
     {
       from: "route_spec",
-      switch: { on: "$.route", cases: { clean: "review_quality", fix: "fix_spec", escalate: "escalate" } },
+      switch: {
+        on: "$.route",
+        cases: { clean: "review_quality", fix: "fix_spec", escalate: "escalate", reprompt: "review_spec" },
+      },
     },
     // Spec fixes re-run the acceptance gate first (they can break it), and the
     // acceptance node's `proceed` edge leads back into review_spec for re-review.
@@ -566,7 +524,10 @@ export default defineFlow({
     { from: "review_quality", to: "route_quality" },
     {
       from: "route_quality",
-      switch: { on: "$.route", cases: { clean: "quality_gates", fix: "fix_quality", escalate: "escalate" } },
+      switch: {
+        on: "$.route",
+        cases: { clean: "quality_gates", fix: "fix_quality", escalate: "escalate", reprompt: "review_quality" },
+      },
     },
     // Quality fixes are re-reviewed by the same lens; the repo-root gates that
     // follow catch anything the fix broke mechanically.
