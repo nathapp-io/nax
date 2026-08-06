@@ -242,3 +242,67 @@ trailing garbage
     expect(result.get("src/a.ts")).toEqual([{ start: 1, end: 2 }]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// diff.noprefix — headers without the a/ b/ prefixes
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("diff parsing — diff.noprefix output", () => {
+  const NOPREFIX_DIFF = [
+    "diff --git src/a.ts src/a.ts",
+    "index 111..222 100644",
+    "--- src/a.ts",
+    "+++ src/a.ts",
+    "@@ -3,0 +4,2 @@",
+    "+added one",
+    "+added two",
+  ].join("\n");
+
+  test("extractDiffFiles reads an unprefixed +++ header", () => {
+    // With `diff.noprefix=true` every header loses its `b/`. Recognising only
+    // the prefixed form yielded an empty result, which the mutation spot-check
+    // reads as "nothing changed" rather than "cannot parse".
+    expect([...extractDiffFiles(NOPREFIX_DIFF)]).toEqual(["src/a.ts"]);
+  });
+
+  test("extractDiffLineRanges reads hunks under an unprefixed header", () => {
+    expect(extractDiffLineRanges(NOPREFIX_DIFF).get("src/a.ts")).toEqual([{ start: 4, end: 5 }]);
+  });
+
+  test("an added line rendered as '+++ ...' is not mistaken for a header", () => {
+    // An ADDED line whose content begins '++ ' renders as '+++ ...' inside a
+    // hunk. Only a `+++` immediately following a `---` is a real header.
+    const diff = [
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1,0 +1,2 @@",
+      "+++ this is content, not a header",
+      "+normal added line",
+    ].join("\n");
+
+    expect([...extractDiffFiles(diff)]).toEqual(["src/a.ts"]);
+    expect(extractDiffLineRanges(diff).get("src/a.ts")).toEqual([{ start: 1, end: 2 }]);
+  });
+
+  test("a '+++'-shaped content line does not orphan the following hunks", () => {
+    const diff = [
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1,0 +1,1 @@",
+      "+++ content",
+      "@@ -9,0 +12,3 @@",
+      "+more",
+    ].join("\n");
+
+    expect(extractDiffLineRanges(diff).get("src/a.ts")).toEqual([
+      { start: 1, end: 1 },
+      { start: 12, end: 14 },
+    ]);
+  });
+
+  test("an unprefixed /dev/null header names no file", () => {
+    const diff = ["--- src/gone.ts", "+++ /dev/null", "@@ -1,2 +0,0 @@", "-a", "-b"].join("\n");
+    expect([...extractDiffFiles(diff)]).toEqual([]);
+    expect(extractDiffLineRanges(diff).size).toBe(0);
+  });
+});
