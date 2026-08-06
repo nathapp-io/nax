@@ -243,3 +243,26 @@ describe("buildFinishBody — repository template (#1478)", () => {
     expect(body.trimEnd()).toBe(body);
   });
 });
+
+describe("buildFinishBody — What changed section (#1477)", () => {
+  test("renders the narrative first, above the Stories table", () => {
+    const body = buildFinishBody(
+      baseCtx({ stories: [story()], narrative: "Replaced the widget cache." }),
+    );
+    expect(body.indexOf("## What changed")).toBe(0);
+    expect(body).toContain("Replaced the widget cache.");
+    expect(body.indexOf("## What changed")).toBeLessThan(body.indexOf("## Stories"));
+  });
+
+  test("omits the heading entirely when there is no narrative", () => {
+    // #1477 forbids an empty heading. Heading and text are produced by one
+    // function so this is structural, not a rule someone has to remember.
+    const body = buildFinishBody(baseCtx({ stories: [story()] }));
+    expect(body).not.toContain("## What changed");
+  });
+
+  test("treats a whitespace-only narrative as absent", () => {
+    const body = buildFinishBody(baseCtx({ stories: [story()], narrative: "  \n " }));
+    expect(body).not.toContain("## What changed");
+  });
+});
