@@ -45,6 +45,28 @@ describe("FIELD_DESCRIPTIONS.precheck.storySizeGate action and maxReplanAttempts
   });
 });
 
+describe("FIELD_DESCRIPTIONS.execution.mutationCheck", () => {
+  const KEYS = [
+    "execution.mutationCheck",
+    "execution.mutationCheck.enabled",
+    "execution.mutationCheck.maxMutants",
+    "execution.mutationCheck.timeoutSeconds",
+  ];
+
+  test.each(KEYS)("%s has a non-empty description", (key) => {
+    expect(typeof FIELD_DESCRIPTIONS[key]).toBe("string");
+    expect(FIELD_DESCRIPTIONS[key].length).toBeGreaterThan(0);
+  });
+
+  test("the parent description states the check is advisory", () => {
+    expect(FIELD_DESCRIPTIONS["execution.mutationCheck"].toLowerCase()).toContain("advisory");
+  });
+
+  test("enabled description records the opt-in default", () => {
+    expect(FIELD_DESCRIPTIONS["execution.mutationCheck.enabled"]).toContain("false");
+  });
+});
+
 describe("FIELD_DESCRIPTIONS structure for per-agent models", () => {
   test("models.claude description exists for agent tier definitions", () => {
     expect(FIELD_DESCRIPTIONS["models.claude"]).toBeDefined();

@@ -422,6 +422,53 @@ Example with defaults: a story can cycle through review→autofix up to 5 times 
 
 ---
 
+### Mutation Spot-Check
+
+Green tests prove the code passes the suite; they do not prove the suite would notice if the code were wrong. The mutation spot-check injects a small number of deliberate defects into the story's changed source files, re-runs the scoped tests against each one, and reports any mutant the suite failed to catch.
+
+It is **opt-in and advisory** — it runs after `full-suite-gate` and can never fail a story. Every mutation is reverted in a `finally`, so the worktree is restored even if a test run crashes.
+
+```json
+{
+  "execution": {
+    "mutationCheck": {
+      "enabled": true,
+      "maxMutants": 3,
+      "timeoutSeconds": 60
+    }
+  }
+}
+```
+
+| Field | Default | Description |
+|:------|:--------|:------------|
+| `enabled` | `false` | Master switch. When `false` the phase is not even scheduled. |
+| `maxMutants` | `3` | Mutants tested per story (1–50). Candidates are gathered across **all** changed files, then sampled evenly across that list — so raising this widens coverage rather than digging deeper into the first file. |
+| `timeoutSeconds` | `60` | Per-mutant scoped test-run timeout (5–600). |
+
+**Cost:** one scoped test run per mutant, serially. Worst case adds `maxMutants × timeoutSeconds` to a story — 3 minutes at the defaults.
+
+**Operators** are regex-based and language-scoped, four per language: comparison flips (`==`↔`!=`, `>=`↔`<=`, and whitespace-delimited `>`/`<`), boolean-literal flips, and whitespace-delimited arithmetic flips (`+`↔`-`, `*`↔`/`). Supported languages: `typescript`, `javascript`, `python`, `go`, `rust`. Any other language yields no operators and the check is a no-op. The whitespace gating is deliberate — it keeps the mutator away from module specifiers (`"../config"`), URLs, generics (`Array<string>`), and arrow functions, all of which would otherwise produce mutants that merely fail to compile.
+
+**Outcomes** are counted per story as `killed` / `survived` / `errored`:
+
+| Outcome | Meaning |
+|:--------|:--------|
+| `killed` | Tests ran and failed — the suite caught the defect. Requires evidence the tests actually executed (a non-zero pass/fail tally), so a mutant that fails to build is never miscounted as a kill. |
+| `survived` | Tests ran and passed with the defect in place — **a gap in the suite.** |
+| `errored` | The mutant never produced a real test result (build failure, unresolvable module, unparseable runner output, timeout). Discarded, not a signal about test quality. |
+
+Survivors are logged per story, and in headless mode (non-`json`) a `SURVIVING MUTANTS` block is printed at run end listing `storyId  file:line  operatorId`:
+
+```
+SURVIVING MUTANTS
+  US-002  src/config/merge.ts:88  ts:cmp-flip
+```
+
+Treat each line as "this line's behaviour is not pinned by a test" and decide whether it deserves one.
+
+---
+
 ### Monorepo Acceptance Test Exclusion
 
 nax generates per-package acceptance test files at `<package-root>/.nax-acceptance.test.ts`. These files are meant to be run by nax only — **not** by your regular test suite.
