@@ -12,7 +12,7 @@
  * DI collaborators (mirrors _verifyScopedDeps) so unit tests need no real git/test run.
  */
 
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, sep } from "node:path";
 import { mutationCheckConfigSelector, qualityConfigSelector } from "../config";
 import type { MutationCheckConfig } from "../config/selectors";
 import { getLogger } from "../logger";
@@ -136,15 +136,24 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       input.repoRoot,
     );
     // getChangedNonTestFiles only strips the git-root/repoRoot prefix mismatch
-    // (issue #565) when packagePrefix is set — its returned paths are then
-    // repoRoot-relative. With no packagePrefix, that surgery never runs and the
-    // paths stay git-root-relative (raw `git diff --name-only` output). Anchor
-    // to whichever root the paths are actually relative to, matching the same
-    // git-root resolution getChangedLineRanges performs internally (#1485).
-    const anchor = input.packagePrefix
-      ? (input.repoRoot ?? input.workdir)
-      : ((await deps.getGitRoot(input.workdir)) ?? input.workdir);
-    const absoluteChangedFiles = changedFiles.map((f) => (isAbsolute(f) ? f : join(anchor, f)));
+    // (issue #565) when both packagePrefix and repoRoot are set — its returned
+    // paths are then repoRoot-relative. Otherwise that surgery never runs and
+    // the paths stay git-root-relative (raw `git diff --name-only` output).
+    // Anchor to whichever root the paths are actually relative to, matching
+    // the same git-root resolution getChangedLineRanges performs internally
+    // (#1485). Mirror the exact gate `getChangedNonTestFiles` uses.
+    const anchor =
+      input.packagePrefix && input.repoRoot
+        ? input.repoRoot
+        : ((await deps.getGitRoot(input.workdir)) ?? input.workdir);
+    // Unfiltered git diffs from the git-root anchor can surface files outside
+    // the project (e.g. when the git root is an ancestor of repoRoot) —
+    // constrain candidates to the project scope so mutation testing never
+    // reads/writes source outside it.
+    const scopeRoot = input.repoRoot ?? input.workdir;
+    const absoluteChangedFiles = changedFiles
+      .map((f) => (isAbsolute(f) ? f : join(anchor, f)))
+      .filter((f) => f === scopeRoot || f.startsWith(`${scopeRoot}${sep}`));
 
     const rangeMap = await deps.getChangedLineRanges(input.workdir, input.storyGitRef);
     if (rangeMap === null) {
