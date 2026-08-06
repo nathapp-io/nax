@@ -1,2 +1,3 @@
 [2026-08-06T00:18:05.805Z] US-001 — PASSED — Record the fix-commit SHA on every finish round — Cost: $3.4637
 [2026-08-06T00:27:29.129Z] US-002 — PASSED — Build deterministic finish PR title and body — Cost: $0.5135
+[2026-08-06T00:41:19.906Z] US-003 — PASSED — Load PRD and status artifacts into the PR context — Cost: $0.5669
