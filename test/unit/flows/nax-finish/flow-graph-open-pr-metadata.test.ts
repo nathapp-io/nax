@@ -12,6 +12,7 @@ import { _prDeps } from "@flows/nax-finish/steps/pr";
 import type { FinishPrContext } from "@flows/nax-finish/steps/pr-body";
 import { _resultDeps } from "@flows/nax-finish/steps/result";
 import type { FlowNodeContext } from "acpx/flows";
+import { makeFlowCtx } from "@test/helpers";
 
 const INPUT = { feature: "x", workdir: "/repo", branch: "feat/x", prdPath: "p", escalateTelegram: false };
 
@@ -28,13 +29,7 @@ const minimalCtx = (): FinishPrContext => ({
 });
 
 const ctxOf = (over: { outputs?: Record<string, unknown> }): FlowNodeContext =>
-  ({
-    input: INPUT,
-    outputs: over.outputs ?? {},
-    results: {},
-    state: { steps: [] },
-    services: {},
-  }) as FlowNodeContext;
+  makeFlowCtx({ input: INPUT, ...over });
 
 type NodeRun<T> = { run: (ctx: FlowNodeContext) => Promise<T> | T };
 const nodeRun = <T>(id: string) => flow.nodes[id] as unknown as NodeRun<T>;

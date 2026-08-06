@@ -10,21 +10,12 @@ import flow from "@flows/nax-finish/nax-finish.flow";
 import { _gitDeps } from "@flows/nax-finish/steps/git";
 import { _resultDeps } from "@flows/nax-finish/steps/result";
 import type { FlowNodeContext, FlowStepRecord } from "acpx/flows";
-import { makeFlowSteps } from "@test/helpers";
+import { makeFlowCtx, makeFlowSteps } from "@test/helpers";
 
 const INPUT = { feature: "x", workdir: "/repo", branch: "feat/x", prdPath: "p", escalateTelegram: false };
 
-const ctxOf = (over: {
-  outputs?: Record<string, unknown>;
-  steps?: FlowStepRecord[];
-}): FlowNodeContext =>
-  ({
-    input: INPUT,
-    outputs: over.outputs ?? {},
-    results: {},
-    state: { steps: over.steps ?? [] },
-    services: {},
-  }) as FlowNodeContext;
+const ctxOf = (over: { outputs?: Record<string, unknown>; steps?: FlowStepRecord[] }): FlowNodeContext =>
+  makeFlowCtx({ input: INPUT, ...over });
 
 type NodeRun<T> = { run: (ctx: FlowNodeContext) => Promise<T> | T };
 const nodeRun = <T>(id: string) => flow.nodes[id] as unknown as NodeRun<T>;

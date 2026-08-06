@@ -8,7 +8,7 @@ import { _prDeps } from "@flows/nax-finish/steps/pr";
 import { _qualityDeps } from "@flows/nax-finish/steps/quality";
 import { _resultDeps } from "@flows/nax-finish/steps/result";
 import type { FlowNodeContext, FlowStepRecord } from "acpx/flows";
-import { makeFlowSteps, reviewRounds } from "@test/helpers";
+import { makeFlowCtx, makeFlowSteps } from "@test/helpers";
 
 const INPUT = { feature: "x", workdir: "/repo", branch: "feat/x", prdPath: "p", escalateTelegram: false };
 
@@ -16,14 +16,7 @@ const ctxOf = (over: {
   input?: Record<string, unknown>;
   outputs?: Record<string, unknown>;
   steps?: FlowStepRecord[];
-}): FlowNodeContext =>
-  ({
-    input: over.input ?? INPUT,
-    outputs: over.outputs ?? {},
-    results: {},
-    state: { steps: over.steps ?? [] },
-    services: {},
-  }) as FlowNodeContext;
+}): FlowNodeContext => makeFlowCtx({ input: INPUT, ...over });
 
 type NodeRun<T> = { run: (ctx: FlowNodeContext) => Promise<T> | T };
 const nodeRun = <T>(id: string) => flow.nodes[id] as unknown as NodeRun<T>;

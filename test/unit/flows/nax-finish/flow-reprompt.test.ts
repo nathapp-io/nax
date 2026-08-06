@@ -41,13 +41,14 @@ describe("reprompt edges", () => {
     expect(switchOf("route_quality").cases.escalate).toBe("escalate");
   });
 
-  // `reviewRounds(phase, N, …)` builds the finished-step history acpx really
-  // produces: by the time `route_<phase>` runs, the `review_<phase>` step that
-  // triggered it is already recorded, so round N carries N steps rather than
-  // N-1. Both round-1 cases below FAIL under the old (buggy) `<` comparison,
+  // `reviewRounds(phase, N, …)` builds N *already-finished* review steps. At a
+  // `route_<phase>` node that equals the round number, because the review that
+  // triggered the route is recorded before the route runs; at a `review_<phase>`
+  // node it is one less, since the executing attempt is not yet recorded. See
+  // test/helpers/flow-steps.ts.
+  //
+  // Both round-1 route cases below FAIL under the old (buggy) `<` comparison,
   // which escalated on the very first unparseable reply instead of retrying.
-  // See test/helpers/flow-steps.ts for why the fixture cannot express the
-  // shape that hid that bug.
   test("route_quality yields reprompt on the first unparseable verdict (round 1)", async () => {
     const verdict = { route: "reprompt", findings: [], raw: "prose" };
     const out = await nodeRun<{ route: string }>("route_quality").run(
@@ -70,6 +71,24 @@ describe("reprompt edges", () => {
     expect(out.route).toBe("escalate");
     expect(out.escalationReason).toContain("after 2 attempts");
   });
+
+  // The complement of the retry-notice tests, and the case the old `round`
+  // naming made look unrepresentable: a review node on its FIRST attempt has
+  // zero recorded steps of its own, so `repromptCount(ctx, phase) > 0` is
+  // false and the prompt must not open with a retry apology.
+  test.each(["spec", "quality"] as const)(
+    "review_%s on its first attempt carries no retry notice",
+    (phase) => {
+      const node = flow.nodes[`review_${phase}`] as unknown as { prompt: (c: FlowNodeContext) => string };
+      const prompt = node.prompt(
+        ctxOf({
+          outputs: { load_ctx: { base: "origin/main", specPath: "spec.md" } },
+          steps: reviewRounds(phase, 0, REPROMPT_VERDICT),
+        }),
+      );
+      expect(prompt).not.toContain("previous reply could not be parsed");
+    },
+  );
 
   test("review_quality leads with the retry notice after a reprompt", () => {
     const node = flow.nodes.review_quality as unknown as { prompt: (c: FlowNodeContext) => string };
