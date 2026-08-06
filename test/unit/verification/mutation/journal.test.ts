@@ -169,6 +169,27 @@ describe("restoreInFlight — sweeping an interrupted run", () => {
     expect(await Bun.file(second).text()).toBe(original);
   });
 
+  test("an entry naming a file outside the root is neither restored nor cleared", async () => {
+    // Belt and braces against a wrong anchor: the entry belongs to another
+    // working tree, so this sweep must leave both the file and the journal for
+    // whoever owns them.
+    const otherTree = makeTempDir("nax-journal-other-");
+    try {
+      const foreign = join(otherTree, "src.ts");
+      const mutated = "const y = 99;\n";
+      await Bun.write(foreign, mutated);
+      await recordInFlight(repoRoot, { ...mutant(), file: foreign, storyId: "US-OTHER" });
+
+      const results = await restoreInFlight(repoRoot);
+
+      expect(results).toEqual([]);
+      expect(await Bun.file(foreign).text()).toBe(mutated);
+      expect(await Bun.file(journalPathFor(repoRoot, "US-OTHER")).exists()).toBe(true);
+    } finally {
+      cleanupTempDir(otherTree);
+    }
+  });
+
   test("no journal directory yields no work", async () => {
     expect(await restoreInFlight(repoRoot)).toEqual([]);
   });

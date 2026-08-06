@@ -28,4 +28,10 @@ export const NAX_GITIGNORE_ENTRIES = [
   // the flow's `commit_*` nodes run `git add -A`, so an un-ignored artifact
   // here lands in the feature branch's history.
   ".nax/finish-audit/",
+  // In-flight mutation-spot-check journal. Same reasoning as finish-audit
+  // above, and more urgent: the journal exists precisely in the window where a
+  // run died mid-mutation, so a later `git add -A` is exactly what would sweep
+  // it into the feature branch. Kept in sync with `journalDir()` in
+  // src/verification/mutation/journal.ts.
+  ".nax/mutation-journal/",
 ];

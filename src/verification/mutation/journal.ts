@@ -14,7 +14,7 @@
  * One file per story, so parallel stories never contend for the same journal.
  */
 
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { revertMutant } from "./apply";
 import type { Mutant } from "./types";
 
@@ -85,9 +85,22 @@ async function readEntry(path: string): Promise<MutationJournalEntry | null> {
   }
 }
 
+/** Is `filePath` inside `root`'s subtree? */
+function isInside(root: string, filePath: string): boolean {
+  const base = resolve(root);
+  const target = resolve(filePath);
+  return target === base || target.startsWith(`${base}${sep}`);
+}
+
 /**
  * Restore every journalled mutation left behind by an earlier run, then clear
  * the journal.
+ *
+ * Entries naming a file OUTSIDE `repoRoot` are skipped and their journal is
+ * left in place: they belong to a different working tree, and writing into one
+ * we were not asked to touch is worse than the leftover we are cleaning up.
+ * With a per-worktree anchor this should never trigger — it is the guard that
+ * keeps a wrong anchor from becoming cross-tree corruption.
  *
  * The journal is cleared even for an `unrecoverable` entry: a line holding
  * neither the mutant nor the original has been rewritten by someone else, so
@@ -117,6 +130,7 @@ export async function restoreInFlight(repoRoot: string): Promise<JournalRestoreR
       await unlink(path).catch(() => {});
       continue;
     }
+    if (!isInside(repoRoot, entry.file)) continue;
     results.push(await restoreEntry(entry));
     await unlink(path).catch(() => {});
   }

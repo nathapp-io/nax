@@ -467,7 +467,9 @@ SURVIVING MUTANTS
 
 Treat each line as "this line's behaviour is not pinned by a test" and decide whether it deserves one.
 
-**Restoring the worktree.** A `finally` covers a thrown error but not process death, so each mutation is also journalled to `.nax/mutation-journal/<storyId>.json` *before* it is written to disk and the journal entry is removed only once the revert is confirmed. If a run is interrupted — Ctrl+C, SIGKILL, a crash, a lost machine — the next run sweeps the journal and undoes anything left behind, whether or not the check is still enabled. Add `.nax/mutation-journal/` to `.gitignore`.
+**Restoring the worktree.** A `finally` covers a thrown error but not process death, so each mutation is also journalled to `.nax/mutation-journal/<storyId>.json` *before* it is written to disk, and the entry is removed only once the revert is confirmed. If a run is interrupted — Ctrl+C, SIGKILL, a crash, a lost machine — the next run sweeps the journal and undoes anything left behind, whether or not the check is still enabled.
+
+The journal is anchored to the **working tree** (the git root of `workdir`), not the project root, so in parallel mode each git worktree keeps its own and concurrent stories cannot restore each other's in-flight mutations. A sweep also skips any entry naming a file outside its own tree. `nax init` adds `.nax/mutation-journal/` to `.gitignore` and it is written to `.git/info/exclude` for every worktree — nax auto-commits with `git add -A`, so an un-ignored journal would land in the feature branch.
 
 Reverting is verified, never positional: the line must still hold the exact mutant that was written. If something else rewrote it in the meantime (a formatter, codegen, the agent), nax writes nothing — restoring a stale line over content it cannot account for is the one outcome nothing downstream can undo. It logs the file, line, and what it actually found, stops mutating that story, and prints a final block:
 

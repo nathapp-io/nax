@@ -213,6 +213,105 @@ describe("mutationCheckOp — leftover mutations from an interrupted run", () =>
     }
   });
 
+  test("the journal follows the worktree, not the shared project root", async () => {
+    // Parallel mode: every story gets its own git worktree, but repoRoot
+    // (ctx.projectDir) stays the shared main repo. Anchoring the journal there
+    // gives all concurrent stories ONE journal directory, so one story's sweep
+    // restores another story's in-flight mutation.
+    //
+    // The journal is deleted once the revert is confirmed, so asserting after
+    // the run proves nothing — both anchors look identical by then. The only
+    // moment the journal is observable is while a mutant is applied, which is
+    // exactly when `regression` is called.
+    const projectRoot = makeTempDir("nax-mutation-project-");
+    const worktree = join(projectRoot, ".nax-wt", "US-004");
+    try {
+      const file = join(worktree, "src", "a.ts");
+      await Bun.write(file, "if (a == b) { return 1; }\n");
+
+      const seen: Array<{ inWorktree: boolean; inProjectRoot: boolean }> = [];
+      const deps = fakeDeps({
+        getGitRoot: async (dir: string) => dir,
+        getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 1 }]]]),
+        regression: async () => {
+          seen.push({
+            inWorktree: await Bun.file(journalPathFor(worktree, "US-004")).exists(),
+            inProjectRoot: await Bun.file(journalPathFor(projectRoot, "US-004")).exists(),
+          });
+          return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" };
+        },
+      });
+
+      await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: worktree,
+          storyId: "US-004",
+          storyGitRef: "abc",
+          repoRoot: projectRoot,
+          resolvedTestPatterns: PATTERNS,
+        } as any,
+        ctxWithConfig(ENABLED),
+        deps,
+      );
+
+      expect(seen.length).toBeGreaterThan(0);
+      for (const observation of seen) {
+        expect(observation.inWorktree).toBe(true);
+        expect(observation.inProjectRoot).toBe(false);
+      }
+    } finally {
+      cleanupTempDir(projectRoot);
+    }
+  });
+
+  test("a sweep never reaches into a sibling worktree's journal", async () => {
+    const projectRoot = makeTempDir("nax-mutation-siblings-");
+    const worktreeA = join(projectRoot, ".nax-wt", "US-004");
+    const worktreeB = join(projectRoot, ".nax-wt", "US-005");
+    try {
+      const fileB = join(worktreeB, "src", "b.ts");
+      const mutatedB = "if (a != b) { return 1; }\n";
+      await Bun.write(fileB, mutatedB);
+      // Story B is mid-check: journalled and applied, not yet reverted.
+      await recordInFlight(worktreeB, {
+        storyId: "US-005",
+        file: fileB,
+        line: 1,
+        before: "if (a == b) { return 1; }",
+        after: "if (a != b) { return 1; }",
+        operatorId: "ts:cmp-flip",
+      });
+
+      const fileA = join(worktreeA, "src", "a.ts");
+      await Bun.write(fileA, "if (c == d) { return 2; }\n");
+
+      await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: worktreeA,
+          storyId: "US-004",
+          storyGitRef: "abc",
+          repoRoot: projectRoot,
+          resolvedTestPatterns: PATTERNS,
+        } as any,
+        ctxWithConfig(ENABLED),
+        fakeDeps({
+          getGitRoot: async (dir: string) => dir,
+          getChangedNonTestFiles: async () => [fileA],
+          getChangedLineRanges: async () => new Map([[fileA, [{ start: 1, end: 1 }]]]),
+        }),
+      );
+
+      // B's in-flight mutation and its journal survive A's sweep untouched.
+      expect(await Bun.file(fileB).text()).toBe(mutatedB);
+      expect(await Bun.file(journalPathFor(worktreeB, "US-005")).exists()).toBe(true);
+    } finally {
+      cleanupTempDir(projectRoot);
+    }
+  });
+
   test("the sweep still runs when the check is disabled", async () => {
     const dir = makeTempDir("nax-mutation-leftover-off-");
     try {

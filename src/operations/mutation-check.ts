@@ -154,9 +154,15 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       }
     };
     const logger = getLogger();
+    // Anchor the journal to the WORKING TREE, not the project root. In parallel
+    // mode every story runs in its own git worktree while `repoRoot`
+    // (`ctx.projectDir`) stays the shared main repo — anchoring there gives all
+    // concurrent stories one journal directory, and since entries carry
+    // absolute paths, one story's sweep would restore another's in-flight
+    // mutation mid-check. `getGitRoot` inside a worktree returns that worktree.
+    const journalRoot = (await deps.getGitRoot(input.workdir)) ?? input.workdir;
     // Sweep before the enabled check: a mutation left behind by an interrupted
     // run must still be restored if the feature is turned off afterwards.
-    const journalRoot = input.repoRoot ?? input.workdir;
     await sweepLeftoverMutants(journalRoot, input.storyId);
 
     if (!cfg?.enabled) {

@@ -485,10 +485,13 @@ describe("mutationCheckOp — issue #1485: anchor root matches getChangedLineRan
       const absoluteFile = join(repoRoot, relativeFile);
       await Bun.write(absoluteFile, "if (a == b) { return 1; }\n");
 
+      // Assert the anchoring OUTCOME, not that getGitRoot goes uncalled: the
+      // journal anchors to the working tree's git root, so the dep is now
+      // reached on every run. Handing back a bogus root proves the changed-file
+      // anchor ignores it — a stronger guarantee than a never-called stub, and
+      // one that does not break the next caller who legitimately needs the dep.
       const deps = fakeDeps({
-        getGitRoot: async () => {
-          throw new Error("getGitRoot must not be called when packagePrefix is set");
-        },
+        getGitRoot: async () => "/somewhere/else/entirely",
         getChangedNonTestFiles: async () => [relativeFile],
         getChangedLineRanges: async () => new Map([[absoluteFile, [{ start: 1, end: 1 }]]]),
       });
