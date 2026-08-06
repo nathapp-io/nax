@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { extractDiffFiles } from "@/utils/diff-files";
+import { extractDiffFiles, extractDiffLineRanges } from "@/utils/diff-files";
 
 describe("extractDiffFiles", () => {
   test("returns empty set for empty input", () => {
@@ -70,5 +70,146 @@ deleted file mode 100644
 ++++ this is added content, not a header
 `;
     expect(extractDiffFiles(diff)).toEqual(new Set(["src/real.ts"]));
+  });
+});
+
+describe("extractDiffLineRanges", () => {
+  test("AC1: returns a Map", () => {
+    const result = extractDiffLineRanges("");
+    expect(result).toBeInstanceOf(Map);
+  });
+
+  test("AC2: produces range from +++ b/ header and @@ -0,0 +1,5 @@", () => {
+    const diff = `diff --git a/src/a.ts b/src/a.ts
+new file mode 100644
+index 0000..1234
+--- /dev/null
++++ b/src/a.ts
+@@ -0,0 +1,5 @@
++line1
++line2
++line3
++line4
++line5
+`;
+    const result = extractDiffLineRanges(diff);
+    expect(result.get("src/a.ts")).toEqual([{ start: 1, end: 5 }]);
+  });
+
+  test("AC3: omitted counts default to 1 for @@ -1 +1 @@", () => {
+    const diff = `diff --git a/src/a.ts b/src/a.ts
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -1 +1 @@
+-x
++y
+`;
+    const result = extractDiffLineRanges(diff);
+    expect(result.get("src/a.ts")).toEqual([{ start: 1, end: 1 }]);
+  });
+
+  test("AC4: hunk with new-side count 0 produces no range", () => {
+    const diff = `diff --git a/src/gone.ts b/src/gone.ts
+deleted file mode 100644
+--- a/src/gone.ts
++++ /dev/null
+@@ -5,3 +0,0 @@
+-x
+-y
+-z
+`;
+    const result = extractDiffLineRanges(diff);
+    expect(result.get("src/gone.ts")).toBeUndefined();
+  });
+
+  test("AC5: hunks for two files yield one entry per file", () => {
+    const diff = `diff --git a/src/a.ts b/src/a.ts
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -1 +1,3 @@
+-x
++y
++y
++y
+diff --git a/src/b.ts b/src/b.ts
+--- a/src/b.ts
++++ b/src/b.ts
+@@ -10 +10,2 @@
+-x
++y
++y
+`;
+    const result = extractDiffLineRanges(diff);
+    expect(result.size).toBe(2);
+    expect(result.get("src/a.ts")).toEqual([{ start: 1, end: 3 }]);
+    expect(result.get("src/b.ts")).toEqual([{ start: 10, end: 11 }]);
+  });
+
+  test("AC6: +++ /dev/null produces no map entry", () => {
+    const diff = `diff --git a/src/gone.ts b/src/gone.ts
+deleted file mode 100644
+--- a/src/gone.ts
++++ /dev/null
+@@ -1,3 +0,0 @@
+-x
+-y
+-z
+`;
+    const result = extractDiffLineRanges(diff);
+    expect(result.has("dev/null")).toBe(false);
+    expect(result.size).toBe(0);
+  });
+
+  test("AC7: multiple hunks in same file are collected in order", () => {
+    const diff = `diff --git a/src/a.ts b/src/a.ts
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -10,0 +11,2 @@
++a
++b
+@@ -30,0 +40,1 @@
++c
+`;
+    const result = extractDiffLineRanges(diff);
+    expect(result.get("src/a.ts")).toEqual([
+      { start: 11, end: 12 },
+      { start: 40, end: 40 },
+    ]);
+  });
+
+  test("AC8: CRLF and LF diffs produce equal maps", () => {
+    const lf = `diff --git a/src/a.ts b/src/a.ts
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -1 +1,2 @@
+-x
++y
+@@ -10 +10,2 @@
+-x
++y
++y
+`;
+    const crlf = lf.replace(/\n/g, "\r\n");
+    expect(extractDiffLineRanges(lf)).toEqual(extractDiffLineRanges(crlf));
+  });
+
+  test("AC9: empty input returns empty Map", () => {
+    const result = extractDiffLineRanges("");
+    expect(result).toBeInstanceOf(Map);
+    expect(result.size).toBe(0);
+  });
+
+  test("AC10: unrecognised lines are ignored without error", () => {
+    const diff = `some preamble text that is not a diff header
+this line means nothing
++++ b/src/a.ts
+@@ -1 +1,2 @@
+-x
++y
+trailing garbage
+@@ not a real hunk
+`;
+    const result = extractDiffLineRanges(diff);
+    expect(result.get("src/a.ts")).toEqual([{ start: 1, end: 2 }]);
   });
 });

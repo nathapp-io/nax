@@ -10,6 +10,12 @@
  */
 
 const HEADER_PREFIX = "+++ b/";
+const HUNK_REGEX = /^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/;
+
+export interface LineRange {
+  readonly start: number;
+  readonly end: number;
+}
 
 export function extractDiffFiles(diff: string): Set<string> {
   const files = new Set<string>();
@@ -22,4 +28,34 @@ export function extractDiffFiles(diff: string): Set<string> {
     files.add(path);
   }
   return files;
+}
+
+export function extractDiffLineRanges(diff: string): Map<string, LineRange[]> {
+  const ranges = new Map<string, LineRange[]>();
+  if (!diff) return ranges;
+
+  let currentPath: string | null = null;
+
+  for (const rawLine of diff.split(/\r?\n/)) {
+    if (rawLine.startsWith(HEADER_PREFIX)) {
+      const path = rawLine.slice(HEADER_PREFIX.length).trim();
+      currentPath = path && path !== "/dev/null" ? path : null;
+      continue;
+    }
+
+    if (!currentPath) continue;
+
+    const match = HUNK_REGEX.exec(rawLine);
+    if (!match) continue;
+
+    const newStart = Number(match[3]);
+    const newCount = match[4] === undefined ? 1 : Number(match[4]);
+    if (newCount <= 0) continue;
+
+    const entry = ranges.get(currentPath) ?? [];
+    entry.push({ start: newStart, end: newStart + newCount - 1 });
+    ranges.set(currentPath, entry);
+  }
+
+  return ranges;
 }
