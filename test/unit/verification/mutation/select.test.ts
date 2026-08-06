@@ -112,3 +112,21 @@ describe("selectEvenlySpaced — even spread across multiple files", () => {
     expect(result[1]?.file).toBe("b.ts");
   });
 });
+
+describe("selectEvenlySpaced — non-integer max is floored", () => {
+  test("max 2.5 yields exactly floor(2.5) = 2 mutants, never 3", () => {
+    const result = selectEvenlySpaced(makeMutants(8), 2.5);
+    expect(result).toHaveLength(2);
+  });
+
+  test("max 0.9 (fractional below 1) yields an empty array", () => {
+    const result = selectEvenlySpaced(makeMutants(8), 0.9);
+    expect(result).toEqual([]);
+  });
+
+  test("max 5.9 still returns all entries when length <= 5", () => {
+    const mutants = makeMutants(5);
+    const result = selectEvenlySpaced(mutants, 5.9);
+    expect(result).toEqual(mutants);
+  });
+});

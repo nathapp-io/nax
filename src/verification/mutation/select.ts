@@ -12,12 +12,13 @@ import type { Mutant } from "./types";
 
 export function selectEvenlySpaced(mutants: readonly Mutant[], max: number): Mutant[] {
   const length = mutants.length;
-  if (length === 0 || max <= 0) return [];
-  if (length <= max) return mutants.slice();
+  const budget = Math.max(0, Math.floor(max));
+  if (length === 0 || budget <= 0) return [];
+  if (length <= budget) return mutants.slice();
 
-  const stride = Math.floor(length / max);
+  const stride = Math.floor(length / budget);
   const picked: Mutant[] = [];
-  for (let i = 0; i < max; i++) {
+  for (let i = 0; i < budget; i++) {
     const index = i * stride;
     const mutant = mutants[index];
     if (mutant === undefined) break;
