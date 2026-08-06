@@ -111,6 +111,15 @@ describe("readRounds", () => {
     captureWrites(null);
     expect(await readRounds(TARGET)).toEqual([]);
   });
+
+  // AC3 — the fix-commit SHA recorded by the live audit trail must survive a
+  // round trip through JSONL, otherwise the terminal result loses "Fixed in
+  // <sha>" and the only way back is `git log` matching timestamps.
+  test("preserves a per-round sha through the JSONL round trip", async () => {
+    captureWrites(`${JSON.stringify(round({ committed: true, sha: "abc123" }))}\n`);
+    const [got] = await readRounds(TARGET);
+    expect(got.sha).toBe("abc123");
+  });
 });
 
 describe("writeResult", () => {
@@ -142,5 +151,19 @@ describe("writeResult", () => {
     const { wrote } = captureWrites(null);
     await writeResult(TARGET, { feature: "feat-x", status: "promoted" });
     expect(JSON.parse(wrote[0].s)).not.toHaveProperty("rounds");
+  });
+
+  // AC4 — the recorded SHA travels from the live audit trail into the terminal
+  // result, so the consumer (PR body, status reporter) can cite "Fixed in <sha>"
+  // without going back to `git log`.
+  test("carries each recorded sha through to rounds[] in the result", async () => {
+    const { wrote } = captureWrites(
+      `${JSON.stringify(round({ attempt: 1, committed: true, sha: "sha-1" }))}\n${JSON.stringify(round({ phase: "gate", attempt: 1, committed: true, sha: "sha-2" }))}\n`,
+    );
+    await writeResult(TARGET, { feature: "feat-x", status: "promoted", url: "https://forge/pr/1" });
+    const parsed = JSON.parse(wrote[0].s);
+    expect(parsed.rounds).toHaveLength(2);
+    expect(parsed.rounds[0].sha).toBe("sha-1");
+    expect(parsed.rounds[1].sha).toBe("sha-2");
   });
 });

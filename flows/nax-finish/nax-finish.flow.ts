@@ -239,6 +239,11 @@ function commitFixNode(phase: FinishPhase) {
         committed,
         findings: findingsOf(ctx, phase),
         ...(phase === "gate" ? { failing: gateOutputs(ctx).failing ?? [] } : {}),
+        // Carry `shaAfter` onto committed rounds only: a no-op round has no
+        // commit, so no SHA to record — keeping the field absent (rather than
+        // null/undefined) lets the result-file reader distinguish "no commit"
+        // from "record lost".
+        ...(committed && shaAfter ? { sha: shaAfter } : {}),
       });
       // Only `commit_gate` routes on this; the other phases have unconditional
       // edges and ignore it.

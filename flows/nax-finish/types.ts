@@ -53,6 +53,13 @@ export interface FinishRound {
   findings: Finding[];
   /** Gate commands that were red this round (gate phase). */
   failing?: string[];
+  /**
+   * `HEAD` SHA after this round's commit (set only when `committed`); absent
+   * on no-op rounds so a reader can distinguish "no commit" from "record lost".
+   * Lets "Fixed in `<sha>`" be reconstructed from the audit trail alone, rather
+   * than by matching round timestamps against `git log`.
+   */
+  sha?: string;
 }
 
 export interface FinishInput {

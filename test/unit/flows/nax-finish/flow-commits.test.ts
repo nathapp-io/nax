@@ -41,14 +41,25 @@ describe("commit_* nodes", () => {
     _resultDeps.appendText = originalAppend;
   });
 
-  const runCommitNode = async (id: string, porcelain: string, outputs: Record<string, unknown> = {}) => {
+  const runCommitNode = async (
+    id: string,
+    porcelain: string,
+    outputs: Record<string, unknown> = {},
+    postCommitSha: string = "post-commit-sha",
+  ) => {
     const calls: string[][] = [];
     const rounds: unknown[] = [];
+    let revParseCalls = 0;
     _gitDeps.run = async (cmd) => {
       calls.push(cmd);
-      return cmd.includes("--porcelain")
-        ? { exitCode: 0, stdout: porcelain, stderr: "" }
-        : { exitCode: 0, stdout: "", stderr: "" };
+      if (cmd.includes("--porcelain")) return { exitCode: 0, stdout: porcelain, stderr: "" };
+      if (cmd.includes("rev-parse")) {
+        revParseCalls++;
+        // The first `rev-parse` is shaBefore (pre-commit); the second is shaAfter
+        // (post-commit). They're called once each only when the tree was dirty.
+        return { exitCode: 0, stdout: `${postCommitSha}\n`, stderr: "" };
+      }
+      return { exitCode: 0, stdout: "", stderr: "" };
     };
     _resultDeps.appendText = async (_p, s) => {
       rounds.push(JSON.parse(s));
@@ -57,7 +68,13 @@ describe("commit_* nodes", () => {
     // The commit message is the last `-m` argument; asserting on it directly
     // keeps these tests readable now that it spans multiple lines.
     const commit = calls.find((c) => c[1] === "commit");
-    return { out, argv: calls.map((c) => c.join(" ")), message: commit?.[3] ?? "", rounds };
+    return {
+      out,
+      argv: calls.map((c) => c.join(" ")),
+      message: commit?.[3] ?? "",
+      rounds,
+      revParseCalls,
+    };
   };
 
   test("commits the fix under a subject naming what was fixed, and does not push", async () => {
@@ -120,6 +137,33 @@ describe("commit_* nodes", () => {
     const { rounds } = await runCommitNode("commit_gate", "", { quality_gates: { failing: ["test"] } });
     expect(rounds).toHaveLength(1);
     expect(rounds[0]).toMatchObject({ phase: "gate", committed: false, failing: ["test"] });
+  });
+
+  // AC1 — the live audit trail must carry the SHA produced by this round's
+  // commit. "Fixed in <sha>" is otherwise only reconstructable by matching
+  // round timestamps against `git log`, which is not what audit trails are for.
+  test("records the post-commit SHA on the round when the tree was dirty", async () => {
+    const { rounds, revParseCalls } = await runCommitNode(
+      "commit_quality",
+      " M a.ts\n",
+      { review_quality: { findings: [{ severity: "CRITICAL", title: "T", problem: "P", fix: "F" }] } },
+      "deadbeef",
+    );
+    expect(rounds).toHaveLength(1);
+    expect(rounds[0]).toMatchObject({ phase: "quality", committed: true, sha: "deadbeef" });
+    // Two rev-parse calls: one for shaBefore, one for shaAfter — proves the SHA
+    // recorded is the post-commit HEAD, not the pre-commit one.
+    expect(revParseCalls).toBe(2);
+  });
+
+  // AC2 — a no-op round has no commit and therefore no SHA to record. The
+  // `sha` key must be absent, not present-with-undefined or present-with-null,
+  // so the result-file reader can distinguish "no commit" from "record lost".
+  test("records no sha on the round when the tree was clean (no commit happened)", async () => {
+    const { rounds } = await runCommitNode("commit_gate", "", { quality_gates: { failing: ["test"] } });
+    expect(rounds).toHaveLength(1);
+    expect(rounds[0]).toMatchObject({ phase: "gate", committed: false });
+    expect(rounds[0]).not.toHaveProperty("sha");
   });
 });
 
