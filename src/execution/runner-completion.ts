@@ -340,7 +340,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   if (survivorCount > 0) {
     logger?.warn("mutation-check", "Surviving mutants detected at run end", {
       storyId: "_run",
-      count: survivorCount,
+      survivorCount,
     });
   }
 

@@ -85,6 +85,6 @@ describe("runCompletionPhase mutation survivor reporting", () => {
     options.runtime.logger.warn = warning;
 
     await runCompletionPhase(options);
-    expect(warning.mock.calls.some((call) => (call[2] as Record<string, unknown>)?.count === 1)).toBe(true);
+    expect(warning.mock.calls.some((call) => (call[2] as Record<string, unknown>)?.survivorCount === 1)).toBe(true);
   });
 });

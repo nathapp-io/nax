@@ -82,7 +82,7 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
     const cfg = ctx.packageView.select(mutationCheckConfigSelector);
     const emptyOutput = { survivors: [], outcomes: { killed: 0, survived: 0, errored: 0 } };
     if (!cfg?.enabled) {
-      if (ctx.storyId) ctx.runtime.mutationSummaries.set(ctx.storyId, { storyId: ctx.storyId, ...emptyOutput });
+      if (ctx.storyId) ctx.runtime?.mutationSummaries?.set(ctx.storyId, { storyId: ctx.storyId, ...emptyOutput });
       return { success: true as const, ...emptyOutput };
     }
 
@@ -99,7 +99,7 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       logger.warn("mutation-check", "No test command configured — skipping mutation spot-check", {
         storyId: input.storyId,
       });
-      if (ctx.storyId) ctx.runtime.mutationSummaries.set(ctx.storyId, { storyId: ctx.storyId, ...emptyOutput });
+      if (ctx.storyId) ctx.runtime?.mutationSummaries?.set(ctx.storyId, { storyId: ctx.storyId, ...emptyOutput });
       return { success: true as const, ...emptyOutput };
     }
     const changedFiles = await deps.getChangedNonTestFiles(
@@ -193,7 +193,7 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
 
     const output = { success: true as const, survivors, outcomes };
     if (ctx.storyId) {
-      ctx.runtime.mutationSummaries.set(ctx.storyId, { storyId: ctx.storyId, survivors, outcomes });
+      ctx.runtime?.mutationSummaries?.set(ctx.storyId, { storyId: ctx.storyId, survivors, outcomes });
     }
     return output;
   },
