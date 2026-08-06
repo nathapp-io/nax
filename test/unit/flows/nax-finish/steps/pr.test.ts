@@ -378,3 +378,113 @@ describe("openOrPromotePr", () => {
     await expect(openOrPromotePr("/repo", "feat/x", "t", "b")).rejects.toThrow(/conflict/);
   });
 });
+
+describe("openOrPromotePr — finish metadata write (US-005 AC1-AC7)", () => {
+  test("US-005 AC1 invokes gh pr edit with title/body after gh pr ready on a draft", async () => {
+    const calls: string[][] = [];
+    _prDeps.run = async (cmd) => {
+      calls.push(cmd);
+      if (cmd.join(" ").includes("remote get-url")) return ok("git@github.com:o/r.git");
+      if (cmd.includes("view")) return ok(JSON.stringify({ isDraft: true, url: "https://gh/pr/1" }));
+      return ok("");
+    };
+    await openOrPromotePr("/repo", "feat/x", "finish-title", "finish-body");
+    const readyIdx = calls.findIndex((c) => c.includes("ready"));
+    const editIdx = calls.findIndex((c) => c.includes("edit"));
+    expect(readyIdx).toBeGreaterThanOrEqual(0);
+    expect(editIdx).toBeGreaterThan(readyIdx);
+    expect(calls[editIdx]).toEqual(["gh", "pr", "edit", "feat/x", "--title", "finish-title", "--body", "finish-body"]);
+  });
+
+  test("US-005 AC2 returns status promoted for a github draft", async () => {
+    _prDeps.run = async (cmd) => {
+      if (cmd.join(" ").includes("remote get-url")) return ok("git@github.com:o/r.git");
+      if (cmd.includes("view")) return ok(JSON.stringify({ isDraft: true, url: "https://gh/pr/1" }));
+      return ok("");
+    };
+    const r = await openOrPromotePr("/repo", "feat/x", "t", "b");
+    expect(r.status).toBe("promoted");
+  });
+
+  test("US-005 AC3 invokes gh pr edit and returns already-ready for a non-draft", async () => {
+    const calls: string[][] = [];
+    _prDeps.run = async (cmd) => {
+      calls.push(cmd);
+      if (cmd.join(" ").includes("remote get-url")) return ok("git@github.com:o/r.git");
+      if (cmd.includes("view")) return ok(JSON.stringify({ isDraft: false, url: "https://gh/pr/3" }));
+      return ok("");
+    };
+    const r = await openOrPromotePr("/repo", "feat/x", "finish-title", "finish-body");
+    expect(r.status).toBe("already-ready");
+    expect(calls.some((c) => c.join(" ") === "gh pr edit feat/x --title finish-title --body finish-body")).toBe(true);
+  });
+
+  test("US-005 AC4 invokes gh pr create with the received title/body and returns opened", async () => {
+    const calls: string[][] = [];
+    _prDeps.run = async (cmd) => {
+      calls.push(cmd);
+      if (cmd.join(" ").includes("remote get-url")) return ok("git@github.com:o/r.git");
+      if (cmd.includes("view")) return { exitCode: 1, stdout: "", stderr: "no pr found" };
+      if (cmd.includes("create")) return ok("https://gh/pr/9");
+      return ok("");
+    };
+    const r = await openOrPromotePr("/repo", "feat/x", "finish-title", "finish-body");
+    expect(r.status).toBe("opened");
+    const create = calls.find((c) => c.includes("create"));
+    expect(create).toBeDefined();
+    expect(create).toEqual(expect.arrayContaining(["--title", "finish-title", "--body", "finish-body"]));
+  });
+
+  test("US-005 AC5 invokes glab mr update with title/description for a gitlab draft", async () => {
+    const calls: string[][] = [];
+    _prDeps.run = async (cmd) => {
+      calls.push(cmd);
+      if (cmd.join(" ").includes("remote get-url")) return ok("git@gitlab.com:o/r.git");
+      if (cmd.includes("view")) return ok(JSON.stringify({ isDraft: true, url: "https://gitlab/mr/1" }));
+      return ok("");
+    };
+    await openOrPromotePr("/repo", "feat/x", "finish-title", "finish-body");
+    expect(
+      calls.some((c) => c.join(" ") === "glab mr update feat/x --title finish-title --description finish-body"),
+    ).toBe(true);
+  });
+
+  test("US-005 AC6 does not throw and returns promoted with the URL when gh pr edit exits non-zero", async () => {
+    _prDeps.run = async (cmd) => {
+      if (cmd.join(" ").includes("remote get-url")) return ok("git@github.com:o/r.git");
+      if (cmd.includes("view")) return ok(JSON.stringify({ isDraft: true, url: "https://gh/pr/1" }));
+      if (cmd.includes("edit")) return { exitCode: 1, stdout: "", stderr: "not found" };
+      return ok("");
+    };
+    const r = await openOrPromotePr("/repo", "feat/x", "t", "b");
+    expect(r.status).toBe("promoted");
+    expect(r.url).toBe("https://gh/pr/1");
+  });
+
+  test("US-005 AC7 does not throw and preserves promoted status + URL when glab mr update exits non-zero", async () => {
+    _prDeps.run = async (cmd) => {
+      if (cmd.join(" ").includes("remote get-url")) return ok("git@gitlab.com:o/r.git");
+      if (cmd.includes("view")) return ok(JSON.stringify({ isDraft: true, url: "https://gitlab/mr/1" }));
+      // The `--ready` promotion call must still succeed — only the metadata
+      // write (`--title`) is allowed to fail here.
+      if (cmd.includes("--ready")) return ok("");
+      if (cmd.includes("update")) return { exitCode: 1, stdout: "", stderr: "forbidden" };
+      return ok("");
+    };
+    const r = await openOrPromotePr("/repo", "feat/x", "t", "b");
+    expect(r.status).toBe("promoted");
+    expect(r.url).toBe("https://gitlab/mr/1");
+  });
+
+  test("US-005 AC7 does not throw and preserves already-ready status + URL when glab mr update exits non-zero", async () => {
+    _prDeps.run = async (cmd) => {
+      if (cmd.join(" ").includes("remote get-url")) return ok("git@gitlab.com:o/r.git");
+      if (cmd.includes("view")) return ok(JSON.stringify({ isDraft: false, url: "https://gitlab/mr/3" }));
+      if (cmd.includes("update")) return { exitCode: 1, stdout: "", stderr: "forbidden" };
+      return ok("");
+    };
+    const r = await openOrPromotePr("/repo", "feat/x", "t", "b");
+    expect(r.status).toBe("already-ready");
+    expect(r.url).toBe("https://gitlab/mr/3");
+  });
+});

@@ -44,6 +44,7 @@
 import { defineFlow, extractJsonObject } from "acpx/flows";
 import { buildFixCommitMessage } from "./commit-message";
 import { findingsOf, fixAttemptCount, gateOutputs, incrementalSince, inputOf, loadCtxOf } from "./flow-ctx";
+import { buildFinishBody, buildFinishTitle } from "./pr-body";
 import { buildReviewPrompt, fixPrompt } from "./review-prompts";
 import {
   _contextDeps,
@@ -53,6 +54,7 @@ import {
   commitFixes,
   detectBaseBranch,
   filesInCommit,
+  loadFinishPrContext,
   loadQualityCommands,
   openOrPromotePr,
   partitionTestFiles,
@@ -64,6 +66,17 @@ import {
   writeResult,
 } from "./steps";
 import type { FinishInput, FinishPhase, FinishResult, ReviewVerdict } from "./types";
+
+/**
+ * Injectable seam for the `open_pr` node's title/body assembly — tests stub
+ * these to control the fallback-vs-built-metadata paths without a real PRD or
+ * git checkout.
+ */
+export const _openPrDeps = {
+  loadFinishPrContext,
+  buildFinishTitle,
+  buildFinishBody,
+};
 
 /**
  * Cap on fix-and-reverify iterations, per phase, before escalating instead of
