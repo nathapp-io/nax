@@ -3,7 +3,7 @@
   "feature": "mutation-signal-correctness",
   "branchName": "feat/mutation-signal-correctness",
   "createdAt": "2026-08-06T04:19:22Z",
-  "updatedAt": "2026-08-06T04:40:25.849Z",
+  "updatedAt": "2026-08-06T04:50:08.565Z",
   "userStories": [
     {
       "id": "US-001",
@@ -30,8 +30,8 @@
         "verification"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -155,7 +155,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/verification/mutation/classify.ts",
@@ -167,7 +169,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d30339eef3524f0d131f0394312f28a6e0bc2064"
     },
     {
       "id": "US-004",
