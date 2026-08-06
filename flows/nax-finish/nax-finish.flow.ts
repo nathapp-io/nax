@@ -44,7 +44,6 @@
 import { defineFlow, extractJsonObject } from "acpx/flows";
 import { buildFixCommitMessage } from "./commit-message";
 import { findingsOf, fixAttemptCount, gateOutputs, incrementalSince, inputOf, loadCtxOf } from "./flow-ctx";
-import { buildFinishBody, buildFinishTitle } from "./pr-body";
 import { buildReviewPrompt, fixPrompt } from "./review-prompts";
 import {
   _contextDeps,
@@ -65,6 +64,7 @@ import {
   runQualityGates,
   writeResult,
 } from "./steps";
+import { buildFinishBody, buildFinishTitle } from "./steps/pr-body";
 import type { FinishInput, FinishPhase, FinishResult, ReviewVerdict } from "./types";
 
 /**

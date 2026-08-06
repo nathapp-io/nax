@@ -1,5 +1,6 @@
 /**
- * nax-finish PR title and body — pure deterministic builder.
+ * nax-finish PR title and body — pure deterministic builder, plus the loader
+ * that assembles a `FinishPrContext` from finish-audit artifacts on disk.
  *
  * The finish flow opens a PR via `openOrPromotePr` and used to ship a
  * hardcoded `nax-finish: <feature>` title and a one-sentence body, throwing
@@ -14,7 +15,11 @@
  * ships to a different runtime — `acpx flow run` runs it in acpx's own Node
  * process where nax's `src/` and its `@/*` alias are not available.
  */
-import type { Finding, FinishRound } from "./types";
+import { readFile } from "node:fs/promises";
+import { dirname, isAbsolute, join } from "node:path";
+import { runArgv } from "../exec";
+import type { Finding, FinishInput, FinishRound, RunFn } from "../types";
+import { readRounds } from "./result";
 
 const SECONDS_PER_MINUTE = 60;
 const MS_PER_SECOND = 1000;
@@ -43,6 +48,113 @@ export interface FinishPrContext {
     durationMs?: number;
     storiesPassed?: number;
     storiesTotal?: number;
+  };
+}
+
+export const _prBodyDeps: {
+  run: RunFn;
+  readText: (path: string) => Promise<string | null>;
+  warn: (message: string, details: { path: string; error: unknown }) => void;
+} = {
+  run: runArgv,
+  // ENOENT is the routine case (status.json/prd.json not yet written) and must
+  // stay silent — mirrors `_qualityDeps.readText` in `steps/quality.ts`. Only a
+  // genuine I/O failure (permission denied, corrupted mount) should warn.
+  readText: async (path) => {
+    try {
+      return await readFile(path, "utf8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw err;
+    }
+  },
+  warn: (message, details) => process.emitWarning(message, { detail: `${details.path}: ${String(details.error)}` }),
+};
+
+interface PrdArtifact {
+  userStories?: { id: string; title: string; acceptanceCriteria?: unknown[] }[];
+  outOfScope?: string[];
+}
+
+interface StatusArtifact {
+  postRun?: { acceptance?: { status?: string }; regression?: { status?: string } };
+  durationMs?: number;
+  progress?: { passed?: number; total?: number };
+}
+
+async function readJson(path: string): Promise<unknown> {
+  let text: string | null;
+  try {
+    text = await _prBodyDeps.readText(path);
+  } catch (error) {
+    _prBodyDeps.warn("[finish-pr] Failed to read PR context artifact", { path, error });
+    return undefined;
+  }
+  if (text === null) return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+function storiesFrom(prd: PrdArtifact | undefined): FinishPrStory[] {
+  if (!Array.isArray(prd?.userStories)) return [];
+  return prd.userStories.map((story) => ({
+    id: story.id,
+    title: story.title,
+    acCount: Array.isArray(story.acceptanceCriteria) ? story.acceptanceCriteria.length : 0,
+  }));
+}
+
+/**
+ * Run `git diff --stat <base>...HEAD` and return its stdout on success.
+ *
+ * Fail-open on every non-happy path — a non-zero exit (no commits, divergent
+ * branch, base missing), a rejected run promise (forks too slow to start), or
+ * any thrown error — returning `undefined`. The PR's Verification block is
+ * optional, and a routine empty-branch finish must not lose `open_pr` to a
+ * throw that the body can simply skip.
+ */
+async function runDiffstat(workdir: string, base: string): Promise<string | undefined> {
+  try {
+    const res = await _prBodyDeps.run(["git", "diff", "--stat", `${base}...HEAD`], { cwd: workdir });
+    if (res.exitCode !== 0) return undefined;
+    return res.stdout;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function loadFinishPrContext(
+  input: FinishInput,
+  args: { base: string; gatesRan: string[] },
+): Promise<FinishPrContext> {
+  const inputPrdPath = input.prdPath || "prd.json";
+  const prdPath = isAbsolute(inputPrdPath) ? inputPrdPath : join(input.workdir, inputPrdPath);
+  // [US-004] The audit trail (`rounds`) and the diffstat are independent of
+  // the PRD/status reads — fetching them in parallel keeps the loader's wall
+  // clock at max(readRounds, readJson×2, diffstat).
+  const [prd, status, rounds, diffstat] = (await Promise.all([
+    readJson(prdPath),
+    readJson(join(dirname(prdPath), "status.json")),
+    readRounds(input),
+    runDiffstat(input.workdir, args.base),
+  ])) as [PrdArtifact | undefined, StatusArtifact | undefined, FinishRound[], string | undefined];
+  return {
+    feature: input.feature,
+    stories: storiesFrom(prd),
+    outOfScope: Array.isArray(prd?.outOfScope) ? prd.outOfScope : [],
+    acceptance: status?.postRun?.acceptance?.status,
+    regression: status?.postRun?.regression?.status,
+    gatesRan: args.gatesRan,
+    rounds,
+    diffstat,
+    run: {
+      durationMs: status?.durationMs,
+      storiesPassed: status?.progress?.passed,
+      storiesTotal: status?.progress?.total,
+    },
   };
 }
 

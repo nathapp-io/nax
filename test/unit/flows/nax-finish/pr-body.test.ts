@@ -7,9 +7,9 @@
  * auto-PR-opened PRs read the same.
  */
 import { describe, expect, test } from "bun:test";
-import { buildFinishBody, buildFinishTitle } from "@flows/nax-finish/pr-body";
-import type { FinishPrContext, FinishPrStory, FinishRound } from "@flows/nax-finish/pr-body";
-import type { Finding } from "@flows/nax-finish/types";
+import { buildFinishBody, buildFinishTitle } from "@flows/nax-finish/steps/pr-body";
+import type { FinishPrContext, FinishPrStory } from "@flows/nax-finish/steps/pr-body";
+import type { Finding, FinishRound } from "@flows/nax-finish/types";
 
 const story = (over: Partial<FinishPrStory> = {}): FinishPrStory => ({
   id: "US-001",

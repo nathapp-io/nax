@@ -1,108 +1,13 @@
-import { readFile } from "node:fs/promises";
-import { dirname, isAbsolute, join } from "node:path";
 import { FinishError } from "../errors";
-import { runArgv } from "../exec";
-import type { FinishPrContext, FinishPrStory } from "../pr-body";
-import type { FinishInput, FinishRound, RunFn } from "../types";
 import { type Forge, detectForge, extractUrl, viewArgv } from "./forge";
-import { readRounds } from "./result";
+import { _prBodyDeps, loadFinishPrContext } from "./pr-body";
 
-export const _prDeps: {
-  run: RunFn;
-  readText: (path: string) => Promise<string | null>;
-  warn: (message: string, details: { path: string; error: unknown }) => void;
-} = {
-  run: runArgv,
-  readText: (path) => readFile(path, "utf8"),
-  warn: (message, details) => process.emitWarning(message, { detail: `${details.path}: ${String(details.error)}` }),
-};
-
-interface PrdArtifact {
-  userStories?: { id: string; title: string; acceptanceCriteria?: unknown[] }[];
-  outOfScope?: string[];
-}
-
-interface StatusArtifact {
-  postRun?: { acceptance?: { status?: string }; regression?: { status?: string } };
-  durationMs?: number;
-  progress?: { passed?: number; total?: number };
-}
-
-async function readJson(path: string): Promise<unknown> {
-  let text: string | null;
-  try {
-    text = await _prDeps.readText(path);
-  } catch (error) {
-    _prDeps.warn("[finish-pr] Failed to read PR context artifact", { path, error });
-    return undefined;
-  }
-  if (text === null) return undefined;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-}
-
-function storiesFrom(prd: PrdArtifact | undefined): FinishPrStory[] {
-  if (!Array.isArray(prd?.userStories)) return [];
-  return prd.userStories.map((story) => ({
-    id: story.id,
-    title: story.title,
-    acCount: Array.isArray(story.acceptanceCriteria) ? story.acceptanceCriteria.length : 0,
-  }));
-}
-
-/**
- * Run `git diff --stat <base>...HEAD` and return its stdout on success.
- *
- * Fail-open on every non-happy path — a non-zero exit (no commits, divergent
- * branch, base missing), a rejected run promise (forks too slow to start), or
- * any thrown error — returning `undefined`. The PR's Verification block is
- * optional, and a routine empty-branch finish must not lose `open_pr` to a
- * throw that the body can simply skip.
- */
-async function runDiffstat(workdir: string, base: string): Promise<string | undefined> {
-  try {
-    const res = await _prDeps.run(["git", "diff", "--stat", `${base}...HEAD`], { cwd: workdir });
-    if (res.exitCode !== 0) return undefined;
-    return res.stdout;
-  } catch {
-    return undefined;
-  }
-}
-
-export async function loadFinishPrContext(
-  input: FinishInput,
-  args: { base: string; gatesRan: string[] },
-): Promise<FinishPrContext> {
-  const inputPrdPath = input.prdPath || "prd.json";
-  const prdPath = isAbsolute(inputPrdPath) ? inputPrdPath : join(input.workdir, inputPrdPath);
-  // [US-004] The audit trail (`rounds`) and the diffstat are independent of
-  // the PRD/status reads — fetching them in parallel keeps the loader's wall
-  // clock at max(readRounds, readJson×2, diffstat).
-  const [prd, status, rounds, diffstat] = (await Promise.all([
-    readJson(prdPath),
-    readJson(join(dirname(prdPath), "status.json")),
-    readRounds(input),
-    runDiffstat(input.workdir, args.base),
-  ])) as [PrdArtifact | undefined, StatusArtifact | undefined, FinishRound[], string | undefined];
-  return {
-    feature: input.feature,
-    stories: storiesFrom(prd),
-    outOfScope: Array.isArray(prd?.outOfScope) ? prd.outOfScope : [],
-    acceptance: status?.postRun?.acceptance?.status,
-    regression: status?.postRun?.regression?.status,
-    gatesRan: args.gatesRan,
-    rounds,
-    diffstat,
-    run: {
-      durationMs: status?.durationMs,
-      storiesPassed: status?.progress?.passed,
-      storiesTotal: status?.progress?.total,
-    },
-  };
-}
+// Re-exported for backward compatibility — `_prDeps`/`loadFinishPrContext`
+// used to live here; both now live in `./pr-body` alongside the builder they
+// feed, per the spec's stated module boundary. Consumers importing from
+// `./pr` (or the `steps` barrel, which re-exports `./pr`) keep working.
+export { loadFinishPrContext };
+export const _prDeps = _prBodyDeps;
 
 /**
  * Parse `gh pr view --json isDraft,url` / `glab mr view --output json` stdout.
