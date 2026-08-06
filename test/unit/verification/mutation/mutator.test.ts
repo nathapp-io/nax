@@ -116,7 +116,9 @@ describe("generateMutants — no truncation (US-002 AC10)", () => {
 
     const mutants = generateMutants({ source, language: "typescript", file: "many.ts" });
 
-    expect(mutants.length).toBeGreaterThan(3);
+    // Each `a > b` line produces exactly one `ts:cmp-bracket-flip` mutant;
+    // 10 lines must yield 10 mutants (no truncation when max is omitted).
+    expect(mutants).toHaveLength(10);
   });
 });
 
