@@ -21,7 +21,13 @@ import { detectLanguage } from "../project/detector";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { selectScopedTests } from "../test-runners/scoped-selection";
 import type { SelectScopedTestsInput, SelectScopedTestsResult } from "../test-runners/scoped-selection";
-import { applyMutant, classifyMutant, generateMutants, revertMutant } from "../verification/mutation";
+import {
+  applyMutant,
+  classifyMutant,
+  generateMutants,
+  revertMutant,
+  selectEvenlySpaced,
+} from "../verification/mutation";
 import type { Mutant, SurvivingMutant } from "../verification/mutation/types";
 import { regression } from "../verification/runners";
 import { getChangedNonTestFiles } from "../verification/smart-runner";
@@ -109,16 +115,16 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
 
     const survivors: SurvivingMutant[] = [];
     const outcomes = { killed: 0, survived: 0, errored: 0 };
-    // Per-story budget cap: cfg.maxMutants applies to the total across all
-    // changed files, not per-file. Accumulate mutants until we reach the cap.
+    // Gather every candidate across all changed files, then select a
+    // deterministic evenly-spread subset once the full list is known.
+    // Per-file early-breaks would re-introduce the first-file-only bias
+    // and a top-of-file bias simultaneously.
     const mutants: Mutant[] = [];
     for (const file of absoluteChangedFiles) {
-      if (mutants.length >= cfg.maxMutants) break;
       try {
         const source = await Bun.file(file).text();
         for (const m of generateMutants({ source, language, file })) {
           mutants.push(m);
-          if (mutants.length >= cfg.maxMutants) break;
         }
       } catch (err) {
         // Fail-open: a source read failure never fails the story — skip this file.
@@ -129,7 +135,8 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
         });
       }
     }
-    for (const mutant of mutants) {
+    const selected = selectEvenlySpaced(mutants, cfg.maxMutants);
+    for (const mutant of selected) {
       try {
         await applyMutant(mutant);
         try {

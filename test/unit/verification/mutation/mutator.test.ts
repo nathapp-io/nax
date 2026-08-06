@@ -106,17 +106,17 @@ describe("generateMutants — Rust operator coverage", () => {
   });
 });
 
-describe("generateMutants — max limit", () => {
-  test("AC8: 10 operator-matchable lines with max=3 returns at most 3 mutants", () => {
+describe("generateMutants — no truncation (US-002 AC10)", () => {
+  test("AC10: source yielding more than three candidates with no max returns every candidate", () => {
     const lines: string[] = [];
     for (let i = 0; i < 10; i++) {
       lines.push(`const v${i} = a > b;`);
     }
     const source = `${lines.join("\n")}\n`;
 
-    const mutants = generateMutants({ source, language: "typescript", file: "many.ts", max: 3 });
+    const mutants = generateMutants({ source, language: "typescript", file: "many.ts" });
 
-    expect(mutants.length).toBeLessThanOrEqual(3);
+    expect(mutants.length).toBeGreaterThan(3);
   });
 });
 

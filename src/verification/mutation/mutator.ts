@@ -4,7 +4,9 @@
  * Walks the source line-by-line, applies every language-scoped operator
  * to each line, and emits a `Mutant` per (operator, line) pair whose
  * replacement is non-empty. No I/O — `file` is just metadata carried
- * onto each mutant for downstream reporting.
+ * onto each mutant for downstream reporting. Selection (budget caps,
+ * even-spread sampling) lives in `./select.ts` and is applied by the
+ * caller over the combined candidate list.
  */
 
 import { getOperatorsForLanguage } from "./operators";
@@ -17,8 +19,6 @@ export interface GenerateMutantsInput {
   language: string | undefined;
   /** Path of the file the mutants were generated for. */
   file: string;
-  /** Cap on the number of mutants returned. Defaults to unbounded. */
-  max?: number;
 }
 
 function applyOperator(operator: MutationOperator, snippet: string): string[] {
@@ -27,14 +27,14 @@ function applyOperator(operator: MutationOperator, snippet: string): string[] {
 }
 
 export function generateMutants(input: GenerateMutantsInput): Mutant[] {
-  const { source, language, file, max } = input;
+  const { source, language, file } = input;
   const operators = getOperatorsForLanguage(language);
   if (operators.length === 0) return [];
 
   const lines = source.split("\n");
   const mutants: Mutant[] = [];
 
-  outer: for (let i = 0; i < lines.length; i++) {
+  for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const lineNumber = i + 1;
 
@@ -52,7 +52,6 @@ export function generateMutants(input: GenerateMutantsInput): Mutant[] {
           after: replacement,
           operatorId: operator.id,
         });
-        if (max !== undefined && mutants.length >= max) break outer;
       }
     }
   }
