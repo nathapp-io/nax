@@ -1,0 +1,380 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `generateMutants` receives `import { NaxError } from \"@/errors\";` as TypeScript source, it returns no mutant with `operatorId` `ts:arith-flip`.",
+    "refined": "const result = generateMutants({ source: 'import { NaxError } from \"@/errors\";', language: 'typescript', file: 'test.ts' }); expect(result.filter(m => m.operatorId === 'ts:arith-flip')).toHaveLength(0);",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `generateMutants` receives `import type { Mutant } from \"./types\";` as TypeScript source, it returns no mutant with `operatorId` `ts:arith-flip`.",
+    "refined": "const result = generateMutants({ source: 'import type { Mutant } from \"./types\";', language: 'typescript', file: 'test.ts' }); expect(result.filter(m => m.operatorId === 'ts:arith-flip')).toHaveLength(0);",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `generateMutants` receives `const url = \"https://a.example/b/c\";` as TypeScript source, it returns no mutant with `operatorId` `ts:arith-flip`.",
+    "refined": "const result = generateMutants({ source: 'const url = \"https://a.example/b/c\";', language: 'typescript', file: 'test.ts' }); expect(result.filter(m => m.operatorId === 'ts:arith-flip')).toHaveLength(0);",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `generateMutants` receives `const idx = line - 1;` as TypeScript source, it returns a `ts:arith-flip` mutant whose `after` is `const idx = line + 1;`.",
+    "refined": "const result = generateMutants({ source: 'const idx = line - 1;', language: 'typescript', file: 'test.ts' }); const mutant = result.find(m => m.operatorId === 'ts:arith-flip'); expect(mutant?.after).toBe('const idx = line + 1;');",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `generateMutants` receives `const total = a + b;` as TypeScript source, it returns a `ts:arith-flip` mutant whose `after` is `const total = a - b;`.",
+    "refined": "const result = generateMutants({ source: 'const total = a + b;', language: 'typescript', file: 'test.ts' }); const mutant = result.find(m => m.operatorId === 'ts:arith-flip'); expect(mutant?.after).toBe('const total = a - b;');",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When `generateMutants` receives `const half = n / 2;` as TypeScript source, it returns a `ts:arith-flip` mutant whose `after` is `const half = n * 2;`.",
+    "refined": "const result = generateMutants({ source: 'const half = n / 2;', language: 'typescript', file: 'test.ts' }); const mutant = result.find(m => m.operatorId === 'ts:arith-flip'); expect(mutant?.after).toBe('const half = n * 2;');",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When `generateMutants` receives `const twice = n * 2;` as TypeScript source, it returns a `ts:arith-flip` mutant whose `after` is `const twice = n / 2;`.",
+    "refined": "const result = generateMutants({ source: 'const twice = n * 2;', language: 'typescript', file: 'test.ts' }); const mutant = result.find(m => m.operatorId === 'ts:arith-flip'); expect(mutant?.after).toBe('const twice = n / 2;');",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When `generateMutants` receives `y = a + b` as Python source, it returns a `py:arith-flip` mutant whose `after` is `y = a - b`.",
+    "refined": "const result = generateMutants({ source: 'y = a + b', language: 'python', file: 'test.py' }); const mutant = result.find(m => m.operatorId === 'py:arith-flip'); expect(mutant?.after).toBe('y = a - b');",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When `generateMutants` receives `path = \"a/b/c\"` as Python source, it returns no mutant with `operatorId` `py:arith-flip`.",
+    "refined": "const result = generateMutants({ source: 'path = \"a/b/c\"', language: 'python', file: 'test.py' }); expect(result.filter(m => m.operatorId === 'py:arith-flip')).toHaveLength(0);",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `generateMutants` receives `sum := a + b` as Go source, it returns a `go:arith-flip` mutant whose `after` is `sum := a - b`.",
+    "refined": "const result = generateMutants({ source: 'sum := a + b', language: 'go', file: 'test.go' }); const mutant = result.find(m => m.operatorId === 'go:arith-flip'); expect(mutant?.after).toBe('sum := a - b');",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When `generateMutants` receives `let sum = a + b;` as Rust source, it returns a `rust:arith-flip` mutant whose `after` is `let sum = a - b;`.",
+    "refined": "const result = generateMutants({ source: 'let sum = a + b;', language: 'rust', file: 'test.rs' }); const mutant = result.find(m => m.operatorId === 'rust:arith-flip'); expect(mutant?.after).toBe('let sum = a - b;');",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given TypeScript source with five relative-specifier import lines followed by spaced arithmetic, when `generateMutants` runs, every returned mutant has `line` greater than or equal to 6.",
+    "refined": "const source = 'import x from \"a\";\\nimport y from \"b\";\\nimport z from \"c\";\\nimport w from \"d\";\\nimport v from \"e\";\\nconst idx = line - 1;'; const result = generateMutants({ source, language: 'typescript', file: 'test.ts' }); expect(result.every(m => m.line >= 6)).toBe(true);",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When `generateMutants` is called twice with identical `source`, `language`, and `file`, it returns deeply equal arrays.",
+    "refined": "const input = { source: 'const idx = line - 1;', language: 'typescript', file: 'test.ts' }; const result1 = generateMutants(input); const result2 = generateMutants(input); expect(result1).toEqual(result2);",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When imported from `src/verification/mutation/select.ts`, `selectEvenlySpaced` is callable as a function.",
+    "refined": "typeof selectEvenlySpaced === 'function'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When `selectEvenlySpaced` receives nine mutants and `max` 3, it returns exactly three mutants.",
+    "refined": "selectEvenlySpaced(new Array(9), 3).length === 3",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When `selectEvenlySpaced` receives nine mutants and `max` 3, it returns input positions 0, 3, and 6.",
+    "refined": "Given mutants[0..8], selectEvenlySpaced(mutants, 3) returns [mutants[0], mutants[3], mutants[6]]",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When `selectEvenlySpaced` receives ten mutants and `max` 3, it returns input positions 0, 3, and 6.",
+    "refined": "Given mutants[0..9], selectEvenlySpaced(mutants, 3) returns [mutants[0], mutants[3], mutants[6]]",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When `selectEvenlySpaced` receives two mutants and `max` 5, it returns both mutants in input order.",
+    "refined": "Given mutants = [a, b] and max=5, selectEvenlySpaced returns [a, b]",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When `selectEvenlySpaced` receives an empty list and `max` 3, it returns an empty array.",
+    "refined": "selectEvenlySpaced([], 3) returns []",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When `selectEvenlySpaced` receives nine mutants and `max` 0, it returns an empty array.",
+    "refined": "selectEvenlySpaced(new Array(9), 0) returns []",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When `selectEvenlySpaced` receives nine mutants and `max` -1, it returns an empty array.",
+    "refined": "selectEvenlySpaced(new Array(9), -1) returns []",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When `selectEvenlySpaced` is called twice with the same input and `max`, it returns deeply equal arrays.",
+    "refined": "JSON.stringify(selectEvenlySpaced(mutants, max)) === JSON.stringify(selectEvenlySpaced(mutants, max)) for any mutants array and max > 0",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When `generateMutants` receives source yielding more than three candidates with no `max`, it returns every candidate rather than truncating.",
+    "refined": "generateMutants({ input, max: undefined }) returns array whose length equals the total candidate count, not capped at 3 or any other value",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Given mutation checking with `maxMutants` 2, one changed file with at least six candidates, and regression returning `TEST_FAILURE` with `failCount` 1, when `mutationCheckOp` executes, it invokes regression exactly twice.",
+    "refined": "mutationCheckOp({ maxMutants: 2, changedFiles: [file6Plus], regression: () => TEST_FAILURE }).regressionCallCount === 2",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-25",
+    "original": "Given mutation checking with `maxMutants` 2, two changed files each with at least six candidates, and regression returning `SUCCESS`, when `mutationCheckOp` executes, its two survivors have distinct `file` values.",
+    "refined": "mutationCheckOp({ maxMutants: 2, changedFiles: [fileA6Plus, fileB6Plus], regression: () => SUCCESS }).survivors satisfies s => s.length === 2 && s[0].file !== s[1].file",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Given mutation checking with one changed file that yields no candidates, when `mutationCheckOp` executes, it never invokes regression.",
+    "refined": "mutationCheckOp({ maxMutants: 2, changedFiles: [fileZeroCandidates], regression }).regressionCallCount === 0",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-27",
+    "original": "Given mutation checking with no candidates after selection, when `mutationCheckOp` executes, it returns `success: true`, empty survivors, all-zero outcomes, and runs no tests.",
+    "refined": "mutationCheckOp({ maxMutants: 2, changedFiles: [emptyFile], regression }).satisfies(r => r.success === true && r.survivors.length === 0 && Object.values(r.outcomes).every(v => v === 0))",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When `classifyMutant` receives `TEST_FAILURE` with `passCount` 0 and `failCount` 0, it returns `errored`.",
+    "refined": "`classifyMutant({ status: 'TEST_FAILURE', passCount: 0, failCount: 0 })` returns `'errored'`",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When `classifyMutant` receives `TEST_FAILURE` with both `passCount` and `failCount` absent, it returns `errored`.",
+    "refined": "`classifyMutant({ status: 'TEST_FAILURE' })` returns `'errored'`",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When `classifyMutant` receives `TEST_FAILURE` with `passCount` 0 and `failCount` 1, it returns `killed`.",
+    "refined": "`classifyMutant({ status: 'TEST_FAILURE', passCount: 0, failCount: 1 })` returns `'killed'`",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When `classifyMutant` receives `TEST_FAILURE` with `passCount` 5 and `failCount` 2, it returns `killed`.",
+    "refined": "`classifyMutant({ status: 'TEST_FAILURE', passCount: 5, failCount: 2 })` returns `'killed'`",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When `classifyMutant` receives `SUCCESS`, it returns `survived`.",
+    "refined": "`classifyMutant({ status: 'SUCCESS' })` returns `'survived'`",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When `classifyMutant` receives `TIMEOUT`, it returns `errored`.",
+    "refined": "`classifyMutant({ status: 'TIMEOUT' })` returns `'errored'`",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When `classifyMutant` receives `ENVIRONMENTAL_FAILURE`, it returns `errored`.",
+    "refined": "`classifyMutant({ status: 'ENVIRONMENTAL_FAILURE' })` returns `'errored'`",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-35",
+    "original": "When `classifyMutant` receives `ASSET_CHECK_FAILED`, it returns `errored`.",
+    "refined": "`classifyMutant({ status: 'ASSET_CHECK_FAILED' })` returns `'errored'`",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-36",
+    "original": "Given one candidate and regression returning `TEST_FAILURE` with both counts 0, when `mutationCheckOp` executes, `outcomes.errored` is 1.",
+    "refined": "Call `mutationCheckOp([candidate], () => ({ status: 'TEST_FAILURE', passCount: 0, failCount: 0 }))`. The returned `outcomes.errored` equals `1`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-37",
+    "original": "Given one candidate and regression returning `TEST_FAILURE` with both counts 0, when `mutationCheckOp` executes, `outcomes.killed` is 0.",
+    "refined": "Call `mutationCheckOp([candidate], () => ({ status: 'TEST_FAILURE', passCount: 0, failCount: 0 }))`. The returned `outcomes.killed` equals `0`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-38",
+    "original": "Given one candidate and regression returning `TEST_FAILURE` with `failCount` 1, when `mutationCheckOp` executes, `outcomes.killed` is 1.",
+    "refined": "Call `mutationCheckOp([candidate], () => ({ status: 'TEST_FAILURE', passCount: 0, failCount: 1 }))`. The returned `outcomes.killed` equals `1`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-39",
+    "original": "Given one candidate and regression returning `SUCCESS`, when `mutationCheckOp` executes, `outcomes.survived` is 1.",
+    "refined": "Call `mutationCheckOp([candidate], () => ({ status: 'SUCCESS' }))`. The returned `outcomes.survived` equals `1`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-40",
+    "original": "Given one candidate and regression returning `TEST_FAILURE` with both counts 0, when `mutationCheckOp` executes, `survivors` has length 0.",
+    "refined": "Call `mutationCheckOp([candidate], () => ({ status: 'TEST_FAILURE', passCount: 0, failCount: 0 }))`. The returned `survivors` array has `length === 0`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-41",
+    "original": "When imported from `src/log-format/mutation-summary.ts`, `formatMutationSummary` is callable as a function.",
+    "refined": "After importing `formatMutationSummary` from `src/log-format/mutation-summary.ts`, `typeof formatMutationSummary` returns `'function'`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-42",
+    "original": "When `formatMutationSummary` receives one story summary with one survivor, its string contains that survivor's file path.",
+    "refined": "Calling `formatMutationSummary([{ storyId: 'US-001', survivors: [{ id: 'surv-1', filePath: '/src/foo.ts', line: 42, operatorId: 'arith' }], killed: 0, errored: 0 }])` returns a string containing `/src/foo.ts`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-43",
+    "original": "When `formatMutationSummary` receives one story summary with one survivor, its string contains that survivor's line number.",
+    "refined": "Calling `formatMutationSummary([{ storyId: 'US-001', survivors: [{ id: 'surv-1', filePath: '/src/foo.ts', line: 42, operatorId: 'arith' }], killed: 0, errored: 0 }])` returns a string containing `'42'`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-44",
+    "original": "When `formatMutationSummary` receives one story summary with one survivor, its string contains that survivor's `operatorId`.",
+    "refined": "Calling `formatMutationSummary([{ storyId: 'US-001', survivors: [{ id: 'surv-1', filePath: '/src/foo.ts', line: 42, operatorId: 'arith' }], killed: 0, errored: 0 }])` returns a string containing `'arith'`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-45",
+    "original": "When `formatMutationSummary` receives one story summary with one survivor, its string contains that story ID.",
+    "refined": "Calling `formatMutationSummary([{ storyId: 'US-001', survivors: [{ id: 'surv-1', filePath: '/src/foo.ts', line: 42, operatorId: 'arith' }], killed: 0, errored: 0 }])` returns a string containing `'US-001'`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-46",
+    "original": "When `formatMutationSummary` receives an empty collection of summaries, it returns an empty string.",
+    "refined": "Calling `formatMutationSummary([])` returns `''`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-47",
+    "original": "When `formatMutationSummary` receives summaries with only killed and errored counts and empty survivors, it returns an empty string.",
+    "refined": "Calling `formatMutationSummary([{ storyId: 'US-001', survivors: [], killed: 5, errored: 1 }])` returns `''`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-48",
+    "original": "When `formatMutationSummary` receives two summaries each with a survivor, its string contains the second survivor's file path.",
+    "refined": "Calling `formatMutationSummary([{ storyId: 'US-001', survivors: [{ id: 's1', filePath: '/src/a.ts', line: 10, operatorId: 'op1' }], killed: 0, errored: 0 }, { storyId: 'US-002', survivors: [{ id: 's2', filePath: '/src/b.ts', line: 20, operatorId: 'op2' }], killed: 0, errored: 0 }])` returns a string containing `/src/b.ts`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-49",
+    "original": "Given `storyId` `US-007`, one candidate, and regression returning `SUCCESS`, when `mutationCheckOp` executes, `runtime.mutationSummaries` contains key `US-007` with one survivor.",
+    "refined": "With `ctx.storyId = 'US-007'`, one mutation candidate, and `mutationCheckOp` returning `SUCCESS` (survivor), `ctx.runtime.mutationSummaries.get('US-007')` is an object with `survivors` array of length 1.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-50",
+    "original": "Given no `storyId` in the call context, when `mutationCheckOp` executes, `runtime.mutationSummaries` remains empty.",
+    "refined": "With `ctx.storyId` as `undefined`, after `mutationCheckOp` executes, `ctx.runtime.mutationSummaries.size` equals `0`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-51",
+    "original": "Given headless normal mode and a runtime summary with a survivor, when `runCompletionPhase` executes, standard output contains that survivor's file path.",
+    "refined": "With `options.headless = true`, `options.outputMode = 'normal'`, and `runtime.mutationSummaries` containing one survivor with `filePath: '/src/foo.ts'`, calling `runCompletionPhase({ runtime, options, ... })` causes `stdout` to contain `/src/foo.ts`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-52",
+    "original": "Given headless JSON mode and a runtime summary with a survivor, when `runCompletionPhase` executes, standard output does not contain that survivor's file path.",
+    "refined": "With `options.headless = true`, `options.outputMode = 'json'`, and `runtime.mutationSummaries` containing one survivor with `filePath: '/src/foo.ts'`, calling `runCompletionPhase({ runtime, options, ... })` causes `stdout` to NOT contain `/src/foo.ts`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-53",
+    "original": "Given headless normal mode and an empty runtime mutation summary map, when `runCompletionPhase` executes, standard output does not contain `surviving mutant`.",
+    "refined": "With `options.headless = true`, `options.outputMode = 'normal'`, and `runtime.mutationSummaries` as an empty `Map`, calling `runCompletionPhase({ runtime, options, ... })` causes `stdout` to NOT contain the string `'surviving mutant'`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-54",
+    "original": "Given a runtime summary with one survivor, when `runCompletionPhase` executes, it emits a warning log record whose data has survivor count 1.",
+    "refined": "With `runtime.mutationSummaries` containing one story with one survivor, calling `runCompletionPhase({ runtime, options, ... })` emits a log record where `level === 'warn'` and `data.survivorCount === 1`.",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]
