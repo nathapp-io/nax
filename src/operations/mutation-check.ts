@@ -12,7 +12,7 @@
  * DI collaborators (mirrors _verifyScopedDeps) so unit tests need no real git/test run.
  */
 
-import { isAbsolute, join, sep } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { mutationCheckConfigSelector, qualityConfigSelector } from "../config";
 import type { MutationCheckConfig } from "../config/selectors";
 import { getLogger } from "../logger";
@@ -23,6 +23,7 @@ import type { ResolvedTestPatterns } from "../test-runners";
 import { selectScopedTests } from "../test-runners/scoped-selection";
 import type { SelectScopedTestsInput, SelectScopedTestsResult } from "../test-runners/scoped-selection";
 import { getGitRoot } from "../utils/git";
+import { isInside, realOrRaw } from "../utils/realpath";
 import { getChangedLineRanges } from "../verification/changed-line-ranges";
 import {
   applyMutant,
@@ -216,11 +217,33 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
     // constrain candidates to the project scope so mutation testing never
     // reads/writes source outside it.
     const scopeRoot = input.repoRoot ?? input.workdir;
+    // Comparisons resolve symlinks; reporting does not. `getGitRoot` answers
+    // with git's realpath while `repoRoot` / `workdir` keep the caller's
+    // spelling, and `getChangedLineRanges` anchors on the resolved form — so on
+    // macOS (`/tmp` -> `/private/tmp`) the two never matched. Depending on which
+    // branch `anchor` took, that either sent every file to `unmappedFiles` or,
+    // worse, made the containment filter reject all of them and skip the
+    // zero-candidate warning with it (#1485).
+    //
+    // `resolved` is the lookup/containment key only. `path` stays as the caller
+    // spelled it and is what gets read, mutated, journalled, and reported, so a
+    // survivor still names the path the operator recognises rather than an
+    // unfamiliar `/private/...` twin.
     const absoluteChangedFiles = changedFiles
-      .map((f) => (isAbsolute(f) ? f : join(anchor, f)))
-      .filter((f) => f === scopeRoot || f.startsWith(`${scopeRoot}${sep}`));
+      .map((f) => {
+        const path = isAbsolute(f) ? f : join(anchor, f);
+        return { path, resolved: realOrRaw(path) };
+      })
+      .filter(({ resolved }) => isInside(scopeRoot, resolved));
 
-    const rangeMap = await deps.getChangedLineRanges(input.workdir, input.storyGitRef);
+    const rawRangeMap = await deps.getChangedLineRanges(input.workdir, input.storyGitRef);
+    // Re-key through the SAME normaliser the candidate keys went through.
+    // `getChangedLineRanges` anchors on `getGitRoot` (already git's realpath)
+    // but falls back to a raw `workdir` when that lookup fails, so its keys are
+    // only conditionally resolved — normalising here makes both sides of the
+    // lookup below unconditionally comparable.
+    const rangeMap =
+      rawRangeMap === null ? null : new Map([...rawRangeMap].map(([path, value]) => [realOrRaw(path), value]));
     if (rangeMap === null) {
       logger.warn("mutation-check", "Failed to obtain changed-line ranges — skipping mutation spot-check", {
         storyId: input.storyId,
@@ -237,8 +260,8 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
     // and a top-of-file bias simultaneously.
     const mutants: Mutant[] = [];
     let unmappedFiles = 0;
-    for (const file of absoluteChangedFiles) {
-      const lineRanges = rangeMap.get(file);
+    for (const { path: file, resolved } of absoluteChangedFiles) {
+      const lineRanges = rangeMap.get(resolved);
       if (lineRanges === undefined) {
         unmappedFiles++;
         logger.debug("mutation-check", "Changed file has no diff line ranges — skipping", {
@@ -336,6 +359,11 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
               // keep the journal for the next run, and stop mutating: whatever
               // moved the file will keep moving it.
               revertFailed = true;
+              // Block auto-commit for this working tree. The check itself stays
+              // advisory — the story is not failed — but the tree now holds a
+              // line this op did not author, and `autoCommitIfDirty` would
+              // otherwise sweep it into a commit (and, under autoPR, a push).
+              ctx.runtime?.dirtyWorktrees?.add(input.workdir);
               logger.error("mutation-check", "Could not confirm revert — worktree may still hold a mutation", {
                 storyId: input.storyId,
                 file: mutant.file,
