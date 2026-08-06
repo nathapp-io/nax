@@ -13,8 +13,10 @@ import type { MutantOutcome } from "./types";
 export function classifyMutant(result: VerificationResult): MutantOutcome {
   switch (result.status) {
     case "TEST_FAILURE": {
-      const executedTests = (result.passCount ?? 0) + (result.failCount ?? 0);
-      return executedTests > 0 ? "killed" : "errored";
+      const passCount = result.passCount ?? 0;
+      const failCount = result.failCount ?? 0;
+      const hasValidEvidence = passCount >= 0 && failCount >= 0 && (passCount > 0 || failCount > 0);
+      return hasValidEvidence ? "killed" : "errored";
     }
     case "SUCCESS":
       return "survived";

@@ -61,6 +61,30 @@ describe("classifyMutant — outcomes", () => {
     ).toBe("killed");
   });
 
+  test("TEST_FAILURE with negative counts is not evidence of execution -> errored", () => {
+    expect(
+      classifyMutant({
+        status: "TEST_FAILURE",
+        success: false,
+        countsTowardEscalation: true,
+        passCount: -1,
+        failCount: 2,
+      }),
+    ).toBe("errored");
+  });
+
+  test("TEST_FAILURE with negative passCount and zero failCount -> errored", () => {
+    expect(
+      classifyMutant({
+        status: "TEST_FAILURE",
+        success: false,
+        countsTowardEscalation: true,
+        passCount: -3,
+        failCount: 0,
+      }),
+    ).toBe("errored");
+  });
+
   test("AC5: SUCCESS -> survived", () => {
     expect(classifyMutant(makeResult("SUCCESS"))).toBe("survived");
   });

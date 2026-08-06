@@ -289,6 +289,52 @@ describe("mutationCheckOp — outcomes aggregation (US-003)", () => {
     const out = await runWithRegression({ status: "TEST_FAILURE", passCount: 0, failCount: 0 });
     expect(out.survivors).toHaveLength(0);
   });
+
+  test("regression throw increments outcomes.errored (rectification review)", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    try {
+      const file = join(dir, "src", "foo.ts");
+      await Bun.write(file, "if (a == b) { return 1; }\n");
+
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [file],
+        selectScopedTests: async () => ({
+          effectiveCommand: "bun test src/foo.test.ts",
+          isFullSuite: false,
+          thresholdFallback: false,
+          isMonorepoOrchestrator: false,
+        }),
+        regression: async () => {
+          throw new Error("subprocess exploded");
+        },
+      });
+
+      const out = await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          storyGitRef: "abc",
+          repoRoot: dir,
+          resolvedTestPatterns: {
+            globs: ["**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [":!*.test.ts"],
+            testDirs: ["test"],
+          },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
+        deps,
+      );
+
+      expect(out.success).toBe(true);
+      expect(out.outcomes.errored).toBe(1);
+      expect(out.outcomes.killed).toBe(0);
+      expect(out.outcomes.survived).toBe(0);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
 });
 
 describe("mutationCheckOp — AC5: TIMEOUT is classified errored (not survived)", () => {

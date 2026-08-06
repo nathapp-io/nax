@@ -161,6 +161,7 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       } catch (err) {
         // Fail-open: any error mutating/testing/reverting a single mutant is
         // never a gate failure — log and move on to the next mutant.
+        outcomes.errored += 1;
         logger.warn("mutation-check", "Error processing mutant — skipping", {
           storyId: input.storyId,
           file: mutant.file,
