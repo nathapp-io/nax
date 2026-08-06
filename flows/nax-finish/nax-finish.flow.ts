@@ -64,7 +64,7 @@ import {
   runQualityGates,
   writeResult,
 } from "./steps";
-import { buildFinishBody, buildFinishTitle } from "./steps/pr-body";
+import { _prBodyDeps, buildFinishBody, buildFinishTitle } from "./steps/pr-body";
 import type { FinishInput, FinishPhase, FinishResult, ReviewVerdict } from "./types";
 
 /**
@@ -468,7 +468,8 @@ export default defineFlow({
           });
           title = _openPrDeps.buildFinishTitle(prCtx);
           body = _openPrDeps.buildFinishBody(prCtx);
-        } catch {
+        } catch (error) {
+          _prBodyDeps.warn("[finish-pr] Falling back to default PR title/body", { path: i.prdPath, error });
           title = fallbackTitle;
           body = fallbackBody;
         }

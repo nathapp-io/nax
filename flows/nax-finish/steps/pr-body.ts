@@ -93,18 +93,24 @@ async function readJson(path: string): Promise<unknown> {
   if (text === null) return undefined;
   try {
     return JSON.parse(text);
-  } catch {
+  } catch (error) {
+    _prBodyDeps.warn("[finish-pr] Failed to parse PR context artifact", { path, error });
     return undefined;
   }
 }
 
 function storiesFrom(prd: PrdArtifact | undefined): FinishPrStory[] {
   if (!Array.isArray(prd?.userStories)) return [];
-  return prd.userStories.map((story) => ({
-    id: story.id,
-    title: story.title,
-    acCount: Array.isArray(story.acceptanceCriteria) ? story.acceptanceCriteria.length : 0,
-  }));
+  // A hand-edited or older-schema PRD can carry a story with a missing/non-string
+  // `id`/`title` — drop only that row rather than letting `escapeTableCell` throw
+  // and take down the entire PR body (caught upstream by `open_pr`'s fallback).
+  return prd.userStories
+    .filter((story) => typeof story.id === "string" && typeof story.title === "string")
+    .map((story) => ({
+      id: story.id,
+      title: story.title,
+      acCount: Array.isArray(story.acceptanceCriteria) ? story.acceptanceCriteria.length : 0,
+    }));
 }
 
 /**
@@ -117,6 +123,10 @@ function storiesFrom(prd: PrdArtifact | undefined): FinishPrStory[] {
  * throw that the body can simply skip.
  */
 async function runDiffstat(workdir: string, base: string): Promise<string | undefined> {
+  // An empty `base` would interpolate to `...HEAD`, which git resolves as
+  // `HEAD...HEAD` — exit 0, empty stdout — masking the missing-base case as
+  // "no changes" instead of skipping explicitly.
+  if (!base) return undefined;
   try {
     const res = await _prBodyDeps.run(["git", "diff", "--stat", `${base}...HEAD`], { cwd: workdir });
     if (res.exitCode !== 0) return undefined;
@@ -160,7 +170,7 @@ export async function loadFinishPrContext(
 
 /**
  * Conventional-commit title matching `buildTitle` in
- * `src/plugins/builtin/auto-pr/pr-body.ts:43`, so finish-opened and
+ * `src/plugins/builtin/auto-pr/pr-body.ts`, so finish-opened and
  * auto-PR-opened PRs read the same in a list view.
  */
 export function buildFinishTitle(ctx: FinishPrContext): string {
@@ -170,7 +180,7 @@ export function buildFinishTitle(ctx: FinishPrContext): string {
 /**
  * Escape a string for safe inclusion in a single markdown table cell.
  *
- * Mirrors `escapeTableCell` in `src/plugins/builtin/auto-pr/pr-body.ts:77`,
+ * Mirrors `escapeTableCell` in `src/plugins/builtin/auto-pr/pr-body.ts`,
  * trimmed to the cases the finish body actually needs: pipes (which break
  * the column boundary) and newlines (which create new rows). Backslashes are
  * escaped first so the pipe escape survives a literal backslash in a title.
@@ -225,17 +235,20 @@ function buildRoundHeading(round: FinishRound): string {
   return `${base} (${short})`;
 }
 
-function buildRoundsSection(rounds: FinishRound[]): string | null {
-  if (rounds.length === 0) return null;
-  const lines: string[] = ["## Review rounds"];
-  for (const round of rounds) {
-    lines.push(buildRoundHeading(round));
-    for (const finding of round.findings) {
-      lines.push(renderFinding(finding));
-    }
-    lines.push("");
+function buildRoundBlock(round: FinishRound): string {
+  const lines: string[] = [buildRoundHeading(round)];
+  if (round.findings.length === 0) {
+    lines.push("- _no findings_");
+  } else {
+    for (const finding of round.findings) lines.push(renderFinding(finding));
   }
   return lines.join("\n");
+}
+
+function buildRoundsSection(rounds: FinishRound[]): string | null {
+  if (rounds.length === 0) return null;
+  const blocks = rounds.map(buildRoundBlock);
+  return ["## Review rounds", ...blocks].join("\n\n");
 }
 
 function renderFinding(finding: Finding): string {
@@ -262,24 +275,19 @@ function buildFooter(run: FinishPrContext["run"]): string | null {
 
 export function buildFinishBody(ctx: FinishPrContext): string {
   const sections: string[] = [];
-  const stories = ctx.stories ?? [];
-  const rounds = ctx.rounds ?? [];
-  const outOfScope = ctx.outOfScope ?? [];
-  const gatesRan = ctx.gatesRan ?? [];
-  const run = ctx.run ?? {};
 
-  if (stories.length > 0) sections.push(buildStoriesSection(stories));
+  if (ctx.stories.length > 0) sections.push(buildStoriesSection(ctx.stories));
 
-  const verification = buildVerificationSection(ctx.acceptance, ctx.regression, gatesRan, ctx.diffstat);
+  const verification = buildVerificationSection(ctx.acceptance, ctx.regression, ctx.gatesRan, ctx.diffstat);
   if (verification !== null) sections.push(verification);
 
-  const roundsSection = buildRoundsSection(rounds);
+  const roundsSection = buildRoundsSection(ctx.rounds);
   if (roundsSection !== null) sections.push(roundsSection);
 
-  const outOfScopeSection = buildOutOfScopeSection(outOfScope);
+  const outOfScopeSection = buildOutOfScopeSection(ctx.outOfScope);
   if (outOfScopeSection !== null) sections.push(outOfScopeSection);
 
-  const footer = buildFooter(run);
+  const footer = buildFooter(ctx.run);
   if (footer !== null) sections.push(footer);
 
   return sections.join("\n\n");

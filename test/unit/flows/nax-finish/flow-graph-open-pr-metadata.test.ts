@@ -9,10 +9,23 @@ import { afterEach, describe, expect, test } from "bun:test";
 import flow, { _openPrDeps } from "@flows/nax-finish/nax-finish.flow";
 import { _gitDeps } from "@flows/nax-finish/steps/git";
 import { _prDeps } from "@flows/nax-finish/steps/pr";
+import type { FinishPrContext } from "@flows/nax-finish/steps/pr-body";
 import { _resultDeps } from "@flows/nax-finish/steps/result";
 import type { FlowNodeContext } from "acpx/flows";
 
 const INPUT = { feature: "x", workdir: "/repo", branch: "feat/x", prdPath: "p", escalateTelegram: false };
+
+// Every field is non-optional on FinishPrContext — a stub must build a real
+// (if empty) context rather than `{}`, since the builders no longer defend
+// against missing fields.
+const minimalCtx = (): FinishPrContext => ({
+  feature: INPUT.feature,
+  stories: [],
+  outOfScope: [],
+  gatesRan: [],
+  rounds: [],
+  run: {},
+});
 
 const ctxOf = (over: { outputs?: Record<string, unknown> }): FlowNodeContext =>
   ({
@@ -43,8 +56,7 @@ describe("open_pr node — finish metadata (US-005 AC8-AC12)", () => {
   });
 
   const mockCleanCommit = () => {
-    _gitDeps.run = async (cmd) =>
-      cmd.includes("--porcelain") ? { exitCode: 0, stdout: "", stderr: "" } : { exitCode: 0, stdout: "", stderr: "" };
+    _gitDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
     _resultDeps.writeText = async () => {};
   };
 
@@ -69,7 +81,7 @@ describe("open_pr node — finish metadata (US-005 AC8-AC12)", () => {
   test("US-005 AC8 passes buildFinishTitle's stubbed return as the PR title", async () => {
     mockCleanCommit();
     const captured = captureCreateTitleBody();
-    _openPrDeps.loadFinishPrContext = async () => ({}) as never;
+    _openPrDeps.loadFinishPrContext = async () => minimalCtx();
     _openPrDeps.buildFinishTitle = () => "STUB-TITLE";
 
     await nodeRun("open_pr").run(ctxOf({ outputs: { load_ctx: { route: "proceed", base: "origin/main" } } }));
@@ -80,7 +92,7 @@ describe("open_pr node — finish metadata (US-005 AC8-AC12)", () => {
   test("US-005 AC9 passes buildFinishBody's stubbed return as the PR body", async () => {
     mockCleanCommit();
     const captured = captureCreateTitleBody();
-    _openPrDeps.loadFinishPrContext = async () => ({}) as never;
+    _openPrDeps.loadFinishPrContext = async () => minimalCtx();
     _openPrDeps.buildFinishBody = () => "STUB-BODY";
 
     await nodeRun("open_pr").run(ctxOf({ outputs: { load_ctx: { route: "proceed", base: "origin/main" } } }));
@@ -92,7 +104,7 @@ describe("open_pr node — finish metadata (US-005 AC8-AC12)", () => {
     let calls = 0;
     _openPrDeps.loadFinishPrContext = async () => {
       calls++;
-      return {} as never;
+      return minimalCtx();
     };
     _resultDeps.writeText = async () => {};
 
@@ -117,7 +129,7 @@ describe("open_pr node — finish metadata (US-005 AC8-AC12)", () => {
   test("US-005 AC12 falls back to the default title and body when buildFinishTitle throws", async () => {
     mockCleanCommit();
     const captured = captureCreateTitleBody();
-    _openPrDeps.loadFinishPrContext = async () => ({}) as never;
+    _openPrDeps.loadFinishPrContext = async () => minimalCtx();
     _openPrDeps.buildFinishTitle = () => {
       throw new Error("builder blew up");
     };
@@ -131,7 +143,7 @@ describe("open_pr node — finish metadata (US-005 AC8-AC12)", () => {
   test("US-005 AC12 falls back to the default title and body when buildFinishBody throws", async () => {
     mockCleanCommit();
     const captured = captureCreateTitleBody();
-    _openPrDeps.loadFinishPrContext = async () => ({}) as never;
+    _openPrDeps.loadFinishPrContext = async () => minimalCtx();
     _openPrDeps.buildFinishBody = () => {
       throw new Error("builder blew up");
     };

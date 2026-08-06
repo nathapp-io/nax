@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _prDeps, loadFinishPrContext, openOrPromotePr } from "@flows/nax-finish/steps/pr";
+import { openOrPromotePr } from "@flows/nax-finish/steps/pr";
+// `_prDeps` (readText/warn/run) and `loadFinishPrContext` live on `_prBodyDeps`
+// in `./pr-body` — `./pr` only re-exports `run`-typed `_prDeps` for its own
+// forge-CLI calls, so the full seam is imported from its actual owner here.
+import { _prBodyDeps as _prDeps, loadFinishPrContext } from "@flows/nax-finish/steps/pr-body";
 import { _resultDeps } from "@flows/nax-finish/steps/result";
 import type { FinishInput, FinishRound, RunResult } from "@flows/nax-finish/types";
 
