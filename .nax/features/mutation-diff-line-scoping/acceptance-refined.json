@@ -1,0 +1,317 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `extractDiffLineRanges` is called with a diff string, then it returns a `Map`.",
+    "refined": "Assert that `extractDiffLineRanges(diff: string)` returns an object that is an instance of `Map` and that `Map.prototype.get` and `Map.prototype.has` are callable on the result.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "Given `+++ b/src/a.ts` and hunk `@@ -0,0 +1,5 @@`, when `extractDiffLineRanges` parses the diff, then `map.get(\"src/a.ts\")` equals `[{ start: 1, end: 5 }]`.",
+    "refined": "Assert that parsing the string `\"+++ b/src/a.ts\\n@@ -0,0 +1,5 @@\"` produces a Map where: `map.get(\"src/a.ts\")` is an Array of length 1, the first element has property `start` equal to 1, and property `end` equal to 5.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "Given hunk `@@ -1 +1 @@`, when `extractDiffLineRanges` parses the diff, then its produced range equals `{ start: 1, end: 1 }`.",
+    "refined": "Assert that parsing `\"+++ b/file.ts\\n@@ -1 +1 @@\"` produces a Map where `map.get(\"file.ts\")` is an Array of length 1 and the first element equals `{ start: 1, end: 1 }` using deep equality comparison.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Given hunk `@@ -5,3 +0,0 @@`, when `extractDiffLineRanges` parses the diff, then it produces no range for that file.",
+    "refined": "Assert that parsing `\"+++ b/file.ts\\n@@ -5,3 +0,0 @@\"` produces a Map where `map.get(\"file.ts\")` is undefined, or if the key exists the value is an empty array.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "Given a diff containing hunks for two files, when `extractDiffLineRanges` parses it, then the map has one entry per file and each entry contains only that file's ranges.",
+    "refined": "Assert that parsing a diff string containing hunks for two distinct files (e.g., `\"+++ b/a.ts\\n@@ -1 +1 @@\"` and `\"+++ b/b.ts\\n@@ -1 +1 @@\"`) produces a Map with exactly 2 keys, and `map.get(\"a.ts\")` contains only ranges from the first file's hunks while `map.get(\"b.ts\")` contains only ranges from the second file's hunks.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Given a file header `+++ /dev/null`, when `extractDiffLineRanges` parses the diff, then the map has no entry for that file.",
+    "refined": "Assert that parsing `\"--- /dev/null\\n+++ /dev/null\"` produces a Map where `map.has(\"/dev/null\")` returns false.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "Given one file with hunks `@@ -10,0 +11,2 @@` and `@@ -30,0 +40,1 @@`, when `extractDiffLineRanges` parses the diff, then its entry equals `[{ start: 11, end: 12 }, { start: 40, end: 40 }]` in that order.",
+    "refined": "Assert that parsing `\"+++ b/file.ts\\n@@ -10,0 +11,2 @@\\n@@ -30,0 +40,1 @@\"` produces a Map where `map.get(\"file.ts\")` is an Array of length 2, index 0 equals `{ start: 11, end: 12 }`, and index 1 equals `{ start: 40, end: 40 }` using deep equality and ordered comparison.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "Given equivalent CRLF and LF diffs, when `extractDiffLineRanges` parses each, then the returned maps are equal.",
+    "refined": "Assert that parsing a CRLF diff string (using `\\r\\n` line endings) and parsing the equivalent LF diff string (using `\\n` line endings) both produce Maps that are deeply equal via `JSON.stringify(Array.from(map1)) === JSON.stringify(Array.from(map2))`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When `extractDiffLineRanges(\"\")` is called, then it returns an empty `Map`.",
+    "refined": "Assert that `extractDiffLineRanges(\"\")` returns a Map where `map.size === 0` and `Array.from(map.entries()).length === 0`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "Given a diff containing recognised headers and unrecognised lines, when `extractDiffLineRanges` parses it, then it returns ranges from the recognised headers without throwing.",
+    "refined": "Assert that parsing a string containing valid diff headers mixed with invalid/unrecognised lines (e.g., `\"+++ b/a.ts\\n@@ -1 +1 @@\\nINVALID_LINE\\nanother bad line\"`) does not throw an exception and `map.get(\"a.ts\")` returns a valid array of line range objects with correct `start` and `end` properties.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When `getChangedLineRanges` receives a successful git response, then it resolves to a `Map`.",
+    "refined": "When the injected git runner resolves with exit code 0, getChangedLineRanges returns a value where typeof result === 'object' && result instanceof Map is true (not null).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given a supplied base ref, when `getChangedLineRanges` calls its injected git runner, then the arguments are `[\"diff\", \"--unified=0\", baseRef]` in that order.",
+    "refined": "When called with baseRef=\"feature branch\", the injected git runner is invoked with args equal to [\"diff\", \"--unified=0\", \"feature branch\"] (exact array equality check).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When `getChangedLineRanges` is called without `baseRef`, then its injected git runner receives `HEAD~1` as the ref.",
+    "refined": "When called with no baseRef argument, the third element of the args array passed to the injected git runner is the string \"HEAD~1\".",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given an injected git response with a non-zero exit code, when `getChangedLineRanges` runs, then it resolves to `null`.",
+    "refined": "When the injected git runner resolves with { code: 1 } (or any non-zero code), getChangedLineRanges returns null (strict equality).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given an injected git runner that throws, when `getChangedLineRanges` runs, then it resolves to `null` without propagating the error.",
+    "refined": "When the injected git runner rejects with an error, getChangedLineRanges returns null and does not throw (verified by wrapping in try/catch and asserting result === null).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given a successful injected git response with empty stdout, when `getChangedLineRanges` runs, then it resolves to an empty `Map` rather than `null`.",
+    "refined": "When git runner resolves with { code: 0, stdout: \"\" }, result is a Map with .size === 0 (not null).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given git root `/repo` and a diff path `src/a.ts`, when `getChangedLineRanges` runs, then the returned map key is `/repo/src/a.ts`.",
+    "refined": "When workdir=\"/repo\" and git output contains diff for \"src/a.ts\", Map.prototype.has.call(result, \"/repo/src/a.ts\") is true and result.get(\"/repo/src/a.ts\") is defined.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given a git-root lookup resolving to `null`, when `getChangedLineRanges` anchors a parsed path, then the key is rooted at the supplied `workdir`.",
+    "refined": "When git root lookup returns null and workdir=\"/work\", the returned Map contains key \"/work/src/a.ts\" for diff path \"src/a.ts\".",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given git output with hunk `@@ -0,0 +2,3 @@` for one file, when `getChangedLineRanges` runs, then that file's absolute-keyed entry contains `{ start: 2, end: 4 }`.",
+    "refined": "For a diff with hunk header \"@@ -0,0 +2,3 @@\" for file \"src/a.ts\" with workdir=\"/repo\", result.get(\"/repo/src/a.ts\") equals [{ start: 2, end: 4 }] where end equals start + linesAdded - 1 (2 + 3 - 1 = 4).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given `lineRanges` covering only line 5, when `generateMutants` runs, then every returned mutant has `line === 5`.",
+    "refined": "Call `generateMutants({source, language, file, lineRanges: [{start: 5, end: 5}]})`. Assert the returned array's every element has `mutant.line === 5`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Given a mutable line equal to a range start, when `generateMutants` runs with that range, then it includes a mutant for that line.",
+    "refined": "Call `generateMutants` with `lineRanges: [{start: 10, end: 20}]` on source containing a mutable statement at line 10. Assert the returned array contains an element where `mutant.line === 10`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Given a mutable line equal to a range end, when `generateMutants` runs with that range, then it includes a mutant for that line.",
+    "refined": "Call `generateMutants` with `lineRanges: [{start: 10, end: 20}]` on source containing a mutable statement at line 20. Assert the returned array contains an element where `mutant.line === 20`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Given two disjoint `lineRanges`, when `generateMutants` runs, then it returns mutants from both ranges and none from lines between them.",
+    "refined": "Call `generateMutants({source, language, file, lineRanges: [{start: 1, end: 5}, {start: 10, end: 15}]})`. Assert: (1) every returned mutant has `line` in `[1,5]` or `[10,15]`; (2) no mutant has `line` in `[6,9]`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When `generateMutants` is called without `lineRanges`, then it returns mutants for every mutable source line as before.",
+    "refined": "Call `generateMutants({source, language, file})` with no `lineRanges` property. Assert the returned array length equals the count of mutable lines in `source`, and each mutable line has a corresponding mutant.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When `generateMutants` is called with an empty `lineRanges` array, then it returns no mutants.",
+    "refined": "Call `generateMutants({source, language, file, lineRanges: []})`. Assert the returned array is empty (`length === 0`).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Given injected `getChangedLineRanges` resolves to `null`, when `mutationCheckOp.execute` runs, then it returns `success: true` with outcomes `{ killed: 0, survived: 0, errored: 0 }`.",
+    "refined": "Mock `getChangedLineRanges` to return `Promise.resolve(null)`. Call `mutationCheckOp.execute()`. Assert `result.success === true` and `result.outcomes` equals `{killed: 0, survived: 0, errored: 0}`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "Given injected `getChangedLineRanges` resolves to `null`, when `mutationCheckOp.execute` runs, then it never invokes injected `regression`.",
+    "refined": "Mock `getChangedLineRanges` to return `Promise.resolve(null)`. Spy on `regression` mock. Call `mutationCheckOp.execute()`. Assert `regression` spy was not called.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "Given injected `getChangedLineRanges` resolves to `null`, when `mutationCheckOp.execute` runs, then it emits a warning containing the story id.",
+    "refined": "Mock `getChangedLineRanges` to return `Promise.resolve(null)`. Capture logged warnings. Call `mutationCheckOp.execute()`. Assert at least one warning string includes `storyId`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "Given a changed file absent from the returned range map, when `mutationCheckOp.execute` runs, then it generates no mutants for that file and resolves with `success: true`.",
+    "refined": "Mock `getChangedLineRanges` to return a map that excludes one changed file. Call `mutationCheckOp.execute()`. Assert `result.success === true` and the excluded file generated zero mutants.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "Given a changed file absent from the returned range map, when `mutationCheckOp.execute` runs, then it emits a debug log containing the story id and file path.",
+    "refined": "Mock `getChangedLineRanges` to return a map that excludes file `/path/excluded.ts`. Capture debug logs. Call `mutationCheckOp.execute()`. Assert at least one debug log string includes both `storyId` and `/path/excluded.ts`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "Given a changed file whose map entry has ranges, when `mutationCheckOp.execute` generates candidates for it, then `generateMutants` receives those same `lineRanges`.",
+    "refined": "Mock `getChangedLineRanges` to return `{'/path/file.ts': [{start: 5, end: 10}]}`. Spy on `generateMutants`. Call `mutationCheckOp.execute()`. Assert `generateMutants` was called with an argument where `lineRanges` equals `[{start: 5, end: 10}]`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When `mutationCheckOp.execute` runs, then it invokes injected `getChangedLineRanges` exactly once with the story `workdir` and `storyGitRef`.",
+    "refined": "Spy on `getChangedLineRanges`. Call `mutationCheckOp.execute()`. Assert spy was called exactly once, and the call received `{workdir: <storyWorkdir>, storyGitRef: <storyGitRef>}`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-33",
+    "original": "Given a file whose ranges contain no mutable content, when `mutationCheckOp.execute` runs, then it resolves with `success: true` and never invokes injected `regression`.",
+    "refined": "Mock `getChangedLineRanges` to return `{'/path/immutable.ts': [{start: 1, end: 100}]}` where all lines in the file are non-mutable. Spy on `regression`. Call `mutationCheckOp.execute()`. Assert `result.success === true` and `regression` was not called.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-34",
+    "original": "Given a file whose ranges contain no mutable content, when `mutationCheckOp.execute` runs, then it emits no warning for that file.",
+    "refined": "Mock `getChangedLineRanges` to return `{'/path/immutable.ts': [{start: 1, end: 100}]}` where all lines are non-mutable. Capture warnings. Call `mutationCheckOp.execute()`. Assert no warning contains `/path/immutable.ts`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-35",
+    "original": "Given mutation checking is enabled and candidates are generated, when `mutationCheckOp.execute` records the story summary, then `checked === true`.",
+    "refined": "Invoke mutationCheckOp.execute with a config where mutationCheck.enabled is true and getChangedLineRanges returns a non-null diff. Assert that the recorded MutationStorySummary has checked === true.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-36",
+    "original": "Given `mutationCheck.enabled === false`, when `mutationCheckOp.execute` records the story summary, then `checked === false`.",
+    "refined": "Invoke mutationCheckOp.execute with a config where mutationCheck.enabled is false. Assert that the recorded MutationStorySummary has checked === false.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-37",
+    "original": "Given no resolvable test command, when `mutationCheckOp.execute` records the story summary, then `checked === false`.",
+    "refined": "Invoke mutationCheckOp.execute with a config where no test command can be resolved (e.g., empty testCommand array or undefined). Assert that the recorded MutationStorySummary has checked === false.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-38",
+    "original": "Given injected `getChangedLineRanges` resolves to `null`, when `mutationCheckOp.execute` records the story summary, then `checked === true` and `candidates === 0`.",
+    "refined": "Mock getChangedLineRanges to return null. Invoke mutationCheckOp.execute. Assert that the recorded MutationStorySummary has checked === true AND candidates === 0.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-39",
+    "original": "Given generated mutation candidates, when `mutationCheckOp.execute` records the story summary, then `candidates` equals the number generated before budget selection.",
+    "refined": "Invoke mutationCheckOp.execute with a known set of mutants (e.g., 5 mutants generated before budget selection). Assert that the recorded MutationStorySummary.candidates === 5.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-40",
+    "original": "Given one summary with `checked: true` and `candidates: 0`, when `formatMutationSummary` runs, then its text contains `NOT CHECKED` and that summary's story id.",
+    "refined": "Call formatMutationSummary([{ storyId: 'ST-001', survivors: [], outcomes: {killed: 0, survived: 0, errored: 0}, candidates: 0, checked: true }]). Assert the returned string includes 'NOT CHECKED' and 'ST-001'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-41",
+    "original": "Given one summary with `checked: false` and `candidates: 0`, when `formatMutationSummary` runs, then its text omits `NOT CHECKED`.",
+    "refined": "Call formatMutationSummary([{ storyId: 'ST-001', survivors: [], outcomes: {killed: 0, survived: 0, errored: 0}, candidates: 0, checked: false }]). Assert the returned string does NOT include 'NOT CHECKED'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-42",
+    "original": "Given one summary with `checked: true` and `candidates > 0`, when `formatMutationSummary` runs, then its text omits `NOT CHECKED`.",
+    "refined": "Call formatMutationSummary([{ storyId: 'ST-001', survivors: [], outcomes: {killed: 0, survived: 0, errored: 0}, candidates: 5, checked: true }]). Assert the returned string does NOT include 'NOT CHECKED'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-43",
+    "original": "Given one summary with a survivor and another with `checked: true` and `candidates: 0`, when `formatMutationSummary` runs, then its text contains both `SURVIVING MUTANTS` and `NOT CHECKED` with `SURVIVING MUTANTS` first.",
+    "refined": "Call formatMutationSummary([{ storyId: 'ST-001', survivors: [{id: 'mut-1', filename: 'a.ts', replacement: 'x'}], outcomes: {killed: 0, survived: 1, errored: 0}, candidates: 1, checked: true }, { storyId: 'ST-002', survivors: [], outcomes: {killed: 0, survived: 0, errored: 0}, candidates: 0, checked: true }]). Let result = formatMutationSummary(...). Assert result.includes('SURVIVING MUTANTS') AND result.includes('NOT CHECKED') AND result.indexOf('SURVIVING MUTANTS') < result.indexOf('NOT CHECKED').",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-44",
+    "original": "Given two summaries with `checked: true` and `candidates: 0`, when `formatMutationSummary` runs, then the `NOT CHECKED` block lists both story ids.",
+    "refined": "Call formatMutationSummary([{ storyId: 'ST-001', survivors: [], outcomes: {killed: 0, survived: 0, errored: 0}, candidates: 0, checked: true }, { storyId: 'ST-002', survivors: [], outcomes: {killed: 0, survived: 0, errored: 0}, candidates: 0, checked: true }]). Let result = formatMutationSummary(...). Assert result.includes('ST-001') AND result.includes('ST-002').",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-45",
+    "original": "Given only summaries with `checked: false`, when `formatMutationSummary` runs, then it returns an empty string.",
+    "refined": "Call formatMutationSummary([{ storyId: 'ST-001', survivors: [], outcomes: {killed: 0, survived: 0, errored: 0}, candidates: 0, checked: false }, { storyId: 'ST-002', survivors: [], outcomes: {killed: 0, survived: 0, errored: 0}, candidates: 0, checked: false }]). Assert the returned string === ''.",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]
