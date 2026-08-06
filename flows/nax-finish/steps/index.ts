@@ -5,4 +5,5 @@ export * from "./escalate";
 export * from "./forge";
 export * from "./git";
 export * from "./pr";
+export * from "./pr-narrative";
 export * from "./result";

@@ -27,6 +27,16 @@ const SUMMARY_HEADINGS = ["summary", "overview"] as const;
  * intent rather than what shipped), and forbid restating the sections the body
  * already renders deterministically.
  */
+/**
+ * `prompt` for the `narrative` flow node. Lives here rather than inline in
+ * `nax-finish.flow.ts` to keep that file under its 600-line cap — the node
+ * just needs `ctx.outputs.load_ctx.base`, which is all this wrapper reads.
+ */
+export function narrativePrompt(ctx: { outputs: unknown }): string {
+  const base = (ctx.outputs as { load_ctx?: { base?: string } }).load_ctx?.base ?? "origin/main";
+  return buildNarrativePrompt({ base });
+}
+
 export function buildNarrativePrompt(args: { base: string }): string {
   return [
     'Write the "What changed" section of a pull request body.',

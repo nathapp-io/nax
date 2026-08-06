@@ -7,6 +7,7 @@ import { _gitDeps } from "@flows/nax-finish/steps/git";
 import { _prDeps } from "@flows/nax-finish/steps/pr";
 import { _qualityDeps } from "@flows/nax-finish/steps/quality";
 import { _resultDeps } from "@flows/nax-finish/steps/result";
+import { narrativeOf } from "@flows/nax-finish/flow-ctx";
 import type { FlowNodeContext, FlowStepRecord } from "acpx/flows";
 import { makeFlowCtx, makeFlowSteps } from "@test/helpers";
 
@@ -110,6 +111,42 @@ describe("nax-finish flow graph", () => {
       expect(flow.nodes[`commit_${phase}`].nodeType).toBe("action");
       expect(toOf(`fix_${phase}`)).toBe(`commit_${phase}`);
     }
+  });
+
+  test("narrative nodes exist and the acp node is isolated", () => {
+    for (const n of ["narrative", "amend_body", "finish_done"]) {
+      expect(flow.nodes[n]).toBeDefined();
+    }
+    expect(flow.nodes.narrative.nodeType).toBe("acp");
+    expect((flow.nodes.narrative as { session?: { isolated?: boolean } }).session?.isolated).toBe(true);
+    expect(flow.nodes.amend_body.nodeType).toBe("action");
+  });
+
+  test("open_pr routes narrate to the narrative node and done to the terminal", () => {
+    expect(switchOf("open_pr").cases.narrate).toBe("narrative");
+    expect(switchOf("open_pr").cases.done).toBe("finish_done");
+  });
+
+  test("the narrative runs after the PR is open, never before it", () => {
+    // acpx has no error edge: an acp node before open_pr could fail the flow and
+    // cost the PR entirely (#1476). This edge direction is the guarantee.
+    expect(switchOf("quality_gates").cases.green).toBe("open_pr");
+    expect(toOf("narrative")).toBe("amend_body");
+  });
+
+  test("amend_body and finish_done are terminal", () => {
+    for (const id of ["amend_body", "finish_done"]) {
+      expect(flow.edges.find((e) => e.from === id)).toBeUndefined();
+    }
+  });
+
+  test("the key amend_body reads is the key the narrative node writes", () => {
+    // A string-keyed handoff asserted from only one side is how ACs go green
+    // while nothing is wired. `narrativeOf` reads `ctx.outputs.narrative`; the
+    // node id below is what acpx keys that output by.
+    expect(flow.nodes.narrative).toBeDefined();
+    expect(narrativeOf({ outputs: { narrative: "prose" } })).toBe("prose");
+    expect(narrativeOf({ outputs: {} })).toBeUndefined();
   });
 });
 

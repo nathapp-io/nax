@@ -44,9 +44,11 @@
 import { defineFlow } from "acpx/flows";
 import { buildFixCommitMessage } from "./commit-message";
 import { findingsOf, fixAttemptCount, gateOutputs, incrementalSince, inputOf, loadCtxOf } from "./flow-ctx";
+import { narrativePrompt, parseNarrative } from "./narrative";
 import { buildReviewPrompt, fixPrompt } from "./review-prompts";
 import {
   _contextDeps,
+  amendPrBodyNode,
   appendRound,
   buildEscalationComment,
   commitAndPush,
@@ -141,18 +143,6 @@ async function acceptanceGateNode(ctx: {
   return { route: "fix", output: r.output };
 }
 
-/**
- * Build the `commit_<phase>` node that follows `fix_<phase>`.
- *
- * One node per phase rather than a single shared one because each returns to a
- * different successor, and acpx routes on the node id — a shared node would
- * need a switch reconstructing which fix ran from the step history.
- *
- * Also the audit seam: this is the only point in the graph where a round's
- * findings and its commit are both known. `ctx.outputs` keeps only the latest
- * output per node, so a round not recorded here is a round no terminal node
- * can reconstruct.
- */
 /**
  * Route for `commit_gate`, whose successor depends on what the fix touched.
  *
@@ -454,6 +444,23 @@ export default defineFlow({
         return { route: NARRATIVE_ENABLED ? "narrate" : "done", committed: sync.committed, ...r };
       },
     },
+    narrative: {
+      nodeType: "acp",
+      session: { isolated: true },
+      profile: process.env.NAX_FINISH_NARRATIVE_PROFILE || undefined,
+      prompt: narrativePrompt,
+      parse: parseNarrative,
+    },
+    amend_body: {
+      nodeType: "action",
+      run: amendPrBodyNode,
+    },
+    // Inert terminal. acpx switch cases must name a real node, so the `done`
+    // route out of open_pr needs somewhere to land.
+    finish_done: {
+      nodeType: "compute",
+      run: () => ({ route: "done" }),
+    },
     escalate: {
       nodeType: "action",
       async run(ctx) {
@@ -577,5 +584,9 @@ export default defineFlow({
         cases: { changed: "review_quality", "tests-only": "quality_gates", unchanged: "quality_gates" },
       },
     },
+    // The narrative runs only once the PR exists. acpx has no error edge, so an
+    // acp node before `open_pr` would be able to fail the flow and cost the PR.
+    { from: "open_pr", switch: { on: "$.route", cases: { narrate: "narrative", done: "finish_done" } } },
+    { from: "narrative", to: "amend_body" },
   ],
 });
