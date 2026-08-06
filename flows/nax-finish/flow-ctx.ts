@@ -48,6 +48,18 @@ export function fixAttemptCount(ctx: StepsCtx, fixNodeId: string): number {
 export function loadCtxOf(ctx: OutputsCtx): LoadCtxOutput {
   return ((ctx.outputs as Record<string, LoadCtxOutput | undefined>).load_ctx ?? {}) as LoadCtxOutput;
 }
+/**
+ * The narrative node's parsed prose.
+ *
+ * Absent when the node was skipped by config, died, or produced only
+ * whitespace — `amend_body` treats all three identically, so there is one
+ * branch downstream rather than three.
+ */
+export function narrativeOf(ctx: OutputsCtx): string | undefined {
+  const out = (ctx.outputs as Record<string, unknown>).narrative;
+  return typeof out === "string" && out.trim().length > 0 ? out : undefined;
+}
+
 export function gateOutputs(ctx: OutputsCtx): { failing?: string[]; ran?: string[] } {
   return ((ctx.outputs as Record<string, { failing?: string[]; ran?: string[] } | undefined>).quality_gates ?? {}) as {
     failing?: string[];

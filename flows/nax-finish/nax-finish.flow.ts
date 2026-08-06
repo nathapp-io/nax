@@ -52,6 +52,7 @@ import {
   commitAndPush,
   commitFixes,
   detectBaseBranch,
+  detectForge,
   filesInCommit,
   loadFinishPrContext,
   loadQualityCommands,
@@ -64,9 +65,17 @@ import {
   runQualityGates,
   writeResult,
 } from "./steps";
+import type { Forge } from "./steps/forge";
 import { _prBodyDeps, buildFinishBody, buildFinishTitle } from "./steps/pr-body";
 import type { FinishInput, FinishPhase, FinishResult, ReviewVerdict } from "./types";
 import { MAX_FIX_ATTEMPTS, parseFixVerdict, parseReviewVerdict, repromptCount, routeReview } from "./verdict";
+
+/**
+ * Disabled only on an explicit "0". An unset variable means enabled, so a flow
+ * invoked directly by `acpx flow run` — outside the plugin that sets the env —
+ * still writes the narrative.
+ */
+const NARRATIVE_ENABLED = process.env.NAX_FINISH_NARRATIVE !== "0";
 
 /**
  * Injectable seam for the `open_pr` node's title/body assembly — tests stub
@@ -416,10 +425,18 @@ export default defineFlow({
         const fallbackBody = `Automated finish of \`${i.feature}\`.`;
         let title = fallbackTitle;
         let body = fallbackBody;
+        // Detected once, here, and handed to both the body builder (which needs
+        // it for the repo template) and the opener. Detecting in both would let
+        // them disagree. On a throw it stays undefined and `openOrPromotePr`
+        // detects for itself, exactly as it did before.
+        let forge: Forge | undefined;
         try {
+          forge = await detectForge(_prBodyDeps.run, i.workdir, "finish-pr");
           const prCtx = await _openPrDeps.loadFinishPrContext(i, {
             base: loadCtx.base ?? "",
             gatesRan: gateOutputs(ctx).ran ?? [],
+            forge,
+            specPath: loadCtx.specPath,
           });
           title = _openPrDeps.buildFinishTitle(prCtx);
           body = _openPrDeps.buildFinishBody(prCtx);
@@ -429,9 +446,12 @@ export default defineFlow({
           body = fallbackBody;
         }
 
-        const r = await openOrPromotePr(i.workdir, i.branch, title, body);
+        const r = await openOrPromotePr(i.workdir, i.branch, title, body, forge);
         await writeResult(i, { feature: i.feature, status: r.status, url: r.url });
-        return { route: "done", committed: sync.committed, ...r };
+        // The PR now exists with the mechanical narrative already in place.
+        // Anything the narrative node does from here is an improvement on a
+        // body that is already correct.
+        return { route: NARRATIVE_ENABLED ? "narrate" : "done", committed: sync.committed, ...r };
       },
     },
     escalate: {
