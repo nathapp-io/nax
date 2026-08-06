@@ -48,7 +48,12 @@ export interface ApplyModifiedFilesResult {
  * shape when a hand-edited `prd.json` is loaded.
  */
 export function isSafeRelativePath(path: string): boolean {
-  return !path.startsWith("/") && !path.includes("..");
+  if (path.startsWith("/")) return false;
+  // Segment-wise, not substring. A bare `includes("..")` also rejects legitimate
+  // filenames that merely contain two dots (`src/foo..bar.ts`, `v1..v2.snap`),
+  // which is a silent drop of a valid authorisation. Splitting on both
+  // separators keeps Windows-style `..\` traversal rejected too.
+  return !path.split(/[\\/]/).includes("..");
 }
 
 /**
