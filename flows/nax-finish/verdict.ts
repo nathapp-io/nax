@@ -15,7 +15,15 @@ import { extractJsonObject } from "acpx/flows";
 import { type OutputsCtx, type StepsCtx, fixAttemptCount } from "./flow-ctx";
 import type { Finding, ReviewVerdict } from "./types";
 
-/** Fix rounds allowed per loop before escalating. Moved here with `routeReview`. */
+/**
+ * Cap on fix-and-reverify iterations, per phase, before escalating instead of
+ * looping forever. acpx's flow engine has no built-in cycle guard, so without
+ * this cap a stubborn failure (LLM can't fix it, or fixes something else each
+ * time) hangs `acpx flow run` — and the post-run plugin awaits that subprocess.
+ *
+ * Lives here rather than in the flow file because `routeReview` needs it; the
+ * flow imports it back for the acceptance node and the two `quality_gates` caps.
+ */
 export const MAX_FIX_ATTEMPTS = 3;
 
 /**
