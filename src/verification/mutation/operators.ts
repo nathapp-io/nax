@@ -110,10 +110,10 @@ function makeBooleanFlip(trueLit: string, falseLit: string): (snippet: string) =
 // whitespace (not end-of-string) so a dangling operator like `a +` is
 // not mutated.
 const ARITHMETIC_PAIRS: ReadonlyArray<PatternReplacement> = [
-  [/(?<=\s)\+(?=\s)/, "-"],
-  [/(?<=\s)-(?=\s)/, "+"],
-  [/(?<=\s)\*(?=\s)/, "/"],
-  [/(?<=\s)\/(?=\s)/, "*"],
+  [/(?<=\s)\+(?=\s\S)/g, "-"],
+  [/(?<=\s)-(?=\s\S)/g, "+"],
+  [/(?<=\s)\*(?=\s\S)/g, "/"],
+  [/(?<=\s)\/(?=\s\S)/g, "*"],
 ];
 
 const TYPESCRIPT_OPERATORS: ReadonlyArray<MutationOperator> = [

@@ -16,10 +16,9 @@ export function selectEvenlySpaced(mutants: readonly Mutant[], max: number): Mut
   if (length === 0 || budget <= 0) return [];
   if (length <= budget) return mutants.slice();
 
-  const stride = Math.floor(length / budget);
   const picked: Mutant[] = [];
   for (let i = 0; i < budget; i++) {
-    const index = i * stride;
+    const index = Math.floor((i * length) / budget);
     picked.push(mutants[index]);
   }
   return picked;

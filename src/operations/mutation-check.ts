@@ -18,6 +18,7 @@ import type { MutationCheckConfig } from "../config/selectors";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { detectLanguage } from "../project/detector";
+import type { MutationOutcomeSummary } from "../runtime/mutation-summary";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { selectScopedTests } from "../test-runners/scoped-selection";
 import type { SelectScopedTestsInput, SelectScopedTestsResult } from "../test-runners/scoped-selection";
@@ -28,7 +29,7 @@ import {
   revertMutant,
   selectEvenlySpaced,
 } from "../verification/mutation";
-import type { Mutant, SurvivingMutant } from "../verification/mutation/types";
+import type { Mutant, MutantOutcome, SurvivingMutant } from "../verification/mutation/types";
 import { regression } from "../verification/runners";
 import { getChangedNonTestFiles } from "../verification/smart-runner";
 import type { VerificationGateOptions, VerificationResult } from "../verification/types";
@@ -48,11 +49,7 @@ export interface MutationCheckInput {
 export interface MutationCheckOutput {
   readonly success: true;
   readonly survivors: readonly SurvivingMutant[];
-  readonly outcomes: {
-    readonly killed: number;
-    readonly survived: number;
-    readonly errored: number;
-  };
+  readonly outcomes: MutationOutcomeSummary;
 }
 
 export interface MutationCheckDeps {
@@ -80,9 +77,17 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
     deps: MutationCheckDeps = _mutationCheckDeps,
   ): Promise<MutationCheckOutput> {
     const cfg = ctx.packageView.select(mutationCheckConfigSelector);
-    const emptyOutput = { survivors: [], outcomes: { killed: 0, survived: 0, errored: 0 } };
+    const emptyOutput: { survivors: readonly SurvivingMutant[]; outcomes: MutationOutcomeSummary } = {
+      survivors: [],
+      outcomes: { killed: 0, survived: 0, errored: 0 },
+    };
+    const record = (result: { survivors: readonly SurvivingMutant[]; outcomes: MutationOutcomeSummary }) => {
+      if (ctx.storyId) {
+        ctx.runtime?.mutationSummaries?.set(ctx.storyId, { storyId: ctx.storyId, ...result });
+      }
+    };
     if (!cfg?.enabled) {
-      if (ctx.storyId) ctx.runtime?.mutationSummaries?.set(ctx.storyId, { storyId: ctx.storyId, ...emptyOutput });
+      record(emptyOutput);
       return { success: true as const, ...emptyOutput };
     }
 
@@ -99,7 +104,7 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       logger.warn("mutation-check", "No test command configured — skipping mutation spot-check", {
         storyId: input.storyId,
       });
-      if (ctx.storyId) ctx.runtime?.mutationSummaries?.set(ctx.storyId, { storyId: ctx.storyId, ...emptyOutput });
+      record(emptyOutput);
       return { success: true as const, ...emptyOutput };
     }
     const changedFiles = await deps.getChangedNonTestFiles(
@@ -140,6 +145,7 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
     }
     const selected = selectEvenlySpaced(mutants, cfg.maxMutants);
     for (const mutant of selected) {
+      let outcome: MutantOutcome | undefined;
       try {
         await applyMutant(mutant);
         try {
@@ -160,7 +166,7 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
             command: scoped.effectiveCommand,
             timeoutSeconds: cfg.timeoutSeconds,
           });
-          const outcome = classifyMutant(result);
+          outcome = classifyMutant(result);
           outcomes[outcome] += 1;
           if (outcome === "survived") {
             survivors.push({ ...mutant, outcome: "survived" });
@@ -170,8 +176,12 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
         }
       } catch (err) {
         // Fail-open: any error mutating/testing/reverting a single mutant is
-        // never a gate failure — log and move on to the next mutant.
-        outcomes.errored += 1;
+        // never a gate failure — log and move on to the next mutant. A mutant
+        // whose outcome was already recorded (e.g. revert failed after a
+        // successful verification) is not re-counted as errored.
+        if (outcome === undefined) {
+          outcomes.errored += 1;
+        }
         logger.warn("mutation-check", "Error processing mutant — skipping", {
           storyId: input.storyId,
           file: mutant.file,
@@ -192,9 +202,7 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
     }
 
     const output = { success: true as const, survivors, outcomes };
-    if (ctx.storyId) {
-      ctx.runtime?.mutationSummaries?.set(ctx.storyId, { storyId: ctx.storyId, survivors, outcomes });
-    }
+    record({ survivors, outcomes });
     return output;
   },
 };

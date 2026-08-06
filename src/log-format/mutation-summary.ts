@@ -4,7 +4,7 @@ export function formatMutationSummary(summaries: Iterable<MutationStorySummary>)
   const lines: string[] = [];
   for (const summary of summaries) {
     for (const survivor of summary.survivors) {
-      const filePath = survivor.filePath ?? survivor.file ?? "";
+      const filePath = survivor.file;
       lines.push(`  ${summary.storyId}  ${filePath}:${survivor.line}  ${survivor.operatorId}`);
     }
   }

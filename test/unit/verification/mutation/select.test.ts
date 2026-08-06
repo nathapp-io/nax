@@ -107,9 +107,21 @@ describe("selectEvenlySpaced — even spread across multiple files", () => {
     const combined = [...a, ...b];
     const result = selectEvenlySpaced(combined, 2);
     expect(result).toHaveLength(2);
-    // stride = floor(12/2) = 6 — picks positions 0 (a.ts) and 6 (b.ts).
+    // indices = floor(i*12/2) — picks positions 0 (a.ts) and 6 (b.ts).
     expect(result[0]?.file).toBe("a.ts");
     expect(result[1]?.file).toBe("b.ts");
+  });
+
+  test("budget above half the candidates still spans every file", () => {
+    const a = makeMutants(6, "a.ts");
+    const b = makeMutants(4, "b.ts");
+    const combined = [...a, ...b];
+    const result = selectEvenlySpaced(combined, 7);
+    expect(result).toHaveLength(7);
+    // A pure prefix (the old stride-1 behaviour) would pick only a.ts;
+    // indices = floor(i*10/7) = 0,1,2,4,5,7,8 must reach b.ts (index 6+).
+    expect(result.some((m) => m.file === "b.ts")).toBe(true);
+    expect(result.some((m) => m.file === "a.ts")).toBe(true);
   });
 });
 

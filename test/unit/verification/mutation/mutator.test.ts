@@ -200,6 +200,12 @@ describe("generateMutants — whitespace-guard arithmetic (non-spaced tokens mus
     expect(mutants.some((m) => m.operatorId === "ts:arith-flip" && m.after === "const total = a - b;")).toBe(true);
   });
 
+  test("AC5b: every spaced '+' on a line mutates, not just the first", () => {
+    const source = `const total = a + b + c;`;
+    const mutants = generateMutants({ source, language: "typescript", file: "total.ts" });
+    expect(mutants.some((m) => m.operatorId === "ts:arith-flip" && m.after === "const total = a - b - c;")).toBe(true);
+  });
+
   test("AC6: spaced '/' mutates to '*'", () => {
     const source = `const half = n / 2;`;
     const mutants = generateMutants({ source, language: "typescript", file: "half.ts" });
