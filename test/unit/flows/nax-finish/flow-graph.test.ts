@@ -700,3 +700,80 @@ describe("escalate node", () => {
     expect(JSON.parse(wrote)).toMatchObject({ status: "escalated", escalationReason: "r" });
   });
 });
+
+describe("reprompt edges", () => {
+  test("route_spec routes reprompt back to review_spec", () => {
+    expect(switchOf("route_spec").cases.reprompt).toBe("review_spec");
+  });
+
+  test("route_quality routes reprompt back to review_quality", () => {
+    expect(switchOf("route_quality").cases.reprompt).toBe("review_quality");
+  });
+
+  test("the existing routes are untouched", () => {
+    expect(switchOf("route_quality").cases.clean).toBe("quality_gates");
+    expect(switchOf("route_quality").cases.fix).toBe("fix_quality");
+    expect(switchOf("route_quality").cases.escalate).toBe("escalate");
+  });
+
+  // acpx's runtime pushes the just-finished step onto `state.steps`
+  // (recordFlowStepOutcome, runtime.ts:262/499) BEFORE the next node runs, so
+  // by the time `route_quality` executes, its own triggering `review_quality`
+  // step is already recorded. These two tests model that real ordering —
+  // round 1's `steps` has exactly the 1 step just recorded, round 2's has 2 —
+  // and the round-1 case would FAIL under the old (buggy) `<` comparison,
+  // which escalated on the very first unparseable reply instead of retrying.
+  test("route_quality yields reprompt on the first unparseable verdict (round 1)", async () => {
+    const verdict = { route: "reprompt", findings: [], raw: "prose" };
+    const out = await nodeRun<{ route: string }>("route_quality").run(
+      ctxOf({
+        outputs: { review_quality: verdict },
+        steps: [{ nodeId: "review_quality", output: verdict }] as never,
+      }),
+    );
+    expect(out.route).toBe("reprompt");
+  });
+
+  test("route_quality escalates on the second consecutive unparseable verdict (round 2)", async () => {
+    const verdict = { route: "reprompt", findings: [], raw: "prose" };
+    const out = await nodeRun<{ route: string; escalationReason?: string }>("route_quality").run(
+      ctxOf({
+        outputs: { review_quality: verdict },
+        steps: [
+          { nodeId: "review_quality", output: verdict },
+          { nodeId: "review_quality", output: verdict },
+        ] as never,
+      }),
+    );
+    expect(out.route).toBe("escalate");
+    expect(out.escalationReason).toContain("after 2 attempts");
+  });
+
+  test("review_quality leads with the retry notice after a reprompt", () => {
+    const node = flow.nodes.review_quality as unknown as { prompt: (c: FlowNodeContext) => string };
+    const prompt = node.prompt(
+      ctxOf({
+        outputs: { load_ctx: { base: "origin/main", specPath: "spec.md" } },
+        steps: [{ nodeId: "review_quality", output: { route: "reprompt", findings: [] } }] as never,
+      }),
+    );
+    expect(prompt).toContain("previous reply could not be parsed");
+  });
+
+  test("a retried review is a FULL review, not an incremental one", () => {
+    // incrementalSince scopes a re-review to firstCommit.shaBefore..HEAD by finding
+    // the first commit_* step after the last review_<phase>. On a reprompt re-entry
+    // no commit_* follows, so it returns null and the whole base...HEAD diff is
+    // re-read. That is right — the previous attempt produced no verdict, so there is
+    // no cleared window to skip. Pinned so nobody "optimises" it into an incremental.
+    const node = flow.nodes.review_quality as unknown as { prompt: (c: FlowNodeContext) => string };
+    const prompt = node.prompt(
+      ctxOf({
+        outputs: { load_ctx: { base: "origin/main", specPath: "spec.md" } },
+        steps: [{ nodeId: "review_quality", output: { route: "reprompt", findings: [] } }] as never,
+      }),
+    );
+    expect(prompt).toContain("git diff origin/main...HEAD");
+    expect(prompt).not.toContain("continuing a review you already started");
+  });
+});

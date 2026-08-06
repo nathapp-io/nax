@@ -16,13 +16,21 @@ export interface Finding {
 }
 export interface ReviewVerdict {
   /**
-   * `clean` is not a model-produced route — the review nodes' `parse` rewrites
-   * `proceed` with zero findings to `clean` so the graph can skip the fix node
-   * entirely instead of prompting an agent to "apply fixes" for nothing.
+   * Neither `clean` nor `reprompt` is a model-produced route.
+   *
+   * `clean` — `parse` rewrites `proceed` with zero findings, so the graph can
+   * skip the fix node instead of prompting an agent to "apply fixes" for nothing.
+   *
+   * `reprompt` — `parse` could not read JSON out of the reply at all. Returning
+   * this rather than throwing is deliberate: a throw fails the acp node and kills
+   * the whole flow with no result file, bypassing the `escalate` sink that exists
+   * to report exactly this kind of dead end.
    */
-  route: "proceed" | "escalate" | "clean";
+  route: "proceed" | "escalate" | "clean" | "reprompt";
   findings: Finding[];
   escalationReason?: string;
+  /** Bounded tail of an unparseable reply; set only when `route` is `reprompt`. */
+  raw?: string;
 }
 /** Wall-clock budgets, forwarded from `finish.autoFlow.timeouts` by the plugin. */
 export interface FinishTimeouts {

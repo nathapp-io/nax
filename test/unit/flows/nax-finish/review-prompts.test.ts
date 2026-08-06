@@ -107,3 +107,28 @@ describe("buildReviewPrompt — incremental re-review", () => {
     }
   });
 });
+
+describe("buildReviewPrompt retry variant", () => {
+  const base = { base: "origin/main", specPath: "spec.md" };
+
+  test("omits the retry notice by default", () => {
+    expect(buildReviewPrompt("quality", base)).not.toContain("previous reply could not be parsed");
+  });
+
+  test("leads a full review with the retry notice when retrying", () => {
+    const p = buildReviewPrompt("quality", { ...base, retry: true });
+    expect(p).toContain("previous reply could not be parsed");
+    expect(p.indexOf("previous reply could not be parsed")).toBeLessThan(p.indexOf("You are the QUALITY reviewer"));
+  });
+
+  test("leads an incremental review with the retry notice too", () => {
+    const p = buildReviewPrompt("spec", { ...base, since: "abc123", priorFindings: [], retry: true });
+    expect(p).toContain("previous reply could not be parsed");
+    expect(p).toContain("abc123");
+  });
+
+  test("keeps the JSON contract last on a retry", () => {
+    const p = buildReviewPrompt("quality", { ...base, retry: true });
+    expect(p.trimEnd().endsWith("}")).toBe(true);
+  });
+});

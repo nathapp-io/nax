@@ -313,6 +313,17 @@ const JSON_CONTRACT = [
 ].join("\n");
 
 /**
+ * Prepended when a previous attempt at this review returned something that was
+ * not JSON. Lead position, not appended: the failure mode is a model that
+ * narrates its findings and forgets the contract at the end of a long turn.
+ */
+const RETRY_NOTICE = [
+  "IMPORTANT — your previous reply could not be parsed as JSON, so it was discarded entirely.",
+  "Do not narrate your findings in prose. Do not describe what you reported.",
+  "Your entire reply must be the JSON object described at the end of this prompt: first char `{`, last char `}`.",
+].join("\n");
+
+/**
  * Build the reviewer prompt.
  *
  * With `since` set this is a **re-review**: the same reviewer already read the
@@ -329,11 +340,19 @@ const JSON_CONTRACT = [
  */
 export function buildReviewPrompt(
   phase: "spec" | "quality",
-  args: { base: string; specPath: string; since?: string | null; priorFindings?: Finding[] },
+  args: {
+    base: string;
+    specPath: string;
+    since?: string | null;
+    priorFindings?: Finding[];
+    retry?: boolean;
+  },
 ): string {
   const dims = phase === "spec" ? SPEC_REVIEW_DIMENSIONS : QUALITY_REVIEW_DIMENSIONS;
+  const lead = args.retry ? [RETRY_NOTICE] : [];
   if (!args.since) {
     return [
+      ...lead,
       `You are the ${phase.toUpperCase()} reviewer for a completed feature.`,
       `The spec/requirements source is: ${args.specPath}. Read it in full.`,
       `Fetch and review the diff: \`git diff ${args.base}...HEAD\` (also \`--name-only\` for the file list).`,
@@ -344,6 +363,7 @@ export function buildReviewPrompt(
     ].join("\n\n");
   }
   return [
+    ...lead,
     `You are the ${phase.toUpperCase()} reviewer for a completed feature, continuing a review you already started.`,
     `On your previous pass over \`git diff ${args.base}...HEAD\` you raised the findings below, and they have since been fixed and committed. Everything else in that diff you already judged acceptable — do not re-derive a verdict on it.`,
     `Your findings from the previous pass:\n${JSON.stringify(args.priorFindings ?? [], null, 2)}`,
