@@ -2,3 +2,4 @@
 [2026-08-06T00:27:29.129Z] US-002 — PASSED — Build deterministic finish PR title and body — Cost: $0.5135
 [2026-08-06T00:41:19.906Z] US-003 — PASSED — Load PRD and status artifacts into the PR context — Cost: $0.5669
 [2026-08-06T01:00:20.268Z] US-004 — PASSED — Load rounds, diffstat, and gate names into the PR context — Cost: $1.4726
+[2026-08-06T01:22:41.926Z] US-005 — PASSED — Write finished title and body on every forge path — Cost: $7.9066

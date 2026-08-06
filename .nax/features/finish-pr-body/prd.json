@@ -3,7 +3,7 @@
   "feature": "finish-pr-body",
   "branchName": "feat/finish-pr-body",
   "createdAt": "2026-08-05T00:00:00.000Z",
-  "updatedAt": "2026-08-06T01:00:23.814Z",
+  "updatedAt": "2026-08-06T01:22:41.926Z",
   "userStories": [
     {
       "id": "US-001",
@@ -244,8 +244,8 @@
         "US-003",
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
