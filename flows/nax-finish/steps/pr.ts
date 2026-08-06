@@ -1,9 +1,69 @@
+import { readFile } from "node:fs/promises";
+import { dirname, isAbsolute, join } from "node:path";
 import { FinishError } from "../errors";
 import { runArgv } from "../exec";
-import type { RunFn } from "../types";
+import type { FinishPrContext, FinishPrStory } from "../pr-body";
+import type { FinishInput, RunFn } from "../types";
 import { type Forge, detectForge, extractUrl, viewArgv } from "./forge";
 
-export const _prDeps: { run: RunFn } = { run: runArgv };
+export const _prDeps: { run: RunFn; readText: (path: string) => Promise<string | null> } = {
+  run: runArgv,
+  readText: (path) => readFile(path, "utf8"),
+};
+
+interface PrdArtifact {
+  userStories?: { id: string; title: string; acceptanceCriteria?: unknown[] }[];
+  outOfScope?: string[];
+}
+
+interface StatusArtifact {
+  postRun?: { acceptance?: { status?: string }; regression?: { status?: string } };
+  durationMs?: number;
+  progress?: { passed?: number; total?: number };
+}
+
+async function readJson(path: string): Promise<unknown> {
+  try {
+    const text = await _prDeps.readText(path);
+    return text === null ? undefined : JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+function storiesFrom(prd: PrdArtifact | undefined): FinishPrStory[] {
+  if (!Array.isArray(prd?.userStories)) return [];
+  return prd.userStories.map((story) => ({
+    id: story.id,
+    title: story.title,
+    acCount: Array.isArray(story.acceptanceCriteria) ? story.acceptanceCriteria.length : 0,
+  }));
+}
+
+export async function loadFinishPrContext(
+  input: FinishInput,
+  args: { base: string; gatesRan: string[] },
+): Promise<FinishPrContext> {
+  const prdPath = isAbsolute(input.prdPath) ? input.prdPath : join(input.workdir, input.prdPath);
+  const [prd, status] = (await Promise.all([readJson(prdPath), readJson(join(dirname(prdPath), "status.json"))])) as [
+    PrdArtifact | undefined,
+    StatusArtifact | undefined,
+  ];
+  return {
+    feature: input.feature,
+    stories: storiesFrom(prd),
+    outOfScope: Array.isArray(prd?.outOfScope) ? prd.outOfScope : [],
+    acceptance: status?.postRun?.acceptance?.status,
+    regression: status?.postRun?.regression?.status,
+    gatesRan: args.gatesRan,
+    rounds: [],
+    run: {
+      durationMs: status?.durationMs,
+      storiesPassed: status?.progress?.passed,
+      storiesTotal: status?.progress?.total,
+    },
+  };
+}
 
 /**
  * Parse `gh pr view --json isDraft,url` / `glab mr view --output json` stdout.
