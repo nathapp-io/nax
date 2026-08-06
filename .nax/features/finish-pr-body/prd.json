@@ -3,7 +3,7 @@
   "feature": "finish-pr-body",
   "branchName": "feat/finish-pr-body",
   "createdAt": "2026-08-05T00:00:00.000Z",
-  "updatedAt": "2026-08-06T00:12:21.219Z",
+  "updatedAt": "2026-08-06T00:18:09.348Z",
   "userStories": [
     {
       "id": "US-001",
@@ -21,8 +21,8 @@
         "audit"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -92,7 +92,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/plugins/builtin/auto-pr/pr-body.ts",
@@ -104,7 +106,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0e9b8944e7649b635a082ff135f78c36e3e56c53"
     },
     {
       "id": "US-003",
