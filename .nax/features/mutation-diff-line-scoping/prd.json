@@ -3,7 +3,7 @@
   "feature": "mutation-diff-line-scoping",
   "branchName": "feat/mutation-diff-line-scoping",
   "createdAt": "2026-08-06T06:48:00Z",
-  "updatedAt": "2026-08-06T07:00:48.322Z",
+  "updatedAt": "2026-08-06T07:06:38.881Z",
   "userStories": [
     {
       "id": "US-001",
@@ -27,8 +27,8 @@
         "parser"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -90,7 +90,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/verification/smart-runner.ts",
@@ -104,7 +106,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "14e5a088b6509c504c9308a0b76d9d2d9bcd88a5"
     },
     {
       "id": "US-003",
