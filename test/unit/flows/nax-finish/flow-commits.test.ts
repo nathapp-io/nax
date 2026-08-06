@@ -55,9 +55,12 @@ describe("commit_* nodes", () => {
       if (cmd.includes("--porcelain")) return { exitCode: 0, stdout: porcelain, stderr: "" };
       if (cmd.includes("rev-parse")) {
         revParseCalls++;
-        // The first `rev-parse` is shaBefore (pre-commit); the second is shaAfter
-        // (post-commit). They're called once each only when the tree was dirty.
-        return { exitCode: 0, stdout: `${postCommitSha}\n`, stderr: "" };
+        // First call = shaBefore (pre-commit HEAD); second call = shaAfter
+        // (post-commit HEAD). Returning distinct values lets the AC1 assertion
+        // actually distinguish the two — returning the same string for both
+        // would let a regression that records `shaBefore` pass unnoticed.
+        const sha = revParseCalls === 1 ? "before-sha" : postCommitSha;
+        return { exitCode: 0, stdout: `${sha}\n`, stderr: "" };
       }
       return { exitCode: 0, stdout: "", stderr: "" };
     };
