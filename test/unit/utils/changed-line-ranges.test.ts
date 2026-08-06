@@ -7,6 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import * as path from "node:path";
 import { withDepsRestore } from "@test/helpers";
 import { _changedLineRangesDeps, getChangedLineRanges } from "@/utils/changed-line-ranges";
 import { _gitDeps } from "@/utils/git";
@@ -200,5 +201,49 @@ new file mode 100644
     const result = await getChangedLineRanges("/workdir", "abc123");
     expect(result).not.toBeNull();
     expect(result?.get("/repo/src/a.ts")).toEqual([{ start: 2, end: 4 }]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Regression — review warning: string concatenation produced non-normalized
+  // keys when the anchor had a trailing slash or the workdir was relative.
+  // ---------------------------------------------------------------------------
+
+  test("normalizes trailing slash on git root so keys are not double-slashed", async () => {
+    _changedLineRangesDeps.getGitRoot = mock(async (_wd: string) => "/repo/");
+    const diff = `diff --git a/src/a.ts b/src/a.ts
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -1 +1,2 @@
+-x
++y
+`;
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(diff, 0)) as unknown as typeof _gitDeps.spawn;
+
+    const result = await getChangedLineRanges("/workdir", "abc123");
+    expect(result).not.toBeNull();
+    expect(result?.has("/repo/src/a.ts")).toBe(true);
+    expect(result?.has("/repo//src/a.ts")).toBe(false);
+  });
+
+  test("absolutizes a relative workdir fallback so keys are absolute paths", async () => {
+    _changedLineRangesDeps.getGitRoot = mock(async (_wd: string) => null);
+    const diff = `diff --git a/src/a.ts b/src/a.ts
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -1 +1,2 @@
+-x
++y
+`;
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(diff, 0)) as unknown as typeof _gitDeps.spawn;
+
+    const result = await getChangedLineRanges("relative/workdir", "abc123");
+    expect(result).not.toBeNull();
+    expect(result).not.toBeNull();
+    const keys = Array.from(result!.keys());
+    expect(keys).toHaveLength(1);
+    expect(path.isAbsolute(keys[0]!)).toBe(true);
+    expect(keys[0]).toMatch(/relative[/\\]workdir[/\\]src[/\\]a\.ts$/);
   });
 });

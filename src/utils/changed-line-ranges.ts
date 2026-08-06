@@ -11,6 +11,7 @@
  * the supplied `workdir` is used as the anchor instead.
  */
 
+import { resolve as resolvePath } from "node:path";
 import { type LineRange, extractDiffLineRanges } from "./diff-files";
 import { getGitRoot, gitWithTimeout } from "./git";
 
@@ -46,10 +47,10 @@ export async function getChangedLineRanges(
     if (ranges.size === 0) return ranges;
 
     const gitRoot = await _changedLineRangesDeps.getGitRoot(workdir);
-    const anchor = gitRoot ?? workdir;
+    const anchor = resolvePath(gitRoot ?? workdir);
     const anchored = new Map<string, LineRange[]>();
     for (const [path, value] of ranges) {
-      anchored.set(`${anchor}/${path}`, value);
+      anchored.set(resolvePath(anchor, path), value);
     }
     return anchored;
   } catch {
