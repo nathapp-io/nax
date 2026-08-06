@@ -11,7 +11,7 @@ const FAKE_STORY = { id: "US-004", title: "mutation-check op" } as any;
 function ctxWithConfig(execution: Record<string, unknown> = {}, runtime: Partial<NaxRuntime> = {}): any {
   const config = { execution, quality: { commands: { test: "bun test" } } } as any;
   return {
-    runtime: { mutationSummaries: new Map(), ...runtime },
+    runtime: { mutationSummaries: new Map(), dirtyWorktrees: new Set<string>(), ...runtime },
     storyId: "US-004",
     packageView: {
       packageDir: "packages/agent",
@@ -149,6 +149,10 @@ describe("mutationCheckOp — an unconfirmed revert stops the check", () => {
       // Stopped after the first mutant rather than compounding.
       expect(regressionCalls).toBe(1);
       expect(ctx.runtime.mutationSummaries.get("US-004")?.revertFailed).toBe(true);
+      // The tree now holds a line this op did not author, so auto-commit must
+      // be blocked for it — otherwise `git add -A` sweeps the injected defect
+      // into a commit and, under autoPR, a push.
+      expect([...ctx.runtime.dirtyWorktrees]).toEqual([dir]);
     } finally {
       cleanupTempDir(dir);
     }
@@ -172,6 +176,8 @@ describe("mutationCheckOp — an unconfirmed revert stops the check", () => {
       expect(out.revertFailed).toBeUndefined();
       expect(await Bun.file(file).text()).toBe(original);
       expect(await Bun.file(journalPathFor(dir, "US-004")).exists()).toBe(false);
+      // A confirmed revert must not block commits.
+      expect([...ctx.runtime.dirtyWorktrees]).toEqual([]);
     } finally {
       cleanupTempDir(dir);
     }

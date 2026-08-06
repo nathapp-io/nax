@@ -19,6 +19,7 @@
  */
 
 import { estimateTokens } from "@/optimizer";
+import { fencedLineIndices } from "@/utils/markdown-fence";
 import type { CanonicalRule } from "./rules-frontmatter";
 
 export interface RuleSection {
@@ -101,8 +102,14 @@ export function splitRuleIntoSections(rule: CanonicalRule): RuleSection[] {
   const content = rule.content;
   const lines = content.split("\n");
 
+  // A `## ` line inside a fenced code block is an EXAMPLE, not a boundary. Rule
+  // files that document markdown by example contain them, and splitting there
+  // cuts a section in the middle of a fence — so a retained section can open a
+  // fence it never closes, and budget truncation can drop the closing half.
+  const fenced = fencedLineIndices(lines);
   const h2Indices: number[] = [];
   for (let i = 0; i < lines.length; i++) {
+    if (fenced.has(i)) continue;
     const line = lines[i] ?? "";
     if (H2_LINE_PATTERN.test(line)) {
       h2Indices.push(i);

@@ -7,8 +7,15 @@
  * make possible: the boundary file contributes its leading sections instead
  * of being dropped whole.
  *
- * Sorting: ascending by `priority` (lower number = more important), then
- * ascending by `ordinal` within a rule.
+ * Sorting: ascending by `priority` (lower number = more important), then by
+ * owning rule, then ascending by `ordinal` within that rule.
+ *
+ * The rule tiebreaker is load-bearing, not cosmetic. Without it, equal-priority
+ * sections from different files sort ordinal-major and interleave — and since
+ * `priority` defaults to `FRONTMATTER_PRIORITY_DEFAULT` for every rule that does
+ * not declare one, that is the normal case, not an edge case. Truncation then
+ * cuts every rule at the same ordinal instead of dropping one boundary file's
+ * tail, so each rule arrives shredded and no rule is contiguous.
  *
  * Truncation: longest leading run whose cumulative tokens fit inside
  * `budgetTokens`. The first section is admitted whole even if it exceeds the
@@ -43,6 +50,16 @@ export interface SectionBudgetResult {
    * treating the budget as a usable cap.
    */
   overageTokens: number;
+}
+
+/**
+ * Identity of the rule a section belongs to, for the sort tiebreaker.
+ *
+ * Matches the key `StaticRulesProvider` sorts its rules by, so the section
+ * order this module produces agrees with the rule order the provider computed.
+ */
+function ownerIdentifier(section: RuleSection): string {
+  return section.ruleId ?? section.rulePath ?? "";
 }
 
 function sectionIdentifier(section: RuleSection): string {
@@ -80,6 +97,7 @@ export function applySectionBudget(sections: RuleSection[], budgetTokens: number
   const sorted = [...sections].sort(
     (a, b) =>
       (a.priority ?? FRONTMATTER_PRIORITY_DEFAULT) - (b.priority ?? FRONTMATTER_PRIORITY_DEFAULT) ||
+      ownerIdentifier(a).localeCompare(ownerIdentifier(b)) ||
       a.ordinal - b.ordinal,
   );
 

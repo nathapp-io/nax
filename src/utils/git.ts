@@ -4,6 +4,7 @@
 
 import { getSafeLogger } from "../logger";
 import { spawn } from "./bun-deps";
+import { realOrRaw } from "./realpath";
 
 /**
  * Default timeout for git subprocess calls.
@@ -238,8 +239,18 @@ export function detectMergeConflict(output: string): boolean {
  * @param stage   - Log stage prefix (e.g. "tdd", "execution")
  * @param role    - Session role for the commit message (e.g. "implementer")
  * @param storyId - Story ID for the commit message
+ * @param blockedWorktrees - Working trees known to hold source this run cannot
+ *   account for — currently an unreverted mutation from the mutation spot-check
+ *   (`runtime.dirtyWorktrees`). A commit under one of these would capture the
+ *   injected defect, so it is refused. Omit when the caller has no runtime.
  */
-export async function autoCommitIfDirty(workdir: string, stage: string, role: string, storyId: string): Promise<void> {
+export async function autoCommitIfDirty(
+  workdir: string,
+  stage: string,
+  role: string,
+  storyId: string,
+  blockedWorktrees?: ReadonlySet<string>,
+): Promise<void> {
   const logger = _gitDeps.getSafeLogger();
   try {
     // Guard: only auto-commit if workdir IS the git repository root.
@@ -275,6 +286,31 @@ export async function autoCommitIfDirty(workdir: string, stage: string, role: st
     const isAtRoot = realWorkdir === realGitRoot;
     const isSubdir = realGitRoot && realWorkdir.startsWith(`${realGitRoot}/`);
     if (!isAtRoot && !isSubdir) return;
+
+    // Staging is `git add -A` from the git ROOT, so the question is whether this
+    // commit's working tree is a blocked one — compare against `realGitRoot`,
+    // not `workdir`, so a monorepo package under a blocked root is still caught.
+    //
+    // Equality, NOT containment. `blockedWorktrees` holds working-tree roots, and
+    // in parallel mode each story's worktree is a LINKED tree at
+    // `<repo>/.nax-wt/<storyId>` — inside the main repo by path, but a separate
+    // checkout that `git add -A` from the main root never stages. A containment
+    // test would block the run-summary commit whenever any story's worktree was
+    // dirty, which is a false positive.
+    if (blockedWorktrees?.size) {
+      const root = realOrRaw(realGitRoot);
+      const blocked = [...blockedWorktrees].filter((tree) => realOrRaw(tree) === root);
+      if (blocked.length > 0) {
+        logger?.error(stage, "Refusing to auto-commit — working tree may still hold an unreverted mutation", {
+          storyId,
+          role,
+          workdir,
+          blocked,
+          hint: "Check the mutation-check log for the file and line, restore it, then commit manually.",
+        });
+        return;
+      }
+    }
 
     const statusProc = _gitDeps.spawn(["git", "status", "--porcelain"], {
       cwd: workdir,

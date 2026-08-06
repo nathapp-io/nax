@@ -20,6 +20,10 @@ import type { SectionBudgetResult } from "@/context";
 import { splitRuleIntoSections } from "@/context";
 import type { RuleSection } from "@/context";
 import { getLogger } from "@/logger";
+// Same estimator the section budget uses (via `rule-sections`). A second local
+// `length / 4` here would let a chunk's reported token count disagree with the
+// number the budget admitted it on.
+import { estimateTokens } from "@/optimizer";
 import { errorMessage } from "@/utils/errors";
 import { DEFAULT_CANONICAL_RULES_BUDGET_TOKENS, loadCanonicalRules } from "../../rules/canonical-loader";
 import type { CanonicalRule } from "../../rules/canonical-loader";
@@ -93,10 +97,6 @@ export interface StaticRulesProviderOptions {
 
 function contentHash8(content: string): string {
   return createHash("sha256").update(content).digest("hex").slice(0, 8);
-}
-
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
 }
 
 function canonicalRuleId(rule: CanonicalRule): string {
@@ -298,7 +298,21 @@ export class StaticRulesProvider implements IContextProvider {
           repoRoot: request.repoRoot,
           packageDir: request.packageDir,
         });
-        return { chunks: [], pullTools: [] };
+        // Report the shape of the drop rather than returning bare. Every other
+        // exit from this provider carries a scopingReport, so omitting it here
+        // made "rules existed but the package filter rejected all of them" the
+        // one scoping outcome invisible to manifest telemetry.
+        return {
+          chunks: [],
+          pullTools: [],
+          scopingReport: {
+            stageFilteredIds: [],
+            appliesToFilteredIds: [],
+            appliesToInertCount: 0,
+            scopeFileCount: request.scopeFiles?.length ?? 0,
+            sectionCount: 0,
+          },
+        };
       }
 
       if (mergedRules.length > 0) {
@@ -382,11 +396,25 @@ export class StaticRulesProvider implements IContextProvider {
 
         const effectiveSections = this.enforceBudget ? budgetResult.retainedSections : allSections;
         if (effectiveSections.length === 0) {
-          logger.warn("static-rules", "No rule sections fit in static rules budget", {
-            storyId: request.storyId,
-            budgetTokens: effectiveBudget,
-            totalScopedSections: allSections.length,
-          });
+          // Two different causes reach zero sections, and conflating them sends
+          // an operator to tune a budget that was never the problem: either the
+          // stage / appliesTo filters rejected every rule, or sections existed
+          // and none fit. `allSections.length` tells them apart.
+          if (allSections.length === 0) {
+            logger.warn("static-rules", "Every canonical rule was filtered out by stage/appliesTo scoping", {
+              storyId: request.storyId,
+              stageFilteredCount: stageFilteredIds.length,
+              appliesToFilteredCount: appliesToFilteredIds.length,
+              stage: request.stage,
+              scopeFileCount: request.scopeFiles?.length ?? 0,
+            });
+          } else {
+            logger.warn("static-rules", "No rule sections fit in static rules budget", {
+              storyId: request.storyId,
+              budgetTokens: effectiveBudget,
+              totalScopedSections: allSections.length,
+            });
+          }
           const emptyPressure = buildSectionBudgetPressure(allSections, budgetResult);
           return {
             chunks: [],

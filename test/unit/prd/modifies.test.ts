@@ -238,6 +238,30 @@ describe("applyModifiedFiles", () => {
     expect(prd.userStories.every((s) => s.modifiedFiles === undefined)).toBe(true);
   });
 
+  test.each([
+    ["a filename containing two dots", "src/foo..bar.ts"],
+    ["a snapshot pair filename", "test/fixtures/v1..v2.snap"],
+    ["a dotted directory segment", "src/a..b/c.ts"],
+  ])("accepts %s — '..' as a substring is not traversal", (_label, path) => {
+    // A bare `includes("..")` also rejected legitimate filenames that merely
+    // contain two dots, silently dropping a valid authorisation. Traversal is a
+    // whole path SEGMENT, not a substring.
+    const spec = ["### Modifies", "", "**US-001**", `- \`${path}\` — legitimate`].join("\n");
+
+    const { prd, invalidPaths } = applyModifiedFiles(prdWithTwoStories(), spec);
+
+    expect(invalidPaths).toEqual([]);
+    expect(prd.userStories[0].modifiedFiles).toEqual([{ path, reason: "legitimate" }]);
+  });
+
+  test("still rejects a Windows-style traversing segment", () => {
+    const spec = ["### Modifies", "", "**US-001**", "- `..\\..\\secrets.txt` — nope"].join("\n");
+
+    const { invalidPaths } = applyModifiedFiles(prdWithTwoStories(), spec);
+
+    expect(invalidPaths).toHaveLength(1);
+  });
+
   test("rejects an escaping path while still attaching the safe entries beside it", () => {
     const spec = [
       "### Modifies",

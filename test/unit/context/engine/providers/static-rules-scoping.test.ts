@@ -201,3 +201,52 @@ describe("ContextOrchestrator.assemble() — scopingReport propagation", () => {
     expect(entry?.scopingReport?.appliesToInertCount).toBe(1);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Zero-rule exits stay observable
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("StaticRulesProvider — zero-rule exits", () => {
+  test("#558 package-filter drop still returns a scopingReport", async () => {
+    // Every other exit from this provider carries a scopingReport. Omitting it
+    // here made "rules existed but the package filter rejected all of them" the
+    // one scoping outcome invisible to manifest telemetry.
+    // Repo-level only: the package has no rules of its own, so the paths:
+    // filter is the sole reason nothing survives.
+    _staticRulesDeps.loadCanonicalRules = async (dir: string) =>
+      dir === "/project"
+        ? [{ id: "api-only", fileName: "api-only.md", content: "## R\nbody", paths: ["packages/api/**"] }]
+        : [];
+
+    const result = await new StaticRulesProvider().fetch({
+      ...BASE_REQUEST,
+      repoRoot: "/project",
+      packageDir: "/project/packages/web",
+      scopeFiles: ["src/a.ts"],
+    });
+
+    expect(result.chunks).toEqual([]);
+    expect(result.scopingReport).toBeDefined();
+    expect(result.scopingReport?.sectionCount).toBe(0);
+    expect(result.scopingReport?.scopeFileCount).toBe(1);
+  });
+
+  test("stage filtering to empty reports the stage cause, not a budget cause", async () => {
+    // Conflating the two sends an operator to tune a budget that was never the
+    // problem.
+    setupCanonical([
+      { id: "review-only", fileName: "review-only.md", content: "## R\nbody", stages: ["review"] },
+    ]);
+
+    const result = await new StaticRulesProvider({ enforceBudget: true }).fetch({
+      ...BASE_REQUEST,
+      stage: "execution",
+    });
+
+    expect(result.chunks).toEqual([]);
+    expect(result.scopingReport?.stageFilteredIds).toEqual(["review-only"]);
+    expect(result.scopingReport?.sectionCount).toBe(0);
+    // Nothing was dropped by the budget — there was nothing to drop.
+    expect(result.budgetPressure).toBeUndefined();
+  });
+});

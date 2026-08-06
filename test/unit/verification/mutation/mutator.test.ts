@@ -266,3 +266,71 @@ describe("generateMutants — whitespace-guard arithmetic (non-spaced tokens mus
     expect(second).toEqual(first);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// String literals and inline comments are not mutation sites
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("generateMutants — string literals and inline comments", () => {
+  test("does not mutate a comparison inside a string literal", () => {
+    // A flipped operator inside a message string changes no behaviour, so the
+    // tests "miss" it and it is reported as a survivor — a false signal that
+    // also burns one of the very few maxMutants slots.
+    const source = 'const msg = "expected a == b";\n';
+    const mutants = generateMutants({ source, language: "typescript", file: "msg.ts" });
+
+    expect(mutants.every((m) => !m.after.includes("a != b"))).toBe(true);
+  });
+
+  test("does not mutate a comparison inside a trailing line comment", () => {
+    const source = "const n = size; // guard when a == b\n";
+    const mutants = generateMutants({ source, language: "typescript", file: "n.ts" });
+
+    expect(mutants.every((m) => !m.after.includes("a != b"))).toBe(true);
+  });
+
+  test("still mutates the code that precedes a string literal", () => {
+    const source = 'if (a == b) throw new Error("a == b");\n';
+    const mutants = generateMutants({ source, language: "typescript", file: "guard.ts" });
+
+    const flip = mutants.find((m) => m.after.startsWith("if (a != b)"));
+    expect(flip).toBeDefined();
+    // The literal is carried through untouched, so the mutated line still
+    // matches the file on disk for apply/revert.
+    expect(flip?.after).toBe('if (a != b) throw new Error("a == b");');
+    expect(flip?.before).toBe(source.trimEnd());
+  });
+
+  test("still mutates the code that precedes a trailing comment", () => {
+    const source = "return a > b; // compare\n";
+    const mutants = generateMutants({ source, language: "typescript", file: "cmp.ts" });
+
+    const flip = mutants.find((m) => m.after.includes("a < b"));
+    expect(flip?.after).toBe("return a < b; // compare");
+  });
+
+  test("skips a line whose code region is empty", () => {
+    const source = '  "a == b";\n';
+    const mutants = generateMutants({ source, language: "typescript", file: "s.ts" });
+
+    expect(mutants).toEqual([]);
+  });
+
+  test("honours the Python comment marker rather than the JS one", () => {
+    const source = "flag = enabled  # set when a == b\n";
+    const mutants = generateMutants({ source, language: "python", file: "s.py" });
+
+    expect(mutants.every((m) => !m.after.includes("a != b"))).toBe(true);
+  });
+
+  test("before/after always span the whole line so revert can match on disk", () => {
+    const source = 'const ok = x >= y; // note "x >= y"\n';
+    const mutants = generateMutants({ source, language: "typescript", file: "ok.ts" });
+
+    expect(mutants.length).toBeGreaterThan(0);
+    for (const m of mutants) {
+      expect(m.before).toBe('const ok = x >= y; // note "x >= y"');
+      expect(m.after.endsWith('// note "x >= y"')).toBe(true);
+    }
+  });
+});

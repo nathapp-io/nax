@@ -280,7 +280,7 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
 
   // @design: BUG-074: Auto-commit any dirty files the agent left (e.g. bun.lock / package.json
   // after `bun add`) before the uncommitted-changes check. Mirrors BUG-058/063.
-  await autoCommitIfDirty(workdir, "review", "agent", storyId ?? "review");
+  await autoCommitIfDirty(workdir, "review", "agent", storyId ?? "review", runtime?.dirtyWorktrees);
 
   // RQ-001: Check for uncommitted tracked files before running checks
   const allUncommittedFiles = await _reviewGitDeps.getUncommittedFiles(workdir);

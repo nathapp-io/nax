@@ -14,8 +14,10 @@
  * One file per story, so parallel stories never contend for the same journal.
  */
 
-import { realpathSync } from "node:fs";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { join } from "node:path";
+// Shared with `mutation-check`, which compares the same git-realpath'd anchors
+// against the same caller-supplied paths and needs an identical answer.
+import { isInside } from "@/utils/realpath";
 import { revertMutant } from "./apply";
 import type { Mutant } from "./types";
 
@@ -120,38 +122,6 @@ async function readEntry(path: string): Promise<MutationJournalEntry | null> {
   } catch {
     return null;
   }
-}
-
-/**
- * Resolve symlinks so two spellings of the same location compare equal.
- *
- * `getGitRoot` returns git's realpath (`git rev-parse --show-toplevel` from
- * `/tmp/repo` answers `/private/tmp/repo`), while a mutant's `file` is built
- * from whichever path the caller supplied — often still the symlinked form.
- * Comparing those unresolved makes every entry look foreign. Same
- * normalisation `autoCommitIfDirty` performs for the same reason.
- */
-function realOrRaw(p: string): string {
-  const abs = resolve(p);
-  try {
-    return realpathSync(abs);
-  } catch {
-    // The path itself is gone — a journalled file deleted since the run died.
-    // Resolve the directory instead so a symlinked root still compares equal;
-    // only fall back to the lexical form when that fails too.
-    try {
-      return join(realpathSync(dirname(abs)), basename(abs));
-    } catch {
-      return abs;
-    }
-  }
-}
-
-/** Is `filePath` inside `root`'s subtree, symlinks resolved on both sides? */
-function isInside(root: string, filePath: string): boolean {
-  const base = realOrRaw(root);
-  const target = realOrRaw(filePath);
-  return target === base || target.startsWith(`${base}${sep}`);
 }
 
 /**

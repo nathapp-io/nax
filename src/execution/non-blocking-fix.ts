@@ -19,6 +19,7 @@ import { captureSnapshotRef, rollbackToRef } from "../tdd/rollback";
 import { createTestFileClassifier, resolveTestFilePatterns } from "../test-runners";
 import { typedSpawn } from "../utils/bun-deps";
 import { packageDirRelative } from "../utils/paths";
+import { isInside } from "../utils/realpath";
 import type { QuarantineMemo } from "../verification";
 import type { GateRegressionDetail, PhaseKind } from "./story-orchestrator";
 import { type NbfFlakeTriageTransaction, createNbfFlakeTriageTransaction } from "./story-orchestrator/nbf-flake-triage";
@@ -128,6 +129,15 @@ export interface NonBlockingFixArgs {
   quarantineMemo?: QuarantineMemo;
   /** Verifier-time failures excluded from NBF first-observation probing. */
   gateBaselineKeys?: ReadonlySet<string>;
+  /**
+   * Working trees holding source this run cannot account for — currently an
+   * unreverted mutation from the mutation spot-check (`runtime.dirtyWorktrees`).
+   *
+   * NBF's very first act is a snapshot COMMIT, which would capture the injected
+   * defect and, worse, leave the tree clean so every later `autoCommitIfDirty`
+   * guard sees nothing to block. Skipping the pass is the only safe response.
+   */
+  blockedWorktrees?: ReadonlySet<string>;
   /** Runs the harness; returns true when it exhausted without resolving. */
   runRectify: (
     maxAttempts: number,
@@ -208,6 +218,20 @@ export function createMeasureSourceDiff(args: CreateMeasureSourceDiffArgs): NonB
  * exhaustion. Never throws into the caller's verdict path: failure ⇒ restore ⇒
  * the story keeps its adversarial-passed state.
  */
+/**
+ * Is `workdir` the blocked working tree, or a package inside one?
+ *
+ * One-directional on purpose. `blockedWorktrees` holds working-tree ROOTS, and
+ * `isInside` already treats the root itself as inside, so this covers both the
+ * root and any package under it. The reverse test (a blocked root inside
+ * `workdir`) would fire when `workdir` is the main repo and some story's linked
+ * worktree at `<repo>/.nax-wt/<storyId>` is blocked — a separate checkout whose
+ * state says nothing about this one.
+ */
+function isBlocked(blocked: ReadonlySet<string>, workdir: string): boolean {
+  return [...blocked].some((tree) => isInside(tree, workdir));
+}
+
 export async function runNonBlockingFix(
   args: NonBlockingFixArgs,
   overrides: Partial<NonBlockingFixDeps> = {},
@@ -215,6 +239,16 @@ export async function runNonBlockingFix(
   const _deps: NonBlockingFixDeps = { ...DEFAULT_DEPS, ...overrides };
   const logger = getSafeLogger();
   if (!shouldRunNonBlockingFix(args.cfg, args.advisoryFindings.length)) {
+    return { ran: false, kept: false, restored: false };
+  }
+  // Checked before the snapshot, not after: the snapshot is itself a commit, so
+  // by the time it has run the mutation is already captured and the tree is
+  // clean. Degrades to "nbf did not run", matching the snapshot-failure path.
+  if (args.blockedWorktrees?.size && isBlocked(args.blockedWorktrees, args.workdir)) {
+    logger?.warn("non-blocking-fix", "skipping best-effort pass — worktree may hold an unreverted mutation", {
+      storyId: args.storyId,
+      workdir: args.workdir,
+    });
     return { ran: false, kept: false, restored: false };
   }
   // Shallow copy is sufficient: phase outputs are replaced wholesale by each stage,
