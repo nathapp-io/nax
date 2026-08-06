@@ -63,18 +63,20 @@ Create `test/unit/flows/nax-finish/verdict.test.ts`:
 import { describe, expect, test } from "bun:test";
 import { parseFixVerdict, parseReviewVerdict } from "@flows/nax-finish/verdict";
 
-// The real 927-byte reply that killed flow run 2026-08-05T154112386Z-nax-finish-600cf3f3
-// on rs-stock/pipeline-run-chat-context. Not a synthetic "not json" string: the point is
-// that a chatty reviewer emits no brace at all, which defeats every extractJsonObject tier.
+// The real reply that killed flow run 2026-08-05T154112386Z-nax-finish-600cf3f3 on
+// rs-stock, with private identifiers replaced by generic equivalents — the shape
+// (long, chatty, no brace anywhere) is authentic, only the names are not. Not a
+// synthetic "not json" string: the point is that a chatty reviewer emits no brace at
+// all, which defeats every extractJsonObject tier.
 const REAL_UNPARSEABLE =
   "Good, not a concern — self-contained change with a matching doc comment. " +
-  "Let's check the Python test files briefly for pipeline.py resolver, and the " +
-  "`apps/api/_pipeline_adapter.py` registration for unused import warnings etc." +
+  "Let's check the test files briefly for the request-routing resolver, and the " +
+  "`src/server/request_handler.py` registration for unused import warnings etc." +
   "Good, that exists as expected. Now let's check the gate-blocked probing logic once " +
-  "more and the `measureForNode`/`findGateBlocker` for edge cases against the AC that " +
+  "more and the `computeNodeMetrics`/`locateBlockingGate` for edge cases against the AC that " +
   '"does not render the gate\'s own output payload" — seems fine. I have enough for ' +
-  "findings.Reported two findings: a HIGH-confidence correctness regression (screen/" +
-  "backtest chat context now emits `Strategy: undefined | Universe: undefined`).";
+  "findings.Reported two findings: a HIGH-confidence correctness regression (the " +
+  "dashboard summary panel now emits `Label: undefined | Category: undefined`).";
 
 const FINDING = { severity: "HIGH", title: "t", problem: "p", fix: "f" };
 
@@ -766,7 +768,7 @@ gh pr create --base main --title "fix(nax-finish): survive an unparseable review
 A reviewer returning prose instead of JSON threw inside `parseVerdict`, failing the
 acp node and killing the whole flow — exit 1, no result file, no notification.
 
-Observed on `rs-stock/pipeline-run-chat-context` (flow run
+Observed on `rs-stock` (flow run
 `2026-08-05T154112386Z-nax-finish-600cf3f3`): the run itself was clean, 4/4 stories,
 but the flow died at `review_quality` after 128s and ~4.2M tokens, losing the quality
 review, the quality gates and the PR.
@@ -792,9 +794,9 @@ The `reprompt` branch is checked before the findings-empty branch. A reprompt ve
 carries zero findings, so the reverse order would route an unread review to `clean` and
 open a PR having verified nothing — a silent false green, worse than the crash.
 
-The regression fixture is the real 927-byte reply from the run above, not a synthetic
-string: the point is that a chatty reviewer emits no brace at all, defeating every
-`extractJsonObject` tier.
+The regression fixture is the real reply from the run above, with private identifiers
+replaced by generic equivalents, not a synthetic string: the point is that a chatty
+reviewer emits no brace at all, defeating every `extractJsonObject` tier.
 
 ## Test plan
 

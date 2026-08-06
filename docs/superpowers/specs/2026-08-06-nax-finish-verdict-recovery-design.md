@@ -9,9 +9,9 @@ A reviewer node in the `nax-finish` flow returned prose instead of JSON. `parseV
 threw, the node failed, and the whole flow died with exit 1 and no result file. The
 post-run plugin had nothing to read and nothing to notify from.
 
-Observed on `rs-stock/pipeline-run-chat-context`, flow run
-`2026-08-05T154112386Z-nax-finish-600cf3f3`. The run itself was clean — 4/4 stories,
-$27.27, 3h47m. The flow got through `load_ctx → acceptance → review_spec → route_spec →
+Observed on `rs-stock`, flow run
+`2026-08-05T154112386Z-nax-finish-600cf3f3`. The run itself was clean — 4/4 stories.
+The flow got through `load_ctx → acceptance → review_spec → route_spec →
 fix_spec → commit_spec → acceptance → review_spec → route_spec` and died at
 `review_quality` after 128s and ~4.2M tokens. The reviewer's final message was a
 927-byte narration ending:
@@ -27,8 +27,8 @@ exactly one JSON object and nothing else"), so this is model non-compliance, not
 missing instruction.
 
 What the crash cost: the quality review's two findings, the quality gates, and the PR.
-The spec-phase fix survived because `commit_spec` had already committed it
-(`08986709` on `feat/pipeline-run-chat-context`).
+The spec-phase fix survived because `commit_spec` had already committed it to the
+feature branch before the crash.
 
 ## Blast radius
 
@@ -220,9 +220,10 @@ Invariants after this change:
   still parse, since `extractJsonObject`'s three tiers are unchanged
 - `parseReviewVerdict` on prose with no braces → `route: "reprompt"`
 - `parseFixVerdict` never throws on any of the same inputs
-- The regression fixture is the **real captured output** — the 927-byte artifact from
+- The regression fixture is the **real captured output** — the artifact from
   the rs-stock run (`sha256-926e009aa773a68da5cb0aaf126d3ea50feb81dc81fd6d6f618bcd4acea4b20d`),
-  not a synthetic `"not json"` string
+  with private identifiers replaced by generic equivalents, not a synthetic
+  `"not json"` string
 - `repromptCount` ignores legitimate `review_*` re-entries and counts only steps whose
   output routed `reprompt`
 
@@ -252,6 +253,6 @@ Invariants after this change:
   `nax-quality-reviewer` (claude-agent-acp, sonnet); swapping models is a different
   lever and would not make the flow survive the next non-compliant reply.
 - The two rs-stock findings the crash discarded. They are real and tracked separately
-  against `rs-stock/pipeline-run-chat-context`.
+  in that project.
 - The `nax-finish` post-run `shouldRun` gate. It correctly declines on `main`; that it
   declines at `debug` level is a separate observability issue.
