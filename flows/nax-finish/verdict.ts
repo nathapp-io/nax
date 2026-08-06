@@ -82,6 +82,16 @@ export function parseFixVerdict(text: string): ReviewVerdict {
  * This is observable only because `parseReviewVerdict` returns rather than
  * throws — a returned verdict makes acpx record the step as successful with
  * this output. A throw would record it `failed`, with nothing to count.
+ *
+ * SELF-INCLUSIVE, not self-exclusive: acpx's runtime calls
+ * `recordFlowStepOutcome(runDir, state, step)` (acpx/src/flows/runtime.ts:262),
+ * which pushes the just-finished step onto `state.steps`
+ * (acpx/src/flows/runtime.ts:499), BEFORE `resolveNextNode` runs and before the
+ * following node (`route_<phase>`) executes. So by the time `routeReview` reads
+ * `ctx.state.steps` here, the current round's own `review_<phase>` step is
+ * already included. On the very first unparseable reply this already returns
+ * 1, not 0. `routeReview`'s comparison against `MAX_REPROMPT_ATTEMPTS` MUST
+ * stay `<=` (not `<`) for that reason — see routeReview below.
  */
 export function repromptCount(ctx: StepsCtx, phase: "spec" | "quality"): number {
   return (ctx.state.steps ?? []).filter(
@@ -108,12 +118,15 @@ export function routeReview(
   const verdict = (ctx.outputs as Record<string, ReviewVerdict | undefined>)[`review_${phase}`];
   const findings = verdict?.findings ?? [];
   if (verdict?.route === "reprompt") {
+    // `attempts` is self-inclusive (see repromptCount) — it already counts this
+    // round's failure, so `<=` (not `<`) is what makes MAX_REPROMPT_ATTEMPTS=1
+    // tolerate exactly one retry before escalating.
     const attempts = repromptCount(ctx, phase);
-    if (attempts < MAX_REPROMPT_ATTEMPTS) return { route: "reprompt", findings };
+    if (attempts <= MAX_REPROMPT_ATTEMPTS) return { route: "reprompt", findings };
     return {
       route: "escalate",
       escalationReason:
-        `${phase} reviewer returned unparseable output after ${attempts + 1} attempts. ` +
+        `${phase} reviewer returned unparseable output after ${attempts} attempts. ` +
         `Last reply: ${verdict.raw ?? "(empty)"}`,
       findings,
     };

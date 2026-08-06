@@ -136,17 +136,27 @@ re-entries in the normal fix loop. This works because acpx's `FlowStepRecord` ca
 `state: { steps: { nodeId: string }[] }` annotation is a narrowing of a richer runtime
 object, so it widens to `{ nodeId: string; output?: unknown }`.
 
+**The count is self-inclusive, not self-exclusive.** acpx's runtime calls
+`recordFlowStepOutcome(runDir, state, step)` (`acpx/src/flows/runtime.ts:262`), which
+pushes the just-finished step onto `state.steps` (`acpx/src/flows/runtime.ts:499`),
+*before* the next node (`route_<phase>`) runs. So by the time `routeReview` reads
+`ctx.state.steps`, the current round's own `review_<phase>` step — the one that just
+routed `reprompt` — is already included. On the very first unparseable reply
+`repromptCount` already returns `1`, not `0`. `routeReview`'s gate must therefore compare
+`attempts <= MAX_REPROMPT_ATTEMPTS`, not `<` — see "Data flow" below.
+
 ### Data flow
 
 ```
 review_quality  parse fails → { route: "reprompt", findings: [], raw: <tail> }
-      │
+      │  (acpx records this step into state.steps BEFORE route_quality runs)
       ▼
 route_quality = routeReview(ctx, "quality")
       │
-      ├─ repromptCount < 1  → { route: "reprompt" } ──→ review_quality
-      │                                                  (retry: true prompt)
-      └─ repromptCount >= 1 → { route: "escalate",
+      ├─ repromptCount <= 1  → { route: "reprompt" } ──→ review_quality
+      │  (round 1: 1 reprompt step already recorded)     (retry: true prompt)
+      └─ repromptCount > 1   → { route: "escalate",
+      │  (round 2: 2 reprompt steps already recorded)
                                  escalationReason: "quality reviewer returned
                                  unparseable output after 2 attempts: <tail>" }
                                                     ──→ escalate

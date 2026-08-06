@@ -120,11 +120,25 @@ describe("routeReview", () => {
     expect(r.route).toBe("reprompt");
   });
 
-  test("escalates once the reprompt cap is reached, naming the raw tail", () => {
-    const steps = Array.from({ length: MAX_REPROMPT_ATTEMPTS }, () => REPROMPT_STEP);
+  // acpx records a step's outcome (`recordFlowStepOutcome`, runtime.ts:262/499)
+  // BEFORE the next node runs, so by the time `routeReview` executes for the
+  // current round, that round's own `review_quality` step is already in
+  // `ctx.state.steps`. These two tests model that real ordering: round N's
+  // `steps` array has exactly N reprompt entries (not N-1), and would FAIL
+  // under the old `attempts < MAX_REPROMPT_ATTEMPTS` comparison — round 1
+  // would incorrectly escalate immediately instead of retrying.
+  test("reprompts on the first unparseable reply (round 1: 1 reprompt step already recorded)", () => {
+    const steps = [REPROMPT_STEP];
+    const r = routeReview(routeCtx({ route: "reprompt", findings: [], raw: "some prose" }, steps), "quality");
+    expect(r.route).toBe("reprompt");
+  });
+
+  test("escalates on the second consecutive unparseable reply, naming the raw tail", () => {
+    const steps = Array.from({ length: MAX_REPROMPT_ATTEMPTS + 1 }, () => REPROMPT_STEP);
     const r = routeReview(routeCtx({ route: "reprompt", findings: [], raw: "some prose" }, steps), "quality");
     expect(r.route).toBe("escalate");
     expect(r.escalationReason).toContain("unparseable");
+    expect(r.escalationReason).toContain("after 2 attempts");
     expect(r.escalationReason).toContain("some prose");
   });
 

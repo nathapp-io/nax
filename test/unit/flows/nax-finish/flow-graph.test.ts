@@ -716,11 +716,37 @@ describe("reprompt edges", () => {
     expect(switchOf("route_quality").cases.escalate).toBe("escalate");
   });
 
-  test("route_quality yields reprompt for an unparseable verdict", async () => {
+  // acpx's runtime pushes the just-finished step onto `state.steps`
+  // (recordFlowStepOutcome, runtime.ts:262/499) BEFORE the next node runs, so
+  // by the time `route_quality` executes, its own triggering `review_quality`
+  // step is already recorded. These two tests model that real ordering —
+  // round 1's `steps` has exactly the 1 step just recorded, round 2's has 2 —
+  // and the round-1 case would FAIL under the old (buggy) `<` comparison,
+  // which escalated on the very first unparseable reply instead of retrying.
+  test("route_quality yields reprompt on the first unparseable verdict (round 1)", async () => {
+    const verdict = { route: "reprompt", findings: [], raw: "prose" };
     const out = await nodeRun<{ route: string }>("route_quality").run(
-      ctxOf({ outputs: { review_quality: { route: "reprompt", findings: [], raw: "prose" } } }),
+      ctxOf({
+        outputs: { review_quality: verdict },
+        steps: [{ nodeId: "review_quality", output: verdict }] as never,
+      }),
     );
     expect(out.route).toBe("reprompt");
+  });
+
+  test("route_quality escalates on the second consecutive unparseable verdict (round 2)", async () => {
+    const verdict = { route: "reprompt", findings: [], raw: "prose" };
+    const out = await nodeRun<{ route: string; escalationReason?: string }>("route_quality").run(
+      ctxOf({
+        outputs: { review_quality: verdict },
+        steps: [
+          { nodeId: "review_quality", output: verdict },
+          { nodeId: "review_quality", output: verdict },
+        ] as never,
+      }),
+    );
+    expect(out.route).toBe("escalate");
+    expect(out.escalationReason).toContain("after 2 attempts");
   });
 
   test("review_quality leads with the retry notice after a reprompt", () => {
