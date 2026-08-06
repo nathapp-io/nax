@@ -22,6 +22,7 @@ import type { MutationOutcomeSummary } from "../runtime/mutation-summary";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { selectScopedTests } from "../test-runners/scoped-selection";
 import type { SelectScopedTestsInput, SelectScopedTestsResult } from "../test-runners/scoped-selection";
+import { getChangedLineRanges } from "../utils/changed-line-ranges";
 import {
   applyMutant,
   classifyMutant,
@@ -55,6 +56,7 @@ export interface MutationCheckOutput {
 export interface MutationCheckDeps {
   detectLanguage: typeof detectLanguage;
   getChangedNonTestFiles: typeof getChangedNonTestFiles;
+  getChangedLineRanges: typeof getChangedLineRanges;
   selectScopedTests: (input: SelectScopedTestsInput) => Promise<SelectScopedTestsResult>;
   regression: (opts: VerificationGateOptions) => Promise<VerificationResult>;
 }
@@ -62,6 +64,7 @@ export interface MutationCheckDeps {
 export const _mutationCheckDeps: MutationCheckDeps = {
   detectLanguage,
   getChangedNonTestFiles,
+  getChangedLineRanges,
   selectScopedTests,
   regression,
 };
@@ -121,6 +124,15 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
     const anchor = input.repoRoot ?? input.workdir;
     const absoluteChangedFiles = changedFiles.map((f) => (isAbsolute(f) ? f : join(anchor, f)));
 
+    const rangeMap = await deps.getChangedLineRanges(input.workdir, input.storyGitRef);
+    if (rangeMap === null) {
+      logger.warn("mutation-check", "Failed to obtain changed-line ranges — skipping mutation spot-check", {
+        storyId: input.storyId,
+      });
+      record(emptyOutput);
+      return { success: true as const, ...emptyOutput };
+    }
+
     const survivors: SurvivingMutant[] = [];
     const outcomes = { killed: 0, survived: 0, errored: 0 };
     // Gather every candidate across all changed files, then select a
@@ -129,9 +141,17 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
     // and a top-of-file bias simultaneously.
     const mutants: Mutant[] = [];
     for (const file of absoluteChangedFiles) {
+      const lineRanges = rangeMap.get(file);
+      if (lineRanges === undefined) {
+        logger.debug("mutation-check", "Changed file has no diff line ranges — skipping", {
+          storyId: input.storyId,
+          file,
+        });
+        continue;
+      }
       try {
         const source = await Bun.file(file).text();
-        for (const m of generateMutants({ source, language, file })) {
+        for (const m of generateMutants({ source, language, file, lineRanges })) {
           mutants.push(m);
         }
       } catch (err) {

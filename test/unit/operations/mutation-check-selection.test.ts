@@ -43,6 +43,7 @@ function fakeDeps(overrides: Partial<MutationCheckDeps> = {}): MutationCheckDeps
   return {
     detectLanguage: async () => "typescript" as any,
     getChangedNonTestFiles: async () => [],
+    getChangedLineRanges: async () => new Map(),
     selectScopedTests: async () => ({
       effectiveCommand: "bun test",
       isFullSuite: true,
@@ -72,6 +73,7 @@ describe("mutationCheckOp — US-002 AC11: regression capped to maxMutants even 
 
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 8 }]]]),
         selectScopedTests: async () => ({
           effectiveCommand: "bun test",
           isFullSuite: true,
@@ -132,6 +134,11 @@ describe("mutationCheckOp — US-002 AC12: even-spread selection across multiple
 
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [fileA, fileB],
+        getChangedLineRanges: async () =>
+          new Map([
+            [fileA, [{ start: 1, end: 8 }]],
+            [fileB, [{ start: 1, end: 8 }]],
+          ]),
         selectScopedTests: async () => ({
           effectiveCommand: "bun test",
           isFullSuite: true,
@@ -183,6 +190,7 @@ describe("mutationCheckOp — US-002 AC13: no candidates means regression never 
 
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 1 }]]]),
         selectScopedTests: async () => ({
           effectiveCommand: "bun test",
           isFullSuite: true,
@@ -235,6 +243,11 @@ describe("mutationCheckOp — US-002 AC14: empty selection returns all-zero outc
 
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [fileA, fileB],
+        getChangedLineRanges: async () =>
+          new Map([
+            [fileA, [{ start: 1, end: 1 }]],
+            [fileB, [{ start: 1, end: 1 }]],
+          ]),
         selectScopedTests: async () => {
           selectCalls += 1;
           return {

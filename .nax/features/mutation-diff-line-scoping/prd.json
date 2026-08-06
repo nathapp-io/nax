@@ -3,7 +3,7 @@
   "feature": "mutation-diff-line-scoping",
   "branchName": "feat/mutation-diff-line-scoping",
   "createdAt": "2026-08-06T06:48:00Z",
-  "updatedAt": "2026-08-06T07:06:38.881Z",
+  "updatedAt": "2026-08-06T07:42:34.658Z",
   "userStories": [
     {
       "id": "US-001",
@@ -77,8 +77,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -152,7 +152,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-balanced",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/verification/mutation/mutator.ts",
@@ -166,7 +168,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8a223ecb143caa751358acbea7f4d86e3737bc53"
     },
     {
       "id": "US-004",

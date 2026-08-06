@@ -29,6 +29,7 @@ function fakeDeps(overrides: Partial<MutationCheckDeps> = {}): MutationCheckDeps
   return {
     detectLanguage: async () => "typescript" as any,
     getChangedNonTestFiles: async () => [],
+    getChangedLineRanges: async () => new Map(),
     selectScopedTests: async () => ({
       effectiveCommand: "bun test",
       isFullSuite: true,
@@ -160,6 +161,7 @@ describe("mutationCheckOp — AC3: surviving mutant (regression SUCCESS)", () =>
 
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 1 }]]]),
         selectScopedTests: async () => ({
           effectiveCommand: "bun test src/foo.test.ts",
           isFullSuite: false,
@@ -212,7 +214,10 @@ describe("mutationCheckOp — US-004 runtime collection", () => {
     try {
       const file = join(dir, "src", "foo.ts");
       await Bun.write(file, "if (a == b) { return 1; }\n");
-      const deps = fakeDeps({ getChangedNonTestFiles: async () => [file] });
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 1 }]]]),
+      });
       const ctx = ctxWithConfig(
         { mutationCheck: { enabled: true, maxMutants: 1, timeoutSeconds: 60 } },
         { mutationSummaries },
@@ -243,7 +248,10 @@ describe("mutationCheckOp — US-004 runtime collection", () => {
     try {
       const file = join(dir, "src", "foo.ts");
       await Bun.write(file, "if (a == b) { return 1; }\n");
-      const deps = fakeDeps({ getChangedNonTestFiles: async () => [file] });
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 1 }]]]),
+      });
       const ctx = ctxWithConfig(
         { mutationCheck: { enabled: true, maxMutants: 1, timeoutSeconds: 60 } },
         { mutationSummaries },
@@ -278,6 +286,7 @@ describe("mutationCheckOp — AC4: TEST_FAILURE kills the mutant", () => {
 
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 1 }]]]),
         selectScopedTests: async () => ({
           effectiveCommand: "bun test src/foo.test.ts",
           isFullSuite: false,
@@ -338,6 +347,7 @@ describe("mutationCheckOp — outcomes aggregation (US-003)", () => {
 
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 1 }]]]),
         selectScopedTests: async () => ({
           effectiveCommand: "bun test src/foo.test.ts",
           isFullSuite: false,
@@ -408,6 +418,7 @@ describe("mutationCheckOp — outcomes aggregation (US-003)", () => {
 
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 1 }]]]),
         selectScopedTests: async () => ({
           effectiveCommand: "bun test src/foo.test.ts",
           isFullSuite: false,
@@ -456,6 +467,7 @@ describe("mutationCheckOp — AC5: TIMEOUT is classified errored (not survived)"
 
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 1 }]]]),
         selectScopedTests: async () => ({
           effectiveCommand: "bun test src/foo.test.ts",
           isFullSuite: false,
@@ -583,6 +595,7 @@ describe("mutationCheckOp — AC7: maxMutants caps regression calls", () => {
 
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 5 }]]]),
         selectScopedTests: async () => ({
           effectiveCommand: "bun test",
           isFullSuite: true,
@@ -631,6 +644,11 @@ describe("mutationCheckOp — AC7: maxMutants caps regression calls", () => {
 
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [fileA, fileB],
+        getChangedLineRanges: async () =>
+          new Map([
+            [fileA, [{ start: 1, end: 4 }]],
+            [fileB, [{ start: 1, end: 4 }]],
+          ]),
         selectScopedTests: async () => ({
           effectiveCommand: "bun test",
           isFullSuite: true,
@@ -679,6 +697,7 @@ describe("mutationCheckOp — AC8: forwards storyGitRef + configured command; re
 
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 1 }]]]),
         selectScopedTests: async (input: any) => {
           capturedSelectInput = input;
           return {
@@ -732,6 +751,7 @@ describe("mutationCheckOp — AC9: regression throw still reverts and reports su
 
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 1 }]]]),
         selectScopedTests: async () => ({
           effectiveCommand: "bun test src/foo.test.ts",
           isFullSuite: false,

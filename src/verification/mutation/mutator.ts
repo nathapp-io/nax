@@ -9,6 +9,7 @@
  * caller over the combined candidate list.
  */
 
+import type { LineRange } from "@/utils/diff-files";
 import { getOperatorsForLanguage } from "./operators";
 import type { Mutant, MutationOperator } from "./types";
 
@@ -19,6 +20,12 @@ export interface GenerateMutantsInput {
   language: string | undefined;
   /** Path of the file the mutants were generated for. */
   file: string;
+  /**
+   * Optional line ranges eligible for mutation (e.g. changed-side ranges from a
+   * git diff). When provided, lines outside every range are skipped. Omitting
+   * the field preserves the whole-file behaviour.
+   */
+  lineRanges?: readonly LineRange[];
 }
 
 function applyOperator(operator: MutationOperator, snippet: string): string[] {
@@ -26,10 +33,18 @@ function applyOperator(operator: MutationOperator, snippet: string): string[] {
   return Array.isArray(result) ? result : [result];
 }
 
+function isLineInRanges(lineNumber: number, ranges: readonly LineRange[]): boolean {
+  for (const range of ranges) {
+    if (lineNumber >= range.start && lineNumber <= range.end) return true;
+  }
+  return false;
+}
+
 export function generateMutants(input: GenerateMutantsInput): Mutant[] {
-  const { source, language, file } = input;
+  const { source, language, file, lineRanges } = input;
   const operators = getOperatorsForLanguage(language);
   if (operators.length === 0) return [];
+  if (lineRanges !== undefined && lineRanges.length === 0) return [];
 
   const lines = source.split("\n");
   const mutants: Mutant[] = [];
@@ -37,6 +52,8 @@ export function generateMutants(input: GenerateMutantsInput): Mutant[] {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const lineNumber = i + 1;
+
+    if (lineRanges !== undefined && !isLineInRanges(lineNumber, lineRanges)) continue;
 
     const trimmed = line.trim();
     const commentPrefixes = language === "python" ? ["#"] : ["//", "/*", "*"];
