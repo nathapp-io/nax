@@ -3,7 +3,7 @@
   "feature": "mutation-diff-line-scoping",
   "branchName": "feat/mutation-diff-line-scoping",
   "createdAt": "2026-08-06T06:48:00Z",
-  "updatedAt": "2026-08-06T06:55:00.000Z",
+  "updatedAt": "2026-08-06T07:00:48.322Z",
   "userStories": [
     {
       "id": "US-001",
@@ -40,12 +40,18 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "simple",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/utils/diff-files.ts",
         "test/unit/utils/diff-files.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7d689050e54fe9905a4245e1967c1d1f34920488"
     },
     {
       "id": "US-002",
@@ -95,7 +101,10 @@
       "expectedFiles": [
         "src/verification/changed-line-ranges.ts",
         "test/unit/verification/changed-line-ranges.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -152,15 +161,9 @@
       "expectedFiles": [
         "test/unit/operations/mutation-check-diff-scope.test.ts"
       ],
-      "outOfScope": [
-        "`operators.ts` has no direct test file; adding `test/unit/verification/mutation/operators.test.ts` and covering the untested operator ids is deferred (gap item G6).",
-        "`selectScopedTests` is recomputed per mutant although it is loop-invariant; hoisting it is deferred (gap item G8).",
-        "Mutant dedupe across operators and equivalent-mutant detection are deferred (gap item G13).",
-        "Content-verified revert (revert is positional today) is deferred (gap item G9).",
-        "Crash and interrupt cleanup for a partially applied mutant is deferred (gap item G10).",
-        "No config key is added to choose between diff-scoped and whole-file candidate generation; diff-scoped is the only behaviour.",
-        "Deleted lines are not mutated; only added and modified lines on the new side of the diff are eligible."
-      ]
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -209,7 +212,10 @@
         "src/operations/mutation-check.ts",
         "test/unit/log-format/mutation-summary.test.ts",
         "test/unit/operations/mutation-check.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "This is an enhancement to the existing advisory mutation spot-check, not a greenfield subsystem. `src/utils/diff-files.ts:14` currently provides a pure `extractDiffFiles` parser using `+++ b/` headers, so the line-range parser belongs beside it and must retain CRLF and `/dev/null` behavior. `src/verification/smart-runner.ts:399` supplies the fail-open `getChangedNonTestFiles` model: default `HEAD~1`, `gitWithTimeout`, package filtering, git-root prefix surgery, and a neutral catch result. `src/utils/git.ts:37` exposes `getGitRoot`, while `gitWithTimeout` at line 54 is the required shared process wrapper. `src/verification/mutation/mutator.ts:14` currently generates candidates from every non-comment source line; adding an optional range filter there preserves the generator as the single, pure eligibility point and keeps source-coordinate reporting unchanged. `src/operations/mutation-check.ts:55` exposes the established `MutationCheckDeps` DI seam and at lines 110-135 converts scoped relative changed files to absolute paths then calls `generateMutants`; it must fetch a single absolute-keyed range map once per story, skip absent entries, and count all pre-budget candidates. This is the primary integration and compatibility risk: every complete fake dependency object in `test/unit/operations/mutation-check.test.ts:28` and `test/unit/operations/mutation-check-selection.test.ts:42` must gain a range fetcher, and existing changed-file fixtures need matching ranges or they intentionally produce no candidates. `src/runtime/mutation-summary.ts:9` has a closed summary shape consumed by `src/log-format/mutation-summary.ts:3`, which currently only renders survivors; both types and existing exact-shape test fixtures need additive `candidates` and `checked` fields. The operation remains fail-open: diff read failures, malformed diffs, files absent from the range map, non-mutable ranges, and file reads never block the story. No migration or configuration change is needed: diff scoping becomes the only behavior, package scoping stays in `getChangedNonTestFiles`, and public internal callers of `generateMutants` remain compatible because `lineRanges` is optional. Relevant tests already exist in `test/unit/utils/diff-files.test.ts:4`, `test/unit/verification/mutation/mutator.test.ts:11`, `test/unit/operations/mutation-check.test.ts:28`, `test/unit/operations/mutation-check-selection.test.ts:42`, and `test/unit/log-format/mutation-summary.test.ts:5`; the new operation-level diff-scope suite must be split out because the existing main operation suite is near its 800-line hard limit.",
