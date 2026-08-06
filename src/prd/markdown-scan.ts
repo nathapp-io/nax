@@ -23,8 +23,9 @@ export const ANY_HEADING = /^(#{1,6})\s/;
 /** A list item — used both to split bullets and to bound folded prose. */
 export const LIST_ITEM_START = /^\s*(?:[-*+•‣◦⁃∙]|\d+\.)\s+/;
 
-/** A fenced code block delimiter (``` or ~~~), with optional info string. */
-export const FENCE = /^\s*(?:```|~~~)/;
+import { fencedLineIndices } from "../utils/markdown-fence";
+
+export { FENCE, fencedLineIndices } from "../utils/markdown-fence";
 
 /**
  * Strip inline emphasis/backticks so heading matching is not defeated by
@@ -41,28 +42,13 @@ export function stripBullet(line: string): string {
   return line.replace(LIST_ITEM_START, "").trim();
 }
 
-/**
- * Indices of every line inside a fenced code block.
- *
- * Fenced content is illustrative — a spec documenting markdown (which spec-kit
- * specs routinely do) contains a literal `## Out of Scope` example. Treating it
- * as a real declaration fabricates an entry that is then backfilled into the
- * PRD, pushed onto a story, and rendered to the implementer as a hard
- * instruction. Every scan over raw lines must consult this.
- */
-export function fencedLineIndices(lines: readonly string[]): Set<number> {
-  const fenced = new Set<number>();
-  let inFence = false;
-  for (const [i, line] of lines.entries()) {
-    if (FENCE.test(line)) {
-      fenced.add(i);
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) fenced.add(i);
-  }
-  return fenced;
-}
+// `fencedLineIndices` is re-exported above from `../utils/markdown-fence`.
+//
+// Fenced content is illustrative — a spec documenting markdown (which spec-kit
+// specs routinely do) contains a literal `## Out of Scope` example. Treating it
+// as a real declaration fabricates an entry that is then backfilled into the
+// PRD, pushed onto a story, and rendered to the implementer as a hard
+// instruction. Every scan over raw lines must consult it.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // **US-00N**-grouped path sections

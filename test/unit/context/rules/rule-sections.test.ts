@@ -294,3 +294,58 @@ describe("splitRuleIntoSections — owning-rule identity", () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fenced code blocks are not section boundaries
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("splitRuleIntoSections — fenced code blocks", () => {
+  test("a '## ' line inside a fence does not start a new section", () => {
+    // Rule files that document markdown by example contain literal headings
+    // inside fences. Splitting there cuts the section mid-fence, so a retained
+    // section can open a fence it never closes.
+    const rule: CanonicalRule = {
+      id: "authoring",
+      fileName: "authoring.md",
+      content: [
+        "## Real",
+        "prose",
+        "```markdown",
+        "## Not A Heading",
+        "example body",
+        "```",
+        "more prose",
+      ].join("\n"),
+    };
+
+    const sections = splitRuleIntoSections(rule);
+
+    expect(sections).toHaveLength(1);
+    expect(sections[0]?.heading).toBe("Real");
+    // The fenced block survives intact, opener and closer together.
+    expect(sections[0]?.content).toContain("## Not A Heading");
+    expect(sections[0]?.content.match(/```/g)).toHaveLength(2);
+  });
+
+  test("headings after a closed fence are still boundaries", () => {
+    const rule: CanonicalRule = {
+      id: "authoring",
+      fileName: "authoring.md",
+      content: ["## One", "```", "## Fenced", "```", "## Two", "body"].join("\n"),
+    };
+
+    const sections = splitRuleIntoSections(rule);
+
+    expect(sections.map((s) => s.heading)).toEqual(["One", "Two"]);
+  });
+
+  test("tilde fences are honoured as well as backtick fences", () => {
+    const rule: CanonicalRule = {
+      id: "authoring",
+      fileName: "authoring.md",
+      content: ["## One", "~~~", "## Fenced", "~~~", "tail"].join("\n"),
+    };
+
+    expect(splitRuleIntoSections(rule).map((s) => s.heading)).toEqual(["One"]);
+  });
+});
