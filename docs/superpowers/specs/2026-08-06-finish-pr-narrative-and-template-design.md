@@ -72,20 +72,47 @@ previous run on this flow.
 
 ### Architecture
 
-One acp node is added to the flow graph, on the green edge out of `quality_gates`. It
-writes prose and nothing else. Every deterministic fact stays where it is.
+The narrative is written **after the PR is already open**, and applied by amending the
+body. Every deterministic fact stays where it is.
 
 ```
-load_ctx --nothing-to-finish--------------------------> open_pr
-quality_gates --green--> narrative --------------------> open_pr
-              (narrative disabled at module load: --green--> open_pr)
+quality_gates --green--> open_pr --narrate--> narrative --> amend_body
+                                 --done-----> finish_done
+load_ctx --nothing-to-finish---> open_pr --done--> finish_done
 ```
 
-`open_pr` reads `ctx.outputs.narrative`. When the key is missing — node skipped by
-config, node failed, parse returned nothing — the body assembly takes the same single
-fallback path. There is one branch for all three cases, not three.
+#### Why the narrative cannot precede `open_pr`
 
-The `nothing-to-finish` edge always bypasses the node: there is no diff to narrate.
+acpx's `AcpNodeDefinition` exposes only `prompt` and `parse`, and `FlowEdge` is only
+`to` or `switch` — **there is no error edge, and no node-level retry**
+(`flows/nax-finish/verdict.ts:9-12`, established by #1476). A failing acp node exits the
+run with code 1 and no result file. #1476 exists because `review_quality` died that way
+and took the PR with it.
+
+`parse` never throwing covers a malformed reply. It cannot cover an agent timeout or a
+transport crash. A narrative node placed before `open_pr` would therefore give a
+cosmetic prose section the power to prevent the PR from opening at all — exactly what
+#1477's first constraint forbids.
+
+Opening first inverts the risk: if the narrative node dies, the PR is already open, its
+result file already written, and the run's work is banked. The body simply lacks one
+section.
+
+#### The body always carries the best narrative available at that instant
+
+`open_pr` resolves the narrative with **no agent text**, so the PR opens carrying the
+mechanical fallback (spec §Summary) when one exists. `amend_body` then re-resolves with
+the model's text and rewrites the body. `resolveNarrative` is called twice with the same
+signature; there is no separate "fallback mode".
+
+`open_pr` routes to `narrate` only when it actually opened or promoted a PR *and* the
+narrative is enabled at module load. `nothing-to-finish` routes to `done`: there is no
+diff to narrate. `finish_done` is an inert terminal node — acpx switch cases must name a
+node, so the `done` route needs a real target.
+
+`amend_body` reads `ctx.outputs.narrative`. When it is missing or empty the node is a
+no-op: the body already in place is correct, and rewriting it identically would spend a
+forge call to change nothing.
 
 ### Config surface
 
@@ -131,9 +158,11 @@ feature inert for exactly the people testing it by hand.
 |:--|:--|:--|
 | `flows/nax-finish/narrative.ts` | new | prompt builder, `parse`, `resolveNarrative`, `readSpecSummary` |
 | `flows/nax-finish/pr-template.ts` | new | ported candidate-path template lookup |
+| `flows/nax-finish/steps/pr-narrative.ts` | new | `amend_body`'s action body — rebuild and `gh pr edit` |
 | `flows/nax-finish/steps/pr-body.ts` | edit | two new sections in `buildFinishBody`; context gains two fields |
-| `flows/nax-finish/steps/pr.ts` | edit | `openOrPromotePr` accepts a forge instead of detecting one |
-| `flows/nax-finish/nax-finish.flow.ts` | edit | acp node, conditional green edge, forge threading in `open_pr` |
+| `flows/nax-finish/steps/pr.ts` | edit | `openOrPromotePr` takes an optional forge; export `updatePrBody` |
+| `flows/nax-finish/flow-ctx.ts` | edit | `narrativeOf` reader |
+| `flows/nax-finish/nax-finish.flow.ts` | edit | `narrative` + `amend_body` + `finish_done` nodes, `open_pr` routing |
 | `src/config/schemas.ts` | edit | two Zod fields + three default literals |
 | `src/config/runtime-types-finish.ts` | edit | `FinishAutoFlowConfig` gains `narrative` |
 | `src/plugins/builtin/nax-finish/config.ts` | edit | read both keys with defaults |
@@ -262,9 +291,10 @@ Every failure mode degrades to a shorter body. None can fail the PR.
 
 | Failure | Outcome |
 |:--|:--|
-| `narrative: false` | node not in the graph; fallback path |
-| Node fails or times out | `ctx.outputs.narrative` absent; fallback path |
-| `parse` yields empty/whitespace | treated as absent; fallback path |
+| `narrative: false` | `open_pr` routes `done`; PR keeps the mechanical fallback |
+| Node fails or times out | **PR is already open and ready**; flow exits 1 with the result file written; body keeps the mechanical fallback |
+| `parse` yields empty/whitespace | `amend_body` is a no-op; body keeps the mechanical fallback |
+| `gh pr edit` fails in `amend_body` | warned, not thrown — the PR is already open and correct |
 | Spec file missing / no `## Summary` or `## Overview` | section omitted entirely |
 | Narrative over 4000 chars | truncated with `…` |
 | No repository template | nothing appended, nothing warned — the common case |
@@ -285,15 +315,21 @@ returning `null` for absent input · `buildFinishBody` section ordering, and tha
 narrative emits no `## What changed` heading anywhere · the ported `findPrTemplate` over
 its candidate-path priority order for both forges · the narrative prompt builder.
 
-**Graph shape** (`flow-graph.test.ts`): reload the flow module with `NAX_FINISH_NARRATIVE`
-set and unset, assert the `quality_gates` green edge targets `narrative` vs `open_pr`, and
-assert the `nothing-to-finish` edge targets `open_pr` in both cases. This tests the enable
-flag for real without running acpx.
+**Graph shape** (`flow-graph.test.ts`): assert `open_pr`'s switch routes `narrate` →
+`narrative` and `done` → `finish_done`; that `quality_gates` green still targets `open_pr`;
+that `narrative` targets `amend_body`; and that `finish_done` and `amend_body` have no
+outgoing edges. Run `open_pr`'s action with the enable flag off and with a
+`nothing-to-finish` load context, asserting it returns `route: "done"` in both — that is
+the enable flag tested for real, without running acpx.
 
-**Wiring, both sides of the handoff** (`flow-graph-open-pr-metadata.test.ts`): assert that
-the key `open_pr` reads is the key the narrative node writes, in one test. Stories 3 and 4
-are exactly the shape where ACs go green while nothing is wired — a string-keyed handoff
-asserted from only one side is the recorded failure mode.
+**Wiring, both sides of the handoff** (`flow-graph-open-pr-metadata.test.ts`): assert in
+one test that the key `amend_body` reads is the key the `narrative` node's `parse` writes.
+This is exactly the shape where ACs go green while nothing is wired — a string-keyed
+handoff asserted from only one side is the recorded failure mode.
+
+**PR is never blocked**: run `amend_body`'s action with `ctx.outputs.narrative` absent and
+assert it issues no forge call, and with `updatePrBody` stubbed to fail and assert it warns
+rather than throws.
 
 **Prompt content**: assert the prompt names the deterministic sections as off-limits.
 This is #1477's "no restatement" criterion tested where it is enforceable — a runtime
@@ -315,10 +351,11 @@ covers.
 | 1 | Config surface: `narrative` flag and `reviewers.narrative` profile through schema → runtime type → `config.ts` → `buildFlowEnv` | `src/` only |
 | 2 | Template port and forge threading, appended to the body | `flows/` only |
 | 3 | Narrative module: prompt builder, `parse`, `resolveNarrative`, `readSpecSummary`, body section | `flows/` only |
-| 4 | Graph wiring: acp node, conditional green edge, `open_pr` forge + narrative threading | `nax-finish.flow.ts` |
+| 4 | `open_pr` resolves the mechanical narrative and routes `narrate` / `done` | `flows/` |
+| 5 | `narrative` + `amend_body` + `finish_done` nodes and their edges | `flows/` |
 
-Story 1 is independent and may land first. Story 4 consumes story 3's exports and is
-ordered after it. Story 2 is independent of 3 and 4 apart from both editing
+Story 1 is independent and may land first. Stories 3 → 4 → 5 are ordered: 4 consumes 3's
+exports, 5 consumes 4's routing. Story 2 is independent of 3–5 apart from also editing
 `buildFinishBody` — a sequencing note for the run, not a dependency.
 
 ## Out of scope
