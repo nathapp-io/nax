@@ -36,6 +36,7 @@ function fakeDeps(overrides: Partial<MutationCheckDeps> = {}): MutationCheckDeps
     detectLanguage: async () => "typescript" as any,
     getChangedNonTestFiles: async () => [],
     getChangedLineRanges: async () => new Map(),
+    getGitRoot: async () => null,
     selectScopedTests: async () => ({
       effectiveCommand: "bun test",
       isFullSuite: true,
@@ -429,6 +430,192 @@ describe("mutationCheckOp — US-003 AC15: file with no mutable content emits no
           data?.storyId === "US-003" && data?.file === file && typeof message === "string",
       );
       expect(matching).toHaveLength(0);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+describe("mutationCheckOp — issue #1485: anchor root matches getChangedLineRanges when repoRoot diverges from git root and packagePrefix is unset", () => {
+  test("without packagePrefix, changed files anchor to the resolved git root — not repoRoot — so range-map lookups hit", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    try {
+      // Simulate repoRoot sitting deeper than the true git root (e.g. a
+      // subdirectory checkout) with no packagePrefix configured — the
+      // exact divergence case from #1485. getChangedNonTestFiles returns a
+      // git-root-relative path (still inside repoRoot's own subtree — this
+      // is an in-scope file, just anchored wrong); getChangedLineRanges
+      // keys its map against the same resolved git root.
+      const gitRoot = dir;
+      const repoRoot = join(dir, "nested-repo-root");
+      const relativeFile = "nested-repo-root/src/foo.ts";
+      const absoluteFile = join(gitRoot, relativeFile);
+      await Bun.write(absoluteFile, "if (a == b) { return 1; }\n");
+
+      const deps = fakeDeps({
+        getGitRoot: async () => gitRoot,
+        getChangedNonTestFiles: async () => [relativeFile],
+        getChangedLineRanges: async () => new Map([[absoluteFile, [{ start: 1, end: 1 }]]]),
+      });
+
+      const out = await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-003",
+          storyGitRef: "abc123",
+          repoRoot,
+          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
+        deps,
+      );
+
+      expect(out.candidates).toBeGreaterThan(0);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  test("with packagePrefix set, changed files still anchor to repoRoot (existing #565 behavior preserved)", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    try {
+      const repoRoot = dir;
+      const relativeFile = "packages/api/src/foo.ts";
+      const absoluteFile = join(repoRoot, relativeFile);
+      await Bun.write(absoluteFile, "if (a == b) { return 1; }\n");
+
+      const deps = fakeDeps({
+        getGitRoot: async () => {
+          throw new Error("getGitRoot must not be called when packagePrefix is set");
+        },
+        getChangedNonTestFiles: async () => [relativeFile],
+        getChangedLineRanges: async () => new Map([[absoluteFile, [{ start: 1, end: 1 }]]]),
+      });
+
+      const out = await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-003",
+          storyGitRef: "abc123",
+          repoRoot,
+          packagePrefix: "packages/api",
+          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
+        deps,
+      );
+
+      expect(out.candidates).toBeGreaterThan(0);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  test("warns once when every changed file misses the range map (total anchoring failure signal)", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    const warnSpy = spyOn(loggerModule.getLogger(), "warn");
+    try {
+      const file = join(dir, "src", "foo.ts");
+      await Bun.write(file, "if (a == b) { return 1; }\n");
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[join(dir, "src", "other.ts"), [{ start: 1, end: 1 }]]]),
+      });
+
+      const out = await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-003",
+          storyGitRef: "abc123",
+          repoRoot: dir,
+          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
+        deps,
+      );
+
+      expect(out.candidates).toBe(0);
+      const calls = warnSpy.mock.calls as Array<[string, string, Record<string, unknown>]>;
+      const totalMissWarn = calls.filter(
+        ([, message]) => typeof message === "string" && message.includes("zero candidates"),
+      );
+      expect(totalMissWarn).toHaveLength(1);
+    } finally {
+      warnSpy.mockRestore();
+      cleanupTempDir(dir);
+    }
+  });
+
+  test("without packagePrefix, a changed file outside repoRoot (but inside the git root) is filtered out of scope", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    try {
+      // git root is an ancestor of repoRoot; the changed file sits in a
+      // sibling directory that is inside the git root but outside the
+      // project's own repoRoot — it must never become a mutation candidate.
+      const gitRoot = dir;
+      const repoRoot = join(dir, "nested-repo-root");
+      const siblingFile = join(gitRoot, "other-project", "src", "foo.ts");
+      await Bun.write(siblingFile, "if (a == b) { return 1; }\n");
+
+      const deps = fakeDeps({
+        getGitRoot: async () => gitRoot,
+        getChangedNonTestFiles: async () => ["other-project/src/foo.ts"],
+        getChangedLineRanges: async () => new Map([[siblingFile, [{ start: 1, end: 1 }]]]),
+      });
+
+      const out = await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-003",
+          storyGitRef: "abc123",
+          repoRoot,
+          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
+        deps,
+      );
+
+      expect(out.candidates).toBe(0);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  test("packagePrefix set without repoRoot still anchors to the resolved git root, not workdir", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    try {
+      // packagePrefix alone does not trigger getChangedNonTestFiles's prefix
+      // surgery (it also requires repoRoot) — so paths stay git-root-relative
+      // here too, and the op must fall back to the git-root anchor.
+      const gitRoot = dir;
+      const relativeFile = "packages/api/src/foo.ts";
+      const absoluteFile = join(gitRoot, relativeFile);
+      await Bun.write(absoluteFile, "if (a == b) { return 1; }\n");
+
+      const deps = fakeDeps({
+        getGitRoot: async () => gitRoot,
+        getChangedNonTestFiles: async () => [relativeFile],
+        getChangedLineRanges: async () => new Map([[absoluteFile, [{ start: 1, end: 1 }]]]),
+      });
+
+      const out = await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-003",
+          storyGitRef: "abc123",
+          packagePrefix: "packages/api",
+          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
+        deps,
+      );
+
+      expect(out.candidates).toBeGreaterThan(0);
     } finally {
       cleanupTempDir(dir);
     }

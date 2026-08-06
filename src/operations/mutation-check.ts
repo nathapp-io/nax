@@ -12,7 +12,7 @@
  * DI collaborators (mirrors _verifyScopedDeps) so unit tests need no real git/test run.
  */
 
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, sep } from "node:path";
 import { mutationCheckConfigSelector, qualityConfigSelector } from "../config";
 import type { MutationCheckConfig } from "../config/selectors";
 import { getLogger } from "../logger";
@@ -22,6 +22,7 @@ import type { MutationOutcomeSummary } from "../runtime/mutation-summary";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { selectScopedTests } from "../test-runners/scoped-selection";
 import type { SelectScopedTestsInput, SelectScopedTestsResult } from "../test-runners/scoped-selection";
+import { getGitRoot } from "../utils/git";
 import { getChangedLineRanges } from "../verification/changed-line-ranges";
 import {
   applyMutant,
@@ -59,6 +60,7 @@ export interface MutationCheckDeps {
   detectLanguage: typeof detectLanguage;
   getChangedNonTestFiles: typeof getChangedNonTestFiles;
   getChangedLineRanges: typeof getChangedLineRanges;
+  getGitRoot: typeof getGitRoot;
   selectScopedTests: (input: SelectScopedTestsInput) => Promise<SelectScopedTestsResult>;
   regression: (opts: VerificationGateOptions) => Promise<VerificationResult>;
 }
@@ -67,6 +69,7 @@ export const _mutationCheckDeps: MutationCheckDeps = {
   detectLanguage,
   getChangedNonTestFiles,
   getChangedLineRanges,
+  getGitRoot,
   selectScopedTests,
   regression,
 };
@@ -132,11 +135,25 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       undefined,
       input.repoRoot,
     );
-    // getChangedNonTestFiles returns paths relative to repoRoot — anchor them
-    // before any file I/O so resolution doesn't silently depend on the
-    // process's current working directory.
-    const anchor = input.repoRoot ?? input.workdir;
-    const absoluteChangedFiles = changedFiles.map((f) => (isAbsolute(f) ? f : join(anchor, f)));
+    // getChangedNonTestFiles only strips the git-root/repoRoot prefix mismatch
+    // (issue #565) when both packagePrefix and repoRoot are set — its returned
+    // paths are then repoRoot-relative. Otherwise that surgery never runs and
+    // the paths stay git-root-relative (raw `git diff --name-only` output).
+    // Anchor to whichever root the paths are actually relative to, matching
+    // the same git-root resolution getChangedLineRanges performs internally
+    // (#1485). Mirror the exact gate `getChangedNonTestFiles` uses.
+    const anchor =
+      input.packagePrefix && input.repoRoot
+        ? input.repoRoot
+        : ((await deps.getGitRoot(input.workdir)) ?? input.workdir);
+    // Unfiltered git diffs from the git-root anchor can surface files outside
+    // the project (e.g. when the git root is an ancestor of repoRoot) —
+    // constrain candidates to the project scope so mutation testing never
+    // reads/writes source outside it.
+    const scopeRoot = input.repoRoot ?? input.workdir;
+    const absoluteChangedFiles = changedFiles
+      .map((f) => (isAbsolute(f) ? f : join(anchor, f)))
+      .filter((f) => f === scopeRoot || f.startsWith(`${scopeRoot}${sep}`));
 
     const rangeMap = await deps.getChangedLineRanges(input.workdir, input.storyGitRef);
     if (rangeMap === null) {
@@ -154,9 +171,11 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
     // Per-file early-breaks would re-introduce the first-file-only bias
     // and a top-of-file bias simultaneously.
     const mutants: Mutant[] = [];
+    let unmappedFiles = 0;
     for (const file of absoluteChangedFiles) {
       const lineRanges = rangeMap.get(file);
       if (lineRanges === undefined) {
+        unmappedFiles++;
         logger.debug("mutation-check", "Changed file has no diff line ranges — skipping", {
           storyId: input.storyId,
           file,
@@ -176,6 +195,16 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
           error: err instanceof Error ? err.message : String(err),
         });
       }
+    }
+    // Every changed file missing from the range map is indistinguishable from
+    // "nothing mutable" at debug level — surface it so a total path-anchoring
+    // mismatch (#1485) doesn't silently produce a zero-candidate no-op.
+    if (absoluteChangedFiles.length > 0 && unmappedFiles === absoluteChangedFiles.length) {
+      logger.warn(
+        "mutation-check",
+        "No changed file matched the diff line-range map — mutation spot-check produced zero candidates, possibly due to a path-anchoring mismatch",
+        { storyId: input.storyId, changedFiles: absoluteChangedFiles.length },
+      );
     }
     const selected = selectEvenlySpaced(mutants, cfg.maxMutants);
     for (const mutant of selected) {
