@@ -3,9 +3,7 @@
  *
  * Covers AC7–AC15: the op fetches line ranges once via `_mutationCheckDeps.getChangedLineRanges`,
  * skips files without map entries, threads the ranges to `generateMutants`,
- * and emits the expected warn/debug log lines. All tests in this file are red
- * — the implementation has not yet been written; the field has been added
- * to the deps interface and the default wired in.
+ * and emits the expected warn/debug log lines.
  */
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";

@@ -38,8 +38,7 @@ export function extractDiffLineRanges(diff: string): Map<string, LineRange[]> {
 
   for (const rawLine of diff.split(/\r?\n/)) {
     if (rawLine.startsWith("+++ ")) {
-      const path = rawLine.slice(4).trim();
-      currentPath = path.startsWith("b/") && path !== "b//dev/null" ? path.slice(2) : null;
+      currentPath = rawLine.startsWith(HEADER_PREFIX) ? rawLine.slice(HEADER_PREFIX.length).trim() || null : null;
       continue;
     }
 

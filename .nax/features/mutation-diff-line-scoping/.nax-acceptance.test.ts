@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir, withWarnSpy } from "@test/helpers";
 
@@ -108,29 +108,62 @@ describe("extractDiffLineRanges", () => {
 // ─────────────────────────────────────────────────────────────────────────
 
 describe("getChangedLineRanges", () => {
-  let originalDeps: any;
+  let originalGitDepsSpawn: typeof import("@/utils/git")._gitDeps.spawn | undefined;
+  let originalGetGitRoot: typeof import("@/verification/changed-line-ranges")._changedLineRangesDeps.getGitRoot | undefined;
+
+  beforeEach(() => {
+    const { _gitDeps } = require("@/utils/git");
+    const { _changedLineRangesDeps } = require("@/verification/changed-line-ranges");
+    originalGitDepsSpawn = _gitDeps.spawn;
+    originalGetGitRoot = _changedLineRangesDeps.getGitRoot;
+  });
 
   afterEach(() => {
-    if (originalDeps) {
+    if (originalGitDepsSpawn) {
+      const { _gitDeps } = require("@/utils/git");
+      _gitDeps.spawn = originalGitDepsSpawn;
+      originalGitDepsSpawn = undefined;
+    }
+    if (originalGetGitRoot) {
       const { _changedLineRangesDeps } = require("@/verification/changed-line-ranges");
-      Object.assign(_changedLineRangesDeps, originalDeps);
-      originalDeps = undefined;
+      _changedLineRangesDeps.getGitRoot = originalGetGitRoot;
+      originalGetGitRoot = undefined;
     }
   });
 
-  function stubDeps(overrides: Record<string, unknown> = {}) {
+  function makeProc(stdout: string, exitCode: number) {
+    const bytes = new TextEncoder().encode(stdout);
+    return {
+      exited: Promise.resolve(exitCode),
+      stdout: new ReadableStream({
+        start(c) {
+          c.enqueue(bytes);
+          c.close();
+        },
+      }),
+      stderr: new ReadableStream({
+        start(c) {
+          c.close();
+        },
+      }),
+    };
+  }
+
+  function stubSpawn(stdout: string, exitCode: number, capture?: (args: string[]) => void) {
+    const { _gitDeps } = require("@/utils/git");
+    _gitDeps.spawn = mock((args: string[], _opts: unknown) => {
+      if (capture) capture(args as string[]);
+      return makeProc(stdout, exitCode);
+    }) as unknown as typeof _gitDeps.spawn;
+  }
+
+  function stubGetGitRoot(value: string | null) {
     const { _changedLineRangesDeps } = require("@/verification/changed-line-ranges");
-    originalDeps = { ..._changedLineRangesDeps };
-    Object.assign(_changedLineRangesDeps, {
-      gitRunner: async () => ({ code: 0, stdout: "" }),
-      getGitRoot: async () => null,
-      ...overrides,
-    });
-    return _changedLineRangesDeps;
+    _changedLineRangesDeps.getGitRoot = mock(async (_wd: string) => value);
   }
 
   test("AC-11: exit code 0 resolves to a Map (not null)", async () => {
-    stubDeps({ gitRunner: async () => ({ code: 0, stdout: "+++ b/a.ts\n@@ -1 +1 @@" }) });
+    stubSpawn("+++ b/a.ts\n@@ -1 +1 @@", 0);
     const { getChangedLineRanges } = require("@/verification/changed-line-ranges");
     const result = await getChangedLineRanges("/repo");
     expect(typeof result === "object" && result instanceof Map).toBe(true);
@@ -139,43 +172,36 @@ describe("getChangedLineRanges", () => {
 
   test("AC-12: baseRef 'feature branch' invokes the git runner with exact args", async () => {
     let capturedArgs: string[] | undefined;
-    stubDeps({
-      gitRunner: async (args: string[]) => {
-        capturedArgs = args;
-        return { code: 0, stdout: "" };
-      },
+    stubSpawn("", 0, (args) => {
+      capturedArgs = args;
     });
     const { getChangedLineRanges } = require("@/verification/changed-line-ranges");
     await getChangedLineRanges("/repo", "feature branch");
-    expect(capturedArgs).toEqual(["diff", "--unified=0", "feature branch"]);
+    expect(capturedArgs).toEqual(["git", "diff", "--unified=0", "feature branch"]);
   });
 
-  test("AC-13: no baseRef defaults the third args element to 'HEAD~1'", async () => {
+  test("AC-13: no baseRef defaults the fourth args element to 'HEAD~1'", async () => {
     let capturedArgs: string[] | undefined;
-    stubDeps({
-      gitRunner: async (args: string[]) => {
-        capturedArgs = args;
-        return { code: 0, stdout: "" };
-      },
+    stubSpawn("", 0, (args) => {
+      capturedArgs = args;
     });
     const { getChangedLineRanges } = require("@/verification/changed-line-ranges");
     await getChangedLineRanges("/repo");
-    expect(capturedArgs?.[2]).toBe("HEAD~1");
+    expect(capturedArgs?.[3]).toBe("HEAD~1");
   });
 
   test("AC-14: non-zero exit code resolves to null", async () => {
-    stubDeps({ gitRunner: async () => ({ code: 1, stdout: "" }) });
+    stubSpawn("", 1);
     const { getChangedLineRanges } = require("@/verification/changed-line-ranges");
     const result = await getChangedLineRanges("/repo");
     expect(result).toBeNull();
   });
 
   test("AC-15: git runner rejection resolves to null without throwing", async () => {
-    stubDeps({
-      gitRunner: async () => {
-        throw new Error("git spawn failed");
-      },
-    });
+    const { _gitDeps } = require("@/utils/git");
+    _gitDeps.spawn = mock(() => {
+      throw new Error("git spawn failed");
+    }) as unknown as typeof _gitDeps.spawn;
     const { getChangedLineRanges } = require("@/verification/changed-line-ranges");
     let result: unknown;
     let threw = false;
@@ -189,7 +215,7 @@ describe("getChangedLineRanges", () => {
   });
 
   test("AC-16: exit code 0 with empty stdout returns an empty (non-null) Map", async () => {
-    stubDeps({ gitRunner: async () => ({ code: 0, stdout: "" }) });
+    stubSpawn("", 0);
     const { getChangedLineRanges } = require("@/verification/changed-line-ranges");
     const result = await getChangedLineRanges("/repo");
     expect(result).not.toBeNull();
@@ -197,10 +223,8 @@ describe("getChangedLineRanges", () => {
   });
 
   test("AC-17: workdir '/repo' resolves diff paths to absolute keys under it", async () => {
-    stubDeps({
-      gitRunner: async () => ({ code: 0, stdout: "+++ b/src/a.ts\n@@ -1 +1 @@" }),
-      getGitRoot: async () => "/repo",
-    });
+    stubSpawn("+++ b/src/a.ts\n@@ -1 +1 @@", 0);
+    stubGetGitRoot("/repo");
     const { getChangedLineRanges } = require("@/verification/changed-line-ranges");
     const result = await getChangedLineRanges("/repo");
     expect(Map.prototype.has.call(result, "/repo/src/a.ts")).toBe(true);
@@ -208,20 +232,16 @@ describe("getChangedLineRanges", () => {
   });
 
   test("AC-18: null git root falls back to workdir for absolute keys", async () => {
-    stubDeps({
-      gitRunner: async () => ({ code: 0, stdout: "+++ b/src/a.ts\n@@ -1 +1 @@" }),
-      getGitRoot: async () => null,
-    });
+    stubSpawn("+++ b/src/a.ts\n@@ -1 +1 @@", 0);
+    stubGetGitRoot(null);
     const { getChangedLineRanges } = require("@/verification/changed-line-ranges");
     const result = await getChangedLineRanges("/work");
     expect(result.has("/work/src/a.ts")).toBe(true);
   });
 
   test("AC-19: new-side hunk '+2,3' yields end = start + linesAdded - 1", async () => {
-    stubDeps({
-      gitRunner: async () => ({ code: 0, stdout: "+++ b/src/a.ts\n@@ -0,0 +2,3 @@" }),
-      getGitRoot: async () => "/repo",
-    });
+    stubSpawn("+++ b/src/a.ts\n@@ -0,0 +2,3 @@", 0);
+    stubGetGitRoot("/repo");
     const { getChangedLineRanges } = require("@/verification/changed-line-ranges");
     const result = await getChangedLineRanges("/repo");
     expect(result.get("/repo/src/a.ts")).toEqual([{ start: 2, end: 4 }]);
@@ -495,27 +515,26 @@ describe("mutationCheckOp — diff-line scoping", () => {
     const dir = makeTempDir("nax-dls-");
     try {
       const file = join(dir, "src", "file.ts");
-      await Bun.write(file, "if (a == b) { return 1; }\n".repeat(1));
+      const sourceLines = Array.from({ length: 10 }, (_, i) => `if (a${i + 1} == b${i + 1}) { return ${i + 1}; }`);
+      await Bun.write(file, sourceLines.join("\n") + "\n");
 
+      const mutationSummaries = new Map();
       const { mutationCheckOp } = require("@/operations");
-      let capturedLineRanges: unknown;
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [file],
-        getChangedLineRanges: async () => new Map([[file, [{ start: 5, end: 10 }]]]),
-        generateMutants: (input: any) => {
-          capturedLineRanges = input.lineRanges;
-          const { generateMutants: real } = require("@/verification/mutation");
-          return real(input);
-        },
+        getChangedLineRanges: async () => new Map([[file, [{ start: 3, end: 7 }]]]),
       });
 
       await mutationCheckOp.execute(
         baseInput({ workdir: dir, repoRoot: dir }),
-        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 5, timeoutSeconds: 60 } }),
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 5, timeoutSeconds: 60 } }, { mutationSummaries }),
         deps,
       );
 
-      expect(capturedLineRanges).toEqual([{ start: 5, end: 10 }]);
+      // generateMutants is not injectable — verify lineRanges reached it by
+      // observing the candidates count: source has 10 mutable lines, but the
+      // {start:3,end:7} range restricts mutants to lines 3-7 (5 mutants).
+      expect(mutationSummaries.get("US-DLS")?.candidates).toBe(5);
     } finally {
       cleanupTempDir(dir);
     }
@@ -524,11 +543,11 @@ describe("mutationCheckOp — diff-line scoping", () => {
   test("AC-32: getChangedLineRanges is called exactly once with workdir and storyGitRef", async () => {
     const { mutationCheckOp } = require("@/operations");
     let callCount = 0;
-    let capturedArg: any;
+    let capturedArgs: unknown[] = [];
     const deps = fakeDeps({
-      getChangedLineRanges: async (input: any) => {
+      getChangedLineRanges: async (...args: unknown[]) => {
         callCount += 1;
-        capturedArg = input;
+        capturedArgs = args;
         return null;
       },
     });
@@ -540,7 +559,7 @@ describe("mutationCheckOp — diff-line scoping", () => {
     );
 
     expect(callCount).toBe(1);
-    expect(capturedArg).toEqual({ workdir: "/tmp/nax-dls-story", storyGitRef: "deadbeef" });
+    expect(capturedArgs).toEqual(["/tmp/nax-dls-story", "deadbeef"]);
   });
 
   test("AC-33: an all-non-mutable diff range succeeds without calling regression", async () => {

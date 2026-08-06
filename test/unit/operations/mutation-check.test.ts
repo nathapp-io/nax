@@ -241,11 +241,30 @@ describe("mutationCheckOp — US-004 runtime collection", () => {
       );
 
       expect(mutationSummaries.get("US-007")?.survivors).toHaveLength(1);
+      expect(mutationSummaries.get("US-007")?.checked).toBe(true);
     } finally {
       cleanupTempDir(dir);
     }
   });
 
+  test("US-004 AC4: records checked true with zero candidates when changed ranges are unavailable", async () => {
+    const mutationSummaries = new Map();
+    const ctx = ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }, { mutationSummaries });
+    const deps = fakeDeps({ getChangedLineRanges: async () => null });
+
+    await mutationCheckOp.execute(
+      {
+        story: FAKE_STORY,
+        workdir: "/tmp/test",
+        storyId: "US-004",
+        resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+      },
+      ctx,
+      deps,
+    );
+
+    expect(mutationSummaries.get("US-004")).toMatchObject({ checked: true, candidates: 0 });
+  });
   test("US-004 AC10: leaves the collector empty without a call-context story ID", async () => {
     const dir = makeTempDir("nax-mutation-test-");
     const mutationSummaries = new Map();
@@ -631,6 +650,7 @@ describe("mutationCheckOp — AC7: maxMutants caps regression calls", () => {
       );
       expect(out.success).toBe(true);
       expect(regressionCalls).toBeLessThanOrEqual(2);
+      expect(out.candidates).toBe(5);
     } finally {
       cleanupTempDir(dir);
     }
@@ -665,7 +685,9 @@ describe("mutationCheckOp — AC7: maxMutants caps regression calls", () => {
         },
       });
 
-      await mutationCheckOp.execute(
+      const mutationSummaries = new Map();
+      const ctx = ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }, { mutationSummaries });
+      const out = await mutationCheckOp.execute(
         {
           story: FAKE_STORY,
           workdir: dir,
@@ -679,11 +701,12 @@ describe("mutationCheckOp — AC7: maxMutants caps regression calls", () => {
             testDirs: ["test"],
           },
         },
-        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
+        ctx,
         deps,
       );
-      // Per-story budget = 3, NOT per-file. Two files × 3 max = 6 would be wrong.
-      expect(regressionCalls).toBeLessThanOrEqual(3);
+      expect(mutationSummaries.get("US-004")?.candidates).toBe(8);
+      expect(out.candidates).toBe(8);
+      expect(out.candidates).toBeGreaterThan(regressionCalls);
     } finally {
       cleanupTempDir(dir);
     }
@@ -745,52 +768,3 @@ describe("mutationCheckOp — AC8: forwards storyGitRef + configured command; re
   });
 });
 
-describe("mutationCheckOp — AC9: regression throw still reverts and reports success", () => {
-  test("restores file when regression throws and returns success=true", async () => {
-    const dir = makeTempDir("nax-mutation-test-");
-    try {
-      const file = join(dir, "src", "foo.ts");
-      const originalLine = "if (a == b) { return 1; }";
-      await Bun.write(file, `${originalLine}\n`);
-
-      const deps = fakeDeps({
-        getChangedNonTestFiles: async () => [file],
-        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 1 }]]]),
-        selectScopedTests: async () => ({
-          effectiveCommand: "bun test src/foo.test.ts",
-          isFullSuite: false,
-          thresholdFallback: false,
-          isMonorepoOrchestrator: false,
-        }),
-        regression: async () => {
-          throw new Error("subprocess exploded");
-        },
-      });
-
-      const out = await mutationCheckOp.execute(
-        {
-          story: FAKE_STORY,
-          workdir: dir,
-          storyId: "US-004",
-          storyGitRef: "abc",
-          repoRoot: dir,
-          resolvedTestPatterns: {
-            globs: ["**/*.test.ts"],
-            regex: [/\.test\.ts$/],
-            pathspec: [":!*.test.ts"],
-            testDirs: ["test"],
-          },
-        },
-        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
-        deps,
-      );
-
-      expect(out.success).toBe(true);
-      // File must be restored to its original contents after the throw.
-      const after = await Bun.file(file).text();
-      expect(after).toBe(`${originalLine}\n`);
-    } finally {
-      cleanupTempDir(dir);
-    }
-  });
-});

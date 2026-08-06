@@ -1,2 +1,4 @@
 [2026-08-06T07:06:35.346Z] US-001 — PASSED — Parse unified-diff new-side line ranges — Cost: $2.0804
 [2026-08-06T07:42:31.082Z] US-002 — PASSED — Fetch and anchor changed line ranges — Cost: $0.6506
+[2026-08-06T08:20:31.467Z] US-003 — PASSED — Scope mutation candidates to changed lines — Cost: $2.1123
+[2026-08-06T08:39:55.966Z] US-004 — PASSED — Surface candidate counts and unchecked stories — Cost: $1.3280

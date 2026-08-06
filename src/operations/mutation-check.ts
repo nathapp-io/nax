@@ -22,7 +22,7 @@ import type { MutationOutcomeSummary } from "../runtime/mutation-summary";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { selectScopedTests } from "../test-runners/scoped-selection";
 import type { SelectScopedTestsInput, SelectScopedTestsResult } from "../test-runners/scoped-selection";
-import { getChangedLineRanges } from "../utils/changed-line-ranges";
+import { getChangedLineRanges } from "../verification/changed-line-ranges";
 import {
   applyMutant,
   classifyMutant,
@@ -235,8 +235,8 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       });
     }
 
-    const output = { success: true as const, survivors, outcomes, candidates: mutants.length, checked: true };
-    record(output);
-    return output;
+    const candidates = mutants.length;
+    record({ survivors, outcomes, candidates, checked: true });
+    return { success: true as const, survivors, outcomes, candidates, checked: true };
   },
 };

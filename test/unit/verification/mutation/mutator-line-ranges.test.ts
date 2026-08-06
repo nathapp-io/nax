@@ -4,11 +4,6 @@
  * Covers AC1–AC6: when `lineRanges` is supplied, only lines inside a range
  * produce mutants; lines outside the ranges are skipped with the same
  * `continue` that already skips comment lines.
- *
- * The implementation has not yet been written; these tests are red. The
- * `lineRanges` field was added to `GenerateMutantsInput` in the test-writer
- * pass, so the new field compiles but the function still emits mutants for
- * every mutable source line.
  */
 
 import { describe, expect, test } from "bun:test";

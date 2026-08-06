@@ -4,16 +4,17 @@
  * Runs one `git diff --unified=0 <ref>` and parses the hunks into
  * `Map<string, LineRange[]>` keyed by absolute path. A non-zero exit code or a
  * thrown spawn resolves to `null` rather than propagating — the mutation
- * spot-check (US-003) treats `null` as "diff unavailable, fall back to whole
- * files" and an empty map as "no in-diff lines".
+ * spot-check (US-003) treats `null` as "diff unavailable, skip the check
+ * entirely for this story" (it does not fall back to whole-file mutation)
+ * and an empty map as "no in-diff lines".
  *
  * Path anchoring uses the resolved git root; when that lookup returns `null`,
  * the supplied `workdir` is used as the anchor instead.
  */
 
 import { resolve as resolvePath } from "node:path";
-import { type LineRange, extractDiffLineRanges } from "./diff-files";
-import { getGitRoot, gitWithTimeout } from "./git";
+import { type LineRange, extractDiffLineRanges } from "../utils/diff-files";
+import { getGitRoot, gitWithTimeout } from "../utils/git";
 
 /**
  * Injectable collaborators — `getGitRoot` is wrapped here (not imported directly)

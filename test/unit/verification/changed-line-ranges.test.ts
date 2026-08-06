@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import * as path from "node:path";
 import { withDepsRestore } from "@test/helpers";
-import { _changedLineRangesDeps, getChangedLineRanges } from "@/utils/changed-line-ranges";
+import { _changedLineRangesDeps, getChangedLineRanges } from "../../../src/verification/changed-line-ranges";
 import { _gitDeps } from "@/utils/git";
 
 describe("getChangedLineRanges", () => {
