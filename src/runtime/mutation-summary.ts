@@ -10,4 +10,6 @@ export interface MutationStorySummary {
   readonly storyId: string;
   readonly survivors: readonly SurvivingMutant[];
   readonly outcomes: MutationOutcomeSummary;
+  readonly candidates: number;
+  readonly checked: boolean;
 }

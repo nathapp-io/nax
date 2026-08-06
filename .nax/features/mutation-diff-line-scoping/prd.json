@@ -1,0 +1,244 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "mutation-diff-line-scoping",
+  "branchName": "feat/mutation-diff-line-scoping",
+  "createdAt": "2026-08-06T06:48:00Z",
+  "updatedAt": "2026-08-06T08:39:55.966Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Parse unified-diff new-side line ranges",
+      "description": "**Goal** — Add a pure unified-diff parser that returns each changed file’s eligible new-side line ranges.\n\n**Motivation** — A survivor on an untouched line is not evidence about *this story’s* tests; it is a pre-existing coverage gap attributed to an unrelated change.\n\n**Approach** — Filter **at generation**: `generateMutants` receives the eligible line ranges and skips lines outside them, using the same `continue` that already skips comment lines. Ranges come from **one** `git diff --unified=0 <ref>` per story, parsed into a map, not a spawn per file. Add `extractDiffLineRanges` beside the existing `extractDiffFiles` in `src/utils/diff-files.ts`, sharing its header conventions. Pure function, no I/O.\n\n**Scope** — In: parsing `+++ b/` file headers and `@@ -a,b +c,d @@` new-side hunks, including CRLF, omissions, deletions, and malformed input tolerance. Out: git invocation, absolute path anchoring, mutant generation, operation wiring, and summary rendering.\n\n**Interface**\n```typescript\nexport interface LineRange { readonly start: number; readonly end: number }  // 1-based, inclusive, new side\nexport function extractDiffLineRanges(diff: string): Map<string, LineRange[]>\n```\n\n**Design notes** — For a header `@@ -a,b +c,d @@`, the range is `{start: c, end: c + d - 1}`. Omitted counts mean 1; a new-side count of 0 yields no range. `+++ /dev/null` produces no map entry. Binary files produce no hunks and yield no entry. Renames report the new path on the `+++` side and need no special handling. Parser never throws; unrecognised lines are ignored and whatever parsed cleanly is returned.",
+      "acceptanceCriteria": [
+        "When `extractDiffLineRanges` is called with a diff string, then it returns a `Map`.",
+        "Given `+++ b/src/a.ts` and hunk `@@ -0,0 +1,5 @@`, when `extractDiffLineRanges` parses the diff, then `map.get(\"src/a.ts\")` equals `[{ start: 1, end: 5 }]`.",
+        "Given hunk `@@ -1 +1 @@`, when `extractDiffLineRanges` parses the diff, then its produced range equals `{ start: 1, end: 1 }`.",
+        "Given hunk `@@ -5,3 +0,0 @@`, when `extractDiffLineRanges` parses the diff, then it produces no range for that file.",
+        "Given a diff containing hunks for two files, when `extractDiffLineRanges` parses it, then the map has one entry per file and each entry contains only that file’s ranges.",
+        "Given a file header `+++ /dev/null`, when `extractDiffLineRanges` parses the diff, then the map has no entry for that file.",
+        "Given one file with hunks `@@ -10,0 +11,2 @@` and `@@ -30,0 +40,1 @@`, when `extractDiffLineRanges` parses the diff, then its entry equals `[{ start: 11, end: 12 }, { start: 40, end: 40 }]` in that order.",
+        "Given equivalent CRLF and LF diffs, when `extractDiffLineRanges` parses each, then the returned maps are equal.",
+        "When `extractDiffLineRanges(\"\")` is called, then it returns an empty `Map`.",
+        "Given a diff containing recognised headers and unrecognised lines, when `extractDiffLineRanges` parses it, then it returns ranges from the recognised headers without throwing."
+      ],
+      "tags": [
+        "feature",
+        "verification",
+        "parser"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A single existing pure utility and its established unit-test suite gain a focused parser with no I/O or cross-module integration.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "simple",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/utils/diff-files.ts",
+        "test/unit/utils/diff-files.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7d689050e54fe9905a4245e1967c1d1f34920488"
+    },
+    {
+      "id": "US-002",
+      "title": "Fetch and anchor changed line ranges",
+      "description": "**Goal** — Add a fail-open fetcher that obtains one unified-zero diff and returns its parsed ranges keyed by absolute path.\n\n**Motivation** — The mutation spot-check mutates whole changed **files** rather than the lines a story changed, so a surviving mutant may sit on code the story never touched.\n\n**Approach** — New module wrapping one `git diff --unified=0` call and anchoring parsed paths to absolute form. `getChangedNonTestFiles` (`src/verification/smart-runner.ts:399`) is the model for the new fetcher: `gitWithTimeout` for the spawn, `baseRef ?? \"HEAD~1\"` for the default ref, and a `try/catch` returning a neutral value rather than throwing.\n\n**Scope** — In: the fetcher, injectable git collaborators, parsing integration, default-ref behavior, and git-root/workdir absolute anchoring. Out: package filtering and pathspec scoping, which remain owned by `getChangedNonTestFiles`; mutant generation and operation integration belong to US-003.\n\n**Interface**\n```typescript\nexport async function getChangedLineRanges(\n  workdir: string,\n  baseRef?: string,\n): Promise<Map<string, LineRange[]> | null>\n```\n\n**Design notes** — Keys in the returned map are **absolute paths**. `getChangedNonTestFiles` already performs prefix surgery for the case where the git root sits above `repoRoot`, and the op anchors its results into `absoluteChangedFiles`; keying absolutely lets the op look up by a value it already holds instead of duplicating that logic where it can drift. The parser works at the git level and knows nothing about languages. No `process.cwd()` — `workdir` stays threaded as a parameter. A non-zero diff exit or thrown spawn returns `null`; successful empty output returns an empty map.",
+      "acceptanceCriteria": [
+        "When `getChangedLineRanges` receives a successful git response, then it resolves to a `Map`.",
+        "Given a supplied base ref, when `getChangedLineRanges` calls its injected git runner, then the arguments are `[\"diff\", \"--unified=0\", baseRef]` in that order.",
+        "When `getChangedLineRanges` is called without `baseRef`, then its injected git runner receives `HEAD~1` as the ref.",
+        "Given an injected git response with a non-zero exit code, when `getChangedLineRanges` runs, then it resolves to `null`.",
+        "Given an injected git runner that throws, when `getChangedLineRanges` runs, then it resolves to `null` without propagating the error.",
+        "Given a successful injected git response with empty stdout, when `getChangedLineRanges` runs, then it resolves to an empty `Map` rather than `null`.",
+        "Given git root `/repo` and a diff path `src/a.ts`, when `getChangedLineRanges` runs, then the returned map key is `/repo/src/a.ts`.",
+        "Given a git-root lookup resolving to `null`, when `getChangedLineRanges` anchors a parsed path, then the key is rooted at the supplied `workdir`.",
+        "Given git output with hunk `@@ -0,0 +2,3 @@` for one file, when `getChangedLineRanges` runs, then that file’s absolute-keyed entry contains `{ start: 2, end: 4 }`."
+      ],
+      "tags": [
+        "feature",
+        "verification",
+        "git",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This adds a small I/O wrapper with injected git behavior, path anchoring, and explicit fail-open handling across three established utility seams.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/verification/smart-runner.ts",
+        "src/utils/git.ts",
+        "src/utils/diff-files.ts",
+        "test/unit/verification/smart-runner.test.ts"
+      ],
+      "expectedFiles": [
+        "src/verification/changed-line-ranges.ts",
+        "test/unit/verification/changed-line-ranges.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "14e5a088b6509c504c9308a0b76d9d2d9bcd88a5"
+    },
+    {
+      "id": "US-003",
+      "title": "Scope mutation candidates to changed lines",
+      "description": "**Goal** — Carry a file’s changed new-side ranges into mutation generation and skip changed files whose ranges cannot be obtained.\n\n**Motivation** — With `maxMutants: 3`, a large file contributes at most a few samples and the odds any land inside the story’s real diff are poor.\n\n**Approach** — Filter **at generation**: `generateMutants` receives the eligible line ranges and skips lines outside them, using the same `continue` that already skips comment lines. Two alternatives were rejected — filtering after generation (builds a full candidate list to discard most of it, and hides eligibility logic in the op) and slicing the source before generation (forces line-number translation back to file coordinates, an off-by-one hazard in the exact field the survivor report cites). Thread ranges into `generateMutants` and wire the op: fetch once, skip files without ranges.\n\n**Scope** — In: optional line-range generation filtering, one range fetch through `_mutationCheckDeps`, absolute-file lookup, fail-open warning/debug logging, and updating existing mutation operation fakes/fixtures. Out: mutation operator coverage, scoped-test caching, dedupe/equivalent-mutant work, altered budget policy, content-verified reverts, crash cleanup, and pathspec filtering.\n\n**Interface**\n```typescript\nexport interface GenerateMutantsInput {\n  source: string;\n  language: string | undefined;\n  file: string;\n  lineRanges?: readonly LineRange[];\n}\n\nexport interface MutationCheckDeps {\n  getChangedLineRanges: typeof getChangedLineRanges;\n}\n```\n\n**Design notes** — The new fetcher is imported by leaf path, mirroring the `getChangedNonTestFiles` import directly above it — do not reroute it through the `src/verification` barrel. Package scoping is inherited, not re-implemented: candidate files still come from `getChangedNonTestFiles(..., packagePrefix, repoRoot)`, which already applies packagePrefix filtering, git-root prefix surgery, and `.naxignore`. The range map is consulted only for files already in that scoped list. When ranges are `null`, log a warning with `storyId`, generate no candidates, and return advisory success. When a file has no map entry, log debug with `storyId` and file then skip it. A file whose eligible ranges have no mutable content simply yields zero candidates without warning.\n\n### Modifies\n\nAdding `getChangedLineRanges` to `MutationCheckDeps` makes every existing fake incomplete, and diff-scoping changes what the op mutates — so the existing op tests must be updated. This story is authorised to change both files:\n\n- `test/unit/operations/mutation-check.test.ts` — its `fakeDeps()` helper (line ~28) returns a complete `MutationCheckDeps` literal and must gain a `getChangedLineRanges` default. Its 14 stub sites that supply changed files (lines ~162, 215, 246, 280, 340, 410, 458, 508, 544, 585, 633, 681, 734) must also supply ranges covering the lines their fixtures expect to be mutated — without ranges a file is skipped by design and those tests would generate zero candidates.\n- `test/unit/operations/mutation-check-selection.test.ts` — same change to its own `fakeDeps()` helper (line ~42) and its 5 stub sites (lines ~74, 134, 185, 237).\n\nNeither file's assertions about outcomes, survivors, or selection are being reinterpreted; only the fixtures gain the ranges the op now requires.",
+      "acceptanceCriteria": [
+        "Given `lineRanges` covering only line 5, when `generateMutants` runs, then every returned mutant has `line === 5`.",
+        "Given a mutable line equal to a range start, when `generateMutants` runs with that range, then it includes a mutant for that line.",
+        "Given a mutable line equal to a range end, when `generateMutants` runs with that range, then it includes a mutant for that line.",
+        "Given two disjoint `lineRanges`, when `generateMutants` runs, then it returns mutants from both ranges and none from lines between them.",
+        "When `generateMutants` is called without `lineRanges`, then it returns mutants for every mutable source line as before.",
+        "When `generateMutants` is called with an empty `lineRanges` array, then it returns no mutants.",
+        "Given injected `getChangedLineRanges` resolves to `null`, when `mutationCheckOp.execute` runs, then it returns `success: true` with outcomes `{ killed: 0, survived: 0, errored: 0 }`.",
+        "Given injected `getChangedLineRanges` resolves to `null`, when `mutationCheckOp.execute` runs, then it never invokes injected `regression`.",
+        "Given injected `getChangedLineRanges` resolves to `null`, when `mutationCheckOp.execute` runs, then it emits a warning containing the story id.",
+        "Given a changed file absent from the returned range map, when `mutationCheckOp.execute` runs, then it generates no mutants for that file and resolves with `success: true`.",
+        "Given a changed file absent from the returned range map, when `mutationCheckOp.execute` runs, then it emits a debug log containing the story id and file path.",
+        "Given a changed file whose map entry has ranges, when `mutationCheckOp.execute` generates candidates for it, then `generateMutants` receives those same `lineRanges`.",
+        "When `mutationCheckOp.execute` runs, then it invokes injected `getChangedLineRanges` exactly once with the story `workdir` and `storyGitRef`.",
+        "Given a file whose ranges contain no mutable content, when `mutationCheckOp.execute` runs, then it resolves with `success: true` and never invokes injected `regression`.",
+        "Given a file whose ranges contain no mutable content, when `mutationCheckOp.execute` runs, then it emits no warning for that file."
+      ],
+      "tags": [
+        "feature",
+        "operations",
+        "verification",
+        "integration"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "This changes the candidate-generation contract and composes a new git-derived dependency through the advisory operation while preserving package scoping, error behavior, and many existing test fixtures.",
+        "agentProfileId": "opencode-balanced",
+        "agent": "opencode",
+        "profileModelTier": "powerful",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-balanced",
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/verification/mutation/mutator.ts",
+        "src/operations/mutation-check.ts",
+        "test/unit/verification/mutation/mutator.test.ts",
+        "test/unit/operations/mutation-check.test.ts",
+        "test/unit/operations/mutation-check-selection.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/operations/mutation-check-diff-scope.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8a223ecb143caa751358acbea7f4d86e3737bc53"
+    },
+    {
+      "id": "US-004",
+      "title": "Surface candidate counts and unchecked stories",
+      "description": "**Goal** — Persist candidate-count/check-attempt state for each story and render attempted checks with no candidates as a run-end `NOT CHECKED` block.\n\n**Motivation** — A story that ends up checking nothing says so at run end instead of looking indistinguishable from a clean pass.\n\n**Approach** — Add `candidates` and `checked` to the story summary and render a `NOT CHECKED` block at run end. `checked` is `true` exactly when the op reached candidate gathering — the feature is enabled **and** a test command resolved. The two early returns before that point record `checked: false`. A diff that could not be read records `checked: true`: the check was attempted and found nothing, which is what the block exists to surface.\n\n**Scope** — In: the runtime summary contract, mutation-check recording for early returns and candidate gathering, and formatter blocks. Out: changing survivor reporting/provenance, mutation configuration defaults, execution policy, or candidate generation and diff fetching.\n\n**Interface**\n```typescript\nexport interface MutationStorySummary {\n  readonly storyId: string;\n  readonly survivors: readonly SurvivingMutant[];\n  readonly outcomes: MutationOutcomeSummary;\n  readonly candidates: number;\n  readonly checked: boolean;\n}\n\nformatMutationSummary(summaries): string\n```\n\n**Design notes** — Candidate count is the number of generated mutants before budget selection. The formatter must put `SURVIVING MUTANTS` first when both blocks apply. `NOT CHECKED` is for `checked: true` and `candidates: 0`, not disabled/no-test-command early returns. Update the closed-world summary assertions and make the formatter test helper default to `checked: true` with a non-zero `candidates` consistent with its outcomes.\n\n### Modifies\n\n- `test/unit/operations/mutation-check.test.ts` — the two `expect(mutationSummaries.get(\"US-004\")).toEqual({...})` assertions (the disabled short-circuit at ~line 78 and the no-test-command case at ~line 101) assert the summary's exact shape and must be updated to include `checked: false` and `candidates: 0`. They are closed-world `toEqual` checks; adding fields necessarily breaks them.\n- `test/unit/log-format/mutation-summary.test.ts` — the `makeSummary()` helper constructs a `MutationStorySummary` literal and must gain the two new fields. It must default to `checked: true` with a non-zero `candidates` consistent with its `outcomes`, or the existing \"returns an empty string when summaries contain no survivors\" test (line ~41, `outcomes: {killed: 2, survived: 0, errored: 1}`, asserting `toBe(\"\")`) starts qualifying as unchecked, renders a `NOT CHECKED` block, and fails.",
+      "acceptanceCriteria": [
+        "Given mutation checking is enabled and candidates are generated, when `mutationCheckOp.execute` records the story summary, then `checked === true`.",
+        "Given `mutationCheck.enabled === false`, when `mutationCheckOp.execute` records the story summary, then `checked === false`.",
+        "Given no resolvable test command, when `mutationCheckOp.execute` records the story summary, then `checked === false`.",
+        "Given injected `getChangedLineRanges` resolves to `null`, when `mutationCheckOp.execute` records the story summary, then `checked === true` and `candidates === 0`.",
+        "Given generated mutation candidates, when `mutationCheckOp.execute` records the story summary, then `candidates` equals the number generated before budget selection.",
+        "Given one summary with `checked: true` and `candidates: 0`, when `formatMutationSummary` runs, then its text contains `NOT CHECKED` and that summary’s story id.",
+        "Given one summary with `checked: false` and `candidates: 0`, when `formatMutationSummary` runs, then its text omits `NOT CHECKED`.",
+        "Given one summary with `checked: true` and `candidates > 0`, when `formatMutationSummary` runs, then its text omits `NOT CHECKED`.",
+        "Given one summary with a survivor and another with `checked: true` and `candidates: 0`, when `formatMutationSummary` runs, then its text contains both `SURVIVING MUTANTS` and `NOT CHECKED` with `SURVIVING MUTANTS` first.",
+        "Given two summaries with `checked: true` and `candidates: 0`, when `formatMutationSummary` runs, then the `NOT CHECKED` block lists both story ids.",
+        "Given only summaries with `checked: false`, when `formatMutationSummary` runs, then it returns an empty string."
+      ],
+      "tags": [
+        "feature",
+        "runtime",
+        "logging",
+        "operations"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a focused cross-module additive summary-contract change with clear early-return semantics and formatter behavior.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/runtime/mutation-summary.ts",
+        "src/log-format/mutation-summary.ts",
+        "src/operations/mutation-check.ts",
+        "test/unit/log-format/mutation-summary.test.ts",
+        "test/unit/operations/mutation-check.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "427f2fc645f30d19ca173b562d257b917e70c1d2"
+    }
+  ],
+  "analysis": "This is an enhancement to the existing advisory mutation spot-check, not a greenfield subsystem. `src/utils/diff-files.ts:14` currently provides a pure `extractDiffFiles` parser using `+++ b/` headers, so the line-range parser belongs beside it and must retain CRLF and `/dev/null` behavior. `src/verification/smart-runner.ts:399` supplies the fail-open `getChangedNonTestFiles` model: default `HEAD~1`, `gitWithTimeout`, package filtering, git-root prefix surgery, and a neutral catch result. `src/utils/git.ts:37` exposes `getGitRoot`, while `gitWithTimeout` at line 54 is the required shared process wrapper. `src/verification/mutation/mutator.ts:14` currently generates candidates from every non-comment source line; adding an optional range filter there preserves the generator as the single, pure eligibility point and keeps source-coordinate reporting unchanged. `src/operations/mutation-check.ts:55` exposes the established `MutationCheckDeps` DI seam and at lines 110-135 converts scoped relative changed files to absolute paths then calls `generateMutants`; it must fetch a single absolute-keyed range map once per story, skip absent entries, and count all pre-budget candidates. This is the primary integration and compatibility risk: every complete fake dependency object in `test/unit/operations/mutation-check.test.ts:28` and `test/unit/operations/mutation-check-selection.test.ts:42` must gain a range fetcher, and existing changed-file fixtures need matching ranges or they intentionally produce no candidates. `src/runtime/mutation-summary.ts:9` has a closed summary shape consumed by `src/log-format/mutation-summary.ts:3`, which currently only renders survivors; both types and existing exact-shape test fixtures need additive `candidates` and `checked` fields. The operation remains fail-open: diff read failures, malformed diffs, files absent from the range map, non-mutable ranges, and file reads never block the story. No migration or configuration change is needed: diff scoping becomes the only behavior, package scoping stays in `getChangedNonTestFiles`, and public internal callers of `generateMutants` remain compatible because `lineRanges` is optional. Relevant tests already exist in `test/unit/utils/diff-files.test.ts:4`, `test/unit/verification/mutation/mutator.test.ts:11`, `test/unit/operations/mutation-check.test.ts:28`, `test/unit/operations/mutation-check-selection.test.ts:42`, and `test/unit/log-format/mutation-summary.test.ts:5`; the new operation-level diff-scope suite must be split out because the existing main operation suite is near its 800-line hard limit.",
+  "outOfScope": [
+    "`operators.ts` has no direct test file; adding `test/unit/verification/mutation/operators.test.ts` and covering the untested operator ids is deferred (gap item G6).",
+    "`selectScopedTests` is recomputed per mutant although it is loop-invariant; hoisting it is deferred (gap item G8).",
+    "Mutant dedupe across operators and equivalent-mutant detection are deferred (gap item G13).",
+    "Serial mutant execution, the flat per-mutant timeout, and the absence of a run-level time budget are unchanged (gap item G14).",
+    "Content-verified revert (revert is positional today) is deferred (gap item G9).",
+    "Crash and interrupt cleanup for a partially applied mutant is deferred (gap item G10).",
+    "No config key is added to choose between diff-scoped and whole-file candidate generation; diff-scoped is the only behaviour.",
+    "Mutants are not tagged with in-diff or out-of-diff provenance, and the surviving-mutant report does not distinguish them.",
+    "The `execution.mutationCheck.maxMutants` default stays at 3; retuning it against field evidence is deferred.",
+    "Deleted lines are not mutated; only added and modified lines on the new side of the diff are eligible."
+  ],
+  "routingProfile": "cross-agent"
+}

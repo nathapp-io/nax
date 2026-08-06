@@ -22,6 +22,7 @@ import type { MutationOutcomeSummary } from "../runtime/mutation-summary";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { selectScopedTests } from "../test-runners/scoped-selection";
 import type { SelectScopedTestsInput, SelectScopedTestsResult } from "../test-runners/scoped-selection";
+import { getChangedLineRanges } from "../verification/changed-line-ranges";
 import {
   applyMutant,
   classifyMutant,
@@ -50,11 +51,14 @@ export interface MutationCheckOutput {
   readonly success: true;
   readonly survivors: readonly SurvivingMutant[];
   readonly outcomes: MutationOutcomeSummary;
+  readonly candidates: number;
+  readonly checked: boolean;
 }
 
 export interface MutationCheckDeps {
   detectLanguage: typeof detectLanguage;
   getChangedNonTestFiles: typeof getChangedNonTestFiles;
+  getChangedLineRanges: typeof getChangedLineRanges;
   selectScopedTests: (input: SelectScopedTestsInput) => Promise<SelectScopedTestsResult>;
   regression: (opts: VerificationGateOptions) => Promise<VerificationResult>;
 }
@@ -62,6 +66,7 @@ export interface MutationCheckDeps {
 export const _mutationCheckDeps: MutationCheckDeps = {
   detectLanguage,
   getChangedNonTestFiles,
+  getChangedLineRanges,
   selectScopedTests,
   regression,
 };
@@ -77,11 +82,23 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
     deps: MutationCheckDeps = _mutationCheckDeps,
   ): Promise<MutationCheckOutput> {
     const cfg = ctx.packageView.select(mutationCheckConfigSelector);
-    const emptyOutput: { survivors: readonly SurvivingMutant[]; outcomes: MutationOutcomeSummary } = {
+    const emptyOutput: {
+      survivors: readonly SurvivingMutant[];
+      outcomes: MutationOutcomeSummary;
+      candidates: number;
+      checked: boolean;
+    } = {
       survivors: [],
       outcomes: { killed: 0, survived: 0, errored: 0 },
+      candidates: 0,
+      checked: false,
     };
-    const record = (result: { survivors: readonly SurvivingMutant[]; outcomes: MutationOutcomeSummary }) => {
+    const record = (result: {
+      survivors: readonly SurvivingMutant[];
+      outcomes: MutationOutcomeSummary;
+      candidates: number;
+      checked: boolean;
+    }) => {
       if (ctx.storyId) {
         ctx.runtime?.mutationSummaries?.set(ctx.storyId, { storyId: ctx.storyId, ...result });
       }
@@ -121,6 +138,15 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
     const anchor = input.repoRoot ?? input.workdir;
     const absoluteChangedFiles = changedFiles.map((f) => (isAbsolute(f) ? f : join(anchor, f)));
 
+    const rangeMap = await deps.getChangedLineRanges(input.workdir, input.storyGitRef);
+    if (rangeMap === null) {
+      logger.warn("mutation-check", "Failed to obtain changed-line ranges — skipping mutation spot-check", {
+        storyId: input.storyId,
+      });
+      record({ ...emptyOutput, checked: true });
+      return { success: true as const, ...emptyOutput, checked: true };
+    }
+
     const survivors: SurvivingMutant[] = [];
     const outcomes = { killed: 0, survived: 0, errored: 0 };
     // Gather every candidate across all changed files, then select a
@@ -129,9 +155,17 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
     // and a top-of-file bias simultaneously.
     const mutants: Mutant[] = [];
     for (const file of absoluteChangedFiles) {
+      const lineRanges = rangeMap.get(file);
+      if (lineRanges === undefined) {
+        logger.debug("mutation-check", "Changed file has no diff line ranges — skipping", {
+          storyId: input.storyId,
+          file,
+        });
+        continue;
+      }
       try {
         const source = await Bun.file(file).text();
-        for (const m of generateMutants({ source, language, file })) {
+        for (const m of generateMutants({ source, language, file, lineRanges })) {
           mutants.push(m);
         }
       } catch (err) {
@@ -201,8 +235,8 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       });
     }
 
-    const output = { success: true as const, survivors, outcomes };
-    record({ survivors, outcomes });
-    return output;
+    const candidates = mutants.length;
+    record({ survivors, outcomes, candidates, checked: true });
+    return { success: true as const, survivors, outcomes, candidates, checked: true };
   },
 };

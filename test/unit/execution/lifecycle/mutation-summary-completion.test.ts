@@ -13,7 +13,13 @@ const survivor = {
 };
 
 function makeSummary(): MutationStorySummary {
-  return { storyId: "US-007", survivors: [survivor], outcomes: { killed: 0, survived: 1, errored: 0 } };
+  return {
+    storyId: "US-007",
+    survivors: [survivor],
+    outcomes: { killed: 0, survived: 1, errored: 0 },
+    candidates: 1,
+    checked: true,
+  };
 }
 
 describe("runCompletionPhase mutation survivor reporting", () => {
