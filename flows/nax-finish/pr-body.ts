@@ -68,6 +68,11 @@ function escapeTableCell(value: string): string {
 }
 
 function formatDuration(durationMs: number): string {
+  // `Math.max(0, NaN)` returns NaN, and `Math.floor(Infinity / 1000)` returns
+  // Infinity — both would render as `"NaNm NaNs"` / `"Infinitym Infinitys"`.
+  // A non-finite duration is a corrupted artifact (status.json is hand-editable),
+  // so fall back to zero rather than let it leak into the PR body verbatim.
+  if (!Number.isFinite(durationMs)) return "0m 00s";
   const clampedMs = Math.max(0, Math.round(durationMs));
   const totalSeconds = Math.floor(clampedMs / MS_PER_SECOND);
   const minutes = Math.floor(totalSeconds / SECONDS_PER_MINUTE);

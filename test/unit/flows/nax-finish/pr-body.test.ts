@@ -198,13 +198,24 @@ describe("buildFinishBody — Run summary footer (US-002 AC15)", () => {
         run: { storiesPassed: 4, storiesTotal: 5, durationMs: 92_000 },
       }),
     );
-    expect(body).toContain("4/5 stories");
-    expect(body).toContain("1m 32s");
+    // AC15: "<storiesPassed>/<storiesTotal> stories · <durationMs formatted as Nm SSs>"
+    // — one line, joined by ' · '. A regression that swaps the separator or
+    // breaks the line would survive `toContain` on each half independently.
+    expect(body).toContain("4/5 stories · 1m 32s");
   });
 
   test("omits the footer when duration is absent and reports only counts when duration is provided", () => {
     expect(buildFinishBody(baseCtx({ run: { storiesPassed: 1, storiesTotal: 1 } }))).toContain("1/1 stories");
     const body = buildFinishBody(baseCtx({ run: { durationMs: 65_000 } }));
     expect(body).toContain("1m 05s");
+  });
+
+  test("non-finite duration formats as '0m 00s' instead of propagating NaN/Infinity into the body", () => {
+    // NaN/Infinity are valid TypeScript `number` values and `Math.max(0, NaN)`
+    // propagates NaN, so a guard is required to avoid `"NaNm NaNs"` in the PR.
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const body = buildFinishBody(baseCtx({ run: { storiesPassed: 1, storiesTotal: 1, durationMs: bad } }));
+      expect(body).toContain("1/1 stories · 0m 00s");
+    }
   });
 });
