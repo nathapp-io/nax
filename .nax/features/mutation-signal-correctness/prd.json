@@ -3,7 +3,7 @@
   "feature": "mutation-signal-correctness",
   "branchName": "feat/mutation-signal-correctness",
   "createdAt": "2026-08-06T04:19:22Z",
-  "updatedAt": "2026-08-06T05:00:23.473Z",
+  "updatedAt": "2026-08-06T05:16:43.852Z",
   "userStories": [
     {
       "id": "US-001",
@@ -87,8 +87,8 @@
         "US-001",
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -218,7 +218,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/runtime/index.ts",
@@ -234,7 +236,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8ed3014c71862f0a83bdf9cc580aab3867cb5817"
     }
   ],
   "analysis": "This is an enhancement of the existing advisory mutation spot-check, not a greenfield feature. The mutation pipeline is split between operator tables, candidate generation, outcome classification, and the deterministic operation. `ARITHMETIC_PAIRS` currently uses unguarded global regexes in `src/verification/mutation/operators.ts:105-110`; the comparison operators at `src/verification/mutation/operators.ts:37-44` already demonstrate whitespace-scoped lookarounds. `generateMutants` in `src/verification/mutation/mutator.ts:29-61` processes lines and operators deterministically but honours an optional `max` with an early break, so it returns first-in-source-order candidates. `mutationCheckOp.execute` in `src/operations/mutation-check.ts:66-183` compounds that bias by stopping collection once it reaches `cfg.maxMutants` before it reaches later changed files; it applies/reverts every selected mutant in a fail-open loop and currently only retains survivors. `classifyMutant` in `src/verification/mutation/classify.ts:13-31` maps all `TEST_FAILURE` results to `killed`, despite `VerificationResult` already exposing optional `passCount` and `failCount` at `src/verification/types.ts:44-56`; `src/verification/runners.ts:94-106` populates those fields on runner failures. The mutation types at `src/verification/mutation/types.ts:9-25` already provide MutantOutcome and SurvivingMutant, so the output can add a typed count object without widening shared verification status types. The mutation barrel (`src/verification/mutation/index.ts`) is the integration export point for a new selector. Existing operation tests are in `test/unit/operations/mutation-check.test.ts`; classifier and mutator tests mirror their source directories under `test/unit/verification/mutation/`. The existing TEST_FAILURE operation test currently omits counts, so it must be corrected to continue exercising a real kill under the new evidence rule.\n\nRun-end integration should remain separate from the review findings system. `NaxRuntime` declares per-run mutable collectors at `src/runtime/index.ts:110-146` and constructs them at `src/runtime/index.ts:264-297`; add a Map keyed by story ID alongside adversarial/semantic iteration maps. `CallContext` already carries runtime to `mutationCheckOp`, so recording must be conditional when storyId is absent. `runCompletionPhase` at `src/execution/runner-completion.ts:111-377` gets its logger through `getSafeLogger`, reads runtime state, logs advisory review findings, and in headless non-JSON mode dynamically imports the formatter before outputting the footer. This is the correct consumer for the mutation collector, without changing status.json or making the advisory gate blocking. `outputAdvisoryFindingsSummary` at `src/execution/lifecycle/headless-formatter.ts:91-103` establishes the required stdout policy: no output for empty data or JSON mode. `src/log-format/index.ts:8-23` is the barrel to re-export a new pure `formatMutationSummary`; keep it distinct from `src/log-format/formatter.ts` because that file is near the repository size limit. `test/unit/execution/runner-completion-events.test.ts` supplies injectable completion dependencies and option builders suited to testing logger/stdout integration.\n\nCompatibility and migration: the gate remains opt-in, advisory, and `success: true` on every existing fail-open path. No config migration, change to the `enabled: false` default, test-runner parser modification, status.json schema change, telemetry migration, or review-Finding union expansion is required. The observable output contract adds `outcomes` to MutationCheckOutput and the runtime contract adds `mutationSummaries`; update internal test/mocks that construct these values. Selection changes only which candidates run under a capped budget, but must be deterministic. A build/collection failure with no parsed executions intentionally changes from a claimed kill to errored; existing callers should use outcomes rather than infer kills from an empty survivors list. Maintain positional revert behavior and the existing per-mutant scoped-test calculation because they are outside this feature.",
