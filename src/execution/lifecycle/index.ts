@@ -7,6 +7,7 @@ export {
   outputRunHeader,
   outputRunFooter,
   outputAdvisoryFindingsSummary,
+  outputMutationSummary,
   type RunHeaderOptions,
   type RunFooterOptions,
 } from "./headless-formatter";

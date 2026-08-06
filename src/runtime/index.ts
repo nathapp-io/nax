@@ -34,6 +34,7 @@ export {
 export type { ProjectIdentity } from "./paths";
 export { createPackageRegistry } from "./packages";
 export type { DispatchContext } from "./dispatch-context";
+export type { MutationOutcomeSummary, MutationStorySummary } from "./mutation-summary";
 export type { AgentMiddleware, MiddlewareContext } from "./agent-middleware";
 export { MiddlewareChain } from "./agent-middleware";
 export type {
@@ -100,6 +101,7 @@ import {
   attachReviewAuditSubscriber,
   cancellationMiddleware,
 } from "./middleware";
+import type { MutationStorySummary } from "./mutation-summary";
 import { createPackageRegistry } from "./packages";
 import type { PackageRegistry } from "./packages";
 import { curatorRollupPath, globalOutputDir, projectOutputDir } from "./paths";
@@ -135,6 +137,8 @@ export interface NaxRuntime {
   readonly semanticIterations: Map<string, Iteration[]>;
   /** Run-scoped per-story rectification oscillation totals. */
   readonly rectificationOscillations: Map<string, number>;
+  /** Run-scoped per-story mutation-check results. */
+  readonly mutationSummaries: Map<string, MutationStorySummary>;
   close(): Promise<void>;
 }
 
@@ -258,6 +262,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const adversarialIterations = new Map<string, Iteration[]>();
   const semanticIterations = new Map<string, Iteration[]>();
   const rectificationOscillations = new Map<string, number>();
+  const mutationSummaries = new Map<string, MutationStorySummary>();
 
   let closed = false;
 
@@ -284,6 +289,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     adversarialIterations,
     semanticIterations,
     rectificationOscillations,
+    mutationSummaries,
 
     get signal() {
       return controller.signal;

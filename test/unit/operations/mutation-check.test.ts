@@ -1,15 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { mutationCheckOp, _mutationCheckDeps } from "@/operations";
+import { _mutationCheckDeps, mutationCheckOp } from "@/operations";
 import type { MutationCheckDeps } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const FAKE_STORY = { id: "US-004", title: "mutation-check op" } as any;
 
-function ctxWithConfig(execution: Record<string, unknown> = {}): any {
+function ctxWithConfig(execution: Record<string, unknown> = {}, runtime: Partial<NaxRuntime> = {}): any {
   const config = { execution, quality: { commands: { test: "bun test" } } } as any;
   return {
-    runtime: {},
+    runtime: { mutationSummaries: new Map(), ...runtime },
     storyId: "US-004",
     packageView: {
       packageDir: "packages/agent",
@@ -59,6 +60,51 @@ describe("mutationCheckOp — AC1: DeterministicOperation shape", () => {
 });
 
 describe("mutationCheckOp — AC2: disabled short-circuit", () => {
+  test("US-004 early-return persistence: records an empty summary when mutation checks are disabled", async () => {
+    const mutationSummaries = new Map();
+    const ctx = ctxWithConfig({ mutationCheck: { enabled: false } }, { mutationSummaries });
+
+    await mutationCheckOp.execute(
+      {
+        story: FAKE_STORY,
+        workdir: "/tmp/test",
+        storyId: "US-004",
+        resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+      },
+      ctx,
+      fakeDeps(),
+    );
+
+    expect(mutationSummaries.get("US-004")).toEqual({
+      storyId: "US-004",
+      survivors: [],
+      outcomes: { killed: 0, survived: 0, errored: 0 },
+    });
+  });
+
+  test("US-004 early-return persistence: records an empty summary when no test command exists", async () => {
+    const mutationSummaries = new Map();
+    const ctx = ctxWithConfig({}, { mutationSummaries });
+    ctx.packageView.config.quality.commands.test = undefined;
+
+    await mutationCheckOp.execute(
+      {
+        story: FAKE_STORY,
+        workdir: "/tmp/test",
+        storyId: "US-004",
+        resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+      },
+      ctx,
+      fakeDeps(),
+    );
+
+    expect(mutationSummaries.get("US-004")).toEqual({
+      storyId: "US-004",
+      survivors: [],
+      outcomes: { killed: 0, survived: 0, errored: 0 },
+    });
+  });
+
   test("returns success=true with empty survivors and never calls scoped tests/regression", async () => {
     let selectionCalled = false;
     let regressionCalled = false;
@@ -159,8 +205,72 @@ describe("mutationCheckOp — AC3: surviving mutant (regression SUCCESS)", () =>
   });
 });
 
+describe("mutationCheckOp — US-004 runtime collection", () => {
+  test("US-004 AC9: stores one survivor under the call-context story ID", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    const mutationSummaries = new Map();
+    try {
+      const file = join(dir, "src", "foo.ts");
+      await Bun.write(file, "if (a == b) { return 1; }\n");
+      const deps = fakeDeps({ getChangedNonTestFiles: async () => [file] });
+      const ctx = ctxWithConfig(
+        { mutationCheck: { enabled: true, maxMutants: 1, timeoutSeconds: 60 } },
+        { mutationSummaries },
+      );
+      ctx.storyId = "US-007";
+
+      await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          repoRoot: dir,
+          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+        },
+        ctx,
+        deps,
+      );
+
+      expect(mutationSummaries.get("US-007")?.survivors).toHaveLength(1);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  test("US-004 AC10: leaves the collector empty without a call-context story ID", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    const mutationSummaries = new Map();
+    try {
+      const file = join(dir, "src", "foo.ts");
+      await Bun.write(file, "if (a == b) { return 1; }\n");
+      const deps = fakeDeps({ getChangedNonTestFiles: async () => [file] });
+      const ctx = ctxWithConfig(
+        { mutationCheck: { enabled: true, maxMutants: 1, timeoutSeconds: 60 } },
+        { mutationSummaries },
+      );
+      ctx.storyId = undefined;
+
+      await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          repoRoot: dir,
+          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+        },
+        ctx,
+        deps,
+      );
+
+      expect(mutationSummaries.size).toBe(0);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
 describe("mutationCheckOp — AC4: TEST_FAILURE kills the mutant", () => {
-  test("returns empty survivors when regression returns TEST_FAILURE", async () => {
+  test("returns empty survivors when regression returns TEST_FAILURE with failCount = 1", async () => {
     const dir = makeTempDir("nax-mutation-test-");
     try {
       const file = join(dir, "src", "foo.ts");
@@ -179,6 +289,8 @@ describe("mutationCheckOp — AC4: TEST_FAILURE kills the mutant", () => {
           success: false,
           countsTowardEscalation: true,
           output: "1 test failed",
+          passCount: 0,
+          failCount: 1,
         }),
       });
 
@@ -204,6 +316,131 @@ describe("mutationCheckOp — AC4: TEST_FAILURE kills the mutant", () => {
       expect(out.survivors).toEqual([]);
       const after = await Bun.file(file).text();
       expect(after).toBe("if (a == b) { return 1; }\n");
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+describe("mutationCheckOp — outcomes aggregation (US-003)", () => {
+  async function runWithRegression(
+    regressionResult: {
+      status: "SUCCESS" | "TEST_FAILURE" | "TIMEOUT" | "ENVIRONMENTAL_FAILURE" | "ASSET_CHECK_FAILED";
+      passCount?: number;
+      failCount?: number;
+    },
+    mutationsConfig: Record<string, unknown> = { enabled: true, maxMutants: 3, timeoutSeconds: 60 },
+  ) {
+    const dir = makeTempDir("nax-mutation-test-");
+    try {
+      const file = join(dir, "src", "foo.ts");
+      await Bun.write(file, "if (a == b) { return 1; }\n");
+
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [file],
+        selectScopedTests: async () => ({
+          effectiveCommand: "bun test src/foo.test.ts",
+          isFullSuite: false,
+          thresholdFallback: false,
+          isMonorepoOrchestrator: false,
+        }),
+        regression: async () => ({
+          ...regressionResult,
+          success: regressionResult.status === "SUCCESS",
+          countsTowardEscalation: true,
+          output: "",
+        }),
+      });
+
+      const out = await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          storyGitRef: "abc123",
+          repoRoot: dir,
+          resolvedTestPatterns: {
+            globs: ["**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [":!*.test.ts"],
+            testDirs: ["test"],
+          },
+        },
+        ctxWithConfig({ mutationCheck: mutationsConfig }),
+        deps,
+      );
+      return out;
+    } finally {
+      cleanupTempDir(dir);
+    }
+  }
+
+  test("AC9: TEST_FAILURE with both counts 0 -> outcomes.errored is 1", async () => {
+    const out = await runWithRegression({ status: "TEST_FAILURE", passCount: 0, failCount: 0 });
+    expect(out.outcomes.errored).toBe(1);
+  });
+
+  test("AC10: TEST_FAILURE with both counts 0 -> outcomes.killed is 0", async () => {
+    const out = await runWithRegression({ status: "TEST_FAILURE", passCount: 0, failCount: 0 });
+    expect(out.outcomes.killed).toBe(0);
+  });
+
+  test("AC11: TEST_FAILURE with failCount 1 -> outcomes.killed is 1", async () => {
+    const out = await runWithRegression({ status: "TEST_FAILURE", passCount: 0, failCount: 1 });
+    expect(out.outcomes.killed).toBe(1);
+  });
+
+  test("AC12: SUCCESS -> outcomes.survived is 1", async () => {
+    const out = await runWithRegression({ status: "SUCCESS" });
+    expect(out.outcomes.survived).toBe(1);
+  });
+
+  test("AC13: TEST_FAILURE with both counts 0 -> survivors has length 0", async () => {
+    const out = await runWithRegression({ status: "TEST_FAILURE", passCount: 0, failCount: 0 });
+    expect(out.survivors).toHaveLength(0);
+  });
+
+  test("regression throw increments outcomes.errored (rectification review)", async () => {
+    const dir = makeTempDir("nax-mutation-test-");
+    try {
+      const file = join(dir, "src", "foo.ts");
+      await Bun.write(file, "if (a == b) { return 1; }\n");
+
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [file],
+        selectScopedTests: async () => ({
+          effectiveCommand: "bun test src/foo.test.ts",
+          isFullSuite: false,
+          thresholdFallback: false,
+          isMonorepoOrchestrator: false,
+        }),
+        regression: async () => {
+          throw new Error("subprocess exploded");
+        },
+      });
+
+      const out = await mutationCheckOp.execute(
+        {
+          story: FAKE_STORY,
+          workdir: dir,
+          storyId: "US-004",
+          storyGitRef: "abc",
+          repoRoot: dir,
+          resolvedTestPatterns: {
+            globs: ["**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [":!*.test.ts"],
+            testDirs: ["test"],
+          },
+        },
+        ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
+        deps,
+      );
+
+      expect(out.success).toBe(true);
+      expect(out.outcomes.errored).toBe(1);
+      expect(out.outcomes.killed).toBe(0);
+      expect(out.outcomes.survived).toBe(0);
     } finally {
       cleanupTempDir(dir);
     }

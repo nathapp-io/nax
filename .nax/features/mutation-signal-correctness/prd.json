@@ -1,0 +1,259 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "mutation-signal-correctness",
+  "branchName": "feat/mutation-signal-correctness",
+  "createdAt": "2026-08-06T04:19:22Z",
+  "updatedAt": "2026-08-06T05:36:42.946Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Whitespace-guard arithmetic mutation operators",
+      "description": "**Goal** — Stop arithmetic mutation operators from corrupting string literals, module specifiers, URLs, and paths while continuing to mutate spaced binary arithmetic.\n\n**Motivation** — G4 — arithmetic operators have no string or comment awareness.\n\n**Approach** — Each arithmetic pattern requires whitespace on both sides, mirroring `COMPARISON_GT` / `COMPARISON_LT`: `+` becomes `/(?<=\\s)\\+(?=\\s)/g`, and likewise for `-`, `*`, `/`. A real binary expression (`const idx = line - 1;`) is spaced by every formatter in use; a module specifier (`\"../config\"`), a URL, or a path fragment is not. This was probed against three real nax source files: arithmetic candidates fell from 32 to 0, 1, and 1 respectively, and the survivors were `const idx = line - 1;` and `const lineNumber = i + 1;` — genuine off-by-one mutations, exactly the class the gate exists to inject.\n\n**Scope** — In: update the shared arithmetic-pair regexes used by TypeScript/JavaScript, Python, Go, and Rust; update the existing mutator tests. Out: candidate sampling and per-file budget placement belong to US-002; test-execution classification and output counts belong to US-003; runtime reporting belongs to US-004.\n\n**Interface** — `ARITHMETIC_PAIRS` remains `ReadonlyArray<readonly [RegExp, string]>`; `generateMutants` remains `(input: GenerateMutantsInput) => Mutant[]`.",
+      "acceptanceCriteria": [
+        "When `generateMutants` receives `import { NaxError } from \"@/errors\";` as TypeScript source, it returns no mutant with `operatorId` `ts:arith-flip`.",
+        "When `generateMutants` receives `import type { Mutant } from \"./types\";` as TypeScript source, it returns no mutant with `operatorId` `ts:arith-flip`.",
+        "When `generateMutants` receives `const url = \"https://a.example/b/c\";` as TypeScript source, it returns no mutant with `operatorId` `ts:arith-flip`.",
+        "When `generateMutants` receives `const idx = line - 1;` as TypeScript source, it returns a `ts:arith-flip` mutant whose `after` is `const idx = line + 1;`.",
+        "When `generateMutants` receives `const total = a + b;` as TypeScript source, it returns a `ts:arith-flip` mutant whose `after` is `const total = a - b;`.",
+        "When `generateMutants` receives `const half = n / 2;` as TypeScript source, it returns a `ts:arith-flip` mutant whose `after` is `const half = n * 2;`.",
+        "When `generateMutants` receives `const twice = n * 2;` as TypeScript source, it returns a `ts:arith-flip` mutant whose `after` is `const twice = n / 2;`.",
+        "When `generateMutants` receives `y = a + b` as Python source, it returns a `py:arith-flip` mutant whose `after` is `y = a - b`.",
+        "When `generateMutants` receives `path = \"a/b/c\"` as Python source, it returns no mutant with `operatorId` `py:arith-flip`.",
+        "When `generateMutants` receives `sum := a + b` as Go source, it returns a `go:arith-flip` mutant whose `after` is `sum := a - b`.",
+        "When `generateMutants` receives `let sum = a + b;` as Rust source, it returns a `rust:arith-flip` mutant whose `after` is `let sum = a - b;`.",
+        "Given TypeScript source with five relative-specifier import lines followed by spaced arithmetic, when `generateMutants` runs, every returned mutant has `line` greater than or equal to 6.",
+        "When `generateMutants` is called twice with identical `source`, `language`, and `file`, it returns deeply equal arrays."
+      ],
+      "tags": [
+        "feature",
+        "mutation",
+        "verification"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A focused shared-regex behavior change with existing unit-test coverage and no new abstraction.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "simple",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/verification/mutation/operators.ts",
+        "src/verification/mutation/mutator.ts",
+        "test/unit/verification/mutation/mutator.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "a35dd8a166b4dcd6ebb03732f7c8179d94b6bd47"
+    },
+    {
+      "id": "US-002",
+      "title": "Evenly sample mutation candidates across changed files",
+      "description": "**Goal** — Replace source-order and first-file-only mutation truncation with a deterministic even-spread sample across all changed files.\n\n**Motivation** — G1 — the budget is spent on the top of the file.\n\n**Approach** — A new exported `selectEvenlySpaced(mutants, max)` in `src/verification/mutation/select.ts` takes the full candidate list and returns `max` entries at a fixed stride (`stride = floor(length / max)`, indices `0, stride, 2*stride, …`). `generateMutants` loses its early-break so it returns every candidate for a file; `mutationCheckOp` gathers candidates across **all** changed files, then applies `selectEvenlySpaced` once to the combined list. This fixes both biases in one place — top-of-file and first-file-only — and keeps selection a pure, deterministic function.\n\nSelection cannot guarantee a buildable mutant, and it does not try to. That is what G2 is for: a mutant that lands on a type annotation is now reported as `errored` and discarded rather than counted as `killed`.\n\n**Scope** — In: add the pure selector, export it, remove `generateMutants` early truncation, make the operation select after reading all candidate files, and preserve the all-zero `outcomes` contract for an empty selection. Out: whitespace guards are US-001; evidence-based classification and nonzero outcome aggregation belong to US-003; runtime collection and reporting belong to US-004.\n\n**Interface** — `selectEvenlySpaced(mutants, max)` is exported from `src/verification/mutation/select.ts`; `generateMutants` remains `(input: GenerateMutantsInput) => Mutant[]`.",
+      "acceptanceCriteria": [
+        "When imported from `src/verification/mutation/select.ts`, `selectEvenlySpaced` is callable as a function.",
+        "When `selectEvenlySpaced` receives nine mutants and `max` 3, it returns exactly three mutants.",
+        "When `selectEvenlySpaced` receives nine mutants and `max` 3, it returns input positions 0, 3, and 6.",
+        "When `selectEvenlySpaced` receives ten mutants and `max` 3, it returns input positions 0, 3, and 6.",
+        "When `selectEvenlySpaced` receives two mutants and `max` 5, it returns both mutants in input order.",
+        "When `selectEvenlySpaced` receives an empty list and `max` 3, it returns an empty array.",
+        "When `selectEvenlySpaced` receives nine mutants and `max` 0, it returns an empty array.",
+        "When `selectEvenlySpaced` receives nine mutants and `max` -1, it returns an empty array.",
+        "When `selectEvenlySpaced` is called twice with the same input and `max`, it returns deeply equal arrays.",
+        "When `generateMutants` receives source yielding more than three candidates with no `max`, it returns every candidate rather than truncating.",
+        "Given mutation checking with `maxMutants` 2, one changed file with at least six candidates, and regression returning `TEST_FAILURE` with `failCount` 1, when `mutationCheckOp` executes, it invokes regression exactly twice.",
+        "Given mutation checking with `maxMutants` 2, two changed files each with at least six candidates, and regression returning `SUCCESS`, when `mutationCheckOp` executes, its two survivors have distinct `file` values.",
+        "Given mutation checking with one changed file that yields no candidates, when `mutationCheckOp` executes, it never invokes regression.",
+        "Given mutation checking with no candidates after selection, when `mutationCheckOp` executes, it returns `success: true`, empty survivors, all-zero outcomes, and runs no tests."
+      ],
+      "tags": [
+        "feature",
+        "mutation",
+        "algorithm",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This adds a pure selection abstraction and rewires candidate gathering across the mutation operation while preserving fail-open behavior.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/verification/mutation/mutator.ts",
+        "src/verification/mutation/index.ts",
+        "src/operations/mutation-check.ts",
+        "test/unit/operations/mutation-check.test.ts"
+      ],
+      "expectedFiles": [
+        "src/verification/mutation/select.ts",
+        "test/unit/verification/mutation/select.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "317fd2f23fd6ba774aa7fb4b3939794550ec1553"
+    },
+    {
+      "id": "US-003",
+      "title": "Classify unexecuted test failures as errored",
+      "description": "**Goal** — Require evidence of executed tests before reporting a mutation as killed, and expose all three outcome totals from the operation.\n\n**Motivation** — G2 — unbuildable mutants are classified `killed`.\n\n**Approach** — On the `TEST_FAILURE` arm, `classifyMutant` returns `killed` only when there is evidence tests actually executed — `(passCount ?? 0) + (failCount ?? 0) > 0`. With no such evidence the mutant produced a non-zero exit with no test results, which means compilation, module resolution, or collection failed: `errored`. All other arms are unchanged.\n\nThis is deliberately conservative in one further case: a genuine test failure whose output the parser cannot recognise (an unknown framework format) now classifies as `errored` rather than `killed`. Discarding an inconclusive result is correct for a spot-check; the current behaviour claims a kill it cannot substantiate, which is the exact false all-clear this spec exists to remove.\n\nThe op gains `outcomes: { killed, survived, errored }` so the three-way distinction is observable rather than inferred from an empty `survivors` array.\n\n**Scope** — In: modify only mutation-specific classification and operation aggregation; update existing tests that encode old no-count kills. Out: parser changes are not part of this story; candidate selection is US-002; runtime reporting is US-004.\n\n**Interface** — `classifyMutant` remains `(result: VerificationResult) => MutantOutcome`; `VerificationResult` is unchanged and already carries optional `passCount`, `failCount`; `MutationCheckOutput` becomes `{ success: true; survivors: readonly SurvivingMutant[]; outcomes: { killed: number; survived: number; errored: number } }`.\n\n**Modifies** — this story changes the meaning of `TEST_FAILURE` for the classifier, and two existing assertions encode the old meaning. The implementer is authorised to edit both files; without this the story deadlocks with a correct implementation against tests it may not touch.\n\n- `test/unit/verification/mutation/classify.test.ts` — its `makeResult` helper builds a `VerificationResult` with no `passCount` or `failCount`. Two assertions consequently break: `AC3: TEST_FAILURE -> killed` and `AC3: accepts a VerificationResult with only status populated`, both expecting `killed` from a result carrying no test counts. Under the new rule both inputs classify as `errored`. Update these two cases to supply `failCount` where the intent is `killed`, and add the no-counts case as an `errored` expectation.\n- `test/unit/operations/mutation-check.test.ts` — the `AC4: TEST_FAILURE kills the mutant` case stubs `regression` with a `TEST_FAILURE` result carrying no counts. Its assertion (empty `survivors`) still passes, but for the wrong reason: the mutant is now `errored`, not `killed`. Add `failCount: 1` to that stub so the case exercises a genuine kill.",
+      "acceptanceCriteria": [
+        "When `classifyMutant` receives `TEST_FAILURE` with `passCount` 0 and `failCount` 0, it returns `errored`.",
+        "When `classifyMutant` receives `TEST_FAILURE` with both `passCount` and `failCount` absent, it returns `errored`.",
+        "When `classifyMutant` receives `TEST_FAILURE` with `passCount` 0 and `failCount` 1, it returns `killed`.",
+        "When `classifyMutant` receives `TEST_FAILURE` with `passCount` 5 and `failCount` 2, it returns `killed`.",
+        "When `classifyMutant` receives `SUCCESS`, it returns `survived`.",
+        "When `classifyMutant` receives `TIMEOUT`, it returns `errored`.",
+        "When `classifyMutant` receives `ENVIRONMENTAL_FAILURE`, it returns `errored`.",
+        "When `classifyMutant` receives `ASSET_CHECK_FAILED`, it returns `errored`.",
+        "Given one candidate and regression returning `TEST_FAILURE` with both counts 0, when `mutationCheckOp` executes, `outcomes.errored` is 1.",
+        "Given one candidate and regression returning `TEST_FAILURE` with both counts 0, when `mutationCheckOp` executes, `outcomes.killed` is 0.",
+        "Given one candidate and regression returning `TEST_FAILURE` with `failCount` 1, when `mutationCheckOp` executes, `outcomes.killed` is 1.",
+        "Given one candidate and regression returning `SUCCESS`, when `mutationCheckOp` executes, `outcomes.survived` is 1.",
+        "Given one candidate and regression returning `TEST_FAILURE` with both counts 0, when `mutationCheckOp` executes, `survivors` has length 0."
+      ],
+      "tags": [
+        "feature",
+        "mutation",
+        "verification",
+        "correctness"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A contained behavioral contract correction across classifier and operation output, with existing tests requiring deliberate semantic updates.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/verification/mutation/classify.ts",
+        "src/verification/types.ts",
+        "src/operations/mutation-check.ts",
+        "test/unit/verification/mutation/classify.test.ts",
+        "test/unit/operations/mutation-check.test.ts",
+        "src/verification/mutation/types.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d30339eef3524f0d131f0394312f28a6e0bc2064"
+    },
+    {
+      "id": "US-004",
+      "title": "Surface mutation survivors at run completion",
+      "description": "**Goal** — Persist per-story mutation results on the run runtime and visibly report survivors at run end.\n\n**Motivation** — G5 — surviving mutants have no consumer.\n\n**Approach** — `mutationCheckOp` records its per-story result into `ctx.runtime.mutationSummaries`, a `Map<string, MutationStorySummary>` on `NaxRuntime`. `runCompletionPhase` reads the map at run end, logs a warning when any survivor exists, and in headless non-`json` mode prints a formatted block — mirroring how `outputAdvisoryFindingsSummary` handles sub-threshold review findings. `json` mode stays silent, consistent with the advisory precedent.\n\nThe survivors are **not** converted into `Finding` objects. `FindingSource` is a closed nine-member union and `AdvisoryFindingSummaryEntry.reviewer` is `\"semantic\" | \"adversarial\"`; both are review-owned, and routing a deterministic operation's output through the review-audit sink would widen shared review contracts to carry something that is not a review. The dedicated collector keeps the blast radius inside the mutation feature.\n\n**Scope** — In: define and initialize the runtime collector, record outputs when `storyId` is present, add a pure log-format formatter and barrel export, log survivors at completion, and print only in headless non-JSON mode. Out: classifier/outcome production is US-003; converting mutation output to Findings or review-audit data is excluded.\n\n**Interface** — `NaxRuntime` gains `mutationSummaries: Map<string, MutationStorySummary>`; `formatMutationSummary` is exported from `src/log-format/mutation-summary.ts` and remains pure, returning a string without stdout writes; `runCompletionPhase` remains `(options: RunnerCompletionOptions) => Promise<RunnerCompletionResult>`.",
+      "acceptanceCriteria": [
+        "When imported from `src/log-format/mutation-summary.ts`, `formatMutationSummary` is callable as a function.",
+        "When `formatMutationSummary` receives one story summary with one survivor, its string contains that survivor's file path.",
+        "When `formatMutationSummary` receives one story summary with one survivor, its string contains that survivor's line number.",
+        "When `formatMutationSummary` receives one story summary with one survivor, its string contains that survivor's `operatorId`.",
+        "When `formatMutationSummary` receives one story summary with one survivor, its string contains that story ID.",
+        "When `formatMutationSummary` receives an empty collection of summaries, it returns an empty string.",
+        "When `formatMutationSummary` receives summaries with only killed and errored counts and empty survivors, it returns an empty string.",
+        "When `formatMutationSummary` receives two summaries each with a survivor, its string contains the second survivor's file path.",
+        "Given `storyId` `US-007`, one candidate, and regression returning `SUCCESS`, when `mutationCheckOp` executes, `runtime.mutationSummaries` contains key `US-007` with one survivor.",
+        "Given no `storyId` in the call context, when `mutationCheckOp` executes, `runtime.mutationSummaries` remains empty.",
+        "Given headless normal mode and a runtime summary with a survivor, when `runCompletionPhase` executes, standard output contains that survivor's file path.",
+        "Given headless JSON mode and a runtime summary with a survivor, when `runCompletionPhase` executes, standard output does not contain that survivor's file path.",
+        "Given headless normal mode and an empty runtime mutation summary map, when `runCompletionPhase` executes, standard output does not contain `surviving mutant`.",
+        "Given a runtime summary with one survivor, when `runCompletionPhase` executes, it emits a warning log record whose data has survivor count 1."
+      ],
+      "tags": [
+        "feature",
+        "mutation",
+        "runtime",
+        "reporting",
+        "integration"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The change wires one existing operation result through the established runtime collector and headless formatter patterns across five clear, bounded modules.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/runtime/index.ts",
+        "src/operations/mutation-check.ts",
+        "src/execution/runner-completion.ts",
+        "src/execution/lifecycle/headless-formatter.ts",
+        "test/unit/execution/runner-completion-events.test.ts",
+        "src/log-format/index.ts"
+      ],
+      "expectedFiles": [
+        "src/log-format/mutation-summary.ts",
+        "test/unit/log-format/mutation-summary.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8ed3014c71862f0a83bdf9cc580aab3867cb5817"
+    }
+  ],
+  "analysis": "This is an enhancement of the existing advisory mutation spot-check, not a greenfield feature. The mutation pipeline is split between operator tables, candidate generation, outcome classification, and the deterministic operation. `ARITHMETIC_PAIRS` currently uses unguarded global regexes in `src/verification/mutation/operators.ts:105-110`; the comparison operators at `src/verification/mutation/operators.ts:37-44` already demonstrate whitespace-scoped lookarounds. `generateMutants` in `src/verification/mutation/mutator.ts:29-61` processes lines and operators deterministically but honours an optional `max` with an early break, so it returns first-in-source-order candidates. `mutationCheckOp.execute` in `src/operations/mutation-check.ts:66-183` compounds that bias by stopping collection once it reaches `cfg.maxMutants` before it reaches later changed files; it applies/reverts every selected mutant in a fail-open loop and currently only retains survivors. `classifyMutant` in `src/verification/mutation/classify.ts:13-31` maps all `TEST_FAILURE` results to `killed`, despite `VerificationResult` already exposing optional `passCount` and `failCount` at `src/verification/types.ts:44-56`; `src/verification/runners.ts:94-106` populates those fields on runner failures. The mutation types at `src/verification/mutation/types.ts:9-25` already provide MutantOutcome and SurvivingMutant, so the output can add a typed count object without widening shared verification status types. The mutation barrel (`src/verification/mutation/index.ts`) is the integration export point for a new selector. Existing operation tests are in `test/unit/operations/mutation-check.test.ts`; classifier and mutator tests mirror their source directories under `test/unit/verification/mutation/`. The existing TEST_FAILURE operation test currently omits counts, so it must be corrected to continue exercising a real kill under the new evidence rule.\n\nRun-end integration should remain separate from the review findings system. `NaxRuntime` declares per-run mutable collectors at `src/runtime/index.ts:110-146` and constructs them at `src/runtime/index.ts:264-297`; add a Map keyed by story ID alongside adversarial/semantic iteration maps. `CallContext` already carries runtime to `mutationCheckOp`, so recording must be conditional when storyId is absent. `runCompletionPhase` at `src/execution/runner-completion.ts:111-377` gets its logger through `getSafeLogger`, reads runtime state, logs advisory review findings, and in headless non-JSON mode dynamically imports the formatter before outputting the footer. This is the correct consumer for the mutation collector, without changing status.json or making the advisory gate blocking. `outputAdvisoryFindingsSummary` at `src/execution/lifecycle/headless-formatter.ts:91-103` establishes the required stdout policy: no output for empty data or JSON mode. `src/log-format/index.ts:8-23` is the barrel to re-export a new pure `formatMutationSummary`; keep it distinct from `src/log-format/formatter.ts` because that file is near the repository size limit. `test/unit/execution/runner-completion-events.test.ts` supplies injectable completion dependencies and option builders suited to testing logger/stdout integration.\n\nCompatibility and migration: the gate remains opt-in, advisory, and `success: true` on every existing fail-open path. No config migration, change to the `enabled: false` default, test-runner parser modification, status.json schema change, telemetry migration, or review-Finding union expansion is required. The observable output contract adds `outcomes` to MutationCheckOutput and the runtime contract adds `mutationSummaries`; update internal test/mocks that construct these values. Selection changes only which candidates run under a capped budget, but must be deterministic. A build/collection failure with no parsed executions intentionally changes from a claimed kill to errored; existing callers should use outcomes rather than infer kills from an empty survivors list. Maintain positional revert behavior and the existing per-mutant scoped-test calculation because they are outside this feature.",
+  "outOfScope": [
+    "Restricting mutant candidates to the story's changed diff lines (gap analysis G3). Mutants continue to be drawn from whole changed files; scoping them to added and modified hunks requires threading diff hunk ranges into `generateMutants` and is deferred to a follow-up arc.",
+    "Creating the dedicated `test/unit/verification/mutation/operators.test.ts` covering every shipped operator id (gap analysis G6). This spec tests only the arithmetic operators it changes; six of sixteen operator ids remain without direct coverage.",
+    "Hoisting the loop-invariant `selectScopedTests` call out of the per-mutant loop in `mutationCheckOp` (gap analysis G8). The redundant per-mutant recomputation is a performance concern, not a correctness one.",
+    "Making `revertMutant` verify the target line still holds the mutated content before restoring it (gap analysis G9). Positional revert remains as shipped.",
+    "Adding a `SIGINT` / `SIGTERM` handler that reverts an in-flight mutant (gap analysis G10). An interrupted run can still leave a mutated source file in the worktree.",
+    "Documenting `execution.mutationCheck` in `docs/guides/configuration.md`, `docs/ROADMAP.md`, or `src/cli/config-descriptions.ts` (gap analysis G11).",
+    "Changing the `enabled: false` default, enabling the gate in nax's own `.nax/config.json`, or adding run telemetry counters for kill rate and false-alarm rate (gap analysis G12).",
+    "Deduplicating mutants across operators and detecting semantically equivalent mutants (gap analysis G13).",
+    "Running mutants in parallel, adding an aggregate time budget, or accounting mutation cost in the run's cost reporting (gap analysis G14).",
+    "Promoting the gate from advisory to blocking, or feeding surviving mutants back to the implementer as a rectification finding. The design defers this behind observed false-alarm data, which does not yet exist.",
+    "Converting surviving mutants into `Finding` objects or routing them through the review-audit sink. The run-end summary is the only consumer this spec adds.",
+    "Restricting mutation of type-only positions such as type annotations and generic parameters. Mutants landing there are reported as `errored` rather than prevented."
+  ],
+  "routingProfile": "cross-agent-mm"
+}

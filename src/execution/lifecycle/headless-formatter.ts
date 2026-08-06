@@ -5,8 +5,8 @@
  * Extracts run header and footer formatting logic from runner.ts.
  */
 
-import { type RunSummary, formatAdvisorySummary, formatRunSummary } from "@/log-format";
-import type { AdvisoryFindingSummaryEntry } from "@/runtime";
+import { type RunSummary, formatAdvisorySummary, formatMutationSummary, formatRunSummary } from "@/log-format";
+import type { AdvisoryFindingSummaryEntry, MutationStorySummary } from "@/runtime";
 import { NAX_VERSION } from "@/version";
 import chalk from "chalk";
 
@@ -80,6 +80,15 @@ export function outputRunFooter(options: RunFooterOptions): void {
   });
 
   console.log(summaryOutput);
+}
+
+export function outputMutationSummary(
+  summaries: Iterable<MutationStorySummary>,
+  formatterMode: "quiet" | "normal" | "verbose" | "json",
+): void {
+  if (formatterMode === "json") return;
+  const output = formatMutationSummary(summaries);
+  if (output) console.log(output);
 }
 
 /**

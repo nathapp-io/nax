@@ -106,17 +106,19 @@ describe("generateMutants — Rust operator coverage", () => {
   });
 });
 
-describe("generateMutants — max limit", () => {
-  test("AC8: 10 operator-matchable lines with max=3 returns at most 3 mutants", () => {
+describe("generateMutants — no truncation (US-002 AC10)", () => {
+  test("AC10: source yielding more than three candidates with no max returns every candidate", () => {
     const lines: string[] = [];
     for (let i = 0; i < 10; i++) {
       lines.push(`const v${i} = a > b;`);
     }
     const source = `${lines.join("\n")}\n`;
 
-    const mutants = generateMutants({ source, language: "typescript", file: "many.ts", max: 3 });
+    const mutants = generateMutants({ source, language: "typescript", file: "many.ts" });
 
-    expect(mutants.length).toBeLessThanOrEqual(3);
+    // Each `a > b` line produces exactly one `ts:cmp-bracket-flip` mutant;
+    // 10 lines must yield 10 mutants (no truncation when max is omitted).
+    expect(mutants).toHaveLength(10);
   });
 });
 
@@ -164,5 +166,103 @@ describe("generateMutants — language-aware comment skipping", () => {
     const mutants = generateMutants({ source, language: "python", file: "f.py" });
     expect(mutants.every((m) => m.line !== 1)).toBe(true);
     expect(mutants.some((m) => m.operatorId === "py:cmp-flip" && m.line === 2)).toBe(true);
+  });
+});
+
+describe("generateMutants — whitespace-guard arithmetic (non-spaced tokens must not mutate)", () => {
+  test("AC1: '@/errors' import specifier yields no ts:arith-flip mutant", () => {
+    const source = `import { NaxError } from "@/errors";`;
+    const mutants = generateMutants({ source, language: "typescript", file: "errors.ts" });
+    expect(mutants.some((m) => m.operatorId === "ts:arith-flip")).toBe(false);
+  });
+
+  test("AC2: './types' import type specifier yields no ts:arith-flip mutant", () => {
+    const source = `import type { Mutant } from "./types";`;
+    const mutants = generateMutants({ source, language: "typescript", file: "types.ts" });
+    expect(mutants.some((m) => m.operatorId === "ts:arith-flip")).toBe(false);
+  });
+
+  test("AC3: URL string literal yields no ts:arith-flip mutant", () => {
+    const source = `const url = "https://a.example/b/c";`;
+    const mutants = generateMutants({ source, language: "typescript", file: "url.ts" });
+    expect(mutants.some((m) => m.operatorId === "ts:arith-flip")).toBe(false);
+  });
+
+  test("AC4: spaced '-' on a real arithmetic expression mutates to '+'", () => {
+    const source = `const idx = line - 1;`;
+    const mutants = generateMutants({ source, language: "typescript", file: "idx.ts" });
+    expect(mutants.some((m) => m.operatorId === "ts:arith-flip" && m.after === "const idx = line + 1;")).toBe(true);
+  });
+
+  test("AC5: spaced '+' mutates to '-'", () => {
+    const source = `const total = a + b;`;
+    const mutants = generateMutants({ source, language: "typescript", file: "total.ts" });
+    expect(mutants.some((m) => m.operatorId === "ts:arith-flip" && m.after === "const total = a - b;")).toBe(true);
+  });
+
+  test("AC5b: every spaced '+' on a line mutates, not just the first", () => {
+    const source = `const total = a + b + c;`;
+    const mutants = generateMutants({ source, language: "typescript", file: "total.ts" });
+    expect(mutants.some((m) => m.operatorId === "ts:arith-flip" && m.after === "const total = a - b - c;")).toBe(true);
+  });
+
+  test("AC6: spaced '/' mutates to '*'", () => {
+    const source = `const half = n / 2;`;
+    const mutants = generateMutants({ source, language: "typescript", file: "half.ts" });
+    expect(mutants.some((m) => m.operatorId === "ts:arith-flip" && m.after === "const half = n * 2;")).toBe(true);
+  });
+
+  test("AC7: spaced '*' mutates to '/'", () => {
+    const source = `const twice = n * 2;`;
+    const mutants = generateMutants({ source, language: "typescript", file: "twice.ts" });
+    expect(mutants.some((m) => m.operatorId === "ts:arith-flip" && m.after === "const twice = n / 2;")).toBe(true);
+  });
+
+  test("AC8: Python spaced '+' mutates to '-'", () => {
+    const source = `y = a + b`;
+    const mutants = generateMutants({ source, language: "python", file: "f.py" });
+    expect(mutants.some((m) => m.operatorId === "py:arith-flip" && m.after === "y = a - b")).toBe(true);
+  });
+
+  test("AC9: Python path string literal yields no py:arith-flip mutant", () => {
+    const source = `path = "a/b/c"`;
+    const mutants = generateMutants({ source, language: "python", file: "f.py" });
+    expect(mutants.some((m) => m.operatorId === "py:arith-flip")).toBe(false);
+  });
+
+  test("AC10: Go spaced '+' mutates to '-'", () => {
+    const source = `sum := a + b`;
+    const mutants = generateMutants({ source, language: "go", file: "f.go" });
+    expect(mutants.some((m) => m.operatorId === "go:arith-flip" && m.after === "sum := a - b")).toBe(true);
+  });
+
+  test("AC11: Rust spaced '+' mutates to '-'", () => {
+    const source = `let sum = a + b;`;
+    const mutants = generateMutants({ source, language: "rust", file: "f.rs" });
+    expect(mutants.some((m) => m.operatorId === "rust:arith-flip" && m.after === "let sum = a - b;")).toBe(true);
+  });
+
+  test("AC12: arithmetic mutations on a line with spaced arithmetic land at line >= 6", () => {
+    const lines = [
+      `import { a } from "./a";`,
+      `import { b } from "./b";`,
+      `import { c } from "./c";`,
+      `import { d } from "./d";`,
+      `import { e } from "./e";`,
+      `const total = a + b;`,
+    ];
+    const source = `${lines.join("\n")}\n`;
+    const mutants = generateMutants({ source, language: "typescript", file: "imports.ts" });
+    expect(mutants.length).toBeGreaterThan(0);
+    for (const m of mutants) {
+      expect(m.line).toBeGreaterThanOrEqual(6);
+    }
+  });
+
+  test("AC13: two calls with identical inputs return deeply equal arrays", () => {
+    const source = `const x = a + b;\nconst y = c - d;\n`;
+    const first = generateMutants({ source, language: "typescript", file: "x.ts" });
+    const second = generateMutants({ source, language: "typescript", file: "x.ts" });
+    expect(second).toEqual(first);
   });
 });
