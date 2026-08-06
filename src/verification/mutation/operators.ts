@@ -13,12 +13,16 @@ type PatternReplacement = readonly [RegExp, string];
 /**
  * TypeScript/JavaScript comparison flips — includes the JS-only strict-equality
  * operators (`===` / `!==`).
+ *
+ * Ordered longest-first: `flipWithPairs` resolves overlapping sites by
+ * alternation order, so `===` / `!==` must precede `==` / `!=` or the strict
+ * operators are consumed as the loose one they contain (issue #1487).
  */
 const TS_COMPARISON_PAIRS: ReadonlyArray<PatternReplacement> = [
-  [/==/g, "!="],
-  [/!=/g, "=="],
   [/===/g, "!=="],
   [/!==/g, "==="],
+  [/==/g, "!="],
+  [/!=/g, "=="],
   [/>=/g, "<="],
   [/<=/g, ">="],
 ];
@@ -64,17 +68,48 @@ function applyComparisonBracketFlip(snippet: string): string[] {
   return results;
 }
 
+/** One matched operator site: where it starts and how many chars it spans. */
+type Site = readonly [start: number, length: number];
+
+/**
+ * Produce one mutant per operator in `pairs` that occurs in `snippet`, with
+ * every occurrence of that operator flipped together.
+ *
+ * The snippet is tokenized ONCE with a combined alternation regex, so each
+ * character position is claimed by exactly one pair. Regex alternation is
+ * leftmost-first, which is why the pair tables are ordered longest-first: it
+ * makes an overlapping shorter operator structurally unable to match inside a
+ * longer one, rather than relying on a per-pattern guard. Before this, the
+ * `==` pair matched the `==` inside `!==` and rewrote it to the uncompilable
+ * `!!=` (issue #1487).
+ *
+ * Pair patterns must not contain capturing groups — one group per pair is
+ * added here to attribute each match back to the pair that produced it.
+ */
 function flipWithPairs(pairs: ReadonlyArray<PatternReplacement>, snippet: string): string[] {
+  const combined = new RegExp(pairs.map(([pattern]) => `(${pattern.source})`).join("|"), "g");
+  const sitesByPair = new Map<number, Site[]>();
+  for (const match of snippet.matchAll(combined)) {
+    const pairIndex = match.slice(1).findIndex((group) => group !== undefined);
+    if (pairIndex < 0 || match[0].length === 0) continue;
+    const sites = sitesByPair.get(pairIndex) ?? [];
+    sites.push([match.index, match[0].length]);
+    sitesByPair.set(pairIndex, sites);
+  }
+
   const seen = new Set<string>();
   const results: string[] = [];
-  for (const [pattern, replacement] of pairs) {
-    if (pattern.test(snippet)) {
-      pattern.lastIndex = 0;
-      const produced = snippet.replace(pattern, replacement);
-      if (!seen.has(produced)) {
-        seen.add(produced);
-        results.push(produced);
-      }
+  for (const pairIndex of [...sitesByPair.keys()].sort((a, b) => a - b)) {
+    const replacement = pairs[pairIndex]?.[1];
+    if (replacement === undefined) continue;
+    // Splice from the end so earlier sites keep their original offsets.
+    let produced = snippet;
+    for (const [start, length] of [...(sitesByPair.get(pairIndex) ?? [])].reverse()) {
+      produced = produced.slice(0, start) + replacement + produced.slice(start + length);
+    }
+    if (produced !== snippet && !seen.has(produced)) {
+      seen.add(produced);
+      results.push(produced);
     }
   }
   return results;
