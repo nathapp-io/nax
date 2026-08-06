@@ -32,7 +32,7 @@ const ctxOf = (over: { outputs?: Record<string, unknown> }): FlowNodeContext =>
     input: INPUT,
     outputs: over.outputs ?? {},
     results: {},
-    state: { steps: [] } as never,
+    state: { steps: [] },
     services: {},
   }) as FlowNodeContext;
 

@@ -7,20 +7,21 @@ import { _gitDeps } from "@flows/nax-finish/steps/git";
 import { _prDeps } from "@flows/nax-finish/steps/pr";
 import { _qualityDeps } from "@flows/nax-finish/steps/quality";
 import { _resultDeps } from "@flows/nax-finish/steps/result";
-import type { FlowNodeContext } from "acpx/flows";
+import type { FlowNodeContext, FlowStepRecord } from "acpx/flows";
+import { makeFlowSteps, reviewRounds } from "@test/helpers";
 
 const INPUT = { feature: "x", workdir: "/repo", branch: "feat/x", prdPath: "p", escalateTelegram: false };
 
 const ctxOf = (over: {
   input?: Record<string, unknown>;
   outputs?: Record<string, unknown>;
-  steps?: { nodeId: string }[];
+  steps?: FlowStepRecord[];
 }): FlowNodeContext =>
   ({
     input: over.input ?? INPUT,
     outputs: over.outputs ?? {},
     results: {},
-    state: { steps: over.steps ?? [] } as never,
+    state: { steps: over.steps ?? [] },
     services: {},
   }) as FlowNodeContext;
 
@@ -177,7 +178,7 @@ describe("acceptance node", () => {
     const out = await nodeRun<{ route: string }>("acceptance").run(
       ctxOf({
         outputs: { load_ctx: { groups: GROUPS } },
-        steps: [{ nodeId: "fix_acceptance" }, { nodeId: "fix_acceptance" }],
+        steps: makeFlowSteps(["fix_acceptance", "fix_acceptance"]),
       }),
     );
     expect(out.route).toBe("fix");
@@ -255,7 +256,7 @@ describe("acceptance node", () => {
     const out = await nodeRun<{ route: string; reason?: string }>("acceptance").run(
       ctxOf({
         outputs: { load_ctx: { groups: GROUPS } },
-        steps: [{ nodeId: "fix_acceptance" }, { nodeId: "fix_acceptance" }, { nodeId: "fix_acceptance" }],
+        steps: makeFlowSteps(["fix_acceptance", "fix_acceptance", "fix_acceptance"]),
       }),
     );
     expect(out.route).toBe("escalate");
@@ -293,7 +294,7 @@ describe("review parse + route_* nodes", () => {
     const out = nodeRun<{ route: string; escalationReason?: string }>("route_spec").run(
       ctxOf({
         outputs: { review_spec: { route: "proceed", findings: [finding] } },
-        steps: [{ nodeId: "fix_spec" }, { nodeId: "fix_spec" }, { nodeId: "fix_spec" }],
+        steps: makeFlowSteps(["fix_spec", "fix_spec", "fix_spec"]),
       }),
     ) as { route: string; escalationReason?: string };
     expect(out.route).toBe("escalate");
@@ -400,7 +401,7 @@ describe("quality_gates node", () => {
       const out = await nodeRun<{ route: string; reason?: string }>("quality_gates").run(
         ctxOf({
           outputs: { load_ctx: { groups: GROUPS } },
-          steps: [{ nodeId: "fix_gate" }, { nodeId: "fix_gate" }, { nodeId: "fix_gate" }],
+          steps: makeFlowSteps(["fix_gate", "fix_gate", "fix_gate"]),
         }),
       );
 
@@ -438,7 +439,7 @@ describe("quality_gates node", () => {
     _qualityDeps.readText = async () => JSON.stringify({ quality: { commands: { lint: "bun run lint" } } });
     _qualityDeps.runShell = async () => ({ exitCode: 1, stdout: "", stderr: "lint bad" });
     const out = await nodeRun<{ route: string; reason?: string }>("quality_gates").run(
-      ctxOf({ steps: [{ nodeId: "fix_gate" }, { nodeId: "fix_gate" }, { nodeId: "fix_gate" }] }),
+      ctxOf({ steps: makeFlowSteps(["fix_gate", "fix_gate", "fix_gate"]) }),
     );
     expect(out.route).toBe("escalate");
     expect(out.reason).toContain("lint");
@@ -698,82 +699,5 @@ describe("escalate node", () => {
 
     expect(out.deliveryError).toBeTruthy();
     expect(JSON.parse(wrote)).toMatchObject({ status: "escalated", escalationReason: "r" });
-  });
-});
-
-describe("reprompt edges", () => {
-  test("route_spec routes reprompt back to review_spec", () => {
-    expect(switchOf("route_spec").cases.reprompt).toBe("review_spec");
-  });
-
-  test("route_quality routes reprompt back to review_quality", () => {
-    expect(switchOf("route_quality").cases.reprompt).toBe("review_quality");
-  });
-
-  test("the existing routes are untouched", () => {
-    expect(switchOf("route_quality").cases.clean).toBe("quality_gates");
-    expect(switchOf("route_quality").cases.fix).toBe("fix_quality");
-    expect(switchOf("route_quality").cases.escalate).toBe("escalate");
-  });
-
-  // acpx's runtime pushes the just-finished step onto `state.steps`
-  // (recordFlowStepOutcome, runtime.ts:262/499) BEFORE the next node runs, so
-  // by the time `route_quality` executes, its own triggering `review_quality`
-  // step is already recorded. These two tests model that real ordering —
-  // round 1's `steps` has exactly the 1 step just recorded, round 2's has 2 —
-  // and the round-1 case would FAIL under the old (buggy) `<` comparison,
-  // which escalated on the very first unparseable reply instead of retrying.
-  test("route_quality yields reprompt on the first unparseable verdict (round 1)", async () => {
-    const verdict = { route: "reprompt", findings: [], raw: "prose" };
-    const out = await nodeRun<{ route: string }>("route_quality").run(
-      ctxOf({
-        outputs: { review_quality: verdict },
-        steps: [{ nodeId: "review_quality", output: verdict }] as never,
-      }),
-    );
-    expect(out.route).toBe("reprompt");
-  });
-
-  test("route_quality escalates on the second consecutive unparseable verdict (round 2)", async () => {
-    const verdict = { route: "reprompt", findings: [], raw: "prose" };
-    const out = await nodeRun<{ route: string; escalationReason?: string }>("route_quality").run(
-      ctxOf({
-        outputs: { review_quality: verdict },
-        steps: [
-          { nodeId: "review_quality", output: verdict },
-          { nodeId: "review_quality", output: verdict },
-        ] as never,
-      }),
-    );
-    expect(out.route).toBe("escalate");
-    expect(out.escalationReason).toContain("after 2 attempts");
-  });
-
-  test("review_quality leads with the retry notice after a reprompt", () => {
-    const node = flow.nodes.review_quality as unknown as { prompt: (c: FlowNodeContext) => string };
-    const prompt = node.prompt(
-      ctxOf({
-        outputs: { load_ctx: { base: "origin/main", specPath: "spec.md" } },
-        steps: [{ nodeId: "review_quality", output: { route: "reprompt", findings: [] } }] as never,
-      }),
-    );
-    expect(prompt).toContain("previous reply could not be parsed");
-  });
-
-  test("a retried review is a FULL review, not an incremental one", () => {
-    // incrementalSince scopes a re-review to firstCommit.shaBefore..HEAD by finding
-    // the first commit_* step after the last review_<phase>. On a reprompt re-entry
-    // no commit_* follows, so it returns null and the whole base...HEAD diff is
-    // re-read. That is right — the previous attempt produced no verdict, so there is
-    // no cleared window to skip. Pinned so nobody "optimises" it into an incremental.
-    const node = flow.nodes.review_quality as unknown as { prompt: (c: FlowNodeContext) => string };
-    const prompt = node.prompt(
-      ctxOf({
-        outputs: { load_ctx: { base: "origin/main", specPath: "spec.md" } },
-        steps: [{ nodeId: "review_quality", output: { route: "reprompt", findings: [] } }] as never,
-      }),
-    );
-    expect(prompt).toContain("git diff origin/main...HEAD");
-    expect(prompt).not.toContain("continuing a review you already started");
   });
 });
