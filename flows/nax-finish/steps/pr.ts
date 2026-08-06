@@ -3,8 +3,9 @@ import { dirname, isAbsolute, join } from "node:path";
 import { FinishError } from "../errors";
 import { runArgv } from "../exec";
 import type { FinishPrContext, FinishPrStory } from "../pr-body";
-import type { FinishInput, RunFn } from "../types";
+import type { FinishInput, FinishRound, RunFn } from "../types";
 import { type Forge, detectForge, extractUrl, viewArgv } from "./forge";
+import { readRounds } from "./result";
 
 export const _prDeps: {
   run: RunFn;
@@ -52,16 +53,40 @@ function storiesFrom(prd: PrdArtifact | undefined): FinishPrStory[] {
   }));
 }
 
+/**
+ * Run `git diff --stat <base>...HEAD` and return its stdout on success.
+ *
+ * Fail-open on every non-happy path — a non-zero exit (no commits, divergent
+ * branch, base missing), a rejected run promise (forks too slow to start), or
+ * any thrown error — returning `undefined`. The PR's Verification block is
+ * optional, and a routine empty-branch finish must not lose `open_pr` to a
+ * throw that the body can simply skip.
+ */
+async function runDiffstat(workdir: string, base: string): Promise<string | undefined> {
+  try {
+    const res = await _prDeps.run(["git", "diff", "--stat", `${base}...HEAD`], { cwd: workdir });
+    if (res.exitCode !== 0) return undefined;
+    return res.stdout;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function loadFinishPrContext(
   input: FinishInput,
   args: { base: string; gatesRan: string[] },
 ): Promise<FinishPrContext> {
   const inputPrdPath = input.prdPath || "prd.json";
   const prdPath = isAbsolute(inputPrdPath) ? inputPrdPath : join(input.workdir, inputPrdPath);
-  const [prd, status] = (await Promise.all([readJson(prdPath), readJson(join(dirname(prdPath), "status.json"))])) as [
-    PrdArtifact | undefined,
-    StatusArtifact | undefined,
-  ];
+  // [US-004] The audit trail (`rounds`) and the diffstat are independent of
+  // the PRD/status reads — fetching them in parallel keeps the loader's wall
+  // clock at max(readRounds, readJson×2, diffstat).
+  const [prd, status, rounds, diffstat] = (await Promise.all([
+    readJson(prdPath),
+    readJson(join(dirname(prdPath), "status.json")),
+    readRounds(input),
+    runDiffstat(input.workdir, args.base),
+  ])) as [PrdArtifact | undefined, StatusArtifact | undefined, FinishRound[], string | undefined];
   return {
     feature: input.feature,
     stories: storiesFrom(prd),
@@ -69,7 +94,8 @@ export async function loadFinishPrContext(
     acceptance: status?.postRun?.acceptance?.status,
     regression: status?.postRun?.regression?.status,
     gatesRan: args.gatesRan,
-    rounds: [],
+    rounds,
+    diffstat,
     run: {
       durationMs: status?.durationMs,
       storiesPassed: status?.progress?.passed,

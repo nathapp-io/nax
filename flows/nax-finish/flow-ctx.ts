@@ -48,10 +48,10 @@ export function fixAttemptCount(ctx: StepsCtx, fixNodeId: string): number {
 export function loadCtxOf(ctx: OutputsCtx): LoadCtxOutput {
   return ((ctx.outputs as Record<string, LoadCtxOutput | undefined>).load_ctx ?? {}) as LoadCtxOutput;
 }
-
-export function gateOutputs(ctx: OutputsCtx): { failing?: string[] } {
-  return ((ctx.outputs as Record<string, { failing?: string[] } | undefined>).quality_gates ?? {}) as {
+export function gateOutputs(ctx: OutputsCtx): { failing?: string[]; ran?: string[] } {
+  return ((ctx.outputs as Record<string, { failing?: string[]; ran?: string[] } | undefined>).quality_gates ?? {}) as {
     failing?: string[];
+    ran?: string[];
   };
 }
 

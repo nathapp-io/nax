@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { _prDeps, loadFinishPrContext, openOrPromotePr } from "@flows/nax-finish/steps/pr";
-import type { FinishInput, RunResult } from "@flows/nax-finish/types";
+import { _resultDeps } from "@flows/nax-finish/steps/result";
+import type { FinishInput, FinishRound, RunResult } from "@flows/nax-finish/types";
 
 const ok = (stdout: string): RunResult => ({ exitCode: 0, stdout, stderr: "" });
 const originalRun = _prDeps.run;
 const originalReadText = _prDeps.readText;
 const originalWarn = _prDeps.warn;
+const originalResultReadText = _resultDeps.readText;
 const input = (overrides: Partial<FinishInput> = {}): FinishInput => ({
   feature: "finish-pr-body",
   workdir: "/repo",
@@ -18,6 +20,7 @@ afterEach(() => {
   _prDeps.run = originalRun;
   _prDeps.readText = originalReadText;
   _prDeps.warn = originalWarn;
+  _resultDeps.readText = originalResultReadText;
 });
 
 describe("loadFinishPrContext (US-003 AC1-AC10)", () => {
@@ -183,6 +186,129 @@ describe("loadFinishPrContext fail-open behavior (US-003 AC11-AC14)", () => {
         error: failure,
       },
     ]);
+  });
+});
+
+describe("loadFinishPrContext (US-004 AC1-AC6)", () => {
+  // US-004 AC1 — every round read from the audit trail reaches the PR context
+  // with its `sha` preserved, so the body can cite "Fixed in <sha>" without a
+  // second `git log` lookup.
+  test("US-004 AC1 returns rounds from readRounds with each sha preserved", async () => {
+    const rounds: FinishRound[] = [
+      {
+        ts: "2026-08-01T05:00:00.000Z",
+        phase: "spec",
+        attempt: 1,
+        committed: true,
+        findings: [],
+        sha: "abc123def4567",
+      },
+      {
+        ts: "2026-08-01T05:01:00.000Z",
+        phase: "gate",
+        attempt: 1,
+        committed: true,
+        findings: [],
+        sha: "def456abc7890",
+      },
+    ];
+    _prDeps.readText = async () => null;
+    _resultDeps.readText = async () => `${JSON.stringify(rounds[0])}\n${JSON.stringify(rounds[1])}\n`;
+
+    const result = await loadFinishPrContext(input(), { base: "main", gatesRan: [] });
+
+    expect(result.rounds).toHaveLength(2);
+    expect(result.rounds[0].sha).toBe("abc123def4567");
+    expect(result.rounds[1].sha).toBe("def456abc7890");
+  });
+
+  // US-004 AC2 — the caller-supplied gatesRan list is what gates are surfaced
+  // as "green" in the PR's verification line, and it must round-trip exactly.
+  test("US-004 AC2 returns args.gatesRan verbatim as gatesRan", async () => {
+    _prDeps.readText = async () => null;
+    _resultDeps.readText = async () => null;
+
+    const result = await loadFinishPrContext(input(), {
+      base: "main",
+      gatesRan: ["lint", "typecheck_1", "security_gate"],
+    });
+
+    expect(result.gatesRan).toEqual(["lint", "typecheck_1", "security_gate"]);
+  });
+
+  // US-004 AC3 — the diffstat command is the only reason the loader now needs
+  // `_prDeps.run`; it must use the caller-supplied base verbatim so a fork with
+  // an unusual default branch is not silently diffed against `main`.
+  test("US-004 AC3 invokes git diff --stat with the supplied base branch", async () => {
+    const calls: string[][] = [];
+    _prDeps.readText = async () => null;
+    _resultDeps.readText = async () => null;
+    _prDeps.run = async (cmd) => {
+      calls.push(cmd);
+      return { exitCode: 1, stdout: "", stderr: "" };
+    };
+
+    await loadFinishPrContext(input(), { base: "origin/release/2026.08", gatesRan: [] });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual(["git", "diff", "--stat", "origin/release/2026.08...HEAD"]);
+  });
+
+  // US-004 AC4 — the diffstat text is rendered verbatim into the Verification
+  // block of the PR body, so the loader must return stdout unchanged.
+  test("US-004 AC4 returns diffstat stdout verbatim when git exits 0", async () => {
+    const stdout = " src/foo.ts | 12 ++++--\n 1 file changed, 9 insertions(+), 3 deletions(-)\n";
+    _prDeps.readText = async () => null;
+    _resultDeps.readText = async () => null;
+    _prDeps.run = async () => ({ exitCode: 0, stdout, stderr: "" });
+
+    const result = await loadFinishPrContext(input(), { base: "main", gatesRan: [] });
+
+    expect(result.diffstat).toBe(stdout);
+  });
+
+  // US-004 AC5 — a non-zero diff (no commits, divergent branch, missing fork)
+  // must not throw and must leave diffstat undefined, otherwise `open_pr` loses
+  // its try/catch and the whole finish fails on a routine empty-branch case.
+  test("US-004 AC5 returns diffstat undefined and does not throw when git exits non-zero", async () => {
+    _prDeps.readText = async () => null;
+    _resultDeps.readText = async () => null;
+    _prDeps.run = async () => ({ exitCode: 128, stdout: "", stderr: "fatal: bad revision" });
+
+    const result = await loadFinishPrContext(input(), { base: "main", gatesRan: [] });
+
+    expect(result.diffstat).toBeUndefined();
+  });
+
+  // US-004 AC5 (rejection path) — the diffstat command can also reject (e.g.,
+  // fork too slow to start). The loader must swallow that the same way it
+  // swallows a non-zero exit, otherwise the rejection becomes an uncaught error
+  // in the flow `open_pr` node.
+  test("US-004 AC5 returns diffstat undefined and does not throw when git rejects", async () => {
+    _prDeps.readText = async () => null;
+    _resultDeps.readText = async () => null;
+    _prDeps.run = async () => {
+      throw new Error("spawn ENOENT");
+    };
+
+    const result = await loadFinishPrContext(input(), { base: "main", gatesRan: [] });
+
+    expect(result.diffstat).toBeUndefined();
+  });
+
+  // US-004 AC6 — a missing audit trail is the *common* case (first finish of a
+  // feature, run killed before any fix round lands) and must surface as an
+  // empty `rounds` array with no throw — readRounds already returns [] on
+  // ENOENT, but the loader must not turn that into an error path of its own.
+  test("US-004 AC6 returns an empty rounds array when the audit trail file does not exist", async () => {
+    _prDeps.readText = async () => null;
+    // _resultDeps.readText is expected to surface ENOENT as `null`; readRounds
+    // then returns []. The loader must propagate that without rethrowing.
+    _resultDeps.readText = async () => null;
+
+    const result = await loadFinishPrContext(input(), { base: "main", gatesRan: [] });
+
+    expect(result.rounds).toEqual([]);
   });
 });
 
