@@ -60,6 +60,51 @@ describe("mutationCheckOp — AC1: DeterministicOperation shape", () => {
 });
 
 describe("mutationCheckOp — AC2: disabled short-circuit", () => {
+  test("US-004 early-return persistence: records an empty summary when mutation checks are disabled", async () => {
+    const mutationSummaries = new Map();
+    const ctx = ctxWithConfig({ mutationCheck: { enabled: false } }, { mutationSummaries });
+
+    await mutationCheckOp.execute(
+      {
+        story: FAKE_STORY,
+        workdir: "/tmp/test",
+        storyId: "US-004",
+        resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+      },
+      ctx,
+      fakeDeps(),
+    );
+
+    expect(mutationSummaries.get("US-004")).toEqual({
+      storyId: "US-004",
+      survivors: [],
+      outcomes: { killed: 0, survived: 0, errored: 0 },
+    });
+  });
+
+  test("US-004 early-return persistence: records an empty summary when no test command exists", async () => {
+    const mutationSummaries = new Map();
+    const ctx = ctxWithConfig({}, { mutationSummaries });
+    ctx.packageView.config.quality.commands.test = undefined;
+
+    await mutationCheckOp.execute(
+      {
+        story: FAKE_STORY,
+        workdir: "/tmp/test",
+        storyId: "US-004",
+        resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+      },
+      ctx,
+      fakeDeps(),
+    );
+
+    expect(mutationSummaries.get("US-004")).toEqual({
+      storyId: "US-004",
+      survivors: [],
+      outcomes: { killed: 0, survived: 0, errored: 0 },
+    });
+  });
+
   test("returns success=true with empty survivors and never calls scoped tests/regression", async () => {
     let selectionCalled = false;
     let regressionCalled = false;

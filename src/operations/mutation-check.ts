@@ -80,8 +80,10 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
     deps: MutationCheckDeps = _mutationCheckDeps,
   ): Promise<MutationCheckOutput> {
     const cfg = ctx.packageView.select(mutationCheckConfigSelector);
+    const emptyOutput = { survivors: [], outcomes: { killed: 0, survived: 0, errored: 0 } };
     if (!cfg?.enabled) {
-      return { success: true, survivors: [], outcomes: { killed: 0, survived: 0, errored: 0 } };
+      if (ctx.storyId) ctx.runtime.mutationSummaries.set(ctx.storyId, { storyId: ctx.storyId, ...emptyOutput });
+      return { success: true as const, ...emptyOutput };
     }
 
     const logger = getLogger();
@@ -97,7 +99,8 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       logger.warn("mutation-check", "No test command configured — skipping mutation spot-check", {
         storyId: input.storyId,
       });
-      return { success: true, survivors: [], outcomes: { killed: 0, survived: 0, errored: 0 } };
+      if (ctx.storyId) ctx.runtime.mutationSummaries.set(ctx.storyId, { storyId: ctx.storyId, ...emptyOutput });
+      return { success: true as const, ...emptyOutput };
     }
     const changedFiles = await deps.getChangedNonTestFiles(
       input.workdir,
