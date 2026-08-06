@@ -219,3 +219,27 @@ describe("buildFinishBody — Run summary footer (US-002 AC15)", () => {
     }
   });
 });
+
+describe("buildFinishBody — repository template (#1478)", () => {
+  test("appends the template verbatim after every deterministic section", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        stories: [story({ id: "US-001", title: "Header", acCount: 2 })],
+        template: "## Checklist\n- [ ] docs updated",
+      }),
+    );
+    expect(body.endsWith("## Checklist\n- [ ] docs updated")).toBe(true);
+    expect(body.indexOf("## Stories")).toBeLessThan(body.indexOf("## Checklist"));
+  });
+
+  test("omits the template entirely when none resolved", () => {
+    const body = buildFinishBody(baseCtx({ stories: [story()] }));
+    expect(body).not.toContain("## Checklist");
+    expect(body.endsWith("\n\n")).toBe(false);
+  });
+
+  test("treats a whitespace-only template as absent", () => {
+    const body = buildFinishBody(baseCtx({ stories: [story()], template: "   \n  " }));
+    expect(body.trimEnd()).toBe(body);
+  });
+});

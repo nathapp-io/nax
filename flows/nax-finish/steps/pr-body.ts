@@ -18,7 +18,9 @@
 import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { runArgv } from "../exec";
+import { findPrTemplate } from "../pr-template";
 import type { Finding, FinishInput, FinishRound, RunFn } from "../types";
+import type { Forge } from "./forge";
 import { readRounds } from "./result";
 
 const SECONDS_PER_MINUTE = 60;
@@ -43,6 +45,8 @@ export interface FinishPrContext {
   regression?: string;
   gatesRan: string[];
   diffstat?: string;
+  /** Repository PR/MR template, verbatim. Absent when none resolves. */
+  template?: string;
   rounds: FinishRound[];
   run: {
     durationMs?: number;
@@ -136,21 +140,38 @@ async function runDiffstat(workdir: string, base: string): Promise<string | unde
   }
 }
 
+/**
+ * Resolve the repository's PR/MR template, fail-open.
+ *
+ * An absent template is the common case and never warns. A genuine read failure
+ * is swallowed too: the body is useful without this section, and `open_pr` must
+ * not lose a PR to a permissions error on a file most repos do not have.
+ */
+async function loadTemplate(workdir: string, forge: Forge | undefined): Promise<string | undefined> {
+  if (forge === undefined) return undefined;
+  try {
+    return (await findPrTemplate(workdir, forge, { readText: _prBodyDeps.readText })) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function loadFinishPrContext(
   input: FinishInput,
-  args: { base: string; gatesRan: string[] },
+  args: { base: string; gatesRan: string[]; forge?: Forge },
 ): Promise<FinishPrContext> {
   const inputPrdPath = input.prdPath || "prd.json";
   const prdPath = isAbsolute(inputPrdPath) ? inputPrdPath : join(input.workdir, inputPrdPath);
   // [US-004] The audit trail (`rounds`) and the diffstat are independent of
   // the PRD/status reads — fetching them in parallel keeps the loader's wall
   // clock at max(readRounds, readJson×2, diffstat).
-  const [prd, status, rounds, diffstat] = (await Promise.all([
+  const [prd, status, rounds, diffstat, template] = (await Promise.all([
     readJson(prdPath),
     readJson(join(dirname(prdPath), "status.json")),
     readRounds(input),
     runDiffstat(input.workdir, args.base),
-  ])) as [PrdArtifact | undefined, StatusArtifact | undefined, FinishRound[], string | undefined];
+    loadTemplate(input.workdir, args.forge),
+  ])) as [PrdArtifact | undefined, StatusArtifact | undefined, FinishRound[], string | undefined, string | undefined];
   return {
     feature: input.feature,
     stories: storiesFrom(prd),
@@ -160,6 +181,7 @@ export async function loadFinishPrContext(
     gatesRan: args.gatesRan,
     rounds,
     diffstat,
+    template,
     run: {
       durationMs: status?.durationMs,
       storiesPassed: status?.progress?.passed,
@@ -289,6 +311,10 @@ export function buildFinishBody(ctx: FinishPrContext): string {
 
   const footer = buildFooter(ctx.run);
   if (footer !== null) sections.push(footer);
+
+  // Appended last and verbatim: `gh` / `glab` suppress the repo's own template
+  // whenever `--body` / `--description` is passed, so it has to be re-embedded.
+  if (ctx.template !== undefined && ctx.template.trim().length > 0) sections.push(ctx.template.trim());
 
   return sections.join("\n\n");
 }
