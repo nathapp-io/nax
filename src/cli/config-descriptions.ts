@@ -90,6 +90,13 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "execution.regressionGate": "Regression gate settings (full suite after scoped tests)",
   "execution.regressionGate.enabled": "Enable full-suite regression gate",
   "execution.regressionGate.timeoutSeconds": "Timeout for regression run in seconds",
+  "execution.mutationCheck":
+    "Mutation spot-check — an advisory probe that injects a few small defects into the story's changed source files and re-runs the scoped tests to see whether the suite catches them. Never fails a story; surviving mutants are reported at run end.",
+  "execution.mutationCheck.enabled": "Enable the mutation spot-check (default: false — opt-in)",
+  "execution.mutationCheck.maxMutants":
+    "Mutants tested per story (default: 3). Candidates are gathered across all changed files and sampled evenly, so raising this widens coverage at a cost of one scoped test run per mutant.",
+  "execution.mutationCheck.timeoutSeconds":
+    "Per-mutant scoped test-run timeout in seconds (default: 60). Worst-case added wall clock per story is maxMutants x timeoutSeconds.",
   "execution.storyIsolation":
     'Story isolation mode. "shared" (default): all stories run on the main branch. "worktree": each story runs in an isolated git worktree (.nax-wt/<storyId>/); passed stories merge into main, failed commits never reach main.',
 

@@ -79,6 +79,11 @@
     "permissionProfile": "unrestricted",
     "sessionTimeoutSeconds": 7200,
     "maxStoriesPerFeature": 15,
+    "mutationCheck": {
+      "enabled": true,
+      "maxMutants": 3,
+      "timeoutSeconds": 60
+    },
     "smartTestRunner": {
       "testFilePatterns": [
         "**/*.test.ts",
