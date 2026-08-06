@@ -135,9 +135,18 @@ New module wrapping one `git diff --unified=0` call and anchoring parsed paths t
 
 ### US-003 — Restrict mutant candidates to changed lines
 
-Thread ranges into `generateMutants` and wire the op: fetch once, skip files without ranges, count candidates.
+Thread ranges into `generateMutants` and wire the op: fetch once, skip files without ranges.
 
 **Test-file placement:** `test/unit/operations/mutation-check.test.ts` is at 772 of the 800-line hard limit. New op-level tests for this story go in the new `test/unit/operations/mutation-check-diff-scope.test.ts` — do not append to the existing file.
+
+### Modifies
+
+Adding `getChangedLineRanges` to `MutationCheckDeps` makes every existing fake incomplete, and diff-scoping changes what the op mutates — so the existing op tests must be updated. This story is authorised to change both files:
+
+- `test/unit/operations/mutation-check.test.ts` — its `fakeDeps()` helper (line ~28) returns a complete `MutationCheckDeps` literal and must gain a `getChangedLineRanges` default. Its **14** stub sites that supply changed files (lines ~162, 215, 246, 280, 340, 410, 458, 508, 544, 585, 633, 681, 734) must also supply ranges covering the lines their fixtures expect to be mutated — without ranges a file is skipped by design and those tests would generate zero candidates.
+- `test/unit/operations/mutation-check-selection.test.ts` — same change to its own `fakeDeps()` helper (line ~42) and its **5** stub sites (lines ~74, 134, 185, 237).
+
+Neither file's assertions about outcomes, survivors, or selection are being reinterpreted; only the fixtures gain the ranges the op now requires.
 
 #### Context Files
 - `src/verification/mutation/mutator.ts` — `generateMutants` and `GenerateMutantsInput`
@@ -157,7 +166,7 @@ Add `candidates` and `checked` to the story summary and render a `NOT CHECKED` b
 ### Modifies
 
 - `test/unit/operations/mutation-check.test.ts` — the two `expect(mutationSummaries.get("US-004")).toEqual({...})` assertions (the disabled short-circuit at ~line 78 and the no-test-command case at ~line 101) assert the summary's exact shape and **must** be updated to include `checked: false` and `candidates: 0`. They are closed-world `toEqual` checks; adding fields necessarily breaks them.
-- `test/unit/log-format/mutation-summary.test.ts` — the `makeSummary()` helper constructs a `MutationStorySummary` literal and must gain the two new fields.
+- `test/unit/log-format/mutation-summary.test.ts` — the `makeSummary()` helper constructs a `MutationStorySummary` literal and must gain the two new fields. It must default to `checked: true` with a **non-zero** `candidates` consistent with its `outcomes`, or the existing "returns an empty string when summaries contain no survivors" test (line ~41, `outcomes: {killed: 2, survived: 0, errored: 1}`, asserting `toBe("")`) starts qualifying as unchecked, renders a `NOT CHECKED` block, and fails.
 
 #### Context Files
 - `src/runtime/mutation-summary.ts` — `MutationStorySummary` and `MutationOutcomeSummary`
