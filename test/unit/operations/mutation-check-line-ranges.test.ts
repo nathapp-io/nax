@@ -8,12 +8,13 @@
  * to the deps interface and the default wired in.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import * as loggerModule from "@/logger";
 import { mutationCheckOp } from "@/operations";
 import type { MutationCheckDeps } from "@/operations";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import * as mutationModule from "@/verification/mutation";
 
 const FAKE_STORY = { id: "US-003", title: "scope mutation candidates" } as any;
 
@@ -264,23 +265,22 @@ describe("mutationCheckOp — US-003 AC11: unmapped file emits a debug log with 
 describe("mutationCheckOp — US-003 AC12: generateMutants receives the file's lineRanges", () => {
   test("the lineRanges returned for a mapped file are forwarded to generateMutants", async () => {
     const dir = makeTempDir("nax-mutation-test-");
+    const capturedInputs: mutationModule.GenerateMutantsInput[] = [];
+    const origGenerateMutants = mutationModule.generateMutants;
+    const spy = spyOn(mutationModule, "generateMutants").mockImplementation((input) => {
+      capturedInputs.push(input);
+      return origGenerateMutants(input);
+    });
     try {
-      // Use a source where line 1 mutates and line 5 also mutates; ranges cover only line 5.
       const file = join(dir, "src", "foo.ts");
-      await Bun.write(file, ["a == b", "c == d", "e == f", "g == h", "i == j"].join("\n") + "\n");
+      await Bun.write(file, "// just a comment\n");
       const fileRanges = [{ start: 5, end: 5 }];
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [file],
         getChangedLineRanges: async () => new Map([[file, fileRanges]]),
-        regression: async () => ({
-          status: "SUCCESS" as const,
-          success: true,
-          countsTowardEscalation: true,
-          output: "",
-        }),
       });
 
-      const out = await mutationCheckOp.execute(
+      await mutationCheckOp.execute(
         {
           story: FAKE_STORY,
           workdir: dir,
@@ -293,13 +293,15 @@ describe("mutationCheckOp — US-003 AC12: generateMutants receives the file's l
         deps,
       );
 
-      expect(out.success).toBe(true);
-      // Survivors should all be on line 5 — anything else means generateMutants
-      // did not receive the file's lineRanges.
-      for (const s of out.survivors) {
-        expect(s.line).toBe(5);
-      }
+      // AC12: generateMutants must be invoked with the file's lineRanges —
+      // assert against the captured call, not against out.survivors (which
+      // is empty for a comment-only source, making a survivor-loop assertion
+      // vacuous).
+      const callsForFile = capturedInputs.filter((i) => i.file === file);
+      expect(callsForFile).toHaveLength(1);
+      expect(callsForFile[0]?.lineRanges).toEqual(fileRanges);
     } finally {
+      spy.mockRestore();
       cleanupTempDir(dir);
     }
   });
@@ -434,6 +436,3 @@ describe("mutationCheckOp — US-003 AC15: file with no mutable content emits no
     }
   });
 });
-
-// Reference `mock` so the import is not flagged as unused.
-void mock;
