@@ -101,7 +101,7 @@ describe("open_pr node — finish metadata (US-005 AC8-AC12)", () => {
     expect(calls).toBe(0);
   });
 
-  test("US-005 AC11 falls back to `nax-finish: <feature>` when loadFinishPrContext throws", async () => {
+  test("US-005 AC11 falls back to `nax-finish: <feature>` title and body when loadFinishPrContext throws", async () => {
     mockCleanCommit();
     const captured = captureCreateTitleBody();
     _openPrDeps.loadFinishPrContext = async () => {
@@ -111,6 +111,7 @@ describe("open_pr node — finish metadata (US-005 AC8-AC12)", () => {
     await nodeRun("open_pr").run(ctxOf({ outputs: { load_ctx: { route: "proceed", base: "origin/main" } } }));
 
     expect(captured.title()).toBe(`nax-finish: ${INPUT.feature}`);
+    expect(captured.body()).toBe(`Automated finish of \`${INPUT.feature}\`.`);
   });
 
   test("US-005 AC12 falls back to the default title and body when buildFinishTitle throws", async () => {
