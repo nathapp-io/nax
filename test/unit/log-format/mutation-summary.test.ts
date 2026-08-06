@@ -105,3 +105,33 @@ describe("formatMutationSummary", () => {
     expect(formatMutationSummary([makeSummary(), second])).toContain("src/second.ts");
   });
 });
+
+describe("formatMutationSummary — WORKTREE NOT RESTORED", () => {
+  const clean = () => makeSummary({ survivors: [], outcomes: { killed: 1, survived: 0, errored: 0 } });
+
+  test("a story whose revert could not be confirmed is named", () => {
+    const out = formatMutationSummary([makeSummary({ ...clean(), revertFailed: true })]);
+
+    expect(out).toContain("WORKTREE NOT RESTORED");
+    expect(out).toContain("US-004");
+  });
+
+  test("the block renders even when nothing survived and everything was checked", () => {
+    // Otherwise the loudest condition would be the one that prints nothing.
+    expect(formatMutationSummary([makeSummary({ ...clean(), revertFailed: true })])).not.toBe("");
+  });
+
+  test("a clean run never renders the block", () => {
+    expect(formatMutationSummary([makeSummary()])).not.toContain("WORKTREE NOT RESTORED");
+  });
+
+  test("it is the last block, after survivors and not-checked", () => {
+    const out = formatMutationSummary([
+      makeSummary({ revertFailed: true }),
+      makeSummary({ storyId: "US-006", survivors: [], candidates: 0 }),
+    ]);
+
+    expect(out.indexOf("WORKTREE NOT RESTORED")).toBeGreaterThan(out.indexOf("SURVIVING MUTANTS"));
+    expect(out.indexOf("WORKTREE NOT RESTORED")).toBeGreaterThan(out.indexOf("NOT CHECKED"));
+  });
+});

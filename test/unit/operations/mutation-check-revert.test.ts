@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { _mutationCheckDeps, mutationCheckOp } from "@/operations";
 import type { MutationCheckDeps } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
+import { applyMutant, journalPathFor, recordInFlight } from "@/verification";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const FAKE_STORY = { id: "US-004", title: "mutation-check op" } as any;
@@ -91,6 +92,152 @@ describe("mutationCheckOp — AC9: regression throw still reverts and reports su
       // File must be restored to its original contents after the throw.
       const after = await Bun.file(file).text();
       expect(after).toBe(`${originalLine}\n`);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+const PATTERNS = {
+  globs: ["**/*.test.ts"],
+  regex: [/\.test\.ts$/],
+  pathspec: [":!*.test.ts"],
+  testDirs: ["test"],
+};
+
+function runInput(dir: string) {
+  return {
+    story: FAKE_STORY,
+    workdir: dir,
+    storyId: "US-004",
+    storyGitRef: "abc",
+    repoRoot: dir,
+    resolvedTestPatterns: PATTERNS,
+  } as any;
+}
+
+const ENABLED = { mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } };
+
+describe("mutationCheckOp — an unconfirmed revert stops the check", () => {
+  test("a test run that rewrites the mutated line leaves the file alone and flags the story", async () => {
+    const dir = makeTempDir("nax-mutation-dirty-");
+    try {
+      const file = join(dir, "src", "foo.ts");
+      // Three mutable lines, so a second mutant would follow if we didn't stop.
+      await Bun.write(file, "if (a == b) { return 1; }\nif (c == d) { return 2; }\nif (e == f) { return 3; }\n");
+      const hijacked = "SOMEONE ELSE WROTE THIS\nif (c == d) { return 2; }\nif (e == f) { return 3; }\n";
+
+      let regressionCalls = 0;
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 3 }]]]),
+        regression: async () => {
+          regressionCalls += 1;
+          // Simulate a formatter/codegen step rewriting the mutated line.
+          await Bun.write(file, hijacked);
+          return { status: "FAILURE" as const, success: false, countsTowardEscalation: true, output: "1 fail" };
+        },
+      });
+
+      const ctx = ctxWithConfig(ENABLED);
+      const out = await mutationCheckOp.execute(runInput(dir), ctx, deps);
+
+      expect(out.success).toBe(true);
+      expect(out.revertFailed).toBe(true);
+      // The foreign write survives — nothing was restored over it.
+      expect(await Bun.file(file).text()).toBe(hijacked);
+      // Stopped after the first mutant rather than compounding.
+      expect(regressionCalls).toBe(1);
+      expect(ctx.runtime.mutationSummaries.get("US-004")?.revertFailed).toBe(true);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  test("a clean run reports no revertFailed and leaves no journal behind", async () => {
+    const dir = makeTempDir("nax-mutation-clean-");
+    try {
+      const file = join(dir, "src", "foo.ts");
+      const original = "if (a == b) { return 1; }\n";
+      await Bun.write(file, original);
+
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 1 }]]]),
+      });
+
+      const ctx = ctxWithConfig(ENABLED);
+      const out = await mutationCheckOp.execute(runInput(dir), ctx, deps);
+
+      expect(out.revertFailed).toBeUndefined();
+      expect(await Bun.file(file).text()).toBe(original);
+      expect(await Bun.file(journalPathFor(dir, "US-004")).exists()).toBe(false);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+describe("mutationCheckOp — leftover mutations from an interrupted run", () => {
+  test("a journalled mutation is restored on the next run", async () => {
+    const dir = makeTempDir("nax-mutation-leftover-");
+    try {
+      const file = join(dir, "src", "foo.ts");
+      const original = "if (a == b) { return 1; }\n";
+      await Bun.write(file, original);
+
+      // Exactly the state a SIGKILL between apply and revert leaves.
+      await recordInFlight(dir, {
+        storyId: "US-999",
+        file,
+        line: 1,
+        before: "if (a == b) { return 1; }",
+        after: "if (a != b) { return 1; }",
+        operatorId: "ts:cmp-flip",
+      });
+      await applyMutant({
+        file,
+        line: 1,
+        before: "if (a == b) { return 1; }",
+        after: "if (a != b) { return 1; }",
+        operatorId: "ts:cmp-flip",
+      });
+
+      const deps = fakeDeps({ getChangedNonTestFiles: async () => [] });
+      await mutationCheckOp.execute(runInput(dir), ctxWithConfig(ENABLED), deps);
+
+      expect(await Bun.file(file).text()).toBe(original);
+      expect(await Bun.file(journalPathFor(dir, "US-999")).exists()).toBe(false);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  test("the sweep still runs when the check is disabled", async () => {
+    const dir = makeTempDir("nax-mutation-leftover-off-");
+    try {
+      const file = join(dir, "src", "foo.ts");
+      const original = "if (a == b) { return 1; }\n";
+      await Bun.write(file, original);
+      const mutant = {
+        file,
+        line: 1,
+        before: "if (a == b) { return 1; }",
+        after: "if (a != b) { return 1; }",
+        operatorId: "ts:cmp-flip",
+      };
+      await recordInFlight(dir, { ...mutant, storyId: "US-999" });
+      await applyMutant(mutant);
+
+      // Turning the feature off must not strand a mutation in the worktree.
+      const out = await mutationCheckOp.execute(
+        runInput(dir),
+        ctxWithConfig({ mutationCheck: { enabled: false, maxMutants: 3, timeoutSeconds: 60 } }),
+        fakeDeps(),
+      );
+
+      expect(out.checked).toBe(false);
+      expect(await Bun.file(file).text()).toBe(original);
     } finally {
       cleanupTempDir(dir);
     }

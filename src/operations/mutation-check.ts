@@ -27,7 +27,10 @@ import { getChangedLineRanges } from "../verification/changed-line-ranges";
 import {
   applyMutant,
   classifyMutant,
+  clearInFlight,
   generateMutants,
+  recordInFlight,
+  restoreInFlight,
   revertMutant,
   selectEvenlySpaced,
 } from "../verification/mutation";
@@ -54,6 +57,11 @@ export interface MutationCheckOutput {
   readonly outcomes: MutationOutcomeSummary;
   readonly candidates: number;
   readonly checked: boolean;
+  /**
+   * Set only when a revert could not be confirmed, meaning the worktree may
+   * still hold an injected mutation. Absent on every clean path.
+   */
+  readonly revertFailed?: true;
 }
 
 export interface MutationCheckDeps {
@@ -73,6 +81,45 @@ export const _mutationCheckDeps: MutationCheckDeps = {
   selectScopedTests,
   regression,
 };
+
+/**
+ * Restore any mutation an earlier run applied but never confirmed reverted.
+ *
+ * Fail-open like the rest of the check: a sweep that throws is logged and
+ * swallowed. Leftover cleanup must never be the thing that fails a run.
+ */
+async function sweepLeftoverMutants(repoRoot: string, storyId: string): Promise<void> {
+  const logger = getLogger();
+  try {
+    for (const result of await restoreInFlight(repoRoot)) {
+      const { entry, outcome } = result;
+      if (outcome === "already-clean") continue;
+      const data = {
+        storyId,
+        appliedByStory: entry.storyId,
+        file: entry.file,
+        line: entry.line,
+        operatorId: entry.operatorId,
+      };
+      if (outcome === "restored") {
+        logger.warn("mutation-check", "Restored a mutation left behind by an interrupted run", data);
+      } else {
+        // Nothing to undo — the line holds neither the mutant nor the
+        // original, so this log is the only remaining record of it.
+        logger.error("mutation-check", "Cannot restore a mutation from an interrupted run — line was rewritten", {
+          ...data,
+          expected: entry.after,
+          actual: result.actual,
+        });
+      }
+    }
+  } catch (err) {
+    logger.warn("mutation-check", "Leftover-mutation sweep failed — continuing", {
+      storyId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 export const mutationCheckOp: DeterministicOperation<MutationCheckInput, MutationCheckOutput, MutationCheckConfig> = {
   kind: "deterministic",
@@ -106,12 +153,17 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
         ctx.runtime?.mutationSummaries?.set(ctx.storyId, { storyId: ctx.storyId, ...result });
       }
     };
+    const logger = getLogger();
+    // Sweep before the enabled check: a mutation left behind by an interrupted
+    // run must still be restored if the feature is turned off afterwards.
+    const journalRoot = input.repoRoot ?? input.workdir;
+    await sweepLeftoverMutants(journalRoot, input.storyId);
+
     if (!cfg?.enabled) {
       record(emptyOutput);
       return { success: true as const, ...emptyOutput };
     }
 
-    const logger = getLogger();
     const packageDir = input.packageDir ?? input.workdir;
     const language = await deps.detectLanguage(packageDir);
     const quality = ctx.packageView.select(qualityConfigSelector);
@@ -207,9 +259,13 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       );
     }
     const selected = selectEvenlySpaced(mutants, cfg.maxMutants);
+    let revertFailed = false;
     for (const mutant of selected) {
       let outcome: MutantOutcome | undefined;
       try {
+        // Journal BEFORE mutating: a crash in between must leave a record
+        // that names a mutation, never a mutation with no record.
+        await recordInFlight(journalRoot, { ...mutant, storyId: input.storyId });
         await applyMutant(mutant);
         try {
           const scoped = await deps.selectScopedTests({
@@ -235,7 +291,25 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
             survivors.push({ ...mutant, outcome: "survived" });
           }
         } finally {
-          await revertMutant(mutant);
+          const reverted = await revertMutant(mutant);
+          if (reverted.reverted) {
+            await clearInFlight(journalRoot, input.storyId);
+          } else {
+            // The line no longer holds what we wrote, so restoring it would
+            // overwrite content we cannot account for. Leave the file alone,
+            // keep the journal for the next run, and stop mutating: whatever
+            // moved the file will keep moving it.
+            revertFailed = true;
+            logger.error("mutation-check", "Could not confirm revert — worktree may still hold a mutation", {
+              storyId: input.storyId,
+              file: mutant.file,
+              line: mutant.line,
+              operatorId: mutant.operatorId,
+              reason: reverted.reason,
+              expected: mutant.after,
+              actual: reverted.actual,
+            });
+          }
         }
       } catch (err) {
         // Fail-open: any error mutating/testing/reverting a single mutant is
@@ -253,6 +327,9 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
           error: err instanceof Error ? err.message : String(err),
         });
       }
+      // An unconfirmed revert means the worktree is in a state this op did
+      // not author. Applying more mutations on top would compound it.
+      if (revertFailed) break;
     }
 
     for (const s of survivors) {
@@ -265,7 +342,9 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
     }
 
     const candidates = mutants.length;
-    record({ survivors, outcomes, candidates, checked: true });
-    return { success: true as const, survivors, outcomes, candidates, checked: true };
+    // Omitted entirely on the clean path so a summary keeps its existing shape.
+    const dirty = revertFailed ? ({ revertFailed: true } as const) : {};
+    record({ survivors, outcomes, candidates, checked: true, ...dirty });
+    return { success: true as const, survivors, outcomes, candidates, checked: true, ...dirty };
   },
 };

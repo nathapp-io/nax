@@ -426,7 +426,7 @@ Example with defaults: a story can cycle through review→autofix up to 5 times 
 
 Green tests prove the code passes the suite; they do not prove the suite would notice if the code were wrong. The mutation spot-check injects a small number of deliberate defects into the story's changed source files, re-runs the scoped tests against each one, and reports any mutant the suite failed to catch.
 
-It is **opt-in and advisory** — it runs after `full-suite-gate` and can never fail a story. Every mutation is reverted in a `finally`, so the worktree is restored even if a test run crashes.
+It is **opt-in and advisory** — it runs after `full-suite-gate` and can never fail a story. Every mutation is reverted in a `finally`, so the worktree is restored even if a test run throws.
 
 ```json
 {
@@ -466,6 +466,17 @@ SURVIVING MUTANTS
 ```
 
 Treat each line as "this line's behaviour is not pinned by a test" and decide whether it deserves one.
+
+**Restoring the worktree.** A `finally` covers a thrown error but not process death, so each mutation is also journalled to `.nax/mutation-journal/<storyId>.json` *before* it is written to disk and the journal entry is removed only once the revert is confirmed. If a run is interrupted — Ctrl+C, SIGKILL, a crash, a lost machine — the next run sweeps the journal and undoes anything left behind, whether or not the check is still enabled. Add `.nax/mutation-journal/` to `.gitignore`.
+
+Reverting is verified, never positional: the line must still hold the exact mutant that was written. If something else rewrote it in the meantime (a formatter, codegen, the agent), nax writes nothing — restoring a stale line over content it cannot account for is the one outcome nothing downstream can undo. It logs the file, line, and what it actually found, stops mutating that story, and prints a final block:
+
+```
+WORKTREE NOT RESTORED — a mutation may still be applied; check the log for file and line
+  US-002
+```
+
+That block means **check your working tree**. It is the only mutation-check output that is about your files rather than your tests.
 
 ---
 

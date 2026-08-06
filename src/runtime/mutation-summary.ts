@@ -12,4 +12,9 @@ export interface MutationStorySummary {
   readonly outcomes: MutationOutcomeSummary;
   readonly candidates: number;
   readonly checked: boolean;
+  /**
+   * Set only when a revert could not be confirmed — the worktree may still
+   * hold an injected mutation for this story. Absent on every clean path.
+   */
+  readonly revertFailed?: true;
 }
