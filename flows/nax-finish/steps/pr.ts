@@ -43,8 +43,12 @@ export async function openOrPromotePr(
   branch: string,
   title: string,
   body: string,
+  // Optional so a caller whose own `detectForge` threw still gets the previous
+  // behaviour. Passing it in is what stops the body and the create-command from
+  // disagreeing about the forge when both would otherwise detect separately.
+  knownForge?: Forge,
 ): Promise<{ status: "opened" | "promoted" | "already-ready"; url?: string }> {
-  const forge = await detectForge(_prDeps.run, repoRoot, "finish-pr");
+  const forge = knownForge ?? (await detectForge(_prDeps.run, repoRoot, "finish-pr"));
   const view = await _prDeps.run(viewArgv(forge, branch, "isDraft,url"), { cwd: repoRoot });
 
   if (view.exitCode !== 0) {
@@ -74,22 +78,23 @@ export async function openOrPromotePr(
         { stage: "finish-pr", branch },
       );
     }
-    await writeFinishMetadata(forge, repoRoot, branch, title, body);
+    await updatePrBody(forge, repoRoot, branch, title, body);
     return { status: "promoted", url };
   }
 
-  await writeFinishMetadata(forge, repoRoot, branch, title, body);
+  await updatePrBody(forge, repoRoot, branch, title, body);
   return { status: "already-ready", url };
 }
 
 /**
- * Write the finish title/body onto an already-promoted or already-ready PR/MR.
+ * Write the finish title/body onto an already-open PR/MR.
  *
- * Non-fatal by design: this runs after the PR is already open (or already
- * ready), so a failed metadata write must not throw away that state — the
- * caller's returned status/url stays valid either way.
+ * Non-fatal by design: this runs after the PR exists, so a failed metadata
+ * write must not throw away that state — the caller's returned status/url
+ * stays valid either way. Exported because `amend_body` calls it after the
+ * narrative node produces prose.
  */
-async function writeFinishMetadata(
+export async function updatePrBody(
   forge: Forge,
   repoRoot: string,
   branch: string,

@@ -33,7 +33,7 @@ describe("getFinishAutoFlowConfig — defaultAgent", () => {
 
   test("reviewers still default to null, so acpx uses --default-agent for them", () => {
     const cfg = getFinishAutoFlowConfig(withAutoFlow({ enabled: true }));
-    expect(cfg.reviewers).toEqual({ spec: null, quality: null });
+    expect(cfg.reviewers).toEqual({ spec: null, quality: null, narrative: null });
   });
 });
 

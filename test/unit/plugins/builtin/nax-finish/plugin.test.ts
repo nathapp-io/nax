@@ -476,6 +476,44 @@ describe("nax-finish post-run action", () => {
     expect(capturedEnv?.NAX_FINISH_QUALITY_PROFILE).toBe("quality-profile");
   });
 
+  test("execute forwards the narrative profile and leaves NAX_FINISH_NARRATIVE unset when enabled", async () => {
+    let capturedEnv: Record<string, string> | undefined;
+    _naxFinishDeps.run = async (_cmd, opts) => {
+      capturedEnv = opts.env;
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    _naxFinishDeps.readResult = async () => ({ feature: "x", status: "opened" });
+
+    await action.execute(
+      baseCtx({
+        config: {
+          finish: {
+            autoFlow: { enabled: true, narrative: true, reviewers: { narrative: "narrator" } },
+          },
+        },
+      }),
+    );
+
+    expect(capturedEnv?.NAX_FINISH_NARRATIVE_PROFILE).toBe("narrator");
+    // Only the disabled case is signalled, so an unset var still means enabled.
+    expect(capturedEnv?.NAX_FINISH_NARRATIVE).toBeUndefined();
+  });
+
+  test("execute sets NAX_FINISH_NARRATIVE=0 when the narrative is disabled", async () => {
+    let capturedEnv: Record<string, string> | undefined;
+    _naxFinishDeps.run = async (_cmd, opts) => {
+      capturedEnv = opts.env;
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    _naxFinishDeps.readResult = async () => ({ feature: "x", status: "opened" });
+
+    await action.execute(
+      baseCtx({ config: { finish: { autoFlow: { enabled: true, narrative: false } } } }),
+    );
+
+    expect(capturedEnv?.NAX_FINISH_NARRATIVE).toBe("0");
+  });
+
   test("execute forwards the acceptance/gate budgets in the flow input and caps the flow itself", async () => {
     let capturedCmd: string[] = [];
     let capturedTimeout: number | undefined;

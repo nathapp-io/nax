@@ -44,14 +44,17 @@
 import { defineFlow } from "acpx/flows";
 import { buildFixCommitMessage } from "./commit-message";
 import { findingsOf, fixAttemptCount, gateOutputs, incrementalSince, inputOf, loadCtxOf } from "./flow-ctx";
+import { narrativePrompt, parseNarrative } from "./narrative";
 import { buildReviewPrompt, fixPrompt } from "./review-prompts";
 import {
   _contextDeps,
+  amendPrBodyNode,
   appendRound,
   buildEscalationComment,
   commitAndPush,
   commitFixes,
   detectBaseBranch,
+  detectForge,
   filesInCommit,
   loadFinishPrContext,
   loadQualityCommands,
@@ -64,9 +67,17 @@ import {
   runQualityGates,
   writeResult,
 } from "./steps";
+import type { Forge } from "./steps/forge";
 import { _prBodyDeps, buildFinishBody, buildFinishTitle } from "./steps/pr-body";
 import type { FinishInput, FinishPhase, FinishResult, ReviewVerdict } from "./types";
 import { MAX_FIX_ATTEMPTS, parseFixVerdict, parseReviewVerdict, repromptCount, routeReview } from "./verdict";
+
+/**
+ * Disabled only on an explicit "0". An unset variable means enabled, so a flow
+ * invoked directly by `acpx flow run` — outside the plugin that sets the env —
+ * still writes the narrative.
+ */
+const NARRATIVE_ENABLED = process.env.NAX_FINISH_NARRATIVE !== "0";
 
 /**
  * Injectable seam for the `open_pr` node's title/body assembly — tests stub
@@ -132,18 +143,6 @@ async function acceptanceGateNode(ctx: {
   return { route: "fix", output: r.output };
 }
 
-/**
- * Build the `commit_<phase>` node that follows `fix_<phase>`.
- *
- * One node per phase rather than a single shared one because each returns to a
- * different successor, and acpx routes on the node id — a shared node would
- * need a switch reconstructing which fix ran from the step history.
- *
- * Also the audit seam: this is the only point in the graph where a round's
- * findings and its commit are both known. `ctx.outputs` keeps only the latest
- * output per node, so a round not recorded here is a round no terminal node
- * can reconstruct.
- */
 /**
  * Route for `commit_gate`, whose successor depends on what the fix touched.
  *
@@ -416,10 +415,18 @@ export default defineFlow({
         const fallbackBody = `Automated finish of \`${i.feature}\`.`;
         let title = fallbackTitle;
         let body = fallbackBody;
+        // Detected once, here, and handed to both the body builder (which needs
+        // it for the repo template) and the opener. Detecting in both would let
+        // them disagree. On a throw it stays undefined and `openOrPromotePr`
+        // detects for itself, exactly as it did before.
+        let forge: Forge | undefined;
         try {
+          forge = await detectForge(_prBodyDeps.run, i.workdir, "finish-pr");
           const prCtx = await _openPrDeps.loadFinishPrContext(i, {
             base: loadCtx.base ?? "",
             gatesRan: gateOutputs(ctx).ran ?? [],
+            forge,
+            specPath: loadCtx.specPath,
           });
           title = _openPrDeps.buildFinishTitle(prCtx);
           body = _openPrDeps.buildFinishBody(prCtx);
@@ -429,10 +436,30 @@ export default defineFlow({
           body = fallbackBody;
         }
 
-        const r = await openOrPromotePr(i.workdir, i.branch, title, body);
+        const r = await openOrPromotePr(i.workdir, i.branch, title, body, forge);
         await writeResult(i, { feature: i.feature, status: r.status, url: r.url });
-        return { route: "done", committed: sync.committed, ...r };
+        // The PR now exists with the mechanical narrative already in place.
+        // Anything the narrative node does from here is an improvement on a
+        // body that is already correct.
+        return { route: NARRATIVE_ENABLED ? "narrate" : "done", committed: sync.committed, ...r };
       },
+    },
+    narrative: {
+      nodeType: "acp",
+      session: { isolated: true },
+      profile: process.env.NAX_FINISH_NARRATIVE_PROFILE || undefined,
+      prompt: narrativePrompt,
+      parse: parseNarrative,
+    },
+    amend_body: {
+      nodeType: "action",
+      run: amendPrBodyNode,
+    },
+    // Inert terminal. acpx switch cases must name a real node, so the `done`
+    // route out of open_pr needs somewhere to land.
+    finish_done: {
+      nodeType: "compute",
+      run: () => ({ route: "done" }),
     },
     escalate: {
       nodeType: "action",
@@ -557,5 +584,9 @@ export default defineFlow({
         cases: { changed: "review_quality", "tests-only": "quality_gates", unchanged: "quality_gates" },
       },
     },
+    // The narrative runs only once the PR exists. acpx has no error edge, so an
+    // acp node before `open_pr` would be able to fail the flow and cost the PR.
+    { from: "open_pr", switch: { on: "$.route", cases: { narrate: "narrative", done: "finish_done" } } },
+    { from: "narrative", to: "amend_body" },
   ],
 });

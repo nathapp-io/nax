@@ -18,7 +18,10 @@
 import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { runArgv } from "../exec";
+import { readSpecSummary, resolveNarrative } from "../narrative";
+import { findPrTemplate } from "../pr-template";
 import type { Finding, FinishInput, FinishRound, RunFn } from "../types";
+import type { Forge } from "./forge";
 import { readRounds } from "./result";
 
 const SECONDS_PER_MINUTE = 60;
@@ -43,6 +46,10 @@ export interface FinishPrContext {
   regression?: string;
   gatesRan: string[];
   diffstat?: string;
+  /** Repository PR/MR template, verbatim. Absent when none resolves. */
+  template?: string;
+  /** Resolved "What changed" prose. Absent when neither source produced text. */
+  narrative?: string;
   rounds: FinishRound[];
   run: {
     durationMs?: number;
@@ -136,21 +143,46 @@ async function runDiffstat(workdir: string, base: string): Promise<string | unde
   }
 }
 
+/**
+ * Resolve the repository's PR/MR template, fail-open.
+ *
+ * An absent template is the common case and never warns. A genuine read failure
+ * is swallowed too: the body is useful without this section, and `open_pr` must
+ * not lose a PR to a permissions error on a file most repos do not have.
+ */
+async function loadTemplate(workdir: string, forge: Forge | undefined): Promise<string | undefined> {
+  if (forge === undefined) return undefined;
+  try {
+    return (await findPrTemplate(workdir, forge, { readText: _prBodyDeps.readText })) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function loadFinishPrContext(
   input: FinishInput,
-  args: { base: string; gatesRan: string[] },
+  args: { base: string; gatesRan: string[]; forge?: Forge; specPath?: string; narrative?: string },
 ): Promise<FinishPrContext> {
   const inputPrdPath = input.prdPath || "prd.json";
   const prdPath = isAbsolute(inputPrdPath) ? inputPrdPath : join(input.workdir, inputPrdPath);
-  // [US-004] The audit trail (`rounds`) and the diffstat are independent of
-  // the PRD/status reads — fetching them in parallel keeps the loader's wall
-  // clock at max(readRounds, readJson×2, diffstat).
-  const [prd, status, rounds, diffstat] = (await Promise.all([
+  // [US-004] The audit trail (`rounds`), the diffstat, and the spec summary
+  // are independent of the PRD/status reads — fetching them in parallel keeps
+  // the loader's wall clock at max(readRounds, readJson×2, diffstat, spec).
+  const [prd, status, rounds, diffstat, template, specSummary] = (await Promise.all([
     readJson(prdPath),
     readJson(join(dirname(prdPath), "status.json")),
     readRounds(input),
     runDiffstat(input.workdir, args.base),
-  ])) as [PrdArtifact | undefined, StatusArtifact | undefined, FinishRound[], string | undefined];
+    loadTemplate(input.workdir, args.forge),
+    readSpecSummary(args.specPath, _prBodyDeps.readText),
+  ])) as [
+    PrdArtifact | undefined,
+    StatusArtifact | undefined,
+    FinishRound[],
+    string | undefined,
+    string | undefined,
+    string | null,
+  ];
   return {
     feature: input.feature,
     stories: storiesFrom(prd),
@@ -160,6 +192,8 @@ export async function loadFinishPrContext(
     gatesRan: args.gatesRan,
     rounds,
     diffstat,
+    template,
+    narrative: resolveNarrative(args.narrative, specSummary),
     run: {
       durationMs: status?.durationMs,
       storiesPassed: status?.progress?.passed,
@@ -255,6 +289,16 @@ function renderFinding(finding: Finding): string {
   return `- [${finding.severity}] ${finding.title}`;
 }
 
+/**
+ * Heading and text are produced together, so "no text" cannot render a bare
+ * `## What changed` heading — the empty-heading case #1477 forbids.
+ */
+function buildNarrativeSection(narrative: string | undefined): string | null {
+  const text = narrative?.trim();
+  if (!text) return null;
+  return ["## What changed", text].join("\n\n");
+}
+
 function buildOutOfScopeSection(outOfScope: string[]): string | null {
   if (outOfScope.length === 0) return null;
   const lines: string[] = ["## Out of scope"];
@@ -276,6 +320,9 @@ function buildFooter(run: FinishPrContext["run"]): string | null {
 export function buildFinishBody(ctx: FinishPrContext): string {
   const sections: string[] = [];
 
+  const narrativeSection = buildNarrativeSection(ctx.narrative);
+  if (narrativeSection !== null) sections.push(narrativeSection);
+
   if (ctx.stories.length > 0) sections.push(buildStoriesSection(ctx.stories));
 
   const verification = buildVerificationSection(ctx.acceptance, ctx.regression, ctx.gatesRan, ctx.diffstat);
@@ -289,6 +336,10 @@ export function buildFinishBody(ctx: FinishPrContext): string {
 
   const footer = buildFooter(ctx.run);
   if (footer !== null) sections.push(footer);
+
+  // Appended last and verbatim: `gh` / `glab` suppress the repo's own template
+  // whenever `--body` / `--description` is passed, so it has to be re-embedded.
+  if (ctx.template !== undefined && ctx.template.trim().length > 0) sections.push(ctx.template.trim());
 
   return sections.join("\n\n");
 }

@@ -148,4 +148,60 @@ describe("open_pr node — finish metadata (US-005 AC8-AC12)", () => {
     expect(captured.title()).toBe(`nax-finish: ${INPUT.feature}`);
     expect(captured.body()).toBe(`Automated finish of \`${INPUT.feature}\`.`);
   });
+
+  test("routes to narrate once the PR is open, so the narrative runs after it", async () => {
+    mockCleanCommit();
+    captureCreateTitleBody();
+    _openPrDeps.loadFinishPrContext = async () => minimalCtx();
+
+    const out = await nodeRun<{ route: string }>("open_pr").run(
+      ctxOf({ outputs: { load_ctx: { route: "proceed", base: "origin/main", specPath: "/s.md" } } }),
+    );
+
+    expect(out.route).toBe("narrate");
+  });
+
+  test("routes to done for a nothing-to-finish run — there is no diff to narrate", async () => {
+    _resultDeps.writeText = async () => {};
+
+    const out = await nodeRun<{ route: string }>("open_pr").run(
+      ctxOf({ outputs: { load_ctx: { route: "nothing-to-finish" } } }),
+    );
+
+    expect(out.route).toBe("done");
+  });
+
+  test("hands one detected forge to both the body builder and the PR opener", async () => {
+    // Detecting separately in each would let the body and the create command
+    // disagree about the forge.
+    mockCleanCommit();
+    captureCreateTitleBody();
+    let forgeSeenByBody: string | undefined;
+    _openPrDeps.loadFinishPrContext = async (_input, args) => {
+      forgeSeenByBody = (args as { forge?: string }).forge;
+      return minimalCtx();
+    };
+
+    await nodeRun("open_pr").run(
+      ctxOf({ outputs: { load_ctx: { route: "proceed", base: "origin/main" } } }),
+    );
+
+    expect(forgeSeenByBody).toBe("github");
+  });
+
+  test("threads load_ctx.specPath into the body builder for the mechanical fallback", async () => {
+    mockCleanCommit();
+    captureCreateTitleBody();
+    let specPathSeen: string | undefined;
+    _openPrDeps.loadFinishPrContext = async (_input, args) => {
+      specPathSeen = (args as { specPath?: string }).specPath;
+      return minimalCtx();
+    };
+
+    await nodeRun("open_pr").run(
+      ctxOf({ outputs: { load_ctx: { route: "proceed", base: "origin/main", specPath: "/spec.md" } } }),
+    );
+
+    expect(specPathSeen).toBe("/spec.md");
+  });
 });

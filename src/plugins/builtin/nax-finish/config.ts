@@ -20,7 +20,8 @@ export interface FinishAutoFlowSettings {
   defaultAgent: string;
   /** acpx `--model`; null passes no flag at all. Opt-in — see the schema. */
   model: string | null;
-  reviewers: { spec: string | null; quality: string | null };
+  narrative: boolean;
+  reviewers: { spec: string | null; quality: string | null; narrative: string | null };
   escalate: { telegram: boolean };
   notify: { mode: "escalation" | "always" | "off" };
   timeouts: { acceptanceMs: number; gateMs: number; flowMs: number; stepMs: number | null };
@@ -35,7 +36,8 @@ const DEFAULT_FINISH_AUTO_FLOW_CONFIG: Omit<FinishAutoFlowSettings, "defaultAgen
   enabled: false,
   flowPath: "flows/nax-finish/nax-finish.flow.ts",
   model: null,
-  reviewers: { spec: null, quality: null },
+  narrative: true,
+  reviewers: { spec: null, quality: null, narrative: null },
   escalate: { telegram: true },
   notify: { mode: "escalation" },
   timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },
@@ -77,9 +79,13 @@ export function getFinishAutoFlowConfig(ctx: { config?: unknown }): FinishAutoFl
     // agent entries. Passing one unconditionally would override the pinned
     // reviewers on a build without that support.
     model: autoFlow.model ?? null,
+    // `!== false` so an older config with no `narrative` key still narrates,
+    // matching the schema default rather than silently opting out.
+    narrative: autoFlow.narrative !== false,
     reviewers: {
       spec: autoFlow.reviewers?.spec ?? null,
       quality: autoFlow.reviewers?.quality ?? null,
+      narrative: autoFlow.reviewers?.narrative ?? null,
     },
     escalate: { telegram: autoFlow.escalate?.telegram !== false },
     notify: { mode: autoFlow.notify?.mode ?? defaults.notify.mode },

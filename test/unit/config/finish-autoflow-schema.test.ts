@@ -7,7 +7,7 @@ describe("finish.autoFlow schema", () => {
     expect(c.finish.autoFlow.enabled).toBe(false);
     expect(c.finish.autoFlow.flowPath).toBe("flows/nax-finish/nax-finish.flow.ts");
     expect(c.finish.autoFlow.defaultAgent).toBeNull();
-    expect(c.finish.autoFlow.reviewers).toEqual({ spec: null, quality: null });
+    expect(c.finish.autoFlow.reviewers).toEqual({ spec: null, quality: null, narrative: null });
     expect(c.finish.autoFlow.escalate.telegram).toBe(true);
     expect(c.finish.autoFlow.notify.mode).toBe("escalation");
     // Every subprocess the flow awaits is capped — nothing defaults to unbounded.
@@ -53,6 +53,31 @@ describe("finish.autoFlow schema", () => {
     expect(
       NaxConfigSchema.safeParse({ version: 1, finish: { autoFlow: { notify: { mode: "sometimes" } } } }).success,
     ).toBe(false);
+  });
+});
+
+describe("finish.autoFlow.narrative", () => {
+  test("narrative defaults to true and reviewers.narrative to null", () => {
+    const parsed = NaxConfigSchema.parse({});
+    expect(parsed.finish.autoFlow.narrative).toBe(true);
+    expect(parsed.finish.autoFlow.reviewers.narrative).toBeNull();
+  });
+
+  test("narrative can be disabled and given a profile", () => {
+    const parsed = NaxConfigSchema.parse({
+      finish: { autoFlow: { narrative: false, reviewers: { narrative: "haiku" } } },
+    });
+    expect(parsed.finish.autoFlow.narrative).toBe(false);
+    expect(parsed.finish.autoFlow.reviewers.narrative).toBe("haiku");
+  });
+
+  test("the finish-level default literal carries the narrative keys too", () => {
+    // The schema repeats its defaults at three levels; a config with no `finish`
+    // block at all must still parse to the same shape as one with an empty block.
+    const empty = NaxConfigSchema.parse({});
+    const explicit = NaxConfigSchema.parse({ finish: { autoFlow: {} } });
+    expect(empty.finish.autoFlow.narrative).toBe(explicit.finish.autoFlow.narrative);
+    expect(empty.finish.autoFlow.reviewers).toEqual(explicit.finish.autoFlow.reviewers);
   });
 });
 
