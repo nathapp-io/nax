@@ -3,7 +3,7 @@
   "feature": "finish-pr-body",
   "branchName": "feat/finish-pr-body",
   "createdAt": "2026-08-05T00:00:00.000Z",
-  "updatedAt": "2026-08-05T15:11:06.263Z",
+  "updatedAt": "2026-08-06T00:12:21.219Z",
   "userStories": [
     {
       "id": "US-001",
@@ -34,7 +34,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "flows/nax-finish/types.ts",
@@ -42,7 +44,11 @@
         "flows/nax-finish/steps/git.ts",
         "flows/nax-finish/steps/result.ts",
         "test/unit/flows/nax-finish/flow-commits.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "dc25808d852236e54f2caa70cbd5b2f348c33a24"
     },
     {
       "id": "US-002",
@@ -96,10 +102,9 @@
         "flows/nax-finish/steps/pr-body.ts",
         "test/unit/flows/nax-finish/steps/pr-body.test.ts"
       ],
-      "outOfScope": [
-        "Sharing code with `src/plugins/builtin/auto-pr/pr-body.ts` is not part of this spec; `src/` and `flows/` are separate modules loaded by different runtimes, and the finish builder is a flow-local reimplementation.",
-        "A model-written \"What changed\" narrative section is not part of this spec; the body is assembled deterministically from artifacts, with no agent call in the `open_pr` path."
-      ]
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -151,9 +156,9 @@
         "flows/nax-finish/types.ts",
         "src/execution/status-file.ts"
       ],
-      "outOfScope": [
-        "Adding new fields to `status.json` or `prd.json` is not part of this spec; the builder reads only fields that already exist."
-      ]
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -197,7 +202,10 @@
         "flows/nax-finish/steps/result.ts",
         "flows/nax-finish/steps/git.ts",
         "flows/nax-finish/flow-ctx.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -249,10 +257,9 @@
         "test/unit/flows/nax-finish/steps/pr.test.ts",
         "test/unit/flows/nax-finish/flow-commits.test.ts"
       ],
-      "outOfScope": [
-        "The escalation draft PR opened by `flows/nax-finish/steps/escalate.ts:71` keeps its existing `nax-finish: <branch>` title and escalation-comment body; only the `open_pr` node's PR is retitled and rewritten.",
-        "Changing the auto-PR plugin's own title, body or template behaviour is not part of this spec."
-      ]
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "This is an enhancement to the acpx-hosted `flows/nax-finish` module, not to the Bun `src/` tree. `flows/nax-finish/nax-finish.flow.ts:223-252` calls `commitFixes`, appends the live audit record, and currently discards `shaAfter`; `FinishRound` at `flows/nax-finish/types.ts:45-56` therefore cannot preserve a fix SHA, although `steps/result.ts:76-107` JSONL-serializes, reads, and embeds whole rounds in the terminal result. `flows/nax-finish/nax-finish.flow.ts:433-447` is the sole normal open_pr integration point: after `commitAndPush`, it supplies the placeholder title/body to `openOrPromotePr`. `openOrPromotePr` in `flows/nax-finish/steps/pr.ts:31-71` already has the stable four-argument contract and handles create, draft promotion, and already-ready paths, but only create receives body metadata today. Its injectable `_prDeps.run` and `test/unit/flows/nax-finish/steps/pr.test.ts` command-capture pattern are the right seams for fail-open edit tests. `flows/nax-finish/flow-ctx.ts:52-56` hides `quality_gates.ran` behind a return type exposing only `failing`; the accessor must widen without breaking existing callers. The green `quality_gates` route emits `ran` at `flows/nax-finish/nax-finish.flow.ts:403-405`, so no new gate data needs to be persisted. The new flow-local `steps/pr-body.ts` must use Node APIs and `_prBodyDeps` because flow modules execute under Node/acpx; `steps/quality.ts:10-30` demonstrates ENOENT-as-absent reads and `scripts/check-flows-no-bun.ts` statically prohibits Bun in flows. It must deliberately mirror, not import, the pure auto-PR builder in `src/plugins/builtin/auto-pr/pr-body.ts:38-107`: `buildTitle` establishes `feat: <feature>`, while `escapeTableCell` escapes backslashes, pipes, and newlines. Loader inputs are existing PRD/status artifacts plus `readRounds`, `git diff --stat <base>...HEAD`, and gate output; relative `prdPath` requires resolution from `FinishInput.workdir`. Main risks are accidentally violating the src→flows runtime boundary, blocking PR creation on optional artifact/forge-edit failures, malformed markdown from table cells, and pushing the 568-line flow over its 600-line hard cap. Keep formatting and I/O in the new module, make every artifact read and diff fail-open, use fallback literals only when builder loading/building throws, and preserve the current create/promotion error behavior except for non-fatal metadata edits. No data migration is required: `sha` is optional, old audit lines remain readable, and status/PRD schemas are read-only inputs. Existing focused coverage lives in `test/unit/flows/nax-finish/flow-commits.test.ts`, `steps/result.test.ts`, and `steps/pr.test.ts`; add a dedicated `steps/pr-body.test.ts` and extend the established flow-node harness for wiring/fallback behavior.",
