@@ -207,3 +207,63 @@ describe("applySectionBudget — non-finite budget", () => {
     expect(applySectionBudget(sections, Number.POSITIVE_INFINITY).retainedSections).toEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cross-rule ordering: equal-priority rules must stay contiguous
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("applySectionBudget — cross-rule ordering", () => {
+  function sectionsFor(ruleId: string, priority: number): RuleSection[] {
+    return ["preamble", "a", "b"].map((slug, ordinal) =>
+      makeSection({ ruleId, rulePath: `${ruleId}.md`, slug, ordinal, tokens: 10, priority }),
+    );
+  }
+
+  test("keeps each rule's sections contiguous instead of interleaving them by ordinal", () => {
+    // Regression: with no rule tiebreaker, equal-priority sections sorted
+    // ordinal-major — every rule's preamble first, then every rule's first
+    // body section, and so on. Since `priority` defaults to the same value for
+    // any rule that does not declare one, that was the normal case, and it
+    // shredded every rule in the delivered output.
+    const sections = [...sectionsFor("alpha", 100), ...sectionsFor("beta", 100)];
+    const result = applySectionBudget(sections, 1000);
+
+    expect(result.retainedSections.map(sectionId)).toEqual([
+      "alpha#preamble",
+      "alpha#a",
+      "alpha#b",
+      "beta#preamble",
+      "beta#a",
+      "beta#b",
+    ]);
+  });
+
+  test("truncation drops one boundary rule's tail rather than every rule's tail", () => {
+    const sections = [...sectionsFor("alpha", 100), ...sectionsFor("beta", 100)];
+    // Room for four of the six 10-token sections.
+    const result = applySectionBudget(sections, 40);
+
+    // alpha survives whole; beta is the boundary rule and contributes its lead.
+    expect(result.retainedSections.map(sectionId)).toEqual([
+      "alpha#preamble",
+      "alpha#a",
+      "alpha#b",
+      "beta#preamble",
+    ]);
+    expect(result.droppedIds).toEqual(["beta#a", "beta#b"]);
+  });
+
+  test("priority still outranks rule identity", () => {
+    const sections = [...sectionsFor("zulu", 1), ...sectionsFor("alpha", 100)];
+    const result = applySectionBudget(sections, 1000);
+
+    expect(result.retainedSections.map((s) => s.ruleId)).toEqual([
+      "zulu",
+      "zulu",
+      "zulu",
+      "alpha",
+      "alpha",
+      "alpha",
+    ]);
+  });
+});
