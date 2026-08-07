@@ -183,7 +183,9 @@ Create `no-progress-bail.ts`, export `withNoProgressBail` from the `@/execution`
 it around `withIncreasingFailuresBail` in `runRectification`.
 *Depends on:* US-001 (reads the config fields it threads).
 
-**Creates (US-002):** `src/execution/story-orchestrator/no-progress-bail.ts`
+**Creates (US-002):** `src/execution/story-orchestrator/no-progress-bail.ts`, `src/findings/bail-marker.ts` (the
+`markNaxBailWrapper`/`isNaxBailWrapper` helpers `withNoProgressBail` needs to distinguish a wrapper-generated
+`bailWhen` from a user-supplied one when composing precedence, per the Composition section above).
 
 ### Modifies
 
@@ -200,6 +202,9 @@ it around `withIncreasingFailuresBail` in `runRectification`.
 
 - `src/execution/story-orchestrator/rectification.ts` — compose the new wrapper around the existing one
 - `src/execution/index.ts` — export `withNoProgressBail` from the barrel
+- `src/execution/story-orchestrator/run-phase.ts` — mark `withIncreasingFailuresBail`'s generated `bailWhen`
+  via `markNaxBailWrapper`
+- `src/findings/index.ts` — export `markNaxBailWrapper`/`isNaxBailWrapper` from the barrel
 
 ### Context Files
 

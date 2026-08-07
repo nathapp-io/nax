@@ -1,8 +1,10 @@
-import { describe, expect, test } from "bun:test";
-import { withIncreasingFailuresBail, withNoProgressBail } from "@/execution";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { _storyOrchestratorDeps, runRectification, withIncreasingFailuresBail, withNoProgressBail } from "@/execution";
 import { runFixCycle } from "@/findings";
 import type { Finding, FixCycle, FixCycleContext, FixStrategy, Iteration } from "@/findings";
+import type { CallContext } from "@/operations";
 import { makeTestRuntime } from "@test/helpers";
+import { GATE_FAILURE, mockFullSuiteGateOp, mockImplementerOp } from "./_revalidation-fixtures";
 
 function finding(message: string): Finding {
   return { severity: "error", category: "test", source: "tdd-verifier", message };
@@ -174,5 +176,90 @@ describe("withNoProgressBail — US-002", () => {
     });
     await runtime.close();
     expect(dispatches).toBeGreaterThan(3);
+  });
+});
+
+describe("withNoProgressBail — US-002 AC-2.9/AC-2.10: driven through runRectification (production entry point)", () => {
+  let origCallOp: typeof _storyOrchestratorDeps.callOp;
+
+  beforeEach(() => {
+    origCallOp = _storyOrchestratorDeps.callOp;
+  });
+
+  afterEach(() => {
+    _storyOrchestratorDeps.callOp = origCallOp;
+  });
+
+  function makeCtx(runtime: ReturnType<typeof makeTestRuntime>): CallContext {
+    return {
+      runtime,
+      packageView: runtime.packages.repo(),
+      packageDir: "/tmp",
+      agentName: "claude",
+      storyId: "US-002-integration",
+    } as CallContext;
+  }
+
+  /** Minimal state with one collected validation phase (the gate) — satisfies `collectRectificationPhases`. */
+  function makeState(abortOnNoProgress: boolean): Parameters<typeof runRectification>[1] {
+    return {
+      fullSuiteGate: { kind: "full-suite-gate", slot: { op: mockFullSuiteGateOp, input: { story: "US-002" } } },
+      rectification: {
+        maxAttempts: 12,
+        strategies: [
+          {
+            name: "strategy",
+            appliesTo: () => true,
+            fixOp: mockImplementerOp,
+            buildInput: () => ({ story: "US-002" }),
+            maxAttempts: 12,
+          },
+        ],
+        abortOnIncreasingFailures: false,
+        abortOnNoProgress,
+        consecutiveNoProgressToBail: 3,
+      },
+    } as unknown as Parameters<typeof runRectification>[1];
+  }
+
+  /** The gate stays red with the identical finding on every re-run — a pure stall, no progress ever made. */
+  function alwaysRedGateAndCountFixes(): () => number {
+    let dispatches = 0;
+    _storyOrchestratorDeps.callOp = (async (_c: unknown, op: { name: string }) => {
+      if (op.name === "full-suite-gate") return { success: false, passed: false, findings: [GATE_FAILURE] };
+      if (op.name === "implementer") {
+        dispatches += 1;
+        return { success: true };
+      }
+      return { success: true, passed: true, findings: [] };
+    }) as typeof _storyOrchestratorDeps.callOp;
+    return () => dispatches;
+  }
+
+  test("AC-2.9: abortOnNoProgress true bails runRectification after exactly 3 fix dispatches", async () => {
+    const runtime = makeTestRuntime();
+    const ctx = makeCtx(runtime);
+    const dispatches = alwaysRedGateAndCountFixes();
+
+    const result = await runRectification(ctx, makeState(true), {}, {
+      "full-suite-gate": { success: false, passed: false, findings: [GATE_FAILURE] },
+    });
+    await runtime.close();
+
+    expect(result.rectificationExhausted).toBe(true);
+    expect(dispatches()).toBe(3);
+  });
+
+  test("AC-2.10: abortOnNoProgress false dispatches more than 3 fixes on the same production path", async () => {
+    const runtime = makeTestRuntime();
+    const ctx = makeCtx(runtime);
+    const dispatches = alwaysRedGateAndCountFixes();
+
+    await runRectification(ctx, makeState(false), {}, {
+      "full-suite-gate": { success: false, passed: false, findings: [GATE_FAILURE] },
+    });
+    await runtime.close();
+
+    expect(dispatches()).toBeGreaterThan(3);
   });
 });

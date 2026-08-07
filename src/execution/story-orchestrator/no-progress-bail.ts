@@ -16,16 +16,22 @@ export function withNoProgressBail(
   const threshold = Math.max(1, consecutiveNoProgress);
   return strategies.map((strategy) => {
     const innerBail = strategy.bailWhen;
-    const userBail = innerBail && !isNaxBailWrapper(innerBail) ? innerBail : undefined;
+    const isUserBail = innerBail !== undefined && !isNaxBailWrapper(innerBail);
     return {
       ...strategy,
       bailWhen: markNaxBailWrapper((iterations: Iteration<Finding>[]): string | null => {
-        const userReason = userBail?.(iterations) ?? null;
-        if (userReason !== null) return userReason;
-        if (iterations.length < threshold) return null;
-        const trailing = iterations.slice(-threshold);
-        if (!trailing.every(madeNoProgress)) return null;
-        return `no finding resolved for ${threshold} consecutive iteration(s); ${trailing.at(-1)?.findingsBefore.length ?? 0} finding(s) persisted`;
+        if (isUserBail) {
+          const userReason = innerBail(iterations);
+          if (userReason !== null) return userReason;
+        }
+        if (iterations.length >= threshold) {
+          const trailing = iterations.slice(-threshold);
+          if (trailing.every(madeNoProgress)) {
+            return `no finding resolved for ${threshold} consecutive iteration(s); ${trailing.at(-1)?.findingsBefore.length ?? 0} finding(s) persisted`;
+          }
+        }
+        if (!isUserBail && innerBail) return innerBail(iterations);
+        return null;
       }),
     };
   });
