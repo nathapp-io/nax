@@ -1,6 +1,6 @@
 import type { NaxConfig } from "@/config";
 import type { Finding, FindingSeverity, FixStrategy, Iteration } from "@/findings";
-import { runFixCycle } from "@/findings";
+import { markNaxBailWrapper, runFixCycle } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { AdversarialReviewInput, CallContext, SemanticReviewInput } from "@/operations";
 import { callOp } from "@/operations";
@@ -435,7 +435,7 @@ export function withIncreasingFailuresBail(
   const threshold = Math.max(1, consecutiveIncreases);
   return strategies.map((strategy) => ({
     ...strategy,
-    bailWhen: (iterations: Iteration<Finding>[]): string | null => {
+    bailWhen: markNaxBailWrapper((iterations: Iteration<Finding>[]): string | null => {
       const userReason = strategy.bailWhen?.(iterations) ?? null;
       if (userReason !== null) return userReason;
       if (iterations.length < threshold) return null;
@@ -447,6 +447,6 @@ export function withIncreasingFailuresBail(
         return `failure count increased for ${threshold} consecutive iteration(s): ${first.findingsBefore.length} -> ${last.findingsAfter.length}`;
       }
       return null;
-    },
+    }),
   }));
 }

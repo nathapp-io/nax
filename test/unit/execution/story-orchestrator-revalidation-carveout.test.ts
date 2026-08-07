@@ -133,6 +133,42 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
     return { cycle: cycle as unknown as FixCycle<Finding>, cycleCtx: cycleCtx as unknown as FixCycleContext };
   }
 
+  test("US-002 production composition: no-progress reason outranks count-increase", async () => {
+    const ctx = makeCtx();
+    const before = [ADVISORY];
+    let capturedCycle: FixCycle<Finding> | null = null;
+    _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>) => {
+      capturedCycle = cycle;
+      return { iterations: [], finalFindings: [], exitReason: "resolved" as FixCycleExitReason, costUsd: 0 };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
+
+    await runRectification(
+      ctx,
+      makeRectifyState([{
+        name: "strategy",
+        appliesTo: () => true,
+        fixOp: mockImplementerOp,
+        buildInput: () => ({ story: "US-002" }),
+        maxAttempts: 12,
+      }]),
+      {},
+      greenBefore(),
+      { initialFindings: before },
+    );
+
+    const iterations = Array.from({ length: 3 }, (_, index) => ({
+      iterationNum: index + 1,
+      findingsBefore: before,
+      findingsAfter: [...before, { ...GATE_FAILURE, message: `new-${index}` }],
+      fixesApplied: [{ strategyName: "strategy", op: "implementer", targetFiles: [], summary: "" }],
+      outcome: "regressed" as const,
+      startedAt: "2026-01-01T00:00:00.000Z",
+      finishedAt: "2026-01-01T00:00:01.000Z",
+    }));
+    const reason = (capturedCycle as unknown as FixCycle<Finding>).strategies[0]?.bailWhen?.(iterations);
+    expect(reason).toContain("no finding resolved");
+  });
+
   test("nbf path: a gate regression surfaces as a finding instead of being discarded by the stale verifier pass", async () => {
     const ctx = makeCtx();
     const phaseOutputs = greenBefore();

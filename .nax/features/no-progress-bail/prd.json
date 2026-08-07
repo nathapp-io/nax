@@ -1,0 +1,175 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "no-progress-bail",
+  "branchName": "feat/no-progress-bail",
+  "createdAt": "2026-08-07T00:00:00+08:00",
+  "updatedAt": "2026-08-07T12:22:58.529Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Declare and thread the no-progress config fields",
+      "description": "**Goal** — Add `abortOnNoProgress` and `consecutiveNoProgressToBail` to rectification configuration and carry their resolved values into `RectificationPhaseOptions`.\n\n**Motivation** — The threshold is 3, one higher than the count bail's 2, because this predicate fires on a much wider shape and the true coverage between 179 and 695 iterations cannot be measured until post-#1496 telemetry accrues.\n\n**Approach** — Full threading path: `src/config/schemas-execution.ts` (schema + bounds) → `src/config/schemas.ts` (the default literal) → `src/config/runtime-types.ts` (interface) → `src/cli/config-descriptions.ts` (descriptions) → `src/execution/plan-inputs.ts:426` (build `RectificationPhaseOptions`) → `src/execution/story-orchestrator/types.ts` (option fields) → `rectification.ts:288` (apply).\n\n**Scope** — In: schema declarations, both default declaration sites, runtime and phase-option contracts, CLI descriptions, and plan-input threading. Out: the bail predicate and cycle composition belong to US-002; `src/verification/rectification.ts:32` is a separate legacy consumer and is not modified.\n\n**Interface** — Two new fields on `execution.rectification`:\n\n| Field | Type | Default | Bounds |\n|:---|:---|:---|:---|\n| `abortOnNoProgress` | boolean | `true` | — |\n| `consecutiveNoProgressToBail` | integer | `3` | min 1, max 10 |\n\n**Design note** — **Both declaration sites are required.** `NaxConfigSchema` (`src/config/schemas.ts:113`) passes a hand-maintained object literal to `ExecutionConfigSchema.default(...)`, and Zod does **not** fill in a nested `.default()` for a key that literal omits. Verified against the real schema: `NaxConfigSchema.parse({})` resolves exactly the ten `rectification` keys the literal lists. A field added only to `schemas-execution.ts` therefore resolves to `undefined` — falsy — and the bail would ship permanently dead for every user without an explicit `execution.rectification` block. AC-1.1 and AC-1.2 pin this.",
+      "acceptanceCriteria": [
+        "When `NaxConfigSchema.parse({})` is called, then `execution.rectification.abortOnNoProgress` equals `true`.",
+        "When `NaxConfigSchema.parse({})` is called, then `execution.rectification.consecutiveNoProgressToBail` equals `3`.",
+        "When `NaxConfigSchema` parses `execution.rectification.consecutiveNoProgressToBail` equal to `0`, then validation fails.",
+        "When `NaxConfigSchema` parses `execution.rectification.consecutiveNoProgressToBail` equal to `11`, then validation fails.",
+        "When `NaxConfigSchema` parses `execution.rectification.consecutiveNoProgressToBail` equal to `1`, then parsing succeeds.",
+        "When `NaxConfigSchema` parses `execution.rectification.consecutiveNoProgressToBail` equal to `10`, then parsing succeeds.",
+        "Given a config whose rectification block has `enabled: true`, `abortOnNoProgress: false`, and `consecutiveNoProgressToBail: 7`, when rectification phase options are built, then the resulting `RectificationPhaseOptions.abortOnNoProgress` equals `false`.",
+        "Given a config whose rectification block has `enabled: true`, `abortOnNoProgress: false`, and `consecutiveNoProgressToBail: 7`, when rectification phase options are built, then the resulting `RectificationPhaseOptions.consecutiveNoProgressToBail` equals `7`.",
+        "When `NaxConfigSchema` parses an explicit `execution.rectification.abortOnNoProgress: false`, then the resolved value equals `false`."
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "execution"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is standard additive multi-file configuration threading with clear defaults, validation bounds, and a single consumer contract.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/config/schemas-execution.ts",
+        "src/config/schemas.ts",
+        "src/config/runtime-types.ts",
+        "src/execution/plan-inputs.ts",
+        "src/execution/story-orchestrator/types.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/config/schemas-execution.ts",
+          "reason": "declare both fields with their bounds"
+        },
+        {
+          "path": "src/config/schemas.ts",
+          "reason": "add both keys to the `ExecutionConfigSchema.default(...)` literal"
+        },
+        {
+          "path": "src/config/runtime-types.ts",
+          "reason": "add both fields to the rectification interface"
+        },
+        {
+          "path": "src/cli/config-descriptions.ts",
+          "reason": "one description per new key"
+        },
+        {
+          "path": "src/execution/plan-inputs.ts",
+          "reason": "carry both onto `RectificationPhaseOptions`"
+        },
+        {
+          "path": "src/execution/story-orchestrator/types.ts",
+          "reason": "declare both option fields"
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "55cd8c136b8bb4d0bce70d0797ab2047914f16ec",
+      "outOfScope": [
+        "The bail predicate and cycle composition belong to US-002."
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Add and wire the identity-keyed no-progress bail",
+      "description": "**Goal** — Create and export `withNoProgressBail`, then compose it with the existing count bail in the production rectification cycle.\n\n**Motivation** — Finding identity is never compared, so a cycle that returns the same defect at a constant count never trips it and runs to the attempt cap.\n\n**Approach** — The no-progress test operates on `Iteration.findingsBefore` / `Iteration.findingsAfter`, which are full `Finding[]` arrays on the stored iteration (they carry counts only in the *emitted log record* — see #1496). Keys come from the existing `findingKey` helper.\n\n```typescript\n// src/execution/story-orchestrator/no-progress-bail.ts\n\n/** True when the iteration resolved nothing: every key present before is still present after. */\nfunction madeNoProgress(iteration: Iteration<Finding>): boolean {\n  if (iteration.findingsBefore.length === 0) return false; // nothing to resolve — not a stall\n  const after = new Set(iteration.findingsAfter.map(findingKey));\n  return iteration.findingsBefore.every((f) => after.has(findingKey(f)));\n}\n\nexport function withNoProgressBail(\n  strategies: FixStrategy<Finding, unknown, unknown, unknown>[],\n  enabled: boolean,\n  consecutiveNoProgress: number,\n): FixStrategy<Finding, unknown, unknown, unknown>[] { /* ... */ }\n```\n\nPattern to mirror: `withIncreasingFailuresBail` — same wrapper signature, same \"user-supplied `bailWhen` wins\" composition, same early return of the unmodified array when disabled. The new module is a sibling file rather than an addition to `run-phase.ts` (452 lines) or `cycle.ts` (584 lines, already against the 600-line source limit), following the `cycle-iteration-log.ts` precedent from #1496.\n\nCompose the two wrappers so their observable precedence is explicit: a user-supplied predicate wins, then no-progress, then count-increase. The no-progress result must be evaluated ahead of the count-increase result when both predicates match; calling an already count-wrapped `bailWhen` first would violate that requirement. No-progress outranks count-increase because it is the more specific diagnosis — an iteration can satisfy both, and the operator-facing reason should name the stall, not the count.\n\n**Scope** — In: the new bail module, its story-orchestrator and public execution-barrel re-exports, rectification composition, and unit/integration coverage of both the wrapper and production entry point. Out: US-001 owns the config fields; `withIncreasingFailuresBail`, `classifyOutcome`, and the verification-lane rectification consumer remain unchanged.\n\n**Failure handling** — `abortOnNoProgress: false` returns the strategy array unmodified; fewer iterations than the threshold returns `null`; an empty `findingsBefore` is progress; a non-null user `bailWhen` reason is returned unchanged without consulting the predicate; and simultaneous no-progress/count-increase returns the no-progress reason. The bail reason is `no finding resolved for 3 consecutive iteration(s); 2 finding(s) persisted` in the corresponding case. Exits retain `exitReason: \"bail-when\"` and carry the string in `FixCycleResult.bailDetail`; production observability is the number of validation/fix-operation runs, not a new `RectificationResult` field.",
+      "acceptanceCriteria": [
+        "Given `withNoProgressBail` imported from `@/execution`, enabled with threshold `3`, and three trailing iterations with the identical single finding in `findingsBefore` and `findingsAfter`, when the wrapped strategy's `bailWhen` is called, then it returns a non-null reason string.",
+        "Given five iterations that each start with five findings and end with a different one removed, when the wrapped strategy's `bailWhen` is called, then it returns `null`.",
+        "Given a no-progress threshold of `3` and exactly two no-progress iterations, when the wrapped strategy's `bailWhen` is called, then it returns `null`.",
+        "Given a no-progress threshold of `3` and a third no-progress iteration appended to two trailing no-progress iterations, when the wrapped strategy's `bailWhen` is called, then it returns a non-null reason string.",
+        "Given three trailing iterations whose before keys all persist after and whose after sets also contain two additional findings, when the wrapped strategy's `bailWhen` is called, then it returns a non-null reason string.",
+        "When `withNoProgressBail` is called with `enabled` set to `false`, then it returns strategy entries that are the same objects passed in.",
+        "When `withNoProgressBail` is called with `enabled` set to `false`, then each returned strategy's `bailWhen` is unchanged.",
+        "Given an input strategy whose `bailWhen` returns `\"user-stop\"` and three no-progress iterations, when the wrapped strategy's `bailWhen` is called, then it returns `\"user-stop\"`.",
+        "Given three trailing iterations whose `findingsBefore` arrays are empty, when the wrapped strategy's `bailWhen` is called, then it returns `null`.",
+        "Given three no-progress iterations carrying two persisting findings, when the wrapped strategy's `bailWhen` is called, then its non-null reason reports iteration count `3`.",
+        "Given three no-progress iterations carrying two persisting findings, when the wrapped strategy's `bailWhen` is called, then its non-null reason reports persisting-finding count `2`.",
+        "Given `runRectification` uses `enabled: true`, at least one rectification validation phase collected, `abortOnNoProgress: true`, `consecutiveNoProgressToBail: 3`, `maxAttemptsTotal: 12`, and validation always returns the same two findings, when the cycle runs, then `RectificationResult.rectificationExhausted` equals `true`.",
+        "Given `runRectification` uses `enabled: true`, at least one rectification validation phase collected, `abortOnNoProgress: true`, `consecutiveNoProgressToBail: 3`, `maxAttemptsTotal: 12`, and validation always returns the same two findings, when the cycle runs, then its rectification strategy fix operation is dispatched exactly `3` times.",
+        "Given `runRectification` uses `enabled: true`, at least one rectification validation phase collected, `abortOnNoProgress: false`, `maxAttemptsTotal: 12`, and validation always returns the same two findings, when the cycle runs, then its rectification strategy fix operation is dispatched more than `3` times.",
+        "Given three trailing iterations simultaneously satisfy no-progress and count-increase and both wrappers are enabled at threshold `3`, when `withNoProgressBail` wraps `withIncreasingFailuresBail` and `bailWhen` is called, then it returns the no-progress reason rather than the count-increase reason."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "rectification",
+        "algorithm"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This adds one small pure wrapper plus established barrel and rectification wiring; targeted unit cases and the existing rectification-overrides harness cover the priority-sensitive integration without requiring a heavier workflow.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/execution/story-orchestrator/run-phase.ts",
+        "src/execution/story-orchestrator/rectification.ts",
+        "src/findings/types.ts",
+        "src/findings/cycle-types.ts",
+        "src/execution/index.ts"
+      ],
+      "expectedFiles": [
+        "src/execution/story-orchestrator/no-progress-bail.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/execution/story-orchestrator/rectification.ts",
+          "reason": "compose the new wrapper around the existing one"
+        },
+        {
+          "path": "src/execution/index.ts",
+          "reason": "export `withNoProgressBail` from the barrel"
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0fc9f06c81338042018db835c87f5497e6fad461",
+      "outOfScope": [
+        "US-001 owns declaration and threading of `abortOnNoProgress` and `consecutiveNoProgressToBail`."
+      ]
+    }
+  ],
+  "analysis": "This is an additive, backward-compatible enhancement to the existing story-orchestrator rectification loop, not a greenfield feature. The current count-based wrapper is `withIncreasingFailuresBail` in `src/execution/story-orchestrator/run-phase.ts:429-452`; it returns the input strategy array unchanged when disabled, delegates to a strategy's existing `bailWhen` first, clamps its threshold to one, and otherwise bails only when every trailing iteration has a larger `findingsAfter` count. `runRectification` constructs the production `FixCycle` in `src/execution/story-orchestrator/rectification.ts:287-302` and currently applies that one wrapper before calling `runFixCycle`. The new composition must make the observable priority user-supplied predicate, no-progress, then count-increase; merely calling the already-wrapped count predicate first would incorrectly mask the required no-progress diagnosis. `runRectification` returns exhaustion for an exhausted cycle with final findings at `src/execution/story-orchestrator/rectification.ts:450-457`, and it records iteration count/exit reason in phase output at lines 418-423, so the production seam should assert fix-operation dispatch count rather than require a new result field. Finding identity is already canonicalized by `findingKey` at `src/findings/types.ts:245-247`, serializing source, file, line, rule, and message; message drift intentionally appears as progress, making the new bail conservative. `RectificationPhaseOptions` in `src/execution/story-orchestrator/types.ts:22-32` already carries the increasing-failure fields; `assemblePlanInputsFromCtx` builds the option object at `src/execution/plan-inputs.ts:422-429`. Config has a multi-site contract: `RectificationConfigSchema` declares the neighboring increasing-failure fields at `src/config/schemas-execution.ts:60-66`, while `NaxConfigSchema` supplies a separate complete default object at `src/config/schemas.ts:120-131`. The latter must include both new values or parsing `{}` leaves them absent despite schema field defaults. The runtime interface and CLI descriptions are neighboring declarations at `src/config/runtime-types.ts:61-65` and `src/cli/config-descriptions.ts:81-83`. Relevant existing tests include `test/unit/config/schemas.test.ts` for parsing, `test/unit/execution/plan-inputs.test.ts` for plan assembly, and `test/unit/execution/rectification-overrides.test.ts` for the `runRectification` harness. `src/execution/index.ts` re-exports story-orchestrator symbols through `src/execution/story-orchestrator/index.ts`, so the new public symbol must follow that two-barrel path. Add focused unit coverage for the new wrapper and config threading, plus integration-level production-path coverage through the existing overrides harness. Risks are wrapper-precedence regression, accidental mutation/allocation when the feature flag is off, a vacuous empty-before-set bail, and changing the legacy count predicate or verification-lane retry behavior. Migration is configuration-only: defaults enable the conservative three-iteration bail for existing users; users can opt out with `execution.rectification.abortOnNoProgress: false`, and no persisted data or config migration is required.",
+  "outOfScope": [
+    "The R1 story-scoped attempt budget and decline ledger (the fix cycle's budget remains per-cycle) is deferred to a separate arc.",
+    "The R4 oscillation circuit-breaker rework — counting oscillation at finding identity rather than at `source`, and reading the breaker mid-story rather than only on the story-failure path — is deferred; its 158/57 split must be re-probed after R1 lands before it can be sized.",
+    "The R2 experiment of restating prior fix attempts explicitly in the fix prompt is deferred; its benefit is unproven and it is to be run as a measured experiment, not shipped as a fix.",
+    "`src/verification/rectification.ts:32` is a separate legacy consumer of `abortOnIncreasingFailures` in the verification lane, comparing `currentFailures` against `initialFailures`. It is a different lane and is not modified by this spec.",
+    "`withIncreasingFailuresBail` and its predicate, reason string, and existing tests are not modified; the count bail's behaviour is preserved exactly.",
+    "`classifyOutcome` (`src/findings/cycle.ts:72`) is correct and is not modified. The new predicate reads finding arrays directly rather than branching on the `outcome` label.",
+    "No change to reviewer prompts, finding classification, retirement, or cost/budget accounting.",
+    "Retroactive measurement of how many historical iterations the new predicate would have caught is not possible from pre-#1496 records (which carry counts only) and is not attempted."
+  ],
+  "routingProfile": "cross-agent"
+}

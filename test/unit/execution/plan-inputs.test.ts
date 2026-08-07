@@ -507,3 +507,59 @@ describe("assemblePlanInputs - complete scenario", () => {
     expect(typeof result.adversarialReview).not.toBe("function");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-1496: no-progress fields threaded into RectificationPhaseOptions
+//
+// Acceptance criteria covered here:
+//   AC 7 — abortOnNoProgress is read from config.execution.rectification.abortOnNoProgress
+//   AC 8 — consecutiveNoProgressToBail is read from config.execution.rectification.consecutiveNoProgressToBail
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("assemblePlanInputsFromCtx — no-progress fields (US-1496)", () => {
+  test("[US-1496 AC 7] RectificationPhaseOptions.abortOnNoProgress reads from config.execution.rectification.abortOnNoProgress", async () => {
+    const ctx = makeNonTddCtx({
+      execution: {
+        ...DEFAULT_CONFIG.execution,
+        inlineReview: true,
+        rectification: {
+          ...DEFAULT_CONFIG.execution.rectification,
+          enabled: true,
+          abortOnNoProgress: false,
+          consecutiveNoProgressToBail: 7,
+        },
+      },
+      review: {
+        ...DEFAULT_CONFIG.review,
+        enabled: true,
+        checks: ["semantic"],
+      },
+    });
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.rectification).toBeDefined();
+    expect(inputs.rectification!.abortOnNoProgress).toBe(false);
+  });
+
+  test("[US-1496 AC 8] RectificationPhaseOptions.consecutiveNoProgressToBail reads from config.execution.rectification.consecutiveNoProgressToBail", async () => {
+    const ctx = makeNonTddCtx({
+      execution: {
+        ...DEFAULT_CONFIG.execution,
+        inlineReview: true,
+        rectification: {
+          ...DEFAULT_CONFIG.execution.rectification,
+          enabled: true,
+          abortOnNoProgress: false,
+          consecutiveNoProgressToBail: 7,
+        },
+      },
+      review: {
+        ...DEFAULT_CONFIG.review,
+        enabled: true,
+        checks: ["semantic"],
+      },
+    });
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.rectification).toBeDefined();
+    expect(inputs.rectification!.consecutiveNoProgressToBail).toBe(7);
+  });
+});

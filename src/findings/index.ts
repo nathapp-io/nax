@@ -53,3 +53,5 @@ export type { ReviewCheckResult } from "../review/types";
 export { classifyOutcome, runFixCycle, _cycleDeps } from "./cycle";
 export { recordIteration } from "./cycle-iteration-log";
 export type { RecordIterationContext, RecordIterationInput } from "./cycle-iteration-log";
+
+export { isNaxBailWrapper, markNaxBailWrapper } from "./bail-marker";

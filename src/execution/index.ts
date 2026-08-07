@@ -66,6 +66,7 @@ export {
   selectRegressedGateFindings,
   createNbfFlakeTriageTransaction,
   refreshReviewInputForDispatch,
+  withNoProgressBail,
   withIncreasingFailuresBail,
   extractPhaseFindings,
   phasePassed,

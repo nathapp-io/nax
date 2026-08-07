@@ -613,3 +613,68 @@ describe("ContextV2RulesConfigSchema — rulesShare (US-003)", () => {
     expect(result.success).toBe(false);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-1496: no-progress config fields (abortOnNoProgress, consecutiveNoProgressToBail)
+//
+// Acceptance criteria covered here:
+//   AC 1 — abortOnNoProgress default is true
+//   AC 2 — consecutiveNoProgressToBail default is 3 (one higher than count bail's 2)
+//   AC 3 — consecutiveNoProgressToBail rejects 0 (min 1)
+//   AC 4 — consecutiveNoProgressToBail rejects 11 (max 10)
+//   AC 5 — consecutiveNoProgressToBail accepts 1 (min boundary)
+//   AC 6 — consecutiveNoProgressToBail accepts 10 (max boundary)
+//   AC 9 — abortOnNoProgress explicit override (false) is preserved
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("RectificationConfigSchema — no-progress fields (US-1496)", () => {
+  function rectificationConfig(rect: Record<string, unknown> | undefined) {
+    const base = { ...(DEFAULT_CONFIG as Record<string, unknown>) };
+    if (rect !== undefined) {
+      const execution = base.execution as Record<string, unknown>;
+      base.execution = { ...execution, rectification: rect };
+    }
+    return base;
+  }
+
+  test("[US-1496 AC 1] abortOnNoProgress defaults to true when execution.rectification is omitted", () => {
+    const config = NaxConfigSchema.parse({});
+    const execution = config.execution as Record<string, unknown>;
+    const rectification = execution.rectification as Record<string, unknown>;
+    expect(rectification["abortOnNoProgress"]).toBe(true);
+  });
+
+  test("[US-1496 AC 2] consecutiveNoProgressToBail defaults to 3 when execution.rectification is omitted", () => {
+    const config = NaxConfigSchema.parse({});
+    const execution = config.execution as Record<string, unknown>;
+    const rectification = execution.rectification as Record<string, unknown>;
+    expect(rectification["consecutiveNoProgressToBail"]).toBe(3);
+  });
+
+  test("[US-1496 AC 3] consecutiveNoProgressToBail rejects 0 (below min 1)", () => {
+    const result = NaxConfigSchema.safeParse(rectificationConfig({ consecutiveNoProgressToBail: 0 }));
+    expect(result.success).toBe(false);
+  });
+
+  test("[US-1496 AC 4] consecutiveNoProgressToBail rejects 11 (above max 10)", () => {
+    const result = NaxConfigSchema.safeParse(rectificationConfig({ consecutiveNoProgressToBail: 11 }));
+    expect(result.success).toBe(false);
+  });
+
+  test("[US-1496 AC 5] consecutiveNoProgressToBail accepts 1 (min boundary)", () => {
+    const result = NaxConfigSchema.safeParse(rectificationConfig({ consecutiveNoProgressToBail: 1 }));
+    expect(result.success).toBe(true);
+  });
+
+  test("[US-1496 AC 6] consecutiveNoProgressToBail accepts 10 (max boundary)", () => {
+    const result = NaxConfigSchema.safeParse(rectificationConfig({ consecutiveNoProgressToBail: 10 }));
+    expect(result.success).toBe(true);
+  });
+
+  test("[US-1496 AC 9] abortOnNoProgress explicit override to false is preserved", () => {
+    const config = NaxConfigSchema.parse(rectificationConfig({ abortOnNoProgress: false }));
+    const execution = config.execution as Record<string, unknown>;
+    const rectification = execution.rectification as Record<string, unknown>;
+    expect(rectification["abortOnNoProgress"]).toBe(false);
+  });
+});

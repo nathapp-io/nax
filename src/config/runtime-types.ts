@@ -60,18 +60,17 @@ export interface RectificationConfig {
   maxFailureSummaryChars: number;
   /** Abort rectification if failure count increases (default: true) */
   abortOnIncreasingFailures: boolean;
-  /** Consecutive regressing iterations required before abortOnIncreasingFailures
-   * bails. 1 = legacy single-iteration behaviour. (default: 2) */
+  /** Consecutive regressing iterations before abortOnIncreasingFailures bails. (default: 2) */
   consecutiveIncreasesToBail: number;
+  /** Abort when no progress is made for several consecutive iterations (US-1496). (default: true) */
+  abortOnNoProgress: boolean;
+  /** Consecutive no-progress iterations before abortOnNoProgress bails. (default: 3) */
+  consecutiveNoProgressToBail: number;
   /** Escalate to higher model tier after exhausting maxAttemptsTotal (default: true) */
   escalateOnExhaustion: boolean;
-  /** Per-strategy attempt number at which "rethink your approach" language is
-   * injected. Counter resets when a new strategy runs — under
-   * maxAttemptsPerStrategy=3, default of 2 fires on the penultimate attempt. (default: 2) */
+  /** Per-strategy attempt number at which "rethink your approach" language is injected. (default: 2) */
   rethinkAtAttempt: number;
-  /** Per-strategy attempt number at which "final chance before escalation"
-   * urgency is added. Counter resets per strategy — under maxAttemptsPerStrategy=3,
-   * default of 3 fires on the final attempt. (default: 3) */
+  /** Per-strategy attempt number at which "final chance before escalation" urgency is added. (default: 3) */
   urgencyAtAttempt: number;
 }
 

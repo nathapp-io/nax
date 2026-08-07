@@ -64,6 +64,15 @@ const RectificationConfigSchema = z.object({
    * values tolerate transient regressions (e.g. a tightened test temporarily
    * surfacing more verifier failures before the implementer fixes the source). */
   consecutiveIncreasesToBail: z.number().int().min(1).max(10).default(2),
+  /** Abort rectification when no progress is made for several consecutive iterations
+   * (US-1496). Predicate wiring lives in US-002; this field is the resolved config
+   * knob. (default: true) */
+  abortOnNoProgress: z.boolean().default(true),
+  /** Number of consecutive no-progress iterations required before `abortOnNoProgress`
+   * bails. One higher than the count bail's default of 2 because the no-progress
+   * predicate fires on a much wider shape — the true coverage between 179 and 695
+   * iterations cannot be measured until post-#1496 telemetry accrues. (default: 3) */
+  consecutiveNoProgressToBail: z.number().int().min(1).max(10).default(3),
   escalateOnExhaustion: z.boolean().optional().default(true),
   // Per-strategy attempt counters — reset when a new strategy runs.
   // Under maxAttemptsPerStrategy=3: rethink on attempt 2, urgency on attempt 3 (final).

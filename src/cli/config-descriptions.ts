@@ -81,6 +81,10 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "execution.rectification.abortOnIncreasingFailures": "Abort if failure count increases",
   "execution.rectification.consecutiveIncreasesToBail":
     "Consecutive regressing iterations required before abortOnIncreasingFailures bails (default: 2; 1 = legacy behaviour)",
+  "execution.rectification.abortOnNoProgress":
+    "Abort rectification when no progress is made for several consecutive iterations (default: true)",
+  "execution.rectification.consecutiveNoProgressToBail":
+    "Consecutive no-progress iterations required before abortOnNoProgress bails (default: 3; one higher than the count bail's 2 because the no-progress predicate fires on a wider shape)",
   "execution.rectification.escalateOnExhaustion":
     "Enable model tier escalation when attempts are exhausted with remaining failures",
   "execution.rectification.rethinkAtAttempt":

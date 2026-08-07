@@ -3,6 +3,7 @@ import { getSafeLogger } from "@/logger";
 import type { CallContext, Operation, RunOperation } from "@/operations";
 import { countOscillationOutcomes, recordOscillations } from "../oscillation-store";
 import { triageNbfGate } from "./nbf-flake-triage";
+import { withNoProgressBail } from "./no-progress-bail";
 import { extractPhaseFindings, orderGateLast, phasesToRevalidate } from "./phase-eval";
 import { isQuarantinedFlake, phaseExplicitlyPassed, phasePassed, selectRegressedGateFindings } from "./phase-eval";
 import { _storyOrchestratorDeps, runPhase, withIncreasingFailuresBail } from "./run-phase";
@@ -287,15 +288,19 @@ export async function runRectification(
   const cycle: FixCycle<Finding> = {
     findings: [...initialFindings],
     iterations: [],
-    strategies: withIncreasingFailuresBail(
-      (overrides?.strategies ?? rectification.strategies) as import("@/findings").FixStrategy<
-        Finding,
-        unknown,
-        unknown,
-        unknown
-      >[],
-      rectification.abortOnIncreasingFailures,
-      rectification.consecutiveIncreasesToBail ?? 1,
+    strategies: withNoProgressBail(
+      withIncreasingFailuresBail(
+        (overrides?.strategies ?? rectification.strategies) as import("@/findings").FixStrategy<
+          Finding,
+          unknown,
+          unknown,
+          unknown
+        >[],
+        rectification.abortOnIncreasingFailures,
+        rectification.consecutiveIncreasesToBail ?? 1,
+      ),
+      rectification.abortOnNoProgress ?? true,
+      rectification.consecutiveNoProgressToBail ?? 3,
     ),
     config: { maxAttemptsTotal: overrides?.maxAttempts ?? rectification.maxAttempts, validatorRetries: 1 },
     validate: async (_validateCtx, opts) => {

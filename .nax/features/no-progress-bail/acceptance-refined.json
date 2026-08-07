@@ -1,0 +1,170 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `NaxConfigSchema.parse({})` is called, then `execution.rectification.abortOnNoProgress` equals `true`.",
+    "refined": "const result = NaxConfigSchema.parse({}); expect(result.execution.rectification.abortOnNoProgress).toBe(true);",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `NaxConfigSchema.parse({})` is called, then `execution.rectification.consecutiveNoProgressToBail` equals `3`.",
+    "refined": "const result = NaxConfigSchema.parse({}); expect(result.execution.rectification.consecutiveNoProgressToBail).toBe(3);",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `NaxConfigSchema` parses `execution.rectification.consecutiveNoProgressToBail` equal to `0`, then validation fails.",
+    "refined": "expect(() => NaxConfigSchema.parse({ execution: { rectification: { consecutiveNoProgressToBail: 0 } } })).toThrow();",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `NaxConfigSchema` parses `execution.rectification.consecutiveNoProgressToBail` equal to `11`, then validation fails.",
+    "refined": "expect(() => NaxConfigSchema.parse({ execution: { rectification: { consecutiveNoProgressToBail: 11 } } })).toThrow();",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `NaxConfigSchema` parses `execution.rectification.consecutiveNoProgressToBail` equal to `1`, then parsing succeeds.",
+    "refined": "expect(() => NaxConfigSchema.parse({ execution: { rectification: { consecutiveNoProgressToBail: 1 } } })).not.toThrow();",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When `NaxConfigSchema` parses `execution.rectification.consecutiveNoProgressToBail` equal to `10`, then parsing succeeds.",
+    "refined": "expect(() => NaxConfigSchema.parse({ execution: { rectification: { consecutiveNoProgressToBail: 10 } } })).not.toThrow();",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "Given a config whose rectification block has `enabled: true`, `abortOnNoProgress: false`, and `consecutiveNoProgressToBail: 7`, when rectification phase options are built, then the resulting `RectificationPhaseOptions.abortOnNoProgress` equals `false`.",
+    "refined": "const config = { execution: { rectification: { enabled: true, abortOnNoProgress: false, consecutiveNoProgressToBail: 7 } } }; const options = buildRectificationPhaseOptions(NaxConfigSchema.parse(config)); expect(options.abortOnNoProgress).toBe(false);",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "Given a config whose rectification block has `enabled: true`, `abortOnNoProgress: false`, and `consecutiveNoProgressToBail: 7`, when rectification phase options are built, then the resulting `RectificationPhaseOptions.consecutiveNoProgressToBail` equals `7`.",
+    "refined": "const config = { execution: { rectification: { enabled: true, abortOnNoProgress: false, consecutiveNoProgressToBail: 7 } } }; const options = buildRectificationPhaseOptions(NaxConfigSchema.parse(config)); expect(options.consecutiveNoProgressToBail).toBe(7);",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When `NaxConfigSchema` parses an explicit `execution.rectification.abortOnNoProgress: false`, then the resolved value equals `false`.",
+    "refined": "const result = NaxConfigSchema.parse({ execution: { rectification: { abortOnNoProgress: false } } }); expect(result.execution.rectification.abortOnNoProgress).toBe(false);",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "Given `withNoProgressBail` imported from `@/execution`, enabled with threshold `3`, and three trailing iterations with the identical single finding in `findingsBefore` and `findingsAfter`, when the wrapped strategy's `bailWhen` is called, then it returns a non-null reason string.",
+    "refined": "Given `withNoProgressBail` imported from `@/execution`, enabled with threshold `3`, and three trailing iterations with the identical single finding in `findingsBefore` and `findingsAfter`, when the wrapped strategy's `bailWhen` is called, then it returns a non-null reason string.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given five iterations that each start with five findings and end with a different one removed, when the wrapped strategy's `bailWhen` is called, then it returns `null`.",
+    "refined": "Given five iterations that each start with five findings and end with a different one removed, when the wrapped strategy's `bailWhen` is called, then it returns `null`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given a no-progress threshold of `3` and exactly two no-progress iterations, when the wrapped strategy's `bailWhen` is called, then it returns `null`.",
+    "refined": "Given a no-progress threshold of `3` and exactly two no-progress iterations, when the wrapped strategy's `bailWhen` is called, then it returns `null`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Given a no-progress threshold of `3` and a third no-progress iteration appended to two trailing no-progress iterations, when the wrapped strategy's `bailWhen` is called, then it returns a non-null reason string.",
+    "refined": "Given a no-progress threshold of `3` and a third no-progress iteration appended to two trailing no-progress iterations, when the wrapped strategy's `bailWhen` is called, then it returns a non-null reason string.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given three trailing iterations whose before keys all persist after and whose after sets also contain two additional findings, when the wrapped strategy's `bailWhen` is called, then it returns a non-null reason string.",
+    "refined": "Given three trailing iterations whose before keys all persist after and whose after sets also contain two additional findings, when the wrapped strategy's `bailWhen` is called, then it returns a non-null reason string.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When `withNoProgressBail` is called with `enabled` set to `false`, then it returns strategy entries that are the same objects passed in.",
+    "refined": "When `withNoProgressBail` is called with `enabled` set to `false`, then it returns strategy entries that are the same objects passed in.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When `withNoProgressBail` is called with `enabled` set to `false`, then each returned strategy's `bailWhen` is unchanged.",
+    "refined": "When `withNoProgressBail` is called with `enabled` set to `false`, then each returned strategy's `bailWhen` is unchanged.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given an input strategy whose `bailWhen` returns `\"user-stop\"` and three no-progress iterations, when the wrapped strategy's `bailWhen` is called, then it returns `\"user-stop\"`.",
+    "refined": "Given an input strategy whose `bailWhen` returns `\"user-stop\"` and three no-progress iterations, when the wrapped strategy's `bailWhen` is called, then it returns `\"user-stop\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given three trailing iterations whose `findingsBefore` arrays are empty, when the wrapped strategy's `bailWhen` is called, then it returns `null`.",
+    "refined": "Given three trailing iterations whose `findingsBefore` arrays are empty, when the wrapped strategy's `bailWhen` is called, then it returns `null`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given three no-progress iterations carrying two persisting findings, when the wrapped strategy's `bailWhen` is called, then its non-null reason reports iteration count `3`.",
+    "refined": "Given three no-progress iterations carrying two persisting findings, when the wrapped strategy's `bailWhen` is called, then its non-null reason reports iteration count `3`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given three no-progress iterations carrying two persisting findings, when the wrapped strategy's `bailWhen` is called, then its non-null reason reports persisting-finding count `2`.",
+    "refined": "Given three no-progress iterations carrying two persisting findings, when the wrapped strategy's `bailWhen` is called, then its non-null reason reports persisting-finding count `2`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Given `runRectification` uses `enabled: true`, at least one rectification validation phase collected, `abortOnNoProgress: true`, `consecutiveNoProgressToBail: 3`, `maxAttemptsTotal: 12`, and validation always returns the same two findings, when the cycle runs, then `RectificationResult.rectificationExhausted` equals `true`.",
+    "refined": "Given `runRectification` uses `enabled: true`, at least one rectification validation phase collected, `abortOnNoProgress: true`, `consecutiveNoProgressToBail: 3`, `maxAttemptsTotal: 12`, and validation always returns the same two findings, when the cycle runs, then `RectificationResult.rectificationExhausted` equals `true`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Given `runRectification` uses `enabled: true`, at least one rectification validation phase collected, `abortOnNoProgress: true`, `consecutiveNoProgressToBail: 3`, `maxAttemptsTotal: 12`, and validation always returns the same two findings, when the cycle runs, then its rectification strategy fix operation is dispatched exactly `3` times.",
+    "refined": "Given `runRectification` uses `enabled: true`, at least one rectification validation phase collected, `abortOnNoProgress: true`, `consecutiveNoProgressToBail: 3`, `maxAttemptsTotal: 12`, and validation always returns the same two findings, when the cycle runs, then its rectification strategy fix operation is dispatched exactly `3` times.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Given `runRectification` uses `enabled: true`, at least one rectification validation phase collected, `abortOnNoProgress: false`, `maxAttemptsTotal: 12`, and validation always returns the same two findings, when the cycle runs, then its rectification strategy fix operation is dispatched more than `3` times.",
+    "refined": "Given `runRectification` uses `enabled: true`, at least one rectification validation phase collected, `abortOnNoProgress: false`, `maxAttemptsTotal: 12`, and validation always returns the same two findings, when the cycle runs, then its rectification strategy fix operation is dispatched more than `3` times.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Given three trailing iterations simultaneously satisfy no-progress and count-increase and both wrappers are enabled at threshold `3`, when `withNoProgressBail` wraps `withIncreasingFailuresBail` and `bailWhen` is called, then it returns the no-progress reason rather than the count-increase reason.",
+    "refined": "Given three trailing iterations simultaneously satisfy no-progress and count-increase and both wrappers are enabled at threshold `3`, when `withNoProgressBail` wraps `withIncreasingFailuresBail` and `bailWhen` is called, then it returns the no-progress reason rather than the count-increase reason.",
+    "testable": true,
+    "storyId": "US-002"
+  }
+]

@@ -27,6 +27,12 @@ export interface RectificationPhaseOptions {
   /** Consecutive regressing iterations required before the increasing-failures
    * bail fires. Defaults to 1 (legacy single-iteration behaviour) when omitted. */
   readonly consecutiveIncreasesToBail?: number;
+  /** Abort rectification when no progress is made for several consecutive iterations
+   * (US-1496). Predicate wiring lives in US-002. Defaults to true when omitted. */
+  readonly abortOnNoProgress?: boolean;
+  /** Consecutive no-progress iterations required before abortOnNoProgress bails.
+   * Defaults to 3 when omitted (one higher than count bail's 2). */
+  readonly consecutiveNoProgressToBail?: number;
   /** Optional: transform findings after validate() returns, before next iteration's strategy selection. */
   readonly postValidate?: (findings: Finding[], ctx: FixCycleContext) => Promise<Finding[]>;
 }
