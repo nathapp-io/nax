@@ -64,18 +64,6 @@ export function buildPriorIterationsBlock<F extends Finding>(iterations: Iterati
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-function findingsAfterCount<F extends Finding>(iter: Iteration<F>): number {
-  return Array.isArray(iter.findingsAfter) ? iter.findingsAfter.length : iter.findingsAfter;
-}
-
-function findingsBeforeCount<F extends Finding>(iter: Iteration<F>): number {
-  return Array.isArray(iter.findingsBefore) ? iter.findingsBefore.length : iter.findingsBefore;
-}
-
-function findingsAfterArray<F extends Finding>(iter: Iteration<F>): readonly F[] {
-  return Array.isArray(iter.findingsAfter) ? iter.findingsAfter : [];
-}
-
 function applyTokenGuard<F extends Finding>(
   sections: string[],
   iterations: Iteration<F>[],
@@ -89,7 +77,7 @@ function applyTokenGuard<F extends Finding>(
     .slice(0, n - 2)
     .map(
       (iter) =>
-        `### Round ${iter.iterationNum} — outcome: ${iter.outcome} (${findingsAfterCount(iter)} findings, omitted for brevity)`,
+        `### Round ${iter.iterationNum} — outcome: ${iter.outcome} (${iter.findingsAfter.length} findings, omitted for brevity)`,
     );
   const verbatim = sections.slice(n - 2);
 
@@ -97,11 +85,11 @@ function applyTokenGuard<F extends Finding>(
 }
 
 function renderIteration<F extends Finding>(iter: Iteration<F>): string {
-  const header = `### Round ${iter.iterationNum} — outcome: ${iter.outcome} (${findingsBeforeCount(iter)} → ${findingsAfterCount(iter)})`;
-  if (findingsAfterCount(iter) === 0) {
+  const header = `### Round ${iter.iterationNum} — outcome: ${iter.outcome} (${iter.findingsBefore.length} → ${iter.findingsAfter.length})`;
+  if (iter.findingsAfter.length === 0) {
     return [header, "_All prior findings cleared._"].join("\n");
   }
-  const lines = findingsAfterArray(iter).map((f, i) => renderFinding(f, i + 1));
+  const lines = iter.findingsAfter.map((f, i) => renderFinding(f, i + 1));
   return [header, "Findings flagged previously:", ...lines].join("\n");
 }
 
@@ -116,7 +104,7 @@ function renderFinding<F extends Finding>(f: F, n: number): string {
 }
 
 function renderVerdictTemplate<F extends Finding>(iterations: Iteration<F>[]): string {
-  const total = iterations.reduce((sum, it) => sum + findingsAfterCount(it), 0);
+  const total = iterations.reduce((sum, it) => sum + it.findingsAfter.length, 0);
   const hasUnchanged = iterations.some((i) => i.outcome === "unchanged");
   const unchangedNote = hasUnchanged
     ? `\n\nWhen outcome is "unchanged", the prior hypothesis is FALSIFIED — the change did not affect what was tested. Choose a different category before producing a new verdict. Do NOT repeat fixes listed above.`

@@ -16,11 +16,10 @@ export function getOscillations(store: Map<string, number>, storyId: string): nu
 /** Minimal iteration shape the oscillation counter needs: the finding sources before/after. */
 type OscillationIteration = Pick<Iteration, "findingsBefore" | "findingsAfter">;
 
-function sourceSet(findings: ReadonlyArray<Pick<Finding, "source">> | number | undefined): Set<Finding["source"]> {
+function sourceSet(findings: ReadonlyArray<Pick<Finding, "source">> | undefined): Set<Finding["source"]> {
   // Defensive: this runs in the rectification hot path. A malformed or partial
-  // iteration (e.g. a carry-forward record missing its findings arrays, or a
-  // post-US-002 iteration that stored only a numeric count) must degrade to
-  // "no sources", never crash the counter.
+  // iteration (e.g. a carry-forward record missing its findings arrays) must
+  // degrade to "no sources", never crash the counter.
   return new Set((Array.isArray(findings) ? findings : []).map((f) => f.source));
 }
 

@@ -8,7 +8,9 @@
  *
  * The stored iteration is widened with the same identity / fix-target fields
  * the log emits so callers that hold an `Iteration<F>` reference can answer
- * "same defect or different?" without re-deriving the keys. See
+ * "same defect or different?" without re-deriving the keys. Only the emitted
+ * log record's findingsBefore/findingsAfter are reduced to counts — the
+ * stored `Iteration.findingsBefore`/`findingsAfter` keep the full arrays. See
  * .nax/features/fix-cycle-iteration-telemetry/spec.md (US-002).
  */
 
@@ -57,9 +59,9 @@ export function recordIteration<F extends Finding>(
   const hasFixes = input.fixesApplied.length > 0;
   const iteration: Iteration<F> = {
     iterationNum,
-    findingsBefore: findingsBeforeCount,
+    findingsBefore: input.findingsBefore,
     fixesApplied: input.fixesApplied,
-    findingsAfter: findingsAfterCount,
+    findingsAfter: input.findingsAfter,
     outcome: input.outcome,
     startedAt: input.startedAt,
     finishedAt: input.finishedAt,

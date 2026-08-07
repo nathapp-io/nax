@@ -470,9 +470,7 @@ callOp: makeCallOpMock() as unknown as CallOpFn});
 callOp: makeCallOpMock() as unknown as CallOpFn});
 
     expect(result.iterations).toHaveLength(1);
-    // US-002 widens the stored iteration: findingsAfter is the numeric count,
-    // not the array — the full finding objects live on `cycle.findings`.
-    expect(result.iterations[0].findingsAfter).toBe(1);
+    expect(result.iterations[0].findingsAfter).toEqual([lintB]);
     expect(result.iterations[0].outcome).toBe("regressed");
     expect(cycle.findings).toEqual([lintB]);
   });

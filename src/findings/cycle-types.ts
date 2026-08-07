@@ -35,14 +35,8 @@ export interface FixApplied {
 export interface Iteration<F extends Finding = Finding> {
   /** 1-indexed. */
   iterationNum: number;
-  /**
-   * Numeric count of findings observed before the iteration ran. Stored as a
-   * number (not the array) on iterations produced by `recordIteration` to keep
-   * the iteration record payload small. Carry-forward iterations recorded by
-   * review orchestrators continue to store the full `F[]` so downstream
-   * demotion and prompt rendering can still inspect individual findings.
-   */
-  findingsBefore: F[] | number;
+  /** Findings observed before the iteration ran. */
+  findingsBefore: F[];
   /**
    * Strategies that ran during this iteration. At least one entry when the
    * iteration is produced by runFixCycle (one per strategy that ran).
@@ -53,8 +47,8 @@ export interface Iteration<F extends Finding = Finding> {
    * in the "Strategies run" column for these rows.
    */
   fixesApplied: FixApplied[];
-  /** Mirror of `findingsBefore`: numeric count or full `F[]` array. */
-  findingsAfter: F[] | number;
+  /** Findings observed after the iteration ran. */
+  findingsAfter: F[];
   /**
    * Exact `findingKey(f)` per entry in the pre-iteration findings, in array
    * order. Set by `recordIteration`; omitted on carry-forward iterations

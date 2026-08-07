@@ -272,24 +272,26 @@ describe("AC-15..AC-25: recordIteration payload widening", () => {
     expect(record.findingKeysAfter[0]).toBe(findingKey(shared));
   });
 
-  test("AC-18: record.findingsBefore is the numeric count (not the array) when findingsBefore has 2 entries", () => {
+  test("AC-18: the emitted log record's findingsBefore is the numeric count (not the array) when findingsBefore has 2 entries", () => {
     const cycle = makeEmptyCycle();
+    const logger = makeLogger();
     const input = makeRecordInput({ findingsBefore: [lintA, lintB] });
-    recordIteration(cycle, input, makeRecordCtx(), null);
-    const record = cycle.iterations[cycle.iterations.length - 1] as unknown as { findingsBefore: unknown };
+    recordIteration(cycle, input, makeRecordCtx(), logger);
+    const [record] = iterationCompletedRecords(logger.calls);
 
-    expect(record.findingsBefore).toBe(2);
-    expect(typeof record.findingsBefore).toBe("number");
+    expect(record?.data?.findingsBefore).toBe(2);
+    expect(typeof record?.data?.findingsBefore).toBe("number");
   });
 
-  test("AC-19: record.findingsAfter is the numeric count (not the array) when findingsAfter has 1 entry", () => {
+  test("AC-19: the emitted log record's findingsAfter is the numeric count (not the array) when findingsAfter has 1 entry", () => {
     const cycle = makeEmptyCycle();
+    const logger = makeLogger();
     const input = makeRecordInput({ findingsAfter: [lintA] });
-    recordIteration(cycle, input, makeRecordCtx(), null);
-    const record = cycle.iterations[cycle.iterations.length - 1] as unknown as { findingsAfter: unknown };
+    recordIteration(cycle, input, makeRecordCtx(), logger);
+    const [record] = iterationCompletedRecords(logger.calls);
 
-    expect(record.findingsAfter).toBe(1);
-    expect(typeof record.findingsAfter).toBe("number");
+    expect(record?.data?.findingsAfter).toBe(1);
+    expect(typeof record?.data?.findingsAfter).toBe("number");
   });
 
   test("AC-20: fixTargetFiles is the de-duplicated, first-seen-order union of every fixesApplied[].targetFiles", () => {
