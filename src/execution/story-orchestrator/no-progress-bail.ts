@@ -19,6 +19,9 @@ export function withNoProgressBail(
     const isUserBail = innerBail !== undefined && !isNaxBailWrapper(innerBail);
     return {
       ...strategy,
+      // Precedence (AC8, AC15): user-supplied bailWhen wins > no-progress > any inner
+      // wrapper bail (e.g. withIncreasingFailuresBail). A wrapped inner bail must still
+      // be consulted as a fallback below — dropping it silently disables that bail.
       bailWhen: markNaxBailWrapper((iterations: Iteration<Finding>[]): string | null => {
         if (isUserBail) {
           const userReason = innerBail(iterations);
