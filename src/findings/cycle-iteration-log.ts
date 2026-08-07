@@ -10,6 +10,7 @@
 import type { Logger } from "@/logger";
 import type { FixApplied, FixCycle, Iteration, IterationOutcome } from "./cycle-types";
 import type { Finding } from "./types";
+import { findingKey } from "./types";
 
 export interface RecordIterationInput<F extends Finding> {
   findingsBefore: F[];
@@ -45,6 +46,18 @@ export function recordIteration<F extends Finding>(
   cycle.iterations.push(iteration);
 
   const costUsd = input.fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0);
+  const findingKeysBefore = input.findingsBefore.map(findingKey);
+  const findingKeysAfter = input.findingsAfter.map(findingKey);
+  const seenTargetFiles = new Set<string>();
+  const fixTargetFiles: string[] = [];
+  for (const fa of input.fixesApplied) {
+    for (const path of fa.targetFiles) {
+      if (seenTargetFiles.has(path)) continue;
+      seenTargetFiles.add(path);
+      fixTargetFiles.push(path);
+    }
+  }
+  const fixSummaries = input.fixesApplied.map((fa) => fa.summary);
   logger?.info("findings.cycle", "iteration completed", {
     storyId: ctx.storyId,
     packageDir: ctx.packageDir,
@@ -54,6 +67,9 @@ export function recordIteration<F extends Finding>(
     outcome: input.outcome,
     findingsBefore: input.findingsBefore.length,
     findingsAfter: input.findingsAfter.length,
+    findingKeysBefore,
+    findingKeysAfter,
+    ...(input.fixesApplied.length > 0 ? { fixTargetFiles, fixSummaries } : {}),
     ...(costUsd > 0 ? { costUsd } : {}),
   });
 
