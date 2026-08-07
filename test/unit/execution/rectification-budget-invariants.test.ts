@@ -506,7 +506,7 @@ describe("US-005b AC5: cross-story isolation — one story's exhausted budget do
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("US-005b AC6: absent runtime.storyFixHistory fails open to per-cycle behaviour", () => {
-  test("AC6: runRectification completes without throwing when runtime.storyFixHistory is undefined", async () => {
+  test("AC6: runRectification completes without throwing and dispatches fix operations under per-cycle behavior", async () => {
     const runtime = track(makeBudgetRuntime(true));
     const storyId = "US-005b-6";
 
@@ -516,28 +516,40 @@ describe("US-005b AC6: absent runtime.storyFixHistory fails open to per-cycle be
       configurable: true,
     });
 
+    let dispatchCount = 0;
     const origCallOp = _storyOrchestratorDeps.callOp;
-    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { kind: string }) => {
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { kind: string; name: string }) => {
       if (op.kind === "deterministic") {
-        // First gate call fails, second succeeds — so the cycle resolves
-        // after exactly one dispatch under per-cycle behavior.
-        return { success: true, findings: [], normalizedFindings: [], estimatedCostUsd: 0 };
+        // Gate keeps failing — cycle iterates until the per-strategy cap (3).
+        return { success: false, findings: [GATE_FINDING], normalizedFindings: [GATE_FINDING], estimatedCostUsd: 0 };
       }
-      return { applied: true };
+      if (op.name === NR_FIXOP_NAME) {
+        dispatchCount++;
+        return { applied: true };
+      }
+      return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
     try {
       const ctx = nrCtx(runtime, storyId, "fast");
       const phaseOutputs = nrSeedPhaseOutputs();
+      // Must complete without throwing — fail-open.
       await expect(
         runRectification(ctx, nrState(3), {}, phaseOutputs, { skipGateTriage: true } as never),
       ).resolves.toBeDefined();
+      // Must dispatch fix operations under per-cycle behavior — the runtime
+      // cannot record exhaustion (the store is absent), so the cycle starts
+      // fresh. With the gate always failing and per-strategy cap=3, the cycle
+      // must dispatch exactly 3 fixes before hitting the cap. A no-op
+      // implementation (or one that silently skipped dispatch when the store
+      // was missing) would surface as dispatchCount=0.
+      expect(dispatchCount).toBe(3);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
     }
   });
 
-  test("AC6 boundary: an absent runtime still completes cleanly on a second call; the budget is still per-cycle", async () => {
+  test("AC6 boundary: absent runtime dispatches the full per-strategy cap on each of two back-to-back calls (per-cycle, no shared exhaustion)", async () => {
     const runtime = track(makeBudgetRuntime(true));
     const storyId = "US-005b-6b";
 
@@ -546,20 +558,40 @@ describe("US-005b AC6: absent runtime.storyFixHistory fails open to per-cycle be
       configurable: true,
     });
 
+    let dispatchCount = 0;
     const origCallOp = _storyOrchestratorDeps.callOp;
-    _storyOrchestratorDeps.callOp = mock(async () => ({ success: true, findings: [], normalizedFindings: [] })) as typeof _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { kind: string; name: string }) => {
+      if (op.kind === "deterministic") {
+        return { success: false, findings: [GATE_FINDING], normalizedFindings: [GATE_FINDING], estimatedCostUsd: 0 };
+      }
+      if (op.name === NR_FIXOP_NAME) {
+        dispatchCount++;
+        return { applied: true };
+      }
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
 
     try {
       const ctx = nrCtx(runtime, storyId, "fast");
       const phaseOutputs = nrSeedPhaseOutputs();
 
-      // Two back-to-back calls — both must complete cleanly.
+      // Two back-to-back calls — both must complete cleanly AND each must
+      // dispatch the full per-strategy cap. A regression that treated the
+      // absent store as "exhausted" would surface here as a 0 dispatch on
+      // the second call.
       await expect(
         runRectification(ctx, nrState(3), {}, phaseOutputs, { skipGateTriage: true } as never),
       ).resolves.toBeDefined();
+      const afterFirst = dispatchCount;
       await expect(
         runRectification(ctx, nrState(3), {}, phaseOutputs, { skipGateTriage: true } as never),
       ).resolves.toBeDefined();
+      const afterSecond = dispatchCount;
+
+      // Each call dispatches the full cap (3). Per-cycle semantics means
+      // exhaustion does not bleed across calls.
+      expect(afterFirst).toBe(3);
+      expect(afterSecond).toBe(6);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
     }
