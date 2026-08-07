@@ -1,0 +1,254 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `execution.rectification.storyScopedFixBudget` is unset during configuration resolution, then the resolved value is `true`.",
+    "refined": "When `execution.rectification.storyScopedFixBudget` is unset during configuration resolution, then the resolved value is `true`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When a project configuration layer sets `execution.rectification.storyScopedFixBudget` to `false`, then the resolved value is `false`.",
+    "refined": "When a project configuration layer sets `execution.rectification.storyScopedFixBudget` to `false`, then the resolved value is `false`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When configuration parsing receives `execution.rectification.storyScopedFixBudget: \"yes\"`, then validation fails without coercing the string.",
+    "refined": "When configuration parsing receives `execution.rectification.storyScopedFixBudget: \"yes\"`, then validation fails without coercing the string.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `storyFixKey(\"US-004\", \"fast\")` and `storyFixKey(\"US-004\", \"powerful\")` are called, then they return different keys.",
+    "refined": "When `storyFixKey(\"US-004\", \"fast\")` and `storyFixKey(\"US-004\", \"powerful\")` are called, then they return different keys.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `storyFixKey(\"US-004\")` and `storyFixKey(\"US-004\", \"default\")` are called, then they return the same key.",
+    "refined": "When `storyFixKey(\"US-004\")` and `storyFixKey(\"US-004\", \"default\")` are called, then they return the same key.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When `getStoryFixState` reads an unwritten key from `createStoryFixHistory()`, then it returns a state with empty `iterations` and an empty `declines` map.",
+    "refined": "When `getStoryFixState` reads an unwritten key from `createStoryFixHistory()`, then it returns a state with empty `iterations` and an empty `declines` map.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When `appendStoryFixIterations` appends two iterations for one key, then `getStoryFixState` returns those iterations in the supplied order.",
+    "refined": "When `appendStoryFixIterations` appends two iterations for one key, then `getStoryFixState` returns those iterations in the supplied order.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When `appendStoryFixIterations` is called twice for one key with one iteration each, then that state's `iterations` length is 2.",
+    "refined": "When `appendStoryFixIterations` is called twice for one key with one iteration each, then that state's `iterations` length is 2.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When iterations are appended under one key, then a different key's state retains empty `iterations`.",
+    "refined": "When iterations are appended under one key, then a different key's state retains empty `iterations`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `createRuntime` constructs a runtime, then `storyFixHistory` is exposed and repeated reads return the same instance.",
+    "refined": "When `createRuntime` constructs a runtime, then `storyFixHistory` is exposed and repeated reads return the same instance.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given three `priorIterations` each recording one fix by strategy `S` capped at 3, when `runFixCycle` runs, then it returns `exitReason` `max-attempts-per-strategy` with `exhaustedStrategy` `S` and dispatches no fix operation.",
+    "refined": "When runFixCycle({ iterations: [], priorIterations: [iteration(fix(S)), iteration(fix(S)), iteration(fix(S))], findings: [...], bailPredicate: ..., maxAttemptsPerStrategy: { S: 3 }, ... }) is called, then result.exitReason === 'max-attempts-per-strategy' AND result.exhaustedStrategy === 'S' AND result.fixOps === [].",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given two such prior iterations, when `runFixCycle` runs strategy `S`, then it dispatches `S` exactly once before its next cap check.",
+    "refined": "When runFixCycle({ iterations: [], priorIterations: [iteration(fix(S)), iteration(fix(S))], findings: [...], maxAttemptsPerStrategy: { S: 3 }, ... }) is called, then the first dispatched fixOp.strategy === 'S' AND the cap check after that dispatch would report remaining capacity as 1 (3 - 2 prior - 1 just dispatched).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Given `priorIterations` whose fixes total `maxAttemptsTotal`, when `runFixCycle` runs, then it returns `exitReason` `max-attempts-total` and dispatches no fix operation.",
+    "refined": "When runFixCycle({ iterations: [], priorIterations: [iteration(fix(S1)), iteration(fix(S2)), ...N fixes total where N === maxAttemptsTotal], findings: [...], maxAttemptsTotal: N, ... }) is called, then result.exitReason === 'max-attempts-total' AND result.fixOps === [].",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given a no-progress threshold of 3 and two prior iterations where every finding present before remains present after, when the first live iteration is likewise non-progressing, then `runFixCycle` returns `exitReason` `bail-when`.",
+    "refined": "When runFixCycle({ iterations: [], priorIterations: [iteration(nonProgressing), iteration(nonProgressing)], findings: [F], bailPredicate: bailWhen('no-progress', { threshold: 3, streak: [iter1, iter2, iter3] }), ... }) is called where all three iterations show no progress on F, then result.exitReason === 'bail-when' AND result.bailPredicate === 'no-progress'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given a no-progress threshold of 3 and the same two non-progressing prior iterations, when the first live iteration resolves a finding, then `runFixCycle` does not return `exitReason` `bail-when`.",
+    "refined": "When runFixCycle({ iterations: [], priorIterations: [iteration(nonProgressing), iteration(nonProgressing)], findings: [F], bailPredicate: bailWhen('no-progress', { threshold: 3 }), ... }) is called where the first live iteration resolves F (findings differ before vs after), then result.exitReason !== 'bail-when'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given `priorIterations` is omitted and strategy `S` has a cap of 3, when `runFixCycle` runs, then it dispatches `S` three times before exiting.",
+    "refined": "When runFixCycle({ iterations: [], findings: [...], maxAttemptsPerStrategy: { S: 3 }, ... }) is called without priorIterations, then result.fixOps.length === 3 AND every fixOp.strategy === 'S'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given three prior iterations and exactly one live iteration, when `runFixCycle` returns, then `FixCycleResult.iterations` has length 1.",
+    "refined": "When runFixCycle({ iterations: [], priorIterations: [iter1, iter2, iter3], findings: [...], ... }) completes exactly one live iteration, then result.iterations.length === 1 AND result.iterations === the single live iteration (priorIterations NOT included).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given three prior iterations, when the first live iteration is recorded, then its `iterationNum` is 1.",
+    "refined": "When runFixCycle({ iterations: [], priorIterations: [iter1, iter2, iter3], findings: [...], ... }) records the first live iteration, then iteration.iterationNum === 1 (1-indexed within THIS cycle, not priorCycles).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given a decline-ledger backing map where strategy `S` already declined a finding, when a ledger is created over that map and `isRetiredFor(S, [finding])` is called, then it returns `true` without a `recordDeclined` call in the new cycle.",
+    "refined": "Given map = new Map([['S', new Set([findingKey(F)])]]) and ledger = createDeclineLedger(map), when ledger.isRetiredFor('S', [F]) is called, then returnValue === true AND map.get('S') contains findingKey(F) without any recordDeclined invocation.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given a decline-ledger backing map, when `recordDeclined` records strategy `S` and a finding, then the caller's map contains `findingKey(finding)` under `S`.",
+    "refined": "Given map = new Map() and ledger = createDeclineLedger(map), when ledger.recordDeclined('S', F) is called, then map.has('S') === true AND map.get('S').has(findingKey(F)) === true.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When `createDeclineLedger` is called without a backing map, then no strategy is retired for any finding until `recordDeclined` is called.",
+    "refined": "When ledger = createDeclineLedger() with no backing, then for any strategy S and finding F: ledger.isRetiredFor(S, F) === false. After ledger.recordDeclined('S', F), then ledger.isRetiredFor('S', F) === true.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "With `storyScopedFixBudget` enabled, when `runRectification` is invoked twice for the same story id and tier after the first invocation exhausts a strategy cap, then the second invocation dispatches no fix operation.",
+    "refined": "Given storyScopedFixBudget=true, config.maxAttemptsPerStrategy=3, and a runtime with empty storyFixHistory; when runRectification(ctx, {storyId: 'S1', tier: 'fast'}, fixDispatchFn) is called and iterations exhausts the per-strategy cap (completes 3 attempts); then a second call runRectification(ctx, {storyId: 'S1', tier: 'fast'}, fixDispatchFn) results in fixDispatchFn being invoked 0 times.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "In that enabled same-story/tier scenario, when the second `runRectification` invocation exits, then its rectification phase output has `exitReason` `max-attempts-per-strategy`.",
+    "refined": "Given the state from criterion 1 after the second invocation; then phaseOutput.exitReason === 'max-attempts-per-strategy' and phaseOutput.exhaustedStrategies includes the strategy that hit the cap.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "With `storyScopedFixBudget` disabled, when the same two invocations run, then the second invocation dispatches fix operations.",
+    "refined": "Given storyScopedFixBudget=false, config.maxAttemptsPerStrategy=3, and a runtime with empty storyFixHistory; when runRectification(ctx, {storyId: 'S1', tier: 'fast'}, fixDispatchFn) exhausts the cap (3 attempts); then a second call runRectification(ctx, {storyId: 'S1', tier: 'fast'}, fixDispatchFn) results in fixDispatchFn being invoked with the strategy at least once.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "With `storyScopedFixBudget` enabled, when two invocations use the same story id but different `phaseTelemetry.tier` values, then the second invocation dispatches fix operations.",
+    "refined": "Given storyScopedFixBudget=true, config.maxAttemptsPerStrategy=3; when runRectification(ctx, {storyId: 'S1', tier: 'fast'}, fixDispatchFn) exhausts the cap; then a second call runRectification(ctx, {storyId: 'S1', tier: 'balanced'}, fixDispatchFn) results in fixDispatchFn being invoked at least once (different tier key 'S1::balanced' has no prior budget).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "With `storyScopedFixBudget` enabled, when one rectification invocation runs two iterations and a later one runs one iteration for the same story/tier key, then `getStoryFixState(runtime.storyFixHistory, storyFixKey(storyId, tier)).iterations` has length 2 after the first and 3 after the second.",
+    "refined": "Given storyScopedFixBudget=true, runtime.storyFixHistory initially empty; when runRectification(ctx, {storyId: 'S1', tier: 'fast'}) completes 2 iterations; then getStoryFixState(runtime.storyFixHistory, 'S1::fast').iterations has length 2; when a later invocation runRectification(ctx, {storyId: 'S1', tier: 'fast'}) completes 1 more iteration; then getStoryFixState(runtime.storyFixHistory, 'S1::fast').iterations has length 3.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "With `storyScopedFixBudget` enabled, when `ExecutionPlan.run` executes a story whose main rectification consumes two of a three-attempt per-strategy cap without exhausting it and whose post-rectification resume invokes rectification again, then the resume pass dispatches the strategy at most once before reporting the cap reached.",
+    "refined": "Given storyScopedFixBudget=true, config.maxAttemptsPerStrategy=3, ExecutionPlan with a story requiring main-pass + resume; when main-pass rectification runRectification completes 2 iterations for strategy 'fix-typos'; then resume-pass runRectification invokes fixDispatchFn('fix-typos') at most once before phaseOutput.exitReason === 'max-attempts-per-strategy' (total would be 3).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "With `storyScopedFixBudget` disabled, when the same `ExecutionPlan.run` resume scenario executes, then the resume pass dispatches the strategy three times.",
+    "refined": "Given storyScopedFixBudget=false, config.maxAttemptsPerStrategy=3, ExecutionPlan with a story requiring main-pass + resume; when main-pass rectification runRectification completes 2 iterations for strategy 'fix-typos'; then resume-pass runRectification invokes fixDispatchFn('fix-typos') exactly 3 times (fresh budget per pass, capped at per-strategy limit).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When `runRectification` is invoked through the non-blocking-fix override path, then the runtime's `storyFixHistory` records no state for that story.",
+    "refined": "After calling runRectification via the non-blocking-fix override path with storyId='S1', assert storyFixHistory.get('S1') === undefined OR storyFixHistory.get('S1') is empty (no entries recorded).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "Given a non-blocking-fix invocation for a story, when a later blocking `runRectification` runs for that story, then its strategy dispatches up to the full per-strategy cap.",
+    "refined": "After a non-blocking-fix invocation for storyId='S1', when a blocking runRectification runs for 'S1', assert the number of fix dispatches for any strategy <= FIX_CYCLE_CAP (e.g., MAX_DISPATCHES_PER_STRATEGY constant), and assert dispatches occur for all strategies up to that cap.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "Given a first cycle with one `gate` finding resolved then reappearing across two iterations and a second cycle without that reappearance, when rectification completes, then `rectificationOscillations` for the story equals 1.",
+    "refined": "Simulate: Cycle1 with gate finding F1 resolved at iter1, F1 reappears at iter2. Cycle2 with no F1. After runRectification completes for storyId='S1', assert rectificationOscillations.get('S1') === 1.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "Given a first `runRectification` invocation with two iterations, when a second invocation with one iteration completes, then its rectification phase output reports `iterationCount` 1.",
+    "refined": "Call runRectification for storyId='S1' with 2 iterations (record FixCycleResult{iterations:[i1,i2]}). Then call runRectification for 'S1' with 1 iteration (record FixCycleResult{iterations:[i3]}). Assert phaseOutputs.rectification.iterationCount === 1 for the second invocation.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "With `storyScopedFixBudget` enabled and one shared runtime, when story `US-001` exhausts its budget and story `US-002` then runs rectification, then `US-002` dispatches fix operations normally.",
+    "refined": "Enable storyScopedFixBudget. Exhaust budget for US-001 (storyFixHistory['US-001'].remaining === 0). Run rectification for US-002. Assert US-002 dispatches >= 1 fix operation (dispatchCount > 0).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "With `storyScopedFixBudget` enabled and `ctx.runtime.storyFixHistory` absent, when `runRectification` runs, then it completes without throwing and dispatches fix operations under per-cycle behavior.",
+    "refined": "Enable storyScopedFixBudget. Set ctx.runtime.storyFixHistory = undefined. Call runRectification for storyId='S1'. Assert no exception is thrown (no Error propagated). Assert fixDispatchCount >= 0 under per-cycle budget behavior.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "With `storyScopedFixBudget` enabled and `phaseTelemetry` absent, when two rectification invocations for one story run after the first exhausts its cap, then the second dispatches no fix operation.",
+    "refined": "Enable storyScopedFixBudget. Set phaseTelemetry = undefined. Run first runRectification for 'S1' until cap exhausted. Assert first invocation dispatches == FIX_CYCLE_CAP. Run second runRectification for 'S1'. Assert second invocation dispatches == 0.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-36",
+    "original": "With `storyScopedFixBudget` enabled and `ctx.storyId` absent, when `runRectification` returns, then it records no state in `storyFixHistory`.",
+    "refined": "Enable storyScopedFixBudget. Set ctx.storyId = undefined/null. Call runRectification. Assert Object.keys(storyFixHistory).length === 0 (no entries recorded for any story).",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]
