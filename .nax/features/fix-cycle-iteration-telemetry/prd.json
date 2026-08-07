@@ -3,7 +3,7 @@
   "feature": "fix-cycle-iteration-telemetry",
   "branchName": "feat/fix-cycle-iteration-telemetry",
   "createdAt": "2026-08-07T00:00:00+08:00",
-  "updatedAt": "2026-08-07T02:56:21.282Z",
+  "updatedAt": "2026-08-07T03:09:05.952Z",
   "userStories": [
     {
       "id": "US-001",
@@ -45,7 +45,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/findings/cycle.ts",
@@ -57,11 +59,6 @@
       "expectedFiles": [
         "src/findings/cycle-iteration-log.ts",
         "test/unit/findings/cycle-iteration-log.test.ts"
-      ],
-      "outOfScope": [
-        "Widened finding-identity and fix-target payload fields belong to US-002.",
-        "Changing the two hardcoded `outcome: \"unchanged\"` literals at the agent-gave-up and lite-validate-threw append sites is deferred; both are preserved exactly as they are today.",
-        "No change to `classifyOutcome`, to any cycle exit reason, or to any control-flow decision in `runFixCycle`."
       ],
       "modifiedFiles": [
         {
@@ -76,6 +73,13 @@
           "path": "test/unit/findings/cycle.test.ts",
           "reason": "extend with the four exit-path seam assertions"
         }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "30ec67e588e7522580a29f0bf65a722d5950ac9d",
+      "outOfScope": [
+        "Widened finding-identity and fix-target payload fields belong to US-002."
       ]
     },
     {
@@ -126,12 +130,6 @@
         "test/unit/findings/cycle-iteration-log.test.ts",
         "src/plugins/builtin/curator/collect.ts"
       ],
-      "outOfScope": [
-        "Changing the two hardcoded `outcome: \"unchanged\"` literals at the agent-gave-up and lite-validate-threw append sites is deferred; both are preserved exactly as they are today.",
-        "Re-keying the `withIncreasingFailuresBail` predicate on finding identity instead of finding count is deferred; it continues to fire only on a strict count increase.",
-        "Counting rectification oscillation at finding identity rather than at `Finding.source`, and reading the oscillation circuit-breaker mid-story rather than on the story-failure path, are both deferred.",
-        "No change to `classifyOutcome`, to any cycle exit reason, or to any control-flow decision in `runFixCycle`."
-      ],
       "modifiedFiles": [
         {
           "path": "src/findings/cycle-iteration-log.ts",
@@ -141,7 +139,10 @@
           "path": "test/unit/findings/cycle-iteration-log.test.ts",
           "reason": "extend with payload-content assertions"
         }
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "This is an additive observability enhancement plus a focused refactor of the findings fix-cycle recorder. `src/findings/cycle.ts:149` owns `runFixCycle`, accepts injected `callOp`, `now`, and `logger` dependencies, and mutates `FixCycle.iterations` in place. It is already 581 lines (`wc -l`), so adding independent log calls risks the project’s 600-line hard limit; extracting the recording responsibility into a sibling module is both the required seam and reduces cycle.ts. Four inline `cycle.iterations.push` sites exist at cycle.ts:348 (all strategies unresolved / agent-gave-up), :410 (terminal lite validation throws), :436 (terminal lite validation result), and :550 (normal full-validation result). Only the normal path currently logs `findings.cycle` / `iteration completed`, immediately after appending. `FixApplied` already preserves `targetFiles`, `summary`, optional `unresolved`, and optional `costUsd`, while `Iteration` carries the seven record fields needed by the new helper (`src/findings/cycle-types.ts:23-47`). `findingKey` is exported and is the classifier’s exact identity encoding: JSON serialization of `[source, file ?? null, line ?? null, rule ?? null, message]` (`src/findings/types.ts:245-246`); the helper must use it unchanged so telemetry and `classifyOutcome` agree. The existing barrel at `src/findings/index.ts:42-55` exports `findingKey`, fix-cycle types, and `runFixCycle`; it must re-export the helper and its public input/context types to satisfy the project barrel-import convention. `Logger.info(stage, message, data)` accepts a `Record<string, unknown>` (`src/logger/logger.ts:245-247`), and object property insertion order makes placing `storyId` first observable and required. The sole downstream consumer is curator collection: `src/plugins/builtin/curator/collect.ts:421-447` dispatches every `findings.cycle` / `iteration completed` record at :510 and reads `iterationNum`, `outcome`, numeric `findingsBefore`, numeric `findingsAfter`, and `costUsd`. The count fields must therefore remain numbers; identities and fix metadata are additive keys that the collector will ignore. Emitting from every append site intentionally makes curator observations increase and makes historical rollups incomparable, without changing curator code or any cycle control flow. Existing seam fixtures and injected logger support are in `test/unit/findings/cycle.test.ts:1-14` and its terminal lite-validation scenarios near :460-635; extend those tests through `runFixCycle` for all exit paths rather than testing only the helper. Add direct helper tests in the new `test/unit/findings/cycle-iteration-log.test.ts` for append/log state and the extended payload. Risks are accidental changes to the two hardcoded `unchanged` outcomes, changing numeric counts to arrays (which silently becomes zero in the curator), changing stage/message routing, or logging empty fix arrays despite the contract. There is no data migration: old JSONL records remain readable, current queries retain their stage/message and count keys, and new records gain identities/targets while previously invisible terminal iterations begin appearing.",
