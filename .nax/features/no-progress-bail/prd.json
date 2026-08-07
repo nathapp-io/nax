@@ -3,7 +3,7 @@
   "feature": "no-progress-bail",
   "branchName": "feat/no-progress-bail",
   "createdAt": "2026-08-07T00:00:00+08:00",
-  "updatedAt": "2026-08-07T11:24:16.904Z",
+  "updatedAt": "2026-08-07T11:45:20.740Z",
   "userStories": [
     {
       "id": "US-001",
@@ -39,7 +39,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/config/schemas-execution.ts",
@@ -47,10 +49,6 @@
         "src/config/runtime-types.ts",
         "src/execution/plan-inputs.ts",
         "src/execution/story-orchestrator/types.ts"
-      ],
-      "outOfScope": [
-        "The bail predicate and cycle composition belong to US-002.",
-        "`src/verification/rectification.ts:32` is a separate legacy consumer of `abortOnIncreasingFailures` in the verification lane, comparing `currentFailures` against `initialFailures`. It is a different lane and is not modified by this spec."
       ],
       "modifiedFiles": [
         {
@@ -77,6 +75,13 @@
           "path": "src/execution/story-orchestrator/types.ts",
           "reason": "declare both option fields"
         }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "55cd8c136b8bb4d0bce70d0797ab2047914f16ec",
+      "outOfScope": [
+        "The bail predicate and cycle composition belong to US-002."
       ]
     },
     {
@@ -134,12 +139,6 @@
       "expectedFiles": [
         "src/execution/story-orchestrator/no-progress-bail.ts"
       ],
-      "outOfScope": [
-        "US-001 owns declaration and threading of `abortOnNoProgress` and `consecutiveNoProgressToBail`.",
-        "`withIncreasingFailuresBail` and its predicate, reason string, and existing tests are not modified; the count bail's behaviour is preserved exactly.",
-        "`classifyOutcome` (`src/findings/cycle.ts:72`) is correct and is not modified. The new predicate reads finding arrays directly rather than branching on the `outcome` label.",
-        "`src/verification/rectification.ts:32` is a separate legacy consumer of `abortOnIncreasingFailures` in the verification lane, comparing `currentFailures` against `initialFailures`. It is a different lane and is not modified by this spec."
-      ],
       "modifiedFiles": [
         {
           "path": "src/execution/story-orchestrator/rectification.ts",
@@ -149,6 +148,12 @@
           "path": "src/execution/index.ts",
           "reason": "export `withNoProgressBail` from the barrel"
         }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "outOfScope": [
+        "US-001 owns declaration and threading of `abortOnNoProgress` and `consecutiveNoProgressToBail`."
       ]
     }
   ],
