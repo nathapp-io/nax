@@ -125,6 +125,8 @@ export const NaxConfigSchema = z
         maxFailureSummaryChars: 2000,
         abortOnIncreasingFailures: true,
         consecutiveIncreasesToBail: 2,
+        abortOnNoProgress: true,
+        consecutiveNoProgressToBail: 3,
         escalateOnExhaustion: true,
         rethinkAtAttempt: 2,
         urgencyAtAttempt: 3,

@@ -425,6 +425,8 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
           strategies: [], // base — buildPlanForStrategy prepends makeFullSuiteRectifyStrategy(story) for TDD+gate plans
           abortOnIncreasingFailures: ctx.config.execution.rectification.abortOnIncreasingFailures,
           consecutiveIncreasesToBail: ctx.config.execution.rectification.consecutiveIncreasesToBail,
+          abortOnNoProgress: ctx.config.execution.rectification.abortOnNoProgress,
+          consecutiveNoProgressToBail: ctx.config.execution.rectification.consecutiveNoProgressToBail,
         }
       : undefined;
 
