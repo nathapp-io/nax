@@ -137,6 +137,12 @@ function storiesFrom(prd: PrdArtifact | undefined): FinishPrStory[] {
  */
 const NAX_ARTIFACT_PATHSPEC = "**/.nax/**";
 
+/** The two halves of the branch's diff: what is under review, and what was held out. */
+interface DiffstatResult {
+  diffstat?: string;
+  artifactSummary?: string;
+}
+
 /** Run `git diff <...args>` under `workdir`, or `undefined` on any non-happy path. */
 async function runGitDiff(workdir: string, args: string[]): Promise<string | undefined> {
   try {
@@ -164,7 +170,7 @@ async function runGitDiff(workdir: string, args: string[]): Promise<string | und
  * optional, and a routine empty-branch finish must not lose `open_pr` to a
  * throw that the body can simply skip.
  */
-async function runDiffstat(workdir: string, base: string): Promise<{ diffstat?: string; artifactSummary?: string }> {
+async function runDiffstat(workdir: string, base: string): Promise<DiffstatResult> {
   // An empty `base` would interpolate to `...HEAD`, which git resolves as
   // `HEAD...HEAD` — exit 0, empty stdout — masking the missing-base case as
   // "no changes" instead of skipping explicitly.
@@ -214,7 +220,7 @@ export async function loadFinishPrContext(
     PrdArtifact | undefined,
     StatusArtifact | undefined,
     FinishRound[],
-    { diffstat?: string; artifactSummary?: string },
+    DiffstatResult,
     string | undefined,
     string | null,
   ];
@@ -283,13 +289,13 @@ function buildStoriesSection(stories: FinishPrStory[]): string {
   return lines.join("\n");
 }
 
-function buildVerificationSection(
-  acceptance: string | undefined,
-  regression: string | undefined,
-  gatesRan: string[],
-  diffstat: string | undefined,
-  artifactSummary: string | undefined,
-): string | null {
+/**
+ * Takes the whole context rather than the five fields it reads: the section
+ * grew past the three-positional-parameter cap in the coding standards, and
+ * every field it wants is already on `FinishPrContext`.
+ */
+function buildVerificationSection(ctx: FinishPrContext): string | null {
+  const { acceptance, regression, gatesRan, diffstat, artifactSummary } = ctx;
   const lines: string[] = ["## Verification"];
   if (acceptance !== undefined) lines.push(`- Acceptance: ${acceptance}`);
   if (regression !== undefined) lines.push(`- Regression: ${regression}`);
@@ -368,13 +374,7 @@ export function buildFinishBody(ctx: FinishPrContext): string {
 
   if (ctx.stories.length > 0) sections.push(buildStoriesSection(ctx.stories));
 
-  const verification = buildVerificationSection(
-    ctx.acceptance,
-    ctx.regression,
-    ctx.gatesRan,
-    ctx.diffstat,
-    ctx.artifactSummary,
-  );
+  const verification = buildVerificationSection(ctx);
   if (verification !== null) sections.push(verification);
 
   const roundsSection = buildRoundsSection(ctx.rounds);
