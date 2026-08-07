@@ -152,4 +152,27 @@ describe("withNoProgressBail — US-002", () => {
     expect(result.exitReason).toBe("bail-when");
     expect(dispatches).toBe(3);
   });
+
+  test("US-002 AC14: disabled no-progress bail dispatches more than three fixes", async () => {
+    const runtime = makeTestRuntime();
+    const ctx = { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-002" } as FixCycleContext;
+    const persisted = [finding("one"), finding("two")];
+    let dispatches = 0;
+    const wrapped = withNoProgressBail(withIncreasingFailuresBail([strategy()], false, 3), false, 3);
+    const cycle: FixCycle<Finding> = {
+      findings: persisted,
+      iterations: [],
+      strategies: wrapped,
+      config: { maxAttemptsTotal: 12, validatorRetries: 1 },
+      validate: async () => ({ findings: persisted }),
+    };
+    await runFixCycle(cycle, ctx, "US-002", {
+      callOp: async () => {
+        dispatches += 1;
+        return {};
+      },
+    });
+    await runtime.close();
+    expect(dispatches).toBeGreaterThan(3);
+  });
 });
