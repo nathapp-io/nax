@@ -3,7 +3,7 @@
   "feature": "no-progress-bail",
   "branchName": "feat/no-progress-bail",
   "createdAt": "2026-08-07T00:00:00+08:00",
-  "updatedAt": "2026-08-07T11:45:20.740Z",
+  "updatedAt": "2026-08-07T11:55:40.269Z",
   "userStories": [
     {
       "id": "US-001",
@@ -26,8 +26,8 @@
         "execution"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -127,7 +127,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/story-orchestrator/run-phase.ts",
@@ -152,6 +154,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "0fc9f06c81338042018db835c87f5497e6fad461",
       "outOfScope": [
         "US-001 owns declaration and threading of `abortOnNoProgress` and `consecutiveNoProgressToBail`."
       ]
