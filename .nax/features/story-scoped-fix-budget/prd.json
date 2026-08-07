@@ -3,7 +3,7 @@
   "feature": "story-scoped-fix-budget",
   "branchName": "feat/story-scoped-fix-budget",
   "createdAt": "2026-08-07T00:00:00.000Z",
-  "updatedAt": "2026-08-07T13:43:54.759Z",
+  "updatedAt": "2026-08-07T14:15:12.404Z",
   "userStories": [
     {
       "id": "US-001",
@@ -28,8 +28,8 @@
         "findings"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -121,7 +121,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-balanced",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/findings/cycle.ts",
@@ -146,7 +148,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f129212ef100969e4130e858343581416bacd895"
     },
     {
       "id": "US-003",

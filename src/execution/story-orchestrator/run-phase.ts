@@ -435,7 +435,7 @@ export function withIncreasingFailuresBail(
   const threshold = Math.max(1, consecutiveIncreases);
   return strategies.map((strategy) => ({
     ...strategy,
-    bailWhen: markNaxBailWrapper((iterations: Iteration<Finding>[]): string | null => {
+    bailWhen: markNaxBailWrapper((iterations: readonly Iteration<Finding>[]): string | null => {
       const userReason = strategy.bailWhen?.(iterations) ?? null;
       if (userReason !== null) return userReason;
       if (iterations.length < threshold) return null;
