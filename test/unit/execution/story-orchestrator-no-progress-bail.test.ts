@@ -95,10 +95,10 @@ describe("withNoProgressBail — US-002", () => {
     expect(withNoProgressBail([original], false, 3)[0]?.bailWhen).toBe(userBail);
   });
 
-  test("US-002 AC8: user-supplied reason wins over no-progress", () => {
-    const original = { ...strategy(), bailWhen: () => "user-stop" };
+  test("US-002 AC8: any user-supplied reason wins over no-progress", () => {
+    const original = { ...strategy(), bailWhen: () => "custom-user-reason" };
     const bail = bailWhen(withNoProgressBail([original], true, 3));
-    expect(bail(stalledIterations([finding("same")], 3))).toBe("user-stop");
+    expect(bail(stalledIterations([finding("same")], 3))).toBe("custom-user-reason");
   });
 
   test("US-002 AC9: empty findingsBefore arrays do not count as a stall", () => {

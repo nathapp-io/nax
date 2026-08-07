@@ -17,11 +17,11 @@ export function withNoProgressBail(
   return strategies.map((strategy) => ({
     ...strategy,
     bailWhen: (iterations: Iteration<Finding>[]): string | null => {
-      const directUserReason = strategy.bailWhen ? strategy.bailWhen(iterations) : null;
-      if (directUserReason === "user-stop") return directUserReason;
-      if (iterations.length < threshold) return directUserReason;
+      const userReason = strategy.bailWhen?.(iterations) ?? null;
+      if (userReason !== null) return userReason;
+      if (iterations.length < threshold) return null;
       const trailing = iterations.slice(-threshold);
-      if (!trailing.every(madeNoProgress)) return directUserReason;
+      if (!trailing.every(madeNoProgress)) return null;
       return `no finding resolved for ${threshold} consecutive iteration(s); ${trailing.at(-1)?.findingsBefore.length ?? 0} finding(s) persisted`;
     },
   }));
