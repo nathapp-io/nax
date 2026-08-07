@@ -1,0 +1,269 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "story-scoped-fix-budget",
+  "branchName": "feat/story-scoped-fix-budget",
+  "createdAt": "2026-08-07T00:00:00.000Z",
+  "updatedAt": "2026-08-07T13:16:57.364Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add run-scoped story fix history and configuration",
+      "description": "**Goal** — Introduce the run-scoped store and config contract needed to carry one story/tier's fix state across rectification re-entry.\n\n**Motivation** — The caps are enforced faithfully *within* each cycle and bound nothing a user would recognise as \"attempts to fix this defect.\"\n\n**Approach** — A run-scoped `Map<string, StoryFixState>` on `NaxRuntime`, sitting beside the existing `rectificationOscillations`, `adversarialIterations`, and `semanticIterations` maps — the established precedent for per-story state threaded across per-attempt `PipelineContext` rebuilds.\n\n**Scope** — In: create and barrel-export the history store, construct it once on `NaxRuntime`, and declare the boolean knob in both Zod/default configuration shapes plus the runtime config type. Out: consuming carried history in `runFixCycle` belongs to US-002; seeding or appending state from `runRectification` belongs to US-003.\n\n**Interface**\n```typescript\nexport interface StoryFixState {\n  /** Iterations from every prior cycle for this (story, tier), in completion order. */\n  readonly iterations: Iteration<Finding>[];\n  /** Backing store for the decline ledger: strategy name -> declined findingKey set. */\n  readonly declines: Map<string, Set<string>>;\n}\n\nexport type StoryFixHistory = Map<string, StoryFixState>;\n\nexport function createStoryFixHistory(): StoryFixHistory;\nexport function storyFixKey(storyId: string, tier?: string): string;\nexport function getStoryFixState(store: StoryFixHistory, key: string): StoryFixState;\nexport function appendStoryFixIterations(store: StoryFixHistory, key: string, iterations: readonly Iteration<Finding>[]): void;\n```\n\nThe key is `` `${storyId}::${tier}` ``, where `tier` is `ctx.phaseTelemetry?.tier`. Escalating a story to a higher model tier therefore yields a fresh budget: a more capable model gets a real attempt, while the main-pass and resume-pass re-entries that produce the 119 overruns collapse onto one budget.\n\nZod does not merge the default literal in `schemas.ts` with the nested schema in `schemas-execution.ts`; both must declare the field. This is the defect pattern from #1498.",
+      "acceptanceCriteria": [
+        "When `execution.rectification.storyScopedFixBudget` is unset during configuration resolution, then the resolved value is `true`.",
+        "When a project configuration layer sets `execution.rectification.storyScopedFixBudget` to `false`, then the resolved value is `false`.",
+        "When configuration parsing receives `execution.rectification.storyScopedFixBudget: \"yes\"`, then validation fails without coercing the string.",
+        "When `storyFixKey(\"US-004\", \"fast\")` and `storyFixKey(\"US-004\", \"powerful\")` are called, then they return different keys.",
+        "When `storyFixKey(\"US-004\")` and `storyFixKey(\"US-004\", \"default\")` are called, then they return the same key.",
+        "When `getStoryFixState` reads an unwritten key from `createStoryFixHistory()`, then it returns a state with empty `iterations` and an empty `declines` map.",
+        "When `appendStoryFixIterations` appends two iterations for one key, then `getStoryFixState` returns those iterations in the supplied order.",
+        "When `appendStoryFixIterations` is called twice for one key with one iteration each, then that state's `iterations` length is 2.",
+        "When iterations are appended under one key, then a different key's state retains empty `iterations`.",
+        "When `createRuntime` constructs a runtime, then `storyFixHistory` is exposed and repeated reads return the same instance."
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "runtime",
+        "findings"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Adds a new shared runtime abstraction across config, types, barrel exports, and lifecycle construction; the behavior is additive but correctness depends on state isolation.",
+        "agentProfileId": "opencode-balanced",
+        "agent": "opencode",
+        "profileModelTier": "powerful",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-balanced",
+        "initialModelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/runtime/index.ts",
+        "src/config/schemas-execution.ts",
+        "src/config/schemas.ts",
+        "src/config/runtime-types.ts",
+        "src/findings/cycle-types.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/runtime/index.ts",
+          "reason": "Add the run-scoped storyFixHistory map to the NaxRuntime interface, to its construction, and to the returned runtime object."
+        },
+        {
+          "path": "src/config/schemas-execution.ts",
+          "reason": "Declare storyScopedFixBudget (default true) in the nested rectification schema."
+        },
+        {
+          "path": "src/config/schemas.ts",
+          "reason": "Declare storyScopedFixBudget in the rectification default literal — Zod does not merge this with the nested schema, so both sites are required."
+        },
+        {
+          "path": "src/config/runtime-types.ts",
+          "reason": "Add storyScopedFixBudget to the resolved RectificationConfig type."
+        },
+        {
+          "path": "src/findings/index.ts",
+          "reason": "Re-export the store functions and the StoryFixState / StoryFixHistory types from the findings barrel; consumers must not import the leaf path."
+        }
+      ],
+      "expectedFiles": [
+        "src/findings/story-fix-history.ts"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Make fix-cycle budgets consume carried history",
+      "description": "**Goal** — Let `runFixCycle` enforce its existing caps, terminal exhaustion check, bail predicates, and decline retirement against carried history without changing the current-cycle result contract.\n\n**Motivation** — The reset also defeats the bail shipped in #1498. `withNoProgressBail` reads its streak from the array passed to `bailWhen`, which is `cycle.iterations`.\n\n**Approach** — The chosen shape is an explicit read-only carry-in field, `FixCycle.priorIterations`, kept distinct from `iterations`. The counters and the bail predicate read the concatenation; `cycle.iterations` and `FixCycleResult.iterations` keep exactly their current this-cycle meaning, so oscillation counting, `phaseOutputs.rectification.iterationCount`, and `recordIteration`'s `iterationNum` need no changes and cannot regress.\n\nAll five `runFixCycle` read sites are reached **before** the iteration is pushed within the same loop pass, so a single concatenation computed at the top of the loop body is correct at every one of them.\n\n**Scope** — In: add optional prior history, use its concatenation at the existing accounting and bail read sites, and permit `createDeclineLedger` to reuse an optional backing map. Out: runtime history construction belongs to US-001; `runRectification` ownership, keying, and config-gated wiring belong to US-003.\n\n**Interface**\n```typescript\nexport interface FixCycle<F extends Finding> {\n  /** Mutable: updated to findingsAfter at the end of each iteration. */\n  findings: F[];\n  /** Mutable: pushed to at the end of each iteration. */\n  iterations: Iteration<F>[];\n  /** Iterations completed by earlier cycles for the same story/tier; never mutated by this cycle. */\n  priorIterations?: readonly Iteration<F>[];\n}\n\nexport function createDeclineLedger<F extends Finding>(\n  backing?: Map<string, Set<string>>,\n): DeclineLedger<F>;\n```\n\n`FixCycleResult.iterations` continues to report only this cycle. `Iteration.iterationNum` remains 1-indexed within this cycle.",
+      "acceptanceCriteria": [
+        "Given three `priorIterations` each recording one fix by strategy `S` capped at 3, when `runFixCycle` runs, then it returns `exitReason` `max-attempts-per-strategy` with `exhaustedStrategy` `S` and dispatches no fix operation.",
+        "Given two such prior iterations, when `runFixCycle` runs strategy `S`, then it dispatches `S` exactly once before its next cap check.",
+        "Given `priorIterations` whose fixes total `maxAttemptsTotal`, when `runFixCycle` runs, then it returns `exitReason` `max-attempts-total` and dispatches no fix operation.",
+        "Given a no-progress threshold of 3 and two prior iterations where every finding present before remains present after, when the first live iteration is likewise non-progressing, then `runFixCycle` returns `exitReason` `bail-when`.",
+        "Given a no-progress threshold of 3 and the same two non-progressing prior iterations, when the first live iteration resolves a finding, then `runFixCycle` does not return `exitReason` `bail-when`.",
+        "Given `priorIterations` is omitted and strategy `S` has a cap of 3, when `runFixCycle` runs, then it dispatches `S` three times before exiting.",
+        "Given three prior iterations and exactly one live iteration, when `runFixCycle` returns, then `FixCycleResult.iterations` has length 1.",
+        "Given three prior iterations, when the first live iteration is recorded, then its `iterationNum` is 1.",
+        "Given a decline-ledger backing map where strategy `S` already declined a finding, when a ledger is created over that map and `isRetiredFor(S, [finding])` is called, then it returns `true` without a `recordDeclined` call in the new cycle.",
+        "Given a decline-ledger backing map, when `recordDeclined` records strategy `S` and a finding, then the caller's map contains `findingKey(finding)` under `S`.",
+        "When `createDeclineLedger` is called without a backing map, then no strategy is retired for any finding until `recordDeclined` is called."
+      ],
+      "tags": [
+        "feature",
+        "findings",
+        "fix-cycle",
+        "state"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Changes termination accounting in the central fix loop while preserving multiple public result and iteration invariants.",
+        "agentProfileId": "opencode-balanced",
+        "agent": "opencode",
+        "profileModelTier": "powerful",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-balanced",
+        "initialModelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/findings/cycle.ts",
+        "src/findings/cycle-types.ts",
+        "src/findings/cycle-retirement.ts",
+        "src/execution/story-orchestrator/no-progress-bail.ts",
+        "src/findings/story-fix-history.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/findings/cycle.ts",
+          "reason": "Compute the attempt history once per loop pass and switch the two cap checks, the terminal-exhaustion check, and the bailWhen call to read it. File is 584 lines against a 600-line hard limit — keep the edit near net-zero and add no new helpers here."
+        },
+        {
+          "path": "src/findings/cycle-types.ts",
+          "reason": "Add the optional readonly priorIterations field to FixCycle, distinct from the existing mutable iterations array."
+        },
+        {
+          "path": "src/findings/cycle-retirement.ts",
+          "reason": "Let createDeclineLedger accept an optional caller-supplied backing map and read and write through it."
+        }
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Share the rectification budget by story and tier",
+      "description": "**Goal** — Wire the run-scoped store into blocking `runRectification` so repeated main and resume passes for one story/tier consume a common budget and decline ledger.\n\n**Motivation** — The decline ledger resets identically, so a strategy that answered UNRESOLVED for a finding is re-dispatched for that same finding on the next cycle with no record that it already gave up.\n\n**Approach** — Seed `priorIterations` and the ledger backing from the store, append the cycle's iterations on exit, derive the key from story and tier, and honour the config knob. Proves the budget is genuinely shared across the re-entries that motivated the work.\n\nThe key is `` `${storyId}::${tier}` ``, where `tier` is `ctx.phaseTelemetry?.tier`. Escalating a story to a higher model tier therefore yields a fresh budget: a more capable model gets a real attempt, while the main-pass and resume-pass re-entries that produce the 119 overruns collapse onto one budget.\n\n**Scope** — In: config-gated store lookup and append after the existing `storyId` guard, default-tier fallback, and end-to-end `ExecutionPlan.run` resume wiring. Out: direct-cycle history consumption belongs to US-002; invariant and fail-open coverage of non-blocking, oscillation, and missing-runtime boundaries belongs to US-004.\n\n**Interface**\n```typescript\nexport interface StoryFixState {\n  /** Iterations from every prior cycle for this (story, tier), in completion order. */\n  readonly iterations: Iteration<Finding>[];\n  /** Backing store for the decline ledger: strategy name -> declined findingKey set. */\n  readonly declines: Map<string, Set<string>>;\n}\n```\n\n`storyScopedFixBudget` is `false` | `priorIterations` is not passed and no store read or write occurs — behaviour is byte-for-byte today's per-cycle semantics.\n\n`ctx.phaseTelemetry` is absent, so no tier is available | Key on the literal tier `\"default\"`. All of that story's cycles then share one budget, which bounds more tightly rather than less.\n\n`ctx.storyId` is absent | `runRectification` already returns before constructing the cycle (`rectification.ts:272`); the store read and write must both sit after that guard, so no state is recorded.",
+      "acceptanceCriteria": [
+        "With `storyScopedFixBudget` enabled, when `runRectification` is invoked twice for the same story id and tier after the first invocation exhausts a strategy cap, then the second invocation dispatches no fix operation.",
+        "In that enabled same-story/tier scenario, when the second `runRectification` invocation exits, then its rectification phase output has `exitReason` `max-attempts-per-strategy`.",
+        "With `storyScopedFixBudget` disabled, when the same two invocations run, then the second invocation dispatches fix operations.",
+        "With `storyScopedFixBudget` enabled, when two invocations use the same story id but different `phaseTelemetry.tier` values, then the second invocation dispatches fix operations.",
+        "With `storyScopedFixBudget` enabled, when one rectification invocation runs two iterations and a later one runs one iteration for the same story/tier key, then `getStoryFixState(runtime.storyFixHistory, storyFixKey(storyId, tier)).iterations` has length 2 after the first and 3 after the second.",
+        "With `storyScopedFixBudget` enabled, when `ExecutionPlan.run` executes a story whose main rectification consumes two of a three-attempt per-strategy cap without exhausting it and whose post-rectification resume invokes rectification again, then the resume pass dispatches the strategy at most once before reporting the cap reached.",
+        "With `storyScopedFixBudget` disabled, when the same `ExecutionPlan.run` resume scenario executes, then the resume pass dispatches the strategy three times."
+      ],
+      "tags": [
+        "feature",
+        "rectification",
+        "integration",
+        "runtime"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Wires an existing history abstraction through the rectification and resume seams, where shared runtime identity, tier keying, and config-gated dispatch must agree; the established integration tests provide a bounded verification path.",
+        "agentProfileId": "opencode-balanced",
+        "agent": "opencode",
+        "profileModelTier": "powerful",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-balanced",
+        "initialModelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/execution/story-orchestrator/rectification.ts",
+        "src/execution/story-orchestrator/execution-plan.ts",
+        "src/findings/story-fix-history.ts",
+        "src/runtime/index.ts",
+        "src/operations/types.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/execution/story-orchestrator/rectification.ts",
+          "reason": "Seed priorIterations and the decline-ledger backing from the store, append the cycle's iterations on exit, and derive the key from story id and phaseTelemetry.tier behind the storyScopedFixBudget knob."
+        }
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Preserve rectification and fail-open invariants",
+      "description": "**Goal** — Prove the shared blocking budget does not contaminate non-blocking fixes, oscillation accounting, per-cycle reporting, other stories, or partial runtimes.\n\n**Motivation** — Seeding `cycle.iterations` directly is the smallest diff, but it retroactively changes the meaning of three existing consumers — most seriously `countOscillationOutcomes(cycleResult.iterations)` at `rectification.ts:436`, whose result is **accumulated** into the run-scoped `rectificationOscillations` map by `recordOscillations`, so a longer array double-counts earlier cycles' oscillations into the run total.\n\n**Approach** — Leave the non-blocking-fix call site opted out, and prove the carry-in changes nothing it must not: oscillation totals, per-cycle iteration reporting, and cross-story isolation. Covers every `### Failure Handling` row not already pinned by US-003.\n\n**Scope** — In: prove that current-cycle-only results remain the basis of oscillation and phase output reporting, preserve the independent non-blocking cycle, and validate all remaining failure-handling boundaries. Out: Re-keying oscillation counting from source identity to finding identity. `countOscillationOutcomes` remains source-level and is not modified by this work; that is gap-analysis item R4, to be re-probed after this lands.\n\nThe counters and the bail predicate read the concatenation; `cycle.iterations` and `FixCycleResult.iterations` keep exactly their current this-cycle meaning, so oscillation counting, `phaseOutputs.rectification.iterationCount`, and `recordIteration`'s `iterationNum` need no changes and cannot regress.\n\nNon-blocking-fix call site (`execution-plan.ts:341`) | Opts out entirely. It fixes advisory findings on an already-green story with a different strategy set, and keeps its own per-cycle budget.\n\n`ctx.runtime.storyFixHistory` is absent (partial or plugin-supplied runtime) | Fail open to per-cycle behaviour. Never throw.",
+      "acceptanceCriteria": [
+        "When `runRectification` is invoked through the non-blocking-fix override path, then the runtime's `storyFixHistory` records no state for that story.",
+        "Given a non-blocking-fix invocation for a story, when a later blocking `runRectification` runs for that story, then its strategy dispatches up to the full per-strategy cap.",
+        "Given a first cycle with one `gate` finding resolved then reappearing across two iterations and a second cycle without that reappearance, when rectification completes, then `rectificationOscillations` for the story equals 1.",
+        "Given a first `runRectification` invocation with two iterations, when a second invocation with one iteration completes, then its rectification phase output reports `iterationCount` 1.",
+        "With `storyScopedFixBudget` enabled and one shared runtime, when story `US-001` exhausts its budget and story `US-002` then runs rectification, then `US-002` dispatches fix operations normally.",
+        "With `storyScopedFixBudget` enabled and `ctx.runtime.storyFixHistory` absent, when `runRectification` runs, then it completes without throwing and dispatches fix operations under per-cycle behavior.",
+        "With `storyScopedFixBudget` enabled and `phaseTelemetry` absent, when two rectification invocations for one story run after the first exhausts its cap, then the second dispatches no fix operation.",
+        "With `storyScopedFixBudget` enabled and `ctx.storyId` absent, when `runRectification` returns, then it records no state in `storyFixHistory`."
+      ],
+      "tags": [
+        "feature",
+        "rectification",
+        "regression",
+        "failure-handling"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Validates cross-module invariants and fail-open behavior around the newly shared state without changing the core algorithm.",
+        "agentProfileId": "opencode-balanced",
+        "agent": "opencode",
+        "profileModelTier": "powerful",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-balanced",
+        "initialModelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/execution/story-orchestrator/rectification.ts",
+        "src/execution/story-orchestrator/execution-plan.ts",
+        "src/execution/oscillation-store.ts",
+        "src/findings/story-fix-history.ts",
+        "src/runtime/index.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/execution/story-orchestrator/rectification.ts",
+          "reason": "Keep the store read and write after the existing storyId guard, and fail open to per-cycle behaviour when runtime.storyFixHistory is absent. Do not change what countOscillationOutcomes receives — it must keep seeing only this cycle's iterations."
+        },
+        {
+          "path": "src/execution/story-orchestrator/execution-plan.ts",
+          "reason": "Leave the non-blocking-fix call site opted out of the shared budget so it retains its own independent per-cycle budget."
+        }
+      ],
+      "outOfScope": [
+        "Re-keying oscillation counting from source identity to finding identity. `countOscillationOutcomes` remains source-level and is not modified by this work; that is gap-analysis item R4, to be re-probed after this lands."
+      ]
+    }
+  ],
+  "analysis": "This is a cross-module enhancement to the existing ADR-022 finding/fix-cycle path, not a greenfield feature. `FixCycle` currently owns mutable `iterations` and `runFixCycle` derives per-strategy caps, total caps, bail predicates, and terminal exhaustion from that one array (src/findings/cycle-types.ts:199; src/findings/cycle.ts:225-265; src/findings/cycle.ts:395-399). `runRectification` creates a new cycle with `iterations: []` after its no-findings and no-story guards (src/execution/story-orchestrator/rectification.ts:269-305), then records only `cycleResult.iterations` for oscillations and phase output counts (src/execution/story-orchestrator/rectification.ts:425-456). This makes preserving the distinction between prior-story history and current-cycle output a hard compatibility requirement. The `ExecutionPlan` main pass and guarded post-rectification resume pass both call `runRectification` on the same context/runtime (src/execution/story-orchestrator/execution-plan.ts:179-181 and :219-245); the non-blocking-fix callback is a separate call path with advisory findings and its own strategies (src/execution/story-orchestrator/execution-plan.ts:300-349). `NaxRuntime` already establishes run-scoped per-story Map precedents (`adversarialIterations`, `semanticIterations`, and `rectificationOscillations`) and constructs/returns them once in `createRuntime` (src/runtime/index.ts:135-140, :276-306). Add `storyFixHistory` beside them, keyed by story and telemetry tier, rather than putting state on rebuilt pipeline contexts. The config uses two declarations that must stay synchronized: nested Zod defaults in `src/config/schemas-execution.ts:49-75`, the `DEFAULT_CONFIG` literal in `src/config/schemas.ts:115-138`, and the resolved runtime type in `src/config/runtime-types.ts:50-80`; existing no-progress config tests in `test/unit/config/schemas.test.ts:630-700` are the closest pattern. The ledger is isolated in `src/findings/cycle-retirement.ts:66-90`; it currently always allocates its own Map, so an optional supplied backing store is the narrow compatibility-preserving seam. `withNoProgressBail` evaluates the supplied iteration list by its trailing run (src/execution/story-orchestrator/no-progress-bail.ts:4-42), so concatenating prior and live iterations at each loop pass makes the existing predicate story-scoped without changing its algorithm. Existing fixtures and cycle tests are centralized under `test/unit/findings/_cycle-fixtures.ts:1-96`, `test/unit/findings/cycle.test.ts`, and `test/unit/findings/cycle-retirement.test.ts`; rectification and resume seams are already driven by `test/integration/execution/rectification-routing.test.ts`, `test/integration/execution/nbf-rectify-declaration.test.ts`, and `test/unit/execution/story-orchestrator-resume-guard.test.ts`. New direct store tests should mirror source at `test/unit/findings/story-fix-history.test.ts`; cross-module runtime/rectification and ExecutionPlan behavior belongs under `test/integration/`. Main risks are (1) double-counting prior iterations if `cycle.iterations` or `FixCycleResult.iterations` is seeded, which would inflate `rectificationOscillations` and phase `iterationCount`; (2) reusing history across tiers, stories, non-blocking fixes, or direct acceptance/regression cycles; (3) failing closed when plugin/partial runtimes omit the new field; and (4) losing either Zod default declaration. The migration is additive and backward compatible: `priorIterations` and ledger backing are optional, the new config defaults true, disabled/missing runtime paths retain current per-cycle behavior, and no persisted data migration is required. Keep `src/findings/cycle.ts` near net-zero because it is already 584 lines against the 600-line hard limit. Every test creating `makeTestRuntime` or `makeMockRuntime` must close it in `afterEach`, per the lint-enforced cleanup script.",
+  "outOfScope": [
+    "Re-keying oscillation counting from source identity to finding identity. `countOscillationOutcomes` remains source-level and is not modified by this work; that is gap-analysis item R4, to be re-probed after this lands.",
+    "Reading the oscillation circuit-breaker mid-story. It continues to be read only on the story-failure path in `src/execution/post-run.ts`.",
+    "Stating prior attempts explicitly in the fix prompt. The `prior` parameter of `FixStrategy.buildInput` remains unconsumed by all six strategies, and no prompt text changes; that is gap-analysis item R2, an experiment rather than a fix.",
+    "Modifying `classifyOutcome` in `src/findings/cycle.ts`. Its behaviour is correct and is relied upon unchanged.",
+    "Changing any reviewer prompt, semantic or adversarial.",
+    "Carrying the fix budget across escalation tiers. A tier change deliberately yields a fresh budget so that escalation to a more capable model still gets real attempts.",
+    "Story-scoping the budget of the non-blocking-fix path. It retains its own independent per-cycle budget.",
+    "Story-scoping the fix cycles driven by `src/execution/lifecycle/acceptance-loop.ts` and `src/execution/lifecycle/run-regression.ts`. Both call `runFixCycle` directly, are not per-story rectification, and remain per-cycle.",
+    "Changing the numbering of `Iteration.iterationNum`, which stays 1-indexed within each cycle."
+  ],
+  "routingProfile": "cross-agent"
+}

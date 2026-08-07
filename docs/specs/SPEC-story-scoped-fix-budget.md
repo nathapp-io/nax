@@ -158,6 +158,8 @@ Leave the non-blocking-fix call site opted out, and prove the carry-in changes n
 - **US-002 -> US-003.** `priorIterations` is populated only by `runRectification`. US-003 asserts the observable consequence: a second cycle for the same story and tier finds its budget already spent.
 - **Seam altitude.** `runRectification` is not the outermost entry point. The re-entry this feature exists to bound is produced by `ExecutionPlan.run`, which calls `runRectification` for the main pass and again for the post-rectification resume pass, rebuilding context between them. AC-3.6 therefore drives `ExecutionPlan.run` itself, so that a wiring bug in which the two passes reach different runtime instances — the failure mode that would silently defeat the whole feature — cannot ship green. `ExecutionPlan.run` is already driven this way in `test/unit/execution/story-orchestrator-resume-guard.test.ts`.
 
+The main pass in AC-3.6 must consume the budget **partially**, not exhaust it. `"max-attempts-per-strategy"` is a member of `EXHAUSTED_EXIT_REASONS` (`src/execution/story-orchestrator/types.ts:6`), and the resume block is gated on `!rectResult.rectificationExhausted || rectResult.liteScopeIncomplete` (`execution-plan.ts:193`) — so a main pass that exhausts the cap is terminal and the resume pass never runs. An AC pairing "main pass exhausts" with "resume pass rectifies again" is unsatisfiable by construction.
+
 ## Acceptance Criteria
 
 ### US-001
@@ -194,8 +196,8 @@ Leave the non-blocking-fix call site opted out, and prove the carry-in changes n
 - AC-3.3 `[integration]` With `storyScopedFixBudget` disabled, the same two invocations cause the second invocation to dispatch fix operations, matching pre-change behaviour.
 - AC-3.4 `[integration]` With `storyScopedFixBudget` enabled, two invocations for the same story id whose `phaseTelemetry.tier` differs cause the second invocation to dispatch fix operations, demonstrating the per-tier reset.
 - AC-3.5 `[integration]` After one `runRectification` invocation that runs two iterations, the story's state retrieved from the runtime's `storyFixHistory` has an `iterations` length of 2; after a further invocation running one iteration, that length is 3.
-- AC-3.6 `[integration]` Driving `ExecutionPlan.run` over one story with `storyScopedFixBudget` enabled, on a plan whose main rectification pass exhausts the per-strategy cap and whose post-rectification resume pass then invokes rectification a second time, causes that second pass to dispatch no fix operation.
-- AC-3.7 `[integration]` Driving the same plan as AC-3.6 with `storyScopedFixBudget` disabled causes the resume pass to dispatch fix operations.
+- AC-3.6 `[integration]` Driving `ExecutionPlan.run` over one story with `storyScopedFixBudget` enabled, on a plan whose main rectification pass consumes two of a three-attempt per-strategy cap **without** exhausting it and whose post-rectification resume pass then invokes rectification a second time, causes that second pass to dispatch the strategy at most once before reporting the cap reached.
+- AC-3.7 `[integration]` Driving the same plan as AC-3.6 with `storyScopedFixBudget` disabled causes the resume pass to dispatch the strategy three times, demonstrating the budget reset the enabled path suppresses.
 
 ### US-004
 
