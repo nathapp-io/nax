@@ -37,7 +37,7 @@
  * `_storyOrchestratorDeps` so no real agent processes are spawned.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG, pickSelector } from "@/config";
 import { _storyOrchestratorDeps, runRectification, StoryOrchestratorBuilder } from "@/execution";
 import type { InternalBuildState } from "@/execution";
@@ -190,14 +190,6 @@ const runtimes: NaxRuntime[] = [];
 
 afterEach(async () => {
   await Promise.allSettled(runtimes.map((r) => r.close()));
-  runtimes.length = 0;
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Local re-export so this file stays self-contained — pulls runRectification
-// from the execution barrel without polluting the import list above.
-// ─────────────────────────────────────────────────────────────────────────────
-beforeEach(() => {
   runtimes.length = 0;
 });
 

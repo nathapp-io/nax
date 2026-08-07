@@ -63,5 +63,6 @@ export {
   appendStoryFixIterations,
   createStoryFixHistory,
   getStoryFixState,
+  mergeStoryFixDeclines,
   storyFixKey,
 } from "./story-fix-history";

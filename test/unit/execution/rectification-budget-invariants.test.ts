@@ -27,7 +27,7 @@
  * via `_storyOrchestratorDeps` so no real agent processes are spawned.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG, pickSelector } from "@/config";
 import { _storyOrchestratorDeps, runRectification } from "@/execution";
 import type { DeterministicOperation, InternalBuildState } from "@/execution";
@@ -243,8 +243,10 @@ describe("US-005b AC1: nbf runRectification does not record state in storyFixHis
 
     // The opposite control: a blocking runRectification writes to the store.
     // If a wiring regression collided the nbf opt-out with the blocking path,
-    // this assertion would no longer hold.
-    expect(runtime.storyFixHistory.has(key)).toBe(true);
+    // this assertion would no longer hold. Assert on content, not presence —
+    // getStoryFixState inserts an empty entry on read, so `.has(key)` alone
+    // would pass even if the write path were deleted entirely.
+    expect(getStoryFixState(runtime.storyFixHistory, key).iterations.length).toBeGreaterThan(0);
   });
 });
 
@@ -659,7 +661,3 @@ describe("US-005b AC8: ctx.storyId absent → no state recorded in storyFixHisto
     expect(runtime.storyFixHistory.has(storyFixKey(storyId, "fast"))).toBe(true);
   });
 });
-
-// Suppress the unused-import lint warning while keeping the local re-export
-// pattern parallel to story-scoped-fix-budget.test.ts.
-void DEFAULT_CONFIG;
