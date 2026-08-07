@@ -53,5 +53,16 @@ export type { ReviewCheckResult } from "../review/types";
 export { classifyOutcome, runFixCycle, _cycleDeps } from "./cycle";
 export { recordIteration } from "./cycle-iteration-log";
 export type { RecordIterationContext, RecordIterationInput } from "./cycle-iteration-log";
+export { createDeclineLedger } from "./cycle-retirement";
+export type { DeclineLedger } from "./cycle-retirement";
 
 export { isNaxBailWrapper, markNaxBailWrapper } from "./bail-marker";
+
+export type { StoryFixHistory, StoryFixState } from "./story-fix-history";
+export {
+  appendStoryFixIterations,
+  createStoryFixHistory,
+  getStoryFixState,
+  mergeStoryFixDeclines,
+  storyFixKey,
+} from "./story-fix-history";

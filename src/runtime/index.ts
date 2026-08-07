@@ -77,7 +77,8 @@ import { createConfigLoader, getProjectKey } from "../config";
 import type { ConfigLoader } from "../config";
 import { NaxError } from "../errors";
 import { PidRegistry } from "../execution/pid-registry";
-import type { Iteration } from "../findings";
+import { createStoryFixHistory } from "../findings";
+import type { Iteration, StoryFixHistory } from "../findings";
 import { getLogger } from "../logger";
 import type { Logger } from "../logger";
 import { ReviewAuditor, createNoOpReviewAuditor } from "../review/review-audit";
@@ -137,6 +138,8 @@ export interface NaxRuntime {
   readonly semanticIterations: Map<string, Iteration[]>;
   /** Run-scoped per-story rectification oscillation totals. */
   readonly rectificationOscillations: Map<string, number>;
+  /** Run-scoped per-(story, tier) fix-iteration + decline history (US-004). */
+  readonly storyFixHistory: StoryFixHistory;
   /** Run-scoped per-story mutation-check results. */
   readonly mutationSummaries: Map<string, MutationStorySummary>;
   /**
@@ -276,6 +279,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const adversarialIterations = new Map<string, Iteration[]>();
   const semanticIterations = new Map<string, Iteration[]>();
   const rectificationOscillations = new Map<string, number>();
+  const storyFixHistory = createStoryFixHistory();
   const mutationSummaries = new Map<string, MutationStorySummary>();
   const dirtyWorktrees = new Set<string>();
 
@@ -304,6 +308,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     adversarialIterations,
     semanticIterations,
     rectificationOscillations,
+    storyFixHistory,
     mutationSummaries,
     dirtyWorktrees,
 

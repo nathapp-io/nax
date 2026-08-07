@@ -128,6 +128,7 @@ export const NaxConfigSchema = z
         abortOnNoProgress: true,
         consecutiveNoProgressToBail: 3,
         escalateOnExhaustion: true,
+        storyScopedFixBudget: true,
         rethinkAtAttempt: 2,
         urgencyAtAttempt: 3,
       },

@@ -1,4 +1,5 @@
 import type { Finding, FixCycle, FixCycleContext } from "@/findings";
+import { appendStoryFixIterations, getStoryFixState, mergeStoryFixDeclines, storyFixKey } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { CallContext, Operation, RunOperation } from "@/operations";
 import { countOscillationOutcomes, recordOscillations } from "../oscillation-store";
@@ -274,6 +275,29 @@ export async function runRectification(
     return {};
   }
 
+  // Story-scoped fix budget (US-003): when enabled, seed priorIterations and
+  // the decline-ledger backing from the run-scoped store so repeated main and
+  // resume passes for one (storyId, tier) pair consume a common budget.
+  //
+  // Excluded from the nbf (non-blocking-fix) path: it retains its own
+  // independent per-cycle budget (out-of-scope item).
+  const storyFixBudgetEnabled =
+    !nbfPath && ctx.runtime.configLoader.current().execution?.rectification?.storyScopedFixBudget === true;
+  const store = ctx.runtime.storyFixHistory;
+  const fixKey = storyFixBudgetEnabled ? storyFixKey(ctx.storyId, ctx.phaseTelemetry?.tier) : undefined;
+  const fixState = fixKey !== undefined && store ? getStoryFixState(store, fixKey) : undefined;
+  // Captured before the cycle runs so the exit-reason remap below (US-003 AC6)
+  // reflects the budget state the cycle actually started with, independent of
+  // whether appendStoryFixIterations happens to replace or mutate fixState.iterations.
+  const priorIterationCount = fixState?.iterations.length ?? 0;
+  // Cycle-local snapshot: the ledger writes into this map live during the cycle, but
+  // it is only merged back into the store after runFixCycle returns (below) — so a
+  // mid-cycle throw discards both the decline ledger and the iteration history
+  // together, instead of leaving findings permanently retired with zero recorded attempts.
+  const declineSnapshot = fixState
+    ? new Map([...fixState.declines].map(([name, keys]) => [name, new Set(keys)]))
+    : undefined;
+
   // Separate map for fix-op outputs so intermediate implementer results don't contaminate
   // the final phaseOutputs success aggregation. The validate callback continues to write
   // gate/verifier re-run results into phaseOutputs so they ARE reflected in the final success.
@@ -288,6 +312,7 @@ export async function runRectification(
   const cycle: FixCycle<Finding> = {
     findings: [...initialFindings],
     iterations: [],
+    priorIterations: fixState?.iterations,
     strategies: withNoProgressBail(
       withIncreasingFailuresBail(
         (overrides?.strategies ?? rectification.strategies) as import("@/findings").FixStrategy<
@@ -426,8 +451,18 @@ export async function runRectification(
     cycle,
     ctx as FixCycleContext,
     "story-orchestrator-rectification",
-    { callOp: wrappedCallOp },
+    { callOp: wrappedCallOp, declineBacking: declineSnapshot },
   );
+
+  // Persist this cycle's iterations and declines into the run-scoped store together
+  // so a later rectification re-entry for the same (storyId, tier) pair inherits the
+  // accumulated history (US-003). Both are skipped together if runFixCycle throws.
+  if (fixKey !== undefined && store && cycleResult.iterations.length > 0) {
+    appendStoryFixIterations(store, fixKey, cycleResult.iterations);
+  }
+  if (fixKey !== undefined && store && declineSnapshot) {
+    mergeStoryFixDeclines(store, fixKey, declineSnapshot);
+  }
 
   // Source-agnostic oscillation counter (US-002). The runtime Map is the
   // stable run-scoped instance threaded across every per-attempt
@@ -438,10 +473,21 @@ export async function runRectification(
     recordOscillations(ctx.runtime.rectificationOscillations, ctx.storyId, oscillationCount);
   }
 
+  // When the story-scoped budget is active and the cycle exited via
+  // validate-short-circuit after prior iterations consumed part of the
+  // per-strategy cap, the primary cause of exit is the cap, not the
+  // short-circuit. Report max-attempts-per-strategy so downstream
+  // consumers (ExecutionPlan resume, post-run inspection) route
+  // the exhaustion correctly (US-003 AC6).
+  const reportedExitReason =
+    cycleResult.exitReason === "validate-short-circuit" && priorIterationCount > 0
+      ? "max-attempts-per-strategy"
+      : cycleResult.exitReason;
+
   phaseOutputs.rectification = {
     success: cycleResult.exitReason === "resolved",
     iterationCount: cycleResult.iterations.length,
-    exitReason: cycleResult.exitReason,
+    exitReason: reportedExitReason,
     finalFindingsCount: cycleResult.finalFindings.length,
   };
 
@@ -453,7 +499,7 @@ export async function runRectification(
     initialFindingsCount: initialFindings.length,
     iterationCount: cycleResult.iterations.length,
     finalFindingsCount: cycleResult.finalFindings.length,
-    exitReason: cycleResult.exitReason,
+    exitReason: reportedExitReason,
     costUsd: cycleResult.costUsd,
   };
   if (cycleResult.exitReason === "resolved") {

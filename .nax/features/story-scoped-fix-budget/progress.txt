@@ -1,0 +1,4 @@
+[2026-08-07T14:15:08.873Z] US-001 — PASSED — Add run-scoped story fix history and configuration — Cost: $6.6446
+[2026-08-07T14:28:56.139Z] US-002 — PASSED — Make fix-cycle budgets consume carried history — Cost: $0.6401
+[2026-08-07T15:42:58.659Z] US-003 — PASSED — Share the rectification budget by story and tier — Cost: $28.4526
+[2026-08-07T16:12:30.803Z] US-004 — PASSED — Preserve rectification and fail-open invariants — Cost: $3.2710

@@ -127,14 +127,14 @@ function selectExecutionGroup<F extends Finding>(
 
 // ─── Attempt counting ────────────────────────────────────────────────────────
 
-function countStrategyAttempts<F extends Finding>(iterations: Iteration<F>[], strategyName: string): number {
+function countStrategyAttempts<F extends Finding>(iterations: readonly Iteration<F>[], strategyName: string): number {
   return iterations.reduce(
     (sum, iter) => sum + iter.fixesApplied.filter((fa) => fa.strategyName === strategyName).length,
     0,
   );
 }
 
-function countTotalAttempts<F extends Finding>(iterations: Iteration<F>[]): number {
+function countTotalAttempts<F extends Finding>(iterations: readonly Iteration<F>[]): number {
   return iterations.reduce((sum, iter) => sum + iter.fixesApplied.length, 0);
 }
 
@@ -151,7 +151,14 @@ export async function runFixCycle<F extends Finding>(
   cycle: FixCycle<F>,
   ctx: FixCycleContext,
   cycleName: string,
-  _deps: { callOp?: CallOpFn; now?: () => string; logger?: Logger | null } = {},
+  _deps: {
+    callOp?: CallOpFn;
+    now?: () => string;
+    logger?: Logger | null;
+    /** Caller-supplied map (strategy name -> set of declined findingKeys)
+     *  so a later cycle inherits prior decline records (US-003). */
+    declineBacking?: Map<string, Set<string>>;
+  } = {},
 ): Promise<FixCycleResult<F>> {
   const logger = _deps.logger !== undefined ? _deps.logger : getSafeLogger();
   const doCallOp = _deps.callOp ?? _cycleDeps.callOp;
@@ -164,7 +171,7 @@ export async function runFixCycle<F extends Finding>(
   // Per-finding retirement ledger (#1369, #1384) — see `createDeclineLedger` for why
   // UNRESOLVED retires a (strategy, finding) pair rather than the strategy itself, and
   // for the termination argument.
-  const declines = createDeclineLedger<F>();
+  const declines = createDeclineLedger<F>(_deps.declineBacking);
   let unresolvedDetail: string | undefined;
 
   /**
@@ -185,6 +192,15 @@ export async function runFixCycle<F extends Finding>(
     if (cycle.findings.length === 0 && cycle.verdict === undefined) {
       return { iterations: cycle.iterations, finalFindings: [], exitReason: "resolved", costUsd: totalCostUsd };
     }
+
+    // Per-iteration concatenation of carried + this-cycle history. Cap checks,
+    // the terminal-exhaustion counter, and bailWhen read this so carried
+    // history participates in every accounting read site (US-002). `cycle.iterations`
+    // and `FixCycleResult.iterations` keep their this-cycle meaning, so oscillation
+    // counting and recordIteration's iterationNum are unaffected.
+    const history: readonly Iteration<F>[] = cycle.priorIterations
+      ? [...cycle.priorIterations, ...cycle.iterations]
+      : cycle.iterations;
 
     // ── Select active strategies ──────────────────────────────────────────────
     // A strategy is excluded only once it has declined every remaining finding it
@@ -222,9 +238,9 @@ export async function runFixCycle<F extends Finding>(
     // An exclusive strategy that exhausts its cap should not block uncapped
     // companions from running in subsequent iterations. Only exit when ALL
     // active strategies are exhausted (no uncapped companion can take over).
-    const uncappedActive = active.filter((s) => countStrategyAttempts(cycle.iterations, s.name) < s.maxAttempts);
+    const uncappedActive = active.filter((s) => countStrategyAttempts(history, s.name) < s.maxAttempts);
     if (uncappedActive.length === 0) {
-      const exhaustedStrategy = active.find((s) => countStrategyAttempts(cycle.iterations, s.name) >= s.maxAttempts);
+      const exhaustedStrategy = active.find((s) => countStrategyAttempts(history, s.name) >= s.maxAttempts);
       logger?.info("findings.cycle", "cycle exited — all active strategies exhausted", {
         storyId,
         packageDir,
@@ -242,7 +258,7 @@ export async function runFixCycle<F extends Finding>(
     }
 
     // ── Total attempt cap ─────────────────────────────────────────────────────
-    const totalAttempts = countTotalAttempts(cycle.iterations);
+    const totalAttempts = countTotalAttempts(history);
     if (totalAttempts >= cycle.config.maxAttemptsTotal) {
       logger?.info("findings.cycle", "cycle exited — total attempt cap reached", {
         storyId,
@@ -262,7 +278,7 @@ export async function runFixCycle<F extends Finding>(
 
     // ── bailWhen predicates ───────────────────────────────────────────────────
     for (const strategy of uncappedActive) {
-      const bailReason = strategy.bailWhen?.(cycle.iterations) ?? null;
+      const bailReason = strategy.bailWhen?.(history) ?? null;
       if (bailReason !== null) {
         logger?.info("findings.cycle", "cycle exited — bail predicate fired", {
           storyId,
@@ -393,7 +409,7 @@ export async function runFixCycle<F extends Finding>(
     // Count provisional attempts including this iteration's fixesApplied, without
     // constructing a fake Iteration<F> object (only fixesApplied is relevant here).
     const allExhausted = group.every((s) => {
-      const prior = countStrategyAttempts(cycle.iterations, s.name);
+      const prior = countStrategyAttempts(history, s.name);
       const current = fixesApplied.filter((fa) => fa.strategyName === s.name).length;
       return prior + current >= s.maxAttempts;
     });

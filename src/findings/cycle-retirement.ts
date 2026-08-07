@@ -62,9 +62,17 @@ export interface DeclineLedger<F extends Finding> {
   retiredNames(strategies: readonly FixStrategy<F, any, any, any>[], findings: readonly F[]): string[];
 }
 
-/** Create an empty per-cycle decline ledger. */
-export function createDeclineLedger<F extends Finding>(): DeclineLedger<F> {
-  const declinedByStrategy = new Map<string, Set<string>>();
+/**
+ * Create a per-cycle decline ledger.
+ *
+ * @param backing Optional caller-supplied map (strategy name -> set of declined
+ *   finding keys). When supplied, the ledger reads and writes through it, so a
+ *   later cycle that opens against the same map inherits the prior declines and
+ *   `recordDeclined` calls in the new cycle persist into the caller's store.
+ *   When omitted, an empty map is allocated and the ledger is cycle-local.
+ */
+export function createDeclineLedger<F extends Finding>(backing?: Map<string, Set<string>>): DeclineLedger<F> {
+  const declinedByStrategy = backing ?? new Map<string, Set<string>>();
 
   const hasDeclined = (strategyName: string, finding: F): boolean =>
     declinedByStrategy.get(strategyName)?.has(findingKey(finding)) === true;

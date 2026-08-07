@@ -68,6 +68,7 @@ export interface RectificationConfig {
   consecutiveNoProgressToBail: number;
   /** Escalate to higher model tier after exhausting maxAttemptsTotal (default: true) */
   escalateOnExhaustion: boolean;
+  storyScopedFixBudget: boolean;
   /** Per-strategy attempt number at which "rethink your approach" language is injected. (default: 2) */
   rethinkAtAttempt: number;
   /** Per-strategy attempt number at which "final chance before escalation" urgency is added. (default: 3) */

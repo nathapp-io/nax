@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-08-07T13-25-54-107Z",
+    "feature": "story-scoped-fix-budget",
+    "startedAt": "2026-08-07T13:25:54.107Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 3201
+  },
+  "progress": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 39.008257458,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 5,
+  "updatedAt": "2026-08-07T16:13:30.306Z",
+  "durationMs": 10056199,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-08-07T16:12:45.203Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-08-07T16:13:29.051Z"
+    }
+  }
+}

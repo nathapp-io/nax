@@ -180,7 +180,7 @@ export interface FixStrategy<
    * Optional bail predicate called before each iteration. Return a non-null
    * string reason to exit with exitReason "bail-when". Returning null continues.
    */
-  bailWhen?: (priorIterations: Iteration<F>[]) => string | null;
+  bailWhen?: (priorIterations: readonly Iteration<F>[]) => string | null;
 
   /** Per-strategy attempt cap. Counted via fixesApplied[].strategyName. */
   maxAttempts: number;
@@ -201,6 +201,15 @@ export interface FixCycle<F extends Finding> {
   findings: F[];
   /** Mutable: pushed to at the end of each iteration. */
   iterations: Iteration<F>[];
+  /**
+   * Iterations completed by earlier cycles for the same story/tier; never mutated by
+   * this cycle. Cap checks, terminal-exhaustion counters, and `bailWhen` predicates
+   * read the concatenation `[...priorIterations, ...iterations]`; `cycle.iterations`
+   * and `FixCycleResult.iterations` continue to report only this cycle.
+   *
+   * Construction of this array is the caller's responsibility (US-001/US-003).
+   */
+  priorIterations?: readonly Iteration<F>[];
   // biome-ignore lint/suspicious/noExplicitAny: heterogeneous strategy array; I/O types are coherent per-strategy
   strategies: FixStrategy<F, any, any, any>[];
   /**
