@@ -5,11 +5,14 @@
  * The finish flow opens a PR via `openOrPromotePr` and used to ship a
  * hardcoded `nax-finish: <feature>` title and a one-sentence body, throwing
  * away every artifact the run produced on the way. This module restores that
- * context as a deterministic markdown body — the title matches
- * `src/plugins/builtin/auto-pr/pr-body.ts:buildTitle`, and the body is
- * assembled by string joins over the fields in `FinishPrContext`. No model
- * call: every section is reproducible from artifacts that exist before
- * `open_pr` runs, and so the body stays greppable in PR history.
+ * context as a deterministic markdown body, assembled by string joins over the
+ * fields in `FinishPrContext`. Every *section* is reproducible from artifacts
+ * that exist before `open_pr` runs, so the body stays greppable in PR history.
+ *
+ * Two fields are the exception, and both arrive later, from the narrative node
+ * that runs after the PR is already open: `narrative` and `title`. Each has a
+ * deterministic fallback (`resolveNarrative`, `resolveTitle`) so `open_pr` never
+ * waits on a model — see `steps/pr-narrative.ts`.
  *
  * Reimplemented here (rather than imported from `src/`) because `flows/`
  * ships to a different runtime — `acpx flow run` runs it in acpx's own Node
@@ -20,6 +23,7 @@ import { dirname, isAbsolute, join } from "node:path";
 import { runArgv } from "../exec";
 import { readSpecSummary, resolveNarrative } from "../narrative";
 import { findPrTemplate } from "../pr-template";
+import { resolveTitle } from "../pr-title";
 import type { Finding, FinishInput, FinishRound, RunFn } from "../types";
 import type { Forge } from "./forge";
 import { readRounds } from "./result";
@@ -55,6 +59,11 @@ export interface FinishPrContext {
   template?: string;
   /** Resolved "What changed" prose. Absent when neither source produced text. */
   narrative?: string;
+  /**
+   * Resolved conventional-commit PR title. Always set — `resolveTitle` falls
+   * back to `feat: <feature>` when the narrative node produced nothing usable.
+   */
+  title: string;
   rounds: FinishRound[];
   run: {
     durationMs?: number;
@@ -202,7 +211,7 @@ async function loadTemplate(workdir: string, forge: Forge | undefined): Promise<
 
 export async function loadFinishPrContext(
   input: FinishInput,
-  args: { base: string; gatesRan: string[]; forge?: Forge; specPath?: string; narrative?: string },
+  args: { base: string; gatesRan: string[]; forge?: Forge; specPath?: string; narrative?: string; title?: string },
 ): Promise<FinishPrContext> {
   const inputPrdPath = input.prdPath || "prd.json";
   const prdPath = isAbsolute(inputPrdPath) ? inputPrdPath : join(input.workdir, inputPrdPath);
@@ -236,6 +245,7 @@ export async function loadFinishPrContext(
     artifactSummary: stat.artifactSummary,
     template,
     narrative: resolveNarrative(args.narrative, specSummary),
+    title: resolveTitle(args.title, input.feature),
     run: {
       durationMs: status?.durationMs,
       storiesPassed: status?.progress?.passed,
@@ -245,12 +255,18 @@ export async function loadFinishPrContext(
 }
 
 /**
- * Conventional-commit title matching `buildTitle` in
- * `src/plugins/builtin/auto-pr/pr-body.ts`, so finish-opened and
- * auto-PR-opened PRs read the same in a list view.
+ * The PR title: the narrative node's conventional-commit subject when it
+ * produced one, else `feat: <feature>`.
+ *
+ * That fallback is what this returned unconditionally, and is still what
+ * `buildTitle` in `src/plugins/builtin/auto-pr/pr-body.ts` opens with — so a
+ * finish run that reaches `open_pr` before the narrative node has spoken still
+ * reads identically to an auto-PR-opened one in a list view. The two diverge
+ * only once there is something better to say: `feat: schema-drift-gate` names
+ * the run, not the change.
  */
 export function buildFinishTitle(ctx: FinishPrContext): string {
-  return `feat: ${ctx.feature}`;
+  return ctx.title;
 }
 
 /**

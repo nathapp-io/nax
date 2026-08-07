@@ -9,6 +9,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { _prBodyDeps, buildFinishBody, buildFinishTitle, loadFinishPrContext } from "@flows/nax-finish/steps/pr-body";
 import type { FinishPrContext, FinishPrStory } from "@flows/nax-finish/steps/pr-body";
+import { resolveTitle } from "@flows/nax-finish/pr-title";
 import type { Finding, FinishRound } from "@flows/nax-finish/types";
 
 const story = (over: Partial<FinishPrStory> = {}): FinishPrStory => ({
@@ -44,17 +45,22 @@ const baseCtx = (over: Partial<FinishPrContext> = {}): FinishPrContext => ({
   gatesRan: [],
   rounds: [],
   run: {},
+  title: "feat: auto-pr-plugin",
   ...over,
 });
 
 describe("buildFinishTitle (US-002 AC1)", () => {
-  test("returns 'feat: <feature>' for the supplied feature", () => {
-    expect(buildFinishTitle(baseCtx({ feature: "auto-pr-plugin" }))).toBe("feat: auto-pr-plugin");
+  test("renders the resolved conventional-commit title", () => {
+    const ctx = baseCtx({ feature: "schema-drift-gate", title: "fix: make the Alembic drift gate able to fail" });
+    expect(buildFinishTitle(ctx)).toBe("fix: make the Alembic drift gate able to fail");
   });
 
-  test("matches the buildTitle format used by the auto-PR plugin", () => {
-    // Identical title shape so finish-opened and auto-PR-opened PRs read the same.
-    expect(buildFinishTitle(baseCtx({ feature: "pipeline-run-outcome" }))).toBe("feat: pipeline-run-outcome");
+  test("renders the 'feat: <feature>' fallback that resolveTitle supplies", () => {
+    // The floor is still the auto-PR plugin's shape, so a finish run whose
+    // narrative node never spoke reads the same as an auto-PR-opened one.
+    expect(buildFinishTitle(baseCtx({ title: resolveTitle(undefined, "pipeline-run-outcome") }))).toBe(
+      "feat: pipeline-run-outcome",
+    );
   });
 });
 

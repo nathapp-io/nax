@@ -9,7 +9,7 @@
  * Every failure is warned and swallowed for the same reason — a throw would
  * fail a flow whose real work already succeeded.
  */
-import { gateOutputs, inputOf, loadCtxOf, narrativeOf } from "../flow-ctx";
+import { gateOutputs, inputOf, loadCtxOf, narrativeOf, prTitleOf } from "../flow-ctx";
 import { detectForge } from "./forge";
 import { updatePrBody } from "./pr";
 import { _prBodyDeps, buildFinishBody, buildFinishTitle, loadFinishPrContext } from "./pr-body";
@@ -19,9 +19,11 @@ export async function amendPrBodyNode(ctx: {
   outputs: unknown;
 }): Promise<{ route: "done"; amended: boolean }> {
   const narrative = narrativeOf(ctx);
+  const title = prTitleOf(ctx);
   // Nothing to add: the body already in place is correct, and rewriting it
-  // identically would spend a forge call to change nothing.
-  if (!narrative) return { route: "done", amended: false };
+  // identically would spend a forge call to change nothing. A title alone is
+  // still worth the call — it is the part a reviewer reads first.
+  if (!narrative && !title) return { route: "done", amended: false };
 
   const i = inputOf(ctx);
   const loadCtx = loadCtxOf(ctx);
@@ -33,6 +35,7 @@ export async function amendPrBodyNode(ctx: {
       forge,
       specPath: loadCtx.specPath,
       narrative,
+      title,
     });
     await updatePrBody(forge, i.workdir, i.branch, buildFinishTitle(prCtx), buildFinishBody(prCtx));
     return { route: "done", amended: true };

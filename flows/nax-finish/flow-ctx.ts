@@ -54,10 +54,28 @@ export function loadCtxOf(ctx: OutputsCtx): LoadCtxOutput {
  * Absent when the node was skipped by config, died, or produced only
  * whitespace — `amend_body` treats all three identically, so there is one
  * branch downstream rather than three.
+ *
+ * Accepts the bare string the node used to return as well as the
+ * `{ narrative, title }` it returns now: a flow resumed from a run recorded
+ * before the title landed replays the old shape from its journal.
  */
 export function narrativeOf(ctx: OutputsCtx): string | undefined {
   const out = (ctx.outputs as Record<string, unknown>).narrative;
-  return typeof out === "string" && out.trim().length > 0 ? out : undefined;
+  const prose = typeof out === "string" ? out : (out as { narrative?: unknown } | undefined)?.narrative;
+  return typeof prose === "string" && prose.trim().length > 0 ? prose : undefined;
+}
+
+/**
+ * The narrative node's parsed PR title, already sanitised by `parseTitle`.
+ *
+ * Absent whenever the node is — `resolveTitle` then falls back to
+ * `feat: <feature>`, which is what shipped before and what auto-PR opens with.
+ */
+export function prTitleOf(ctx: OutputsCtx): string | undefined {
+  const out = (ctx.outputs as Record<string, unknown>).narrative;
+  if (typeof out !== "object" || out === null) return undefined;
+  const title = (out as { title?: unknown }).title;
+  return typeof title === "string" && title.trim().length > 0 ? title : undefined;
 }
 
 export function gateOutputs(ctx: OutputsCtx): { failing?: string[]; ran?: string[] } {

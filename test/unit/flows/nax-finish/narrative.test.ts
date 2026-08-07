@@ -11,6 +11,7 @@ import {
   NARRATIVE_MAX_CHARS,
   buildNarrativePrompt,
   parseNarrative,
+  parseNarrativeNode,
   readSpecSummary,
   resolveNarrative,
 } from "@flows/nax-finish/narrative";
@@ -175,5 +176,47 @@ describe("buildNarrativePrompt", () => {
     const prompt = buildNarrativePrompt({ base: "main" });
     expect(prompt).toContain("<narrative>");
     expect(prompt).toContain("</narrative>");
+  });
+
+  test("asks for a conventional-commit title in its own sentinel", () => {
+    const prompt = buildNarrativePrompt({ base: "main" });
+    expect(prompt).toContain("<title>");
+    expect(prompt).toContain("</title>");
+    expect(prompt).toContain("conventional-commit");
+  });
+});
+
+describe("parseNarrativeNode", () => {
+  test("splits a well-formed reply into title and prose", () => {
+    const reply = "<title>fix: repair the gate</title>\n<narrative>Adds a detector.</narrative>";
+    expect(parseNarrativeNode(reply)).toEqual({ title: "fix: repair the gate", narrative: "Adds a detector." });
+  });
+
+  test("keeps the title block out of the prose when the narrative sentinel is missing", () => {
+    // Tier 2: without this the `<title>` block would be rendered as part of
+    // the "What changed" section.
+    const out = parseNarrativeNode("<title>fix: repair the gate</title>\n\nAdds a detector.");
+    expect(out.title).toBe("fix: repair the gate");
+    expect(out.narrative).toBe("Adds a detector.");
+    expect(out.narrative).not.toContain("<title>");
+  });
+
+  test("returns prose with no title when the model omitted the title block", () => {
+    expect(parseNarrativeNode("<narrative>Adds a detector.</narrative>")).toEqual({
+      title: undefined,
+      narrative: "Adds a detector.",
+    });
+  });
+
+  test("returns a title with empty prose rather than throwing", () => {
+    // A title alone is still worth amending the PR for.
+    const out = parseNarrativeNode("<title>fix: repair the gate</title>");
+    expect(out.title).toBe("fix: repair the gate");
+    expect(out.narrative).toBe("");
+  });
+
+  test("never throws on junk", () => {
+    expect(parseNarrativeNode("")).toEqual({ title: undefined, narrative: "" });
+    expect(parseNarrativeNode(undefined as unknown as string)).toEqual({ title: undefined, narrative: "" });
   });
 });
