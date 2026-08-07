@@ -212,10 +212,9 @@ async function nrRun(
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("US-005b AC1: nbf runRectification does not record state in storyFixHistory", () => {
-  test("AC1: runRectification with initialFindings (nbf path) leaves storyFixHistory empty for the story", async () => {
+  test("AC1: runRectification with initialFindings (nbf path) records no state in storyFixHistory for the story", async () => {
     const runtime = track(makeBudgetRuntime(true));
     const storyId = "US-005b-1-nbf";
-    const key = storyFixKey(storyId, "fast");
 
     await nrRun(runtime, {
       storyId,
@@ -223,7 +222,16 @@ describe("US-005b AC1: nbf runRectification does not record state in storyFixHis
       overrides: { initialFindings: [GATE_FINDING] },
     });
 
-    expect(runtime.storyFixHistory.has(key)).toBe(false);
+    // AC1 requires NO state recorded for the story — not just an absence
+    // under the specific (storyId, "fast") key. A faulty non-blocking path
+    // could still record state for the story under another tier or the
+    // default key while a single-key assertion passed. Scan every key the
+    // storyFixHistory could plausibly hold for this storyId.
+    const keysForStory = Array.from(runtime.storyFixHistory.keys()).filter((k) =>
+      k.startsWith(`${storyId}::`),
+    );
+    expect(keysForStory).toEqual([]);
+    expect(runtime.storyFixHistory.size).toBe(0);
   });
 
   test("AC1 boundary: a blocking runRectification (no initialFindings) DOES record state for the same story", async () => {
