@@ -152,6 +152,14 @@ from "the cycle ran on to `maxAttemptsTotal`" is therefore **how many times the 
 ran**, which is what AC-2.9 and AC-2.10 assert. `runRectification` already has a driving test
 harness in `test/unit/execution/rectification-overrides.test.ts`.
 
+⚠️ **Both entry guards must be satisfied by the AC-2.9/AC-2.10 fixtures.**
+`runRectification` returns `{}` immediately unless *both* hold
+(`src/execution/story-orchestrator/rectification.ts:218-224`): `state.rectification` is truthy
+(set only when `execution.rectification.enabled === true`, `plan-inputs.ts:422`), **and**
+`collectRectificationPhases(state)` returns at least one phase. A fixture missing either yields
+zero fix-op dispatches rather than the asserted count, and the AC would fail for a reason it does
+not name.
+
 ## Out of Scope
 
 - The R1 story-scoped attempt budget and decline ledger (the fix cycle's budget remains per-cycle) is deferred to a separate arc.
@@ -268,15 +276,17 @@ it around `withIncreasingFailuresBail` in `runRectification`.
   returns `null`, so an empty before-set is treated as progress rather than as a stall.
 - **AC-2.8** `[unit]` The non-null reason returned for three no-progress iterations carrying two
   persisting findings reports both the iteration count `3` and the persisting-finding count `2`.
-- **AC-2.9** `[integration]` Driving `runRectification` with rectification config
-  `abortOnNoProgress` true, `consecutiveNoProgressToBail` `3` and `maxAttemptsTotal` `12`, where the
+- **AC-2.9** `[integration]` Driving `runRectification` with rectification config `enabled` true,
+  `abortOnNoProgress` true, `consecutiveNoProgressToBail` `3` and `maxAttemptsTotal` `12`, and with
+  at least one rectification validation phase collected so the cycle actually runs, where the
   cycle's validation returns the same two findings on every call, returns a `RectificationResult`
   whose `rectificationExhausted` is `true`, having dispatched the rectification strategy's fix
   operation exactly `3` times.
-- **AC-2.10** `[integration]` Driving `runRectification` with the same always-identical validation
-  findings and `maxAttemptsTotal` `12` but `abortOnNoProgress` set to `false` dispatches the
-  rectification strategy's fix operation more than `3` times, confirming the new bail is genuinely
-  gated by its flag on the production path.
+- **AC-2.10** `[integration]` Driving `runRectification` with the same `enabled`-true config, at
+  least one rectification validation phase collected, the same always-identical validation findings
+  and `maxAttemptsTotal` `12`, but `abortOnNoProgress` set to `false`, dispatches the rectification
+  strategy's fix operation more than `3` times, confirming the new bail is genuinely gated by its
+  flag on the production path.
 - **AC-2.11** `[unit]` For three trailing iterations that are each simultaneously no-progress and
   count-increasing, a strategy wrapped by `withNoProgressBail` around `withIncreasingFailuresBail`
   (both enabled, both at threshold 3) returns the no-progress reason rather than the count-increase
