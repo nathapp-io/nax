@@ -170,24 +170,46 @@ Add `abortOnNoProgress` and `consecutiveNoProgressToBail` to the rectification c
 declaration sites, and carry them to `RectificationPhaseOptions`. No behaviour change on its own.
 *Depends on:* nothing.
 
-### Modifies
-
-- **US-001** `src/config/schemas-execution.ts`, `src/config/schemas.ts`, `src/config/runtime-types.ts`, `src/cli/config-descriptions.ts`, `src/execution/plan-inputs.ts`, `src/execution/story-orchestrator/types.ts`
-- **US-002** `src/execution/story-orchestrator/no-progress-bail.ts`, `src/execution/story-orchestrator/rectification.ts`, `src/execution/index.ts`
-
-**Context Files (US-001):** `src/config/schemas-execution.ts`, `src/config/schemas.ts`,
-`src/config/runtime-types.ts`, `src/execution/plan-inputs.ts`,
-`src/execution/story-orchestrator/types.ts`
-
 **US-002 — The no-progress bail predicate, wired into the rectification cycle**
 Create `no-progress-bail.ts`, export `withNoProgressBail` from the `@/execution` barrel, and compose
 it around `withIncreasingFailuresBail` in `runRectification`.
 *Depends on:* US-001 (reads the config fields it threads).
 
-**Context Files (US-002):** `src/execution/story-orchestrator/run-phase.ts`,
-`src/execution/story-orchestrator/rectification.ts`, `src/findings/types.ts`,
-`src/findings/cycle-types.ts`, `src/execution/index.ts`
 **Creates (US-002):** `src/execution/story-orchestrator/no-progress-bail.ts`
+
+### Modifies
+
+**US-001**
+
+- `src/config/schemas-execution.ts` — declare both fields with their bounds
+- `src/config/schemas.ts` — add both keys to the `ExecutionConfigSchema.default(...)` literal
+- `src/config/runtime-types.ts` — add both fields to the rectification interface
+- `src/cli/config-descriptions.ts` — one description per new key
+- `src/execution/plan-inputs.ts` — carry both onto `RectificationPhaseOptions`
+- `src/execution/story-orchestrator/types.ts` — declare both option fields
+
+**US-002**
+
+- `src/execution/story-orchestrator/rectification.ts` — compose the new wrapper around the existing one
+- `src/execution/index.ts` — export `withNoProgressBail` from the barrel
+
+### Context Files
+
+**US-001**
+
+- `src/config/schemas-execution.ts` — the sibling `abortOnIncreasingFailures` declaration to mirror
+- `src/config/schemas.ts` — the hand-maintained execution default literal
+- `src/config/runtime-types.ts` — the rectification config interface
+- `src/execution/plan-inputs.ts` — where `RectificationPhaseOptions` is built
+- `src/execution/story-orchestrator/types.ts` — the options interface
+
+**US-002**
+
+- `src/execution/story-orchestrator/run-phase.ts` — `withIncreasingFailuresBail`, the wrapper to mirror
+- `src/execution/story-orchestrator/rectification.ts` — the composition site at line 288
+- `src/findings/types.ts` — `findingKey`
+- `src/findings/cycle-types.ts` — the `bailWhen` and `Iteration` contracts
+- `src/execution/index.ts` — the barrel
 
 ### Seams
 
