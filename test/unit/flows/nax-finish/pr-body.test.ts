@@ -6,8 +6,8 @@
  * title cannot break its row, and mirrors `buildTitle` so finish-opened and
  * auto-PR-opened PRs read the same.
  */
-import { describe, expect, test } from "bun:test";
-import { buildFinishBody, buildFinishTitle } from "@flows/nax-finish/steps/pr-body";
+import { afterEach, describe, expect, test } from "bun:test";
+import { _prBodyDeps, buildFinishBody, buildFinishTitle, loadFinishPrContext } from "@flows/nax-finish/steps/pr-body";
 import type { FinishPrContext, FinishPrStory } from "@flows/nax-finish/steps/pr-body";
 import type { Finding, FinishRound } from "@flows/nax-finish/types";
 
@@ -105,6 +105,16 @@ describe("buildFinishBody — Verification block (US-002 AC4-AC7)", () => {
     const stat = " src/foo.ts | 12 ++++--\n 1 file changed, 9 insertions(+), 3 deletions(-)";
     const body = buildFinishBody(baseCtx({ diffstat: stat }));
     expect(body).toContain(stat);
+  });
+
+  test("accounts for the held-out nax artifacts so the body reconciles with the real diff", () => {
+    const body = buildFinishBody(baseCtx({ artifactSummary: "5 files changed, 1248 insertions(+)" }));
+    expect(body).toContain("Excluded from diffstat — nax run artifacts: 5 files changed, 1248 insertions(+)");
+  });
+
+  test("renders no exclusion line when the branch touched no artifacts", () => {
+    const body = buildFinishBody(baseCtx({ diffstat: " src/foo.ts | 1 +" }));
+    expect(body).not.toContain("Excluded from diffstat");
   });
 });
 
@@ -264,5 +274,78 @@ describe("buildFinishBody — What changed section (#1477)", () => {
   test("treats a whitespace-only narrative as absent", () => {
     const body = buildFinishBody(baseCtx({ stories: [story()], narrative: "  \n " }));
     expect(body).not.toContain("## What changed");
+  });
+});
+
+describe("loadFinishPrContext — diffstat scope", () => {
+  const origRun = _prBodyDeps.run;
+  const origReadText = _prBodyDeps.readText;
+  afterEach(() => {
+    _prBodyDeps.run = origRun;
+    _prBodyDeps.readText = origReadText;
+  });
+
+  const INPUT = { feature: "f", workdir: "/repo", branch: "feat/f", prdPath: "p.json", escalateTelegram: false };
+
+  /** Capture every argv the loader issues, answering each `git diff` distinctly. */
+  const captureRun = (stdoutFor: (cmd: string[]) => string = () => "") => {
+    const calls: string[][] = [];
+    _prBodyDeps.run = async (cmd) => {
+      calls.push(cmd);
+      return { exitCode: 0, stdout: stdoutFor(cmd), stderr: "" };
+    };
+    return calls;
+  };
+
+  test("excludes nax artifacts at any depth, not just the repo root", async () => {
+    // The `**/` prefix and the `glob` magic word are both load-bearing: nax
+    // writes to `.nax/` AND `<pkg>/.nax/`, and a root-anchored `:!.nax/**`
+    // silently keeps the per-package copy — the largest file in the diff on
+    // the run that motivated this.
+    const calls = captureRun();
+    _prBodyDeps.readText = async () => null;
+    await loadFinishPrContext(INPUT, { base: "origin/main", gatesRan: [] });
+
+    const stat = calls.find((c) => c.includes("--stat"));
+    expect(stat).toBeDefined();
+    expect(stat).toContain(":(glob,exclude)**/.nax/**");
+  });
+
+  test("reports the excluded artifacts as a shortstat rather than dropping them", async () => {
+    const calls = captureRun((cmd) => (cmd.includes("--shortstat") ? " 5 files changed, 1248 insertions(+)\n" : " a.ts | 1 +\n"));
+    _prBodyDeps.readText = async () => null;
+    const ctx = await loadFinishPrContext(INPUT, { base: "origin/main", gatesRan: [] });
+
+    const short = calls.find((c) => c.includes("--shortstat"));
+    expect(short).toContain(":(glob)**/.nax/**");
+    expect(ctx.artifactSummary).toBe("5 files changed, 1248 insertions(+)");
+    expect(ctx.diffstat).toBe(" a.ts | 1 +\n");
+  });
+
+  test("omits the artifact summary when the branch touched none", async () => {
+    captureRun((cmd) => (cmd.includes("--shortstat") ? "" : " a.ts | 1 +\n"));
+    _prBodyDeps.readText = async () => null;
+    const ctx = await loadFinishPrContext(INPUT, { base: "origin/main", gatesRan: [] });
+    expect(ctx.artifactSummary).toBeUndefined();
+  });
+
+  test("issues no git diff at all when the base is unresolved", async () => {
+    const calls = captureRun();
+    _prBodyDeps.readText = async () => null;
+    const ctx = await loadFinishPrContext(INPUT, { base: "", gatesRan: [] });
+    expect(calls.filter((c) => c[1] === "diff")).toEqual([]);
+    expect(ctx.diffstat).toBeUndefined();
+    expect(ctx.artifactSummary).toBeUndefined();
+  });
+
+  test("survives a git failure without losing the rest of the context", async () => {
+    _prBodyDeps.run = async () => {
+      throw new Error("git exploded");
+    };
+    _prBodyDeps.readText = async () => null;
+    const ctx = await loadFinishPrContext(INPUT, { base: "origin/main", gatesRan: ["lint"] });
+    expect(ctx.diffstat).toBeUndefined();
+    expect(ctx.artifactSummary).toBeUndefined();
+    expect(ctx.gatesRan).toEqual(["lint"]);
   });
 });

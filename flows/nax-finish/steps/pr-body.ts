@@ -46,6 +46,11 @@ export interface FinishPrContext {
   regression?: string;
   gatesRan: string[];
   diffstat?: string;
+  /**
+   * `--shortstat` for the nax artifacts held out of `diffstat`. Absent when the
+   * branch touched none, so a repo that gitignores them renders nothing.
+   */
+  artifactSummary?: string;
   /** Repository PR/MR template, verbatim. Absent when none resolves. */
   template?: string;
   /** Resolved "What changed" prose. Absent when neither source produced text. */
@@ -121,7 +126,37 @@ function storiesFrom(prd: PrdArtifact | undefined): FinishPrStory[] {
 }
 
 /**
- * Run `git diff --stat <base>...HEAD` and return its stdout on success.
+ * Pathspec matching nax's own run artifacts, at any depth.
+ *
+ * `**` and the `glob` magic word are both load-bearing. nax writes artifacts
+ * to a repo-root `.nax/` *and* to a per-package `<pkg>/.nax/` — a root-anchored
+ * `:!.nax/**` silently keeps the per-package copy, which is routinely the
+ * largest file in the diff (587 of 2039 insertions on the run that motivated
+ * this). Without `glob`, git's default wildmatch lets `*` cross `/` and the
+ * two forms stop being distinguishable.
+ */
+const NAX_ARTIFACT_PATHSPEC = "**/.nax/**";
+
+/** Run `git diff <...args>` under `workdir`, or `undefined` on any non-happy path. */
+async function runGitDiff(workdir: string, args: string[]): Promise<string | undefined> {
+  try {
+    const res = await _prBodyDeps.run(["git", "diff", ...args], { cwd: workdir });
+    if (res.exitCode !== 0) return undefined;
+    return res.stdout;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Diffstat of the branch, excluding nax's own artifacts.
+ *
+ * The artifacts (`spec.md`, `prd.json`, the generated acceptance test) are
+ * committed and real, but they are the run's exhaust rather than the change
+ * under review, and they dominate the totals — quoting them in the headline
+ * advertises a 2039-line change where 791 lines are reviewable code.
+ * `artifactSummary` keeps them accounted for rather than silently dropped, so
+ * the body still reconciles against `gh pr diff`.
  *
  * Fail-open on every non-happy path — a non-zero exit (no commits, divergent
  * branch, base missing), a rejected run promise (forks too slow to start), or
@@ -129,18 +164,18 @@ function storiesFrom(prd: PrdArtifact | undefined): FinishPrStory[] {
  * optional, and a routine empty-branch finish must not lose `open_pr` to a
  * throw that the body can simply skip.
  */
-async function runDiffstat(workdir: string, base: string): Promise<string | undefined> {
+async function runDiffstat(workdir: string, base: string): Promise<{ diffstat?: string; artifactSummary?: string }> {
   // An empty `base` would interpolate to `...HEAD`, which git resolves as
   // `HEAD...HEAD` — exit 0, empty stdout — masking the missing-base case as
   // "no changes" instead of skipping explicitly.
-  if (!base) return undefined;
-  try {
-    const res = await _prBodyDeps.run(["git", "diff", "--stat", `${base}...HEAD`], { cwd: workdir });
-    if (res.exitCode !== 0) return undefined;
-    return res.stdout;
-  } catch {
-    return undefined;
-  }
+  if (!base) return {};
+  const range = `${base}...HEAD`;
+  const [diffstat, artifacts] = await Promise.all([
+    runGitDiff(workdir, ["--stat", range, "--", `:(glob,exclude)${NAX_ARTIFACT_PATHSPEC}`]),
+    runGitDiff(workdir, ["--shortstat", range, "--", `:(glob)${NAX_ARTIFACT_PATHSPEC}`]),
+  ]);
+  const summary = artifacts?.trim();
+  return { diffstat, artifactSummary: summary ? summary : undefined };
 }
 
 /**
@@ -168,7 +203,7 @@ export async function loadFinishPrContext(
   // [US-004] The audit trail (`rounds`), the diffstat, and the spec summary
   // are independent of the PRD/status reads — fetching them in parallel keeps
   // the loader's wall clock at max(readRounds, readJson×2, diffstat, spec).
-  const [prd, status, rounds, diffstat, template, specSummary] = (await Promise.all([
+  const [prd, status, rounds, stat, template, specSummary] = (await Promise.all([
     readJson(prdPath),
     readJson(join(dirname(prdPath), "status.json")),
     readRounds(input),
@@ -179,7 +214,7 @@ export async function loadFinishPrContext(
     PrdArtifact | undefined,
     StatusArtifact | undefined,
     FinishRound[],
-    string | undefined,
+    { diffstat?: string; artifactSummary?: string },
     string | undefined,
     string | null,
   ];
@@ -191,7 +226,8 @@ export async function loadFinishPrContext(
     regression: status?.postRun?.regression?.status,
     gatesRan: args.gatesRan,
     rounds,
-    diffstat,
+    diffstat: stat.diffstat,
+    artifactSummary: stat.artifactSummary,
     template,
     narrative: resolveNarrative(args.narrative, specSummary),
     run: {
@@ -252,12 +288,19 @@ function buildVerificationSection(
   regression: string | undefined,
   gatesRan: string[],
   diffstat: string | undefined,
+  artifactSummary: string | undefined,
 ): string | null {
   const lines: string[] = ["## Verification"];
   if (acceptance !== undefined) lines.push(`- Acceptance: ${acceptance}`);
   if (regression !== undefined) lines.push(`- Regression: ${regression}`);
   if (gatesRan.length > 0) lines.push(`- Gates: ${gatesRan.join(", ")}`);
   if (diffstat !== undefined && diffstat.length > 0) lines.push(`- Diffstat:\n\n\`\`\`\n${diffstat}\n\`\`\``);
+  // Stated even though the files are excluded above: a reviewer who diffs the
+  // branch themselves sees more than the diffstat quotes, and an unexplained
+  // mismatch reads as a stale body.
+  if (artifactSummary !== undefined && artifactSummary.length > 0) {
+    lines.push(`- Excluded from diffstat — nax run artifacts: ${artifactSummary}`);
+  }
   if (lines.length === 1) return null;
   return lines.join("\n");
 }
@@ -325,7 +368,13 @@ export function buildFinishBody(ctx: FinishPrContext): string {
 
   if (ctx.stories.length > 0) sections.push(buildStoriesSection(ctx.stories));
 
-  const verification = buildVerificationSection(ctx.acceptance, ctx.regression, ctx.gatesRan, ctx.diffstat);
+  const verification = buildVerificationSection(
+    ctx.acceptance,
+    ctx.regression,
+    ctx.gatesRan,
+    ctx.diffstat,
+    ctx.artifactSummary,
+  );
   if (verification !== null) sections.push(verification);
 
   const roundsSection = buildRoundsSection(ctx.rounds);
