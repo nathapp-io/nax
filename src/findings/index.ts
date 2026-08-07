@@ -55,3 +55,11 @@ export { recordIteration } from "./cycle-iteration-log";
 export type { RecordIterationContext, RecordIterationInput } from "./cycle-iteration-log";
 
 export { isNaxBailWrapper, markNaxBailWrapper } from "./bail-marker";
+
+export type { StoryFixHistory, StoryFixState } from "./story-fix-history";
+export {
+  appendStoryFixIterations,
+  createStoryFixHistory,
+  getStoryFixState,
+  storyFixKey,
+} from "./story-fix-history";

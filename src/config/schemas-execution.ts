@@ -74,6 +74,10 @@ const RectificationConfigSchema = z.object({
    * iterations cannot be measured until post-#1496 telemetry accrues. (default: 3) */
   consecutiveNoProgressToBail: z.number().int().min(1).max(10).default(3),
   escalateOnExhaustion: z.boolean().optional().default(true),
+  /** Bound the rectification budget to one (story, tier) pair so a tier escalation
+   * yields a fresh budget — a more capable model gets real attempts instead of
+   * inheriting the prior tier's exhausted state. (default: true) */
+  storyScopedFixBudget: z.boolean().default(true),
   // Per-strategy attempt counters — reset when a new strategy runs.
   // Under maxAttemptsPerStrategy=3: rethink on attempt 2, urgency on attempt 3 (final).
   rethinkAtAttempt: z.number().int().min(1).default(2),
