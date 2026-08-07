@@ -1,7 +1,8 @@
 import { NaxError } from "@/errors";
+import { getSafeLogger } from "@/logger";
 import { validatePlanOutput } from "@/prd";
 import type { PRD } from "@/prd/types";
-import { finalizePrdRouting } from "./finalize-routing";
+import { persistPrd } from "./persist-prd";
 import type { PlanModeContext } from "./types";
 
 export async function writeOrRecoverPrd(ctx: PlanModeContext, prd: PRD | null, err?: unknown): Promise<string> {
@@ -27,24 +28,12 @@ export async function writeOrRecoverPrd(ctx: PlanModeContext, prd: PRD | null, e
 
   if (prd !== null) {
     if (Array.isArray((prd as { userStories?: unknown }).userStories)) {
-      const finalized = finalizePrdRouting(
-        { ...prd, project: ctx.projectName },
-        ctx.config.routing?.agents,
-        ctx.profileName,
-      );
-      await ctx.deps.writeFile(ctx.outputPath, JSON.stringify(finalized, null, 2));
-      return ctx.outputPath;
+      return persistPrd(ctx, prd);
     }
 
     const normalizedPrd = tryExtractPrd(prd);
     if (normalizedPrd !== null) {
-      const finalized = finalizePrdRouting(
-        { ...normalizedPrd, project: ctx.projectName },
-        ctx.config.routing?.agents,
-        ctx.profileName,
-      );
-      await ctx.deps.writeFile(ctx.outputPath, JSON.stringify(finalized, null, 2));
-      return ctx.outputPath;
+      return persistPrd(ctx, normalizedPrd);
     }
   }
 
@@ -65,13 +54,15 @@ export async function writeOrRecoverPrd(ctx: PlanModeContext, prd: PRD | null, e
       }
     }
     recoveredPrd = recoveredPrd ?? validatePlanOutput(rawContent, ctx.options.feature, ctx.branchName);
-    const finalized = finalizePrdRouting(
-      { ...recoveredPrd, project: ctx.projectName },
-      ctx.config.routing?.agents,
-      ctx.profileName,
-    );
-    await ctx.deps.writeFile(ctx.outputPath, JSON.stringify(finalized, null, 2));
-    return ctx.outputPath;
+    // Recovery is deliberate — `nax plan` produces a usable PRD rather than
+    // failing — but it is a degraded result, so say so. Silence here is what
+    // made #1494 take hours to attribute: exit 0, no console line, no JSONL record.
+    getSafeLogger()?.warn("plan", "PRD recovered from disk after a plan failure — result is degraded", {
+      featureName: ctx.options.feature,
+      outputPath: ctx.outputPath,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return persistPrd(ctx, recoveredPrd);
   } catch {
     throw err;
   }

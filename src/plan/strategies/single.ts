@@ -1,8 +1,9 @@
+import { getSafeLogger } from "@/logger";
 import { callOp, planInteractiveOp } from "@/operations";
 import type { PlanInteractiveInput } from "@/operations";
 import { validatePlanOutput } from "@/prd";
 import { assertIsValidPrd } from "./assert";
-import { finalizePrdRouting } from "./finalize-routing";
+import { persistPrd } from "./persist-prd";
 import type { IPlanStrategy, PlanModeContext } from "./types";
 
 export const _singlePlanDeps = {
@@ -39,24 +40,20 @@ export class SinglePlanStrategy implements IPlanStrategy {
         } satisfies PlanInteractiveInput,
       );
       assertIsValidPrd(prd);
-      const finalized = finalizePrdRouting(
-        { ...prd, project: ctx.projectName },
-        ctx.config.routing?.agents,
-        ctx.profileName,
-      );
-      await ctx.deps.writeFile(ctx.outputPath, JSON.stringify(finalized, null, 2));
-      return ctx.outputPath;
+      return await persistPrd(ctx, prd);
     } catch (err) {
       if (ctx.deps.existsSync(ctx.outputPath)) {
         const rawContent = await ctx.deps.readFile(ctx.outputPath);
         const recoveredPrd = validatePlanOutput(rawContent, ctx.options.feature, ctx.branchName);
-        const finalizedRecovered = finalizePrdRouting(
-          { ...recoveredPrd, project: ctx.projectName },
-          ctx.config.routing?.agents,
-          ctx.profileName,
-        );
-        await ctx.deps.writeFile(ctx.outputPath, JSON.stringify(finalizedRecovered, null, 2));
-        return ctx.outputPath;
+        // Same degraded-result contract as writeOrRecoverPrd — single hand-rolls
+        // its own recovery rather than sharing that helper, which is exactly how
+        // it escaped #1494's original scope table.
+        getSafeLogger()?.warn("plan", "PRD recovered from disk after a plan failure — result is degraded", {
+          featureName: ctx.options.feature,
+          outputPath: ctx.outputPath,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return await persistPrd(ctx, recoveredPrd);
       }
       throw err;
     } finally {

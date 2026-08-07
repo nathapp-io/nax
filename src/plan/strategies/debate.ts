@@ -1,9 +1,8 @@
 import type { DebateStageConfig } from "@/debate/types";
 import { NaxError } from "@/errors";
-import { applyPlanFidelity, callOp, planInteractiveOp } from "@/operations";
+import { callOp, planInteractiveOp } from "@/operations";
 import type { CallContext, PlanInteractiveInput } from "@/operations";
 import { validatePlanOutput } from "@/prd";
-import type { PRD } from "@/prd/types";
 import { PlanPromptBuilder } from "@/prompts";
 import { assertIsValidPrd } from "./assert";
 import { buildPlanComposition } from "./debate-composition";
@@ -82,10 +81,9 @@ export class DebatePlanStrategy implements IPlanStrategy {
         const prd = validatePlanOutput(debateResult.output, ctx.options.feature, ctx.branchName);
         // Debate synthesis merges debater candidates and can drop a feature-level
         // exclusion. Repairable rather than merely reportable — an exclusion has
-        // exactly one home, so restore it. spec-review --prd remains the gate.
-        const scoped = applyPlanFidelity(prd, ctx.specContent, ctx.options.feature);
-        const withProject = { ...scoped, project: ctx.projectName } satisfies PRD;
-        return _debatePlanDeps.writeOrRecoverPrd(ctx, withProject);
+        // exactly one home, and persistPrd restores it. spec-review --prd remains
+        // the gate.
+        return _debatePlanDeps.writeOrRecoverPrd(ctx, prd);
       }
 
       const prd = await callOp(
@@ -107,8 +105,7 @@ export class DebatePlanStrategy implements IPlanStrategy {
         } satisfies PlanInteractiveInput,
       );
       assertIsValidPrd(prd);
-      const withProject = { ...prd, project: ctx.projectName } satisfies PRD;
-      return _debatePlanDeps.writeOrRecoverPrd(ctx, withProject);
+      return _debatePlanDeps.writeOrRecoverPrd(ctx, prd);
     } catch (err) {
       return _debatePlanDeps.writeOrRecoverPrd(ctx, null, err);
     } finally {

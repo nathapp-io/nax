@@ -9,3 +9,5 @@ export { DebatePlanStrategy, _debatePlanDeps } from "./debate";
 export { RefinePlanStrategy, _refinePlanDeps } from "./refine";
 export { buildPlanComposition } from "./debate-composition";
 export { finalizePrdRouting } from "./finalize-routing";
+export { finalizeAndWritePrd, persistPrd } from "./persist-prd";
+export type { PersistPrdArgs } from "./persist-prd";

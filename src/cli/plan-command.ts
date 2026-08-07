@@ -14,7 +14,7 @@ import { renderManifestSection } from "../debate";
 import { NaxError } from "../errors";
 import { callOp, groundOp, planDraftOp } from "../operations";
 import type { PlanDraftInput } from "../operations";
-import { buildPlanModeContext, createPlanStrategy, finalizePrdRouting } from "../plan/strategies";
+import { buildPlanModeContext, createPlanStrategy, finalizeAndWritePrd } from "../plan/strategies";
 export { assertIsValidPrd, buildPlanComposition } from "../plan/strategies";
 import { buildPackageSummary, buildSourceRootsSection } from "./plan-helpers";
 import { _planDeps, createPlanRuntime } from "./plan-runtime";
@@ -198,15 +198,20 @@ export async function runPlanPipeline(
     });
 
     if (verdict.outcome === "passed") {
-      // Delta C4 + ADR-025: finalizePrdRouting resolves agentProfileId → agent,
-      // stamps origin fields, and records the loader-resolved config profile name
-      // so nax run can detect ladder drift.
-      const prdToWrite = finalizePrdRouting(
-        { ...verdict.prd, project: projectName },
-        config.routing?.agents,
-        config.profile,
-      );
-      await _planDeps.writeFile(outputPath, JSON.stringify(prdToWrite, null, 2));
+      // Delta C4 + ADR-025: finalizeAndWritePrd re-applies the spec→PRD fidelity
+      // repairs, resolves agentProfileId → agent, stamps origin fields, and
+      // records the loader-resolved config profile name so nax run can detect
+      // ladder drift.
+      await finalizeAndWritePrd({
+        prd: verdict.prd,
+        specContent,
+        featureName: options.feature,
+        projectName,
+        agentRouting: config.routing?.agents,
+        profileName: config.profile,
+        outputPath,
+        writeFile: _planDeps.writeFile,
+      });
       logger?.info("plan", "[OK] PRD written via pipeline", { outputPath });
       return outputPath;
     }
