@@ -3,7 +3,7 @@ import { DEFAULT_CONFIG, NaxConfigSchema, pickSelector } from "../../../src/conf
 import {
   StoryOrchestratorBuilder,
   _storyOrchestratorDeps,
-  buildRectificationPhaseOptions,
+  assemblePlanInputsFromCtx,
   withIncreasingFailuresBail,
   withNoProgressBail,
 } from "../../../src/execution";
@@ -49,7 +49,13 @@ describe("AC-4: consecutiveNoProgressToBail === 11 fails validation", () => {
 describe("AC-5: consecutiveNoProgressToBail === 1 parses successfully", () => {
   test("AC-5: NaxConfigSchema.parse does not throw for consecutiveNoProgressToBail: 1", () => {
     expect(() =>
-      NaxConfigSchema.parse({ execution: { rectification: { consecutiveNoProgressToBail: 1 } } }),
+      NaxConfigSchema.parse({
+        ...DEFAULT_CONFIG,
+        execution: {
+          ...DEFAULT_CONFIG.execution,
+          rectification: { ...DEFAULT_CONFIG.execution.rectification, consecutiveNoProgressToBail: 1 },
+        },
+      }),
     ).not.toThrow();
   });
 });
@@ -57,34 +63,88 @@ describe("AC-5: consecutiveNoProgressToBail === 1 parses successfully", () => {
 describe("AC-6: consecutiveNoProgressToBail === 10 parses successfully", () => {
   test("AC-6: NaxConfigSchema.parse does not throw for consecutiveNoProgressToBail: 10", () => {
     expect(() =>
-      NaxConfigSchema.parse({ execution: { rectification: { consecutiveNoProgressToBail: 10 } } }),
+      NaxConfigSchema.parse({
+        ...DEFAULT_CONFIG,
+        execution: {
+          ...DEFAULT_CONFIG.execution,
+          rectification: { ...DEFAULT_CONFIG.execution.rectification, consecutiveNoProgressToBail: 10 },
+        },
+      }),
     ).not.toThrow();
   });
 });
 
-describe("AC-7: buildRectificationPhaseOptions carries abortOnNoProgress from config", () => {
-  test("AC-7: options.abortOnNoProgress === false when config sets it false", () => {
-    const config = {
-      execution: { rectification: { enabled: true, abortOnNoProgress: false, consecutiveNoProgressToBail: 7 } },
-    };
-    const options = buildRectificationPhaseOptions(NaxConfigSchema.parse(config));
-    expect(options.abortOnNoProgress).toBe(false);
+describe("AC-7: assemblePlanInputsFromCtx carries abortOnNoProgress from config into rectification phase options", () => {
+  test("AC-7: options.abortOnNoProgress === false when config sets it false", async () => {
+    const parsed = NaxConfigSchema.parse({
+      ...DEFAULT_CONFIG,
+      execution: {
+        ...DEFAULT_CONFIG.execution,
+        rectification: {
+          ...DEFAULT_CONFIG.execution.rectification,
+          enabled: true,
+          abortOnNoProgress: false,
+          consecutiveNoProgressToBail: 7,
+        },
+      },
+    });
+    const story = makeStory({ id: "US-np-ac7" });
+    const options = (
+      await assemblePlanInputsFromCtx({
+        config: parsed,
+        rootConfig: parsed,
+        story,
+        prompt: "implement prompt",
+        projectDir: "/tmp",
+        workdir: "/tmp",
+        routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+        hooks: { hooks: {} },
+      } as never)
+    ).rectification;
+    expect(options?.abortOnNoProgress).toBe(false);
   });
 });
 
-describe("AC-8: buildRectificationPhaseOptions carries consecutiveNoProgressToBail from config", () => {
-  test("AC-8: options.consecutiveNoProgressToBail === 7 when config sets it 7", () => {
-    const config = {
-      execution: { rectification: { enabled: true, abortOnNoProgress: false, consecutiveNoProgressToBail: 7 } },
-    };
-    const options = buildRectificationPhaseOptions(NaxConfigSchema.parse(config));
-    expect(options.consecutiveNoProgressToBail).toBe(7);
+describe("AC-8: assemblePlanInputsFromCtx carries consecutiveNoProgressToBail from config into rectification phase options", () => {
+  test("AC-8: options.consecutiveNoProgressToBail === 7 when config sets it 7", async () => {
+    const parsed = NaxConfigSchema.parse({
+      ...DEFAULT_CONFIG,
+      execution: {
+        ...DEFAULT_CONFIG.execution,
+        rectification: {
+          ...DEFAULT_CONFIG.execution.rectification,
+          enabled: true,
+          abortOnNoProgress: false,
+          consecutiveNoProgressToBail: 7,
+        },
+      },
+    });
+    const story = makeStory({ id: "US-np-ac8" });
+    const options = (
+      await assemblePlanInputsFromCtx({
+        config: parsed,
+        rootConfig: parsed,
+        story,
+        prompt: "implement prompt",
+        projectDir: "/tmp",
+        workdir: "/tmp",
+        routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+        hooks: { hooks: {} },
+      } as never)
+    ).rectification;
+    expect(options?.consecutiveNoProgressToBail).toBe(7);
   });
 });
 
 describe("AC-9: explicit abortOnNoProgress: false overrides the schema default", () => {
   test("AC-9: NaxConfigSchema.parse({execution:{rectification:{abortOnNoProgress:false}}}) yields false", () => {
-    const result = NaxConfigSchema.parse({ execution: { rectification: { abortOnNoProgress: false } } });
+    const result = NaxConfigSchema.parse({
+      ...DEFAULT_CONFIG,
+      execution: {
+        ...DEFAULT_CONFIG.execution,
+        rectification: { ...DEFAULT_CONFIG.execution.rectification, abortOnNoProgress: false },
+      },
+    });
     expect(result.execution.rectification.abortOnNoProgress).toBe(false);
   });
 });

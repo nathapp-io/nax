@@ -1,1 +1,2 @@
 [2026-08-07T11:55:36.734Z] US-001 — PASSED — Declare and thread the no-progress config fields — Cost: $4.7624
+[2026-08-07T12:22:58.528Z] US-002 — PASSED — Add and wire the identity-keyed no-progress bail — Cost: $1.5964

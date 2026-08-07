@@ -3,7 +3,7 @@
   "feature": "no-progress-bail",
   "branchName": "feat/no-progress-bail",
   "createdAt": "2026-08-07T00:00:00+08:00",
-  "updatedAt": "2026-08-07T11:55:40.269Z",
+  "updatedAt": "2026-08-07T12:22:58.529Z",
   "userStories": [
     {
       "id": "US-001",
@@ -114,8 +114,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
