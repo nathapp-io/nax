@@ -191,8 +191,8 @@ describe("planCommand integration — callOp + planInteractiveOp", () => {
 
     // After migration, planCommand should have called callOp internally
     // Result should be the path to the generated prd.json
-    expect(result).toContain("prd.json");
-    expect(result).toContain("authentication");
+    expect(result.outputPath).toContain("prd.json");
+    expect(result.outputPath).toContain("authentication");
   });
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -273,7 +273,7 @@ describe("planCommand integration — callOp + planInteractiveOp", () => {
 
     // After migration, maxInteractionTurns should be threaded through CallContext
     // Verification happens indirectly through successful completion
-    expect(result).toContain("prd.json");
+    expect(result.outputPath).toContain("prd.json");
   });
 
   test("uses default maxInteractionTurns when config is undefined", async () => {
@@ -291,7 +291,7 @@ describe("planCommand integration — callOp + planInteractiveOp", () => {
 
     // When config.agent is undefined, maxInteractionTurns should be undefined
     // callOp uses its own defaults
-    expect(result).toContain("prd.json");
+    expect(result.outputPath).toContain("prd.json");
   });
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -322,7 +322,7 @@ describe("planCommand integration — callOp + planInteractiveOp", () => {
 
     // After migration, even if callOp fails but PRD is on disk, should return path
     expect(result).toBeDefined();
-    expect(result).toContain("prd.json");
+    expect(result.outputPath).toContain("prd.json");
   });
 
   test("throws error when callOp fails and outputPath doesn't exist on disk", async () => {
@@ -409,7 +409,7 @@ describe("planCommand integration — callOp + planInteractiveOp", () => {
     // 3. CallContext should have maxInteractionTurns from config
     // 4. Result should be path to generated prd.json
     expect(result).toBeDefined();
-    expect(typeof result).toBe("string");
-    expect(result).toContain("prd.json");
+    expect(typeof result.outputPath).toBe("string");
+    expect(result.outputPath).toContain("prd.json");
   });
 });

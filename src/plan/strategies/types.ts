@@ -52,7 +52,26 @@ export interface PlanModeContext {
   readonly deps: PlanDeps;
 }
 
+/**
+ * Why a PRD is a degraded result — the plan threw and was recovered from the
+ * agent-written file on disk rather than produced by the strategy's own path.
+ */
+export interface PlanDegradation {
+  /** The original error that diverted the strategy onto its recovery branch. */
+  readonly reason: string;
+}
+
+/**
+ * A strategy's outcome. Carries `degraded` so the CLI can say so — a recovered
+ * PRD used to be indistinguishable from a clean one at every layer above the
+ * strategy, which is half of why #1494 went unnoticed.
+ */
+export interface PlanResult {
+  readonly outputPath: string;
+  readonly degraded?: PlanDegradation;
+}
+
 export interface IPlanStrategy {
   readonly mode: "single" | "pipeline" | "debate" | "refine";
-  execute(ctx: PlanModeContext): Promise<string>;
+  execute(ctx: PlanModeContext): Promise<PlanResult>;
 }

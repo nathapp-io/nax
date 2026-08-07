@@ -15,6 +15,8 @@ import { NaxError } from "../errors";
 import { callOp, groundOp, planDraftOp } from "../operations";
 import type { PlanDraftInput } from "../operations";
 import { buildPlanModeContext, createPlanStrategy, finalizeAndWritePrd } from "../plan/strategies";
+import type { PlanResult } from "../plan/strategies";
+
 export { assertIsValidPrd, buildPlanComposition } from "../plan/strategies";
 import { buildPackageSummary, buildSourceRootsSection } from "./plan-helpers";
 import { _planDeps, createPlanRuntime } from "./plan-runtime";
@@ -70,9 +72,14 @@ export interface PlanCommandOptions {
  * @param workdir - Project root directory
  * @param config  - Nax configuration
  * @param options - Command options
- * @returns Path to generated prd.json
+ * @returns The generated prd.json path, plus `degraded` when the plan threw and
+ *          the PRD had to be recovered from disk.
  */
-export async function planCommand(workdir: string, config: NaxConfig, options: PlanCommandOptions): Promise<string> {
+export async function planCommand(
+  workdir: string,
+  config: NaxConfig,
+  options: PlanCommandOptions,
+): Promise<PlanResult> {
   const ctx = await buildPlanModeContext(workdir, config, options, _planDeps);
   try {
     const mode = resolvePlanMode(config);

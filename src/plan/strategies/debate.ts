@@ -6,7 +6,7 @@ import { validatePlanOutput } from "@/prd";
 import { PlanPromptBuilder } from "@/prompts";
 import { assertIsValidPrd } from "./assert";
 import { buildPlanComposition } from "./debate-composition";
-import type { IPlanStrategy, PlanModeContext } from "./types";
+import type { IPlanStrategy, PlanModeContext, PlanResult } from "./types";
 import { writeOrRecoverPrd } from "./write-prd";
 
 export const _debatePlanDeps = {
@@ -20,7 +20,7 @@ export const _debatePlanDeps = {
 export class DebatePlanStrategy implements IPlanStrategy {
   readonly mode = "debate" as const;
 
-  async execute(ctx: PlanModeContext): Promise<string> {
+  async execute(ctx: PlanModeContext): Promise<PlanResult> {
     const agentRouting = ctx.config.routing?.agents;
     const profiles = agentRouting?.enabled === true ? (agentRouting.profiles ?? []) : [];
     const { taskContext, outputFormat } = new PlanPromptBuilder().build(

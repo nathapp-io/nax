@@ -157,8 +157,8 @@ describe("planCommand callOp migration (US-003)", () => {
       feature: "test-feature",
     });
 
-    expect(result).toContain("prd.json");
-    expect(result).toContain("test-feature");
+    expect(result.outputPath).toContain("prd.json");
+    expect(result.outputPath).toContain("test-feature");
   });
 
   // Test that spec is read correctly

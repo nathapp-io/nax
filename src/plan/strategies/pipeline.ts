@@ -5,7 +5,7 @@ import { callOp, groundOp, planDraftOp } from "@/operations";
 import type { CallContext, PlanDraftInput } from "@/operations";
 import { runPlanCritic } from "../critic";
 import { persistPrd } from "./persist-prd";
-import type { IPlanStrategy, PlanModeContext } from "./types";
+import type { IPlanStrategy, PlanModeContext, PlanResult } from "./types";
 
 export const _pipelinePlanDeps = {
   callOp,
@@ -17,7 +17,7 @@ export const _pipelinePlanDeps = {
 export class PipelinePlanStrategy implements IPlanStrategy {
   readonly mode = "pipeline" as const;
 
-  async execute(ctx: PlanModeContext): Promise<string> {
+  async execute(ctx: PlanModeContext): Promise<PlanResult> {
     if (ctx.config.debate?.enabled === true) {
       ctx.deps.getLogger()?.warn("plan", "pipeline mode active; debate config ignored", {
         storyId: ctx.options.feature,
@@ -87,7 +87,7 @@ export class PipelinePlanStrategy implements IPlanStrategy {
 
       // The critic can drop feature-level exclusions the draft carried; persistPrd
       // restores them, as it now does for every strategy on every path.
-      return await persistPrd(ctx, verdict.prd);
+      return { outputPath: await persistPrd(ctx, verdict.prd) };
     } finally {
       await ctx.runtime.close().catch(() => {});
     }

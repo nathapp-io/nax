@@ -4,7 +4,7 @@ import type { PlanInteractiveInput } from "@/operations";
 import { validatePlanOutput } from "@/prd";
 import { assertIsValidPrd } from "./assert";
 import { persistPrd } from "./persist-prd";
-import type { IPlanStrategy, PlanModeContext } from "./types";
+import type { IPlanStrategy, PlanModeContext, PlanResult } from "./types";
 
 export const _singlePlanDeps = {
   callOp,
@@ -14,7 +14,7 @@ export const _singlePlanDeps = {
 export class SinglePlanStrategy implements IPlanStrategy {
   readonly mode = "single" as const;
 
-  async execute(ctx: PlanModeContext): Promise<string> {
+  async execute(ctx: PlanModeContext): Promise<PlanResult> {
     try {
       const prd = await _singlePlanDeps.callOp(
         {
@@ -40,7 +40,7 @@ export class SinglePlanStrategy implements IPlanStrategy {
         } satisfies PlanInteractiveInput,
       );
       assertIsValidPrd(prd);
-      return await persistPrd(ctx, prd);
+      return { outputPath: await persistPrd(ctx, prd) };
     } catch (err) {
       if (ctx.deps.existsSync(ctx.outputPath)) {
         const rawContent = await ctx.deps.readFile(ctx.outputPath);
@@ -48,12 +48,13 @@ export class SinglePlanStrategy implements IPlanStrategy {
         // Same degraded-result contract as writeOrRecoverPrd — single hand-rolls
         // its own recovery rather than sharing that helper, which is exactly how
         // it escaped #1494's original scope table.
+        const reason = err instanceof Error ? err.message : String(err);
         getSafeLogger()?.warn("plan", "PRD recovered from disk after a plan failure — result is degraded", {
           featureName: ctx.options.feature,
           outputPath: ctx.outputPath,
-          error: err instanceof Error ? err.message : String(err),
+          error: reason,
         });
-        return await persistPrd(ctx, recoveredPrd);
+        return { outputPath: await persistPrd(ctx, recoveredPrd), degraded: { reason } };
       }
       throw err;
     } finally {

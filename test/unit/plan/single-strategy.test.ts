@@ -79,7 +79,7 @@ describe("SinglePlanStrategy", () => {
 
     try {
       const result = await strategy.execute(ctx);
-      expect(result).toBe(ctx.outputPath);
+      expect(result.outputPath).toBe(ctx.outputPath);
       expect(callOpMock).toHaveBeenCalledTimes(1);
       const [callCtx, operation, input] = callOpMock.mock.calls[0] as [Record<string, unknown>, unknown, Record<string, unknown>];
       expect(callCtx.runtime).toBe(ctx.runtime);
@@ -116,7 +116,7 @@ describe("SinglePlanStrategy", () => {
     }) as typeof _singlePlanDeps.callOp;
 
     try {
-      await expect(strategy.execute(ctx)).resolves.toBe(ctx.outputPath);
+      await expect(strategy.execute(ctx)).resolves.toMatchObject({ outputPath: ctx.outputPath });
     } finally {
       _singlePlanDeps.callOp = originalCallOp;
     }

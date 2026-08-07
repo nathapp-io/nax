@@ -3,9 +3,9 @@ import { getSafeLogger } from "@/logger";
 import { validatePlanOutput } from "@/prd";
 import type { PRD } from "@/prd/types";
 import { persistPrd } from "./persist-prd";
-import type { PlanModeContext } from "./types";
+import type { PlanModeContext, PlanResult } from "./types";
 
-export async function writeOrRecoverPrd(ctx: PlanModeContext, prd: PRD | null, err?: unknown): Promise<string> {
+export async function writeOrRecoverPrd(ctx: PlanModeContext, prd: PRD | null, err?: unknown): Promise<PlanResult> {
   const tryExtractPrd = (value: unknown): PRD | null => {
     if (value === null || typeof value !== "object") return null;
 
@@ -28,12 +28,12 @@ export async function writeOrRecoverPrd(ctx: PlanModeContext, prd: PRD | null, e
 
   if (prd !== null) {
     if (Array.isArray((prd as { userStories?: unknown }).userStories)) {
-      return persistPrd(ctx, prd);
+      return { outputPath: await persistPrd(ctx, prd) };
     }
 
     const normalizedPrd = tryExtractPrd(prd);
     if (normalizedPrd !== null) {
-      return persistPrd(ctx, normalizedPrd);
+      return { outputPath: await persistPrd(ctx, normalizedPrd) };
     }
   }
 
@@ -57,12 +57,13 @@ export async function writeOrRecoverPrd(ctx: PlanModeContext, prd: PRD | null, e
     // Recovery is deliberate — `nax plan` produces a usable PRD rather than
     // failing — but it is a degraded result, so say so. Silence here is what
     // made #1494 take hours to attribute: exit 0, no console line, no JSONL record.
+    const reason = err instanceof Error ? err.message : String(err);
     getSafeLogger()?.warn("plan", "PRD recovered from disk after a plan failure — result is degraded", {
       featureName: ctx.options.feature,
       outputPath: ctx.outputPath,
-      error: err instanceof Error ? err.message : String(err),
+      error: reason,
     });
-    return persistPrd(ctx, recoveredPrd);
+    return { outputPath: await persistPrd(ctx, recoveredPrd), degraded: { reason } };
   } catch {
     throw err;
   }

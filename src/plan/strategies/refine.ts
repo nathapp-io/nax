@@ -1,6 +1,6 @@
 import { callOp, planRefineOp } from "@/operations";
 import type { PlanRefineInput } from "@/operations";
-import type { IPlanStrategy, PlanModeContext } from "./types";
+import type { IPlanStrategy, PlanModeContext, PlanResult } from "./types";
 import { writeOrRecoverPrd } from "./write-prd";
 
 export const _refinePlanDeps = {
@@ -11,7 +11,7 @@ export const _refinePlanDeps = {
 export class RefinePlanStrategy implements IPlanStrategy {
   readonly mode = "refine" as const;
 
-  async execute(ctx: PlanModeContext): Promise<string> {
+  async execute(ctx: PlanModeContext): Promise<PlanResult> {
     try {
       const prd = await _refinePlanDeps.callOp(
         {

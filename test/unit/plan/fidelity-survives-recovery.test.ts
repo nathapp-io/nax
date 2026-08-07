@@ -138,7 +138,9 @@ describe("#1494 — fidelity repairs survive the disk-recovery path", () => {
     }) as typeof _refinePlanDeps.callOp;
 
     try {
-      expect(await new RefinePlanStrategy().execute(ctx)).toBe(ctx.outputPath);
+      const result = await new RefinePlanStrategy().execute(ctx);
+      expect(result.outputPath).toBe(ctx.outputPath);
+      expect(result.degraded?.reason).toBe("agent call failed");
     } finally {
       _refinePlanDeps.callOp = original;
     }
@@ -154,7 +156,9 @@ describe("#1494 — fidelity repairs survive the disk-recovery path", () => {
     }) as typeof _singlePlanDeps.callOp;
 
     try {
-      expect(await new SinglePlanStrategy().execute(ctx)).toBe(ctx.outputPath);
+      const result = await new SinglePlanStrategy().execute(ctx);
+      expect(result.outputPath).toBe(ctx.outputPath);
+      expect(result.degraded?.reason).toBe("agent call failed");
     } finally {
       _singlePlanDeps.callOp = original;
     }
@@ -171,7 +175,9 @@ describe("#1494 — fidelity repairs survive the disk-recovery path", () => {
       config: { ...ctx.config, plan: { specGuard: false }, debate: { stages: { plan: { enabled: true } } } },
     } as unknown as PlanModeContext;
 
-    expect(await new DebatePlanStrategy().execute(ctxWithStage)).toBe(ctx.outputPath);
+    const result = await new DebatePlanStrategy().execute(ctxWithStage);
+    expect(result.outputPath).toBe(ctx.outputPath);
+    expect(result.degraded?.reason).toBe("debate stage failed");
     expectModifiedFilesSurvived(written);
   });
 
@@ -182,7 +188,11 @@ describe("#1494 — fidelity repairs survive the disk-recovery path", () => {
     _refinePlanDeps.callOp = (async () => JSON.parse(DISK_PRD)) as typeof _refinePlanDeps.callOp;
 
     try {
-      expect(await new RefinePlanStrategy().execute(ctx)).toBe(ctx.outputPath);
+      const result = await new RefinePlanStrategy().execute(ctx);
+      expect(result.outputPath).toBe(ctx.outputPath);
+      // A clean plan must NOT be labelled degraded — otherwise the CLI warning
+      // becomes noise the user learns to ignore.
+      expect(result.degraded).toBeUndefined();
     } finally {
       _refinePlanDeps.callOp = original;
     }

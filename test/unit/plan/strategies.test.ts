@@ -197,7 +197,7 @@ describe("writeOrRecoverPrd", () => {
 
     const result = await writeOrRecoverPrd(ctx, SAMPLE_PRD);
 
-    expect(result).toBe(ctx.outputPath);
+    expect(result.outputPath).toBe(ctx.outputPath);
     const writeCall = (deps.writeFile as ReturnType<typeof mock>).mock.calls.at(-1);
     expect(writeCall?.[0]).toBe(ctx.outputPath);
     const writtenPrd = JSON.parse(String(writeCall?.[1])) as PRD;
@@ -215,7 +215,7 @@ describe("writeOrRecoverPrd", () => {
 
     const result = await writeOrRecoverPrd(ctx, null, err);
 
-    expect(result).toBe(ctx.outputPath);
+    expect(result.outputPath).toBe(ctx.outputPath);
     expect(deps.readFile).toHaveBeenCalledWith(ctx.outputPath);
     const writeCall = (deps.writeFile as ReturnType<typeof mock>).mock.calls.at(-1);
     expect(writeCall?.[0]).toBe(ctx.outputPath);

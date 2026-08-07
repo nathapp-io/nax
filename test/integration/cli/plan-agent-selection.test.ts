@@ -210,8 +210,8 @@ describe("planCommand — plan-time agent selection (ADR-025 Part C)", () => {
     });
 
     // planCommand must return the prd.json path
-    expect(result).toContain("prd.json");
-    expect(result).toContain("plan-agent-selection");
+    expect(result.outputPath).toContain("prd.json");
+    expect(result.outputPath).toContain("plan-agent-selection");
 
     // Read the written prd.json from disk
     const written = await Bun.file(outputPath).text();

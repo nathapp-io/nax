@@ -1,4 +1,11 @@
-export type { IPlanStrategy, PlanCommandOptions, PlanDeps, PlanModeContext } from "./types";
+export type {
+  IPlanStrategy,
+  PlanCommandOptions,
+  PlanDegradation,
+  PlanDeps,
+  PlanModeContext,
+  PlanResult,
+} from "./types";
 export { buildPlanModeContext } from "./context-builder";
 export { createPlanStrategy } from "./factory";
 export { writeOrRecoverPrd } from "./write-prd";

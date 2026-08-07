@@ -80,7 +80,7 @@ describe("PipelinePlanStrategy", () => {
     }) as typeof _pipelinePlanDeps.runPlanCritic;
 
     try {
-      const outputPath = await strategy.execute(ctx);
+      const { outputPath } = await strategy.execute(ctx);
       expect(outputPath).toBe(ctx.outputPath);
       expect(sequence).toEqual(["ground", "draft", "critic"]);
     } finally {
