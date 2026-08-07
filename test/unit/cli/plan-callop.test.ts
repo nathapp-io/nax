@@ -317,9 +317,9 @@ describe("planCommand — callOp + planInteractiveOp migration", () => {
     });
 
     // Result should be a string path to prd.json
-    expect(typeof result).toBe("string");
-    expect(result).toContain("prd.json");
-    expect(result).toContain("url-shortener");
+    expect(typeof result.outputPath).toBe("string");
+    expect(result.outputPath).toContain("prd.json");
+    expect(result.outputPath).toContain("url-shortener");
   });
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -416,7 +416,7 @@ describe("planCommand — callOp + planInteractiveOp migration", () => {
       // No auto: true
     });
 
-    expect(typeof result).toBe("string");
+    expect(typeof result.outputPath).toBe("string");
   });
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -467,7 +467,7 @@ describe("planCommand — callOp + planInteractiveOp migration", () => {
     });
 
     // After migration, planCommand should work using planInteractiveOp
-    expect(result).toContain("prd.json");
+    expect(result.outputPath).toContain("prd.json");
   });
 
   // ────────────────────────────────────────────────────────────────────────────

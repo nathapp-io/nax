@@ -378,7 +378,7 @@ describe("planCommand", () => {
     });
 
     const expectedPath = join(tmpDir, ".nax", "features", "url-shortener", "prd.json");
-    expect(result).toBe(expectedPath);
+    expect(result.outputPath).toBe(expectedPath);
     expect(capturedWriteArgs[0][0]).toBe(expectedPath);
     const [_path, content] = capturedWriteArgs[0];
     const written = JSON.parse(content) as PRD;
@@ -739,8 +739,8 @@ describe("assertIsValidPrd guard (#993)", () => {
       feature: "url-shortener",
     });
 
-    expect(result).toContain("url-shortener");
-    expect(result).toContain("prd.json");
+    expect(result.outputPath).toContain("url-shortener");
+    expect(result.outputPath).toContain("prd.json");
     expect(capturedWrites993.length).toBeGreaterThan(0);
     const written = JSON.parse(capturedWrites993[capturedWrites993.length - 1]?.[1] ?? "{}");
     const writtenIds = (written.userStories as Array<{ id: string; title: string }>).map((s) => s.id);
@@ -1079,9 +1079,9 @@ describe("runPlanPipeline (US-005)", () => {
         feature: "test-feature",
       });
 
-      expect(result).toBe(join(tempWorkdir, ".nax", "features", "test-feature", "prd.json"));
+      expect(result.outputPath).toBe(join(tempWorkdir, ".nax", "features", "test-feature", "prd.json"));
       // Verify no PLAN_PIPELINE_NOT_IMPLEMENTED was thrown (success path reached)
-      expect(typeof result).toBe("string");
+      expect(typeof result.outputPath).toBe("string");
     });
   });
 });

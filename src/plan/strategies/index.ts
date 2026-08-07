@@ -1,4 +1,11 @@
-export type { IPlanStrategy, PlanCommandOptions, PlanDeps, PlanModeContext } from "./types";
+export type {
+  IPlanStrategy,
+  PlanCommandOptions,
+  PlanDegradation,
+  PlanDeps,
+  PlanModeContext,
+  PlanResult,
+} from "./types";
 export { buildPlanModeContext } from "./context-builder";
 export { createPlanStrategy } from "./factory";
 export { writeOrRecoverPrd } from "./write-prd";
@@ -9,3 +16,5 @@ export { DebatePlanStrategy, _debatePlanDeps } from "./debate";
 export { RefinePlanStrategy, _refinePlanDeps } from "./refine";
 export { buildPlanComposition } from "./debate-composition";
 export { finalizePrdRouting } from "./finalize-routing";
+export { finalizeAndWritePrd, persistPrd } from "./persist-prd";
+export type { PersistPrdArgs } from "./persist-prd";

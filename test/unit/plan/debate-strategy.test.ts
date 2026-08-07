@@ -155,7 +155,7 @@ describe("DebatePlanStrategy", () => {
 
     const result = await new DebatePlanStrategy().execute(ctx);
 
-    expect(result).toBe(ctx.outputPath);
+    expect(result.outputPath).toBe(ctx.outputPath);
     expect(buildPromptSpy).toHaveBeenCalledWith(
       ctx.specContent,
       ctx.codebaseContext,
@@ -209,7 +209,9 @@ describe("DebatePlanStrategy", () => {
     const createDebateRunnerMock = mock(() => ({ runPlan: runPlanMock }));
     const callOpSpy = spyOn(operationsModule, "callOp").mockResolvedValue(fallbackPrd as never);
     const origWriteOrRecoverPrd = _debatePlanDeps.writeOrRecoverPrd;
-    _debatePlanDeps.writeOrRecoverPrd = mock(async () => "/tmp/workdir/.nax/features/feat-debate/prd.json");
+    _debatePlanDeps.writeOrRecoverPrd = mock(async () => ({
+      outputPath: "/tmp/workdir/.nax/features/feat-debate/prd.json",
+    }));
     const ctx = makeContext({
       deps: makeDeps({ createDebateRunner: createDebateRunnerMock }),
     });
@@ -217,7 +219,7 @@ describe("DebatePlanStrategy", () => {
     try {
       const result = await new DebatePlanStrategy().execute(ctx);
 
-      expect(result).toBe(ctx.outputPath);
+      expect(result.outputPath).toBe(ctx.outputPath);
       expect(callOpSpy).toHaveBeenCalledTimes(1);
       const [callCtx, op, input] = callOpSpy.mock.calls[0] as [Record<string, unknown>, unknown, Record<string, unknown>];
       expect(op).toBe(planInteractiveOp);

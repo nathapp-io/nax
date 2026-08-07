@@ -80,6 +80,7 @@ import { DEFAULT_CONFIG, findProjectDir, loadConfig, validateDirectory } from ".
 import { run } from "../src/execution";
 import { loadHooksConfig } from "../src/hooks";
 import { type LogLevel, initLogger, resetLogger } from "../src/logger";
+import type { PlanResult } from "../src/plan/strategies";
 import { countStories, loadPRD } from "../src/prd";
 import { AgentStreamEventBus, projectOutputDir } from "../src/runtime";
 import { resolveScheduleGate, waitForSchedule } from "../src/schedule";
@@ -102,6 +103,20 @@ program.name("nax").description("AI Coding Agent Orchestrator — loops until do
  */
 function collectProfile(value: string, previous: string[]): string[] {
   return previous.concat(value);
+}
+
+/**
+ * Surface a degraded plan. `nax plan` is deliberately recovery-tolerant — it
+ * yields a usable PRD rather than failing — but a recovered PRD came from the
+ * agent's own on-disk output after a throw, not from the strategy's normal
+ * path. It used to be indistinguishable from a clean plan at every layer, so
+ * `[OK] PRD generated` + exit 0 was the only signal the user ever saw (#1494).
+ */
+function warnIfPlanDegraded(result: PlanResult): void {
+  if (!result.degraded) return;
+  console.log(chalk.yellow("\n[WARN] PRD recovered after a plan failure — this is a degraded result"));
+  console.log(chalk.dim(`   Cause: ${result.degraded.reason}`));
+  console.log(chalk.dim("   Deterministic spec->PRD repairs were re-applied, but review the PRD before running."));
 }
 
 /**
@@ -564,12 +579,14 @@ program
         console.log(chalk.dim(`   [Plan log: ${planLogPath}]`));
 
         console.log(chalk.dim("   [Planning phase: generating PRD from spec]"));
-        const generatedPrdPath = await planCommand(workdir, config, {
+        const planResult = await planCommand(workdir, config, {
           from: options.from,
           feature: options.feature,
           auto: options.oneShot ?? false, // interactive by default; --one-shot skips Q&A
           branch: undefined,
         });
+        const generatedPrdPath = planResult.outputPath;
+        warnIfPlanDegraded(planResult);
 
         // Load the generated PRD to display confirmation gate
         const generatedPrd = await loadPRD(generatedPrdPath);
@@ -1126,15 +1143,16 @@ program
           console.error(chalk.red("Error: --from <spec-path> is required unless --decompose is used"));
           process.exit(1);
         }
-        const prdPath = await planCommand(workdir, config, {
+        const planResult = await planCommand(workdir, config, {
           from: options.from,
           feature: options.feature,
           auto: options.auto || options.oneShot, // --auto and --one-shot are aliases
           branch: options.branch,
         });
 
+        warnIfPlanDegraded(planResult);
         console.log(chalk.green("\n[OK] PRD generated"));
-        console.log(chalk.dim(`   PRD: ${prdPath}`));
+        console.log(chalk.dim(`   PRD: ${planResult.outputPath}`));
         console.log(chalk.dim(`   Log: ${planLogPath}`));
         console.log(chalk.dim(`\nNext: nax run -f ${options.feature}`));
       }

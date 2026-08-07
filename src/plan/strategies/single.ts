@@ -1,9 +1,10 @@
+import { getSafeLogger } from "@/logger";
 import { callOp, planInteractiveOp } from "@/operations";
 import type { PlanInteractiveInput } from "@/operations";
 import { validatePlanOutput } from "@/prd";
 import { assertIsValidPrd } from "./assert";
-import { finalizePrdRouting } from "./finalize-routing";
-import type { IPlanStrategy, PlanModeContext } from "./types";
+import { persistPrd } from "./persist-prd";
+import type { IPlanStrategy, PlanModeContext, PlanResult } from "./types";
 
 export const _singlePlanDeps = {
   callOp,
@@ -13,7 +14,7 @@ export const _singlePlanDeps = {
 export class SinglePlanStrategy implements IPlanStrategy {
   readonly mode = "single" as const;
 
-  async execute(ctx: PlanModeContext): Promise<string> {
+  async execute(ctx: PlanModeContext): Promise<PlanResult> {
     try {
       const prd = await _singlePlanDeps.callOp(
         {
@@ -39,24 +40,21 @@ export class SinglePlanStrategy implements IPlanStrategy {
         } satisfies PlanInteractiveInput,
       );
       assertIsValidPrd(prd);
-      const finalized = finalizePrdRouting(
-        { ...prd, project: ctx.projectName },
-        ctx.config.routing?.agents,
-        ctx.profileName,
-      );
-      await ctx.deps.writeFile(ctx.outputPath, JSON.stringify(finalized, null, 2));
-      return ctx.outputPath;
+      return { outputPath: await persistPrd(ctx, prd) };
     } catch (err) {
       if (ctx.deps.existsSync(ctx.outputPath)) {
         const rawContent = await ctx.deps.readFile(ctx.outputPath);
         const recoveredPrd = validatePlanOutput(rawContent, ctx.options.feature, ctx.branchName);
-        const finalizedRecovered = finalizePrdRouting(
-          { ...recoveredPrd, project: ctx.projectName },
-          ctx.config.routing?.agents,
-          ctx.profileName,
-        );
-        await ctx.deps.writeFile(ctx.outputPath, JSON.stringify(finalizedRecovered, null, 2));
-        return ctx.outputPath;
+        // Same degraded-result contract as writeOrRecoverPrd — single hand-rolls
+        // its own recovery rather than sharing that helper, which is exactly how
+        // it escaped #1494's original scope table.
+        const reason = err instanceof Error ? err.message : String(err);
+        getSafeLogger()?.warn("plan", "PRD recovered from disk after a plan failure — result is degraded", {
+          featureName: ctx.options.feature,
+          outputPath: ctx.outputPath,
+          error: reason,
+        });
+        return { outputPath: await persistPrd(ctx, recoveredPrd), degraded: { reason } };
       }
       throw err;
     } finally {

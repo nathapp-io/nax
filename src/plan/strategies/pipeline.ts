@@ -1,11 +1,11 @@
 import { renderManifestSection } from "@/debate";
 import type { FactsManifest } from "@/debate/facts-manifest";
 import { NaxError } from "@/errors";
-import { applyPlanFidelity, callOp, groundOp, planDraftOp } from "@/operations";
+import { callOp, groundOp, planDraftOp } from "@/operations";
 import type { CallContext, PlanDraftInput } from "@/operations";
 import { runPlanCritic } from "../critic";
-import { finalizePrdRouting } from "./finalize-routing";
-import type { IPlanStrategy, PlanModeContext } from "./types";
+import { persistPrd } from "./persist-prd";
+import type { IPlanStrategy, PlanModeContext, PlanResult } from "./types";
 
 export const _pipelinePlanDeps = {
   callOp,
@@ -17,7 +17,7 @@ export const _pipelinePlanDeps = {
 export class PipelinePlanStrategy implements IPlanStrategy {
   readonly mode = "pipeline" as const;
 
-  async execute(ctx: PlanModeContext): Promise<string> {
+  async execute(ctx: PlanModeContext): Promise<PlanResult> {
     if (ctx.config.debate?.enabled === true) {
       ctx.deps.getLogger()?.warn("plan", "pipeline mode active; debate config ignored", {
         storyId: ctx.options.feature,
@@ -85,16 +85,9 @@ export class PipelinePlanStrategy implements IPlanStrategy {
         );
       }
 
-      // The critic can drop feature-level exclusions the draft carried; this path
-      // has no op verify, so restore them here for parity with single/refine.
-      const scoped = applyPlanFidelity(verdict.prd, ctx.specContent, ctx.options.feature);
-      const prdToWrite = finalizePrdRouting(
-        { ...scoped, project: ctx.projectName },
-        ctx.config.routing?.agents,
-        ctx.profileName,
-      );
-      await ctx.deps.writeFile(ctx.outputPath, JSON.stringify(prdToWrite, null, 2));
-      return ctx.outputPath;
+      // The critic can drop feature-level exclusions the draft carried; persistPrd
+      // restores them, as it now does for every strategy on every path.
+      return { outputPath: await persistPrd(ctx, verdict.prd) };
     } finally {
       await ctx.runtime.close().catch(() => {});
     }

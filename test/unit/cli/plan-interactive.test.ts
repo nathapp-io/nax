@@ -292,7 +292,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     });
 
     const expectedPath = join(tmpDir, ".nax", "features", "url-shortener", "prd.json");
-    expect(result).toBe(expectedPath);
+    expect(result.outputPath).toBe(expectedPath);
     expect(capturedWriteArgs[0][0]).toBe(expectedPath);
 
     const [_path, content] = capturedWriteArgs[0];
@@ -418,7 +418,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
       feature: "url-shortener",
     });
 
-    expect(result).toContain("prd.json");
+    expect(result.outputPath).toContain("prd.json");
     expect(planCalled).toBe(true);
   });
 

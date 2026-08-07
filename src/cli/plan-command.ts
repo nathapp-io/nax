@@ -14,7 +14,9 @@ import { renderManifestSection } from "../debate";
 import { NaxError } from "../errors";
 import { callOp, groundOp, planDraftOp } from "../operations";
 import type { PlanDraftInput } from "../operations";
-import { buildPlanModeContext, createPlanStrategy, finalizePrdRouting } from "../plan/strategies";
+import { buildPlanModeContext, createPlanStrategy, finalizeAndWritePrd } from "../plan/strategies";
+import type { PlanResult } from "../plan/strategies";
+
 export { assertIsValidPrd, buildPlanComposition } from "../plan/strategies";
 import { buildPackageSummary, buildSourceRootsSection } from "./plan-helpers";
 import { _planDeps, createPlanRuntime } from "./plan-runtime";
@@ -70,9 +72,14 @@ export interface PlanCommandOptions {
  * @param workdir - Project root directory
  * @param config  - Nax configuration
  * @param options - Command options
- * @returns Path to generated prd.json
+ * @returns The generated prd.json path, plus `degraded` when the plan threw and
+ *          the PRD had to be recovered from disk.
  */
-export async function planCommand(workdir: string, config: NaxConfig, options: PlanCommandOptions): Promise<string> {
+export async function planCommand(
+  workdir: string,
+  config: NaxConfig,
+  options: PlanCommandOptions,
+): Promise<PlanResult> {
   const ctx = await buildPlanModeContext(workdir, config, options, _planDeps);
   try {
     const mode = resolvePlanMode(config);
@@ -198,15 +205,20 @@ export async function runPlanPipeline(
     });
 
     if (verdict.outcome === "passed") {
-      // Delta C4 + ADR-025: finalizePrdRouting resolves agentProfileId → agent,
-      // stamps origin fields, and records the loader-resolved config profile name
-      // so nax run can detect ladder drift.
-      const prdToWrite = finalizePrdRouting(
-        { ...verdict.prd, project: projectName },
-        config.routing?.agents,
-        config.profile,
-      );
-      await _planDeps.writeFile(outputPath, JSON.stringify(prdToWrite, null, 2));
+      // Delta C4 + ADR-025: finalizeAndWritePrd re-applies the spec→PRD fidelity
+      // repairs, resolves agentProfileId → agent, stamps origin fields, and
+      // records the loader-resolved config profile name so nax run can detect
+      // ladder drift.
+      await finalizeAndWritePrd({
+        prd: verdict.prd,
+        specContent,
+        featureName: options.feature,
+        projectName,
+        agentRouting: config.routing?.agents,
+        profileName: config.profile,
+        outputPath,
+        writeFile: _planDeps.writeFile,
+      });
       logger?.info("plan", "[OK] PRD written via pipeline", { outputPath });
       return outputPath;
     }
