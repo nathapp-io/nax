@@ -3,7 +3,7 @@
   "feature": "story-scoped-fix-budget",
   "branchName": "feat/story-scoped-fix-budget",
   "createdAt": "2026-08-07T00:00:00.000Z",
-  "updatedAt": "2026-08-07T14:28:59.660Z",
+  "updatedAt": "2026-08-07T16:12:30.810Z",
   "userStories": [
     {
       "id": "US-001",
@@ -174,8 +174,8 @@
         "US-001",
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -234,8 +234,8 @@
         "US-002",
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -247,7 +247,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-balanced",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/execution/story-orchestrator/rectification.ts",
@@ -268,7 +270,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5832f82e562b37e4e7c1d931a97d8d02cb134287"
     }
   ],
   "analysis": "This is a cross-module enhancement to the existing ADR-022 finding/fix-cycle path, not a greenfield feature. `FixCycle` currently owns mutable `iterations` and `runFixCycle` derives per-strategy caps, total caps, bail predicates, and terminal exhaustion from that one array (src/findings/cycle-types.ts:199; src/findings/cycle.ts:225-265; src/findings/cycle.ts:395-399). `runRectification` creates a new cycle with `iterations: []` after its no-findings and no-story guards (src/execution/story-orchestrator/rectification.ts:269-305), then records only `cycleResult.iterations` for oscillations and phase output counts (src/execution/story-orchestrator/rectification.ts:425-456). This makes preserving the distinction between prior-story history and current-cycle output a hard compatibility requirement. The `ExecutionPlan` main pass and guarded post-rectification resume pass both call `runRectification` on the same context/runtime (src/execution/story-orchestrator/execution-plan.ts:179-181 and :219-245); the non-blocking-fix callback is a separate call path with advisory findings and its own strategies (src/execution/story-orchestrator/execution-plan.ts:300-349). `NaxRuntime` already establishes run-scoped per-story Map precedents (`adversarialIterations`, `semanticIterations`, and `rectificationOscillations`) and constructs/returns them once in `createRuntime` (src/runtime/index.ts:135-140, :276-306). Add `storyFixHistory` beside them, keyed by story and telemetry tier, rather than putting state on rebuilt pipeline contexts. The config uses two declarations that must stay synchronized: nested Zod defaults in `src/config/schemas-execution.ts:49-75`, the `DEFAULT_CONFIG` literal in `src/config/schemas.ts:115-138`, and the resolved runtime type in `src/config/runtime-types.ts:50-80`; existing no-progress config tests in `test/unit/config/schemas.test.ts:630-700` are the closest pattern. The ledger is isolated in `src/findings/cycle-retirement.ts:66-90`; it currently always allocates its own Map, so an optional supplied backing store is the narrow compatibility-preserving seam. `withNoProgressBail` evaluates the supplied iteration list by its trailing run (src/execution/story-orchestrator/no-progress-bail.ts:4-42), so concatenating prior and live iterations at each loop pass makes the existing predicate story-scoped without changing its algorithm. Existing fixtures and cycle tests are centralized under `test/unit/findings/_cycle-fixtures.ts:1-96`, `test/unit/findings/cycle.test.ts`, and `test/unit/findings/cycle-retirement.test.ts`; rectification and resume seams are already driven by `test/integration/execution/rectification-routing.test.ts`, `test/integration/execution/nbf-rectify-declaration.test.ts`, and `test/unit/execution/story-orchestrator-resume-guard.test.ts`. New direct store tests should mirror source at `test/unit/findings/story-fix-history.test.ts`; cross-module runtime/rectification and ExecutionPlan behavior belongs under `test/integration/`. Main risks are (1) double-counting prior iterations if `cycle.iterations` or `FixCycleResult.iterations` is seeded, which would inflate `rectificationOscillations` and phase `iterationCount`; (2) reusing history across tiers, stories, non-blocking fixes, or direct acceptance/regression cycles; (3) failing closed when plugin/partial runtimes omit the new field; and (4) losing either Zod default declaration. The migration is additive and backward compatible: `priorIterations` and ledger backing are optional, the new config defaults true, disabled/missing runtime paths retain current per-cycle behavior, and no persisted data migration is required. Keep `src/findings/cycle.ts` near net-zero because it is already 584 lines against the 600-line hard limit. Every test creating `makeTestRuntime` or `makeMockRuntime` must close it in `afterEach`, per the lint-enforced cleanup script.",
