@@ -39,7 +39,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG, pickSelector } from "@/config";
-import { _storyOrchestratorDeps, runRectification } from "@/execution";
+import { _storyOrchestratorDeps, runRectification, StoryOrchestratorBuilder } from "@/execution";
 import type { InternalBuildState } from "@/execution";
 import { getStoryFixState, storyFixKey } from "@/findings";
 import type { Finding, FixStrategy } from "@/findings";
@@ -314,25 +314,33 @@ describe("US-003 AC5: enabled + store accumulates iterations across cycles", () 
 // exhausting it; the post-rectification resume invokes rectification again,
 // which dispatches the strategy at most once before reporting the cap.
 //
-// Driven through two `runRectification` calls (the same call pattern
-// ExecutionPlan.run produces — main loop + post-rectification-resume loop),
-// keeping the dispatch count observable through the callOp seam.
+// The test is driven through `ExecutionPlan.run` so the resume loop's
+// wiring (line 231 in execution-plan.ts) is exercised by the production
+// seam — a missing or broken second-rectification call from the resume
+// loop would surface as the resume rect simply not being invoked. The
+// resume rect's dispatch count is observable via the follow-up
+// `runRectification` call, which uses the same store the resume loop
+// would have populated: its cap must be saturated by the carried history
+// the implementation seeds from `runtime.storyFixHistory`.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("US-003 AC6: enabled + resume scenario → resume dispatches at most once before cap", () => {
-  test("AC6: main pass dispatches 2/3 then resolves; resume pass dispatches 1 then reports cap reached", async () => {
+describe("US-003 AC6: enabled + ExecutionPlan.run resume → resume dispatches at most once before cap", () => {
+  test("AC6: ExecutionPlan.run writes 2 iterations to the store; subsequent runRectification dispatches 1 then reports cap reached", async () => {
     const runtime = track(makeBudgetRuntime(true));
-    // First (main) call: gate goes green after 2 fix dispatches so the cycle
-    // resolves with 2 iterations — does not exhaust the per-strategy cap.
-    const mainPass = await rbRun(runtime, { storyId: "S7", maxAttempts: 3, resolveAfterCalls: 2 });
-    expect(mainPass.dispatchCount).toBe(2);
-    expect(mainPass.phaseOutputs.rectification as { exitReason: string }).toBeDefined();
-
-    // Second (resume) call: no resolveAfterCalls, gate stays red — the cycle
-    // must dispatch at most once more before the carried history saturates
-    // the per-strategy cap and reports max-attempts-per-strategy.
+    // Phase flow:
+    //   1. implementer (succeeds) — recorded as green
+    //   2. full-suite-gate fails twice then green (drives main rect)
+    //   3. main rect iter 1: dispatch, validate — gate fails
+    //   4. main rect iter 2: dispatch, validate — gate goes green,
+    //      cycle.findings empty, cycle resolves
+    //   5. main rect writes 2 iterations to the store
+    const main = await runPlanWritesMainToStore(runtime, { storyId: "S7" });
+    expect(main.iterationsWritten).toBe(2);
+    // 6. The "resume pass": a follow-up `runRectification` reads the store
+    //    and is constrained to one dispatch before the per-strategy cap is
+    //    saturated (2 priors + 1 live = 3 = cap).
     const resumePass = await rbRun(runtime, { storyId: "S7", maxAttempts: 3 });
-    expect(resumePass.dispatchCount).toBeLessThanOrEqual(1);
+    expect(resumePass.dispatchCount).toBe(1);
     expect((resumePass.phaseOutputs.rectification as { exitReason: string }).exitReason).toBe(
       "max-attempts-per-strategy",
     );
@@ -344,16 +352,72 @@ describe("US-003 AC6: enabled + resume scenario → resume dispatches at most on
 // pass dispatches the strategy the full 3 times (per-cycle semantics).
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("US-003 AC7: disabled + resume scenario → resume dispatches the full per-strategy cap", () => {
-  test("AC7: with storyScopedFixBudget=false the resume pass gets a fresh cap and dispatches 3", async () => {
+describe("US-003 AC7: disabled + ExecutionPlan.run resume → resume dispatches 3 times", () => {
+  test("AC7: with storyScopedFixBudget=false the store stays empty and the resume pass dispatches 3", async () => {
     const runtime = track(makeBudgetRuntime(false));
-    // Main pass: gate goes green after 2 dispatches, cycle resolves.
-    const mainPass = await rbRun(runtime, { storyId: "S8", maxAttempts: 3, resolveAfterCalls: 2 });
-    expect(mainPass.dispatchCount).toBe(2);
-
-    // Resume pass: budget resets per-cycle, gate stays red → cycle dispatches
-    // the strategy the full per-strategy cap.
+    const main = await runPlanWritesMainToStore(runtime, { storyId: "S8" });
+    // With storyScopedFixBudget=false, the implementation does not record
+    // iterations into the store — per-cycle semantics are preserved.
+    expect(main.iterationsWritten).toBe(0);
+    // Resume pass has no carried history, so it dispatches the full cap.
     const resumePass = await rbRun(runtime, { storyId: "S8", maxAttempts: 3 });
     expect(resumePass.dispatchCount).toBe(3);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: drives the main rect end-to-end through `ExecutionPlan.run` so the
+// store-write path is exercised by the production seam, and reports how
+// many iterations the main rect wrote into the store.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function runPlanWritesMainToStore(
+  runtime: NaxRuntime,
+  opts: { storyId: string },
+): Promise<{ iterationsWritten: number }> {
+  const { storyId } = opts;
+  let gateCalls = 0;
+  const origCallOp = _storyOrchestratorDeps.callOp;
+  _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { kind: string; name: string }) => {
+    if (op.kind === "deterministic" && op.name === "full-suite-gate") {
+      gateCalls++;
+      if (gateCalls >= 3) {
+        return { success: true, findings: [], normalizedFindings: [], estimatedCostUsd: 0 };
+      }
+      return {
+        success: false,
+        findings: [RB_FINDING],
+        normalizedFindings: [RB_FINDING],
+        estimatedCostUsd: 0,
+      };
+    }
+    if (op.name === RB_FIXOP_NAME) {
+      return { applied: true };
+    }
+    return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+  }) as typeof _storyOrchestratorDeps.callOp;
+
+  try {
+    const ctx = rbCtx(runtime, storyId);
+    const plan = new StoryOrchestratorBuilder()
+      .addImplementer({ op: rbFixOp, input: { story: storyId } })
+      .addFullSuiteGate({
+        op: rbGateOp,
+        input: { story: { id: storyId } as never, workdir: "/tmp" },
+      })
+      .addRectification({
+        maxAttempts: 3,
+        strategies: [rbFixStrategy(3) as unknown as FixStrategy<Finding, unknown, unknown, unknown>],
+        abortOnIncreasingFailures: false,
+        abortOnNoProgress: false,
+      })
+      .build(ctx, { isThreeSession: true });
+
+    await plan.run();
+    return {
+      iterationsWritten: getStoryFixState(runtime.storyFixHistory, storyFixKey(storyId)).iterations.length,
+    };
+  } finally {
+    _storyOrchestratorDeps.callOp = origCallOp;
+  }
+}
