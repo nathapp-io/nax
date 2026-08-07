@@ -3,6 +3,7 @@ import type { CallOpFn } from "@/findings/cycle";
 import { classifyOutcome, runFixCycle } from "@/findings";
 import type { FixCycle, FixStrategy, Iteration, ValidateResult } from "@/findings";
 import type { Finding } from "@/findings";
+import type { Logger } from "@/logger";
 import { makeLogger } from "@test/helpers";
 import {
   lintA,
@@ -501,7 +502,7 @@ callOp: makeCallOpMock() as unknown as CallOpFn});
     const callOpMock = makeCallOpMock();
 
     await runFixCycle(cycle, makeCtx(), "my-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
-callOp: callOpMock as unknown as CallOpFn, logger: mockLogger as unknown as import("../../../src/logger").Logger});
+callOp: callOpMock as unknown as CallOpFn, logger: mockLogger as unknown as Logger});
 
     const warnCall = mockLogger.calls.find((c) => c.level === "warn" && c.stage === "findings.cycle");
     expect(warnCall).toBeDefined();
@@ -523,7 +524,7 @@ callOp: callOpMock as unknown as CallOpFn, logger: mockLogger as unknown as impo
     const callOpMock = makeCallOpMock();
 
     await runFixCycle(cycle, makeCtx(), "my-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
-callOp: callOpMock as unknown as CallOpFn, logger: mockLogger as unknown as import("../../../src/logger").Logger});
+callOp: callOpMock as unknown as CallOpFn, logger: mockLogger as unknown as Logger});
 
     const infoCall = mockLogger.calls.find(
       (c) => c.level === "info" && c.stage === "findings.cycle" && c.data?.reason === reason,
@@ -630,5 +631,131 @@ callOp: makeCallOpMock() as unknown as CallOpFn });
 
     expect(result.exitReason).toBe("resolved");
     expect(result.finalFindings).toHaveLength(0);
+  });
+});
+
+// ─── runFixCycle — iteration-completed log emission (US-001 AC8-14) ──────────
+
+describe("runFixCycle — iteration-completed log emission", () => {
+  const iterationCompletedCalls = (logger: ReturnType<typeof makeLogger>) =>
+    logger.calls.filter((c) => c.level === "info" && c.stage === "findings.cycle" && c.message === "iteration completed");
+
+  test("AC8: agent-gave-up exit emits one iteration-completed record with iterationNum=1", async () => {
+    const mockLogger = makeLogger();
+    const strategy = makeStrategy({ extractApplied: () => ({ summary: "", unresolved: "Cannot resolve" }) });
+    const cycle = makeCycle([lintA], [strategy], async () => []);
+
+    const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn,
+      logger: mockLogger as unknown as Logger,
+    });
+    expect(result.exitReason).toBe("agent-gave-up");
+
+    const calls = iterationCompletedCalls(mockLogger);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].data).toMatchObject({ iterationNum: 1 });
+  });
+
+  test("AC9: terminal lite validate returns no findings → resolved → emits one iteration-completed record", async () => {
+    const mockLogger = makeLogger();
+    const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
+    const cycle = makeCycle([lintA], [strategy], async () => []);
+
+    const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn,
+      logger: mockLogger as unknown as Logger,
+    });
+    expect(result.exitReason).toBe("resolved");
+
+    const calls = iterationCompletedCalls(mockLogger);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("AC10: terminal lite validate short-circuits → validate-short-circuit → emits one iteration-completed record", async () => {
+    const mockLogger = makeLogger();
+    const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
+    const validateResult: ValidateResult<Finding> = { findings: [lintA], shortCircuited: true };
+    const cycle = makeCycle([lintA], [strategy], async () => validateResult as unknown as Finding[]);
+
+    const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn,
+      logger: mockLogger as unknown as Logger,
+    });
+    expect(result.exitReason).toBe("validate-short-circuit");
+
+    const calls = iterationCompletedCalls(mockLogger);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("AC11: terminal lite validate throws → max-attempts-per-strategy → emits one iteration-completed record", async () => {
+    const mockLogger = makeLogger();
+    const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
+    const cycle = makeCycle([lintA], [strategy], async () => {
+      throw new Error("lite validate failed");
+    });
+
+    const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn,
+      logger: mockLogger as unknown as Logger,
+    });
+    expect(result.exitReason).toBe("max-attempts-per-strategy");
+
+    const calls = iterationCompletedCalls(mockLogger);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("AC12: one normal resolving iteration → emits exactly one iteration-completed record", async () => {
+    const mockLogger = makeLogger();
+    const strategy = makeStrategy({ name: "lint-fix" });
+    const cycle = makeCycle([lintA], [strategy], async () => []);
+
+    const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn,
+      logger: mockLogger as unknown as Logger,
+    });
+    expect(result.exitReason).toBe("resolved");
+
+    const calls = iterationCompletedCalls(mockLogger);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].data).toMatchObject({ iterationNum: 1 });
+  });
+
+  test("AC13: two normal iterations before terminal exit → iterationNum sequence is [1, 2, 3]", async () => {
+    const mockLogger = makeLogger();
+    // Validate twice returning a remaining finding; on the third iteration, returns resolved.
+    let validateCall = 0;
+    const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 5 });
+    const cycle = makeCycle([lintA], [strategy], async () => {
+      validateCall++;
+      if (validateCall < 3) return [lintA];
+      return [];
+    });
+
+    const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn,
+      logger: mockLogger as unknown as Logger,
+    });
+    expect(result.exitReason).toBe("resolved");
+    expect(result.iterations).toHaveLength(3);
+
+    const calls = iterationCompletedCalls(mockLogger);
+    expect(calls).toHaveLength(3);
+    expect(calls.map((c) => c.data?.iterationNum)).toEqual([1, 2, 3]);
+  });
+
+  test("AC14: agent-gave-up exit → emitted iteration record has outcome === 'unchanged'", async () => {
+    const mockLogger = makeLogger();
+    const strategy = makeStrategy({ extractApplied: () => ({ summary: "", unresolved: "Cannot resolve" }) });
+    const cycle = makeCycle([lintA], [strategy], async () => []);
+
+    const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn,
+      logger: mockLogger as unknown as Logger,
+    });
+    expect(result.exitReason).toBe("agent-gave-up");
+
+    const calls = iterationCompletedCalls(mockLogger);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].data).toMatchObject({ outcome: "unchanged", iterationNum: 1 });
   });
 });
