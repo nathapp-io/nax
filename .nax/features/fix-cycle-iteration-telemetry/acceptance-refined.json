@@ -1,0 +1,177 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `recordIteration` is imported from the `src/findings` barrel, then it is callable as a function.",
+    "refined": "Import `recordIteration` from `src/findings` and assert `typeof recordIteration === 'function'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `recordIteration` is called with a cycle whose `iterations` is empty, then it returns an `Iteration` whose `iterationNum` is `1`.",
+    "refined": "Create a FixCycle with empty `iterations` array. Call `recordIteration(cycle, input, ctx, logger)`. Assert returned `Iteration` object has `iterationNum === 1`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `recordIteration` returns, then the last element of `cycle.iterations` is the returned `Iteration`.",
+    "refined": "Call `recordIteration(cycle, input, ctx, logger)` and store result in `returned`. Assert `cycle.iterations[cycle.iterations.length - 1] === returned`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `recordIteration` is called a second time on the same cycle, then it returns an `Iteration` whose `iterationNum` is `2`.",
+    "refined": "Call `recordIteration(cycle, input1, ctx, logger)` then `recordIteration(cycle, input2, ctx, logger)`. Assert second returned `Iteration` has `iterationNum === 2`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `recordIteration` is called with a capturing logger, then the logger emits exactly one record with stage `findings.cycle` and message `iteration completed`.",
+    "refined": "Create a mock logger with an array `calls`. Call `recordIteration(cycle, input, ctx, mockLogger, ...)`. Assert `mockLogger.calls.length === 1` AND `mockLogger.calls[0].stage === 'findings.cycle'` AND `mockLogger.calls[0].message === 'iteration completed'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When `recordIteration` emits its record, then the first key of the data object is `storyId`.",
+    "refined": "Capture the data object passed to `mockLogger.log`. Assert `Object.keys(data)[0] === 'storyId'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When `recordIteration` is called with `logger` set to `null` or `undefined`, then `cycle.iterations` holds the returned `Iteration` as its last element.",
+    "refined": "Call `recordIteration(cycle, input, ctx, null)` and `recordIteration(cycle, input2, ctx, undefined)`. Assert neither throws AND `cycle.iterations[cycle.iterations.length - 1]` equals the respective returned `Iteration`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When `runFixCycle` executes a strategy whose fix operation reports `unresolved` and exits with reason `agent-gave-up`, then it emits one `iteration completed` record whose `iterationNum` is `1`.",
+    "refined": "Call `runFixCycle` with a strategy whose fix operation returns `unresolved`. Capture logger output. Assert exactly 1 record with `stage === 'findings.cycle'`, `message === 'iteration completed'`, and `data.iterationNum === 1`. Assert cycle exit reason is `agent-gave-up`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When terminal lite validation in `runFixCycle` returns no findings and the cycle exits with reason `resolved`, then it emits one `iteration completed` record.",
+    "refined": "Call `runFixCycle` with terminal lite validation configured to return empty findings array. Capture logger output. Assert exactly 1 record with `stage === 'findings.cycle'` and `message === 'iteration completed'`. Assert cycle exit reason is `resolved`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When terminal lite validation in `runFixCycle` reports a short-circuit and the cycle exits with reason `validate-short-circuit`, then it emits one `iteration completed` record.",
+    "refined": "Call `runFixCycle` with terminal lite validation configured to report short-circuit. Capture logger output. Assert exactly 1 record with `stage === 'findings.cycle'` and `message === 'iteration completed'`. Assert cycle exit reason is `validate-short-circuit`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When terminal lite validation in `runFixCycle` throws and the cycle exits with reason `max-attempts-per-strategy`, then it emits one `iteration completed` record.",
+    "refined": "Call `runFixCycle` with terminal lite validation configured to throw an error. Capture logger output. Assert exactly 1 record with `stage === 'findings.cycle'` and `message === 'iteration completed'`. Assert cycle exit reason is `max-attempts-per-strategy`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When `runFixCycle` completes one normal iteration that resolves, then it emits exactly one `iteration completed` record.",
+    "refined": "Call `runFixCycle` with normal iteration that resolves. Capture logger output. Assert exactly 1 record where `stage === 'findings.cycle'` and `message === 'iteration completed'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When `runFixCycle` completes two normal iterations before a terminal exit, then its emitted `iteration completed` records have `iterationNum` values in the order `1`, `2`, `3`.",
+    "refined": "Call `runFixCycle` configured to run two normal iterations before terminal exit. Capture logger output. Assert exactly 3 records with `stage === 'findings.cycle'` and `message === 'iteration completed'`. Assert `records[0].data.iterationNum === 1`, `records[1].data.iterationNum === 2`, `records[2].data.iterationNum === 3`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When `runFixCycle` exits via `agent-gave-up`, then its emitted iteration record has `outcome` equal to `unchanged`.",
+    "refined": "Call `runFixCycle` configured to exit via `agent-gave-up`. Capture logger output. Assert the record with `stage === 'findings.cycle'` and `message === 'iteration completed'` has `data.outcome === 'unchanged'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When an iteration's `findingsBefore` contains two findings, then its record's `findingKeysBefore` equals `findingKey` applied to each finding in the same order.",
+    "refined": "Given recordIteration(input) where input.findingsBefore is an array of N Finding objects, the output record MUST have findingKeysBefore as an array of exactly N strings where findingKeysBefore[i] === findingKey(input.findingsBefore[i]) for all 0 <= i < N.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When an iteration's `findingsAfter` contains one finding, then its record's `findingKeysAfter` is a single-element list containing `findingKey` of that finding.",
+    "refined": "Given recordIteration(input) where input.findingsAfter is an array of exactly 1 Finding object, the output record MUST have findingKeysAfter as an array of exactly 1 string equal to findingKey(input.findingsAfter[0]).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When the same finding object is present in both `findingsBefore` and `findingsAfter`, then its key appears in both `findingKeysBefore` and `findingKeysAfter` in the emitted record.",
+    "refined": "Given recordIteration(input) where the same Finding object reference exists at input.findingsBefore[indexBefore] and input.findingsAfter[indexAfter], the output record MUST contain findingKey(thatFinding) at output.findingKeysBefore[indexBefore] AND at output.findingKeysAfter[indexAfter].",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When an iteration's `findingsBefore` contains two findings, then its record's `findingsBefore` is the number `2`.",
+    "refined": "Given recordIteration(input) where input.findingsBefore is an array of length 2, the output record.findingsBefore MUST equal the integer 2 (number type, not string).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When an iteration's `findingsAfter` contains one finding, then its record's `findingsAfter` is the number `1`.",
+    "refined": "Given recordIteration(input) where input.findingsAfter is an array of length 1, the output record.findingsAfter MUST equal the integer 1 (number type, not string).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When two `fixesApplied` entries have overlapping `targetFiles`, then the record's `fixTargetFiles` lists each distinct path once in first-seen order.",
+    "refined": "Given recordIteration(input) where fixesApplied[0].targetFiles = ['a.ts', 'b.ts'] and fixesApplied[1].targetFiles = ['b.ts', 'c.ts'], the output record.fixTargetFiles MUST equal ['a.ts', 'b.ts', 'c.ts'] with no duplicates and preserving first-seen order.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When an iteration has two `fixesApplied` entries, then its record's `fixSummaries` contains their `summary` values in the same order.",
+    "refined": "Given recordIteration(input) where fixesApplied is an array of length N, the output record.fixSummaries MUST be an array of exactly N strings where fixSummaries[i] === fixesApplied[i].summary for all 0 <= i < N.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When an iteration's `fixesApplied` is empty, then its record contains no `fixTargetFiles` key.",
+    "refined": "Given recordIteration(input) where fixesApplied is an empty array, Object.hasOwn(record, 'fixTargetFiles') MUST be false (key absent, not undefined).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When an iteration's `fixesApplied` is empty, then its record contains no `fixSummaries` key.",
+    "refined": "Given recordIteration(input) where fixesApplied is an empty array, Object.hasOwn(record, 'fixSummaries') MUST be false (key absent, not undefined).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When a finding has `file`, `line`, and `rule` all undefined, then its record's `findingKeysBefore` entry equals `findingKey` of that finding.",
+    "refined": "Given a Finding f where f.file === undefined, f.line === undefined, and f.rule === undefined, and f is input.findingsBefore[i], record.findingKeysBefore[i] MUST equal findingKey(f) with null placeholders for the undefined fields.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When every `fixesApplied` entry in an iteration has `costUsd` equal to zero, then its record contains no `costUsd` key.",
+    "refined": "Given recordIteration(input) where for every fixesApplied entry fixesApplied[j].costUsd === 0, Object.hasOwn(record, 'costUsd') MUST be false (key absent, not undefined or null).",
+    "testable": true,
+    "storyId": "US-002"
+  }
+]
