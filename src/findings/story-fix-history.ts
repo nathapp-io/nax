@@ -1,15 +1,10 @@
 /**
- * Run-scoped story fix history store (US-004 carrier; consumption lands in US-002/US-003).
+ * Run-scoped story fix history store (US-004).
  *
  * One entry per (storyId, tier) pair, key format `${storyId}::${tier}`. The `tier`
  * segment is `ctx.phaseTelemetry?.tier` so a tier escalation yields a fresh budget
  * — the new model gets a real attempt rather than inheriting the prior model's
  * exhausted budget.
- *
- * US-004 test-writer stubs. The store types are complete; the runtime functions
- * are deliberately minimal so the AC-covering tests fail at the assertion (proving
- * the behaviour is missing) rather than at import. The implementer in the next
- * session replaces the placeholder bodies with real logic.
  */
 
 import type { Iteration } from "./cycle-types";
@@ -33,9 +28,12 @@ export function storyFixKey(storyId: string, tier?: string): string {
 }
 
 export function getStoryFixState(store: StoryFixHistory, key: string): StoryFixState {
-  const existing = store.get(key);
-  if (existing) return existing;
-  return { iterations: [{} as Iteration<Finding>], declines: new Map<string, Set<string>>() };
+  let existing = store.get(key);
+  if (!existing) {
+    existing = { iterations: [], declines: new Map<string, Set<string>>() };
+    store.set(key, existing);
+  }
+  return existing;
 }
 
 export function appendStoryFixIterations(
@@ -46,8 +44,13 @@ export function appendStoryFixIterations(
   const existing = store.get(key);
   if (existing) {
     store.set(key, {
-      iterations: existing.iterations,
+      iterations: [...existing.iterations, ...iterations],
       declines: existing.declines,
+    });
+  } else {
+    store.set(key, {
+      iterations: [...iterations],
+      declines: new Map<string, Set<string>>(),
     });
   }
 }

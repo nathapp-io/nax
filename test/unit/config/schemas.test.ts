@@ -678,3 +678,49 @@ describe("RectificationConfigSchema — no-progress fields (US-1496)", () => {
     expect(rectification["abortOnNoProgress"]).toBe(false);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-004: storyScopedFixBudget config field (run-scoped story fix history)
+//
+// Acceptance criteria covered here:
+//   AC 1 — storyScopedFixBudget defaults to true when unset
+//   AC 2 — storyScopedFixBudget = false is preserved when project config sets it
+//   AC 3 — string "yes" fails validation without coercing to boolean
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("RectificationConfigSchema — storyScopedFixBudget (US-004)", () => {
+  function rectificationConfig(rect: Record<string, unknown> | undefined) {
+    const base = { ...(DEFAULT_CONFIG as Record<string, unknown>) };
+    if (rect !== undefined) {
+      const execution = base.execution as Record<string, unknown>;
+      base.execution = { ...execution, rectification: rect };
+    }
+    return base;
+  }
+
+  test("[US-004 AC 1] storyScopedFixBudget defaults to true when execution.rectification is omitted", () => {
+    const config = NaxConfigSchema.parse({});
+    const execution = config.execution as Record<string, unknown>;
+    const rectification = execution.rectification as Record<string, unknown>;
+    expect(rectification["storyScopedFixBudget"]).toBe(true);
+  });
+
+  test("[US-004 AC 1] storyScopedFixBudget defaults to true when execution.rectification is supplied without storyScopedFixBudget", () => {
+    const config = NaxConfigSchema.parse(rectificationConfig({ enabled: true, maxAttemptsTotal: 5 }));
+    const execution = config.execution as Record<string, unknown>;
+    const rectification = execution.rectification as Record<string, unknown>;
+    expect(rectification["storyScopedFixBudget"]).toBe(true);
+  });
+
+  test("[US-004 AC 2] storyScopedFixBudget explicit override to false is preserved", () => {
+    const config = NaxConfigSchema.parse(rectificationConfig({ storyScopedFixBudget: false }));
+    const execution = config.execution as Record<string, unknown>;
+    const rectification = execution.rectification as Record<string, unknown>;
+    expect(rectification["storyScopedFixBudget"]).toBe(false);
+  });
+
+  test("[US-004 AC 3] storyScopedFixBudget rejects string 'yes' (no boolean coercion)", () => {
+    const result = NaxConfigSchema.safeParse(rectificationConfig({ storyScopedFixBudget: "yes" }));
+    expect(result.success).toBe(false);
+  });
+});
