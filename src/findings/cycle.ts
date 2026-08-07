@@ -151,7 +151,14 @@ export async function runFixCycle<F extends Finding>(
   cycle: FixCycle<F>,
   ctx: FixCycleContext,
   cycleName: string,
-  _deps: { callOp?: CallOpFn; now?: () => string; logger?: Logger | null } = {},
+  _deps: {
+    callOp?: CallOpFn;
+    now?: () => string;
+    logger?: Logger | null;
+    /** Caller-supplied map (strategy name -> set of declined findingKeys)
+     *  so a later cycle inherits prior decline records (US-003). */
+    declineBacking?: Map<string, Set<string>>;
+  } = {},
 ): Promise<FixCycleResult<F>> {
   const logger = _deps.logger !== undefined ? _deps.logger : getSafeLogger();
   const doCallOp = _deps.callOp ?? _cycleDeps.callOp;
@@ -164,7 +171,7 @@ export async function runFixCycle<F extends Finding>(
   // Per-finding retirement ledger (#1369, #1384) — see `createDeclineLedger` for why
   // UNRESOLVED retires a (strategy, finding) pair rather than the strategy itself, and
   // for the termination argument.
-  const declines = createDeclineLedger<F>();
+  const declines = createDeclineLedger<F>(_deps.declineBacking);
   let unresolvedDetail: string | undefined;
 
   /**
