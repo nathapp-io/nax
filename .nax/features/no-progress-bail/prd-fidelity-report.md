@@ -5,7 +5,8 @@
 **Reviewed against:** nax repo at `a7ae938a` (branch `feat/no-progress-bail`)
 **Planner:** `nax plan --profile cross-agent`, nax v0.77.1, exit 0
 **Date:** 2026-08-07
-**Verdict:** ⚠️ ready with one major — 0 blockers, 1 major, 1 minor
+**Verdict:** ✅ ready — 0 blockers; the one major was **resolved by surgical patch** (see
+"Resolution" below); 1 minor accepted with no action.
 
 ## Summary
 
@@ -127,7 +128,28 @@ The spec also cites `test/unit/execution/rectification-overrides.test.ts` as the
 which necessarily sets both preconditions up.
 
 **Recommended fix:** add the precondition to AC-2.9/AC-2.10 — "…with at least one rectification
-validation phase collected" — or state it once in US-002's description. Requires a re-plan.
+validation phase collected" — or state it once in US-002's description.
+
+### Resolution — surgical patch, no re-plan (2026-08-07, commit `4935ab0f`)
+
+Fixed in place rather than by re-planning, at the user's direction.
+
+- **Spec** — AC-2.9 and AC-2.10 now name both guards (`enabled: true` and "at least one
+  rectification validation phase collected"). A new Design note under "Observability at the
+  production entry point" cites `rectification.ts:218-224` and states that a fixture missing
+  either guard yields zero fix-op dispatches rather than the asserted count.
+- **PRD** — the three `runRectification` ACs (US-002 indices 11-13) were patched via `jq` to
+  carry the same two preconditions.
+
+**Patch scope verified:** `del(.userStories[1].acceptanceCriteria)` on the pre/post PRD diffs
+**identical** — every other field byte-for-byte unchanged. Exactly 3 AC strings differ (6 diff
+lines). AC counts unchanged at 9/15, so the `maxAcCount: 16` cap is untouched. Re-validated
+through nax's own `loadPRD`: 2 stories, ACs `[9, 15]`, `modifiedFiles` `[6, 2]`, `outOfScope` 8,
+and 3 ACs carrying the guard clause.
+
+⚠️ This PRD is now **hand-patched**. Re-running `nax plan` for this feature would regenerate it
+from the spec and discard the patch — which is safe, because the spec now carries the same
+preconditions and would reproduce them. Do not hand-patch again without re-checking that.
 
 ## Check 6 — Out-of-scope preservation
 
