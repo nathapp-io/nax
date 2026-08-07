@@ -426,6 +426,10 @@ function derivePhaseOutcome(output: unknown): "passed" | "failed" | "skipped" {
  *
  * @internal Exported for unit testing; not for external callers.
  */
+function iterationCount(value: Finding[] | number): number {
+  return Array.isArray(value) ? value.length : value;
+}
+
 export function withIncreasingFailuresBail(
   strategies: FixStrategy<Finding, unknown, unknown, unknown>[],
   enabled: boolean,
@@ -440,11 +444,11 @@ export function withIncreasingFailuresBail(
       if (userReason !== null) return userReason;
       if (iterations.length < threshold) return null;
       const trailing = iterations.slice(-threshold);
-      const allRegressed = trailing.every((it) => it.findingsAfter.length > it.findingsBefore.length);
+      const allRegressed = trailing.every((it) => iterationCount(it.findingsAfter) > iterationCount(it.findingsBefore));
       if (allRegressed) {
         const first = trailing[0];
         const last = trailing[trailing.length - 1];
-        return `failure count increased for ${threshold} consecutive iteration(s): ${first.findingsBefore.length} -> ${last.findingsAfter.length}`;
+        return `failure count increased for ${threshold} consecutive iteration(s): ${iterationCount(first.findingsBefore)} -> ${iterationCount(last.findingsAfter)}`;
       }
       return null;
     },

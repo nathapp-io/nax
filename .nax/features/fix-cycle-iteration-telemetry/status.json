@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-08-07T03-04-59-367Z",
+    "feature": "fix-cycle-iteration-telemetry",
+    "startedAt": "2026-08-07T03:04:59.367Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 19132
+  },
+  "progress": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 2.6945165598000003,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 3,
+  "updatedAt": "2026-08-07T03:41:00.744Z",
+  "durationMs": 2161377,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-08-07T03:40:28.882Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-08-07T03:40:59.543Z"
+    }
+  }
+}

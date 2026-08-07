@@ -35,7 +35,14 @@ export interface FixApplied {
 export interface Iteration<F extends Finding = Finding> {
   /** 1-indexed. */
   iterationNum: number;
-  findingsBefore: F[];
+  /**
+   * Numeric count of findings observed before the iteration ran. Stored as a
+   * number (not the array) on iterations produced by `recordIteration` to keep
+   * the iteration record payload small. Carry-forward iterations recorded by
+   * review orchestrators continue to store the full `F[]` so downstream
+   * demotion and prompt rendering can still inspect individual findings.
+   */
+  findingsBefore: F[] | number;
   /**
    * Strategies that ran during this iteration. At least one entry when the
    * iteration is produced by runFixCycle (one per strategy that ran).
@@ -46,7 +53,31 @@ export interface Iteration<F extends Finding = Finding> {
    * in the "Strategies run" column for these rows.
    */
   fixesApplied: FixApplied[];
-  findingsAfter: F[];
+  /** Mirror of `findingsBefore`: numeric count or full `F[]` array. */
+  findingsAfter: F[] | number;
+  /**
+   * Exact `findingKey(f)` per entry in the pre-iteration findings, in array
+   * order. Set by `recordIteration`; omitted on carry-forward iterations
+   * recorded by review orchestrators (which retain the array form above).
+   * Identities match `classifyOutcome` so the iteration record can answer
+   * "same defect or different?" without re-deriving the keys.
+   */
+  findingKeysBefore?: string[];
+  /** Mirror of `findingKeysBefore` for the post-iteration findings. */
+  findingKeysAfter?: string[];
+  /**
+   * De-duplicated union of `fixesApplied[].targetFiles` in first-seen order.
+   * Omitted when `fixesApplied` is empty so carry-forward iterations don't
+   * carry a zero-length array.
+   */
+  fixTargetFiles?: string[];
+  /** One entry per `fixesApplied` entry, in input order. Omitted when empty. */
+  fixSummaries?: string[];
+  /**
+   * Sum of `fixesApplied[].costUsd` for this iteration. Omitted when the
+   * total is zero so the record stays free of zero-cost entries.
+   */
+  costUsd?: number;
   outcome: IterationOutcome;
   startedAt: string; // ISO-8601
   finishedAt: string; // ISO-8601

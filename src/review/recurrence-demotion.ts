@@ -106,8 +106,9 @@ export function countPriorAppearances(
 ): Map<string, PriorAppearance> {
   const counts = new Map<string, PriorAppearance>();
   for (const it of priorIterations) {
+    const findingsAfter = Array.isArray(it.findingsAfter) ? it.findingsAfter : [];
     const seenThisIter = new Map<string, string>();
-    for (const f of (it.findingsAfter ?? []) as Finding[]) {
+    for (const f of findingsAfter) {
       if (f.source !== source) continue;
       // Index under BOTH keys. `finding-projection.ts` persists a valid 1-based
       // acIndex into meta, but iterations recorded before that — or by an older

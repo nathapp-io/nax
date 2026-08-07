@@ -5,6 +5,11 @@
  * iteration record onto the cycle state and emitting the structured log
  * record. These were decoupled, which is why three of the four cycle
  * append sites emitted no log. See .nax/features/iteration-record-helper/spec.md.
+ *
+ * The stored iteration is widened with the same identity / fix-target fields
+ * the log emits so callers that hold an `Iteration<F>` reference can answer
+ * "same defect or different?" without re-deriving the keys. See
+ * .nax/features/fix-cycle-iteration-telemetry/spec.md (US-002).
  */
 
 import type { Logger } from "@/logger";
@@ -34,20 +39,11 @@ export function recordIteration<F extends Finding>(
   logger: Logger | null | undefined,
 ): Iteration<F> {
   const iterationNum = cycle.iterations.length + 1;
-  const iteration: Iteration<F> = {
-    iterationNum,
-    findingsBefore: input.findingsBefore,
-    fixesApplied: input.fixesApplied,
-    findingsAfter: input.findingsAfter,
-    outcome: input.outcome,
-    startedAt: input.startedAt,
-    finishedAt: input.finishedAt,
-  };
-  cycle.iterations.push(iteration);
-
-  const costUsd = input.fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0);
+  const findingsBeforeCount = input.findingsBefore.length;
+  const findingsAfterCount = input.findingsAfter.length;
   const findingKeysBefore = input.findingsBefore.map(findingKey);
   const findingKeysAfter = input.findingsAfter.map(findingKey);
+  const costUsd = input.fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0);
   const seenTargetFiles = new Set<string>();
   const fixTargetFiles: string[] = [];
   for (const fa of input.fixesApplied) {
@@ -58,6 +54,22 @@ export function recordIteration<F extends Finding>(
     }
   }
   const fixSummaries = input.fixesApplied.map((fa) => fa.summary);
+  const hasFixes = input.fixesApplied.length > 0;
+  const iteration: Iteration<F> = {
+    iterationNum,
+    findingsBefore: findingsBeforeCount,
+    fixesApplied: input.fixesApplied,
+    findingsAfter: findingsAfterCount,
+    outcome: input.outcome,
+    startedAt: input.startedAt,
+    finishedAt: input.finishedAt,
+    findingKeysBefore,
+    findingKeysAfter,
+    ...(hasFixes ? { fixTargetFiles, fixSummaries } : {}),
+    ...(costUsd > 0 ? { costUsd } : {}),
+  };
+  cycle.iterations.push(iteration);
+
   logger?.info("findings.cycle", "iteration completed", {
     storyId: ctx.storyId,
     packageDir: ctx.packageDir,
@@ -65,11 +77,11 @@ export function recordIteration<F extends Finding>(
     iterationNum,
     strategiesRan: input.fixesApplied.map((fa) => fa.strategyName),
     outcome: input.outcome,
-    findingsBefore: input.findingsBefore.length,
-    findingsAfter: input.findingsAfter.length,
+    findingsBefore: findingsBeforeCount,
+    findingsAfter: findingsAfterCount,
     findingKeysBefore,
     findingKeysAfter,
-    ...(input.fixesApplied.length > 0 ? { fixTargetFiles, fixSummaries } : {}),
+    ...(hasFixes ? { fixTargetFiles, fixSummaries } : {}),
     ...(costUsd > 0 ? { costUsd } : {}),
   });
 

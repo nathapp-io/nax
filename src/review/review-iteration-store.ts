@@ -6,6 +6,10 @@ export function getReviewIterations(store: Map<string, Iteration[]>, storyId: st
   return store.get(storyId) ?? [];
 }
 
+function findingsArray(value: Finding[] | number): Finding[] {
+  return Array.isArray(value) ? value : [];
+}
+
 /**
  * Append one review round to the per-story history. `fixesApplied` is `[]`
  * because the fix ran in the implementation session outside the FixCycle (see
@@ -22,7 +26,7 @@ export function recordReviewIteration(
   roundFindings: readonly Finding[],
 ): void {
   const prior = store.get(storyId) ?? [];
-  const findingsBefore = prior.length > 0 ? prior[prior.length - 1].findingsAfter : [];
+  const findingsBefore = prior.length > 0 ? findingsArray(prior[prior.length - 1].findingsAfter) : [];
   const findingsAfter = [...roundFindings];
   const now = new Date().toISOString();
   const iteration: Iteration = {
