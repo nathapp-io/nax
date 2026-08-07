@@ -49,6 +49,65 @@ describe("parseNarrative", () => {
   test("never throws on an empty reply — a throw would fail the flow", () => {
     expect(parseNarrative("")).toBe("");
   });
+
+  test("never throws on a non-string reply", () => {
+    expect(parseNarrative(undefined as unknown as string)).toBe("");
+  });
+
+  test("keeps only what the sentinel wraps", () => {
+    const reply = "Let me read the diff first.\n<narrative>\nAdds a detector.\n</narrative>\n";
+    expect(parseNarrative(reply)).toBe("Adds a detector.");
+  });
+
+  test("preserves prose that would not survive a JSON contract", () => {
+    // Backticks, quotes and hard newlines are why this node uses a sentinel
+    // rather than the JSON the sibling review nodes use.
+    const prose = 'Wires `detect_schema_drift()` in.\n\nIt returns "ok" per {table, op} pair.';
+    expect(parseNarrative(`<narrative>${prose}</narrative>`)).toBe(prose);
+  });
+
+  test("takes the last opening tag, so narrating the tag does not win", () => {
+    const reply = "I will wrap it in <narrative> tags.\n<narrative>Real prose.</narrative>";
+    expect(parseNarrative(reply)).toBe("Real prose.");
+  });
+
+  test("recovers prose when the closing tag is missing", () => {
+    expect(parseNarrative("chatter\n<narrative>Adds a detector.")).toBe("Adds a detector.");
+  });
+
+  test("strips leaked preamble and a bold heading when the sentinel is absent", () => {
+    // The exact shape observed on rs-stock PR #446: acpx concatenates every
+    // agent message chunk of the turn, so between-tool-call narration lands in
+    // `parse`'s input with no separator at all.
+    const reply = [
+      "Now I have a clear picture. Let me check the remaining acceptance test",
+      'briefly, then write the PR body.I have enough context to write the "What changed" prose.',
+      "",
+      "**What changed**",
+      "",
+      "Adds a shared schema-drift detector.",
+    ].join("\n");
+    expect(parseNarrative(reply)).toBe("Adds a shared schema-drift detector.");
+  });
+
+  test("strips a markdown heading form too", () => {
+    expect(parseNarrative("Thinking out loud.\n\n## What changed\n\nAdds a gate.")).toBe("Adds a gate.");
+  });
+
+  test("returns the trimmed reply when no anchor is present at all", () => {
+    // Tier 3: preamble we cannot locate beats dropping the narrative entirely.
+    expect(parseNarrative("Adds a gate to readyz.")).toBe("Adds a gate to readyz.");
+  });
+
+  test("returns empty when the agent wrote a heading and nothing else", () => {
+    // Empty routes `resolveNarrative` to the spec summary rather than
+    // rendering a bare heading.
+    expect(parseNarrative("**What changed**")).toBe("");
+  });
+
+  test("falls through to the heading strip when the sentinel is empty", () => {
+    expect(parseNarrative("chatter\n**What changed**\n<narrative>  </narrative>")).toBe("");
+  });
 });
 
 describe("readSpecSummary", () => {
@@ -108,5 +167,13 @@ describe("buildNarrativePrompt", () => {
 
   test("states the length budget", () => {
     expect(buildNarrativePrompt({ base: "main" })).toContain(String(NARRATIVE_MAX_CHARS));
+  });
+
+  test("asks for the sentinel the parser anchors on", () => {
+    // The prompt and `parseNarrative` have to agree on the delimiter; nothing
+    // else ties them together, and a silent drift here reinstates the leak.
+    const prompt = buildNarrativePrompt({ base: "main" });
+    expect(prompt).toContain("<narrative>");
+    expect(prompt).toContain("</narrative>");
   });
 });
