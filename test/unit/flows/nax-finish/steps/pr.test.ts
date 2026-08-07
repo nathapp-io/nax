@@ -257,8 +257,21 @@ describe("loadFinishPrContext (US-004 AC1-AC6)", () => {
 
     await loadFinishPrContext(input(), { base: "origin/release/2026.08", gatesRan: [] });
 
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toEqual(["git", "diff", "--stat", "origin/release/2026.08...HEAD"]);
+    // Two calls since the artifact exclusion landed: the reviewable diffstat,
+    // and the `--shortstat` that accounts for the nax artifacts held out of it.
+    // Both must carry the caller's base — the point of this AC.
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      expect(call).toContain("origin/release/2026.08...HEAD");
+    }
+    expect(calls.find((c) => c.includes("--stat"))).toEqual([
+      "git",
+      "diff",
+      "--stat",
+      "origin/release/2026.08...HEAD",
+      "--",
+      ":(glob,exclude)**/.nax/**",
+    ]);
   });
 
   // US-004 AC4 — the diffstat text is rendered verbatim into the Verification

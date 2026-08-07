@@ -24,6 +24,16 @@ const ctxWith = (narrative?: unknown) =>
     outputs: { load_ctx: { route: "proceed", base: "origin/main" }, narrative },
   });
 
+/**
+ * A `run` that satisfies `detectForge` (GitHub remote) and records every argv,
+ * so the amend path actually reaches `gh pr edit` instead of failing detection.
+ */
+const githubRun = (calls: string[][] = []) => async (cmd: string[]) => {
+  calls.push(cmd);
+  const isRemote = cmd.includes("remote");
+  return { exitCode: 0, stdout: isRemote ? "git@github.com:acme/repo.git" : "", stderr: "" };
+};
+
 describe("amendPrBodyNode", () => {
   test("issues no forge call when the narrative node produced nothing", async () => {
     const calls: string[][] = [];
@@ -31,14 +41,38 @@ describe("amendPrBodyNode", () => {
       calls.push(cmd);
       return { exitCode: 0, stdout: "", stderr: "" };
     };
-    const out = await amendPrBodyNode(ctxWith(undefined));
+    const out = await amendPrBodyNode(ctxWith({ narrative: "" }));
     expect(out).toEqual({ route: "done", amended: false });
     expect(calls).toEqual([]);
   });
 
   test("treats a whitespace-only narrative as nothing", async () => {
-    const out = await amendPrBodyNode(ctxWith("   \n  "));
+    const out = await amendPrBodyNode(ctxWith({ narrative: "   \n  " }));
     expect(out.amended).toBe(false);
+  });
+
+  test("amends for a title even when the prose is empty", async () => {
+    // The title is the part a reviewer reads first, so it alone justifies the
+    // forge call that an empty narrative would otherwise skip.
+    _prBodyDeps.run = githubRun();
+    const out = await amendPrBodyNode(ctxWith({ narrative: "", title: "fix: repair the gate" }));
+    expect(out.amended).toBe(true);
+  });
+
+  test("writes the model's title onto the PR", async () => {
+    const calls: string[][] = [];
+    _prBodyDeps.run = githubRun(calls);
+    await amendPrBodyNode(ctxWith({ narrative: "Prose.", title: "fix: repair the gate" }));
+    const edit = calls.find((c) => c.includes("--title"));
+    expect(edit?.[edit.indexOf("--title") + 1]).toBe("fix: repair the gate");
+  });
+
+  test("falls back to 'feat: <feature>' when the node produced no title", async () => {
+    const calls: string[][] = [];
+    _prBodyDeps.run = githubRun(calls);
+    await amendPrBodyNode(ctxWith({ narrative: "Prose." }));
+    const edit = calls.find((c) => c.includes("--title"));
+    expect(edit?.[edit.indexOf("--title") + 1]).toBe("feat: x");
   });
 
   test("warns instead of throwing when the forge edit fails", async () => {
@@ -47,7 +81,7 @@ describe("amendPrBodyNode", () => {
     _prBodyDeps.run = async () => {
       throw new Error("gh exploded");
     };
-    const out = await amendPrBodyNode(ctxWith("real prose"));
+    const out = await amendPrBodyNode(ctxWith({ narrative: "real prose" }));
     expect(out).toEqual({ route: "done", amended: false });
     expect(warnings.length).toBe(1);
   });

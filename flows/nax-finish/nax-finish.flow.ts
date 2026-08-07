@@ -44,7 +44,7 @@
 import { defineFlow } from "acpx/flows";
 import { buildFixCommitMessage } from "./commit-message";
 import { findingsOf, fixAttemptCount, gateOutputs, incrementalSince, inputOf, loadCtxOf } from "./flow-ctx";
-import { narrativePrompt, parseNarrative } from "./narrative";
+import { narrativePrompt, parseNarrativeNode } from "./narrative";
 import { buildReviewPrompt, fixPrompt } from "./review-prompts";
 import {
   _contextDeps,
@@ -449,7 +449,7 @@ export default defineFlow({
       session: { isolated: true },
       profile: process.env.NAX_FINISH_NARRATIVE_PROFILE || undefined,
       prompt: narrativePrompt,
-      parse: parseNarrative,
+      parse: parseNarrativeNode,
     },
     amend_body: {
       nodeType: "action",

@@ -12,10 +12,40 @@
  * test can reach it.
  */
 
+import { TITLE_CLOSE_TAG, TITLE_MAX_CHARS, TITLE_OPEN_TAG, parseTitle } from "./pr-title";
+
 /** Longest narrative rendered into a PR body, in characters, including the ellipsis. */
 export const NARRATIVE_MAX_CHARS = 4000;
 
 const TRUNCATION_SUFFIX = "…";
+
+/**
+ * Sentinel wrapping the prose, so `parseNarrative` has an explicit anchor
+ * rather than an inferred one.
+ *
+ * acpx hands `parse` the concatenation of *every* agent message chunk in the
+ * turn — `chunks.join("")` in its `createQuietCaptureOutput`. This node reads
+ * the diff with tools, so the agent's between-tool-call narration ("Now I have
+ * a clear picture. Let me check…") is structurally part of that string. A
+ * prompt asking for "no preamble" cannot prevent it; only a delimiter can.
+ *
+ * A sentinel rather than the JSON contract the sibling nodes use: this payload
+ * is multi-paragraph prose about code, full of backticks, quotes and newlines.
+ * Literal newlines inside a JSON string are invalid JSON, so a JSON contract
+ * would fail on exactly the inputs this node exists to carry.
+ */
+const OPEN_TAG = "<narrative>";
+const CLOSE_TAG = "</narrative>";
+
+/**
+ * Headings the agent emits despite being told not to. Anchors the fallback
+ * strip when the sentinel is absent: everything up to and including the
+ * heading is preamble.
+ */
+const HEADING_RE = /^[\s\S]*?(?:\*\*What changed\*\*|##+\s*What changed)\s*/i;
+
+/** A `<title>…</title>` block, closed or not — removed wholesale from the prose. */
+const TITLE_BLOCK_RE = new RegExp(`${TITLE_OPEN_TAG}[\\s\\S]*?(?:${TITLE_CLOSE_TAG}|$)`, "gi");
 
 /** Headings a spec uses for its lead paragraph, in priority order. */
 const SUMMARY_HEADINGS = ["summary", "overview"] as const;
@@ -57,7 +87,18 @@ export function buildNarrativePrompt(args: { base: string }): string {
     "anything a reviewer would otherwise have to reconstruct from the diff by hand.",
     `Hard limit: ${NARRATIVE_MAX_CHARS} characters.`,
     "Do not write a heading — the heading is added for you.",
-    "Return the prose only. No JSON, no code fences, no preamble.",
+    "",
+    "Then write the pull request title: a conventional-commit subject describing",
+    `the change (\`fix: …\`, \`feat: …\`, \`refactor: …\`), at most ${TITLE_MAX_CHARS} characters.`,
+    "Describe what the change does — not the feature's name, which the reader",
+    "can already see on the branch.",
+    "",
+    "Reply with exactly these two blocks, and write nothing after the last one:",
+    `${TITLE_OPEN_TAG}conventional-commit subject${TITLE_CLOSE_TAG}`,
+    `${OPEN_TAG}the prose${CLOSE_TAG}`,
+    "",
+    "Everything outside those tags is discarded, so anything you say while working",
+    "through the diff is safe to leave where it falls.",
   ].join("\n");
 }
 
@@ -66,10 +107,51 @@ export function buildNarrativePrompt(args: { base: string }): string {
  *
  * Never throws. A throw inside `parse` fails the node, and acpx has no error
  * edge — see `verdict.ts`. Here that would mean the flow dying *after* the PR
- * was already opened.
+ * was already opened, so every branch below degrades instead of rejecting.
+ *
+ * Three tiers, strongest anchor first:
+ *   1. Sentinel — the contract the prompt asks for.
+ *   2. Heading — the agent ignored the sentinel but still wrote
+ *      `**What changed**`, which marks where its preamble stopped.
+ *   3. Bare trim — no anchor available; better a narrative with preamble than
+ *      no narrative at all.
  */
 export function parseNarrative(text: string): string {
-  return typeof text === "string" ? text.trim() : "";
+  if (typeof text !== "string") return "";
+
+  // Last opening tag, not the first: if the agent narrates the tag before
+  // emitting it for real ("I'll wrap this in <narrative>"), the real one wins.
+  const open = text.lastIndexOf(OPEN_TAG);
+  if (open !== -1) {
+    const from = open + OPEN_TAG.length;
+    const close = text.indexOf(CLOSE_TAG, from);
+    const inner = (close === -1 ? text.slice(from) : text.slice(from, close)).trim();
+    if (inner) return inner;
+  }
+
+  // Strip tag markers before the heading pass: an empty or malformed sentinel
+  // falls through to here, and leftover `<narrative>` markup in a PR body is
+  // worse than the preamble this function exists to remove. The title block
+  // goes entirely — tags and content — since it is not part of the prose.
+  const untagged = text.replace(TITLE_BLOCK_RE, "").split(OPEN_TAG).join("").split(CLOSE_TAG).join("");
+  return untagged.replace(HEADING_RE, "").trim();
+}
+
+/** What the `narrative` acp node returns: the prose, and the title to rename the PR to. */
+export interface NarrativeNodeResult {
+  narrative: string;
+  title?: string;
+}
+
+/**
+ * `parse` for the narrative acp node.
+ *
+ * Both halves are optional to the flow: a missing title leaves the PR on
+ * `feat: <feature>`, and missing prose leaves the body's mechanical sections
+ * alone. Never throws, for the reason `parseNarrative` documents.
+ */
+export function parseNarrativeNode(text: string): NarrativeNodeResult {
+  return { narrative: parseNarrative(text), title: parseTitle(text) };
 }
 
 function truncate(text: string): string {

@@ -5,11 +5,14 @@
  * The finish flow opens a PR via `openOrPromotePr` and used to ship a
  * hardcoded `nax-finish: <feature>` title and a one-sentence body, throwing
  * away every artifact the run produced on the way. This module restores that
- * context as a deterministic markdown body — the title matches
- * `src/plugins/builtin/auto-pr/pr-body.ts:buildTitle`, and the body is
- * assembled by string joins over the fields in `FinishPrContext`. No model
- * call: every section is reproducible from artifacts that exist before
- * `open_pr` runs, and so the body stays greppable in PR history.
+ * context as a deterministic markdown body, assembled by string joins over the
+ * fields in `FinishPrContext`. Every *section* is reproducible from artifacts
+ * that exist before `open_pr` runs, so the body stays greppable in PR history.
+ *
+ * Two fields are the exception, and both arrive later, from the narrative node
+ * that runs after the PR is already open: `narrative` and `title`. Each has a
+ * deterministic fallback (`resolveNarrative`, `resolveTitle`) so `open_pr` never
+ * waits on a model — see `steps/pr-narrative.ts`.
  *
  * Reimplemented here (rather than imported from `src/`) because `flows/`
  * ships to a different runtime — `acpx flow run` runs it in acpx's own Node
@@ -20,6 +23,7 @@ import { dirname, isAbsolute, join } from "node:path";
 import { runArgv } from "../exec";
 import { readSpecSummary, resolveNarrative } from "../narrative";
 import { findPrTemplate } from "../pr-template";
+import { resolveTitle } from "../pr-title";
 import type { Finding, FinishInput, FinishRound, RunFn } from "../types";
 import type { Forge } from "./forge";
 import { readRounds } from "./result";
@@ -46,10 +50,20 @@ export interface FinishPrContext {
   regression?: string;
   gatesRan: string[];
   diffstat?: string;
+  /**
+   * `--shortstat` for the nax artifacts held out of `diffstat`. Absent when the
+   * branch touched none, so a repo that gitignores them renders nothing.
+   */
+  artifactSummary?: string;
   /** Repository PR/MR template, verbatim. Absent when none resolves. */
   template?: string;
   /** Resolved "What changed" prose. Absent when neither source produced text. */
   narrative?: string;
+  /**
+   * Resolved conventional-commit PR title. Always set — `resolveTitle` falls
+   * back to `feat: <feature>` when the narrative node produced nothing usable.
+   */
+  title: string;
   rounds: FinishRound[];
   run: {
     durationMs?: number;
@@ -121,7 +135,43 @@ function storiesFrom(prd: PrdArtifact | undefined): FinishPrStory[] {
 }
 
 /**
- * Run `git diff --stat <base>...HEAD` and return its stdout on success.
+ * Pathspec matching nax's own run artifacts, at any depth.
+ *
+ * `**` and the `glob` magic word are both load-bearing. nax writes artifacts
+ * to a repo-root `.nax/` *and* to a per-package `<pkg>/.nax/` — a root-anchored
+ * `:!.nax/**` silently keeps the per-package copy, which is routinely the
+ * largest file in the diff (587 of 2039 insertions on the run that motivated
+ * this). Without `glob`, git's default wildmatch lets `*` cross `/` and the
+ * two forms stop being distinguishable.
+ */
+const NAX_ARTIFACT_PATHSPEC = "**/.nax/**";
+
+/** The two halves of the branch's diff: what is under review, and what was held out. */
+interface DiffstatResult {
+  diffstat?: string;
+  artifactSummary?: string;
+}
+
+/** Run `git diff <...args>` under `workdir`, or `undefined` on any non-happy path. */
+async function runGitDiff(workdir: string, args: string[]): Promise<string | undefined> {
+  try {
+    const res = await _prBodyDeps.run(["git", "diff", ...args], { cwd: workdir });
+    if (res.exitCode !== 0) return undefined;
+    return res.stdout;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Diffstat of the branch, excluding nax's own artifacts.
+ *
+ * The artifacts (`spec.md`, `prd.json`, the generated acceptance test) are
+ * committed and real, but they are the run's exhaust rather than the change
+ * under review, and they dominate the totals — quoting them in the headline
+ * advertises a 2039-line change where 791 lines are reviewable code.
+ * `artifactSummary` keeps them accounted for rather than silently dropped, so
+ * the body still reconciles against `gh pr diff`.
  *
  * Fail-open on every non-happy path — a non-zero exit (no commits, divergent
  * branch, base missing), a rejected run promise (forks too slow to start), or
@@ -129,18 +179,18 @@ function storiesFrom(prd: PrdArtifact | undefined): FinishPrStory[] {
  * optional, and a routine empty-branch finish must not lose `open_pr` to a
  * throw that the body can simply skip.
  */
-async function runDiffstat(workdir: string, base: string): Promise<string | undefined> {
+async function runDiffstat(workdir: string, base: string): Promise<DiffstatResult> {
   // An empty `base` would interpolate to `...HEAD`, which git resolves as
   // `HEAD...HEAD` — exit 0, empty stdout — masking the missing-base case as
   // "no changes" instead of skipping explicitly.
-  if (!base) return undefined;
-  try {
-    const res = await _prBodyDeps.run(["git", "diff", "--stat", `${base}...HEAD`], { cwd: workdir });
-    if (res.exitCode !== 0) return undefined;
-    return res.stdout;
-  } catch {
-    return undefined;
-  }
+  if (!base) return {};
+  const range = `${base}...HEAD`;
+  const [diffstat, artifacts] = await Promise.all([
+    runGitDiff(workdir, ["--stat", range, "--", `:(glob,exclude)${NAX_ARTIFACT_PATHSPEC}`]),
+    runGitDiff(workdir, ["--shortstat", range, "--", `:(glob)${NAX_ARTIFACT_PATHSPEC}`]),
+  ]);
+  const summary = artifacts?.trim();
+  return { diffstat, artifactSummary: summary ? summary : undefined };
 }
 
 /**
@@ -161,14 +211,14 @@ async function loadTemplate(workdir: string, forge: Forge | undefined): Promise<
 
 export async function loadFinishPrContext(
   input: FinishInput,
-  args: { base: string; gatesRan: string[]; forge?: Forge; specPath?: string; narrative?: string },
+  args: { base: string; gatesRan: string[]; forge?: Forge; specPath?: string; narrative?: string; title?: string },
 ): Promise<FinishPrContext> {
   const inputPrdPath = input.prdPath || "prd.json";
   const prdPath = isAbsolute(inputPrdPath) ? inputPrdPath : join(input.workdir, inputPrdPath);
   // [US-004] The audit trail (`rounds`), the diffstat, and the spec summary
   // are independent of the PRD/status reads — fetching them in parallel keeps
   // the loader's wall clock at max(readRounds, readJson×2, diffstat, spec).
-  const [prd, status, rounds, diffstat, template, specSummary] = (await Promise.all([
+  const [prd, status, rounds, stat, template, specSummary] = (await Promise.all([
     readJson(prdPath),
     readJson(join(dirname(prdPath), "status.json")),
     readRounds(input),
@@ -179,7 +229,7 @@ export async function loadFinishPrContext(
     PrdArtifact | undefined,
     StatusArtifact | undefined,
     FinishRound[],
-    string | undefined,
+    DiffstatResult,
     string | undefined,
     string | null,
   ];
@@ -191,9 +241,11 @@ export async function loadFinishPrContext(
     regression: status?.postRun?.regression?.status,
     gatesRan: args.gatesRan,
     rounds,
-    diffstat,
+    diffstat: stat.diffstat,
+    artifactSummary: stat.artifactSummary,
     template,
     narrative: resolveNarrative(args.narrative, specSummary),
+    title: resolveTitle(args.title, input.feature),
     run: {
       durationMs: status?.durationMs,
       storiesPassed: status?.progress?.passed,
@@ -203,12 +255,18 @@ export async function loadFinishPrContext(
 }
 
 /**
- * Conventional-commit title matching `buildTitle` in
- * `src/plugins/builtin/auto-pr/pr-body.ts`, so finish-opened and
- * auto-PR-opened PRs read the same in a list view.
+ * The PR title: the narrative node's conventional-commit subject when it
+ * produced one, else `feat: <feature>`.
+ *
+ * That fallback is what this returned unconditionally, and is still what
+ * `buildTitle` in `src/plugins/builtin/auto-pr/pr-body.ts` opens with — so a
+ * finish run that reaches `open_pr` before the narrative node has spoken still
+ * reads identically to an auto-PR-opened one in a list view. The two diverge
+ * only once there is something better to say: `feat: schema-drift-gate` names
+ * the run, not the change.
  */
 export function buildFinishTitle(ctx: FinishPrContext): string {
-  return `feat: ${ctx.feature}`;
+  return ctx.title;
 }
 
 /**
@@ -247,17 +305,24 @@ function buildStoriesSection(stories: FinishPrStory[]): string {
   return lines.join("\n");
 }
 
-function buildVerificationSection(
-  acceptance: string | undefined,
-  regression: string | undefined,
-  gatesRan: string[],
-  diffstat: string | undefined,
-): string | null {
+/**
+ * Takes the whole context rather than the five fields it reads: the section
+ * grew past the three-positional-parameter cap in the coding standards, and
+ * every field it wants is already on `FinishPrContext`.
+ */
+function buildVerificationSection(ctx: FinishPrContext): string | null {
+  const { acceptance, regression, gatesRan, diffstat, artifactSummary } = ctx;
   const lines: string[] = ["## Verification"];
   if (acceptance !== undefined) lines.push(`- Acceptance: ${acceptance}`);
   if (regression !== undefined) lines.push(`- Regression: ${regression}`);
   if (gatesRan.length > 0) lines.push(`- Gates: ${gatesRan.join(", ")}`);
   if (diffstat !== undefined && diffstat.length > 0) lines.push(`- Diffstat:\n\n\`\`\`\n${diffstat}\n\`\`\``);
+  // Stated even though the files are excluded above: a reviewer who diffs the
+  // branch themselves sees more than the diffstat quotes, and an unexplained
+  // mismatch reads as a stale body.
+  if (artifactSummary !== undefined && artifactSummary.length > 0) {
+    lines.push(`- Excluded from diffstat — nax run artifacts: ${artifactSummary}`);
+  }
   if (lines.length === 1) return null;
   return lines.join("\n");
 }
@@ -325,7 +390,7 @@ export function buildFinishBody(ctx: FinishPrContext): string {
 
   if (ctx.stories.length > 0) sections.push(buildStoriesSection(ctx.stories));
 
-  const verification = buildVerificationSection(ctx.acceptance, ctx.regression, ctx.gatesRan, ctx.diffstat);
+  const verification = buildVerificationSection(ctx);
   if (verification !== null) sections.push(verification);
 
   const roundsSection = buildRoundsSection(ctx.rounds);

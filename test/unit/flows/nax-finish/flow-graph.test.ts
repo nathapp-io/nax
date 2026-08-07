@@ -7,7 +7,7 @@ import { _gitDeps } from "@flows/nax-finish/steps/git";
 import { _prDeps } from "@flows/nax-finish/steps/pr";
 import { _qualityDeps } from "@flows/nax-finish/steps/quality";
 import { _resultDeps } from "@flows/nax-finish/steps/result";
-import { narrativeOf } from "@flows/nax-finish/flow-ctx";
+import { narrativeOf, prTitleOf } from "@flows/nax-finish/flow-ctx";
 import type { FlowNodeContext, FlowStepRecord } from "acpx/flows";
 import { makeFlowCtx, makeFlowSteps } from "@test/helpers";
 
@@ -145,8 +145,21 @@ describe("nax-finish flow graph", () => {
     // while nothing is wired. `narrativeOf` reads `ctx.outputs.narrative`; the
     // node id below is what acpx keys that output by.
     expect(flow.nodes.narrative).toBeDefined();
-    expect(narrativeOf({ outputs: { narrative: "prose" } })).toBe("prose");
+    expect(narrativeOf({ outputs: { narrative: { narrative: "prose" } } })).toBe("prose");
     expect(narrativeOf({ outputs: {} })).toBeUndefined();
+  });
+
+  test("narrativeOf still reads the bare string a pre-title run journalled", () => {
+    // acpx replays a resumed run's outputs from its journal, so a run recorded
+    // before the node returned `{ narrative, title }` hands back the old shape.
+    expect(narrativeOf({ outputs: { narrative: "prose" } })).toBe("prose");
+  });
+
+  test("prTitleOf reads the title half, and is absent for the old shape", () => {
+    expect(prTitleOf({ outputs: { narrative: { narrative: "p", title: "fix: thing" } } })).toBe("fix: thing");
+    expect(prTitleOf({ outputs: { narrative: "prose" } })).toBeUndefined();
+    expect(prTitleOf({ outputs: { narrative: { narrative: "p" } } })).toBeUndefined();
+    expect(prTitleOf({ outputs: {} })).toBeUndefined();
   });
 });
 
