@@ -35,6 +35,7 @@ export interface FixApplied {
 export interface Iteration<F extends Finding = Finding> {
   /** 1-indexed. */
   iterationNum: number;
+  /** Findings observed before the iteration ran. */
   findingsBefore: F[];
   /**
    * Strategies that ran during this iteration. At least one entry when the
@@ -46,7 +47,31 @@ export interface Iteration<F extends Finding = Finding> {
    * in the "Strategies run" column for these rows.
    */
   fixesApplied: FixApplied[];
+  /** Findings observed after the iteration ran. */
   findingsAfter: F[];
+  /**
+   * Exact `findingKey(f)` per entry in the pre-iteration findings, in array
+   * order. Set by `recordIteration`; omitted on carry-forward iterations
+   * recorded by review orchestrators (which retain the array form above).
+   * Identities match `classifyOutcome` so the iteration record can answer
+   * "same defect or different?" without re-deriving the keys.
+   */
+  findingKeysBefore?: string[];
+  /** Mirror of `findingKeysBefore` for the post-iteration findings. */
+  findingKeysAfter?: string[];
+  /**
+   * De-duplicated union of `fixesApplied[].targetFiles` in first-seen order.
+   * Omitted when `fixesApplied` is empty so carry-forward iterations don't
+   * carry a zero-length array.
+   */
+  fixTargetFiles?: string[];
+  /** One entry per `fixesApplied` entry, in input order. Omitted when empty. */
+  fixSummaries?: string[];
+  /**
+   * Sum of `fixesApplied[].costUsd` for this iteration. Omitted when the
+   * total is zero so the record stays free of zero-cost entries.
+   */
+  costUsd?: number;
   outcome: IterationOutcome;
   startedAt: string; // ISO-8601
   finishedAt: string; // ISO-8601

@@ -1,0 +1,162 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "fix-cycle-iteration-telemetry",
+  "branchName": "feat/fix-cycle-iteration-telemetry",
+  "createdAt": "2026-08-07T00:00:00+08:00",
+  "updatedAt": "2026-08-07T03:26:40.538Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Route every iteration append through one recording helper",
+      "description": "**Goal** — Extract `recordIteration`, export it from the findings barrel, and route all four `runFixCycle` iteration append paths through it so every appended iteration emits its record.\n\n**Motivation** — The terminal iteration of every exhausted cycle is invisible because three of the four iteration append sites do not emit an iteration record.\n\n**Approach** — **New module.** `src/findings/cycle-iteration-log.ts`, exporting `recordIteration`, re-exported from the `src/findings` barrel per the project's barrel-import rule.\n\n```typescript\nexport interface RecordIterationInput<F extends Finding> {\n  findingsBefore: F[];\n  findingsAfter: F[];\n  fixesApplied: FixApplied[];\n  outcome: IterationOutcome;\n  startedAt: string;\n  finishedAt: string;\n}\n\nexport interface RecordIterationContext {\n  storyId?: string;\n  packageDir?: string;\n  cycleName: string;\n}\n\n/** Append the iteration to `cycle.iterations` AND emit its record. One call, both effects. */\nexport function recordIteration<F extends Finding>(\n  cycle: FixCycle<F>,\n  input: RecordIterationInput<F>,\n  ctx: RecordIterationContext,\n  logger: Logger | null | undefined,\n): Iteration<F>;\n```\n\nCoupling append and emit in one function is the point: the defect exists because the two were separable, and three call sites did one without the other.\n\n**Extraction is forced, not stylistic.** `src/findings/cycle.ts` is 581 lines against the 600-line hard limit in `.nax/rules/project-conventions.md`, and is **not** grandfathered in `scripts/baselines/file-sizes-baseline.json`. Adding three log calls in place breaches the limit; removing four inline nine-line constructions in favour of four call sites nets the file down to roughly 550.\n\n**Scope** — In: the helper, its barrel exports, and all four append paths in `runFixCycle`, including seam tests that inject a logger through the outer `runFixCycle` entry point. Out: widened finding-identity and fix-target payload fields belong to US-002; changing the two hardcoded `outcome: \"unchanged\"` literals, `classifyOutcome`, cycle exit reasons, or control-flow decisions is out of scope.\n\n**Integration note** — The four append sites are agent-gave-up, lite-validate threw, terminal lite-validate, and normal iteration. The two hardcoded `\"unchanged\"` literals are preserved verbatim. `storyId` stays the first key per the structured-logging rule.\n\n**Failure handling** — When `logger` is `null` / `undefined`, append still happens; no throw. The `Iteration` is cycle state, not a logging side-effect.",
+      "acceptanceCriteria": [
+        "When `recordIteration` is imported from the `src/findings` barrel, then it is callable as a function.",
+        "When `recordIteration` is called with a cycle whose `iterations` is empty, then it returns an `Iteration` whose `iterationNum` is `1`.",
+        "When `recordIteration` returns, then the last element of `cycle.iterations` is the returned `Iteration`.",
+        "When `recordIteration` is called a second time on the same cycle, then it returns an `Iteration` whose `iterationNum` is `2`.",
+        "When `recordIteration` is called with a capturing logger, then the logger emits exactly one record with stage `findings.cycle` and message `iteration completed`.",
+        "When `recordIteration` emits its record, then the first key of the data object is `storyId`.",
+        "When `recordIteration` is called with `logger` set to `null` or `undefined`, then `cycle.iterations` holds the returned `Iteration` as its last element.",
+        "When `runFixCycle` executes a strategy whose fix operation reports `unresolved` and exits with reason `agent-gave-up`, then it emits one `iteration completed` record whose `iterationNum` is `1`.",
+        "When terminal lite validation in `runFixCycle` returns no findings and the cycle exits with reason `resolved`, then it emits one `iteration completed` record.",
+        "When terminal lite validation in `runFixCycle` reports a short-circuit and the cycle exits with reason `validate-short-circuit`, then it emits one `iteration completed` record.",
+        "When terminal lite validation in `runFixCycle` throws and the cycle exits with reason `max-attempts-per-strategy`, then it emits one `iteration completed` record.",
+        "When `runFixCycle` completes one normal iteration that resolves, then it emits exactly one `iteration completed` record.",
+        "When `runFixCycle` completes two normal iterations before a terminal exit, then its emitted `iteration completed` records have `iterationNum` values in the order `1`, `2`, `3`.",
+        "When `runFixCycle` exits via `agent-gave-up`, then its emitted iteration record has `outcome` equal to `unchanged`."
+      ],
+      "tags": [
+        "feature",
+        "refactor",
+        "logging",
+        "findings"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A bounded multi-file refactor introduces one small public helper and rewires four established paths with existing injectable logger fixtures.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/findings/cycle.ts",
+        "src/findings/cycle-types.ts",
+        "src/findings/index.ts",
+        "src/findings/types.ts",
+        "test/unit/findings/cycle.test.ts"
+      ],
+      "expectedFiles": [
+        "src/findings/cycle-iteration-log.ts",
+        "test/unit/findings/cycle-iteration-log.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/findings/cycle.ts",
+          "reason": "replace the four inline `cycle.iterations.push(...)` constructions and the inline log call with `recordIteration` calls"
+        },
+        {
+          "path": "src/findings/index.ts",
+          "reason": "re-export `recordIteration` and its input types from the barrel"
+        },
+        {
+          "path": "test/unit/findings/cycle.test.ts",
+          "reason": "extend with the four exit-path seam assertions"
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "30ec67e588e7522580a29f0bf65a722d5950ac9d",
+      "outOfScope": [
+        "Widened finding-identity and fix-target payload fields belong to US-002."
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Carry finding identities and fix targets in the iteration record",
+      "description": "**Goal** — Widen every iteration-completed record with exact finding identities and applied-fix target metadata while retaining the existing compatible fields.\n\n**Motivation** — The record cannot answer \"same defect or different?\" because it logs only finding counts, and fix targets are computed then dropped.\n\n**Approach** — Stage `findings.cycle`, message `iteration completed` — both unchanged, so existing queries keep matching. `storyId` stays the first key per the structured-logging rule.\n\n| Key | Status | Value |\n|:---|:---|:---|\n| `storyId`, `packageDir`, `cycleName`, `iterationNum`, `strategiesRan`, `outcome` | unchanged | as today |\n| `findingsBefore`, `findingsAfter` | **unchanged — remain integer counts** | existing consumers keep working |\n| `findingKeysBefore`, `findingKeysAfter` | **new** | `findingKey(f)` per finding, in array order |\n| `fixTargetFiles` | **new** | de-duplicated union of `fixesApplied[].targetFiles`, first-seen order |\n| `fixSummaries` | **new** | one entry per `fixesApplied` entry |\n| `costUsd` | unchanged | omitted when zero |\n\nIdentities are the **exact `findingKey` output**, not a digest or a reduced tuple, so the telemetry compares findings by precisely the same rule `classifyOutcome` uses (`cycle.ts:50-51`). Any other encoding could show two findings as identical while the classifier treated them as distinct, producing a record that cannot explain the outcome it reports. The cost is payload size — `findingKey` embeds the full message text.\n\n**Scope** — In: widen `recordIteration`'s emitted data and extend its direct tests. Out: routing/append refactoring belongs to US-001; curator schema or collection changes, `classifyOutcome` changes, and identity-based bail or oscillation behavior are out of scope.\n\n**Downstream compatibility** — The curator reads exactly five fields — `iterationNum`, `outcome`, `findingsBefore`, `findingsAfter`, `costUsd` — via `numberValue(…, 0)` and `optionalString`. The count fields must stay numeric; replacing them with arrays would silently zero the curator's data. New keys are ignored by the consumer, which reads named fields only.\n\n**Failure handling** — A finding with `file` / `line` / `rule` undefined is logged using `findingKey` as-is, including its `null` positions, without throwing. When `fixesApplied` is empty (carry-forward iterations), `fixTargetFiles` and `fixSummaries` are omitted rather than logged as empty arrays.",
+      "acceptanceCriteria": [
+        "When an iteration's `findingsBefore` contains two findings, then its record's `findingKeysBefore` equals `findingKey` applied to each finding in the same order.",
+        "When an iteration's `findingsAfter` contains one finding, then its record's `findingKeysAfter` is a single-element list containing `findingKey` of that finding.",
+        "When the same finding object is present in both `findingsBefore` and `findingsAfter`, then its key appears in both `findingKeysBefore` and `findingKeysAfter` in the emitted record.",
+        "When an iteration's `findingsBefore` contains two findings, then its record's `findingsBefore` is the number `2`.",
+        "When an iteration's `findingsAfter` contains one finding, then its record's `findingsAfter` is the number `1`.",
+        "When two `fixesApplied` entries have overlapping `targetFiles`, then the record's `fixTargetFiles` lists each distinct path once in first-seen order.",
+        "When an iteration has two `fixesApplied` entries, then its record's `fixSummaries` contains their `summary` values in the same order.",
+        "When an iteration's `fixesApplied` is empty, then its record contains no `fixTargetFiles` key.",
+        "When an iteration's `fixesApplied` is empty, then its record contains no `fixSummaries` key.",
+        "When a finding has `file`, `line`, and `rule` all undefined, then its record's `findingKeysBefore` entry equals `findingKey` of that finding.",
+        "When every `fixesApplied` entry in an iteration has `costUsd` equal to zero, then its record contains no `costUsd` key."
+      ],
+      "tags": [
+        "feature",
+        "telemetry",
+        "logging",
+        "findings"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a constrained extension of the upstream helper that must preserve an existing log-consumer contract while adding deterministic payload derivations.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/findings/cycle-iteration-log.ts",
+        "src/findings/types.ts",
+        "src/findings/cycle-types.ts",
+        "test/unit/findings/cycle-iteration-log.test.ts",
+        "src/plugins/builtin/curator/collect.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/findings/cycle-iteration-log.ts",
+          "reason": "widen the emitted payload with identity and fix-target keys"
+        },
+        {
+          "path": "test/unit/findings/cycle-iteration-log.test.ts",
+          "reason": "extend with payload-content assertions"
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "087e50b59bbddc911a3dbbf4b28ecb3737f24ad2"
+    }
+  ],
+  "analysis": "This is an additive observability enhancement plus a focused refactor of the findings fix-cycle recorder. `src/findings/cycle.ts:149` owns `runFixCycle`, accepts injected `callOp`, `now`, and `logger` dependencies, and mutates `FixCycle.iterations` in place. It is already 581 lines (`wc -l`), so adding independent log calls risks the project’s 600-line hard limit; extracting the recording responsibility into a sibling module is both the required seam and reduces cycle.ts. Four inline `cycle.iterations.push` sites exist at cycle.ts:348 (all strategies unresolved / agent-gave-up), :410 (terminal lite validation throws), :436 (terminal lite validation result), and :550 (normal full-validation result). Only the normal path currently logs `findings.cycle` / `iteration completed`, immediately after appending. `FixApplied` already preserves `targetFiles`, `summary`, optional `unresolved`, and optional `costUsd`, while `Iteration` carries the seven record fields needed by the new helper (`src/findings/cycle-types.ts:23-47`). `findingKey` is exported and is the classifier’s exact identity encoding: JSON serialization of `[source, file ?? null, line ?? null, rule ?? null, message]` (`src/findings/types.ts:245-246`); the helper must use it unchanged so telemetry and `classifyOutcome` agree. The existing barrel at `src/findings/index.ts:42-55` exports `findingKey`, fix-cycle types, and `runFixCycle`; it must re-export the helper and its public input/context types to satisfy the project barrel-import convention. `Logger.info(stage, message, data)` accepts a `Record<string, unknown>` (`src/logger/logger.ts:245-247`), and object property insertion order makes placing `storyId` first observable and required. The sole downstream consumer is curator collection: `src/plugins/builtin/curator/collect.ts:421-447` dispatches every `findings.cycle` / `iteration completed` record at :510 and reads `iterationNum`, `outcome`, numeric `findingsBefore`, numeric `findingsAfter`, and `costUsd`. The count fields must therefore remain numbers; identities and fix metadata are additive keys that the collector will ignore. Emitting from every append site intentionally makes curator observations increase and makes historical rollups incomparable, without changing curator code or any cycle control flow. Existing seam fixtures and injected logger support are in `test/unit/findings/cycle.test.ts:1-14` and its terminal lite-validation scenarios near :460-635; extend those tests through `runFixCycle` for all exit paths rather than testing only the helper. Add direct helper tests in the new `test/unit/findings/cycle-iteration-log.test.ts` for append/log state and the extended payload. Risks are accidental changes to the two hardcoded `unchanged` outcomes, changing numeric counts to arrays (which silently becomes zero in the curator), changing stage/message routing, or logging empty fix arrays despite the contract. There is no data migration: old JSONL records remain readable, current queries retain their stage/message and count keys, and new records gain identities/targets while previously invisible terminal iterations begin appearing.",
+  "outOfScope": [
+    "Making the fix-cycle attempt budget or decline ledger story-scoped rather than per-cycle is deferred; `runRectification` continues to construct each cycle with `iterations: []`.",
+    "Re-keying the `withIncreasingFailuresBail` predicate on finding identity instead of finding count is deferred; it continues to fire only on a strict count increase.",
+    "Changing the two hardcoded `outcome: \"unchanged\"` literals at the agent-gave-up and lite-validate-threw append sites is deferred; both are preserved exactly as they are today.",
+    "Counting rectification oscillation at finding identity rather than at `Finding.source`, and reading the oscillation circuit-breaker mid-story rather than on the story-failure path, are both deferred.",
+    "Passing prior-iteration history into the autofix prompts is deferred; every `FixStrategy.buildInput` continues to ignore its `prior` parameter.",
+    "Stabilising `findingKey` against message rewording and line drift is deferred; this spec logs the key exactly as it exists today.",
+    "No change to `classifyOutcome`, to any cycle exit reason, or to any control-flow decision in `runFixCycle`."
+  ],
+  "routingProfile": "cross-agent"
+}

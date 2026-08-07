@@ -13,6 +13,7 @@ import type { Logger } from "@/logger";
 import { callOp as _callOp } from "@/operations";
 import type { Operation } from "@/operations";
 import { errorMessage } from "@/utils/errors";
+import { recordIteration } from "./cycle-iteration-log";
 import { createDeclineLedger } from "./cycle-retirement";
 import type {
   FixApplied,
@@ -345,15 +346,19 @@ export async function runFixCycle<F extends Finding>(
       const allGaveUp = unresolvedFas.length === fixesApplied.length;
       if (allGaveUp) {
         const finishedAt = now();
-        cycle.iterations.push({
-          iterationNum: cycle.iterations.length + 1,
-          findingsBefore,
-          fixesApplied,
-          findingsAfter: cycle.findings,
-          outcome: "unchanged",
-          startedAt,
-          finishedAt,
-        });
+        recordIteration(
+          cycle,
+          {
+            findingsBefore,
+            fixesApplied,
+            findingsAfter: cycle.findings,
+            outcome: "unchanged",
+            startedAt,
+            finishedAt,
+          },
+          { storyId, packageDir, cycleName },
+          logger,
+        );
         // Every other exit accumulates the iteration's spend; this one used to
         // return before doing so, reporting costUsd: 0 for real spend (#1369).
         totalCostUsd += fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0);
@@ -407,15 +412,19 @@ export async function runFixCycle<F extends Finding>(
         liteShortCircuited = liteResult.shortCircuited ?? false;
       } catch (err) {
         const finishedAt = now();
-        cycle.iterations.push({
-          iterationNum: cycle.iterations.length + 1,
-          findingsBefore,
-          fixesApplied,
-          findingsAfter: cycle.findings,
-          outcome: "unchanged",
-          startedAt,
-          finishedAt,
-        });
+        recordIteration(
+          cycle,
+          {
+            findingsBefore,
+            fixesApplied,
+            findingsAfter: cycle.findings,
+            outcome: "unchanged",
+            startedAt,
+            finishedAt,
+          },
+          { storyId, packageDir, cycleName },
+          logger,
+        );
         logger?.warn("findings.cycle", "lite validate failed on terminal exhausted branch", {
           storyId,
           packageDir,
@@ -433,15 +442,19 @@ export async function runFixCycle<F extends Finding>(
 
       const outcome = classifyOutcome(findingsBefore, liteFindingsAfter);
       const finishedAt = now();
-      cycle.iterations.push({
-        iterationNum: cycle.iterations.length + 1,
-        findingsBefore,
-        fixesApplied,
-        findingsAfter: liteFindingsAfter,
-        outcome,
-        startedAt,
-        finishedAt,
-      });
+      recordIteration(
+        cycle,
+        {
+          findingsBefore,
+          fixesApplied,
+          findingsAfter: liteFindingsAfter,
+          outcome,
+          startedAt,
+          finishedAt,
+        },
+        { storyId, packageDir, cycleName },
+        logger,
+      );
       cycle.findings = liteFindingsAfter;
 
       if (liteFindingsAfter.length === 0 && !liteShortCircuited) {
@@ -546,33 +559,23 @@ export async function runFixCycle<F extends Finding>(
     // ── Classify and record ───────────────────────────────────────────────────
     const outcome = classifyOutcome(findingsBefore, findingsAfter);
     const finishedAt = now();
-    const iterationNum = cycle.iterations.length + 1;
-    const iteration: Iteration<F> = {
-      iterationNum,
-      findingsBefore,
-      fixesApplied,
-      findingsAfter,
-      outcome,
-      startedAt,
-      finishedAt,
-    };
-
-    cycle.iterations.push(iteration);
+    recordIteration(
+      cycle,
+      {
+        findingsBefore,
+        fixesApplied,
+        findingsAfter,
+        outcome,
+        startedAt,
+        finishedAt,
+      },
+      { storyId, packageDir, cycleName },
+      logger,
+    );
     cycle.findings = findingsAfter;
 
     const iterationCostUsd = fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0);
     totalCostUsd += iterationCostUsd;
-    logger?.info("findings.cycle", "iteration completed", {
-      storyId,
-      packageDir,
-      cycleName,
-      iterationNum,
-      strategiesRan: fixesApplied.map((fa) => fa.strategyName),
-      outcome,
-      findingsBefore: findingsBefore.length,
-      findingsAfter: findingsAfter.length,
-      ...(iterationCostUsd > 0 ? { costUsd: iterationCostUsd } : {}),
-    });
 
     if (outcome === "resolved") {
       return { iterations: cycle.iterations, finalFindings: [], exitReason: "resolved", costUsd: totalCostUsd };
