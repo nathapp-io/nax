@@ -204,6 +204,8 @@ export interface PipelineContext extends DispatchContext {
       /** This package's own failed AC ids (not the deduped global union). */
       failedACs: string[];
     }>;
+    /** Package dirs whose required acceptance test target was missing (US-003). */
+    missingTargets?: string[];
   };
   /** Story start timestamp (ISO string, set by runner before pipeline) */
   storyStartTime?: string;

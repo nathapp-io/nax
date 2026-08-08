@@ -122,6 +122,12 @@ interface AcceptanceTestRunResult {
   failedACs: string[];
   testOutput: string;
   failedPackages?: AcceptanceFailedPackage[];
+  /**
+   * Package dirs whose acceptance test target is missing (US-003). When present
+   * the run must fail closed even though `failedACs` is empty — the missing
+   * target is the failure, not a passing test.
+   */
+  missingTargets?: string[];
 }
 
 type AcceptanceTestPathEntry = NonNullable<PipelineContext["acceptanceTestPaths"]>[number];
@@ -241,6 +247,18 @@ async function runAcceptanceTestsOnce(
   const result = await acceptanceStage.execute(acceptanceContext);
   if (result.action !== "fail") return { passed: true, failedACs: [], testOutput: "" };
   const failures = acceptanceContext.acceptanceFailures;
+  // US-003: a stage-returned fail with no failedACs is a missing-target failure,
+  // not a pass — propagate it as failed so the loop fails closed. Without this,
+  // a missing acceptance target is silently treated as a successful validation.
+  if (failures?.missingTargets && failures.missingTargets.length > 0) {
+    return {
+      passed: false,
+      failedACs: [],
+      testOutput: failures.testOutput,
+      failedPackages: failures.failedPackages,
+      missingTargets: failures.missingTargets,
+    };
+  }
   if (!failures || failures.failedACs.length === 0) return { passed: true, failedACs: [], testOutput: "" };
   return {
     passed: false,

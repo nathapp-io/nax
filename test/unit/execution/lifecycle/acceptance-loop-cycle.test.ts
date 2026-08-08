@@ -705,3 +705,77 @@ describe("cycle.validate closure", () => {
     expect(typeof capturedCycle?.validate).toBe("function");
   });
 });
+
+// ─── US-003 rect: runAcceptanceTestsOnce must propagate missing-target failures ──
+
+describe("US-003 rect: runAcceptanceTestsOnce propagates missing-target failures", () => {
+  test("final validation pass returns success=false when acceptance stage reports a missing target", async () => {
+    // First call: stage reports the opening failure with AC failures (drives one fix cycle).
+    // Second call (final full pass): stage reports a missing target — failedACs is empty
+    // but the result MUST be passed: false so the run fails closed.
+    const origImportAcceptanceStage = _runAcceptanceTestsOnceDeps.importAcceptanceStage;
+    let callCount = 0;
+    const stubbedExecute = (ctx: any) => {
+      callCount++;
+      if (callCount === 1) {
+        ctx.acceptanceFailures = {
+          failedACs: ["AC-1"],
+          findings: [],
+          testOutput: "boom",
+          failedPackages: [
+            { testPath: "/tmp/test.ts", packageDir: "/tmp/workdir", output: "boom", failedACs: ["AC-1"] },
+          ],
+        };
+        return Promise.resolve({ action: "fail" as const });
+      }
+      // Missing target: action=fail but failedACs=[] and the failures object records
+      // it via the missingTargets field (US-003 wiring in acceptance.ts).
+      ctx.acceptanceFailures = {
+        failedACs: [],
+        findings: [],
+        testOutput: "",
+        failedPackages: [],
+        missingTargets: ["/tmp/workdir"],
+      };
+      return Promise.resolve({ action: "fail" as const });
+    };
+    _runAcceptanceTestsOnceDeps.importAcceptanceStage = async () =>
+      ({ acceptanceStage: { execute: stubbedExecute } }) as any;
+
+    _acceptanceFixCycleDeps.runFixCycle = async () => ({
+      iterations: [],
+      finalFindings: [],
+      exitReason: "resolved",
+    }) as any;
+
+    const origLoadContent = _acceptanceLoopDeps.loadAcceptanceTestContent;
+    _acceptanceLoopDeps.loadAcceptanceTestContent = async () => [];
+
+    const origCallOp = _diagnosisDeps.callOp;
+    (_diagnosisDeps as any).callOp = async () => ({
+      output: { verdict: "source_bug", reasoning: "stub", confidence: 0.9 },
+      costUsd: 0,
+    });
+
+    try {
+      const ctx = makeCtx();
+      ctx.workdir = "/tmp/workdir";
+      ctx.featureDir = undefined;
+      ctx.acceptanceTestPaths = [{ testPath: "/tmp/test.ts", packageDir: "/tmp/workdir" }];
+
+      const result = await runAcceptanceLoop(ctx);
+
+      // Bug under rect: runAcceptanceTestsOnce returns passed:true because failedACs
+      // is empty, so the final validation passes and the run is reported successful
+      // even though the acceptance target is missing.
+      expect(result.success).toBe(false);
+    } finally {
+      (_diagnosisDeps as any).callOp = origCallOp;
+      _acceptanceFixCycleDeps.runFixCycle = (() => {
+        throw new Error("not set in beforeEach");
+      }) as typeof _acceptanceFixCycleDeps.runFixCycle;
+      _acceptanceLoopDeps.loadAcceptanceTestContent = origLoadContent;
+      _runAcceptanceTestsOnceDeps.importAcceptanceStage = origImportAcceptanceStage;
+    }
+  });
+});

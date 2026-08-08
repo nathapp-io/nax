@@ -293,13 +293,17 @@ export const acceptanceStage: PipelineStage = {
 
     // US-003: missing required acceptance targets fail the run with every affected
     // packageDir named in the reason. Surface them before the pass/fail verdict so
-    // the verdict still reports the missing-target package list.
+    // the verdict still reports the missing-target package list. The missingTargets
+    // field on acceptanceFailures is what runAcceptanceTestsOnce reads downstream
+    // — without it, the consumer would treat "no failedACs" as passed and silently
+    // close the run as successful.
     if (missingTargets.length > 0) {
       ctx.acceptanceFailures = {
         failedACs: [],
         findings: [],
         testOutput: combinedOutput,
         failedPackages,
+        missingTargets,
       };
       logger.info("acceptance", "verdict", {
         storyId: ctx.story.id,
