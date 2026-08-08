@@ -52,6 +52,47 @@ export type FinishPhase = "acceptance" | "spec" | "quality" | "gate";
  * finish that died mid-loop is exactly when the record of what it already
  * changed on the branch matters most.
  */
+/**
+ * What produced a round — the difference between "a reviewer read this and
+ * approved it" and "nothing read this".
+ *
+ * Rounds used to be appended only where a fix produced a commit, so a review
+ * that passed left no record at all and was indistinguishable from a review
+ * that never ran (#1507). Every phase that executes now records a round, and
+ * this field says which of the five things happened.
+ *
+ * Optional because rounds recorded by earlier versions have no `outcome`, and
+ * the PR body still has to render those without claiming more than it knows.
+ */
+export type FinishRoundOutcome =
+  /** A reviewer reported findings and this phase's fix node ran. */
+  | "fixed"
+  /** A reviewer ran and reported nothing. The only value that means "approved". */
+  | "passed"
+  /** The reviewer replied, but no verdict could be read out of it. */
+  | "unparseable"
+  /** Handed off to a human — an explicit escalate, a cap, or a node that emitted nothing. */
+  | "escalated"
+  /**
+   * This phase has no reviewer at all (`gate`, `acceptance`). Distinct from
+   * `passed`: an empty finding list here means "nobody looked", and rendering it
+   * as "no findings" manufactures evidence of a review that does not exist.
+   */
+  | "no-reviewer"
+  /**
+   * A re-review was owed and deliberately skipped — today only a `gate` fix
+   * that touched test files exclusively (`gateCommitRoute` → `tests-only`).
+   *
+   * Distinct from `no-reviewer`, which the same node writes when the fix *is*
+   * routed on to `review_quality`. Without the distinction both wrote
+   * `no-reviewer`, so the audit could not tell a gate fix that was re-reviewed
+   * from one whose re-review was skipped by policy — the #1507 failure mode
+   * surviving on the one path where the omission is intentional, and the path
+   * where a reader most needs to know. Recording it is also what makes "how
+   * often does this fire?" answerable before anyone decides to close the hole.
+   */
+  | "review-skipped";
+
 export interface FinishRound {
   ts: string;
   phase: FinishPhase;
@@ -59,6 +100,8 @@ export interface FinishRound {
   attempt: number;
   /** True when the fix produced a commit; false when it changed nothing. */
   committed: boolean;
+  /** What produced this round; absent on rounds written before it existed. */
+  outcome?: FinishRoundOutcome;
   /** Reviewer findings this round set out to fix (spec/quality phases). */
   findings: Finding[];
   /** Gate commands that were red this round (gate phase). */

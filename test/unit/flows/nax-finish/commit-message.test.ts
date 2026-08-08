@@ -84,14 +84,19 @@ describe("buildFixCommitMessage — body", () => {
     expect(msg).toContain("nax-finish: quality review fixes");
   });
 
-  test("the gate body carries the gate output tail, not a finding list", () => {
+  // Was "carries the gate output tail": the body now names the failing test
+  // when the output identifies one, and falls back to the tail only when it
+  // cannot (covered below). What matters here is unchanged — the gate body
+  // reports runner evidence, never a reviewer finding list.
+  test("the gate body carries runner evidence, not a finding list", () => {
     const msg = buildFixCommitMessage(
       "gate",
       "f",
       ctxOf({ quality_gates: { failing: ["test"], output: "FAIL src/a.test.ts\n1 failed" } }),
     );
     expect(msg).toContain("Failing: test");
-    expect(msg).toContain("1 failed");
+    expect(msg).toContain("src/a.test.ts");
+    expect(msg).not.toContain("[HIGH]");
   });
 
   test("a subject-only message still ends with a single trailing newline-free line", () => {
@@ -103,5 +108,65 @@ describe("buildFixCommitMessage — body", () => {
     const msg = buildFixCommitMessage("spec", "f", ctxOf({ review_spec: { findings: [finding()] } }));
     expect(msg.split("\n")[1]).toBe("");
     expect(msg.split("\n")[2]).not.toBe("");
+  });
+});
+
+// The gate body used to be the raw last-20-lines of runner stdout. On the run
+// that motivated this (#1506) those 20 lines were three stack traces emitted as
+// *warnings* by tests that passed, so the message named the wrong failure
+// entirely — and pasted the author's absolute home path into shipped history.
+describe("buildFixCommitMessage — gate body names the failure", () => {
+  // Authentic shape: bun prints `(fail) <describe> > <test>` for real failures,
+  // while passing tests can still write stack traces to stderr.
+  const REAL_GATE_OUTPUT = [
+    "Warning: [finish-pr] Failed to write PR title/body",
+    "      at updatePrBody (/Users/someone/work/nax/flows/nax-finish/steps/pr.ts:111:19)",
+    "      at async <anonymous> (/Users/someone/work/nax/test/unit/flows/nax-finish/steps/pr.test.ts:476:21)",
+    "(fail) nax-finish post-run action > execute omits reviewer profile env vars [0.12ms]",
+    " 12121 pass",
+    " 1 fail",
+  ].join("\n");
+
+  const gateMsg = (output: string, workdir?: string) =>
+    buildFixCommitMessage("gate", "f", ctxOf({ quality_gates: { failing: ["test"], output } }), { workdir });
+
+  test("names the failing test rather than whichever lines happened to be last", () => {
+    const msg = gateMsg(REAL_GATE_OUTPUT);
+    expect(msg).toContain("execute omits reviewer profile env vars");
+  });
+
+  test("does not present a passing test's warning trace as the failure", () => {
+    const msg = gateMsg(REAL_GATE_OUTPUT);
+    expect(msg).not.toContain("Failed to write PR title/body");
+  });
+
+  test("strips absolute paths so shipped history carries no local filesystem layout", () => {
+    const msg = gateMsg(REAL_GATE_OUTPUT);
+    expect(msg).not.toContain("/Users/someone");
+  });
+
+  test("rewrites paths under the workdir to repo-relative", () => {
+    const msg = gateMsg("      at foo (/Users/someone/work/nax/src/a.ts:1:2)", "/Users/someone/work/nax");
+    expect(msg).toContain("src/a.ts:1:2");
+    expect(msg).not.toContain("/Users/someone");
+  });
+
+  test("falls back to the output tail when no failing test can be identified", () => {
+    const msg = gateMsg("something broke\nexit code 2");
+    expect(msg).toContain("exit code 2");
+  });
+
+  test("still records which gate commands were red", () => {
+    expect(gateMsg(REAL_GATE_OUTPUT)).toContain("Failing: test");
+  });
+
+  // A bare list of ten reads as "ten tests failed". A reader who acts on that
+  // count is acting on a truncation, so the cut has to announce itself.
+  test("says how many failing tests it left out rather than truncating silently", () => {
+    const many = Array.from({ length: 14 }, (_, i) => `(fail) suite > case ${i}`).join("\n");
+    const msg = gateMsg(many);
+    expect(msg).toContain("case 0");
+    expect(msg).toContain("...and 4 more failing test(s)");
+    expect(msg).not.toContain("case 13");
   });
 });

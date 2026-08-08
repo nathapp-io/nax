@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { narrativeOf, prTitleOf } from "@flows/nax-finish/flow-ctx";
 import flow from "@flows/nax-finish/nax-finish.flow";
 import { _acceptanceDeps } from "@flows/nax-finish/steps/acceptance";
 import { _contextDeps } from "@flows/nax-finish/steps/context";
@@ -7,9 +8,8 @@ import { _gitDeps } from "@flows/nax-finish/steps/git";
 import { _prDeps } from "@flows/nax-finish/steps/pr";
 import { _qualityDeps } from "@flows/nax-finish/steps/quality";
 import { _resultDeps } from "@flows/nax-finish/steps/result";
-import { narrativeOf, prTitleOf } from "@flows/nax-finish/flow-ctx";
-import type { FlowNodeContext, FlowStepRecord } from "acpx/flows";
 import { makeFlowCtx, makeFlowSteps } from "@test/helpers";
+import type { FlowNodeContext, FlowStepRecord } from "acpx/flows";
 
 const INPUT = { feature: "x", workdir: "/repo", branch: "feat/x", prdPath: "p", escalateTelegram: false };
 
@@ -326,45 +326,45 @@ describe("review parse + route_* nodes", () => {
 
   const finding = { severity: "HIGH" as const, title: "t", problem: "p", fix: "f" };
 
-  test("route_spec sends findings to the fix node while under the cap", () => {
-    const out = nodeRun<{ route: string }>("route_spec").run(
+  test("route_spec sends findings to the fix node while under the cap", async () => {
+    const out = (await nodeRun<{ route: string }>("route_spec").run(
       ctxOf({ outputs: { review_spec: { route: "proceed", findings: [finding] } } }),
-    ) as { route: string };
+    )) as { route: string };
     expect(out.route).toBe("fix");
   });
 
-  test("route_spec escalates once the fix cap is reached", () => {
-    const out = nodeRun<{ route: string; escalationReason?: string }>("route_spec").run(
+  test("route_spec escalates once the fix cap is reached", async () => {
+    const out = (await nodeRun<{ route: string; escalationReason?: string }>("route_spec").run(
       ctxOf({
         outputs: { review_spec: { route: "proceed", findings: [finding] } },
         steps: makeFlowSteps(["fix_spec", "fix_spec", "fix_spec"]),
       }),
-    ) as { route: string; escalationReason?: string };
+    )) as { route: string; escalationReason?: string };
     expect(out.route).toBe("escalate");
     expect(out.escalationReason).toContain("after 3 fix attempts");
   });
 
-  test("route_spec passes the reviewer's own escalate verdict straight through", () => {
-    const out = nodeRun<{ route: string; escalationReason?: string }>("route_spec").run(
+  test("route_spec passes the reviewer's own escalate verdict straight through", async () => {
+    const out = (await nodeRun<{ route: string; escalationReason?: string }>("route_spec").run(
       ctxOf({
         outputs: {
           review_spec: { route: "escalate", findings: [finding], escalationReason: "AC-3 contradicts the schema" },
         },
       }),
-    ) as { route: string; escalationReason?: string };
+    )) as { route: string; escalationReason?: string };
     expect(out.route).toBe("escalate");
     expect(out.escalationReason).toBe("AC-3 contradicts the schema");
   });
 
-  test("route_quality reads the quality verdict, not the spec one", () => {
-    const out = nodeRun<{ route: string }>("route_quality").run(
+  test("route_quality reads the quality verdict, not the spec one", async () => {
+    const out = (await nodeRun<{ route: string }>("route_quality").run(
       ctxOf({
         outputs: {
           review_spec: { route: "proceed", findings: [finding] },
           review_quality: { route: "clean", findings: [] },
         },
       }),
-    ) as { route: string };
+    )) as { route: string };
     expect(out.route).toBe("clean");
   });
 });

@@ -7,9 +7,9 @@
  * auto-PR-opened PRs read the same.
  */
 import { afterEach, describe, expect, test } from "bun:test";
+import { resolveTitle } from "@flows/nax-finish/pr-title";
 import { _prBodyDeps, buildFinishBody, buildFinishTitle, loadFinishPrContext } from "@flows/nax-finish/steps/pr-body";
 import type { FinishPrContext, FinishPrStory } from "@flows/nax-finish/steps/pr-body";
-import { resolveTitle } from "@flows/nax-finish/pr-title";
 import type { Finding, FinishRound } from "@flows/nax-finish/types";
 
 const story = (over: Partial<FinishPrStory> = {}): FinishPrStory => ({
@@ -27,9 +27,7 @@ const finding = (over: Partial<Finding> = {}): Finding => ({
   ...over,
 });
 
-const committedRound = (
-  over: Partial<FinishRound> & { sha?: string } = {},
-): FinishRound => ({
+const committedRound = (over: Partial<FinishRound> & { sha?: string } = {}): FinishRound => ({
   ts: "2026-01-01T00:00:00.000Z",
   phase: "spec",
   attempt: 1,
@@ -128,10 +126,7 @@ describe("buildFinishBody — Review rounds (US-002 AC8-AC12)", () => {
   test("renders one heading per round naming phase and attempt", () => {
     const body = buildFinishBody(
       baseCtx({
-        rounds: [
-          committedRound({ phase: "spec", attempt: 1 }),
-          committedRound({ phase: "quality", attempt: 2 }),
-        ],
+        rounds: [committedRound({ phase: "spec", attempt: 1 }), committedRound({ phase: "quality", attempt: 2 })],
       }),
     );
     expect(body).toContain("## Review rounds");
@@ -186,6 +181,61 @@ describe("buildFinishBody — Review rounds (US-002 AC8-AC12)", () => {
   test("renders no Review rounds heading when rounds is empty", () => {
     const body = buildFinishBody(baseCtx({ rounds: [] }));
     expect(body).not.toContain("## Review rounds");
+  });
+});
+
+// #1507: an empty finding list means four different things, and the body used
+// to render all of them as "_no findings_" — which a human reads as "a reviewer
+// looked and approved this". Only `passed` means that.
+describe("buildFinishBody — what an empty round actually means", () => {
+  const emptyRound = (over: Record<string, unknown>) => ({
+    ts: "2026-01-01T00:00:00.000Z",
+    phase: "quality",
+    attempt: 1,
+    committed: false,
+    findings: [],
+    ...over,
+  });
+
+  test("a passed review still reads as no findings", () => {
+    const body = buildFinishBody(baseCtx({ rounds: [emptyRound({ outcome: "passed" })] }));
+    expect(body).toContain("- _no findings_");
+  });
+
+  test("a gate round says no reviewer ran, NOT that a reviewer found nothing", () => {
+    const body = buildFinishBody(baseCtx({ rounds: [emptyRound({ phase: "gate", outcome: "no-reviewer" })] }));
+    expect(body).toContain("### gate attempt 1");
+    expect(body).toContain("no reviewer");
+    expect(body).not.toContain("- _no findings_");
+  });
+
+  // The reader has to be able to see the skip. A PR whose gate fix bypassed the
+  // re-review by policy looks, in every other respect, exactly like one that was
+  // re-reviewed and came back clean.
+  test("a skipped re-review is visible in the body, not disguised as a clean one", () => {
+    const body = buildFinishBody(baseCtx({ rounds: [emptyRound({ phase: "gate", outcome: "review-skipped" })] }));
+    expect(body).toContain("re-review skipped");
+    expect(body).not.toContain("- _no findings_");
+  });
+
+  test("an unparseable review is not rendered as a pass", () => {
+    const body = buildFinishBody(baseCtx({ rounds: [emptyRound({ outcome: "unparseable" })] }));
+    expect(body).toContain("could not be parsed");
+    expect(body).not.toContain("- _no findings_");
+  });
+
+  test("an escalated review is not rendered as a pass", () => {
+    const body = buildFinishBody(baseCtx({ rounds: [emptyRound({ outcome: "escalated" })] }));
+    expect(body).toContain("escalated");
+    expect(body).not.toContain("- _no findings_");
+  });
+
+  // Rounds written before `outcome` existed carry no such field. The body must
+  // keep rendering them exactly as it did, rather than claiming they had no
+  // reviewer — it does not know that.
+  test("a legacy round with no outcome renders as before", () => {
+    const body = buildFinishBody(baseCtx({ rounds: [emptyRound({})] }));
+    expect(body).toContain("- _no findings_");
   });
 });
 
@@ -304,9 +354,7 @@ describe("buildFinishBody — repository template (#1478, merged per #1504)", ()
 
 describe("buildFinishBody — What changed section (#1477)", () => {
   test("renders the narrative first, above the Stories table", () => {
-    const body = buildFinishBody(
-      baseCtx({ stories: [story()], narrative: "Replaced the widget cache." }),
-    );
+    const body = buildFinishBody(baseCtx({ stories: [story()], narrative: "Replaced the widget cache." }));
     expect(body.indexOf("## What changed")).toBe(0);
     expect(body).toContain("Replaced the widget cache.");
     expect(body.indexOf("## What changed")).toBeLessThan(body.indexOf("## Stories"));
@@ -360,7 +408,9 @@ describe("loadFinishPrContext — diffstat scope", () => {
   });
 
   test("reports the excluded artifacts as a shortstat rather than dropping them", async () => {
-    const calls = captureRun((cmd) => (cmd.includes("--shortstat") ? " 5 files changed, 1248 insertions(+)\n" : " a.ts | 1 +\n"));
+    const calls = captureRun((cmd) =>
+      cmd.includes("--shortstat") ? " 5 files changed, 1248 insertions(+)\n" : " a.ts | 1 +\n",
+    );
     _prBodyDeps.readText = async () => null;
     const ctx = await loadFinishPrContext(INPUT, { base: "origin/main", gatesRan: [] });
 

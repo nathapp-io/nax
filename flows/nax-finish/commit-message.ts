@@ -23,8 +23,72 @@ const SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const;
 /** How much gate output to quote in the body before it stops being a commit message. */
 const MAX_GATE_OUTPUT_LINES = 20;
 
+/**
+ * Markers a test runner uses to introduce a failing case, worst-supported-first.
+ *
+ * A heuristic, deliberately: nax orchestrates polyglot repos, so this cannot be
+ * one runner's format. Each entry is the literal token that precedes the test's
+ * name — bun/jest `(fail)`, go `--- FAIL:`, pytest `FAILED`, and the tick-style
+ * reporters. Nothing downstream depends on a match; a miss just falls back to
+ * the output tail, which is what shipped before.
+ */
+const FAILURE_MARKERS = ["(fail)", "--- FAIL:", "FAILED ", "FAIL ", "✗ ", "× "];
+
+/** How many failing test names to name before the message stops being a commit message. */
+const MAX_NAMED_FAILURES = 10;
+
+/**
+ * Strip machine-local filesystem layout out of text bound for shipped history.
+ *
+ * Two passes, because the two cases differ: a path under the repo is meaningful
+ * once made relative, while a path outside it is noise no reader of the commit
+ * can act on. The home-directory pattern catches what remains — runner output
+ * routinely quotes absolute paths from outside the repo (caches, toolchains).
+ */
+function redactPaths(text: string, workdir?: string): string {
+  const withoutRepo = workdir ? text.split(`${workdir}/`).join("") : text;
+  return withoutRepo.replace(/(?:\/Users\/|\/home\/)[^/\s)]+\//g, "~/");
+}
+
+/**
+ * The names of the tests that actually failed, in output order.
+ *
+ * This is the whole point of the change: the body used to be the last 20 lines
+ * of runner stdout, and a suite whose *passing* tests write to stderr pushes the
+ * real failure out of that window — so the commit named a stack trace from a
+ * test that passed (#1506).
+ */
+function failingTestNames(output: string): string[] {
+  const names: string[] = [];
+  for (const line of output.split("\n")) {
+    const trimmed = line.trim();
+    const marker = FAILURE_MARKERS.find((m) => trimmed.startsWith(m));
+    if (!marker) continue;
+    // Drop bun's trailing `[0.12ms]` timing — it is noise in a commit message
+    // and makes otherwise-identical messages differ between runs.
+    const name = trimmed
+      .slice(marker.length)
+      .replace(/\s*\[[\d.]+m?s\]$/, "")
+      .trim();
+    if (name) names.push(name);
+  }
+  // Say so when the list is cut short. A bare list of ten reads as "ten tests
+  // failed", and a reader who acts on that count is acting on a truncation.
+  if (names.length > MAX_NAMED_FAILURES) {
+    const dropped = names.length - MAX_NAMED_FAILURES;
+    return [...names.slice(0, MAX_NAMED_FAILURES), `...and ${dropped} more failing test(s)`];
+  }
+  return names;
+}
+
 interface MessageCtx {
   outputs: Record<string, unknown>;
+}
+
+/** Options carrying what the message builder cannot read off `ctx.outputs`. */
+interface MessageOptions {
+  /** Absolute repo root, used to rewrite quoted paths as repo-relative. */
+  workdir?: string;
 }
 
 interface PhaseOutputs {
@@ -88,20 +152,30 @@ function subjectFor(phase: FinishPhase, ctx: MessageCtx): string {
   return findings.length > 0 ? reviewSubject(phase, findings) : `apply ${phase} review fixes`;
 }
 
-function bodyFor(phase: FinishPhase, ctx: MessageCtx): string[] {
+/**
+ * What to quote from a runner's output: the failing test names if they can be
+ * identified, otherwise the tail, as before.
+ *
+ * Never both. Naming the failures *and* pasting the tail reproduces the noise
+ * this replaces, and the tail is the weaker signal whenever the names exist.
+ */
+function runnerEvidence(output: string, opts: MessageOptions): string {
+  const clean = redactPaths(output, opts.workdir).trim();
+  const names = failingTestNames(clean);
+  if (names.length > 0) return ["Failed tests:", ...names.map((n) => `- ${n}`)].join("\n");
+  return clean.split("\n").slice(-MAX_GATE_OUTPUT_LINES).join("\n");
+}
+
+function bodyFor(phase: FinishPhase, ctx: MessageCtx, opts: MessageOptions): string[] {
   if (phase === "gate") {
     const gate = outputsFor(ctx, "quality_gates");
     const failing = gate.failing ?? [];
-    const tail = (gate.output ?? "").trim().split("\n").slice(-MAX_GATE_OUTPUT_LINES).join("\n");
-    return [...(failing.length > 0 ? [`Failing: ${failing.join(", ")}`] : []), ...(tail ? [tail] : [])];
+    const evidence = runnerEvidence(gate.output ?? "", opts);
+    return [...(failing.length > 0 ? [`Failing: ${failing.join(", ")}`] : []), ...(evidence ? [evidence] : [])];
   }
   if (phase === "acceptance") {
-    const tail = (outputsFor(ctx, "acceptance").output ?? "")
-      .trim()
-      .split("\n")
-      .slice(-MAX_GATE_OUTPUT_LINES)
-      .join("\n");
-    return tail ? [tail] : [];
+    const evidence = runnerEvidence(outputsFor(ctx, "acceptance").output ?? "", opts);
+    return evidence ? [evidence] : [];
   }
   const findings = findingsFor(ctx, phase);
   if (findings.length === 0) return [];
@@ -129,8 +203,13 @@ function phaseLabel(phase: FinishPhase): string {
  * described is still a commit that must happen — failing here would strand the
  * fix uncommitted and reintroduce the stale-diff bug (#1397).
  */
-export function buildFixCommitMessage(phase: FinishPhase, feature: string, ctx: MessageCtx): string {
+export function buildFixCommitMessage(
+  phase: FinishPhase,
+  feature: string,
+  ctx: MessageCtx,
+  opts: MessageOptions = {},
+): string {
   const subject = truncate(`fix(${feature}): ${subjectFor(phase, ctx)}`);
-  const body = bodyFor(phase, ctx);
+  const body = bodyFor(phase, ctx, opts);
   return [subject, ...body, `nax-finish: ${phaseLabel(phase)} fixes`].join("\n\n");
 }

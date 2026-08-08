@@ -9,8 +9,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import flow from "@flows/nax-finish/nax-finish.flow";
 import { _gitDeps } from "@flows/nax-finish/steps/git";
 import { _resultDeps } from "@flows/nax-finish/steps/result";
-import type { FlowNodeContext, FlowStepRecord } from "acpx/flows";
 import { makeFlowCtx, makeFlowSteps } from "@test/helpers";
+import type { FlowNodeContext, FlowStepRecord } from "acpx/flows";
 
 const INPUT = { feature: "x", workdir: "/repo", branch: "feat/x", prdPath: "p", escalateTelegram: false };
 
@@ -37,7 +37,7 @@ describe("commit_* nodes", () => {
     id: string,
     porcelain: string,
     outputs: Record<string, unknown> = {},
-    postCommitSha: string = "post-commit-sha",
+    postCommitSha = "post-commit-sha",
   ) => {
     const calls: string[][] = [];
     const rounds: unknown[] = [];
@@ -160,6 +160,28 @@ describe("commit_* nodes", () => {
     expect(rounds[0]).toMatchObject({ phase: "gate", committed: false });
     expect(rounds[0]).not.toHaveProperty("sha");
   });
+
+  test("marks a review-phase round as fixed — a reviewer found something and this fixed it", async () => {
+    const { rounds } = await runCommitNode("commit_quality", " M a.ts\n", {
+      review_quality: { findings: [{ severity: "LOW", title: "T", problem: "P", fix: "F" }] },
+    });
+    expect(rounds[0]).toMatchObject({ outcome: "fixed" });
+  });
+
+  // The gate phase has no `review_gate` node at all. Recording its empty finding
+  // list without saying so let the PR body render "- _no findings_", which reads
+  // as "a reviewer looked and approved this" — manufactured evidence for a
+  // review that cannot have happened (#1507).
+  test("marks a gate round as having no reviewer, never as a clean review", async () => {
+    const { rounds } = await runCommitNode("commit_gate", "", { quality_gates: { failing: ["test"] } });
+    expect(rounds[0]).toMatchObject({ phase: "gate", outcome: "no-reviewer" });
+    expect(rounds[0].outcome).not.toBe("passed");
+  });
+
+  test("marks an acceptance round as having no reviewer", async () => {
+    const { rounds } = await runCommitNode("commit_acceptance", " M a.ts\n");
+    expect(rounds[0]).toMatchObject({ phase: "acceptance", outcome: "no-reviewer" });
+  });
 });
 
 // Regression: the gate loop was the last loop to edit the tree and the only one
@@ -197,12 +219,17 @@ describe("gate re-entry is scoped to non-test changes", () => {
 
   const TS_TEST_REGEX = ["\\.test\\.ts$", "(^|/)test/"];
 
+  const gateRounds: unknown[] = [];
+
   const runGateCommit = async (
     files: string[],
     regex: string[] = TS_TEST_REGEX,
     opts: { revParseFails?: boolean } = {},
   ) => {
-    _resultDeps.appendText = async () => {};
+    gateRounds.length = 0;
+    _resultDeps.appendText = async (_p, s) => {
+      gateRounds.push(JSON.parse(s));
+    };
     _gitDeps.run = async (cmd) => {
       if (cmd.includes("--porcelain")) return { exitCode: 0, stdout: " M a\n", stderr: "" };
       if (cmd.includes("rev-parse"))
@@ -235,6 +262,35 @@ describe("gate re-entry is scoped to non-test changes", () => {
 
   test("an empty file list (git show failed) reviews rather than skipping", async () => {
     expect((await runGateCommit([])).route).toBe("changed");
+  });
+
+  // The skip is a deliberate cost tradeoff, but until it says so in the audit
+  // it is indistinguishable from a gate fix that WAS re-reviewed — both wrote
+  // `no-reviewer`. That is the #1507 failure mode surviving on the one path
+  // where the omission is on purpose, which is exactly where a reader most
+  // needs to know. Recording it is also what makes "how often does this fire?"
+  // answerable before anyone decides whether to close the hole.
+  test("a skipped re-review says so in the audit trail", async () => {
+    await runGateCommit(["test/unit/a.test.ts"]);
+    expect(gateRounds[0]).toMatchObject({ phase: "gate", outcome: "review-skipped" });
+  });
+
+  test("a gate fix that IS re-reviewed is not marked skipped", async () => {
+    await runGateCommit(["src/scheduler.ts"]);
+    expect(gateRounds[0]).toMatchObject({ phase: "gate", outcome: "no-reviewer" });
+  });
+
+  test("a gate fix that committed nothing is not marked skipped — there was nothing to review", async () => {
+    _resultDeps.appendText = async (_p, s) => {
+      gateRounds.push(JSON.parse(s));
+    };
+    gateRounds.length = 0;
+    _gitDeps.run = async (cmd) => {
+      if (cmd.includes("--porcelain")) return { exitCode: 0, stdout: "", stderr: "" };
+      return { exitCode: 0, stdout: "sha1\n", stderr: "" };
+    };
+    await nodeRun<{ route: string }>("commit_gate").run(ctxOf({ outputs: { load_ctx: { testFileRegex: [] } } }));
+    expect(gateRounds[0]).toMatchObject({ outcome: "no-reviewer" });
   });
 
   // A committed fix whose HEAD will not resolve is real and unclassifiable. It

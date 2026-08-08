@@ -118,14 +118,31 @@ export function repromptCount(ctx: StepsCtx, phase: "spec" | "quality"): number 
  * findings, so checking `findings.length === 0` ahead of it would route an
  * unreadable review to `clean`, and the flow would open a PR having reviewed
  * nothing. That silent false green is worse than the crash this replaces.
+ *
+ * An **absent** verdict escalates for the same reason, and it is a distinct
+ * case from an unparseable one: `parseReviewVerdict` never returns undefined,
+ * so a missing entry means the node produced no output at all — it never ran,
+ * or it died before emitting. Neither is an approval. This must not fall
+ * through to `findings ?? []`, because `ctx.outputs` holds only each node's
+ * latest output: on a loop re-entry the previous round's clean verdict can
+ * still be sitting there, and routing on it re-approves a diff nobody read.
+ * There is no reprompt path here — a node that emitted nothing has no raw tail
+ * to quote back, so a human is the only remaining reader.
  */
 export function routeReview(
   ctx: OutputsCtx & StepsCtx,
   phase: "spec" | "quality",
 ): { route: string; escalationReason?: string; findings: Finding[] } {
   const verdict = (ctx.outputs as Record<string, ReviewVerdict | undefined>)[`review_${phase}`];
-  const findings = verdict?.findings ?? [];
-  if (verdict?.route === "reprompt") {
+  if (!verdict) {
+    return {
+      route: "escalate",
+      escalationReason: `${phase} reviewer produced no verdict — the node emitted no output, so nothing reviewed this diff.`,
+      findings: [],
+    };
+  }
+  const findings = verdict.findings ?? [];
+  if (verdict.route === "reprompt") {
     // `attempts` is self-inclusive (see repromptCount) — it already counts this
     // round's failure, so `<=` (not `<`) is what makes MAX_REPROMPT_ATTEMPTS=1
     // tolerate exactly one retry before escalating.
@@ -139,7 +156,7 @@ export function routeReview(
       findings,
     };
   }
-  if (verdict?.route === "escalate") {
+  if (verdict.route === "escalate") {
     return {
       route: "escalate",
       escalationReason: verdict.escalationReason ?? `${phase} review raised a finding needing human judgment`,
