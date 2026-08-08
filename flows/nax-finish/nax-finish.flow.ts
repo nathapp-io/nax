@@ -203,7 +203,7 @@ function commitFixNode(phase: FinishPhase) {
       // PR opens, and a hook failure here would kill the flow mid-loop.
       const { committed, shaBefore, shaAfter } = await commitFixes(
         i.workdir,
-        buildFixCommitMessage(phase, i.feature, messageCtx),
+        buildFixCommitMessage(phase, i.feature, messageCtx, { workdir: i.workdir }),
         { skipHooks: true },
       );
       await appendRound(i, {
