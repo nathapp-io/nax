@@ -245,7 +245,16 @@ export function buildFlowArgv(
 }
 
 function buildFlowEnv(cfg: FinishAutoFlowSettings): Record<string, string> {
-  const env: Record<string, string> = { ...process.env } as Record<string, string>;
+  // Strip these before spreading the rest of `process.env`: this very process
+  // may itself have been launched by an outer nax-finish flow, and an
+  // unconfigured reviewer must not let that ambient value leak into the child.
+  const {
+    NAX_FINISH_SPEC_PROFILE: _spec,
+    NAX_FINISH_QUALITY_PROFILE: _quality,
+    NAX_FINISH_NARRATIVE_PROFILE: _narrative,
+    ...rest
+  } = process.env;
+  const env: Record<string, string> = { ...rest } as Record<string, string>;
   if (cfg.reviewers.spec) env.NAX_FINISH_SPEC_PROFILE = cfg.reviewers.spec;
   if (cfg.reviewers.quality) env.NAX_FINISH_QUALITY_PROFILE = cfg.reviewers.quality;
   if (cfg.reviewers.narrative) env.NAX_FINISH_NARRATIVE_PROFILE = cfg.reviewers.narrative;
