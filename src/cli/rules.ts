@@ -136,27 +136,53 @@ export interface RulesExportOptions {
 }
 
 /**
+ * Read a canonical PACKAGE-scope glob as a Claude FILE glob.
+ *
+ * `ruleMatchesPackage` (static-rules.ts) tests each canonical pattern against a
+ * package directory path relative to the repo root, so the faithful file-glob
+ * reading is "every file beneath a directory this pattern selects". A trailing
+ * `/*` or `/**` is part of how the package form spells "this directory", not an
+ * extra level, so it is normalised away before the file-matching `/**` is added
+ * — otherwise `packages/api/**` would become `packages/api/**\/**` and match
+ * strictly less than it did.
+ */
+function packageGlobToFileGlob(pattern: string): string {
+  const base = pattern.replace(/\/+\*{1,2}$/, "").replace(/\/+$/, "");
+  // A pattern that selects every package maps to every file.
+  if (base === "" || base === "**") return "**";
+  return `${base}/**`;
+}
+
+/**
  * Rebuild an agent-facing frontmatter block from a canonical rule.
  *
  * The key means different things in each store: nax's `appliesTo:` is the FILE
  * glob and its `paths:` is PACKAGE scope, whereas Claude's `paths:` is the file
  * glob. `nax rules migrate` translates Claude `paths:` -> nax `appliesTo:` on
  * the way in (see translateLegacyFrontmatter); this is the same translation on
- * the way out. Canonical `paths:` has no Claude equivalent and is dropped.
+ * the way out. Canonical `paths:` is read as a file glob via
+ * {@link packageGlobToFileGlob} so a package-scoped rule keeps its scope.
  *
  * Returns "" for an unscoped rule so no empty block is emitted.
  */
 function claudeFrontmatter(rule: CanonicalRule): string {
-  // Canonical `paths:` is PACKAGE scope and has no Claude equivalent. Dropping
-  // it silently WIDENS the rule — a rule scoped to one package becomes globally
-  // loaded — so it is warned about rather than quietly discarded.
-  if (rule.paths?.length) {
-    _rulesCLIDeps.getLogger().warn("rules-export", "Dropping package scope — Claude has no equivalent", {
+  const fileGlobs = rule.appliesTo ?? [];
+  const packageGlobs = rule.paths ?? [];
+
+  // nax applies `appliesTo` AND `paths` as a conjunction, but Claude's single
+  // `paths:` list is a disjunction — emitting both would WIDEN the rule rather
+  // than narrow it, which is the opposite of what either scope asked for. Keep
+  // the file glob, the more specific of the two, and report the package scope
+  // instead of quietly unioning it in.
+  if (fileGlobs.length > 0 && packageGlobs.length > 0) {
+    _rulesCLIDeps.getLogger().warn("rules-export", "Dropping package scope — Claude cannot express both scopes", {
       rule: rule.path ?? rule.fileName,
-      droppedPaths: rule.paths,
+      droppedPaths: packageGlobs,
+      keptAppliesTo: fileGlobs,
     });
   }
-  const globs = rule.appliesTo ?? [];
+
+  const globs = fileGlobs.length > 0 ? fileGlobs : [...new Set(packageGlobs.map(packageGlobToFileGlob))];
   if (globs.length === 0) return "";
   // JSON.stringify escapes quotes/backslashes — a raw interpolation would
   // emit invalid YAML for a glob containing either (cf. toYamlListLiteral).

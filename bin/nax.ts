@@ -1752,6 +1752,11 @@ rules
       process.exit(1);
       return;
     }
+    // Without this the export's warnings — a scope it could not carry across, a
+    // generated file with no canonical source — resolve through `getLogger()`
+    // to the noop logger and are discarded, so the command silently loses
+    // information it believes it is reporting. `rules lint` already does this.
+    initLogger({ level: "info", useChalk: true });
     try {
       await rulesExportCommand({
         dir: workdir,
