@@ -3,7 +3,7 @@
   "feature": "acceptance-target-protection",
   "branchName": "feat/acceptance-target-protection",
   "createdAt": "2026-08-08T22:50:00+08:00",
-  "updatedAt": "2026-08-08T14:54:02.475Z",
+  "updatedAt": "2026-08-08T15:14:22.474Z",
   "userStories": [
     {
       "id": "US-001",
@@ -39,7 +39,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/prompts/sections/behavioral-guardrails.ts",
@@ -54,9 +56,6 @@
       "suggestedCriteria": [
         "When behavioral guardrails are configured as `off`, then `buildNaxArtifactsSection(\"verifier\")` still returns the immutable-artifact section."
       ],
-      "outOfScope": [
-        "wording differences between isolation modes (`lite` vs standard) — the section is identical for both, matching `buildBehavioralGuardrailsSection`'s current behavior where `_variant` and `_isolation` are accepted but unused."
-      ],
       "modifiedFiles": [
         {
           "path": "src/prompts/sections/index.ts",
@@ -70,6 +69,13 @@
           "path": "src/prompts/builders/rectifier-builder-helpers.ts",
           "reason": ""
         }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "2c9b5dd3c40cafb883a3ca6030671c2685de15ba",
+      "outOfScope": [
+        "wording differences between isolation modes (`lite` vs standard) — the section is identical for both, matching `buildBehavioralGuardrailsSection`'s current behavior where `_variant` and `_isolation` are accepted but unused."
       ]
     },
     {
@@ -121,7 +127,10 @@
           "path": "src/utils/git.ts",
           "reason": ""
         }
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -171,9 +180,6 @@
       "expectedFiles": [
         "test/unit/pipeline/stages/acceptance-missing-target.test.ts"
       ],
-      "outOfScope": [
-        "honoring per-package `acceptance.enabled` during test **generation** — this story reads the flag only in the missing-target predicate."
-      ],
       "modifiedFiles": [
         {
           "path": "src/pipeline/types.ts",
@@ -191,6 +197,12 @@
           "path": "src/execution/runner-completion.ts",
           "reason": ""
         }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "outOfScope": [
+        "honoring per-package `acceptance.enabled` during test **generation** — this story reads the flag only in the missing-target predicate."
       ]
     },
     {
@@ -247,7 +259,10 @@
           "path": "src/execution/runner-completion.ts",
           "reason": ""
         }
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "This is an enhancement to nax's prompt, git snapshot, and post-run acceptance subsystems. Prompt composition already uses a role-keyed, config-gated section: buildBehavioralGuardrailsSection() returns null for verifier and no-test at src/prompts/sections/behavioral-guardrails.ts:12-33, and TddPromptBuilder composes it at src/prompts/builders/tdd-builder.ts:239-248. The sections barrel exports section builders at src/prompts/sections/index.ts:16-21. Rectifier prompt text is assembled through buildEscapeHatch() at src/prompts/builders/rectifier-builder-helpers.ts:116-143, which already contains separate .nax citation guidance; rectifier-builder.ts must not grow because its file-size baseline is capped. autoCommitIfDirty() is an exported, injected-dependency leaf at src/utils/git.ts:247-347: it obtains porcelain status at :315-323, logs dirty files, stages from the git root with git add -A at :335, and wraps the entire flow in a best-effort catch. Its callers include snapshot and completion paths, so the structural .nax deletion/rename guard must neither change its signature nor throw on malformed porcelain or failed restore. groupStoriesByPackage() filters non-fix/non-decomposed stories, groups by workdir, and synthesizes an empty root group at src/acceptance/test-path.ts:128-175. PipelineContext currently carries testPath, packageDir, framework, and command override at src/pipeline/types.ts:234-243; the new fields must be optional to preserve existing literal construction. acceptanceSetupStage resolves package config and builds entries at src/pipeline/stages/acceptance-setup.ts:442-463. runner-completion recomputes groups for reruns and currently resolves per-package framework/command only at src/execution/runner-completion.ts:138-203. The acceptance stage currently skips a missing file at src/pipeline/stages/acceptance.ts:167-170, then publishes ctx.acceptanceFailures with failedACs, findings, output, and failedPackages at :309-314. The new predicate must fail only for a missing target whose group has stories and package acceptance is enabled; missing targets must not fabricate failed ACs. Root acceptance is already gated before execute through acceptanceStage.enabled(), while omitted metadata needs explicit fallbacks derived from ctx.prd / enabled=true. The acceptance loop imports and executes the stage at src/execution/lifecycle/acceptance-loop.ts:357-579 and currently treats a fail without failedACs as an unspecified failure at :393-402. It must carry a separate optional skippedPackages list without helper growth in this 579/600-line file. AcceptanceLoopResult exposes optional failedACs/retries at :82-93, and AcceptancePhaseStatus exposes optional failedACs/retries at src/execution/status-file.ts:22-30. runner-completion records passed at :221 and failed at :238-243 and uses only status=passed to skip acceptance on resume at :123-133; a failed status with skipped packages will therefore rerun once propagation preserves failed status. Existing tests cover section patterns, git dependency mocking, acceptance-stage package failures, and completion behavior in the specified context files. Risks are porcelain v1 quoting/rename parsing, accidental .nax restoration beyond acceptance artifacts (intentional structural protection), backward compatibility with optional context literals, monorepo package-config fallbacks, and avoiding retries/fix cycles for a missing target that has no failed ACs. No migration is needed: new status/context fields are optional and historical status files remain readable; absent producer metadata is derived conservatively by the consumer.",
