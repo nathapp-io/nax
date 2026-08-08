@@ -60,9 +60,9 @@ All three are `RulesFrontmatterError`, which carries the file path. Stored trimm
 
 The unknown-key error message currently ends *"Only priority, paths, appliesTo, and stages are recognised."* That string is user-facing guidance, so it must gain `description` in the same change — a stale version of it would actively misdirect someone hitting the error.
 
-### Carrying — `canonical-loader.ts`
+### Carrying — the type, then the construction site
 
-`CanonicalRule` gains `description?: string`, threaded through where `paths` already is.
+`CanonicalRule` is **defined in `rules-frontmatter.ts:64`** and only re-exported from `canonical-loader.ts:33`, so the field is added to the former. The rule object is *built* in `canonical-loader.ts` (~line 435), where `description` is threaded through beside `paths` using the same conditional-spread form.
 
 ### Export — `claudeFrontmatter` in `cli/rules.ts`
 
