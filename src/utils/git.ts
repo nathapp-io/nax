@@ -227,6 +227,91 @@ export function detectMergeConflict(output: string): boolean {
 }
 
 /**
+ * Parse `git status --porcelain` output and return the set of deleted-or-renamed
+ * paths whose path lies under a `.nax/` segment. Structural discriminator — any
+ * deletion or rename touching a `.nax/` segment is treated as a stray-agent
+ * mistake the auto-commit must restore before staging.
+ *
+ * Exported so tests can exercise the parser against real porcelain strings
+ * rather than via a spawn mock. Pure — no I/O.
+ *
+ * Porcelain format reference:
+ *   `XY path` for non-renames, `XY old -> new` for renames. The XY status
+ *   column is two characters: index (X) and worktree (Y). A deletion shows as
+ *   ` D` (staged-delete) or `D ` (unstaged-delete) or `DD` (both); a rename
+ *   shows as `R ` or ` R`. Paths containing special characters come back
+ *   quoted by git (double quotes around the path, internal backslashes and
+ *   quotes escaped). We unquote via a small parser rather than shelling out
+ *   so the call is deterministic and testable.
+ *
+ * @param porcelain - The stdout of `git status --porcelain`
+ * @returns Array of paths to restore (old path for renames), in input order
+ */
+export function parsePorcelainForNaxPaths(porcelain: string): string[] {
+  const protectedPaths: string[] = [];
+  if (!porcelain) return protectedPaths;
+
+  for (const rawLine of porcelain.split("\n")) {
+    if (!rawLine) continue;
+    // Malformed lines (e.g. status shorter than 3 chars) are not actionable.
+    if (rawLine.length < 4) continue;
+    const xStatus = rawLine[0];
+    const yStatus = rawLine[1];
+    // "?? untracked" has no meaningful index/worktree status — skip.
+    if (xStatus === "?" && yStatus === "?") continue;
+    // We only restore deletions and renames; modifications stay as the agent
+    // left them.
+    const isDeleted = yStatus === "D" || (xStatus === "D" && yStatus !== " ");
+    const isRename = xStatus === "R" || yStatus === "R";
+    if (!isDeleted && !isRename) continue;
+
+    const pathField = rawLine.slice(3);
+    // Renames: "old -> new" — restore the OLD path so the file reappears at
+    // the agent's last known location in HEAD.
+    let targetPath: string;
+    if (isRename) {
+      const arrowIdx = pathField.indexOf(" -> ");
+      if (arrowIdx < 0) continue;
+      targetPath = pathField.slice(0, arrowIdx);
+    } else {
+      targetPath = pathField;
+    }
+    targetPath = unquotePorcelainPath(targetPath);
+
+    // Structural check: any path segment equal to `.nax` qualifies. This is
+    // broader than "the acceptance target" and deliberately so — it also
+    // protects `prd.json`, `checkpoint.jsonl`, and `acceptance-meta.json`.
+    if (!targetPath.split("/").includes(".nax")) continue;
+
+    protectedPaths.push(targetPath);
+  }
+  return protectedPaths;
+}
+
+/**
+ * Strip surrounding double quotes from a porcelain path and unescape internal
+ * `\"` and `\\` sequences. Pure — no I/O.
+ */
+function unquotePorcelainPath(p: string): string {
+  if (p.length < 2 || p[0] !== '"' || p[p.length - 1] !== '"') return p;
+  const inner = p.slice(1, -1);
+  let out = "";
+  for (let i = 0; i < inner.length; i++) {
+    const c = inner[i];
+    if (c === "\\" && i + 1 < inner.length) {
+      const next = inner[i + 1];
+      if (next === '"' || next === "\\") {
+        out += next;
+        i++;
+        continue;
+      }
+    }
+    out += c;
+  }
+  return out;
+}
+
+/**
  * Auto-commit safety net.
  *
  * If the agent left uncommitted changes after a session, stage and commit them
@@ -327,6 +412,27 @@ export async function autoCommitIfDirty(
       storyId,
       dirtyFiles: statusOutput.trim().split("\n").length,
     });
+
+    // Best-effort restore of deleted/renamed .nax/ paths before staging.
+    // The snapshot auto-commit swept an acceptance artifact deletion onto the
+    // branch after an agent treated it as a stray test file — restore any path
+    // under a `.nax/` segment so the auto-commit does not lose nax state.
+    // A non-zero exit on restore is logged but does NOT block the commit; the
+    // restore is best-effort and the agent's edits still need to land.
+    const naxPaths = parsePorcelainForNaxPaths(statusOutput);
+    for (const protectedPath of naxPaths) {
+      logger?.error(stage, "Restoring deleted .nax/ path before auto-commit", {
+        storyId,
+        role,
+        path: protectedPath,
+      });
+      const checkoutProc = _gitDeps.spawn(["git", "checkout", "--", protectedPath], {
+        cwd: workdir,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      await checkoutProc.exited;
+    }
 
     // Always stage from gitRoot with -A so that agent changes outside packageDir
     // (e.g. monorepo root package.json after `bun add`) are captured. Using
