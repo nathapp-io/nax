@@ -173,8 +173,10 @@ function packageGlobToFileGlob(pattern: string): string {
  * the agent prompt sees the rule's purpose ahead of any scope — both fields
  * are serialized through `JSON.stringify` for the same reason globs are:
  * a description containing `:`, `#`, `"`, or `\` would otherwise produce
- * YAML Claude fails to parse, since `Bun.YAML.parse` shares its parser
- * surface with Claude's own frontmatter loader.
+ * invalid YAML. This block is read by Claude's own frontmatter loader, a
+ * separate implementation from nax's `Bun.YAML.parse` (used only for
+ * canonical `.nax/rules/*.md`) — escaping guards the emitted YAML's grammar
+ * itself, not compatibility between the two parsers.
  *
  * Returns "" for a rule that has neither description nor scope, so an empty
  * block is never emitted.
