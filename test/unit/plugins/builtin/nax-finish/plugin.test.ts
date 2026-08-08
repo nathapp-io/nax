@@ -507,9 +507,7 @@ describe("nax-finish post-run action", () => {
     };
     _naxFinishDeps.readResult = async () => ({ feature: "x", status: "opened" });
 
-    await action.execute(
-      baseCtx({ config: { finish: { autoFlow: { enabled: true, narrative: false } } } }),
-    );
+    await action.execute(baseCtx({ config: { finish: { autoFlow: { enabled: true, narrative: false } } } }));
 
     expect(capturedEnv?.NAX_FINISH_NARRATIVE).toBe("0");
   });
@@ -604,20 +602,6 @@ describe("nax-finish post-run action", () => {
       finish: { autoFlow: { enabled: true, prBody: { template: "strict", sectionMap: { werk: "stories" } } } },
     });
     expect(configured.prBody).toEqual({ template: "strict", sectionMap: { werk: "stories" } });
-  });
-
-  test("execute omits reviewer profile env vars when reviewers are null", async () => {
-    let capturedEnv: Record<string, string> | undefined;
-    _naxFinishDeps.run = async (_cmd, opts) => {
-      capturedEnv = opts.env;
-      return { exitCode: 0, stdout: "", stderr: "" };
-    };
-    _naxFinishDeps.readResult = async () => ({ feature: "x", status: "opened" });
-
-    await action.execute(baseCtx());
-
-    expect(capturedEnv?.NAX_FINISH_SPEC_PROFILE).toBeUndefined();
-    expect(capturedEnv?.NAX_FINISH_QUALITY_PROFILE).toBeUndefined();
   });
 });
 

@@ -248,10 +248,18 @@ function buildFlowEnv(cfg: FinishAutoFlowSettings): Record<string, string> {
   // Strip these before spreading the rest of `process.env`: this very process
   // may itself have been launched by an outer nax-finish flow, and an
   // unconfigured reviewer must not let that ambient value leak into the child.
+  //
+  // NAX_FINISH_NARRATIVE belongs in the same list even though it is a switch
+  // rather than a profile, and leaving it out was a real leak: an outer flow
+  // with narration disabled exports `0`, every inner flow inherited it, and the
+  // inner run went silent while its config said otherwise. Every var this
+  // function is responsible for setting, it must also be responsible for
+  // clearing — a partial strip is the bug, not the variable count.
   const {
     NAX_FINISH_SPEC_PROFILE: _spec,
     NAX_FINISH_QUALITY_PROFILE: _quality,
     NAX_FINISH_NARRATIVE_PROFILE: _narrative,
+    NAX_FINISH_NARRATIVE: _narrativeSwitch,
     ...rest
   } = process.env;
   const env: Record<string, string> = { ...rest } as Record<string, string>;
