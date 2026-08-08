@@ -3,7 +3,7 @@
   "feature": "acceptance-target-protection",
   "branchName": "feat/acceptance-target-protection",
   "createdAt": "2026-08-08T22:50:00+08:00",
-  "updatedAt": "2026-08-08T15:14:22.474Z",
+  "updatedAt": "2026-08-08T15:22:06.427Z",
   "userStories": [
     {
       "id": "US-001",
@@ -26,8 +26,8 @@
         "safety"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -113,7 +113,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/utils/git.ts",
@@ -130,7 +132,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "775062cdf1db68d01e2f686aa878b0a589a782e4"
     },
     {
       "id": "US-003",

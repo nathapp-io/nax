@@ -1,0 +1,1 @@
+[2026-08-08T15:22:02.825Z] US-001 — PASSED — .nax immutability guard in code-touching prompts — Cost: $3.9193
