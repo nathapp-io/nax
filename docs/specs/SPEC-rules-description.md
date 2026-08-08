@@ -1,6 +1,6 @@
 # SPEC: Canonical rule `description:`
 
-<!-- spec-writing: completed-through-phase-5 -->
+<!-- spec-writing: completed-through-phase-6 -->
 
 ## Summary
 
@@ -111,6 +111,8 @@ Checked before drafting: no existing test asserts the full unknown-key sentence.
 - Carrying `description` through `rule-sections.ts` budget chunking is out of scope.
 
 ## Stories
+
+Two stories, deliberately not merged. US-002 is meaningless without US-001, which would normally force a merge — but the combined AC count is 16, exactly the project's resolved `maxAcCount`, and `nax plan` splits compound ACs atomically, so the merged story would plan to roughly 24 and breach the gate. The split is the narrower of the two evils and follows the module boundary (canonical loader vs CLI export) rather than an arbitrary seam.
 
 **US-001 — Canonical rules accept and carry a description**
 Parse, validate, and carry `description` from `.nax/rules/*.md` through `loadCanonicalRules`, and make the previously-fatal migrate sequence succeed.
