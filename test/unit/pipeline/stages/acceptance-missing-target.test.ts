@@ -287,4 +287,49 @@ describe("US-003: missing acceptance target fails the run", () => {
       restoreFile();
     }
   });
+
+  test("mixed: missing target + another package's AC failures → preserves the AC failures", async () => {
+    // Package /missing has a missing target → recorded via missingTargets (AC-7 says
+    // no entries in failedACs for this package).
+    // Package /present has a present test file with a real AC failure that must be
+    // preserved in failedACs alongside the missing-target signal.
+    const present = new Set(["/tmp/present.test.ts"]);
+    const restoreFile = stubFileExists(present);
+    const origSpawn = Bun.spawn;
+    (Bun as any).spawn = (_cmd: string[], _opts: any) => ({
+      exited: Promise.resolve(1),
+      stdout: new ReadableStream({
+        start(c) {
+          c.enqueue(new TextEncoder().encode("  (fail) AC-2: present boom\n"));
+          c.close();
+        },
+      }),
+      stderr: new ReadableStream({ start(c) { c.close(); } }),
+    });
+    try {
+      const ctx = makeCtx({
+        acceptanceTestPaths: [
+          {
+            testPath: "/missing/missing.test.ts",
+            packageDir: "/missing",
+            storyCount: 1,
+            acceptanceEnabled: true,
+          },
+          {
+            testPath: "/tmp/present.test.ts",
+            packageDir: "/present",
+            storyCount: 1,
+            acceptanceEnabled: true,
+          },
+        ],
+      });
+      const result = await acceptanceStage.execute(ctx);
+      expect(result.action).toBe("fail");
+      expect(ctx.acceptanceFailures?.failedACs ?? []).toContain("AC-2");
+      expect(ctx.acceptanceFailures?.missingTargets ?? []).toContain("/missing");
+    } finally {
+      (Bun as any).spawn = origSpawn;
+      restoreFile();
+    }
+  });
 });

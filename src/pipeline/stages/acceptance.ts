@@ -296,11 +296,13 @@ export const acceptanceStage: PipelineStage = {
     // the verdict still reports the missing-target package list. The missingTargets
     // field on acceptanceFailures is what runAcceptanceTestsOnce reads downstream
     // — without it, the consumer would treat "no failedACs" as passed and silently
-    // close the run as successful.
+    // close the run as successful. AC failures collected from other packages are
+    // preserved alongside missingTargets — only the missing-target package's own
+    // ACs are absent (AC-7), not the union across packages.
     if (missingTargets.length > 0) {
       ctx.acceptanceFailures = {
-        failedACs: [],
-        findings: [],
+        failedACs: allFailedACs,
+        findings: allFindings,
         testOutput: combinedOutput,
         failedPackages,
         missingTargets,
@@ -309,7 +311,7 @@ export const acceptanceStage: PipelineStage = {
         storyId: ctx.story.id,
         packageDir: ctx.workdir,
         passed: false,
-        failedACs: [],
+        failedACs: allFailedACs,
         retries: ctx.acceptanceRetries ?? 0,
         hardeningPromoted,
         durationMs,
