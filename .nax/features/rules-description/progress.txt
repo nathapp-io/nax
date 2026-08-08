@@ -1,1 +1,2 @@
 [2026-08-08T04:07:30.396Z] US-001 — PASSED — Canonical rules accept and carry a description — Cost: $2.1552
+[2026-08-08T04:13:36.847Z] US-002 — PASSED — The Claude export emits and surfaces the description — Cost: $0.3280

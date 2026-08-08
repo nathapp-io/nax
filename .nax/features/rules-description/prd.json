@@ -3,7 +3,7 @@
   "feature": "rules-description",
   "branchName": "feat/rules-description",
   "createdAt": "2026-08-08T03:48:14Z",
-  "updatedAt": "2026-08-08T04:07:33.982Z",
+  "updatedAt": "2026-08-08T04:13:36.847Z",
   "userStories": [
     {
       "id": "US-001",
@@ -77,8 +77,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
