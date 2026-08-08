@@ -364,6 +364,34 @@ describe("parsePorcelainForNaxPaths", () => {
     ]);
   });
 
+  test("decodes octal escapes for a deleted .nax/ path with non-ASCII bytes", () => {
+    // With `core.quotePath=true` (the default), git encodes non-ASCII bytes
+    // as octal escapes inside the quoted path: `café` becomes `caf\303\251`.
+    // A naive unquote that only handles `\"` and `\\` leaves the escapes in
+    // place and the path no longer resolves. The decoded path must round-trip
+    // to the actual UTF-8 bytes that exist on disk.
+    const output = ' D ".nax/caf\\303\\251/file.tsx"\n';
+    const result = paths(parsePorcelainForNaxPaths(output));
+    expect(result).toHaveLength(1);
+    // .nax/café/file.tsx in UTF-8: 'caf' + 0xC3 0xA9 + '/file.tsx'
+    expect(result[0]).toBe(Buffer.from([0x2e, 0x6e, 0x61, 0x78, 0x2f, 0x63, 0x61, 0x66, 0xc3, 0xa9, 0x2f, 0x66, 0x69, 0x6c, 0x65, 0x2e, 0x74, 0x73, 0x78]).toString());
+    // The decoded path must contain the literal `.nax` segment (octal-decoded
+    // bytes must not leak into the structural check).
+    expect(result[0]).toContain(".nax/");
+    expect(result[0]).not.toContain("\\303");
+  });
+
+  test("splits a rename on the unquoted ` -> ` boundary, not inside a quoted path", () => {
+    // A rename whose OLD path is itself quoted AND contains the literal
+    // sequence ` -> ` must split at the boundary outside the quotes, not at
+    // the arrow inside the filename. Here the OLD path is literally
+    // `foo -> bar.txt`; truncating at the first ` -> ` would yield `foo`.
+    const output = ' R ".nax/features/f/foo -> bar.txt" -> src/elsewhere.txt\n';
+    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([
+      ".nax/features/f/foo -> bar.txt",
+    ]);
+  });
+
   test("skips an uninterpretable line and still returns a deleted .nax/ path", () => {
     // Defensive: malformed status (single char) is not a deletion/rename, so
     // we ignore it. A subsequent deleted .nax/ path must still be parsed.
