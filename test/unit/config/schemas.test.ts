@@ -677,6 +677,24 @@ describe("RectificationConfigSchema — no-progress fields (US-1496)", () => {
     const rectification = execution.rectification as Record<string, unknown>;
     expect(rectification["abortOnNoProgress"]).toBe(false);
   });
+
+  /**
+   * The default is declared in TWO places that Zod never reconciles: the parent
+   * literal in `schemas.ts` (which `parse({})` resolves) and `.default(true)` on
+   * the nested field in `schemas-execution.ts` (which only a PARTIAL
+   * `execution.rectification` reaches). AC 1 above covers the first; without
+   * this the second can be flipped and every test still passes, letting the two
+   * sites drift silently.
+   *
+   * Found by the mutation spot-check: a `ts:bool-flip` on the nested default
+   * survived a real run.
+   */
+  test("abortOnNoProgress defaults to true when rectification is present but omits it", () => {
+    const config = NaxConfigSchema.parse(rectificationConfig({ maxAttemptsTotal: 5 }));
+    const execution = config.execution as Record<string, unknown>;
+    const rectification = execution.rectification as Record<string, unknown>;
+    expect(rectification["abortOnNoProgress"]).toBe(true);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
