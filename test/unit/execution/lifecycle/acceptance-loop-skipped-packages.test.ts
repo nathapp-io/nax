@@ -28,7 +28,8 @@ import type { PRD, UserStory } from "@/prd";
 import type { PostRunStatus } from "@/execution/status-file";
 import { _runCompletionDeps } from "@/execution/lifecycle";
 import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
-import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import { StatusWriter } from "@/execution";
+import { cleanupTempDir, makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -401,6 +402,57 @@ describe("US-004 AC-4: passing acceptance has status='passed' and no skippedPack
     const skipped = (passedCall?.[1] as { skippedPackages?: string[] } | undefined)
       ?.skippedPackages;
     expect(skipped === undefined || (Array.isArray(skipped) && skipped.length === 0)).toBe(true);
+  });
+
+  test("passing run clears stale skippedPackages left from a prior failed run (AC-4 merge)", async () => {
+    // AC-4 contract: when the new run passes, the recorded acceptance must
+    // have status="passed" AND no skippedPackages — even if a prior run
+    // recorded skippedPackages on a failed status. StatusWriter merges
+    // updates shallowly, so the runner-completion must explicitly clear
+    // the field when transitioning to "passed".
+    const tmpDir = makeTempDir("nax-us-004-ac4-merge-");
+    const statusFile = `${tmpDir}/status.json`;
+    const realStatusWriter = new StatusWriter(statusFile, makeNaxConfig(), {
+      runId: "run-merge",
+      feature: "test-feature",
+      startedAt: new Date(0).toISOString(),
+      dryRun: false,
+      startTimeMs: Date.now(),
+      pid: process.pid,
+    });
+    try {
+      // Seed the prior failed state.
+      realStatusWriter.setPostRunPhase("acceptance", {
+        status: "failed",
+        failedACs: [],
+        retries: 1,
+        lastRunAt: new Date(0).toISOString(),
+        skippedPackages: ["pkg-a"],
+      });
+      const seeded = realStatusWriter.getPostRunStatus();
+      expect(seeded.acceptance.skippedPackages).toEqual(["pkg-a"]);
+
+      const prd = makePRD([{ id: "US-001", status: "passed" }]);
+      const config = makeConfig(true);
+      _runnerCompletionDeps.runAcceptanceLoop = mock(
+        async (): Promise<AcceptanceLoopResult> => ({
+          success: true,
+          prd,
+          totalCost: 0,
+          iterations: 1,
+          storiesCompleted: 1,
+          prdDirty: false,
+        }),
+      ) as typeof _runnerCompletionDeps.runAcceptanceLoop;
+
+      await runCompletionPhase(makeOpts(config, prd, realStatusWriter as unknown as RunnerCompletionOptions["statusWriter"]));
+
+      const final = realStatusWriter.getPostRunStatus();
+      expect(final.acceptance.status).toBe("passed");
+      expect(final.acceptance.skippedPackages).toBeUndefined();
+    } finally {
+      cleanupTempDir(tmpDir);
+    }
   });
 });
 

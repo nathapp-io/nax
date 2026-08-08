@@ -223,7 +223,15 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
       const lastRunAt = new Date().toISOString();
       const acceptanceDurationMs = Date.now() - acceptanceStartTime;
       if (acceptanceResult.success) {
-        options.statusWriter.setPostRunPhase("acceptance", { status: "passed", lastRunAt });
+        // US-004 (AC-4): explicitly clear skippedPackages on the passed
+        // transition so a stale list from a prior failed run is not
+        // retained. StatusWriter merges updates shallowly, so omitting
+        // the field would leave the previous value in place.
+        options.statusWriter.setPostRunPhase("acceptance", {
+          status: "passed",
+          lastRunAt,
+          skippedPackages: undefined,
+        });
         pipelineEventBus.emit({
           type: "postrun:phase:completed",
           phase: "acceptance",
