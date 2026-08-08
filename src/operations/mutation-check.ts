@@ -145,6 +145,7 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       candidates: 0,
       checked: false,
     };
+    const logger = getLogger();
     const record = (result: {
       survivors: readonly SurvivingMutant[];
       outcomes: MutationOutcomeSummary;
@@ -154,8 +155,25 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       if (ctx.storyId) {
         ctx.runtime?.mutationSummaries?.set(ctx.storyId, { storyId: ctx.storyId, ...result });
       }
+      // `mutationSummaries` is in-memory and the run-end summary is stdout-only,
+      // so without this line a run where every mutant was killed leaves no trace
+      // on disk at all — survivors were the only outcome ever persisted. The
+      // kill rate needs its denominator (`candidates`) recorded next to it, or
+      // the soft-gate decision cannot be made from run artifacts.
+      //
+      // Only when the gate actually ran: the feature is default-off everywhere
+      // but nax's own repo, and a row of zeroes from a disabled gate would read
+      // as a real all-errored measurement.
+      if (result.checked) {
+        logger.info("mutation-check", "Mutation spot-check outcomes", {
+          storyId: input.storyId,
+          killed: result.outcomes.killed,
+          survived: result.outcomes.survived,
+          errored: result.outcomes.errored,
+          candidates: result.candidates,
+        });
+      }
     };
-    const logger = getLogger();
     // A mutation left behind by an interrupted run must still be restored if
     // the feature is turned off afterwards, so the sweep precedes the enabled
     // gate. Resolving the anchor costs a `git rev-parse` subprocess though, and
