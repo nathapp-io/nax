@@ -358,6 +358,7 @@ const EMPTY_ROUND_NOTE: Record<string, string> = {
   "no-reviewer": "- _no reviewer for this phase_",
   unparseable: "- _reviewer output could not be parsed_",
   escalated: "- _escalated for human review_",
+  "review-skipped": "- _re-review skipped: this fix touched test files only_",
 };
 
 function buildRoundBlock(round: FinishRound): string {

@@ -78,7 +78,20 @@ export type FinishRoundOutcome =
    * `passed`: an empty finding list here means "nobody looked", and rendering it
    * as "no findings" manufactures evidence of a review that does not exist.
    */
-  | "no-reviewer";
+  | "no-reviewer"
+  /**
+   * A re-review was owed and deliberately skipped — today only a `gate` fix
+   * that touched test files exclusively (`gateCommitRoute` → `tests-only`).
+   *
+   * Distinct from `no-reviewer`, which the same node writes when the fix *is*
+   * routed on to `review_quality`. Without the distinction both wrote
+   * `no-reviewer`, so the audit could not tell a gate fix that was re-reviewed
+   * from one whose re-review was skipped by policy — the #1507 failure mode
+   * surviving on the one path where the omission is intentional, and the path
+   * where a reader most needs to know. Recording it is also what makes "how
+   * often does this fire?" answerable before anyone decides to close the hole.
+   */
+  | "review-skipped";
 
 export interface FinishRound {
   ts: string;

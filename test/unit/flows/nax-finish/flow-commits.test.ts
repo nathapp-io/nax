@@ -219,12 +219,17 @@ describe("gate re-entry is scoped to non-test changes", () => {
 
   const TS_TEST_REGEX = ["\\.test\\.ts$", "(^|/)test/"];
 
+  const gateRounds: unknown[] = [];
+
   const runGateCommit = async (
     files: string[],
     regex: string[] = TS_TEST_REGEX,
     opts: { revParseFails?: boolean } = {},
   ) => {
-    _resultDeps.appendText = async () => {};
+    gateRounds.length = 0;
+    _resultDeps.appendText = async (_p, s) => {
+      gateRounds.push(JSON.parse(s));
+    };
     _gitDeps.run = async (cmd) => {
       if (cmd.includes("--porcelain")) return { exitCode: 0, stdout: " M a\n", stderr: "" };
       if (cmd.includes("rev-parse"))
@@ -257,6 +262,35 @@ describe("gate re-entry is scoped to non-test changes", () => {
 
   test("an empty file list (git show failed) reviews rather than skipping", async () => {
     expect((await runGateCommit([])).route).toBe("changed");
+  });
+
+  // The skip is a deliberate cost tradeoff, but until it says so in the audit
+  // it is indistinguishable from a gate fix that WAS re-reviewed — both wrote
+  // `no-reviewer`. That is the #1507 failure mode surviving on the one path
+  // where the omission is on purpose, which is exactly where a reader most
+  // needs to know. Recording it is also what makes "how often does this fire?"
+  // answerable before anyone decides whether to close the hole.
+  test("a skipped re-review says so in the audit trail", async () => {
+    await runGateCommit(["test/unit/a.test.ts"]);
+    expect(gateRounds[0]).toMatchObject({ phase: "gate", outcome: "review-skipped" });
+  });
+
+  test("a gate fix that IS re-reviewed is not marked skipped", async () => {
+    await runGateCommit(["src/scheduler.ts"]);
+    expect(gateRounds[0]).toMatchObject({ phase: "gate", outcome: "no-reviewer" });
+  });
+
+  test("a gate fix that committed nothing is not marked skipped — there was nothing to review", async () => {
+    _resultDeps.appendText = async (_p, s) => {
+      gateRounds.push(JSON.parse(s));
+    };
+    gateRounds.length = 0;
+    _gitDeps.run = async (cmd) => {
+      if (cmd.includes("--porcelain")) return { exitCode: 0, stdout: "", stderr: "" };
+      return { exitCode: 0, stdout: "sha1\n", stderr: "" };
+    };
+    await nodeRun<{ route: string }>("commit_gate").run(ctxOf({ outputs: { load_ctx: { testFileRegex: [] } } }));
+    expect(gateRounds[0]).toMatchObject({ outcome: "no-reviewer" });
   });
 
   // A committed fix whose HEAD will not resolve is real and unclassifiable. It

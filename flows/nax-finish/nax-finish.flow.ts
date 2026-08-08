@@ -34,7 +34,8 @@
  * - `commit_gate` re-enters `review_quality` when its fix touched non-test code
  *   — the gate loop was previously the one editing loop whose output only ever
  *   faced mechanical checks. A test-only fix skips the re-review by explicit
- *   cost tradeoff; see `gateCommitRoute` for why that is a known hole.
+ *   cost tradeoff; see `gateCommitRoute` for why that is a known hole. The skip
+ *   records `review-skipped`, so it is visible in the audit.
  * - Every `commit_*` node appends its round to the finish-audit trail as it
  *   happens, rather than a terminal node reconstructing them from
  *   `ctx.state.steps`. Appending live is what makes the trail survive a flow
@@ -50,6 +51,7 @@ import {
   _contextDeps,
   amendPrBodyNode,
   appendRound,
+  buildCommitRound,
   buildEscalationComment,
   commitAndPush,
   commitFixes,
@@ -154,7 +156,7 @@ async function acceptanceGateNode(ctx: {
  *   The defect that motivated the re-entry (rs-stock `b6fb66dd`) was itself
  *   test-only — 8 copy-pasted stubs across 3 test files — so this route would
  *   not have caught it. Widen it here if test-quality regressions start
- *   shipping.
+ *   shipping — the audit's `review-skipped` rounds are the evidence.
  * - `changed` — production code was touched, or the paths could not be
  *   classified at all. "Cannot classify" reviews rather than skips.
  */
@@ -206,31 +208,29 @@ function commitFixNode(phase: FinishPhase) {
         buildFixCommitMessage(phase, i.feature, messageCtx, { workdir: i.workdir }),
         { skipHooks: true },
       );
-      await appendRound(i, {
-        ts: new Date().toISOString(),
-        phase,
-        attempt: fixAttemptCount(ctx, `fix_${phase}`),
-        committed,
-        // `gate` and `acceptance` have no reviewer node, so their empty finding
-        // list means "nobody looked" — not "a reviewer approved this". Saying
-        // which is what stops the PR body inventing a review (#1507).
-        outcome: phase === "spec" || phase === "quality" ? "fixed" : "no-reviewer",
-        findings: findingsOf(ctx, phase),
-        ...(phase === "gate" ? { failing: gateOutputs(ctx).failing ?? [] } : {}),
-        // Carry `shaAfter` onto committed rounds only: a no-op round has no
-        // commit, so no SHA to record — keeping the field absent (rather than
-        // null/undefined) lets the result-file reader distinguish "no commit"
-        // from "record lost".
-        ...(committed && shaAfter ? { sha: shaAfter } : {}),
-      });
-      // Only `commit_gate` routes on this; the other phases have unconditional
-      // edges and ignore it.
+      // Routed BEFORE the round is recorded: `buildCommitRound` needs the
+      // successor to tell an owed-but-skipped re-review from a phase that never
+      // had a reviewer. Only `commit_gate` routes on this; the other phases have
+      // unconditional edges and ignore it.
       const route =
         phase === "gate"
           ? await gateCommitRoute(i, committed, shaAfter, loadCtxOf(ctx).testFileRegex ?? [])
           : committed
             ? "changed"
             : "unchanged";
+      await appendRound(
+        i,
+        buildCommitRound({
+          phase,
+          attempt: fixAttemptCount(ctx, `fix_${phase}`),
+          committed,
+          route,
+          findings: findingsOf(ctx, phase),
+          failing: phase === "gate" ? (gateOutputs(ctx).failing ?? []) : undefined,
+          shaAfter,
+          now: new Date().toISOString(),
+        }),
+      );
       return { committed, route, shaBefore, shaAfter };
     },
   };

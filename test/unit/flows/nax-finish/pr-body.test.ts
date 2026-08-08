@@ -209,6 +209,15 @@ describe("buildFinishBody — what an empty round actually means", () => {
     expect(body).not.toContain("- _no findings_");
   });
 
+  // The reader has to be able to see the skip. A PR whose gate fix bypassed the
+  // re-review by policy looks, in every other respect, exactly like one that was
+  // re-reviewed and came back clean.
+  test("a skipped re-review is visible in the body, not disguised as a clean one", () => {
+    const body = buildFinishBody(baseCtx({ rounds: [emptyRound({ phase: "gate", outcome: "review-skipped" })] }));
+    expect(body).toContain("re-review skipped");
+    expect(body).not.toContain("- _no findings_");
+  });
+
   test("an unparseable review is not rendered as a pass", () => {
     const body = buildFinishBody(baseCtx({ rounds: [emptyRound({ outcome: "unparseable" })] }));
     expect(body).toContain("could not be parsed");
