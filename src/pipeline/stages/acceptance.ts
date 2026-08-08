@@ -182,9 +182,14 @@ export const acceptanceStage: PipelineStage = {
         // US-003: missing target only fails the run when the package has PRD stories
         // AND acceptance is enabled for that package. Empty groups and per-package
         // disabled acceptance are honored as skips, mirroring the root-level flag.
+        // The fallback single-file path (no ctx.acceptanceTestPaths) preserves the
+        // pre-ACC-002 "skip missing" semantics — callers that haven't adopted
+        // acceptance-setup expect a missing test file to be a non-blocking skip,
+        // not a hard fail (regression caught by pipeline-acceptance integration test).
+        const isFallbackGroup = !ctx.acceptanceTestPaths;
         const resolvedStoryCount = storyCount ?? storiesByPackageDir.get(packageDir) ?? 0;
         const resolvedAcceptanceEnabled = acceptanceEnabled ?? true;
-        if (resolvedStoryCount > 0 && resolvedAcceptanceEnabled) {
+        if (!isFallbackGroup && resolvedStoryCount > 0 && resolvedAcceptanceEnabled) {
           logger.warn("acceptance", "Required acceptance test file missing", {
             storyId: ctx.story.id,
             testPath,

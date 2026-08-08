@@ -15,7 +15,7 @@ describe("US-001: .nax/ immutability guard", () => {
     const { buildNaxArtifactsSection } = await import("../../../src/prompts/sections");
     const section = buildNaxArtifactsSection("test-writer");
     expect(section).toMatch(
-      /\.nax\/.*(?:must never be moved|must never be renamed|must never be deleted|are immutable|do not move|do not rename|do not delete)/i,
+      /\.nax\/[\s\S]*?(?:must never be moved|must never be renamed|must never be deleted|are immutable|do not move|do not rename|do not delete)/i,
     );
   });
 
@@ -116,35 +116,41 @@ describe("US-001: .nax/ immutability guard", () => {
 
 describe("US-002: auto-commit restores deleted .nax/ artifacts", () => {
   test("AC-10: parsePorcelain returns a deleted .nax/ path as protected", async () => {
-    const { parsePorcelain } = await import("../../../src/utils/git");
-    expect(parsePorcelain("D apps/web/.nax/features/f/.nax-acceptance.test.tsx")).toEqual([
-      "apps/web/.nax/features/f/.nax-acceptance.test.tsx",
+    const { parsePorcelainForNaxPaths } = await import("../../../src/utils/git");
+    expect(parsePorcelainForNaxPaths("D  apps/web/.nax/features/f/.nax-acceptance.test.tsx")).toEqual([
+      { path: "apps/web/.nax/features/f/.nax-acceptance.test.tsx", staged: true },
     ]);
   });
 
   test("AC-11: parsePorcelain returns the OLD path for a rename moving a file out of .nax/", async () => {
-    const { parsePorcelain } = await import("../../../src/utils/git");
-    expect(parsePorcelain("R  .nax/old/file.ts -> new/file.ts")).toEqual([".nax/old/file.ts"]);
+    const { parsePorcelainForNaxPaths } = await import("../../../src/utils/git");
+    expect(parsePorcelainForNaxPaths("R  .nax/old/file.ts -> new/file.ts")).toEqual([
+      { path: ".nax/old/file.ts", staged: true },
+    ]);
   });
 
   test("AC-12: parsePorcelain returns empty for a .nax/ file that was only modified", async () => {
-    const { parsePorcelain } = await import("../../../src/utils/git");
-    expect(parsePorcelain("M .nax/foo/bar.ts")).toEqual([]);
+    const { parsePorcelainForNaxPaths } = await import("../../../src/utils/git");
+    expect(parsePorcelainForNaxPaths("M  .nax/foo/bar.ts")).toEqual([]);
   });
 
   test("AC-13: parsePorcelain returns empty for a deleted path outside .nax/", async () => {
-    const { parsePorcelain } = await import("../../../src/utils/git");
-    expect(parsePorcelain("D src/legacy.ts")).toEqual([]);
+    const { parsePorcelainForNaxPaths } = await import("../../../src/utils/git");
+    expect(parsePorcelainForNaxPaths("D  src/legacy.ts")).toEqual([]);
   });
 
   test("AC-14: parsePorcelain unquotes a deleted .nax/ path containing a space", async () => {
-    const { parsePorcelain } = await import("../../../src/utils/git");
-    expect(parsePorcelain('D ".nax/path with space.txt"')).toEqual([".nax/path with space.txt"]);
+    const { parsePorcelainForNaxPaths } = await import("../../../src/utils/git");
+    expect(parsePorcelainForNaxPaths('D  ".nax/path with space.txt"')).toEqual([
+      { path: ".nax/path with space.txt", staged: true },
+    ]);
   });
 
   test("AC-15: parsePorcelain skips an unparseable line and still returns protected paths from the rest", async () => {
-    const { parsePorcelain } = await import("../../../src/utils/git");
-    expect(parsePorcelain("INVALID_LINE\nD .nax/deleted.ts")).toEqual([".nax/deleted.ts"]);
+    const { parsePorcelainForNaxPaths } = await import("../../../src/utils/git");
+    expect(parsePorcelainForNaxPaths("INVALID_LINE\nD  .nax/deleted.ts")).toEqual([
+      { path: ".nax/deleted.ts", staged: true },
+    ]);
   });
 });
 
@@ -196,7 +202,7 @@ describe("US-002: autoCommitIfDirty restore integration", () => {
   }
 
   test("AC-16: a deleted .nax/ path triggers a git checkout restore before git add -A", async () => {
-    await run("D .nax/deleted.ts\n", "US-016");
+    await run("D  .nax/deleted.ts\n", "US-016");
     const checkoutIdx = calls.findIndex((c) => c.cmd.includes("checkout") && c.cmd.some((a) => a.includes(".nax/deleted.ts")));
     const addIdx = calls.findIndex((c) => c.cmd.includes("add") && c.cmd.includes("-A"));
     expect(checkoutIdx).toBeGreaterThanOrEqual(0);
@@ -214,22 +220,22 @@ describe("US-002: autoCommitIfDirty restore integration", () => {
       debug: mock(() => {}),
     })) as unknown as typeof gitModule._gitDeps.getSafeLogger;
 
-    await run("D .nax/deleted.ts\n", "US-017");
+    await run("D  .nax/deleted.ts\n", "US-017");
 
     expect(errorMock).toHaveBeenCalled();
     const call = errorMock.mock.calls[0];
-    expect(call[0]).toBe("US-017");
+    expect(call[2]?.storyId).toBe("US-017");
   });
 
   test("AC-18: a deletion outside .nax/ triggers no checkout — add and commit still run", async () => {
-    await run("D src/changed.ts\n", "US-018");
+    await run("D  src/changed.ts\n", "US-018");
     expect(calls.some((c) => c.cmd.includes("checkout"))).toBe(false);
     expect(calls.some((c) => c.cmd.includes("add") && c.cmd.includes("-A"))).toBe(true);
     expect(calls.some((c) => c.cmd.includes("commit"))).toBe(true);
   });
 
   test("AC-19: a failed checkout restore still allows add and commit to run", async () => {
-    await run("D .nax/deleted.ts\n", "US-019", 1);
+    await run("D  .nax/deleted.ts\n", "US-019", 1);
     expect(calls.some((c) => c.cmd.includes("checkout"))).toBe(true);
     expect(calls.some((c) => c.cmd.includes("add") && c.cmd.includes("-A"))).toBe(true);
     expect(calls.some((c) => c.cmd.includes("commit"))).toBe(true);
@@ -267,7 +273,7 @@ describe("US-003: missing acceptance target fails the stage", () => {
     } as PipelineContext;
   }
 
-  test("AC-20: fails with 'Acceptance test file not found' when storyCount=1, acceptanceEnabled=true, file missing", async () => {
+  test("AC-20: fails with 'Required acceptance test files are missing' when storyCount=1, acceptanceEnabled=true, file missing", async () => {
     const { acceptanceStage } = await import("../../../src/pipeline/stages/acceptance");
     const ctx = makeCtx({
       acceptanceTestPaths: [
@@ -281,7 +287,7 @@ describe("US-003: missing acceptance target fails the stage", () => {
     });
     const result = await acceptanceStage.execute(ctx);
     expect(result.action).toBe("fail");
-    expect((result as { reason?: string }).reason).toContain("Acceptance test file not found");
+    expect((result as { reason?: string }).reason).toContain("Required acceptance test files are missing");
   });
 
   test("AC-21: the failure reason names every missing target's packageDir", async () => {
@@ -532,6 +538,7 @@ describe("US-003: missing acceptance target fails the stage", () => {
         config: { ...rootConfig, acceptance: { ...rootConfig.acceptance, enabled: true } } as any,
         hooks: { hooks: {}, _skipGlobal: false } as any,
         feature: "test-feature",
+        featureDir: `${workdir}/.nax/features/test-feature`,
         workdir,
         statusFile: `${workdir}/status.json`,
         runId: "run-030",
