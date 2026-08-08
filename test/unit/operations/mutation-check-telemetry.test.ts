@@ -17,54 +17,25 @@ import { join } from "node:path";
 import { _mutationCheckDeps, mutationCheckOp } from "@/operations";
 import type { MutationCheckDeps } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { cleanupTempDir, makeTempDir, withInfoSpy } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeMutationCheckCtx,
+  makeMutationCheckDeps as fakeDeps,
+  makeTempDir,
+  withInfoSpy,
+} from "@test/helpers";
 
 const FAKE_STORY = { id: "US-004", title: "mutation-check telemetry" } as any;
 const ENABLED = { enabled: true, maxMutants: 3, timeoutSeconds: 60 };
 
-function ctxWithConfig(
+const ctxWithConfig = (
   execution: Record<string, unknown> = {},
   runtime: Partial<NaxRuntime> = {},
-  quality: Record<string, unknown> = { commands: { test: "bun test" } },
-): any {
-  const config = { execution, quality } as any;
-  return {
-    runtime: { mutationSummaries: new Map(), dirtyWorktrees: new Set<string>(), ...runtime },
-    storyId: "US-004",
-    packageView: {
-      packageDir: "packages/agent",
-      repoRoot: "/repo",
-      hasOverride: false,
-      config,
-      select: (s: any) => s.select(config),
-    },
-  } as any;
-}
+  quality?: Record<string, unknown>,
+) => makeMutationCheckCtx(execution, { runtime, ...(quality ? { quality } : {}) });
 
 const originalMutationCheckDeps = { ..._mutationCheckDeps };
 afterEach(() => Object.assign(_mutationCheckDeps, originalMutationCheckDeps));
-
-function fakeDeps(overrides: Partial<MutationCheckDeps> = {}): MutationCheckDeps {
-  return {
-    detectLanguage: async () => "typescript" as any,
-    getChangedNonTestFiles: async () => [],
-    getChangedLineRanges: async () => new Map(),
-    getGitRoot: async () => null,
-    selectScopedTests: async () => ({
-      effectiveCommand: "bun test",
-      isFullSuite: true,
-      thresholdFallback: false,
-      isMonorepoOrchestrator: false,
-    }),
-    regression: async () => ({
-      status: "SUCCESS" as const,
-      success: true,
-      countsTowardEscalation: true,
-      output: "",
-    }),
-    ...overrides,
-  };
-}
 
 /**
  * Drive the op to completion against a single one-line mutable source file, and

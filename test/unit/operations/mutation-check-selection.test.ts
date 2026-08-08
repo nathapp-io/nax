@@ -8,58 +8,25 @@
  *  - never invokes regression when no candidates are produced (AC13)
  *  - returns the all-zero outcomes contract for an empty selection (AC14)
  *
- * Mirrors the helpers in mutation-check.test.ts rather than co-locating,
- * because this file would otherwise push the parent over the 800-line
- * test file limit.
+ * Separate from mutation-check.test.ts because co-locating would push that
+ * file over the 800-line test limit; the shared fixtures both use live in
+ * test/helpers/mutation-check.ts.
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { mutationCheckOp, _mutationCheckDeps } from "@/operations";
-import type { MutationCheckDeps } from "@/operations";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeMutationCheckCtx as ctxWithConfig,
+  makeMutationCheckDeps as fakeDeps,
+  makeTempDir,
+} from "@test/helpers";
 
 const FAKE_STORY = { id: "US-004", title: "mutation-check op" } as any;
 
-function ctxWithConfig(execution: Record<string, unknown> = {}): any {
-  const config = { execution, quality: { commands: { test: "bun test" } } } as any;
-  return {
-    runtime: {},
-    storyId: "US-004",
-    packageView: {
-      packageDir: "packages/agent",
-      repoRoot: "/repo",
-      hasOverride: false,
-      config,
-      select: (s: any) => s.select(config),
-    },
-  } as any;
-}
-
 const originalMutationCheckDeps = { ..._mutationCheckDeps };
 afterEach(() => Object.assign(_mutationCheckDeps, originalMutationCheckDeps));
-
-function fakeDeps(overrides: Partial<MutationCheckDeps> = {}): MutationCheckDeps {
-  return {
-    detectLanguage: async () => "typescript" as any,
-    getChangedNonTestFiles: async () => [],
-    getChangedLineRanges: async () => new Map(),
-    getGitRoot: async () => null,
-    selectScopedTests: async () => ({
-      effectiveCommand: "bun test",
-      isFullSuite: true,
-      thresholdFallback: false,
-      isMonorepoOrchestrator: false,
-    }),
-    regression: async () => ({
-      status: "SUCCESS" as const,
-      success: true,
-      countsTowardEscalation: true,
-      output: "",
-    }),
-    ...overrides,
-  };
-}
 
 describe("mutationCheckOp — US-002 AC11: regression capped to maxMutants even with many candidates in one file", () => {
   test("maxMutants 2, one file with 8 candidates, regression TEST_FAILURE failCount 1 — regression invoked exactly twice", async () => {
