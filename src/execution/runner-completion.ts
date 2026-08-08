@@ -173,6 +173,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
                 packageDir: g.packageDir,
                 testFramework: groupConfig.project?.testFramework,
                 commandOverride: groupConfig.acceptance.command,
+                acceptanceEnabled: groupConfig.acceptance.enabled,
               };
             }),
           )

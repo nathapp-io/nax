@@ -106,9 +106,16 @@ describe("US-002: per-package acceptance runner", () => {
   test("AC-3: falls back to single-file behavior when acceptanceTestPaths is not set", async () => {
     // When acceptanceTestPaths is absent, should use featureDir + testPath from config
     const ctx = makeCtx(); // no acceptanceTestPaths
-    // File doesn't exist → stage continues without error (backward compat)
+    // US-003: the synthesized fallback group has storyCount derived from the PRD
+    // (1 story at the repo root) and acceptanceEnabled defaults to true, so a
+    // missing test file is now a hard fail — the pre-ACC-002 "skip missing" path
+    // was the bug this story closes. The fallback path itself is still reached
+    // (verified by the resulting action = "fail" with the synthesized testPath).
     const result = await acceptanceStage.execute(ctx);
-    expect(result.action).toBe("continue");
+    expect(result.action).toBe("fail");
+    if (result.action === "fail") {
+      expect(result.reason).toContain("/tmp/test-workdir");
+    }
   });
 
   test("AC-4: all packages passing returns continue", async () => {

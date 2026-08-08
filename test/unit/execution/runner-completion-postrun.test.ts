@@ -585,4 +585,62 @@ describe("runCompletionPhase - monorepo: acceptanceTestPaths passed to runAccept
     expect(path?.commandOverride).toBe("bun test {{FILE}} --timeout=60000");
     expect(path?.testFramework).toBe("bun");
   });
+
+  test("US-003 AC-11: acceptanceEnabled is resolved from the package's config, not the root", async () => {
+    let capturedCtx: Parameters<typeof _runnerCompletionDeps.runAcceptanceLoop>[0] | undefined;
+
+    const loadConfigForWorkdirMock = mock(async (_rootConfigPath: string, relativeWorkdir?: string) => {
+      // apps/api package has acceptance disabled
+      if (relativeWorkdir === "apps/api") {
+        return makeNaxConfig({
+          acceptance: { enabled: false, maxRetries: 3 },
+          project: { testFramework: "jest" },
+          execution: { regressionGate: { mode: "disabled" } },
+        });
+      }
+      return makeConfig(true);
+    });
+    _runnerCompletionDeps.loadConfigForWorkdir = loadConfigForWorkdirMock;
+
+    _runnerCompletionDeps.runAcceptanceLoop = mock(async (ctx): Promise<AcceptanceLoopResult> => {
+      capturedCtx = ctx;
+      return {
+        success: true,
+        prd: ctx.prd,
+        totalCost: 0,
+        iterations: 1,
+        storiesCompleted: 2,
+        prdDirty: false,
+      };
+    });
+
+    const prd: PRD = {
+      project: "proj",
+      feature: "graphify-kb-cc",
+      branchName: "feat/graphify-kb-cc",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userStories: [
+        { ...makeStory("US-001", "passed"), workdir: "apps/api" },
+        { ...makeStory("US-002", "passed"), workdir: "apps/cli" },
+      ],
+    };
+
+    // Root config has acceptance ENABLED — without per-package resolution, all entries would be true.
+    const config = makeConfig(true);
+    const statusWriter = makeStatusWriter();
+    const opts: RunnerCompletionOptions = {
+      ...makeOpts(config, prd, statusWriter),
+      featureDir: `${WORKDIR}/.nax/features/graphify-kb-cc`,
+    };
+
+    await runCompletionPhase(opts);
+
+    const paths = capturedCtx?.acceptanceTestPaths ?? [];
+    expect(paths.length).toBe(2);
+    const apiEntry = paths.find((p) => p.packageDir.endsWith("apps/api"));
+    const cliEntry = paths.find((p) => p.packageDir.endsWith("apps/cli"));
+    expect(apiEntry?.acceptanceEnabled).toBe(false);
+    expect(cliEntry?.acceptanceEnabled).toBe(true);
+  });
 });

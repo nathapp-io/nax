@@ -28,6 +28,7 @@
  * ```
  */
 
+import path from "node:path";
 import { buildAcceptanceRunCommand, resolveAcceptanceFeatureTestPath } from "@/acceptance";
 import type { HardeningContext } from "@/acceptance";
 import { acFailureToFinding, acSentinelToFinding } from "@/findings";
@@ -130,6 +131,8 @@ export const acceptanceStage: PipelineStage = {
       packageDir: string;
       testFramework?: string;
       commandOverride?: string;
+      storyCount?: number;
+      acceptanceEnabled?: boolean;
     }> = ctx.acceptanceTestPaths ?? [
       {
         testPath: resolveAcceptanceFeatureTestPath(
@@ -140,6 +143,16 @@ export const acceptanceStage: PipelineStage = {
         packageDir: ctx.workdir,
       },
     ];
+
+    // US-003: count PRD stories per package for missing-target storyCount fallback.
+    // Same SSOT grouping as AcceptanceTestGroup.stories in src/acceptance/test-path.ts.
+    const storiesByPackageDir = new Map<string, number>();
+    for (const s of ctx.prd.userStories) {
+      if (s.id.startsWith("US-FIX-") || s.status === "decomposed") continue;
+      const wd = s.workdir ?? "";
+      const pkgDir = wd ? path.join(ctx.workdir, wd) : ctx.workdir;
+      storiesByPackageDir.set(pkgDir, (storiesByPackageDir.get(pkgDir) ?? 0) + 1);
+    }
 
     // Collect combined results across all packages
     const allFailedACs: string[] = [];
@@ -152,6 +165,7 @@ export const acceptanceStage: PipelineStage = {
       output: string;
       failedACs: string[];
     }> = [];
+    const missingTargets: string[] = [];
     const allOutputParts: string[] = [];
     let anyError = false;
     let errorExitCode = 0;
@@ -159,13 +173,31 @@ export const acceptanceStage: PipelineStage = {
     // on the verdict under its own key — it is NOT a retry count (#1424).
     let hardeningPromoted = 0;
 
-    for (const { testPath, packageDir, testFramework, commandOverride } of testGroups) {
+    for (const { testPath, packageDir, testFramework, commandOverride, storyCount, acceptanceEnabled } of testGroups) {
       // Check if test file exists
       const testFile = Bun.file(testPath);
       const exists = await testFile.exists();
 
       if (!exists) {
-        logger.warn("acceptance", "Acceptance test file not found — skipping", { storyId: ctx.story.id, testPath });
+        // US-003: missing target only fails the run when the package has PRD stories
+        // AND acceptance is enabled for that package. Empty groups and per-package
+        // disabled acceptance are honored as skips, mirroring the root-level flag.
+        const resolvedStoryCount = storyCount ?? storiesByPackageDir.get(packageDir) ?? 0;
+        const resolvedAcceptanceEnabled = acceptanceEnabled ?? true;
+        if (resolvedStoryCount > 0 && resolvedAcceptanceEnabled) {
+          logger.warn("acceptance", "Required acceptance test file missing", {
+            storyId: ctx.story.id,
+            testPath,
+            packageDir,
+          });
+          missingTargets.push(packageDir);
+        } else {
+          logger.warn("acceptance", "Acceptance test file not found — skipping", {
+            storyId: ctx.story.id,
+            testPath,
+            packageDir,
+          });
+        }
         continue;
       }
 
@@ -258,6 +290,32 @@ export const acceptanceStage: PipelineStage = {
 
     const combinedOutput = allOutputParts.join("\n");
     const durationMs = Date.now() - startTime;
+
+    // US-003: missing required acceptance targets fail the run with every affected
+    // packageDir named in the reason. Surface them before the pass/fail verdict so
+    // the verdict still reports the missing-target package list.
+    if (missingTargets.length > 0) {
+      ctx.acceptanceFailures = {
+        failedACs: [],
+        findings: [],
+        testOutput: combinedOutput,
+        failedPackages,
+      };
+      logger.info("acceptance", "verdict", {
+        storyId: ctx.story.id,
+        packageDir: ctx.workdir,
+        passed: false,
+        failedACs: [],
+        retries: ctx.acceptanceRetries ?? 0,
+        hardeningPromoted,
+        durationMs,
+        missingTargets,
+      });
+      return {
+        action: "fail",
+        reason: `Required acceptance test files are missing for packages: ${missingTargets.join(", ")}`,
+      };
+    }
 
     // All packages passed
     if (allFailedACs.length === 0) {

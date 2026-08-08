@@ -369,8 +369,15 @@ describe("acceptance stage (GREEN gate): works with pre-generated test file", ()
 
     const stories2 = [makeStory("US-001", ["AC-1"])];
     stories2[0].status = "passed" as any;
+    // US-003: a fallback single-file group with stories derives storyCount > 0
+    // and acceptanceEnabled defaults to true, so a missing target is a hard
+    // fail. The fallback path itself is still reached; the action reports the
+    // synthesized package dir in the failure reason.
     const result = await acceptanceStage.execute(makeCtx({ prd: makePrd(stories2) as any, story: stories2[0], featureDir: "/tmp/non-existent-feature-dir" }));
-    expect(result.action).toBe("continue");
+    expect(result.action).toBe("fail");
+    if (result.action === "fail") {
+      expect(result.reason).toContain("/tmp/test-workdir");
+    }
   });
 });
 

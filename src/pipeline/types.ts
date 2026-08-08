@@ -238,6 +238,10 @@ export interface PipelineContext extends DispatchContext {
     testFramework?: string;
     /** Per-package acceptance.command override. Undefined = use framework default. */
     commandOverride?: string;
+    /** Number of non-fix, non-decomposed PRD stories grouped into this package. US-003. */
+    storyCount?: number;
+    /** Whether acceptance is enabled for this package's config. US-003. */
+    acceptanceEnabled?: boolean;
   }>;
   /** Failure category from TDD orchestrator (set by executionStage on TDD failure) */
   tddFailureCategory?: FailureCategory;
