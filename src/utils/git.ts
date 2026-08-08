@@ -227,114 +227,15 @@ export function detectMergeConflict(output: string): boolean {
 }
 
 /**
- * One protected-path entry returned by `parsePorcelainForNaxPaths`.
- *
- * `staged` is true when the deletion/rename is already reflected in the index
- * (porcelain status has `D` or `R` in the index column). The auto-commit uses
- * this to choose between `git checkout -- <path>` (restore from the index — for
- * unstaged deletions, where the index still has the file) and
- * `git checkout HEAD -- <path>` (restore from the commit — for staged
- * deletions/renames, where the index says the file is gone and only HEAD
- * still has it).
+ * Re-exports of the porcelain parser for callers that import from
+ * `@/utils/git`. The parser itself lives in `./porcelain.ts` to keep the
+ * pure string-handling code separate from the subprocess orchestration here.
+ * Imported as a value as well so `autoCommitIfDirty` can call it directly
+ * without going through the module re-export indirection.
  */
-export interface NaxProtectedPath {
-  /** The path to restore (the OLD path for renames, unquoted). */
-  path: string;
-  /** True when the index already records the deletion/rename. */
-  staged: boolean;
-}
-
-/**
- * Parse `git status --porcelain` output and return the set of deleted-or-renamed
- * paths whose path lies under a `.nax/` segment. Structural discriminator — any
- * deletion or rename touching a `.nax/` segment is treated as a stray-agent
- * mistake the auto-commit must restore before staging.
- *
- * Exported so tests can exercise the parser against real porcelain strings
- * rather than via a spawn mock. Pure — no I/O.
- *
- * Porcelain format reference:
- *   `XY path` for non-renames, `XY old -> new` for renames. The XY status
- *   column is two characters: index (X) and worktree (Y). A deletion shows as
- *   ` D` (unstaged-delete), `D ` (staged-delete), or `DD` (both); a rename
- *   shows as `R ` (staged-rename) or ` R` (unstaged-rename). Paths containing
- *   special characters come back quoted by git (double quotes around the path,
- *   internal backslashes and quotes escaped). We unquote via a small parser
- *   rather than shelling out so the call is deterministic and testable.
- *
- * @param porcelain - The stdout of `git status --porcelain`
- * @returns Array of protected-path entries (old path for renames), in input order
- */
-export function parsePorcelainForNaxPaths(porcelain: string): NaxProtectedPath[] {
-  const protectedPaths: NaxProtectedPath[] = [];
-  if (!porcelain) return protectedPaths;
-
-  for (const rawLine of porcelain.split("\n")) {
-    if (!rawLine) continue;
-    // Malformed lines (e.g. status shorter than 3 chars) are not actionable.
-    if (rawLine.length < 4) continue;
-    const xStatus = rawLine[0];
-    const yStatus = rawLine[1];
-    // "?? untracked" has no meaningful index/worktree status — skip.
-    if (xStatus === "?" && yStatus === "?") continue;
-    // We only restore deletions and renames; modifications stay as the agent
-    // left them. `D` in either column counts — `D ` is staged-delete (e.g.
-    // after `git rm .nax/...`) and `git add -A` would otherwise keep it
-    // staged, losing the path without a `git checkout` first.
-    const isDeleted = xStatus === "D" || yStatus === "D";
-    const isRename = xStatus === "R" || yStatus === "R";
-    if (!isDeleted && !isRename) continue;
-
-    // The deletion/rename is "staged" when the index column carries the
-    // status letter. That is the case where the index no longer has the old
-    // path and the restore must source from HEAD rather than the index.
-    const staged = xStatus === "D" || xStatus === "R";
-
-    const pathField = rawLine.slice(3);
-    // Renames: "old -> new" — restore the OLD path so the file reappears at
-    // the agent's last known location in HEAD.
-    let targetPath: string;
-    if (isRename) {
-      const arrowIdx = pathField.indexOf(" -> ");
-      if (arrowIdx < 0) continue;
-      targetPath = pathField.slice(0, arrowIdx);
-    } else {
-      targetPath = pathField;
-    }
-    targetPath = unquotePorcelainPath(targetPath);
-
-    // Structural check: any path segment equal to `.nax` qualifies. This is
-    // broader than "the acceptance target" and deliberately so — it also
-    // protects `prd.json`, `checkpoint.jsonl`, and `acceptance-meta.json`.
-    if (!targetPath.split("/").includes(".nax")) continue;
-
-    protectedPaths.push({ path: targetPath, staged });
-  }
-  return protectedPaths;
-}
-
-/**
- * Strip surrounding double quotes from a porcelain path and unescape internal
- * `\"` and `\\` sequences. Pure — no I/O.
- */
-function unquotePorcelainPath(p: string): string {
-  if (p.length < 2 || p[0] !== '"' || p[p.length - 1] !== '"') return p;
-  const inner = p.slice(1, -1);
-  let out = "";
-  for (let i = 0; i < inner.length; i++) {
-    const c = inner[i];
-    if (c === "\\" && i + 1 < inner.length) {
-      const next = inner[i + 1];
-      if (next === '"' || next === "\\") {
-        out += next;
-        i++;
-        continue;
-      }
-    }
-    out += c;
-  }
-  return out;
-}
+import { parsePorcelainForNaxPaths } from "./porcelain";
+export { parsePorcelainForNaxPaths };
+export type { NaxProtectedPath } from "./porcelain";
 
 /**
  * Auto-commit safety net.
