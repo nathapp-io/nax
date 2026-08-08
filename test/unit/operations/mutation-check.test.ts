@@ -1,51 +1,21 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { _mutationCheckDeps, mutationCheckOp } from "@/operations";
-import type { MutationCheckDeps } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeMutationCheckCtx,
+  makeMutationCheckDeps as fakeDeps,
+  makeTempDir,
+} from "@test/helpers";
 
 const FAKE_STORY = { id: "US-004", title: "mutation-check op" } as any;
 
-function ctxWithConfig(execution: Record<string, unknown> = {}, runtime: Partial<NaxRuntime> = {}): any {
-  const config = { execution, quality: { commands: { test: "bun test" } } } as any;
-  return {
-    runtime: { mutationSummaries: new Map(), ...runtime },
-    storyId: "US-004",
-    packageView: {
-      packageDir: "packages/agent",
-      repoRoot: "/repo",
-      hasOverride: false,
-      config,
-      select: (s: any) => s.select(config),
-    },
-  } as any;
-}
+const ctxWithConfig = (execution: Record<string, unknown> = {}, runtime: Partial<NaxRuntime> = {}) =>
+  makeMutationCheckCtx(execution, { runtime });
 
 const originalMutationCheckDeps = { ..._mutationCheckDeps };
 afterEach(() => Object.assign(_mutationCheckDeps, originalMutationCheckDeps));
-
-function fakeDeps(overrides: Partial<MutationCheckDeps> = {}): MutationCheckDeps {
-  return {
-    detectLanguage: async () => "typescript" as any,
-    getChangedNonTestFiles: async () => [],
-    getChangedLineRanges: async () => new Map(),
-    getGitRoot: async () => null,
-    selectScopedTests: async () => ({
-      effectiveCommand: "bun test",
-      isFullSuite: true,
-      thresholdFallback: false,
-      isMonorepoOrchestrator: false,
-    }),
-    regression: async () => ({
-      status: "SUCCESS" as const,
-      success: true,
-      countsTowardEscalation: true,
-      output: "",
-    }),
-    ...overrides,
-  };
-}
 
 describe("mutationCheckOp — AC1: DeterministicOperation shape", () => {
   test("kind is deterministic", () => {

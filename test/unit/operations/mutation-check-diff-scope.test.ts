@@ -10,48 +10,18 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import * as loggerModule from "@/logger";
 import { mutationCheckOp } from "@/operations";
-import type { MutationCheckDeps } from "@/operations";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeMutationCheckCtx,
+  makeMutationCheckDeps as fakeDeps,
+  makeTempDir,
+} from "@test/helpers";
 import * as mutationModule from "@/verification/mutation";
 
 const FAKE_STORY = { id: "US-003", title: "scope mutation candidates" } as any;
 
-function ctxWithConfig(execution: Record<string, unknown> = {}): any {
-  const config = { execution, quality: { commands: { test: "bun test" } } } as any;
-  return {
-    runtime: { mutationSummaries: new Map() },
-    storyId: "US-003",
-    packageView: {
-      packageDir: "packages/agent",
-      repoRoot: "/repo",
-      hasOverride: false,
-      config,
-      select: (s: any) => s.select(config),
-    },
-  } as any;
-}
-
-function fakeDeps(overrides: Partial<MutationCheckDeps> = {}): MutationCheckDeps {
-  return {
-    detectLanguage: async () => "typescript" as any,
-    getChangedNonTestFiles: async () => [],
-    getChangedLineRanges: async () => new Map(),
-    getGitRoot: async () => null,
-    selectScopedTests: async () => ({
-      effectiveCommand: "bun test",
-      isFullSuite: true,
-      thresholdFallback: false,
-      isMonorepoOrchestrator: false,
-    }),
-    regression: async () => ({
-      status: "SUCCESS" as const,
-      success: true,
-      countsTowardEscalation: true,
-      output: "",
-    }),
-    ...overrides,
-  };
-}
+const ctxWithConfig = (execution: Record<string, unknown> = {}) =>
+  makeMutationCheckCtx(execution, { storyId: "US-003" });
 
 describe("mutationCheckOp — US-003 AC7: getChangedLineRanges resolves to null", () => {
   test("returns success:true with outcomes { killed: 0, survived: 0, errored: 0 }", async () => {

@@ -42,3 +42,5 @@ export { makeScriptedAgent, runOrchestratorE2E } from "./e2e";
 export type { ScriptedAgentSpec, ScriptedTurn, E2EOptions, E2EResult, E2EGates } from "./e2e";
 export { DEFAULT_TEST_ROUTING, makeTestContext, makeTestPRD, makeTestStory } from "./pipeline-context";
 export { makeFlowCtx, makeFlowStep, makeFlowSteps, reviewRounds } from "./flow-steps";
+export { makeMutationCheckCtx, makeMutationCheckDeps } from "./mutation-check";
+export type { MutationCheckCtxOptions } from "./mutation-check";
