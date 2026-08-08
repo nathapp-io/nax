@@ -455,6 +455,34 @@ export const NaxConfigSchema = z
              * mechanical fallback (spec §Summary) or no such section at all.
              */
             narrative: z.boolean().default(true),
+            /**
+             * How the repo's own PR/MR template is honoured.
+             *
+             * `merge` (default) treats the template as *shape*: headings the
+             * body can fill keep their wording, headings it cannot are
+             * dropped, and content with no matching heading is appended under
+             * nax's own. `strict` keeps the unfillable headings, empty, for
+             * repos whose CI asserts a set of headings exists. `ignore` skips
+             * the template entirely.
+             *
+             * Never appends the template verbatim — that shipped an unfilled
+             * form below a filled one (#1504).
+             */
+            prBody: z
+              .object({
+                template: z.enum(["merge", "strict", "ignore"]).default("merge"),
+                /**
+                 * Template heading → body-section key, layered over the
+                 * defaults in `flows/nax-finish/pr-template-merge.ts`. Keys are
+                 * matched case- and punctuation-insensitively. An empty value
+                 * suppresses a default alias.
+                 *
+                 * Known section keys: `narrative`, `stories`, `verification`,
+                 * `rounds`, `outOfScope`.
+                 */
+                sectionMap: z.record(z.string(), z.string()).default({}),
+              })
+              .default({ template: "merge", sectionMap: {} }),
             reviewers: z
               .object({
                 spec: z.string().nullable().default(null),
@@ -493,6 +521,7 @@ export const NaxConfigSchema = z
             defaultAgent: null,
             model: null,
             narrative: true,
+            prBody: { template: "merge", sectionMap: {} },
             reviewers: { spec: null, quality: null, narrative: null },
             escalate: { telegram: true },
             notify: { mode: "escalation" },
@@ -506,6 +535,7 @@ export const NaxConfigSchema = z
           defaultAgent: null,
           model: null,
           narrative: true,
+          prBody: { template: "merge", sectionMap: {} },
           reviewers: { spec: null, quality: null, narrative: null },
           escalate: { telegram: true },
           notify: { mode: "escalation" },

@@ -583,6 +583,29 @@ describe("nax-finish post-run action", () => {
     expect(r.message).toContain("not found");
   });
 
+  test("execute forwards prBody settings to the flow, defaulting to merge", async () => {
+    const inputFor = async (config: unknown) => {
+      let cmd: string[] = [];
+      _naxFinishDeps.run = async (c) => {
+        cmd = c;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      };
+      _naxFinishDeps.readResult = async () => ({ feature: "x", status: "opened" });
+      await action.execute(baseCtx({ config } as never));
+      return JSON.parse(cmd[cmd.indexOf("--input-json") + 1]);
+    };
+
+    // A config carrying no `prBody` key must still merge — not fall back to the
+    // pre-#1504 verbatim append.
+    const defaulted = await inputFor({ finish: { autoFlow: { enabled: true } } });
+    expect(defaulted.prBody).toEqual({ template: "merge", sectionMap: {} });
+
+    const configured = await inputFor({
+      finish: { autoFlow: { enabled: true, prBody: { template: "strict", sectionMap: { werk: "stories" } } } },
+    });
+    expect(configured.prBody).toEqual({ template: "strict", sectionMap: { werk: "stories" } });
+  });
+
   test("execute omits reviewer profile env vars when reviewers are null", async () => {
     let capturedEnv: Record<string, string> | undefined;
     _naxFinishDeps.run = async (_cmd, opts) => {

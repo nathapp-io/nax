@@ -308,6 +308,7 @@ async function executeFinishFlow(options: ExecuteFinishOptions): Promise<FinishT
     runId: ctx.runId,
     escalateTelegram,
     timeouts: { acceptanceMs: cfg.timeouts.acceptanceMs, gateMs: cfg.timeouts.gateMs },
+    prBody: { template: cfg.prBody.template, sectionMap: cfg.prBody.sectionMap },
   };
   const cmd = buildFlowArgv(flowPath, JSON.stringify(input), {
     defaultAgent: cfg.defaultAgent,
