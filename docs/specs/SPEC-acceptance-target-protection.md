@@ -24,20 +24,21 @@ Detection in US-002 is a **structural discriminator**, not a resolved-path list:
 
 ### Integration
 
-**US-001 — prompt guard.** Follows `buildBehavioralGuardrailsSection` (`src/prompts/sections/behavioral-guardrails.ts:13`) exactly: a role-keyed builder in `src/prompts/sections/`, exported from the `src/prompts/sections/index.ts` barrel, composed into the prompt accumulator. Two deliberate differences from that precedent:
+**US-001 — prompt guard.** Follows `buildBehavioralGuardrailsSection` (`src/prompts/sections/behavioral-guardrails.ts:12`) exactly: a role-keyed builder in `src/prompts/sections/`, exported from the `src/prompts/sections/index.ts` barrel, composed into the prompt accumulator. Two deliberate differences from that precedent:
 
 - It is **not config-gated**. `buildBehavioralGuardrailsSection` takes a `GuardrailLevel` and returns `null` when `"off"`; this section is a safety invariant and always returns a string.
 - It **applies to `verifier`**. The guardrails builder returns `null` for `verifier` and `no-test`; this one does not.
 
-Three composition sites, all existing:
+Two composition sites, both existing:
 
 | Site | Roles covered |
 |:---|:---|
 | `src/prompts/builders/tdd-builder.ts:238-248` (alongside the guardrails block) | `test-writer`, `implementer`, `verifier` |
-| `src/prompts/builders/rectifier-builder.ts:215` | rectifier (hardcodes `"implementer"`) |
-| `src/prompts/builders/rectifier-builder.ts:257` | rectifier (hardcodes `"implementer"`) |
+| `buildEscapeHatch` in `src/prompts/builders/rectifier-builder-helpers.ts:116` — interpolate the section into its returned template string | rectifier |
 
-The rectifier's existing `.nax/` paragraph (`rectifier-builder-helpers.ts:130-135`) is **left unchanged** — it addresses a different failure mode (agents *citing* a `.nax/` test as real coverage) and uses rectifier-only vocabulary that would be noise elsewhere.
+**The rectifier guard must not be composed in `rectifier-builder.ts`.** That file is 902 lines and is pinned at exactly `902` in `scripts/baselines/file-sizes-baseline.json`; the ratchet grandfathers oversized files but forbids growth, so adding even one line there fails `bun run check:file-sizes` inside `bun run lint`. Routing through `buildEscapeHatch` (in the 412-line helpers module, which already carries the rectifier's `.nax/` text) adds zero lines to the capped file.
+
+The rectifier's existing `.nax/` citation paragraph (`rectifier-builder-helpers.ts:130-135`) is **left unchanged** — it addresses a different failure mode (agents *citing* a `.nax/` test as real coverage) and uses rectifier-only vocabulary that would be noise elsewhere. The new section is appended alongside it, not merged into it.
 
 **US-002 — auto-commit restore.** `autoCommitIfDirty` in `src/utils/git.ts:247`. The new step sits between the `git status --porcelain` read (`:315-323`) and the `git add -A` (`:335`). Follows the existing refusal precedent 15 lines above at `:300-313` for logging shape. All process spawning goes through the existing `_gitDeps.spawn` injection point; the logger is `_gitDeps.getSafeLogger()`.
 
@@ -45,12 +46,23 @@ Porcelain parsing is extracted to its own exported helper so it can be tested ag
 
 **US-003 — stage decision.** `ctx.acceptanceTestPaths` (`src/pipeline/types.ts:234`) gains two fields, both derivable from data the two producers already hold:
 
-- `storyCount: number` — from `AcceptanceTestGroup.stories.length` (`src/acceptance/test-path.ts:105`)
-- `acceptanceEnabled: boolean` — from the per-package `groupConfig` that `runner-completion.ts:158` already loads and currently reads only for `testFramework` / `commandOverride`
+- `storyCount?: number` — from `AcceptanceTestGroup.stories.length` (`src/acceptance/test-path.ts:105`)
+- `acceptanceEnabled?: boolean` — from the per-package `groupConfig` that `runner-completion.ts:158` already loads and currently reads only for `testFramework` / `commandOverride`
+
+**Both fields are optional, and that is load-bearing — not laziness.** Eight existing test files construct `{ testPath, packageDir }` literals for this type across 64 references (`prompt-acceptance.test.ts`, `acceptance.test.ts`, `acceptance-loop.test.ts`, and others). Required fields would make every one a compile error, and test-authorship isolation bars US-003's implementer from editing suites its story does not own — the story would deadlock with a correct implementation.
+
+Because optional fields could otherwise silently restore the very skip this feature removes, the consumer resolves each with an explicit fallback rather than trusting the producer:
+
+- `storyCount` undefined → derive it in the stage by counting `ctx.prd.userStories` that are non-fix, non-decomposed, and whose `workdir` resolves to that group's `packageDir`. The stage already holds `ctx.prd` (`acceptance.ts:92`).
+- `acceptanceEnabled` undefined → treat as `true`. The root-level flag has already gated `acceptanceStage.enabled()`, so reaching the consumer at all means acceptance is on.
 
 Producers: `src/pipeline/stages/acceptance-setup.ts:456` and `src/execution/runner-completion.ts:171`. Consumer: the skip at `src/pipeline/stages/acceptance.ts:167-170`.
 
 **US-004 — status propagation.** The chain mirrors how `failedACs` already travels: `ctx.acceptanceFailures` (`acceptance.ts:309`) → `AcceptanceLoopResult` (`src/execution/lifecycle/acceptance-loop.ts:82`) → `setPostRunPhase("acceptance", …)` (`src/execution/runner-completion.ts:221` and `:238`) → `AcceptancePhaseStatus` (`src/execution/status-file.ts:22`).
+
+Every field added along this chain is **optional**, so no existing literal construction of these types breaks.
+
+⚠️ **`src/execution/lifecycle/acceptance-loop.ts` is 579 of the 600-line source limit — 21 lines of headroom.** Thread the new field through; do not add helper functions to this file. If the change would exceed the limit, extract to `src/execution/lifecycle/acceptance-helpers.ts` (existing, 8.6K) rather than growing it.
 
 ### Why a missing file is sometimes legitimate
 
@@ -98,7 +110,7 @@ US-003 and US-004 are deliberately **not merged**, though US-004 is meaningless 
 - `src/prompts/sections/behavioral-guardrails.ts` — role-keyed section pattern to mirror
 - `src/prompts/sections/index.ts` — barrel export pattern
 - `src/prompts/builders/tdd-builder.ts` — composition site for test-writer/implementer/verifier
-- `src/prompts/builders/rectifier-builder.ts` — the two rectifier composition sites
+- `src/prompts/builders/rectifier-builder-helpers.ts` — `buildEscapeHatch`, the rectifier composition site
 - `test/unit/prompts/sections/role-task.test.ts` — existing section test patterns
 
 **US-002**
@@ -134,7 +146,7 @@ US-003 and US-004 are deliberately **not merged**, though US-004 is meaningless 
 **US-001**
 - `src/prompts/sections/index.ts`
 - `src/prompts/builders/tdd-builder.ts`
-- `src/prompts/builders/rectifier-builder.ts`
+- `src/prompts/builders/rectifier-builder-helpers.ts`
 
 **US-002**
 - `src/utils/git.ts`
@@ -186,6 +198,8 @@ US-003 and US-004 are deliberately **not merged**, though US-004 is meaningless 
 - [unit] the failure reason names the `packageDir` of every group whose acceptance target was missing.
 - [unit] the acceptance stage returns `action: "continue"` when the only group with a missing target has `storyCount` of 0.
 - [unit] the acceptance stage returns `action: "continue"` when the only group with a missing target has `acceptanceEnabled` of `false`.
+- [unit] when a group with a missing target omits `storyCount` entirely, the acceptance stage derives the count from `ctx.prd` and still returns `action: "fail"` for a package that has one non-fix story.
+- [unit] when a group with a missing target omits `acceptanceEnabled` entirely, the acceptance stage treats acceptance as enabled and returns `action: "fail"`.
 - [unit] a group whose acceptance target is missing contributes no entries to the failed acceptance criteria list, so the reason distinguishes a missing target from a failing test.
 - [unit] `acceptanceStage.enabled()` returns `false` when `config.acceptance.enabled` is `false`, so the missing-target failure is unreachable for a root-disabled run.
 - [unit] when every group has its acceptance target present and passing, the stage returns `action: "continue"` as it does today.
