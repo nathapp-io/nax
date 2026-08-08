@@ -159,4 +159,14 @@ describe("buildFixCommitMessage — gate body names the failure", () => {
   test("still records which gate commands were red", () => {
     expect(gateMsg(REAL_GATE_OUTPUT)).toContain("Failing: test");
   });
+
+  // A bare list of ten reads as "ten tests failed". A reader who acts on that
+  // count is acting on a truncation, so the cut has to announce itself.
+  test("says how many failing tests it left out rather than truncating silently", () => {
+    const many = Array.from({ length: 14 }, (_, i) => `(fail) suite > case ${i}`).join("\n");
+    const msg = gateMsg(many);
+    expect(msg).toContain("case 0");
+    expect(msg).toContain("...and 4 more failing test(s)");
+    expect(msg).not.toContain("case 13");
+  });
 });

@@ -71,7 +71,12 @@ function failingTestNames(output: string): string[] {
       .replace(/\s*\[[\d.]+m?s\]$/, "")
       .trim();
     if (name) names.push(name);
-    if (names.length >= MAX_NAMED_FAILURES) break;
+  }
+  // Say so when the list is cut short. A bare list of ten reads as "ten tests
+  // failed", and a reader who acts on that count is acting on a truncation.
+  if (names.length > MAX_NAMED_FAILURES) {
+    const dropped = names.length - MAX_NAMED_FAILURES;
+    return [...names.slice(0, MAX_NAMED_FAILURES), `...and ${dropped} more failing test(s)`];
   }
   return names;
 }
