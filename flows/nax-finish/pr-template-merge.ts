@@ -117,6 +117,8 @@ const FRONTMATTER_RE = /^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/;
 const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
 /** `Closes #`, `Fixes # (issue)` — an issue reference with no issue. */
 const DANGLING_ISSUE_RE = /^[ \t]*(?:closes?|fixe?s?|resolves?)[ \t]*:?[ \t]*#[ \t]*(?:\([^)]*\))?[ \t]*$/i;
+/** An unticked task-list item — an unfilled field wherever it appears. */
+const UNCHECKED_BOX_RE = /^[ \t]*[-*+][ \t]+\[[ \t]\]/;
 
 interface TemplateSection {
   heading: string;
@@ -141,23 +143,32 @@ function normalizeHeading(heading: string): string {
 /**
  * Strip placeholders from template-derived prose.
  *
- * Only ever applied to text nax is *keeping* (the preamble). Text under a
- * matched heading is replaced wholesale and text under an unmatched one is
- * discarded, so a checkbox list or a stale `Closes #` inside a section never
- * reaches this function — which is why there is no checkbox-versus-gate
- * reconciliation anywhere in this module.
+ * Only ever applied to the preamble — the one template region that survives
+ * into the body. Text under a matched heading is replaced wholesale and text
+ * under an unmatched one is discarded, so a checklist or a stale `Closes #`
+ * *inside a section* never reaches this function, which is why there is no
+ * checkbox-versus-gate reconciliation anywhere in this module.
+ *
+ * The preamble is the exception, because a template may open with a
+ * contributor checklist before its first heading. An unticked box there is an
+ * unfilled field like any other, so it is dropped while the prose around it is
+ * kept.
  */
 function cleanTemplateText(text: string): string {
   return text
     .replace(HTML_COMMENT_RE, "")
     .split("\n")
-    .filter((line) => !DANGLING_ISSUE_RE.test(line))
+    .filter((line) => !DANGLING_ISSUE_RE.test(line) && !UNCHECKED_BOX_RE.test(line))
     .map((line) => line.trimEnd())
     .join("\n")
     .trim();
 }
 
-function parseTemplate(text: string): ParsedTemplate {
+function parseTemplate(rawText: string): ParsedTemplate {
+  // Normalised up front so a CRLF template (anything authored on Windows, or
+  // fetched through a forge web editor) cannot leak a stray carriage return
+  // into a heading this module re-emits.
+  const text = rawText.replace(/\r\n/g, "\n");
   const frontmatterMatch = FRONTMATTER_RE.exec(text);
   const frontmatter = frontmatterMatch ? frontmatterMatch[0].trimEnd() : "";
   const rest = frontmatterMatch ? text.slice(frontmatterMatch[0].length) : text;
@@ -209,7 +220,11 @@ export function mergeTemplate(
   // this module removes — so fall back to the body nax would have written.
   if (parsed.sections.length === 0) return renderSections(sections);
 
-  const aliases = { ...DEFAULT_SECTION_ALIASES, ...(opts.sectionMap ?? {}) };
+  // Override keys go through the same normalisation as the template headings
+  // they are matched against, so a repo pins a heading by pasting it —
+  // `"What does this MR do and why?"` — not by hand-normalising it first.
+  const aliases = { ...DEFAULT_SECTION_ALIASES };
+  for (const [heading, key] of Object.entries(opts.sectionMap ?? {})) aliases[normalizeHeading(heading)] = key;
   const fillable = sections.filter((s) => s.heading.length > 0 && s.body.trim().length > 0);
   const consumed = new Set<string>();
   const parts: string[] = [];

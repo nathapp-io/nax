@@ -156,6 +156,16 @@ describe("mergeTemplate — heading matching", () => {
     expect(out.trimEnd().endsWith("2/2 stories · 18m 24s")).toBe(true);
   });
 
+  test("a sectionMap key is matched the same way a template heading is — raw, as a human writes it in config", () => {
+    // The config schema promises keys match "case- and punctuation-
+    // insensitively". A user pins GitLab's default heading by pasting it, not
+    // by pre-normalising it to `what does this mr do and why`.
+    const out = mergeTemplate(TEMPLATE_BY_NAME["gitlab-default"], sections(), {
+      sectionMap: { "Screenshots or screen recordings": "rounds" },
+    });
+    expect(bodyUnder(out, "Screenshots or screen recordings")).toContain("quality attempt 1");
+  });
+
   test("the default alias table maps the headings the corpus actually uses", () => {
     expect(DEFAULT_SECTION_ALIASES.what).toBe("narrative");
     expect(DEFAULT_SECTION_ALIASES.testing).toBe("verification");
@@ -218,6 +228,34 @@ describe('mergeTemplate — "strict" mode', () => {
 
   test("still appends the nax sections the template has no home for", () => {
     expect(headings(strict).slice(5)).toEqual(["Review rounds", "Out of scope"]);
+  });
+});
+
+describe("mergeTemplate — hostile template shapes", () => {
+  test("a CRLF template does not leak carriage returns into the body", () => {
+    const out = mergeTemplate("## What\r\n\r\n<!-- x -->\r\n\r\n## Testing\r\n\r\n- [ ] tests\r\n", sections());
+    expect(out).not.toContain("\r");
+    expect(bodyUnder(out, "What")).toBe("Adds a description field.");
+  });
+
+  test("strips an unchecked checkbox left in the preamble, above the first heading", () => {
+    // A real shape: repos that open with a contributor checklist and only then
+    // start their sections. Preamble text is the one template region that
+    // survives into the body, so the no-unfilled-field rule has to hold there.
+    const out = mergeTemplate("- [ ] I read CONTRIBUTING.md\n\n## What\n\n<!-- x -->\n", sections());
+    expect(out).not.toContain("- [ ]");
+  });
+
+  test("keeps preamble prose that sits alongside a stripped checkbox", () => {
+    const out = mergeTemplate("Please confirm:\n\n- [ ] I read CONTRIBUTING.md\n\n## What\n\n<!-- x -->\n", sections());
+    expect(out).toContain("Please confirm:");
+    expect(out).not.toContain("- [ ]");
+  });
+
+  test("does not mistake a leading horizontal rule for YAML frontmatter", () => {
+    const out = mergeTemplate("---\n\nRead the guide.\n\n---\n\n## What\n\n<!-- x -->\n", sections());
+    expect(bodyUnder(out, "What")).toBe("Adds a description field.");
+    expect(out).toContain("Read the guide.");
   });
 });
 

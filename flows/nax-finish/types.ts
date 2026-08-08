@@ -1,3 +1,5 @@
+import type { TemplateMode } from "./pr-template-merge";
+
 /** One acceptance-test group as reported by `nax features resolve --json`. */
 export interface AcceptanceGroup {
   packageDir: string;
@@ -102,7 +104,7 @@ export interface FinishInput {
  */
 export interface FinishPrBodySettings {
   /** `merge` (default) · `strict` (keep unfillable headings, empty) · `ignore`. */
-  template?: "merge" | "strict" | "ignore";
+  template?: TemplateMode;
   /** Normalised template heading → body-section key, layered over the defaults. */
   sectionMap?: Record<string, string>;
 }
