@@ -1,1 +1,2 @@
 [2026-08-08T15:22:02.825Z] US-001 — PASSED — .nax immutability guard in code-touching prompts — Cost: $3.9193
+[2026-08-08T15:47:15.575Z] US-002 — PASSED — Restore deleted .nax artifacts before auto-commit staging — Cost: $1.5401
