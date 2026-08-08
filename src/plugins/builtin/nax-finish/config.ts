@@ -21,6 +21,8 @@ export interface FinishAutoFlowSettings {
   /** acpx `--model`; null passes no flag at all. Opt-in — see the schema. */
   model: string | null;
   narrative: boolean;
+  /** PR/MR body composition — see `finish.autoFlow.prBody` in the schema. */
+  prBody: { template: "merge" | "strict" | "ignore"; sectionMap: Record<string, string> };
   reviewers: { spec: string | null; quality: string | null; narrative: string | null };
   escalate: { telegram: boolean };
   notify: { mode: "escalation" | "always" | "off" };
@@ -37,6 +39,7 @@ const DEFAULT_FINISH_AUTO_FLOW_CONFIG: Omit<FinishAutoFlowSettings, "defaultAgen
   flowPath: "flows/nax-finish/nax-finish.flow.ts",
   model: null,
   narrative: true,
+  prBody: { template: "merge", sectionMap: {} },
   reviewers: { spec: null, quality: null, narrative: null },
   escalate: { telegram: true },
   notify: { mode: "escalation" },
@@ -82,6 +85,10 @@ export function getFinishAutoFlowConfig(ctx: { config?: unknown }): FinishAutoFl
     // `!== false` so an older config with no `narrative` key still narrates,
     // matching the schema default rather than silently opting out.
     narrative: autoFlow.narrative !== false,
+    prBody: {
+      template: autoFlow.prBody?.template ?? defaults.prBody.template,
+      sectionMap: autoFlow.prBody?.sectionMap ?? defaults.prBody.sectionMap,
+    },
     reviewers: {
       spec: autoFlow.reviewers?.spec ?? null,
       quality: autoFlow.reviewers?.quality ?? null,

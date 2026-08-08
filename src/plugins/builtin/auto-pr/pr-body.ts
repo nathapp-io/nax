@@ -8,6 +8,12 @@
  */
 
 import type { UserStory } from "@/prd/types";
+// Imported from `flows/`, not re-implemented, so the draft body and the
+// nax-finish body compose a template identically. `flows/` is the more
+// constrained runtime (acpx's Node process — no `Bun`, no `@/*`), so code that
+// lives there runs here too; the reverse is not true, which is why the other
+// shared helpers in this directory were ported the other way.
+import { type BodySection, type MergeOptions, mergeTemplate } from "@flows/nax-finish/pr-template-merge";
 
 const SECONDS_PER_MINUTE = 60;
 const MS_PER_SECOND = 1000;
@@ -58,7 +64,6 @@ function buildSummaryLines(ctx: PrBodyContext): string[] {
   const failed = `${storySummary.failed} failed`;
   const skipped = `${storySummary.skipped} skipped`;
   return [
-    "## Run summary",
     `- Feature: ${ctx.feature}`,
     `- Stories: ${passed} / ${failed} / ${skipped}`,
     `- Duration: ${formatDuration(ctx.totalDurationMs)}`,
@@ -92,36 +97,38 @@ function buildStoryTable(stories: UserStory[]): string[] {
   return lines;
 }
 
+const REVIEW_PENDING_BANNER = "> Auto-opened by nax — review pending. Run nax-finish before merge.";
+
 /**
  * Build the PR/MR body.
  *
- * Layout (template present):
+ * Layout (template present, and it has a heading this can fill):
  * ```
  * > Auto-opened by nax — review pending. Run nax-finish before merge.
  * (blank line)
- * ## Run summary
- * - …
+ * ## <the template's own heading>
+ * (blank line)
+ * - Feature: …
  * | Story | Title | ACs |
  * | …     | …     | …   |
- * (blank line)
- * ---
- * <template verbatim>
  * ```
  *
- * When `template` is `null`, the `---` separator and template block are omitted.
+ * The template used to be appended verbatim after a `---` separator, which
+ * shipped an unfilled form below a filled one (nax#1504). It is now merged —
+ * same `mergeTemplate` the finish body uses, so promoting this draft to a
+ * finished PR does not change the body's shape for no reason.
+ *
+ * The banner is prepended outside the merge: it must lead the body, and
+ * `mergeTemplate` places headingless sections last.
  */
-export function buildBody(ctx: PrBodyContext, template: string | null): string {
-  const blocks: string[] = [];
-
-  blocks.push("> Auto-opened by nax — review pending. Run nax-finish before merge.");
-  blocks.push("");
-  blocks.push(...buildSummaryLines(ctx));
-  blocks.push(...buildStoryTable(ctx.stories));
-
-  if (template !== null) {
-    blocks.push("---");
-    blocks.push(template);
-  }
-
-  return blocks.join("\n");
+export function buildBody(ctx: PrBodyContext, template: string | null, opts: MergeOptions = {}): string {
+  const sections: BodySection[] = [
+    {
+      key: "stories",
+      heading: "Run summary",
+      body: [...buildSummaryLines(ctx), ...buildStoryTable(ctx.stories)].join("\n").trim(),
+    },
+  ];
+  const merged = mergeTemplate(template, sections, opts);
+  return merged.length > 0 ? `${REVIEW_PENDING_BANNER}\n\n${merged}` : REVIEW_PENDING_BANNER;
 }

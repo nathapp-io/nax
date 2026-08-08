@@ -236,16 +236,58 @@ describe("buildFinishBody — Run summary footer (US-002 AC15)", () => {
   });
 });
 
-describe("buildFinishBody — repository template (#1478)", () => {
-  test("appends the template verbatim after every deterministic section", () => {
+describe("buildFinishBody — repository template (#1478, merged per #1504)", () => {
+  // Superseded the original #1478 contract ("append the template verbatim
+  // last"), which shipped an unfilled form below a filled one — see
+  // `pr-template-merge.ts`. The template is now shape, not trailing content.
+  test("drops a template section nax cannot fill rather than shipping its blank checklist", () => {
     const body = buildFinishBody(
       baseCtx({
         stories: [story({ id: "US-001", title: "Header", acCount: 2 })],
         template: "## Checklist\n- [ ] docs updated",
       }),
     );
-    expect(body.endsWith("## Checklist\n- [ ] docs updated")).toBe(true);
-    expect(body.indexOf("## Stories")).toBeLessThan(body.indexOf("## Checklist"));
+    expect(body).not.toContain("## Checklist");
+    expect(body).not.toContain("- [ ] docs updated");
+    expect(body).toContain("| US-001 | Header | 2 |");
+  });
+
+  test("adopts a template heading it can fill, and puts nax's content under it", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        stories: [story({ id: "US-001", title: "Header", acCount: 2 })],
+        narrative: "Replaced the widget cache.",
+        template: "## Summary\n\n<!-- describe -->\n\n## How\n\n<!-- details -->",
+      }),
+    );
+    expect(body).toContain("## Summary\n\nReplaced the widget cache.");
+    expect(body).toContain("## How\n\n| Story | Title | ACs |");
+    expect(body).not.toContain("## What changed");
+    expect(body).not.toContain("<!--");
+  });
+
+  test("keeps every unfillable heading, empty, under the strict mode a heading-checking CI needs", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        stories: [story()],
+        template: "## Checklist\n- [ ] docs updated",
+        templateMode: "strict",
+      }),
+    );
+    expect(body).toContain("## Checklist");
+    expect(body).not.toContain("- [ ] docs updated");
+  });
+
+  test("honours a sectionMap override for a heading the default table does not know", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        stories: [story({ id: "US-001", title: "Header", acCount: 2 })],
+        template: "## Werk\n\n<!-- x -->",
+        templateSectionMap: { werk: "stories" },
+      }),
+    );
+    expect(body).toContain("## Werk\n\n| Story | Title | ACs |");
+    expect(body).not.toContain("## Stories");
   });
 
   test("omits the template entirely when none resolved", () => {

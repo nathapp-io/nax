@@ -23,6 +23,7 @@ import { dirname, isAbsolute, join } from "node:path";
 import { runArgv } from "../exec";
 import { readSpecSummary, resolveNarrative } from "../narrative";
 import { findPrTemplate } from "../pr-template";
+import { type BodySection, type TemplateMode, mergeTemplate } from "../pr-template-merge";
 import { resolveTitle } from "../pr-title";
 import type { Finding, FinishInput, FinishRound, RunFn } from "../types";
 import type { Forge } from "./forge";
@@ -57,6 +58,10 @@ export interface FinishPrContext {
   artifactSummary?: string;
   /** Repository PR/MR template, verbatim. Absent when none resolves. */
   template?: string;
+  /** How `template` is honoured. Absent → `merge`. See `pr-template-merge.ts`. */
+  templateMode?: TemplateMode;
+  /** Repo overrides for the template-heading → section-key table. */
+  templateSectionMap?: Record<string, string>;
   /** Resolved "What changed" prose. Absent when neither source produced text. */
   narrative?: string;
   /**
@@ -244,6 +249,8 @@ export async function loadFinishPrContext(
     diffstat: stat.diffstat,
     artifactSummary: stat.artifactSummary,
     template,
+    ...(input.prBody?.template !== undefined ? { templateMode: input.prBody.template } : {}),
+    ...(input.prBody?.sectionMap !== undefined ? { templateSectionMap: input.prBody.sectionMap } : {}),
     narrative: resolveNarrative(args.narrative, specSummary),
     title: resolveTitle(args.title, input.feature),
     run: {
@@ -296,7 +303,6 @@ function formatDuration(durationMs: number): string {
 
 function buildStoriesSection(stories: FinishPrStory[]): string {
   const lines: string[] = [];
-  lines.push("## Stories");
   lines.push("| Story | Title | ACs |");
   lines.push("|-------|-------|-----|");
   for (const story of stories) {
@@ -312,7 +318,7 @@ function buildStoriesSection(stories: FinishPrStory[]): string {
  */
 function buildVerificationSection(ctx: FinishPrContext): string | null {
   const { acceptance, regression, gatesRan, diffstat, artifactSummary } = ctx;
-  const lines: string[] = ["## Verification"];
+  const lines: string[] = [];
   if (acceptance !== undefined) lines.push(`- Acceptance: ${acceptance}`);
   if (regression !== undefined) lines.push(`- Regression: ${regression}`);
   if (gatesRan.length > 0) lines.push(`- Gates: ${gatesRan.join(", ")}`);
@@ -323,7 +329,7 @@ function buildVerificationSection(ctx: FinishPrContext): string | null {
   if (artifactSummary !== undefined && artifactSummary.length > 0) {
     lines.push(`- Excluded from diffstat — nax run artifacts: ${artifactSummary}`);
   }
-  if (lines.length === 1) return null;
+  if (lines.length === 0) return null;
   return lines.join("\n");
 }
 
@@ -346,8 +352,7 @@ function buildRoundBlock(round: FinishRound): string {
 
 function buildRoundsSection(rounds: FinishRound[]): string | null {
   if (rounds.length === 0) return null;
-  const blocks = rounds.map(buildRoundBlock);
-  return ["## Review rounds", ...blocks].join("\n\n");
+  return rounds.map(buildRoundBlock).join("\n\n");
 }
 
 function renderFinding(finding: Finding): string {
@@ -355,20 +360,17 @@ function renderFinding(finding: Finding): string {
 }
 
 /**
- * Heading and text are produced together, so "no text" cannot render a bare
- * `## What changed` heading — the empty-heading case #1477 forbids.
+ * Body only — the heading is attached by `buildFinishBody`, which drops any
+ * section whose body is null. "No text" therefore cannot render a bare
+ * `## What changed` heading, the empty-heading case #1477 forbids.
  */
 function buildNarrativeSection(narrative: string | undefined): string | null {
-  const text = narrative?.trim();
-  if (!text) return null;
-  return ["## What changed", text].join("\n\n");
+  return narrative?.trim() || null;
 }
 
 function buildOutOfScopeSection(outOfScope: string[]): string | null {
   if (outOfScope.length === 0) return null;
-  const lines: string[] = ["## Out of scope"];
-  for (const item of outOfScope) lines.push(`- ${item}`);
-  return lines.join("\n");
+  return outOfScope.map((item) => `- ${item}`).join("\n");
 }
 
 function buildFooter(run: FinishPrContext["run"]): string | null {
@@ -382,29 +384,38 @@ function buildFooter(run: FinishPrContext["run"]): string | null {
   return parts.join(" · ");
 }
 
+/**
+ * The nax-authored sections, in canonical order — the order they appear in
+ * when the repo has no template, and the order the leftovers are appended in
+ * when it has one. `key` is what `mergeTemplate` matches against the repo's
+ * headings; the run footer carries an empty heading so it stays unmatchable
+ * and last.
+ */
+function buildBodySections(ctx: FinishPrContext): BodySection[] {
+  const candidates: { key: string; heading: string; body: string | null }[] = [
+    { key: "narrative", heading: "What changed", body: buildNarrativeSection(ctx.narrative) },
+    { key: "stories", heading: "Stories", body: ctx.stories.length > 0 ? buildStoriesSection(ctx.stories) : null },
+    { key: "verification", heading: "Verification", body: buildVerificationSection(ctx) },
+    { key: "rounds", heading: "Review rounds", body: buildRoundsSection(ctx.rounds) },
+    { key: "outOfScope", heading: "Out of scope", body: buildOutOfScopeSection(ctx.outOfScope) },
+    { key: "footer", heading: "", body: buildFooter(ctx.run) },
+  ];
+  return candidates
+    .filter((c): c is { key: string; heading: string; body: string } => c.body !== null)
+    .map(({ key, heading, body }) => ({ key, heading, body }));
+}
+
+/**
+ * Assemble the body, merged into the repo's own PR template when it has one.
+ *
+ * The template supplies the *shape* (which headings, in what order) and these
+ * sections supply the *content* — see `pr-template-merge.ts` for why appending
+ * it verbatim, which is what this used to do, shipped a blank form under a
+ * filled one (nax#1504).
+ */
 export function buildFinishBody(ctx: FinishPrContext): string {
-  const sections: string[] = [];
-
-  const narrativeSection = buildNarrativeSection(ctx.narrative);
-  if (narrativeSection !== null) sections.push(narrativeSection);
-
-  if (ctx.stories.length > 0) sections.push(buildStoriesSection(ctx.stories));
-
-  const verification = buildVerificationSection(ctx);
-  if (verification !== null) sections.push(verification);
-
-  const roundsSection = buildRoundsSection(ctx.rounds);
-  if (roundsSection !== null) sections.push(roundsSection);
-
-  const outOfScopeSection = buildOutOfScopeSection(ctx.outOfScope);
-  if (outOfScopeSection !== null) sections.push(outOfScopeSection);
-
-  const footer = buildFooter(ctx.run);
-  if (footer !== null) sections.push(footer);
-
-  // Appended last and verbatim: `gh` / `glab` suppress the repo's own template
-  // whenever `--body` / `--description` is passed, so it has to be re-embedded.
-  if (ctx.template !== undefined && ctx.template.trim().length > 0) sections.push(ctx.template.trim());
-
-  return sections.join("\n\n");
+  return mergeTemplate(ctx.template, buildBodySections(ctx), {
+    mode: ctx.templateMode,
+    sectionMap: ctx.templateSectionMap,
+  });
 }

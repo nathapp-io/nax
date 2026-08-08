@@ -81,14 +81,34 @@ describe("buildBody (null template)", () => {
 });
 
 describe("buildBody (with template)", () => {
-  test("AC5 — ends with the template text verbatim preceded by '---' separator", () => {
+  // Supersedes the original AC5 ("ends with the template verbatim, preceded by
+  // a `---` separator"). Appending an unfilled template below filled content is
+  // the nax#1504 defect; the template is now merged, by the same
+  // `mergeTemplate` the nax-finish body uses.
+  test("AC5 — drops a template section it cannot fill instead of appending it blank", () => {
     const ctx = makeContext();
-    const template = "## Checklist\n- [ ] x";
+    const body = buildBody(ctx, "## Checklist\n- [ ] x");
 
-    const body = buildBody(ctx, template);
+    expect(body).not.toContain("## Checklist");
+    expect(body).not.toContain("- [ ] x");
+    expect(body).toContain("| US-001 | Config foundation | 4 |");
+  });
 
-    expect(body).toContain("---\n## Checklist\n- [ ] x");
-    expect(body.endsWith(template)).toBe(true);
+  test("AC5 — fills a template heading it can match, using the template's own wording", () => {
+    const ctx = makeContext();
+    const body = buildBody(ctx, "## How\n\n<!-- key details -->");
+
+    expect(body).toContain("## How");
+    expect(body).not.toContain("## Run summary");
+    expect(body).not.toContain("<!--");
+    expect(body).toContain("| US-001 | Config foundation | 4 |");
+  });
+
+  test("keeps the review-pending banner leading the body when a template merges in", () => {
+    const ctx = makeContext();
+    const body = buildBody(ctx, "## How\n\n<!-- x -->");
+
+    expect(body.startsWith("> Auto-opened by nax")).toBe(true);
   });
 
   test("table rows render story id, title, and AC count when template present", () => {

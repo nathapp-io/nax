@@ -1,3 +1,5 @@
+import type { TemplateMode } from "./pr-template-merge";
+
 /** One acceptance-test group as reported by `nax features resolve --json`. */
 export interface AcceptanceGroup {
   packageDir: string;
@@ -92,6 +94,19 @@ export interface FinishInput {
    */
   escalateTelegram: boolean;
   timeouts?: FinishTimeouts;
+  /** PR/MR body composition, forwarded from `finish.autoFlow.prBody`. */
+  prBody?: FinishPrBodySettings;
+}
+
+/**
+ * How the repo's own PR/MR template is honoured when composing the body.
+ * Absent (and absent fields) mean the defaults in `pr-template-merge.ts`.
+ */
+export interface FinishPrBodySettings {
+  /** `merge` (default) · `strict` (keep unfillable headings, empty) · `ignore`. */
+  template?: TemplateMode;
+  /** Normalised template heading → body-section key, layered over the defaults. */
+  sectionMap?: Record<string, string>;
 }
 export interface FinishResult {
   feature: string;
