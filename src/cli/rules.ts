@@ -147,7 +147,13 @@ export interface RulesExportOptions {
  * strictly less than it did.
  */
 function packageGlobToFileGlob(pattern: string): string {
-  const base = pattern.replace(/\/+\*{1,2}$/, "").replace(/\/+$/, "");
+  // Trailing slashes come off FIRST: `packages/api/*/` and `packages/api/*`
+  // name the same directory, but a star-strip anchored at end-of-string sees
+  // only the second, so the order below is what keeps them from diverging.
+  const base = pattern
+    .replace(/\/+$/, "")
+    .replace(/\/+\*{1,2}$/, "")
+    .replace(/\/+$/, "");
   // A pattern that selects every package maps to every file.
   if (base === "" || base === "**") return "**";
   return `${base}/**`;

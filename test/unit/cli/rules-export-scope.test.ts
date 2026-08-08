@@ -70,6 +70,9 @@ describe("rules export (claude) — package scope becomes a file glob", () => {
     ["packages/api/**", "packages/api/**"],
     ["apps/web", "apps/web/**"],
     ["packages/*/core", "packages/*/core/**"],
+    // A trailing slash names the same directory and must not change the result.
+    ["packages/api/", "packages/api/**"],
+    ["packages/api/*/", "packages/api/**"],
   ])("canonical paths %p exports as Claude glob %p", async (canonical, expected) => {
     const out = await exportOne({ paths: [canonical] });
     expect(out.startsWith("---\n")).toBe(true);
