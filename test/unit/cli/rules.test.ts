@@ -255,7 +255,12 @@ describe("rulesExportCommand", () => {
     });
   });
 
-  test("warns when canonical package scope is dropped, instead of widening silently", async () => {
+  // Package scope used to be dropped here (warned about, but dropped), which
+  // left the rule with no frontmatter at all and therefore globally loaded.
+  // It is now carried across as the equivalent file glob. The lossy case that
+  // remains — both scopes set, which Claude cannot express as an intersection —
+  // is covered in rules-export-scope.test.ts.
+  test("carries canonical package scope across instead of widening the rule", async () => {
     const warnings: Array<{ msg: string; data: unknown }> = [];
     _rulesCLIDeps.getLogger = () =>
       ({ warn: (_s: string, msg: string, data: unknown) => warnings.push({ msg, data }) }) as never;
@@ -263,9 +268,10 @@ describe("rulesExportCommand", () => {
 
     await rulesExportCommand({ dir: "/project", agent: "claude" });
 
-    const w = warnings.find((x) => x.msg.includes("package scope"));
-    expect(w).toBeDefined();
-    expect(JSON.stringify(w?.data)).toContain("apps/api/**");
+    const out = written["/project/.claude/rules/pkg.md"] ?? "";
+    expect(out.startsWith("---\n")).toBe(true);
+    expect(out).toContain('  - "apps/api/**"');
+    expect(warnings.find((x) => x.msg.includes("package scope"))).toBeUndefined();
   });
 
   test("warns about a generated rule file with no canonical source", async () => {

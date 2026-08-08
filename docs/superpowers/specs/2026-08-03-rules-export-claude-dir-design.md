@@ -70,6 +70,14 @@ The key means different things in each store:
 
 Getting this wrong reproduces the original bug in the opposite direction, which is why it is called out here rather than left to the implementer.
 
+> **Superseded by #1503.** Dropping canonical `paths:` was itself the bug: a rule
+> using `paths:` with no `appliesTo:` produced no globs, so the frontmatter block
+> was omitted entirely and Claude loaded the rule *globally* — the widest possible
+> reading of a rule that asked to be narrow. Package scope is now translated to
+> the equivalent file glob (`packages/api/*` → `packages/api/**`) rather than
+> dropped. The warning survives only for a rule that sets **both** scopes, which
+> Claude's single disjunctive `paths:` list cannot express as an intersection.
+
 ## Sequencing constraint (hard)
 
 **This must not ship before US-004 of `context-budget-truth` lands.** That story restores `appliesTo:` on the three files that lost scoping. Today `.nax/rules/` has no scoping for them and `.claude/rules/` holds the only copy — so exporting now would overwrite the survivors with unscoped versions and destroy the scoping in both stores at once, silently unscoping rules Claude Code currently honours.
