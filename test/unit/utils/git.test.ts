@@ -286,9 +286,13 @@ describe("captureWorkingTreeChanges", () => {
 // `checkpoint.jsonl`, and `acceptance-meta.json`.
 
 describe("parsePorcelainForNaxPaths", () => {
+  function paths(result: ReturnType<typeof parsePorcelainForNaxPaths>): string[] {
+    return result.map((r) => r.path);
+  }
+
   test("returns a deleted .nax/ path as protected", () => {
     const output = " D apps/web/.nax/features/f/.nax-acceptance.test.tsx\n";
-    expect(parsePorcelainForNaxPaths(output)).toEqual([
+    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([
       "apps/web/.nax/features/f/.nax-acceptance.test.tsx",
     ]);
   });
@@ -299,14 +303,32 @@ describe("parsePorcelainForNaxPaths", () => {
     // to ` D`. The auto-commit runs `git add -A`, which keeps a staged
     // deletion staged, so a missed `D ` line would still be lost.
     const output = "D  apps/web/.nax/features/f/.nax-acceptance.test.tsx\n";
-    expect(parsePorcelainForNaxPaths(output)).toEqual([
+    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([
       "apps/web/.nax/features/f/.nax-acceptance.test.tsx",
     ]);
   });
 
+  test("flags a staged-deleted .nax/ path with staged=true", () => {
+    // The caller needs the staged flag to choose between `git checkout --`
+    // (index) and `git checkout HEAD --` (HEAD). For `D ` the index already
+    // records the deletion, so HEAD is the only source that still has the
+    // file.
+    const output = "D  .nax/features/f/.nax-acceptance.test.tsx\n";
+    const result = parsePorcelainForNaxPaths(output);
+    expect(result).toHaveLength(1);
+    expect(result[0].staged).toBe(true);
+  });
+
+  test("flags an unstaged-deleted .nax/ path with staged=false", () => {
+    const output = " D .nax/features/f/.nax-acceptance.test.tsx\n";
+    const result = parsePorcelainForNaxPaths(output);
+    expect(result).toHaveLength(1);
+    expect(result[0].staged).toBe(false);
+  });
+
   test("returns a double-delete .nax/ path (DD) as protected", () => {
     const output = "DD apps/web/.nax/features/f/.nax-acceptance.test.tsx\n";
-    expect(parsePorcelainForNaxPaths(output)).toEqual([
+    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([
       "apps/web/.nax/features/f/.nax-acceptance.test.tsx",
     ]);
   });
@@ -315,7 +337,7 @@ describe("parsePorcelainForNaxPaths", () => {
     // Rename: status 'R ', then "old -> new". We restore the old path because
     // that is where the agent last saw the file in HEAD.
     const output = " R .nax/features/f/.nax-acceptance.test.tsx -> src/orphan.test.tsx\n";
-    expect(parsePorcelainForNaxPaths(output)).toEqual([
+    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([
       ".nax/features/f/.nax-acceptance.test.tsx",
     ]);
   });
@@ -337,7 +359,7 @@ describe("parsePorcelainForNaxPaths", () => {
     // and escaping backslashes/quotes inside. We must unquote before the
     // `git checkout <path>` call so the path resolves correctly.
     const output = ' D ".nax/features/f name/file.tsx"\n';
-    expect(parsePorcelainForNaxPaths(output)).toEqual([
+    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([
       ".nax/features/f name/file.tsx",
     ]);
   });
@@ -346,7 +368,7 @@ describe("parsePorcelainForNaxPaths", () => {
     // Defensive: malformed status (single char) is not a deletion/rename, so
     // we ignore it. A subsequent deleted .nax/ path must still be parsed.
     const output = "??bogus\n D .nax/features/f/file.tsx\n";
-    expect(parsePorcelainForNaxPaths(output)).toEqual([
+    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([
       ".nax/features/f/file.tsx",
     ]);
   });
@@ -363,7 +385,7 @@ describe("parsePorcelainForNaxPaths", () => {
       " R .nax/prd.json -> /tmp/leak.json",
       " D .nax/checkpoint.jsonl",
     ].join("\n");
-    expect(parsePorcelainForNaxPaths(output)).toEqual([
+    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([
       ".nax/features/a/file.tsx",
       ".nax/prd.json",
       ".nax/checkpoint.jsonl",
@@ -520,6 +542,79 @@ describe("autoCommitIfDirty .nax/ restore", () => {
     );
     expect(addCalls.length).toBe(1);
     expect(commitCalls.length).toBe(1);
+  });
+
+  test("uses git checkout HEAD -- <path> for a staged deletion (D )", async () => {
+    // A staged deletion means the index already records the deletion, so a bare
+    // `git checkout -- <path>` cannot restore it (the index says the file is
+    // gone). Restoring from HEAD brings the file back into the worktree AND
+    // the index. Without this, the snapshot auto-commit would still sweep a
+    // `git rm`-deleted .nax/ file onto the branch.
+    const { spawn, calls } = captureSpawn([
+      { output: "/tmp/repo\n" }, // rev-parse
+      { output: "D  .nax/features/f/.nax-acceptance.test.tsx\n" }, // status — staged delete
+      { output: "" }, // checkout HEAD --
+      { output: "" }, // add
+      { output: "" }, // commit
+    ]);
+    _gitDeps.spawn = spawn;
+
+    await autoCommitIfDirty("/tmp/repo", "test", "implementer", "US-002");
+
+    const checkoutCall = calls.find((c) =>
+      c.args[0] === "git" && c.args[1] === "checkout"
+    );
+    expect(checkoutCall).toBeDefined();
+    // The `HEAD` token MUST appear so the index-level deletion is bypassed.
+    expect(checkoutCall!.args).toContain("HEAD");
+    expect(checkoutCall!.args).toContain("--");
+    expect(checkoutCall!.args).toContain(".nax/features/f/.nax-acceptance.test.tsx");
+  });
+
+  test("uses git checkout HEAD -- <path> for a staged rename (R )", async () => {
+    // The OLD path is gone from the index (only the NEW path is there). Bare
+    // `git checkout -- <old>` fails; `git checkout HEAD -- <old>` works.
+    const { spawn, calls } = captureSpawn([
+      { output: "/tmp/repo\n" },
+      { output: "R  .nax/features/f/.nax-acceptance.test.tsx -> src/leak.tsx\n" },
+      { output: "" }, // checkout HEAD --
+      { output: "" }, // add
+      { output: "" }, // commit
+    ]);
+    _gitDeps.spawn = spawn;
+
+    await autoCommitIfDirty("/tmp/repo", "test", "implementer", "US-002");
+
+    const checkoutCall = calls.find((c) =>
+      c.args[0] === "git" && c.args[1] === "checkout"
+    );
+    expect(checkoutCall).toBeDefined();
+    expect(checkoutCall!.args).toContain("HEAD");
+    // Restoring the OLD path (not the new one)
+    expect(checkoutCall!.args).toContain(".nax/features/f/.nax-acceptance.test.tsx");
+    expect(checkoutCall!.args).not.toContain("src/leak.tsx");
+  });
+
+  test("uses plain git checkout -- <path> for an unstaged deletion ( D)", async () => {
+    // The index still has the file — restore from the index. Adding HEAD here
+    // would be unnecessary and changes semantics for the unstaged case.
+    const { spawn, calls } = captureSpawn([
+      { output: "/tmp/repo\n" },
+      { output: " D .nax/features/f/.nax-acceptance.test.tsx\n" },
+      { output: "" },
+      { output: "" },
+      { output: "" },
+    ]);
+    _gitDeps.spawn = spawn;
+
+    await autoCommitIfDirty("/tmp/repo", "test", "implementer", "US-002");
+
+    const checkoutCall = calls.find((c) =>
+      c.args[0] === "git" && c.args[1] === "checkout"
+    );
+    expect(checkoutCall).toBeDefined();
+    expect(checkoutCall!.args).not.toContain("HEAD");
+    expect(checkoutCall!.args).toContain("--");
   });
 });
 

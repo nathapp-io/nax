@@ -227,6 +227,24 @@ export function detectMergeConflict(output: string): boolean {
 }
 
 /**
+ * One protected-path entry returned by `parsePorcelainForNaxPaths`.
+ *
+ * `staged` is true when the deletion/rename is already reflected in the index
+ * (porcelain status has `D` or `R` in the index column). The auto-commit uses
+ * this to choose between `git checkout -- <path>` (restore from the index — for
+ * unstaged deletions, where the index still has the file) and
+ * `git checkout HEAD -- <path>` (restore from the commit — for staged
+ * deletions/renames, where the index says the file is gone and only HEAD
+ * still has it).
+ */
+export interface NaxProtectedPath {
+  /** The path to restore (the OLD path for renames, unquoted). */
+  path: string;
+  /** True when the index already records the deletion/rename. */
+  staged: boolean;
+}
+
+/**
  * Parse `git status --porcelain` output and return the set of deleted-or-renamed
  * paths whose path lies under a `.nax/` segment. Structural discriminator — any
  * deletion or rename touching a `.nax/` segment is treated as a stray-agent
@@ -238,17 +256,17 @@ export function detectMergeConflict(output: string): boolean {
  * Porcelain format reference:
  *   `XY path` for non-renames, `XY old -> new` for renames. The XY status
  *   column is two characters: index (X) and worktree (Y). A deletion shows as
- *   ` D` (staged-delete) or `D ` (unstaged-delete) or `DD` (both); a rename
- *   shows as `R ` or ` R`. Paths containing special characters come back
- *   quoted by git (double quotes around the path, internal backslashes and
- *   quotes escaped). We unquote via a small parser rather than shelling out
- *   so the call is deterministic and testable.
+ *   ` D` (unstaged-delete), `D ` (staged-delete), or `DD` (both); a rename
+ *   shows as `R ` (staged-rename) or ` R` (unstaged-rename). Paths containing
+ *   special characters come back quoted by git (double quotes around the path,
+ *   internal backslashes and quotes escaped). We unquote via a small parser
+ *   rather than shelling out so the call is deterministic and testable.
  *
  * @param porcelain - The stdout of `git status --porcelain`
- * @returns Array of paths to restore (old path for renames), in input order
+ * @returns Array of protected-path entries (old path for renames), in input order
  */
-export function parsePorcelainForNaxPaths(porcelain: string): string[] {
-  const protectedPaths: string[] = [];
+export function parsePorcelainForNaxPaths(porcelain: string): NaxProtectedPath[] {
+  const protectedPaths: NaxProtectedPath[] = [];
   if (!porcelain) return protectedPaths;
 
   for (const rawLine of porcelain.split("\n")) {
@@ -266,6 +284,11 @@ export function parsePorcelainForNaxPaths(porcelain: string): string[] {
     const isDeleted = xStatus === "D" || yStatus === "D";
     const isRename = xStatus === "R" || yStatus === "R";
     if (!isDeleted && !isRename) continue;
+
+    // The deletion/rename is "staged" when the index column carries the
+    // status letter. That is the case where the index no longer has the old
+    // path and the restore must source from HEAD rather than the index.
+    const staged = xStatus === "D" || xStatus === "R";
 
     const pathField = rawLine.slice(3);
     // Renames: "old -> new" — restore the OLD path so the file reappears at
@@ -285,7 +308,7 @@ export function parsePorcelainForNaxPaths(porcelain: string): string[] {
     // protects `prd.json`, `checkpoint.jsonl`, and `acceptance-meta.json`.
     if (!targetPath.split("/").includes(".nax")) continue;
 
-    protectedPaths.push(targetPath);
+    protectedPaths.push({ path: targetPath, staged });
   }
   return protectedPaths;
 }
@@ -421,14 +444,24 @@ export async function autoCommitIfDirty(
     // under a `.nax/` segment so the auto-commit does not lose nax state.
     // A non-zero exit on restore is logged but does NOT block the commit; the
     // restore is best-effort and the agent's edits still need to land.
+    //
+    // For staged deletions/renames (status letter in the index column), the
+    // index no longer holds the old path — only HEAD does. `git checkout --`
+    // restores from the index and would fail; `git checkout HEAD --` restores
+    // from the commit and brings the file back into both the index and the
+    // worktree.
     const naxPaths = parsePorcelainForNaxPaths(statusOutput);
-    for (const protectedPath of naxPaths) {
+    for (const { path: protectedPath, staged } of naxPaths) {
       logger?.error(stage, "Restoring deleted .nax/ path before auto-commit", {
         storyId,
         role,
         path: protectedPath,
+        staged,
       });
-      const checkoutProc = _gitDeps.spawn(["git", "checkout", "--", protectedPath], {
+      const checkoutArgs = staged
+        ? ["git", "checkout", "HEAD", "--", protectedPath]
+        : ["git", "checkout", "--", protectedPath];
+      const checkoutProc = _gitDeps.spawn(checkoutArgs, {
         cwd: workdir,
         stdout: "pipe",
         stderr: "pipe",
