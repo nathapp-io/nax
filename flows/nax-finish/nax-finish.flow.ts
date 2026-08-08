@@ -63,6 +63,7 @@ import {
   postEscalation,
   preflight,
   resolveFeature,
+  routeReviewAndRecord,
   runAcceptanceGate,
   runQualityGates,
   writeResult,
@@ -70,7 +71,7 @@ import {
 import type { Forge } from "./steps/forge";
 import { _prBodyDeps, buildFinishBody, buildFinishTitle } from "./steps/pr-body";
 import type { FinishInput, FinishPhase, FinishResult, ReviewVerdict } from "./types";
-import { MAX_FIX_ATTEMPTS, parseFixVerdict, parseReviewVerdict, repromptCount, routeReview } from "./verdict";
+import { MAX_FIX_ATTEMPTS, parseFixVerdict, parseReviewVerdict, repromptCount } from "./verdict";
 
 /**
  * Disabled only on an explicit "0". An unset variable means enabled, so a flow
@@ -210,6 +211,10 @@ function commitFixNode(phase: FinishPhase) {
         phase,
         attempt: fixAttemptCount(ctx, `fix_${phase}`),
         committed,
+        // `gate` and `acceptance` have no reviewer node, so their empty finding
+        // list means "nobody looked" — not "a reviewer approved this". Saying
+        // which is what stops the PR body inventing a review (#1507).
+        outcome: phase === "spec" || phase === "quality" ? "fixed" : "no-reviewer",
         findings: findingsOf(ctx, phase),
         ...(phase === "gate" ? { failing: gateOutputs(ctx).failing ?? [] } : {}),
         // Carry `shaAfter` onto committed rounds only: a no-op round has no
@@ -286,7 +291,7 @@ export default defineFlow({
     },
     route_spec: {
       nodeType: "compute",
-      run: (ctx) => routeReview(ctx, "spec"),
+      run: (ctx) => routeReviewAndRecord(ctx, "spec"),
     },
     fix_spec: {
       nodeType: "acp",
@@ -312,7 +317,7 @@ export default defineFlow({
     },
     route_quality: {
       nodeType: "compute",
-      run: (ctx) => routeReview(ctx, "quality"),
+      run: (ctx) => routeReviewAndRecord(ctx, "quality"),
     },
     fix_quality: {
       nodeType: "acp",

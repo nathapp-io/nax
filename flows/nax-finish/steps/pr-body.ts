@@ -340,10 +340,30 @@ function buildRoundHeading(round: FinishRound): string {
   return `${base} (${short})`;
 }
 
+/**
+ * What an empty finding list means, in the reader's terms.
+ *
+ * Four different things used to render identically as "_no findings_", which a
+ * human reads as "a reviewer looked at this and approved it" (#1507). Only
+ * `passed` means that. `no-reviewer` is the one that actively misleads: the
+ * gate phase has no reviewer node at all, so its empty list is the absence of a
+ * review, not the result of one.
+ *
+ * `fixed` and the legacy `undefined` both fall through to "_no findings_":
+ * rounds written before `outcome` existed carry no field to read, and claiming
+ * anything more specific about them would be inventing detail.
+ */
+const EMPTY_ROUND_NOTE: Record<string, string> = {
+  passed: "- _no findings_",
+  "no-reviewer": "- _no reviewer for this phase_",
+  unparseable: "- _reviewer output could not be parsed_",
+  escalated: "- _escalated for human review_",
+};
+
 function buildRoundBlock(round: FinishRound): string {
   const lines: string[] = [buildRoundHeading(round)];
   if (round.findings.length === 0) {
-    lines.push("- _no findings_");
+    lines.push(EMPTY_ROUND_NOTE[round.outcome ?? ""] ?? "- _no findings_");
   } else {
     for (const finding of round.findings) lines.push(renderFinding(finding));
   }

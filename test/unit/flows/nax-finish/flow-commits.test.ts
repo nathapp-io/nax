@@ -9,8 +9,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import flow from "@flows/nax-finish/nax-finish.flow";
 import { _gitDeps } from "@flows/nax-finish/steps/git";
 import { _resultDeps } from "@flows/nax-finish/steps/result";
-import type { FlowNodeContext, FlowStepRecord } from "acpx/flows";
 import { makeFlowCtx, makeFlowSteps } from "@test/helpers";
+import type { FlowNodeContext, FlowStepRecord } from "acpx/flows";
 
 const INPUT = { feature: "x", workdir: "/repo", branch: "feat/x", prdPath: "p", escalateTelegram: false };
 
@@ -37,7 +37,7 @@ describe("commit_* nodes", () => {
     id: string,
     porcelain: string,
     outputs: Record<string, unknown> = {},
-    postCommitSha: string = "post-commit-sha",
+    postCommitSha = "post-commit-sha",
   ) => {
     const calls: string[][] = [];
     const rounds: unknown[] = [];
@@ -159,6 +159,28 @@ describe("commit_* nodes", () => {
     expect(rounds).toHaveLength(1);
     expect(rounds[0]).toMatchObject({ phase: "gate", committed: false });
     expect(rounds[0]).not.toHaveProperty("sha");
+  });
+
+  test("marks a review-phase round as fixed — a reviewer found something and this fixed it", async () => {
+    const { rounds } = await runCommitNode("commit_quality", " M a.ts\n", {
+      review_quality: { findings: [{ severity: "LOW", title: "T", problem: "P", fix: "F" }] },
+    });
+    expect(rounds[0]).toMatchObject({ outcome: "fixed" });
+  });
+
+  // The gate phase has no `review_gate` node at all. Recording its empty finding
+  // list without saying so let the PR body render "- _no findings_", which reads
+  // as "a reviewer looked and approved this" — manufactured evidence for a
+  // review that cannot have happened (#1507).
+  test("marks a gate round as having no reviewer, never as a clean review", async () => {
+    const { rounds } = await runCommitNode("commit_gate", "", { quality_gates: { failing: ["test"] } });
+    expect(rounds[0]).toMatchObject({ phase: "gate", outcome: "no-reviewer" });
+    expect(rounds[0].outcome).not.toBe("passed");
+  });
+
+  test("marks an acceptance round as having no reviewer", async () => {
+    const { rounds } = await runCommitNode("commit_acceptance", " M a.ts\n");
+    expect(rounds[0]).toMatchObject({ phase: "acceptance", outcome: "no-reviewer" });
   });
 });
 

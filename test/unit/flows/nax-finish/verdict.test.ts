@@ -7,8 +7,8 @@ import {
   repromptCount,
   routeReview,
 } from "@flows/nax-finish/verdict";
-import type { FlowStepRecord } from "acpx/flows";
 import { makeFlowStep, makeFlowSteps, reviewRounds } from "@test/helpers";
+import type { FlowStepRecord } from "acpx/flows";
 
 // The real reply that killed flow run 2026-08-05T154112386Z-nax-finish-600cf3f3 on
 // rs-stock, with private identifiers replaced by generic equivalents — the shape
@@ -164,5 +164,25 @@ describe("routeReview", () => {
     const r = routeReview(routeCtx({ route: "proceed", findings: [FINDING] }, steps), "quality");
     expect(r.route).toBe("escalate");
     expect(r.escalationReason).toContain("fix attempts");
+  });
+
+  // A reviewer that produced NO output at all is not an approval. `ctx.outputs`
+  // keeps only each node's latest output, so an absent verdict is either "the
+  // node never ran" or "it died without emitting" — and in a loop the previous
+  // round's clean verdict may still be sitting there. Defaulting to `findings ??
+  // []` made all three read as "clean" and opened a PR having verified nothing.
+  test("an absent verdict is NEVER routed clean", () => {
+    const r = routeReview({ outputs: {}, state: { steps: [] } }, "quality");
+    expect(r.route).not.toBe("clean");
+    expect(r.route).toBe("escalate");
+    expect(r.escalationReason).toContain("no verdict");
+  });
+
+  test("an absent verdict escalates rather than reusing the previous round's clean verdict", () => {
+    // The stale-output case: round 1 passed clean, round 2's node emitted
+    // nothing. Routing on the leftover output would silently re-approve.
+    const steps = makeFlowSteps(["review_quality", "route_quality", "commit_gate"]);
+    const r = routeReview({ outputs: { review_spec: { route: "clean", findings: [] } }, state: { steps } }, "quality");
+    expect(r.route).toBe("escalate");
   });
 });
