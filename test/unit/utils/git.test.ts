@@ -293,6 +293,24 @@ describe("parsePorcelainForNaxPaths", () => {
     ]);
   });
 
+  test("returns a staged-deleted .nax/ path (D ) as protected", () => {
+    // AC: any deletion under .nax/ must restore. `D ` is the staged-deletion
+    // status (e.g. after `git rm .nax/...`) and must be treated identically
+    // to ` D`. The auto-commit runs `git add -A`, which keeps a staged
+    // deletion staged, so a missed `D ` line would still be lost.
+    const output = "D  apps/web/.nax/features/f/.nax-acceptance.test.tsx\n";
+    expect(parsePorcelainForNaxPaths(output)).toEqual([
+      "apps/web/.nax/features/f/.nax-acceptance.test.tsx",
+    ]);
+  });
+
+  test("returns a double-delete .nax/ path (DD) as protected", () => {
+    const output = "DD apps/web/.nax/features/f/.nax-acceptance.test.tsx\n";
+    expect(parsePorcelainForNaxPaths(output)).toEqual([
+      "apps/web/.nax/features/f/.nax-acceptance.test.tsx",
+    ]);
+  });
+
   test("returns the OLD path when a rename moves a file out of .nax/", () => {
     // Rename: status 'R ', then "old -> new". We restore the old path because
     // that is where the agent last saw the file in HEAD.

@@ -260,8 +260,10 @@ export function parsePorcelainForNaxPaths(porcelain: string): string[] {
     // "?? untracked" has no meaningful index/worktree status — skip.
     if (xStatus === "?" && yStatus === "?") continue;
     // We only restore deletions and renames; modifications stay as the agent
-    // left them.
-    const isDeleted = yStatus === "D" || (xStatus === "D" && yStatus !== " ");
+    // left them. `D` in either column counts — `D ` is staged-delete (e.g.
+    // after `git rm .nax/...`) and `git add -A` would otherwise keep it
+    // staged, losing the path without a `git checkout` first.
+    const isDeleted = xStatus === "D" || yStatus === "D";
     const isRename = xStatus === "R" || yStatus === "R";
     if (!isDeleted && !isRename) continue;
 
