@@ -361,3 +361,53 @@ describe("rectification prompts — single-session permits test edits (US-003 re
     expect(forbidden).not.toContain("MAY edit test files");
   });
 });
+
+// ─── AC-9: .nax/ immutability text composed into every RectifierPromptBuilder
+// output (via buildEscapeHatch). The existing .nax/ citation paragraph at
+// helpers.ts:130-135 stays unchanged — the new section is appended alongside it.
+
+describe("AC-9: RectifierPromptBuilder includes .nax/ immutability text", () => {
+  test("buildEscapeHatch (TDD path) returns the .nax/ immutability text", () => {
+    const hatch = buildEscapeHatch({ includeMockHandoff: true });
+    const lower = hatch.toLowerCase();
+    expect(hatch).toContain(".nax/");
+    expect(lower).toContain("moved");
+    expect(lower).toContain("renamed");
+    expect(lower).toContain("deleted");
+  });
+
+  test("buildEscapeHatch (non-TDD path) returns the .nax/ immutability text", () => {
+    const hatch = buildEscapeHatch({ includeMockHandoff: false });
+    const lower = hatch.toLowerCase();
+    expect(hatch).toContain(".nax/");
+    expect(lower).toContain("moved");
+    expect(lower).toContain("renamed");
+    expect(lower).toContain("deleted");
+  });
+
+  test("existing .nax/ citation paragraph at helpers.ts:130-135 is left unchanged", () => {
+    // The pre-existing disqualifier paragraph must still be present verbatim.
+    const hatch = buildEscapeHatch({ includeMockHandoff: true });
+    expect(hatch).toContain("never a false positive because a `.nax/` file exists");
+    expect(hatch).toContain("NOT source-tree test coverage");
+    expect(hatch).toContain("author a real test under the package's resolved test path");
+  });
+
+  test("reviewRectification output includes the .nax/ immutability text", () => {
+    const result = RectifierPromptBuilder.reviewRectification([makeCheck("lint")], TDD_STORY);
+    const lower = result.toLowerCase();
+    expect(result).toContain(".nax/");
+    expect(lower).toContain("moved");
+    expect(lower).toContain("renamed");
+    expect(lower).toContain("deleted");
+  });
+
+  test("firstAttemptDelta output includes the .nax/ immutability text", () => {
+    const result = RectifierPromptBuilder.firstAttemptDelta([makeCheck()], 3, undefined, NO_TEST_STORY);
+    const lower = result.toLowerCase();
+    expect(result).toContain(".nax/");
+    expect(lower).toContain("moved");
+    expect(lower).toContain("renamed");
+    expect(lower).toContain("deleted");
+  });
+});

@@ -17,5 +17,6 @@ export { buildAcceptanceSection } from "./acceptance";
 export type { AcceptanceEntry } from "./acceptance";
 export { buildSelfVerificationSection } from "./self-verification";
 export { buildBehavioralGuardrailsSection } from "./behavioral-guardrails";
+export { buildNaxArtifactsSection } from "./nax-artifacts";
 export { buildTestQualitySection } from "./test-quality";
 export type { GuardrailLevel, GuardrailRole } from "./behavioral-guardrails";

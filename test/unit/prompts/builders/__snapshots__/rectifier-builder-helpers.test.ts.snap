@@ -15,6 +15,17 @@ evidence that an acceptance criterion is already tested, and you may NOT emit UN
 The only valid response to a missing-test finding is to
 author a real test under the package's resolved test path.
 
+# .nax/ artifact immutability
+
+Files under \`.nax/\` are nax's own artifacts (acceptance scaffolds, plan state, generated acceptance
+tests). They must NEVER be moved, renamed, or deleted — \`.nax/\` is a tool-managed directory and
+modifying it breaks the orchestrator.
+
+- A test under \`.nax/\` is NOT a reason to skip writing source-tree tests. \`.nax/\` is generated
+  scaffolding, not real coverage of the package's code.
+- A source-tree test is NOT a reason to remove a test under \`.nax/\`. The two serve different
+  purposes and must coexist.
+
 ## Test-file edit exceptions
 
 The "do not modify test files" rule has four narrow escape valves. Each requires a
@@ -113,6 +124,17 @@ acceptance gate — it is NOT source-tree test coverage. You may NOT cite any \`
 evidence that an acceptance criterion is already tested, and you may NOT emit UNRESOLVED on that basis.
 The only valid response to a missing-test finding is to
 author a real test under the package's resolved test path.
+
+# .nax/ artifact immutability
+
+Files under \`.nax/\` are nax's own artifacts (acceptance scaffolds, plan state, generated acceptance
+tests). They must NEVER be moved, renamed, or deleted — \`.nax/\` is a tool-managed directory and
+modifying it breaks the orchestrator.
+
+- A test under \`.nax/\` is NOT a reason to skip writing source-tree tests. \`.nax/\` is generated
+  scaffolding, not real coverage of the package's code.
+- A source-tree test is NOT a reason to remove a test under \`.nax/\`. The two serve different
+  purposes and must coexist.
 
 ## Test-file edit exceptions
 

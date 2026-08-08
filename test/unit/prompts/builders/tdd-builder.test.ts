@@ -167,6 +167,55 @@ describe("AC-21: when behavioralGuardrails='off', acc.add not called for guardra
   });
 });
 
+// ---------------------------------------------------------------------------
+// AC-7 / AC-8: .nax/ immutability section is composed into TddPromptBuilder
+// prompts for test-writer and verifier (not config-gated; always present).
+// ---------------------------------------------------------------------------
+
+describe("AC-7/AC-8: TddPromptBuilder includes .nax/ immutability text", () => {
+  test("test-writer prompt includes .nax/ immutability text (moved, renamed, deleted)", async () => {
+    const story = makeStory();
+    const config = makeNaxConfig({});
+    const prompt = await TddPromptBuilder.for("test-writer", {})
+      .story(story)
+      .withLoader("/tmp", config)
+      .build();
+
+    expect(prompt).toContain(".nax/");
+    const lower = prompt.toLowerCase();
+    expect(lower).toContain("moved");
+    expect(lower).toContain("renamed");
+    expect(lower).toContain("deleted");
+  });
+
+  test("verifier prompt includes .nax/ immutability text (moved, renamed, deleted)", async () => {
+    const story = makeStory();
+    const config = makeNaxConfig({});
+    const prompt = await TddPromptBuilder.for("verifier", {})
+      .story(story)
+      .withLoader("/tmp", config)
+      .build();
+
+    expect(prompt).toContain(".nax/");
+    const lower = prompt.toLowerCase();
+    expect(lower).toContain("moved");
+    expect(lower).toContain("renamed");
+    expect(lower).toContain("deleted");
+  });
+
+  test(".nax/ section is always present regardless of behavioralGuardrails config", async () => {
+    const story = makeStory();
+    // Even with guardrails off, the .nax/ section must still render.
+    const config = makeNaxConfig({ prompts: { behavioralGuardrails: "off" } });
+    const prompt = await TddPromptBuilder.for("test-writer", {})
+      .story(story)
+      .withLoader("/tmp", config)
+      .build();
+
+    expect(prompt).toContain(".nax/");
+  });
+});
+
 describe("TddPromptBuilder.verdictRetry", () => {
   test("returns a re-emit instruction with explicit start/end markers", () => {
     const out = TddPromptBuilder.verdictRetry();
