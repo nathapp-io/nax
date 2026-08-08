@@ -14,7 +14,7 @@ import { STAGE_CONTEXT_MAP } from "../engine/stage-config";
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const KNOWN_FRONTMATTER_KEYS = new Set(["priority", "paths", "appliesTo", "stages"]);
+export const KNOWN_FRONTMATTER_KEYS = new Set(["priority", "paths", "appliesTo", "stages", "description"]);
 export const FRONTMATTER_PRIORITY_DEFAULT = 100;
 
 /**
@@ -71,6 +71,7 @@ export interface CanonicalRule {
   paths?: string[];
   appliesTo?: string[];
   stages?: string[];
+  description?: string;
   warnings?: string[];
 }
 
@@ -80,6 +81,7 @@ export interface ParsedFrontmatter {
   paths?: string[];
   appliesTo?: string[];
   stages?: string[];
+  description?: string;
   warnings: string[];
 }
 
@@ -182,7 +184,7 @@ export function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatt
   const unknownKeys = Object.keys(doc).filter((key) => !KNOWN_FRONTMATTER_KEYS.has(key));
   if (unknownKeys.length > 0) {
     throw new RulesFrontmatterError(
-      `Canonical rule frontmatter declares unknown key(s): ${unknownKeys.join(", ")}. Only priority, paths, appliesTo, and stages are recognised.`,
+      `Canonical rule frontmatter declares unknown key(s): ${unknownKeys.join(", ")}. Only priority, paths, appliesTo, stages, and description are recognised.`,
       filePath,
     );
   }
@@ -245,12 +247,29 @@ export function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatt
     }
   }
 
+  const descriptionRaw = doc.description;
+  let description: string | undefined;
+  if (descriptionRaw !== undefined) {
+    if (typeof descriptionRaw !== "string") {
+      throw new RulesFrontmatterError("frontmatter.description must be a string", filePath);
+    }
+    if (descriptionRaw.includes("\n") || descriptionRaw.includes("\r")) {
+      throw new RulesFrontmatterError("frontmatter.description must be a single line", filePath);
+    }
+    const trimmed = descriptionRaw.trim();
+    if (!trimmed) {
+      throw new RulesFrontmatterError("frontmatter.description cannot be empty", filePath);
+    }
+    description = trimmed;
+  }
+
   return {
     content: effectiveContent.slice(close[0].length).trim(),
     priority,
     ...(paths && { paths }),
     ...(appliesTo && { appliesTo }),
     ...(stages && { stages }),
+    ...(description && { description }),
     warnings,
   };
 }

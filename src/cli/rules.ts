@@ -169,7 +169,17 @@ function packageGlobToFileGlob(pattern: string): string {
  * the way out. Canonical `paths:` is read as a file glob via
  * {@link packageGlobToFileGlob} so a package-scoped rule keeps its scope.
  *
- * Returns "" for an unscoped rule so no empty block is emitted.
+ * When the rule carries a `description`, it is emitted FIRST in the block so
+ * the agent prompt sees the rule's purpose ahead of any scope — both fields
+ * are serialized through `JSON.stringify` for the same reason globs are:
+ * a description containing `:`, `#`, `"`, or `\` would otherwise produce
+ * invalid YAML. This block is read by Claude's own frontmatter loader, a
+ * separate implementation from nax's `Bun.YAML.parse` (used only for
+ * canonical `.nax/rules/*.md`) — escaping guards the emitted YAML's grammar
+ * itself, not compatibility between the two parsers.
+ *
+ * Returns "" for a rule that has neither description nor scope, so an empty
+ * block is never emitted.
  */
 function claudeFrontmatter(rule: CanonicalRule): string {
   const fileGlobs = rule.appliesTo ?? [];
@@ -179,21 +189,26 @@ function claudeFrontmatter(rule: CanonicalRule): string {
   // `paths:` list is a disjunction — emitting both would WIDEN the rule rather
   // than narrow it, which is the opposite of what either scope asked for. Keep
   // the file glob, the more specific of the two, and report the package scope
-  // instead of quietly unioning it in.
+  // instead of quietly unioning it in. `description` is metadata, not scope,
+  // so it is preserved alongside the warning so the operator can identify the
+  // affected rule when several files share a name.
   if (fileGlobs.length > 0 && packageGlobs.length > 0) {
     _rulesCLIDeps.getLogger().warn("rules-export", "Dropping package scope — Claude cannot express both scopes", {
       rule: rule.path ?? rule.fileName,
+      description: rule.description,
       droppedPaths: packageGlobs,
       keptAppliesTo: fileGlobs,
     });
   }
 
   const globs = fileGlobs.length > 0 ? fileGlobs : [...new Set(packageGlobs.map(packageGlobToFileGlob))];
-  if (globs.length === 0) return "";
+  const description = rule.description;
+  if (globs.length === 0 && description === undefined) return "";
   // JSON.stringify escapes quotes/backslashes — a raw interpolation would
-  // emit invalid YAML for a glob containing either (cf. toYamlListLiteral).
-  const lines = globs.map((g) => `  - ${JSON.stringify(g)}`).join("\n");
-  return `---\npaths:\n${lines}\n---\n`;
+  // emit invalid YAML for any value containing either (cf. toYamlListLiteral).
+  const descLine = description !== undefined ? `description: ${JSON.stringify(description)}\n` : "";
+  const globLines = globs.length > 0 ? `paths:\n${globs.map((g) => `  - ${JSON.stringify(g)}`).join("\n")}\n` : "";
+  return `---\n${descLine}${globLines}---\n`;
 }
 
 /**

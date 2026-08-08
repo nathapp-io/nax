@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-08-08T03-55-51-573Z",
+    "feature": "rules-description",
+    "startedAt": "2026-08-08T03:55:51.573Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 59204
+  },
+  "progress": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 2.4832012550000004,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 3,
+  "updatedAt": "2026-08-08T04:14:15.839Z",
+  "durationMs": 1104266,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-08-08T04:13:44.558Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-08-08T04:14:14.630Z"
+    }
+  }
+}

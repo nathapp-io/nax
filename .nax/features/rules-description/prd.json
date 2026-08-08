@@ -1,0 +1,120 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "rules-description",
+  "branchName": "feat/rules-description",
+  "createdAt": "2026-08-08T03:48:14Z",
+  "updatedAt": "2026-08-08T04:13:36.847Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Canonical rules accept and carry a description",
+      "description": "**Goal** — Parse, validate, and carry optional single-line `description` metadata from `.nax/rules/*.md` through `loadCanonicalRules`, so migrated legacy rules remain loadable.\n\n**Motivation** — `nax rules migrate` translates `paths:` → `appliesTo:` and copies every other key through verbatim, so a legacy Claude rule carrying `description:` migrates cleanly and then breaks every subsequent load.\n\n**Approach** — Optional field, no behaviour change for rules that omit it. Single-line values only, trimmed.\n\n**Integration** — `KNOWN_FRONTMATTER_KEYS` | `src/context/rules/rules-frontmatter.ts:17` | add `\"description\"`; `ParsedFrontmatter` | `src/context/rules/rules-frontmatter.ts:77` | add `description?: string`; `CanonicalRule` | `src/context/rules/rules-frontmatter.ts:64` | add `description?: string`; `parseFrontmatter` final return | `src/context/rules/rules-frontmatter.ts:248` | conditional-spread `description`; unknown-key error text | `src/context/rules/rules-frontmatter.ts:185` | list `description` among recognised keys; rule object construction | `src/context/rules/canonical-loader.ts:~435` | conditional-spread `description`. `CanonicalRule` is **defined** in `rules-frontmatter.ts` and only *re-exported* from `canonical-loader.ts:33` — the type edit belongs in the former. Patterns to mirror: `paths` and `appliesTo` parsing already establish the validate-then-trim-then-conditional-spread shape and the `RulesFrontmatterError(message, filePath)` error form. `translateLegacyFrontmatter` needs **no change** — it already copies `description` through; that path was broken only because the loader rejected the result.\n\n**Scope** — In: canonical parser/type/loader propagation, recognized-key diagnostics, and the migrate-then-load regression. Out: the Claude export and warning changes belong to US-002; Making `description` required on a canonical rule is out of scope; it stays optional and a rule without one loads exactly as it does today; Emitting a `nax rules lint` warning for rules that lack a `description` is out of scope; absence is silent; Printing rule descriptions in `nax rules lint` output is out of scope; Injecting a rule's description into the agent context alongside the rule body is out of scope; it would consume token budget on every run; Multi-line or paragraph descriptions are out of scope; a newline in the value is a parse error and prose belongs in the rule body; Carrying `description` through `rule-sections.ts` budget chunking is out of scope.\n\n**Interface**\n```typescript\nexport interface CanonicalRule {\n  description?: string;\n}\n\nexport interface ParsedFrontmatter {\n  description?: string;\n}\n```",
+      "acceptanceCriteria": [
+        "When `parseFrontmatter` receives frontmatter with `description: Use when editing controllers` and a body, then its result has `description` equal to `\"Use when editing controllers\"`.",
+        "When `parseFrontmatter` receives a `description` value with leading and trailing spaces, then its result has the surrounding whitespace removed.",
+        "When `parseFrontmatter` receives a numeric `description`, then it throws `RulesFrontmatterError` whose message contains `frontmatter.description must be a string`.",
+        "When `parseFrontmatter` receives an empty or whitespace-only `description`, then it throws `RulesFrontmatterError` whose message contains `frontmatter.description cannot be empty`.",
+        "When `parseFrontmatter` receives a `description` containing a newline, then it throws `RulesFrontmatterError` whose message contains `frontmatter.description must be a single line`.",
+        "When `parseFrontmatter` receives an unrecognised `scope` key, then it throws `RulesFrontmatterError` whose message names `description` among the recognised keys.",
+        "When `parseFrontmatter` receives frontmatter without `description`, then its result omits `description` and does not throw.",
+        "When `loadCanonicalRules` loads a canonical rule declaring `description`, then the returned `CanonicalRule.description` equals the declared value.",
+        "Given a legacy `.claude/rules/` rule declaring both `description` and `paths`, when `rulesMigrateCommand` migrates it and `loadCanonicalRules` loads `.nax/rules/`, then loading does not throw and the returned rule's `description` equals the original value."
+      ],
+      "tags": [
+        "feature",
+        "rules",
+        "frontmatter",
+        "migration"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a clear four-file, additive parser/type/loader change with existing validation and dependency-injection test patterns; it has no new abstraction or security boundary.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/context/rules/rules-frontmatter.ts",
+        "src/context/rules/canonical-loader.ts",
+        "src/cli/rules.ts",
+        "test/unit/context/rules/rules-frontmatter.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ac4b53ac0d085cf44574988d70bc1a9bd2e4e092"
+    },
+    {
+      "id": "US-002",
+      "title": "The Claude export emits and surfaces the description",
+      "description": "**Goal** — Emit canonical rule descriptions in generated Claude rule frontmatter and preserve them in the warning that reports a dropped package scope.\n\n**Motivation** — An unrecognised key is a **hard error**, not a warning, and `CanonicalRule` has no field to carry one. So a rule cannot describe its own purpose.\n\n**Approach** — Serialized on export with `JSON.stringify`, matching how globs are already emitted, so a value containing `:`, `#`, a quote, or a backslash cannot produce a generated file Claude fails to parse.\n\n**Integration** — `claudeFrontmatter` | `src/cli/rules.ts:174` | emit `description`, generalise the empty-block guard; both-scopes warning | `src/cli/rules.ts:~183` | add `description` to the warn data. `claudeFrontmatter` already uses `JSON.stringify` for glob values with a comment explaining why. Generated Claude rule frontmatter — `description` first, then `paths`:\n```yaml\n---\ndescription: \"Use when editing OAuth controllers\"\npaths:\n  - \"src/**/*.ts\"\n---\n```\n\n**Scope** — In: the Claude per-rule export frontmatter and its both-scopes structured warning, exercised through `rulesExportCommand`. Out: parser, canonical loader, and migration acceptance work belong to US-001; Carrying `description` on the shim agents (`codex`, `gemini`, `cursor`) is out of scope; those agents receive one concatenated file with no per-rule frontmatter to hold it.\n\n**Interface**\n```typescript\nfunction claudeFrontmatter(rule: CanonicalRule): string\n```\n\n**Seam** — US-002's acceptance criteria read `CanonicalRule.description` created and populated by US-001. Exercise the field through `rulesExportCommand` — the outermost `nax rules export` entry point — rather than testing `claudeFrontmatter` directly, so coverage includes the production wiring.",
+      "acceptanceCriteria": [
+        "When `rulesExportCommand` exports a Claude rule with `description` and an `appliesTo` glob, then the generated frontmatter contains the declared description before its `paths` entry.",
+        "When `rulesExportCommand` exports a Claude rule with `description` and no scope, then the generated file begins with a frontmatter block containing the description and no `paths` entry.",
+        "When `rulesExportCommand` exports a Claude rule with `description` and canonical package scope, then the generated frontmatter contains the description and the package scope translated to its file glob.",
+        "When `rulesExportCommand` exports a Claude rule with neither description nor scope, then the generated file does not begin with a frontmatter block.",
+        "When `rulesExportCommand` exports a Claude rule whose description contains a colon, hash, double quote, and backslash, then its frontmatter parses as YAML and its `description` value equals the original text exactly.",
+        "When `rulesExportCommand` exports a Claude rule with an `appliesTo` glob, canonical package scope, and description, then it emits the package-scope warning whose structured data includes that description.",
+        "When `rulesExportCommand` exports a Claude rule with an `appliesTo` glob and no description, then its generated frontmatter contains no `description` entry."
+      ],
+      "tags": [
+        "feature",
+        "rules",
+        "cli",
+        "export"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a focused CLI export integration change with existing injected writer/logger coverage, safe serialization requirements, and no new subsystem boundary.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/cli/rules.ts",
+        "src/context/rules/rules-frontmatter.ts",
+        "test/unit/cli/rules-export-scope.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "82af7da84a3d5553a3eccaedb3d4fd206c93131d"
+    }
+  ],
+  "analysis": "This is a backward-compatible enhancement to the canonical-rules pipeline. `src/context/rules/rules-frontmatter.ts:17` maintains the closed set of allowed YAML keys; `CanonicalRule` and `ParsedFrontmatter` are declared in that file at lines 64 and 77, and `parseFrontmatter()` validates the object before independently parsing `priority`, `paths`, `appliesTo`, and `stages` (lines 99-256). The implementation should add the optional `description?: string` field to both interfaces, admit `description` in `KNOWN_FRONTMATTER_KEYS`, validate it as a string, trim it, reject an empty value and any newline with `RulesFrontmatterError`, and conditionally include it in the parsed result. The unknown-key diagnostic at lines 181-186 is a closed-world message and must list description among supported keys. `src/context/rules/canonical-loader.ts:369-487` is the only production constructor for loaded `CanonicalRule` values; it already uses conditional spreads for parsed optional fields, so it must propagate the parsed description there. The loader is used by rules export and lint as well as context providers, but descriptions remain metadata and must not be injected into rule content or budget chunking. `src/cli/rules.ts:412-434` translates legacy Claude `paths:` to canonical `appliesTo:` and otherwise preserves frontmatter; no migration code change is required. Once the parser accepts description, `rulesMigrateCommand()` (lines 513-572) will stop creating a canonical store that its loader rejects. `claudeFrontmatter()` in `src/cli/rules.ts:174-197` is the Claude-only per-rule frontmatter builder called through `exportRuleDirectory`, reached by `rulesExportCommand()` (lines 292-343). It currently emits no block when no glob remains, uses JSON.stringify for YAML-safe glob quoting, and logs the both-scopes lossiness warning with `rule`, `droppedPaths`, and `keptAppliesTo`. It should make description the first emitted field, JSON.stringify it for safe YAML scalar serialization, retain the existing scope translation/precedence, generalize the empty-block guard so an unscoped described rule still emits a block, and include the description in the warning data. `test/unit/context/rules/rules-frontmatter.test.ts` already imports parser symbols and loader deps, providing unit and loader-integration patterns. `test/unit/cli/rules-export-scope.test.ts` is a focused dependency-injected export harness with an in-memory writer/logger and is intentionally the extension point because `test/unit/cli/rules.test.ts` is near its 800-line cap. Risks are limited to preserving absence semantics and existing scope behavior: rules without description must keep loading unchanged, unscoped rules without description must still have no Claude frontmatter, and JSON quoting must preserve colons, hashes, quotes, and backslashes. No data migration is needed: legacy translation already copies description; accepting it closes the existing migrate-then-load failure. `src/cli/rules.ts` is near its 600-line hard cap, so if the needed export edits exceed available headroom, extract only the frontmatter builder into a dedicated `src/cli/` module rather than exceeding the limit.",
+  "outOfScope": [
+    "Making `description` required on a canonical rule is out of scope; it stays optional and a rule without one loads exactly as it does today.",
+    "Emitting a `nax rules lint` warning for rules that lack a `description` is out of scope; absence is silent.",
+    "Printing rule descriptions in `nax rules lint` output is out of scope.",
+    "Giving the curator awareness of canonical rules, so its proposals can name and describe the rule they concern, is out of scope; the curator currently loads no rules and every proposal targets the fixed path `.nax/rules/curator-suggestions.md`.",
+    "Injecting a rule's description into the agent context alongside the rule body is out of scope; it would consume token budget on every run.",
+    "Carrying `description` on the shim agents (`codex`, `gemini`, `cursor`) is out of scope; those agents receive one concatenated file with no per-rule frontmatter to hold it.",
+    "Multi-line or paragraph descriptions are out of scope; a newline in the value is a parse error and prose belongs in the rule body.",
+    "Carrying `description` through `rule-sections.ts` budget chunking is out of scope."
+  ],
+  "routingProfile": "cross-agent"
+}

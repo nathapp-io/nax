@@ -1,0 +1,114 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `parseFrontmatter` receives frontmatter with `description: Use when editing controllers` and a body, then its result has `description` equal to `\"Use when editing controllers\"`.",
+    "refined": "Calling `parseFrontmatter({ description: 'Use when editing controllers', content: 'rule body' })` returns an object with `description` property strictly equal to `'Use when editing controllers'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `parseFrontmatter` receives a `description` value with leading and trailing spaces, then its result has the surrounding whitespace removed.",
+    "refined": "Calling `parseFrontmatter({ description: '  trimmed value  ', content: 'rule body' })` returns an object with `description` property strictly equal to `'trimmed value'` (no leading/trailing spaces).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `parseFrontmatter` receives an numeric `description`, then it throws `RulesFrontmatterError` whose message contains `frontmatter.description must be a string`.",
+    "refined": "Calling `parseFrontmatter({ description: 42, content: 'rule body' })` throws a `RulesFrontmatterError` instance whose `message` property includes the substring `frontmatter.description must be a string`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `parseFrontmatter` receives an empty or whitespace-only `description`, then it throws `RulesFrontmatterError` whose message contains `frontmatter.description cannot be empty`.",
+    "refined": "Calling `parseFrontmatter({ description: '', content: 'rule body' })` and `parseFrontmatter({ description: '   ', content: 'rule body' })` both throw a `RulesFrontmatterError` instance whose `message` property includes the substring `frontmatter.description cannot be empty`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `parseFrontmatter` receives a `description` containing a newline, then it throws `RulesFrontmatterError` whose message contains `frontmatter.description must be a single line`.",
+    "refined": "Calling `parseFrontmatter({ description: 'line1\\nline2', content: 'rule body' })` throws a `RulesFrontmatterError` instance whose `message` property includes the substring `frontmatter.description must be a single line`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When `parseFrontmatter` receives an unrecognised `scope` key, then it throws `RulesFrontmatterError` whose message names `description` among the recognised keys.",
+    "refined": "Calling `parseFrontmatter({ scope: 'read', content: 'rule body' })` throws a `RulesFrontmatterError` instance whose `message` property includes the substring `description` (listed as a recognised frontmatter key alongside `paths`, `appliesTo`, etc.).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When `parseFrontmatter` receives frontmatter without `description`, then its result omits `description` and does not throw.",
+    "refined": "Calling `parseFrontmatter({ paths: ['*.js'], content: 'rule body' })` returns an object that does not have an own `description` property (result.description is undefined), and does not throw.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When `loadCanonicalRules` loads a canonical rule declaring `description`, then the returned `CanonicalRule.description` equals the declared value.",
+    "refined": "Given a `.nax/rules/test.md` file with frontmatter `description: My rule description` and valid rule content, calling `loadCanonicalRules(['test.md'])` returns an array where the first element has `description` property strictly equal to `'My rule description'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "Given a legacy `.claude/rules/` rule declaring both `description` and `paths`, when `rulesMigrateCommand` migrates it and `loadCanonicalRules` loads `.nax/rules/`, then loading does not throw and the returned rule's `description` equals the original value.",
+    "refined": "Given a legacy `.claude/rules/legacy.md` file with frontmatter `description: Legacy desc` and `paths: ['*.js']`, after calling `rulesMigrateCommand(['legacy.md'])` to produce `.nax/rules/legacy.md`, calling `loadCanonicalRules(['legacy.md'])` returns an array where the first element has `description` property strictly equal to `'Legacy desc'` and does not throw.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `rulesExportCommand` exports a Claude rule with `description` and an `appliesTo` glob, then the generated frontmatter contains the declared description before its `paths` entry.",
+    "refined": "Given a CanonicalRule with description \"Use when editing OAuth controllers\" and appliesTo \"src/**/*.ts\", when rulesExportCommand is invoked, then the generated output contains the substring 'description: \"Use when editing OAuth controllers\"' at a lower character index than the substring 'paths:'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When `rulesExportCommand` exports a Claude rule with `description` and no scope, then the generated file begins with a frontmatter block containing the description and no `paths` entry.",
+    "refined": "Given a CanonicalRule with description \"Admin-only rule\" and no appliesTo and no packageScope, when rulesExportCommand is invoked, then the output string starts with '---', contains 'description: \"Admin-only rule\"', does not contain 'paths:', and contains '---' closing the block.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When `rulesExportCommand` exports a Claude rule with `description` and canonical package scope, then the generated frontmatter contains the description and the package scope translated to its file glob.",
+    "refined": "Given a CanonicalRule with description \"API rules\" and packageScope \"@nathapp/api\" (without appliesTo), when rulesExportCommand is invoked, then the frontmatter contains 'description: \"API rules\"' and 'paths:' with a glob matching the package scope (e.g., \"packages/api/**/*.ts\").",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When `rulesExportCommand` exports a Claude rule with neither description nor scope, then the generated file does not begin with a frontmatter block.",
+    "refined": "Given a CanonicalRule with no description, no appliesTo, and no packageScope, when rulesExportCommand is invoked, then the output string does not start with '---'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When `rulesExportCommand` exports a Claude rule whose description contains a colon, hash, double quote, and backslash, then its frontmatter parses as YAML and its `description` value equals the original text exactly.",
+    "refined": "Given a CanonicalRule with description \"status: ok # note \\\"quote\\\"\\\\\" (containing colon, hash, double quote, backslash), when rulesExportCommand is invoked, then: (1) the frontmatter substring between the first pair of '---' delimiters parses as valid YAML, and (2) parsing that YAML yields a 'description' field whose value exactly equals the original unescaped string \"status: ok # note \\\"quote\\\"\\\\\".",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When `rulesExportCommand` exports a Claude rule with an `appliesTo` glob, canonical package scope, and description, then it emits the package-scope warning whose structured data includes that description.",
+    "refined": "Given a CanonicalRule with description \"Shared rule\", appliesTo \"src/**/*.ts\", and packageScope \"@nathapp/shared\", when rulesExportCommand is invoked, then: (1) the stderr or log output contains a warning with 'appliesTo' and 'packageScope' in its structured data, and (2) that warning's structured data object includes a 'description' field with value \"Shared rule\".",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When `rulesExportCommand` exports a Claude rule with an `appliesTo` glob and no description, then its generated frontmatter contains no `description` entry.",
+    "refined": "Given a CanonicalRule with appliesTo \"src/**/*.ts\" and no description (and no packageScope), when rulesExportCommand is invoked, then the generated frontmatter contains 'paths:' with the glob but does not contain the substring 'description:'.",
+    "testable": true,
+    "storyId": "US-002"
+  }
+]
