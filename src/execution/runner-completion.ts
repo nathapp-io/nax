@@ -202,6 +202,10 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
           runtime: options.runtime,
           abortSignal: options.abortSignal,
           acceptanceTestPaths,
+          // US-004: forward the prior run's missing-target packages so a
+          // resumed run evaluates them rather than treating the prior
+          // "failed" record as a pass-by-default.
+          skippedPackages: postRunStatus?.acceptance?.skippedPackages,
         });
       } catch (err) {
         // A thrown error here would otherwise leave "acceptance" permanently
@@ -236,12 +240,20 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
         });
       } else {
         acceptancePassed = false;
-        options.statusWriter.setPostRunPhase("acceptance", {
+        // US-004: surface missing-target packages on the failed phase so a
+        // resumed run can re-evaluate them. Empty/undefined is also written
+        // through so the field round-trips cleanly (status: "passed" never
+        // carries skippedPackages — see AC-3).
+        const failureUpdate: Record<string, unknown> = {
           status: "failed",
           failedACs: acceptanceResult.failedACs ?? [],
           retries: acceptanceResult.retries ?? 0,
           lastRunAt,
-        });
+        };
+        if (acceptanceResult.skippedPackages && acceptanceResult.skippedPackages.length > 0) {
+          failureUpdate.skippedPackages = acceptanceResult.skippedPackages;
+        }
+        options.statusWriter.setPostRunPhase("acceptance", failureUpdate);
         pipelineEventBus.emit({
           type: "postrun:phase:completed",
           phase: "acceptance",

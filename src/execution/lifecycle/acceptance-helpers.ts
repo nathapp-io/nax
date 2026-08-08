@@ -104,8 +104,32 @@ export function buildResult(
   prdDirty: boolean,
   failedACs?: string[],
   retries?: number,
+  skippedPackages?: string[],
 ): AcceptanceLoopResult {
-  return { success, prd, totalCost, iterations, storiesCompleted, prdDirty, failedACs, retries };
+  return { success, prd, totalCost, iterations, storiesCompleted, prdDirty, failedACs, retries, skippedPackages };
+}
+
+/** Failure shortcut — keeps the bare-fail call site on one line. */
+export function buildFailureResult(
+  prd: PRD,
+  totalCost: number,
+  iterations: number,
+  storiesCompleted: number,
+  failedACs: string[] | undefined,
+  retries: number | undefined,
+  skippedPackages: string[] | undefined,
+): AcceptanceLoopResult {
+  return {
+    success: false,
+    prd,
+    totalCost,
+    iterations,
+    storiesCompleted,
+    prdDirty: false,
+    failedACs,
+    retries,
+    skippedPackages,
+  };
 }
 
 // ─── Test regeneration ──────────────────────────────────────────────────────

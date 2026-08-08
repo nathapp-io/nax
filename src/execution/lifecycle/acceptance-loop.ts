@@ -34,6 +34,7 @@ import { hookCtx } from "../helpers";
 import type { StatusWriter } from "../status-writer";
 import { resolveAcceptanceDiagnosis } from "./acceptance-fix";
 import {
+  buildFailureResult,
   buildResult,
   isStubTestFile,
   regenerateAcceptanceTest as regenerateAcceptanceTestFn,
@@ -77,6 +78,7 @@ export interface AcceptanceLoopContext extends DispatchContext {
    * fix cycle belong to the enclosing attempt and carry its index unchanged.
    */
   acceptanceRetries?: number;
+  skippedPackages?: string[];
 }
 
 export interface AcceptanceLoopResult {
@@ -90,6 +92,7 @@ export interface AcceptanceLoopResult {
   failedACs?: string[];
   /** Number of acceptance retries performed */
   retries?: number;
+  skippedPackages?: string[];
 }
 
 // isStubTestFile, isTestLevelFailure, loadSpecContent, loadAcceptanceTestContent,
@@ -409,6 +412,8 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
     }
 
     const failures = acceptanceContext.acceptanceFailures;
+    const skippedPackages =
+      (acceptanceResult as { skippedPackages?: string[] }).skippedPackages ?? failures?.missingTargets;
     if (!failures || failures.failedACs.length === 0) {
       logger?.error("acceptance", "Acceptance tests failed but no specific failures detected");
       await fireHook(
@@ -417,7 +422,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         hookCtx(ctx.feature, { reason: "Acceptance tests failed (no failures detected)", cost: totalCost }),
         ctx.workdir,
       );
-      return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
+      return buildFailureResult(prd, totalCost, iterations, storiesCompleted, undefined, undefined, skippedPackages);
     }
 
     // ── 2. retries++ ─────────────────────────────────────────────────────
@@ -438,15 +443,14 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         }),
         ctx.workdir,
       );
-      return buildResult(
-        false,
+      return buildFailureResult(
         prd,
         totalCost,
         iterations,
         storiesCompleted,
-        prdDirty,
         failures.failedACs,
         acceptanceRetries,
+        skippedPackages,
       );
     }
 
@@ -464,15 +468,14 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
             storyId: firstStory?.id,
             stubRegenCount,
           });
-          return buildResult(
-            false,
+          return buildFailureResult(
             prd,
             totalCost,
             iterations,
             storiesCompleted,
-            prdDirty,
             failures.failedACs,
             acceptanceRetries,
+            skippedPackages,
           );
         }
         stubRegenCount++;
@@ -494,15 +497,14 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
 
     if (!ctx.runtime) {
       logger?.error("acceptance", "Runtime not found for diagnosis", { storyId: firstStory?.id });
-      return buildResult(
-        false,
+      return buildFailureResult(
         prd,
         totalCost,
         iterations,
         storiesCompleted,
-        prdDirty,
         failures.failedACs,
         acceptanceRetries,
+        skippedPackages,
       );
     }
 
@@ -590,6 +592,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       prdDirty,
       failureMessages,
       acceptanceRetries + totalInternalIterations,
+      finalCheck.missingTargets,
     );
   }
 
