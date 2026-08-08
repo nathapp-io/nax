@@ -3,7 +3,7 @@
   "feature": "rules-description",
   "branchName": "feat/rules-description",
   "createdAt": "2026-08-08T03:48:14Z",
-  "updatedAt": "2026-08-08T03:50:34.101Z",
+  "updatedAt": "2026-08-08T03:59:50.638Z",
   "userStories": [
     {
       "id": "US-001",
@@ -40,14 +40,20 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/context/rules/rules-frontmatter.ts",
         "src/context/rules/canonical-loader.ts",
         "src/cli/rules.ts",
         "test/unit/context/rules/rules-frontmatter.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ac4b53ac0d085cf44574988d70bc1a9bd2e4e092"
     },
     {
       "id": "US-002",
@@ -91,9 +97,9 @@
         "src/context/rules/rules-frontmatter.ts",
         "test/unit/cli/rules-export-scope.test.ts"
       ],
-      "outOfScope": [
-        "Carrying `description` on the shim agents (`codex`, `gemini`, `cursor`) is out of scope; those agents receive one concatenated file with no per-rule frontmatter to hold it."
-      ]
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "This is a backward-compatible enhancement to the canonical-rules pipeline. `src/context/rules/rules-frontmatter.ts:17` maintains the closed set of allowed YAML keys; `CanonicalRule` and `ParsedFrontmatter` are declared in that file at lines 64 and 77, and `parseFrontmatter()` validates the object before independently parsing `priority`, `paths`, `appliesTo`, and `stages` (lines 99-256). The implementation should add the optional `description?: string` field to both interfaces, admit `description` in `KNOWN_FRONTMATTER_KEYS`, validate it as a string, trim it, reject an empty value and any newline with `RulesFrontmatterError`, and conditionally include it in the parsed result. The unknown-key diagnostic at lines 181-186 is a closed-world message and must list description among supported keys. `src/context/rules/canonical-loader.ts:369-487` is the only production constructor for loaded `CanonicalRule` values; it already uses conditional spreads for parsed optional fields, so it must propagate the parsed description there. The loader is used by rules export and lint as well as context providers, but descriptions remain metadata and must not be injected into rule content or budget chunking. `src/cli/rules.ts:412-434` translates legacy Claude `paths:` to canonical `appliesTo:` and otherwise preserves frontmatter; no migration code change is required. Once the parser accepts description, `rulesMigrateCommand()` (lines 513-572) will stop creating a canonical store that its loader rejects. `claudeFrontmatter()` in `src/cli/rules.ts:174-197` is the Claude-only per-rule frontmatter builder called through `exportRuleDirectory`, reached by `rulesExportCommand()` (lines 292-343). It currently emits no block when no glob remains, uses JSON.stringify for YAML-safe glob quoting, and logs the both-scopes lossiness warning with `rule`, `droppedPaths`, and `keptAppliesTo`. It should make description the first emitted field, JSON.stringify it for safe YAML scalar serialization, retain the existing scope translation/precedence, generalize the empty-block guard so an unscoped described rule still emits a block, and include the description in the warning data. `test/unit/context/rules/rules-frontmatter.test.ts` already imports parser symbols and loader deps, providing unit and loader-integration patterns. `test/unit/cli/rules-export-scope.test.ts` is a focused dependency-injected export harness with an in-memory writer/logger and is intentionally the extension point because `test/unit/cli/rules.test.ts` is near its 800-line cap. Risks are limited to preserving absence semantics and existing scope behavior: rules without description must keep loading unchanged, unscoped rules without description must still have no Claude frontmatter, and JSON quoting must preserve colons, hashes, quotes, and backslashes. No data migration is needed: legacy translation already copies description; accepting it closes the existing migrate-then-load failure. `src/cli/rules.ts` is near its 600-line hard cap, so if the needed export edits exceed available headroom, extract only the frontmatter builder into a dedicated `src/cli/` module rather than exceeding the limit.",
