@@ -146,12 +146,21 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       checked: false,
     };
     const logger = getLogger();
-    const record = (result: {
-      survivors: readonly SurvivingMutant[];
-      outcomes: MutationOutcomeSummary;
-      candidates: number;
-      checked: boolean;
-    }) => {
+    const record = (
+      result: {
+        survivors: readonly SurvivingMutant[];
+        outcomes: MutationOutcomeSummary;
+        candidates: number;
+        checked: boolean;
+        revertFailed?: true;
+      },
+      /**
+       * Why nothing was measured, when the gate exited after the enabled check
+       * but before mutating anything. Absent on a completed check. Kept off
+       * `result` so it stays out of the stored `MutationStorySummary`.
+       */
+      skipReason?: string,
+    ) => {
       if (ctx.storyId) {
         ctx.runtime?.mutationSummaries?.set(ctx.storyId, { storyId: ctx.storyId, ...result });
       }
@@ -171,6 +180,12 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
           survived: result.outcomes.survived,
           errored: result.outcomes.errored,
           candidates: result.candidates,
+          // An all-zero row means "bailed" or "nothing to mutate" — without this
+          // the two are indistinguishable, and a bail would be counted as a real
+          // zero-candidate measurement.
+          ...(skipReason ? { skipReason } : {}),
+          // The counts describe a tree this op did not leave clean.
+          ...(result.revertFailed ? { revertFailed: true } : {}),
         });
       }
     };
@@ -266,7 +281,7 @@ export const mutationCheckOp: DeterministicOperation<MutationCheckInput, Mutatio
       logger.warn("mutation-check", "Failed to obtain changed-line ranges — skipping mutation spot-check", {
         storyId: input.storyId,
       });
-      record({ ...emptyOutput, checked: true });
+      record({ ...emptyOutput, checked: true }, "changed-line-ranges-unavailable");
       return { success: true as const, ...emptyOutput, checked: true };
     }
 

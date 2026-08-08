@@ -22,10 +22,14 @@ import { cleanupTempDir, makeTempDir, withInfoSpy } from "@test/helpers";
 const FAKE_STORY = { id: "US-004", title: "mutation-check telemetry" } as any;
 const ENABLED = { enabled: true, maxMutants: 3, timeoutSeconds: 60 };
 
-function ctxWithConfig(execution: Record<string, unknown> = {}, runtime: Partial<NaxRuntime> = {}): any {
-  const config = { execution, quality: { commands: { test: "bun test" } } } as any;
+function ctxWithConfig(
+  execution: Record<string, unknown> = {},
+  runtime: Partial<NaxRuntime> = {},
+  quality: Record<string, unknown> = { commands: { test: "bun test" } },
+): any {
+  const config = { execution, quality } as any;
   return {
-    runtime: { mutationSummaries: new Map(), ...runtime },
+    runtime: { mutationSummaries: new Map(), dirtyWorktrees: new Set<string>(), ...runtime },
     storyId: "US-004",
     packageView: {
       packageDir: "packages/agent",
@@ -73,6 +77,7 @@ async function runAndCaptureInfo(
     failCount?: number;
   },
   mutationsConfig: Record<string, unknown> = ENABLED,
+  opts: { depsOverrides?: Partial<MutationCheckDeps>; quality?: Record<string, unknown> } = {},
 ): Promise<{ calls: unknown[][]; out: any }> {
   const dir = makeTempDir("nax-mutation-telemetry-");
   try {
@@ -94,6 +99,7 @@ async function runAndCaptureInfo(
         countsTowardEscalation: true,
         output: "",
       }),
+      ...(opts.depsOverrides ?? {}),
     });
 
     return await withInfoSpy(async (infoSpy) => {
@@ -111,7 +117,7 @@ async function runAndCaptureInfo(
             testDirs: ["test"],
           },
         },
-        ctxWithConfig({ mutationCheck: mutationsConfig }),
+        ctxWithConfig({ mutationCheck: mutationsConfig }, {}, opts.quality),
         deps,
       );
       const calls = infoSpy.mock.calls.filter((c) => c[0] === "mutation-check");
@@ -166,5 +172,92 @@ describe("mutationCheckOp — outcome telemetry is durable (G12)", () => {
     const { calls, out } = await runAndCaptureInfo({ status: "SUCCESS" }, { enabled: false });
     expect(out.checked).toBe(false);
     expect(calls.length).toBe(0);
+  });
+
+  test("stays silent when no test command is configured", async () => {
+    const { calls, out } = await runAndCaptureInfo({ status: "SUCCESS" }, ENABLED, { quality: {} });
+    expect(out.checked).toBe(false);
+    expect(calls.length).toBe(0);
+  });
+
+  /**
+   * The gate got past the enabled check but bailed before mutating anything, so
+   * it reports `checked: true` with nothing measured. The record still has to be
+   * emitted — an absent row is indistinguishable from a story the gate never
+   * reached — but it must say WHY, or a bail is silently counted as a real
+   * zero-candidate measurement.
+   */
+  test("emits with a skipReason when the gate bailed before mutating anything", async () => {
+    const { calls, out } = await runAndCaptureInfo({ status: "SUCCESS" }, ENABLED, {
+      depsOverrides: { getChangedLineRanges: async () => null },
+    });
+    expect(out.checked).toBe(true);
+    expect(out.candidates).toBe(0);
+    expect(calls.length).toBe(1);
+    expect(calls[0]?.[2]).toMatchObject({
+      killed: 0,
+      survived: 0,
+      errored: 0,
+      candidates: 0,
+      skipReason: "changed-line-ranges-unavailable",
+    });
+  });
+
+  test("a completed check carries no skipReason", async () => {
+    const { calls } = await runAndCaptureInfo({ status: "TEST_FAILURE", failCount: 1 });
+    expect(calls[0]?.[2]).not.toHaveProperty("skipReason");
+  });
+});
+
+/**
+ * A story whose worktree was left holding an injected mutation is exactly the
+ * context an analyst needs beside the counts — the numbers describe a tree that
+ * is not the one the tests were written against.
+ */
+describe("mutationCheckOp — outcome telemetry flags an unrestored worktree", () => {
+  test("carries revertFailed when a revert could not be confirmed", async () => {
+    const dir = makeTempDir("nax-mutation-telemetry-dirty-");
+    try {
+      const file = join(dir, "src", "foo.ts");
+      await Bun.write(file, "if (a == b) { return 1; }\n");
+      const hijacked = "SOMEONE ELSE WROTE THIS\n";
+
+      const deps = fakeDeps({
+        getChangedNonTestFiles: async () => [file],
+        getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 1 }]]]),
+        regression: async () => {
+          // Simulate a formatter rewriting the mutated line mid-check.
+          await Bun.write(file, hijacked);
+          return { status: "FAILURE" as const, success: false, countsTowardEscalation: true, output: "1 fail" };
+        },
+      });
+
+      const { calls, out } = await withInfoSpy(async (infoSpy) => {
+        const out = await mutationCheckOp.execute(
+          {
+            story: FAKE_STORY,
+            workdir: dir,
+            storyId: "US-004",
+            storyGitRef: "abc123",
+            repoRoot: dir,
+            resolvedTestPatterns: {
+              globs: ["**/*.test.ts"],
+              regex: [/\.test\.ts$/],
+              pathspec: [":!*.test.ts"],
+              testDirs: ["test"],
+            },
+          },
+          ctxWithConfig({ mutationCheck: ENABLED }),
+          deps,
+        );
+        return { calls: infoSpy.mock.calls.filter((c) => c[0] === "mutation-check"), out };
+      });
+
+      expect(out.revertFailed).toBe(true);
+      expect(calls.length).toBe(1);
+      expect(calls[0]?.[2]).toMatchObject({ revertFailed: true });
+    } finally {
+      cleanupTempDir(dir);
+    }
   });
 });
