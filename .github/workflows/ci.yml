@@ -82,3 +82,9 @@ jobs:
 
       - name: Test (ui)
         run: bun test test/ui/ --timeout=60000 --bail
+
+      # Excluded from `bun run test` by design (scripts/run-tests.ts PHASES) — but the
+      # scripted-agent e2e suite is the only end-to-end cover for the story orchestrator,
+      # so CI runs it explicitly. ~30s.
+      - name: Test (e2e)
+        run: bun run test:e2e
