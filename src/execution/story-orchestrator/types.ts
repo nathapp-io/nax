@@ -261,6 +261,8 @@ export interface RectificationOverrides {
 export interface RectificationResult {
   rectificationExhausted?: boolean;
   unfixedFindings?: readonly Finding[];
+  /** Verifier diagnosed an incorrect test; automatic fixes must stop for human review. */
+  terminalReviewRequired?: boolean;
   /** Validate short-circuited with empty findings — resume must still run scope-backfill phases. */
   liteScopeIncomplete?: boolean;
   /** Populated when exitReason is "agent-gave-up" — the implementer's UNRESOLVED: reason text. */

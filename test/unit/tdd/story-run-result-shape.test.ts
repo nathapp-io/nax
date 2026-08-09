@@ -45,6 +45,7 @@ describe("StoryRunResult shape fields (Slice D rename verification)", () => {
       "isolation-violation",
       "session-failure",
       "tests-failing",
+      "test-incorrect",
       "full-suite-gate-exhausted",
       "verifier-rejected",
       "greenfield-no-tests",

@@ -28,15 +28,23 @@ Set \`approved: false\` when ANY of these conditions are true:
 - The implementer loosened test assertions to mask bugs
 - The implementer made illegitimate test changes
 
+When tests fail but the implementation satisfies every acceptance criterion and
+a specific test assertion contradicts the specification, set
+\`testFailureDiagnosis.cause\` to \`"test-incorrect"\` and identify each
+assertion with its file, test name, and reasoning. Do not use this diagnosis if
+the implementer modified tests or any acceptance criterion is unmet.
+
 **JSON schema** (fill in all fields with real values):
 
 \`\`\`json
-{"version":1,"approved":true,"tests":{"allPassing":true,"passCount":42,"failCount":0},"testModifications":{"detected":false,"files":[],"legitimate":true,"reasoning":"..."},"acceptanceCriteria":{"allMet":true,"criteria":[{"criterion":"...","met":true}]},"quality":{"rating":"good","issues":[]},"fixes":[],"reasoning":"..."}
+{"version":1,"approved":true,"tests":{"allPassing":true,"passCount":42,"failCount":0},"testModifications":{"detected":false,"files":[],"legitimate":true,"reasoning":"..."},"testFailureDiagnosis":null,"acceptanceCriteria":{"allMet":true,"criteria":[{"criterion":"...","met":true}]},"quality":{"rating":"good","issues":[]},"fixes":[],"reasoning":"..."}
 \`\`\`
 
 **Field notes:**
 - \`quality.rating\` must be one of: \`"good"\`, \`"acceptable"\`, \`"poor"\`
 - \`testModifications.files\` — list any test files the implementer changed
+- \`testFailureDiagnosis\` — normally \`null\`; for a concrete incorrect-test
+  diagnosis use \`{"cause":"test-incorrect","assertions":[{"file":"...","testName":"...","reasoning":"..."}]}\`
 - \`acceptanceCriteria\` and \`quality\` are advisory in this TDD verifier verdict; do not use them to reject semantic correctness
 - \`fixes\` — keep this empty; the verifier must not apply code or test fixes
 - \`reasoning\` — brief summary of your overall assessment

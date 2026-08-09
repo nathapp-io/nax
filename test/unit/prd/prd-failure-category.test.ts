@@ -145,9 +145,10 @@ describe("FailureCategory export from src/execution", () => {
     const isolation: FailureCategory = "isolation-violation";
     const session: FailureCategory = "session-failure";
     const failing: FailureCategory = "tests-failing";
+    const incorrectTest: FailureCategory = "test-incorrect";
     const gateExhausted: FailureCategory = "full-suite-gate-exhausted";
     const rejected: FailureCategory = "verifier-rejected";
-    expect([isolation, session, failing, gateExhausted, rejected]).toHaveLength(5);
+    expect([isolation, session, failing, incorrectTest, gateExhausted, rejected]).toHaveLength(6);
   });
 });
 

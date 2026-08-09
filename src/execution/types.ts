@@ -42,6 +42,8 @@ export type FailureCategory =
   | "session-failure"
   /** Tests were written and implemented but still fail after all sessions */
   | "tests-failing"
+  /** Verifier found concrete test assertions that conflict with otherwise-met acceptance criteria */
+  | "test-incorrect"
   /** Full-suite gate failed and rectification retries exhausted before verifier */
   | "full-suite-gate-exhausted"
   /** Verifier explicitly rejected the implementation */

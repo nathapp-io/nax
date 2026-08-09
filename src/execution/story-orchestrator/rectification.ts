@@ -270,6 +270,13 @@ export async function runRectification(
   if (initialFindings.length === 0) {
     return {};
   }
+  if (initialFindings.some((finding) => finding.category === "incorrect-test-assertion")) {
+    getSafeLogger()?.warn("story-orchestrator", "Incorrect test diagnosis requires human review", {
+      storyId: ctx.storyId,
+      findingCount: initialFindings.length,
+    });
+    return { terminalReviewRequired: true, unfixedFindings: initialFindings };
+  }
   if (!ctx.storyId) {
     // runFixCycle requires storyId for parallel-log correlation.
     return {};

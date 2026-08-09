@@ -59,6 +59,29 @@ function makeVerifierRejectedVerdict(files: string[] = ["test/unit/foo.test.ts"]
   });
 }
 
+function makeIncorrectTestVerdict() {
+  return JSON.stringify({
+    version: 1,
+    approved: false,
+    tests: { allPassing: false, passCount: 4, failCount: 1 },
+    testModifications: { detected: false, files: [], legitimate: true, reasoning: "no mods" },
+    testFailureDiagnosis: {
+      cause: "test-incorrect",
+      assertions: [
+        {
+          file: "test/unit/foo.test.ts",
+          testName: "injects the failure note",
+          reasoning: "The assertion conflicts with AC7.",
+        },
+      ],
+    },
+    acceptanceCriteria: { allMet: true, criteria: [] },
+    quality: { rating: "good", issues: [] },
+    fixes: [],
+    reasoning: "Implementation is conformant; the assertion is incorrect.",
+  });
+}
+
 /** Advisory-only rejection: tests pass, AC not met but quality advisory — categorizeVerdict returns success=true */
 function makeAdvisoryOnlyVerdict() {
   return JSON.stringify({
@@ -230,5 +253,22 @@ describe("AC3: normalizedFindings when verifier-rejected", () => {
     expect(result.normalizedFindings.length).toBe(1);
     expect(result.normalizedFindings.length).toBeGreaterThan(0);
     expect((result.normalizedFindings[0] as Record<string, unknown>).category).toBe("illegitimate-test-edits");
+  });
+});
+
+describe("test-incorrect normalized finding", () => {
+  test("preserves the assertion diagnosis as a test-targeted finding", async () => {
+    const { verifierOp } = await import("@/operations");
+    const ctx = await makeCtx();
+    const parse = verifierOp.parse as ParseFn;
+
+    const result = parse(makeIncorrectTestVerdict(), makeInput(), ctx);
+    const finding = result.normalizedFindings[0] as Record<string, unknown>;
+
+    expect(result.failureCategory).toBe("test-incorrect");
+    expect(result.normalizedFindings).toHaveLength(1);
+    expect(finding.category).toBe("incorrect-test-assertion");
+    expect(finding.fixTarget).toBe("test");
+    expect(finding.message).toContain("test/unit/foo.test.ts");
   });
 });

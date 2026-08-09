@@ -13,6 +13,17 @@ import type { FailureCategory } from "./types";
 // Re-export for backward compatibility
 export { VERDICT_FILE, isValidVerdict, readVerdict, cleanupVerdict, coerceVerdict } from "./verdict-reader";
 
+export interface TestFailureDiagnosis {
+  /** The verifier's judgment about why story-scoped tests remain red. */
+  cause: "implementation" | "test-incorrect" | "unknown";
+  /** Concrete assertions supporting a test-incorrect judgment. */
+  assertions: Array<{
+    file: string;
+    testName?: string;
+    reasoning: string;
+  }>;
+}
+
 /** Structured verdict written by the verifier (session 3) */
 export interface VerifierVerdict {
   /** Schema version */
@@ -42,6 +53,9 @@ export interface VerifierVerdict {
     /** Reasoning for legitimacy judgment */
     reasoning: string;
   };
+
+  /** Optional structured diagnosis for remaining test failures. */
+  testFailureDiagnosis?: TestFailureDiagnosis | null;
 
   /** Acceptance criteria check */
   acceptanceCriteria: {
@@ -85,9 +99,11 @@ export interface VerdictCategorization {
  * @returns Categorized outcome with optional failureCategory and reviewReason
  *
  * Logic:
- * - verdict.approved = true → success
  * - Not approved, illegitimate test mods → verifier-rejected
+ * - Red tests with an admissible incorrect-test diagnosis → test-incorrect
  * - Not approved, tests failing → tests-failing
+ * - Approved with red tests → tests-failing (approval cannot override test state)
+ * - verdict.approved = true with green tests → success
  * - Not approved for semantic AC/quality concerns only → success (advisory; semantic review owns these)
  * - Not approved, other → success (advisory; verifier only blocks TDD integrity failures)
  * - null verdict, testsPass=true → success
@@ -105,10 +121,6 @@ export function categorizeVerdict(verdict: VerifierVerdict | null, testsPass: bo
     };
   }
 
-  if (verdict.approved) {
-    return { success: true };
-  }
-
   if (verdict.testModifications.detected && !verdict.testModifications.legitimate) {
     const files = verdict.testModifications.files.join(", ") || "unknown files";
     return {
@@ -119,6 +131,14 @@ export function categorizeVerdict(verdict: VerifierVerdict | null, testsPass: bo
   }
 
   if (!verdict.tests.allPassing) {
+    if (hasAdmissibleIncorrectTestDiagnosis(verdict)) {
+      const files = verdict.testFailureDiagnosis?.assertions.map((assertion) => assertion.file).join(", ");
+      return {
+        success: false,
+        failureCategory: "test-incorrect",
+        reviewReason: `Verifier identified incorrect test assertion(s) in ${files}; human review required before changing tests or source.`,
+      };
+    }
     return {
       success: false,
       failureCategory: "tests-failing",
@@ -127,4 +147,16 @@ export function categorizeVerdict(verdict: VerifierVerdict | null, testsPass: bo
   }
 
   return { success: true };
+}
+
+function hasAdmissibleIncorrectTestDiagnosis(verdict: VerifierVerdict): boolean {
+  const diagnosis = verdict.testFailureDiagnosis;
+  return (
+    verdict.approved === false &&
+    verdict.testModifications.detected === false &&
+    verdict.acceptanceCriteria.allMet === true &&
+    diagnosis?.cause === "test-incorrect" &&
+    diagnosis.assertions.length > 0 &&
+    diagnosis.assertions.every((assertion) => assertion.file.trim() !== "" && assertion.reasoning.trim() !== "")
+  );
 }

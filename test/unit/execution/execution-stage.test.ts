@@ -133,6 +133,15 @@ describe("routeTddFailure", () => {
     expect(ctx.retryAsLite).toBeUndefined();
   });
 
+  it("pauses on test-incorrect with the verifier's review reason", () => {
+    const ctx: MockContext = {};
+    const result = routeTddFailure("test-incorrect", false, ctx, "Incorrect assertion; human review required");
+
+    expect(result.action).toBe("pause");
+    if (result.action === "pause") expect(result.reason).toBe("Incorrect assertion; human review required");
+    expect(ctx.retryAsLite).toBeUndefined();
+  });
+
   it("uses custom reviewReason when pausing", () => {
     const ctx: MockContext = {};
     const result = routeTddFailure(undefined, false, ctx, "Custom reason for pause");

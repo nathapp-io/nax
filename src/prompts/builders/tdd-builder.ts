@@ -325,7 +325,8 @@ export class TddPromptBuilder {
       "Re-emit the verdict as the FINAL content of your reply.\n" +
       "Output ONLY the JSON object — no markdown fences, no explanation, no prose.\n" +
       "The reply must start with { and end with } on its own line.\n" +
-      "Required top-level fields: version, approved, tests, testModifications, acceptanceCriteria, quality, fixes, reasoning."
+      "Required top-level fields: version, approved, tests, testModifications, acceptanceCriteria, quality, fixes, reasoning.\n" +
+      'Optional testFailureDiagnosis: null, or {"cause":"test-incorrect","assertions":[{"file":"...","testName":"...","reasoning":"..."}]}.'
     );
   }
 
@@ -345,7 +346,7 @@ export class TddPromptBuilder {
       "- Set reasoning to a single sentence.\n" +
       "Output ONLY the JSON object — no markdown fences, no prose.\n" +
       "Schema (minimal):\n" +
-      `{"version":1,"approved":boolean,"tests":{"allPassing":boolean,"passCount":number,"failCount":number},"testModifications":{"detected":boolean,"files":[],"legitimate":boolean,"reasoning":"..."},"acceptanceCriteria":{"allMet":boolean,"criteria":[]},"quality":{"rating":"good"|"acceptable"|"poor","issues":[]},"fixes":[],"reasoning":"..."}`
+      `{"version":1,"approved":boolean,"tests":{"allPassing":boolean,"passCount":number,"failCount":number},"testModifications":{"detected":boolean,"files":[],"legitimate":boolean,"reasoning":"..."},"testFailureDiagnosis":null,"acceptanceCriteria":{"allMet":boolean,"criteria":[]},"quality":{"rating":"good"|"acceptable"|"poor","issues":[]},"fixes":[],"reasoning":"..."}`
     );
   }
 
