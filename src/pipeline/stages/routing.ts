@@ -60,12 +60,16 @@ export const routingStage: PipelineStage = {
       });
     }
     // Preserve a previously-stored tier only when it is a genuine escalation:
-    // - both tiers rankable -> strictly-higher rank wins (canonical behavior)
-    // - either tier custom/unrankable -> fall back to escalation-record evidence,
-    //   since rank comparison is meaningless for names outside TIER_RANK
+    // - an escalation record exists for this story -> honor it outright. A cross-agent
+    //   rung ladder can escalate sideways or down (e.g. agentA/powerful -> agentB/balanced),
+    //   so rank comparison alone would discard a real escalation whose tier does not
+    //   outrank the freshly-derived candidate (#1522).
+    // - no escalation record -> fall back to rank comparison, so a stale tier left over
+    //   from a prior, unrelated run does not stick around just because it ranks higher
     const isEscalated =
       previousTier !== undefined &&
-      (previousRank !== undefined && candidateRank !== undefined ? previousRank > candidateRank : hasEscalationRecords);
+      (hasEscalationRecords ||
+        (previousRank !== undefined && candidateRank !== undefined && previousRank > candidateRank));
     const modelTier = isEscalated ? previousTier : candidateTier;
 
     // PRD-assigned agent wins (plan-time selection, Delta C3). decision.agent is
