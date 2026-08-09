@@ -209,33 +209,31 @@ describe("packChunks — AC-4 optimality property", () => {
     //     the bulky chunk and recovers the optimum. This is the case the
     //     repair exists to handle, and exercises greedy-vs-repair selection
     //     across the full n <= 12 space (not just the 2-item AC-1 fixture).
-    //     Construction: smallTokens * (n-1) > budget so greedy packs all
-    //     smalls; bulkyTokens > budget - smallTokens so no small fits
-    //     alongside bulky, making the bulky the unique optimum.
+    //     Construction: nAdv >= 2; smallTokens * (nAdv-1) > budget so greedy
+    //     packs all smalls; bulkyTokens > budget - smallTokens so no small
+    //     fits alongside bulky, making the bulky the unique optimum.
     //   random (last 100): independent random tokens/scores at the easy end
     //     of the spec's range (tokens 1..10, budget 60..199) where greedy
     //     by density already hits the optimum or close to it.
-    // The property is "at least 95% of optimum across 200 cases", not a
-    // universal 95% bound on adversarial inputs — `best-of(greedy, largest
-    // single)` is not a 95%-of-optimal algorithm in the worst case.
     const ADV_COUNT = 100;
 
     for (let caseIdx = 0; caseIdx < NUM_CASES; caseIdx++) {
-      const n = 1 + Math.floor(rng() * MAX_CHUNKS); // 1..12
-      const budget = BUDGET_MIN + Math.floor(rng() * (BUDGET_MAX - BUDGET_MIN + 1)); // 60..199
       const chunks: ScoredChunk[] = [];
+      let budget: number;
 
       if (caseIdx < ADV_COUNT) {
-        // Multi-item capacity conflict: 1 bulky + n-1 small items.
-        // Smalls collectively fill the budget (greedy picks them all, bulky
-        // is excluded). Bulky alone strictly exceeds the budget minus one
-        // small token, so no small item fits alongside bulky — bulky alone
-        // is the unique optimum.
+        // Adversarial: 1 bulky + (nAdv-1) small items. Enforce nAdv >= 2 and
+        // (nAdv-1) * smallTokens > budget so the capacity conflict actually exists.
+        const nAdv = 2 + Math.floor(rng() * (MAX_CHUNKS - 1)); // 2..12
         const smallTokens = 10 + Math.floor(rng() * 11); // 10..20
-        const minBulkyTokens = budget - smallTokens + 1;
-        const maxBulkyTokens = budget;
-        if (minBulkyTokens <= maxBulkyTokens) {
-          const bulkyTokens = minBulkyTokens + Math.floor(rng() * (maxBulkyTokens - minBulkyTokens + 1));
+        // Budget ceiling: must be < (nAdv-1)*smallTokens so smalls collectively
+        // overflow. Budget floor: must be >= smallTokens+1 so bulky is feasible.
+        const budgetLo = Math.max(BUDGET_MIN, smallTokens + 1);
+        const budgetHi = Math.min(BUDGET_MAX, (nAdv - 1) * smallTokens - 1);
+        if (budgetLo <= budgetHi) {
+          budget = budgetLo + Math.floor(rng() * (budgetHi - budgetLo + 1));
+          const minBulkyTokens = budget - smallTokens + 1;
+          const bulkyTokens = minBulkyTokens + Math.floor(rng() * (budget - minBulkyTokens + 1));
           const bulkyScore = 0.9 + rng() * 0.05; // 0.9..0.95
           chunks.push(
             makeScored({
@@ -245,7 +243,7 @@ describe("packChunks — AC-4 optimality property", () => {
               tokens: bulkyTokens,
             }),
           );
-          for (let i = 0; i < n - 1; i++) {
+          for (let i = 0; i < nAdv - 1; i++) {
             const smallScore = 0.1 + rng() * 0.05; // 0.1..0.15
             chunks.push(
               makeScored({
@@ -257,7 +255,9 @@ describe("packChunks — AC-4 optimality property", () => {
             );
           }
         } else {
-          // Infeasible to construct — fall back to random.
+          // Cannot construct — fall back to random.
+          budget = BUDGET_MIN + Math.floor(rng() * (BUDGET_MAX - BUDGET_MIN + 1));
+          const n = 1 + Math.floor(rng() * MAX_CHUNKS);
           for (let i = 0; i < n; i++) {
             const tokens = TOKEN_MIN + Math.floor(rng() * (TOKEN_MAX - TOKEN_MIN + 1));
             const score = 0.05 + rng() * 0.95;
@@ -272,6 +272,8 @@ describe("packChunks — AC-4 optimality property", () => {
           }
         }
       } else {
+        budget = BUDGET_MIN + Math.floor(rng() * (BUDGET_MAX - BUDGET_MIN + 1));
+        const n = 1 + Math.floor(rng() * MAX_CHUNKS);
         for (let i = 0; i < n; i++) {
           const tokens = TOKEN_MIN + Math.floor(rng() * (TOKEN_MAX - TOKEN_MIN + 1)); // 1..10
           const score = 0.05 + rng() * 0.95; // 0.05..1.0

@@ -63,7 +63,7 @@ export interface PackResult {
   usedTokens: number;
   /** Effective budget ceiling used (min of budgetTokens, availableBudgetTokens) */
   effectiveBudget: number;
-  /** IDs of ALL floor-kind chunks that were packed (static + feature) */
+  /** IDs of ALL floor-kind chunks that were packed (static, feature, test-coverage) */
   floorPackedIds: string[];
   /** IDs of floor-kind chunks that caused the budget to be exceeded (subset of floorPackedIds) */
   floorOverageIds: string[];
