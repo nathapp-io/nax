@@ -43,6 +43,7 @@ Existing pattern to mirror: `rebuildForAgent` already resolves the target profil
 - **Framing selection is a registry lookup, not a heuristic.** US-002 routes `assemble()`'s render step through the same `renderForAgent` the rebuild path already uses, keyed on `request.agentId`. When `request.agentId` is absent, behaviour is unchanged (`renderChunks`), so unconfigured repos see no difference.
 - **Re-packing on rebuild reuses `packChunks`.** `PackedChunk extends ScoredChunk`, so the chunks reconstructed from `prior.chunks` are already valid `packChunks` input — no new scoring path is introduced. The rebuild ceiling is `min(prior.manifest.effectiveBudget, targetProfile.caps.preferredPromptTokens)`, the value `:568` already computes; the change is that it now *bounds the payload* instead of only being recorded.
 - **`packChunks` is used for selection only; emission order stays the prior order.** `packChunks` returns floor chunks first and then non-floor chunks sorted by density, so its output order differs from `prior.chunks`. `rebuildInfo.chunkIdMap` is built by zipping `priorChunkIds` against the emitted chunks **by index** (`orchestrator.ts:537-542`), so adopting the packer's order would silently pair unrelated chunk ids. The rebuild must therefore take the *set* of chunks `packChunks` keeps and emit them in their original `prior.chunks` relative order, with any injected failure-note chunk kept last.
+- **The rebuild recomputes floor-overage from its own pack result.** `rebuildForAgent` builds its manifest by spreading `...prior.manifest` and never calls `buildManifest`, so `floorOverageItems` (`manifest-types.ts:137`, normally filled from `PackResult.floorOverageIds` at `manifest-builder.ts:90`) currently carries the *prior* bundle's value. Once the rebuild packs, it must overwrite that field from the new `PackResult` — otherwise the manifest reports the previous agent's overage against the new agent's ceiling, which is the same class of untruth this feature exists to remove.
 - **Stubbing goes through `_orchestratorDeps`, never `mock.module()`.** `mock.module()` is a forbidden pattern in this repo (it leaks globally in Bun and poisons other test files). `src/context/engine/orchestrator.ts:73` already exports `_orchestratorDeps = { now, uuid, getLogger }`; US-001 adds the extracted rebuild function to that object so the delegation seam can be stubbed the sanctioned way.
 - **AC-7 uses the repair named in the source comment**, not a DP: `best-of(greedy, largest single item that fits)`. Applied to the non-floor pass only — floor chunks are exempt from the budget by `FLOOR_KINDS` and must stay exempt.
 - **The repair changes the expected outcome of an existing shipped test, and US-004 owns that update.** `test/unit/context/engine/packing.test.ts:65-76` ("non-floor chunks are ordered by score density, not raw score", the #1448 regression test) packs `bulky` (score 0.9, 900 tokens) against `dense` (score 0.5, 100 tokens) at budget 900 and asserts `packed` is exactly `["dense"]`. That fixture is itself an AC-7 violation: `bulky` alone is feasible and scores 0.9, so greedy's 0.5 is 56% of optimal, and the repair must return `bulky`. Leaving the test unchanged would deadlock the story. US-004 therefore updates that fixture so it still discriminates a density sort from a raw-score sort **without** triggering the repair — two 100-token chunks scoring 0.5 each (jointly 1.0) against the same 900-token `bulky` (0.9) at budget 900: density packs both small chunks, raw-score packs only `bulky`, and no single item beats the greedy result.
@@ -161,6 +162,21 @@ Add the `best-of(greedy, largest single item that fits)` repair to the non-floor
 - US-001 introduces an exported rebuild function consumed by `ContextEngine.rebuildForAgent`; US-001's own ACs carry the seam assertion, since producer and consumer land together.
 - US-003 changes behaviour reached only through `ContextEngine.rebuildForAgent`; its ACs trigger that method rather than the extracted function directly.
 
+### Modifies
+
+**US-001**
+- `src/context/engine/orchestrator.ts`
+
+**US-002**
+- `src/context/engine/orchestrator.ts`
+
+**US-003**
+- `src/context/engine/rebuild.ts`
+
+**US-004**
+- `src/context/engine/packing.ts`
+- `test/unit/context/engine/packing.test.ts`
+
 ## Acceptance Criteria
 
 ### US-001 — Extract the rebuild path into its own module
@@ -192,7 +208,9 @@ Add the `best-of(greedy, largest single item that fits)` repair to the non-floor
 - [unit] `rebuildForAgent` with `prior.manifest.effectiveBudget` absent returns a bundle whose `manifest.effectiveBudget` equals the target profile's `preferredPromptTokens`.
 - [unit] `rebuildForAgent` with `newAgentId` and a failure returns a bundle that contains the injected failure-note chunk even when the target ceiling is smaller than the prior payload.
 - [unit] `rebuildForAgent` on a bundle it has already rebuilt returns the same `manifest.usedTokens` as the first rebuild, so repeated rebuilds do not shrink the payload further.
-- [unit] `rebuildForAgent` on a prior bundle whose chunks all fit returns `chunks` in the same relative order as `prior.chunks`, so `manifest.rebuildInfo.chunkIdMap` pairs each prior id with itself.
+- [unit] `rebuildForAgent` on a prior bundle whose chunks all fit returns `chunks` in the same relative order as `prior.chunks`.
+- [unit] `rebuildForAgent` with `newAgentId` and a failure, on a prior bundle whose chunks all fit, returns a bundle whose `manifest.rebuildInfo.chunkIdMap` pairs every prior chunk id with itself.
+- [unit] `rebuildForAgent` on a prior bundle whose floor chunks exceed the target ceiling returns a bundle whose `manifest.floorOverageItems` lists exactly the floor chunk ids that overflowed that ceiling, rather than the prior bundle's values.
 
 ### US-004 — Packing meets the AC-7 5%-of-optimal bound
 
