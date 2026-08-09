@@ -109,12 +109,26 @@ function makePrd(storyIds: string[]): PRD {
   } as unknown as PRD;
 }
 
+function failuresFor(storyIds: string[]) {
+  return storyIds.map((storyId) => ({
+    file: `${storyId}.test.ts`,
+    testName: `${storyId} regression`,
+    error: "boom",
+    stackTrace: [],
+  }));
+}
+
 function makeOptions(storyIds: string[], runtimeOverride?: NaxRuntime): DeferredRegressionOptions {
   return {
     config: makeConfig(),
     prd: makePrd(storyIds),
     workdir: "/tmp/test-workdir",
     runtime: runtimeOverride ?? makeMockRuntime(),
+    storyMetrics: storyIds.map((storyId, index) => ({
+      storyId,
+      completedAt: new Date(index * 1_000).toISOString(),
+      failingTestFiles: [`${storyId}.test.ts`],
+    })),
   } as unknown as DeferredRegressionOptions;
 }
 
@@ -181,7 +195,7 @@ describe("runDeferredRegression — early exit after first story", () => {
     _regressionDeps.parseTestOutput = mock(() => ({
       passed: 0,
       failed: 92,
-      failures: [], // unmapped → all stories affected
+      failures: failuresFor(["US-001", "US-002", "US-003"]),
     }));
     const rectifiedStories: string[] = [];
     _regressionDeps.runFixCycle = mock(async (_cycle, cycleCtx) => {
@@ -202,7 +216,7 @@ describe("runDeferredRegression — early exit after first story", () => {
     expect(result.storyCosts).toEqual({ "US-001": 0.5 });
   });
 
-  test("count-only failures are treated as unmapped and still trigger deferred rectification", async () => {
+  test("count-only failures remain unresolved instead of rectifying every passed story", async () => {
     const verifyCalls: string[] = [];
 
     _regressionDeps.runVerification = mock(async () => {
@@ -232,11 +246,11 @@ describe("runDeferredRegression — early exit after first story", () => {
 
     const result = await runDeferredRegression(makeOptions(["US-001", "US-002"]));
 
-    expect(result.success).toBe(true);
-    expect(result.affectedStories).toEqual(["US-001", "US-002"]);
-    expect(rectifiedStories).toEqual(["US-001"]);
-    expect(result.rectificationAttempts).toBe(1);
-    expect(verifyCalls).toHaveLength(2);
+    expect(result.success).toBe(false);
+    expect(result.affectedStories).toEqual([]);
+    expect(rectifiedStories).toEqual([]);
+    expect(result.rectificationAttempts).toBe(0);
+    expect(verifyCalls).toHaveLength(1);
   });
 });
 
@@ -262,7 +276,13 @@ describe("runDeferredRegression — synthetic finding when no structured failure
       return makePassResult(230);
     });
 
-    _regressionDeps.parseTestOutput = mock(() => ({ passed: 230, failed: 0, failures: [] }));
+    let parseCallCount = 0;
+    _regressionDeps.parseTestOutput = mock(() => {
+      parseCallCount++;
+      return parseCallCount === 1
+        ? { passed: 230, failed: 1, failures: failuresFor(["US-001"]) }
+        : { passed: 230, failed: 0, failures: [] };
+    });
 
     let capturedFindingCount = -1;
     _regressionDeps.runFixCycle = mock(async (cycle, cycleCtx) => {
@@ -301,7 +321,7 @@ describe("runDeferredRegression — early exit after second story", () => {
     _regressionDeps.parseTestOutput = mock(() => ({
       passed: 0,
       failed: 92,
-      failures: [],
+      failures: failuresFor(["US-001", "US-002", "US-003"]),
     }));
     const rectifiedStories: string[] = [];
     _regressionDeps.runFixCycle = mock(async (_cycle, cycleCtx) => {
@@ -336,7 +356,7 @@ describe("runDeferredRegression — no story fixes anything", () => {
     _regressionDeps.parseTestOutput = mock(() => ({
       passed: 0,
       failed: 92,
-      failures: [],
+      failures: failuresFor(["US-001", "US-002"]),
     }));
     _regressionDeps.runFixCycle = mock(async () => makeFixCycleResult(false)); // never fixed
 
@@ -369,7 +389,7 @@ describe("runDeferredRegression — test output context forwarding", () => {
 
     _regressionDeps.parseTestOutput = mock((output) => {
       capturedParseArgs.push(output);
-      return { passed: 0, failed: 92, failures: [] };
+      return { passed: 0, failed: 92, failures: failuresFor(["US-001", "US-002"]) };
     }) as unknown as typeof _regressionDeps.parseTestOutput;
     _regressionDeps.runFixCycle = mock(async () => makeFixCycleResult(true, 0.1));
 
@@ -438,7 +458,7 @@ describe("runDeferredRegression — storyCosts tracking (issue #679)", () => {
       if (i === 0) return makeVerifyResult(); // initial: fail
       return makePassResult(); // mid-loop after first story: pass
     });
-    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 5, failures: [] }));
+    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 5, failures: failuresFor(["US-001"]) }));
     _regressionDeps.runFixCycle = mock(async () => makeFixCycleResult(true, 1.2559));
 
     const result = await runDeferredRegression(makeOptions(["US-001"]));
@@ -451,7 +471,7 @@ describe("runDeferredRegression — storyCosts tracking (issue #679)", () => {
     // US-001 cycle fails (maxRectificationAttempts = 2, handled inside runFixCycle)
     // Then the final re-run passes
     _regressionDeps.runVerification = mock(async () => makeVerifyResult());
-    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
+    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: failuresFor(["US-001"]) }));
     _regressionDeps.runFixCycle = mock(async () => makeFixCycleResult(false, 1.5, 2));
 
     const result = await runDeferredRegression(makeOptions(["US-001"]));
@@ -470,7 +490,11 @@ describe("runDeferredRegression — storyCosts tracking (issue #679)", () => {
       if (i === 1) return makeVerifyResult(); // mid after US-001: still fail
       return makePassResult(); // mid after US-002: pass
     });
-    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
+    _regressionDeps.parseTestOutput = mock(() => ({
+      passed: 0,
+      failed: 3,
+      failures: failuresFor(["US-001", "US-002"]),
+    }));
     let storyIdx = 0;
     _regressionDeps.runFixCycle = mock(async () => {
       storyIdx++;
@@ -492,7 +516,7 @@ describe("runDeferredRegression — storyCosts tracking (issue #679)", () => {
 describe("runDeferredRegression — storyDurations + storyOutcomes", () => {
   test("storyDurations is a non-negative number per story", async () => {
     _regressionDeps.runVerification = mock(async () => makeVerifyResult());
-    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
+    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: failuresFor(["US-001"]) }));
     _regressionDeps.runFixCycle = mock(async () => makeFixCycleResult(false, 0.2, 2));
 
     const result = await runDeferredRegression(makeOptions(["US-001"]));
@@ -509,7 +533,11 @@ describe("runDeferredRegression — storyDurations + storyOutcomes", () => {
       if (i === 1) return makeVerifyResult(); // mid after US-001: still fail
       return makeVerifyResult(); // final re-run: still fail
     });
-    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
+    _regressionDeps.parseTestOutput = mock(() => ({
+      passed: 0,
+      failed: 3,
+      failures: failuresFor(["US-001", "US-002"]),
+    }));
     let storyIdx = 0;
     _regressionDeps.runFixCycle = mock(async () => {
       storyIdx++;
@@ -526,7 +554,7 @@ describe("runDeferredRegression — storyDurations + storyOutcomes", () => {
 
   test("storyOutcomes latches true once any cycle succeeds", async () => {
     _regressionDeps.runVerification = mock(async () => makeVerifyResult());
-    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
+    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: failuresFor(["US-001"]) }));
     _regressionDeps.runFixCycle = mock(async () => makeFixCycleResult(true, 0.3));
 
     const result = await runDeferredRegression(makeOptions(["US-001"]));
@@ -568,7 +596,7 @@ describe("runDeferredRegression — runtime threading (AC5/AC6)", () => {
       if (i === 0) return makeVerifyResult(); // initial: fail
       return makePassResult(); // mid-loop: pass → early exit
     });
-    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
+    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: failuresFor(["US-001"]) }));
 
     let capturedAgentManager: unknown;
     _regressionDeps.runFixCycle = mock(async (_cycle, cycleCtx) => {
@@ -593,7 +621,7 @@ describe("runDeferredRegression — runtime threading (AC5/AC6)", () => {
       if (i === 0) return makeVerifyResult();
       return makePassResult();
     });
-    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
+    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: failuresFor(["US-001"]) }));
 
     let capturedRuntime: unknown;
     _regressionDeps.runFixCycle = mock(async (_cycle, cycleCtx) => {

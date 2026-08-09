@@ -1,12 +1,11 @@
 /**
  * Unit tests for deferred-regression blame attribution.
  *
- * Covers the transition-based attribution that replaces the git-recency
- * heuristic: a failing test is attributed to the EARLIEST story whose
+ * Covers transition-based attribution: a failing test is attributed to the
+ * EARLIEST story whose
  * per-story full-suite-gate snapshot shows it failing (i.e. the story where
- * the test transitioned pass -> fail). Falls back to the git heuristic when no
- * snapshot data is available (e.g. single-session + deferred, which has no
- * per-story gate).
+ * the test transitioned pass -> fail). Failures without causal attribution are
+ * left unresolved rather than assigned to an unrelated passed story.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -82,9 +81,9 @@ const deferredConfig = makeNaxConfig({
   },
 });
 
-function makePrd(storyIds: string[]): PRD {
+function makePrd(storyIds: string[], failedStoryIds: ReadonlySet<string> = new Set()): PRD {
   return {
-    userStories: storyIds.map((id) => ({ id, status: "passed", title: id })),
+    userStories: storyIds.map((id) => ({ id, status: failedStoryIds.has(id) ? "failed" : "passed", title: id })),
   } as unknown as PRD;
 }
 
@@ -165,28 +164,15 @@ describe("runDeferredRegression — transition attribution", () => {
     expect(rectified).toEqual(["US-002"]);
   });
 
-  test("falls back to the git heuristic when no snapshot maps the failing test", async () => {
-    // No snapshot contains foo.test.ts → transition returns undefined → git
-    // fallback maps the test to the most-recently-committed passed story.
-    _regressionDeps.runVerification = mock(async () =>
-      _regressionDeps.runVerification.mock.calls.length === 1
-        ? {
-            success: false,
-            status: "TEST_FAILURE",
-            countsTowardEscalation: true,
-            output: "fail",
-            passCount: 0,
-            failCount: 1,
-          }
-        : {
-            success: true,
-            status: "SUCCESS",
-            countsTowardEscalation: false,
-            output: "pass",
-            passCount: 10,
-            failCount: 0,
-          },
-    );
+  test("leaves a failing test unattributed when no snapshot maps it", async () => {
+    _regressionDeps.runVerification = mock(async () => ({
+      success: false,
+      status: "TEST_FAILURE",
+      countsTowardEscalation: true,
+      output: "fail",
+      passCount: 0,
+      failCount: 1,
+    }));
     _regressionDeps.parseTestOutput = mock(() => ({
       passed: 0,
       failed: 1,
@@ -197,39 +183,23 @@ describe("runDeferredRegression — transition attribution", () => {
       rectified.push(cycleCtx.storyId);
       return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
     });
-    // Make every git query report "has commits" so the heuristic returns the
-    // most-recent passed story (US-002).
-    const origSpawn = _gitDeps.spawn;
-    _gitDeps.spawn = mock(() => ({
-      exited: Promise.resolve(0),
-      stdout: "abc1234 commit",
-      stderr: "",
-      kill: () => {},
-    })) as unknown as typeof _gitDeps.spawn;
+    const result = await runDeferredRegression({
+      config: deferredConfig,
+      prd: makePrd(["US-001", "US-002"]),
+      workdir: "/tmp/test-workdir",
+      runtime: makeMockRuntime(),
+      storyMetrics: [
+        snap("US-001", "2026-01-01T00:00:00.000Z", []),
+        snap("US-002", "2026-01-01T00:01:00.000Z", ["bar.test.ts"]),
+      ],
+    } as unknown as DeferredRegressionOptions);
 
-    try {
-      const result = await runDeferredRegression({
-        config: deferredConfig,
-        prd: makePrd(["US-001", "US-002"]),
-        workdir: "/tmp/test-workdir",
-        runtime: makeMockRuntime(),
-        storyMetrics: [
-          snap("US-001", "2026-01-01T00:00:00.000Z", []),
-          snap("US-002", "2026-01-01T00:01:00.000Z", ["bar.test.ts"]),
-        ],
-      } as unknown as DeferredRegressionOptions);
-
-      expect(result.affectedStories).toEqual(["US-002"]);
-      expect(rectified).toEqual(["US-002"]);
-    } finally {
-      _gitDeps.spawn = origSpawn;
-    }
+    expect(result.success).toBe(false);
+    expect(result.affectedStories).toEqual([]);
+    expect(rectified).toEqual([]);
   });
 
-  test("does not blame a transition hit that is not a passed story (guard)", async () => {
-    // Snapshot points at US-099, which is not among the passed stories. The
-    // guard must reject it and fall back to git (which maps nothing in /tmp),
-    // so US-099 is never added to affected stories.
+  test("does not blame a passed story for a failed story's test", async () => {
     _regressionDeps.runVerification = mock(async () => ({
       success: false,
       status: "TEST_FAILURE",
@@ -250,15 +220,29 @@ describe("runDeferredRegression — transition attribution", () => {
       costUsd: 0,
     }));
 
-    const result = await runDeferredRegression({
-      config: deferredConfig,
-      prd: makePrd(["US-001", "US-002"]),
-      workdir: "/tmp/test-workdir",
-      runtime: makeMockRuntime(),
-      storyMetrics: [snap("US-099", "2026-01-01T00:01:00.000Z", ["foo.test.ts"])],
-    } as unknown as DeferredRegressionOptions);
+    const originalSpawn = _gitDeps.spawn;
+    _gitDeps.spawn = mock(() => ({
+      exited: Promise.resolve(0),
+      stdout: "abc1234 chore(US-004): unrelated passing story",
+      stderr: "",
+      kill: () => {},
+    })) as unknown as typeof _gitDeps.spawn;
 
-    expect(result.affectedStories).not.toContain("US-099");
-    expect(result.affectedStories).toEqual([]);
+    try {
+      const result = await runDeferredRegression({
+        config: deferredConfig,
+        prd: makePrd(["US-003", "US-004"], new Set(["US-003"])),
+        workdir: "/tmp/test-workdir",
+        runtime: makeMockRuntime(),
+        storyMetrics: [snap("US-003", "2026-01-01T00:01:00.000Z", ["foo.test.ts"])],
+      } as unknown as DeferredRegressionOptions);
+
+      expect(result.success).toBe(false);
+      expect(result.affectedStories).not.toContain("US-004");
+      expect(result.affectedStories).toEqual([]);
+      expect(_regressionDeps.runFixCycle).not.toHaveBeenCalled();
+    } finally {
+      _gitDeps.spawn = originalSpawn;
+    }
   });
 });

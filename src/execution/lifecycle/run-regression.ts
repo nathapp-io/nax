@@ -4,8 +4,8 @@
  * Runs full test suite once after all stories complete, then attempts
  * targeted rectification per responsible story. Handles edge cases:
  * - Partial completion: only check stories marked passed
- * - Overlapping file changes: try last modified story first
- * - Unmapped tests: warn and mark all passed stories for re-verification
+ * - Regression attribution: use per-story gate transitions
+ * - Unmapped tests: fail safely without rectifying an unrelated story
  */
 
 import type { NaxConfig } from "@/config";
@@ -19,7 +19,6 @@ import { countStories } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
 import { parseTestOutput } from "@/test-runners";
 import type { TestSummary } from "@/test-runners";
-import { hasCommitsForStory } from "@/utils/git";
 import {
   type FlakeQuarantineReport,
   NULL_QUARANTINE_MEMO,
@@ -97,8 +96,8 @@ export interface DeferredRegressionOptions {
   runtime: NaxRuntime;
   /**
    * Per-story metrics from the main run, carrying per-story gate snapshots
-   * (`failingTestFiles`). When present, regression blame is attributed via
-   * gate transition (accurate) before falling back to the git heuristic.
+   * (`failingTestFiles`). Regression blame is attributed only when a gate
+   * transition identifies a passed story.
    */
   storyMetrics?: readonly StorySnapshot[];
   /**
@@ -144,44 +143,16 @@ export interface DeferredRegressionResult {
 }
 
 /**
- * Map a test file to the story responsible for it via git log.
- *
- * Searches recent commits for story IDs in the format US-NNN.
- * Returns the first matching story ID, or undefined if not found.
- */
-async function findResponsibleStory(
-  testFile: string,
-  workdir: string,
-  passedStories: UserStory[],
-): Promise<UserStory | undefined> {
-  const logger = getSafeLogger();
-
-  // Try each passed story in reverse order (most recent first)
-  for (let i = passedStories.length - 1; i >= 0; i--) {
-    const story = passedStories[i];
-    const hasCommits = await hasCommitsForStory(workdir, story.id, 50);
-    if (hasCommits) {
-      logger?.info("regression", `Mapped test to story ${story.id}`, { testFile });
-      return story;
-    }
-  }
-
-  return undefined;
-}
-
-/**
  * Attribute a failing test file to the story that introduced the regression,
  * using per-story gate snapshots.
  *
  * A snapshot records the tests failing AFTER each story's full-suite gate. The
  * earliest story (chronologically, by `completedAt`) whose snapshot contains
  * the failing test is treated as where it transitioned pass -> fail — i.e. the
- * story responsible for the regression. Unlike the git-recency heuristic in
- * {@link findResponsibleStory} (which blames whichever story most recently
- * committed, regardless of who broke the test), this follows the failing test.
+ * story responsible for the regression. This follows the failing test rather
+ * than guessing from unrelated story commits.
  *
- * Assumptions / limitations (caller falls back to the git heuristic when this
- * returns `undefined`, so a miss degrades to prior behaviour, never worse):
+ * Assumptions / limitations:
  * - **Sequential only.** Callers must withhold snapshots for parallel runs:
  *   `completedAt` order is not causal there and worktrees isolate gate state.
  * - **Green baseline.** "Earliest containing" approximates a true pass -> fail
@@ -393,38 +364,28 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
 
   if (testFilesInFailures.size === 0) {
     logger?.warn("regression", "No test files found in failures (unmapped)");
-    // Mark all passed stories for re-verification
-    for (const story of passedStories) {
-      affectedStories.add(story.id);
-      affectedStoriesObjs.set(story.id, story);
-    }
   } else {
     const testFilesArray = Array.from(testFilesInFailures);
     const snapshots = options.storyMetrics ?? [];
     const passedById = new Map(passedStories.map((s) => [s.id, s]));
 
     for (const testFile of testFilesArray) {
-      // Prefer transition attribution (causal: blames the story where the test
-      // went pass -> fail). Fall back to the git-recency heuristic when no gate
-      // snapshot maps the test to a *passed* story (e.g. single-session +
-      // deferred has no per-story gate, so no snapshots exist).
-      let responsibleStory: UserStory | undefined;
+      // Attribute only with causal evidence: the story where this file first
+      // transitioned to failing. A miss is left unresolved rather than guessed.
       const transitionId = findResponsibleStoryByTransition(testFile, snapshots);
-      if (transitionId && passedById.has(transitionId)) {
-        responsibleStory = passedById.get(transitionId);
+      const responsibleStory = transitionId ? passedById.get(transitionId) : undefined;
+      if (responsibleStory) {
         logger?.info("regression", "Mapped test to story via gate transition", {
           storyId: transitionId,
           testFile,
         });
-      }
-      if (!responsibleStory) {
-        responsibleStory = await findResponsibleStory(testFile, workdir, passedStories);
-      }
-      if (responsibleStory) {
         affectedStories.add(responsibleStory.id);
         affectedStoriesObjs.set(responsibleStory.id, responsibleStory);
       } else {
-        logger?.warn("regression", "Could not map test file to story", { testFile });
+        logger?.warn("regression", "Could not safely map test file to a passed story", {
+          testFile,
+          ...(transitionId ? { transitionStoryId: transitionId } : {}),
+        });
       }
     }
   }
