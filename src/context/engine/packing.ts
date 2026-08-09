@@ -1,28 +1,29 @@
 /**
- * Context Engine v2 — Greedy Packing
+ * Context Engine v2 — Greedy Packing + Repair
  *
  * Selects which chunks fit within the token budget.
  *
  * Phase 0-2: Greedy algorithm — sort by score/tokens (density) descending,
- * always include floor items (static + feature kinds) first regardless of
- * budget.
+ * always include floor items (static + feature + test-coverage kinds) first
+ * regardless of budget.
  *
  * Budget floor rule (spec §AC-6):
- *   "static" and "feature" chunks are always included even when their total
- *   tokens exceed budgetTokens. The manifest records reason:
- *   "budget-exceeded-by-floor" for any chunk that causes an overflow.
+ *   "static", "feature", and "test-coverage" chunks are always included
+ *   even when their total tokens exceed budgetTokens. The manifest records
+ *   reason: "budget-exceeded-by-floor" for any chunk that causes an overflow.
  *
- * Known limitation (spec §AC-7): density-greedy is the standard heuristic
- * for fractional knapsack, but for the 0/1 case (chunks are atomic — no
- * partial packing) it is not guaranteed to land within 5% of the brute-force
- * optimum in adversarial inputs (e.g. one huge high-density chunk that
- * excludes many smaller lower-density ones which would sum to more value).
- * A true 5%-bound requires either the standard "best-of(greedy, largest
- * single item that fits)" repair or a small-input DP, neither implemented
- * yet — tracked as a follow-up alongside the AC-7 property test.
+ * Non-floor optimality repair (spec §AC-7, US-004):
+ *   Density-greedy is the standard heuristic for fractional knapsack, but
+ *   for the 0/1 case (chunks are atomic — no partial packing) it is not
+ *   guaranteed to land within 5% of the brute-force optimum in adversarial
+ *   inputs (e.g. one huge high-density chunk that excludes many smaller
+ *   lower-density ones which would sum to more value). The standard
+ *   "best-of(greedy, largest single item that fits)" repair narrows that
+ *   gap to a provable bound. Applied to the non-floor pass only — floor
+ *   chunks are exempt from the budget and remain greedy/floor-included.
  *
- * Phase 3+: Optional 0/1 knapsack DP (in packing.ts) if greedy proves
- * suboptimal. Floor rule still applies in Phase 3+.
+ * Phase 3+: Optional 0/1 knapsack DP (in packing.ts) if the repair proves
+ * insufficient. Floor rule still applies in Phase 3+.
  */
 
 import type { ScoredChunk } from "./scoring";
@@ -69,11 +70,77 @@ export interface PackResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Non-floor patch helpers (US-004)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Greedy by density — fill the remaining budget with the highest-density
+ * non-floor chunks first. Returns the selected chunks in selected order and
+ * the leftover IDs.
+ */
+function greedyNonFloor(
+  nonFloor: ScoredChunk[],
+  remainingBudget: number,
+): { selected: ScoredChunk[]; excludedIds: string[] } {
+  const sorted = [...nonFloor].sort((a, b) => scoreDensity(b) - scoreDensity(a));
+  const selected: ScoredChunk[] = [];
+  const excludedIds: string[] = [];
+  let used = 0;
+  for (const chunk of sorted) {
+    if (used + chunk.tokens <= remainingBudget) {
+      selected.push(chunk);
+      used += chunk.tokens;
+    } else {
+      excludedIds.push(chunk.id);
+    }
+  }
+  return { selected, excludedIds };
+}
+
+/**
+ * Largest single item that fits — the AC-7 repair candidate. Among
+ * non-floor chunks that fit alone in the remaining budget, pick the one
+ * with the highest score. Returns an empty array if nothing fits.
+ */
+function largestSingleItem(nonFloor: ScoredChunk[], remainingBudget: number): ScoredChunk[] {
+  let best: ScoredChunk | null = null;
+  for (const chunk of nonFloor) {
+    if (chunk.tokens > remainingBudget) continue;
+    if (best === null || chunk.score > best.score) best = chunk;
+  }
+  return best ? [best] : [];
+}
+
+/**
+ * Best-of(greedy, largest single item) repair (spec §AC-7). Picks the
+ * candidate with the higher total score. Ties keep the greedy result.
+ * Returns the selected chunks in input order for determinism.
+ */
+function repairNonFloor(
+  nonFloor: ScoredChunk[],
+  remainingBudget: number,
+): { selected: ScoredChunk[]; excludedIds: string[] } {
+  const greedy = greedyNonFloor(nonFloor, remainingBudget);
+  const greedyScore = greedy.selected.reduce((s, c) => s + c.score, 0);
+
+  const largest = largestSingleItem(nonFloor, remainingBudget);
+  const largestScore = largest.reduce((s, c) => s + c.score, 0);
+
+  if (largestScore > greedyScore) {
+    const winnerIds = new Set(largest.map((c) => c.id));
+    const excludedIds = nonFloor.filter((c) => !winnerIds.has(c.id)).map((c) => c.id);
+    return { selected: largest, excludedIds };
+  }
+
+  return greedy;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Packing
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Greedy packing with budget floor.
+ * Greedy packing with budget floor and non-floor optimality repair.
  *
  * @param chunks - de-duped, scored chunks (excludes role-filtered + below-min-score)
  * @param budgetTokens - token budget from ContextRequest
@@ -84,17 +151,14 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
     availableBudgetTokens !== undefined ? Math.min(budgetTokens, availableBudgetTokens) : budgetTokens;
 
   const floorChunks = chunks.filter((c) => FLOOR_KINDS.includes(c.kind));
-  const nonFloorChunks = chunks
-    .filter((c) => !FLOOR_KINDS.includes(c.kind))
-    .sort((a, b) => scoreDensity(b) - scoreDensity(a));
+  const nonFloorChunks = chunks.filter((c) => !FLOOR_KINDS.includes(c.kind));
 
   const packed: PackedChunk[] = [];
-  const budgetExcludedIds: string[] = [];
   const floorPackedIds: string[] = [];
   const floorOverageIds: string[] = [];
   let usedTokens = 0;
 
-  // Pass 1: floor items — always include
+  // Pass 1: floor items — always include, regardless of budget
   for (const chunk of floorChunks) {
     const overflows = usedTokens + chunk.tokens > effectiveBudget;
     const packedChunk: PackedChunk = { ...chunk };
@@ -107,15 +171,20 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
     usedTokens += chunk.tokens;
   }
 
-  // Pass 2: non-floor items — greedy by score
-  for (const chunk of nonFloorChunks) {
-    if (usedTokens + chunk.tokens <= effectiveBudget) {
-      packed.push({ ...chunk });
-      usedTokens += chunk.tokens;
-    } else {
-      budgetExcludedIds.push(chunk.id);
-    }
+  // Pass 2: non-floor items — best-of(greedy, largest single item) repair
+  const remainingBudget = Math.max(0, effectiveBudget - usedTokens);
+  const { selected, excludedIds } = repairNonFloor(nonFloorChunks, remainingBudget);
+  for (const chunk of selected) {
+    packed.push({ ...chunk });
+    usedTokens += chunk.tokens;
   }
 
-  return { packed, budgetExcludedIds, usedTokens, effectiveBudget, floorPackedIds, floorOverageIds };
+  return {
+    packed,
+    budgetExcludedIds: excludedIds,
+    usedTokens,
+    effectiveBudget,
+    floorPackedIds,
+    floorOverageIds,
+  };
 }
