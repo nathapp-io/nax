@@ -3,7 +3,7 @@
   "feature": "rules-cli-honesty",
   "branchName": "feat/rules-cli-honesty",
   "createdAt": "2026-08-09T00:00:00.000Z",
-  "updatedAt": "2026-08-09T06:14:59.845Z",
+  "updatedAt": "2026-08-09T06:23:06.078Z",
   "userStories": [
     {
       "id": "US-001",
@@ -45,7 +45,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/cli/rules.ts",
@@ -61,7 +63,11 @@
           "path": "src/cli/rules.ts",
           "reason": ""
         }
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "63069214da4195a3b33daf1cd2754e7d783b4f0f"
     },
     {
       "id": "US-002",
@@ -111,14 +117,17 @@
       "expectedFiles": [
         "test/unit/cli/rules-lint-roots.test.ts"
       ],
-      "outOfScope": [
-        "**Out of scope:** no risk-sensitive property from the adversarial-scope table applies — this feature touches no authentication, rate limiting, replay protection, idempotency store, multi-tenancy boundary, concurrency primitive, expiry policy, or cryptographic material."
-      ],
       "modifiedFiles": [
         {
           "path": "src/cli/rules-lint.ts",
           "reason": ""
         }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "outOfScope": [
+        "**Out of scope:** no risk-sensitive property from the adversarial-scope table applies — this feature touches no authentication, rate limiting, replay protection, idempotency store, multi-tenancy boundary, concurrency primitive, expiry policy, or cryptographic material."
       ]
     }
   ],
