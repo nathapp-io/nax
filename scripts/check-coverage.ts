@@ -58,7 +58,12 @@ async function runCoverage(): Promise<number> {
       "test/unit/",
       "--coverage",
       "--coverage-reporter=lcov",
-      "--timeout=5000",
+      // Same per-test budget as the CI unit step (`bun test test/unit/
+      // --timeout=60000`). Coverage instrumentation adds enough overhead that
+      // the 5s default fails process-timing tests that pass uninstrumented —
+      // e.g. "runArgv > kills an overrunning process" took 5000.95ms in CI.
+      // The whole run is still bounded by RUN_TIMEOUT_MS.
+      "--timeout=60000",
     ],
     {
       cwd: ROOT,
