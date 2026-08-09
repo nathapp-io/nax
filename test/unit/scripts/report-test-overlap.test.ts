@@ -1,5 +1,5 @@
 /**
- * Tests for scripts/check-test-overlap.ts
+ * Tests for scripts/report-test-overlap.ts
  *
  * Covers test overlap detection and reporting
  */
@@ -8,9 +8,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { makeTempDir } from "../../helpers/temp";
-import { analyzeOverlap, generateReport, parseTestFile } from "../../../scripts/check-test-overlap";
+import { analyzeOverlap, generateReport, parseTestFile } from "../../../scripts/report-test-overlap";
 
-describe("check-test-overlap", () => {
+describe("report-test-overlap", () => {
   let testDir: string;
 
   beforeEach(() => {

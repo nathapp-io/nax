@@ -42,6 +42,13 @@ interface Totals {
 /**
  * Run the unit suite with coverage in a detached process group so a hang or
  * SIGABRT is reaped along with any descendants (mirrors scripts/run-tests.ts).
+ *
+ * Only the lcov reporter is requested. `--coverage-reporter=text` aborts the
+ * whole run with `error: An internal error occurred (WriteFailed)` whenever
+ * stdout is a pipe rather than a TTY — which is every CI context, and any local
+ * `| head`/`| tail`. That is why this gate could never have run in CI. The
+ * per-file table it printed was cosmetic: the floor is evaluated by parsing
+ * coverage/lcov.info, and the summary below prints the numbers that matter.
  */
 async function runCoverage(): Promise<number> {
   const child = Bun.spawn(
@@ -51,8 +58,12 @@ async function runCoverage(): Promise<number> {
       "test/unit/",
       "--coverage",
       "--coverage-reporter=lcov",
-      "--coverage-reporter=text",
-      "--timeout=5000",
+      // Same per-test budget as the CI unit step (`bun test test/unit/
+      // --timeout=60000`). Coverage instrumentation adds enough overhead that
+      // the 5s default fails process-timing tests that pass uninstrumented —
+      // e.g. "runArgv > kills an overrunning process" took 5000.95ms in CI.
+      // The whole run is still bounded by RUN_TIMEOUT_MS.
+      "--timeout=60000",
     ],
     {
       cwd: ROOT,

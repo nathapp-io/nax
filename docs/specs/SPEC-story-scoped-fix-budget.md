@@ -212,6 +212,6 @@ The main pass in AC-3.6 must consume the budget **partially**, not exhaust it. `
 
 **Verification note.** This spec adds no removals, so there is no terminal-cleanup story. The repo's static gate for the type and config changes is `bun run typecheck`; lint is `bun run lint`.
 
-**Test-hygiene note.** Every test that constructs a runtime via `makeTestRuntime` or `makeMockRuntime` must collect it and close it in an `afterEach`; this is enforced by `scripts/check-runtime-cleanup.sh` as part of `bun run lint`. Unit tests mirror source paths (`test/unit/findings/story-fix-history.test.ts`); cross-module tests belong under `test/integration/`.
+**Test-hygiene note.** Every test that constructs a runtime via `makeTestRuntime` or `makeMockRuntime` must collect it and close it in an `afterEach`; this is enforced by `scripts/check-runtime-cleanup.sh` as part of `bun run check:all`. Unit tests mirror source paths (`test/unit/findings/story-fix-history.test.ts`); cross-module tests belong under `test/integration/`.
 
 <!-- spec-writing: completed-through-phase-6 -->
