@@ -29,7 +29,14 @@ import type { PostRunStatus } from "@/execution/status-file";
 import { _runCompletionDeps } from "@/execution/lifecycle";
 import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
 import { StatusWriter } from "@/execution";
-import { cleanupTempDir, makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeTempDir } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeNaxConfig,
+  makeStory,
+  makeTempDir,
+} from "@test/helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -80,21 +87,6 @@ function makeAcceptanceCtx(): AcceptanceLoopContext {
   };
 }
 
-function makeStory(id: string, status: UserStory["status"]): UserStory {
-  return {
-    id,
-    title: `Story ${id}`,
-    description: "Test story",
-    acceptanceCriteria: ["AC-1"],
-    tags: [],
-    dependencies: [],
-    status,
-    passes: status === "passed",
-    escalations: [],
-    attempts: 1,
-  };
-}
-
 function makePRD(stories: Array<{ id: string; status: UserStory["status"] }>): PRD {
   return {
     project: "test-project",
@@ -102,13 +94,22 @@ function makePRD(stories: Array<{ id: string; status: UserStory["status"] }>): P
     branchName: "test-branch",
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
-    userStories: stories.map(({ id, status }) => makeStory(id, status)),
+    userStories: stories.map(({ id, status }) =>
+      makeStory({
+        id,
+        title: `Story ${id}`,
+        status,
+        passes: status === "passed",
+        acceptanceCriteria: ["AC-1"],
+        attempts: 1,
+      }),
+    ),
   };
 }
 
-function makeConfig(acceptanceEnabled = true): NaxConfig {
+function makeTestConfig(): NaxConfig {
   return makeNaxConfig({
-    acceptance: { enabled: acceptanceEnabled, maxRetries: 3 },
+    acceptance: { enabled: true, maxRetries: 3 },
     execution: { regressionGate: { mode: "disabled" } },
     quality: { commands: { test: "bun test" } },
   });
@@ -312,7 +313,7 @@ describe("US-004 AC-2: completion phase reports status=failed and skippedPackage
   test("setPostRunPhase('acceptance', ...) receives status='failed' and skippedPackages=['pkg-a']", async () => {
     const statusWriter = makeStatusWriter(makePostRunStatus("not-run", "not-run"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = makeConfig(true);
+    const config = makeTestConfig();
 
     _runnerCompletionDeps.runAcceptanceLoop = mock(
       async (): Promise<AcceptanceLoopResult> => ({
@@ -344,7 +345,7 @@ describe("US-004 AC-3: missing-target acceptance failure is never reported as 'p
   test("setPostRunPhase is never called with status='passed' when acceptance fails with missing packages", async () => {
     const statusWriter = makeStatusWriter(makePostRunStatus("not-run", "not-run"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = makeConfig(true);
+    const config = makeTestConfig();
 
     _runnerCompletionDeps.runAcceptanceLoop = mock(
       async (): Promise<AcceptanceLoopResult> => ({
@@ -377,7 +378,7 @@ describe("US-004 AC-4: passing acceptance has status='passed' and no skippedPack
   test("setPostRunPhase receives status='passed' and skippedPackages is empty/undefined on full pass", async () => {
     const statusWriter = makeStatusWriter(makePostRunStatus("not-run", "not-run"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = makeConfig(true);
+    const config = makeTestConfig();
 
     _runnerCompletionDeps.runAcceptanceLoop = mock(
       async (): Promise<AcceptanceLoopResult> => ({
@@ -433,7 +434,7 @@ describe("US-004 AC-4: passing acceptance has status='passed' and no skippedPack
       expect(seeded.acceptance.skippedPackages).toEqual(["pkg-a"]);
 
       const prd = makePRD([{ id: "US-001", status: "passed" }]);
-      const config = makeConfig(true);
+      const config = makeTestConfig();
       _runnerCompletionDeps.runAcceptanceLoop = mock(
         async (): Promise<AcceptanceLoopResult> => ({
           success: true,
@@ -464,7 +465,7 @@ describe("US-004 AC-5: a failed status with non-empty skippedPackages re-runs th
       makePostRunStatus("failed", "not-run", ["pkg-a"]),
     );
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = makeConfig(true);
+    const config = makeTestConfig();
 
     let receivedSkippedPackages: unknown;
     let loopWasCalled = false;
