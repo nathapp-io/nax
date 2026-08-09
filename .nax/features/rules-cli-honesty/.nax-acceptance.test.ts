@@ -165,9 +165,13 @@ describe("rules-cli-honesty acceptance", () => {
       dryCapture.restore();
     }
     const realRun = await rulesMigrateCommand({ dir: "/source", force: false, dryRun: false });
-    const summary = dryCapture.lines.find((line) => /\d+ written, \d+ skipped/.test(line));
+    const summary = dryCapture.lines.find((line) =>
+      /^\s*Dry run: \d+ file\(s\) would be written, \d+ skipped\.$/.test(line),
+    );
     expect(summary).toBeDefined();
-    expect(summary).toContain(`${realRun.written.length} written, ${realRun.skipped.length} skipped`);
+    expect(summary).toContain(
+      `Dry run: ${realRun.written.length} file(s) would be written, ${realRun.skipped.length} skipped.`,
+    );
     expect(dryRun).toEqual(realRun);
   });
 
