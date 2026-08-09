@@ -3,9 +3,28 @@
 # production source. Test fixtures are excluded — those are intentional
 # partial-config builders.
 #
-# Allowed sites (schema-derived, runtime-validated):
-#   src/config/defaults.ts
-#   src/config/loader.ts
+# Allowed sites — each cast is reached only with a runtime shape the code has
+# already guaranteed, so the assertion cannot silently paper over a partial:
+#
+#   src/config/defaults.ts          schema-derived (NaxConfigSchema.parse)
+#   src/config/loader.ts            follows the layered safeParse
+#   src/operations/setup-generate.ts
+#       :123 casts `result.data` straight out of `NaxConfigSchema.safeParse`,
+#            which throws on failure — same guarantee as loader.ts.
+#       :63  rebuilds an already-typed `NaxConfig` param, only narrowing
+#            `quality.commands`; the cast is forced by a local widening above it.
+#   src/cli/routing-calibrate.ts
+#       :165 merges DEFAULT_CONFIG with the result of `loadConfig`, which
+#            safeParses and throws — two validated configs in, so the cast only
+#            re-narrows `deepMergeConfig`'s `Record<string, unknown>` return.
+#   src/plugins/builtin/nax-finish/config.ts
+#       :51  deliberately accepts an unvalidated object (older configs, partial
+#            test fixtures). `pickSelector.select` is a total property copy and
+#            every field read downstream is optional and default-merged, so a
+#            partial yields defaults rather than an undefined-access.
+#
+# NOTE: entries are matched per FILE, so a new cast added to an allow-listed
+# file is also exempt. Tighten to a per-line ratchet if that becomes a problem.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -17,6 +36,9 @@ matches=$(grep -RnE 'as (unknown as )?NaxConfig\b' src/ \
   --exclude-dir=node_modules \
   | grep -vE '^src/config/defaults\.ts:' \
   | grep -vE '^src/config/loader\.ts:' \
+  | grep -vE '^src/operations/setup-generate\.ts:' \
+  | grep -vE '^src/cli/routing-calibrate\.ts:' \
+  | grep -vE '^src/plugins/builtin/nax-finish/config\.ts:' \
   || true)
 
 if [ -n "$matches" ]; then
