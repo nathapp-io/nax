@@ -4,7 +4,9 @@
  * Each test creates a value of the subtype and assigns it to the base type.
  * If the subtype does not extend DispatchContext, TypeScript compilation fails.
  *
- * These tests are validated by `bun x tsc --project tsconfig.test.json --noEmit`.
+ * These tests are validated by `bun run check:dispatch-context`, which runs
+ * `bun x tsc --project tsconfig.dispatch-context.json --noEmit` (that config
+ * includes this file only) and is gated in CI.
  */
 
 import { describe, expect, test } from "bun:test";
