@@ -186,6 +186,53 @@ describe("captureTreeState (AC8)", () => {
     expect(clean.dirtyDigest).not.toBe(dirty.dirtyDigest);
   });
 
+  test("#1521: rewriting an already-modified file (same porcelain status, different diff content) moves dirtyDigest", async () => {
+    // `git status --porcelain` only lists filenames + status codes — it is
+    // IDENTICAL for two edits to the same already-modified file. A resume
+    // digest that hashes only that output cannot distinguish "nothing
+    // changed since last attempt" from "the escalated agent rewrote the
+    // file" — which made buildResumePlan return "resume" and elide the
+    // implementer phase on every escalated retry. The fix folds `git diff`
+    // (+ `git diff --cached`) content into the digest.
+    const porcelain = " M src/foo.ts\n";
+    let diffOutput = "diff --git a/src/foo.ts b/src/foo.ts\n-old line\n+new line v1\n";
+
+    _gitDeps.spawn = mock((args: string[]) => {
+      let stdout: string;
+      if (args.includes("rev-parse")) {
+        stdout = "abc123\n";
+      } else if (args.includes("status")) {
+        stdout = porcelain;
+      } else if (args.includes("--cached")) {
+        stdout = ""; // nothing staged
+      } else {
+        stdout = diffOutput; // `git diff`
+      }
+      const bytes = new TextEncoder().encode(stdout);
+      return {
+        stdout: new ReadableStream({ start(c) {
+          c.enqueue(bytes);
+          c.close();
+        } }),
+        stderr: new ReadableStream({ start(c) {
+          c.close();
+        } }),
+        exited: Promise.resolve(0),
+        kill: mock(() => {}),
+      };
+    });
+
+    const first = await captureTreeState(tempDir!, { _deps: _gitDeps });
+
+    // Simulate the escalated agent rewriting the same already-modified file:
+    // `git status --porcelain` is unchanged (still just " M src/foo.ts"),
+    // but the actual diff content differs.
+    diffOutput = "diff --git a/src/foo.ts b/src/foo.ts\n-old line\n+new line v2 (rewritten by escalated agent)\n";
+    const second = await captureTreeState(tempDir!, { _deps: _gitDeps });
+
+    expect(first.dirtyDigest).not.toBe(second.dirtyDigest);
+  });
+
   test("AC8 timeout: a hung git subprocess does not stall captureTreeState (proxy for gitWithTimeout enforcement)", async () => {
     // Adversarial-review finding: captureTreeState must not block on an
     // unkillable git subprocess. Every other git call in the project routes

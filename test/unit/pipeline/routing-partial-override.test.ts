@@ -120,6 +120,39 @@ describe("routing stage — resolveRouting integration (BUG-032 + FIX-001)", () 
     expect(ctx.routing.complexity).toBe("medium");
   });
 
+  test("(4) sideways/downward cross-agent tier escalation is preserved even when it does not outrank the candidate (#1522)", async () => {
+    // A cross-agent rung ladder can escalate sideways or down (e.g.
+    // agentA/powerful -> agentB/balanced). handleTierEscalation wrote
+    // modelTier="balanced" and appended an escalation record. If the router
+    // re-derives "powerful" again (TIER_RANK.powerful > TIER_RANK.balanced),
+    // rank-only comparison would discard the escalation and snap back to
+    // "powerful" — silently reverting the escalated agent's rung and
+    // resetting the story-scoped fix budget key (storyFixKey).
+    mockResolveRouting.mockImplementationOnce(async () => ({
+      complexity: "expert",
+      modelTier: "powerful",
+      testStrategy: "three-session-tdd",
+      reasoning: "re-classified as expert",
+    }));
+
+    const story = makeStory({
+      modelTier: "balanced", // escalated-to tier, does not outrank "powerful"
+      complexity: "medium",
+      testStrategy: "three-session-tdd",
+      reasoning: "escalated cross-agent",
+    });
+    story.escalations = [
+      { fromTier: "powerful", toTier: "balanced", reason: "cross-agent rung", timestamp: new Date().toISOString() },
+    ];
+    const ctx = makeCtx(story);
+
+    await routingStage.execute(ctx);
+
+    // The escalated tier must survive re-routing — an escalation record is
+    // authoritative regardless of rank comparison.
+    expect(ctx.routing.modelTier).toBe("balanced");
+  });
+
   test("(3) initialComplexity is set from first routing and not overwritten on retry", async () => {
     const story = makeStory();
     const ctx = makeCtx(story);
