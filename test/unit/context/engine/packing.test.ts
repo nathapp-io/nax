@@ -149,17 +149,21 @@ describe("packChunks — AC-4 optimality property", () => {
     let worstCase: { case: number; packed: number; optimal: number } | null = null;
 
     // The 200 cases mix two distributions on purpose:
-    //   adversarial (first 100): heavy high-score chunk + tiny small chunk in
-    //     the same budget. Greedy packs the smalls and excludes the bulky; the
-    //     repair (best-of greedy / largest single item) flips to the bulky
-    //     chunk and recovers the optimum. This is the case the repair exists
-    //     to handle, and the AC-1 fixture is the canonical example.
+    //   adversarial (first 100): multi-item capacity conflicts built so
+    //     greedy-by-density excludes the bulky high-score chunk in favour of
+    //     many small items that jointly fill the budget. The repair flips to
+    //     the bulky chunk and recovers the optimum. This is the case the
+    //     repair exists to handle, and exercises greedy-vs-repair selection
+    //     across the full n <= 12 space (not just the 2-item AC-1 fixture).
+    //     Construction: smallTokens * (n-1) > budget so greedy packs all
+    //     smalls; bulkyTokens > budget - smallTokens so no small fits
+    //     alongside bulky, making the bulky the unique optimum.
     //   random (last 100): independent random tokens/scores at the easy end
-    //     of the spec's range (tokens 1..10, budget 60..199) where greedy by
-    //     density already hits the optimum or close to it.
-    // The property under test is "at least 95% of optimum across 200 cases",
-    // not a universal 95% bound on adversarial inputs — `best-of(greedy,
-    // largest single)` is not a 95%-of-optimal algorithm in the worst case.
+    //     of the spec's range (tokens 1..10, budget 60..199) where greedy
+    //     by density already hits the optimum or close to it.
+    // The property is "at least 95% of optimum across 200 cases", not a
+    // universal 95% bound on adversarial inputs — `best-of(greedy, largest
+    // single)` is not a 95%-of-optimal algorithm in the worst case.
     const ADV_COUNT = 100;
 
     for (let caseIdx = 0; caseIdx < NUM_CASES; caseIdx++) {
@@ -168,30 +172,51 @@ describe("packChunks — AC-4 optimality property", () => {
       const chunks: ScoredChunk[] = [];
 
       if (caseIdx < ADV_COUNT) {
-        // Adversarial: bulky takes nearly all the budget, small takes the rest.
-        // Greedy picks the small chunk (higher density); the bulky single item
-        // beats the greedy result, so the repair fires.
-        const smallTokens = 5 + Math.floor(rng() * 5); // 5..9
-        const smallScore = 0.4 + rng() * 0.15; // 0.4..0.55
-        let bulkyTokens = budget - smallTokens + 1 + Math.floor(rng() * 5);
-        if (bulkyTokens > budget) bulkyTokens = budget;
-        const bulkyScore = 0.9 + rng() * 0.05; // 0.9..0.95
-        chunks.push(
-          makeScored({
-            id: `b-${caseIdx}`,
-            kind: "session",
-            score: Math.round(bulkyScore * 1000) / 1000,
-            tokens: bulkyTokens,
-          }),
-        );
-        chunks.push(
-          makeScored({
-            id: `s-${caseIdx}`,
-            kind: "session",
-            score: Math.round(smallScore * 1000) / 1000,
-            tokens: smallTokens,
-          }),
-        );
+        // Multi-item capacity conflict: 1 bulky + n-1 small items.
+        // Smalls collectively fill the budget (greedy picks them all, bulky
+        // is excluded). Bulky alone strictly exceeds the budget minus one
+        // small token, so no small item fits alongside bulky — bulky alone
+        // is the unique optimum.
+        const smallTokens = 10 + Math.floor(rng() * 11); // 10..20
+        const minBulkyTokens = budget - smallTokens + 1;
+        const maxBulkyTokens = budget;
+        if (minBulkyTokens <= maxBulkyTokens) {
+          const bulkyTokens = minBulkyTokens + Math.floor(rng() * (maxBulkyTokens - minBulkyTokens + 1));
+          const bulkyScore = 0.9 + rng() * 0.05; // 0.9..0.95
+          chunks.push(
+            makeScored({
+              id: `b-${caseIdx}`,
+              kind: "session",
+              score: Math.round(bulkyScore * 1000) / 1000,
+              tokens: bulkyTokens,
+            }),
+          );
+          for (let i = 0; i < n - 1; i++) {
+            const smallScore = 0.1 + rng() * 0.05; // 0.1..0.15
+            chunks.push(
+              makeScored({
+                id: `f-${caseIdx}-${i}`,
+                kind: "session",
+                score: Math.round(smallScore * 1000) / 1000,
+                tokens: smallTokens,
+              }),
+            );
+          }
+        } else {
+          // Infeasible to construct — fall back to random.
+          for (let i = 0; i < n; i++) {
+            const tokens = TOKEN_MIN + Math.floor(rng() * (TOKEN_MAX - TOKEN_MIN + 1));
+            const score = 0.05 + rng() * 0.95;
+            chunks.push(
+              makeScored({
+                id: `c-${caseIdx}-${i}`,
+                kind: "session",
+                score: Math.round(score * 1000) / 1000,
+                tokens,
+              }),
+            );
+          }
+        }
       } else {
         for (let i = 0; i < n; i++) {
           const tokens = TOKEN_MIN + Math.floor(rng() * (TOKEN_MAX - TOKEN_MIN + 1)); // 1..10
