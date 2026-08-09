@@ -49,7 +49,10 @@
         "src/context/engine/rebuild.ts"
       ],
       "modifiedFiles": [
-        "src/context/engine/orchestrator.ts"
+        {
+          "path": "src/context/engine/orchestrator.ts",
+          "reason": "rebuildForAgent moves out to rebuild.ts and becomes a delegating wrapper; _orchestratorDeps gains the rebuild property."
+        }
       ]
     },
     {
@@ -96,7 +99,10 @@
         "test/unit/context/engine/orchestrator-agent-framing.test.ts"
       ],
       "modifiedFiles": [
-        "src/context/engine/orchestrator.ts"
+        {
+          "path": "src/context/engine/orchestrator.ts",
+          "reason": "assemble() step 8 routes through renderForAgent when request.agentId is set."
+        }
       ]
     },
     {
@@ -147,7 +153,10 @@
         "test/unit/context/engine/orchestrator-rebuild.test.ts"
       ],
       "modifiedFiles": [
-        "src/context/engine/rebuild.ts"
+        {
+          "path": "src/context/engine/rebuild.ts",
+          "reason": "re-pack to the target ceiling, preserve prior order, recompute floorOverageItems (file created by US-001)."
+        }
       ]
     },
     {
@@ -193,8 +202,14 @@
         "test/unit/context/engine/packing-optimality.test.ts"
       ],
       "modifiedFiles": [
-        "src/context/engine/packing.ts",
-        "test/unit/context/engine/packing.test.ts"
+        {
+          "path": "src/context/engine/packing.ts",
+          "reason": "add the best-of(greedy, largest single item that fits) repair to the non-floor pass."
+        },
+        {
+          "path": "test/unit/context/engine/packing.test.ts",
+          "reason": "REQUIRED. The #1448 density-sort test at :65-76 asserts packed == [\"dense\"]; the repair correctly returns \"bulky\", so this story must replace that fixture with the two-small-chunks variant per the spec Approach."
+        }
       ]
     }
   ],

@@ -165,17 +165,17 @@ Add the `best-of(greedy, largest single item that fits)` repair to the non-floor
 ### Modifies
 
 **US-001**
-- `src/context/engine/orchestrator.ts`
+- `src/context/engine/orchestrator.ts` — `rebuildForAgent` moves out to `rebuild.ts` and becomes a delegating wrapper; `_orchestratorDeps` gains the rebuild property.
 
 **US-002**
-- `src/context/engine/orchestrator.ts`
+- `src/context/engine/orchestrator.ts` — `assemble()` step 8 routes through `renderForAgent` when `request.agentId` is set.
 
 **US-003**
-- `src/context/engine/rebuild.ts`
+- `src/context/engine/rebuild.ts` — re-pack to the target ceiling, preserve prior order, recompute `floorOverageItems` (file created by US-001).
 
 **US-004**
-- `src/context/engine/packing.ts`
-- `test/unit/context/engine/packing.test.ts`
+- `src/context/engine/packing.ts` — add the best-of(greedy, largest single item that fits) repair to the non-floor pass.
+- `test/unit/context/engine/packing.test.ts` — REQUIRED. The #1448 density-sort test at `:65-76` asserts `packed` is `["dense"]`; the repair correctly returns `bulky`, so this story must replace that fixture with the two-small-chunks variant per Design § Approach.
 
 ## Acceptance Criteria
 
