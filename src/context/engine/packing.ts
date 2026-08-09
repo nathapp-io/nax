@@ -18,8 +18,8 @@
  *   guaranteed to land within 5% of the brute-force optimum in adversarial
  *   inputs (e.g. one huge high-density chunk that excludes many smaller
  *   lower-density ones which would sum to more value). The standard
- *   "best-of(greedy, largest single item that fits)" repair narrows that
- *   gap to a provable bound. Applied to the non-floor pass only — floor
+ *   "best-of(greedy, largest single item, best pair)" repair narrows that
+ *   gap. Applied to the non-floor pass only — floor
  *   chunks are exempt from the budget and remain greedy/floor-included.
  *
  * Phase 3+: Optional 0/1 knapsack DP (in packing.ts) if the repair proves
@@ -112,9 +112,31 @@ function largestSingleItem(nonFloor: ScoredChunk[], remainingBudget: number): Sc
 }
 
 /**
- * Best-of(greedy, largest single item) repair (spec §AC-7). Picks the
- * candidate with the higher total score. Ties keep the greedy result.
- * Returns the selected chunks in input order for determinism.
+ * Best pair of items that fit — finds two distinct non-floor chunks that
+ * jointly fit in the remaining budget and maximize total score. Returns an
+ * empty array if fewer than two items fit individually.
+ */
+function bestPair(nonFloor: ScoredChunk[], remainingBudget: number): ScoredChunk[] {
+  let best: [ScoredChunk, ScoredChunk] | null = null;
+  let bestScore = -1;
+  for (let i = 0; i < nonFloor.length; i++) {
+    if (nonFloor[i].tokens > remainingBudget) continue;
+    for (let j = i + 1; j < nonFloor.length; j++) {
+      if (nonFloor[i].tokens + nonFloor[j].tokens > remainingBudget) continue;
+      const pairScore = nonFloor[i].score + nonFloor[j].score;
+      if (pairScore > bestScore) {
+        bestScore = pairScore;
+        best = [nonFloor[i], nonFloor[j]];
+      }
+    }
+  }
+  return best ? [best[0], best[1]] : [];
+}
+
+/**
+ * Best-of(greedy, largest single item, best pair) repair (spec §AC-7).
+ * Picks the candidate with the highest total score. Ties keep the greedy
+ * result. Returns the selected chunks in input order for determinism.
  */
 function repairNonFloor(
   nonFloor: ScoredChunk[],
@@ -125,6 +147,15 @@ function repairNonFloor(
 
   const largest = largestSingleItem(nonFloor, remainingBudget);
   const largestScore = largest.reduce((s, c) => s + c.score, 0);
+
+  const pair = bestPair(nonFloor, remainingBudget);
+  const pairScore = pair.reduce((s, c) => s + c.score, 0);
+
+  if (pairScore > greedyScore && pairScore >= largestScore) {
+    const winnerIds = new Set(pair.map((c) => c.id));
+    const excludedIds = nonFloor.filter((c) => !winnerIds.has(c.id)).map((c) => c.id);
+    return { selected: pair, excludedIds };
+  }
 
   if (largestScore > greedyScore) {
     const winnerIds = new Set(largest.map((c) => c.id));
@@ -171,7 +202,7 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
     usedTokens += chunk.tokens;
   }
 
-  // Pass 2: non-floor items — best-of(greedy, largest single item) repair
+  // Pass 2: non-floor items — best-of(greedy, largest single, best pair) repair
   const remainingBudget = Math.max(0, effectiveBudget - usedTokens);
   const { selected, excludedIds } = repairNonFloor(nonFloorChunks, remainingBudget);
   for (const chunk of selected) {

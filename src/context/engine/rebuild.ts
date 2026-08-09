@@ -1,12 +1,14 @@
 /**
- * Context Engine v2 — Agent Rebuild (Phase 5.5)
+ * Context Engine v2 — Agent Rebuild (Phase 5.5, US-003)
  *
  * Extracted from `orchestrator.ts` so the rebuild logic lives in its own
  * file under the 600-line source limit. The public
  * `ContextOrchestrator.rebuildForAgent()` method now delegates to this
  * function via the `_orchestratorDeps.rebuild` seam.
  *
- * Behaviour is unchanged from the original `rebuildForAgent` method.
+ * US-003: Re-packs chunks to fit the target profile's budget ceiling via
+ * `packChunks`, reorders emitted chunks to preserve prior relative order,
+ * and recomputes `floorOverageItems` from the rebuild's own pack result.
  *
  * Pure — no I/O, no logging; logging is performed via the injected
  * `deps.getLogger()` returned from `_orchestratorDeps`.
@@ -17,9 +19,8 @@ import { getLogger } from "@/logger";
 import { AGENT_PROFILES, getAgentProfile } from "./agent-profiles";
 import { renderForAgent } from "./agent-renderer";
 import { buildDigest, digestTokens } from "./digest";
-import { rebuildUsedTokens } from "./manifest-builder";
 import { DEFAULT_REBUILD_AGENT_ID, buildFailureNoteChunk } from "./orchestrator-rebuild-helpers";
-import type { PackedChunk } from "./packing";
+import { type PackedChunk, packChunks } from "./packing";
 import { renderChunks } from "./render";
 import { neutralizeForAgent } from "./scratch-neutralizer";
 import type { ContextBundle, ContextChunk, ContextManifest, RebuildOptions } from "./types";
@@ -87,22 +88,65 @@ export function rebuild(
 
   const packedChunks = toPackedChunks(prior, newAgentId, targetAgentId);
 
-  // Inject failure-note chunk when this is an agent-swap rebuild
-  if (failure && newAgentId) {
+  // AC-33: strip pull tools if the new agent cannot invoke tool calls.
+  const targetProfile = getAgentProfile(targetAgentId).profile;
+  const rebuiltPullTools = targetProfile.caps.supportsToolCalls ? prior.pullTools : [];
+
+  // US-003: Compute the effective token ceiling for this rebuild.
+  const effectiveBudget = Math.min(
+    prior.manifest.effectiveBudget ?? Number.POSITIVE_INFINITY,
+    targetProfile.caps.preferredPromptTokens,
+  );
+
+  // Inject failure-note chunk when this is an agent-swap rebuild.
+  // Skip when the prior is already a rebuild — the prior's own failure-note
+  // chunk suffices and re-injecting would double it (AC8 idempotency).
+  let failureNoteChunk: PackedChunk | undefined;
+  if (failure && newAgentId && !prior.manifest.rebuildInfo) {
     // Truthiness fallback matches the original orchestrator implementation —
     // `prior.agentId ?? ""` followed by `... || "unknown"` collapses both
     // undefined and "" to "unknown" for the failure-note chunk.
-    packedChunks.push(buildFailureNoteChunk(prior.agentId || "unknown", newAgentId, failure));
+    failureNoteChunk = buildFailureNoteChunk(prior.agentId || "unknown", newAgentId, failure);
+    packedChunks.push(failureNoteChunk);
+  }
+
+  // US-003: Repack chunks to fit the target ceiling.
+  let packResult = packChunks(packedChunks, effectiveBudget);
+
+  // US-003 AC7: Force-include the failure-note chunk when it was excluded by packing.
+  if (failureNoteChunk && !packResult.packed.some((c) => c.id === failureNoteChunk.id)) {
+    packResult = {
+      ...packResult,
+      packed: [...packResult.packed, failureNoteChunk],
+      usedTokens: packResult.usedTokens + failureNoteChunk.tokens,
+    };
+  }
+
+  // US-003: Reorder selected chunks to prior order, with failure-note last.
+  const chunkById = new Map<string, PackedChunk>(packResult.packed.map((c) => [c.id, c]));
+  const orderedChunks: PackedChunk[] = [];
+  for (const priorId of priorChunkIds) {
+    const chunk = chunkById.get(priorId);
+    if (chunk) orderedChunks.push(chunk);
+  }
+  if (failureNoteChunk && chunkById.has(failureNoteChunk.id)) {
+    orderedChunks.push(failureNoteChunk);
   }
 
   // Re-render under the target agent's profile (or markdown-sections for same-agent rebuild)
   const pushMarkdown = newAgentId
-    ? renderForAgent(packedChunks, targetAgentId, { priorStageDigest })
-    : renderChunks(packedChunks, { priorStageDigest });
+    ? renderForAgent(orderedChunks, targetAgentId, { priorStageDigest })
+    : renderChunks(orderedChunks, { priorStageDigest });
 
-  const digest = buildDigest(packedChunks);
+  const digest = buildDigest(orderedChunks);
   const dTokens = digestTokens(digest);
 
+  // US-003: usedTokens from packer + digest contribution from priorStageDigest.
+  const newDigestContent = priorStageDigest?.trim();
+  const digestContribution = newDigestContent ? Math.ceil(newDigestContent.length / 4) : 0;
+  const usedTokens = packResult.usedTokens + digestContribution;
+
+  // US-003: chunkIdMap pairs prior chunk IDs with themselves (IDs don't change during rebuild).
   const rebuildInfo: ContextManifest["rebuildInfo"] =
     failure && newAgentId
       ? {
@@ -111,45 +155,38 @@ export function rebuild(
           failureCategory: failure.category,
           failureOutcome: failure.outcome,
           priorChunkIds,
-          newChunkIds: packedChunks.map((c) => c.id),
+          newChunkIds: orderedChunks.map((c) => c.id),
           chunkIdMap: priorChunkIds
-            .map((priorChunkId, index) => {
-              const newChunkId = packedChunks[index]?.id;
-              return newChunkId ? { priorChunkId, newChunkId } : null;
+            .map((priorId) => {
+              const entry = chunkById.get(priorId);
+              return entry ? { priorChunkId: priorId, newChunkId: priorId } : null;
             })
             .filter((entry): entry is { priorChunkId: string; newChunkId: string } => entry !== null),
         }
       : undefined;
 
-  const usedTokens = rebuildUsedTokens(prior, packedChunks, priorStageDigest);
-
-  // AC-33: strip pull tools if the new agent cannot invoke tool calls.
-  const targetProfile = getAgentProfile(targetAgentId).profile;
-  const rebuiltPullTools = targetProfile.caps.supportsToolCalls ? prior.pullTools : [];
-
   const manifest: ContextManifest = {
     ...prior.manifest,
     requestId: deps.uuid(),
-    includedChunks: packedChunks.map((c) => c.id),
+    includedChunks: orderedChunks.map((c) => c.id),
     // Recomputed chunk tokens — a rebuild can add a chunk (the failure note)
     // that the prior map has no entry for, which would record tokens:0 (#1421).
-    chunkTokens: Object.fromEntries(packedChunks.map((c) => [c.id, c.tokens])),
+    chunkTokens: Object.fromEntries(orderedChunks.map((c) => [c.id, c.tokens])),
     usedTokens,
     digestTokens: dTokens,
     buildMs: 0,
     rebuildInfo,
-    // Re-tighten to the target agent's own ceiling on an agent swap — the spread above
-    // otherwise carries the PRIOR agent's effectiveBudget forward alongside the new
-    // agent's content (and any injected failure-note chunk), which would make
-    // computeFloorOverage (src/metrics/tracker.ts) compute overage against the wrong
-    // ceiling for every swapped story.
-    effectiveBudget: Math.min(
-      prior.manifest.effectiveBudget ?? Number.POSITIVE_INFINITY,
-      targetProfile.caps.preferredPromptTokens,
-    ),
+    effectiveBudget,
+    // US-003 AC5: floorOverageItems from the rebuild's own pack result, not the prior bundle's.
+    // Post-process: the packer marks every floor chunk that overflows, but
+    // the minimal set is just the first chunk whose inclusion pushed tokens
+    // past the effectiveBudget — subsequent floor chunks overflow only because
+    // the first one already pushed past.
+    floorItems: packResult.floorPackedIds,
+    floorOverageItems: packResult.floorOverageIds.length > 0 ? [packResult.floorOverageIds[0]] : undefined,
   };
 
-  const rebuiltChunks: ContextChunk[] = packedChunks.map((c) => {
+  const rebuiltChunks: ContextChunk[] = orderedChunks.map((c) => {
     // providerId is set by enrichRaw() in the orchestrator before scoring.
     // Derive from id as fallback: format is <providerId>:<contentHash8>
     const providerId = c.providerId ?? c.id.split(":")[0] ?? "unknown";
@@ -173,8 +210,6 @@ export function rebuild(
     pullTools: rebuiltPullTools,
     digest,
     manifest,
-    // Return the full packedChunks (including any injected failure-note) so
-    // bundle.chunks matches what was actually rendered into pushMarkdown.
     chunks: rebuiltChunks,
     agentId: targetAgentId,
   };

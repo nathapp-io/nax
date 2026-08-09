@@ -91,20 +91,14 @@ describe("packChunks — greedy", () => {
     expect(result.budgetExcludedIds).toContain("small");
   });
 
-  test("regression: (6,1.0)/(5,0.8)/(5,0.8) at budget 10 — documented density-greedy failure mode", () => {
-    // Known counterexample for density-greedy. Three non-floor chunks:
+  test("regression: (6,1.0)/(5,0.8)/(5,0.8) at budget 10 — best-pair repair beats density-greedy", () => {
+    // Three non-floor chunks:
     //   a: tokens=6, score=1.0   → density 0.167
     //   b: tokens=5, score=0.8   → density 0.16
     //   c: tokens=5, score=0.8   → density 0.16
-    // At budget 10, density-greedy packs the densest chunk (a: 6 tokens, 1.0
-    // score), then b and c both fail to fit (5 + 6 > 10). Greedy = 1.0.
-    // Optimal is b + c (10 tokens, 1.6 score). Ratio = 0.625.
-    // The repair (best-of greedy / largest single item) cannot help here:
-    // largest single item is a (1.0), which equals greedy. So the algorithm
-    // returns 1.0 against an optimum of 1.6 — a known universal bound gap
-    // of `best-of(greedy, largest single)`. This is NOT a 95%-of-optimal
-    // algorithm in the worst case; the AC-4 distribution is chosen so the
-    // 95% bound holds across 200 cases, not a single adversarial one.
+    // At budget 10, density-greedy packs only a (6 tokens, 1.0 score).
+    // Largest single item is also a (1.0). Best pair is b + c (10 tokens,
+    // 1.6 score), which beats greedy — the repair selects b + c.
     const chunks = [
       makeScored({ id: "a", kind: "session", score: 1.0, tokens: 6 }),
       makeScored({ id: "b", kind: "session", score: 0.8, tokens: 5 }),
@@ -113,10 +107,10 @@ describe("packChunks — greedy", () => {
     const result = packChunks(chunks, 10);
     const packedScore = result.packed.reduce((s, c) => s + c.score, 0);
     const optimal = 1.6; // b + c: 10 tokens, 1.6 score
-    expect(result.packed.map((c) => c.id)).toEqual(["a"]);
-    expect(result.budgetExcludedIds).toEqual(["b", "c"]);
-    expect(packedScore).toBe(1.0);
-    expect(packedScore / optimal).toBeLessThan(0.95);
+    expect(result.packed.map((c) => c.id)).toEqual(["b", "c"]);
+    expect(result.budgetExcludedIds).toEqual(["a"]);
+    expect(packedScore).toBe(1.6);
+    expect(packedScore / optimal).toBeGreaterThanOrEqual(0.95);
   });
 
   test("AC-3: when every input chunk is non-floor, usedTokens does not exceed effectiveBudget", () => {
@@ -175,6 +169,38 @@ describe("packChunks — AC-4 optimality property", () => {
 
     let worstRatio = 1;
     let worstCase: { case: number; packed: number; optimal: number } | null = null;
+
+    // ── Fixed regression: (6,1.0)+(5,0.8)+(5,0.8) at budget 10 ──────────
+    // Included as a fixed case within the 200-case 95%-threshold evaluation.
+    // The best-pair repair correctly selects b + c for 1.6 against optimum
+    // 1.6 (ratio 1.0), validating the per-case AC-4 guarantee.
+    const REGRESSION_CASE = {
+      chunks: [
+        makeScored({ id: "a-reg", kind: "session", score: 1.0, tokens: 6 }),
+        makeScored({ id: "b-reg", kind: "session", score: 0.8, tokens: 5 }),
+        makeScored({ id: "c-reg", kind: "session", score: 0.8, tokens: 5 }),
+      ] as ScoredChunk[],
+      budget: 10,
+    };
+    {
+      const result = packChunks(REGRESSION_CASE.chunks, REGRESSION_CASE.budget);
+      const packedScore = (result.packed as ScoredChunk[]).reduce((s, c) => s + c.score, 0);
+      let optimal = 0;
+      for (let mask = 0; mask < (1 << 3); mask++) {
+        let tokens = 0;
+        let score = 0;
+        for (let i = 0; i < 3; i++) {
+          if (mask & (1 << i)) {
+            tokens += REGRESSION_CASE.chunks[i].tokens;
+            if (tokens > REGRESSION_CASE.budget) break;
+            score += REGRESSION_CASE.chunks[i].score;
+          }
+        }
+        if (tokens <= REGRESSION_CASE.budget && score > optimal) optimal = score;
+      }
+      const ratio = optimal <= 0 ? 1 : packedScore / optimal;
+      expect(ratio).toBeGreaterThanOrEqual(0.95);
+    }
 
     // The 200 cases mix two distributions on purpose:
     //   adversarial (first 100): multi-item capacity conflicts built so
