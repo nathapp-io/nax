@@ -163,12 +163,15 @@ export interface NaxStatusFile {
  * Derive progress counts from PRD story statuses.
  *
  * Counts each story by its current status. `pending` is computed as
- * everything not in the four explicit terminal/waiting states.
+ * everything not in the four explicit terminal/waiting states. `failed`
+ * also counts `regression-failed` — mirrors countStories() in src/prd/index.ts,
+ * which the deferred regression gate relies on for the same classification
+ * (see run-completion.ts, RL-004).
  */
 export function countProgress(prd: PRD): NaxStatusFile["progress"] {
   const stories = prd.userStories;
   const passed = stories.filter((s) => s.status === "passed").length;
-  const failed = stories.filter((s) => s.status === "failed").length;
+  const failed = stories.filter((s) => s.status === "failed" || s.status === "regression-failed").length;
   const paused = stories.filter((s) => s.status === "paused").length;
   const blocked = stories.filter((s) => s.status === "blocked").length;
   const total = stories.length;

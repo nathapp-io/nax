@@ -133,6 +133,24 @@ describe("countProgress", () => {
     expect(skipped.passed).toBe(0);
     expect(countProgress(makePrd([makeStory("US-001", "in-progress")])).pending).toBe(1);
   });
+
+  test("regression-failed counts as failed, not pending", () => {
+    // A story that passed acceptance but was later flipped to regression-failed
+    // in-memory by the deferred regression gate (run-completion.ts) must be
+    // classified the same way countStories() in src/prd/index.ts classifies it.
+    const stories = [
+      makeStory("US-001", "passed"),
+      makeStory("US-002", "passed"),
+      makeStory("US-003", "passed"),
+      makeStory("US-004", "regression-failed"),
+    ];
+    const progress = countProgress(makePrd(stories));
+
+    expect(progress.total).toBe(4);
+    expect(progress.passed).toBe(3);
+    expect(progress.failed).toBe(1);
+    expect(progress.pending).toBe(0);
+  });
 });
 
 // ============================================================================
