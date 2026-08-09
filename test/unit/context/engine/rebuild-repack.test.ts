@@ -261,10 +261,14 @@ describe("US-003 — rebuild AC2: rebuilt chunks omit the excluded non-floor IDs
       failure: AVAILABILITY_FAILURE,
     });
 
-    const rebuiltIds = new Set(rebuilt.chunks.map((c) => c.id));
+    // AC7 injects a failure-note chunk whenever newAgentId + failure are
+    // supplied, and its id is by construction absent from the prior. Drop it
+    // before the subset comparison — AC2 is about which PRIOR chunks survive.
+    const noteId = `failure-note:${prior.agentId}:totally-unknown-agent:${AVAILABILITY_FAILURE.outcome}`;
+    const rebuiltIds = new Set(rebuilt.chunks.map((c) => c.id).filter((id) => id !== noteId));
     // Floor chunk is retained.
     expect(rebuiltIds.has("p1:feat")).toBe(true);
-    // The set of rebuilt chunks must be a strict subset of the prior chunks.
+    // The surviving prior chunks must be a strict subset of the prior chunks.
     const priorIds = new Set(prior.chunks.map((c) => c.id));
     for (const id of rebuiltIds) {
       expect(priorIds.has(id)).toBe(true);
@@ -279,10 +283,13 @@ describe("US-003 — rebuild AC2: rebuilt chunks omit the excluded non-floor IDs
 
 describe("US-003 — rebuild AC3: rebuilt chunks retain every prior chunk ID when prior fits", () => {
   test("under-budget prior rebuilt plain (no swap) keeps every prior chunk ID", async () => {
+    // Sized to sit just under claude's 16_000 ceiling rather than trivially
+    // low: a rebuild that packs to any fraction of the ceiling (e.g. 75%)
+    // would drop p1:sess-b here, which AC3 forbids.
     const chunks = [
       chunk({ id: "p1:feat", kind: "feature", tokens: 200 }),
-      chunk({ id: "p1:sess-a", kind: "session", tokens: 300 }),
-      chunk({ id: "p1:sess-b", kind: "session", tokens: 400 }),
+      chunk({ id: "p1:sess-a", kind: "session", tokens: 3_000 }),
+      chunk({ id: "p1:sess-b", kind: "session", tokens: 12_000 }),
     ];
     const prior = makeBundleFromChunks(chunks, {
       effectiveBudget: 16_000,
@@ -379,7 +386,10 @@ describe("US-003 — rebuild AC5: floorOverageItems reflects the rebuild's own p
     // Prior carries a stale floorOverageItems from a *different* overflow
     // scenario. After rebuild, the floorOverageItems must be the rebuilt
     // pack's floorOverageIds, not the prior's leftover.
-    const floorBig = chunk({ id: "p1:feat-big", kind: "feature", tokens: 6_000 });
+    // AC5's precondition is "floor-kind chunks whose tokens ALONE exceed the
+    // target ceiling", so floorBig must clear CONSERVATIVE_CEILING (8_000) on
+    // its own — otherwise nothing overflows and the assertions below are vacuous.
+    const floorBig = chunk({ id: "p1:feat-big", kind: "feature", tokens: 8_500 });
     const floorSmall = chunk({ id: "p1:feat-small", kind: "feature", tokens: 200 });
     const nonFloor = chunk({ id: "p1:sess", kind: "session", tokens: 500 });
 
@@ -503,10 +513,13 @@ describe("US-003 — rebuild AC6: rebuilt effectiveBudget equals target profile'
 
 describe("US-003 — rebuild AC7: failure-note chunk is retained when ceiling shrinks", () => {
   test("swap to a smaller-ceiling agent + failure: rebuilt bundle contains the failure-note chunk", async () => {
+    // AC7's precondition is "a target ceiling SMALLER than the prior payload".
+    // The payload must therefore exceed CONSERVATIVE_CEILING (8_000) — at
+    // 6_200 the prior still fits and the shrinking ceiling is never exercised.
     const prior = makeBundleFromChunks(
       [
         chunk({ id: "p1:feat", kind: "feature", tokens: 200 }),
-        chunk({ id: "p1:sess", kind: "session", tokens: 6_000 }),
+        chunk({ id: "p1:sess", kind: "session", tokens: 12_000 }),
       ],
       { effectiveBudget: 16_000 },
       "claude",

@@ -101,14 +101,12 @@ export function rebuild(
   // Inject failure-note chunk when this is an agent-swap rebuild.
   // Skip when the prior is already a rebuild — the prior's own failure-note
   // chunk suffices and re-injecting would double it (AC8 idempotency).
-  // Also skip when the prior's payload exceeds the target budget — the
-  // resulting rebuilt bundle will be missing non-floor chunks that were
-  // dropped by packing, and inserting an additional extra-prior chunk into
-  // the rebuilt set would violate AC2's "rebuilt chunk ids ⊆ prior chunk
-  // ids" invariant.
+  //
+  // AC7 requires the note precisely when the target ceiling is SMALLER than
+  // the prior payload, so injection must not be conditioned on the payload
+  // fitting — the force-include below keeps it even when packing drops it.
   let failureNoteChunk: PackedChunk | undefined;
-  const willFit = packedChunks.reduce((sum, c) => sum + c.tokens, 0) <= effectiveBudget;
-  if (failure && newAgentId && willFit && !prior.manifest.rebuildInfo) {
+  if (failure && newAgentId && !prior.manifest.rebuildInfo) {
     // Truthiness fallback matches the original orchestrator implementation —
     // `prior.agentId ?? ""` followed by `... || "unknown"` collapses both
     // undefined and "" to "unknown" for the failure-note chunk.
@@ -116,14 +114,10 @@ export function rebuild(
     packedChunks.push(failureNoteChunk);
   }
 
-  // US-003: Repack chunks to fit the target ceiling.
-  // Use a tighter packing budget (75% of the effective ceiling) so that
-  // floor items whose token sum exceeds 75% of the budget are flagged as
-  // overflowing. Floor chunks are always included regardless of budget,
-  // but per AC5 floorOverageItems must record which floor chunk first
-  // pushed past the ceiling.
-  const packCeil = Math.ceil(effectiveBudget * 0.75);
-  let packResult = packChunks(packedChunks, packCeil);
+  // US-003: Repack chunks to fit the target ceiling. The pack budget is the
+  // effective ceiling itself — packing below it would drop chunks that AC3
+  // requires the rebuild to retain.
+  let packResult = packChunks(packedChunks, effectiveBudget);
 
   // US-003 AC7: Force-include the failure-note chunk when it was excluded by packing.
   if (failureNoteChunk && !packResult.packed.some((c) => c.id === failureNoteChunk.id)) {
@@ -194,11 +188,10 @@ export function rebuild(
     // the minimal set is just the first chunk whose inclusion pushed tokens
     // past the effectiveBudget — subsequent floor chunks overflow only because
     // the first one already pushed past.
-    // When no floor chunk overflows the effectiveBudget, we emit an empty
-    // array rather than undefined so the caller can distinguish "the rebuild
-    // computed fresh floorOverageItems" from "absent".
+    // No overflow -> undefined, matching `manifest-builder.ts` on the primary
+    // build path so both paths report an empty overage identically.
     floorItems: packResult.floorPackedIds,
-    floorOverageItems: packResult.floorOverageIds.length > 0 ? [packResult.floorOverageIds[0]] : [],
+    floorOverageItems: packResult.floorOverageIds.length > 0 ? [packResult.floorOverageIds[0]] : undefined,
   };
 
   const rebuiltChunks: ContextChunk[] = orderedChunks.map((c) => {
