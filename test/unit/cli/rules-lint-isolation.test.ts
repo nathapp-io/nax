@@ -20,6 +20,8 @@ import type { CanonicalRule } from "@/context/rules/canonical-loader";
 let origGlobCanonicalRuleFilesLint: typeof _rulesLintDeps.globCanonicalRuleFiles;
 let origLoadCanonicalRulesLint: typeof _rulesLintDeps.loadCanonicalRules;
 let origGetLoggerLint: typeof _rulesLintDeps.getLogger;
+let origGlobHasMatchLint: typeof _rulesLintDeps.globHasMatch;
+let origDiscoverWorkspacePackagesLint: typeof _rulesLintDeps.discoverWorkspacePackages;
 
 let origGetLoggerCLI: typeof _rulesCLIDeps.getLogger;
 
@@ -27,6 +29,8 @@ beforeEach(() => {
   origGlobCanonicalRuleFilesLint = _rulesLintDeps.globCanonicalRuleFiles;
   origLoadCanonicalRulesLint = _rulesLintDeps.loadCanonicalRules;
   origGetLoggerLint = _rulesLintDeps.getLogger;
+  origGlobHasMatchLint = _rulesLintDeps.globHasMatch;
+  origDiscoverWorkspacePackagesLint = _rulesLintDeps.discoverWorkspacePackages;
 
   origGetLoggerCLI = _rulesCLIDeps.getLogger;
 });
@@ -35,6 +39,8 @@ afterEach(() => {
   _rulesLintDeps.globCanonicalRuleFiles = origGlobCanonicalRuleFilesLint;
   _rulesLintDeps.loadCanonicalRules = origLoadCanonicalRulesLint;
   _rulesLintDeps.getLogger = origGetLoggerLint;
+  _rulesLintDeps.globHasMatch = origGlobHasMatchLint;
+  _rulesLintDeps.discoverWorkspacePackages = origDiscoverWorkspacePackagesLint;
 
   _rulesCLIDeps.getLogger = origGetLoggerCLI;
 });
