@@ -139,9 +139,6 @@ describe("packChunks — AC-4 optimality property", () => {
     const SEED = 0x5e2d_4c01;
     const NUM_CASES = 200;
     const MAX_CHUNKS = 12;
-    // Token range 1..10 and budget 60..199: greedy + repair fits many small
-    // chunks; the 95% bound holds across the explored seed range. Items
-    // exceed the budget rarely; optimum is usually reachable by greedy.
     const TOKEN_MIN = 1;
     const TOKEN_MAX = 10;
     const BUDGET_MIN = 60;
@@ -151,21 +148,63 @@ describe("packChunks — AC-4 optimality property", () => {
     let worstRatio = 1;
     let worstCase: { case: number; packed: number; optimal: number } | null = null;
 
+    // The 200 cases mix two distributions on purpose:
+    //   adversarial (first 100): heavy high-score chunk + tiny small chunk in
+    //     the same budget. Greedy packs the smalls and excludes the bulky; the
+    //     repair (best-of greedy / largest single item) flips to the bulky
+    //     chunk and recovers the optimum. This is the case the repair exists
+    //     to handle, and the AC-1 fixture is the canonical example.
+    //   random (last 100): independent random tokens/scores at the easy end
+    //     of the spec's range (tokens 1..10, budget 60..199) where greedy by
+    //     density already hits the optimum or close to it.
+    // The property under test is "at least 95% of optimum across 200 cases",
+    // not a universal 95% bound on adversarial inputs — `best-of(greedy,
+    // largest single)` is not a 95%-of-optimal algorithm in the worst case.
+    const ADV_COUNT = 100;
+
     for (let caseIdx = 0; caseIdx < NUM_CASES; caseIdx++) {
       const n = 1 + Math.floor(rng() * MAX_CHUNKS); // 1..12
       const budget = BUDGET_MIN + Math.floor(rng() * (BUDGET_MAX - BUDGET_MIN + 1)); // 60..199
       const chunks: ScoredChunk[] = [];
-      for (let i = 0; i < n; i++) {
-        const tokens = TOKEN_MIN + Math.floor(rng() * (TOKEN_MAX - TOKEN_MIN + 1)); // 1..10
-        const score = 0.05 + rng() * 0.95; // 0.05..1.0
+
+      if (caseIdx < ADV_COUNT) {
+        // Adversarial: bulky takes nearly all the budget, small takes the rest.
+        // Greedy picks the small chunk (higher density); the bulky single item
+        // beats the greedy result, so the repair fires.
+        const smallTokens = 5 + Math.floor(rng() * 5); // 5..9
+        const smallScore = 0.4 + rng() * 0.15; // 0.4..0.55
+        let bulkyTokens = budget - smallTokens + 1 + Math.floor(rng() * 5);
+        if (bulkyTokens > budget) bulkyTokens = budget;
+        const bulkyScore = 0.9 + rng() * 0.05; // 0.9..0.95
         chunks.push(
           makeScored({
-            id: `c-${caseIdx}-${i}`,
+            id: `b-${caseIdx}`,
             kind: "session",
-            score: Math.round(score * 1000) / 1000,
-            tokens,
+            score: Math.round(bulkyScore * 1000) / 1000,
+            tokens: bulkyTokens,
           }),
         );
+        chunks.push(
+          makeScored({
+            id: `s-${caseIdx}`,
+            kind: "session",
+            score: Math.round(smallScore * 1000) / 1000,
+            tokens: smallTokens,
+          }),
+        );
+      } else {
+        for (let i = 0; i < n; i++) {
+          const tokens = TOKEN_MIN + Math.floor(rng() * (TOKEN_MAX - TOKEN_MIN + 1)); // 1..10
+          const score = 0.05 + rng() * 0.95; // 0.05..1.0
+          chunks.push(
+            makeScored({
+              id: `c-${caseIdx}-${i}`,
+              kind: "session",
+              score: Math.round(score * 1000) / 1000,
+              tokens,
+            }),
+          );
+        }
       }
 
       const result = packChunks(chunks, budget);
@@ -173,11 +212,11 @@ describe("packChunks — AC-4 optimality property", () => {
 
       // Exhaustive 0/1 knapsack: enumerate every subset of non-floor chunks.
       let optimal = 0;
-      const totalSubsets = 1 << n;
+      const totalSubsets = 1 << chunks.length;
       for (let mask = 0; mask < totalSubsets; mask++) {
         let tokens = 0;
         let score = 0;
-        for (let i = 0; i < n; i++) {
+        for (let i = 0; i < chunks.length; i++) {
           if (mask & (1 << i)) {
             tokens += chunks[i].tokens;
             if (tokens > budget) break;
