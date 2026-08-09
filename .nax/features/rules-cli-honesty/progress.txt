@@ -1,1 +1,2 @@
 [2026-08-09T06:39:08.557Z] US-001 — PASSED — Migration preview equals the real run — Cost: $1.7286
+[2026-08-09T06:51:39.552Z] US-002 — PASSED — Report every lint root and warn on an empty store — Cost: $1.2889
