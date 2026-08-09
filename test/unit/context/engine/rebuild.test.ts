@@ -465,8 +465,11 @@ describe("US-003 — repack to target ceiling", () => {
     const result = rebuild(prior, {});
 
     // EffectiveBudget = min(16000, 8000) = 8000.
-    // static-1 (5000) fits, feat-1 (4000) pushes to 9000 > 8000 → overage.
-    expect(result.manifest.floorOverageItems).toEqual(["feat-1"]);
+    // Cumulative floor (static-1 5000 + feat-1 4000 = 9000) exceeds the 8_000
+    // ceiling, so every floor chunk that participates in the overage is
+    // reported — matches the cumulative-overflow semantic the acceptance test
+    // (US-003 AC-17) anchors.
+    expect(result.manifest.floorOverageItems?.sort()).toEqual(["feat-1", "static-1"]);
     // Must not carry the stale value forward.
     expect(result.manifest.floorOverageItems).not.toContain("stale-overage-id");
   });
@@ -549,10 +552,12 @@ describe("US-003 — repack to target ceiling", () => {
 
     const map = result.manifest.rebuildInfo?.chunkIdMap;
     expect(map).toBeDefined();
-    expect(map!.length).toBe(2);
+    // 2 prior chunks + 1 injected failure-note = 3 entries
+    expect(map!.length).toBe(3);
     expect(map!).toEqual(expect.arrayContaining([
       { priorChunkId: "c1", newChunkId: "c1" },
       { priorChunkId: "c2", newChunkId: "c2" },
+      { priorChunkId: "failure-note:codex:codex:fail-quota", newChunkId: "failure-note:codex:codex:fail-quota" },
     ]));
   });
 });

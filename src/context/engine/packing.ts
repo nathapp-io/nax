@@ -134,9 +134,69 @@ function bestPair(nonFloor: ScoredChunk[], remainingBudget: number): ScoredChunk
 }
 
 /**
- * Best-of(greedy, largest single item, best pair) repair (spec §AC-7).
- * Picks the candidate with the highest total score. Ties keep the greedy
- * result. Returns the selected chunks in input order for determinism.
+ * Exact 0/1 knapsack via subset enumeration (US-004 AC-26). For small n
+ * (default cap 20) enumerating every subset is fast — 2^20 ≈ 1M masks —
+ * and yields the optimum directly. For larger inputs we fall back to the
+ * best-of(greedy, largest single item, best pair) heuristic, which is the
+ * previous AC-7 repair and stays cheap.
+ *
+ * `nonFloor` may be empty; the loop short-circuits to a no-pick answer.
+ * Tokens/score are read straight from the chunk — no scaling.
+ */
+function knapsackOptimum(
+  nonFloor: ScoredChunk[],
+  remainingBudget: number,
+): { selected: ScoredChunk[]; totalScore: number } {
+  if (nonFloor.length === 0) return { selected: [], totalScore: 0 };
+
+  // Prune items that cannot fit individually — they cannot participate in any
+  // feasible subset, so excluding them shrinks the search space.
+  const feasible = nonFloor.filter((c) => c.tokens <= remainingBudget);
+  if (feasible.length === 0) return { selected: [], totalScore: 0 };
+
+  const SUBSET_LIMIT = 20;
+  if (feasible.length > SUBSET_LIMIT) {
+    // Fall back to the heuristic. This preserves AC-7 behavior for large
+    // inputs where exact enumeration would be too expensive.
+    const greedy = greedyNonFloor(feasible, remainingBudget);
+    return {
+      selected: greedy.selected,
+      totalScore: greedy.selected.reduce((s, c) => s + c.score, 0),
+    };
+  }
+
+  let bestMask = 0;
+  let bestScore = 0;
+  const totalSubsets = 1 << feasible.length;
+  for (let mask = 1; mask < totalSubsets; mask++) {
+    let tokens = 0;
+    let score = 0;
+    for (let i = 0; i < feasible.length; i++) {
+      if (mask & (1 << i)) {
+        tokens += feasible[i].tokens;
+        if (tokens > remainingBudget) break;
+        score += feasible[i].score;
+      }
+    }
+    if (tokens <= remainingBudget && score > bestScore) {
+      bestScore = score;
+      bestMask = mask;
+    }
+  }
+
+  const selected: ScoredChunk[] = [];
+  for (let i = 0; i < feasible.length; i++) {
+    if (bestMask & (1 << i)) selected.push(feasible[i]);
+  }
+  return { selected, totalScore: bestScore };
+}
+
+/**
+ * Best-of(greedy, exact 0/1 knapsack, largest single item, best pair) repair
+ * (spec §AC-7, US-004 AC-26). For small n the exact DP wins; for larger n the
+ * heuristic stays cheap. Picks the candidate with the highest total score.
+ * Ties keep the greedy result. Returns the selected chunks in input order
+ * for determinism.
  */
 function repairNonFloor(
   nonFloor: ScoredChunk[],
@@ -145,25 +205,33 @@ function repairNonFloor(
   const greedy = greedyNonFloor(nonFloor, remainingBudget);
   const greedyScore = greedy.selected.reduce((s, c) => s + c.score, 0);
 
+  const optimum = knapsackOptimum(nonFloor, remainingBudget);
+
   const largest = largestSingleItem(nonFloor, remainingBudget);
   const largestScore = largest.reduce((s, c) => s + c.score, 0);
 
   const pair = bestPair(nonFloor, remainingBudget);
   const pairScore = pair.reduce((s, c) => s + c.score, 0);
 
-  if (pairScore > greedyScore && pairScore >= largestScore) {
-    const winnerIds = new Set(pair.map((c) => c.id));
-    const excludedIds = nonFloor.filter((c) => !winnerIds.has(c.id)).map((c) => c.id);
-    return { selected: pair, excludedIds };
+  // Pick the best among greedy / exact / pair / largest. Exact >= greedy
+  // by construction (the optimum is the best feasible score), so it always
+  // wins when it strictly exceeds greedy.
+  const candidates: Array<{ selected: ScoredChunk[]; totalScore: number }> = [
+    { selected: greedy.selected, totalScore: greedyScore },
+    { selected: optimum.selected, totalScore: optimum.totalScore },
+    { selected: pair, totalScore: pairScore },
+    { selected: largest, totalScore: largestScore },
+  ];
+  let best = candidates[0];
+  for (const candidate of candidates) {
+    if (candidate.totalScore > best.totalScore) {
+      best = candidate;
+    }
   }
 
-  if (largestScore > greedyScore) {
-    const winnerIds = new Set(largest.map((c) => c.id));
-    const excludedIds = nonFloor.filter((c) => !winnerIds.has(c.id)).map((c) => c.id);
-    return { selected: largest, excludedIds };
-  }
-
-  return greedy;
+  const winnerIds = new Set(best.selected.map((c) => c.id));
+  const excludedIds = nonFloor.filter((c) => !winnerIds.has(c.id)).map((c) => c.id);
+  return { selected: best.selected, excludedIds };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -189,9 +257,19 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
   const floorOverageIds: string[] = [];
   let usedTokens = 0;
 
+  // Determine whether the floor pass collectively overflows the effective
+  // budget. When it does, every packed floor chunk is reported as overage
+  // (matching the cumulative semantic — see US-003 AC-5, AC-17 acceptance
+  // test: "manifest.floorOverageItems lists exactly the overflowing floor
+  // chunk IDs"). When the cumulative floor fits, no chunk is reported as
+  // overage regardless of how any individual chunk lines up against the
+  // budget on its own.
+  const totalFloorTokens = floorChunks.reduce((sum, c) => sum + c.tokens, 0);
+  const floorCollectivelyOverflows = totalFloorTokens > effectiveBudget;
+
   // Pass 1: floor items — always include, regardless of budget
   for (const chunk of floorChunks) {
-    const overflows = usedTokens + chunk.tokens > effectiveBudget;
+    const overflows = floorCollectivelyOverflows || usedTokens + chunk.tokens > effectiveBudget;
     const packedChunk: PackedChunk = { ...chunk };
     if (overflows) {
       packedChunk.reason = "budget-exceeded-by-floor";

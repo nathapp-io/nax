@@ -349,7 +349,10 @@ describe("rebuildForAgent — #508-M5 rebuildInfo chunk ID correlation", () => {
     expect(newIds).toContain("chunk:abc");
     expect(newIds.length).toBeGreaterThan(1);
 
-    expect(rebuilt.manifest.rebuildInfo?.chunkIdMap).toEqual([{ priorChunkId: "chunk:abc", newChunkId: "chunk:abc" }]);
+    expect(rebuilt.manifest.rebuildInfo?.chunkIdMap).toEqual([
+      { priorChunkId: "chunk:abc", newChunkId: "chunk:abc" },
+      { priorChunkId: "failure-note:claude:codex:fail-quota", newChunkId: "failure-note:claude:codex:fail-quota" },
+    ]);
 
     // Plain re-render (no failure) → undefined
     const orch2 = new ContextOrchestrator([]);

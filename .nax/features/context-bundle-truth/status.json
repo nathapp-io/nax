@@ -1,12 +1,12 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-08-09T08-14-32-624Z",
+    "id": "run-2026-08-09T11-54-40-565Z",
     "feature": "context-bundle-truth",
-    "startedAt": "2026-08-09T08:14:32.624Z",
+    "startedAt": "2026-08-09T11:54:40.565Z",
     "status": "completed",
     "dryRun": false,
-    "pid": 70717
+    "pid": 35683
   },
   "progress": {
     "total": 4,
@@ -17,20 +17,21 @@
     "pending": 0
   },
   "cost": {
-    "spent": 13.728015264999994,
+    "spent": 0.4738492050000001,
     "limit": 60
   },
   "current": null,
-  "iterations": 6,
-  "updatedAt": "2026-08-09T10:58:07.556Z",
-  "durationMs": 9814932,
+  "iterations": 0,
+  "updatedAt": "2026-08-09T12:06:33.647Z",
+  "durationMs": 713082,
   "postRun": {
     "acceptance": {
-      "status": "not-run"
+      "status": "passed",
+      "lastRunAt": "2026-08-09T12:06:02.187Z"
     },
     "regression": {
       "status": "passed",
-      "lastRunAt": "2026-08-09T10:58:05.880Z"
+      "lastRunAt": "2026-08-09T12:06:32.420Z"
     }
   }
 }

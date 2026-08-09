@@ -153,6 +153,9 @@ export function rebuild(
   const usedTokens = packResult.usedTokens + digestContribution;
 
   // US-003: chunkIdMap pairs prior chunk IDs with themselves (IDs don't change during rebuild).
+  // The injected failure-note chunk is also recorded, paired with itself, so
+  // downstream readers can locate the injected chunk in the rebuilt bundle via
+  // the same map (US-003 AC-22 acceptance test).
   const rebuildInfo: ContextManifest["rebuildInfo"] =
     failure && newAgentId
       ? {
@@ -162,12 +165,15 @@ export function rebuild(
           failureOutcome: failure.outcome,
           priorChunkIds,
           newChunkIds: orderedChunks.map((c) => c.id),
-          chunkIdMap: priorChunkIds
-            .map((priorId) => {
-              const entry = chunkById.get(priorId);
-              return entry ? { priorChunkId: priorId, newChunkId: priorId } : null;
-            })
-            .filter((entry): entry is { priorChunkId: string; newChunkId: string } => entry !== null),
+          chunkIdMap: [
+            ...priorChunkIds
+              .map((priorId) => {
+                const entry = chunkById.get(priorId);
+                return entry ? { priorChunkId: priorId, newChunkId: priorId } : null;
+              })
+              .filter((entry): entry is { priorChunkId: string; newChunkId: string } => entry !== null),
+            ...(failureNoteChunk ? [{ priorChunkId: failureNoteChunk.id, newChunkId: failureNoteChunk.id }] : []),
+          ],
         }
       : undefined;
 

@@ -700,12 +700,15 @@ describe("US-003 — rebuild AC10: chunkIdMap pairs every prior chunk ID with it
     const chunkIdMap = rebuilt.manifest.rebuildInfo?.chunkIdMap;
     expect(chunkIdMap).toBeDefined();
     const priorIds = prior.chunks.map((c) => c.id).sort();
+    // The injected failure-note chunk also appears in the map, paired with itself.
+    const failureId = `failure-note:claude:gemini:${AVAILABILITY_FAILURE.outcome}`;
+    const expectedPairs = [...priorIds, failureId]
+      .sort()
+      .map((id) => ({ priorChunkId: id, newChunkId: id }));
     const mapPairs = (chunkIdMap ?? [])
       .map((entry) => ({ priorChunkId: entry.priorChunkId, newChunkId: entry.newChunkId }))
       .sort((a, b) => a.priorChunkId.localeCompare(b.priorChunkId));
-    expect(mapPairs).toEqual(
-      priorIds.map((id) => ({ priorChunkId: id, newChunkId: id })),
-    );
+    expect(mapPairs).toEqual(expectedPairs);
   });
 
   test("chunkIdMap covers every prior chunk ID, not just a subset", () => {
