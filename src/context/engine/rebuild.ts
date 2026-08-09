@@ -183,15 +183,13 @@ export function rebuild(
     buildMs: 0,
     rebuildInfo,
     effectiveBudget,
-    // US-003 AC5: floorOverageItems from the rebuild's own pack result, not the prior bundle's.
-    // Post-process: the packer marks every floor chunk that overflows, but
-    // the minimal set is just the first chunk whose inclusion pushed tokens
-    // past the effectiveBudget — subsequent floor chunks overflow only because
-    // the first one already pushed past.
-    // No overflow -> undefined, matching `manifest-builder.ts` on the primary
-    // build path so both paths report an empty overage identically.
+    // US-003 AC5: floorOverageItems from the rebuild's own pack result, not the
+    // prior bundle's. The packer's `floorOverageIds` IS the set of floor chunks
+    // that overflowed (cumulatively) — pass it through whole, exactly as
+    // `manifest-builder.ts` does on the primary build path, so the two paths
+    // report overage identically. No overflow -> undefined, likewise.
     floorItems: packResult.floorPackedIds,
-    floorOverageItems: packResult.floorOverageIds.length > 0 ? [packResult.floorOverageIds[0]] : undefined,
+    floorOverageItems: packResult.floorOverageIds.length > 0 ? packResult.floorOverageIds : undefined,
   };
 
   const rebuiltChunks: ContextChunk[] = orderedChunks.map((c) => {

@@ -441,10 +441,14 @@ describe("US-003 — rebuild AC5: floorOverageItems reflects the rebuild's own p
     });
 
     const overflow = rebuilt.manifest.floorOverageItems ?? [];
-    // The huge floor chunk must be flagged as overflowing.
+    // Overflow is cumulative, matching the packer's own rule
+    // (`usedTokens + chunk.tokens > effectiveBudget`) and `manifest-builder`
+    // on the primary build path: p1:feat-huge (9_000) clears the 8_000 ceiling
+    // by itself, and p1:feat-small lands on top of it at 9_100, so BOTH are
+    // over-budget floor chunks. The spec asks for "exactly the floor chunk ids
+    // that overflowed that ceiling" — that is the whole set, not just the first.
     expect(overflow).toContain("p1:feat-huge");
-    // The small floor chunk does not overflow on its own.
-    expect(overflow).not.toContain("p1:feat-small");
+    expect(overflow).toContain("p1:feat-small");
     // The non-floor chunk must not be in floorOverageItems.
     expect(overflow).not.toContain("p1:sess");
     // The stale id from the prior must be gone.
