@@ -3,7 +3,7 @@
   "feature": "context-bundle-truth",
   "branchName": "feat/context-bundle-truth",
   "createdAt": "2026-08-09T08:02:16Z",
-  "updatedAt": "2026-08-09T08:21:11.568Z",
+  "updatedAt": "2026-08-09T08:35:53.982Z",
   "userStories": [
     {
       "id": "US-001",
@@ -23,8 +23,8 @@
         "context-engine"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -92,7 +92,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/context/engine/orchestrator.ts",
@@ -112,7 +114,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "92519d0dd9720173c2fff8913f17414fb0df7cfe"
     },
     {
       "id": "US-003",
