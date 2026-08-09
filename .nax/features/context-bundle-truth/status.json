@@ -4,14 +4,14 @@
     "id": "run-2026-08-09T08-14-32-624Z",
     "feature": "context-bundle-truth",
     "startedAt": "2026-08-09T08:14:32.624Z",
-    "status": "failed",
+    "status": "completed",
     "dryRun": false,
     "pid": 70717
   },
   "progress": {
     "total": 4,
-    "passed": 3,
-    "failed": 1,
+    "passed": 4,
+    "failed": 0,
     "paused": 0,
     "blocked": 0,
     "pending": 0
