@@ -47,6 +47,20 @@ export function findProjectDir(startDir: string = process.cwd()): string | null 
   return null;
 }
 
+/**
+ * @internal Shared `warn` sink for every config deprecation shim in this file.
+ *
+ * These run inside `loadConfig`, which can execute before `initLogger`, so an uninitialised
+ * logger must not break config loading — hence the swallowed throw.
+ */
+function defaultConfigWarn(msg: string): void {
+  try {
+    getLogger().warn("config", msg);
+  } catch {
+    /* logger may not be init yet */
+  }
+}
+
 /** @internal Map removed routing strategies to 'keyword' with a deprecation warning.
  * Strategies removed in ROUTE-001: manual, adaptive, custom → mapped to 'keyword'.
  * Returns a new object (immutable -- does not mutate the input). */
@@ -55,14 +69,9 @@ function applyRemovedStrategyCompat(conf: Record<string, unknown>): Record<strin
   const strategy = routing?.strategy;
   const REMOVED_STRATEGIES = ["manual", "adaptive", "custom"];
   if (typeof strategy === "string" && REMOVED_STRATEGIES.includes(strategy)) {
-    try {
-      getLogger().warn(
-        "config",
-        `routing.strategy="${strategy}" was removed in ROUTE-001 and is no longer supported. Falling back to "keyword". Update your config to use "keyword" or "llm".`,
-      );
-    } catch {
-      /* logger may not be init yet */
-    }
+    defaultConfigWarn(
+      `routing.strategy="${strategy}" was removed in ROUTE-001 and is no longer supported. Falling back to "keyword". Update your config to use "keyword" or "llm".`,
+    );
     return { ...conf, routing: { ...routing, strategy: "keyword" } };
   }
   return conf;
@@ -81,13 +90,7 @@ function applyRemovedStrategyCompat(conf: Record<string, unknown>): Record<strin
  */
 export function _applyRemovedRoutingKeysShim(
   conf: Record<string, unknown>,
-  warn: (msg: string) => void = (msg) => {
-    try {
-      getLogger().warn("config", msg);
-    } catch {
-      /* logger may not be init yet */
-    }
-  },
+  warn: (msg: string) => void = defaultConfigWarn,
 ): Record<string, unknown> {
   const routing = conf.routing as Record<string, unknown> | undefined;
   if (!routing || typeof routing !== "object") return conf;
@@ -117,14 +120,9 @@ function applyBatchModeCompat(conf: Record<string, unknown>): Record<string, unk
     const batchMode = llm.batchMode;
     if (typeof batchMode === "boolean") {
       const mappedMode = batchMode ? "one-shot" : "per-story";
-      try {
-        getLogger().warn(
-          "config",
-          `routing.llm.batchMode is deprecated and will be removed in v1.0. Mapped to mode="${mappedMode}". Update your config to use routing.llm.mode instead.`,
-        );
-      } catch {
-        /* logger may not be init yet */
-      }
+      defaultConfigWarn(
+        `routing.llm.batchMode is deprecated and will be removed in v1.0. Mapped to mode="${mappedMode}". Update your config to use routing.llm.mode instead.`,
+      );
       return {
         ...conf,
         routing: {
@@ -150,13 +148,7 @@ function applyBatchModeCompat(conf: Record<string, unknown>): Record<string, unk
  */
 export function _applyLegacyReviewExecutionShim(
   conf: Record<string, unknown>,
-  warn: (msg: string) => void = (msg) => {
-    try {
-      getLogger().warn("config", msg);
-    } catch {
-      /* logger may not be init yet */
-    }
-  },
+  warn: (msg: string) => void = defaultConfigWarn,
 ): Record<string, unknown> {
   let result = conf;
 
@@ -209,13 +201,7 @@ export function _applyLegacyReviewExecutionShim(
  */
 export function applyRoutingRetryDeprecationWarning(
   conf: Record<string, unknown>,
-  warn: (msg: string) => void = (msg) => {
-    try {
-      getLogger().warn("config", msg);
-    } catch {
-      /* logger may not be init yet */
-    }
-  },
+  warn: (msg: string) => void = defaultConfigWarn,
 ): Record<string, unknown> {
   const routing = conf.routing as Record<string, unknown> | undefined;
   const llm = routing?.llm as Record<string, unknown> | undefined;
