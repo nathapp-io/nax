@@ -6,7 +6,31 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { FIELD_DESCRIPTIONS } from "../../../src/cli/config-descriptions";
+import { FIELD_DESCRIPTIONS } from "@/cli";
+import { RoutingConfigSchema } from "@/config";
+
+describe("FIELD_DESCRIPTIONS routing coherence with RoutingConfigSchema", () => {
+  test("documents no routing key the schema does not define", () => {
+    const schemaKeys = Object.keys(RoutingConfigSchema.shape);
+    const documented = [
+      ...new Set(
+        Object.keys(FIELD_DESCRIPTIONS)
+          .filter((k) => k.startsWith("routing."))
+          .map((k) => k.slice("routing.".length).split(".")[0]),
+      ),
+    ];
+
+    expect(documented.filter((k) => !schemaKeys.includes(k))).toEqual([]);
+  });
+
+  test("routing.strategy description names only the strategies the schema accepts", () => {
+    const description = FIELD_DESCRIPTIONS["routing.strategy"];
+
+    for (const removed of ["manual", "adaptive", "custom"]) {
+      expect(description).not.toContain(removed);
+    }
+  });
+});
 
 describe("FIELD_DESCRIPTIONS.models (US-001-4)", () => {
   test("models description exists", () => {

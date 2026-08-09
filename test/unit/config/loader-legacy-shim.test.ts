@@ -13,8 +13,75 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { _applyLegacyReviewExecutionShim, loadConfig } from "../../../src/config/loader";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import {
+  _applyLegacyReviewExecutionShim,
+  _applyRemovedRoutingKeysShim,
+  loadConfig,
+} from "../../../src/config/loader";
+import { addSink, initLogger, resetLogger } from "@/logger";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
+
+describe("_applyRemovedRoutingKeysShim — routing keys removed with ROUTE-001", () => {
+  test("warns and strips routing.customStrategyPath", () => {
+    const captured: string[] = [];
+    const result = _applyRemovedRoutingKeysShim(
+      { routing: { strategy: "keyword", customStrategyPath: "./my-strategy.ts" } },
+      (msg) => captured.push(msg),
+    );
+
+    expect(captured.length).toBe(1);
+    expect(captured[0]).toContain("routing.customStrategyPath");
+    expect(captured[0]).toContain("removed");
+    expect(result.routing as Record<string, unknown>).not.toHaveProperty("customStrategyPath");
+  });
+
+  test("warns and strips routing.adaptive", () => {
+    const captured: string[] = [];
+    const result = _applyRemovedRoutingKeysShim(
+      { routing: { strategy: "keyword", adaptive: { costThreshold: 0.5, minSamples: 10 } } },
+      (msg) => captured.push(msg),
+    );
+
+    expect(captured.length).toBe(1);
+    expect(captured[0]).toContain("routing.adaptive");
+    expect(captured[0]).toContain("removed");
+    expect(result.routing as Record<string, unknown>).not.toHaveProperty("adaptive");
+  });
+
+  test("warns once per removed key when both are present", () => {
+    const captured: string[] = [];
+    _applyRemovedRoutingKeysShim(
+      { routing: { strategy: "keyword", adaptive: {}, customStrategyPath: "./x.ts" } },
+      (msg) => captured.push(msg),
+    );
+
+    expect(captured.length).toBe(2);
+  });
+
+  test("leaves a routing config without removed keys untouched and silent", () => {
+    const captured: string[] = [];
+    const input = { routing: { strategy: "llm", llm: { model: "sonnet" } } };
+    const result = _applyRemovedRoutingKeysShim(input, (msg) => captured.push(msg));
+
+    expect(captured.length).toBe(0);
+    expect(result.routing).toEqual({ strategy: "llm", llm: { model: "sonnet" } });
+  });
+
+  test("does not mutate the input config", () => {
+    const input = { routing: { strategy: "keyword", customStrategyPath: "./x.ts" } };
+    _applyRemovedRoutingKeysShim(input, () => {});
+
+    expect(input.routing).toHaveProperty("customStrategyPath", "./x.ts");
+  });
+
+  test("tolerates a config with no routing section", () => {
+    const captured: string[] = [];
+    const result = _applyRemovedRoutingKeysShim({ execution: {} }, (msg) => captured.push(msg));
+
+    expect(captured.length).toBe(0);
+    expect(result).toEqual({ execution: {} });
+  });
+});
 
 describe("loadConfig — legacy key deprecation shim", () => {
   let tempDir: string;
@@ -151,6 +218,23 @@ describe("loadConfig — legacy key deprecation shim", () => {
     // because pluginMode is now a valid field with default (#1146).
     expect(config.review as unknown as Record<string, unknown>).toHaveProperty("pluginMode", "observational");
     expect(config.review as unknown as Record<string, unknown>).not.toHaveProperty("dialogue");
+  });
+
+  test("loadConfig warns about removed routing keys end-to-end (proves the shim is wired)", async () => {
+    await writeProjectConfig({ routing: { strategy: "keyword", adaptive: { costThreshold: 0.5 } } });
+
+    const captured: string[] = [];
+    resetLogger();
+    initLogger({ level: "warn" });
+    const removeSink = addSink((entry) => captured.push(entry.message));
+    try {
+      await loadConfig(tempDir);
+    } finally {
+      removeSink();
+      resetLogger();
+    }
+
+    expect(captured.some((m) => m.includes("routing.adaptive") && m.includes("removed"))).toBe(true);
   });
 
   test("AC7: loadConfig preserves valid pluginMode 'gating' end-to-end", async () => {

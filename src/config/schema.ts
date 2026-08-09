@@ -57,7 +57,6 @@ export type {
   ContextConfig,
   ContextV2Config,
   RoutingStrategyName,
-  AdaptiveRoutingConfig,
   LlmRoutingMode,
   LlmRoutingConfig,
   RoutingConfig,

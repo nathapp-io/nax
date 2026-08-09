@@ -422,12 +422,6 @@ export interface PrecheckConfig {
   storySizeGate: StorySizeGateConfig;
 }
 
-export interface AdaptiveRoutingConfig {
-  minSamples: number;
-  costThreshold: number;
-  fallbackStrategy: "keyword" | "llm" | "manual";
-}
-
 /** LLM routing config */
 export interface LlmRoutingConfig {
   /** Model selector for routing call (tier string or explicit { agent, model }) */
@@ -457,10 +451,6 @@ export interface LlmRoutingConfig {
 export interface RoutingConfig {
   /** Strategy to use (default: "keyword") */
   strategy: RoutingStrategyName;
-  /** Path to custom strategy file (required if strategy = "custom") */
-  customStrategyPath?: string;
-  /** Adaptive routing settings (used when strategy = "adaptive") */
-  adaptive?: AdaptiveRoutingConfig;
   /** LLM routing settings (used when strategy = "llm") */
   llm?: LlmRoutingConfig;
   /** Agent routing settings (plan-time agent selection) */
