@@ -17,21 +17,18 @@ import { NaxError } from "../../errors";
 import { getLogger } from "../../logger";
 import { errorMessage } from "../../utils/errors";
 import { NeutralityLintError } from "../rules/canonical-loader";
-import { AGENT_PROFILES, getAgentProfile } from "./agent-profiles";
-import { renderForAgent } from "./agent-renderer";
+import { getAgentProfile } from "./agent-profiles";
 import { dedupeChunks } from "./dedupe";
 import { DIGEST_RESERVE_TOKENS, buildDigest, digestTokens } from "./digest";
-import { buildManifest, rebuildUsedTokens } from "./manifest-builder";
-import { DEFAULT_REBUILD_AGENT_ID, buildFailureNoteChunk } from "./orchestrator-rebuild-helpers";
+import { buildManifest } from "./manifest-builder";
 import { FLOOR_KINDS, packChunks } from "./packing";
 import type { PackedChunk } from "./packing";
 import { PULL_TOOL_REGISTRY } from "./pull-tools";
+import { type RebuildDeps, rebuild } from "./rebuild";
 import { FIXED_RENDER_OVERHEAD_TOKENS, renderChunks, separatorOverheadTokens } from "./render";
 import { MIN_SCORE, scoreChunks } from "./scoring";
-import { neutralizeForAgent } from "./scratch-neutralizer";
 import { getStageContextConfig } from "./stage-config";
 import type {
-  AdapterFailure,
   ContextBundle,
   ContextChunk,
   ContextManifest,
@@ -74,6 +71,7 @@ export const _orchestratorDeps = {
   now: () => Date.now(),
   uuid: () => randomUUID(),
   getLogger,
+  rebuild: rebuild as (prior: ContextBundle, options?: RebuildOptions, deps?: RebuildDeps) => ContextBundle,
 };
 
 type ProviderActivationSource = NonNullable<NonNullable<ContextManifest["providerResults"]>[number]["source"]>;
@@ -483,103 +481,9 @@ export class ContextOrchestrator {
    * @param options - optional: newAgentId, failure (for agent-swap), priorStageDigest
    */
   rebuildForAgent(prior: ContextBundle, options: RebuildOptions = {}): ContextBundle {
-    const { newAgentId, failure, priorStageDigest, storyId } = options;
-    const targetAgentId = newAgentId ?? prior.agentId ?? DEFAULT_REBUILD_AGENT_ID;
-    const logger = _orchestratorDeps.getLogger();
-
-    if (newAgentId && !AGENT_PROFILES[newAgentId]) {
-      logger.warn("context-v2", "rebuildForAgent: unknown agent id — using conservative defaults", {
-        ...(storyId && { storyId }),
-        stage: prior.manifest.stage,
-        agentId: newAgentId,
-      });
-    }
-
-    // Snapshot prior chunk IDs before any mutations (AC-39, M5)
-    const priorChunkIds = prior.chunks.map((c) => c.id);
-
-    // Convert ContextChunks back to PackedChunk shape (adds ScoredChunk fields)
-    const priorAgentForNeutralize = prior.agentId ?? "";
-    const packedChunks: import("./packing").PackedChunk[] = prior.chunks.map((c) => {
-      // M2 (AC-42): re-neutralize session-scratch chunk content when swapping agents.
-      // Session chunks carry free-text from renderEntry(); if the prior assemble ran
-      // under claude, tool-name references were preserved (no-op neutralization).
-      // On swap to a different agent we apply neutralization retroactively.
-      const content =
-        newAgentId && newAgentId !== priorAgentForNeutralize && c.kind === "session"
-          ? neutralizeForAgent(c.content, priorAgentForNeutralize, targetAgentId)
-          : c.content;
-      return { ...c, content, rawScore: c.score, roleFiltered: false, belowMinScore: false };
+    return _orchestratorDeps.rebuild(prior, options, {
+      uuid: _orchestratorDeps.uuid,
+      getLogger: _orchestratorDeps.getLogger,
     });
-
-    // Inject failure-note chunk when this is an agent-swap rebuild
-    if (failure && newAgentId) {
-      packedChunks.push(buildFailureNoteChunk(priorAgentForNeutralize || "unknown", newAgentId, failure));
-    }
-
-    // Re-render under the target agent's profile (or markdown-sections for same-agent rebuild)
-    const pushMarkdown = newAgentId
-      ? renderForAgent(packedChunks, targetAgentId, { priorStageDigest })
-      : renderChunks(packedChunks, { priorStageDigest });
-
-    const digest = buildDigest(packedChunks);
-    const dTokens = digestTokens(digest);
-
-    const rebuildInfo: ContextManifest["rebuildInfo"] =
-      failure && newAgentId
-        ? {
-            priorAgentId: prior.agentId ?? "unknown",
-            newAgentId: targetAgentId,
-            failureCategory: failure.category,
-            failureOutcome: failure.outcome,
-            priorChunkIds,
-            newChunkIds: packedChunks.map((c) => c.id),
-            chunkIdMap: priorChunkIds
-              .map((priorChunkId, index) => {
-                const newChunkId = packedChunks[index]?.id;
-                return newChunkId ? { priorChunkId, newChunkId } : null;
-              })
-              .filter((entry): entry is { priorChunkId: string; newChunkId: string } => entry !== null),
-          }
-        : undefined;
-
-    const usedTokens = rebuildUsedTokens(prior, packedChunks, priorStageDigest);
-
-    // AC-33: strip pull tools if the new agent cannot invoke tool calls.
-    const targetProfile = getAgentProfile(targetAgentId).profile;
-    const rebuiltPullTools = targetProfile.caps.supportsToolCalls ? prior.pullTools : [];
-
-    const manifest: ContextManifest = {
-      ...prior.manifest,
-      requestId: _orchestratorDeps.uuid(),
-      includedChunks: packedChunks.map((c) => c.id),
-      // Recomputed chunk tokens — a rebuild can add a chunk (the failure note)
-      // that the prior map has no entry for, which would record tokens:0 (#1421).
-      chunkTokens: Object.fromEntries(packedChunks.map((c) => [c.id, c.tokens])),
-      usedTokens,
-      digestTokens: dTokens,
-      buildMs: 0,
-      rebuildInfo,
-      // Re-tighten to the target agent's own ceiling on an agent swap — the spread above
-      // otherwise carries the PRIOR agent's effectiveBudget forward alongside the new
-      // agent's content (and any injected failure-note chunk), which would make
-      // computeFloorOverage (src/metrics/tracker.ts) compute overage against the wrong
-      // ceiling for every swapped story.
-      effectiveBudget: Math.min(
-        prior.manifest.effectiveBudget ?? Number.POSITIVE_INFINITY,
-        targetProfile.caps.preferredPromptTokens,
-      ),
-    };
-
-    return {
-      pushMarkdown,
-      pullTools: rebuiltPullTools,
-      digest,
-      manifest,
-      // Return the full packedChunks (including any injected failure-note) so
-      // bundle.chunks matches what was actually rendered into pushMarkdown.
-      chunks: packedChunks.map(toContextChunk),
-      agentId: targetAgentId,
-    };
   }
 }
