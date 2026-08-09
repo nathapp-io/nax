@@ -20,5 +20,10 @@ AGENT = 1
 # code, so the floor is enforced by scripts/check-coverage.ts (which parses coverage/
 # lcov.info), not here.
 coverageSkipTestFiles = true
-coverageReporter = ["text", "lcov"]
+# lcov only. The "text" reporter aborts the run with `error: An internal error
+# occurred (WriteFailed)` whenever stdout is a pipe rather than a TTY — every CI
+# context, and any local `| head`/`| tail`. Its per-file table was cosmetic;
+# check-coverage.ts parses coverage/lcov.info and prints the totals. For per-file
+# detail, read coverage/lcov.info directly.
+coverageReporter = ["lcov"]
 coverageDir = "coverage"
