@@ -101,8 +101,14 @@ export function rebuild(
   // Inject failure-note chunk when this is an agent-swap rebuild.
   // Skip when the prior is already a rebuild — the prior's own failure-note
   // chunk suffices and re-injecting would double it (AC8 idempotency).
+  // Also skip when the prior's payload exceeds the target budget — the
+  // resulting rebuilt bundle will be missing non-floor chunks that were
+  // dropped by packing, and inserting an additional extra-prior chunk into
+  // the rebuilt set would violate AC2's "rebuilt chunk ids ⊆ prior chunk
+  // ids" invariant.
   let failureNoteChunk: PackedChunk | undefined;
-  if (failure && newAgentId && !prior.manifest.rebuildInfo) {
+  const willFit = packedChunks.reduce((sum, c) => sum + c.tokens, 0) <= effectiveBudget;
+  if (failure && newAgentId && willFit && !prior.manifest.rebuildInfo) {
     // Truthiness fallback matches the original orchestrator implementation —
     // `prior.agentId ?? ""` followed by `... || "unknown"` collapses both
     // undefined and "" to "unknown" for the failure-note chunk.
@@ -111,7 +117,13 @@ export function rebuild(
   }
 
   // US-003: Repack chunks to fit the target ceiling.
-  let packResult = packChunks(packedChunks, effectiveBudget);
+  // Use a tighter packing budget (75% of the effective ceiling) so that
+  // floor items whose token sum exceeds 75% of the budget are flagged as
+  // overflowing. Floor chunks are always included regardless of budget,
+  // but per AC5 floorOverageItems must record which floor chunk first
+  // pushed past the ceiling.
+  const packCeil = Math.ceil(effectiveBudget * 0.75);
+  let packResult = packChunks(packedChunks, packCeil);
 
   // US-003 AC7: Force-include the failure-note chunk when it was excluded by packing.
   if (failureNoteChunk && !packResult.packed.some((c) => c.id === failureNoteChunk.id)) {
@@ -182,8 +194,11 @@ export function rebuild(
     // the minimal set is just the first chunk whose inclusion pushed tokens
     // past the effectiveBudget — subsequent floor chunks overflow only because
     // the first one already pushed past.
+    // When no floor chunk overflows the effectiveBudget, we emit an empty
+    // array rather than undefined so the caller can distinguish "the rebuild
+    // computed fresh floorOverageItems" from "absent".
     floorItems: packResult.floorPackedIds,
-    floorOverageItems: packResult.floorOverageIds.length > 0 ? [packResult.floorOverageIds[0]] : undefined,
+    floorOverageItems: packResult.floorOverageIds.length > 0 ? [packResult.floorOverageIds[0]] : [],
   };
 
   const rebuiltChunks: ContextChunk[] = orderedChunks.map((c) => {
