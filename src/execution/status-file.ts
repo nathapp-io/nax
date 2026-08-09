@@ -162,13 +162,20 @@ export interface NaxStatusFile {
 /**
  * Derive progress counts from PRD story statuses.
  *
- * Counts each story by its current status. `pending` is computed as
- * everything not in the four explicit terminal/waiting states.
+ * `failed` counts both `failed` and `regression-failed` — mirrors
+ * countStories() in src/prd/index.ts, which the deferred regression gate
+ * relies on for the same classification (see run-completion.ts, RL-004).
+ *
+ * `pending` is everything else: `pending`, `in-progress`, `skipped`, and
+ * `decomposed` all fall into this bucket today. That collapses statuses
+ * countStories() tracks separately (`skipped`, `decomposed`) — status.json's
+ * `progress` shape has no dedicated field for them. Not addressed here;
+ * tracked as a follow-up alongside this fix.
  */
 export function countProgress(prd: PRD): NaxStatusFile["progress"] {
   const stories = prd.userStories;
   const passed = stories.filter((s) => s.status === "passed").length;
-  const failed = stories.filter((s) => s.status === "failed").length;
+  const failed = stories.filter((s) => s.status === "failed" || s.status === "regression-failed").length;
   const paused = stories.filter((s) => s.status === "paused").length;
   const blocked = stories.filter((s) => s.status === "blocked").length;
   const total = stories.length;
