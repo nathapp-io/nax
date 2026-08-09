@@ -10,7 +10,7 @@ import type { Finding } from "@/findings/types";
 import type { UserStory } from "@/prd";
 import { isBlockingSeverity } from "@/review";
 import type { ReviewCheckResult } from "@/review/types";
-import { buildIsolationSection } from "../sections";
+import { buildIsolationSection, buildNaxArtifactsSection } from "../sections";
 
 interface CheckErrorFormatOptions {
   blockingThreshold?: "error" | "warning" | "info";
@@ -133,6 +133,8 @@ acceptance gate — it is NOT source-tree test coverage. You may NOT cite any \`
 evidence that an acceptance criterion is already tested, and you may NOT emit UNRESOLVED on that basis.
 The only valid response to a missing-test finding is to
 author a real test under the package's resolved test path.
+
+${buildNaxArtifactsSection("implementer")}
 
 ## Test-file edit exceptions
 

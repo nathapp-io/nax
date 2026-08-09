@@ -27,6 +27,7 @@ import type { DeferredReviewResult } from "./deferred-review";
 import type { ExitReason } from "./executor-types";
 import type { AcceptanceLoopContext, AcceptanceLoopResult } from "./lifecycle/acceptance-loop";
 import type { RunCompletionOptions, RunCompletionResult } from "./lifecycle/run-completion";
+import type { AcceptancePhaseStatus } from "./status-file";
 import { hookCtx } from "./story-context";
 
 /**
@@ -173,6 +174,8 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
                 packageDir: g.packageDir,
                 testFramework: groupConfig.project?.testFramework,
                 commandOverride: groupConfig.acceptance.command,
+                storyCount: g.stories.length,
+                acceptanceEnabled: groupConfig.acceptance.enabled,
               };
             }),
           )
@@ -201,6 +204,12 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
           runtime: options.runtime,
           abortSignal: options.abortSignal,
           acceptanceTestPaths,
+          // US-004 (AC-35): forward the prior run's missing-target packages
+          // onto the context so a resumed run's acceptance loop is invoked
+          // with that history available, rather than the resume decision
+          // (driven by postRunStatus.acceptance.status, see
+          // acceptanceAlreadyPassed above) losing it entirely.
+          skippedPackages: postRunStatus?.acceptance?.skippedPackages,
         });
       } catch (err) {
         // A thrown error here would otherwise leave "acceptance" permanently
@@ -218,7 +227,15 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
       const lastRunAt = new Date().toISOString();
       const acceptanceDurationMs = Date.now() - acceptanceStartTime;
       if (acceptanceResult.success) {
-        options.statusWriter.setPostRunPhase("acceptance", { status: "passed", lastRunAt });
+        // US-004 (AC-4): explicitly clear skippedPackages on the passed
+        // transition so a stale list from a prior failed run is not
+        // retained. StatusWriter merges updates shallowly, so omitting
+        // the field would leave the previous value in place.
+        options.statusWriter.setPostRunPhase("acceptance", {
+          status: "passed",
+          lastRunAt,
+          skippedPackages: undefined,
+        });
         pipelineEventBus.emit({
           type: "postrun:phase:completed",
           phase: "acceptance",
@@ -235,12 +252,22 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
         });
       } else {
         acceptancePassed = false;
-        options.statusWriter.setPostRunPhase("acceptance", {
+        // US-004: surface missing-target packages on the failed phase so a
+        // resumed run can re-evaluate them. The field is always written —
+        // explicitly undefined when this failure has none — because
+        // StatusWriter merges updates shallowly and would otherwise leave a
+        // stale list from an earlier missing-target failure in place.
+        const failureUpdate: Partial<AcceptancePhaseStatus> = {
           status: "failed",
           failedACs: acceptanceResult.failedACs ?? [],
           retries: acceptanceResult.retries ?? 0,
           lastRunAt,
-        });
+          skippedPackages:
+            acceptanceResult.skippedPackages && acceptanceResult.skippedPackages.length > 0
+              ? acceptanceResult.skippedPackages
+              : undefined,
+        };
+        options.statusWriter.setPostRunPhase("acceptance", failureUpdate);
         pipelineEventBus.emit({
           type: "postrun:phase:completed",
           phase: "acceptance",

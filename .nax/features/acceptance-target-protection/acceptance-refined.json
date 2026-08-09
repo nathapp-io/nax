@@ -1,0 +1,247 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `buildNaxArtifactsSection(\"test-writer\")` is called, then it returns a string containing a sentence that files under `.nax/` must never be moved, renamed, or deleted.",
+    "refined": "Calling `buildNaxArtifactsSection(\"test-writer\")` returns a string that matches the regex `/\\.nax\\/.*(?:must never be moved|must never be renamed|must never be deleted|are immutable|do not move|do not rename|do not delete)/i`",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `buildNaxArtifactsSection` is called for `test-writer`, then it returns a non-null string.",
+    "refined": "Calling `buildNaxArtifactsSection(\"test-writer\")` returns a value where `typeof result === 'string' && result !== null`",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `buildNaxArtifactsSection` is called for `implementer`, then it returns a non-null string.",
+    "refined": "Calling `buildNaxArtifactsSection(\"implementer\")` returns a value where `typeof result === 'string' && result !== null`",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `buildNaxArtifactsSection` is called for `verifier`, then it returns a non-null string.",
+    "refined": "Calling `buildNaxArtifactsSection(\"verifier\")` returns a value where `typeof result === 'string' && result !== null`",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `buildNaxArtifactsSection` returns its section, then it states that a test under `.nax/` is not a reason to skip writing source-tree tests.",
+    "refined": "Calling `buildNaxArtifactsSection` with any GuardrailRole returns a string containing both `.nax/` and a negation construct matching `/skip|ignore|omit.*source.*tree|skip.*writing/` combined with `.nax/` in proximity (within 50 chars before or after)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When `buildNaxArtifactsSection` returns its section, then it states that a source-tree test is not a reason to remove a test under `.nax/`.",
+    "refined": "Calling `buildNaxArtifactsSection` with any GuardrailRole returns a string containing both `source` (or `source-tree` or `source tree`) and a negation construct matching `/remove|delete|drop|eliminate/` combined with `.nax/` in proximity (within 50 chars before or after)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When `TddPromptBuilder` builds a prompt for the `test-writer` role, then the prompt includes the `.nax/` immutability text.",
+    "refined": "Constructing a prompt via `TddPromptBuilder.build(role=\"test-writer\", ...)` and calling `buildNaxArtifactsSection(\"test-writer\")` produces a substring that is present verbatim in the built prompt",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When `TddPromptBuilder` builds a prompt for the `verifier` role, then the prompt includes the `.nax/` immutability text.",
+    "refined": "Constructing a prompt via `TddPromptBuilder.build(role=\"verifier\", ...)` and calling `buildNaxArtifactsSection(\"verifier\")` produces a substring that is present verbatim in the built prompt",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When `RectifierPromptBuilder` builds a rectifier prompt, then the prompt includes the `.nax/` immutability text.",
+    "refined": "Calling `buildEscapeHatch(...)` and calling `buildNaxArtifactsSection(\"rectifier\")` produces a substring that is present verbatim in the escape hatch output string",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When the porcelain parser receives a deleted `apps/web/.nax/features/f/.nax-acceptance.test.tsx` path, then it returns that path as protected.",
+    "refined": "parsePorcelain('D apps/web/.nax/features/f/.nax-acceptance.test.tsx') returns ['apps/web/.nax/features/f/.nax-acceptance.test.tsx']",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When the porcelain parser receives a rename moving a file out of `.nax/`, then it returns the old path rather than the new path.",
+    "refined": "parsePorcelain('R  .nax/old/file.ts -> new/file.ts') returns ['.nax/old/file.ts']",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When the porcelain parser receives a modified `.nax/` file status, then it returns no protected paths.",
+    "refined": "parsePorcelain('M .nax/foo/bar.ts') returns []",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When the porcelain parser receives a deleted path outside `.nax/` such as `src/legacy.ts`, then it returns no protected paths.",
+    "refined": "parsePorcelain('D src/legacy.ts') returns []",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When the porcelain parser receives a quoted deleted `.nax/` path containing a space, then it returns the unquoted path.",
+    "refined": "parsePorcelain('D \".nax/path with space.txt\"') returns ['.nax/path with space.txt']",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When the porcelain parser receives an uninterpretable line followed by a deleted `.nax/` path, then it skips the uninterpretable line and returns the protected path.",
+    "refined": "parsePorcelain('INVALID_LINE\\nD .nax/deleted.ts') returns ['.nax/deleted.ts']",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When `git status --porcelain` reports a deleted file under `.nax/`, then `autoCommitIfDirty` runs `git checkout` restoring that path before `git add`.",
+    "refined": "Given status returns 'D .nax/deleted.ts'; spawn mock records calls in order; verify checkout ['-.nax/deleted.ts'] precedes add ['-A']",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When `autoCommitIfDirty` restores a deleted `.nax/` path, then it logs an error whose payload has `storyId` as its first field.",
+    "refined": "Error log is emitted via _gitDeps.getSafeLogger().error() with args where args[0] equals the storyId passed to autoCommitIfDirty",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When `git status --porcelain` reports only changes outside `.nax/`, then `autoCommitIfDirty` runs no `git checkout` and still commits.",
+    "refined": "Given status returns 'D src/changed.ts'; spawn mock verify checkout is never called; add and commit are called",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When a `.nax/` restore `git checkout` exits non-zero, then `autoCommitIfDirty` still runs `git add` and `git commit`.",
+    "refined": "Given status returns 'D .nax/deleted.ts' and checkout exits 1; spawn mock verify add and commit are still called after checkout failure",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When an acceptance group has `storyCount: 1`, `acceptanceEnabled: true`, and no file at `testPath`, then `acceptanceStage.execute()` returns `action: \"fail\"`.",
+    "refined": "Given an AcceptanceTestPaths entry with storyCount=1, acceptanceEnabled=true, and testPath pointing to a non-existent file, when acceptanceStage.execute() is called, then the returned result has action === \"fail\" and result.reason includes \"Acceptance test file not found\".",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When multiple required acceptance targets are missing, then the failure reason names every affected `packageDir`.",
+    "refined": "Given AcceptanceTestPaths contains three entries with storyCount>=1 and acceptanceEnabled=true whose testPath files do not exist, when acceptanceStage.execute() is called, then result.reason includes all three distinct packageDir values from the missing entries.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When the only missing acceptance target belongs to a group with `storyCount: 0`, then `acceptanceStage.execute()` returns `action: \"continue\"`.",
+    "refined": "Given an AcceptanceTestPaths entry with storyCount=0, testPath pointing to a non-existent file, and no other entries, when acceptanceStage.execute() is called, then the returned result has action === \"continue\".",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When the only missing acceptance target belongs to a group with `acceptanceEnabled: false`, then `acceptanceStage.execute()` returns `action: \"continue\"`.",
+    "refined": "Given an AcceptanceTestPaths entry with acceptanceEnabled=false, testPath pointing to a non-existent file, and no other entries, when acceptanceStage.execute() is called, then the returned result has action === \"continue\".",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When a missing-target group omits `storyCount` and its package has one non-fix PRD story, then `acceptanceStage.execute()` derives the count and returns `action: \"fail\"`.",
+    "refined": "Given ctx.prd.userStories contains exactly one non-fix, non-decomposed story with workdir resolving to packageDir P, and AcceptanceTestPaths contains an entry for P with storyCount omitted and testPath non-existent, when acceptanceStage.execute() is called, then the derived storyCount is 1 and result.action === \"fail\".",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When a missing-target group omits `acceptanceEnabled`, then `acceptanceStage.execute()` treats acceptance as enabled and returns `action: \"fail\"`.",
+    "refined": "Given an AcceptanceTestPaths entry with storyCount=1, acceptanceEnabled omitted, and testPath non-existent, when acceptanceStage.execute() is called, then acceptanceEnabled is treated as true and result.action === \"fail\".",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When an acceptance target is missing, then its failure record contributes no entries to `failedACs`.",
+    "refined": "Given a missing acceptance target scenario with storyCount=1 and acceptanceEnabled=true, when acceptanceStage.execute() is called, then result.failedACs is an empty array (or undefined).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When `config.acceptance.enabled` is false, then `acceptanceStage.enabled()` returns false.",
+    "refined": "Given config.acceptance.enabled is set to false, when acceptanceStage.enabled() is called, then it returns false.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When every acceptance group has a present, passing target, then `acceptanceStage.execute()` returns `action: \"continue\"`.",
+    "refined": "Given AcceptanceTestPaths entries where all testPath files exist and are executable/passing, and all entries have storyCount>=1 and acceptanceEnabled=true, when acceptanceStage.execute() is called, then result.action === \"continue\".",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When `acceptanceSetupStage` populates `ctx.acceptanceTestPaths`, then each entry's `storyCount` equals the number of PRD stories grouped into its package.",
+    "refined": "Given ctx.prd.userStories contains exactly M stories whose workdir resolves to packageDir P (excluding fix stories and decomposed stories), when acceptanceSetupStage.execute() populates ctx.acceptanceTestPaths, then the entry for P has storyCount === M.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When `runner-completion` populates an acceptance test-path entry, then `acceptanceEnabled` is resolved from that package's config rather than the root config.",
+    "refined": "Given root config acceptance.enabled=false but package P's groupConfig has acceptance.enabled=true, when runner-completion populates an AcceptanceTestPaths entry for P, then that entry's acceptanceEnabled === true (not the root-level false).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When the acceptance stage fails because targets are missing, then `AcceptanceLoopResult` carries the list of missing-target packages.",
+    "refined": "When acceptance fails with a missing-target error, `AcceptanceLoopResult` returned from the acceptance loop contains `skippedPackages` as a non-empty string array containing exactly the missing package names.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "Given an acceptance stage stub that fails with one missing package, when the completion phase runs, then `setPostRunPhase(\"acceptance\", ...)` receives `status: \"failed\"` and `skippedPackages` containing that package.",
+    "refined": "After stubbing acceptance to fail with missing package \"pkg-a\", calling the completion phase results in `setPostRunPhase` being invoked with argument `phase === \"acceptance\"`, `status === \"failed\"`, and `skippedPackages` equal to [\"pkg-a\"].",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When acceptance fails because a target is missing, then `setPostRunPhase(\"acceptance\", ...)` is never called with `status: \"passed\"`.",
+    "refined": "During any execution where acceptance fails due to missing targets, `setPostRunPhase` is never invoked with both `phase === \"acceptance\"` and `status === \"passed\"` in the same call.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When acceptance passes with every target present, then the recorded acceptance status is `\"passed\"` and has no `skippedPackages`.",
+    "refined": "When all acceptance targets are present and acceptance succeeds, `setPostRunPhase` is called with `phase === \"acceptance\"`, `status === \"passed\"`, and `skippedPackages` is either undefined or an empty array.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "Given a resumed run whose status has acceptance `status: \"failed\"` and a non-empty `skippedPackages`, when completion evaluates post-run phases, then it reruns acceptance rather than skipping it.",
+    "refined": "Given a post-run status object with `acceptance.status === \"failed\"` and `acceptance.skippedPackages === [\"pkg-a\"]`, when `runCompletionPhase` evaluates the acceptance phase, it invokes the acceptance loop (not skipping) and passes the existing `skippedPackages` to it.",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]

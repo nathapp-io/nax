@@ -204,6 +204,8 @@ export interface PipelineContext extends DispatchContext {
       /** This package's own failed AC ids (not the deduped global union). */
       failedACs: string[];
     }>;
+    /** Package dirs whose required acceptance test target was missing (US-003). */
+    missingTargets?: string[];
   };
   /** Story start timestamp (ISO string, set by runner before pipeline) */
   storyStartTime?: string;
@@ -238,6 +240,10 @@ export interface PipelineContext extends DispatchContext {
     testFramework?: string;
     /** Per-package acceptance.command override. Undefined = use framework default. */
     commandOverride?: string;
+    /** Number of non-fix, non-decomposed PRD stories grouped into this package. US-003. */
+    storyCount?: number;
+    /** Whether acceptance is enabled for this package's config. US-003. */
+    acceptanceEnabled?: boolean;
   }>;
   /** Failure category from TDD orchestrator (set by executionStage on TDD failure) */
   tddFailureCategory?: FailureCategory;

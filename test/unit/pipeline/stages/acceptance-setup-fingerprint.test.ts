@@ -323,6 +323,41 @@ describe("US-001: per-package test file generation by workdir", () => {
     expect(ctx.acceptanceTestPaths!.some((p) => p.packageDir.endsWith("apps/api"))).toBe(true);
     expect(ctx.acceptanceTestPaths!.some((p) => p.packageDir.endsWith("apps/cli"))).toBe(true);
   });
+
+  test("US-003 AC-10: each ctx.acceptanceTestPaths entry's storyCount equals the number of PRD stories grouped into its package", async () => {
+    const stories = [
+      makeStoryWithWorkdir("US-001", "apps/api", ["AC-1: criterion"]),
+      makeStoryWithWorkdir("US-002", "apps/api", ["AC-2: criterion"]),
+      makeStoryWithWorkdir("US-003", "apps/cli", ["AC-1: criterion"]),
+    ];
+    const ctx = makeCtx({
+      prd: {
+        project: "test-project",
+        feature: "test-feature",
+        branchName: "feat/test",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userStories: stories,
+      },
+      story: stories[0],
+      stories,
+    });
+
+    _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp();
+    _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(ctx.acceptanceTestPaths).toBeDefined();
+    const apiEntry = ctx.acceptanceTestPaths!.find((p) => p.packageDir.endsWith("apps/api"));
+    const cliEntry = ctx.acceptanceTestPaths!.find((p) => p.packageDir.endsWith("apps/cli"));
+    expect(apiEntry?.storyCount).toBe(2);
+    expect(cliEntry?.storyCount).toBe(1);
+  });
 });
 
 // ---------------------------------------------------------------------------

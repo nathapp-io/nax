@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-08-08T15-05-28-014Z",
+    "feature": "acceptance-target-protection",
+    "startedAt": "2026-08-08T15:05:28.014Z",
+    "status": "failed",
+    "dryRun": false,
+    "pid": 44223
+  },
+  "progress": {
+    "total": 4,
+    "passed": 3,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 1
+  },
+  "cost": {
+    "spent": 27.218285585000004,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 5,
+  "updatedAt": "2026-08-08T20:27:16.920Z",
+  "durationMs": 19308906,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-08-08T20:07:50.746Z"
+    },
+    "regression": {
+      "status": "failed",
+      "failedTests": [
+        "test/integration/pipeline/pipeline-acceptance.test.ts"
+      ],
+      "affectedStories": [
+        "US-004"
+      ],
+      "lastRunAt": "2026-08-08T20:27:15.150Z"
+    }
+  }
+}

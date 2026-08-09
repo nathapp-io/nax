@@ -1,0 +1,288 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "acceptance-target-protection",
+  "branchName": "feat/acceptance-target-protection",
+  "createdAt": "2026-08-08T22:50:00+08:00",
+  "updatedAt": "2026-08-08T20:07:50.654Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": ".nax immutability guard in code-touching prompts",
+      "description": "**Goal** — Add an always-on `.nax/` artifact-protection section to every code-touching TDD and rectifier role prompt.\n\n**Motivation** — The test-writer relocated acceptance coverage faithfully and then tidied up what looked like an orphan because only acceptance-gen was told the computed `.nax/` path was intentional.\n\n**Approach** — Follows `buildBehavioralGuardrailsSection` (`src/prompts/sections/behavioral-guardrails.ts:12`) exactly: a role-keyed builder in `src/prompts/sections/`, exported from the `src/prompts/sections/index.ts` barrel, composed into the prompt accumulator. Two deliberate differences from that precedent:\n\n- It is **not config-gated**. `buildBehavioralGuardrailsSection` takes a `GuardrailLevel` and returns `null` when `\"off\"`; this section is a safety invariant and always returns a string.\n- It **applies to `verifier`**. The guardrails builder returns `null` for `verifier` and `no-test`; this one does not.\n\nTwo composition sites, both existing:\n\n| Site | Roles covered |\n|:---|:---|\n| `src/prompts/builders/tdd-builder.ts:238-248` (alongside the guardrails block) | `test-writer`, `implementer`, `verifier` |\n| `buildEscapeHatch` in `src/prompts/builders/rectifier-builder-helpers.ts:116` — interpolate the section into its returned template string | rectifier |\n\n**The rectifier guard must not be composed in `rectifier-builder.ts`.** That file is 902 lines and is pinned at exactly `902` in `scripts/baselines/file-sizes-baseline.json`; the ratchet grandfathers oversized files but forbids growth, so adding even one line there fails `bun run check:file-sizes` inside `bun run lint`. Routing through `buildEscapeHatch` (in the 412-line helpers module, which already carries the rectifier's `.nax/` text) adds zero lines to the capped file.\n\nThe rectifier's existing `.nax/` citation paragraph (`rectifier-builder-helpers.ts:130-135`) is **left unchanged** — it addresses a different failure mode (agents *citing* a `.nax/` test as real coverage) and uses rectifier-only vocabulary that would be noise elsewhere. The new section is appended alongside it, not merged into it.\n\n**Scope** — In: `buildNaxArtifactsSection`, the sections barrel export, TDD composition, and rectifier escape-hatch composition. Out: changing the rectifier's existing `.nax/` citation paragraph; changing wording by isolation mode.\n\n**Interface**\n```typescript\nbuildNaxArtifactsSection(role: GuardrailRole): string\n```",
+      "acceptanceCriteria": [
+        "When `buildNaxArtifactsSection(\"test-writer\")` is called, then it returns a string containing a sentence that files under `.nax/` must never be moved, renamed, or deleted.",
+        "When `buildNaxArtifactsSection` is called for `test-writer`, then it returns a non-null string.",
+        "When `buildNaxArtifactsSection` is called for `implementer`, then it returns a non-null string.",
+        "When `buildNaxArtifactsSection` is called for `verifier`, then it returns a non-null string.",
+        "When `buildNaxArtifactsSection` returns its section, then it states that a test under `.nax/` is not a reason to skip writing source-tree tests.",
+        "When `buildNaxArtifactsSection` returns its section, then it states that a source-tree test is not a reason to remove a test under `.nax/`.",
+        "When `TddPromptBuilder` builds a prompt for the `test-writer` role, then the prompt includes the `.nax/` immutability text.",
+        "When `TddPromptBuilder` builds a prompt for the `verifier` role, then the prompt includes the `.nax/` immutability text.",
+        "When `RectifierPromptBuilder` builds a rectifier prompt, then the prompt includes the `.nax/` immutability text.",
+        "When behavioral guardrails are configured as `off`, then `buildNaxArtifactsSection(\"verifier\")` still returns the immutable-artifact section."
+      ],
+      "tags": [
+        "feature",
+        "prompts",
+        "safety"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The change composes one always-on section at two established prompt seams and needs prompt-output regression tests for three roles.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/prompts/sections/behavioral-guardrails.ts",
+        "src/prompts/sections/index.ts",
+        "src/prompts/builders/tdd-builder.ts",
+        "src/prompts/builders/rectifier-builder-helpers.ts",
+        "test/unit/prompts/sections/role-task.test.ts"
+      ],
+      "expectedFiles": [
+        "src/prompts/sections/nax-artifacts.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/prompts/sections/index.ts",
+          "reason": ""
+        },
+        {
+          "path": "src/prompts/builders/tdd-builder.ts",
+          "reason": ""
+        },
+        {
+          "path": "src/prompts/builders/rectifier-builder-helpers.ts",
+          "reason": ""
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "2c9b5dd3c40cafb883a3ca6030671c2685de15ba",
+      "outOfScope": [
+        "wording differences between isolation modes (`lite` vs standard) — the section is identical for both, matching `buildBehavioralGuardrailsSection`'s current behavior where `_variant` and `_isolation` are accepted but unused."
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Restore deleted .nax artifacts before auto-commit staging",
+      "description": "**Goal** — Detect deleted or moved-out `.nax/` paths in porcelain status and best-effort restore them before `git add -A`.\n\n**Motivation** — The snapshot auto-commit swept an acceptance artifact deletion onto the branch after an agent treated it as a stray test file.\n\n**Approach** — `autoCommitIfDirty` in `src/utils/git.ts:247`. The new step sits between the `git status --porcelain` read (`:315-323`) and the `git add -A` (`:335`). Follows the existing refusal precedent 15 lines above at `:300-313` for logging shape. All process spawning goes through the existing `_gitDeps.spawn` injection point; the logger is `_gitDeps.getSafeLogger()`.\n\nPorcelain parsing is extracted to its own exported helper so it can be tested against real porcelain strings rather than through a spawn mock. Rename entries are `R  old -> new` and the **old** path is the one to restore; paths containing spaces or non-ASCII bytes come back quoted by git.\n\nDetection in US-002 is a **structural discriminator**, not a resolved-path list: any deletion or rename whose path lies under a `.nax/` segment is illegitimate for an agent session. This is broader than \"the acceptance target\" and deliberately so — it also protects `prd.json`, `checkpoint.jsonl`, and `acceptance-meta.json`, and it makes the code enforcement exactly symmetric with the prompt sentence US-001 adds. `autoCommitIfDirty(workdir, stage, role, storyId, blockedWorktrees?)` is a leaf utility with no PRD, config, or feature name in scope, so it *cannot* call `groupStoriesByPackage`; a structural rule is the only form of the check available to it without a signature change.\n\n**Scope** — In: exported porcelain parsing and restore-before-stage behavior in `autoCommitIfDirty`. Out: a `protectedPaths` parameter, atomic check-then-stage behavior, and restoration for direct agent commits.\n\n**Interface**\n```typescript\nexport async function autoCommitIfDirty(\n  workdir: string,\n  stage: string,\n  role: string,\n  storyId: string,\n  blockedWorktrees?: ReadonlySet<string>,\n): Promise<void>\n```",
+      "acceptanceCriteria": [
+        "When the porcelain parser receives a deleted `apps/web/.nax/features/f/.nax-acceptance.test.tsx` path, then it returns that path as protected.",
+        "When the porcelain parser receives a rename moving a file out of `.nax/`, then it returns the old path rather than the new path.",
+        "When the porcelain parser receives a modified `.nax/` file status, then it returns no protected paths.",
+        "When the porcelain parser receives a deleted path outside `.nax/` such as `src/legacy.ts`, then it returns no protected paths.",
+        "When the porcelain parser receives a quoted deleted `.nax/` path containing a space, then it returns the unquoted path.",
+        "When the porcelain parser receives an uninterpretable line followed by a deleted `.nax/` path, then it skips the uninterpretable line and returns the protected path.",
+        "When `git status --porcelain` reports a deleted file under `.nax/`, then `autoCommitIfDirty` runs `git checkout` restoring that path before `git add`.",
+        "When `autoCommitIfDirty` restores a deleted `.nax/` path, then it logs an error whose payload has `storyId` as its first field.",
+        "When `git status --porcelain` reports only changes outside `.nax/`, then `autoCommitIfDirty` runs no `git checkout` and still commits.",
+        "When a `.nax/` restore `git checkout` exits non-zero, then `autoCommitIfDirty` still runs `git add` and `git commit`."
+      ],
+      "tags": [
+        "feature",
+        "git",
+        "safety"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One shared git utility gains a pure parser and a best-effort subprocess step, both covered through its existing dependency injection seam.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/utils/git.ts",
+        "test/unit/utils/git.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/utils/git-nax-artifact-guard.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/utils/git.ts",
+          "reason": ""
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "775062cdf1db68d01e2f686aa878b0a589a782e4"
+    },
+    {
+      "id": "US-003",
+      "title": "Fail acceptance when a required target is missing",
+      "description": "**Goal** — Make the acceptance stage fail closed when an enabled package with PRD stories has no acceptance target on disk.\n\n**Motivation** — The completion gate logged `Acceptance test file not found — skipping` and wrote a passed acceptance status even though one story's criteria were never verified.\n\n**Approach** — `ctx.acceptanceTestPaths` (`src/pipeline/types.ts:234`) gains two fields, both derivable from data the two producers already hold:\n\n- `storyCount?: number` — from `AcceptanceTestGroup.stories.length` (`src/acceptance/test-path.ts:105`)\n- `acceptanceEnabled?: boolean` — from the per-package `groupConfig` that `runner-completion.ts:158` already loads and currently reads only for `testFramework` / `commandOverride`\n\n**Both fields are optional, and that is load-bearing — not laziness.** Eight existing test files construct `{ testPath, packageDir }` literals for this type across 64 references (`prompt-acceptance.test.ts`, `acceptance.test.ts`, `acceptance-loop.test.ts`, and others). Required fields would make every one a compile error, and test-authorship isolation bars US-003's implementer from editing suites its story does not own — the story would deadlock with a correct implementation.\n\nBecause optional fields could otherwise silently restore the very skip this feature removes, the consumer resolves each with an explicit fallback rather than trusting the producer:\n\n- `storyCount` undefined → derive it in the stage by counting `ctx.prd.userStories` that are non-fix, non-decomposed, and whose `workdir` resolves to that group's `packageDir`. The stage already holds `ctx.prd` (`acceptance.ts:92`).\n- `acceptanceEnabled` undefined → treat as `true`. The root-level flag has already gated `acceptanceStage.enabled()`, so reaching the consumer at all means acceptance is on.\n\nProducers: `src/pipeline/stages/acceptance-setup.ts:456` and `src/execution/runner-completion.ts:171`. Consumer: the skip at `src/pipeline/stages/acceptance.ts:167-170`.\n\nA missing acceptance test is a failure **only** when both conditions hold: the group has at least one story in the PRD, and acceptance is enabled for that group's package. Root `acceptance.enabled: false` already makes `acceptanceStage.enabled()` return false; per-package disabled acceptance is honored only by this missing-target predicate; and the synthesized empty root group remains a skip.\n\n**Scope** — In: optional metadata, both producers, explicit consumer fallbacks, and missing-target acceptance failure records. Out: per-package generation behavior and reviving `acceptance.generateTests`.\n\n**Interface**\n```typescript\nacceptanceTestPaths?: Array<{\n  testPath: string;\n  packageDir: string;\n  storyCount?: number;\n  acceptanceEnabled?: boolean;\n}>\n```",
+      "acceptanceCriteria": [
+        "When an acceptance group has `storyCount: 1`, `acceptanceEnabled: true`, and no file at `testPath`, then `acceptanceStage.execute()` returns `action: \"fail\"`.",
+        "When multiple required acceptance targets are missing, then the failure reason names every affected `packageDir`.",
+        "When the only missing acceptance target belongs to a group with `storyCount: 0`, then `acceptanceStage.execute()` returns `action: \"continue\"`.",
+        "When the only missing acceptance target belongs to a group with `acceptanceEnabled: false`, then `acceptanceStage.execute()` returns `action: \"continue\"`.",
+        "When a missing-target group omits `storyCount` and its package has one non-fix PRD story, then `acceptanceStage.execute()` derives the count and returns `action: \"fail\"`.",
+        "When a missing-target group omits `acceptanceEnabled`, then `acceptanceStage.execute()` treats acceptance as enabled and returns `action: \"fail\"`.",
+        "When an acceptance target is missing, then its failure record contributes no entries to `failedACs`.",
+        "When `config.acceptance.enabled` is false, then `acceptanceStage.enabled()` returns false.",
+        "When every acceptance group has a present, passing target, then `acceptanceStage.execute()` returns `action: \"continue\"`.",
+        "When `acceptanceSetupStage` populates `ctx.acceptanceTestPaths`, then each entry's `storyCount` equals the number of PRD stories grouped into its package.",
+        "When `runner-completion` populates an acceptance test-path entry, then `acceptanceEnabled` is resolved from that package's config rather than the root config."
+      ],
+      "tags": [
+        "feature",
+        "acceptance",
+        "monorepo"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Optional metadata is produced at two existing package-config seams and consumed by one existing stage conditional, with focused stage and producer tests.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/acceptance.ts",
+        "src/acceptance/test-path.ts",
+        "src/pipeline/stages/acceptance-setup.ts",
+        "src/execution/runner-completion.ts",
+        "test/unit/pipeline/stages/acceptance.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/pipeline/stages/acceptance-missing-target.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/pipeline/types.ts",
+          "reason": ""
+        },
+        {
+          "path": "src/pipeline/stages/acceptance.ts",
+          "reason": ""
+        },
+        {
+          "path": "src/pipeline/stages/acceptance-setup.ts",
+          "reason": ""
+        },
+        {
+          "path": "src/execution/runner-completion.ts",
+          "reason": ""
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "93d88d238632771f64bdf448b107e2cd1ed44333",
+      "outOfScope": [
+        "honoring per-package `acceptance.enabled` during test **generation** — this story reads the flag only in the missing-target predicate."
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Propagate missing-target packages to status.json",
+      "description": "**Goal** — Preserve missing-acceptance-target package names from the acceptance stage through the completion result into failed post-run status.\n\n**Motivation** — The prior run wrote `postRun.acceptance.status: \"passed\"` despite skipped acceptance verification, leaving only warning records as evidence.\n\n**Approach** — The chain mirrors how `failedACs` already travels: `ctx.acceptanceFailures` (`acceptance.ts:309`) → `AcceptanceLoopResult` (`src/execution/lifecycle/acceptance-loop.ts:82`) → `setPostRunPhase(\"acceptance\", …)` (`src/execution/runner-completion.ts:221` and `:238`) → `AcceptancePhaseStatus` (`src/execution/status-file.ts:22`).\n\nEvery field added along this chain is **optional**, so no existing literal construction of these types breaks.\n\n⚠️ **`src/execution/lifecycle/acceptance-loop.ts` is 579 of the 600-line source limit — 21 lines of headroom.** Thread the new field through; do not add helper functions to this file. If the change would exceed the limit, extract to `src/execution/lifecycle/acceptance-helpers.ts` (existing, 8.6K) rather than growing it.\n\n**Scope** — In: optional `skippedPackages` propagation for missing-target failures and failed acceptance status. Out: changing the `PostRunPhaseStatus` union or the missing-target decision predicate owned by US-003.\n\n**Interface**\n```typescript\ninterface AcceptanceLoopResult {\n  skippedPackages?: string[];\n}\n\ninterface AcceptancePhaseStatus {\n  skippedPackages?: string[];\n}\n```",
+      "acceptanceCriteria": [
+        "When the acceptance stage fails because targets are missing, then `AcceptanceLoopResult` carries the list of missing-target packages.",
+        "Given an acceptance stage stub that fails with one missing package, when the completion phase runs, then `setPostRunPhase(\"acceptance\", ...)` receives `status: \"failed\"` and `skippedPackages` containing that package.",
+        "When acceptance fails because a target is missing, then `setPostRunPhase(\"acceptance\", ...)` is never called with `status: \"passed\"`.",
+        "When acceptance passes with every target present, then the recorded acceptance status is `\"passed\"` and has no `skippedPackages`.",
+        "Given a resumed run whose status has acceptance `status: \"failed\"` and a non-empty `skippedPackages`, when completion evaluates post-run phases, then it reruns acceptance rather than skipping it."
+      ],
+      "tags": [
+        "feature",
+        "acceptance",
+        "status"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Optional-field propagation follows an existing failedACs chain across three closely coupled execution types.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/execution/lifecycle/acceptance-loop.ts",
+        "src/execution/lifecycle/acceptance-helpers.ts",
+        "src/execution/status-file.ts",
+        "src/execution/runner-completion.ts",
+        "src/pipeline/stages/acceptance.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/execution/lifecycle/acceptance-loop.ts",
+          "reason": ""
+        },
+        {
+          "path": "src/execution/status-file.ts",
+          "reason": ""
+        },
+        {
+          "path": "src/execution/runner-completion.ts",
+          "reason": ""
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e61f740f4d43fc74c50d1770438fb829720ca35b"
+    }
+  ],
+  "analysis": "This is an enhancement to nax's prompt, git snapshot, and post-run acceptance subsystems. Prompt composition already uses a role-keyed, config-gated section: buildBehavioralGuardrailsSection() returns null for verifier and no-test at src/prompts/sections/behavioral-guardrails.ts:12-33, and TddPromptBuilder composes it at src/prompts/builders/tdd-builder.ts:239-248. The sections barrel exports section builders at src/prompts/sections/index.ts:16-21. Rectifier prompt text is assembled through buildEscapeHatch() at src/prompts/builders/rectifier-builder-helpers.ts:116-143, which already contains separate .nax citation guidance; rectifier-builder.ts must not grow because its file-size baseline is capped. autoCommitIfDirty() is an exported, injected-dependency leaf at src/utils/git.ts:247-347: it obtains porcelain status at :315-323, logs dirty files, stages from the git root with git add -A at :335, and wraps the entire flow in a best-effort catch. Its callers include snapshot and completion paths, so the structural .nax deletion/rename guard must neither change its signature nor throw on malformed porcelain or failed restore. groupStoriesByPackage() filters non-fix/non-decomposed stories, groups by workdir, and synthesizes an empty root group at src/acceptance/test-path.ts:128-175. PipelineContext currently carries testPath, packageDir, framework, and command override at src/pipeline/types.ts:234-243; the new fields must be optional to preserve existing literal construction. acceptanceSetupStage resolves package config and builds entries at src/pipeline/stages/acceptance-setup.ts:442-463. runner-completion recomputes groups for reruns and currently resolves per-package framework/command only at src/execution/runner-completion.ts:138-203. The acceptance stage currently skips a missing file at src/pipeline/stages/acceptance.ts:167-170, then publishes ctx.acceptanceFailures with failedACs, findings, output, and failedPackages at :309-314. The new predicate must fail only for a missing target whose group has stories and package acceptance is enabled; missing targets must not fabricate failed ACs. Root acceptance is already gated before execute through acceptanceStage.enabled(), while omitted metadata needs explicit fallbacks derived from ctx.prd / enabled=true. The acceptance loop imports and executes the stage at src/execution/lifecycle/acceptance-loop.ts:357-579 and currently treats a fail without failedACs as an unspecified failure at :393-402. It must carry a separate optional skippedPackages list without helper growth in this 579/600-line file. AcceptanceLoopResult exposes optional failedACs/retries at :82-93, and AcceptancePhaseStatus exposes optional failedACs/retries at src/execution/status-file.ts:22-30. runner-completion records passed at :221 and failed at :238-243 and uses only status=passed to skip acceptance on resume at :123-133; a failed status with skipped packages will therefore rerun once propagation preserves failed status. Existing tests cover section patterns, git dependency mocking, acceptance-stage package failures, and completion behavior in the specified context files. Risks are porcelain v1 quoting/rename parsing, accidental .nax restoration beyond acceptance artifacts (intentional structural protection), backward compatibility with optional context literals, monorepo package-config fallbacks, and avoiding retries/fix cycles for a missing target that has no failed ACs. No migration is needed: new status/context fields are optional and historical status files remain readable; absent producer metadata is derived conservatively by the consumer.",
+  "outOfScope": [
+    "Making acceptance test **generation** honor per-package `acceptance.enabled`; this feature honors that flag only in the missing-target failure predicate, leaving `acceptance-setup.ts:181` reading the root value as it does today.",
+    "Reviving the dead `acceptance.generateTests` config key, which is declared in the schema but has no non-test readers.",
+    "Moving the generated acceptance test out of `.nax/` into the package's own test tree.",
+    "Adding a `protectedPaths` parameter to `autoCommitIfDirty`; detection is structural and requires no signature change.",
+    "Adding an `incomplete` value to the `PostRunPhaseStatus` union; a missing target is reported as `failed` plus a `skippedPackages` list.",
+    "Changing the rectifier's existing `.nax/` citation paragraph in `rectifier-builder-helpers.ts`.",
+    "Restoring `.nax/` files deleted by any path other than `autoCommitIfDirty`, such as a direct agent commit that the orchestrator never auto-commits.",
+    "US-002 only: atomicity of the check-then-act sequence between reading `git status` and running `git add` is out of scope — the restore is best-effort and a concurrent writer could re-delete the path in that window.",
+    "Detecting acceptance targets deleted in earlier runs and already merged to the base branch."
+  ],
+  "routingProfile": "cross-agent"
+}

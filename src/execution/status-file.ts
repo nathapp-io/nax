@@ -27,6 +27,12 @@ export interface AcceptancePhaseStatus {
   retries?: number;
   /** Acceptance criteria that failed */
   failedACs?: string[];
+  /**
+   * Package dirs whose required acceptance test target was missing
+   * (US-004). When non-empty the run MUST report `status: "failed"`
+   * — a missing target is not a pass even though failedACs is empty.
+   */
+  skippedPackages?: string[];
 }
 
 /** Status of the regression test phase during post-run */

@@ -8,6 +8,7 @@ export { releaseHeavyPipelineContext } from "./iteration-runner";
 export { groupStoriesIntoBatches, type StoryBatch } from "./batching";
 export { escalateTier, getTierConfig, calculateMaxIterations, resolveMaxAttemptsOutcome } from "./escalation";
 export { readQueueFile, clearQueueFile } from "./queue-handler";
+export { StatusWriter, type StatusWriterContext } from "./status-writer";
 export { ensureStoryPackageDirs } from "./ensure-package-dirs";
 export { _newPackageSetupDeps, markNewPackageDirs, maybeRunNewPackageSetup } from "./new-package-setup";
 export {

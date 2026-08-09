@@ -2,7 +2,12 @@
  * Lifecycle module exports
  */
 
-export { runAcceptanceLoop, type AcceptanceLoopContext, type AcceptanceLoopResult } from "./acceptance-loop";
+export {
+  runAcceptanceLoop,
+  _runAcceptanceTestsOnceDeps,
+  type AcceptanceLoopContext,
+  type AcceptanceLoopResult,
+} from "./acceptance-loop";
 export {
   outputRunHeader,
   outputRunFooter,

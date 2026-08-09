@@ -37,6 +37,7 @@ import {
   buildConventionsSection,
   buildHermeticSection,
   buildIsolationSection,
+  buildNaxArtifactsSection,
   buildRoleTaskSection,
   buildSelfVerificationSection,
   buildStoryReminderSection,
@@ -246,6 +247,12 @@ export class TddPromptBuilder {
       guardrailIsolation,
     );
     if (guardrails) acc.add(this.s("guardrails", guardrails));
+
+    // (6.71) .nax/ artifact immutability — always-on safety invariant for
+    // code-touching roles (test-writer, implementer, verifier). Composed
+    // alongside the guardrails block; not config-gated.
+    const naxArtifacts = buildNaxArtifactsSection(this.role as GuardrailRole, guardrailVariant, guardrailIsolation);
+    if (naxArtifacts) acc.add(this.s("nax-artifacts", naxArtifacts));
 
     // (6.8) Test-quality pre-brief — adversarial test-gap lenses forwarded to
     // test-authoring roles (July 2026 audit: test-gap was 67% of adversarial
