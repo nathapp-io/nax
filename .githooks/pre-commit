@@ -22,4 +22,7 @@ bun run check:no-adapter-wrap
 echo "[pre-commit] Running dispatch context check..."
 bun run check:dispatch-context
 
+echo "[pre-commit] Running NaxConfig cast check..."
+bun run check:naxconfig-cast
+
 echo "[pre-commit] OK"
