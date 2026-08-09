@@ -98,3 +98,5 @@ export {
   type RoutingCalibrateOptions,
   type RoutingCalibrateResult,
 } from "./routing-calibrate";
+
+export { FIELD_DESCRIPTIONS } from "./config-descriptions";

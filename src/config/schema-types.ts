@@ -47,7 +47,7 @@ export interface TierConfig {
   agent?: string;
 }
 
-export type RoutingStrategyName = "keyword" | "llm" | "manual" | "adaptive" | "custom";
+export type RoutingStrategyName = "keyword" | "llm";
 
 export type LlmRoutingMode = "one-shot" | "per-story" | "hybrid";
 

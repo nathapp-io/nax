@@ -53,6 +53,7 @@ export type { AgentRoutingProfile, AgentRoutingConfig } from "./schemas-infra";
 export {
   AgentRoutingProfileSchema,
   AgentRoutingConfigSchema,
+  RoutingConfigSchema,
   DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
 } from "./schemas-infra";
 export { DebateConfigSchema } from "./schemas-debate";

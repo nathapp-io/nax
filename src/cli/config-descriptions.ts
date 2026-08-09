@@ -44,12 +44,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
 
   // Routing
   routing: "Model routing strategy configuration",
-  "routing.strategy": "Routing strategy: keyword | llm | manual | adaptive | custom",
-  "routing.customStrategyPath": "Path to custom routing strategy (if strategy=custom)",
-  "routing.adaptive": "Adaptive routing settings",
-  "routing.adaptive.minSamples": "Minimum samples before adaptive routing activates",
-  "routing.adaptive.costThreshold": "Cost threshold for strategy switching (0-1)",
-  "routing.adaptive.fallbackStrategy": "Fallback strategy if adaptive fails",
+  "routing.strategy": "Routing strategy: keyword | llm",
   "routing.llm": "LLM-based routing settings",
   "routing.llm.model":
     'Model selector for routing decisions. Accepts a tier string (for example "fast") or an explicit object like { agent: "codex", model: "gpt-5.4" }.',

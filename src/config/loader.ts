@@ -68,6 +68,46 @@ function applyRemovedStrategyCompat(conf: Record<string, unknown>): Record<strin
   return conf;
 }
 
+/**
+ * @internal Strip routing keys whose feature was removed in ROUTE-001, warning per key.
+ *
+ * `routing.customStrategyPath` and `routing.adaptive` only ever applied to the `custom` and
+ * `adaptive` strategies, which `applyRemovedStrategyCompat` maps to `keyword`. They are absent
+ * from `RoutingConfigSchema`, so Zod's strip() would drop them silently — the warn is the point.
+ *
+ * @param conf - Raw merged config object
+ * @param warn - Called once per removed key with a message naming the key and "removed"
+ * @returns New config object with removed keys stripped (immutable — does not mutate input)
+ */
+export function _applyRemovedRoutingKeysShim(
+  conf: Record<string, unknown>,
+  warn: (msg: string) => void = (msg) => {
+    try {
+      getLogger().warn("config", msg);
+    } catch {
+      /* logger may not be init yet */
+    }
+  },
+): Record<string, unknown> {
+  const routing = conf.routing as Record<string, unknown> | undefined;
+  if (!routing || typeof routing !== "object") return conf;
+
+  const REMOVED_ROUTING_KEYS = ["customStrategyPath", "adaptive"] as const;
+  let newRouting = routing;
+
+  for (const key of REMOVED_ROUTING_KEYS) {
+    if (key in newRouting) {
+      warn(
+        `routing.${key} was removed in ROUTE-001 along with the "custom"/"adaptive" strategies and has no effect. Remove it from your config.`,
+      );
+      const { [key]: _removed, ...rest } = newRouting;
+      newRouting = rest;
+    }
+  }
+
+  return newRouting === routing ? conf : { ...conf, routing: newRouting };
+}
+
 /** @internal Backward compat: map deprecated routing.llm.batchMode to routing.llm.mode.
  * Returns a new object (immutable -- does not mutate the input). */
 function applyBatchModeCompat(conf: Record<string, unknown>): Record<string, unknown> {
@@ -248,10 +288,12 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   if (globalConfRaw) {
     const { profile: _gProfile, ...globalConfStripped } = globalConfRaw;
     const globalConf = _applyLegacyReviewExecutionShim(
-      applyRoutingRetryDeprecationWarning(
-        applyBatchModeCompat(
-          applyRemovedStrategyCompat(
-            migrateLegacyReviewModelKey(migrateLegacyTestPattern(globalConfStripped, logger), logger),
+      _applyRemovedRoutingKeysShim(
+        applyRoutingRetryDeprecationWarning(
+          applyBatchModeCompat(
+            applyRemovedStrategyCompat(
+              migrateLegacyReviewModelKey(migrateLegacyTestPattern(globalConfStripped, logger), logger),
+            ),
           ),
         ),
       ),
@@ -265,10 +307,12 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
     if (projConf) {
       const { profile: _pProfile, ...projConfStripped } = projConf;
       const resolvedProjConf = _applyLegacyReviewExecutionShim(
-        applyRoutingRetryDeprecationWarning(
-          applyBatchModeCompat(
-            applyRemovedStrategyCompat(
-              migrateLegacyReviewModelKey(migrateLegacyTestPattern(projConfStripped, logger), logger),
+        _applyRemovedRoutingKeysShim(
+          applyRoutingRetryDeprecationWarning(
+            applyBatchModeCompat(
+              applyRemovedStrategyCompat(
+                migrateLegacyReviewModelKey(migrateLegacyTestPattern(projConfStripped, logger), logger),
+              ),
             ),
           ),
         ),

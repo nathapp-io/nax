@@ -77,7 +77,6 @@ export type {
   TddConfig,
   TestCoverageConfig,
   TestingConfig,
-  AdaptiveRoutingConfig,
   AgentConfig,
   IdleWatchdogConfig,
   ProjectProfile,
