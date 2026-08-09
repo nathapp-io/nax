@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { NaxError } from "@/errors";
 import { planMigration, type MigrationPlanEntry, type PlanMigrationOptions } from "@/cli";
 
 const TARGET_DIR = "/target";
@@ -68,11 +69,11 @@ describe("planMigration", () => {
     // same run. The planner must always pick one — both for the four
     // existing/absent × force on/off combinations and for mixed inputs.
     const entries = [
-      makeEntry({ sourcePath: "/s/a.md", targetFileName: "a.md", targetPath: "/t/a.md" }),
-      makeEntry({ sourcePath: "/s/b.md", targetFileName: "b.md", targetPath: "/t/b.md" }),
-      makeEntry({ sourcePath: "/s/c.md", targetFileName: "c.md", targetPath: "/t/c.md" }),
+      makeEntry({ sourcePath: "/s/a.md", targetFileName: "a.md", targetPath: "/target/a.md" }),
+      makeEntry({ sourcePath: "/s/b.md", targetFileName: "b.md", targetPath: "/target/b.md" }),
+      makeEntry({ sourcePath: "/s/c.md", targetFileName: "c.md", targetPath: "/target/c.md" }),
     ];
-    const fileExists = async (p: string): Promise<boolean> => p === "/t/a.md";
+    const fileExists = async (p: string): Promise<boolean> => p === "/target/a.md";
     const plan = await planMigration(entries, makeOptions({ force: false, fileExists }));
     expect(plan.writes.map((e) => e.targetFileName).sort()).toEqual(["b.md", "c.md"]);
     expect(plan.skips.map((e) => e.targetFileName)).toEqual(["a.md"]);
@@ -84,11 +85,11 @@ describe("planMigration", () => {
     // so a re-run is deterministic and the dry-run preview matches the real
     // run entry-for-entry.
     const entries = [
-      makeEntry({ sourcePath: "/s/a.md", targetFileName: "a.md", targetPath: "/t/a.md" }),
-      makeEntry({ sourcePath: "/s/b.md", targetFileName: "b.md", targetPath: "/t/b.md" }),
-      makeEntry({ sourcePath: "/s/c.md", targetFileName: "c.md", targetPath: "/t/c.md" }),
+      makeEntry({ sourcePath: "/s/a.md", targetFileName: "a.md", targetPath: "/target/a.md" }),
+      makeEntry({ sourcePath: "/s/b.md", targetFileName: "b.md", targetPath: "/target/b.md" }),
+      makeEntry({ sourcePath: "/s/c.md", targetFileName: "c.md", targetPath: "/target/c.md" }),
     ];
-    const fileExists = async (p: string): Promise<boolean> => p === "/t/b.md";
+    const fileExists = async (p: string): Promise<boolean> => p === "/target/b.md";
     const plan = await planMigration(entries, makeOptions({ force: false, fileExists }));
     expect(plan.writes.map((e) => e.targetFileName)).toEqual(["a.md", "c.md"]);
     expect(plan.skips.map((e) => e.targetFileName)).toEqual(["b.md"]);
@@ -98,5 +99,49 @@ describe("planMigration", () => {
     const plan = await planMigration([], makeOptions());
     expect(plan.writes).toEqual([]);
     expect(plan.skips).toEqual([]);
+  });
+
+  test("rejects an entry whose targetPath escapes the declared targetDir", async () => {
+    // The planner must validate that each entry's targetPath is contained in
+    // the declared targetDir — otherwise an entry could steer fileExists at a
+    // path outside the requested directory, and the rest of the pipeline would
+    // happily write to it. Same containment pattern as rulesExportCommand.
+    const escaping = makeEntry({
+      sourcePath: "/source/rule.md",
+      targetFileName: "rule.md",
+      targetPath: "/elsewhere/rule.md",
+    });
+    let threw: unknown;
+    try {
+      await planMigration([escaping], makeOptions());
+    } catch (err) {
+      threw = err;
+    }
+    expect(threw).toBeInstanceOf(NaxError);
+    expect((threw as NaxError).code).toBe("RULES_MIGRATE_TARGET_ESCAPE");
+  });
+
+  test("rejects a relative-traversal escape before consulting fileExists", async () => {
+    // /target/../escape.md is a sibling of targetDir, not a child. A naive
+    // startsWith("/target") would accept it; resolve() first, then check.
+    let consulted = 0;
+    const fileExists = async () => {
+      consulted++;
+      return false;
+    };
+    const escaping = makeEntry({
+      sourcePath: "/source/rule.md",
+      targetFileName: "rule.md",
+      targetPath: "/target/../escape.md",
+    });
+    let threw: unknown;
+    try {
+      await planMigration([escaping], makeOptions({ fileExists }));
+    } catch (err) {
+      threw = err;
+    }
+    expect(threw).toBeInstanceOf(NaxError);
+    expect((threw as NaxError).code).toBe("RULES_MIGRATE_TARGET_ESCAPE");
+    expect(consulted).toBe(0);
   });
 });

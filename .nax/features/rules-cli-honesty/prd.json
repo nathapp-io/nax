@@ -3,7 +3,7 @@
   "feature": "rules-cli-honesty",
   "branchName": "feat/rules-cli-honesty",
   "createdAt": "2026-08-09T00:00:00.000Z",
-  "updatedAt": "2026-08-09T06:23:06.078Z",
+  "updatedAt": "2026-08-09T06:39:12.140Z",
   "userStories": [
     {
       "id": "US-001",
@@ -32,8 +32,8 @@
         "planning"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -105,7 +105,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/cli/rules-lint.ts",
@@ -126,6 +128,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "d6732b9575574d10bf279fedf79f059e0a4c4bfe",
       "outOfScope": [
         "**Out of scope:** no risk-sensitive property from the adversarial-scope table applies — this feature touches no authentication, rate limiting, replay protection, idempotency store, multi-tenancy boundary, concurrency primitive, expiry policy, or cryptographic material."
       ]

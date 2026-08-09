@@ -13,6 +13,9 @@
  * without monkey-patching Bun.file and lets both modes agree by construction.
  */
 
+import { resolve, sep } from "node:path";
+import { NaxError } from "../errors";
+
 export interface MigrationPlanEntry {
   sourcePath: string;
   targetFileName: string;
@@ -43,6 +46,11 @@ export interface PlanMigrationOptions {
  * Source order is preserved within each list: the real run writes in that
  * order, and the dry-run preview is reported in the same order so the two
  * outputs line up entry-for-entry.
+ *
+ * Each entry's `targetPath` must resolve inside the declared `targetDir`.
+ * Anything else would steer `fileExists` at a path the caller did not
+ * authorize, and the writer would happily produce a file there — same
+ * containment check rulesExportCommand applies to its rule paths.
  */
 export async function planMigration(
   sources: MigrationPlanEntry[],
@@ -51,7 +59,17 @@ export async function planMigration(
   const writes: MigrationPlanEntry[] = [];
   const skips: MigrationPlanEntry[] = [];
 
+  const resolvedTargetDir = resolve(options.targetDir);
+
   for (const source of sources) {
+    const resolvedTargetPath = resolve(source.targetPath);
+    if (!resolvedTargetPath.startsWith(`${resolvedTargetDir}${sep}`) && resolvedTargetPath !== resolvedTargetDir) {
+      throw new NaxError(
+        `Migration target escapes ${options.targetDir}: ${source.targetFileName} -> ${source.targetPath}`,
+        "RULES_MIGRATE_TARGET_ESCAPE",
+        { stage: "rules-migrate-plan", targetDir: options.targetDir, entry: source.targetPath },
+      );
+    }
     const exists = await options.fileExists(source.targetPath);
     if (exists && !options.force) {
       skips.push(source);
