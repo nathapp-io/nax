@@ -393,6 +393,7 @@ describe("resolveMaxAttemptsOutcome", () => {
     ["isolation-violation", "pause"],
     ["verifier-rejected", "pause"],
     ["greenfield-no-tests", "pause"],
+    ["test-incorrect", "pause"],
     ["session-failure", "fail"],
     ["tests-failing", "fail"],
     ["full-suite-gate-exhausted", "fail"],

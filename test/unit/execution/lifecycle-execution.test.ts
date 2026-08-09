@@ -328,7 +328,7 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
     expect(result.rectificationAttempts).toBe(0);
   });
 
-  test("unmapped failures (no file field) → all passed stories in affectedStories", async () => {
+  test("unmapped failures (no file field) do not blame passed stories", async () => {
     let verCallCount = 0;
     _regressionDeps.runVerification = mock(async (): Promise<VerificationResult> => {
       verCallCount++;
@@ -372,7 +372,8 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
       runtime: makeRuntime(),
     });
 
-    expect(result.affectedStories).toContain("US-001");
-    expect(result.affectedStories).toContain("US-002");
+    expect(result.success).toBe(false);
+    expect(result.affectedStories).toEqual([]);
+    expect(_regressionDeps.runFixCycle).not.toHaveBeenCalled();
   });
 });

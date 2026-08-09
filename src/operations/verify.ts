@@ -80,6 +80,23 @@ function buildVerifierFindings(verdict: VerifierVerdict, categorization: Verdict
         },
       ];
     }
+    case "test-incorrect": {
+      const assertions = verdict.testFailureDiagnosis?.assertions ?? [];
+      const files = assertions.map((assertion) => assertion.file);
+      return [
+        {
+          source: "tdd-verifier",
+          severity: "error",
+          category: "incorrect-test-assertion",
+          fixTarget: "test",
+          message: `Verifier identified incorrect test assertion(s) in ${files.join(", ")}; human review required`,
+          meta: {
+            assertions,
+            reasoning: verdict.reasoning,
+          },
+        },
+      ];
+    }
     default:
       return [];
   }

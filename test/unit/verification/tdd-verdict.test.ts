@@ -288,14 +288,14 @@ describe("categorizeVerdict", () => {
     expect(result.failureCategory).toBeUndefined();
   });
 
-  test("approved=true with failing tests still → success (verifier approved)", () => {
-    // Verifier takes precedence — if it says approved, we trust it
+  test("approved=true cannot override failing tests", () => {
     const verdict = makeVerdict({
       approved: true,
       tests: { allPassing: false, passCount: 5, failCount: 2 },
     });
     const result = categorizeVerdict(verdict, false);
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.failureCategory).toBe("tests-failing");
   });
 
   // --- illegitimate test modifications ---
@@ -347,6 +347,73 @@ describe("categorizeVerdict", () => {
     expect(result.success).toBe(false);
     expect(result.failureCategory).toBe("tests-failing");
     expect(result.reviewReason).toContain("3 failure(s)");
+  });
+
+  test("structured incorrect-test diagnosis pauses source rectification", () => {
+    const verdict = makeVerdict({
+      approved: false,
+      tests: { allPassing: false, passCount: 8, failCount: 1 },
+      testFailureDiagnosis: {
+        cause: "test-incorrect",
+        assertions: [
+          {
+            file: "test/unit/foo.test.ts",
+            testName: "injects the required failure note",
+            reasoning: "The assertion omits the note required by AC7.",
+          },
+        ],
+      },
+    });
+
+    const result = categorizeVerdict(verdict, false);
+
+    expect(result.success).toBe(false);
+    expect(result.failureCategory).toBe("test-incorrect");
+    expect(result.reviewReason).toContain("test/unit/foo.test.ts");
+    expect(result.reviewReason).toContain("human review");
+  });
+
+  test("incorrect-test diagnosis requires concrete assertions", () => {
+    const verdict = makeVerdict({
+      approved: false,
+      tests: { allPassing: false, passCount: 8, failCount: 1 },
+      testFailureDiagnosis: { cause: "test-incorrect", assertions: [] },
+    });
+
+    expect(categorizeVerdict(verdict, false).failureCategory).toBe("tests-failing");
+  });
+
+  test("incorrect-test diagnosis is inadmissible when the implementer modified tests", () => {
+    const verdict = makeVerdict({
+      approved: false,
+      tests: { allPassing: false, passCount: 8, failCount: 1 },
+      testModifications: {
+        detected: true,
+        files: ["test/unit/foo.test.ts"],
+        legitimate: true,
+        reasoning: "Implementer changed the assertion.",
+      },
+      testFailureDiagnosis: {
+        cause: "test-incorrect",
+        assertions: [{ file: "test/unit/foo.test.ts", reasoning: "Assertion is wrong." }],
+      },
+    });
+
+    expect(categorizeVerdict(verdict, false).failureCategory).toBe("tests-failing");
+  });
+
+  test("incorrect-test diagnosis is inadmissible when acceptance criteria are unmet", () => {
+    const verdict = makeVerdict({
+      approved: false,
+      tests: { allPassing: false, passCount: 8, failCount: 1 },
+      acceptanceCriteria: { allMet: false, criteria: [{ criterion: "AC7", met: false }] },
+      testFailureDiagnosis: {
+        cause: "test-incorrect",
+        assertions: [{ file: "test/unit/foo.test.ts", reasoning: "Assertion is wrong." }],
+      },
+    });
+
+    expect(categorizeVerdict(verdict, false).failureCategory).toBe("tests-failing");
   });
 
   // --- advisory acceptance criteria / quality ---

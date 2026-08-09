@@ -250,6 +250,28 @@ describe("US-005b AC1: nbf runRectification does not record state in storyFixHis
   });
 });
 
+describe("incorrect-test terminal review", () => {
+  test("does not enter the automatic fix cycle", async () => {
+    const runtime = track(makeBudgetRuntime(true));
+    const incorrectTest: Finding = {
+      source: "tdd-verifier",
+      severity: "error",
+      category: "incorrect-test-assertion",
+      message: "Assertion conflicts with AC7",
+      fixTarget: "test",
+    };
+
+    const { dispatchCount, phaseOutputs, result } = await nrRun(runtime, {
+      storyId: "US-1524",
+      overrides: { initialFindings: [incorrectTest] },
+    });
+
+    expect(dispatchCount).toBe(0);
+    expect(phaseOutputs.rectification).toBeUndefined();
+    expect(result).toMatchObject({ terminalReviewRequired: true, unfixedFindings: [incorrectTest] });
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // AC2 — a non-blocking-fix invocation does not consume the blocking budget.
 // ─────────────────────────────────────────────────────────────────────────────

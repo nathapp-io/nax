@@ -190,7 +190,11 @@ export class ExecutionPlan {
     // canonical sequence and runs any phase whose output is missing or non-passing.
     // Halts on first failure (same RED→GREEN contract as the main loop). Skipped
     // entirely when rectification was exhausted — the story is already terminal.
-    if (this.state.rectification && (!rectResult.rectificationExhausted || rectResult.liteScopeIncomplete)) {
+    if (
+      this.state.rectification &&
+      !rectResult.terminalReviewRequired &&
+      (!rectResult.rectificationExhausted || rectResult.liteScopeIncomplete)
+    ) {
       // The first rectification ran with a strategy-specific revalidation set
       // (STRATEGY_TO_REVALIDATION_PHASES) that may have excluded phases this
       // resume block runs for the first time (e.g. full-suite-rectify excludes

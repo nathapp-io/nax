@@ -397,6 +397,14 @@ describe("routeTddFailure", () => {
     });
   });
 
+  describe("test-incorrect", () => {
+    test("pauses with the verifier review reason", () => {
+      const result = routeTddFailure("test-incorrect", false, makeCtx(), "Assertion conflicts with AC7");
+      expect(result.action).toBe("pause");
+      if (result.action === "pause") expect(result.reason).toBe("Assertion conflicts with AC7");
+    });
+  });
+
   describe("no failureCategory (backward compat)", () => {
     test("undefined category → pause with reviewReason, default message, and in lite mode", () => {
       const r1 = routeTddFailure(undefined, false, makeCtx(), "human review needed");
@@ -415,6 +423,7 @@ describe("routeTddFailure", () => {
     const nonIsolationCategories: Array<FailureCategory | undefined> = [
       "session-failure",
       "tests-failing",
+      "test-incorrect",
       "full-suite-gate-exhausted",
       "verifier-rejected",
       undefined,

@@ -5,10 +5,26 @@
 import { unlink } from "node:fs/promises";
 import path from "node:path";
 import { getLogger } from "../logger";
-import type { VerifierVerdict } from "./verdict";
+import type { TestFailureDiagnosis, VerifierVerdict } from "./verdict";
 
 /** File name written by the verifier agent */
 export const VERDICT_FILE = ".nax-verifier-verdict.json";
+
+function isValidTestFailureDiagnosis(value: unknown): value is TestFailureDiagnosis {
+  if (!value || typeof value !== "object") return false;
+  const diagnosis = value as Record<string, unknown>;
+  if (!["implementation", "test-incorrect", "unknown"].includes(diagnosis.cause as string)) return false;
+  if (!Array.isArray(diagnosis.assertions)) return false;
+  return diagnosis.assertions.every((assertion) => {
+    if (!assertion || typeof assertion !== "object") return false;
+    const item = assertion as Record<string, unknown>;
+    return (
+      typeof item.file === "string" &&
+      typeof item.reasoning === "string" &&
+      (item.testName === undefined || typeof item.testName === "string")
+    );
+  });
+}
 
 /**
  * Validate that a parsed object has the required fields for a VerifierVerdict.
@@ -36,6 +52,14 @@ export function isValidVerdict(obj: unknown): obj is VerifierVerdict {
   if (!Array.isArray(mods.files)) return false;
   if (typeof mods.legitimate !== "boolean") return false;
   if (typeof mods.reasoning !== "string") return false;
+
+  if (
+    v.testFailureDiagnosis !== undefined &&
+    v.testFailureDiagnosis !== null &&
+    !isValidTestFailureDiagnosis(v.testFailureDiagnosis)
+  ) {
+    return false;
+  }
 
   // acceptanceCriteria sub-object
   if (!v.acceptanceCriteria || typeof v.acceptanceCriteria !== "object") return false;
@@ -156,6 +180,9 @@ export function coerceVerdict(obj: Record<string, unknown>): VerifierVerdict | n
         legitimate: true,
         reasoning: "Not assessed in free-form verdict",
       },
+      ...(isValidTestFailureDiagnosis(obj.testFailureDiagnosis)
+        ? { testFailureDiagnosis: obj.testFailureDiagnosis }
+        : {}),
       acceptanceCriteria: { allMet, criteria },
       quality: { rating, issues: [] },
       fixes: Array.isArray(obj.fixes) ? (obj.fixes as string[]) : [],

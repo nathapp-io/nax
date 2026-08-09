@@ -118,6 +118,10 @@ export function routeTddFailure(
       // explicitly to keep the exhaustiveness check honest. An infra prep failure
       // is not auto-recoverable by a stronger tier, so pause for human review.
       return pauseFallback;
+    case "test-incorrect":
+      // Tests are executable specifications. A verifier diagnosis must pause
+      // for a human ruling rather than authorizing automatic source/test edits.
+      return pauseFallback;
     default:
       // Exhaustive check: if a new FailureCategory is added, this errors at compile time.
       failureCategory satisfies never;
