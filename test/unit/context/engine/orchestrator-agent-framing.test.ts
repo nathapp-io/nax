@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { ContextOrchestrator, _orchestratorDeps } from "@/context/engine";
 import type { ContextProviderResult, ContextRequest, IContextProvider } from "@/context/engine";
 import { makeLogger, type MockLogger } from "@test/helpers";
@@ -29,9 +29,17 @@ function makeProvider(): IContextProvider {
   return { id: "p1", kind: "feature", fetch: async () => result };
 }
 
+const originalUuid = _orchestratorDeps.uuid;
+const originalNow = _orchestratorDeps.now;
+
 beforeEach(() => {
   _orchestratorDeps.uuid = () => "test-uuid-1" as `${string}-${string}-${string}-${string}-${string}`;
   _orchestratorDeps.now = () => Date.now();
+});
+
+afterEach(() => {
+  _orchestratorDeps.uuid = originalUuid;
+  _orchestratorDeps.now = originalNow;
 });
 
 describe("US-002 — ContextOrchestrator.assemble() agent framing", () => {

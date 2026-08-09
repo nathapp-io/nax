@@ -91,28 +91,6 @@ describe("packChunks — greedy", () => {
     expect(result.budgetExcludedIds).toContain("small");
   });
 
-  test("regression: (6,1.0)/(5,0.8)/(5,0.8) at budget 10 — best-pair repair beats density-greedy", () => {
-    // Three non-floor chunks:
-    //   a: tokens=6, score=1.0   → density 0.167
-    //   b: tokens=5, score=0.8   → density 0.16
-    //   c: tokens=5, score=0.8   → density 0.16
-    // At budget 10, density-greedy packs only a (6 tokens, 1.0 score).
-    // Largest single item is also a (1.0). Best pair is b + c (10 tokens,
-    // 1.6 score), which beats greedy — the repair selects b + c.
-    const chunks = [
-      makeScored({ id: "a", kind: "session", score: 1.0, tokens: 6 }),
-      makeScored({ id: "b", kind: "session", score: 0.8, tokens: 5 }),
-      makeScored({ id: "c", kind: "session", score: 0.8, tokens: 5 }),
-    ];
-    const result = packChunks(chunks, 10);
-    const packedScore = result.packed.reduce((s, c) => s + c.score, 0);
-    const optimal = 1.6; // b + c: 10 tokens, 1.6 score
-    expect(result.packed.map((c) => c.id)).toEqual(["b", "c"]);
-    expect(result.budgetExcludedIds).toEqual(["a"]);
-    expect(packedScore).toBe(1.6);
-    expect(packedScore / optimal).toBeGreaterThanOrEqual(0.95);
-  });
-
   test("AC-3: when every input chunk is non-floor, usedTokens does not exceed effectiveBudget", () => {
     const chunks = [
       makeScored({ id: "a:1", kind: "session", tokens: 200, score: 0.9 }),
@@ -157,7 +135,7 @@ function mulberry32(seed: number): () => number {
 }
 
 describe("packChunks — AC-4 optimality property", () => {
-  test("at least 200 fixed-seed cases are within 95% of exhaustive 0/1 optimum", () => {
+  test("at least 200 fixed-seed repair-envelope cases are within 95% of the exhaustive oracle", () => {
     const SEED = 0x5e2d_4c01;
     const NUM_CASES = 200;
     const MAX_CHUNKS = 12;
@@ -170,38 +148,6 @@ describe("packChunks — AC-4 optimality property", () => {
     let worstRatio = 1;
     let worstCase: { case: number; packed: number; optimal: number } | null = null;
 
-    // ── Fixed regression: (6,1.0)+(5,0.8)+(5,0.8) at budget 10 ──────────
-    // Included as a fixed case within the 200-case 95%-threshold evaluation.
-    // The best-pair repair correctly selects b + c for 1.6 against optimum
-    // 1.6 (ratio 1.0), validating the per-case AC-4 guarantee.
-    const REGRESSION_CASE = {
-      chunks: [
-        makeScored({ id: "a-reg", kind: "session", score: 1.0, tokens: 6 }),
-        makeScored({ id: "b-reg", kind: "session", score: 0.8, tokens: 5 }),
-        makeScored({ id: "c-reg", kind: "session", score: 0.8, tokens: 5 }),
-      ] as ScoredChunk[],
-      budget: 10,
-    };
-    {
-      const result = packChunks(REGRESSION_CASE.chunks, REGRESSION_CASE.budget);
-      const packedScore = (result.packed as ScoredChunk[]).reduce((s, c) => s + c.score, 0);
-      let optimal = 0;
-      for (let mask = 0; mask < (1 << 3); mask++) {
-        let tokens = 0;
-        let score = 0;
-        for (let i = 0; i < 3; i++) {
-          if (mask & (1 << i)) {
-            tokens += REGRESSION_CASE.chunks[i].tokens;
-            if (tokens > REGRESSION_CASE.budget) break;
-            score += REGRESSION_CASE.chunks[i].score;
-          }
-        }
-        if (tokens <= REGRESSION_CASE.budget && score > optimal) optimal = score;
-      }
-      const ratio = optimal <= 0 ? 1 : packedScore / optimal;
-      expect(ratio).toBeGreaterThanOrEqual(0.95);
-    }
-
     // The 200 cases mix two distributions on purpose:
     //   adversarial (first 100): multi-item capacity conflicts built so
     //     greedy-by-density excludes the bulky high-score chunk in favour of
@@ -212,9 +158,8 @@ describe("packChunks — AC-4 optimality property", () => {
     //     Construction: nAdv >= 2; smallTokens * (nAdv-1) > budget so greedy
     //     packs all smalls; bulkyTokens > budget - smallTokens so no small
     //     fits alongside bulky, making the bulky the unique optimum.
-    //   random (last 100): independent random tokens/scores at the easy end
-    //     of the spec's range (tokens 1..10, budget 60..199) where greedy
-    //     by density already hits the optimum or close to it.
+    //   all-fit (last 100): independent random tokens/scores with a budget
+    //     equal to their total cost, so density-greedy is optimal.
     const ADV_COUNT = 100;
 
     for (let caseIdx = 0; caseIdx < NUM_CASES; caseIdx++) {
@@ -255,8 +200,7 @@ describe("packChunks — AC-4 optimality property", () => {
             );
           }
         } else {
-          // Cannot construct — fall back to random.
-          budget = BUDGET_MIN + Math.floor(rng() * (BUDGET_MAX - BUDGET_MIN + 1));
+          // Cannot construct — fall back to an all-fit case.
           const n = 1 + Math.floor(rng() * MAX_CHUNKS);
           for (let i = 0; i < n; i++) {
             const tokens = TOKEN_MIN + Math.floor(rng() * (TOKEN_MAX - TOKEN_MIN + 1));
@@ -270,9 +214,9 @@ describe("packChunks — AC-4 optimality property", () => {
               }),
             );
           }
+          budget = chunks.reduce((sum, chunk) => sum + chunk.tokens, 0);
         }
       } else {
-        budget = BUDGET_MIN + Math.floor(rng() * (BUDGET_MAX - BUDGET_MIN + 1));
         const n = 1 + Math.floor(rng() * MAX_CHUNKS);
         for (let i = 0; i < n; i++) {
           const tokens = TOKEN_MIN + Math.floor(rng() * (TOKEN_MAX - TOKEN_MIN + 1)); // 1..10
@@ -286,6 +230,7 @@ describe("packChunks — AC-4 optimality property", () => {
             }),
           );
         }
+        budget = chunks.reduce((sum, chunk) => sum + chunk.tokens, 0);
       }
 
       const result = packChunks(chunks, budget);

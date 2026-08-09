@@ -22,6 +22,7 @@ import { renderForAgent } from "./agent-renderer";
 import { dedupeChunks } from "./dedupe";
 import { DIGEST_RESERVE_TOKENS, buildDigest, digestTokens } from "./digest";
 import { buildManifest } from "./manifest-builder";
+import { toContextChunk } from "./orchestrator-rebuild-helpers";
 import { FLOOR_KINDS, packChunks } from "./packing";
 import type { PackedChunk } from "./packing";
 import { PULL_TOOL_REGISTRY } from "./pull-tools";
@@ -119,29 +120,6 @@ export async function fetchWithTimeout(
   } finally {
     clearTimeout(handle);
   }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Chunk → ContextChunk conversion
-// ─────────────────────────────────────────────────────────────────────────────
-
-function toContextChunk(packed: PackedChunk): ContextChunk {
-  // providerId is set by enrichRaw() in the orchestrator before scoring.
-  // Derive from id as fallback: format is <providerId>:<contentHash8>
-  const providerId = packed.providerId ?? packed.id.split(":")[0] ?? "unknown";
-  return {
-    id: packed.id,
-    providerId,
-    kind: packed.kind,
-    scope: packed.scope,
-    role: packed.role,
-    content: packed.content,
-    tokens: packed.tokens,
-    rawScore: packed.rawScore,
-    score: packed.score,
-    reason: packed.reason,
-    ...(packed.staleCandidate && { staleCandidate: true }),
-  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

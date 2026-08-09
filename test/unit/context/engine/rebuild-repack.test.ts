@@ -28,7 +28,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { AGENT_PROFILES, ContextOrchestrator } from "@/context/engine";
+import { AGENT_PROFILES, ContextOrchestrator, FLOOR_KINDS } from "@/context/engine";
 import type {
   AdapterFailure,
   ContextBundle,
@@ -130,7 +130,7 @@ function makeManifest(overrides: Partial<ContextManifest> = {}): ContextManifest
 function makeBundleFromChunks(
   chunks: ContextChunk[],
   manifestOverrides: Partial<ContextManifest> = {},
-  agentId: string = "claude",
+  agentId = "claude",
 ): ContextBundle {
   return {
     pushMarkdown: "",
@@ -140,7 +140,7 @@ function makeBundleFromChunks(
     agentId,
     manifest: makeManifest({
       includedChunks: chunks.map((c) => c.id),
-      floorItems: chunks.filter((c) => ["static", "feature", "test-coverage"].includes(c.kind)).map((c) => c.id),
+      floorItems: chunks.filter((c) => FLOOR_KINDS.includes(c.kind)).map((c) => c.id),
       usedTokens: chunks.reduce((s, c) => s + c.tokens, 0),
       ...manifestOverrides,
     }),
@@ -170,9 +170,13 @@ describe("US-003 — rebuild AC1: usedTokens ≤ effectiveBudget on over-budget 
       chunk({ id: "p1:sess-b", kind: "session", tokens: 5_000, content: "y".repeat(20_000) }),
       chunk({ id: "p1:sess-c", kind: "session", tokens: 5_000, content: "z".repeat(20_000) }),
     ];
-    const prior = makeBundleFromChunks(overBudgetChunks, {
-      effectiveBudget: 16_000,
-    }, "claude");
+    const prior = makeBundleFromChunks(
+      overBudgetChunks,
+      {
+        effectiveBudget: 16_000,
+      },
+      "claude",
+    );
 
     const orch = new ContextOrchestrator([]);
     const rebuilt = orch.rebuildForAgent(prior, {
@@ -181,9 +185,7 @@ describe("US-003 — rebuild AC1: usedTokens ≤ effectiveBudget on over-budget 
     });
 
     expect(rebuilt.manifest.effectiveBudget).toBeDefined();
-    expect(rebuilt.manifest.usedTokens).toBeLessThanOrEqual(
-      rebuilt.manifest.effectiveBudget as number,
-    );
+    expect(rebuilt.manifest.usedTokens).toBeLessThanOrEqual(rebuilt.manifest.effectiveBudget as number);
   });
 
   test("rebuild against the conservative-default ceiling: effectiveBudget equals 8_000", async () => {
@@ -192,9 +194,13 @@ describe("US-003 — rebuild AC1: usedTokens ≤ effectiveBudget on over-budget 
       chunk({ id: "p1:sess-a", kind: "session", tokens: 5_000 }),
       chunk({ id: "p1:sess-b", kind: "session", tokens: 5_000 }),
     ];
-    const prior = makeBundleFromChunks(overBudgetChunks, {
-      effectiveBudget: 16_000,
-    }, "claude");
+    const prior = makeBundleFromChunks(
+      overBudgetChunks,
+      {
+        effectiveBudget: 16_000,
+      },
+      "claude",
+    );
 
     const orch = new ContextOrchestrator([]);
     const rebuilt = orch.rebuildForAgent(prior, {
@@ -218,9 +224,13 @@ describe("US-003 — rebuild AC2: rebuilt chunks omit the excluded non-floor IDs
     const lowSessionC = chunk({ id: "p1:sess-excl", kind: "session", tokens: 4_000, rawScore: 0.3 });
     const floorFeat = chunk({ id: "p1:feat", kind: "feature", tokens: 100, rawScore: 1.0 });
 
-    const prior = makeBundleFromChunks([floorFeat, lowSessionA, lowSessionB, lowSessionC], {
-      effectiveBudget: 16_000,
-    }, "claude");
+    const prior = makeBundleFromChunks(
+      [floorFeat, lowSessionA, lowSessionB, lowSessionC],
+      {
+        effectiveBudget: 16_000,
+      },
+      "claude",
+    );
 
     const orch = new ContextOrchestrator([]);
     const rebuilt = orch.rebuildForAgent(prior, {
@@ -234,8 +244,7 @@ describe("US-003 — rebuild AC2: rebuilt chunks omit the excluded non-floor IDs
     expect(rebuiltIds).toContain("p1:feat");
     // At least one of the over-budget non-floor chunks must be excluded so
     // that usedTokens fits under the conservative ceiling.
-    const excludedNonFloor = [lowSessionA, lowSessionB, lowSessionC]
-      .filter((c) => !rebuiltIds.includes(c.id));
+    const excludedNonFloor = [lowSessionA, lowSessionB, lowSessionC].filter((c) => !rebuiltIds.includes(c.id));
     expect(excludedNonFloor.length).toBeGreaterThan(0);
     // The rebuilt bundle must be strictly smaller than the prior's chunk set
     // when the prior was over the conservative ceiling.
@@ -251,9 +260,13 @@ describe("US-003 — rebuild AC2: rebuilt chunks omit the excluded non-floor IDs
       chunk({ id: `p1:sess-${s}`, kind: "session", tokens: 4_000, rawScore: 0.6 }),
     );
 
-    const prior = makeBundleFromChunks([floorFeat, ...sessions], {
-      effectiveBudget: 16_000,
-    }, "claude");
+    const prior = makeBundleFromChunks(
+      [floorFeat, ...sessions],
+      {
+        effectiveBudget: 16_000,
+      },
+      "claude",
+    );
 
     const orch = new ContextOrchestrator([]);
     const rebuilt = orch.rebuildForAgent(prior, {
@@ -291,9 +304,13 @@ describe("US-003 — rebuild AC3: rebuilt chunks retain every prior chunk ID whe
       chunk({ id: "p1:sess-a", kind: "session", tokens: 3_000 }),
       chunk({ id: "p1:sess-b", kind: "session", tokens: 12_000 }),
     ];
-    const prior = makeBundleFromChunks(chunks, {
-      effectiveBudget: 16_000,
-    }, "claude");
+    const prior = makeBundleFromChunks(
+      chunks,
+      {
+        effectiveBudget: 16_000,
+      },
+      "claude",
+    );
 
     const orch = new ContextOrchestrator([]);
     const rebuilt = orch.rebuildForAgent(prior, {});
@@ -311,9 +328,13 @@ describe("US-003 — rebuild AC3: rebuilt chunks retain every prior chunk ID whe
       chunk({ id: "p1:sess-a", kind: "session", tokens: 300 }),
       chunk({ id: "p1:sess-b", kind: "session", tokens: 400 }),
     ];
-    const prior = makeBundleFromChunks(chunks, {
-      effectiveBudget: 16_000,
-    }, "claude");
+    const prior = makeBundleFromChunks(
+      chunks,
+      {
+        effectiveBudget: 16_000,
+      },
+      "claude",
+    );
 
     const orch = new ContextOrchestrator([]);
     const rebuilt = orch.rebuildForAgent(prior, {});
@@ -335,9 +356,13 @@ describe("US-003 — rebuild AC4: floor-kind chunks are all retained when they o
     const floorBigB = chunk({ id: "p1:feat-b", kind: "feature", tokens: 6_000 });
     const nonFloor = chunk({ id: "p1:sess", kind: "session", tokens: 500 });
 
-    const prior = makeBundleFromChunks([floorBigA, floorBigB, nonFloor], {
-      effectiveBudget: 16_000,
-    }, "claude");
+    const prior = makeBundleFromChunks(
+      [floorBigA, floorBigB, nonFloor],
+      {
+        effectiveBudget: 16_000,
+      },
+      "claude",
+    );
 
     const orch = new ContextOrchestrator([]);
     const rebuilt = orch.rebuildForAgent(prior, {
@@ -393,13 +418,17 @@ describe("US-003 — rebuild AC5: floorOverageItems reflects the rebuild's own p
     const floorSmall = chunk({ id: "p1:feat-small", kind: "feature", tokens: 200 });
     const nonFloor = chunk({ id: "p1:sess", kind: "session", tokens: 500 });
 
-    const prior = makeBundleFromChunks([floorBig, floorSmall, nonFloor], {
-      effectiveBudget: 16_000,
-      // Prior bundle says floorOverageItems = ["stale-floor-id"] — this is
-      // a fictional id that does not exist in the prior's chunks. The
-      // rebuild must NOT inherit it.
-      floorOverageItems: ["stale-floor-id-from-prior"],
-    }, "claude");
+    const prior = makeBundleFromChunks(
+      [floorBig, floorSmall, nonFloor],
+      {
+        effectiveBudget: 16_000,
+        // Prior bundle says floorOverageItems = ["stale-floor-id"] — this is
+        // a fictional id that does not exist in the prior's chunks. The
+        // rebuild must NOT inherit it.
+        floorOverageItems: ["stale-floor-id-from-prior"],
+      },
+      "claude",
+    );
 
     const orch = new ContextOrchestrator([]);
     const rebuilt = orch.rebuildForAgent(prior, {
@@ -429,10 +458,14 @@ describe("US-003 — rebuild AC5: floorOverageItems reflects the rebuild's own p
     const biggerFloorBig = chunk({ id: "p1:feat-huge", kind: "feature", tokens: 9_000 });
     const nonFloor = chunk({ id: "p1:sess", kind: "session", tokens: 500 });
 
-    const prior = makeBundleFromChunks([biggerFloorBig, floorSmall, nonFloor], {
-      effectiveBudget: 16_000,
-      floorOverageItems: ["old-stale-id"],
-    }, "claude");
+    const prior = makeBundleFromChunks(
+      [biggerFloorBig, floorSmall, nonFloor],
+      {
+        effectiveBudget: 16_000,
+        floorOverageItems: ["old-stale-id"],
+      },
+      "claude",
+    );
 
     const orch = new ContextOrchestrator([]);
     const rebuilt = orch.rebuildForAgent(prior, {
@@ -458,10 +491,14 @@ describe("US-003 — rebuild AC5: floorOverageItems reflects the rebuild's own p
   test("floorOverageItems is undefined when no floor chunk overflows", async () => {
     const floorSmall = chunk({ id: "p1:feat-small", kind: "feature", tokens: 100 });
     const nonFloor = chunk({ id: "p1:sess", kind: "session", tokens: 200 });
-    const prior = makeBundleFromChunks([floorSmall, nonFloor], {
-      effectiveBudget: 16_000,
-      floorOverageItems: ["leftover-from-prior"],
-    }, "claude");
+    const prior = makeBundleFromChunks(
+      [floorSmall, nonFloor],
+      {
+        effectiveBudget: 16_000,
+        floorOverageItems: ["leftover-from-prior"],
+      },
+      "claude",
+    );
 
     const orch = new ContextOrchestrator([]);
     const rebuilt = orch.rebuildForAgent(prior, {});
@@ -668,9 +705,7 @@ describe("US-003 — rebuild AC9: rebuilt chunks retain prior's relative order",
     const rebuiltOrder = rebuiltIds.filter((id) => id !== expectedNoteId);
     // The rebuilt prior-chunk order (minus the failure-note) must equal the
     // prior's chunk order filtered to the survivors.
-    const priorSurvivors = prior.chunks
-      .map((c) => c.id)
-      .filter((id) => rebuiltOrder.includes(id));
+    const priorSurvivors = prior.chunks.map((c) => c.id).filter((id) => rebuiltOrder.includes(id));
     expect(rebuiltOrder).toEqual(priorSurvivors);
   });
 });
@@ -702,9 +737,7 @@ describe("US-003 — rebuild AC10: chunkIdMap pairs every prior chunk ID with it
     const priorIds = prior.chunks.map((c) => c.id).sort();
     // The injected failure-note chunk also appears in the map, paired with itself.
     const failureId = `failure-note:claude:gemini:${AVAILABILITY_FAILURE.outcome}`;
-    const expectedPairs = [...priorIds, failureId]
-      .sort()
-      .map((id) => ({ priorChunkId: id, newChunkId: id }));
+    const expectedPairs = [...priorIds, failureId].sort().map((id) => ({ priorChunkId: id, newChunkId: id }));
     const mapPairs = (chunkIdMap ?? [])
       .map((entry) => ({ priorChunkId: entry.priorChunkId, newChunkId: entry.newChunkId }))
       .sort((a, b) => a.priorChunkId.localeCompare(b.priorChunkId));

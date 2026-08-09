@@ -8,7 +8,7 @@ export type { RebuildOptions } from "./types";
 export { scoreChunks, scoreChunk, MIN_SCORE } from "./scoring";
 export type { ScoredChunk } from "./scoring";
 export { dedupeChunks, SIMILARITY_THRESHOLD } from "./dedupe";
-export { packChunks } from "./packing";
+export { FLOOR_KINDS, packChunks } from "./packing";
 export type { PackedChunk, PackResult } from "./packing";
 export { renderChunks, separatorOverheadTokens, FIXED_RENDER_OVERHEAD_TOKENS } from "./render";
 export { buildDigest, DIGEST_RESERVE_TOKENS, digestTokens } from "./digest";

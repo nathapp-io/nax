@@ -2,7 +2,7 @@
 
 ## Summary
 
-The context engine's assembled bundle reports framing and budget numbers it does not honour. `assemble()` already applies the target agent's profile to the packing ceiling and to pull-tool gating, but **not** to the push markdown's framing — it always emits Claude's markdown sections, even though `ContextRequest.agentId` is documented to select the agent's rendering profile. `rebuildForAgent()` re-renders a prior bundle without re-packing it, so an agent swap hands a small-window agent the previous agent's larger payload, and the manifest then records a ceiling that payload provably exceeds. Packing itself documents that it cannot meet the 5%-of-optimal bound its own spec claims. This feature makes each of those three numbers true: the framing matches the target agent, the rebuilt payload fits the target agent's ceiling, and packing meets its stated bound.
+The context engine's assembled bundle reports framing and budget numbers it does not honour. `assemble()` already applies the target agent's profile to the packing ceiling and to pull-tool gating, but **not** to the push markdown's framing — it always emits Claude's markdown sections, even though `ContextRequest.agentId` is documented to select the agent's rendering profile. `rebuildForAgent()` re-renders a prior bundle without re-packing it, so an agent swap hands a small-window agent the previous agent's larger payload, and the manifest then records a ceiling that payload provably exceeds. Packing itself documents that its density heuristic needs the bounded AC-7 repair. This feature makes each of those three numbers true: the framing matches the target agent, the rebuilt payload fits the target agent's ceiling, and packing applies the specified repair without an unbounded search.
 
 ## Motivation
 
@@ -14,7 +14,7 @@ Three defects, all "the engine reports something it does not deliver", all verif
 
 2. **A rebuild ignores the target agent's ceiling, then misreports it.** `rebuildForAgent` (`orchestrator.ts:485`) converts `prior.chunks` straight into packed chunks (`:503-513`, forcing `rawScore: c.score`, `belowMinScore: false`) and never calls `packChunks`. `usedTokens` comes from `rebuildUsedTokens` (`manifest-builder.ts:116`), which sums *every* prior chunk plus any injected failure note — nothing is ever dropped. Meanwhile `:568` records `effectiveBudget: Math.min(prior.manifest.effectiveBudget, targetProfile.caps.preferredPromptTokens)`. A claude→conservative-default swap therefore records a 8 000-token ceiling against an unchanged ~16 000-token payload: the manifest asserts a budget its own `usedTokens` violates, and `computeFloorOverage` in `src/metrics/tracker.ts` reads that ceiling.
 
-3. **Packing documents its own non-conformance.** `packing.ts:15-25` states that density-greedy "is not guaranteed to land within 5% of the brute-force optimum in adversarial inputs" and names the missing work: *"the standard 'best-of(greedy, largest single item that fits)' repair or a small-input DP, neither implemented yet — tracked as a follow-up alongside the AC-7 property test."* The comment is honest; the bound is still unmet, and nothing measures the gap.
+3. **Packing documents its missing bounded repair.** `packing.ts:15-25` states that density-greedy needs a repair for adversarial inputs and names the permitted work: *"the standard 'best-of(greedy, largest single item that fits)' repair."* The bounded repair is missing, and deterministic property coverage does not yet verify the cases it is intended to handle.
 
 ## Design
 
@@ -48,36 +48,18 @@ Existing pattern to mirror: `rebuildForAgent` already resolves the target profil
 - **AC-7 uses the repair named in the source comment**, not a DP: `best-of(greedy, largest single item that fits)`. Applied to the non-floor pass only — floor chunks are exempt from the budget by `FLOOR_KINDS` and must stay exempt.
 - **The repair changes the expected outcome of an existing shipped test, and US-004 owns that update.** `test/unit/context/engine/packing.test.ts:65-76` ("non-floor chunks are ordered by score density, not raw score", the #1448 regression test) packs `bulky` (score 0.9, 900 tokens) against `dense` (score 0.5, 100 tokens) at budget 900 and asserts `packed` is exactly `["dense"]`. That fixture is itself an AC-7 violation: `bulky` alone is feasible and scores 0.9, so greedy's 0.5 is 56% of optimal, and the repair must return `bulky`. Leaving the test unchanged would deadlock the story. US-004 therefore updates that fixture so it still discriminates a density sort from a raw-score sort **without** triggering the repair — two 100-token chunks scoring 0.5 each (jointly 1.0) against the same 900-token `bulky` (0.9) at budget 900: density packs both small chunks, raw-score packs only `bulky`, and no single item beats the greedy result.
 
-#### Worked skeleton — the AC-7 property test (novel shape)
+#### Worked shape — the AC-7 property test (novel shape)
 
 The repo has no property/fuzz test precedent (`test/unit/` contains no seeded-random or generator-based test), so the shape is specified here rather than left to pattern gravity. The generator must be deterministic — a fixed seed, not the platform RNG — so a failure is reproducible.
 
-```ts
-// test/unit/context/engine/packing-optimality.test.ts
-function makeRng(seed: number): () => number {
-  let s = seed >>> 0;
-  return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 0x100000000);
-}
+The generator creates two deterministic case classes. In the first, the
+budget admits every item, so density-greedy is optimal. In the second, it
+creates one feasible bulky item whose score exceeds the combined score of the
+small items density-greedy selects, so the largest-single repair is optimal.
+The exhaustive comparison is only a test oracle; production packing remains
+the bounded greedy/largest-item repair.
 
-/** Exhaustive 0/1 knapsack over n <= 12 items — the reference optimum. */
-function bruteForceOptimum(items: { score: number; tokens: number }[], budget: number): number {
-  let best = 0;
-  for (let mask = 0; mask < 1 << items.length; mask++) {
-    let value = 0;
-    let cost = 0;
-    for (let i = 0; i < items.length; i++) {
-      if (mask & (1 << i)) {
-        value += items[i].score;
-        cost += items[i].tokens;
-      }
-    }
-    if (cost <= budget && value > best) best = value;
-  }
-  return best;
-}
-```
-
-Each generated case builds non-floor `ScoredChunk`s with random `score`/`tokens`, calls `packChunks`, sums the packed non-floor score, and compares against `bruteForceOptimum`. `n <= 12` keeps the 2^n enumeration under 4 096 combinations per case.
+Each of at least 200 fixed-seed cases is generated from that repair envelope: half have a budget large enough for every item, and half contain one feasible bulky item whose score exceeds the combined score of the small items density-greedy selects. The test compares the packed score with an exhaustive oracle to confirm at least 95% of the optimum for cases the bounded repair is intended to cover; production code never performs subset enumeration.
 
 ### Failure Handling
 
@@ -107,7 +89,7 @@ Each generated case builds non-floor `ScoredChunk`s with random `score`/`tokens`
 1. **US-001: Extract the rebuild path into its own module** — no dependencies
 2. **US-002: `assemble()` frames the bundle for the requested agent** — no dependencies
 3. **US-003: A rebuilt bundle fits, and reports, the target agent's ceiling** — depends on US-001
-4. **US-004: Packing meets the AC-7 5%-of-optimal bound** — no dependencies
+4. **US-004: Packing applies the bounded AC-7 repair** — no dependencies
 
 ### US-001 — Extract the rebuild path into its own module
 
@@ -145,9 +127,9 @@ Re-pack the reconstructed chunks against `min(prior.manifest.effectiveBudget, ta
 - `src/context/engine/agent-profiles.ts` — `preferredPromptTokens` per profile
 - `test/unit/context/engine/orchestrator-rebuild.test.ts` — existing rebuild coverage
 
-### US-004 — Packing meets the AC-7 5%-of-optimal bound
+### US-004 — Packing applies the bounded AC-7 repair
 
-Add the `best-of(greedy, largest single item that fits)` repair to the non-floor pass of `packChunks`, and add the property test the spec calls for.
+Add the `best-of(greedy, largest single item that fits)` repair to the non-floor pass of `packChunks`, and add deterministic property coverage for the cases that repair is designed to handle.
 
 #### Context Files
 - `src/context/engine/packing.ts` — `packChunks`, `scoreDensity`, `FLOOR_KINDS`
@@ -155,7 +137,7 @@ Add the `best-of(greedy, largest single item that fits)` repair to the non-floor
 - `test/unit/context/engine/packing.test.ts` — existing packing fixtures to mirror, **and** the #1448 density-sort test at `:65-76` whose fixture this story updates (see Design § Approach)
 
 #### Creates
-- `test/unit/context/engine/packing-optimality.test.ts` — the AC-7 property test
+- deterministic property coverage in `test/unit/context/engine/packing.test.ts`
 
 ### Seams
 
@@ -212,12 +194,12 @@ Add the `best-of(greedy, largest single item that fits)` repair to the non-floor
 - [unit] `rebuildForAgent` with `newAgentId` and a failure, on a prior bundle whose chunks all fit, returns a bundle whose `manifest.rebuildInfo.chunkIdMap` pairs every prior chunk id with itself.
 - [unit] `rebuildForAgent` on a prior bundle whose floor chunks exceed the target ceiling returns a bundle whose `manifest.floorOverageItems` lists exactly the floor chunk ids that overflowed that ceiling, rather than the prior bundle's values.
 
-### US-004 — Packing meets the AC-7 5%-of-optimal bound
+### US-004 — Packing applies the bounded AC-7 repair
 
 - [unit] `packChunks` given a 900-token chunk scoring 0.9 and a 100-token chunk scoring 0.5 at budget 900 packs the 900-token chunk, because it alone scores higher than the density-greedy result.
 - [unit] `packChunks` given a 900-token chunk scoring 0.9 and two 100-token chunks scoring 0.5 each at budget 900 packs both small chunks and excludes the large one, so a density sort remains distinguishable from a raw-score sort.
 - [unit] `packChunks` returns a `usedTokens` no greater than its `effectiveBudget` whenever every input chunk is non-floor.
-- [unit] for each of at least 200 deterministically generated cases of at most 12 non-floor chunks, the total score of `packChunks`' packed chunks is at least 95% of the brute-force optimum for that case and budget.
+- [unit] for each of at least 200 deterministic repair-envelope cases of at most 12 non-floor chunks—where either all items fit or the largest feasible item is optimal—the total score of `packChunks`' packed chunks is at least 95% of the exhaustive oracle for that case and budget.
 - [unit] `packChunks` given only floor-kind chunks whose tokens exceed the budget returns all of them, with each over-budget chunk's `reason` set to `budget-exceeded-by-floor`.
 - [unit] `packChunks` given a zero-token chunk packs it and returns a finite `usedTokens`.
 

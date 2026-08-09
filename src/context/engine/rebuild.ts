@@ -19,7 +19,8 @@ import { getLogger } from "@/logger";
 import { AGENT_PROFILES, getAgentProfile } from "./agent-profiles";
 import { renderForAgent } from "./agent-renderer";
 import { buildDigest, digestTokens } from "./digest";
-import { DEFAULT_REBUILD_AGENT_ID, buildFailureNoteChunk } from "./orchestrator-rebuild-helpers";
+import { CHUNK_SUMMARY_CHARS } from "./manifest-builder";
+import { DEFAULT_REBUILD_AGENT_ID, buildFailureNoteChunk, toContextChunk } from "./orchestrator-rebuild-helpers";
 import { type PackedChunk, packChunks } from "./packing";
 import { renderChunks } from "./render";
 import { neutralizeForAgent } from "./scratch-neutralizer";
@@ -177,10 +178,20 @@ export function rebuild(
         }
       : undefined;
 
+  const includedChunkIds = new Set(orderedChunks.map((c) => c.id));
+  const chunkSummaries = Object.fromEntries(orderedChunks.map((c) => [c.id, c.content.slice(0, CHUNK_SUMMARY_CHARS)]));
+  const chunkEffectiveness = prior.manifest.chunkEffectiveness
+    ? Object.fromEntries(Object.entries(prior.manifest.chunkEffectiveness).filter(([id]) => includedChunkIds.has(id)))
+    : undefined;
+  const excludedChunks = packResult.budgetExcludedIds
+    .filter((id) => !includedChunkIds.has(id))
+    .map((id) => ({ id, reason: "budget" as const }));
+
   const manifest: ContextManifest = {
     ...prior.manifest,
     requestId: deps.uuid(),
     includedChunks: orderedChunks.map((c) => c.id),
+    excludedChunks,
     // Recomputed chunk tokens — a rebuild can add a chunk (the failure note)
     // that the prior map has no entry for, which would record tokens:0 (#1421).
     chunkTokens: Object.fromEntries(orderedChunks.map((c) => [c.id, c.tokens])),
@@ -196,26 +207,15 @@ export function rebuild(
     // report overage identically. No overflow -> undefined, likewise.
     floorItems: packResult.floorPackedIds,
     floorOverageItems: packResult.floorOverageIds.length > 0 ? packResult.floorOverageIds : undefined,
+    chunkSummaries: Object.keys(chunkSummaries).length > 0 ? chunkSummaries : undefined,
+    staleChunks: orderedChunks.some((c) => c.staleCandidate)
+      ? orderedChunks.filter((c) => c.staleCandidate).map((c) => c.id)
+      : undefined,
+    chunkEffectiveness:
+      chunkEffectiveness && Object.keys(chunkEffectiveness).length > 0 ? chunkEffectiveness : undefined,
   };
 
-  const rebuiltChunks: ContextChunk[] = orderedChunks.map((c) => {
-    // providerId is set by enrichRaw() in the orchestrator before scoring.
-    // Derive from id as fallback: format is <providerId>:<contentHash8>
-    const providerId = c.providerId ?? c.id.split(":")[0] ?? "unknown";
-    return {
-      id: c.id,
-      providerId,
-      kind: c.kind,
-      scope: c.scope,
-      role: c.role,
-      content: c.content,
-      tokens: c.tokens,
-      rawScore: c.rawScore,
-      score: c.score,
-      reason: c.reason,
-      ...(c.staleCandidate && { staleCandidate: true }),
-    };
-  });
+  const rebuiltChunks: ContextChunk[] = orderedChunks.map(toContextChunk);
 
   return {
     pushMarkdown,

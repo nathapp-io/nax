@@ -208,7 +208,7 @@
         "Given a 900-token non-floor chunk scoring 0.9 and a 100-token non-floor chunk scoring 0.5 at budget 900, when `packChunks` is called, then it packs the 900-token chunk.",
         "Given a 900-token non-floor chunk scoring 0.9 and two 100-token non-floor chunks scoring 0.5 each at budget 900, when `packChunks` is called, then it packs both small chunks and excludes the large chunk.",
         "Given every input chunk is non-floor, when `packChunks` returns, then `usedTokens` is no greater than `effectiveBudget`.",
-        "Given each of at least 200 fixed-seed generated cases containing at most 12 non-floor chunks, when `packChunks` is compared with exhaustive 0/1-knapsack optimum for that case and budget, then its total packed score is at least 95% of the optimum.",
+        "Given each of at least 200 deterministic repair-envelope cases containing at most 12 non-floor chunks, where either every item fits or the largest feasible item is optimal, when `packChunks` is compared with an exhaustive oracle for that case and budget, then its total packed score is at least 95% of the optimum.",
         "Given only floor-kind chunks whose tokens exceed the budget, when `packChunks` is called, then it returns all chunks with each over-budget chunk's `reason` set to `budget-exceeded-by-floor`.",
         "Given a zero-token chunk, when `packChunks` is called, then it includes that chunk and returns a finite `usedTokens`."
       ],

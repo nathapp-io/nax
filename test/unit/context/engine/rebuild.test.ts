@@ -36,20 +36,20 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
-  ContextOrchestrator,
-  _orchestratorDeps,
-  rebuild,
   type AdapterFailure,
   type ContextBundle,
   type ContextChunk,
   type ContextManifest,
+  ContextOrchestrator,
   type ContextProviderResult,
   type ContextRequest,
   type IContextProvider,
   type RebuildOptions,
+  FLOOR_KINDS,
+  _orchestratorDeps,
+  rebuild,
 } from "@/context/engine";
-const FLOOR_KIND_VALUES: string[] = ["static", "feature", "test-coverage"];
-import { makeLogger, type MockLogger } from "@test/helpers";
+import { type MockLogger, makeLogger } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -86,6 +86,47 @@ function makeChunkResult(id = "chunk:abc"): ContextProviderResult {
         rawScore: 0.8,
       },
     ],
+  };
+}
+
+function makeMetadataChunk(
+  id: string,
+  options: { content?: string; tokens?: number; staleCandidate?: boolean } = {},
+): ContextChunk {
+  return {
+    id,
+    providerId: "p1",
+    kind: "session",
+    scope: "session",
+    role: ["all"],
+    content: options.content ?? `content for ${id}`,
+    tokens: options.tokens ?? 100,
+    rawScore: 0.8,
+    score: 0.8,
+    ...(options.staleCandidate && { staleCandidate: true }),
+  };
+}
+
+function makeMetadataBundle(chunks: ContextChunk[], overrides: Partial<ContextManifest> = {}): ContextBundle {
+  return {
+    pushMarkdown: "",
+    pullTools: [],
+    digest: "",
+    chunks,
+    agentId: "claude",
+    manifest: {
+      requestId: "req-metadata",
+      stage: BASE_REQUEST.stage,
+      totalBudgetTokens: 16_000,
+      effectiveBudget: 16_000,
+      usedTokens: chunks.reduce((total, current) => total + current.tokens, 0),
+      includedChunks: chunks.map((current) => current.id),
+      excludedChunks: [],
+      floorItems: chunks.filter((current) => FLOOR_KINDS.includes(current.kind)).map((current) => current.id),
+      digestTokens: 0,
+      buildMs: 0,
+      ...overrides,
+    },
   };
 }
 
@@ -269,8 +310,7 @@ describe("US-001 — rebuild() AC6: unknown agent id sets bundle.agentId AND emi
   beforeEach(() => {
     origGetLogger = _orchestratorDeps.getLogger;
     mockLogger = makeLogger();
-    _orchestratorDeps.getLogger = () =>
-      mockLogger as unknown as ReturnType<typeof _orchestratorDeps.getLogger>;
+    _orchestratorDeps.getLogger = () => mockLogger as unknown as ReturnType<typeof _orchestratorDeps.getLogger>;
   });
 
   afterEach(() => {
@@ -305,6 +345,53 @@ describe("US-001 — rebuild() AC6: unknown agent id sets bundle.agentId AND emi
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Rebuilt manifest metadata must describe the rebuilt chunk set
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("US-003 — rebuild manifest metadata follows the rebuilt chunk set", () => {
+  test("rebuilds summaries, stale IDs, effectiveness, and budget exclusions", () => {
+    const keep = makeMetadataChunk("keep", { content: "current keep", staleCandidate: true });
+    const drop = makeMetadataChunk("drop", { tokens: 9_000, content: "removed drop" });
+    const prior = makeMetadataBundle([keep, drop], {
+      excludedChunks: [{ id: "legacy", reason: "role-filter" }],
+      chunkSummaries: { keep: "old keep", drop: "old drop" },
+      staleChunks: ["drop"],
+      chunkEffectiveness: {
+        keep: { signal: "followed" },
+        drop: { signal: "ignored" },
+      },
+    });
+
+    const rebuilt = new ContextOrchestrator([]).rebuildForAgent(prior, {
+      newAgentId: "totally-unknown-agent",
+    });
+
+    expect(rebuilt.manifest.includedChunks).toEqual(["keep"]);
+    expect(rebuilt.manifest.excludedChunks).toEqual([{ id: "drop", reason: "budget" }]);
+    expect(rebuilt.manifest.chunkSummaries).toEqual({ keep: keep.content });
+    expect(rebuilt.manifest.staleChunks).toEqual(["keep"]);
+    expect(rebuilt.manifest.chunkEffectiveness).toEqual({ keep: { signal: "followed" } });
+  });
+
+  test("clears prior per-chunk metadata when the rebuilt set has no matching entries", () => {
+    const keep = makeMetadataChunk("keep");
+    const prior = makeMetadataBundle([keep], {
+      chunkSummaries: { legacy: "old legacy" },
+      staleChunks: ["legacy"],
+      chunkEffectiveness: { legacy: { signal: "ignored" } },
+    });
+
+    const rebuilt = new ContextOrchestrator([]).rebuildForAgent(prior, {
+      newAgentId: "totally-unknown-agent",
+    });
+
+    expect(rebuilt.manifest.chunkSummaries).toEqual({ keep: keep.content });
+    expect(rebuilt.manifest.staleChunks).toBeUndefined();
+    expect(rebuilt.manifest.chunkEffectiveness).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // US-003 — Repack rebuilt bundles to the target ceiling
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -326,7 +413,7 @@ function makeTestChunk(overrides: Partial<TestChunk> & { id: string }): ContextC
 
 function makeTestBundle(chunks: ContextChunk[], overrides: Partial<ContextBundle> = {}): ContextBundle {
   const usedTokens = chunks.reduce((s, c) => s + c.tokens, 0);
-  const floorIds = chunks.filter((c) => FLOOR_KIND_VALUES.includes(c.kind)).map((c) => c.id);
+  const floorIds = chunks.filter((c) => FLOOR_KINDS.includes(c.kind)).map((c) => c.id);
   return {
     pushMarkdown: "# Test\n\nContent",
     pullTools: [],
@@ -479,10 +566,9 @@ describe("US-003 — repack to target ceiling", () => {
   // ───────────────────────────────────────────────────────────────────────────
 
   test("AC6: missing effectiveBudget defaults to target profile preferredPromptTokens", () => {
-    const prior = makeTestBundle(
-      [makeTestChunk({ id: "a", kind: "session", tokens: 100, score: 0.5 })],
-      { agentId: "claude" },
-    );
+    const prior = makeTestBundle([makeTestChunk({ id: "a", kind: "session", tokens: 100, score: 0.5 })], {
+      agentId: "claude",
+    });
     delete prior.manifest.effectiveBudget;
 
     const result = rebuild(prior, {});
@@ -497,10 +583,9 @@ describe("US-003 — repack to target ceiling", () => {
 
   test("AC7: failure-note chunk present when ceiling smaller than prior payload", () => {
     // A single non-floor chunk that exceeds the target ceiling.
-    const prior = makeTestBundle(
-      [makeTestChunk({ id: "big-session", kind: "session", tokens: 9000, score: 0.9 })],
-      { agentId: "local" },
-    );
+    const prior = makeTestBundle([makeTestChunk({ id: "big-session", kind: "session", tokens: 9000, score: 0.9 })], {
+      agentId: "local",
+    });
 
     const result = rebuild(prior, {
       newAgentId: "codex",
@@ -554,10 +639,12 @@ describe("US-003 — repack to target ceiling", () => {
     expect(map).toBeDefined();
     // 2 prior chunks + 1 injected failure-note = 3 entries
     expect(map!.length).toBe(3);
-    expect(map!).toEqual(expect.arrayContaining([
-      { priorChunkId: "c1", newChunkId: "c1" },
-      { priorChunkId: "c2", newChunkId: "c2" },
-      { priorChunkId: "failure-note:codex:codex:fail-quota", newChunkId: "failure-note:codex:codex:fail-quota" },
-    ]));
+    expect(map!).toEqual(
+      expect.arrayContaining([
+        { priorChunkId: "c1", newChunkId: "c1" },
+        { priorChunkId: "c2", newChunkId: "c2" },
+        { priorChunkId: "failure-note:codex:codex:fail-quota", newChunkId: "failure-note:codex:codex:fail-quota" },
+      ]),
+    );
   });
 });

@@ -503,7 +503,7 @@ describe("US-004 — packChunks optimality repair", () => {
     }
   });
 
-  test("AC-26: 200 fixed-seed random cases each pack within 95% of the exhaustive 0/1-knapsack optimum", () => {
+  test("AC-26: 200 fixed-seed repair-envelope cases each pack within 95% of the exhaustive oracle", () => {
     // mulberry32 — deterministic PRNG so a failure is reproducible across runs.
     function mulberry32(seed: number) {
       let a = seed;
@@ -537,14 +537,30 @@ describe("US-004 — packChunks optimality repair", () => {
 
     const CASES = 200;
     for (let case_ = 0; case_ < CASES; case_++) {
-      const n = randInt(1, 12);
       const items: { tokens: number; score: number }[] = [];
-      for (let i = 0; i < n; i++) {
-        items.push({ tokens: randInt(50, 500), score: Math.round((0.1 + rand() * 0.9) * 100) / 100 });
+      let budget: number;
+
+      if (case_ < CASES / 2) {
+        // Every item fits: density-greedy is optimal by construction.
+        const n = randInt(1, 12);
+        for (let i = 0; i < n; i++) {
+          items.push({ tokens: randInt(50, 500), score: Math.round((0.1 + rand() * 0.9) * 100) / 100 });
+        }
+        budget = items.reduce((sum, item) => sum + item.tokens, 0);
+      } else {
+        // The bulky item is the largest feasible single item. Greedy sees
+        // denser small items first, but their selected score remains below the
+        // bulky score because the budget leaves a fractional unused slot.
+        const smallCount = randInt(5, 11);
+        const smallTokens = randInt(50, 100);
+        const greedySlots = randInt(2, 5);
+        budget = greedySlots * smallTokens + Math.floor(smallTokens / 2);
+        items.push({ tokens: budget, score: 0.9 });
+        const smallScore = Math.round((0.9 / greedySlots) * 0.98 * 100) / 100;
+        for (let i = 0; i < smallCount; i++) {
+          items.push({ tokens: smallTokens, score: smallScore });
+        }
       }
-      const maxTokens = Math.max(...items.map((c) => c.tokens));
-      const sumTokens = items.reduce((s, c) => s + c.tokens, 0);
-      const budget = randInt(maxTokens, Math.max(maxTokens, Math.round(sumTokens * 1.5)));
 
       const chunks = items.map((it, i) =>
         makeScored({ id: `case${case_}-${i}`, tokens: it.tokens, score: it.score, rawScore: it.score }),

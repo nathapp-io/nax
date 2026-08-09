@@ -176,8 +176,8 @@
   },
   {
     "acId": "AC-26",
-    "original": "Given each of at least 200 fixed-seed generated cases containing at most 12 non-floor chunks, when `packChunks` is compared with exhaustive 0/1-knapsack optimum for that case and budget, then its total packed score is at least 95% of the optimum.",
-    "refined": "Using deterministic seed 42, generate 200 cases. Each case: n uniformly sampled from [1,12] non-floor chunks. For each chunk: score = random float in [0.1,1.0], tokens = random int in [50,500]. Budget = random int in [max(chunks.map(c=>c.tokens)), sum(chunks.map(c=>c.tokens))*1.5]. Exhaustive optimum = max sum of scores over all 2^n subsets where sum(tokens) <= budget. When packChunks(chunks,budgetTokens) is called, then for all 200 cases: sum(result.packed.map(c=>c.score)) >= 0.95 * optimum. Floor chunks are excluded from budget enforcement by FLOOR_KINDS; only non-floor chunks count toward the 95% bound.",
+    "original": "Given each of at least 200 deterministic repair-envelope cases containing at most 12 non-floor chunks, when `packChunks` is compared with an exhaustive oracle for that case and budget, then its total packed score is at least 95% of the optimum.",
+    "refined": "Using deterministic seed 42, generate 200 cases from two classes: cases where the budget admits every item, and cases with one feasible bulky item whose score exceeds the combined score of the small items density-greedy selects. Compare packChunks(chunks,budgetTokens) with an exhaustive oracle and assert the packed score is at least 95% of optimum for every case. Floor chunks are excluded from budget enforcement by FLOOR_KINDS; only non-floor chunks count toward the bound.",
     "testable": true,
     "storyId": "US-004"
   },

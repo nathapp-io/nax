@@ -18,12 +18,9 @@
  *   guaranteed to land within 5% of the brute-force optimum in adversarial
  *   inputs (e.g. one huge high-density chunk that excludes many smaller
  *   lower-density ones which would sum to more value). The standard
- *   "best-of(greedy, largest single item, best pair)" repair narrows that
+ *   "best-of(greedy, largest single item)" repair narrows that
  *   gap. Applied to the non-floor pass only — floor
  *   chunks are exempt from the budget and remain greedy/floor-included.
- *
- * Phase 3+: Optional 0/1 knapsack DP (in packing.ts) if the repair proves
- * insufficient. Floor rule still applies in Phase 3+.
  */
 
 import type { ScoredChunk } from "./scoring";
@@ -112,91 +109,10 @@ function largestSingleItem(nonFloor: ScoredChunk[], remainingBudget: number): Sc
 }
 
 /**
- * Best pair of items that fit — finds two distinct non-floor chunks that
- * jointly fit in the remaining budget and maximize total score. Returns an
- * empty array if fewer than two items fit individually.
- */
-function bestPair(nonFloor: ScoredChunk[], remainingBudget: number): ScoredChunk[] {
-  let best: [ScoredChunk, ScoredChunk] | null = null;
-  let bestScore = -1;
-  for (let i = 0; i < nonFloor.length; i++) {
-    if (nonFloor[i].tokens > remainingBudget) continue;
-    for (let j = i + 1; j < nonFloor.length; j++) {
-      if (nonFloor[i].tokens + nonFloor[j].tokens > remainingBudget) continue;
-      const pairScore = nonFloor[i].score + nonFloor[j].score;
-      if (pairScore > bestScore) {
-        bestScore = pairScore;
-        best = [nonFloor[i], nonFloor[j]];
-      }
-    }
-  }
-  return best ? [best[0], best[1]] : [];
-}
-
-/**
- * Exact 0/1 knapsack via subset enumeration (US-004 AC-26). For small n
- * (default cap 20) enumerating every subset is fast — 2^20 ≈ 1M masks —
- * and yields the optimum directly. For larger inputs we fall back to the
- * best-of(greedy, largest single item, best pair) heuristic, which is the
- * previous AC-7 repair and stays cheap.
- *
- * `nonFloor` may be empty; the loop short-circuits to a no-pick answer.
- * Tokens/score are read straight from the chunk — no scaling.
- */
-function knapsackOptimum(
-  nonFloor: ScoredChunk[],
-  remainingBudget: number,
-): { selected: ScoredChunk[]; totalScore: number } {
-  if (nonFloor.length === 0) return { selected: [], totalScore: 0 };
-
-  // Prune items that cannot fit individually — they cannot participate in any
-  // feasible subset, so excluding them shrinks the search space.
-  const feasible = nonFloor.filter((c) => c.tokens <= remainingBudget);
-  if (feasible.length === 0) return { selected: [], totalScore: 0 };
-
-  const SUBSET_LIMIT = 20;
-  if (feasible.length > SUBSET_LIMIT) {
-    // Fall back to the heuristic. This preserves AC-7 behavior for large
-    // inputs where exact enumeration would be too expensive.
-    const greedy = greedyNonFloor(feasible, remainingBudget);
-    return {
-      selected: greedy.selected,
-      totalScore: greedy.selected.reduce((s, c) => s + c.score, 0),
-    };
-  }
-
-  let bestMask = 0;
-  let bestScore = 0;
-  const totalSubsets = 1 << feasible.length;
-  for (let mask = 1; mask < totalSubsets; mask++) {
-    let tokens = 0;
-    let score = 0;
-    for (let i = 0; i < feasible.length; i++) {
-      if (mask & (1 << i)) {
-        tokens += feasible[i].tokens;
-        if (tokens > remainingBudget) break;
-        score += feasible[i].score;
-      }
-    }
-    if (tokens <= remainingBudget && score > bestScore) {
-      bestScore = score;
-      bestMask = mask;
-    }
-  }
-
-  const selected: ScoredChunk[] = [];
-  for (let i = 0; i < feasible.length; i++) {
-    if (bestMask & (1 << i)) selected.push(feasible[i]);
-  }
-  return { selected, totalScore: bestScore };
-}
-
-/**
- * Best-of(greedy, exact 0/1 knapsack, largest single item, best pair) repair
- * (spec §AC-7, US-004 AC-26). For small n the exact DP wins; for larger n the
- * heuristic stays cheap. Picks the candidate with the highest total score.
- * Ties keep the greedy result. Returns the selected chunks in input order
- * for determinism.
+ * Best-of(greedy, largest single item) repair (spec §AC-7, US-004 AC-26).
+ * Picks the candidate with the highest total score. Ties keep the greedy
+ * result. The greedy candidate is returned in density order; the rebuild path
+ * normalizes selected chunks to prior order when it needs stable emission.
  */
 function repairNonFloor(
   nonFloor: ScoredChunk[],
@@ -205,21 +121,12 @@ function repairNonFloor(
   const greedy = greedyNonFloor(nonFloor, remainingBudget);
   const greedyScore = greedy.selected.reduce((s, c) => s + c.score, 0);
 
-  const optimum = knapsackOptimum(nonFloor, remainingBudget);
-
   const largest = largestSingleItem(nonFloor, remainingBudget);
   const largestScore = largest.reduce((s, c) => s + c.score, 0);
 
-  const pair = bestPair(nonFloor, remainingBudget);
-  const pairScore = pair.reduce((s, c) => s + c.score, 0);
-
-  // Pick the best among greedy / exact / pair / largest. Exact >= greedy
-  // by construction (the optimum is the best feasible score), so it always
-  // wins when it strictly exceeds greedy.
+  // Pick the best between greedy and the largest feasible single item.
   const candidates: Array<{ selected: ScoredChunk[]; totalScore: number }> = [
     { selected: greedy.selected, totalScore: greedyScore },
-    { selected: optimum.selected, totalScore: optimum.totalScore },
-    { selected: pair, totalScore: pairScore },
     { selected: largest, totalScore: largestScore },
   ];
   let best = candidates[0];
@@ -280,7 +187,7 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
     usedTokens += chunk.tokens;
   }
 
-  // Pass 2: non-floor items — best-of(greedy, largest single, best pair) repair
+  // Pass 2: non-floor items — best-of(greedy, largest single) repair
   const remainingBudget = Math.max(0, effectiveBudget - usedTokens);
   const { selected, excludedIds } = repairNonFloor(nonFloorChunks, remainingBudget);
   for (const chunk of selected) {
