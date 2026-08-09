@@ -459,6 +459,7 @@ async function runAcceptanceSetup(
       testFramework: groupConfig.project?.testFramework,
       commandOverride: groupConfig.acceptance.command,
       storyCount: g.stories.length,
+      acceptanceEnabled: groupConfig.acceptance.enabled,
     });
   }
   ctx.acceptanceTestPaths = acceptanceTestPaths;

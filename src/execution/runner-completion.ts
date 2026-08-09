@@ -27,6 +27,7 @@ import type { DeferredReviewResult } from "./deferred-review";
 import type { ExitReason } from "./executor-types";
 import type { AcceptanceLoopContext, AcceptanceLoopResult } from "./lifecycle/acceptance-loop";
 import type { RunCompletionOptions, RunCompletionResult } from "./lifecycle/run-completion";
+import type { AcceptancePhaseStatus } from "./status-file";
 import { hookCtx } from "./story-context";
 
 /**
@@ -173,6 +174,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
                 packageDir: g.packageDir,
                 testFramework: groupConfig.project?.testFramework,
                 commandOverride: groupConfig.acceptance.command,
+                storyCount: g.stories.length,
                 acceptanceEnabled: groupConfig.acceptance.enabled,
               };
             }),
@@ -202,9 +204,11 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
           runtime: options.runtime,
           abortSignal: options.abortSignal,
           acceptanceTestPaths,
-          // US-004: forward the prior run's missing-target packages so a
-          // resumed run evaluates them rather than treating the prior
-          // "failed" record as a pass-by-default.
+          // US-004 (AC-35): forward the prior run's missing-target packages
+          // onto the context so a resumed run's acceptance loop is invoked
+          // with that history available, rather than the resume decision
+          // (driven by postRunStatus.acceptance.status, see
+          // acceptanceAlreadyPassed above) losing it entirely.
           skippedPackages: postRunStatus?.acceptance?.skippedPackages,
         });
       } catch (err) {
@@ -253,7 +257,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
         // explicitly undefined when this failure has none — because
         // StatusWriter merges updates shallowly and would otherwise leave a
         // stale list from an earlier missing-target failure in place.
-        const failureUpdate: Record<string, unknown> = {
+        const failureUpdate: Partial<AcceptancePhaseStatus> = {
           status: "failed",
           failedACs: acceptanceResult.failedACs ?? [],
           retries: acceptanceResult.retries ?? 0,

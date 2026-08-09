@@ -6,6 +6,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { realpathSync } from "node:fs";
+import fs from "node:fs/promises";
+import path from "node:path";
 import {
   _gitDeps,
   autoCommitIfDirty,
@@ -14,6 +17,7 @@ import {
   detectMergeConflict,
   parsePorcelainForNaxPaths,
 } from "@/utils/git";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 describe("detectMergeConflict", () => {
   // True positives — real git conflict signals
@@ -439,21 +443,23 @@ describe("parsePorcelainForNaxPaths", () => {
 
 interface CapturedCall {
   args: string[];
+  cwd?: string;
 }
 
-function captureSpawn(outputs: Array<{ output: string; exitCode?: number }>): {
+function captureSpawn(outputs: Array<{ output: string; exitCode?: number; stderr?: string }>): {
   spawn: typeof _gitDeps.spawn;
   calls: CapturedCall[];
 } {
   const calls: CapturedCall[] = [];
   let callIdx = 0;
-  const spawn = mock((args: unknown[], _opts: unknown) => {
-    calls.push({ args: args as string[] });
+  const spawn = mock((args: unknown[], opts: { cwd?: string } = {}) => {
+    calls.push({ args: args as string[], cwd: opts.cwd });
     const spec = outputs[callIdx++] ?? { output: "", exitCode: 0 };
     const bytes = new TextEncoder().encode(spec.output);
+    const stderrBytes = new TextEncoder().encode(spec.stderr ?? "");
     return {
       stdout: new ReadableStream({ start(c) { c.enqueue(bytes); c.close(); } }),
-      stderr: new ReadableStream({ start(c) { c.close(); } }),
+      stderr: new ReadableStream({ start(c) { c.enqueue(stderrBytes); c.close(); } }),
       exited: Promise.resolve(spec.exitCode ?? 0),
       kill: mock(() => {}),
     };
@@ -525,6 +531,66 @@ describe("autoCommitIfDirty .nax/ restore", () => {
       const keys = Object.keys(call.data);
       expect(keys[0]).toBe("storyId");
       expect(call.data.storyId).toBe("US-002");
+    }
+  });
+
+  test("logs an error with the exit code and stderr when the restore checkout fails", async () => {
+    const { spawn } = captureSpawn([
+      { output: "/tmp/repo\n" },
+      { output: " D .nax/features/f/.nax-acceptance.test.tsx\n" },
+      { output: "", exitCode: 128, stderr: "error: pathspec did not match" }, // checkout fails
+      { output: "" }, // add
+      { output: "" }, // commit
+    ]);
+    _gitDeps.spawn = spawn;
+
+    const errorCalls: Array<{ message: string; data: Record<string, unknown> }> = [];
+    _gitDeps.getSafeLogger = () => ({
+      error: (stage: string, message: string, data?: Record<string, unknown>) => {
+        errorCalls.push({ message, data: data ?? {} });
+      },
+      warn: () => {},
+      info: () => {},
+      debug: () => {},
+    });
+
+    await autoCommitIfDirty("/tmp/repo", "test", "implementer", "US-002");
+
+    expect(errorCalls.length).toBeGreaterThan(0);
+    const failureLog = errorCalls.find((c) => c.data.exitCode === 128);
+    expect(failureLog).toBeDefined();
+    expect(failureLog!.data.storyId).toBe("US-002");
+    expect(failureLog!.data.stderr).toContain("pathspec");
+  });
+
+  test("spawns the restore checkout from the repo root, not a monorepo package subdir", async () => {
+    // git status --porcelain paths are repo-root-relative regardless of the cwd
+    // git was invoked from, so the restore checkout must also run from the repo
+    // root — matching the `git add -A` staging call — or the pathspec silently
+    // fails to match from a package subdir. Real directories are used (rather
+    // than the "/tmp/repo" convention above) so realpathSync resolves the root
+    // and the subdir consistently, exercising the actual isSubdir branch.
+    const repoRoot = makeTempDir("nax-git-root-");
+    const packageDir = path.join(repoRoot, "apps", "web");
+    await fs.mkdir(packageDir, { recursive: true });
+    try {
+      const realRepoRoot = realpathSync(repoRoot);
+      const { spawn, calls } = captureSpawn([
+        { output: `${realRepoRoot}\n` }, // rev-parse --show-toplevel
+        { output: " D apps/web/.nax/features/f/.nax-acceptance.test.tsx\n" }, // status
+        { output: "" }, // checkout
+        { output: "" }, // add
+        { output: "" }, // commit
+      ]);
+      _gitDeps.spawn = spawn;
+
+      await autoCommitIfDirty(packageDir, "test", "implementer", "US-002");
+
+      const checkoutCall = calls.find((c) => c.args[0] === "git" && c.args[1] === "checkout");
+      expect(checkoutCall).toBeDefined();
+      expect(checkoutCall!.cwd).toBe(realRepoRoot);
+    } finally {
+      cleanupTempDir(repoRoot);
     }
   });
 

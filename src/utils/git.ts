@@ -353,6 +353,10 @@ export async function autoCommitIfDirty(
     // worktree.
     const naxPaths = parsePorcelainForNaxPaths(statusOutput);
     for (const { path: protectedPath, staged } of naxPaths) {
+      // AC-17: this log is intentionally `error`-level even on a successful
+      // restore — the deletion it is repairing indicates an agent mistake
+      // worth surfacing loudly, not routine operation. A failed restore logs
+      // again below with the exit code and stderr.
       logger?.error(stage, "Restoring deleted .nax/ path before auto-commit", {
         storyId,
         role,
@@ -362,12 +366,27 @@ export async function autoCommitIfDirty(
       const checkoutArgs = staged
         ? ["git", "checkout", "HEAD", "--", protectedPath]
         : ["git", "checkout", "--", protectedPath];
+      // Porcelain paths are repo-root-relative regardless of the cwd `git status`
+      // ran from, so the restore must spawn from realGitRoot too — matching the
+      // `git add -A` staging call below. Spawning from `workdir` (a monorepo
+      // package subdir) makes the pathspec resolve against the wrong root and
+      // the restore silently no-ops.
       const checkoutProc = _gitDeps.spawn(checkoutArgs, {
-        cwd: workdir,
+        cwd: realGitRoot,
         stdout: "pipe",
         stderr: "pipe",
       });
-      await checkoutProc.exited;
+      const checkoutExit = await checkoutProc.exited;
+      if (checkoutExit !== 0) {
+        const stderr = await new Response(checkoutProc.stderr).text();
+        logger?.error(stage, "Failed to restore .nax/ path before auto-commit", {
+          storyId,
+          role,
+          path: protectedPath,
+          exitCode: checkoutExit,
+          stderr: stderr.trim(),
+        });
+      }
     }
 
     // Always stage from gitRoot with -A so that agent changes outside packageDir

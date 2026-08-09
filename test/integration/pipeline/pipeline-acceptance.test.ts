@@ -147,9 +147,12 @@ describe("test-feature - Acceptance Tests", () => {
     }
   });
 
-  test("continues when test file does not exist or no feature directory", async () => {
+  test("continues when no feature directory; fails when test file is missing but the group has stories", async () => {
+    // US-003: a missing test file is a hard fail once the group has PRD
+    // stories and acceptance is enabled — the pre-ACC-002 "skip missing"
+    // path was the bug this story closes.
     const ctx1 = createTestContext(createTestPRD([{ id: "US-001", status: "passed" }]));
-    expect((await acceptanceStage.execute(ctx1)).action).toBe("continue");
+    expect((await acceptanceStage.execute(ctx1)).action).toBe("fail");
 
     const ctx2 = createTestContext(createTestPRD([{ id: "US-001", status: "passed" }]));
     ctx2.featureDir = undefined;
