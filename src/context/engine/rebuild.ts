@@ -89,7 +89,10 @@ export function rebuild(
 
   // Inject failure-note chunk when this is an agent-swap rebuild
   if (failure && newAgentId) {
-    packedChunks.push(buildFailureNoteChunk(prior.agentId ?? "unknown", newAgentId, failure));
+    // Truthiness fallback matches the original orchestrator implementation —
+    // `prior.agentId ?? ""` followed by `... || "unknown"` collapses both
+    // undefined and "" to "unknown" for the failure-note chunk.
+    packedChunks.push(buildFailureNoteChunk(prior.agentId || "unknown", newAgentId, failure));
   }
 
   // Re-render under the target agent's profile (or markdown-sections for same-agent rebuild)
