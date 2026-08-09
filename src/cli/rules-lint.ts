@@ -230,7 +230,11 @@ export async function rulesLintCommand(options: RulesLintOptions, deps: RulesLin
       {
         stage: "rules-lint",
         failedRoots: failedRootPaths,
-        causes: failedRoots.map((f) => (f.cause instanceof Error ? f.cause.message : String(f.cause))),
+        // Preserve the original errors (not just their messages) so the
+        // stack traces and error identity survive — see error-handling.md
+        // "Always chain errors with `cause: err` to preserve the original
+        // error chain". Iterating callers can drill in with each `causes[i]`.
+        causes: failedRoots.map((f) => f.cause),
       },
     );
   }
