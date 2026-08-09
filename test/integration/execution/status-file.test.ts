@@ -151,6 +151,24 @@ describe("countProgress", () => {
     expect(progress.failed).toBe(1);
     expect(progress.pending).toBe(0);
   });
+
+  test("failed and regression-failed both contribute to the failed bucket", () => {
+    const stories = [
+      makeStory("US-001", "passed"),
+      makeStory("US-002", "failed"),
+      makeStory("US-003", "regression-failed"),
+      makeStory("US-004", "pending"),
+    ];
+    const progress = countProgress(makePrd(stories));
+
+    expect(progress.total).toBe(4);
+    expect(progress.passed).toBe(1);
+    expect(progress.failed).toBe(2);
+    expect(progress.pending).toBe(1);
+    expect(progress.pending).toBe(
+      progress.total - progress.passed - progress.failed - progress.paused - progress.blocked,
+    );
+  });
 });
 
 // ============================================================================
