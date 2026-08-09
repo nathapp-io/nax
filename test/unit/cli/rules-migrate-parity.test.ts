@@ -106,7 +106,7 @@ describe("rulesMigrateCommand — dry-run / real-run parity", () => {
     expect(mkdirCalls).toHaveLength(0);
   });
 
-  test("AC-12: dry-run summary reports the same counts as the real run", async () => {
+  test("AC-12: dry-run summary reports the same counts as the real run, with dry-run wording", async () => {
     const originalLog = console.log;
     const lines: string[] = [];
     console.log = (...args: unknown[]) => {
@@ -122,9 +122,11 @@ describe("rulesMigrateCommand — dry-run / real-run parity", () => {
     }
     Object.keys(written).forEach((k) => delete written[k]);
     const realRun = await rulesMigrateCommand({ dir: "/project", dryRun: false });
-    const summary = lines.find((line) => /\d+ written, \d+ skipped/.test(line));
+    const summary = lines.find((line) => /^\s*Dry run: \d+ file\(s\) would be written, \d+ skipped\.$/.test(line));
     expect(summary).toBeDefined();
-    expect(summary).toContain(`${realRun.written.length} written, ${realRun.skipped.length} skipped`);
+    expect(summary).toContain(
+      `Dry run: ${realRun.written.length} file(s) would be written, ${realRun.skipped.length} skipped.`,
+    );
     expect(dryRun?.written).toEqual(realRun.written);
     expect(dryRun?.skipped).toEqual(realRun.skipped);
   });

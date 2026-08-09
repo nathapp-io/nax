@@ -269,7 +269,11 @@ export async function rulesMigrateCommand(options: RulesMigrateOptions): Promise
     skipped.push(entry.targetFileName);
   }
 
-  console.log(`\nMigration complete: ${written.length} written, ${skipped.length} skipped.`);
+  console.log(
+    dryRun
+      ? `\nDry run: ${written.length} file(s) would be written, ${skipped.length} skipped.`
+      : `\nMigration complete: ${written.length} file(s) written, ${skipped.length} skipped.`,
+  );
   if (!dryRun && written.length > 0) {
     console.log(
       `Review ${CANONICAL_RULES_DIR}/ before committing. Run \`nax rules export --agent=claude\` to regenerate CLAUDE.md.`,
