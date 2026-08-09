@@ -1,0 +1,148 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "rules-cli-honesty",
+  "branchName": "feat/rules-cli-honesty",
+  "createdAt": "2026-08-09T00:00:00.000Z",
+  "updatedAt": "2026-08-09T06:51:39.553Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Migration preview equals the real run",
+      "description": "**Goal** — Extract the migration write-or-skip decision into a shared plan so dry-run output, real execution, outcomes, and summaries describe the same work.\n\n**Motivation** — `nax rules migrate --dry-run` reports writes it did not earn because it skips the existing-target check, counts those targets as written, and suppresses the summary.\n\n**Approach** — The migration's write-or-skip decision moves into one pure function, `planMigration`, which both the dry run and the real run consume. The preview then equals the real run by construction rather than by two branches that must be kept in agreement — the arrangement that produced defect 1.\n\nThe planner is a pure function in a codebase full of them, and its dependency (`fileExists`) is injected exactly as the existing CLI deps are.\n\n**Scope** — In: add the migration planner; use its writes/skips in `rulesMigrateCommand`; render matching dry-run and real-run decisions; return the observable outcome; add the specified focused planner and parity tests. Out: linter root isolation and empty-store reporting (US-002); Broadening `nax rules migrate` source discovery to `AGENTS.md`, `.cursorrules`, `.cursor/*.mdc`, or `@`-include inlining is out of scope.\n\n**Interface**\n```typescript\nMigrationPlanEntry — `sourcePath`, `targetFileName`, `targetPath`, `content`.\nMigrationPlan — `writes: MigrationPlanEntry[]`, `skips: MigrationPlanEntry[]`. Every source lands in exactly one of the two lists.\nplanMigration(sources, options) where `options` carries `targetDir`, `force`, and an injected `fileExists(path) => Promise<boolean>`; returns `Promise<MigrationPlan>`.\n\nrulesMigrateCommand: (options: RulesMigrateOptions) => Promise<MigrationOutcome>\nMigrationOutcome: { written: string[]; skipped: string[] }\n```\n\n`rulesMigrateCommand` widens from `Promise<void>` to `Promise<MigrationOutcome>`, where `MigrationOutcome` carries `written: string[]` and `skipped: string[]` — target file names, in source order. Widening a `void` return is safe for existing callers: `bin/nax.ts` awaits and discards it, and no existing test asserts on the returned value. The outcome is observable without capturing stdout.\n\nNew per-file and summary lines use `console.log`, matching every other line this CLI already prints (`src/cli/rules.ts`, `src/cli/rules-lint.ts`); the \"no `console.log` in source\" rule is scoped to non-CLI code, and no existing rules-CLI output routes through the logger.",
+      "acceptanceCriteria": [
+        "When `planMigration` receives one source whose target exists and `force` is false, then its `skips` contains that source's target file name.",
+        "When `planMigration` receives one source whose target exists and `force` is false, then its `writes` is empty.",
+        "When `planMigration` receives one source whose target exists and `force` is true, then its `writes` contains that target file name.",
+        "When `planMigration` receives one source whose target exists and `force` is true, then its `skips` is empty.",
+        "When `planMigration` receives one source whose target is absent and `force` is false, then its `writes` contains that target file name.",
+        "When `planMigration` receives one source whose target is absent and `force` is true, then its `writes` contains that target file name.",
+        "When `rulesMigrateCommand` runs with `dryRun: true`, one source, and `fileExists` reporting its target exists, then it does not call `writeFile`.",
+        "When `rulesMigrateCommand` runs with `dryRun: true`, one source, and `fileExists` reporting its target exists, then its returned outcome's `skipped` list contains that target file name.",
+        "When `rulesMigrateCommand` runs twice over identical sources and `fileExists` responses, once with `dryRun: true` and once with `dryRun: false`, then their outcomes have equal written file-name sets.",
+        "When `rulesMigrateCommand` runs twice over identical sources and `fileExists` responses, once with `dryRun: true` and once with `dryRun: false`, then their outcomes have equal skipped file-name sets.",
+        "When `rulesMigrateCommand` runs with `dryRun: true`, then it does not call the injected `mkdir` dependency.",
+        "When `rulesMigrateCommand` runs with `dryRun: true` over fixed inputs, then stdout includes a trailing summary reporting the same written and skipped counts as the real-run invocation over those inputs.",
+        "When a migration target exists and `--force` is absent, then `rulesMigrateCommand` reports it as skipped in both dry-run and real-run modes.",
+        "When a migration target exists and `--force` is absent, then `rulesMigrateCommand` excludes it from the returned written list in both dry-run and real-run modes."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "migration",
+        "planning"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a standard four-file CLI change: a pure injected planner, one existing command integration, and focused unit/integration tests with no new subsystem or cross-story dependency.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/cli/rules.ts",
+        "test/unit/cli/rules.test.ts"
+      ],
+      "expectedFiles": [
+        "src/cli/rules-migrate-plan.ts",
+        "test/unit/cli/rules-migrate-plan.test.ts",
+        "test/unit/cli/rules-migrate-parity.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/cli/rules.ts",
+          "reason": ""
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "63069214da4195a3b33daf1cd2754e7d783b4f0f"
+    },
+    {
+      "id": "US-002",
+      "title": "Report every lint root and warn on an empty store",
+      "description": "**Goal** — Keep linting after individual canonical-rule root load failures, aggregate those failures into one CLI error, and surface an empty canonical rules store as a warning.\n\n**Motivation** — `nax rules lint` aborts at the first failing rule root and reports a repository with no canonical rule files as a clean pass.\n\n**Approach** — The linter keeps its loop in place. Its fix is per-root error isolation plus an explicit exit contract, not a restructure; `src/cli/rules-lint.ts` is 210 lines and under no size pressure, so extracting it would be refactoring unrelated to the goal.\n\n**Scope** — In: isolate `loadCanonicalRules` errors for each root; continue linting healthy roots; aggregate failures into a `NaxError`; count an empty canonical store as a logger warning; retain existing stdout summary streams and wrapper-driven non-zero exit. Out: migration planning and dry-run parity (US-001); Adding a `--check`, `--strict`, or `--json` flag to `nax rules lint` for CI gating is out of scope; the command keeps its current flag surface; Making lint warnings produce a non-zero exit code is out of scope; only a rule root that fails to load exits non-zero; Distinguishing \"no rules directory exists\" from \"a rules directory exists but holds no rule files\" is out of scope; both conditions produce the same empty-store warning; Wiring `nax rules lint` into `bun run lint`, git hooks, or CI is out of scope.\n\n**Interface**\n```typescript\nrulesLintCommand(options: RulesLintOptions, deps: RulesLintDeps = _rulesLintDeps): Promise<void>\n```\n\nA rule root's `loadCanonicalRules` rejects | Record the root and its cause, continue linting remaining roots, then reject once with a `NaxError` coded `RULES_LINT_ROOT_FAILED` naming every failed root. Exit 1 through the existing `bin/nax.ts` catch.\n\nEvery root loads, warnings emitted | Resolve normally; `[WARN]` summary; exit 0. Unchanged.\n\nEvery root loads, zero rule files in total | Emit an empty-store warning through the logger so the summary is the `[WARN]` form; resolve normally; exit 0.\n\nRule-level warnings go to the injected logger, as today. Per-file progress lines and the trailing summary go to stdout via `console.log`, as today. Errors reaching `bin/nax.ts` are printed to stderr by the existing wrapper.",
+      "acceptanceCriteria": [
+        "When `rulesLintCommand` receives two rule roots and the first root's `loadCanonicalRules` rejects, then it emits through the injected logger a warning attributable to a rule from the second root.",
+        "When at least one root's `loadCanonicalRules` rejects, then `rulesLintCommand` rejects with a `NaxError` whose code is `RULES_LINT_ROOT_FAILED`.",
+        "When two of three rule roots reject during `loadCanonicalRules`, then the `RULES_LINT_ROOT_FAILED` rejection context names both failing root paths.",
+        "When every rule root loads successfully and only warnings are produced, then `rulesLintCommand` resolves without rejecting.",
+        "When every rule root loads successfully and warnings are produced, then `rulesLintCommand` emits the `[WARN]` summary line.",
+        "When every rule root loads successfully and no root yields any rule file, then `rulesLintCommand` emits an empty-store warning through the injected logger.",
+        "When every rule root loads successfully and no root yields any rule file, then `rulesLintCommand` resolves without rejecting.",
+        "When no rule root yields any rule file, then `rulesLintCommand` emits the `[WARN]` summary line.",
+        "When no rule root yields any rule file, then `rulesLintCommand` does not emit the `[OK]` summary line.",
+        "When at least one root yields at least one rule file and no other warning condition holds, then `rulesLintCommand` emits no empty-store warning."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "lint",
+        "error-handling"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A two-file behavioral change using existing dependency injection and error patterns, with deliberate per-root continuation and aggregation semantics.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/cli/rules-lint.ts",
+        "src/cli/rules.ts",
+        "src/errors.ts",
+        "bin/nax.ts",
+        "test/unit/cli/rules-lint.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/cli/rules-lint-roots.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/cli/rules-lint.ts",
+          "reason": ""
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d6732b9575574d10bf279fedf79f059e0a4c4bfe",
+      "outOfScope": [
+        "**Out of scope:** no risk-sensitive property from the adversarial-scope table applies — this feature touches no authentication, rate limiting, replay protection, idempotency store, multi-tenancy boundary, concurrency primitive, expiry policy, or cryptographic material."
+      ]
+    }
+  ],
+  "analysis": "This is a targeted TypeScript CLI enhancement, not a greenfield feature. `rulesMigrateCommand` in src/cli/rules.ts:528 currently gathers sources, creates `.nax/rules` only outside dry-run, and makes its existing-target decision inline at src/cli/rules.ts:558. Because that check includes `!options.dryRun`, a dry run reports every source as writable, counts skipped files as written, and suppresses the completion summary at src/cli/rules.ts:579. The module already exposes mutable `_rulesCLIDeps` (src/cli/rules.ts:43) for `fileExists`, `mkdir`, and file writes, so the planner should accept `fileExists` explicitly and the command should continue using this existing injection seam. `rules.ts` is 587 lines, close to the 600-line hard source limit; the plan belongs in a same-directory leaf module and must be imported directly rather than added inline. Existing migration tests are in test/unit/cli/rules.test.ts (currently 753 lines), so the specified planner and parity tests must be new files rather than additions to that file. The CLI index exports `rulesMigrateCommand` (src/cli/index.ts:64); its callers await and discard the result, so widening the return from `Promise<void>` to `Promise<MigrationOutcome>` is backwards compatible while providing an assertion surface.\n\n`rulesLintCommand` lives in src/cli/rules-lint.ts:137 and accepts injectable `RulesLintDeps`; its root loop directly awaits `deps.loadCanonicalRules(root)` at src/cli/rules-lint.ts:157, causing the first loader error to hide later roots. It already counts warnings and emits either `[WARN]` or `[OK]` summaries at src/cli/rules-lint.ts:202-208, making an empty-store logger warning sufficient to select the warning summary without changing warning exit semantics. `collectCanonicalRuleRoots` supplies root and package-overlay roots, while the current fail-open handling for `discoverWorkspacePackages` at src/cli/rules-lint.ts:147-152 must remain untouched. The outer adapter in src/cli/rules.ts:78 forwards `_rulesCLIDeps` to lint, and bin/nax.ts:1718-1734 catches command errors, prints `Error: <message>` to stderr, and exits 1; a final aggregated `NaxError` preserves this contract. Use `NaxError` from src/errors.ts:11, whose constructor provides the required machine-readable code and context record. Existing lint tests are in test/unit/cli/rules-lint.test.ts (currently 726 lines), so all new root-isolation and empty-store coverage belongs in the mandated new test file.\n\nKey risks are report/side-effect divergence, source-order regressions, accidentally creating a directory during dry run, and changing warning-only lint behavior to an error. The migration planner must classify every source exactly once in source order, use target paths derived from `targetDir`, and leave content transformation/rendering to the command. Lint must continue through all roots after loader failures, preserve healthy-root warnings, aggregate every failed root and cause into `RULES_LINT_ROOT_FAILED`, and reject only after processing all roots. No data migration is required: this changes the command decision/reporting path in place; callers that discard the existing migration return remain valid.",
+  "outOfScope": [
+    "Adding a `--check`, `--strict`, or `--json` flag to `nax rules lint` for CI gating is out of scope; the command keeps its current flag surface.",
+    "Making lint warnings produce a non-zero exit code is out of scope; only a rule root that fails to load exits non-zero.",
+    "Distinguishing \"no rules directory exists\" from \"a rules directory exists but holds no rule files\" is out of scope; both conditions produce the same empty-store warning.",
+    "Changing `nax rules export` is out of scope; it already rejects an empty canonical store and its `--check` already compares generated content against disk.",
+    "Wiring `nax rules lint` into `bun run lint`, git hooks, or CI is out of scope.",
+    "Broadening `nax rules migrate` source discovery to `AGENTS.md`, `.cursorrules`, `.cursor/*.mdc`, or `@`-include inlining is out of scope.",
+    "US-002 only: the existing fail-open behaviour when `discoverWorkspacePackages` rejects is unchanged and is not re-verified by this spec."
+  ],
+  "routingProfile": "cross-agent"
+}

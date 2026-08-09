@@ -24,12 +24,11 @@
  */
 
 import { mkdir } from "node:fs/promises";
-import { basename, join, resolve, sep } from "node:path";
-import { CANONICAL_RULES_DIR, NEUTRALITY_RULES, loadCanonicalRules } from "../context/rules/canonical-loader";
+import { join, resolve, sep } from "node:path";
+import { CANONICAL_RULES_DIR, loadCanonicalRules } from "../context/rules/canonical-loader";
 import type { CanonicalRule } from "../context/rules/canonical-loader";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
-import { errorMessage } from "../utils/errors";
 
 export {
   collectCanonicalRuleRoots,
@@ -43,6 +42,15 @@ export {
 } from "./rules-lint";
 
 import { rulesLintCommand as _rulesLintCommandImpl, _rulesLintDeps } from "./rules-lint";
+
+export {
+  rulesMigrateCommand,
+  neutralizeContent,
+  translateLegacyFrontmatter,
+  withReviewNotice,
+  type RulesMigrateOptions,
+  type MigrationOutcome,
+} from "./rules-migrate";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps
@@ -355,233 +363,4 @@ export async function rulesExportCommand(options: RulesExportOptions): Promise<v
 
   await _rulesCLIDeps.writeFile(shimPath, shimContent);
   console.log(`[OK] Wrote ${shimFileName} (${rules.length} rule file(s) from ${CANONICAL_RULES_DIR}/)`);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Neutralization helpers (used by migrate)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Apply basic neutralization to source content, driven by the SAME
- * `NEUTRALITY_RULES` table the lint command validates against
- * (src/context/rules/canonical-loader.ts). Migrate and lint previously kept
- * two independent pattern lists that drifted — migrated content could still
- * fail lint (missing AGENTS.md/GEMINI.md/.codex//.gemini//<ide_diagnostics>
- * handling, case-sensitive tool-phrasing). A single table makes that
- * impossible by construction.
- *
- * Returns the neutralized content and a count of replacements made.
- */
-export function neutralizeContent(content: string): { content: string; replacements: number } {
-  let result = content;
-  let replacements = 0;
-
-  for (const rule of NEUTRALITY_RULES) {
-    for (const { pattern, replacement } of rule.neutralizeSteps ?? []) {
-      const matches = [...result.matchAll(pattern)].length;
-      if (matches > 0) {
-        result = result.replace(pattern, replacement);
-        replacements += matches;
-      }
-    }
-  }
-
-  return { content: result.trim(), replacements };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Legacy frontmatter translation (used by migrate)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Rewrite a legacy `paths:` scope block to nax's `appliesTo:`.
- *
- * The two stores spell the key the same way and mean different things. In a
- * per-agent rules directory `paths:` is a FILE glob — "load this rule when the
- * story touches these files". In nax `paths:` is PACKAGE scope, matched against
- * the story's package dir, and `ruleMatchesPackage` short-circuits to `true`
- * whenever `packageDir === repoRoot`.
- *
- * So copying the key across verbatim silently produces config that reads as
- * scoped and has no effect at all — in every single-package repo, for every
- * migrated rule. `appliesTo:` is the key with the source's actual semantics.
- *
- * Only the leading frontmatter block is considered; a `paths:` mentioned in
- * prose is left alone. A file that already declares `appliesTo:` is returned
- * untouched rather than given two competing scope keys, which also makes a
- * re-run of `nax rules migrate --force` idempotent.
- */
-/**
- * Wrap a scalar YAML value into a single-element flow-sequence literal, e.g.
- * `src/agents/**` or `"src/agents/**"` -> `["src/agents/**"]`. Always emits a
- * double-quoted element (via JSON.stringify) regardless of the source
- * quoting, since an unquoted glob starting with `*` would otherwise be
- * misparsed as a YAML alias inside the new flow sequence.
- */
-function toYamlListLiteral(scalar: string): string {
-  const trimmed = scalar.trim();
-  const unquoted = trimmed.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
-  return `[${JSON.stringify(unquoted)}]`;
-}
-
-export function translateLegacyFrontmatter(content: string): { content: string; translated: boolean } {
-  const fm = /^---(\r?\n)([\s\S]*?)\r?\n---\r?\n/.exec(content);
-  if (!fm?.[2]) return { content, translated: false };
-
-  const eol = fm[1] ?? "\n";
-  const block = fm[2];
-  // Top-level keys only: an indented `paths:` belongs to a nested mapping.
-  if (!/^paths:/m.test(block) || /^appliesTo:/m.test(block)) return { content, translated: false };
-
-  // `paths` accepts a bare scalar string (canonical-loader.ts), but `appliesTo` only
-  // accepts a list (spec AC US-004.2) — so a scalar `paths: "src/agents/**"` must become
-  // a single-element list, not a scalar `appliesTo:`, or loadCanonicalRules rejects the
-  // migrated file with RulesFrontmatterError on every subsequent run.
-  const scalarMatch = /^paths:[ \t]*(\S.*)$/m.exec(block);
-  const isInlineList = scalarMatch?.[1]?.trim().startsWith("[") ?? false;
-  const rewritten =
-    scalarMatch && !isInlineList
-      ? block.replace(/^paths:[ \t]*(\S.*)$/m, `appliesTo: ${toYamlListLiteral(scalarMatch[1])}`)
-      : block.replace(/^paths:/m, "appliesTo:");
-  const head = content.slice(0, fm.index);
-  const tail = content.slice(fm.index + fm[0].length);
-  return { content: `${head}---${eol}${rewritten}${eol}---${eol}${tail}`, translated: true };
-}
-
-/**
- * Prepend the review notice, placing it AFTER any frontmatter block.
- *
- * The notice is an HTML comment, and frontmatter is only recognised at byte 0
- * (`/^---\n/`). Emitting the notice first therefore pushes the block out of
- * position and the whole thing is read as body text — so a migrated file that
- * both needed neutralizing and carried a scope key silently lost its scope.
- * That combination is not hypothetical: it is every rule with both.
- */
-export function withReviewNotice(content: string, replacements: number): string {
-  if (replacements <= 0) return content;
-  const notice = `<!-- NOTE: ${replacements} neutralization(s) applied — review before committing -->\n\n`;
-  const fm = /^---\r?\n[\s\S]*?\r?\n---\r?\n/.exec(content);
-  if (!fm) return notice + content;
-  return content.slice(0, fm[0].length) + notice + content.slice(fm[0].length).replace(/^(?:\r?\n)+/, "");
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// nax rules migrate
-// ─────────────────────────────────────────────────────────────────────────────
-
-export interface RulesMigrateOptions {
-  /** Project working directory (default: process.cwd()) */
-  dir?: string;
-  /** Overwrite existing .nax/rules/ files (default: false) */
-  force?: boolean;
-  /** Preview output without writing any files */
-  dryRun?: boolean;
-}
-
-interface MigrateSource {
-  sourcePath: string;
-  targetFileName: string;
-  content: string;
-}
-
-/**
- * Collect source files to migrate: CLAUDE.md + .claude/rules/*.md
- */
-async function collectMigrationSources(workdir: string): Promise<MigrateSource[]> {
-  const sources: MigrateSource[] = [];
-
-  // CLAUDE.md at root
-  const claudeMdPath = join(workdir, "CLAUDE.md");
-  if (await _rulesCLIDeps.fileExists(claudeMdPath)) {
-    const content = await _rulesCLIDeps.readFile(claudeMdPath);
-    if (content.trim()) {
-      sources.push({ sourcePath: claudeMdPath, targetFileName: "project-conventions.md", content });
-    }
-  }
-
-  // .claude/rules/*.md
-  const rulesDir = join(workdir, ".claude", "rules");
-  const ruleFiles = _rulesCLIDeps.globInDir(rulesDir);
-  for (const filePath of ruleFiles) {
-    try {
-      const content = await _rulesCLIDeps.readFile(filePath);
-      if (content.trim()) {
-        sources.push({ sourcePath: filePath, targetFileName: basename(filePath), content });
-      }
-    } catch {
-      // skip unreadable files
-    }
-  }
-
-  return sources;
-}
-
-/**
- * `nax rules migrate`
- *
- * Reads CLAUDE.md + .claude/rules/*.md from the project and writes a
- * .nax/rules/ draft with basic neutralization applied. The operator
- * reviews the result before committing.
- *
- * Existing .nax/rules/ files are not overwritten unless --force is passed.
- */
-export async function rulesMigrateCommand(options: RulesMigrateOptions): Promise<void> {
-  const workdir = options.dir ?? process.cwd();
-  const force = options.force ?? false;
-
-  const sources = await collectMigrationSources(workdir);
-  if (sources.length === 0) {
-    console.log("[WARN] No source files found (checked CLAUDE.md and .claude/rules/*.md). Nothing to migrate.");
-    return;
-  }
-
-  const targetDir = join(workdir, CANONICAL_RULES_DIR);
-
-  if (!options.dryRun) {
-    try {
-      await _rulesCLIDeps.mkdir(targetDir);
-    } catch (err) {
-      throw new NaxError(
-        `Failed to create ${CANONICAL_RULES_DIR}: ${errorMessage(err)}`,
-        "RULES_MIGRATE_MKDIR_FAILED",
-        { stage: "rules-migrate", targetDir },
-      );
-    }
-  }
-
-  let written = 0;
-  let skipped = 0;
-
-  for (const { sourcePath, targetFileName, content } of sources) {
-    const targetPath = join(targetDir, targetFileName);
-
-    if (!force && !options.dryRun && (await _rulesCLIDeps.fileExists(targetPath))) {
-      console.log(`[skip] ${targetFileName} already exists (use --force to overwrite)`);
-      skipped++;
-      continue;
-    }
-
-    const { content: scoped } = translateLegacyFrontmatter(content);
-    const { content: neutralized, replacements } = neutralizeContent(scoped);
-    const output = withReviewNotice(neutralized, replacements);
-
-    if (options.dryRun) {
-      console.log(`[dry-run] Would write ${targetFileName} from ${sourcePath} (${replacements} replacements)`);
-    } else {
-      await _rulesCLIDeps.writeFile(targetPath, output);
-      console.log(
-        `[OK] ${targetFileName} <- ${sourcePath}${replacements > 0 ? ` (${replacements} replacements)` : ""}`,
-      );
-    }
-    written++;
-  }
-
-  if (!options.dryRun) {
-    console.log(`\nMigration complete: ${written} file(s) written, ${skipped} skipped.`);
-    if (written > 0) {
-      console.log(
-        `Review ${CANONICAL_RULES_DIR}/ before committing. Run \`nax rules export --agent=claude\` to regenerate CLAUDE.md.`,
-      );
-    }
-  }
 }

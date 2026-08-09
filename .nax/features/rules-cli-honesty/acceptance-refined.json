@@ -1,0 +1,170 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `planMigration` receives one source whose target exists and `force` is false, then its `skips` contains that source's target file name.",
+    "refined": "Given inputs: sources = [{sourcePath: '/source/rule.md', targetFileName: 'target.md', targetPath: '/target/rule.md', content: '# Rule'}], options = {targetDir: '/target', force: false, fileExists: async (path) => true}. planMigration(sources, options) returns MigrationPlan where plan.skips is an array containing 'target.md'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `planMigration` receives one source whose target exists and `force` is false, then its `writes` is empty.",
+    "refined": "Given inputs: sources = [{sourcePath: '/source/rule.md', targetFileName: 'target.md', targetPath: '/target/rule.md', content: '# Rule'}], options = {targetDir: '/target', force: false, fileExists: async (path) => true}. planMigration(sources, options) returns MigrationPlan where plan.writes is an empty array.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `planMigration` receives one source whose target exists and `force` is true, then its `writes` contains that target file name.",
+    "refined": "Given inputs: sources = [{sourcePath: '/source/rule.md', targetFileName: 'target.md', targetPath: '/target/rule.md', content: '# Rule'}], options = {targetDir: '/target', force: true, fileExists: async (path) => true}. planMigration(sources, options) returns MigrationPlan where plan.writes is an array containing exactly one entry with targetFileName = 'target.md'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `planMigration` receives one source whose target exists and `force` is true, then its `skips` is empty.",
+    "refined": "Given inputs: sources = [{sourcePath: '/source/rule.md', targetFileName: 'target.md', targetPath: '/target/rule.md', content: '# Rule'}], options = {targetDir: '/target', force: true, fileExists: async (path) => true}. planMigration(sources, options) returns MigrationPlan where plan.skips is an empty array.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `planMigration` receives one source whose target is absent and `force` is false, then its `writes` contains that target file name.",
+    "refined": "Given inputs: sources = [{sourcePath: '/source/rule.md', targetFileName: 'target.md', targetPath: '/target/rule.md', content: '# Rule'}], options = {targetDir: '/target', force: false, fileExists: async (path) => false}. planMigration(sources, options) returns MigrationPlan where plan.writes is an array containing exactly one entry with targetFileName = 'target.md'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When `planMigration` receives one source whose target is absent and `force` is true, then its `writes` contains that target file name.",
+    "refined": "Given inputs: sources = [{sourcePath: '/source/rule.md', targetFileName: 'target.md', targetPath: '/target/rule.md', content: '# Rule'}], options = {targetDir: '/target', force: true, fileExists: async (path) => false}. planMigration(sources, options) returns MigrationPlan where plan.writes is an array containing exactly one entry with targetFileName = 'target.md'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When `rulesMigrateCommand` runs with `dryRun: true`, one source, and `fileExists` reporting its target exists, then it does not call `writeFile`.",
+    "refined": "Given a rulesMigrateCommand with injected mocks: fileExists = async (path) => true, writeFile = spy, mkdir = spy. When called with options = {sources: [{sourcePath: '/source/rule.md', targetFileName: 'target.md', targetPath: '/target/rule.md', content: '# Rule'}], targetDir: '/target', force: false, dryRun: true}, writeFile spy has never been called.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When `rulesMigrateCommand` runs with `dryRun: true`, one source, and `fileExists` reporting its target exists, then its returned outcome's `skipped` list contains that target file name.",
+    "refined": "Given a rulesMigrateCommand with injected mocks: fileExists = async (path) => true, writeFile = spy, mkdir = spy. When called with options = {sources: [{sourcePath: '/source/rule.md', targetFileName: 'target.md', targetPath: '/target/rule.md', content: '# Rule'}], targetDir: '/target', force: false, dryRun: true}, the returned MigrationOutcome object has outcome.skipped equal to ['target.md'].",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When `rulesMigrateCommand` runs twice over identical sources and `fileExists` responses, once with `dryRun: true` and once with `dryRun: false`, then their outcomes have equal written file-name sets.",
+    "refined": "Given a rulesMigrateCommand with injected mocks: fileExists = async (path) => true, writeFile = spy, mkdir = spy. When called twice with identical sources = [{sourcePath: '/source/rule.md', targetFileName: 'target.md', targetPath: '/target/rule.md', content: '# Rule'}], options = {targetDir: '/target', force: true}, once with dryRun: true and once with dryRun: false, the set of file names in outcome1.written equals the set of file names in outcome2.written.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `rulesMigrateCommand` runs twice over identical sources and `fileExists` responses, once with `dryRun: true` and once with `dryRun: false`, then their outcomes have equal skipped file-name sets.",
+    "refined": "Given a rulesMigrateCommand with injected mocks: fileExists = async (path) => true, writeFile = spy, mkdir = spy. When called twice with identical sources = [{sourcePath: '/source/rule.md', targetFileName: 'target.md', targetPath: '/target/rule.md', content: '# Rule'}], options = {targetDir: '/target', force: false}, once with dryRun: true and once with dryRun: false, the set of file names in outcome1.skipped equals the set of file names in outcome2.skipped.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When `rulesMigrateCommand` runs with `dryRun: true`, then it does not call the injected `mkdir` dependency.",
+    "refined": "Given a rulesMigrateCommand with injected mocks: fileExists = async (path) => false, writeFile = spy, mkdir = spy. When called with options = {sources: [{sourcePath: '/source/rule.md', targetFileName: 'target.md', targetPath: '/target/rule.md', content: '# Rule'}], targetDir: '/target', force: false, dryRun: true}, mkdir spy has never been called.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When `rulesMigrateCommand` runs with `dryRun: true` over fixed inputs, then stdout includes a trailing summary reporting the same written and skipped counts as the real-run invocation over those inputs.",
+    "refined": "Given a rulesMigrateCommand with injected mocks: fileExists = async (path) => false, writeFile = spy, mkdir = spy, stdoutCapture = []. When called with sources = [{sourcePath: '/source/rule.md', targetFileName: 'target.md', targetPath: '/target/rule.md', content: '# Rule'}], options = {targetDir: '/target', force: false, dryRun: true}, stdoutCapture contains a line matching /\\d+ written, \\d+ skipped/ where the counts equal those from a real-run call over identical inputs.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When a migration target exists and `--force` is absent, then `rulesMigrateCommand` reports it as skipped in both dry-run and real-run modes.",
+    "refined": "Given a rulesMigrateCommand with injected mock: fileExists = async (path) => true. When called twice with sources = [{sourcePath: '/source/rule.md', targetFileName: 'target.md', targetPath: '/target/rule.md', content: '# Rule'}], options = {targetDir: '/target', force: false}, once with dryRun: true and once with dryRun: false, both returned outcomes have skipped arrays containing 'target.md'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When a migration target exists and `--force` is absent, then `rulesMigrateCommand` excludes it from the returned written list in both dry-run and real-run modes.",
+    "refined": "Given a rulesMigrateCommand with injected mock: fileExists = async (path) => true. When called twice with sources = [{sourcePath: '/source/rule.md', targetFileName: 'target.md', targetPath: '/target/rule.md', content: '# Rule'}], options = {targetDir: '/target', force: false}, once with dryRun: true and once with dryRun: false, both returned outcomes have written arrays that do not contain 'target.md'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When `rulesLintCommand` receives two rule roots and the first root's `loadCanonicalRules` rejects, then it emits through the injected logger a warning attributable to a rule from the second root.",
+    "refined": "Given two rule roots R1 and R2 where R1.loadCanonicalRules() rejects and R2.loadCanonicalRules() resolves with a ruleset containing at least one rule that produces a warning, the logger.warn function is called with an object whose context contains a rule sourced from R2 (i.e., rule.filePath starts with R2).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When at least one root's `loadCanonicalRules` rejects, then `rulesLintCommand` rejects with a `NaxError` whose code is `RULES_LINT_ROOT_FAILED`.",
+    "refined": "Given one or more rule roots where loadCanonicalRules() rejects, rulesLintCommand throws a NaxError with error.code equal to 'RULES_LINT_ROOT_FAILED'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When two of three rule roots reject during `loadCanonicalRules`, then the `RULES_LINT_ROOT_FAILED` rejection context names both failing root paths.",
+    "refined": "Given three rule roots where exactly two (e.g., R1 and R3) have loadCanonicalRules() rejecting, the caught error satisfies error.code === 'RULES_LINT_ROOT_FAILED' and error.context.failedRoots is an array containing exactly the two failing root paths as strings.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When every rule root loads successfully and only warnings are produced, then `rulesLintCommand` resolves without rejecting.",
+    "refined": "Given all rule roots have loadCanonicalRules() resolving successfully and all rules produce only warnings (no errors), rulesLintCommand fulfills its returned Promise without throwing (Promise resolves to undefined).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When every rule root loads successfully and warnings are produced, then `rulesLintCommand` emits the `[WARN]` summary line.",
+    "refined": "Given all rule roots load successfully and warnings are produced, stdout captured during execution includes a line matching /\\[WARN\\].*\\d+ warning/.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When every rule root loads successfully and no root yields any rule file, then `rulesLintCommand` emits an empty-store warning through the injected logger.",
+    "refined": "Given all rule roots load successfully but no root yields any rule file, logger.warn is called at least once with a message that includes 'empty' (case-insensitive) and 'store' or 'rules'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When every rule root loads successfully and no root yields any rule file, then `rulesLintCommand` resolves without rejecting.",
+    "refined": "Given all rule roots load successfully but no root yields any rule file, rulesLintCommand fulfills its returned Promise without throwing.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When no rule root yields any rule file, then `rulesLintCommand` emits the `[WARN]` summary line.",
+    "refined": "Given no rule root yields any rule file, stdout captured during execution includes a line matching /\\[WARN\\]/.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When no rule root yields any rule file, then `rulesLintCommand` does not emit the `[OK]` summary line.",
+    "refined": "Given no rule root yields any rule file, stdout captured during execution does not include any line matching /\\[OK\\]/.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When at least one root yields at least one rule file and no other warning condition holds, then `rulesLintCommand` emits no empty-store warning.",
+    "refined": "Given at least one root yields at least one rule file and no empty-store condition exists, logger.warn is never called with a message matching /empty.*store|empty.*rules/ (case-insensitive).",
+    "testable": true,
+    "storyId": "US-002"
+  }
+]

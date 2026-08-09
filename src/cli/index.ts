@@ -68,7 +68,14 @@ export {
   type RulesExportOptions,
   type RulesLintOptions,
   type RulesMigrateOptions,
+  type MigrationOutcome,
 } from "./rules";
+export {
+  planMigration,
+  type MigrationPlanEntry,
+  type MigrationPlan,
+  type PlanMigrationOptions,
+} from "./rules-migrate-plan";
 export {
   _rulesLintDeps,
   collectCanonicalRuleRoots,

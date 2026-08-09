@@ -10,6 +10,7 @@
 import { join } from "node:path";
 import { globToRegex, normalizePath } from "../context/engine";
 import { CANONICAL_RULES_DIR, loadCanonicalRules } from "../context/rules/canonical-loader";
+import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { discoverWorkspacePackages } from "../test-runners";
 
@@ -153,8 +154,18 @@ export async function rulesLintCommand(options: RulesLintOptions, deps: RulesLin
 
   let totalRuleFiles = 0;
   let warningCount = 0;
+  const failedRoots: Array<{ root: string; cause: unknown }> = [];
   for (const root of roots) {
-    const rules = await deps.loadCanonicalRules(root);
+    let rules: Awaited<ReturnType<typeof deps.loadCanonicalRules>>;
+    try {
+      rules = await deps.loadCanonicalRules(root);
+    } catch (err) {
+      // Per-root isolation: a loader failure on one root must not abort the
+      // remaining roots. The aggregate rejection below names every failed root
+      // so the operator sees the full set, not just the first one.
+      failedRoots.push({ root, cause: err });
+      continue;
+    }
     totalRuleFiles += rules.length;
     for (const rule of rules) {
       // Re-emit parser/loader warnings (unrecognised stages, displaced frontmatter)
@@ -197,6 +208,35 @@ export async function rulesLintCommand(options: RulesLintOptions, deps: RulesLin
         );
       }
     }
+  }
+
+  // Empty canonical store: the operator gets a clean [OK] pass today, which
+  // hides the fact that no source-of-truth rules are being linted at all.
+  // Surface it as a logger warning so the trailing summary reports [WARN].
+  if (totalRuleFiles === 0 && failedRoots.length === 0) {
+    warningCount++;
+    logger.warn(
+      "rules-lint",
+      "Canonical rules store is empty — no rule files found across any rule root. Run `nax rules migrate` to seed the store.",
+      { code: "EMPTY_STORE", roots: roots.length },
+    );
+  }
+
+  if (failedRoots.length > 0) {
+    const failedRootPaths = failedRoots.map((f) => f.root);
+    throw new NaxError(
+      `Failed to load canonical rules from ${failedRootPaths.length} rule root(s): ${failedRootPaths.join(", ")}`,
+      "RULES_LINT_ROOT_FAILED",
+      {
+        stage: "rules-lint",
+        failedRoots: failedRootPaths,
+        // Preserve the original errors (not just their messages) so the
+        // stack traces and error identity survive — see error-handling.md
+        // "Always chain errors with `cause: err` to preserve the original
+        // error chain". Iterating callers can drill in with each `causes[i]`.
+        causes: failedRoots.map((f) => f.cause),
+      },
+    );
   }
 
   const scopeLabel = roots.length === 1 ? "repo root" : `${roots.length} rule roots`;
