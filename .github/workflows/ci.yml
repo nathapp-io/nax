@@ -7,8 +7,11 @@ on:
       - 'src/**'
       - 'test/**'
       - 'bin/**'
+      - 'flows/**'
       - 'scripts/**'
       - 'bun.lock'
+      - 'package.json'
+      - 'tsconfig*.json'
       - '.github/workflows/**'
   pull_request:
     branches: [main]
@@ -16,6 +19,7 @@ on:
       - 'src/**'
       - 'test/**'
       - 'bin/**'
+      - 'flows/**'
       - 'scripts/**'
       - 'bun.lock'
       - 'package.json'
@@ -30,7 +34,10 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        check: [typecheck, lint, check:test-mocks, check:process-cwd, check:no-adapter-wrap, check:dispatch-context, check:naxconfig-cast]
+        # `check:all` is the single aggregator for every static gate (lint
+        # included). Adding a gate to package.json is enough to make CI run it —
+        # `check:gate-reachability`, inside `check:all`, fails if one is orphaned.
+        check: [typecheck, check:all]
     steps:
       - uses: actions/checkout@v5
 
@@ -88,3 +95,9 @@ jobs:
       # so CI runs it explicitly. ~30s.
       - name: Test (e2e)
         run: bun run test:e2e
+
+      # Enforces the documented 80% floor. Bun collects coverage but does not
+      # enforce coverageThreshold via exit code, so scripts/check-coverage.ts
+      # parses lcov and fails below the floor. Re-runs test/unit/ (~20s).
+      - name: Coverage floor
+        run: bun run test:coverage

@@ -10,19 +10,10 @@ export PATH="$HOME/.bun/bin:$PATH"
 echo "[pre-commit] Running typecheck..."
 bun run typecheck
 
-echo "[pre-commit] Running lint..."
-bun run lint
-
-echo "[pre-commit] Running process.cwd() check..."
-bun run check:process-cwd
-
-echo "[pre-commit] Running adapter wrap check..."
-bun run check:no-adapter-wrap
-
-echo "[pre-commit] Running dispatch context check..."
-bun run check:dispatch-context
-
-echo "[pre-commit] Running NaxConfig cast check..."
-bun run check:naxconfig-cast
+# `check:all` runs lint plus every static gate. Listing gates individually here
+# is what let earlier ones ship unwired — a new gate added to package.json is
+# picked up automatically, and check:gate-reachability fails if one is orphaned.
+echo "[pre-commit] Running all static checks..."
+bun run check:all
 
 echo "[pre-commit] OK"
