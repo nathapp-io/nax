@@ -262,10 +262,12 @@ Never send real signals in tests — mock `process.on()` instead.
 
 | Limit | Lines | Action |
 |:------|:------|:-------|
-| Soft | 500 | Warning |
-| Hard | 800 | Build fails |
+| Soft | 500 | Review guideline — not gated |
+| Hard | 800 | `bun run lint` fails |
 
-Run `bun run check:test-sizes` to check.
+Run `bun run check:file-sizes` to check. It runs inside `bun run lint`, and ratchets against
+`scripts/baselines/file-sizes-baseline.json`: files already over the limit are grandfathered but
+may not grow, and new files must be under it.
 
 ---
 

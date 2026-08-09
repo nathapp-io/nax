@@ -23,13 +23,15 @@ Test files exceeding these limits become difficult to navigate and maintain. Lar
 Run the size checker with:
 
 ```bash
-bun run check:test-sizes
+bun run check:file-sizes
 ```
 
 This script:
-- Scans all files matching `test/**/*.test.ts`
-- Lists files exceeding the soft limit (500 lines)
-- Fails the build if any file exceeds the hard limit (800 lines)
+- Scans `src/**/*.ts`, `flows/**/*.ts` (600-line limit) and `test/**/*.test.ts` (800-line limit)
+- Fails if a new file exceeds its limit, or if a grandfathered file grows past its recorded size
+- Runs inside `bun run lint`, so CI and the pre-commit hook both enforce it
+
+The 500-line soft limit below is a review guideline, not a gate.
 - Respects `NAX_SKIP_PRECHECK=1` to suppress the hard-limit failure
 
 ### Example Output
@@ -149,18 +151,22 @@ describe("user creation", () => {
 
 ## Continuous Monitoring
 
-The check-test-sizes script is automatically run as part of the build pipeline. For local development:
+`bun run check:file-sizes` runs as part of `bun run lint`, so the hard limits are enforced in CI
+and by the pre-commit hook. For local development:
 
 ```bash
-# Run size check only
-bun run check:test-sizes
+# Run the size check on its own
+bun run check:file-sizes
+
+# List every oversized file, grandfathered or not
+bun run scripts/check-file-sizes.ts --list
 
 # Run with precheck skipped (useful during development)
 NAX_SKIP_PRECHECK=1 bun run test
-
-# View files that need attention
-bun run check:test-sizes | grep "✗\|⚠"
 ```
+
+After splitting a grandfathered file, lower the baseline with
+`bun run check:file-sizes:update`.
 
 ## See Also
 
