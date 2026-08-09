@@ -18,6 +18,7 @@ import { getLogger } from "../../logger";
 import { errorMessage } from "../../utils/errors";
 import { NeutralityLintError } from "../rules/canonical-loader";
 import { getAgentProfile } from "./agent-profiles";
+import { renderForAgent } from "./agent-renderer";
 import { dedupeChunks } from "./dedupe";
 import { DIGEST_RESERVE_TOKENS, buildDigest, digestTokens } from "./digest";
 import { buildManifest } from "./manifest-builder";
@@ -417,10 +418,12 @@ export class ContextOrchestrator {
       });
     }
 
-    // Step 8: render markdown
-    const pushMarkdown = renderChunks(packed, {
-      priorStageDigest: request.priorStageDigest,
-    });
+    // Step 8: render for the requested agent, preserving legacy markdown when absent.
+    const renderOptions = { priorStageDigest: request.priorStageDigest };
+    const pushMarkdown =
+      request.agentId !== undefined
+        ? renderForAgent(packed, request.agentId, renderOptions)
+        : renderChunks(packed, renderOptions);
 
     // Step 9: build digest
     const digest = buildDigest(packed);
