@@ -6,7 +6,7 @@
  */
 
 import type { PackedChunk } from "./packing";
-import type { AdapterFailure } from "./types";
+import type { AdapterFailure, ContextChunk } from "./types";
 
 /**
  * Agent id used when neither options.newAgentId nor prior.agentId is set.
@@ -14,6 +14,26 @@ import type { AdapterFailure } from "./types";
  * fallback) if the project default agent ever changes.
  */
 export const DEFAULT_REBUILD_AGENT_ID = "claude";
+
+/** Convert a packed chunk into the public bundle representation. */
+export function toContextChunk(packed: PackedChunk): ContextChunk {
+  // providerId is set by enrichRaw() in the orchestrator before scoring.
+  // Derive from id as fallback: format is <providerId>:<contentHash8>
+  const providerId = packed.providerId ?? packed.id.split(":")[0] ?? "unknown";
+  return {
+    id: packed.id,
+    providerId,
+    kind: packed.kind,
+    scope: packed.scope,
+    role: packed.role,
+    content: packed.content,
+    tokens: packed.tokens,
+    rawScore: packed.rawScore,
+    score: packed.score,
+    reason: packed.reason,
+    ...(packed.staleCandidate && { staleCandidate: true }),
+  };
+}
 
 /**
  * Build a deterministic failure-note chunk describing the agent swap.

@@ -9,7 +9,7 @@ import type { PackedChunk } from "./packing";
 import type { ContextBundle, ContextManifest, ContextRequest } from "./types";
 
 /** Maximum characters of chunk content retained for post-story effectiveness annotation. */
-const CHUNK_SUMMARY_CHARS = 300;
+export const CHUNK_SUMMARY_CHARS = 300;
 
 /** Everything assemble() has computed by the time the manifest is built. */
 export interface ManifestInputs {

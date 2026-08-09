@@ -1,0 +1,198 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "Given a prior bundle and empty options, when the exported rebuild function from `src/context/engine/rebuild.ts` is called, then its `pushMarkdown` equals the prior bundle's rendering.",
+    "refined": "Call `rebuild(priorBundle, {})` and assert `result.pushMarkdown === priorBundle.rendering`",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `_orchestratorDeps` is imported from `src/context/engine/orchestrator.ts`, then it exposes the extracted rebuild function as a replaceable property.",
+    "refined": "Import `_orchestratorDeps` and assert `typeof _orchestratorDeps.rebuild === 'function'`",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "Given `_orchestratorDeps`' rebuild property is replaced with a stub that returns a sentinel bundle, when `ContextEngine.rebuildForAgent` is called, then it returns that sentinel bundle unchanged.",
+    "refined": "Replace `_orchestratorDeps.rebuild` with a function returning `{ pushMarkdown: 'sentinel' }`, call `ContextEngine.rebuildForAgent(bundle, {})`, and assert result `pushMarkdown === 'sentinel'`",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Given `_orchestratorDeps`' rebuild property is replaced with a stub, when `ContextEngine.rebuildForAgent` is called, then the stub is invoked exactly once with the received prior bundle and options object.",
+    "refined": "Replace `_orchestratorDeps.rebuild` with a spy, call `ContextEngine.rebuildForAgent(priorBundle, options)`, and assert `spy.calls.length === 1 && spy.calls[0][0] === priorBundle && spy.calls[0][1] === options`",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "Given `newAgentId: \"codex\"` and a failure, when `ContextEngine.rebuildForAgent` is called, then `manifest.rebuildInfo.newAgentId` equals `\"codex\"`.",
+    "refined": "Call `ContextEngine.rebuildForAgent(bundle, { newAgentId: 'codex' })` with conditions that trigger failure, then assert `result.manifest.rebuildInfo.newAgentId === 'codex'`",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Given `newAgentId` is absent from `AGENT_PROFILES`, when `ContextEngine.rebuildForAgent` is called, then the returned bundle's `agentId` equals that ID and a warn-level log is emitted.",
+    "refined": "Call `ContextEngine.rebuildForAgent(bundle, { newAgentId: 'unknown-agent' })`, then assert `result.agentId === 'unknown-agent'` and verify a warn-level log was emitted with 'unknown-agent'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "Given `request.agentId` is `\"codex\"`, when `assemble()` returns a bundle, then its `pushMarkdown` contains `<context_section type=` wrappers.",
+    "refined": "Assert that `assemble(request: { agentId: 'codex' })` returns a bundle where `bundle.pushMarkdown` matches the regex `/<context_section\\s+type=/`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "Given `request.agentId` is `\"claude\"`, when `assemble()` returns a bundle, then its `pushMarkdown` uses `## ` section headers.",
+    "refined": "Assert that `assemble(request: { agentId: 'claude' })` returns a bundle where `bundle.pushMarkdown` matches the regex `/^##\\s+.+$/m` (line-starting `## ` followed by non-empty text) and does NOT contain `<context_section` tags.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "Given `request.agentId` is absent, when `assemble()` returns a bundle, then its `pushMarkdown` uses `## ` section headers.",
+    "refined": "Assert that `assemble(request: {})` returns a bundle where `bundle.pushMarkdown` matches the regex `/^##\\s+.+$/m` and does NOT contain `<context_section` tags.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "Given `request.agentId` is absent from `AGENT_PROFILES`, when `assemble()` returns a bundle, then its `pushMarkdown` uses conservative `[Section]` bracket framing.",
+    "refined": "Assert that `assemble(request: { agentId: 'unknown-agent' })` returns a bundle where `bundle.pushMarkdown` matches the regex `/\\[[^\\]]+\\]/` (any `[...]` bracket pattern) and does NOT contain `## ` headers or `<context_section` tags.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given `request.agentId` is absent from `AGENT_PROFILES`, when `assemble()` is called, then it emits a warn-level log naming that agent ID.",
+    "refined": "Assert that calling `assemble(request: { agentId: 'unknown-agent' })` produces a log entry at WARN level containing the string `'unknown-agent'` in the log message or associated metadata.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given `request.priorStageDigest` is set and `request.agentId` is `\"codex\"`, when `assemble()` returns a bundle, then its `pushMarkdown` contains a `prior_stage_summary` section.",
+    "refined": "Assert that `assemble(request: { agentId: 'codex', priorStageDigest: 'some-digest' })` returns a bundle where `bundle.pushMarkdown` matches the regex `/prior_stage_summary|` codex's equivalent marker for prior-stage content) and the section contains non-empty content after its header.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Given a prior bundle whose non-floor chunks exceed the target profile's `preferredPromptTokens`, when `rebuildForAgent` is called, then `manifest.usedTokens` is at most `manifest.effectiveBudget`.",
+    "refined": "Call `rebuildForAgent(priorBundle, { targetProfile })` where `priorBundle.chunks` contains non-floor chunks whose total tokens exceed `targetProfile.caps.preferredPromptTokens`. Assert that `result.manifest.usedTokens <= result.manifest.effectiveBudget`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given the same over-budget prior bundle, when `rebuildForAgent` is called, then its `chunks` omit the excluded non-floor chunks.",
+    "refined": "Call `rebuildForAgent(priorBundle, { targetProfile })` where non-floor chunks exceed the target ceiling. Collect `result.chunks.map(c => c.id)` and assert it is a strict subset of `priorBundle.chunks.map(c => c.id)`. Assert that every excluded ID corresponds to a non-floor chunk in `priorBundle`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given a prior bundle whose chunks all fit the target ceiling, when `rebuildForAgent` is called, then its `chunks` retain every prior chunk ID.",
+    "refined": "Call `rebuildForAgent(priorBundle, { targetProfile })` where the total tokens of `priorBundle.chunks` fit within `targetProfile.caps.preferredPromptTokens`. Assert that `result.chunks.map(c => c.id).sort()` equals `priorBundle.chunks.map(c => c.id).sort()`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given floor-kind chunks whose tokens alone exceed the target ceiling, when `rebuildForAgent` is called, then its bundle contains every floor chunk ID.",
+    "refined": "Construct a bundle whose floor-kind chunks (each with `kind` in `FLOOR_KINDS = ['static', 'feature', 'test-coverage']`) have combined tokens exceeding `targetProfile.caps.preferredPromptTokens`. Call `rebuildForAgent(bundle, { targetProfile })`. Assert that every floor chunk ID from the prior bundle appears in `result.chunks.map(c => c.id)`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given floor-kind chunks whose tokens alone exceed the target ceiling, when `rebuildForAgent` is called, then `manifest.floorOverageItems` lists exactly the floor chunk IDs that overflowed that ceiling, rather than the prior bundle's values.",
+    "refined": "Construct a bundle with floor chunks exceeding the target ceiling. Call `rebuildForAgent(bundle, { targetProfile })`. Extract `result.manifest.floorOverageItems` and assert: (1) it does not equal `priorBundle.manifest.floorOverageItems`; (2) every ID it contains is a floor chunk ID from the prior bundle that was excluded from `result.chunks` due to overage.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given a prior bundle without `manifest.effectiveBudget`, when `rebuildForAgent` is called, then `manifest.effectiveBudget` equals the target profile's `preferredPromptTokens`.",
+    "refined": "Construct a bundle where `priorBundle.manifest.effectiveBudget` is `undefined`. Call `rebuildForAgent(priorBundle, { targetProfile })`. Assert that `result.manifest.effectiveBudget === targetProfile.caps.preferredPromptTokens`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given `newAgentId` and a failure and a target ceiling smaller than the prior payload, when `rebuildForAgent` is called, then its bundle contains the injected failure-note chunk.",
+    "refined": "Call `rebuildForAgent(priorBundle, { newAgentId, failure: { reason: 'test-failure' }, targetProfile })` where `targetProfile.caps.preferredPromptTokens` is smaller than the prior payload size. Assert that `result.chunks.some(c => c.kind === 'failure-note')` is true and that the chunk's content references the failure reason.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given a bundle already returned by `rebuildForAgent`, when it is rebuilt again, then its `manifest.usedTokens` equals the first rebuild's `manifest.usedTokens`.",
+    "refined": "Call `rebuildForAgent(priorBundle, { targetProfile })` to produce `result1`. Call `rebuildForAgent(result1, { targetProfile })` to produce `result2`. Assert `result2.manifest.usedTokens === result1.manifest.usedTokens`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Given a prior bundle whose chunks all fit, when `rebuildForAgent` is called, then its `chunks` retain the same relative order as `prior.chunks`.",
+    "refined": "Call `rebuildForAgent(priorBundle, { targetProfile })` where all chunks fit the ceiling. Extract IDs in order from both arrays: `result.chunks.map(c => c.id)` and `priorBundle.chunks.map(c => c.id)`. Assert the two arrays are equal element-by-index.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Given `newAgentId` and a failure and a prior bundle whose chunks all fit, when `rebuildForAgent` is called, then `manifest.rebuildInfo.chunkIdMap` pairs every prior chunk ID with itself.",
+    "refined": "Call `rebuildForAgent(priorBundle, { newAgentId, failure: { reason: 'test-failure' }, targetProfile })` where all prior chunks fit the ceiling. For each entry in `result.manifest.rebuildInfo.chunkIdMap`, assert that the key (prior ID) equals the value (emitted ID) for all non-failure-note entries. Assert that failure-note entries map to the injected chunk ID.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Given a 900-token non-floor chunk scoring 0.9 and a 100-token non-floor chunk scoring 0.5 at budget 900, when `packChunks` is called, then it packs the 900-token chunk.",
+    "refined": "Given chunks=[{id:'bulky',score:0.9,tokens:900},{id:'dense',score:0.5,tokens:100}] and budgetTokens=900 (all non-floor, kind='context'), when packChunks(chunks,budgetTokens) is called, then result.packed.map(c=>c.id) equals ['bulky']. This verifies the AC-7 repair: best-of(greedy=0.5, largest-feasible=0.9) returns 0.9, not greedy's 0.5.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Given a 900-token non-floor chunk scoring 0.9 and two 100-token non-floor chunks scoring 0.5 each at budget 900, when `packChunks` is called, then it packs both small chunks and excludes the large chunk.",
+    "refined": "Given chunks=[{id:'bulky',score:0.9,tokens:900},{id:'small1',score:0.5,tokens:100},{id:'small2',score:0.5,tokens:100}] and budgetTokens=900 (all non-floor), when packChunks(chunks,budgetTokens) is called, then result.packed.map(c=>c.id).sort() equals ['small1','small2'].sort() AND result.budgetExcludedIds.includes('bulky'). Greedy scores 1.0 vs bulky's 0.9, so density packing wins. A raw-score sort would pack only bulky (0.9 alone is feasible), so this fixture discriminates the two orderings without triggering repair.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-25",
+    "original": "Given every input chunk is non-floor, when `packChunks` returns, then `usedTokens` is no greater than `effectiveBudget`.",
+    "refined": "For any input where every chunk.kind is NOT in ['static','feature','test-coverage'] (FLOOR_KINDS), when packChunks(chunks,budgetTokens) returns, then result.usedTokens <= result.effectiveBudget AND result.usedTokens is a finite number. This holds regardless of which chunks are packed.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Given each of at least 200 deterministic repair-envelope cases containing at most 12 non-floor chunks, when `packChunks` is compared with an exhaustive oracle for that case and budget, then its total packed score is at least 95% of the optimum.",
+    "refined": "Using deterministic seed 42, generate 200 cases from two classes: cases where the budget admits every item, and cases with one feasible bulky item whose score exceeds the combined score of the small items density-greedy selects. Compare packChunks(chunks,budgetTokens) with an exhaustive oracle and assert the packed score is at least 95% of optimum for every case. Floor chunks are excluded from budget enforcement by FLOOR_KINDS; only non-floor chunks count toward the bound.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-27",
+    "original": "Given only floor-kind chunks whose tokens exceed the budget, when `packChunks` is called, then it returns all chunks with each over-budget chunk's `reason` set to `budget-exceeded-by-floor`.",
+    "refined": "Given chunks=[{id:'f1',kind:'static',score:0.9,tokens:1500},{id:'f2',kind:'feature',score:0.8,tokens:1200},{id:'f3',kind:'test-coverage',score:0.7,tokens:1000}] and budgetTokens=900, when packChunks(chunks,budgetTokens) is called, then result.packed.length equals 3 AND result.packed.every(c=>c.reason==='budget-exceeded-by-floor') AND result.floorPackedIds.length equals 3 AND result.floorOverageIds.length equals 3. Floor chunks are exempt from budget by FLOOR_KINDS; they are always included with the floor-specific reason, never rejected.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-28",
+    "original": "Given a zero-token chunk, when `packChunks` is called, then it includes that chunk and returns a finite `usedTokens`.",
+    "refined": "Given chunks=[{id:'zero',kind:'context',score:0.5,tokens:0}] and budgetTokens=900, when packChunks(chunks,budgetTokens) is called, then result.packed.some(c=>c.id==='zero') AND Number.isFinite(result.usedTokens) AND result.usedTokens >= 0. Zero-token chunks are always feasible and should not break token accounting.",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]

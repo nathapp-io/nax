@@ -1,0 +1,301 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "context-bundle-truth",
+  "branchName": "feat/context-bundle-truth",
+  "createdAt": "2026-08-09T08:02:16Z",
+  "updatedAt": "2026-08-09T10:39:15.685Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Extract agent-rebuild implementation",
+      "description": "**Goal** — Move the agent-rebuild implementation into its own module while preserving the public `ContextEngine.rebuildForAgent` behavior through a delegating wrapper.\n\n**Motivation** — `rebuildForAgent` needs re-packing work, but `src/context/engine/orchestrator.ts` is already 585 lines against the project's 600-line source limit.\n\n**Approach** — `src/context/engine/orchestrator.ts` is 585 lines against the project's 600-line source limit, enforced by `bun run check:file-sizes` as a ratchet. US-003 cannot add re-packing to `rebuildForAgent` in place without breaching it. This story moves the rebuild logic into `src/context/engine/rebuild.ts` as an exported function and leaves `ContextEngine.rebuildForAgent` as a delegating wrapper. Behaviour is unchanged.\n\n**Scope** — In: extraction, exported rebuild function, and the `_orchestratorDeps` delegation seam. Out: re-packing to a target ceiling (US-003); assemble-time agent framing (US-002); packing-algorithm changes (US-004).\n\n**Interface** — `ContextEngine.rebuildForAgent` remains `(prior: ContextBundle, options: RebuildOptions = {}) => ContextBundle`. US-001 introduces an exported rebuild function consumed by `ContextEngine.rebuildForAgent`; `_orchestratorDeps` exposes that function so tests can replace it without `mock.module()`.",
+      "acceptanceCriteria": [
+        "Given a prior bundle and empty options, when the exported rebuild function from `src/context/engine/rebuild.ts` is called, then its `pushMarkdown` equals the prior bundle's rendering.",
+        "When `_orchestratorDeps` is imported from `src/context/engine/orchestrator.ts`, then it exposes the extracted rebuild function as a replaceable property.",
+        "Given `_orchestratorDeps`' rebuild property is replaced with a stub that returns a sentinel bundle, when `ContextEngine.rebuildForAgent` is called, then it returns that sentinel bundle unchanged.",
+        "Given `_orchestratorDeps`' rebuild property is replaced with a stub, when `ContextEngine.rebuildForAgent` is called, then the stub is invoked exactly once with the received prior bundle and options object.",
+        "Given `newAgentId: \"codex\"` and a failure, when `ContextEngine.rebuildForAgent` is called, then `manifest.rebuildInfo.newAgentId` equals `\"codex\"`.",
+        "Given `newAgentId` is absent from `AGENT_PROFILES`, when `ContextEngine.rebuildForAgent` is called, then the returned bundle's `agentId` equals that ID and a warn-level log is emitted."
+      ],
+      "tags": [
+        "feature",
+        "refactor",
+        "context-engine"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A focused extraction across the orchestrator, a new module, and unit seams must preserve behavior and established dependency-injection conventions.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/context/engine/orchestrator.ts",
+        "src/context/engine/manifest-builder.ts",
+        "src/context/engine/agent-renderer.ts",
+        "test/unit/context/engine/orchestrator-rebuild.test.ts",
+        "src/context/engine/types.ts"
+      ],
+      "expectedFiles": [
+        "src/context/engine/rebuild.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/context/engine/orchestrator.ts",
+          "reason": "rebuildForAgent moves out to rebuild.ts and becomes a delegating wrapper; _orchestratorDeps gains the rebuild property."
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "16f37298846b11aff3d3efac221b8a13a928f15a"
+    },
+    {
+      "id": "US-002",
+      "title": "Frame assembled bundles for the target agent",
+      "description": "**Goal** — Route `assemble()` rendering through the requested agent's registered framing profile.\n\n**Motivation** — A codex-first run currently receives Claude framing for its entire life even though `ContextRequest.agentId` documents agent-specific rendering.\n\n**Approach** — Framing selection is a registry lookup, not a heuristic. US-002 routes `assemble()`'s render step through the same `renderForAgent` the rebuild path already uses, keyed on `request.agentId`. When `request.agentId` is absent, behaviour is unchanged (`renderChunks`), so unconfigured repos see no difference.\n\n**Scope** — In: assemble-time rendering dispatch and profile-warning/framing tests. Out: rebuild extraction and re-packing (US-001 and US-003); pull-tool or profile-budget behavior already on the assemble path; packing repair (US-004).\n\n**Interface** — `ContextEngine.assemble` renders at step 8 via `renderChunks(packed, { priorStageDigest })`; `renderForAgent(chunks: PackedChunk[], agentId: string, options?: AgentRenderOptions): string`; `ContextRequest.agentId` is optional and drives `renderForAgent` when present.",
+      "acceptanceCriteria": [
+        "Given `request.agentId` is `\"codex\"`, when `assemble()` returns a bundle, then its `pushMarkdown` contains `<context_section type=` wrappers.",
+        "Given `request.agentId` is `\"claude\"`, when `assemble()` returns a bundle, then its `pushMarkdown` uses `## ` section headers.",
+        "Given `request.agentId` is absent, when `assemble()` returns a bundle, then its `pushMarkdown` uses `## ` section headers.",
+        "Given `request.agentId` is absent from `AGENT_PROFILES`, when `assemble()` returns a bundle, then its `pushMarkdown` uses conservative `[Section]` bracket framing.",
+        "Given `request.agentId` is absent from `AGENT_PROFILES`, when `assemble()` is called, then it emits a warn-level log naming that agent ID.",
+        "Given `request.priorStageDigest` is set and `request.agentId` is `\"codex\"`, when `assemble()` returns a bundle, then its `pushMarkdown` contains a `prior_stage_summary` section."
+      ],
+      "tags": [
+        "feature",
+        "context-engine",
+        "rendering"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The change is a contained dispatch integration with compatibility-sensitive renderer and logger behavior across existing profiles.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/context/engine/orchestrator.ts",
+        "src/context/engine/agent-renderer.ts",
+        "src/context/engine/agent-profiles.ts",
+        "test/unit/context/engine/orchestrator.test.ts",
+        "src/context/engine/types.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/context/engine/orchestrator-agent-framing.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/context/engine/orchestrator.ts",
+          "reason": "assemble() step 8 routes through renderForAgent when request.agentId is set."
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "92519d0dd9720173c2fff8913f17414fb0df7cfe"
+    },
+    {
+      "id": "US-003",
+      "title": "Repack rebuilt bundles to the target ceiling",
+      "description": "**Goal** — Ensure agent-rebuilt context payloads are selected, rendered, and reported within the target profile's effective budget while preserving floor guarantees and prior order.\n\n**Motivation** — A claude-to-conservative-default swap currently records an 8,000-token ceiling against an unchanged roughly 16,000-token payload.\n\n**Approach** — Re-packing on rebuild reuses `packChunks`. `PackedChunk extends ScoredChunk`, so the chunks reconstructed from `prior.chunks` are already valid `packChunks` input — no new scoring path is introduced. The rebuild ceiling is `min(prior.manifest.effectiveBudget, targetProfile.caps.preferredPromptTokens)`, the value `:568` already computes; the change is that it now bounds the payload instead of only being recorded.\n\n`packChunks` is used for selection only; emission order stays the prior order. `packChunks` returns floor chunks first and then non-floor chunks sorted by density, so its output order differs from `prior.chunks`. `rebuildInfo.chunkIdMap` is built by zipping `priorChunkIds` against the emitted chunks **by index** (`orchestrator.ts:537-542`), so adopting the packer's order would silently pair unrelated chunk ids. The rebuild must therefore take the *set* of chunks `packChunks` keeps and emit them in their original `prior.chunks` relative order, with any injected failure-note chunk kept last.\n\n**Scope** — In: target-profile ceiling selection, rebuild repacking, emitted order preservation, manifest token truthfulness, floor overage retention, and failure-note retention. Out: re-scoring chunks during a rebuild — `scoreChunks(chunks, callerRole, minScore)` requires `RawChunk[]` and a `callerRole`, and `ContextBundle` carries neither, so re-scoring needs a new carrier that this feature does not introduce; Re-running de-duplication (`dedupeChunks`) during a rebuild; packing-algorithm quality work (US-004).\n\n**Interface** — `ContextEngine.rebuildForAgent(prior: ContextBundle, options: RebuildOptions = {}): ContextBundle`; `packChunks(chunks: ScoredChunk[], budgetTokens: number, availableBudgetTokens?: number): PackResult`; `PackResult` is `{ packed, budgetExcludedIds, usedTokens, effectiveBudget, floorPackedIds, floorOverageIds }`; `FLOOR_KINDS` is `[\"static\", \"feature\", \"test-coverage\"]` and floor chunks are packed regardless of budget.\n\nThe rebuild recomputes floor-overage from its own pack result. `rebuildForAgent` builds its manifest by spreading `...prior.manifest` and never calls `buildManifest`, so `floorOverageItems` (`manifest-types.ts:137`, normally filled from `PackResult.floorOverageIds` at `manifest-builder.ts:90`) currently carries the prior bundle's value. Once the rebuild packs, it must overwrite that field from the new `PackResult`.",
+      "acceptanceCriteria": [
+        "Given a prior bundle whose non-floor chunks exceed the target profile's `preferredPromptTokens`, when `rebuildForAgent` is called, then `manifest.usedTokens` is at most `manifest.effectiveBudget`.",
+        "Given the same over-budget prior bundle, when `rebuildForAgent` is called, then its `chunks` omit the excluded non-floor chunks.",
+        "Given a prior bundle whose chunks all fit the target ceiling, when `rebuildForAgent` is called, then its `chunks` retain every prior chunk ID.",
+        "Given floor-kind chunks whose tokens alone exceed the target ceiling, when `rebuildForAgent` is called, then its bundle contains every floor chunk ID.",
+        "Given floor-kind chunks whose tokens alone exceed the target ceiling, when `rebuildForAgent` is called, then `manifest.floorOverageItems` lists exactly the floor chunk IDs that overflowed that ceiling, rather than the prior bundle's values.",
+        "Given a prior bundle without `manifest.effectiveBudget`, when `rebuildForAgent` is called, then `manifest.effectiveBudget` equals the target profile's `preferredPromptTokens`.",
+        "Given `newAgentId` and a failure and a target ceiling smaller than the prior payload, when `rebuildForAgent` is called, then its bundle contains the injected failure-note chunk.",
+        "Given a bundle already returned by `rebuildForAgent`, when it is rebuilt again, then its `manifest.usedTokens` equals the first rebuild's `manifest.usedTokens`.",
+        "Given a prior bundle whose chunks all fit, when `rebuildForAgent` is called, then its `chunks` retain the same relative order as `prior.chunks`.",
+        "Given `newAgentId` and a failure and a prior bundle whose chunks all fit, when `rebuildForAgent` is called, then `manifest.rebuildInfo.chunkIdMap` pairs every prior chunk ID with itself."
+      ],
+      "tags": [
+        "feature",
+        "context-engine",
+        "budget",
+        "manifest"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 1,
+      "escalations": [
+        {
+          "fromTier": "powerful",
+          "toTier": "balanced",
+          "fromAgent": "opencode",
+          "toAgent": "claude",
+          "reason": "Rectification exhausted with unfixed findings",
+          "timestamp": "2026-08-09T09:25:38.284Z"
+        }
+      ],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "This integrates selection, ordering, synthetic chunks, manifest accounting, profile constraints, and backwards-compatible rebuild behavior across multiple modules.",
+        "agentProfileId": "opencode-balanced",
+        "agent": "claude",
+        "profileModelTier": "powerful",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-balanced",
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/context/engine/rebuild.ts",
+        "src/context/engine/packing.ts",
+        "src/context/engine/agent-profiles.ts",
+        "src/context/engine/manifest-builder.ts",
+        "test/unit/context/engine/orchestrator-rebuild.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/context/engine/rebuild.ts",
+          "reason": "re-pack to the target ceiling, preserve prior order, recompute floorOverageItems (file created by US-001)."
+        }
+      ],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: powerful: Rectification exhausted with unfixed findings"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "powerful",
+          "stage": "escalation",
+          "summary": "Tier powerful [tests-failing]: Rectification exhausted with unfixed findings",
+          "cost": 0.8133765789999999,
+          "timestamp": "2026-08-09T09:25:38.284Z",
+          "agent": "opencode",
+          "agentProfileId": "opencode-balanced"
+        }
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "eef8a5ca74aeb7df158f9d79d4c0b575bdf4529c",
+      "failureCategory": "full-suite-gate-exhausted"
+    },
+    {
+      "id": "US-004",
+      "title": "Repair non-floor packing optimality",
+      "description": "**Goal** — Improve non-floor `packChunks` selection so the stated AC-7 optimality bound is met while density ordering remains meaningful.\n\n**Motivation** — Packing documents that density-greedy cannot meet the 5%-of-optimal bound its own specification claims.\n\n**Approach** — AC-7 uses the repair named in the source comment: `best-of(greedy, largest single item that fits)`. Apply it to the non-floor pass only — floor chunks are exempt from the budget by `FLOOR_KINDS` and must stay exempt — and validate the stated 95%-of-optimum threshold against the deterministic property cases.\n\nThe repair changes the expected outcome of an existing shipped test, and US-004 owns that update. `test/unit/context/engine/packing.test.ts:65-76` (\"non-floor chunks are ordered by score density, not raw score\", the #1448 regression test) packs `bulky` (score 0.9, 900 tokens) against `dense` (score 0.5, 100 tokens) at budget 900 and asserts `packed` is exactly `[\"dense\"]`. That fixture is itself an AC-7 violation: `bulky` alone is feasible and scores 0.9, so greedy's 0.5 is 56% of optimal, and the repair must return `bulky`. Leaving the test unchanged would deadlock the story. US-004 therefore updates that fixture so it still discriminates a density sort from a raw-score sort **without** triggering the repair — two 100-token chunks scoring 0.5 each (jointly 1.0) against the same 900-token `bulky` (0.9) at budget 900: density packs both small chunks, raw-score packs only `bulky`, and no single item beats the greedy result.\n\nThe generator must be deterministic — a fixed seed, not the platform RNG — so a failure is reproducible. Each generated case builds non-floor `ScoredChunk`s with random `score`/`tokens`, calls `packChunks`, sums the packed non-floor score, and compares against exhaustive 0/1-knapsack optimum; `n <= 12` keeps enumeration under 4,096 combinations per case.\n\n**Scope** — In: non-floor repair, packing result accounting, deterministic optimality property coverage, and the updated density regression fixture. Out: floor semantics and floor ordering; re-packing rebuilt bundles (US-003); scoring-axis work: freshness, per-stage kind weights, and the semantic kind taxonomy.\n\n**Interface** — `packChunks(chunks: ScoredChunk[], budgetTokens: number, availableBudgetTokens?: number): PackResult`; `PackResult` is `{ packed, budgetExcludedIds, usedTokens, effectiveBudget, floorPackedIds, floorOverageIds }`; `FLOOR_KINDS` is `[\"static\", \"feature\", \"test-coverage\"]`.",
+      "acceptanceCriteria": [
+        "Given a 900-token non-floor chunk scoring 0.9 and a 100-token non-floor chunk scoring 0.5 at budget 900, when `packChunks` is called, then it packs the 900-token chunk.",
+        "Given a 900-token non-floor chunk scoring 0.9 and two 100-token non-floor chunks scoring 0.5 each at budget 900, when `packChunks` is called, then it packs both small chunks and excludes the large chunk.",
+        "Given every input chunk is non-floor, when `packChunks` returns, then `usedTokens` is no greater than `effectiveBudget`.",
+        "Given each of at least 200 deterministic repair-envelope cases containing at most 12 non-floor chunks, where either every item fits or the largest feasible item is optimal, when `packChunks` is compared with an exhaustive oracle for that case and budget, then its total packed score is at least 95% of the optimum.",
+        "Given only floor-kind chunks whose tokens exceed the budget, when `packChunks` is called, then it returns all chunks with each over-budget chunk's `reason` set to `budget-exceeded-by-floor`.",
+        "Given a zero-token chunk, when `packChunks` is called, then it includes that chunk and returns a finite `usedTokens`."
+      ],
+      "tags": [
+        "feature",
+        "context-engine",
+        "algorithm",
+        "packing"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "fromAgent": "opencode",
+          "toAgent": "opencode",
+          "reason": "Rectification exhausted with unfixed findings",
+          "timestamp": "2026-08-09T10:18:11.062Z"
+        }
+      ],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The change is confined to the packing function and its unit fixtures, while the deterministic exhaustive comparator makes the algorithmic result directly testable in one TDD session.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/context/engine/packing.ts",
+        "src/context/engine/scoring.ts",
+        "test/unit/context/engine/packing.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/context/engine/packing-optimality.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/context/engine/packing.ts",
+          "reason": "add the best-of(greedy, largest single item that fits) repair to the non-floor pass."
+        },
+        {
+          "path": "test/unit/context/engine/packing.test.ts",
+          "reason": "REQUIRED. The #1448 density-sort test at :65-76 asserts packed == [\"dense\"]; the repair correctly returns \"bulky\", so this story must replace that fixture with the two-small-chunks variant per the spec Approach."
+        }
+      ],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Rectification exhausted with unfixed findings"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Tier balanced: Rectification exhausted with unfixed findings",
+          "cost": 7.911319659999997,
+          "timestamp": "2026-08-09T10:18:11.062Z",
+          "agent": "opencode",
+          "agentProfileId": "opencode-medium"
+        }
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "05638413f245491d0d374254d69b15cbb4acfd02"
+    }
+  ],
+  "analysis": "The context engine is an existing TypeScript/Bun subsystem, centered on `ContextOrchestrator` in `src/context/engine/orchestrator.ts`. `assemble()` resolves `request.agentId` through `getAgentProfile()` before computing `min(request.budgetTokens, preferredPromptTokens, availableBudgetTokens)` and already gates pull tools with `supportsToolCalls` (`src/context/engine/orchestrator.ts:196-223`, `:380-425`), but its render step unconditionally calls `renderChunks`; agent-aware framing is only reached by rebuild. `renderForAgent()` selects markdown, XML, or conservative plain framing from the profile registry (`src/context/engine/agent-renderer.ts:40-117`); unknown IDs already use `CONSERVATIVE_DEFAULT_PROFILE` (plain, 8,000 tokens, no tools) through `getAgentProfile()` (`src/context/engine/agent-profiles.ts:55-145`). The assemble change must preserve the no-agent `renderChunks` path for backward compatibility and retain the existing unknown-agent warning, profile ceiling, and pull-tool behavior.\n\n`ContextOrchestrator.rebuildForAgent()` is a 100-line method at `src/context/engine/orchestrator.ts:485-584`, while the containing source file is near the 600-line ratchet. It reconstructs `PackedChunk`-like values from `prior.chunks`, optionally neutralizes session chunks, injects a failure note, renders, rebuilds digest/manifest data, and filters pull tools. It currently retains every prior chunk, while reporting `effectiveBudget = min(prior.manifest.effectiveBudget ?? Infinity, targetProfile.caps.preferredPromptTokens)`; `rebuildUsedTokens()` compounds this by summing all prior chunks plus extras (`src/context/engine/manifest-builder.ts:116-130`). Extracting the path into `rebuild.ts` creates room for the required repack and needs a dependency-injection seam: `_orchestratorDeps` currently contains `now`, `uuid`, and `getLogger` (`src/context/engine/orchestrator.ts:73-77`). The delegating wrapper must preserve public `RebuildOptions` and no-I/O behavior. Repacking must use `packChunks` for selection, then retain original prior-chunk order for emission so index-based `rebuildInfo.chunkIdMap` remains correct; injected failure-note chunks stay last. Repeated rebuilds should stabilize because subsequent input is the already-selected payload. Floor chunks remain intentionally allowed to exceed the ceiling and their existing overage fields/reasons must propagate: `PackResult.floorOverageIds` is persisted as `ContextManifest.floorOverageItems` by `buildManifest()` (`src/context/engine/manifest-builder.ts:80-91`).\n\n`packChunks()` (`src/context/engine/packing.ts:82-121`) separates `FLOOR_KINDS` (`static`, `feature`, `test-coverage`), forces them into output, and density-sorts non-floor chunks. The proposed repair applies solely to its non-floor pass and must preserve zero-token safety, `availableBudgetTokens` behavior, floor inclusion/order, `budgetExcludedIds`, and truthful `usedTokens`. Existing direct coverage lives in `test/unit/context/engine/packing.test.ts`, including a density-order fixture that must change because its current bulky-vs-dense data becomes correctly repairable. Assembly/rebuild coverage is split between `test/unit/context/engine/orchestrator.test.ts` and `test/unit/context/engine/orchestrator-rebuild.test.ts`; the former is close to the 800-line test-file ratchet, so new framing tests belong in `orchestrator-agent-framing.test.ts`. The existing public barrel `src/context/engine/index.ts` exports the orchestrator/deps, packing, renderers, profiles, and manifest utility; evaluate whether the new standalone rebuild function needs a matching barrel export while preserving direct-module testability. No data migration is required: rebuilt bundles derive from existing `ContextBundle` fields, and prior manifests lacking `effectiveBudget` must be treated as unbounded before applying the target profile ceiling. The AC-7 mandated best-of repair is a bounded heuristic; the deterministic 200-case property test is the feature's executable conformance guard for the stated 95% threshold.",
+  "outOfScope": [
+    "Re-scoring chunks during a rebuild — `scoreChunks(chunks, callerRole, minScore)` requires `RawChunk[]` and a `callerRole`, and `ContextBundle` carries neither, so re-scoring needs a new carrier that this feature does not introduce.",
+    "Re-running de-duplication (`dedupeChunks`) during a rebuild.",
+    "Making `AgentCapabilities.supportsMarkdown` load-bearing — every profile in `AGENT_PROFILES` and `CONSERVATIVE_DEFAULT_PROFILE` sets it to `true`, so no observable behaviour can be tested against it today.",
+    "Scoring-axis work: freshness, per-stage kind weights, and the semantic kind taxonomy.",
+    "Per-provider soft budgets — the `IContextProvider.fetch` signature keeps its `(request, signal)` shape.",
+    "Wiring `AgentResult.agentFallbacks` into `PipelineContext.agentFallbacks`, and emitting the `context.fallback.triggered` event.",
+    "A cross-stage content cache for `CodeNeighborProvider` — `contentCache` stays per-fetch.",
+    "Manifest prune, retention, or TTL in `manifest-store.ts`.",
+    "Changes to the effectiveness classifier or `pollutionRatio`.",
+    "The v2 write path (extractor, fragment writer, merger, summarization and promotion gates).",
+    "Populating `ContextManifest.pullCalls`.",
+    "Renaming `pull.maxCallsPerRun` to reflect its per-story-attempt scope."
+  ],
+  "routingProfile": "cross-agent"
+}
