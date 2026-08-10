@@ -406,7 +406,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     const agentManager = makeAgentManager(PROPOSAL_PASS);
     const runtime = makeMockRuntime({
       agentManager,
-      reviewAuditor: { recordDispatch() {}, recordDecision: (entry) => auditCalls.push(entry), async flush() {} },
+      reviewAuditor: { recordDispatch() {}, recordDecision: (entry) => auditCalls.push(entry), getAdvisoryFindings: () => [], async flush() {} },
     });
 
     const result = await runSemanticReview({

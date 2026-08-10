@@ -30,6 +30,17 @@ const BASELINE_FILE = join(import.meta.dir, "baselines", "test-as-unknown-as-bas
 const PATTERN = /\bas\s+unknown\s+as\b/;
 const ALLOW_MARKER = "test-ratchet-allow: as-unknown-as";
 
+/**
+ * Test files for the ratchet scripts themselves contain the literal phrase
+ * "as unknown as" inside fixture strings that verify the scanner finds
+ * them. They are not real double-casts. Skip them so the ratchet doesn't
+ * grade its own scaffolding.
+ */
+const EXEMPT_FILES = new Set<string>([
+  "test/unit/scripts/check-test-typecheck.test.ts",
+  "test/unit/scripts/check-test-as-unknown-as.test.ts",
+]);
+
 interface Baseline {
   count: number;
   updatedAt: string;
@@ -51,6 +62,7 @@ export async function scanAsUnknownAs(
   for await (const file of glob.scan({ cwd: join(rootDir, SCAN_DIR), absolute: false })) {
     if (file.endsWith(".d.ts")) continue;
     const rel = join(SCAN_DIR, file);
+    if (EXEMPT_FILES.has(rel)) continue;
     const text = await Bun.file(join(rootDir, rel)).text();
     const lines = text.split("\n");
     for (const line of lines) {

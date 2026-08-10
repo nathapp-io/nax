@@ -35,7 +35,7 @@ describe("attachReviewAuditSubscriber", () => {
     const bus = new DispatchEventBus();
     attachReviewAuditSubscriber(
       bus,
-      { recordDispatch: (e) => recorded.push(e), recordDecision() {}, async flush() {} },
+      { recordDispatch: (e) => recorded.push(e), recordDecision() {}, getAdvisoryFindings: () => [], async flush() {} },
       "run-1",
     );
 
@@ -55,7 +55,7 @@ describe("attachReviewAuditSubscriber", () => {
     const bus = new DispatchEventBus();
     attachReviewAuditSubscriber(
       bus,
-      { recordDispatch: (e) => recorded.push(e), recordDecision() {}, async flush() {} },
+      { recordDispatch: (e) => recorded.push(e), recordDecision() {}, getAdvisoryFindings: () => [], async flush() {} },
       "run-1",
     );
 
@@ -75,7 +75,7 @@ describe("attachReviewAuditSubscriber", () => {
     const bus = new DispatchEventBus();
     attachReviewAuditSubscriber(
       bus,
-      { recordDispatch: (e) => recorded.push(e), recordDecision() {}, async flush() {} },
+      { recordDispatch: (e) => recorded.push(e), recordDecision() {}, getAdvisoryFindings: () => [], async flush() {} },
       "run-1",
     );
 
@@ -89,7 +89,7 @@ describe("attachReviewAuditSubscriber", () => {
     const bus = new DispatchEventBus();
     attachReviewAuditSubscriber(
       bus,
-      { recordDispatch() {}, recordDecision: (e) => decisions.push(e), async flush() {} },
+      { recordDispatch() {}, recordDecision: (e) => decisions.push(e), getAdvisoryFindings: () => [], async flush() {} },
       "run-1",
     );
 
@@ -119,7 +119,7 @@ describe("attachReviewAuditSubscriber", () => {
     const bus = new DispatchEventBus();
     const off = attachReviewAuditSubscriber(
       bus,
-      { recordDispatch() {}, recordDecision: (e) => decisions.push(e), async flush() {} },
+      { recordDispatch() {}, recordDecision: (e) => decisions.push(e), getAdvisoryFindings: () => [], async flush() {} },
       "run-1",
     );
 

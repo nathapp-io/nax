@@ -169,6 +169,7 @@ describe("createRuntime", () => {
     const reviewAuditor = {
       recordDispatch() {},
       recordDecision() {},
+      getAdvisoryFindings: () => [],
       async flush() { reviewFlushCalled = true; },
     };
     const rt = makeRuntime(DEFAULT_CONFIG, "/tmp/test", { reviewAuditor });
