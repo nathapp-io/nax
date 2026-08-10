@@ -10,6 +10,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { createOtelReporterPlugin } from "@/plugins";
+import { mockFetch } from "@test/helpers";
 import type { PostJsonDeps } from "@/plugins/builtin/reporter-shared";
 import {
   type Heartbeat,
@@ -52,17 +53,17 @@ function snapshot(overrides: Partial<HeartbeatSnapshot> = {}): HeartbeatSnapshot
 
 function capturingDeps(): PostJsonDeps {
   return {
-    fetch: async (_url, _init) => new Response(null, { status: 200 }),
+    fetch: mockFetch(async (_url, _init) => new Response(null, { status: 200 })),
   };
 }
 
 function capturingPosts() {
   const posts: Array<{ url: string; body: any }> = [];
   const deps: PostJsonDeps = {
-    fetch: async (url, init) => {
+    fetch: mockFetch(async (url, init) => {
       posts.push({ url: String(url), body: JSON.parse(String(init?.body)) });
       return new Response(null, { status: 200 });
-    },
+    }),
   };
   return { posts, deps };
 }

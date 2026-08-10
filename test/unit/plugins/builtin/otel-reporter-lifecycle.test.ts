@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { type PostJsonDeps, createOtelReporterPlugin } from "@/plugins";
-import { withWarnSpy } from "@test/helpers";
+import { mockFetch, withWarnSpy } from "@test/helpers";
 import { attr } from "../../../../src/plugins/builtin/otel-reporter/otlp";
 
 /**
@@ -29,10 +29,10 @@ const baseCfg: OtelReporterConfig = {
 function capturing() {
   const posts: Array<{ url: string; body: any }> = [];
   const deps: PostJsonDeps = {
-    fetch: async (url, init) => {
+    fetch: mockFetch(async (url, init) => {
       posts.push({ url: String(url), body: JSON.parse(String(init?.body)) });
       return new Response(null, { status: 200 });
-    },
+    }),
   };
   return { posts, deps };
 }

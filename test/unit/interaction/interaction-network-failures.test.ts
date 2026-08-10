@@ -9,6 +9,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import type { InteractionRequest } from "../../../src/interaction";
 import { _telegramPluginDeps, TelegramInteractionPlugin } from "../../../src/interaction/plugins/telegram";
 import { WebhookInteractionPlugin, _webhookPluginDeps } from "../../../src/interaction/plugins/webhook";
+import { mockFetch } from "../../helpers/mock-fetch";
 
 function timeoutResult<T>(value: T, delayMs = 0): Promise<T> {
   return new Promise((resolve) => {
@@ -31,9 +32,9 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
 
     // Mock fetch to throw network error
     const originalFetch = _telegramPluginDeps.fetch;
-    _telegramPluginDeps.fetch = async () => {
+    _telegramPluginDeps.fetch = mockFetch(async () => {
       throw new Error("ECONNREFUSED");
-    };
+    });
 
     const request: InteractionRequest = {
       id: "test-network-error",
@@ -57,9 +58,9 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
 
     // Mock fetch to return invalid JSON
     const originalFetch = _telegramPluginDeps.fetch;
-    _telegramPluginDeps.fetch = async () => {
+    _telegramPluginDeps.fetch = mockFetch(async () => {
       return new Response("not json", { status: 200 });
-    };
+    });
 
     const request: InteractionRequest = {
       id: "test-malformed-response",
@@ -83,9 +84,9 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
 
     // Mock fetch to return 500 error
     const originalFetch = _telegramPluginDeps.fetch;
-    _telegramPluginDeps.fetch = async () => {
+    _telegramPluginDeps.fetch = mockFetch(async () => {
       return new Response("Internal Server Error", { status: 500 });
-    };
+    });
 
     const request: InteractionRequest = {
       id: "test-http-error",
@@ -109,9 +110,9 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
 
     // Mock fetch to throw network error
     const originalFetch = _telegramPluginDeps.fetch;
-    _telegramPluginDeps.fetch = async () => {
+    _telegramPluginDeps.fetch = mockFetch(async () => {
       throw new Error("Network timeout");
-    };
+    });
 
     // Access private method via type assertion for testing
     const getUpdates = (plugin as unknown as { getUpdates: () => Promise<unknown[]> }).getUpdates;
@@ -130,10 +131,10 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
     const originalFetch = _telegramPluginDeps.fetch;
     let fetchCallCount = 0;
 
-    _telegramPluginDeps.fetch = async () => {
+    _telegramPluginDeps.fetch = mockFetch(async () => {
       fetchCallCount++;
       throw new Error("Network error");
-    };
+    });
 
     // Access private getUpdates
     const getUpdates = (plugin as unknown as { getUpdates: () => Promise<unknown[]> }).getUpdates;
@@ -158,7 +159,7 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
     const originalFetch = _telegramPluginDeps.fetch;
     let callCount = 0;
 
-    _telegramPluginDeps.fetch = async () => {
+    _telegramPluginDeps.fetch = mockFetch(async () => {
       callCount++;
       if (callCount === 1) {
         // First call fails
@@ -166,7 +167,7 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
       }
       // Second call succeeds
       return new Response(JSON.stringify({ ok: true, result: [] }), { status: 200 });
-    };
+    });
 
     const getUpdates = (plugin as unknown as { getUpdates: () => Promise<unknown[]> }).getUpdates;
 
@@ -192,9 +193,9 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
 
     // Mock fetch to throw network error
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () => {
+    globalThis.fetch = mockFetch(async () => {
       throw new Error("ECONNREFUSED");
-    };
+    });
 
     const request: InteractionRequest = {
       id: "test-network-error",
@@ -219,9 +220,9 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
 
     // Mock fetch to return 503 error
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () => {
+    globalThis.fetch = mockFetch(async () => {
       return new Response("Service Unavailable", { status: 503 });
-    };
+    });
 
     const request: InteractionRequest = {
       id: "test-http-error",
