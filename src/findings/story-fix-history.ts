@@ -1,17 +1,25 @@
 /**
  * Run-scoped story fix history store (US-004).
  *
- * One entry per (storyId, tier) pair, key format `${storyId}::${tier}`. The `tier`
- * segment is `ctx.phaseTelemetry?.tier` so a tier escalation yields a fresh budget
- * — the new model gets a real attempt rather than inheriting the prior model's
- * exhausted budget.
+ * One entry per (storyId, tier, agent) triple, key format
+ * `${storyId}::${tier}::${agent}` — an escalation rung, not just a tier. The
+ * `tier` segment is `ctx.phaseTelemetry?.tier` and the `agent` segment is
+ * `ctx.agentName`, so any escalation yields a fresh budget: the new rung gets a
+ * real attempt rather than inheriting the prior rung's exhausted counters.
+ *
+ * The agent segment is load-bearing, not decorative. `autoMode.escalation.tierOrder`
+ * matches rungs by the (tier, agent) tuple and repeated tier names across agents are
+ * a supported ladder shape (see `execution/escalation/escalation.ts`), so a rung pair
+ * like `fast/agentA -> fast/agentB` is a genuine escalation that a tier-only key
+ * cannot distinguish. Keying on the tier alone handed the escalated agent the
+ * previous agent's exhausted budget, and its cycle bailed at zero iterations (#1530).
  */
 
 import type { Iteration } from "./cycle-types";
 import type { Finding } from "./types";
 
 export interface StoryFixState {
-  /** Iterations from every prior cycle for this (story, tier), in completion order. */
+  /** Iterations from every prior cycle for this (story, tier, agent) rung, in completion order. */
   readonly iterations: readonly Iteration<Finding>[];
   /** Backing store for the decline ledger: strategy name -> declined findingKey set. */
   readonly declines: Map<string, Set<string>>;
@@ -23,8 +31,8 @@ export function createStoryFixHistory(): StoryFixHistory {
   return new Map<string, StoryFixState>();
 }
 
-export function storyFixKey(storyId: string, tier?: string): string {
-  return `${storyId}::${tier ?? "default"}`;
+export function storyFixKey(storyId: string, tier?: string, agent?: string): string {
+  return `${storyId}::${tier ?? "default"}::${agent ?? "default"}`;
 }
 
 export function getStoryFixState(store: StoryFixHistory, key: string): StoryFixState {

@@ -42,13 +42,37 @@ describe("storyFixKey (US-004)", () => {
     const fast = storyFixKey("US-004", "fast");
     const powerful = storyFixKey("US-004", "powerful");
     expect(fast).not.toBe(powerful);
-    expect(fast).toBe("US-004::fast");
-    expect(powerful).toBe("US-004::powerful");
+    expect(fast).toBe("US-004::fast::default");
+    expect(powerful).toBe("US-004::powerful::default");
   });
 
   test("[US-004 AC 5] undefined tier is canonicalised to 'default'", () => {
     expect(storyFixKey("US-004")).toBe(storyFixKey("US-004", "default"));
-    expect(storyFixKey("US-004")).toBe("US-004::default");
+    expect(storyFixKey("US-004")).toBe("US-004::default::default");
+  });
+
+  // The escalation ladder is a (tier, agent) tuple and repeated tier names across
+  // agents are a supported shape, so the tier alone does not identify a rung.
+  test("[#1530] the same tier under different agents produces different keys", () => {
+    const agentA = storyFixKey("US-004", "fast", "agent-a");
+    const agentB = storyFixKey("US-004", "fast", "agent-b");
+    expect(agentA).not.toBe(agentB);
+    expect(agentA).toBe("US-004::fast::agent-a");
+    expect(agentB).toBe("US-004::fast::agent-b");
+  });
+
+  test("[#1530] undefined agent is canonicalised to 'default'", () => {
+    expect(storyFixKey("US-004", "fast")).toBe(storyFixKey("US-004", "fast", "default"));
+  });
+
+  test("[#1530] agent and tier are independently significant", () => {
+    const keys = new Set([
+      storyFixKey("US-004", "fast", "agent-a"),
+      storyFixKey("US-004", "fast", "agent-b"),
+      storyFixKey("US-004", "balanced", "agent-a"),
+      storyFixKey("US-004", "balanced", "agent-b"),
+    ]);
+    expect(keys.size).toBe(4);
   });
 });
 

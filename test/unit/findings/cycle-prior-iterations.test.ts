@@ -18,6 +18,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { CallOpFn } from "@/findings/cycle";
 import { createDeclineLedger, runFixCycle } from "@/findings";
+import { makeLogger } from "@test/helpers";
 import type { Finding, FixStrategy, Iteration } from "@/findings";
 import {
   lintA,
@@ -317,6 +318,47 @@ describe("US-002 AC4/AC5 — bailWhen predicates read carried history", () => {
 
     expect(result.exitReason).toBe("bail-when");
     expect(result.bailDetail).toBe("no progress for 3 consecutive iterations");
+  });
+
+  test("[#1530] a bail fired on carried history reports how many iterations were inherited", async () => {
+    // Threshold 2 with two stalled priors: the predicate fires before this
+    // cycle records a single iteration, so `bailDetail` quotes counts that
+    // belong entirely to earlier cycles. The log must say so.
+    const strategy = bailsAfterConsecutiveNoProgress("lint-fix", 2);
+    const cycle = makeCycle([lintA], [strategy], async () => [lintA]);
+    cycle.priorIterations = [
+      stalledPriorIteration([lintA], "lint-fix", 1),
+      stalledPriorIteration([lintA], "lint-fix", 2),
+    ];
+    const logger = makeLogger();
+
+    const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn,
+      logger: logger as unknown as Parameters<typeof runFixCycle>[3]["logger"],
+    });
+
+    expect(result.exitReason).toBe("bail-when");
+    expect(result.iterations).toHaveLength(0);
+
+    const bailLog = logger.calls.find((c) => c.message === "cycle exited — bail predicate fired");
+    expect(bailLog).toBeDefined();
+    expect(bailLog?.data).toMatchObject({ cycleIterations: 0, inheritedIterations: 2 });
+  });
+
+  test("[#1530] a bail with no carried history omits the inherited counter", async () => {
+    const strategy = bailsAfterConsecutiveNoProgress("lint-fix", 1);
+    const cycle = makeCycle([lintA], [strategy], async () => [lintA]);
+    const logger = makeLogger();
+
+    const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn,
+      logger: logger as unknown as Parameters<typeof runFixCycle>[3]["logger"],
+    });
+
+    expect(result.exitReason).toBe("bail-when");
+    const bailLog = logger.calls.find((c) => c.message === "cycle exited — bail predicate fired");
+    expect(bailLog?.data).toMatchObject({ cycleIterations: 1 });
+    expect(bailLog?.data).not.toHaveProperty("inheritedIterations");
   });
 
   test("AC5: two stalled prior iterations + first live iteration resolves → does NOT bail", async () => {

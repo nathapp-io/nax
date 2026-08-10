@@ -80,6 +80,9 @@ const nrFixOp: RunOperation<{ story: string }, { applied: boolean }, typeof DEFA
   parse: () => ({ applied: true }),
 };
 
+/** Default agent for these contexts; the store key includes it (#1530). */
+const RBI_AGENT = "claude";
+
 function nrStrategy(maxAttempts: number): FixStrategy<Finding, { story: string }, { applied: boolean }> {
   return {
     name: "nr-fix-strategy",
@@ -118,7 +121,7 @@ function nrCtx(
     runtime,
     packageView: runtime.packages.repo(),
     packageDir: "/tmp",
-    agentName: "claude",
+    agentName: RBI_AGENT,
     storyId,
     ...(tier !== undefined
       ? {
@@ -237,7 +240,7 @@ describe("US-005b AC1: nbf runRectification does not record state in storyFixHis
   test("AC1 boundary: a blocking runRectification (no initialFindings) DOES record state for the same story", async () => {
     const runtime = track(makeBudgetRuntime(true));
     const storyId = "US-005b-1-blocking";
-    const key = storyFixKey(storyId, "fast");
+    const key = storyFixKey(storyId, "fast", RBI_AGENT);
 
     await nrRun(runtime, { storyId, tier: "fast" });
 
@@ -493,7 +496,7 @@ describe("US-005b AC4: phase output iterationCount reports this cycle's count, n
     });
 
     // Store accumulated across both cycles.
-    const key = storyFixKey(storyId, "fast");
+    const key = storyFixKey(storyId, "fast", RBI_AGENT);
     expect(getStoryFixState(runtime.storyFixHistory, key).iterations).toHaveLength(3);
 
     // Per-cycle output remained at this cycle's count (1), not the
@@ -654,7 +657,7 @@ describe("US-005b AC7: phaseTelemetry absent → no tier key → budget keyed on
 
     // Default key — proves the write happened under the canonical 'default'
     // segment when no tier is supplied.
-    const key = storyFixKey(storyId); // tier=undefined → "default"
+    const key = storyFixKey(storyId, undefined, RBI_AGENT); // tier=undefined → "default"
     const state = getStoryFixState(runtime.storyFixHistory, key);
     expect(state.iterations.length).toBeGreaterThanOrEqual(1);
   });
@@ -680,6 +683,6 @@ describe("US-005b AC8: ctx.storyId absent → no state recorded in storyFixHisto
     await nrRun(runtime, { storyId, tier: "fast", maxAttempts: 3 });
 
     expect(runtime.storyFixHistory.size).toBe(1);
-    expect(runtime.storyFixHistory.has(storyFixKey(storyId, "fast"))).toBe(true);
+    expect(runtime.storyFixHistory.has(storyFixKey(storyId, "fast", RBI_AGENT))).toBe(true);
   });
 });
