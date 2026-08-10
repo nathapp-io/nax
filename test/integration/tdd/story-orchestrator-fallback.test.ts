@@ -39,6 +39,7 @@ function defaultPatterns(): ResolvedTestPatterns {
     regex: [/\.test\.ts$/],
     pathspec: [":(exclude)**/*.test.ts"],
     testDirs: ["test/unit", "test/integration"],
+    resolution: "detected",
   };
 }
 

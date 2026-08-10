@@ -252,6 +252,7 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
     regex: [/\.test\.ts$/],
     pathspec: [] as string[],
     testDirs: ["test"],
+    resolution: "detected" as const,
   };
 
   const sem = config.review?.semantic;

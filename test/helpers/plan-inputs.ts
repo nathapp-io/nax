@@ -20,6 +20,7 @@ function makeResolvedTestPatterns(): ResolvedTestPatterns {
     regex: [/\.test\.ts$/],
     pathspec: [":(exclude)test/**/*.test.ts"],
     testDirs: ["test/unit", "test/integration"],
+    resolution: "detected",
   };
 }
 

@@ -36,10 +36,11 @@ const story: UserStory = {
 
 function defaultPatterns(): ResolvedTestPatterns {
   return {
-    globs: ["test/**/*.test.ts"],
+    globs: ["**/*.test.ts"],
     regex: [/\.test\.ts$/],
-    pathspec: [":(exclude)test/**/*.test.ts"],
+    pathspec: [":(exclude)**/*.test.ts"],
     testDirs: ["test/unit", "test/integration"],
+    resolution: "detected",
   };
 }
 

@@ -141,6 +141,7 @@ describe("AC4: builder.addMutationCheck + plan run", () => {
           regex: [/\.test\.ts$/],
           pathspec: [":(exclude)test/**/*.test.ts"],
           testDirs: ["test/unit", "test/integration"],
+          resolution: "detected",
         },
       };
       const gateOp = makeDeterministicOp("full-suite-gate", { success: true });
@@ -207,6 +208,7 @@ describe("AC4: builder.addMutationCheck + plan run", () => {
           regex: [/\.test\.ts$/],
           pathspec: [":(exclude)test/**/*.test.ts"],
           testDirs: ["test/unit", "test/integration"],
+          resolution: "detected",
         },
       };
 
@@ -263,6 +265,7 @@ describe("AC5: buildPlanForStrategy wires mutation-check from PlanInputs", () =>
           regex: [/\.test\.ts$/],
           pathspec: [":(exclude)test/**/*.test.ts"],
           testDirs: ["test/unit", "test/integration"],
+          resolution: "detected",
         },
       },
     });
@@ -299,6 +302,7 @@ describe("AC5: buildPlanForStrategy wires mutation-check from PlanInputs", () =>
           regex: [/\.test\.ts$/],
           pathspec: [":(exclude)test/**/*.test.ts"],
           testDirs: ["test/unit", "test/integration"],
+          resolution: "detected",
         },
       } as any,
       implementer: { story },
@@ -313,6 +317,7 @@ describe("AC5: buildPlanForStrategy wires mutation-check from PlanInputs", () =>
           regex: [/\.test\.ts$/],
           pathspec: [":(exclude)test/**/*.test.ts"],
           testDirs: ["test/unit", "test/integration"],
+          resolution: "detected",
         },
       },
     });
@@ -366,6 +371,7 @@ describe("AC6: mutation-check survivor with success:true does not halt verifier"
           regex: [/\.test\.ts$/],
           pathspec: [":(exclude)test/**/*.test.ts"],
           testDirs: ["test/unit", "test/integration"],
+          resolution: "detected",
         },
       };
 

@@ -42,6 +42,7 @@ const MINIMAL_PATTERNS = {
   regex: [/\.test\.ts$/],
   pathspec: [":(exclude)test/**/*.test.ts"],
   testDirs: ["test/unit", "test/integration"],
+  resolution: "detected",
 } as const;
 
 /**

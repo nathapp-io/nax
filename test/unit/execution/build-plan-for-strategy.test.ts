@@ -39,6 +39,7 @@ function makeGreenfieldGateInput(story: UserStory): import("@/operations").Green
       regex: [/\.test\.ts$/],
       pathspec: [":(exclude)test/**/*.test.ts"],
       testDirs: ["test/unit", "test/integration"],
+      resolution: "detected",
     },
   };
 }
