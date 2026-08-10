@@ -2,9 +2,12 @@
  * Unit tests for pipeline-result-handler.ts (ENH-005 — outputFiles capture)
  */
 
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { loadPRD, savePRD } from "@/prd";
 import { makeMockRuntime } from "../../helpers/runtime";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { _tierEscalationDeps } from "../../../src/execution/escalation/tier-escalation";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import { _gitDeps } from "../../../src/utils/git";
@@ -448,5 +451,116 @@ describe("handlePipelineFailure — story:skipped event", () => {
     await handlePipelineFailure(ctx, failResult);
 
     expect(capturedSkipped).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A story whose branch never landed must not be recorded as passed
+// ---------------------------------------------------------------------------
+
+/**
+ * These assert the **on-disk** prd.json, not `ctx.prd`.
+ *
+ * That is the whole point. `completionStage` runs before this handler and has
+ * already written `status: "passed"` to disk, and the executor answers
+ * `prdDirty: true` by *reloading* from disk (`unified-executor.ts:484-486`) —
+ * it never saves on the handler's behalf. So a handler that mutates `ctx.prd`
+ * and sets `prdDirty` without calling `savePRD` has its correction silently
+ * discarded on the next reload. An in-memory assertion passes against exactly
+ * that bug; only reading the file back catches it.
+ */
+describe("handlePipelineSuccess — a failed worktree merge is not a passed story", () => {
+  let tempDir: string;
+  let prdPath: string;
+
+  beforeEach(() => {
+    tempDir = makeTempDir("nax-merge-fail-");
+    prdPath = join(tempDir, "prd.json");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  /** Mirrors the state completionStage leaves behind: passed, in memory and on disk. */
+  async function seedPassedStory(): Promise<{ story: UserStory; ctx: PipelineHandlerContext }> {
+    const story = makeStory("US-001");
+    const ctx = makeCtx(story, {
+      config: WORKTREE_CONFIG,
+      prdPath,
+      workdir: tempDir,
+      storyGitRef: undefined,
+    });
+    await savePRD(ctx.prd, prdPath);
+    expect((await loadPRD(prdPath)).userStories[0]?.status).toBe("passed");
+    return { story, ctx };
+  }
+
+  function stubSpawn(): string[][] {
+    const calls: string[][] = [];
+    _resultHandlerDeps.spawn = mock((args: unknown) => {
+      calls.push(args as string[]);
+      return {
+        stdout: new ReadableStream({ start(c) { c.close(); } }),
+        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        exited: Promise.resolve(0),
+        kill: mock(() => {}),
+      };
+    }) as unknown as typeof _resultHandlerDeps.spawn;
+    return calls;
+  }
+
+  test("a non-conflict merge failure marks the story failed on disk", async () => {
+    const { ctx } = await seedPassedStory();
+    stubSpawn();
+    _resultHandlerDeps.mergeEngine = {
+      merge: mock(async () => ({ success: false as const, failureKind: "error" as const, error: "dirty tree" })),
+    } as unknown as typeof _resultHandlerDeps.mergeEngine;
+
+    const result = await handlePipelineSuccess(ctx, makeMinimalResult());
+
+    expect((await loadPRD(prdPath)).userStories[0]?.status).toBe("failed");
+    expect(result.storiesCompletedDelta).toBe(0);
+    expect(result.prdDirty).toBe(true);
+  });
+
+  test("the reported failure survives the executor's reload-from-disk", async () => {
+    const { ctx } = await seedPassedStory();
+    stubSpawn();
+    _resultHandlerDeps.mergeEngine = {
+      merge: mock(async () => ({ success: false as const, failureKind: "error" as const, error: "missing branch" })),
+    } as unknown as typeof _resultHandlerDeps.mergeEngine;
+
+    const result = await handlePipelineSuccess(ctx, makeMinimalResult());
+
+    // Exactly what unified-executor does when prdDirty is true. A handler that
+    // only mutated ctx.prd would come back "passed" here.
+    const reloaded = result.prdDirty ? await loadPRD(ctx.prdPath) : result.prd;
+    expect(reloaded.userStories[0]?.status).toBe("failed");
+  });
+
+  test("a non-conflict merge failure reclaims the worktree directory", async () => {
+    const { ctx } = await seedPassedStory();
+    const calls = stubSpawn();
+    _resultHandlerDeps.mergeEngine = {
+      merge: mock(async () => ({ success: false as const, failureKind: "error" as const, error: "dirty tree" })),
+    } as unknown as typeof _resultHandlerDeps.mergeEngine;
+
+    await handlePipelineSuccess(ctx, makeMinimalResult());
+
+    expect(calls.some((a) => a.includes("worktree") && a.includes("remove"))).toBe(true);
+  });
+
+  test("a clean merge still reports the story as passed", async () => {
+    const { ctx } = await seedPassedStory();
+    stubSpawn();
+    _resultHandlerDeps.mergeEngine = {
+      merge: mock(async () => ({ success: true as const })),
+    } as unknown as typeof _resultHandlerDeps.mergeEngine;
+
+    const result = await handlePipelineSuccess(ctx, makeMinimalResult());
+
+    expect((await loadPRD(prdPath)).userStories[0]?.status).toBe("passed");
+    expect(result.storiesCompletedDelta).toBe(1);
   });
 });
