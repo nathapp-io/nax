@@ -13,19 +13,19 @@ describe("non-blocking-fix gating", () => {
   test("disabled config → does not run", () => {
     expect(shouldRunNonBlockingFix(undefined, 2)).toBe(false);
     expect(
-      shouldRunNonBlockingFix({ enabled: false, scope: "both", regressionAttempts: 1, verifierGuard: true }, 2),
+      shouldRunNonBlockingFix({ enabled: false, scope: "both", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } }, 2),
     ).toBe(false);
   });
 
   test("enabled but zero advisory findings → does not run", () => {
     expect(
-      shouldRunNonBlockingFix({ enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true }, 0),
+      shouldRunNonBlockingFix({ enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } }, 0),
     ).toBe(false);
   });
 
   test("enabled with advisory findings → runs", () => {
     expect(
-      shouldRunNonBlockingFix({ enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true }, 3),
+      shouldRunNonBlockingFix({ enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } }, 3),
     ).toBe(true);
   });
 
@@ -35,6 +35,7 @@ describe("non-blocking-fix gating", () => {
       scope: "both" as const,
       regressionAttempts: 1,
       verifierGuard: true,
+      sourceDiffCap: { maxFiles: 10, maxLines: 500 },
     };
     expect(shouldRunNonBlockingFix(enabled, 1)).toBe(true);
     expect(shouldRunNonBlockingFix(enabled, -1)).toBe(false);
@@ -46,7 +47,7 @@ describe("runNonBlockingFix keep vs restore", () => {
     workdir: "/tmp/x",
     storyId: "us-001",
     advisoryFindings: [{ source: "adversarial-review", severity: "warning", category: "input", message: "m" }] as never,
-    cfg: { enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true } as const,
+    cfg: { enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } } as const,
     phaseCosts: {} as Record<string, number>,
   };
   const fakeDeps = {
@@ -467,6 +468,7 @@ describe("nonBlockingExtraPhases with triage scope", () => {
       scope: "triage",
       regressionAttempts: 1,
       verifierGuard: true,
+      sourceDiffCap: { maxFiles: 10, maxLines: 500 },
     });
     expect(phases).toEqual(["verifier"]);
   });
@@ -477,6 +479,7 @@ describe("nonBlockingExtraPhases with triage scope", () => {
       scope: "triage",
       regressionAttempts: 1,
       verifierGuard: false,
+      sourceDiffCap: { maxFiles: 10, maxLines: 500 },
     });
     expect(phases).toEqual([]);
   });
@@ -665,7 +668,7 @@ describe("actionableAdvisoryFindings", () => {
   test("an all-compliance advisory bucket closes the NBF gate", () => {
     // The observed US-004 case: one advisory finding, and it asked for nothing.
     // NBF must not open a paid pass for it.
-    const cfg = { enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true } as const;
+    const cfg = { enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } } as const;
     const actionable = actionableAdvisoryFindings([advisory({ actionRequired: false })]);
     expect(shouldRunNonBlockingFix(cfg, actionable.length)).toBe(false);
   });

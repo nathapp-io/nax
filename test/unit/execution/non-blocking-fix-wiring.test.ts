@@ -12,17 +12,17 @@ describe("non-blocking-fix wiring gate", () => {
   });
   test("gate is on when enabled with advisory findings", () => {
     expect(
-      shouldRunNonBlockingFix({ enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true }, 5),
+      shouldRunNonBlockingFix({ enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } }, 5),
     ).toBe(true);
   });
   test("gate is off when enabled but zero advisory findings", () => {
     expect(
-      shouldRunNonBlockingFix({ enabled: true, scope: "source", regressionAttempts: 1, verifierGuard: false }, 0),
+      shouldRunNonBlockingFix({ enabled: true, scope: "source", regressionAttempts: 1, verifierGuard: false, sourceDiffCap: { maxFiles: 10, maxLines: 500 } }, 0),
     ).toBe(false);
   });
   test("gate is off when config present but disabled", () => {
     expect(
-      shouldRunNonBlockingFix({ enabled: false, scope: "both", regressionAttempts: 1, verifierGuard: true }, 3),
+      shouldRunNonBlockingFix({ enabled: false, scope: "both", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } }, 3),
     ).toBe(false);
   });
 });
@@ -102,7 +102,7 @@ describe("non-blocking-fix runtime wiring", () => {
           timeoutMs: 600_000,
           parallel: false,
           maxConcurrentSessions: 2,
-          nonBlockingFix: { enabled: true, scope: "triage", regressionAttempts: 1, verifierGuard: true },
+          nonBlockingFix: { enabled: true, scope: "triage", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } },
         },
       },
     });
@@ -171,7 +171,7 @@ describe("non-blocking-fix runtime wiring", () => {
           timeoutMs: 600_000,
           parallel: false,
           maxConcurrentSessions: 2,
-          nonBlockingFix: { enabled: true, scope: "triage", regressionAttempts: 1, verifierGuard: true },
+          nonBlockingFix: { enabled: true, scope: "triage", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } },
         },
       },
     });
@@ -250,7 +250,7 @@ describe("non-blocking-fix runtime wiring", () => {
           timeoutMs: 600_000,
           parallel: false,
           maxConcurrentSessions: 2,
-          nonBlockingFix: { enabled: true, scope: "triage", regressionAttempts: 1, verifierGuard: true },
+          nonBlockingFix: { enabled: true, scope: "triage", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } },
         },
       },
     });

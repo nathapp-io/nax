@@ -30,7 +30,7 @@ describe("RectificationOverrides.postValidate — addNonBlockingFix stores nbPos
     const nbPostValidate = async (findings: Finding[], _ctx: FixCycleContext): Promise<Finding[]> => findings;
     expect(() =>
       new StoryOrchestratorBuilder().addNonBlockingFix(
-        { enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: false },
+        { enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: false, sourceDiffCap: { maxFiles: 10, maxLines: 500 } },
         [],
         nbPostValidate,
       ),
@@ -40,7 +40,7 @@ describe("RectificationOverrides.postValidate — addNonBlockingFix stores nbPos
   test("addNonBlockingFix without postValidate is backwards-compatible (postValidate omitted)", () => {
     expect(() =>
       new StoryOrchestratorBuilder().addNonBlockingFix(
-        { enabled: true, scope: "source", regressionAttempts: 1, verifierGuard: false },
+        { enabled: true, scope: "source", regressionAttempts: 1, verifierGuard: false, sourceDiffCap: { maxFiles: 10, maxLines: 500 } },
         [],
       ),
     ).not.toThrow();

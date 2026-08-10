@@ -111,6 +111,7 @@ describe("buildPlanForStrategy — AC2/AC3/AC4: triage strategy predicate behavi
             scope: "triage",
             regressionAttempts: 1,
             verifierGuard: true,
+            sourceDiffCap: { maxFiles: 10, maxLines: 500 },
           },
         },
       },
