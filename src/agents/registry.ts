@@ -10,7 +10,7 @@ import { AcpAgentAdapter } from "./acp/adapter";
 import type { AgentAdapter } from "./types";
 
 /** Known agent names (used for name validation and health checks) */
-export const KNOWN_AGENT_NAMES = ["claude", "codex", "opencode", "gemini", "aider"];
+export const KNOWN_AGENT_NAMES = ["claude", "codex", "opencode", "gemini", "aider", "pi"];
 
 /**
  * Test-only adapter overrides. Keys are agent names; values are adapter instances

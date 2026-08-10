@@ -30,7 +30,6 @@ import type {
 } from "../types";
 import { CompleteError, SessionTurnError } from "../types";
 import { defaultAcpTokenUsageMapper } from "./token-mapper";
-import type { AgentRegistryEntry } from "./types";
 import type { SessionTokenUsage } from "./wire-types";
 
 import {
@@ -45,6 +44,7 @@ import {
   throwIfAborted,
 } from "./adapter-lifecycle";
 import { buildTurnResult, extractContextToolCall, extractOutput, extractQuestion } from "./adapter-output";
+import { resolveRegistryEntry } from "./agent-entries";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Backward-compat re-exports (consumers import from this file via barrel)
@@ -73,46 +73,7 @@ const INTERACTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 min for human to respond
 // Agent registry
 // ─────────────────────────────────────────────────────────────────────────────
 
-const AGENT_REGISTRY: Record<string, AgentRegistryEntry> = {
-  claude: {
-    binary: "claude",
-    displayName: "Claude Code (ACP)",
-    supportedTiers: ["fast", "balanced", "powerful"],
-    maxContextTokens: 200_000,
-  },
-  codex: {
-    binary: "codex",
-    displayName: "OpenAI Codex (ACP)",
-    supportedTiers: ["fast", "balanced"],
-    maxContextTokens: 128_000,
-  },
-  gemini: {
-    binary: "gemini",
-    displayName: "Gemini CLI (ACP)",
-    supportedTiers: ["fast", "balanced", "powerful"],
-    maxContextTokens: 1_000_000,
-  },
-  opencode: {
-    binary: "opencode",
-    displayName: "opencode (ACP)",
-    supportedTiers: ["fast", "balanced", "powerful"],
-    maxContextTokens: 128_000,
-  },
-};
-
-const DEFAULT_ENTRY: AgentRegistryEntry = {
-  binary: "claude",
-  displayName: "ACP Agent",
-  supportedTiers: ["balanced"],
-  maxContextTokens: 128_000,
-};
-
-function resolveRegistryEntry(agentName: string): AgentRegistryEntry {
-  return AGENT_REGISTRY[agentName] ?? DEFAULT_ENTRY;
-}
-
-/** Names that have a real ACP adapter entry (subset of KNOWN_AGENT_NAMES). */
-export const ACP_ADAPTER_NAMES: ReadonlySet<string> = new Set(Object.keys(AGENT_REGISTRY));
+export { ACP_ADAPTER_NAMES } from "./agent-entries";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AcpAgentAdapter
