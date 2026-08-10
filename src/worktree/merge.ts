@@ -8,11 +8,29 @@ export const _mergeDeps = {
   spawn,
 };
 
+/**
+ * Why a merge did not succeed.
+ *
+ * `conflict` — git left the repository mid-merge with unmerged paths. This is the
+ * only kind that is rectifiable: there is a real textual conflict for an agent to
+ * resolve.
+ *
+ * `error` — anything else: a dirty working tree, a missing branch, a repository
+ * already stuck mid-merge, a spawn failure. There is no conflict to resolve, so
+ * routing one of these into conflict rectification only spends an agent session
+ * on a problem it cannot fix.
+ */
+export type MergeFailureKind = "conflict" | "error";
+
 export interface MergeResult {
   success: boolean;
   storyId: string;
   conflictFiles?: string[];
   retryCount?: number;
+  /** Set whenever `success` is false. */
+  failureKind?: MergeFailureKind;
+  /** Human-readable cause, carried on `failureKind: "error"` results. */
+  error?: string;
 }
 
 export interface StoryDependencies {
@@ -23,16 +41,51 @@ export class MergeEngine {
   constructor(private worktreeManager: WorktreeManager) {}
 
   /**
-   * Merges branch nax/<storyId> into current branch with --no-ff
-   * Returns { success: true } on clean merge
-   * Returns { success: false, conflictFiles: [...] } on conflict
-   * Cleans up worktree after successful merge
+   * True when the repository has an in-progress merge — i.e. `MERGE_HEAD` resolves.
+   *
+   * This is the authoritative signal for "did a conflict happen?". Reading it from
+   * git rather than string-matching stderr is what keeps one story's leftover state
+   * from being reported as the next story's conflict: `git merge` into a repository
+   * that is already mid-merge fails with "fatal: Exiting because of an unresolved
+   * conflict", whose text contains "conflict" but says nothing about THIS merge.
+   */
+  private async isMidMerge(projectRoot: string): Promise<boolean> {
+    const proc = _mergeDeps.spawn(["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"], {
+      cwd: projectRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    return (await proc.exited) === 0;
+  }
+
+  /**
+   * Merges branch nax/<storyId> into the current branch with --no-ff.
+   *
+   * TOTAL over git-level failures — it never throws for them. Callers (`mergeAll`,
+   * `pipeline-result-handler`) treat merging as one step in a longer sequence, so a
+   * throw here aborted the whole batch and discarded the results of stories that had
+   * already merged successfully. Every outcome is a value instead:
+   *
+   *   { success: true }                          clean merge, worktree cleaned up
+   *   { success: false, failureKind: "conflict" } real conflict, aborted, rectifiable
+   *   { success: false, failureKind: "error" }    everything else, NOT rectifiable
    */
   async merge(projectRoot: string, storyId: string): Promise<Omit<MergeResult, "storyId">> {
     const branchName = `nax/${storyId}`;
 
     try {
-      // Perform merge with --no-ff
+      // Guard: never merge into a repository that is already mid-merge. Doing so
+      // fails in a way that reads like this story's own conflict, and would send an
+      // innocent story to rectification carrying the previous story's file list.
+      if (await this.isMidMerge(projectRoot)) {
+        const error = `Repository has an unresolved merge in progress; refusing to merge ${branchName}`;
+        getSafeLogger()?.error("worktree", "Refusing to merge into a mid-merge repository", {
+          storyId,
+          projectRoot,
+        });
+        return { success: false, failureKind: "error", error };
+      }
+
       const mergeProc = _mergeDeps.spawn(
         ["git", "merge", "--no-ff", branchName, "-m", `Merge branch '${branchName}'`],
         {
@@ -63,29 +116,54 @@ export class MergeEngine {
         return { success: true };
       }
 
-      // Merge failed - check for conflicts
-      const output = `${stdout}\n${stderr}`;
-      if (output.includes("CONFLICT") || output.includes("conflict") || output.includes("Automatic merge failed")) {
-        // Extract conflict files
-        const conflictFiles = await this.getConflictFiles(projectRoot);
-
-        // Abort the merge
-        await this.abortMerge(projectRoot);
-
-        return {
-          success: false,
-          conflictFiles,
-        };
-      }
-
-      // Other error
-      throw new Error(`Merge failed: ${stderr || stdout || "unknown error"}`);
+      return await this.classifyMergeFailure(projectRoot, storyId, `${stdout}\n${stderr}`);
     } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error(`Failed to merge branch ${branchName}: ${String(error)}`);
+      // Spawn-level failure (git missing, cwd gone). Still a value, not a throw.
+      getSafeLogger()?.error("worktree", "Merge failed before git could report", {
+        storyId,
+        error: errorMessage(error),
+      });
+      return { success: false, failureKind: "error", error: errorMessage(error) };
     }
+  }
+
+  /**
+   * Decide what a non-zero `git merge` exit actually was, by interrogating the
+   * repository rather than pattern-matching stderr.
+   */
+  private async classifyMergeFailure(
+    projectRoot: string,
+    storyId: string,
+    output: string,
+  ): Promise<Omit<MergeResult, "storyId">> {
+    const logger = getSafeLogger();
+    const conflictFiles = await this.getConflictFiles(projectRoot);
+    const midMerge = await this.isMidMerge(projectRoot);
+
+    // No merge in progress and nothing unmerged => git refused before touching the
+    // index (dirty tree, missing branch, unrelated histories). Not a conflict.
+    if (!midMerge && conflictFiles.length === 0) {
+      const error = output.trim() || "unknown error";
+      logger?.error("worktree", "Merge failed for a non-conflict reason", {
+        storyId,
+        error,
+      });
+      return { success: false, failureKind: "error", error };
+    }
+
+    // A real conflict. Abort so the next story starts from a clean index — and if
+    // the abort does not take, say so rather than reporting a tidy conflict: the
+    // repository is now unusable for every merge that follows.
+    if (!(await this.abortMerge(projectRoot))) {
+      const error = `Merge conflict in ${storyId} could not be aborted; repository left mid-merge`;
+      logger?.error("worktree", "git merge --abort failed — repository left mid-merge", {
+        storyId,
+        conflictFiles,
+      });
+      return { success: false, failureKind: "error", conflictFiles, error };
+    }
+
+    return { success: false, failureKind: "conflict", conflictFiles };
   }
 
   /**
@@ -109,6 +187,8 @@ export class MergeEngine {
           success: false,
           storyId,
           conflictFiles: [],
+          failureKind: "error",
+          error: `Skipped: depends on a story that failed to merge (${deps.filter((d) => failedStories.has(d)).join(", ")})`,
         });
         failedStories.add(storyId);
         continue;
@@ -117,8 +197,10 @@ export class MergeEngine {
       // Try to merge
       let result = await this.merge(projectRoot, storyId);
 
-      // If conflict, retry once after rebasing
-      if (!result.success && result.conflictFiles) {
+      // Only a real conflict is worth a rebase-and-retry. A non-conflict error
+      // (dirty tree, missing branch, repository stuck mid-merge) is not fixed by
+      // rebasing, and retrying it just fails the same way twice.
+      if (result.failureKind === "conflict") {
         try {
           // Rebase worktree on updated base
           await this.rebaseWorktree(projectRoot, storyId);
@@ -133,6 +215,8 @@ export class MergeEngine {
               storyId,
               conflictFiles: result.conflictFiles,
               retryCount: 1,
+              failureKind: result.failureKind ?? "error",
+              error: result.error,
             });
             failedStories.add(storyId);
             continue;
@@ -151,6 +235,8 @@ export class MergeEngine {
             storyId,
             conflictFiles: result.conflictFiles,
             retryCount: 1,
+            failureKind: "error",
+            error: errorMessage(error),
           });
           failedStories.add(storyId);
         }
@@ -162,11 +248,15 @@ export class MergeEngine {
           retryCount: 0,
         });
       } else {
-        // Failed without conflicts (shouldn't happen normally)
+        // Non-conflict failure. Record it and carry on with the remaining stories —
+        // this used to be unreachable because merge() threw instead of returning,
+        // which took the whole batch (and every already-merged result) down with it.
         results.push({
           success: false,
           storyId,
           retryCount: 0,
+          failureKind: result.failureKind ?? "error",
+          error: result.error,
         });
         failedStories.add(storyId);
       }
@@ -296,9 +386,15 @@ export class MergeEngine {
   }
 
   /**
-   * Aborts an in-progress merge
+   * Aborts an in-progress merge. Returns whether the repository was actually
+   * returned to a clean state.
+   *
+   * The exit code is load-bearing: a failed abort leaves MERGE_HEAD set, and every
+   * subsequent `git merge` in the batch then fails with text containing "conflict",
+   * which used to be attributed to whichever story merged next. Callers must be able
+   * to tell "conflict, cleaned up" from "conflict, repository still broken".
    */
-  private async abortMerge(projectRoot: string): Promise<void> {
+  private async abortMerge(projectRoot: string): Promise<boolean> {
     try {
       const proc = _mergeDeps.spawn(["git", "merge", "--abort"], {
         cwd: projectRoot,
@@ -306,13 +402,20 @@ export class MergeEngine {
         stderr: "pipe",
       });
 
-      await proc.exited;
+      const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
+      if (exitCode !== 0) {
+        getSafeLogger()?.error("worktree", "Failed to abort merge", {
+          exitCode,
+          stderr: stderr.trim(),
+        });
+        return false;
+      }
+      return true;
     } catch (error) {
-      // Log warning but don't throw - merge might already be aborted
-      const logger = getSafeLogger();
-      logger?.warn("worktree", "Failed to abort merge", {
+      getSafeLogger()?.error("worktree", "Failed to abort merge", {
         error: errorMessage(error),
       });
+      return false;
     }
   }
 }

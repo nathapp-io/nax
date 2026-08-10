@@ -84,8 +84,8 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
   logger?.info("parallel", "Rectifying story on updated base", { storyId, attempt: "rectification" });
 
   try {
-    const { WorktreeManager } = await import("../worktree/manager");
-    const { MergeEngine } = await import("../worktree/merge");
+    const { WorktreeManager } = await import("../worktree");
+    const { MergeEngine } = await import("../worktree");
     const { runPipeline } = await import("../pipeline/runner");
     const { defaultPipeline } = await import("../pipeline/stages");
     const { routeTask } = await import("../routing");

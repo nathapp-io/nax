@@ -22,8 +22,7 @@ import type { routeTask } from "../routing";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { spawn } from "../utils/bun-deps";
 import { captureDiffSummary, captureOutputFiles } from "../utils/git";
-import { WorktreeManager } from "../worktree/manager";
-import { MergeEngine } from "../worktree/merge";
+import { MergeEngine, WorktreeManager } from "../worktree";
 import { handleTierEscalation } from "./escalation";
 import { appendProgress } from "./progress";
 
@@ -160,6 +159,19 @@ export async function handlePipelineSuccess(
   if (ctx.config.execution.storyIsolation === "worktree") {
     const story = ctx.story;
     const mergeResult = await _resultHandlerDeps.mergeEngine.merge(ctx.workdir, story.id);
+    // Only an explicit "error" diverts away from rectification. A failure with no
+    // failureKind keeps the historical behaviour (assume conflict) so a result from
+    // outside this module cannot silently lose its rectification pass.
+    if (!mergeResult.success && mergeResult.failureKind === "error") {
+      // A non-conflict git failure (dirty tree, missing branch, repository stuck
+      // mid-merge). There is nothing for conflict rectification to resolve, so fail
+      // the story with the real cause instead of spending a session on it.
+      logger?.error("worktree", "Merge failed for a non-conflict reason — marking story as failed", {
+        storyId: story.id,
+        error: mergeResult.error,
+      });
+      return { storiesCompletedDelta: 0, costDelta, prd, prdDirty: false };
+    }
     if (!mergeResult.success) {
       // Merge conflict after the story passed all checks — attempt rectification.
       const { rectifyConflictedStory } = await import("./merge-conflict-rectify");
