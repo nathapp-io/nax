@@ -34,7 +34,6 @@ export {
   DIGEST_RESERVE_TOKENS,
   FIXED_RENDER_OVERHEAD_TOKENS,
   estimateAvailableBudgetTokens,
-  rebuildUsedTokens,
 } from "./engine";
 export type { AdapterFailure, ContextBundle, ContextChunk } from "./engine/types";
 export type { PackedChunk } from "./engine/packing";

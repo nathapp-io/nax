@@ -115,7 +115,7 @@ AgentAdapter                                |
 |:--------|:--------|
 | `nax context inspect <storyId>` | Render manifests as tree — what was injected at each stage and why |
 | `nax rules export --agent=<id>` | Generate CLAUDE.md / AGENTS.md shim from canonical store (one-way) |
-| `nax rules migrate` | Convert CLAUDE.md + .claude/rules/ → .nax/rules/ draft |
+| `nax rules migrate` | Convert .claude/rules/ → .nax/rules/ draft |
 | `nax rules lint` | Validate neutrality of .nax/rules/ content |
 
 ---

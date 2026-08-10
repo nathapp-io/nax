@@ -1032,7 +1032,7 @@ Moving role-filtering into the orchestrator risks a subtle semantic change. **Mi
 Existing projects have invested in `CLAUDE.md` and `.claude/rules/*.md`. Moving to `.nax/rules/` is a substantial authoring migration. If content copied verbatim contains Claude-specific phrasing, the promise of neutrality is compromised from day one. **Mitigations:**
 
 - Ship a **neutrality linter** (`src/context/rules/canonical-loader.ts`) that rejects obvious tells: `<system-reminder>`, `CLAUDE.md`, `.claude/`, `the <X> tool` phrasing, `use the Grep tool`, `IMPORTANT:` shouts, and emoji. Linter failures block the rules from loading; operator must fix.
-- Provide a `nax rules migrate` command that takes `CLAUDE.md` + `.claude/rules/*.md` and writes a `.nax/rules/` draft with neutralization applied; operator reviews the diff before committing.
+- Provide a `nax rules migrate` command that takes `.claude/rules/*.md` and writes a `.nax/rules/` draft with neutralization applied; operator reviews the diff before committing. (Revised 2026-08-10: root `CLAUDE.md` was originally a source too, but it targeted the same basename as `.claude/rules/project-conventions.md` and the second write silently clobbered the first — see `SPEC-context-engine-canonical-rules.md` § Migration path.)
 - Keep `CLAUDE.md` as an auto-generated shim via `nax rules export` so humans invoking Claude Code directly (outside nax) still see rules. One-way generation — no read-back.
 - During migration period, allow a config flag `context.rules.allowLegacyClaudeMd: true` that falls back to reading `CLAUDE.md` when `.nax/rules/` is absent, with a deprecation warning. Removed after one minor version.
 

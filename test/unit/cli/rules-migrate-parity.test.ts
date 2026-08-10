@@ -60,24 +60,24 @@ describe("rulesMigrateCommand — dry-run / real-run parity", () => {
     _rulesCLIDeps.writeFile = async (path, content) => {
       calls.push([path, content]);
     };
-    _rulesCLIDeps.fileExists = async (p) =>
-      p === "/project/CLAUDE.md" || p === "/project/.nax/rules/project-conventions.md";
+    _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/project-conventions.md"];
+    _rulesCLIDeps.fileExists = async (p) => p === "/project/.nax/rules/project-conventions.md";
     _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
     await rulesMigrateCommand({ dir: "/project", dryRun: true });
     expect(calls).toHaveLength(0);
   });
 
   test("AC-8: dry-run with an existing target returns that target as skipped", async () => {
-    _rulesCLIDeps.fileExists = async (p) =>
-      p === "/project/CLAUDE.md" || p === "/project/.nax/rules/project-conventions.md";
+    _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/project-conventions.md"];
+    _rulesCLIDeps.fileExists = async (p) => p === "/project/.nax/rules/project-conventions.md";
     _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
     const outcome = await rulesMigrateCommand({ dir: "/project", dryRun: true });
     expect(outcome.skipped).toEqual(["project-conventions.md"]);
   });
 
   test("AC-9: dry-run and real-run report equal written file-name sets (force=true)", async () => {
-    _rulesCLIDeps.fileExists = async (p) =>
-      p === "/project/CLAUDE.md" || p === "/project/.nax/rules/project-conventions.md";
+    _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/project-conventions.md"];
+    _rulesCLIDeps.fileExists = async (p) => p === "/project/.nax/rules/project-conventions.md";
     _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
     const dryRun = await rulesMigrateCommand({ dir: "/project", force: true, dryRun: true });
     Object.keys(written).forEach((k) => delete written[k]);
@@ -86,8 +86,8 @@ describe("rulesMigrateCommand — dry-run / real-run parity", () => {
   });
 
   test("AC-10: dry-run and real-run report equal skipped file-name sets (force=false)", async () => {
-    _rulesCLIDeps.fileExists = async (p) =>
-      p === "/project/CLAUDE.md" || p === "/project/.nax/rules/project-conventions.md";
+    _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/project-conventions.md"];
+    _rulesCLIDeps.fileExists = async (p) => p === "/project/.nax/rules/project-conventions.md";
     _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
     const dryRun = await rulesMigrateCommand({ dir: "/project", dryRun: true });
     Object.keys(written).forEach((k) => delete written[k]);
@@ -100,7 +100,7 @@ describe("rulesMigrateCommand — dry-run / real-run parity", () => {
     _rulesCLIDeps.mkdir = async (dir) => {
       mkdirCalls.push(dir);
     };
-    _rulesCLIDeps.fileExists = async (p) => p === "/project/CLAUDE.md";
+    _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/project-conventions.md"];
     _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
     await rulesMigrateCommand({ dir: "/project", dryRun: true });
     expect(mkdirCalls).toHaveLength(0);
@@ -112,7 +112,7 @@ describe("rulesMigrateCommand — dry-run / real-run parity", () => {
     console.log = (...args: unknown[]) => {
       lines.push(args.map(String).join(" "));
     };
-    _rulesCLIDeps.fileExists = async (p) => p === "/project/CLAUDE.md";
+    _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/project-conventions.md"];
     _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
     let dryRun: MigrationOutcome | undefined;
     try {
@@ -132,8 +132,8 @@ describe("rulesMigrateCommand — dry-run / real-run parity", () => {
   });
 
   test("AC-13: an existing unforced target is skipped in both dry-run and real-run", async () => {
-    _rulesCLIDeps.fileExists = async (p) =>
-      p === "/project/CLAUDE.md" || p === "/project/.nax/rules/project-conventions.md";
+    _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/project-conventions.md"];
+    _rulesCLIDeps.fileExists = async (p) => p === "/project/.nax/rules/project-conventions.md";
     _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
     const dryRun = await rulesMigrateCommand({ dir: "/project", dryRun: true });
     Object.keys(written).forEach((k) => delete written[k]);
@@ -143,8 +143,8 @@ describe("rulesMigrateCommand — dry-run / real-run parity", () => {
   });
 
   test("AC-14: an existing unforced target is absent from writes in both dry-run and real-run", async () => {
-    _rulesCLIDeps.fileExists = async (p) =>
-      p === "/project/CLAUDE.md" || p === "/project/.nax/rules/project-conventions.md";
+    _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/project-conventions.md"];
+    _rulesCLIDeps.fileExists = async (p) => p === "/project/.nax/rules/project-conventions.md";
     _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
     const dryRun = await rulesMigrateCommand({ dir: "/project", dryRun: true });
     Object.keys(written).forEach((k) => delete written[k]);
