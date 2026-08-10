@@ -160,19 +160,19 @@ interface MigrateSource {
 }
 
 /**
- * Collect source files to migrate: CLAUDE.md + .claude/rules/*.md
+ * Collect source files to migrate: .claude/rules/*.md
+ *
+ * Root CLAUDE.md is deliberately NOT a source. It used to be, mapped to the
+ * same target basename (`project-conventions.md`) as
+ * `.claude/rules/project-conventions.md` — a collision `planMigration`
+ * resolves via `fileExists` BEFORE any write, so both sources became writes
+ * to the identical target and the second write silently clobbered the
+ * first. `.claude/rules/*.md` basenames are unique within that one
+ * directory, so dropping CLAUDE.md as a source removes the collision at
+ * its root instead of adding duplicate-target detection.
  */
 async function collectMigrationSources(workdir: string): Promise<MigrateSource[]> {
   const sources: MigrateSource[] = [];
-
-  // CLAUDE.md at root
-  const claudeMdPath = join(workdir, "CLAUDE.md");
-  if (await _rulesCLIDeps.fileExists(claudeMdPath)) {
-    const content = await _rulesCLIDeps.readFile(claudeMdPath);
-    if (content.trim()) {
-      sources.push({ sourcePath: claudeMdPath, targetFileName: "project-conventions.md", content });
-    }
-  }
 
   // .claude/rules/*.md
   const rulesDir = join(workdir, ".claude", "rules");
@@ -194,9 +194,10 @@ async function collectMigrationSources(workdir: string): Promise<MigrateSource[]
 /**
  * `nax rules migrate`
  *
- * Reads CLAUDE.md + .claude/rules/*.md from the project and writes a
- * .nax/rules/ draft with basic neutralization applied. The operator
- * reviews the result before committing.
+ * Reads .claude/rules/*.md from the project and writes a .nax/rules/ draft
+ * with basic neutralization applied. The operator reviews the result before
+ * committing. Root CLAUDE.md is not read as a migration source — see
+ * {@link collectMigrationSources}.
  *
  * Existing .nax/rules/ files are not overwritten unless --force is passed.
  *
@@ -212,7 +213,15 @@ export async function rulesMigrateCommand(options: RulesMigrateOptions): Promise
 
   const sources = await collectMigrationSources(workdir);
   if (sources.length === 0) {
-    console.log("[WARN] No source files found (checked CLAUDE.md and .claude/rules/*.md). Nothing to migrate.");
+    // Stated unconditionally rather than probed: a project whose rules live only in
+    // root CLAUDE.md is exactly the case that used to migrate and now does not, and
+    // "no source files found" alone reads as a bug to an operator looking at a
+    // CLAUDE.md sitting right there. Naming the boundary is cheaper than a fileExists
+    // call, and keeps this command from reading CLAUDE.md for any purpose at all.
+    console.log("[WARN] No source files found (checked .claude/rules/*.md). Nothing to migrate.");
+    console.log(
+      "[WARN] Root CLAUDE.md is not a migration source. Move the rules you want migrated into .claude/rules/, or author .nax/rules/ directly.",
+    );
     return { written: [], skipped: [] };
   }
 

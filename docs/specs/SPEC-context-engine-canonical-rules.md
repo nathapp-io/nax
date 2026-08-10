@@ -151,13 +151,23 @@ Generation is optional. Projects that don't run agents outside nax can ignore it
 
 ### Migration path
 
-For projects with existing `CLAUDE.md` + `.claude/rules/`:
+For projects with existing `.claude/rules/`:
 
 #### `nax rules migrate`
 
 ```
-nax rules migrate [--from=CLAUDE.md] [--from=.claude/rules/] [--to=.nax/rules/] [--dry-run]
+nax rules migrate [--from=.claude/rules/] [--to=.nax/rules/] [--dry-run]
 ```
+
+> **Revised 2026-08-10.** As originally specified, migrate also read root `CLAUDE.md` and wrote it
+> to target basename `project-conventions.md`. That collided with `.claude/rules/project-conventions.md`,
+> which maps to the same basename: the planner resolved every existence check *before* any write, so
+> both sources became writes to one path and the second silently clobbered the first — the CLI
+> reported two files written where one existed. `.claude/rules/*.md` basenames are unique within a
+> single directory, so dropping `CLAUDE.md` as a source removes the collision at its root.
+> Consequence: a project whose rules live only in `CLAUDE.md` now has nothing to migrate and is told
+> so. `CLAUDE.md` remains a one-way *output* of `nax rules export --agent=claude`; migrate never
+> wrote to it and still does not.
 
 Behavior:
 
