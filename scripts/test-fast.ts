@@ -10,7 +10,7 @@ const SIGNAL_EXIT_CODE: Record<"SIGINT" | "SIGTERM" | "SIGHUP", number> = {
   SIGHUP: 129,
 };
 
-let activeProcess: Bun.Subprocess<"ignore", "inherit", "inherit"> | null = null;
+let activeProcess: Bun.Subprocess<"inherit", "inherit", "inherit"> | null = null;
 let shuttingDown = false;
 
 function killProcessGroup(pid: number, signal: NodeJS.Signals): void {
