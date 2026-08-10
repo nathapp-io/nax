@@ -27,38 +27,6 @@ on:
       - '.github/workflows/**'
 
 jobs:
-  checks:
-    name: ${{ matrix.check }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    strategy:
-      fail-fast: true
-      matrix:
-        # `check:all` is the single aggregator for every static gate (lint
-        # included). Adding a gate to package.json is enough to make CI run it —
-        # `check:gate-reachability`, inside `check:all`, fails if one is orphaned.
-        check: [typecheck, check:all]
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.13"
-
-      - name: Cache bun dependencies
-        uses: actions/cache@v5
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-${{ runner.os }}-
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Run ${{ matrix.check }}
-        run: bun run ${{ matrix.check }}
-
   test:
     name: test
     runs-on: ubuntu-latest
@@ -80,6 +48,16 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      # Runs first since it's ~1-2s — fail fast before the slower steps below.
+      - name: Typecheck
+        run: bun run typecheck
+
+      # `check:all` is the single aggregator for every static gate (lint
+      # included). Adding a gate to package.json is enough to make CI run it —
+      # `check:gate-reachability`, inside `check:all`, fails if one is orphaned.
+      - name: Check all
+        run: bun run check:all
 
       - name: Test (unit)
         run: bun test test/unit/ --timeout=60000 --bail
