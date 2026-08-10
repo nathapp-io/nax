@@ -1,7 +1,6 @@
 {
-  "updatedAt": "2026-08-09T05:16:56.067Z",
+  "updatedAt": "2026-08-10T06:14:46.745Z",
   "byFile": {
-    "src/agents/acp/adapter.ts": 629,
     "src/agents/acp/spawn-client.ts": 734,
     "src/agents/manager.ts": 790,
     "src/context/engine/providers/code-neighbor.ts": 613,
