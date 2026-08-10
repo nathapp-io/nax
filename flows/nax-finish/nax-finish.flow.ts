@@ -36,6 +36,12 @@
  *   faced mechanical checks. A test-only fix skips the re-review by explicit
  *   cost tradeoff; see `gateCommitRoute` for why that is a known hole. The skip
  *   records `review-skipped`, so it is visible in the audit.
+ * - `load_ctx` and `open_pr` both route to `escalate` rather than throwing on
+ *   their own failures. acpx has no error edge, so a throw ends the run with no
+ *   result file for the plugin to read or notify from — the one outcome that
+ *   must always be reported is "a human is needed" (#1399). `open_pr` matters
+ *   most: it is reached only after every gate is green, so a failed push or
+ *   forge call there discards a completed, verified run.
  * - Every `commit_*` node appends its round to the finish-audit trail as it
  *   happens, rather than a terminal node reconstructing them from
  *   `ctx.state.steps`. Appending live is what makes the trail survive a flow
@@ -49,6 +55,7 @@ import { narrativePrompt, parseNarrativeNode } from "./narrative";
 import { buildReviewPrompt, fixPrompt } from "./review-prompts";
 import {
   _contextDeps,
+  acceptanceGateNode,
   amendPrBodyNode,
   appendRound,
   buildCommitRound,
@@ -59,21 +66,19 @@ import {
   detectForge,
   filesInCommit,
   loadFinishPrContext,
-  loadQualityCommands,
   openOrPromotePr,
   partitionTestFiles,
   postEscalation,
   preflight,
+  qualityGatesNode,
   resolveFeature,
   routeReviewAndRecord,
-  runAcceptanceGate,
-  runQualityGates,
   writeResult,
 } from "./steps";
 import type { Forge } from "./steps/forge";
 import { _prBodyDeps, buildFinishBody, buildFinishTitle } from "./steps/pr-body";
 import type { FinishInput, FinishPhase, FinishResult, ReviewVerdict } from "./types";
-import { MAX_FIX_ATTEMPTS, parseFixVerdict, parseReviewVerdict, repromptCount } from "./verdict";
+import { parseFixVerdict, parseReviewVerdict, repromptCount } from "./verdict";
 
 /**
  * Disabled only on an explicit "0". An unset variable means enabled, so a flow
@@ -92,59 +97,6 @@ export const _openPrDeps = {
   buildFinishTitle,
   buildFinishBody,
 };
-
-/**
- * Re-run the acceptance gate, routing on the shared fix-cap rules.
- *
- * "Nothing ran" is not a pass — the same rule `quality_gates` applies to an
- * unconfigured repo. `nax features resolve` reports `groups: []` for BOTH
- * `no-prd` and `disabled`, and reports `exists: false` for a group whose test
- * was expected at its canonical path but never generated. Treating all of those
- * as green let the flow open a ready PR having verified nothing about the
- * feature's own contract (#1398). Only `disabled` — the repo's explicit opt-out
- * — skips cleanly.
- */
-async function acceptanceGateNode(ctx: {
-  input: unknown;
-  outputs: unknown;
-  state: { steps: { nodeId: string }[] };
-}): Promise<{ route: string; reason?: string; output: string }> {
-  const i = inputOf(ctx);
-  const { groups = [], acceptanceStatus } = loadCtxOf(ctx);
-  if (acceptanceStatus === "disabled") {
-    return { route: "proceed", output: "[acceptance] disabled in .nax/config.json — skipping" };
-  }
-  if (acceptanceStatus === "no-prd") {
-    return {
-      route: "escalate",
-      reason: `Acceptance targets could not be computed (status: no-prd) — nothing was verified for "${i.feature}".`,
-      output: "[acceptance] no prd.json resolved — acceptance targets unknown",
-    };
-  }
-
-  const r = await runAcceptanceGate(i.workdir, groups, { timeoutMs: i.timeouts?.acceptanceMs });
-  if (r.passed) {
-    // A real failure below routes to the fix loop, which is more actionable;
-    // the coverage hole is only reported once the runnable groups are green.
-    if (r.missing.length > 0) {
-      return {
-        route: "escalate",
-        reason: `Acceptance test never generated for: ${r.missing.join(", ")} — that package's contract is unverified.`,
-        output: r.output,
-      };
-    }
-    return { route: "proceed", output: r.output };
-  }
-  const attempts = fixAttemptCount(ctx, "fix_acceptance");
-  if (attempts >= MAX_FIX_ATTEMPTS) {
-    return {
-      route: "escalate",
-      reason: `Acceptance tests still failing after ${attempts} fix attempts.`,
-      output: r.output,
-    };
-  }
-  return { route: "fix", output: r.output };
-}
 
 /**
  * Route for `commit_gate`, whose successor depends on what the fix touched.
@@ -260,6 +212,7 @@ export default defineFlow({
           testFileRegex: resolution.testFileRegex,
           commitsAhead: pf.commitsAhead,
           route: pf.route,
+          ...(pf.reason ? { reason: pf.reason } : {}),
         };
       },
     },
@@ -333,75 +286,7 @@ export default defineFlow({
     commit_gate: commitFixNode("gate"),
     quality_gates: {
       nodeType: "action",
-      async run(ctx) {
-        const i = inputOf(ctx);
-
-        // Acceptance is gate zero here, not just at the `acceptance` node.
-        // Both fix loops that run after it — quality review and this gate —
-        // edit code, and the repo-root `test` command does not cover the
-        // feature's acceptance tests: they live under `<pkg>/.nax/features/<f>/`
-        // and usually need their own runner config. Re-running them here is what
-        // makes "nothing reaches open_pr without the feature's own contract
-        // passing against the tree as it will ship" true on every path (#1398).
-        //
-        // Unconditional, though the common green path re-runs a gate that
-        // already passed: acceptance is the cheapest gate in the pipeline, and a
-        // conditional skip derived from step history would be a check that can
-        // be *wrong* — a silent false green, the failure mode this exists to
-        // prevent.
-        //
-        // `missing` is deliberately ignored: groups are resolved once at
-        // load_ctx, so a coverage hole was already escalated by the acceptance
-        // node and cannot appear here.
-        const acc = await runAcceptanceGate(i.workdir, loadCtxOf(ctx).groups ?? [], {
-          timeoutMs: i.timeouts?.acceptanceMs,
-        });
-        if (!acc.passed) {
-          // Short-circuit: the repo gates are re-run next round anyway, and
-          // skipping them keeps this out of the "nothing configured" branch
-          // below, which would otherwise misreport configured-but-skipped
-          // commands as absent.
-          const accAttempts = fixAttemptCount(ctx, "fix_gate");
-          const failing = ["acceptance"];
-          if (accAttempts >= MAX_FIX_ATTEMPTS) {
-            return {
-              route: "escalate",
-              reason: `A later fix broke the feature's own contract: acceptance still failing after ${accAttempts} fix attempts.`,
-              ran: [],
-              failing,
-              output: acc.output,
-            };
-          }
-          return { route: "fix", ran: [], failing, output: acc.output };
-        }
-
-        const cmds = await loadQualityCommands(i.workdir);
-        const r = await runQualityGates(i.workdir, cmds, { timeoutMs: i.timeouts?.gateMs });
-        if (r.passed) return { route: "green", ran: r.ran, failing: r.failing, output: r.output };
-        // Nothing configured is not a pass — escalate immediately rather than
-        // open a "ready" PR having verified nothing. An LLM fix node cannot
-        // invent the repo's build/test commands.
-        if (r.ran.length === 0) {
-          return {
-            route: "escalate",
-            reason: "No quality.commands configured in .nax/config.json — nax-finish verified nothing.",
-            ran: r.ran,
-            failing: r.failing,
-            output: r.output,
-          };
-        }
-        const attempts = fixAttemptCount(ctx, "fix_gate");
-        if (attempts >= MAX_FIX_ATTEMPTS) {
-          return {
-            route: "escalate",
-            reason: `Quality gates still failing after ${attempts} fix attempts (${r.failing.join(", ")}).`,
-            ran: r.ran,
-            failing: r.failing,
-            output: r.output,
-          };
-        }
-        return { route: "fix", ran: r.ran, failing: r.failing, output: r.output };
-      },
+      run: qualityGatesNode,
     },
     open_pr: {
       nodeType: "action",
@@ -414,7 +299,24 @@ export default defineFlow({
         }
         // Every fix node edited the working tree; without this the PR would be
         // opened from a remote branch missing all of them.
-        const sync = await commitAndPush(i.workdir, i.branch, `fix(${i.feature}): nax-finish automated fixes`);
+        //
+        // Routed, not thrown. acpx has no error edge, so a throw here kills the
+        // flow — and this is the last node on the happy path, reached only once
+        // every gate is green and every fix has landed. It died before
+        // `writeResult`, so the plugin found no result file and notified
+        // nobody: the #1399 failure mode the `escalate` node was hardened
+        // against and this one was not. A protected branch, an expired token or
+        // a non-fast-forward push is exactly the kind of dead end `escalate`
+        // exists to report.
+        let sync: { committed: boolean };
+        try {
+          sync = await commitAndPush(i.workdir, i.branch, `fix(${i.feature}): nax-finish automated fixes`);
+        } catch (error) {
+          return {
+            route: "escalate",
+            reason: `nax-finish could not push "${i.branch}", so no PR was opened: ${String(error)}`,
+          };
+        }
 
         const fallbackTitle = `nax-finish: ${i.feature}`;
         const fallbackBody = `Automated finish of \`${i.feature}\`.`;
@@ -441,7 +343,18 @@ export default defineFlow({
           body = fallbackBody;
         }
 
-        const r = await openOrPromotePr(i.workdir, i.branch, title, body, forge);
+        // Same reasoning as the push above: a forge that refuses to create or
+        // promote (rate limit, revoked token, unrecognised remote) must reach a
+        // human through `escalate`, not take the flow down silently.
+        let r: { status: "opened" | "promoted" | "already-ready"; url?: string };
+        try {
+          r = await openOrPromotePr(i.workdir, i.branch, title, body, forge);
+        } catch (error) {
+          return {
+            route: "escalate",
+            reason: `nax-finish could not open or promote the PR for "${i.branch}": ${String(error)}`,
+          };
+        }
         await writeResult(i, { feature: i.feature, status: r.status, url: r.url });
         // The PR now exists with the mechanical narrative already in place.
         // Anything the narrative node does from here is an improvement on a
@@ -478,12 +391,14 @@ export default defineFlow({
             : routed.route_quality?.route === "escalate"
               ? routed.route_quality
               : undefined;
-        const loopExhausted =
-          outs.acceptance?.route === "escalate"
-            ? outs.acceptance
-            : outs.quality_gates?.route === "escalate"
-              ? outs.quality_gates
-              : undefined;
+        // Ordered by how far down the graph the node sits, so the *last* thing
+        // that gave up names the reason. `load_ctx` and `open_pr` are here
+        // because both can now route here rather than throw — a base ref that
+        // does not resolve, and a push or forge call that failed after every
+        // gate was green.
+        const loopExhausted = [outs.open_pr, outs.quality_gates, outs.acceptance, outs.load_ctx].find(
+          (o) => o?.route === "escalate",
+        );
         const reason =
           verdict?.escalationReason ?? loopExhausted?.reason ?? "nax-finish could not reach a green, shippable state";
 
@@ -531,7 +446,15 @@ export default defineFlow({
     },
   },
   edges: [
-    { from: "load_ctx", switch: { on: "$.route", cases: { proceed: "acceptance", "nothing-to-finish": "open_pr" } } },
+    {
+      from: "load_ctx",
+      switch: {
+        on: "$.route",
+        // `escalate`: the branch could not be measured against its base at all,
+        // so neither "proceed" nor "nothing-to-finish" would be a true claim.
+        cases: { proceed: "acceptance", "nothing-to-finish": "open_pr", escalate: "escalate" },
+      },
+    },
     {
       from: "acceptance",
       switch: { on: "$.route", cases: { proceed: "review_spec", fix: "fix_acceptance", escalate: "escalate" } },
@@ -591,7 +514,10 @@ export default defineFlow({
     },
     // The narrative runs only once the PR exists. acpx has no error edge, so an
     // acp node before `open_pr` would be able to fail the flow and cost the PR.
-    { from: "open_pr", switch: { on: "$.route", cases: { narrate: "narrative", done: "finish_done" } } },
+    {
+      from: "open_pr",
+      switch: { on: "$.route", cases: { narrate: "narrative", done: "finish_done", escalate: "escalate" } },
+    },
     { from: "narrative", to: "amend_body" },
   ],
 });

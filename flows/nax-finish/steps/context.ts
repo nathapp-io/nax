@@ -92,11 +92,42 @@ export function partitionTestFiles(paths: string[], regexSources: string[]): { t
   return { test, nonTest };
 }
 
-export async function preflight(
-  workdir: string,
-  base: string,
-): Promise<{ commitsAhead: number; route: "proceed" | "nothing-to-finish" }> {
+export interface PreflightOutcome {
+  commitsAhead: number;
+  route: "proceed" | "nothing-to-finish" | "escalate";
+  /** Set only on `escalate` — why the count could not be trusted. */
+  reason?: string;
+}
+
+/**
+ * How far ahead of the base branch this branch is.
+ *
+ * A failed count must never be reported as zero. `base` reaches here from
+ * `detectBaseBranch`, whose last-resort `origin/master` is returned without
+ * being verified — so a repo whose base ref is not fetched locally makes
+ * `rev-list` exit non-zero with empty stdout. `Number.parseInt("") || 0` turned
+ * that into `0`, indistinguishable from "this branch has no new commits", and
+ * the flow reported `nothing-to-finish` having reviewed, verified and pushed
+ * nothing. Both the non-zero exit and unreadable output escalate instead: a
+ * human can fetch the base, and no fix node can.
+ */
+export async function preflight(workdir: string, base: string): Promise<PreflightOutcome> {
   const res = await _contextDeps.run(["git", "rev-list", "--count", `${base}..HEAD`], { cwd: workdir });
-  const commitsAhead = Number.parseInt(res.stdout.trim(), 10) || 0;
+  if (res.exitCode !== 0) {
+    const detail = res.stderr.trim() || res.stdout.trim() || `exit ${res.exitCode}`;
+    return {
+      commitsAhead: 0,
+      route: "escalate",
+      reason: `Could not count commits against "${base}" — git rev-list failed: ${detail}. The base branch may not exist locally; nax-finish will not treat that as "nothing to finish".`,
+    };
+  }
+  const commitsAhead = Number.parseInt(res.stdout.trim(), 10);
+  if (!Number.isFinite(commitsAhead)) {
+    return {
+      commitsAhead: 0,
+      route: "escalate",
+      reason: `git rev-list --count ${base}..HEAD exited 0 but printed no readable count: "${res.stdout.trim()}".`,
+    };
+  }
   return { commitsAhead, route: commitsAhead > 0 ? "proceed" : "nothing-to-finish" };
 }

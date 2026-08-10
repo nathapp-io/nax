@@ -39,6 +39,8 @@ export interface LoadCtxOutput {
   /** Test-file regex sources from `nax features resolve`; empty = cannot classify. */
   testFileRegex?: string[];
   route?: string;
+  /** Set only when `route` is `escalate` — see `preflight`. */
+  reason?: string;
 }
 
 export function fixAttemptCount(ctx: StepsCtx, fixNodeId: string): number {
@@ -111,15 +113,32 @@ export function findingsOf(ctx: OutputsCtx, phase: FinishPhase): Finding[] {
  * would have discarded the earlier `shaBefore` and silently under-scoped the
  * review.
  *
+ * Only commit steps that actually **committed** anchor the window. A fix node
+ * that edited nothing still records a `commit_*` step, and its `shaBefore` is
+ * the current HEAD — so scoping to it asks the reviewer for `HEAD..HEAD`, an
+ * empty diff, while the prompt tells it the prior findings "have since been
+ * fixed and committed". It returns clean, `route_*` sends the flow onward, and
+ * the findings ship unfixed. That leaves the loop through the green door, so
+ * `MAX_FIX_ATTEMPTS` never catches it. A no-op round therefore either yields
+ * the window to a later real commit, or falls back to a full review.
+ *
+ * Rounds journalled before `committed` existed carry no such field; `!== false`
+ * keeps replaying them on the previous behaviour rather than widening every
+ * resumed review to the whole branch.
+ *
  * Returns null — a full review — when there is no prior review of this phase
- * (round 1), no commit since it (nothing new to look at), or the commit step
- * recorded no `shaBefore`.
+ * (round 1), no commit landed since it (nothing new to look at), or the commit
+ * step recorded no `shaBefore`.
  */
 export function incrementalSince(ctx: OutputsCtx & StepsCtx, phase: "spec" | "quality"): string | null {
   const steps = ctx.state.steps ?? [];
   const lastReview = steps.map((s) => s.nodeId).lastIndexOf(`review_${phase}`);
   if (lastReview < 0) return null;
-  const firstCommit = steps.slice(lastReview + 1).find((s) => s.nodeId.startsWith("commit_"));
+  const firstCommit = steps
+    .slice(lastReview + 1)
+    .find(
+      (s) => s.nodeId.startsWith("commit_") && (s.output as { committed?: boolean } | undefined)?.committed !== false,
+    );
   if (!firstCommit) return null;
   return (firstCommit.output as { shaBefore?: string | null } | undefined)?.shaBefore ?? null;
 }
