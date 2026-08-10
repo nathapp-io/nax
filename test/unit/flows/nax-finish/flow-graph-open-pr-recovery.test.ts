@@ -84,3 +84,44 @@ describe("open_pr — failure routing", () => {
     expect(edge.switch.cases.escalate).toBe("escalate");
   });
 });
+
+/**
+ * Whole-graph invariants, asserted once rather than per edge.
+ *
+ * A switch case naming a node that does not exist dead-ends only when that
+ * route is taken — and the routes added here are the failure paths, which no
+ * happy-path test ever walks. `finish_done` exists solely because acpx requires
+ * a real node for every case, so this is the rule the graph is already built
+ * around; nothing checked it.
+ */
+describe("flow graph integrity", () => {
+  const targetsOf = (edge: (typeof flow.edges)[number]): string[] =>
+    "to" in edge ? [edge.to] : Object.values(edge.switch.cases);
+
+  test("every edge target names a declared node", () => {
+    const declared = new Set(Object.keys(flow.nodes));
+    const dangling = flow.edges.flatMap((e) =>
+      targetsOf(e)
+        .filter((t) => !declared.has(t))
+        .map((t) => `${e.from} -> ${t}`),
+    );
+    expect(dangling).toEqual([]);
+  });
+
+  test("every declared node is reachable from the start node", () => {
+    const reachable = new Set([flow.startAt]);
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const edge of flow.edges) {
+        if (!reachable.has(edge.from)) continue;
+        for (const target of targetsOf(edge)) {
+          if (!reachable.has(target)) {
+            reachable.add(target);
+            grew = true;
+          }
+        }
+      }
+    }
+    expect(Object.keys(flow.nodes).filter((n) => !reachable.has(n))).toEqual([]);
+  });
+});
