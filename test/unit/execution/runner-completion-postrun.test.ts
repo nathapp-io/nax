@@ -644,3 +644,40 @@ describe("runCompletionPhase - monorepo: acceptanceTestPaths passed to runAccept
     expect(cliEntry?.acceptanceEnabled).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// isSequential forwarding: RunnerOptions.parallel -> handleRunCompletion
+// ---------------------------------------------------------------------------
+
+describe("runCompletionPhase - forwards parallel mode as isSequential", () => {
+  // The deferred-regression gate withholds its per-story gate snapshots when
+  // isSequential === false, because `completedAt` order is not causal across
+  // worktrees. That branch was dead: runCompletionPhase never forwarded the
+  // runner's `parallel` option, so isSequential was always undefined and every
+  // run — including parallel ones — attributed blame from those snapshots.
+  // #1527 had already deleted the git-recency fallback, leaving non-causal
+  // snapshots as the only attribution signal in parallel mode.
+  test.each([
+    [undefined, true],
+    [0, false],
+    [4, false],
+  ] as const)("parallel=%s -> isSequential=%s", async (parallel, expectedIsSequential) => {
+    let captured: { isSequential?: boolean } | undefined;
+    _runnerCompletionDeps.handleRunCompletion = mock(async (opts) => {
+      captured = opts as { isSequential?: boolean };
+      return defaultCompletionResult;
+    });
+
+    const config = makeConfig(false);
+    const prd = makePRD([{ id: "US-001", status: "passed" }]);
+    const statusWriter = makeStatusWriter();
+    const opts: RunnerCompletionOptions = {
+      ...makeOpts(config, prd, statusWriter),
+      ...(parallel === undefined ? {} : { parallel }),
+    };
+
+    await runCompletionPhase(opts);
+
+    expect(captured?.isSequential).toBe(expectedIsSequential);
+  });
+});

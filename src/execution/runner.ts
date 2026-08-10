@@ -289,6 +289,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       hooks,
       feature,
       workdir,
+      parallel,
       prdPath,
       statusFile,
       logFilePath,

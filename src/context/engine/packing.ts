@@ -14,13 +14,23 @@
  *
  * Non-floor optimality repair (spec §AC-7, US-004):
  *   Density-greedy is the standard heuristic for fractional knapsack, but
- *   for the 0/1 case (chunks are atomic — no partial packing) it is not
- *   guaranteed to land within 5% of the brute-force optimum in adversarial
- *   inputs (e.g. one huge high-density chunk that excludes many smaller
- *   lower-density ones which would sum to more value). The standard
- *   "best-of(greedy, largest single item)" repair narrows that
- *   gap. Applied to the non-floor pass only — floor
- *   chunks are exempt from the budget and remain greedy/floor-included.
+ *   for the 0/1 case (chunks are atomic — no partial packing) it can fall
+ *   arbitrarily far from the optimum (e.g. one huge high-density chunk that
+ *   excludes many smaller lower-density ones which would sum to more value).
+ *   The standard "best-of(greedy, largest feasible single item)" repair
+ *   applied below is a **½-approximation**: at least half the optimum in
+ *   general, and exactly optimal inside the envelope AC-4's property test
+ *   covers — every item fits, or one feasible item is the optimum.
+ *
+ *   It is NOT a 5%-of-optimal guarantee. Outside that envelope the shortfall
+ *   approaches 50%: A(51 tok, score 52), B(50, 50), C(50, 50) at budget 100
+ *   packs [A] = 52 against an optimum of [B, C] = 100. That is accepted, not
+ *   overlooked — real candidate sets are 5–20 chunks with no adversarial
+ *   structure, and closing the gap means exact 0/1 DP (deferred to Phase 3+).
+ *   See `packChunks — documented approximation bound` in packing.test.ts.
+ *
+ *   Applied to the non-floor pass only — floor chunks are exempt from the
+ *   budget and remain greedy/floor-included.
  */
 
 import type { ScoredChunk } from "./scoring";

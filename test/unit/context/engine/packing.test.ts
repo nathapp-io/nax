@@ -391,3 +391,43 @@ describe("packChunks — availableBudgetTokens", () => {
     expect(withUndefined.budgetExcludedIds.sort()).toEqual(withOmitted.budgetExcludedIds.sort());
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// packChunks — documented approximation bound
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("packChunks — documented approximation bound", () => {
+  test("outside the repair envelope the packer is a 1/2-approximation, not 95%-of-optimal", () => {
+    // This test documents the REAL guarantee rather than a desirable outcome.
+    //
+    // SPEC-context-engine-v2.md assumption 7 claimed greedy packing lands
+    // "within 5% of optimal for candidate sets <= 50". It does not.
+    // best-of(greedy, largest feasible single item) is a 1/2-approximation;
+    // AC-4's property test asserts 95% only inside the envelope it generates
+    // (every item fits, or one feasible item is the optimum). This case sits
+    // outside that envelope and the shortfall is 48%.
+    //
+    // If someone later implements exact 0/1 DP, this test SHOULD fail — update
+    // it together with the spec assumption and the packing.ts header, so the
+    // documented bound and the code never drift apart again.
+    const a = makeScored({ id: "A", kind: "code-neighbor", tokens: 51, score: 52, rawScore: 52 });
+    const b = makeScored({ id: "B", kind: "code-neighbor", tokens: 50, score: 50, rawScore: 50 });
+    const c = makeScored({ id: "C", kind: "code-neighbor", tokens: 50, score: 50, rawScore: 50 });
+
+    const result = packChunks([a, b, c], 100);
+    const packedScore = result.packed.reduce((sum, chunk) => sum + chunk.score, 0);
+
+    // Density order is A (1.02), then B and C (1.00). Greedy takes A and then
+    // cannot fit either 50-token chunk; the largest feasible single item is
+    // also A. Both candidates score 52 against an optimum of B+C = 100.
+    expect(result.packed.map((chunk) => chunk.id)).toEqual(["A"]);
+    expect(packedScore).toBe(52);
+
+    // The optimum fits the budget exactly, so this is a genuine miss, not an
+    // infeasible target.
+    expect(b.tokens + c.tokens).toBeLessThanOrEqual(100);
+    expect(packedScore).toBeLessThan(0.95 * (b.score + c.score));
+    // Still at least half the optimum — the bound the repair does guarantee.
+    expect(packedScore).toBeGreaterThanOrEqual(0.5 * (b.score + c.score));
+  });
+});
