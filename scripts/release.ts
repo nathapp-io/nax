@@ -233,14 +233,14 @@ async function bumpRelease() {
   const prBody = `## Release ${tagName}\n\nBumps version: ${currentVersion} → ${nextVersion}\n\nAfter merging, run:\n\`\`\`bash\ngit checkout main && git pull origin main\nbun run release tag\n\`\`\``;
 
   try {
-    const prUrl = (
+    const result = (
       await $`gh pr create --title ${prTitle} --body ${prBody} --base main --head ${branchName} --label skip-changelog`
-    )
-      .text()
-      .then((t) => t.trim());
-    console.log(`\n✅ PR created: ${await prUrl}`);
+    );
+    const prUrl = result.text().trim();
+    console.log(`\n✅ PR created: ${prUrl}`);
   } catch (e) {
-    console.warn(`   ⚠️  Could not create PR via gh CLI. Push succeeded — create PR manually.`);
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`   ⚠️  gh pr create failed: ${msg}. Push succeeded — create PR manually.`);
   }
 
   // Return to main
