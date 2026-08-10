@@ -182,8 +182,12 @@ export const queueCheckStage: PipelineStage = {
         if (isTargeted) {
           ctx.stories = ctx.stories.filter((s) => s.id !== cmd.storyId);
 
-          // If batch is now empty, skip this iteration
+          // If batch is now empty, skip this iteration. This is the third
+          // early-return path that clears the whole queue file, so it drops any
+          // still-unprocessed commands exactly like PAUSE / ABORT do — audit it
+          // the same way.
           if (ctx.stories.length === 0) {
+            logDroppedCommands(logger, ctx, queueCommands, index);
             await clearQueueFile(ctx.workdir);
             return { action: "skip", reason: "All stories in batch were skipped" };
           }

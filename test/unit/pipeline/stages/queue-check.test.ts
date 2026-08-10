@@ -346,4 +346,38 @@ describe("queueCheckStage — PAUSE/ABORT dropped-command audit", () => {
     // storyId must be the first key in the data object (project-conventions.md).
     expect(Object.keys(dropped.data)[0]).toBe("storyId");
   });
+
+  test("a SKIP that empties the batch also records the commands it drops", async () => {
+    // Third early-return path that clears the whole queue file: SKIP removes the
+    // last story from the batch, so the stage returns "skip" before reaching the
+    // trailing RETRY. Same loss as PAUSE/ABORT, so it must be audited the same way.
+    const story = makeStory({ id: "US-001", status: "pending" });
+    const other = makeStory({ id: "US-002", status: "failed" });
+    const prd = makePRD({ userStories: [story, other] });
+    const ctx = {
+      workdir,
+      featureDir: workdir,
+      prd,
+      stories: [story],
+      story,
+    } as unknown as PipelineContext;
+
+    await Bun.write(join(workdir, ".queue.txt"), "SKIP US-001\nRETRY US-002\n");
+
+    const result = await queueCheckStage.execute(ctx);
+    expect(result.action).toBe("skip");
+    // The dropped RETRY really did not run — US-002 is still failed.
+    expect(ctx.prd.userStories[1].status).toBe("failed");
+
+    await getLogger().flush();
+    const lines = (await Bun.file(logFile).text()).trim().split("\n").filter(Boolean);
+    const entries = lines.map((l) => JSON.parse(l));
+    const dropped = entries.find((e) => e.stage === "queue" && e.message.includes("Dropped"));
+
+    expect(dropped).toBeDefined();
+    expect(dropped.data.storyId).toBe(story.id);
+    expect(dropped.data.droppedCount).toBe(1);
+    expect(dropped.data.droppedTypes).toEqual(["RETRY"]);
+    expect(Object.keys(dropped.data)[0]).toBe("storyId");
+  });
 });
