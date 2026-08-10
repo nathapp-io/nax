@@ -20,7 +20,7 @@
  *         (a tier escalation must yield a fresh budget).
  *   AC5 — storyScopedFixBudget enabled + first call runs 2 iterations then a
  *         second call runs 1 iteration for the same story/tier key →
- *         getStoryFixState(store, storyFixKey(storyId, tier)).iterations has
+ *         getStoryFixState(store, storyFixKey(storyId, tier, agent)).iterations has
  *         length 2 after the first, length 3 after the second.
  *   AC6 — storyScopedFixBudget enabled + ExecutionPlan.run executes a story
  *         whose main rectification consumes 2 of a 3-attempt per-strategy
@@ -54,6 +54,9 @@ import type { CallContext, DeterministicOperation, RunOperation } from "@/operat
 const testSel = pickSelector("test-story-budget-sel", "execution");
 
 const RB_FIXOP_NAME = "rb-fixop";
+
+/** Default agent for the test contexts; the store key includes it (#1530). */
+const RB_AGENT = "claude";
 
 const RB_FINDING: Finding = {
   source: "test-runner",
@@ -125,12 +128,12 @@ function createRuntimeWithConfig(config: ReturnType<typeof makeNaxConfig>): NaxR
   return makeTestRuntime({ config, agentManager: makeMockAgentManager() });
 }
 
-function rbCtx(runtime: NaxRuntime, storyId: string, tier?: string): CallContext {
+function rbCtx(runtime: NaxRuntime, storyId: string, tier?: string, agentName = RB_AGENT): CallContext {
   return {
     runtime,
     packageView: runtime.packages.repo(),
     packageDir: "/tmp",
-    agentName: "claude",
+    agentName,
     storyId,
     ...(tier !== undefined
       ? {
@@ -149,12 +152,20 @@ async function rbRun(
   opts: {
     storyId: string;
     tier?: string;
+    agentName?: string;
     maxAttempts?: number;
     resolveAfterCalls?: number;
     overrides?: Record<string, unknown>;
   },
 ): Promise<{ dispatchCount: number; phaseOutputs: Record<string, unknown>; result: unknown }> {
-  const { storyId, tier, maxAttempts = 3, resolveAfterCalls = Number.POSITIVE_INFINITY, overrides } = opts;
+  const {
+    storyId,
+    tier,
+    agentName,
+    maxAttempts = 3,
+    resolveAfterCalls = Number.POSITIVE_INFINITY,
+    overrides,
+  } = opts;
   let dispatchCount = 0;
   let gateCalls = 0;
   const origCallOp = _storyOrchestratorDeps.callOp;
@@ -174,7 +185,7 @@ async function rbRun(
   }) as typeof _storyOrchestratorDeps.callOp;
 
   try {
-    const ctx = rbCtx(runtime, storyId, tier);
+    const ctx = rbCtx(runtime, storyId, tier, agentName);
     const phaseOutputs = rbSeedPhaseOutputs();
     const result = await runRectification(ctx, rbState(maxAttempts), {}, phaseOutputs, {
       skipGateTriage: true,
@@ -279,6 +290,41 @@ describe("US-003 AC4: enabled + same storyId but different tier → fresh budget
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// #1530 — a cross-agent escalation rung that reuses a tier name.
+// The ladder matches rungs by (tier, agent), so `fast/agent-a -> fast/agent-b`
+// is a real escalation. Keying the budget on the tier alone handed the escalated
+// agent the previous agent's exhausted counters, so it got zero fix iterations.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("#1530: enabled + same tier but different agent → fresh budget", () => {
+  test("a same-tier cross-agent escalation yields a fresh budget; the same rung stays exhausted", async () => {
+    const runtime = track(makeBudgetRuntime(true));
+
+    const first = await rbRun(runtime, { storyId: "S8", tier: "fast", agentName: "agent-a", maxAttempts: 3 });
+    expect(first.dispatchCount).toBe(3);
+
+    // Same rung — the budget IS shared, so nothing dispatches.
+    const sameRung = await rbRun(runtime, { storyId: "S8", tier: "fast", agentName: "agent-a", maxAttempts: 3 });
+    expect(sameRung.dispatchCount).toBe(0);
+
+    // Next rung up the ladder: same tier name, different agent. The escalated
+    // agent must get its own full cap rather than inheriting an exhausted one.
+    const nextRung = await rbRun(runtime, { storyId: "S8", tier: "fast", agentName: "agent-b", maxAttempts: 3 });
+    expect(nextRung.dispatchCount).toBe(3);
+  });
+
+  test("iterations accumulate per rung, not per tier", async () => {
+    const runtime = track(makeBudgetRuntime(true));
+
+    await rbRun(runtime, { storyId: "S9", tier: "fast", agentName: "agent-a", maxAttempts: 3, resolveAfterCalls: 2 });
+    await rbRun(runtime, { storyId: "S9", tier: "fast", agentName: "agent-b", maxAttempts: 3, resolveAfterCalls: 1 });
+
+    expect(getStoryFixState(runtime.storyFixHistory, storyFixKey("S9", "fast", "agent-a")).iterations).toHaveLength(2);
+    expect(getStoryFixState(runtime.storyFixHistory, storyFixKey("S9", "fast", "agent-b")).iterations).toHaveLength(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AC5 — getStoryFixState(store, storyFixKey(storyId, tier)).iterations
 // accumulates across cycles: first run 2 iterations → length 2; second run 1
 // iteration → length 3.
@@ -290,7 +336,7 @@ describe("US-003 AC5: enabled + store accumulates iterations across cycles", () 
     // First call: stop the gate after 2 fix dispatches so the cycle records
     // exactly two iterations without hitting the per-strategy cap.
     await rbRun(runtime, { storyId: "S6", maxAttempts: 3, resolveAfterCalls: 2 });
-    const key = storyFixKey("S6");
+    const key = storyFixKey("S6", undefined, RB_AGENT);
     expect(getStoryFixState(runtime.storyFixHistory, key).iterations).toHaveLength(2);
 
     // Second call: stop the gate after 1 fix dispatch — exactly one new
@@ -553,7 +599,7 @@ async function runPlanResumeScenario(
       | undefined;
     return {
       dispatchCount,
-      storeIterations: getStoryFixState(runtime.storyFixHistory, storyFixKey(storyId)).iterations.length,
+      storeIterations: getStoryFixState(runtime.storyFixHistory, storyFixKey(storyId, undefined, RB_AGENT)).iterations.length,
       rectificationExitReason: rectOutput?.exitReason,
     };
   } finally {

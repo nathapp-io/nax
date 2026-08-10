@@ -291,7 +291,10 @@ export async function runRectification(
   const storyFixBudgetEnabled =
     !nbfPath && ctx.runtime.configLoader.current().execution?.rectification?.storyScopedFixBudget === true;
   const store = ctx.runtime.storyFixHistory;
-  const fixKey = storyFixBudgetEnabled ? storyFixKey(ctx.storyId, ctx.phaseTelemetry?.tier) : undefined;
+  // Keyed on the full escalation rung (tier AND agent), not the tier alone: a
+  // cross-agent ladder can escalate to a rung that reuses a tier name, and a
+  // tier-only key hands that rung the previous agent's exhausted budget (#1530).
+  const fixKey = storyFixBudgetEnabled ? storyFixKey(ctx.storyId, ctx.phaseTelemetry?.tier, ctx.agentName) : undefined;
   const fixState = fixKey !== undefined && store ? getStoryFixState(store, fixKey) : undefined;
   // Captured before the cycle runs so the exit-reason remap below (US-003 AC6)
   // reflects the budget state the cycle actually started with, independent of

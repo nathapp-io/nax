@@ -166,6 +166,8 @@ export async function runFixCycle<F extends Finding>(
 
   const storyId = ctx.storyId;
   const packageDir = ctx.packageDir;
+  /** Correlation triple every `findings.cycle` log line carries; `storyId` stays first. */
+  const logCtx = { storyId, packageDir, cycleName };
   let totalCostUsd = 0;
 
   // Per-finding retirement ledger (#1369, #1384) — see `createDeclineLedger` for why
@@ -218,9 +220,7 @@ export async function runFixCycle<F extends Finding>(
       const orphanSources = [...new Set(cycle.findings.map((f) => f.source))];
       const retiredStrategies = declines.retiredNames(cycle.strategies, cycle.findings);
       logger?.warn("findings.cycle", "cycle exited — no matching strategy (orphaned findings)", {
-        storyId,
-        packageDir,
-        cycleName,
+        ...logCtx,
         reason: "no-strategy",
         findingsCount: cycle.findings.length,
         orphanSources,
@@ -242,9 +242,7 @@ export async function runFixCycle<F extends Finding>(
     if (uncappedActive.length === 0) {
       const exhaustedStrategy = active.find((s) => countStrategyAttempts(history, s.name) >= s.maxAttempts);
       logger?.info("findings.cycle", "cycle exited — all active strategies exhausted", {
-        storyId,
-        packageDir,
-        cycleName,
+        ...logCtx,
         reason: "max-attempts-per-strategy",
         exhaustedStrategy: exhaustedStrategy?.name,
       });
@@ -261,9 +259,7 @@ export async function runFixCycle<F extends Finding>(
     const totalAttempts = countTotalAttempts(history);
     if (totalAttempts >= cycle.config.maxAttemptsTotal) {
       logger?.info("findings.cycle", "cycle exited — total attempt cap reached", {
-        storyId,
-        packageDir,
-        cycleName,
+        ...logCtx,
         reason: "max-attempts-total",
         totalAttempts,
         maxAttemptsTotal: cycle.config.maxAttemptsTotal,
@@ -280,13 +276,19 @@ export async function runFixCycle<F extends Finding>(
     for (const strategy of uncappedActive) {
       const bailReason = strategy.bailWhen?.(history) ?? null;
       if (bailReason !== null) {
+        // `bailDetail` is computed over `history`, which folds in iterations
+        // carried from earlier cycles for this rung. Without the two counters
+        // below, a bail that fires on purely inherited history reads as a
+        // nonsense log — a detail quoting counts no iteration of THIS cycle
+        // produced (#1530). Report where the numbers came from.
+        const inheritedIterations = cycle.priorIterations?.length ?? 0;
         logger?.info("findings.cycle", "cycle exited — bail predicate fired", {
-          storyId,
-          packageDir,
-          cycleName,
+          ...logCtx,
           reason: "bail-when",
           strategyName: strategy.name,
           bailDetail: bailReason,
+          cycleIterations: cycle.iterations.length,
+          ...(inheritedIterations > 0 ? { inheritedIterations } : {}),
         });
         return finish({
           iterations: cycle.iterations,
@@ -379,9 +381,7 @@ export async function runFixCycle<F extends Finding>(
         // return before doing so, reporting costUsd: 0 for real spend (#1369).
         totalCostUsd += fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0);
         logger?.info("findings.cycle", "cycle exited — agent gave up", {
-          storyId,
-          packageDir,
-          cycleName,
+          ...logCtx,
           reason: "agent-gave-up",
           strategyName: firstUnresolved.strategyName,
           unresolvedDetail: firstUnresolved.unresolved,
@@ -396,9 +396,7 @@ export async function runFixCycle<F extends Finding>(
       }
 
       logger?.info("findings.cycle", "strategy gave up — retired, continuing with co-run siblings", {
-        storyId,
-        packageDir,
-        cycleName,
+        ...logCtx,
         strategyName: firstUnresolved.strategyName,
         unresolvedDetail: firstUnresolved.unresolved,
         ranWithoutGivingUp: fixesApplied.filter((fa) => !fa.unresolved).map((fa) => fa.strategyName),
@@ -442,9 +440,7 @@ export async function runFixCycle<F extends Finding>(
           logger,
         );
         logger?.warn("findings.cycle", "lite validate failed on terminal exhausted branch", {
-          storyId,
-          packageDir,
-          cycleName,
+          ...logCtx,
           error: errorMessage(err),
         });
         return finish({
@@ -475,9 +471,7 @@ export async function runFixCycle<F extends Finding>(
 
       if (liteFindingsAfter.length === 0 && !liteShortCircuited) {
         logger?.info("findings.cycle", "cycle exited — resolved after terminal lite validate", {
-          storyId,
-          packageDir,
-          cycleName,
+          ...logCtx,
           reason: "resolved",
         });
         return finish({
@@ -506,9 +500,7 @@ export async function runFixCycle<F extends Finding>(
           continue;
         }
         logger?.info("findings.cycle", "cycle exited — validate short-circuited", {
-          storyId,
-          packageDir,
-          cycleName,
+          ...logCtx,
           reason: "validate-short-circuit",
           liteFindingsAfterCount: liteFindingsAfter.length,
         });
@@ -521,9 +513,7 @@ export async function runFixCycle<F extends Finding>(
       }
 
       logger?.info("findings.cycle", "cycle exited — strategy attempt cap reached (lite validate)", {
-        storyId,
-        packageDir,
-        cycleName,
+        ...logCtx,
         reason: "max-attempts-per-strategy",
         exhaustedStrategy: group[0]?.name,
         liteFindingsAfterCount: liteFindingsAfter.length,
@@ -562,9 +552,7 @@ export async function runFixCycle<F extends Finding>(
           });
         }
         logger?.warn("findings.cycle", "validator retry", {
-          storyId,
-          packageDir,
-          cycleName,
+          ...logCtx,
           attempt: validatorAttempt + 1,
           error: errorMessage(err),
         });
