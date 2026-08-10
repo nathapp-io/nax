@@ -8,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { initLogger, resetLogger } from "@/logger";
+import { getLogger, initLogger, resetLogger } from "@/logger";
 import { queueCheckStage } from "@/pipeline";
 import type { PipelineContext } from "@/pipeline";
 import { cleanupTempDir, makePRD, makeStory, makeTempDir } from "@test/helpers";
@@ -91,6 +91,33 @@ describe("queueCheckStage — RETRY / PRIORITY", () => {
     expect(ctx.stories.map((s) => s.id)).toEqual(["US-001"]);
   });
 
+  test("SKIP for a story outside the current batch still marks it skipped (out-of-batch SKIP is not discarded)", async () => {
+    const s1 = makeStory({ id: "US-001", status: "running" });
+    const s2 = makeStory({ id: "US-007", status: "pending" });
+    const prd = makePRD({ userStories: [s1, s2] });
+    // Sequential mode: ctx.stories only contains the story currently running (US-001).
+    const ctx = makeCtx(workdir, { prd, stories: [s1], story: s1 });
+
+    await Bun.write(join(workdir, ".queue.txt"), "SKIP US-007\n");
+
+    const result = await queueCheckStage.execute(ctx);
+
+    expect(ctx.prd.userStories[1].status).toBe("skipped");
+    // Not in the current batch, so the batch itself is unaffected.
+    expect(result.action).toBe("continue");
+    expect(ctx.stories.map((s) => s.id)).toEqual(["US-001"]);
+  });
+
+  test("SKIP for an unknown story ID is a no-op and continues", async () => {
+    const ctx = makeCtx(workdir);
+    await Bun.write(join(workdir, ".queue.txt"), "SKIP US-999\n");
+
+    const result = await queueCheckStage.execute(ctx);
+
+    expect(result.action).toBe("continue");
+    expect(ctx.prd.userStories[0].status).toBe("pending");
+  });
+
   test("PAUSE still stops execution (existing behavior)", async () => {
     const ctx = makeCtx(workdir);
     await Bun.write(join(workdir, ".queue.txt"), "PAUSE\n");
@@ -104,6 +131,21 @@ describe("queueCheckStage — RETRY / PRIORITY", () => {
     const ctx = makeCtx(workdir);
     const result = await queueCheckStage.execute(ctx);
     expect(result.action).toBe("continue");
+  });
+
+  test("with no featureDir, the PRD fallback path is under .nax/features/unknown (not nax/features/unknown)", async () => {
+    const failedStory = makeStory({ id: "US-001", status: "failed" });
+    const prd = makePRD({ userStories: [failedStory] });
+    const ctx = makeCtx(workdir, { prd, stories: [failedStory], story: failedStory, featureDir: undefined });
+
+    await Bun.write(join(workdir, ".queue.txt"), "RETRY US-001\n");
+
+    await queueCheckStage.execute(ctx);
+
+    const dotPrdFile = Bun.file(join(workdir, ".nax", "features", "unknown", "prd.json"));
+    const noDotPrdFile = Bun.file(join(workdir, "nax", "features", "unknown", "prd.json"));
+    expect(await dotPrdFile.exists()).toBe(true);
+    expect(await noDotPrdFile.exists()).toBe(false);
   });
 });
 
@@ -259,5 +301,49 @@ describe("queueCheckStage — INJECT", () => {
     } finally {
       cleanupTempDir(outsideDir);
     }
+  });
+});
+
+describe("queueCheckStage — PAUSE/ABORT dropped-command audit", () => {
+  let workdir: string;
+  let logFile: string;
+
+  beforeEach(() => {
+    workdir = makeTempDir("nax-queue-check-dropped-");
+    logFile = join(workdir, "audit.jsonl");
+    initLogger({ level: "silent", filePath: logFile });
+  });
+
+  afterEach(async () => {
+    resetLogger();
+    cleanupTempDir(workdir);
+  });
+
+  test("PAUSE followed by an unprocessed RETRY logs a warn recording the dropped command", async () => {
+    const story = makeStory({ id: "US-001", status: "pending" });
+    const prd = makePRD({ userStories: [story] });
+    const ctx = {
+      workdir,
+      featureDir: workdir,
+      prd,
+      stories: [story],
+      story,
+    } as unknown as PipelineContext;
+
+    await Bun.write(join(workdir, ".queue.txt"), "PAUSE\nRETRY US-002\n");
+
+    const result = await queueCheckStage.execute(ctx);
+    expect(result.action).toBe("pause");
+
+    await getLogger().flush();
+    const lines = (await Bun.file(logFile).text()).trim().split("\n").filter(Boolean);
+    const entries = lines.map((l) => JSON.parse(l));
+    const dropped = entries.find((e) => e.stage === "queue" && e.message.includes("Dropped"));
+
+    expect(dropped).toBeDefined();
+    expect(dropped.data.storyId).toBe(story.id);
+    expect(dropped.data.droppedCount).toBe(1);
+    // storyId must be the first key in the data object (project-conventions.md).
+    expect(Object.keys(dropped.data)[0]).toBe("storyId");
   });
 });

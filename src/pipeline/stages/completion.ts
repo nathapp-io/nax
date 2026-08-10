@@ -55,7 +55,7 @@ export const completionStage: PipelineStage = {
     // Calculate PRD path — prefer ctx.prdPath (already resolved by runner), fall back to
     // featureDir reconstruction, with a last-resort for contexts where neither is set (e.g. tests).
     const prdPath =
-      ctx.prdPath ?? (ctx.featureDir ? `${ctx.featureDir}/prd.json` : `${ctx.workdir}/nax/features/unknown/prd.json`);
+      ctx.prdPath ?? (ctx.featureDir ? `${ctx.featureDir}/prd.json` : `${ctx.workdir}/.nax/features/unknown/prd.json`);
 
     // Collect story metrics
     const storyStartTime = ctx.storyStartTime || new Date().toISOString();
