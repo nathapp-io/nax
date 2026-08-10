@@ -64,6 +64,7 @@ describe("execution runner", () => {
     const opts: RunOptions = {
       prdPath,
       workdir: tmpDir,
+      statusFile: `${tmpDir}/status.json`,
       config: { ...TEST_CONFIG, execution: { ...TEST_CONFIG.execution, maxIterations: 2 } },
       hooks: { hooks: {} },
       feature: "test-feature",
@@ -105,6 +106,7 @@ describe("execution runner", () => {
     const opts: RunOptions = {
       prdPath,
       workdir: tmpDir,
+      statusFile: `${tmpDir}/status.json`,
       config: { ...TEST_CONFIG, execution: { ...TEST_CONFIG.execution, maxIterations: 2 } },
       hooks: { hooks: {} },
       feature: "test-feature",
@@ -148,6 +150,7 @@ describe("execution runner", () => {
     const opts: RunOptions = {
       prdPath,
       workdir: tmpDir,
+      statusFile: `${tmpDir}/status.json`,
       config: {
         ...TEST_CONFIG,
         autoMode: {
@@ -199,6 +202,7 @@ describe("execution runner", () => {
     const opts: RunOptions = {
       prdPath,
       workdir: tmpDir,
+      statusFile: `${tmpDir}/status.json`,
       config: {
         ...TEST_CONFIG,
         execution: {
@@ -240,6 +244,7 @@ describe("execution runner", () => {
     const opts: RunOptions = {
       prdPath,
       workdir: tmpDir,
+      statusFile: `${tmpDir}/status.json`,
       config: { ...TEST_CONFIG, execution: { ...TEST_CONFIG.execution, maxIterations: 2 } },
       hooks: { hooks: {} },
       feature: "test-feature",
@@ -289,6 +294,7 @@ describe("execution runner", () => {
     const opts: RunOptions = {
       prdPath,
       workdir: tmpDir,
+      statusFile: `${tmpDir}/status.json`,
       config: {
         ...TEST_CONFIG,
         execution: { ...TEST_CONFIG.execution, maxIterations: 2 },
@@ -364,6 +370,7 @@ describe("execution runner", () => {
     const opts: RunOptions = {
       prdPath,
       workdir: tmpDir,
+      statusFile: `${tmpDir}/status.json`,
       config: {
         ...TEST_CONFIG,
         autoMode: {
@@ -444,6 +451,7 @@ describe("execution runner", () => {
     const opts: RunOptions = {
       prdPath,
       workdir: tmpDir,
+      statusFile: `${tmpDir}/status.json`,
       config: {
         ...TEST_CONFIG,
         autoMode: {
@@ -510,6 +518,7 @@ describe("execution runner — lite mode routing", () => {
     const opts: RunOptions = {
       prdPath,
       workdir: tmpDir,
+      statusFile: `${tmpDir}/status.json`,
       config: { ...TEST_CONFIG, execution: { ...TEST_CONFIG.execution, maxIterations: 2 } },
       hooks: { hooks: {} },
       feature: "test-feature",
@@ -612,6 +621,7 @@ describe("execution runner — lite mode routing", () => {
     const opts: RunOptions = {
       prdPath,
       workdir: tmpDir,
+      statusFile: `${tmpDir}/status.json`,
       config: {
         ...TEST_CONFIG,
         tdd: { ...TEST_CONFIG.tdd, strategy: "lite" as const },

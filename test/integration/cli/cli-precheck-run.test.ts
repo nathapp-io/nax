@@ -393,6 +393,7 @@ describe("Precheck Integration with nax run", () => {
     await run({
       prdPath,
       workdir: testDir,
+      statusFile: `${testDir}/status.json`,
       config,
       hooks: { hooks: {} },
       feature: "auto-test",
@@ -512,6 +513,7 @@ describe("Precheck Integration with nax run", () => {
     const result = await run({
       prdPath,
       workdir: testDir,
+      statusFile: `${testDir}/status.json`,
       config,
       hooks: { hooks: {} },
       feature: "warning-test",
@@ -548,6 +550,7 @@ describe("Precheck Integration with nax run", () => {
     await run({
       prdPath,
       workdir: testDir,
+      statusFile: `${testDir}/status.json`,
       config,
       hooks: { hooks: {} },
       feature: "log-test",

@@ -163,6 +163,7 @@ describe("Reporter Lifecycle Events — resilience (US-004)", () => {
     const result = await run({
       prdPath,
       workdir,
+      statusFile: `${workdir}/status.json`,
       config,
       hooks,
       feature: "test-feature",
@@ -237,6 +238,7 @@ describe("Reporter Lifecycle Events — resilience (US-004)", () => {
     await run({
       prdPath,
       workdir,
+      statusFile: `${workdir}/status.json`,
       config,
       hooks,
       feature: "test-feature",
@@ -303,6 +305,7 @@ describe("Reporter Lifecycle Events — resilience (US-004)", () => {
     await run({
       prdPath,
       workdir,
+      statusFile: `${workdir}/status.json`,
       config,
       hooks,
       feature: "test-feature",
