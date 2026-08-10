@@ -73,6 +73,58 @@ function captureFailureSentinel(): string {
   return `__capture_failed__:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 }
 
+/** Cap on untracked files whose content is folded into the digest. */
+const MAX_UNTRACKED_HASHED = 500;
+
+/**
+ * `git hash-object` over up to MAX_UNTRACKED_HASHED paths is a heavier call
+ * than the sub-30ms plumbing commands above, so it gets a proportionally
+ * larger deadline than TREE_CAPTURE_TIMEOUT_MS.
+ */
+const UNTRACKED_HASH_TIMEOUT_MS = 250;
+
+/**
+ * Digest input covering untracked files: their paths plus git's own content
+ * hash for each.
+ *
+ * `git diff` and `git diff --cached` cover TRACKED files only, and
+ * `git status --porcelain` lists an untracked file by name, never by content.
+ * Without this, rewriting a file the implementer just created leaves status
+ * and both diffs byte-identical, the digest unchanged, and the resume guard
+ * reading "nothing moved" — issue #1521's exact symptom, which survived its
+ * own fix for new files.
+ *
+ * Returns null when git fails, so the caller falls back to the capture-failure
+ * sentinel (forcing a rerun) rather than silently hashing an incomplete view.
+ * Every failure mode here must err toward "changed": a false rerun costs time,
+ * a false "unchanged" skips the implementer.
+ */
+async function untrackedDigestInput(deps: CaptureTreeStateDeps, workdir: string): Promise<string | null> {
+  const listed = await spawnWithTimeout(
+    spawnGit(deps, ["ls-files", "--others", "--exclude-standard", "-z"], workdir),
+    TREE_CAPTURE_TIMEOUT_MS,
+  );
+  if (listed.exitCode !== 0) return null;
+
+  // -z so paths containing newlines or quote-worthy characters survive intact;
+  // git would otherwise quote them and hash-object would receive the quotes.
+  const paths = listed.stdout.split("\u0000").filter((p) => p !== "");
+  if (paths.length === 0) return "0";
+
+  paths.sort();
+  // Bounded so a large untracked tree cannot blow the argument list or the
+  // deadline. The total count is hashed unconditionally, so files past the cap
+  // still move the digest as they appear or disappear.
+  const capped = paths.slice(0, MAX_UNTRACKED_HASHED);
+  const hashed = await spawnWithTimeout(
+    spawnGit(deps, ["hash-object", "--", ...capped], workdir),
+    UNTRACKED_HASH_TIMEOUT_MS,
+  );
+  if (hashed.exitCode !== 0) return null;
+
+  return `${paths.length}\n${capped.join("\n")}\n${hashed.stdout.trim()}`;
+}
+
 export async function captureTreeState(workdir: string, options: CaptureTreeStateOptions): Promise<TreeState> {
   let headSha = "";
   let dirtyDigest = "";
@@ -95,18 +147,23 @@ export async function captureTreeState(workdir: string, options: CaptureTreeStat
         // and status codes, so rewriting an already-modified file leaves it
         // byte-identical (issue #1521). Fold in the actual content diff (both
         // unstaged and staged) so an edit to an already-modified file moves
-        // the digest, not just a change to which files are touched.
+        // the digest, not just a change to which files are touched. Both diffs
+        // cover TRACKED files only, so untracked content is folded in
+        // separately -- see untrackedDigestInput.
         const diffProc = spawnGit(options._deps, ["diff"], workdir);
         const diff = await spawnWithTimeout(diffProc, TREE_CAPTURE_TIMEOUT_MS);
         const cachedDiffProc = spawnGit(options._deps, ["diff", "--cached"], workdir);
         const cachedDiff = await spawnWithTimeout(cachedDiffProc, TREE_CAPTURE_TIMEOUT_MS);
-        if (diff.exitCode === 0 && cachedDiff.exitCode === 0) {
+        const untracked = await untrackedDigestInput(options._deps, workdir);
+        if (diff.exitCode === 0 && cachedDiff.exitCode === 0 && untracked !== null) {
           const hasher = new Bun.CryptoHasher("sha256");
           hasher.update(trimmedStatus);
           hasher.update("\u0000");
           hasher.update(diff.stdout);
           hasher.update("\u0000");
           hasher.update(cachedDiff.stdout);
+          hasher.update("\u0000");
+          hasher.update(untracked);
           dirtyDigest = hasher.digest("hex") as string;
         } else {
           dirtyDigest = captureFailureSentinel();

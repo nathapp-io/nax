@@ -233,6 +233,53 @@ describe("captureTreeState (AC8)", () => {
     expect(first.dirtyDigest).not.toBe(second.dirtyDigest);
   });
 
+  test("AC8: an edit to an UNTRACKED file moves the digest (git diff covers tracked files only)", async () => {
+    // #1521's fix folded `git diff` + `git diff --cached` into the digest, but
+    // both cover TRACKED files only. `git status --porcelain` lists an untracked
+    // file by NAME, never by content — so rewriting a file the implementer just
+    // created leaves status, diff, and diff --cached all byte-identical, the
+    // digest unchanged, and buildResumePlan elides the implementer exactly as it
+    // did before #1521. Untracked content must be folded in too.
+    const porcelain = "?? src/new-file.ts\n";
+    let untrackedBlobSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n";
+
+    _gitDeps.spawn = mock((args: string[]) => {
+      let stdout: string;
+      if (args.includes("rev-parse")) {
+        stdout = "abc123\n";
+      } else if (args.includes("status")) {
+        stdout = porcelain;
+      } else if (args.includes("ls-files")) {
+        stdout = "src/new-file.ts\u0000";
+      } else if (args.includes("hash-object")) {
+        stdout = untrackedBlobSha;
+      } else {
+        stdout = ""; // both `git diff` and `git diff --cached` are empty
+      }
+      const bytes = new TextEncoder().encode(stdout);
+      return {
+        stdout: new ReadableStream({ start(c) {
+          c.enqueue(bytes);
+          c.close();
+        } }),
+        stderr: new ReadableStream({ start(c) {
+          c.close();
+        } }),
+        exited: Promise.resolve(0),
+        kill: mock(() => {}),
+      };
+    });
+
+    const first = await captureTreeState(tempDir!, { _deps: _gitDeps });
+
+    // The agent rewrites the same untracked file: identical status line, still
+    // absent from both diffs, but git's content hash for it changes.
+    untrackedBlobSha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n";
+    const second = await captureTreeState(tempDir!, { _deps: _gitDeps });
+
+    expect(first.dirtyDigest).not.toBe(second.dirtyDigest);
+  });
+
   test("AC8 timeout: a hung git subprocess does not stall captureTreeState (proxy for gitWithTimeout enforcement)", async () => {
     // Adversarial-review finding: captureTreeState must not block on an
     // unkillable git subprocess. Every other git call in the project routes
