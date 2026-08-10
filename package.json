@@ -49,8 +49,10 @@
     "check:runtime-cleanup": "bash scripts/check-runtime-cleanup.sh",
     "check:scripts": "bash scripts/check-scripts.sh",
     "check:adapter-no-config-import": "bash scripts/check-adapter-no-config-import.sh",
+    "check:test-typecheck": "bun run scripts/check-test-typecheck.ts",
+    "check:test-typecheck:update": "bun run scripts/check-test-typecheck.ts --update-baseline",
     "check:gate-reachability": "bun run scripts/check-gate-reachability.ts",
-    "check:all": "bun run lint && bun run check:test-mocks && bun run check:process-cwd && bun run check:no-adapter-wrap && bun run check:scripts && bun run check:dispatch-context && bun run check:naxconfig-cast && bun run check:runtime-cleanup && bun run check:adapter-no-config-import && bun run check:gate-reachability",
+    "check:all": "bun run lint && bun run check:test-mocks && bun run check:process-cwd && bun run check:no-adapter-wrap && bun run check:scripts && bun run check:dispatch-context && bun run check:naxconfig-cast && bun run check:runtime-cleanup && bun run check:adapter-no-config-import && bun run check:test-typecheck && bun run check:gate-reachability",
     "prepublishOnly": "bun run build",
     "test:full": "FULL=1 NAX_PRECHECK=1 bun test test/ --timeout=60000"
   },
