@@ -45,14 +45,16 @@ All introduced by US-001 in `src/findings/story-fix-history.ts` and re-exported 
 
 | Symbol | Kind | Purpose |
 |:---|:---|:---|
-| `StoryFixState` | interface | `{ iterations, declines }` for one `(story, tier)` |
+| `StoryFixState` | interface | `{ iterations, declines }` for one `(story, tier, agent)` rung |
 | `StoryFixHistory` | type | `Map<string, StoryFixState>` |
 | `createStoryFixHistory()` | function | Construct an empty store |
-| `storyFixKey(storyId, tier?)` | function | Derive the map key; `tier` defaults to `"default"` |
+| `storyFixKey(storyId, tier?, agent?)` | function | Derive the map key; `tier` and `agent` each default to `"default"` |
 | `getStoryFixState(store, key)` | function | Read a state, creating an empty one on miss |
 | `appendStoryFixIterations(store, key, iterations)` | function | Append this cycle's iterations to the state |
 
 `FixCycle.priorIterations` (US-002) and `execution.rectification.storyScopedFixBudget` (US-001) are the other two additions.
+
+> **Amendment (#1530).** The key was originally `(storyId, tier)`. The escalation ladder matches rungs by the `(tier, agent)` tuple and repeated tier names across agents are a supported shape, so a tier-only key could not distinguish a cross-agent rung — the escalated agent inherited the previous rung's exhausted budget and got zero fix iterations. The `agent` segment (read from `ctx.agentName`) closes that. AC-1.4 and AC-1.5 below still hold as written.
 
 ### Integration
 

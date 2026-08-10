@@ -491,9 +491,7 @@ export async function runFixCycle<F extends Finding>(
         if (companions.length > 0) {
           // Cost already accumulated at the top of this branch.
           logger?.info("findings.cycle", "exclusive strategy exhausted — continuing to companion strategies", {
-            storyId,
-            packageDir,
-            cycleName,
+            ...logCtx,
             exhaustedStrategies: group.map((s) => s.name),
             remainingStrategies: companions.map((s) => s.name),
           });
