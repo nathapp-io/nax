@@ -164,17 +164,22 @@ export const queueCheckStage: PipelineStage = {
       }
 
       if (cmd.type === "SKIP") {
-        logger.warn("queue", "Skipping story by user request", {
-          storyId: cmd.storyId,
-        });
-
-        // Mark as skipped in PRD unconditionally — matches RETRY / PRIORITY / INJECT,
-        // which all mutate ctx.prd regardless of batch membership. Without this, a
+        // Mark as skipped in PRD regardless of batch membership — matches RETRY /
+        // PRIORITY / INJECT, which all mutate ctx.prd the same way. Without this, a
         // SKIP naming a story outside the current batch (e.g. sequential mode, where
         // ctx.stories has length 1) is silently discarded by clearQueueFile below.
-        // markStorySkipped no-ops for an unknown storyId, same as resetStoryToPending.
-        markStorySkipped(ctx.prd, cmd.storyId);
-        await savePRD(ctx.prd, resolvePrdPath(ctx));
+        //
+        // Report what actually happened. A SKIP naming a story the PRD does not
+        // contain (a typo, a stale id) changes nothing, so announcing a skip and
+        // writing the PRD behind it would be two lies and a wasted write.
+        if (markStorySkipped(ctx.prd, cmd.storyId)) {
+          logger.warn("queue", "Skipping story by user request", { storyId: cmd.storyId });
+          await savePRD(ctx.prd, resolvePrdPath(ctx));
+        } else {
+          logger.warn("queue", "SKIP names a story that is not in the PRD — ignoring", {
+            storyId: cmd.storyId,
+          });
+        }
 
         // Batch membership is an ADDITIONAL, separate action: if the story is part of
         // the batch currently being executed, also remove it from the batch.

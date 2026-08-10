@@ -71,6 +71,36 @@ describe("context steps", () => {
     expect(r.groups).toEqual([]);
   });
 
+  test("resolveFeature degrades an unrecognised acceptance status to no-prd", async () => {
+    // A status this flow does not know cannot be reasoned about: it is neither
+    // the explicit opt-out nor a resolution we can trust. `no-prd` is the one
+    // value that routes to `escalate`, which is the honest answer — the same
+    // posture as the missing-status default just above.
+    _contextDeps.run = async () =>
+      ok(
+        JSON.stringify({
+          specSource: { kind: "markdown", path: ".nax/features/x/spec.md" },
+          acceptance: { status: "partially-resolved", groups: [] },
+        }),
+      );
+    const r = await resolveFeature("x", "/w");
+    expect(r.acceptanceStatus).toBe("no-prd");
+  });
+
+  test("resolveFeature passes through every status the flow actually branches on", async () => {
+    for (const status of ["ok", "no-prd", "disabled"] as const) {
+      _contextDeps.run = async () =>
+        ok(
+          JSON.stringify({
+            specSource: { kind: "markdown", path: ".nax/features/x/spec.md" },
+            acceptance: { status, groups: [] },
+          }),
+        );
+      const r = await resolveFeature("x", "/w");
+      expect(r.acceptanceStatus).toBe(status);
+    }
+  });
+
   test("resolveFeature throws when specSource is missing", async () => {
     _contextDeps.run = async () => ok(JSON.stringify({ status: "no-prd", featureName: "x" }));
     await expect(resolveFeature("x", "/w")).rejects.toThrow('no specSource for "x"');

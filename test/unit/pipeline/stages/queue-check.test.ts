@@ -118,6 +118,28 @@ describe("queueCheckStage — RETRY / PRIORITY", () => {
     expect(ctx.prd.userStories[0].status).toBe("pending");
   });
 
+  test("SKIP for an unknown story ID does not write the PRD", async () => {
+    // markStorySkipped cannot skip a story that is not there, so persisting is
+    // a write that records nothing. The real cost is the log line above it,
+    // which used to announce a skip that never happened.
+    const ctx = makeCtx(workdir);
+    await Bun.write(join(workdir, ".queue.txt"), "SKIP US-999\n");
+
+    await queueCheckStage.execute(ctx);
+
+    expect(await Bun.file(join(workdir, "prd.json")).exists()).toBe(false);
+  });
+
+  test("SKIP for a known story still writes the PRD", async () => {
+    const ctx = makeCtx(workdir);
+    await Bun.write(join(workdir, ".queue.txt"), "SKIP US-001\n");
+
+    await queueCheckStage.execute(ctx);
+
+    expect(await Bun.file(join(workdir, "prd.json")).exists()).toBe(true);
+    expect(ctx.prd.userStories[0].status).toBe("skipped");
+  });
+
   test("PAUSE still stops execution (existing behavior)", async () => {
     const ctx = makeCtx(workdir);
     await Bun.write(join(workdir, ".queue.txt"), "PAUSE\n");

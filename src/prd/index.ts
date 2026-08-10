@@ -329,11 +329,19 @@ export function resetFailedStoriesToPending(prd: PRD, opts: ResetFailedOptions =
 }
 
 /** Mark a story as skipped */
-export function markStorySkipped(prd: PRD, storyId: string): void {
+/**
+ * Mark a story skipped. Returns whether a story with that id was found.
+ *
+ * The return value is what lets callers tell "skipped it" from "there was
+ * nothing to skip" — a SKIP naming a story the PRD does not contain used to be
+ * announced in the log as though it had happened, and persisted an unchanged
+ * PRD behind it.
+ */
+export function markStorySkipped(prd: PRD, storyId: string): boolean {
   const story = prd.userStories.find((s) => s.id === storyId);
-  if (story) {
-    story.status = "skipped";
-  }
+  if (!story) return false;
+  story.status = "skipped";
+  return true;
 }
 
 /**

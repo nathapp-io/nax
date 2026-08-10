@@ -17,6 +17,7 @@
  *   *outcome*, so the currently-executing node is never in this list — which is
  *   what lets `incrementalSince` find the *previous* review rather than itself.
  */
+import type { AcceptanceStatus } from "./steps/context";
 import type { AcceptanceGroup, Finding, FinishInput, FinishPhase, ReviewVerdict } from "./types";
 
 /** Minimal shapes so each reader takes only the part of the context it reads. */
@@ -34,8 +35,8 @@ export interface LoadCtxOutput {
   base?: string;
   specPath?: string;
   groups?: AcceptanceGroup[];
-  /** `nax features resolve`'s acceptance status: "ok" | "disabled" | "no-prd". */
-  acceptanceStatus?: string;
+  /** `nax features resolve`'s acceptance status, narrowed at `resolveFeature`. */
+  acceptanceStatus?: AcceptanceStatus;
   /** Test-file regex sources from `nax features resolve`; empty = cannot classify. */
   testFileRegex?: string[];
   route?: string;
