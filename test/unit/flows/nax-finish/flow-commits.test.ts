@@ -353,6 +353,40 @@ describe("review nodes — incremental scoping window", () => {
     expect(p).toContain("git diff origin/main...HEAD");
   });
 
+  // A fix node that edited nothing still records a `commit_*` step, and that
+  // step's `shaBefore` is the *current* HEAD — so scoping to it asks for
+  // `HEAD..HEAD`, an empty diff. The reviewer is simultaneously told the prior
+  // findings "have since been fixed and committed", so it returns clean and
+  // route_* sends the flow onward with the findings unfixed. That exits the
+  // loop through the green door rather than the fix cap, which is why
+  // MAX_FIX_ATTEMPTS never catches it.
+  test("a fix that committed nothing falls back to a full review", () => {
+    const p = promptOf("review_quality", {
+      outputs: { ...LOAD, review_quality: { findings: [{ severity: "HIGH", title: "t", problem: "p", fix: "f" }] } },
+      steps: makeFlowSteps([
+        "review_quality",
+        "fix_quality",
+        ["commit_quality", { committed: false, shaBefore: "head-sha", shaAfter: "head-sha" }],
+      ]),
+    });
+    expect(p).toContain("git diff origin/main...HEAD");
+    expect(p).not.toContain("head-sha..HEAD");
+  });
+
+  // The window must still open at the tree the last verdict passed on, so a
+  // no-op round followed by a real one scopes from the REAL commit's parent.
+  test("a no-op round before a real commit scopes from the commit that landed", () => {
+    const p = promptOf("review_quality", {
+      outputs: { ...LOAD, review_quality: { findings: [] } },
+      steps: makeFlowSteps([
+        "review_quality",
+        ["commit_gate", { committed: false, shaBefore: "head-sha", shaAfter: "head-sha" }],
+        ["commit_gate", { committed: true, shaBefore: "head-sha", shaAfter: "new-sha" }],
+      ]),
+    });
+    expect(p).toContain("git diff head-sha..HEAD");
+  });
+
   test("only commits AFTER the last review count — an earlier one does not scope it", () => {
     const p = promptOf("review_quality", {
       outputs: { ...LOAD, review_quality: { findings: [] } },

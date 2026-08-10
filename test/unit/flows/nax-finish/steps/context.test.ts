@@ -90,6 +90,31 @@ describe("context steps", () => {
     _contextDeps.run = async () => ok("3\n");
     expect(await preflight("/w", "origin/main")).toEqual({ commitsAhead: 3, route: "proceed" });
   });
+
+  // `detectBaseBranch`'s last-resort `origin/master` is returned unverified, so
+  // a repo whose base ref is not fetched locally fails this count. Parsing the
+  // empty stdout gave `NaN || 0` — indistinguishable from a branch with no new
+  // commits — and the flow reported `nothing-to-finish` having reviewed,
+  // verified and pushed nothing.
+  test("preflight escalates when the base ref cannot be resolved, rather than reading it as 0 commits", async () => {
+    _contextDeps.run = async () => ({
+      exitCode: 128,
+      stdout: "",
+      stderr: "fatal: ambiguous argument 'origin/master..HEAD': unknown revision",
+    });
+    const r = await preflight("/w", "origin/master");
+    expect(r.route).toBe("escalate");
+    expect(r.commitsAhead).toBe(0);
+    expect(r.reason).toContain("origin/master");
+    expect(r.reason).toContain("unknown revision");
+  });
+
+  test("preflight escalates on unreadable output from a zero exit", async () => {
+    _contextDeps.run = async () => ok("not-a-number\n");
+    const r = await preflight("/w", "origin/main");
+    expect(r.route).toBe("escalate");
+    expect(r.reason).toContain("not-a-number");
+  });
 });
 
 describe("partitionTestFiles", () => {

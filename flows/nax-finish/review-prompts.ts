@@ -334,9 +334,12 @@ const RETRY_NOTICE = [
  * available — it is told to open whatever the fix touches — it just is not asked
  * to re-derive a verdict on unchanged code.
  *
- * `since` is only ever supplied when exactly one commit separates the two
- * reviews (see `incrementalSince`), so `since..HEAD` provably contains every
- * change made since the previous verdict.
+ * `since` is the parent of the *first* commit that landed after the previous
+ * verdict, not of the latest one (see `incrementalSince`) — the acceptance loop
+ * can commit between a spec fix and its re-review, and the window has to span
+ * both. So `since..HEAD` provably contains every change made since that
+ * verdict, however many commits that took, and it is never supplied at all when
+ * no commit landed.
  */
 export function buildReviewPrompt(
   phase: "spec" | "quality",
