@@ -5,6 +5,7 @@
  * Uses rename-before-read pattern to prevent race conditions.
  */
 
+import { rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import { getLogger } from "../logger";
 import { parseQueueFile } from "../queue";
@@ -57,11 +58,17 @@ export async function readQueueFile(workdir: string): Promise<QueueCommand[]> {
       return [];
     }
 
-    // Atomically rename to .processing (prevents concurrent reads)
+    // Atomically rename to .processing (prevents concurrent reads).
+    // Uses node:fs/promises rename (not a `mv` subprocess) — unlike a spawned
+    // `mv`, whose exit code we'd have to inspect manually, `rename()` rejects
+    // on failure so a genuine failure (permission denied, cross-device, the
+    // file already moved by another process) is always caught here.
     try {
-      await Bun.spawn(["mv", queuePath, processingPath], { stdout: "pipe" }).exited;
+      await rename(queuePath, processingPath);
     } catch (error) {
-      // File was already moved by another process, or doesn't exist anymore
+      logger?.warn("queue", "Failed to rename queue file for processing", {
+        error: (error as Error).message,
+      });
       return [];
     }
 
@@ -99,7 +106,7 @@ export async function clearQueueFile(workdir: string): Promise<void> {
     const file = Bun.file(processingPath);
     const exists = await file.exists();
     if (exists) {
-      await Bun.spawn(["rm", processingPath], { stdout: "pipe" }).exited;
+      await unlink(processingPath);
     }
   } catch (error) {
     logger?.warn("queue", "Failed to clear queue file", {

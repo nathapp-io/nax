@@ -22,6 +22,41 @@ import {
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /**
+ * Resolve the PRD path for this pipeline context. Prefers the feature directory
+ * when known; falls back to the canonical `.nax/features/unknown/prd.json` path
+ * (matching the layout documented in `.gitignore` / `.naxignore` /
+ * `src/cli/accept.ts` / `src/cli/features-resolve.ts`) so a missing featureDir
+ * never writes an untracked, un-ignored file into the repo root.
+ */
+function resolvePrdPath(ctx: PipelineContext): string {
+  return ctx.featureDir ? `${ctx.featureDir}/prd.json` : `${ctx.workdir}/.nax/features/unknown/prd.json`;
+}
+
+/**
+ * PAUSE and ABORT stop processing mid-loop and clear the whole queue file — any
+ * commands still unprocessed after the current index are lost with no record.
+ * That control flow is intentional (a paused/aborted run should not keep applying
+ * queued mutations), but the loss must be auditable. Logs one warn naming how many
+ * commands were dropped and their types, before the queue file is cleared.
+ */
+function logDroppedCommands(
+  logger: ReturnType<typeof getLogger>,
+  ctx: PipelineContext,
+  queueCommands: readonly { type: string }[],
+  currentIndex: number,
+): void {
+  const dropped = queueCommands.slice(currentIndex + 1);
+  if (dropped.length === 0) {
+    return;
+  }
+  logger.warn("queue", "Dropped unprocessed queue commands", {
+    storyId: ctx.story?.id ?? "unknown",
+    droppedCount: dropped.length,
+    droppedTypes: dropped.map((c) => c.type),
+  });
+}
+
+/**
  * Queue Check Stage
  *
  * Checks for queue commands (PAUSE/ABORT/SKIP) before executing a story.
@@ -51,9 +86,10 @@ export const queueCheckStage: PipelineStage = {
       return { action: "continue" };
     }
 
-    for (const cmd of queueCommands) {
+    for (const [index, cmd] of queueCommands.entries()) {
       if (cmd.type === "PAUSE") {
         logger.warn("queue", "Paused by user", { storyId: ctx.story?.id ?? "unknown", command: "PAUSE" });
+        logDroppedCommands(logger, ctx, queueCommands, index);
         await clearQueueFile(ctx.workdir);
         return { action: "pause", reason: "User requested pause via .queue.txt" };
       }
@@ -69,8 +105,8 @@ export const queueCheckStage: PipelineStage = {
         }
 
         // Save PRD path from featureDir
-        const prdPath = ctx.featureDir ? `${ctx.featureDir}/prd.json` : `${ctx.workdir}/nax/features/unknown/prd.json`;
-        await savePRD(ctx.prd, prdPath);
+        await savePRD(ctx.prd, resolvePrdPath(ctx));
+        logDroppedCommands(logger, ctx, queueCommands, index);
         await clearQueueFile(ctx.workdir);
 
         return { action: "pause", reason: "User requested abort" };
@@ -80,8 +116,7 @@ export const queueCheckStage: PipelineStage = {
         logger.warn("queue", "Retrying story by user request", { storyId: cmd.storyId });
         resetStoryToPending(ctx.prd, cmd.storyId);
 
-        const prdPath = ctx.featureDir ? `${ctx.featureDir}/prd.json` : `${ctx.workdir}/nax/features/unknown/prd.json`;
-        await savePRD(ctx.prd, prdPath);
+        await savePRD(ctx.prd, resolvePrdPath(ctx));
         continue;
       }
 
@@ -92,8 +127,7 @@ export const queueCheckStage: PipelineStage = {
         });
         setStoryPriority(ctx.prd, cmd.storyId, cmd.value);
 
-        const prdPath = ctx.featureDir ? `${ctx.featureDir}/prd.json` : `${ctx.workdir}/nax/features/unknown/prd.json`;
-        await savePRD(ctx.prd, prdPath);
+        await savePRD(ctx.prd, resolvePrdPath(ctx));
         continue;
       }
 
@@ -118,10 +152,7 @@ export const queueCheckStage: PipelineStage = {
             storyFile: cmd.storyFile,
           });
 
-          const prdPath = ctx.featureDir
-            ? `${ctx.featureDir}/prd.json`
-            : `${ctx.workdir}/nax/features/unknown/prd.json`;
-          await savePRD(ctx.prd, prdPath);
+          await savePRD(ctx.prd, resolvePrdPath(ctx));
         } catch (err) {
           logger.error("queue", "Failed to inject story — skipping INJECT command", {
             storyId: ctx.story?.id ?? "unknown",
@@ -133,28 +164,30 @@ export const queueCheckStage: PipelineStage = {
       }
 
       if (cmd.type === "SKIP") {
-        // Check if this SKIP applies to any story in the current batch
+        logger.warn("queue", "Skipping story by user request", {
+          storyId: cmd.storyId,
+        });
+
+        // Mark as skipped in PRD unconditionally — matches RETRY / PRIORITY / INJECT,
+        // which all mutate ctx.prd regardless of batch membership. Without this, a
+        // SKIP naming a story outside the current batch (e.g. sequential mode, where
+        // ctx.stories has length 1) is silently discarded by clearQueueFile below.
+        // markStorySkipped no-ops for an unknown storyId, same as resetStoryToPending.
+        markStorySkipped(ctx.prd, cmd.storyId);
+        await savePRD(ctx.prd, resolvePrdPath(ctx));
+
+        // Batch membership is an ADDITIONAL, separate action: if the story is part of
+        // the batch currently being executed, also remove it from the batch.
         const isTargeted = ctx.stories.some((s) => s.id === cmd.storyId);
-
         if (isTargeted) {
-          logger.warn("queue", "Skipping story by user request", {
-            storyId: cmd.storyId,
-          });
-
-          // Mark as skipped in PRD
-          markStorySkipped(ctx.prd, cmd.storyId);
-
-          // Save PRD
-          const prdPath = ctx.featureDir
-            ? `${ctx.featureDir}/prd.json`
-            : `${ctx.workdir}/nax/features/unknown/prd.json`;
-          await savePRD(ctx.prd, prdPath);
-
-          // Remove from batch
           ctx.stories = ctx.stories.filter((s) => s.id !== cmd.storyId);
 
-          // If batch is now empty, skip this iteration
+          // If batch is now empty, skip this iteration. This is the third
+          // early-return path that clears the whole queue file, so it drops any
+          // still-unprocessed commands exactly like PAUSE / ABORT do — audit it
+          // the same way.
           if (ctx.stories.length === 0) {
+            logDroppedCommands(logger, ctx, queueCommands, index);
             await clearQueueFile(ctx.workdir);
             return { action: "skip", reason: "All stories in batch were skipped" };
           }
