@@ -59,6 +59,16 @@ export interface RunnerCompletionOptions extends DispatchContext {
   agentGetFn?: AgentGetFn;
   /** Path to prd.json — required for acceptance fix story writes */
   prdPath: string;
+  /**
+   * Max parallel sessions, straight from RunnerOptions: undefined = sequential,
+   * 0 = auto-detect, N > 0 = cap at N.
+   *
+   * The deferred-regression gate needs this to know whether its per-story gate
+   * snapshots are causally ordered. It was never forwarded, so `isSequential`
+   * was only ever set by tests and the parallel branch was dead in production —
+   * snapshots reached the gate on every run, including parallel ones.
+   */
+  parallel?: number;
   /** Per-run plugin-provider cache (Finding 5 / issue #473). Disposed in handleRunCompletion. */
   pluginProviderCache?: import("../context/engine").PluginProviderCache;
   /** End-of-run deferred plugin review result (#1146 G2). Forwarded to handleRunCompletion. */
@@ -323,6 +333,11 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     exitReason: options.exitReason,
     runtime: options.runtime,
     abortSignal: options.abortSignal,
+    // RunnerOptions.parallel: undefined = sequential. Anything else fans stories
+    // out across worktrees, where `completedAt` order is not causal and per-story
+    // gate state does not reflect the merged repo — so the regression gate must
+    // withhold its snapshots rather than attribute blame from them.
+    isSequential: options.parallel === undefined,
   });
 
   const { durationMs, runCompletedAt, finalCounts, reportedTotal, pluginGateFailed } = completionResult;

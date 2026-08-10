@@ -155,11 +155,17 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
         // without a second probe.
         quarantineMemo: options.runtime.quarantineMemo,
         // Per-story gate snapshots enable causal blame attribution (transition
-        // pass -> fail) instead of the git-recency heuristic. Sequential runs
-        // only: in parallel mode story completion order (`completedAt`) is not
-        // causal and each story runs in an isolated worktree, so a per-story
-        // snapshot does not reflect merged-repo state — fall back to the git
-        // heuristic there by withholding snapshots.
+        // pass -> fail). Sequential runs only: in parallel mode story completion
+        // order (`completedAt`) is not causal and each story runs in an isolated
+        // worktree, so a per-story snapshot does not reflect merged-repo state.
+        //
+        // Withholding them in parallel used to mean "fall back to the git-recency
+        // heuristic". #1527 deleted that heuristic — blaming whichever story
+        // committed most recently is not evidence — so withholding now means the
+        // gate reports the regression and rectifies nothing. That is deliberate:
+        // a parallel regression needs a human, not a guess. `isSequential` was
+        // never forwarded from the runner until #1528's follow-up, so this branch
+        // was dead and parallel runs were attributing from non-causal snapshots.
         storyMetrics:
           options.isSequential === false
             ? undefined
