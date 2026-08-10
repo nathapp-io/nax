@@ -97,12 +97,12 @@ export const _parallelBatchDeps = {
   },
 
   createWorktreeManager: async () => {
-    const { WorktreeManager } = await import("../worktree/manager");
+    const { WorktreeManager } = await import("../worktree");
     return new WorktreeManager();
   },
 
-  createMergeEngine: async (worktreeManager: import("../worktree/manager").WorktreeManager) => {
-    const { MergeEngine } = await import("../worktree/merge");
+  createMergeEngine: async (worktreeManager: import("../worktree").WorktreeManager) => {
+    const { MergeEngine } = await import("../worktree");
     return new MergeEngine(worktreeManager);
   },
 
@@ -264,6 +264,16 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
         workerResult.merged.push(story);
         logger?.info("parallel-batch", "Story merged successfully", {
           storyId: mergeResult.storyId,
+        });
+      } else if (mergeResult.failureKind === "error") {
+        // Non-conflict merge failure. Nothing for rectification to resolve, so treat
+        // it as a plain story failure rather than buying an agent session for it.
+        // Only an explicit "error" lands here — an unlabelled failure keeps the
+        // historical conflict path so no caller silently loses rectification.
+        workerResult.failed.push({ story, error: mergeResult.error ?? "merge failed" });
+        logger?.error("parallel-batch", "Merge failed for a non-conflict reason", {
+          storyId: mergeResult.storyId,
+          error: mergeResult.error,
         });
       } else {
         // Merge conflict — move to mergeConflicts for rectification below

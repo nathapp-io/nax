@@ -18,8 +18,7 @@ import type { PRD, UserStory } from "../prd";
 import { markStoryFailed, markStoryPassed, savePRD } from "../prd";
 import type { PostRunStatusWriter } from "../prd";
 import { errorMessage } from "../utils/errors";
-import { WorktreeManager } from "../worktree/manager";
-import { MergeEngine, type StoryDependencies } from "../worktree/merge";
+import { MergeEngine, type StoryDependencies, WorktreeManager } from "../worktree";
 import { executeParallelBatch } from "./parallel-worker";
 import { groupStoriesByDependencies } from "./story-selector";
 
@@ -243,6 +242,15 @@ export async function executeParallel(
           logger?.info("parallel", "Story merged successfully", {
             storyId: mergeResult.storyId,
             retryCount: mergeResult.retryCount,
+          });
+        } else if (mergeResult.failureKind === "error") {
+          // Non-conflict git failure — there is no conflict to rectify, so record the
+          // real cause instead of queueing an agent session that cannot help. Only an
+          // explicit "error" lands here; an unlabelled failure keeps the conflict path.
+          markStoryFailed(currentPrd, mergeResult.storyId, undefined, undefined, statusWriter);
+          logger?.error("parallel", "Merge failed for a non-conflict reason", {
+            storyId: mergeResult.storyId,
+            error: mergeResult.error,
           });
         } else {
           // Merge conflict — mark story as failed

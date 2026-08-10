@@ -5,8 +5,8 @@
  * Covers: MergeEngine topological sort and merge logic
  */
 
-import { describe, expect, it } from "bun:test";
-import { MergeEngine } from "../../../src/worktree/merge";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { _mergeDeps, MergeEngine } from "../../../src/worktree/merge";
 import type { StoryDependencies } from "../../../src/worktree/merge";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -265,5 +265,188 @@ describe("MergeEngine.mergeAll", () => {
 
     // Restore original method
     engine.merge = originalMerge;
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Git-state classification — these drive the REAL merge() through the injected
+// spawn seam. The suite above stubs engine.merge wholesale, which is why the
+// throw-instead-of-return defect survived: the function under test was replaced.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** One faked git invocation. */
+interface FakeProc {
+  exit: number;
+  stdout?: string;
+  stderr?: string;
+}
+
+/** Build a `_mergeDeps.spawn` stand-in that answers per git command. */
+function fakeSpawn(handler: (cmd: readonly string[]) => FakeProc): typeof _mergeDeps.spawn {
+  return ((cmd: string[]) => {
+    const res = handler(cmd);
+    return {
+      exited: Promise.resolve(res.exit),
+      stdout: new Response(res.stdout ?? "").body,
+      stderr: new Response(res.stderr ?? "").body,
+    };
+  }) as unknown as typeof _mergeDeps.spawn;
+}
+
+const isMergeCmd = (cmd: readonly string[]) => cmd[1] === "merge" && cmd[2] === "--no-ff";
+const isAbortCmd = (cmd: readonly string[]) => cmd[1] === "merge" && cmd[2] === "--abort";
+const isMergeHeadProbe = (cmd: readonly string[]) => cmd[1] === "rev-parse" && cmd.includes("MERGE_HEAD");
+const isUnmergedProbe = (cmd: readonly string[]) => cmd[1] === "diff" && cmd.includes("--diff-filter=U");
+
+/** Real `git merge` output for a dirty working tree — note: contains no "conflict". */
+const DIRTY_TREE_STDERR =
+  "error: Your local changes to the following files would be overwritten by merge:\n\tf.txt\nAborting\n";
+
+describe("MergeEngine — non-conflict git failures", () => {
+  let origSpawn: typeof _mergeDeps.spawn;
+
+  beforeEach(() => {
+    origSpawn = _mergeDeps.spawn;
+  });
+
+  afterEach(() => {
+    _mergeDeps.spawn = origSpawn;
+  });
+
+  it("mergeAll stays total when a story fails for a non-conflict reason", async () => {
+    // US-002 fails with the real dirty-tree message: exit 2, no "conflict" text,
+    // repo left clean (no MERGE_HEAD, no unmerged files). Previously this threw
+    // out of mergeAll, discarding US-001's recorded success and never trying US-003.
+    _mergeDeps.spawn = fakeSpawn((cmd) => {
+      if (isMergeCmd(cmd) && cmd[3] === "nax/US-002") return { exit: 2, stderr: DIRTY_TREE_STDERR };
+      if (isMergeCmd(cmd)) return { exit: 0 };
+      if (isMergeHeadProbe(cmd)) return { exit: 1 }; // never mid-merge
+      if (isUnmergedProbe(cmd)) return { exit: 0, stdout: "" }; // no unmerged files
+      return { exit: 0 };
+    });
+
+    const engine = new MergeEngine(mockWorktreeManager);
+    const results = await engine.mergeAll("/repo", ["US-001", "US-002", "US-003"], {});
+
+    expect(results.length).toBe(3);
+    expect(results[0]).toMatchObject({ storyId: "US-001", success: true });
+    expect(results[1]).toMatchObject({ storyId: "US-002", success: false, failureKind: "error" });
+    expect(results[2]).toMatchObject({ storyId: "US-003", success: true });
+    // An "error" is not a conflict — routing it to conflict rectification would
+    // spend an agent session resolving a conflict that does not exist.
+    expect(results[1].conflictFiles ?? []).toEqual([]);
+  });
+
+  it("classifies by repo state, not by the word 'conflict' in stderr", async () => {
+    // Real output when the repo is left mid-merge by an earlier story:
+    //   "fatal: Exiting because of an unresolved conflict."
+    // It contains "conflict", but THIS story caused nothing — the repo is clean
+    // by the time we probe it, so it must be an error, not this story's conflict.
+    _mergeDeps.spawn = fakeSpawn((cmd) => {
+      if (isMergeCmd(cmd)) {
+        return { exit: 128, stderr: "error: Merging is not possible.\nfatal: Exiting because of an unresolved conflict.\n" };
+      }
+      if (isMergeHeadProbe(cmd)) return { exit: 1 };
+      if (isUnmergedProbe(cmd)) return { exit: 0, stdout: "" };
+      return { exit: 0 };
+    });
+
+    const engine = new MergeEngine(mockWorktreeManager);
+    const result = await engine.merge("/repo", "US-001");
+
+    expect(result.success).toBe(false);
+    expect(result.failureKind).toBe("error");
+  });
+
+  it("refuses to merge into a repository that is already mid-merge", async () => {
+    let mergeAttempted = false;
+    _mergeDeps.spawn = fakeSpawn((cmd) => {
+      if (isMergeCmd(cmd)) {
+        mergeAttempted = true;
+        return { exit: 0 };
+      }
+      if (isMergeHeadProbe(cmd)) return { exit: 0 }; // MERGE_HEAD resolves => mid-merge
+      return { exit: 0 };
+    });
+
+    const engine = new MergeEngine(mockWorktreeManager);
+    const result = await engine.merge("/repo", "US-001");
+
+    expect(result.success).toBe(false);
+    expect(result.failureKind).toBe("error");
+    // The guard must fire BEFORE git merge runs — merging into a dirty index is
+    // what produced the misattributed conflict in the first place.
+    expect(mergeAttempted).toBe(false);
+  });
+
+  /**
+   * A conflicting repository, faked with real state transitions: the failing merge
+   * SETS MERGE_HEAD and a successful abort clears it. A fake that answers the
+   * MERGE_HEAD probe with a constant would be answering the pre-merge guard too, so
+   * the guard would short-circuit and the test would pass without the conflict path
+   * ever running.
+   */
+  function conflictingRepo(opts: { abortExit: number; unmerged: string }) {
+    let midMerge = false;
+    return fakeSpawn((cmd) => {
+      if (isMergeCmd(cmd)) {
+        midMerge = true;
+        return { exit: 1, stderr: "CONFLICT (content): Merge conflict in f.txt\n" };
+      }
+      if (isAbortCmd(cmd)) {
+        if (opts.abortExit === 0) midMerge = false;
+        return { exit: opts.abortExit, stderr: opts.abortExit === 0 ? "" : "fatal: could not abort\n" };
+      }
+      if (isMergeHeadProbe(cmd)) return { exit: midMerge ? 0 : 1 };
+      if (isUnmergedProbe(cmd)) return { exit: 0, stdout: opts.unmerged };
+      return { exit: 0 };
+    });
+  }
+
+  it("does not report a clean conflict when git merge --abort fails", async () => {
+    // A genuine conflict, but the abort fails, so the repo stays mid-merge and
+    // every later merge in the batch is invalid. Reporting a plain conflict here
+    // would hand the story to rectification against an unusable repo.
+    _mergeDeps.spawn = conflictingRepo({ abortExit: 128, unmerged: "f.txt\n" });
+
+    const engine = new MergeEngine(mockWorktreeManager);
+    const result = await engine.merge("/repo", "US-001");
+
+    expect(result.success).toBe(false);
+    expect(result.failureKind).toBe("error");
+  });
+
+  it("still reports a real conflict as a conflict, with its files", async () => {
+    _mergeDeps.spawn = conflictingRepo({ abortExit: 0, unmerged: "f.txt\nsrc/g.ts\n" });
+
+    const engine = new MergeEngine(mockWorktreeManager);
+    const result = await engine.merge("/repo", "US-001");
+
+    expect(result.success).toBe(false);
+    expect(result.failureKind).toBe("conflict");
+    expect(result.conflictFiles).toEqual(["f.txt", "src/g.ts"]);
+  });
+
+  it("mergeAll reports every story when the repo is stuck mid-merge", async () => {
+    // The mid-merge guard makes each subsequent story fail fast rather than
+    // being misreported as its own conflict.
+    _mergeDeps.spawn = fakeSpawn((cmd) => {
+      if (isMergeHeadProbe(cmd)) return { exit: 0 };
+      return { exit: 0 };
+    });
+
+    const engine = new MergeEngine(mockWorktreeManager);
+    const results = await engine.mergeAll("/repo", ["US-001", "US-002"], {});
+
+    expect(results.length).toBe(2);
+    expect(results.every((r) => !r.success && r.failureKind === "error")).toBe(true);
+  });
+});
+
+describe("worktree barrel", () => {
+  it("exports the merge surface so consumers need not reach into the leaf module", async () => {
+    const barrel = await import("@/worktree");
+    expect(barrel.MergeEngine).toBeDefined();
+    expect(barrel._mergeDeps).toBeDefined();
   });
 });
