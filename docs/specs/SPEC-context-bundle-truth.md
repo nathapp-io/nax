@@ -97,7 +97,7 @@ Each of at least 200 fixed-seed cases is generated from that repair envelope: ha
 
 #### Context Files
 - `src/context/engine/orchestrator.ts` — the `rebuildForAgent` method being moved
-- `src/context/engine/manifest-builder.ts` — `rebuildUsedTokens`, called by the moved code
+- `src/context/engine/manifest-builder.ts` — `rebuildUsedTokens`, called by the moved code (deleted 2026-08-10: the shipped `rebuild()` computes `usedTokens` from its own `PackResult`, leaving this function with no caller while it still encoded the pre-US-003 accounting this story removed)
 - `src/context/engine/agent-renderer.ts` — `renderForAgent`, called by the moved code
 - `test/unit/context/engine/orchestrator-rebuild.test.ts` — existing rebuild coverage to keep green
 

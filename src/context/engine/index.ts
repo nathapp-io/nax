@@ -12,7 +12,6 @@ export { FLOOR_KINDS, packChunks } from "./packing";
 export type { PackedChunk, PackResult } from "./packing";
 export { renderChunks, separatorOverheadTokens, FIXED_RENDER_OVERHEAD_TOKENS } from "./render";
 export { buildDigest, DIGEST_RESERVE_TOKENS, digestTokens } from "./digest";
-export { rebuildUsedTokens } from "./manifest-builder";
 export { rebuild, type RebuildDeps } from "./rebuild";
 export { estimateAvailableBudgetTokens } from "./available-budget";
 export { getStageContextConfig, STAGE_CONTEXT_MAP, DEFAULT_STAGE_CONFIG } from "./stage-config";
