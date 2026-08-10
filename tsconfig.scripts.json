@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["scripts/**/*.ts"],
+  "exclude": ["node_modules", "dist", "test"],
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "types": ["bun-types"]
+  }
+}
