@@ -186,6 +186,7 @@ describe("Reporter Lifecycle Events — basic (US-004)", () => {
     await run({
       prdPath,
       workdir,
+      statusFile: `${workdir}/status.json`,
       config,
       hooks,
       feature: "test-feature",
@@ -230,6 +231,7 @@ describe("Reporter Lifecycle Events — basic (US-004)", () => {
     await run({
       prdPath,
       workdir,
+      statusFile: `${workdir}/status.json`,
       config,
       hooks,
       feature: "test-feature",
@@ -285,6 +287,7 @@ describe("Reporter Lifecycle Events — basic (US-004)", () => {
     await run({
       prdPath,
       workdir,
+      statusFile: `${workdir}/status.json`,
       config,
       hooks,
       feature: "test-feature",
@@ -332,6 +335,7 @@ describe("Reporter Lifecycle Events — basic (US-004)", () => {
     await run({
       prdPath,
       workdir,
+      statusFile: `${workdir}/status.json`,
       config,
       hooks,
       feature: "test-feature",
@@ -371,6 +375,7 @@ describe("Reporter Lifecycle Events — basic (US-004)", () => {
     await run({
       prdPath,
       workdir,
+      statusFile: `${workdir}/status.json`,
       config,
       hooks,
       feature: "test-feature",
@@ -414,6 +419,7 @@ describe("Reporter Lifecycle Events — basic (US-004)", () => {
     await run({
       prdPath,
       workdir,
+      statusFile: `${workdir}/status.json`,
       config,
       hooks,
       feature: "test-feature",

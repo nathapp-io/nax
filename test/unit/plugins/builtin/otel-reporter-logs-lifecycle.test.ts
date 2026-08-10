@@ -12,6 +12,7 @@
  * existing reports in `otel-reporter-lifecycle.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { mockFetch } from "@test/helpers";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { initLogger, resetLogger } from "@/logger";
 import { type PostJsonDeps, buildLogsPayload, createOtelReporterPlugin } from "@/plugins";
@@ -25,10 +26,10 @@ interface CapturedPost {
 function capturingDeps() {
   const posts: CapturedPost[] = [];
   const deps: PostJsonDeps = {
-    fetch: async (url, init) => {
+    fetch: mockFetch(async (url, init) => {
       posts.push({ url: String(url), body: JSON.parse(String(init?.body)) });
       return new Response(null, { status: 200 });
-    },
+    }),
   };
   return { posts, deps };
 }

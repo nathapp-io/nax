@@ -129,6 +129,7 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
             scope: "triage",
             regressionAttempts: 1,
             verifierGuard: true,
+            sourceDiffCap: { maxFiles: 10, maxLines: 500 },
             ...extra,
           },
         },
@@ -148,7 +149,7 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
           timeoutMs: 600_000,
           parallel: false,
           maxConcurrentSessions: 2,
-          nonBlockingFix: { enabled: true, scope, regressionAttempts: 1, verifierGuard: true },
+          nonBlockingFix: { enabled: true, scope, regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } },
         },
       },
     });

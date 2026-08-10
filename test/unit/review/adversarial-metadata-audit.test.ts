@@ -305,7 +305,7 @@ describe("runAdversarialReview — review audit gate", () => {
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({
       agentManager,
-      reviewAuditor: { recordDispatch() {}, recordDecision: (entry) => auditCalls.push(entry), async flush() {} },
+      reviewAuditor: { recordDispatch() {}, recordDecision: (entry) => auditCalls.push(entry), getAdvisoryFindings: () => [], async flush() {} },
     });
 
     await runAdversarialReview({ workdir: "/tmp/wd", storyGitRef: "abc123", story: STORY, adversarialConfig: ADVERSARIAL_CONFIG, agentManager, runtime });
@@ -320,7 +320,7 @@ describe("runAdversarialReview — review audit gate", () => {
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({
       agentManager,
-      reviewAuditor: { recordDispatch() {}, recordDecision: (entry) => auditCalls.push(entry), async flush() {} },
+      reviewAuditor: { recordDispatch() {}, recordDecision: (entry) => auditCalls.push(entry), getAdvisoryFindings: () => [], async flush() {} },
     });
     const naxConfig = { review: { audit: { enabled: true } } } as any;
 
@@ -337,7 +337,7 @@ describe("runAdversarialReview — review audit gate", () => {
     const agentManager = makeAgentManager("not json at all");
     const runtime = makeMockRuntime({
       agentManager,
-      reviewAuditor: { recordDispatch() {}, recordDecision: (entry) => auditCalls.push(entry), async flush() {} },
+      reviewAuditor: { recordDispatch() {}, recordDecision: (entry) => auditCalls.push(entry), getAdvisoryFindings: () => [], async flush() {} },
     });
     const naxConfig = { review: { audit: { enabled: true } } } as any;
 

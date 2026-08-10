@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { mockFetch } from "@test/helpers";
 import type { WebhookReporterConfig } from "@/config/schemas-reporters";
 import type { PhaseCompleteEvent, PhaseStartEvent } from "@/plugins";
 import { type PostJsonDeps, createWebhookReporterPlugin } from "@/plugins";
@@ -13,14 +14,14 @@ const baseCfg: WebhookReporterConfig = {
 function capturing() {
   const calls: Array<{ url: string; body: any; headers: Headers }> = [];
   const deps: PostJsonDeps = {
-    fetch: async (url, init) => {
+    fetch: mockFetch(async (url, init) => {
       calls.push({
         url: String(url),
         body: JSON.parse(String(init?.body)),
         headers: new Headers(init?.headers),
       });
       return new Response(null, { status: 200 });
-    },
+    }),
   };
   return { calls, deps };
 }

@@ -255,7 +255,7 @@ describe("runNonBlockingFix quarantine transaction", () => {
     workdir: "/tmp/nax-1404",
     storyId: "US-1404",
     advisoryFindings: [ADVISORY],
-    cfg: { enabled: true, scope: "triage", regressionAttempts: 1, verifierGuard: true } as const,
+    cfg: { enabled: true, scope: "triage", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } } as const,
     phaseOutputs: { [GATE_NAME]: { success: true } } as Record<string, unknown>,
     phaseCosts: {} as Record<string, number>,
   };

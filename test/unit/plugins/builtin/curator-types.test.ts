@@ -21,6 +21,7 @@ describe("Observation Types", () => {
   test("ChunkIncludedObservation should have correct shape", () => {
     const obs: ChunkIncludedObservation = {
       schemaVersion: 1,
+      projectKey: "TEST",
       runId: "run-123",
       featureId: "feature-1",
       storyId: "story-1",
@@ -42,6 +43,7 @@ describe("Observation Types", () => {
   test("ChunkExcludedObservation should have correct shape", () => {
     const obs: ChunkExcludedObservation = {
       schemaVersion: 1,
+      projectKey: "TEST",
       runId: "run-123",
       featureId: "feature-1",
       storyId: "story-1",
@@ -62,6 +64,7 @@ describe("Observation Types", () => {
   test("ProviderEmptyObservation should have correct shape", () => {
     const obs: ProviderEmptyObservation = {
       schemaVersion: 1,
+      projectKey: "TEST",
       runId: "run-123",
       featureId: "feature-1",
       storyId: "story-1",
@@ -81,6 +84,7 @@ describe("Observation Types", () => {
   test("ReviewFindingObservation should have correct shape", () => {
     const obs: ReviewFindingObservation = {
       schemaVersion: 1,
+      projectKey: "TEST",
       runId: "run-123",
       featureId: "feature-1",
       storyId: "story-1",
@@ -103,6 +107,7 @@ describe("Observation Types", () => {
   test("RectifyCycleObservation should have correct shape", () => {
     const obs: RectifyCycleObservation = {
       schemaVersion: 1,
+      projectKey: "TEST",
       runId: "run-123",
       featureId: "feature-1",
       storyId: "story-1",
@@ -122,6 +127,7 @@ describe("Observation Types", () => {
   test("EscalationObservation should have correct shape", () => {
     const obs: EscalationObservation = {
       schemaVersion: 1,
+      projectKey: "TEST",
       runId: "run-123",
       featureId: "feature-1",
       storyId: "story-1",
@@ -141,6 +147,7 @@ describe("Observation Types", () => {
   test("AcceptanceVerdictObservation should have correct shape", () => {
     const obs: AcceptanceVerdictObservation = {
       schemaVersion: 1,
+      projectKey: "TEST",
       runId: "run-123",
       featureId: "feature-1",
       storyId: "story-1",
@@ -160,6 +167,7 @@ describe("Observation Types", () => {
   test("PullCallObservation should have correct shape", () => {
     const obs: PullCallObservation = {
       schemaVersion: 1,
+      projectKey: "TEST",
       runId: "run-123",
       featureId: "feature-1",
       storyId: "story-1",
@@ -179,6 +187,7 @@ describe("Observation Types", () => {
   test("VerdictObservation should have correct shape", () => {
     const obs: VerdictObservation = {
       schemaVersion: 1,
+      projectKey: "TEST",
       runId: "run-123",
       featureId: "feature-1",
       storyId: "story-1",
@@ -199,6 +208,7 @@ describe("Observation Types", () => {
   test("FixCycleIterationObservation should have correct shape", () => {
     const obs: FixCycleIterationObservation = {
       schemaVersion: 1,
+      projectKey: "TEST",
       runId: "run-123",
       featureId: "feature-1",
       storyId: "story-1",
@@ -218,6 +228,7 @@ describe("Observation Types", () => {
   test("all observation types should have schemaVersion=1", () => {
     const obs1: ChunkIncludedObservation = {
       schemaVersion: 1,
+      projectKey: "TEST",
       runId: "run-123",
       featureId: "feature-1",
       storyId: "story-1",
@@ -229,6 +240,7 @@ describe("Observation Types", () => {
 
     const obs2: ReviewFindingObservation = {
       schemaVersion: 1,
+      projectKey: "TEST",
       runId: "run-123",
       featureId: "feature-1",
       storyId: "story-1",
@@ -246,6 +258,7 @@ describe("Observation Types", () => {
     const observations: Observation[] = [
       {
         schemaVersion: 1,
+      projectKey: "TEST",
         runId: "run-123",
         featureId: "feature-1",
         storyId: "story-1",
@@ -256,6 +269,7 @@ describe("Observation Types", () => {
       },
       {
         schemaVersion: 1,
+      projectKey: "TEST",
         runId: "run-123",
         featureId: "feature-1",
         storyId: "story-1",
@@ -274,6 +288,7 @@ describe("Observation Types", () => {
   test("observations should have required base fields", () => {
     const obs: Observation = {
       schemaVersion: 1,
+      projectKey: "TEST",
       runId: "run-123",
       featureId: "feature-1",
       storyId: "story-1",

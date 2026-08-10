@@ -89,7 +89,7 @@ function makeNbfConfig() {
         timeoutMs: 600_000,
         parallel: false,
         maxConcurrentSessions: 2,
-        nonBlockingFix: { enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: false },
+        nonBlockingFix: { enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: false, sourceDiffCap: { maxFiles: 10, maxLines: 500 } },
       },
     },
   });

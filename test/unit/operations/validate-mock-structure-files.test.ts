@@ -9,6 +9,7 @@ const testPatterns: ResolvedTestPatterns = {
   globs: ["**/*.test.ts"],
   pathspec: [":(exclude)src/**"],
   testDirs: ["test/unit"],
+  resolution: "detected",
 };
 
 // Helper to create a file existence mock
@@ -197,6 +198,7 @@ describe("validateMockStructureFiles", () => {
         globs: [],
         pathspec: [],
         testDirs: ["test/unit"],
+        resolution: "detected",
       };
 
       const decl: TestEditDeclaration = {
@@ -260,6 +262,7 @@ describe("validateMockStructureFiles", () => {
       globs: ["tests/**/*.py"],
       pathspec: [],
       testDirs: ["tests"],
+      resolution: "detected",
     };
 
     test("accepts a repo-relative declaration when repoRoot is supplied", async () => {
@@ -308,6 +311,8 @@ describe("validateMockStructureFiles", () => {
         globs: ["tests/**/*.py"],
         pathspec: [],
         testDirs: ["tests"],
+      resolution: "detected",
+        resolution: "detected",
       };
 
       const decl: TestEditDeclaration = {
@@ -385,6 +390,8 @@ describe("validateMockStructureFiles", () => {
         globs: ["tests/**/*.py"],
         pathspec: [],
         testDirs: ["tests"],
+      resolution: "detected",
+        resolution: "detected",
       };
       const probed: string[] = [];
 

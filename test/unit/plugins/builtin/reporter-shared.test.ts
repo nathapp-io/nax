@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { type PostJsonDeps, interpolateHeaders, postJson } from "@/plugins";
+import { mockFetch } from "@test/helpers";
 
 describe("interpolateHeaders", () => {
   test("resolves a single env placeholder", () => {
@@ -27,17 +28,17 @@ describe("interpolateHeaders", () => {
 });
 
 describe("postJson", () => {
-  const okFetch: PostJsonDeps["fetch"] = async () => new Response(null, { status: 200 });
+  const okFetch: PostJsonDeps["fetch"] = mockFetch(async () => new Response(null, { status: 200 }));
 
   test("returns true and POSTs JSON with merged headers on 2xx", async () => {
     let capturedUrl = "";
     let capturedInit: RequestInit | undefined;
     const deps: PostJsonDeps = {
-      fetch: async (url, init) => {
+      fetch: mockFetch(async (url, init) => {
         capturedUrl = String(url);
         capturedInit = init;
         return new Response(null, { status: 204 });
-      },
+      }),
     };
     const ok = await postJson(
       "https://h/x",
@@ -59,7 +60,7 @@ describe("postJson", () => {
   });
 
   test("returns false on non-2xx", async () => {
-    const deps: PostJsonDeps = { fetch: async () => new Response(null, { status: 500 }) };
+    const deps: PostJsonDeps = { fetch: mockFetch(async () => new Response(null, { status: 500 })) };
     const ok = await postJson(
       "https://h/x",
       {},
@@ -75,9 +76,9 @@ describe("postJson", () => {
 
   test("returns false when fetch throws (network/timeout)", async () => {
     const deps: PostJsonDeps = {
-      fetch: async () => {
+      fetch: mockFetch(async () => {
         throw new Error("boom");
-      },
+      }),
     };
     const ok = await postJson(
       "https://h/x",

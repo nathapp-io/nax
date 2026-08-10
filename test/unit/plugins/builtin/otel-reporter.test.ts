@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mockFetch } from "@test/helpers";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { type PostJsonDeps, createOtelReporterPlugin } from "@/plugins";
 
@@ -25,10 +26,10 @@ const fullCfg: OtelReporterConfig = {
 function capturing() {
   const posts: Array<{ url: string; body: any }> = [];
   const deps: PostJsonDeps = {
-    fetch: async (url, init) => {
+    fetch: mockFetch(async (url, init) => {
       posts.push({ url: String(url), body: JSON.parse(String(init?.body)) });
       return new Response(null, { status: 200 });
-    },
+    }),
   };
   return { posts, deps };
 }
