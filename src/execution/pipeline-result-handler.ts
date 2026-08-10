@@ -57,6 +57,46 @@ async function removeWorktreeDirectory(projectRoot: string, storyId: string): Pr
   }
 }
 
+/**
+ * Record a story whose pipeline passed but whose branch never landed on the base.
+ *
+ * By the time this runs, `completionStage` has already marked the story passed,
+ * written that to disk (`stages/completion.ts`) and emitted `story:completed`.
+ * Correcting only the in-memory PRD is therefore not enough on two counts:
+ *
+ * - The executor answers `prdDirty: true` by **reloading from disk**
+ *   (`unified-executor.ts:484-486`), which would restore `passed` and discard
+ *   the correction. The `savePRD` here is what makes it stick.
+ * - `isComplete(prd)` / `countStories(prd)` read story status, so leaving it
+ *   `passed` lets the whole run report complete for code that is not on the branch.
+ *
+ * Mirrors the `case "fail"` arm of `handlePipelineFailure`, minus the tier
+ * escalation: every gate already passed, so there is nothing to retry at a
+ * higher tier — the branch simply could not land.
+ */
+async function failStoryAfterMerge(ctx: PipelineHandlerContext, prd: PRD, reason: string): Promise<void> {
+  markStoryFailed(prd, ctx.story.id, undefined, undefined, ctx.statusWriter);
+  await savePRD(prd, ctx.prdPath);
+
+  if (ctx.featureDir) {
+    await appendProgress(ctx.featureDir, ctx.story.id, "failed", `${ctx.story.title} — ${reason}`);
+  }
+
+  // `story:completed` is already on the bus for this story. Without this
+  // correction every reporter, hook and the TUI keeps showing a success the
+  // PRD no longer claims.
+  pipelineEventBus.emit({
+    type: "story:failed",
+    storyId: ctx.story.id,
+    story: { id: ctx.story.id, title: ctx.story.title, status: ctx.story.status, attempts: ctx.story.attempts },
+    reason,
+    countsTowardEscalation: false,
+    feature: ctx.feature,
+    attempts: ctx.story.attempts,
+    cost: ctx.runtime.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? ctx.totalCost,
+  });
+}
+
 /** Filter noise from output files (test files, lock files, nax runtime files) */
 function filterOutputFiles(files: string[]): string[] {
   const NOISE = [
@@ -166,11 +206,17 @@ export async function handlePipelineSuccess(
       // A non-conflict git failure (dirty tree, missing branch, repository stuck
       // mid-merge). There is nothing for conflict rectification to resolve, so fail
       // the story with the real cause instead of spending a session on it.
+      const reason = `Merge failed for a non-conflict reason: ${mergeResult.error ?? "unknown error"}`;
       logger?.error("worktree", "Merge failed for a non-conflict reason — marking story as failed", {
         storyId: story.id,
         error: mergeResult.error,
       });
-      return { storiesCompletedDelta: 0, costDelta, prd, prdDirty: false };
+      await failStoryAfterMerge(ctx, prd, reason);
+      // Nothing will revisit this worktree — no rectification pass is coming —
+      // so reclaim the directory. The branch stays for diagnostics, exactly as
+      // the `case "fail"` arm does.
+      await removeWorktreeDirectory(ctx.workdir, story.id);
+      return { storiesCompletedDelta: 0, costDelta, prd, prdDirty: true };
     }
     if (!mergeResult.success) {
       // Merge conflict after the story passed all checks — attempt rectification.
@@ -194,8 +240,16 @@ export async function handlePipelineSuccess(
           storyId: story.id,
           conflictFiles: mergeResult.conflictFiles,
         });
-        // Return as failure: story passed review but can't land on main
-        return { storiesCompletedDelta: 0, costDelta, prd, prdDirty: false };
+        // Return as failure: story passed review but can't land on main.
+        // The worktree is deliberately NOT reclaimed here — rectification
+        // preserves it so the unresolved conflict can be inspected by hand.
+        const files = (mergeResult.conflictFiles ?? []).join(", ");
+        await failStoryAfterMerge(
+          ctx,
+          prd,
+          `Merge conflict could not be rectified${files ? ` (${files})` : ""} — the branch did not land`,
+        );
+        return { storiesCompletedDelta: 0, costDelta, prd, prdDirty: true };
       }
     }
     logger?.info("worktree", "Merged story to main", { storyId: story.id });

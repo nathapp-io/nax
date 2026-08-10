@@ -9,7 +9,7 @@
 
 import { describe, expect, test } from "bun:test";
 import type { RectifyConflictedStoryOptions } from "../../../src/execution/merge-conflict-rectify";
-import { rectifyConflictedStory } from "../../../src/execution/merge-conflict-rectify";
+import { rectifyConflictedStory, rectifyMergeFailure } from "../../../src/execution/merge-conflict-rectify";
 import { makeMockAgentManager, makeNaxConfig, makePRD, makeSessionManager, makeStory } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -131,5 +131,51 @@ describe("rect AC-7: rectifyConflictedStory catches errors and returns failure �
     const failureCheck: FailureVariant = { success: false, storyId: "x", cost: 0, finalConflict: false };
     expect(successCheck.success).toBe(true);
     expect(failureCheck.success).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The post-rectification merge reports WHY it did not land
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("rectifyMergeFailure: carries the merge classification instead of assuming a conflict", () => {
+  test("a real conflict is reported as a final conflict, with its files", () => {
+    const r = rectifyMergeFailure("US-001", 1.5, {
+      success: false,
+      storyId: "US-001",
+      failureKind: "conflict",
+      conflictFiles: ["src/a.ts", "src/b.ts"],
+    });
+
+    expect(r).toMatchObject({
+      success: false,
+      storyId: "US-001",
+      cost: 1.5,
+      finalConflict: true,
+      conflictFiles: ["src/a.ts", "src/b.ts"],
+    });
+  });
+
+  test("a non-conflict git failure is NOT reported as a final conflict", () => {
+    // Telling the operator the agent could not resolve a conflict, when git
+    // actually refused over a dirty tree or a missing branch, sends them
+    // looking for a conflict that was never there.
+    const r = rectifyMergeFailure("US-001", 0, {
+      success: false,
+      storyId: "US-001",
+      failureKind: "error",
+      error: "working tree is dirty",
+    });
+
+    expect(r).toMatchObject({ finalConflict: false, conflictFiles: [] });
+  });
+
+  test("an absent result keeps the historical conflict reading", () => {
+    // mergeAll returned nothing for this story. Unknown is not "error", so the
+    // conservative reading — the one every caller had before failureKind
+    // existed — is preserved.
+    const r = rectifyMergeFailure("US-001", 0, undefined);
+
+    expect(r).toMatchObject({ finalConflict: true, conflictFiles: [] });
   });
 });

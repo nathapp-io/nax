@@ -15,6 +15,7 @@ import type { PluginRegistry } from "../plugins/registry";
 import type { PRD } from "../prd";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { errorMessage } from "../utils/errors";
+import type { MergeResult } from "../worktree";
 
 /**
  * Close a stale ACP session by name — best-effort, swallows all errors.
@@ -54,6 +55,32 @@ export type RectificationResult =
       pipelineFailure?: boolean;
       conflictFiles?: string[];
     };
+
+/**
+ * Build the failure result for a post-rectification merge that did not land.
+ *
+ * `finalConflict` used to be hardcoded `true` here, which was the last place
+ * still guessing: after #1533 the merge engine reports *why* it failed, and a
+ * dirty tree or a missing branch is not a conflict the agent failed to resolve.
+ * Telling the operator otherwise sends them looking for a conflict that was
+ * never there.
+ *
+ * Only an explicit `"error"` clears the flag. An absent result, or one from a
+ * merge engine predating `failureKind`, keeps the historical conflict reading.
+ */
+export function rectifyMergeFailure(
+  storyId: string,
+  cost: number,
+  mergeResult: MergeResult | undefined,
+): RectificationResult {
+  return {
+    success: false,
+    storyId,
+    cost,
+    finalConflict: mergeResult?.failureKind !== "error",
+    conflictFiles: mergeResult?.conflictFiles ?? [],
+  };
+}
 
 /** Options passed to rectifyConflictedStory */
 export interface RectifyConflictedStoryOptions extends ConflictedStoryInfo, DispatchContext {
@@ -158,9 +185,12 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
     const mergeResult = mergeResults[0];
 
     if (!mergeResult || !mergeResult.success) {
-      const conflictFiles = mergeResult?.conflictFiles ?? [];
-      logger?.info("parallel", "Rectification failed - preserving worktree", { storyId });
-      return { success: false, storyId, cost, finalConflict: true, conflictFiles };
+      logger?.info("parallel", "Rectification failed - preserving worktree", {
+        storyId,
+        failureKind: mergeResult?.failureKind,
+        error: mergeResult?.error,
+      });
+      return rectifyMergeFailure(storyId, cost, mergeResult);
     }
 
     logger?.info("parallel", "Rectification succeeded - story merged", {

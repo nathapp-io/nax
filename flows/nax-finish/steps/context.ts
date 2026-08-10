@@ -12,10 +12,35 @@ export async function detectBaseBranch(workdir: string): Promise<string> {
   return main.exitCode === 0 ? "origin/main" : "origin/master";
 }
 
+/**
+ * The acceptance resolutions this flow knows how to route on, as emitted by
+ * `resolveFeatureAcceptance` (`src/cli/features-acceptance.ts`).
+ *
+ * A closed set, not `string`: `steps/gates.ts` branches on all three by literal
+ * — `disabled` decides whether the acceptance gate runs at all — and a typo in
+ * any of those comparisons against a `string` compiles cleanly and silently
+ * stops a gate from firing.
+ */
+export type AcceptanceStatus = "ok" | "no-prd" | "disabled";
+
+const ACCEPTANCE_STATUSES: readonly AcceptanceStatus[] = ["ok", "no-prd", "disabled"];
+
+/**
+ * Narrow the resolver's status, degrading anything unrecognised to `no-prd`.
+ *
+ * A status this flow cannot interpret is not a licence to proceed: it is
+ * neither the explicit opt-out nor a resolution to trust. `no-prd` routes to
+ * `escalate`, which is the honest answer and matches the existing default for
+ * a status that is missing entirely.
+ */
+export function toAcceptanceStatus(raw: unknown): AcceptanceStatus {
+  return ACCEPTANCE_STATUSES.find((s) => s === raw) ?? "no-prd";
+}
+
 export interface FeatureResolution {
   specPath: string;
   specKind: "markdown" | "prd";
-  acceptanceStatus: string;
+  acceptanceStatus: AcceptanceStatus;
   groups: AcceptanceGroup[];
   /**
    * Test-file classification regexes, as sources, from `nax features resolve`
@@ -57,7 +82,7 @@ export async function resolveFeature(feature: string, workdir: string): Promise<
   return {
     specPath: parsed.specSource.path,
     specKind: parsed.specSource.kind,
-    acceptanceStatus: parsed.acceptance?.status ?? "no-prd",
+    acceptanceStatus: toAcceptanceStatus(parsed.acceptance?.status),
     groups: parsed.acceptance?.groups ?? [],
     testFileRegex: parsed.testPatterns?.regex ?? [],
   };

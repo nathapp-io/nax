@@ -30,7 +30,10 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 15, not 10: this job absorbed the `typecheck` + `check:all` matrix (#1534),
+    # which used to run in parallel under its own 5-minute budget. The work grew
+    # while the budget did not, and a timeout here reads like a test failure.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
