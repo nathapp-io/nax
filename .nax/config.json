@@ -15,6 +15,11 @@
       "fast": "minimax/MiniMax-M2.7",
       "balanced": "minimax/MiniMax-M2.7",
       "powerful": "minimax/MiniMax-M2.7"
+    },
+    "pi": {
+      "fast": "huggingface/MiniMaxAI/MiniMax-M2.7",
+      "balanced": "huggingface/MiniMaxAI/MiniMax-M2.7",
+      "powerful": "huggingface/MiniMaxAI/MiniMax-M2.7"
     }
   },
   "autoMode": {
