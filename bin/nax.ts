@@ -1448,6 +1448,10 @@ runs
       process.exit(1);
     }
 
+    // Both runs commands emit exclusively through the logger; without this the
+    // uninitialized getLogger() returns the noop logger and they print nothing
+    // while exiting 0. Console-facing, so headless stays off.
+    initLogger({ level: "info", useChalk: true });
     await runsListCommand({ feature: options.feature, workdir });
   });
 
@@ -1465,6 +1469,7 @@ runs
       process.exit(1);
     }
 
+    initLogger({ level: "info", useChalk: true });
     await runsShowCommand({ runId, feature: options.feature, workdir });
   });
 
