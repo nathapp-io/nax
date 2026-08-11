@@ -18,6 +18,18 @@ import type { TestFailure } from "../test-runners/types";
 import { executeWithTimeout } from "./executor";
 import type { TestExecutionResult } from "./types";
 
+// Frameworks that exit 0 for "zero tests matched the isolation filter" (primarily `go
+// test -run '^Name$'` when the name doesn't round-trip the filter) need this check so an
+// undetectable-but-still-failing test isn't declared "flaky" from a probe that never ran
+// it. Conservative on purpose: only the well-known zero-match phrasing counts, so a
+// framework whose real failure output happens to differ isn't misclassified as clean.
+const NO_TESTS_EXECUTED_MARKERS = [/no tests? to run/i, /^ran 0 tests?/im];
+
+function probeRanNoTests(output: string | undefined): boolean {
+  if (!output) return false;
+  return NO_TESTS_EXECUTED_MARKERS.some((re) => re.test(output));
+}
+
 export type FlakeProbeVerdict =
   | { verdict: "flaky"; probeRuns: number; probePasses: number }
   | { verdict: "consistent-failure"; probeRuns: number }
@@ -154,7 +166,7 @@ export async function runFlakeProbe(input: FlakeProbeInput): Promise<FlakeProbeV
       // environmental, not an attributable flake signal.
       continue;
     }
-    if (result.success && result.countsTowardEscalation) {
+    if (result.success && result.countsTowardEscalation && !probeRanNoTests(result.output)) {
       probePasses += 1;
     }
   }

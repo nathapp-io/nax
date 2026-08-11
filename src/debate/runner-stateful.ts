@@ -65,7 +65,6 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
 
   const signal = resolveStatefulSignal(ctx);
   const noopBuildRebutPrompt = (): string => "";
-  const localProposalBarrier = () => [Promise.withResolvers<string>()];
   const debaterRole = (index: number) => `debate-${ctx.stage}-${index}` as SessionRole;
   const debaterCallContext = (agentName: string, index: number): CallContext => ({
     ...createDebaterCallContext(ctx, agentName),
@@ -78,6 +77,13 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
     }
   };
 
+  // One barrier array shared by every debater in this round, sized to the
+  // participant count — each debater resolves its OWN slot by `index` (BUG-12:
+  // a fresh 1-element array per debater meant every debater but #0 indexed past
+  // the end and threw inside hopBody, which allSettledBounded then dropped
+  // silently, leaving only debater 0's proposal to ever succeed).
+  const proposalBarriers = resolved.map(() => Promise.withResolvers<string>());
+
   const proposalSettled = await allSettledBounded(
     resolved.map(
       ({ debater, agentName }, index) =>
@@ -88,7 +94,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
               index,
               proposePrompt: proposalBuilder.buildProposalPrompt(index),
               buildRebutPrompt: noopBuildRebutPrompt,
-              proposalBarriers: localProposalBarrier(),
+              proposalBarriers,
               signal,
               storyId: ctx.storyId,
               skipRebuttal: true,
@@ -169,6 +175,11 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
     return buildFailedResult(ctx.storyId, ctx.stage, ctx.stageConfig, 0);
   }
 
+  // Same sizing fix as the proposal round above — one shared array, sized to
+  // this round's participant count (survivors of the proposal round), not a
+  // fresh 1-element array per debater.
+  const rebuttalRoundBarriers = successfulProposals.map(() => Promise.withResolvers<string>());
+
   const rebuttals = shouldRunRebuttal
     ? (
         await allSettledBounded(
@@ -186,7 +197,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
                     })),
                   ),
                   buildRebutPrompt: noopBuildRebutPrompt,
-                  proposalBarriers: localProposalBarrier(),
+                  proposalBarriers: rebuttalRoundBarriers,
                   signal,
                   storyId: ctx.storyId,
                   skipRebuttal: true,

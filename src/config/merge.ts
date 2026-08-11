@@ -17,11 +17,11 @@ import type { NaxConfig } from "./schema";
  * - models: per-agent model tier mappings (deep)
  * - routing: strategy, llm (deep)
  * - execution: smartTestRunner, regressionGate (deep), flakeDetection (deep),
- *   mutationCheck (deep), verificationTimeoutSeconds
- * - review: enabled, checks, commands (deep), semantic (deep)
- * - acceptance: enabled, generateTests, testPath
- * - quality: commands (deep), testing (deep)
- * - context: testCoverage (deep)
+ *   mutationCheck (deep), rectification (deep), verificationTimeoutSeconds
+ * - review: enabled, checks, commands (deep), semantic (deep), adversarial (deep)
+ * - acceptance: enabled, generateTests, testPath, fix (deep)
+ * - quality: commands (deep), testing (deep), autofix (deep), lintOutput (deep)
+ * - context: testCoverage (deep), v2.stages (deep), v2.rules (deep)
  * - project: type, language, frameworks
  *
  * Root-only sections (autoMode, generate, tdd, decompose, plan, constitution,
@@ -94,6 +94,10 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
         ...root.execution.mutationCheck,
         ...packageOverride.execution?.mutationCheck,
       },
+      rectification: {
+        ...root.execution.rectification,
+        ...packageOverride.execution?.rectification,
+      },
     },
     review: {
       ...root.review,
@@ -140,10 +144,18 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
         packageOverride.review?.semantic !== undefined
           ? { ...root.review.semantic, ...packageOverride.review.semantic }
           : root.review.semantic,
+      adversarial:
+        packageOverride.review?.adversarial !== undefined
+          ? { ...root.review.adversarial, ...packageOverride.review.adversarial }
+          : root.review.adversarial,
     },
     acceptance: {
       ...root.acceptance,
       ...packageOverride.acceptance,
+      fix:
+        packageOverride.acceptance?.fix !== undefined
+          ? { ...root.acceptance.fix, ...packageOverride.acceptance.fix }
+          : root.acceptance.fix,
     },
     quality: {
       ...root.quality,
@@ -156,6 +168,14 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
         packageOverride.quality?.testing !== undefined
           ? { ...root.quality.testing, ...packageOverride.quality.testing }
           : root.quality.testing,
+      autofix:
+        packageOverride.quality?.autofix !== undefined
+          ? { ...root.quality.autofix, ...packageOverride.quality.autofix }
+          : root.quality.autofix,
+      lintOutput:
+        packageOverride.quality?.lintOutput !== undefined
+          ? { ...root.quality.lintOutput, ...packageOverride.quality.lintOutput }
+          : root.quality.lintOutput,
     },
     context: {
       ...root.context,
@@ -170,6 +190,10 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
         stages: {
           ...root.context.v2?.stages,
           ...packageOverride.context?.v2?.stages,
+        },
+        rules: {
+          ...root.context.v2?.rules,
+          ...packageOverride.context?.v2?.rules,
         },
       },
     },

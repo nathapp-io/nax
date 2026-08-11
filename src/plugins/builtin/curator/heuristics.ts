@@ -228,25 +228,30 @@ function h2PullToolEmptyResult(observations: Observation[], threshold: number): 
 function h3RepeatedRectification(observations: Observation[], threshold: number): Proposal[] {
   const cycles = observations.filter((o): o is RectifyCycleObservation => o.kind === "rectify-cycle");
 
-  const byStory = new Map<string, { count: number; featureId: string }>();
+  // Keyed by featureId/storyId — story IDs are feature-scoped ("US-001" exists in
+  // every feature), so grouping by the bare storyId merges unrelated features'
+  // rectify counts into one fabricated recurrence (BUG-48; see H1's crossFeatureKey
+  // comment for the same issue).
+  const byStory = new Map<string, { count: number; featureId: string; storyId: string }>();
   for (const obs of cycles) {
-    const existing = byStory.get(obs.storyId);
+    const key = `${obs.featureId}/${obs.storyId}`;
+    const existing = byStory.get(key);
     if (existing) {
       existing.count++;
     } else {
-      byStory.set(obs.storyId, { count: 1, featureId: obs.featureId });
+      byStory.set(key, { count: 1, featureId: obs.featureId, storyId: obs.storyId });
     }
   }
 
   const proposals: Proposal[] = [];
-  for (const [storyId, data] of byStory.entries()) {
-    if (data.count < threshold) continue;
+  for (const { count, featureId, storyId } of byStory.values()) {
+    if (count < threshold) continue;
     proposals.push({
       id: "H3",
       severity: "HIGH",
-      target: { canonicalFile: `.nax/features/${data.featureId}/context.md`, action: "add" },
-      description: `Repeated rectification cycle: story ${storyId} required ${data.count} rectify attempts`,
-      evidence: `Story ${storyId} triggered ${data.count} rectify cycles`,
+      target: { canonicalFile: `.nax/features/${featureId}/context.md`, action: "add" },
+      description: `Repeated rectification cycle: story ${storyId} required ${count} rectify attempts`,
+      evidence: `Story ${storyId} triggered ${count} rectify cycles`,
       sourceKinds: ["rectify-cycle"],
       storyIds: [storyId],
     });
@@ -258,22 +263,27 @@ function h3RepeatedRectification(observations: Observation[], threshold: number)
 function h4EscalationChain(observations: Observation[], threshold: number): Proposal[] {
   const escalations = observations.filter((o): o is EscalationObservation => o.kind === "escalation");
 
-  const byPath = new Map<string, { storyIds: string[]; featureId: string }>();
+  // Sites are featureId/storyId composites, not bare story IDs — story IDs are
+  // feature-scoped, so two features' unrelated "US-001" would otherwise dedupe
+  // into one displayed site and understate how widely this escalation path
+  // actually recurs (BUG-48; same fix as H1's `sites`).
+  const byPath = new Map<string, { sites: string[]; featureId: string }>();
   for (const obs of escalations) {
     const key = `${obs.payload.from}->${obs.payload.to}`;
+    const site = `${obs.featureId}/${obs.storyId}`;
     const existing = byPath.get(key);
     if (existing) {
-      existing.storyIds.push(obs.storyId);
+      existing.sites.push(site);
     } else {
-      byPath.set(key, { storyIds: [obs.storyId], featureId: obs.featureId });
+      byPath.set(key, { sites: [site], featureId: obs.featureId });
     }
   }
 
   const proposals: Proposal[] = [];
   for (const [escalationPath, data] of byPath.entries()) {
-    if (data.storyIds.length < threshold) continue;
-    const count = data.storyIds.length;
-    const unique = uniqueStoryIds(data.storyIds);
+    if (data.sites.length < threshold) continue;
+    const count = data.sites.length;
+    const unique = uniqueStoryIds(data.sites);
     proposals.push({
       id: "H4",
       severity: "MED",
@@ -326,18 +336,24 @@ function h5StaleChunk(observations: Observation[], threshold: number): Proposal[
 function h6FixCycleUnchanged(observations: Observation[], threshold: number): Proposal[] {
   const iterations = observations.filter((o): o is FixCycleIterationObservation => o.kind === "fix-cycle-iteration");
 
+  // Keyed by featureId/storyId (BUG-48) — grouping by the bare storyId here is the
+  // most severe instance of this bug: it doesn't just inflate a count, it interleaves
+  // two unrelated features' iterations (whose iterationNum both restart from 1) into
+  // one fabricated streak.
   const byStory = new Map<string, FixCycleIterationObservation[]>();
   for (const obs of iterations) {
-    const existing = byStory.get(obs.storyId);
+    const key = `${obs.featureId}/${obs.storyId}`;
+    const existing = byStory.get(key);
     if (existing) {
       existing.push(obs);
     } else {
-      byStory.set(obs.storyId, [obs]);
+      byStory.set(key, [obs]);
     }
   }
 
   const proposals: Proposal[] = [];
-  for (const [storyId, storyIterations] of byStory.entries()) {
+  for (const storyIterations of byStory.values()) {
+    const storyId = storyIterations[0].storyId;
     const ordered = [...storyIterations].sort(
       (a, b) => (a.payload.iterationNum ?? a.payload.iteration) - (b.payload.iterationNum ?? b.payload.iteration),
     );

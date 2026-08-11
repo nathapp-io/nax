@@ -45,8 +45,21 @@ export function selectNextStories(
     );
 
     if (storiesToExecute.length === 0) {
-      // Batch exhausted — signal caller to stop (no more work in this batch)
-      return null;
+      // Batch exhausted for this slot (e.g. only a `decomposed` parent left, whose
+      // sub-stories live outside this batch) — fall through to the single-story
+      // fallback instead of ending the run with pending sub-stories still queued.
+      const fallbackStory = getNextStory(prd, lastStoryId, config.execution.rectification?.maxAttemptsTotal ?? 12);
+      if (!fallbackStory) return null;
+
+      return {
+        selection: {
+          story: fallbackStory,
+          storiesToExecute: [fallbackStory],
+          routing: buildPreviewRouting(fallbackStory, config),
+          isBatchExecution: false,
+        },
+        nextBatchIndex: currentBatchIndex + 1,
+      };
     }
 
     const story = storiesToExecute[0];

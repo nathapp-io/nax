@@ -9,10 +9,11 @@
  */
 
 import type { NaxConfig } from "../config";
+import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { resolveTestFilePatterns } from "../test-runners";
 import { errorMessage } from "../utils/errors";
-import { getMergeBase } from "../utils/git";
+import { getMergeBase, gitWithTimeout } from "../utils/git";
 import type { FlakeTriageDiff } from "./flake-triage";
 import { getChangedNonTestFiles, getChangedTestFiles, mapSourceToTests } from "./smart-runner";
 
@@ -36,6 +37,32 @@ export async function resolveFlakeBaselineDiff(
   try {
     const resolved = await resolveTestFilePatterns(config, workdir, storyWorkdir);
     const baseRef = await getMergeBase(workdir);
+    if (baseRef === undefined) {
+      // getMergeBase() exhausted every fallback (no origin/main, no origin/master, no
+      // initial commit) — there is no diff to trust. Substituting "HEAD~1" here would
+      // silently diff against the wrong ref; substituting an empty diff would be the
+      // fail-OPEN direction this function exists to avoid. Fail closed instead.
+      throw new NaxError("getMergeBase() found no usable ref (empty/detached repo)", "FLAKE_BASELINE_NO_MERGE_BASE", {
+        stage: "flake-triage",
+        workdir,
+      });
+    }
+    // Preflight the actual diff command so a git failure (non-zero exit) is caught
+    // here and fails closed — getChangedTestFiles/getChangedNonTestFiles swallow git
+    // errors into `[]`, which is indistinguishable from a genuinely empty diff and
+    // would otherwise flow through as the fail-OPEN empty-diff case this guards against.
+    const preflight = await gitWithTimeout(["diff", "--name-only", baseRef], workdir);
+    if (preflight.exitCode !== 0) {
+      throw new NaxError(
+        `git diff --name-only ${baseRef} failed (exit ${preflight.exitCode})`,
+        "FLAKE_BASELINE_GIT_DIFF_FAILED",
+        {
+          stage: "flake-triage",
+          baseRef,
+          exitCode: preflight.exitCode,
+        },
+      );
+    }
     const changedTestFiles = await getChangedTestFiles(workdir, workdir, baseRef, storyWorkdir, [...resolved.regex]);
     const changedNonTestFiles = await getChangedNonTestFiles(
       workdir,

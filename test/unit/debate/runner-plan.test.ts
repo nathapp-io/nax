@@ -912,6 +912,8 @@ describe("runner-plan — postDebateVerifier and tag-expert rewrite", () => {
     _runPlanDeps.resolvePostDebateVerifier = origResolvePostDebateVerifier;
   });
 
+  // BUG-15: no file-read fallback anymore — stub both debaters' proposals directly.
+  const stubDebatePlanOp = (output: string) => spyOn(callModule, "callOp").mockImplementation(async (_c, op: any) => (op?.name === "debate-plan" ? { success: true, rebut: output } : Promise.reject(new Error(op?.name))) as never);
   function makeRunWithVerifier(verifierFn: () => Promise<{ outcome: string; costUsd: number }>) {
     const verifierCalled: string[] = [];
     _runPlanDeps.resolvePostDebateVerifier = mock((_kind: string) => {
@@ -978,8 +980,7 @@ describe("runner-plan — postDebateVerifier and tag-expert rewrite", () => {
       runInSession: mock(async () => ({ output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 })) as any,
       nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
     });
-    _debateSessionDeps.readFile = mock(async () => prdOutput);
-
+    stubDebatePlanOp(prdOutput);
     const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
     const agentManager = makeMockAgentManager();
 
@@ -1018,8 +1019,7 @@ describe("runner-plan — postDebateVerifier and tag-expert rewrite", () => {
       runInSession: mock(async () => ({ output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 })) as any,
       nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
     });
-    _debateSessionDeps.readFile = mock(async () => prdOutput);
-
+    stubDebatePlanOp(prdOutput);
     const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
     const agentManager = makeMockAgentManager();
 

@@ -63,7 +63,13 @@ function appendFilesToCommand(command: string, files: readonly string[]): string
 
 async function listChangedFiles(workdir: string, baseRef: string): Promise<string[] | null> {
   const proc = Bun.spawn({
-    cmd: ["git", "diff", "--name-only", `${baseRef}..HEAD`],
+    // --relative: git emits paths relative to the repo root by default, even when run
+    // from a subdirectory. In a monorepo `workdir` is the package dir, and
+    // filterFilesToScope() below does `join(workdir, relPath)` — without --relative
+    // that double-prefixes every path (e.g. packages/api/packages/api/src/foo.ts),
+    // so every file fails the existence check and the scope comes back empty — a
+    // false-green "lint skipped" with zero lint actually run (BUG-31).
+    cmd: ["git", "diff", "--relative", "--name-only", `${baseRef}..HEAD`],
     cwd: workdir,
     stdout: "pipe",
     stderr: "pipe",

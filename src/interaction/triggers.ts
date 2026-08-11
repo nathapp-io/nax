@@ -86,7 +86,11 @@ export function createTriggerRequest(
   const { fallback, timeout } = getTriggerConfig(trigger, config);
 
   const summary = substituteTemplate(metadata.defaultSummary, context);
-  const id = `trigger-${trigger}-${Date.now()}`;
+  // crypto.randomUUID() entropy — Date.now() alone collides for two same-name
+  // triggers firing in the same millisecond under parallel stories, and the
+  // second receive() then takes the supersede path and fabricates a `skip`
+  // for the first prompt (BUG-34).
+  const id = `trigger-${trigger}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 
   return {
     id,

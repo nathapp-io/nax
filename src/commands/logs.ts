@@ -10,7 +10,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { LogLevel } from "../logger/types";
-import { resolveProject } from "./common";
+import { resolveProject, resolveSingleFeature } from "./common";
 import { displayLogs, displayRunsList, followLogs } from "./logs-formatter";
 import { resolveRunFileFromRegistry, selectRunFile } from "./logs-reader";
 
@@ -61,15 +61,9 @@ export async function logsCommand(options: LogsOptions): Promise<void> {
   const resolved = resolveProject({ dir: options.dir });
   const naxDir = join(resolved.projectDir, ".nax");
 
-  // Read config to get feature name
-  const configPath = resolved.configPath;
-  const configFile = Bun.file(configPath);
-  const config = await configFile.json();
-  const featureName = config.feature;
-
-  if (!featureName) {
-    throw new Error("No feature specified in config.json");
-  }
+  // config.json never carries a feature field — derive the single feature from
+  // .nax/features/* (BUG-02).
+  const featureName = resolveSingleFeature(naxDir);
 
   const featureDir = join(naxDir, "features", featureName);
   const runsDir = join(featureDir, "runs");

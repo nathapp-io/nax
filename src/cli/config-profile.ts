@@ -128,6 +128,13 @@ export async function profileUseCommand(profileName: string, startDir: string): 
     return "Profile reset to default.";
   }
 
+  // Verify the profile actually exists before poisoning .nax/config.json with a
+  // dangling reference — loadProfile throws a NaxError naming the available
+  // profiles when it doesn't, which is exactly what a typo'd name needs (BUG-50).
+  // A typo previously broke the next `nax run` with a confusing downstream error
+  // instead of failing here where the mistake was made.
+  await loadProfile(profileName, startDir);
+
   const updated = { ...existing, profile: profileName };
   await Bun.write(configPath, JSON.stringify(updated, null, 2));
   return `Now using profile: ${profileName}`;

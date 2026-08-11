@@ -273,7 +273,12 @@ describe("CLI precheck command", () => {
   });
 
   test("should handle missing feature flag with error", async () => {
-    const { projectDir, naxDir } = setupTestProject("test-no-feature");
+    const { projectDir, naxDir, featureDir } = setupTestProject("test-no-feature");
+
+    // BUG-02: -f omitted now derives the feature from .nax/features/* — remove the
+    // fixture's auto-created "test-feature" dir so there is genuinely nothing to
+    // derive, exercising the same "no feature specified" error this test intends.
+    rmSync(featureDir, { recursive: true, force: true });
 
     await Bun.write(
       join(naxDir, "config.json"),

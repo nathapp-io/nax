@@ -201,6 +201,7 @@ describe("profileUseCommand", () => {
   });
 
   test("writes 'profile' field into .nax/config.json and returns non-empty confirmation message", async () => {
+    await writeJsonAsync(join(tempDir, ".nax", "profiles", "fast.json"), { model: "fast" });
     const result = await profileUseCommand("fast", tempDir);
 
     const config = await Bun.file(join(tempDir, ".nax", "config.json")).json();
@@ -225,6 +226,7 @@ describe("profileUseCommand", () => {
   });
 
   test("creates config.json if it does not exist; preserves existing fields when writing profile", async () => {
+    await writeJsonAsync(join(tempDir, ".nax", "profiles", "fast.json"), { model: "fast" });
     const configPath = join(tempDir, ".nax", "config.json");
     await profileUseCommand("fast", tempDir);
     expect(await Bun.file(configPath).exists()).toBe(true);
@@ -235,6 +237,12 @@ describe("profileUseCommand", () => {
     const config = await Bun.file(configPath).json();
     expect(config.profile).toBe("fast");
     expect(config.timeout).toBe(5000);
+  });
+
+  // BUG-50: a typo'd profile name must not silently poison config.json.
+  test("rejects a profile name with no matching profile file", async () => {
+    await expect(profileUseCommand("does-not-exist", tempDir)).rejects.toThrow(/not found/i);
+    expect(await Bun.file(join(tempDir, ".nax", "config.json")).exists()).toBe(false);
   });
 });
 

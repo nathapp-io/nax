@@ -17,12 +17,10 @@ import {
   type AcpClient,
   type AcpClientOptions,
   type AcpLineActivity,
-  type AcpParseState,
   type AcpSession,
   type AcpSessionResponse,
   createParseState,
   finalizeParseState,
-  parseAcpxJsonLine,
 } from "@/agents";
 import { getSafeLogger } from "@/logger";
 import type { AgentStreamEvent } from "@/runtime";
@@ -31,6 +29,7 @@ import { buildAllowedEnv } from "../shared/env";
 import { parseModelSpec } from "./model-spec";
 import { applyReasoningEffort } from "./reasoning-effort";
 import { parseSessionIds } from "./session-ids";
+import { readAndParseLines } from "./stdout-line-reader";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -54,52 +53,7 @@ export const _spawnClientDeps = {
 // Line-reader helper
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Read chunks from a stream, split on newlines, and feed each complete line
- * into an AcpxParseState incrementally. Discards raw bytes immediately after
- * parsing so only the extracted fields (strings + numbers) are held in memory.
- *
- * The caller races this promise against a drain timeout to handle the Bun bug
- * where piped streams may not close after SIGTERM.
- *
- * When onActivity is provided, it is called immediately for each line that
- * produces activity metadata
- * (message_update, thinking_update, usage_update, tool_call_update).
- */
-async function readAndParseLines(
-  stream: ReadableStream<Uint8Array>,
-  state: AcpParseState,
-  onActivity?: (activity: AcpLineActivity) => void,
-): Promise<void> {
-  const decoder = new TextDecoder();
-  let remainder = "";
-  const reader = stream.getReader();
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      remainder += decoder.decode(value, { stream: true });
-      for (;;) {
-        const nl = remainder.indexOf("\n");
-        if (nl < 0) break;
-        const line = remainder.slice(0, nl);
-        remainder = remainder.slice(nl + 1);
-        if (line.trim()) {
-          const activity = parseAcpxJsonLine(line, state);
-          if (activity && onActivity) onActivity(activity);
-        }
-      }
-    }
-    // Flush decoder and process any content after the last newline
-    remainder += decoder.decode();
-    if (remainder.trim()) {
-      const activity = parseAcpxJsonLine(remainder.trim(), state);
-      if (activity && onActivity) onActivity(activity);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
+// readAndParseLines lives in ./stdout-line-reader (split out to stay under the file-size limit).
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Env builder
@@ -328,7 +282,8 @@ export class SpawnAcpSession implements AcpSession {
             }
           }
         : undefined;
-      const parsePromise = readAndParseLines(proc.stdout, parseState, onActivity).catch(() => {});
+      const parseHandle = readAndParseLines(proc.stdout, parseState, onActivity);
+      const parsePromise = parseHandle.promise.catch(() => {});
       const stderrPromise = new Response(proc.stderr).text().catch(() => "");
 
       const exitCode = await proc.exited;
@@ -347,10 +302,17 @@ export class SpawnAcpSession implements AcpSession {
       };
       const drainA = makeDrain(_spawnClientDeps.streamDrainTimeoutMs);
       const drainB = makeDrain(_spawnClientDeps.streamDrainTimeoutMs);
-      const [, stderr] = await Promise.all([
-        Promise.race([parsePromise, drainA.promise]).finally(() => drainA.cancel()),
+      const stdoutRaceResult = Promise.race([
+        parsePromise.then(() => "parsed" as const),
+        drainA.promise.then(() => "drain" as const),
+      ]).finally(() => drainA.cancel());
+      const [stdoutWinner, stderr] = await Promise.all([
+        stdoutRaceResult,
         Promise.race([stderrPromise, drainB.promise]).finally(() => drainB.cancel()),
       ]);
+      // Drain timeout won the race: cancel the stdout reader so its pending read()
+      // settles and the reader/lock isn't held for the rest of the process (BUG-46).
+      if (stdoutWinner === "drain") parseHandle.cancel();
 
       // Emit process_update(exited) after exit code is known
       emit?.({ ...baseEvent, kind: "agent.process_update", status: "exited", exitCode, timestamp: now() });

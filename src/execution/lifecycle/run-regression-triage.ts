@@ -13,7 +13,7 @@ import type { Finding } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import { detectFramework } from "@/test-runners";
 import type { TestSummary } from "@/test-runners";
-import { resolveFlakeBaselineDiff } from "@/verification";
+import type { resolveFlakeBaselineDiff } from "@/verification";
 import type { FlakeQuarantineReport, QuarantineMemo, triageFlakyFindings } from "@/verification/flake-triage";
 import type { DeferredRegressionResult } from "./run-regression";
 
@@ -33,9 +33,10 @@ export type RegressionTriageOutcome =
  * passes with warnings, no attribution, no fix cycles) or whether real
  * failures remain for the attribution pipeline in `runDeferredRegression`.
  *
- * `triageFn` is `_regressionDeps.triageFlakyFindings` from the caller — kept
- * as a parameter (not imported here) so existing tests that stub
- * `_regressionDeps.triageFlakyFindings` continue to intercept the call.
+ * `triageFn` and `resolveBaselineDiffFn` are `_regressionDeps.triageFlakyFindings`
+ * / `_regressionDeps.resolveFlakeBaselineDiff` from the caller — kept as
+ * parameters (not imported here) so existing tests that stub `_regressionDeps`
+ * continue to intercept the calls.
  */
 export async function runRegressionFlakeTriage(params: {
   regressionFindings: Finding[];
@@ -46,6 +47,7 @@ export async function runRegressionFlakeTriage(params: {
   testCommand: string;
   quarantineMemo: QuarantineMemo;
   triageFn: (input: Parameters<typeof triageFlakyFindings>[0]) => ReturnType<typeof triageFlakyFindings>;
+  resolveBaselineDiffFn: typeof resolveFlakeBaselineDiff;
   flakeDetection: FlakeDetectionConfig;
 }): Promise<RegressionTriageOutcome> {
   const {
@@ -57,10 +59,11 @@ export async function runRegressionFlakeTriage(params: {
     testCommand,
     quarantineMemo,
     triageFn,
+    resolveBaselineDiffFn,
     flakeDetection,
   } = params;
   const logger = getSafeLogger();
-  const baselineDiff = await resolveFlakeBaselineDiff(config, workdir);
+  const baselineDiff = await resolveBaselineDiffFn(config, workdir);
   if (baselineDiff === null) {
     // Fail closed: skip triage entirely rather than substituting an empty
     // diff, which would make every failing test look pre-existing (see

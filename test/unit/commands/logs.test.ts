@@ -21,7 +21,11 @@ import { type LogsOptions, _deps, logsCommand } from "../../../src/commands/logs
 const TEST_WORKSPACE = join(import.meta.dir, "..", "..", "tmp", "logs-test");
 
 function setupTestProject(featureName: string): string {
-  const projectDir = join(TEST_WORKSPACE, `project-${Date.now()}`);
+  // Random suffix, not just Date.now() — two calls in the same test tick can share a
+  // millisecond, colliding into the same directory and merging their .nax/features/
+  // entries (surfaced by BUG-02: logs now derives the feature by listing
+  // .nax/features/*, so a merged fixture becomes a spurious "ambiguous" failure).
+  const projectDir = join(TEST_WORKSPACE, `project-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`);
   const naxDir = join(projectDir, ".nax");
   const featureDir = join(naxDir, "features", featureName);
   const runsDir = join(featureDir, "runs");

@@ -81,9 +81,18 @@ export function validateAdversarialShape(parsed: unknown): AdversarialLLMRespons
   const acks = extractAcks(obj.acks);
   return {
     passed: obj.passed,
-    findings: obj.findings as AdversarialLLMFinding[],
+    // Mirrors semantic-helpers.ts's validateLLMShape: `findings: [null]` and
+    // `findings: ["prose"]` are both shapes an LLM produces, and every downstream
+    // reader (e.g. filterByAcQuote) dereferences `.severity` unguarded — a malformed
+    // entry that survives this cast becomes a crash mid-review (BUG-49).
+    findings: (obj.findings as unknown[]).filter(isAdversarialFindingShaped),
     ...(acks.length > 0 && { acks }),
   };
+}
+
+/** A finding must at least be an object; field-level validity is the consumer's business. */
+function isAdversarialFindingShaped(f: unknown): f is AdversarialLLMFinding {
+  return typeof f === "object" && f !== null && !Array.isArray(f);
 }
 
 /**

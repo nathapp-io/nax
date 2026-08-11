@@ -11,6 +11,7 @@ import { acceptanceStage } from "@/pipeline/stages";
 import type { PipelineContext } from "@/pipeline/types";
 import { DEFAULT_CONFIG } from "@/config";
 import { addSink, initLogger, resetLogger } from "@/logger";
+import { _executorDeps } from "@/verification";
 import { makeStory } from "@test/helpers";
 
 afterEach(() => {
@@ -262,8 +263,8 @@ describe("US-003: missing acceptance target fails the run", () => {
   test("AC-9: every group present and passing → continue", async () => {
     const present = new Set(["/tmp/a.test.ts", "/tmp/b.test.ts"]);
     const restoreFile = stubFileExists(present);
-    const origSpawn = Bun.spawn;
-    (Bun as any).spawn = (_cmd: string[], _opts: any) => ({
+    const origSpawn = _executorDeps.spawn;
+    _executorDeps.spawn = ((_cmd: string[], _opts: any) => ({
       exited: Promise.resolve(0),
       stdout: new ReadableStream({
         start(c) {
@@ -272,7 +273,7 @@ describe("US-003: missing acceptance target fails the run", () => {
         },
       }),
       stderr: new ReadableStream({ start(c) { c.close(); } }),
-    });
+    })) as unknown as typeof _executorDeps.spawn;  // test-ratchet-allow: as-unknown-as
     try {
       const ctx = makeCtx({
         acceptanceTestPaths: [
@@ -283,7 +284,7 @@ describe("US-003: missing acceptance target fails the run", () => {
       const result = await acceptanceStage.execute(ctx);
       expect(result.action).toBe("continue");
     } finally {
-      (Bun as any).spawn = origSpawn;
+      _executorDeps.spawn = origSpawn;
       restoreFile();
     }
   });
@@ -295,8 +296,8 @@ describe("US-003: missing acceptance target fails the run", () => {
     // preserved in failedACs alongside the missing-target signal.
     const present = new Set(["/tmp/present.test.ts"]);
     const restoreFile = stubFileExists(present);
-    const origSpawn = Bun.spawn;
-    (Bun as any).spawn = (_cmd: string[], _opts: any) => ({
+    const origSpawn = _executorDeps.spawn;
+    _executorDeps.spawn = ((_cmd: string[], _opts: any) => ({
       exited: Promise.resolve(1),
       stdout: new ReadableStream({
         start(c) {
@@ -305,7 +306,7 @@ describe("US-003: missing acceptance target fails the run", () => {
         },
       }),
       stderr: new ReadableStream({ start(c) { c.close(); } }),
-    });
+    })) as unknown as typeof _executorDeps.spawn;  // test-ratchet-allow: as-unknown-as
     try {
       const ctx = makeCtx({
         acceptanceTestPaths: [
@@ -328,7 +329,7 @@ describe("US-003: missing acceptance target fails the run", () => {
       expect(ctx.acceptanceFailures?.failedACs ?? []).toContain("AC-2");
       expect(ctx.acceptanceFailures?.missingTargets ?? []).toContain("/missing");
     } finally {
-      (Bun as any).spawn = origSpawn;
+      _executorDeps.spawn = origSpawn;
       restoreFile();
     }
   });

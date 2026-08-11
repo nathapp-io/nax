@@ -71,11 +71,13 @@ export interface FixStory {
  */
 export function findRelatedStories(failedAC: string, prd: PRD): string[] {
   const relatedStoryIds: string[] = [];
+  const escapedAC = failedAC.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const acPattern = new RegExp(`(?<![\\w-])${escapedAC}(?!\\d)`);
 
   // Strategy 1: Find stories with this AC in their acceptanceCriteria
   for (const story of prd.userStories) {
     for (const ac of story.acceptanceCriteria) {
-      if (ac.includes(failedAC)) {
+      if (acPattern.test(ac)) {
         relatedStoryIds.push(story.id);
         break;
       }

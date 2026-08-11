@@ -268,10 +268,19 @@ export class AutoInteractionPlugin implements InteractionPlugin {
       });
     }
 
-    if (parsed.confidence < 0 || parsed.confidence > 1) {
-      throw new NaxError(`Invalid confidence: ${parsed.confidence} (must be 0-1)`, "AUTO_APPROVE_PARSE_FAILED", {
-        stage: "run",
-      });
+    if (
+      typeof parsed.confidence !== "number" ||
+      !Number.isFinite(parsed.confidence) ||
+      parsed.confidence < 0 ||
+      parsed.confidence > 1
+    ) {
+      throw new NaxError(
+        `Invalid confidence: ${parsed.confidence} (must be a number 0-1)`,
+        "AUTO_APPROVE_PARSE_FAILED",
+        {
+          stage: "run",
+        },
+      );
     }
 
     return parsed;

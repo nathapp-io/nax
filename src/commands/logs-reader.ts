@@ -29,18 +29,36 @@ export async function resolveRunFileFromRegistry(runId: string): Promise<string 
     throw new Error(`Run not found in registry: ${runId}`);
   }
 
-  let matched: MetaJson | null = null;
+  // Exact match wins immediately and unambiguously. Otherwise collect every prefix
+  // match instead of taking the first one — `entries` order is whatever readdir()
+  // returns (not sorted, not deterministic across filesystems), so silently picking
+  // the first prefix match could return an arbitrary run among several sharing that
+  // prefix (BUG-54). Error on genuine ambiguity instead.
+  let exactMatch: MetaJson | null = null;
+  const prefixMatches: MetaJson[] = [];
   for (const entry of entries) {
     const metaPath = join(runsDir, entry, "meta.json");
     try {
       const meta: MetaJson = await Bun.file(metaPath).json();
-      if (meta.runId === runId || meta.runId.startsWith(runId)) {
-        matched = meta;
+      if (meta.runId === runId) {
+        exactMatch = meta;
         break;
+      }
+      if (meta.runId.startsWith(runId)) {
+        prefixMatches.push(meta);
       }
     } catch {
       // skip unreadable meta.json entries
     }
+  }
+
+  let matched: MetaJson | null = exactMatch;
+  if (!matched) {
+    if (prefixMatches.length > 1) {
+      const candidates = prefixMatches.map((m) => m.runId).join(", ");
+      throw new Error(`Ambiguous run ID "${runId}" matches multiple runs: ${candidates}`);
+    }
+    matched = prefixMatches[0] ?? null;
   }
 
   if (!matched) {

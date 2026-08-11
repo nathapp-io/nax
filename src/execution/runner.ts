@@ -165,8 +165,14 @@ export async function run(options: RunOptions): Promise<RunResult> {
   // enter the inner try block below.
   const origLoadCheckpoints = _storyOrchestratorDeps.loadCheckpoints;
   const origRecordGreen = _storyOrchestratorDeps.recordGreen;
-  applyResumeModeDeps(featureDir ?? "", resumeMode);
-  applyRecordGreenDeps(featureDir ?? "", runId);
+  // Feature-less runs have no directory to durably record checkpoints under —
+  // `join("", "checkpoint.jsonl")` resolves to a bare relative path, which lands in
+  // whatever the process CWD happens to be and cross-seeds unrelated runs (BUG-40).
+  // Leave the default no-op stubs wired in that case instead of pointing them at CWD.
+  if (featureDir) {
+    applyResumeModeDeps(featureDir, resumeMode);
+    applyRecordGreenDeps(featureDir, runId);
+  }
   let iterations = 0;
   let storiesCompleted = 0;
   let totalCost = 0;

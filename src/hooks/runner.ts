@@ -14,6 +14,8 @@ import type { HookContext, HookDef, HookEvent, HooksConfig } from "./types";
 
 const DEFAULT_TIMEOUT = 5000;
 const STREAM_DRAIN_TIMEOUT_MS = 2000;
+/** Grace period after SIGTERM before escalating to SIGKILL for a hook that ignores it. */
+const HOOK_KILL_GRACE_MS = 5000;
 
 function createDrainDeadline(deadlineMs: number): { promise: Promise<string>; cancel: () => void } {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -220,17 +222,23 @@ async function executeHook(
     env: buildAllowedEnv({ env }),
   });
 
-  // Timeout handling
+  // Timeout handling. A single SIGTERM is not a deadline — a hook that traps or
+  // ignores it (or a daemon it spawned) leaves `proc.exited` unresolved forever,
+  // hanging the run's completion phase indefinitely. Escalate to SIGKILL if the
+  // process hasn't exited within the grace period.
   let timedOut = false;
+  let killTimeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeoutId = setTimeout(() => {
     timedOut = true;
     killProcessGroup(proc.pid, "SIGTERM");
+    killTimeoutId = setTimeout(() => killProcessGroup(proc.pid, "SIGKILL"), HOOK_KILL_GRACE_MS);
   }, timeout);
 
   const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
   const stderrPromise = new Response(proc.stderr).text().catch(() => "");
   const exitCode = await proc.exited;
   clearTimeout(timeoutId);
+  clearTimeout(killTimeoutId);
 
   const [stdout, stderr] = timedOut
     ? await (async () => {

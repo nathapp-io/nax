@@ -7,9 +7,9 @@ export const SEVERITY_RANK: Record<string, number> = {
   info: 0,
   unverifiable: 0,
   low: 1,
-  warning: 1,
-  error: 2,
-  critical: 3,
+  warning: 2,
+  error: 3,
+  critical: 4,
 };
 
 export function isBlockingSeverity(sev: string, threshold: "error" | "warning" | "info" = "error"): boolean {

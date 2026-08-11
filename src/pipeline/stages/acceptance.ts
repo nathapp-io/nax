@@ -37,6 +37,7 @@ import { getLogger } from "@/logger";
 import { countStories } from "@/prd";
 import { parseTestFailures as _parseTestFailures } from "@/test-runners";
 import { logTestOutput } from "@/utils/log-test-output";
+import { executeWithTimeout, shellQuoteArg } from "@/verification";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /** Injectable deps for testability */
@@ -215,19 +216,15 @@ export const acceptanceStage: PipelineStage = {
         cmd: testCmdParts.join(" "),
         packageDir,
       });
-      const proc = Bun.spawn(testCmdParts, {
-        cwd: packageDir,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
+      const execution = await executeWithTimeout(
+        testCmdParts.map(shellQuoteArg).join(" "),
+        Math.ceil(ctx.config.acceptance.timeoutMs / 1000),
+        undefined,
+        { cwd: packageDir },
+      );
 
-      const [exitCode, stdout, stderr] = await Promise.all([
-        proc.exited,
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
-      ]);
-
-      const output = `${stdout}\n${stderr}`;
+      const exitCode = execution.exitCode ?? (execution.success ? 0 : 1);
+      const output = execution.output ?? "";
       allOutputParts.push(output);
 
       const failedACs = parseTestFailures(output);

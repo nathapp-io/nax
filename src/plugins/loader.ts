@@ -118,6 +118,21 @@ export async function loadPlugins(
   const effectiveProjectRoot = projectRoot || projectDir;
   const pluginNames = new Set<string>();
   const disabledSet = new Set(disabledPlugins ?? []);
+
+  // Registers a plugin, replacing any earlier entry with the same name instead of
+  // appending a duplicate — a name collision is logged as "overrides", but every
+  // call site previously pushed anyway, so both stayed registered and each ran
+  // twice per run (getPostRunActions()/getReporters() return all matches), breaking
+  // the "each finding appears exactly once" invariant recurrence heuristics rely on.
+  const registerLoadedPlugin = (entry: LoadedPlugin): void => {
+    const existingIndex = loadedPlugins.findIndex((p) => p.plugin.name === entry.plugin.name);
+    if (existingIndex >= 0) {
+      loadedPlugins[existingIndex] = entry;
+    } else {
+      loadedPlugins.push(entry);
+    }
+    pluginNames.add(entry.plugin.name);
+  };
   const logger = getSafeLogger();
 
   // 0. Load built-in plugins.
@@ -223,11 +238,10 @@ export async function loadPlugins(
       if (pluginNames.has(validated.name)) {
         logger?.warn("plugins", `Plugin name collision: '${validated.name}' (global directory)`);
       }
-      loadedPlugins.push({
+      registerLoadedPlugin({
         plugin: validated,
         source: { type: "global", path: plugin.path },
       });
-      pluginNames.add(validated.name);
     }
   }
 
@@ -244,11 +258,10 @@ export async function loadPlugins(
       if (pluginNames.has(validated.name)) {
         logger?.warn("plugins", `Plugin name collision: '${validated.name}' (project directory overrides global)`);
       }
-      loadedPlugins.push({
+      registerLoadedPlugin({
         plugin: validated,
         source: { type: "project", path: plugin.path },
       });
-      pluginNames.add(validated.name);
     }
   }
 
@@ -271,11 +284,10 @@ export async function loadPlugins(
       if (pluginNames.has(validated.name)) {
         logger?.warn("plugins", `Plugin name collision: '${validated.name}' (config entry overrides previous)`);
       }
-      loadedPlugins.push({
+      registerLoadedPlugin({
         plugin: validated,
         source: { type: "config", path: entry.module },
       });
-      pluginNames.add(validated.name);
     }
   }
 

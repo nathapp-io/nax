@@ -24,6 +24,7 @@ import {
   NULL_QUARANTINE_MEMO,
   type QuarantineMemo,
   fullSuite,
+  resolveFlakeBaselineDiff,
   triageFlakyFindings,
 } from "@/verification";
 import { runRegressionFlakeTriage } from "./run-regression-triage";
@@ -71,6 +72,7 @@ export const _regressionDeps = {
   triageFlakyFindings: triageFlakyFindings as (
     input: Parameters<typeof triageFlakyFindings>[0],
   ) => ReturnType<typeof triageFlakyFindings>,
+  resolveFlakeBaselineDiff,
 };
 
 /**
@@ -352,6 +354,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     testCommand,
     quarantineMemo,
     triageFn: _regressionDeps.triageFlakyFindings,
+    resolveBaselineDiffFn: _regressionDeps.resolveFlakeBaselineDiff,
     flakeDetection: config.execution.flakeDetection,
   });
   if (triageOutcome.shortCircuit) {

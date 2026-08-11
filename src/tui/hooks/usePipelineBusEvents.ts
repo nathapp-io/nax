@@ -113,16 +113,24 @@ export function usePipelineBusEvents(initialStories: StoryDisplayState[]): Pipel
     // story:completed — mark story passed/failed, set cost, clear step
     const unsubCompleted = pipelineEventBus.on("story:completed", (event) => {
       setState((prev) => {
+        // Add this completion's cost onto the story's running total instead of
+        // replacing it — a story that completes more than once (e.g. a retried
+        // attempt) would otherwise have its earlier attempt's cost silently
+        // dropped the moment the later cost overwrites it (BUG-55: "a $0.50 then
+        // $0.30 story" ends up contributing only $0.30 to the running total).
+        // A no-op for the common single-completion case (prevStoryCost is 0).
+        const prevStoryCost = prev.stories.find((s) => s.story.id === event.storyId)?.cost ?? 0;
+        const costDelta = event.cost ?? 0;
+        const storyCost = prevStoryCost + costDelta;
+        const totalCost = prev.totalCost + costDelta;
         const newStories = prev.stories.map((s) => {
           if (s.story.id === event.storyId) {
             const status = event.passed ? ("passed" as const) : ("failed" as const);
-            const storyCost = event.cost ?? s.cost;
             return { ...s, status, cost: storyCost };
           }
           return s;
         });
 
-        const totalCost = newStories.reduce((sum, s) => sum + (s.cost ?? 0), 0);
         const { [event.storyId]: _removed, ...remainingSteps } = prev.storySteps;
         // Mirror the status mapping above: a `passed:false` completion is a failure,
         // so it arms the retry target too. In practice terminal failures arrive via

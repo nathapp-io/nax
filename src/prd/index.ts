@@ -66,6 +66,13 @@ export async function loadPRD(path: string): Promise<PRD> {
 
   const prd: PRD = await Bun.file(path).json();
 
+  if (!Array.isArray(prd.userStories)) {
+    throw new NaxError(`PRD file is missing or has a corrupt "userStories" array: ${path}`, "PRD_INVALID", {
+      stage: "prd",
+      path,
+    });
+  }
+
   // @design: BUG-21: Normalize story fields to prevent null/undefined arithmetic issues
   // @design: BUG-004: Auto-default optional PRD fields in-memory (tags, status, acceptanceCriteria, storyPoints)
   for (const story of prd.userStories) {
@@ -158,6 +165,7 @@ export function getNextStory(prd: PRD, currentStoryId?: string | null, maxRetrie
       s.status !== "failed" &&
       s.status !== "paused" &&
       s.status !== "decomposed" &&
+      s.status !== "regression-failed" &&
       hasSatisfiedDependencies(s, storyIds, completedIds),
   );
 
@@ -232,7 +240,8 @@ export function markStoryPassed(prd: PRD, storyId: string, _statusWriter?: PostR
     const parent = prd.userStories.find((s) => s.id === parentId);
     if (parent && parent.status === "decomposed") {
       const siblings = prd.userStories.filter((s) => s.parentStoryId === parentId);
-      const allSiblingsPassed = siblings.length > 0 && siblings.every((s) => s.passes || s.status === "passed");
+      const allSiblingsPassed =
+        siblings.length > 0 && siblings.every((s) => s.passes || s.status === "passed" || s.status === "skipped");
       if (allSiblingsPassed) {
         parent.passes = true;
         parent.status = "passed";

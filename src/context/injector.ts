@@ -235,9 +235,13 @@ export async function buildProjectMetadata(workdir: string, config: NaxConfig): 
     name: detected?.name,
     language: detected?.lang,
     dependencies: detected?.dependencies ?? [],
-    testCommand: config.execution?.testCommand ?? undefined,
-    lintCommand: config.execution?.lintCommand ?? undefined,
-    typecheckCommand: config.execution?.typecheckCommand ?? undefined,
+    // execution.testCommand/lintCommand/typecheckCommand were moved to
+    // quality.commands.{test,lint,typecheck} — Zod strips the old keys silently,
+    // so reading them here always returned undefined and the generated
+    // CLAUDE.md/AGENTS.md **Commands:** line was never emitted (BUG-43).
+    testCommand: config.quality?.commands?.test ?? undefined,
+    lintCommand: config.quality?.commands?.lint ?? undefined,
+    typecheckCommand: config.quality?.commands?.typecheck ?? undefined,
   };
 }
 

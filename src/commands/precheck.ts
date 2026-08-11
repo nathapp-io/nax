@@ -11,7 +11,7 @@ import chalk from "chalk";
 import { loadConfig } from "../config";
 import { loadPRD } from "../prd";
 import { EXIT_CODES, runEnvironmentPrecheck, runPrecheck } from "../precheck";
-import { resolveProject } from "./common";
+import { resolveProject, resolveSingleFeature } from "./common";
 
 /**
  * Options for precheck command
@@ -49,22 +49,20 @@ export async function precheckCommand(options: PrecheckOptions): Promise<void> {
     process.exit(result.passed ? EXIT_CODES.SUCCESS : EXIT_CODES.BLOCKER);
   }
 
-  // Determine feature name (from flag or config)
+  // Get feature directory
+  const naxDir = join(resolved.projectDir, ".nax");
+
+  // Determine feature name (from flag, or derived from .nax/features/* — config.json
+  // never carries a feature field, BUG-02).
   let featureName = options.feature;
   if (!featureName) {
-    // Read from config.json
-    const configFile = Bun.file(resolved.configPath);
-    const config = await configFile.json();
-    featureName = config.feature;
-
-    if (!featureName) {
-      console.error(chalk.red("No feature specified. Use -f flag or set feature in config.json"));
+    try {
+      featureName = resolveSingleFeature(naxDir);
+    } catch (err) {
+      console.error(chalk.red(err instanceof Error ? err.message : String(err)));
       process.exit(1);
     }
   }
-
-  // Get feature directory
-  const naxDir = join(resolved.projectDir, ".nax");
   const featureDir = join(naxDir, "features", featureName);
   const prdPath = join(featureDir, "prd.json");
 

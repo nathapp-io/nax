@@ -338,6 +338,8 @@ export class CompleteError extends Error {
   constructor(
     message: string,
     public readonly exitCode?: number,
+    /** True/false when the transport (acpx) classified the failure as retryable; undefined when unknown. */
+    public readonly retryable?: boolean,
   ) {
     super(message);
     this.name = "CompleteError";

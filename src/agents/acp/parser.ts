@@ -42,6 +42,8 @@ export interface AcpxParseState {
   error: string | undefined;
   /** True if the acpx error response explicitly set retryable=true (e.g. QUEUE_DISCONNECTED). */
   retryable: boolean;
+  /** True once at least one line has parsed as valid NDJSON — gates the legacy-text fallback below. */
+  sawJsonLine: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,6 +58,7 @@ export function createParseState(): AcpxParseState {
     stopReason: undefined,
     error: undefined,
     retryable: false,
+    sawJsonLine: false,
   };
 }
 
@@ -69,6 +72,13 @@ export function createParseState(): AcpxParseState {
 export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLineActivity | undefined {
   try {
     const event = JSON.parse(line);
+    if (!state.sawJsonLine) {
+      // First real NDJSON line: drop any legacy-text fallback content an
+      // earlier unparseable banner/reconnect-notice line may have stashed in
+      // state.text, so it can't become a permanent prefix of the real response.
+      state.text = "";
+      state.sawJsonLine = true;
+    }
 
     // ── JSON-RPC envelope format (acpx v0.3+) ──────────────────────────────
     if (event.jsonrpc === "2.0") {
@@ -148,12 +158,17 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
 
         if (result.usage && typeof result.usage === "object") {
           const u = result.usage as Record<string, unknown>;
+          const asNumber = (...values: unknown[]): number => {
+            for (const v of values) {
+              if (typeof v === "number" && Number.isFinite(v)) return v;
+            }
+            return 0;
+          };
           state.tokenUsage = {
-            input_tokens: (u.inputTokens as number) ?? (u.input_tokens as number) ?? 0,
-            output_tokens: (u.outputTokens as number) ?? (u.output_tokens as number) ?? 0,
-            cache_read_input_tokens: (u.cachedReadTokens as number) ?? (u.cache_read_input_tokens as number) ?? 0,
-            cache_creation_input_tokens:
-              (u.cachedWriteTokens as number) ?? (u.cache_creation_input_tokens as number) ?? 0,
+            input_tokens: asNumber(u.inputTokens, u.input_tokens),
+            output_tokens: asNumber(u.outputTokens, u.output_tokens),
+            cache_read_input_tokens: asNumber(u.cachedReadTokens, u.cache_read_input_tokens),
+            cache_creation_input_tokens: asNumber(u.cachedWriteTokens, u.cache_creation_input_tokens),
           };
         }
       }
@@ -206,7 +221,10 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
         typeof event.error === "string" ? event.error : (event.error.message ?? JSON.stringify(event.error));
     }
   } catch {
-    if (!state.text) state.text = line;
+    // Only treat an unparseable line as legacy plain-text output when no NDJSON
+    // line has been seen yet — otherwise a stray banner/reconnect-notice line
+    // becomes a permanent prefix of an otherwise-successful JSON-RPC response.
+    if (!state.text && !state.sawJsonLine) state.text = line;
   }
   return undefined;
 }

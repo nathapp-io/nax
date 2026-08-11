@@ -69,6 +69,12 @@ function makeOptions(opts: {
 let savedDeps: typeof _regressionDeps;
 beforeEach(() => {
   savedDeps = { ..._regressionDeps };
+  // BUG-08 hardened resolveFlakeBaselineDiff to fail closed (return null) when git
+  // commands fail — this suite's workdir ("/tmp/test-workdir") isn't a real git repo,
+  // so the real implementation would now skip triage entirely before ever reaching
+  // the mocked triageFlakyFindings below. Stub a valid empty diff so these tests keep
+  // exercising the triage-wiring integration they're actually about.
+  _regressionDeps.resolveFlakeBaselineDiff = mock(async () => ({ changedTestFiles: [], mappedTestFiles: [] }));
 });
 afterEach(() => {
   Object.assign(_regressionDeps, savedDeps);

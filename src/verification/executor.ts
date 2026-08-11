@@ -83,6 +83,12 @@ export async function executeWithTimeout(
     stderr: "pipe",
     env: env || normalizeEnvironment(process.env as Record<string, string | undefined>),
     cwd: options?.cwd,
+    // Bun.spawn does not setpgid children into their own group by default, so
+    // killProcessGroup(-pid) below would target a group the shell isn't actually
+    // the leader of (ESRCH -> falls back to killing only the /bin/sh wrapper,
+    // leaking the real test-runner grandchild). `detached` makes this process a
+    // session/group leader via setsid(), so its own pid IS the real pgid.
+    detached: true,
   });
 
   // Rule 07: drain stdout+stderr concurrently with proc.exited to prevent

@@ -177,24 +177,28 @@ export class RuleBasedOptimizer implements IPromptOptimizer {
       remainingChars -= sections.acceptanceCriteria.length;
     }
 
-    // Add as much context as fits
-    if (sections.context && remainingChars > 0) {
+    // Add as much context as fits. nax's real prompts use headers like "# Role:
+    // Implementer" / "# INSTRUCTIONS" that extractSections doesn't recognize, so
+    // task/context/AC are frequently all undefined and the whole prompt lands in
+    // `other` — treat that the same as context (truncate-to-fit) rather than the
+    // old all-or-nothing gate, which silently dropped it whenever it didn't fit
+    // in one piece (BUG-20).
+    const trimmable = sections.context ?? sections.other;
+    if (trimmable && remainingChars > 0) {
       // Reserve space for the trimmed message if we're going to add it
-      const reserveForMessage = sections.context.length > remainingChars ? trimmedMessage.length : 0;
+      const reserveForMessage = trimmable.length > remainingChars ? trimmedMessage.length : 0;
       const maxContextChars = Math.max(0, remainingChars - reserveForMessage);
-      const trimmedContext = sections.context.substring(0, maxContextChars);
+      const trimmedContext = trimmable.substring(0, maxContextChars);
       result += trimmedContext;
-      if (trimmedContext.length < sections.context.length) {
+      if (trimmedContext.length < trimmable.length) {
         result += trimmedMessage;
       }
     }
 
-    // Add other sections if there's room
-    if (sections.other && remainingChars > sections.other.length) {
-      result += sections.other;
-    }
-
-    return result;
+    // Never hand back a blank prompt — if nothing survived trimming (e.g. maxTokens
+    // is smaller than the reserved task/AC sections alone), bail out and send the
+    // untrimmed prompt rather than an empty one.
+    return result.trim() ? result : prompt;
   }
 
   /**

@@ -56,11 +56,16 @@ export const planDebaterOp: RunOperation<DebatePlanInput, DebatePlanOutput, Deba
       }
     }
 
-    const peerProposals = await raceAgainstAbort(
-      Promise.all(ctx.input.proposalBarriers.map((barrier) => barrier.promise)),
+    // allSettled — a rejected peer barrier (own send failure, or the runner rejecting
+    // it on that debater's callOp failure) must not cascade into every surviving
+    // debater's Promise.all and abort their own callOp in turn (BUG-14, same failure
+    // shape as BUG-13 in the hybrid runner).
+    const peerProposalsSettled = await raceAgainstAbort(
+      Promise.allSettled(ctx.input.proposalBarriers.map((barrier) => barrier.promise)),
       ctx.input.signal,
       ctx.input.storyId,
     );
+    const peerProposals = peerProposalsSettled.map((r) => (r.status === "fulfilled" ? r.value : ""));
 
     const rebutResult = ctx.input.turnSemaphore
       ? await ctx.input.turnSemaphore.run(() => ctx.send(ctx.input.buildRebutPrompt(peerProposals)))

@@ -391,7 +391,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
 
   const { acceptanceStage } = await _runAcceptanceTestsOnceDeps.importAcceptanceStage();
 
-  while (acceptanceRetries < maxRetries) {
+  do {
     // ── 1. Run acceptance ────────────────────────────────────────────────
     // Stamp the attempt index onto a per-iteration copy so the stage's verdict
     // reports a real retry count. Fix-cycle re-validations reuse this same copy
@@ -594,7 +594,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       acceptanceRetries + totalInternalIterations,
       finalCheck.missingTargets,
     );
-  }
+  } while (acceptanceRetries < maxRetries);
 
   return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
 }
