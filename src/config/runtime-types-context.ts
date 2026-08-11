@@ -131,12 +131,20 @@ export interface ContextV2Config {
     historyScope: "repo" | "package";
     /** Working directory scope for CodeNeighborProvider. Default: "package". */
     neighborScope: "repo" | "package";
-    /** Cross-package scan depth for CodeNeighborProvider. Default: 1. */
+    /** Cross-package scan depth for CodeNeighborProvider in monorepo mode (#507). Default: 1. */
     crossPackageDepth: number;
     /** Override source-file glob for reverse-dep scanning (#895). Derived from language when omitted. */
     sourceGlob?: string;
     /** Max files scanned per directory during reverse-dep glob (#895). Default: 500. */
     maxGlobFiles: number;
+  };
+  /**
+   * Manifest retention settings (US-001). Optional — when absent the
+   * manifest sweep is not invoked at run completion.
+   */
+  manifest?: {
+    /** Days to keep context-manifest and rebuild-manifest files before purging. */
+    retentionDays: number;
   };
 }
 

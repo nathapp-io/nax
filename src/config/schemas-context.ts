@@ -233,6 +233,19 @@ export const ContextV2ConfigSchema = z
         scoreMultiplier: z.number().min(0).max(1).default(0.4),
       })
       .default(() => ({ enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 })),
+    /**
+     * Manifest retention settings (US-001).
+     * Opt-in: when unset, purgeStaleManifests is not invoked. When set,
+     * `context-manifest-*.json` and `rebuild-manifest.json` files older
+     * than `retentionDays` are deleted at run completion. `.optional()`
+     * with no `.default()` so an unset key resolves to `undefined`.
+     */
+    manifest: z
+      .object({
+        /** Days to keep context-manifest and rebuild-manifest files before purging. */
+        retentionDays: z.number().int().min(1),
+      })
+      .optional(),
   })
   .default(() => ({
     enabled: false,

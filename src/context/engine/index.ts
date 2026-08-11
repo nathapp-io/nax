@@ -65,6 +65,9 @@ export {
 } from "./manifest-store";
 export type { StoredContextManifest, RebuildManifestEntry } from "./manifest-store";
 
+export { purgeStaleManifests, _manifestPurgeDeps, MAX_MANIFEST_SCAN } from "./manifest-purge";
+export type { ManifestPurgeDeps } from "./manifest-purge";
+
 export type {
   AdapterFailure,
   ChunkEffectiveness,

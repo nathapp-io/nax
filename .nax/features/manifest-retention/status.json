@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-08-11T02-49-13-899Z",
+    "feature": "manifest-retention",
+    "startedAt": "2026-08-11T02:49:13.899Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 73026
+  },
+  "progress": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 6.1881726299999995,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 3,
+  "updatedAt": "2026-08-11T03:37:23.202Z",
+  "durationMs": 2889303,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-08-11T03:36:51.232Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-08-11T03:37:21.970Z"
+    }
+  }
+}

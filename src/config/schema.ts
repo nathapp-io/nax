@@ -77,7 +77,7 @@ export {
 } from "./types";
 
 // Zod schemas
-export { NaxConfigSchema, AcceptanceConfigSchema, PlanConfigSchema } from "./schemas";
+export { NaxConfigSchema, AcceptanceConfigSchema, PlanConfigSchema, ContextV2ConfigSchema } from "./schemas";
 
 // Default config
 export { DEFAULT_CONFIG } from "./defaults";
