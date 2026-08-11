@@ -145,18 +145,15 @@ describe("InteractionChain.prompt() — choose normalization", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Regression guard: AutoInteractionPlugin.decide() returns InteractionResponse
- * whose requestId matches the submitted request.id.
+ * Regression guard: InteractionChain.prompt() with AutoInteractionPlugin
+ * returns an InteractionResponse whose requestId matches the submitted
+ * request.id.
  *
  * After deleting src/interaction/state.ts, the in-process interaction path
  * (InteractionChain → AutoInteractionPlugin → decide()) must continue to
- * correctly preserve requestId for human-review triggers.
- *
- * AutoInteractionPlugin.receive() always throws because it only receives
- * requestId (not the full request) and cannot call decide() without the
- * request object. The in-process path is: callers use chain.getPrimary() to
- * obtain the plugin instance and call decide(request) directly — bypassing
- * chain.prompt() entirely for the auto plugin.
+ * correctly preserve requestId for human-review triggers.  The path is:
+ *   chain.prompt(request) → plugin.send(request) [stores it]
+ *                         → plugin.receive(request.id) [retrieves & decides]
  */
 describe("InteractionChain + AutoInteractionPlugin — in-process human-review path (US-003)", () => {
   let origCallLlm: typeof _autoPluginDeps.callLlm;
@@ -178,17 +175,12 @@ describe("InteractionChain + AutoInteractionPlugin — in-process human-review p
       const plugin = await makeAutoPlugin();
       const chain = makeChain(plugin);
 
-      // Obtain the plugin via chain.getPrimary() — this is the production path.
-      // AutoInteractionPlugin.receive() always throws (needs full request, not
-      // just requestId), so callers invoke decide(request) directly.
-      const primaryPlugin = chain.getPrimary() as AutoInteractionPlugin;
-      expect(primaryPlugin).toBeDefined();
-
+      // Production path: chain.prompt() calls send() (stores request) then
+      // receive() (retrieves request and calls decide() internally).
       const request = makeRequest({ id: requestId, type: "confirm", metadata: { trigger: "human-review" } });
-      const response = await primaryPlugin.decide(request);
+      const response = await chain.prompt(request);
 
-      expect(response).not.toBeUndefined();
-      expect(response!.requestId).toBe(requestId);
+      expect(response.requestId).toBe(requestId);
     },
   );
 });
