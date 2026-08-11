@@ -1,0 +1,234 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "retire-dead-cli-config-surface",
+  "branchName": "feat/retire-dead-cli-config-surface",
+  "createdAt": "2026-08-11T09:13:26Z",
+  "updatedAt": "2026-08-11T09:17:50.069Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Remove four no-op config keys behind a warn-and-strip guard",
+      "description": "**Goal** \u2014 Remove the four inert configuration keys while preserving successful config resolution and warning users once per removed path.\n\n**Motivation** \u2014 A user reads that `tdd.autoVerifyIsolation` toggles isolation verification, sets it to `false`, gets no error \u2014 and isolation verification runs anyway.\n\n**Approach** \u2014 `src/config/config-guards.ts` (193 lines) already owns \"reject configuration that no longer means what the user thinks\", exporting four guards. The new function joins this file rather than a new module \u2014 it is the same concern, and `config-patterns.md` requires one owner per concept. This one warns and strips where its four siblings throw. That divergence is deliberate and must be documented in the function's doc comment, because the nearest precedent went the other way. The rationale for diverging: a warning also cures that false belief, while a throw hard-fails every existing config that sets a key which was already inert. These four gate nothing, so no behaviour is dropped either way; the gentler mechanism is preferred where the only harm is a stale key. The doc comment must state this so the next reader does not read the inconsistency as an oversight.\n\nThe `reject*` guards run post-merge and pre-`safeParse`, at two sites: `loader.ts:353-361` \u2014 root chain, operating on `rawConfig`; and `loader.ts:486-489` \u2014 per-package overlay chain, operating on `rawMerged`. `stripRemovedNoOpKeys` joins both, reassigning the object (`rawConfig = stripRemovedNoOpKeys(rawConfig)`) since it returns a new value rather than throwing. The current per-package flow merges `packageFields` into an already parsed root object before profile parsing, so the implementation must establish the specified post-merge guard/parse point for ordinary package overlays as well as package profiles. Post-merge placement is deliberate and differs from the pre-merge, per-layer shim chain. Running post-merge yields one warning per resolved config regardless of which layer supplied the key. `defaultConfigWarn` (`loader.ts:52-59`, wrapping `getLogger().warn(\"config\", msg)`) is the default sink, matching the shim family. The injectable `warn` parameter exists for testing.\n\n**Scope** \u2014 In: add the immutable guard and both loader call sites; remove the four declarations, defaults, runtime fields, descriptions, fixture properties, obsolete escalation-field test, and stale merge comment. Out: tier escalation implementation; replacement configuration keys; changing unconditional verification or acceptance behavior; converting other guards or shims to a shared mechanism.\n\n**Interface**\n```typescript\n/** Removed key's dotted path \u2192 hint appended to its warning. */\nconst REMOVED_NO_OP_KEYS: Readonly<Record<string, string>> = {\n  \"execution.rectification.escalateOnExhaustion\": \"\u2026\",\n  \"tdd.autoVerifyIsolation\": \"\u2026\",\n  \"tdd.autoApproveVerifier\": \"\u2026\",\n  \"acceptance.generateTests\": \"use `acceptance.enabled` instead\",\n};\n\n/**\n * Strip config keys that were declared but never read, warning once per key.\n *\n * Unlike its `reject*` siblings this warns rather than throws \u2014 see spec.\n * Returns a new object; does not mutate `conf`.\n */\nexport function stripRemovedNoOpKeys(\n  conf: Record<string, unknown>,\n  warn?: (msg: string) => void,\n): Record<string, unknown>;\n```",
+      "acceptanceCriteria": [
+        "When `stripRemovedNoOpKeys` receives all four removed paths and an injected warn sink, then the sink is invoked exactly four times and each message names exactly one of `execution.rectification.escalateOnExhaustion`, `tdd.autoVerifyIsolation`, `tdd.autoApproveVerifier`, or `acceptance.generateTests`.",
+        "When `stripRemovedNoOpKeys` receives `tdd.autoVerifyIsolation`, then its returned `tdd` object omits `autoVerifyIsolation` while the input object still contains that property.",
+        "When `stripRemovedNoOpKeys` receives no removed paths, then it invokes the injected warn sink zero times and returns a value deeply equal to its input.",
+        "When `stripRemovedNoOpKeys` strips a removed `tdd` sibling, then the returned configuration retains the original `tdd.maxRetries` value.",
+        "When `stripRemovedNoOpKeys` strips a removed `acceptance` sibling, then the returned configuration retains the original `acceptance.enabled` value.",
+        "When `stripRemovedNoOpKeys` strips a removed `execution.rectification` sibling, then the returned configuration retains the original `execution.rectification.abortOnNoProgress` value.",
+        "When `stripRemovedNoOpKeys` receives a configuration with no `tdd` property, then it invokes the sink zero times, does not throw, and returns the configuration unchanged.",
+        "When `stripRemovedNoOpKeys` receives `{ tdd: 42 }`, then it invokes the sink zero times, does not throw, and returns `tdd` equal to `42`.",
+        "When `stripRemovedNoOpKeys` receives `tdd.autoVerifyIsolation: \"yes\"`, then it strips the property and invokes the warn sink once with a message containing `tdd.autoVerifyIsolation`.",
+        "Given a project `.nax/config.json` setting `tdd.autoVerifyIsolation` to `false`, when `loadConfig` resolves it, then the returned `tdd` section has no `autoVerifyIsolation` property.",
+        "Given a global config setting `acceptance.generateTests` to `false` and no project config, when `loadConfig` resolves it, then the returned `acceptance` section has no `generateTests` property.",
+        "Given both global and project config set `execution.rectification.escalateOnExhaustion`, when `loadConfig` resolves them, then the returned `execution.rectification` section has no `escalateOnExhaustion` property.",
+        "Given a per-package overlay setting `tdd.autoApproveVerifier`, when `loadConfigForWorkdir` resolves that package, then the returned `tdd` section has no `autoApproveVerifier` property.",
+        "When `NaxConfigSchema` parses an empty object, then `execution.rectification` has no `escalateOnExhaustion` property.",
+        "When `NaxConfigSchema` parses an empty object, then `tdd` has no `autoVerifyIsolation` property.",
+        "When `NaxConfigSchema` parses an empty object, then `tdd` has no `autoApproveVerifier` property.",
+        "When `NaxConfigSchema` parses an empty object, then `acceptance` has no `generateTests` property.",
+        "When `FIELD_DESCRIPTIONS` is queried for `execution.rectification.escalateOnExhaustion`, then it returns `undefined`.",
+        "When `FIELD_DESCRIPTIONS` is queried for `tdd.autoVerifyIsolation`, then it returns `undefined`.",
+        "When `FIELD_DESCRIPTIONS` is queried for `tdd.autoApproveVerifier`, then it returns `undefined`.",
+        "When `FIELD_DESCRIPTIONS` is queried for `acceptance.generateTests`, then it returns `undefined`.",
+        "When `FIELD_DESCRIPTIONS` is queried for `acceptance.enabled`, then it returns a non-empty string."
+      ],
+      "tags": [
+        "config",
+        "deprecation",
+        "loader",
+        "cli"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The change spans established configuration seams and many mechanical fixture edits, but its single new guard has explicit behavior and no new abstraction beyond existing shim patterns.",
+        "agentProfileId": "pi-medium",
+        "agent": "pi",
+        "profileModelTier": "balanced",
+        "initialAgent": "pi",
+        "initialProfileId": "pi-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/config/config-guards.ts",
+        "src/config/loader.ts",
+        "src/config/schemas-execution.ts",
+        "src/config/runtime-types.ts",
+        "src/cli/config-descriptions.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/config/removed-no-op-keys.test.ts"
+      ],
+      "outOfScope": [
+        "Implementing tier escalation on rectification exhaustion, i.e. US-002 and US-003 of `docs/specs/SPEC-rectification-escalation.md`. That spec is retired as won't-do by this work.",
+        "Converting `stripRemovedNoOpKeys` into a throwing guard, or converting any of the four existing `reject*` guards into warn-and-strip. The divergence is deliberate and documented.",
+        "Adding replacement configuration keys for any of the four removed keys.",
+        "Making isolation verification, verifier auto-approval, or acceptance test generation conditionally disableable. Each currently runs unconditionally and continues to.",
+        "Changing the behaviour of `acceptance.enabled`, which remains the single switch governing acceptance test generation."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/config/escalate-on-exhaustion.test.ts",
+          "reason": "the whole file (106 lines) exists to assert `escalateOnExhaustion` is defined on `RectificationConfig`, defaults to `true`, is overridable to `false`, and has a `FIELD_DESCRIPTIONS` entry. Every assertion pins the removed field. Delete the file; the invariant that replaces it is AC-7 and AC-11 below \u2014 the key is stripped on load and is absent from the parsed defaults."
+        },
+        {
+          "path": "test/unit/config/merge.test.ts",
+          "reason": "the `test.each` table at line 290 has a `\"generateTests\"` row asserting per-package override of `acceptance.generateTests`. Delete that row only; the surviving `\"enabled\"` and `\"testPath\"` rows preserve the real invariant, that per-package acceptance overrides still apply."
+        },
+        {
+          "path": "test/unit/execution/rectification.test.ts",
+          "reason": "two `RectificationConfig` object literals (lines 21 and 93) set `escalateOnExhaustion: true`. Remove the property from both; the surrounding rectification assertions are unaffected and must continue to pass."
+        },
+        {
+          "path": "test/unit/config/debate-schema.test.ts",
+          "reason": "its shared `NaxConfig` fixture sets `escalateOnExhaustion` under `execution.rectification` and both `autoVerifyIsolation` and `autoApproveVerifier` under `tdd`. Remove those three properties; every debate-schema assertion is unrelated to them and must continue to pass."
+        },
+        {
+          "path": "test/unit/config/sessiontiers-defaults.test.ts",
+          "reason": "calls `TddConfigSchema.parse({...})` with `autoVerifyIsolation` and `autoApproveVerifier` supplied. Remove both from the parse inputs; the session-tier default assertions the file actually makes must continue to pass."
+        },
+        {
+          "path": "test/unit/config/smart-runner-flag.test.ts",
+          "reason": "its config fixture supplies `autoVerifyIsolation`, `autoApproveVerifier` and `acceptance.generateTests`. Remove all three; the smart-runner flag assertions are unrelated and must continue to pass."
+        },
+        {
+          "path": "test/unit/verification/smart-runner-config.test.ts",
+          "reason": "same three keys in its config fixture. Remove them; the smart-runner config resolution assertions must continue to pass."
+        },
+        {
+          "path": "test/unit/precheck/precheck-story-size-gate.test.ts",
+          "reason": "its `NaxConfig` fixture supplies `autoVerifyIsolation`, `autoApproveVerifier` and `acceptance.generateTests`. Remove all three; the story-size-gate threshold assertions must continue to pass."
+        },
+        {
+          "path": "test/unit/precheck/precheck-run-story-size-gate-routing.test.ts",
+          "reason": "same three keys in its fixture. Remove them; the gate-routing assertions must continue to pass."
+        },
+        {
+          "path": "test/integration/pipeline/pipeline-acceptance.test.ts",
+          "reason": "its config fixture sets `acceptance.generateTests`. Remove it; acceptance-pipeline behaviour is governed by `acceptance.enabled`, which the file's assertions already exercise and which must continue to pass."
+        },
+        {
+          "path": "test/integration/pipeline/pipeline-events.test.ts",
+          "reason": "its config fixture supplies `autoVerifyIsolation`, `autoApproveVerifier` and `acceptance.generateTests`. Remove all three; the pipeline event-ordering assertions must continue to pass."
+        },
+        {
+          "path": "test/integration/routing/routing-stage-final-state.test.ts",
+          "reason": "same three keys in its fixture. Remove them; the routing final-state assertions must continue to pass."
+        },
+        {
+          "path": "test/integration/routing/routing-stage-greenfield.test.ts",
+          "reason": "same three keys in its fixture. Remove them; the greenfield routing assertions must continue to pass."
+        },
+        {
+          "path": "test/integration/prompts/pb-004-migration.test.ts",
+          "reason": "same three keys in its fixture. Remove them; the prompt-builder migration assertions must continue to pass."
+        }
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Delete the dead interact CLI surface and status branch",
+      "description": "**Goal** \u2014 Delete the unregistered `nax interact` handlers and unreachable pending-interaction status display without changing the surrounding feature-status output.\n\n**Motivation** \u2014 `nax interact list` could only ever print \"No pending interactions\", while `respond` and `cancel` could only ever throw \"Interaction request not found\".\n\n**Approach** \u2014 Deletes `src/cli/interact.ts`, `src/cli/constitution.ts`, their `src/cli/index.ts` barrel re-exports, and the unreachable pending-interactions block in `src/cli/status-features.ts`.\n\n**Scope** \u2014 In: remove the CLI modules, barrel exports, and `Waiting for Interaction` branch; adjust status regression coverage. Out: deleting the interaction state module and its barrel exports (US-003); registering `nax interact`; modifying the live interaction chain, triggers, bridge builder, or plugins.\n\n**Interface** \u2014 No new public interface is introduced; this story removes the unregistered CLI command surface.",
+      "acceptanceCriteria": [
+        "Given a feature directory with an `interactions` subdirectory containing one well-formed pending request, when the `nax status` feature display runs, then its output contains no `Waiting for Interaction` text.",
+        "Given that same feature directory, when the `nax status` feature display runs, then its output includes the PRD feature name.",
+        "Given that same feature directory, when the `nax status` feature display runs, then its output includes the feature story listing."
+      ],
+      "tags": [
+        "cli",
+        "dead-code",
+        "status"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A contained deletion across CLI exports and one status display branch, with output regression coverage.",
+        "agentProfileId": "pi-medium",
+        "agent": "pi",
+        "profileModelTier": "balanced",
+        "initialAgent": "pi",
+        "initialProfileId": "pi-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/cli/index.ts",
+        "src/cli/status-features.ts",
+        "src/cli/interact.ts",
+        "src/cli/constitution.ts",
+        "test/unit/cli/status-features.test.ts"
+      ],
+      "outOfScope": [
+        "Registering `nax interact` as a CLI command, in this or any follow-up implied by this spec.",
+        "Modifying `src/interaction/chain.ts`, `triggers.ts`, `bridge-builder.ts`, or any plugin under `src/interaction/plugins/`.",
+        "Deleting the orphaned interaction state layer (US-003)."
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Delete the orphaned interaction state layer",
+      "description": "**Goal** \u2014 Remove the disk-persistence interaction state module after its CLI consumers have been deleted, while preserving in-process interaction responses.\n\n**Motivation** \u2014 The disk-based protocol is orphaned end to end: nothing ever writes `<featureDir>/interactions/`, and `<featureDir>/responses/` is written only by `interact.ts` and read by nobody.\n\n**Approach** \u2014 Terminal cleanup. Deletes `src/interaction/state.ts` in full and its re-exports from `src/interaction/index.ts`. Every consumer is removed by US-002, so this story adds no production code. Carries one regression guard proving the in-process interaction path is unaffected.\n\n**Scope** \u2014 In: delete `state.ts`, its barrel exports, and add the in-process chain regression assertion. Out: the CLI deletion and status branch removal (US-002); building a disk-backed producer; modifications to `chain.ts`, `triggers.ts`, `bridge-builder.ts`, or plugins.\n\n**Interface** \u2014 No new interface is introduced; all eight state exports and the `RunState` type from `src/interaction/state.ts` are removed. The unrelated local `RunState` interface at `src/plugins/builtin/otel-reporter/index.ts:55` must not be touched.",
+      "acceptanceCriteria": [
+        "Given an `InteractionChain` configured with `AutoInteractionPlugin`, when it resolves a `human-review` interaction request through the in-process path, then the returned response `requestId` matches the submitted request ID.",
+        "Given an initialized `AutoInteractionPlugin` receives an interaction request whose metadata trigger is `security-review`, when it decides the request, then it returns `undefined` rather than an auto-approved response."
+      ],
+      "tags": [
+        "interaction",
+        "dead-code",
+        "cleanup"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Terminal module and barrel deletion with a focused regression assertion against the unchanged in-process path.",
+        "agentProfileId": "pi-structural",
+        "agent": "pi",
+        "profileModelTier": "fast",
+        "initialAgent": "pi",
+        "initialProfileId": "pi-structural",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "src/interaction/index.ts",
+        "src/interaction/state.ts",
+        "src/interaction/chain.ts",
+        "src/interaction/plugins/auto.ts",
+        "test/unit/interaction/interaction-plugins.test.ts"
+      ],
+      "outOfScope": [
+        "Building a disk-backed producer for pending interactions. The in-process `InteractionChain` path remains the only interaction mechanism in nax.",
+        "Modifying `src/interaction/chain.ts`, `triggers.ts`, `bridge-builder.ts`, or any plugin under `src/interaction/plugins/`."
+      ]
+    }
+  ],
+  "analysis": "This is a refactor of an existing Bun/TypeScript CLI with a layered Zod configuration system. `src/config/loader.ts` merges defaults, global, project, profile, and CLI layers; the root chain invokes its pre-parse reject guards immediately before `NaxConfigSchema.safeParse` at `src/config/loader.ts:353-361`. `loadConfigForWorkdir` first caches `loadConfig`, then applies a per-package override/profile and invokes the same guards before its own parse at `src/config/loader.ts:486-489`. The existing `defaultConfigWarn` wraps `getLogger().warn(\"config\", msg)` at `src/config/loader.ts:52-59`; use it as the guard default, while direct unit calls inject a warn sink. Root config caching means loader-altitude tests must call `_clearRootConfigCache` between isolated fixture cases, as existing loader tests do.\n\nThe four no-op keys are currently declared in `src/config/schemas-execution.ts:76,337-338` and `src/config/schemas-infra.ts:41`, included in defaults in `src/config/schemas.ts:130,218-219,291`, required by `src/config/runtime-types.ts:70,232,236,305`, and advertised by `src/cli/config-descriptions.ts:83,123,125,181`. Their fixture-only references span config, execution, verification, precheck, pipeline, routing, and prompt tests; remove only the literal properties whose requirement disappears, delete `test/unit/config/escalate-on-exhaustion.test.ts`, and remove only the `generateTests` table row in `test/unit/config/merge.test.ts`. `src/config/merge.ts:22` needs its stale acceptance deep-merge comment corrected but its spread-based code must remain unchanged. The guard must use object/path presence rather than values, preserve siblings, avoid mutation, and leave missing/non-object parents for Zod. Post-merge placement prevents duplicate warnings when global and project layers both set a removed key. Backward compatibility is intentionally warn-and-strip: existing inert configuration continues to load while a logger warning makes the removal audible.\n\nThe dead CLI/interaction surface is structurally isolated. Graph inspection finds `interactListCommand`, `interactRespondCommand`, and `interactCancelCommand` at `src/cli/interact.ts` with no inbound callers, while `savePendingInteraction` at `src/interaction/state.ts:122` has zero callers. `loadPendingInteraction` is called only by those dead commands and the pending-interaction block in `displayFeatureDetails` (`src/cli/status-features.ts:279-320`). `src/cli/index.ts:49-51` and `src/interaction/index.ts:25-36` expose the deleted symbols. Delete the CLI handlers, unused `constitution.ts`, the state module, related barrel exports, and the status block. Do not change the live in-process interaction graph: `InteractionChain` is exported from `src/interaction/index.ts:22`, and existing tests under `test/unit/interaction/` and `test/integration/interaction/` cover the plugins and chain. Update the existing status feature test for surrounding status output and add an in-process AutoInteractionPlugin regression assertion. The unrelated `RunState` in `src/plugins/builtin/otel-reporter/index.ts:55` remains untouched. Migration is removal-only: users retaining a removed config key receive one warning per resolved config; there is no disk interaction protocol to migrate because no producer exists.",
+  "outOfScope": [
+    "Building a disk-backed producer for pending interactions. The in-process `InteractionChain` path remains the only interaction mechanism in nax.",
+    "Registering `nax interact` as a CLI command, in this or any follow-up implied by this spec.",
+    "Implementing tier escalation on rectification exhaustion, i.e. US-002 and US-003 of `docs/specs/SPEC-rectification-escalation.md`. That spec is retired as won't-do by this work.",
+    "Converting `stripRemovedNoOpKeys` into a throwing guard, or converting any of the four existing `reject*` guards into warn-and-strip. The divergence is deliberate and documented.",
+    "Consolidating the four existing `reject*` guards or the three pre-merge shims into a shared table-driven mechanism.",
+    "Adding replacement configuration keys for any of the four removed keys.",
+    "Making isolation verification, verifier auto-approval, or acceptance test generation conditionally disableable. Each currently runs unconditionally and continues to.",
+    "Modifying `src/interaction/chain.ts`, `triggers.ts`, `bridge-builder.ts`, or any plugin under `src/interaction/plugins/`.",
+    "Changing the behaviour of `acceptance.enabled`, which remains the single switch governing acceptance test generation."
+  ],
+  "routingProfile": "cross-agent-pi"
+}
