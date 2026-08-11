@@ -129,8 +129,6 @@ function createTestContext(
     },
     tdd: {
       maxRetries: 3,
-      autoVerifyIsolation: true,
-      autoApproveVerifier: true,
       strategy: "auto",
       greenfieldDetection: greenfieldDetectionEnabled,
       rollbackOnFailure: true,
@@ -158,7 +156,6 @@ function createTestContext(
     acceptance: {
       enabled: true,
       maxRetries: 2,
-      generateTests: true,
       testPath: "acceptance.test.ts",
     },
     context: {

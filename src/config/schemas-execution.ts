@@ -73,7 +73,6 @@ const RectificationConfigSchema = z.object({
    * predicate fires on a much wider shape — the true coverage between 179 and 695
    * iterations cannot be measured until post-#1496 telemetry accrues. (default: 3) */
   consecutiveNoProgressToBail: z.number().int().min(1).max(10).default(3),
-  escalateOnExhaustion: z.boolean().optional().default(true),
   /** Bound the rectification budget to one (story, tier) pair so a tier escalation
    * yields a fresh budget — a more capable model gets real attempts instead of
    * inheriting the prior tier's exhausted state. (default: true) */
@@ -334,8 +333,6 @@ export const QualityConfigSchema = z.object({
 
 export const TddConfigSchema = z.object({
   maxRetries: z.number().int().nonnegative(),
-  autoVerifyIsolation: z.boolean(),
-  autoApproveVerifier: z.boolean(),
   strategy: z.enum(["auto", "strict", "lite", "off"]).default("auto"),
   sessionTiers: z
     .object({

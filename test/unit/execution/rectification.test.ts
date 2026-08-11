@@ -18,7 +18,6 @@ describe("shouldRetryRectification", () => {
     fullSuiteTimeoutSeconds: 120,
     maxFailureSummaryChars: 2000,
     abortOnIncreasingFailures: true,
-    escalateOnExhaustion: true,
     rethinkAtAttempt: 2,
     urgencyAtAttempt: 3,
   };
@@ -90,7 +89,6 @@ describe("createEscalatedRectificationPrompt", () => {
     fullSuiteTimeoutSeconds: 120,
     maxFailureSummaryChars: 2000,
     abortOnIncreasingFailures: true,
-    escalateOnExhaustion: true,
     rethinkAtAttempt: 2,
     urgencyAtAttempt: 3,
   };

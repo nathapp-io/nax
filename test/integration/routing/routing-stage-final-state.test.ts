@@ -116,8 +116,6 @@ function createTestContext(workdir: string, overrides?: Partial<PipelineContext>
     },
     tdd: {
       maxRetries: 3,
-      autoVerifyIsolation: true,
-      autoApproveVerifier: true,
       strategy: "auto",
       greenfieldDetection: true,
       rollbackOnFailure: true,
@@ -131,7 +129,7 @@ function createTestContext(workdir: string, overrides?: Partial<PipelineContext>
     },
     review: { enabled: true, checks: ["test"], commands: {} },
     plan: { model: "balanced", outputPath: "features" },
-    acceptance: { enabled: true, maxRetries: 2, generateTests: true, testPath: "acceptance.test.ts" },
+    acceptance: { enabled: true, maxRetries: 2, testPath: "acceptance.test.ts" },
     context: {
       testCoverage: {
         enabled: true,

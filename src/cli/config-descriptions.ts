@@ -80,8 +80,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
     "Abort rectification when no progress is made for several consecutive iterations (default: true)",
   "execution.rectification.consecutiveNoProgressToBail":
     "Consecutive no-progress iterations required before abortOnNoProgress bails (default: 3; one higher than the count bail's 2 because the no-progress predicate fires on a wider shape)",
-  "execution.rectification.escalateOnExhaustion":
-    "Enable model tier escalation when attempts are exhausted with remaining failures",
   "execution.rectification.rethinkAtAttempt":
     "Attempt number at which 'rethink your approach' language is injected into the prompt (default: 2)",
   "execution.rectification.urgencyAtAttempt":
@@ -120,9 +118,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   // TDD
   tdd: "Test-driven development configuration",
   "tdd.maxRetries": "Max retries per TDD session before escalating",
-  "tdd.autoVerifyIsolation": "Auto-verify test isolation between sessions",
   "tdd.strategy": "TDD strategy: auto | strict | lite | off",
-  "tdd.autoApproveVerifier": "Auto-approve legitimate fixes in verifier session",
   "tdd.sessionTiers": "Per-session model tier overrides",
   "tdd.sessionTiers.testWriter": "Model tier for test-writer session",
   "tdd.sessionTiers.implementer":
@@ -178,7 +174,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   acceptance: "Acceptance test configuration",
   "acceptance.enabled": "Enable acceptance test generation and validation",
   "acceptance.maxRetries": "Max retry loops for fix stories",
-  "acceptance.generateTests": "Generate acceptance tests during analyze",
   "acceptance.testPath": "Path to acceptance test file (relative to feature dir)",
   "acceptance.command":
     "Override command to run acceptance tests. Use {{FILE}} as placeholder for the test file path (default: 'bun test {{FILE}} --timeout=60000')",

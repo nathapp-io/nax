@@ -87,15 +87,13 @@ function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
     },
     tdd: {
       maxRetries: 2,
-      autoVerifyIsolation: true,
       strategy: "auto",
-      autoApproveVerifier: true,
     },
     constitution: { enabled: false, path: "constitution.md", maxTokens: 2000 },
     analyze: { llmEnhanced: false, model: "balanced", fallbackToKeywords: true, maxCodebaseSummaryTokens: 5000 },
     review: { enabled: false, checks: [], commands: {} },
     plan: { model: "balanced", outputPath: "spec.md" },
-    acceptance: { enabled: false, maxRetries: 2, generateTests: false, testPath: "acceptance.test.ts" },
+    acceptance: { enabled: false, maxRetries: 2, testPath: "acceptance.test.ts" },
     context: {
       testCoverage: {
         enabled: false,

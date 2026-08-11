@@ -169,6 +169,107 @@ export function rejectDeadQualityFlags(conf: Record<string, unknown>): void {
 }
 
 /**
+ * Keys that were declared in the schema and CLI documentation but read at no
+ * code site. Setting any of them to `false` was a silent no-op — the behaviour
+ * ran unconditionally regardless. Removing them changes no behaviour, but
+ * Zod's default `.strip()` would swallow the keys and leave the user
+ * believing their override was still in effect.
+ *
+ * Map value is a migration hint appended to the warning message, telling the
+ * user where (or whether) the behaviour they thought they were toggling
+ * actually lives. The three `tdd.*` and `execution.rectification.*` entries
+ * describe the unconditional behaviour the user was already getting;
+ * `acceptance.generateTests` points at the single surviving switch.
+ */
+const REMOVED_NO_OP_KEYS: Readonly<Record<string, string>> = {
+  "execution.rectification.escalateOnExhaustion": "this key had no effect — tier escalation is currently unconditional",
+  "tdd.autoVerifyIsolation": "this key had no effect — isolation verification is currently unconditional",
+  "tdd.autoApproveVerifier": "this key had no effect — verifier auto-approval is currently unconditional",
+  "acceptance.generateTests": "use `acceptance.enabled` instead",
+};
+
+/**
+ * Strip config keys that were declared but never read, warning once per key.
+ *
+ * Unlike the four `reject*` siblings above, this function warns rather than
+ * throws. The four keys it strips were inert: setting one to `false` never
+ * disabled anything. A throw would hard-fail every existing config that
+ * supplied an already-inert key, with no behaviour change to show for it. A
+ * warning surfaces the false belief (the user was setting a key that did
+ * nothing) without breaking already-working configs. The divergence from the
+ * `reject*` siblings is deliberate and is captured by this doc comment so
+ * the next reader does not read the inconsistency as an oversight.
+ *
+ * Returns a new object; does not mutate `conf`. Runs after every layer of
+ * the config-merge chain so one warning is emitted per resolved config
+ * regardless of which layer supplied the key.
+ *
+ * @param conf - Raw config object (post-merge, pre-`safeParse`).
+ * @param warn - Optional sink; called once per removed key. Defaults to
+ *   `defaultConfigWarn` from `loader.ts` when invoked via `loadConfig`.
+ * @returns A new object with the removed keys stripped.
+ */
+export function stripRemovedNoOpKeys(
+  conf: Record<string, unknown>,
+  warn?: (msg: string) => void,
+): Record<string, unknown> {
+  let result = conf;
+
+  for (const [path, hint] of Object.entries(REMOVED_NO_OP_KEYS)) {
+    const segments = path.split(".");
+    if (segments.length < 2) continue;
+
+    // Walk into result following `segments`. Tolerate missing intermediates
+    // (AC-7: no `tdd` at all) and non-object intermediates (AC-8: `tdd: 42`).
+    let parent: Record<string, unknown> | undefined = result;
+    for (let i = 0; i < segments.length - 1; i++) {
+      const seg = segments[i];
+      const next = parent?.[seg];
+      if (next === null || typeof next !== "object") {
+        parent = undefined;
+        break;
+      }
+      parent = next as Record<string, unknown>;
+    }
+    if (!parent) continue;
+
+    const leaf = segments[segments.length - 1];
+    if (!(leaf in parent)) continue;
+
+    warn?.(`Config key "${path}" has been removed — ${hint}. Remove it from your config.`);
+    const { [leaf]: _removed, ...rest } = parent;
+    // Re-attach the stripped parent at its path under `result`. Re-walking
+    // from the root keeps the chain immutable — we never mutate the original
+    // `conf`, only rebuild new objects above it.
+    const newParent = rest;
+    if (segments.length === 1) {
+      result = newParent;
+    } else {
+      result = rebuildAtPath(result, segments.slice(0, -1), newParent);
+    }
+  }
+
+  // Return a new top-level object even when no key matched (AC-3) so callers
+  // can treat the result as owned.
+  return result === conf ? { ...conf } : result;
+}
+
+/**
+ * Build a new object whose path (a sequence of segment keys) ends at
+ * `value`. Each ancestor is reconstructed as a fresh shallow copy so the
+ * original is not mutated.
+ */
+function rebuildAtPath(
+  root: Record<string, unknown>,
+  path: string[],
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  if (path.length === 0) return value;
+  const [head, ...tail] = path;
+  return { ...root, [head]: rebuildAtPath((root[head] as Record<string, unknown>) ?? {}, tail, value) };
+}
+
+/**
  * @internal Reject `execution.permissionProfile: "scoped"` until Phase 2 lands.
  *
  * The scoped profile is a valid enum value (Zod accepts it), but its resolver

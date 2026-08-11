@@ -19,7 +19,7 @@ import type { NaxConfig } from "./schema";
  * - execution: smartTestRunner, regressionGate (deep), flakeDetection (deep),
  *   mutationCheck (deep), rectification (deep), verificationTimeoutSeconds
  * - review: enabled, checks, commands (deep), semantic (deep), adversarial (deep)
- * - acceptance: enabled, generateTests, testPath, fix (deep)
+ * - acceptance: enabled, testPath, fix (deep)
  * - quality: commands (deep), testing (deep), autofix (deep), lintOutput (deep)
  * - context: testCoverage (deep), v2.stages (deep), v2.rules (deep)
  * - project: type, language, frameworks

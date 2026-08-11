@@ -52,8 +52,6 @@ const mockConfig: NaxConfig = {
   },
   tdd: {
     maxRetries: 2,
-    autoVerifyIsolation: true,
-    autoApproveVerifier: false,
   },
   constitution: {
     enabled: true,
@@ -78,7 +76,6 @@ const mockConfig: NaxConfig = {
   acceptance: {
     enabled: false,
     maxRetries: 2,
-    generateTests: false,
     testPath: "acceptance.test.ts",
   },
 };

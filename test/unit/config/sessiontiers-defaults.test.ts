@@ -5,8 +5,6 @@ describe("tdd.sessionTiers defaults", () => {
   test("materializes testWriter/verifier defaults when sessionTiers is absent", () => {
     const parsed = TddConfigSchema.parse({
       maxRetries: 0,
-      autoVerifyIsolation: false,
-      autoApproveVerifier: false,
     });
     expect(parsed.sessionTiers?.testWriter).toBe("fast");
     expect(parsed.sessionTiers?.verifier).toBe("fast");
@@ -15,8 +13,6 @@ describe("tdd.sessionTiers defaults", () => {
   test("respects an explicit tier string", () => {
     const parsed = TddConfigSchema.parse({
       maxRetries: 0,
-      autoVerifyIsolation: false,
-      autoApproveVerifier: false,
       sessionTiers: { testWriter: "balanced" },
     });
     expect(parsed.sessionTiers?.testWriter).toBe("balanced");
@@ -26,8 +22,6 @@ describe("tdd.sessionTiers defaults", () => {
   test("accepts a ConfiguredModel object ({ agent, model })", () => {
     const parsed = TddConfigSchema.parse({
       maxRetries: 0,
-      autoVerifyIsolation: false,
-      autoApproveVerifier: false,
       sessionTiers: { verifier: { agent: "claude", model: "haiku" } },
     });
     expect(parsed.sessionTiers?.verifier).toEqual({ agent: "claude", model: "haiku" });
