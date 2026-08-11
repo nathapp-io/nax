@@ -322,9 +322,9 @@ export async function executeUnified(
 
           await pipelineEventBus.drain();
           totalCost += batchResult.totalCost;
-          storiesCompleted += batchResult.completed.length;
+          storiesCompleted +=
+            batchResult.completed.length + batchResult.mergeConflicts.filter((c) => c.rectified).length;
           prdDirty = true;
-
           if (ctx.sessionManager) {
             for (const story of batchResult.completed) {
               await closeStorySessions(ctx.sessionManager, story.id, ctx.agentGetFn);

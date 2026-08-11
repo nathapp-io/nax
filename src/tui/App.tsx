@@ -188,7 +188,7 @@ export function App({ feature, version, stories: initialStories, events, queueFi
   };
 
   // Custom input handler for confirmation dialogs
-  useInput((input) => {
+  useInput((input, key) => {
     // Handle confirmation dialogs
     if (showQuitConfirm || showAbortConfirm) {
       const inputKey = input.toLowerCase();
@@ -199,7 +199,7 @@ export function App({ feature, version, stories: initialStories, events, queueFi
           writeQueueCommand(queueFilePath, { type: "ABORT" });
           setShowAbortConfirm(false);
         }
-      } else if (inputKey === "n" || input === "\x1b") {
+      } else if (inputKey === "n" || key.escape) {
         // n or Esc cancels
         setShowQuitConfirm(false);
         setShowAbortConfirm(false);

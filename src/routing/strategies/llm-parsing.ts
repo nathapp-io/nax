@@ -35,7 +35,9 @@ export function validateRoutingDecision(
   }
 
   const modelTier = parsed.modelTier as string;
-  const tierExistsInAnyAgent = Object.values(config.models).some((agentTiers) => modelTier in agentTiers);
+  const tierExistsInAnyAgent = Object.values(config.models).some(
+    (agentTiers) => typeof modelTier === "string" && Object.hasOwn(agentTiers, modelTier),
+  );
   if (!tierExistsInAnyAgent) {
     throw new Error(`Invalid modelTier: ${modelTier} (not found in any agent's tier map)`);
   }

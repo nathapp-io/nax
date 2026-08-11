@@ -218,7 +218,7 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
 
   // Validate dependency references (against already-known IDs)
   for (const dep of dependencies) {
-    if (!allIds.has(dep)) {
+    if (!allIds.has(normalizeStoryId(dep))) {
       throw new NaxError(
         `[schema] story[${index}].dependencies references unknown story ID "${dep}"`,
         "SCHEMA_VALIDATION_FAILED",

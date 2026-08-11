@@ -194,7 +194,8 @@ export async function runPlan(
 
     for (let i = 0; i < settled.length; i++) {
       const res = settled[i];
-      if (res.status === "fulfilled") {
+      const succeeded = res.status === "fulfilled" && res.value.success;
+      if (succeeded && res.status === "fulfilled") {
         successful.push({
           debater: resolved[i].debater,
           agentName: resolved[i].agentName,
@@ -220,7 +221,12 @@ export async function runPlan(
             stage: ctx.stage,
             debaterIndex: i,
             agent: resolved[i].debater.agent,
-            error: res.reason instanceof Error ? res.reason.message : String(res.reason),
+            error:
+              res.status === "rejected"
+                ? res.reason instanceof Error
+                  ? res.reason.message
+                  : String(res.reason)
+                : `debate op returned success:false — ${res.value.rebut}`,
           });
         }
       }

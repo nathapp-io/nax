@@ -144,9 +144,15 @@ async function promptForConfirmation(question: string): Promise<boolean> {
       process.stdin.pause();
       process.stdin.removeListener("data", handler);
 
-      const answer = char.toLowerCase();
       process.stdout.write("\n");
 
+      if (char === "") {
+        // Ctrl+C — treat as cancellation, not confirmation
+        resolve(false);
+        process.exit(130);
+      }
+
+      const answer = char.toLowerCase();
       if (answer === "n") {
         resolve(false);
       } else {
@@ -677,7 +683,12 @@ program
       config.agent ??= {};
       config.agent.default = options.agent;
     }
-    config.execution.maxIterations = Number.parseInt(options.maxIterations, 10);
+    const maxIterations = Number.parseInt(options.maxIterations, 10);
+    if (!Number.isFinite(maxIterations) || maxIterations < 1) {
+      console.error(chalk.red("--max-iterations must be a positive integer"));
+      process.exit(1);
+    }
+    config.execution.maxIterations = maxIterations;
     if (options.maxCost !== undefined) {
       const maxCost = Number(options.maxCost);
       if (!Number.isFinite(maxCost) || maxCost <= 0) {
