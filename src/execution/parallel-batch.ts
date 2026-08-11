@@ -133,6 +133,11 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
   // already created for its siblings (BUG-05). A synthesized failure matches the shape
   // the dependency-prep loop already produces below.
   const preExecutionFailures: RunParallelBatchResult["failed"] = [];
+  // Failure timestamp captured at the moment each pre-execution failure actually
+  // happens, not at batchEndMs (which is stamped after every surviving sibling
+  // finishes) — otherwise an instant worktree-create failure reports a duration
+  // spanning the whole batch's wall-clock time in storyDurations.
+  const preExecutionFailureEndTimes = new Map<string, number>();
   for (const story of stories) {
     storyStartTimes.set(story.id, Date.now());
     try {
@@ -152,6 +157,7 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
           context: { ...pipelineContext, story, stories: [story], workdir } as PipelineContext,
         },
       });
+      preExecutionFailureEndTimes.set(story.id, Date.now());
       continue;
     }
     worktreePaths.set(story.id, path.join(workdir, ".nax-wt", story.id));
@@ -332,7 +338,7 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
     storyEndTimes.set(story.id, batchEndMs);
   }
   for (const { story } of failed) {
-    storyEndTimes.set(story.id, batchEndMs);
+    storyEndTimes.set(story.id, preExecutionFailureEndTimes.get(story.id) ?? batchEndMs);
   }
 
   const mergeConflicts: RunParallelBatchResult["mergeConflicts"] = [];

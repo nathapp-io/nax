@@ -150,10 +150,14 @@ export function resolveProject(options: ResolveProjectOptions = {}): ResolvedPro
  * no such key in `NaxConfigSchema`) — commands that read `config.feature` always get
  * `undefined` and fail unconditionally without an explicit flag.
  *
+ * `remediationHint` must describe how *this specific command* actually disambiguates —
+ * not every caller has a `-f`/`--feature` flag (e.g. `nax logs` binds `-f` to
+ * `--follow` and has no feature flag at all; it disambiguates via `-r <runId>` instead).
+ *
  * @throws {NaxError} when there are zero or more than one feature directories —
- *   the caller must pass the flag explicitly in either case.
+ *   the caller must resolve the ambiguity via `remediationHint` in either case.
  */
-export function resolveSingleFeature(naxDir: string): string {
+export function resolveSingleFeature(naxDir: string, remediationHint = "pass -f <name>"): string {
   const featuresDir = join(naxDir, "features");
   const available = existsSync(featuresDir)
     ? readdirSync(featuresDir, { withFileTypes: true })
@@ -165,13 +169,13 @@ export function resolveSingleFeature(naxDir: string): string {
   if (available.length === 1) return available[0];
 
   if (available.length === 0) {
-    throw new NaxError("No feature specified and no features found — pass -f <name>.", "FEATURE_NOT_SPECIFIED", {
+    throw new NaxError(`No feature specified and no features found — ${remediationHint}.`, "FEATURE_NOT_SPECIFIED", {
       featuresDir,
     });
   }
 
   throw new NaxError(
-    `No feature specified and multiple features exist — pass -f <name>.\n\nAvailable features:\n${available.map((f) => `  - ${f}`).join("\n")}`,
+    `No feature specified and multiple features exist — ${remediationHint}.\n\nAvailable features:\n${available.map((f) => `  - ${f}`).join("\n")}`,
     "FEATURE_AMBIGUOUS",
     { featuresDir, available },
   );

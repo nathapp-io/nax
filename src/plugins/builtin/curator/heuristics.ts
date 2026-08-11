@@ -195,22 +195,27 @@ function h2PullToolEmptyResult(observations: Observation[], threshold: number): 
       o.payload.keyword.length > 0,
   );
 
-  const byKeyword = new Map<string, { storyIds: string[]; featureId: string }>();
+  // Sites are featureId/storyId composites, not bare story IDs — story IDs are
+  // feature-scoped, so two features' unrelated "US-001" would otherwise dedupe
+  // into one displayed site and understate how widely this empty-keyword pattern
+  // actually recurs (BUG-48; same fix as H1/H4's `sites`).
+  const byKeyword = new Map<string, { sites: string[]; featureId: string }>();
   for (const obs of pulls) {
     const keyword = obs.payload.keyword as string;
+    const site = `${obs.featureId}/${obs.storyId}`;
     const existing = byKeyword.get(keyword);
     if (existing) {
-      existing.storyIds.push(obs.storyId);
+      existing.sites.push(site);
     } else {
-      byKeyword.set(keyword, { storyIds: [obs.storyId], featureId: obs.featureId });
+      byKeyword.set(keyword, { sites: [site], featureId: obs.featureId });
     }
   }
 
   const proposals: Proposal[] = [];
   for (const [keyword, data] of byKeyword.entries()) {
-    if (data.storyIds.length < threshold) continue;
-    const count = data.storyIds.length;
-    const unique = uniqueStoryIds(data.storyIds);
+    if (data.sites.length < threshold) continue;
+    const count = data.sites.length;
+    const unique = uniqueStoryIds(data.sites);
     proposals.push({
       id: "H2",
       severity: "MED",
