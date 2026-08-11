@@ -45,14 +45,6 @@ export { initCommand, type InitOptions } from "./init";
 export { setupCommand, type SetupOptions } from "./setup";
 export { writeSetupConfig, _writeSetupDeps, type WriteSetupConfigResult } from "./setup-write";
 export { pluginsListCommand } from "./plugins";
-export {
-  interactListCommand,
-  interactRespondCommand,
-  interactCancelCommand,
-  type InteractListOptions,
-  type InteractRespondOptions,
-  type InteractCancelOptions,
-} from "./interact";
 export { generateCommand, type GenerateCommandOptions } from "./generate";
 export { configCommand, type ConfigCommandOptions } from "./config";
 export { agentsListCommand } from "./agents";

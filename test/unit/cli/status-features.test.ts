@@ -391,3 +391,157 @@ describe("displayFeatureDetails - PostRun Status Display (US-004)", () => {
     expect(output).toContain("$5.5000");
   });
 });
+
+// ============================================================================
+// US-002 (retire-dead-cli-config-surface) — pending interactions removal
+//
+// Covers acceptance criteria:
+//   1. status output must not contain "Waiting for Interaction"
+//   2. status output must include the PRD feature name
+//   3. status output must include the feature story listing
+//
+// All three ACs share the same fixture: a feature directory with an
+// `interactions/` subdirectory holding one well-formed pending request.
+// AC-1 fails the RED phase because the legacy branch emits that text.
+// AC-2 and AC-3 are regression guards against collateral damage to the
+// surrounding status output.
+// ============================================================================
+
+describe("displayFeatureDetails - Pending Interactions Removal (US-002)", () => {
+  let testDir: string;
+  let originalCwd: string;
+  let consoleOutput: string[];
+  const originalLog = console.log;
+  let origProjectOutputDir: typeof _statusFeaturesDeps.projectOutputDir;
+
+  beforeEach(() => {
+    const rawTestDir = makeTempDir("nax-test-");
+    testDir = realpathSync(rawTestDir);
+    originalCwd = process.cwd();
+
+    origProjectOutputDir = _statusFeaturesDeps.projectOutputDir;
+    _statusFeaturesDeps.projectOutputDir = () => join(testDir, ".nax");
+
+    consoleOutput = [];
+    console.log = mock((message: string) => {
+      consoleOutput.push(message);
+    });
+  });
+
+  afterEach(() => {
+    _statusFeaturesDeps.projectOutputDir = origProjectOutputDir;
+    process.chdir(originalCwd);
+    console.log = originalLog;
+
+    if (testDir) {
+      rmSync(testDir, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * Helper: Build a minimal PRD with two distinct stories so the story listing
+   * has multiple entries to assert against.
+   */
+  function buildPRD(featureName: string): PRD {
+    return {
+      project: "test-project",
+      feature: featureName,
+      branchName: `feat/${featureName}`,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      userStories: [
+        {
+          id: "US-001",
+          title: "Alpha story",
+          description: "Test story 1",
+          acceptanceCriteria: ["AC-1"],
+          tags: [],
+          dependencies: [],
+          status: "passed",
+          passes: true,
+          escalations: [],
+          attempts: 1,
+        },
+        {
+          id: "US-002",
+          title: "Beta story",
+          description: "Test story 2",
+          acceptanceCriteria: ["AC-2"],
+          tags: [],
+          dependencies: [],
+          status: "pending",
+          passes: false,
+          escalations: [],
+          attempts: 0,
+        },
+      ],
+    };
+  }
+
+  /**
+   * Helper: Write a feature fixture whose `interactions/` subdirectory holds
+   * one well-formed pending request. The request id matches the
+   * `[a-zA-Z0-9_-]{1,128}` regex enforced by `validateInteractionId`.
+   */
+  function buildFeatureWithPendingInteraction(): { featureDir: string; featureName: string } {
+    const naxDir = join(testDir, ".nax");
+    const featuresDir = join(naxDir, "features");
+    const featureDir = join(featuresDir, "test-feature");
+    mkdirSync(featureDir, { recursive: true });
+    writeFileSync(join(naxDir, "config.json"), "{}");
+
+    const featureName = "test-feature";
+    writeFileSync(join(featureDir, "prd.json"), JSON.stringify(buildPRD(featureName), null, 2));
+
+    const interactionsDir = join(featureDir, "interactions");
+    mkdirSync(interactionsDir, { recursive: true });
+    const request = {
+      id: "ix-test-1",
+      type: "confirm",
+      featureName,
+      stage: "review",
+      summary: "Should this still show?",
+      fallback: "abort",
+      metadata: { trigger: "pre-merge" },
+      timeout: 60_000,
+      createdAt: Date.now(),
+    };
+    writeFileSync(join(interactionsDir, "ix-test-1.json"), JSON.stringify(request, null, 2));
+
+    return { featureDir, featureName };
+  }
+
+  // AC-1: status output must contain no "Waiting for Interaction" text.
+  test("AC-1: status output contains no 'Waiting for Interaction' text when feature has a pending interaction", async () => {
+    buildFeatureWithPendingInteraction();
+
+    await displayFeatureStatus({ feature: "test-feature", dir: testDir });
+
+    const output = consoleOutput.join("\n");
+    expect(output).not.toContain("Waiting for Interaction");
+  });
+
+  // AC-2: status output must still include the PRD feature name.
+  test("AC-2: status output includes the PRD feature name when feature has a pending interaction", async () => {
+    buildFeatureWithPendingInteraction();
+
+    await displayFeatureStatus({ feature: "test-feature", dir: testDir });
+
+    const output = consoleOutput.join("\n");
+    expect(output).toContain("test-feature");
+  });
+
+  // AC-3: status output must still include the feature story listing.
+  test("AC-3: status output includes the feature story listing when feature has a pending interaction", async () => {
+    buildFeatureWithPendingInteraction();
+
+    await displayFeatureStatus({ feature: "test-feature", dir: testDir });
+
+    const output = consoleOutput.join("\n");
+    expect(output).toContain("Stories:");
+    expect(output).toContain("US-001");
+    expect(output).toContain("Alpha story");
+    expect(output).toContain("US-002");
+    expect(output).toContain("Beta story");
+  });
+});
