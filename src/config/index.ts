@@ -47,6 +47,7 @@ export {
   NaxConfigSchema,
   AcceptanceConfigSchema,
   PlanConfigSchema,
+  ContextV2ConfigSchema,
 } from "./schema";
 export { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
 export type { AgentRoutingProfile, AgentRoutingConfig } from "./schemas-infra";
