@@ -8,6 +8,7 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "@/config";
+import { purgeStaleManifests } from "@/context/engine";
 import {
   type RunCompletionOptions,
   _runCompletionDeps,
@@ -686,7 +687,7 @@ describe("US-002: handleRunCompletion — manifest retention sweep", () => {
   afterEach(() => {
     Object.assign(_runCompletionDeps, {
       runDeferredRegression: mockRunDeferredRegression as typeof _runCompletionDeps.runDeferredRegression,
-      purgeStaleManifests: undefined,
+      purgeStaleManifests,
     });
     loggerSpy?.mockRestore();
     pipelineEventBus.clear();
