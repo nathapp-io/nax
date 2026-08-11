@@ -10,6 +10,7 @@ import { acceptanceStage, parseTestFailures } from "../../../../src/pipeline/sta
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import { addSink, initLogger, resetLogger } from "@/logger";
+import { _executorDeps } from "@/verification";
 import { makeStory } from "../../../helpers";
 
 // ---------------------------------------------------------------------------
@@ -59,8 +60,8 @@ describe("US-002: per-package acceptance runner", () => {
     const spawnCalls: Array<{ cwd: string; cmd: string[] }> = [];
 
     // Patch Bun.spawn for this test
-    const origSpawn = Bun.spawn;
-    (Bun as any).spawn = (cmd: string[], opts: any) => {
+    const origSpawn = _executorDeps.spawn;
+    _executorDeps.spawn = ((cmd: string[], opts: any) => {
       spawnCalls.push({ cwd: opts.cwd, cmd });
       const mockProc = {
         exited: Promise.resolve(0),
@@ -77,7 +78,7 @@ describe("US-002: per-package acceptance runner", () => {
         }),
       };
       return mockProc;
-    };
+    }) as unknown as typeof _executorDeps.spawn;  // test-ratchet-allow: as-unknown-as
 
     const ctx = makeCtx({
       acceptanceTestPaths: [
@@ -98,7 +99,7 @@ describe("US-002: per-package acceptance runner", () => {
       expect(spawnCalls.some((c) => c.cwd === "/tmp/test-workdir/apps/api")).toBe(true);
       expect(spawnCalls.some((c) => c.cwd === "/tmp/test-workdir/apps/cli")).toBe(true);
     } finally {
-      (Bun as any).spawn = origSpawn;
+      _executorDeps.spawn = origSpawn;
       (Bun as any).file = origFile;
     }
   });
@@ -119,8 +120,8 @@ describe("US-002: per-package acceptance runner", () => {
   });
 
   test("AC-4: all packages passing returns continue", async () => {
-    const origSpawn = Bun.spawn;
-    (Bun as any).spawn = (_cmd: string[], _opts: any) => ({
+    const origSpawn = _executorDeps.spawn;
+    _executorDeps.spawn = ((_cmd: string[], _opts: any) => ({
       exited: Promise.resolve(0),
       stdout: new ReadableStream({
         start(controller) {
@@ -133,7 +134,7 @@ describe("US-002: per-package acceptance runner", () => {
           controller.close();
         },
       }),
-    });
+    })) as unknown as typeof _executorDeps.spawn;  // test-ratchet-allow: as-unknown-as
 
     const origFile = Bun.file;
     (Bun as any).file = (_p: string) => ({
@@ -152,7 +153,7 @@ describe("US-002: per-package acceptance runner", () => {
       const result = await acceptanceStage.execute(ctx);
       expect(result.action).toBe("continue");
     } finally {
-      (Bun as any).spawn = origSpawn;
+      _executorDeps.spawn = origSpawn;
       (Bun as any).file = origFile;
     }
   });
@@ -160,15 +161,15 @@ describe("US-002: per-package acceptance runner", () => {
   test("AC-5: per-package testFramework is used when building run command", async () => {
     const spawnCalls: Array<{ cmd: string[]; cwd: string }> = [];
 
-    const origSpawn = Bun.spawn;
-    (Bun as any).spawn = (cmd: string[], opts: any) => {
+    const origSpawn = _executorDeps.spawn;
+    _executorDeps.spawn = ((cmd: string[], opts: any) => {
       spawnCalls.push({ cmd, cwd: opts.cwd });
       return {
         exited: Promise.resolve(0),
         stdout: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("1 pass\n")); c.close(); } }),
         stderr: new ReadableStream({ start(c) { c.close(); } }),
       };
-    };
+    }) as unknown as typeof _executorDeps.spawn;  // test-ratchet-allow: as-unknown-as
 
     const origFile = Bun.file;
     (Bun as any).file = (_p: string) => ({
@@ -200,22 +201,22 @@ describe("US-002: per-package acceptance runner", () => {
       const apiCall = spawnCalls.find((c) => c.cwd === "/tmp/test-workdir/apps/api");
       const webCall = spawnCalls.find((c) => c.cwd === "/tmp/test-workdir/apps/web");
 
-      // apps/api should use npx jest
-      expect(apiCall?.cmd[0]).toBe("npx");
-      expect(apiCall?.cmd[1]).toBe("jest");
+      // apps/api should use npx jest — spawn args are [shell, "-c", shellQuotedCommand]
+      expect(apiCall?.cmd[2]).toContain("npx");
+      expect(apiCall?.cmd[2]).toContain("jest");
 
       // apps/web should fall back to bun test (no testFramework)
-      expect(webCall?.cmd[0]).toBe("bun");
-      expect(webCall?.cmd[1]).toBe("test");
+      expect(webCall?.cmd[2]).toContain("bun");
+      expect(webCall?.cmd[2]).toContain("test");
     } finally {
-      (Bun as any).spawn = origSpawn;
+      _executorDeps.spawn = origSpawn;
       (Bun as any).file = origFile;
     }
   });
 
   test("records failed package metadata in acceptanceFailures for downstream fix routing", async () => {
-    const origSpawn = Bun.spawn;
-    (Bun as any).spawn = (cmd: string[], opts: any) => {
+    const origSpawn = _executorDeps.spawn;
+    _executorDeps.spawn = ((cmd: string[], opts: any) => {
       const isApi = opts.cwd === "/tmp/test-workdir/apps/api";
       const output = isApi ? "FAIL AC-2" : "1 pass\n";
       const exitCode = isApi ? 1 : 0;
@@ -233,7 +234,7 @@ describe("US-002: per-package acceptance runner", () => {
           },
         }),
       };
-    };
+    }) as unknown as typeof _executorDeps.spawn;  // test-ratchet-allow: as-unknown-as
 
     const origFile = Bun.file;
     (Bun as any).file = (_p: string) => ({
@@ -272,14 +273,14 @@ describe("US-002: per-package acceptance runner", () => {
         },
       ]);
     } finally {
-      (Bun as any).spawn = origSpawn;
+      _executorDeps.spawn = origSpawn;
       (Bun as any).file = origFile;
     }
   });
 
   test("records per-package output and failedACs on each failed package entry", async () => {
-    const origSpawn = Bun.spawn;
-    (Bun as any).spawn = (_cmd: string[], opts: any) => {
+    const origSpawn = _executorDeps.spawn;
+    _executorDeps.spawn = ((_cmd: string[], opts: any) => {
       const isApi = opts.cwd === "/tmp/test-workdir/apps/api";
       const output = isApi ? "FAIL AC-1 api boom\n" : "FAIL AC-2 web boom\n";
       return {
@@ -296,7 +297,7 @@ describe("US-002: per-package acceptance runner", () => {
           },
         }),
       };
-    };
+    }) as unknown as typeof _executorDeps.spawn;  // test-ratchet-allow: as-unknown-as
 
     const origFile = Bun.file;
     (Bun as any).file = (_p: string) => ({
@@ -333,7 +334,7 @@ describe("US-002: per-package acceptance runner", () => {
       expect(web?.failedACs).toEqual(["AC-2"]);
       expect(ctx.acceptanceFailures?.failedACs).toEqual(["AC-1", "AC-2"]);
     } finally {
-      (Bun as any).spawn = origSpawn;
+      _executorDeps.spawn = origSpawn;
       (Bun as any).file = origFile;
     }
   });
@@ -501,7 +502,7 @@ describe("acceptance verdict logger emit", () => {
     { testPath: "/tmp/test-workdir/apps/api/.nax-acceptance.test.ts", packageDir: "/tmp/test-workdir/apps/api" },
   ];
 
-  let origSpawn: typeof Bun.spawn;
+  let origSpawn: typeof _executorDeps.spawn;
   let origFile: typeof Bun.file;
   let unsubscribe: (() => void) | null = null;
   let verdicts: Array<Record<string, unknown>> = [];
@@ -519,10 +520,10 @@ describe("acceptance verdict logger emit", () => {
 
   /** Stub the test command to pass (exit 0) or fail on AC-2 (exit 1). */
   function stubRun(pass: boolean): void {
-    origSpawn = Bun.spawn;
+    origSpawn = _executorDeps.spawn;
     origFile = Bun.file;
     const out = pass ? "1 pass\n" : "  (fail) AC-2: handles empty input\n";
-    (Bun as any).spawn = (_cmd: string[], _opts: any) => ({
+    _executorDeps.spawn = ((_cmd: string[], _opts: any) => ({
       exited: Promise.resolve(pass ? 0 : 1),
       stdout: new ReadableStream({
         start(controller) {
@@ -535,7 +536,7 @@ describe("acceptance verdict logger emit", () => {
           controller.close();
         },
       }),
-    });
+    })) as unknown as typeof _executorDeps.spawn;  // test-ratchet-allow: as-unknown-as
     (Bun as any).file = (_p: string) => ({
       exists: () => Promise.resolve(true),
       text: () => Promise.resolve(""),
@@ -551,7 +552,7 @@ describe("acceptance verdict logger emit", () => {
     unsubscribe?.();
     unsubscribe = null;
     resetLogger();
-    if (origSpawn) (Bun as any).spawn = origSpawn;
+    if (origSpawn) _executorDeps.spawn = origSpawn;
     if (origFile) (Bun as any).file = origFile;
   });
 

@@ -30,6 +30,7 @@ import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { callOp as _callOp, acceptanceGenerateOp, acceptanceRefineOp } from "@/operations";
 import { autoCommitIfDirty as _autoCommitIfDirty } from "@/utils/git";
+import { executeWithTimeout, shellQuoteArg } from "@/verification";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -130,19 +131,20 @@ export const _acceptanceSetupDeps = {
     _testPath: string,
     _workdir: string,
     _cmd: string[],
+    timeoutMs = 1_800_000,
   ): Promise<{ exitCode: number; output: string }> => {
-    const cmd = _cmd;
-    const proc = Bun.spawn(cmd, {
-      cwd: _workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [exitCode, stdout, stderr] = await Promise.all([
-      proc.exited,
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
-    return { exitCode, output: `${stdout}\n${stderr}` };
+    const execution = await executeWithTimeout(
+      _cmd.map(shellQuoteArg).join(" "),
+      Math.ceil(timeoutMs / 1000),
+      undefined,
+      {
+        cwd: _workdir,
+      },
+    );
+    return {
+      exitCode: execution.exitCode ?? (execution.success ? 0 : 1),
+      output: execution.output ?? "",
+    };
   },
   callOp: async (
     pipelineCtx: PipelineContext,
@@ -486,7 +488,12 @@ async function runAcceptanceSetup(
       cmd: runCmd.join(" "),
       packageDir,
     });
-    const { exitCode } = await _acceptanceSetupDeps.runTest(testPath, packageDir, runCmd);
+    const { exitCode } = await _acceptanceSetupDeps.runTest(
+      testPath,
+      packageDir,
+      runCmd,
+      ctx.config.acceptance.timeoutMs,
+    );
     if (exitCode !== 0) {
       redFailCount++;
     }

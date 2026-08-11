@@ -11,6 +11,7 @@
  * DEFAULT_TEST_FILE_PATTERNS for backward compatibility.
  */
 
+import { NaxError } from "../errors";
 import { DEFAULT_TEST_FILE_PATTERNS, isTestFileByPatterns } from "../test-runners";
 import { spawn } from "../utils/bun-deps";
 import type { IsolationCheck } from "./types";
@@ -37,8 +38,26 @@ export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promis
   // Use Bun.readableStreamToText — more reliable than new Response(stream).text()
   // with both real pipes and mocked ReadableStreams across Bun versions.
   // Must read BEFORE awaiting proc.exited to avoid stream-closed-on-exit issues.
-  const output = await Bun.readableStreamToText(proc.stdout);
-  await proc.exited;
+  // Drain stdout+stderr concurrently with proc.exited — sequential reads would
+  // deadlock on a pipe-buffer-sized stderr (~64KB), and stderr must be read
+  // regardless of exit code so a failure isn't silently discarded.
+  const [output, stderr, exitCode] = await Promise.all([
+    Bun.readableStreamToText(proc.stdout),
+    Bun.readableStreamToText(proc.stderr),
+    proc.exited,
+  ]);
+
+  if (exitCode !== 0) {
+    throw new NaxError(
+      `git diff --name-only ${fromRef} failed (exit ${exitCode}): ${stderr.trim()}`,
+      "GIT_DIFF_FAILED",
+      {
+        stage: "tdd-isolation",
+        fromRef,
+        exitCode,
+      },
+    );
+  }
 
   return output.trim().split("\n").filter(Boolean);
 }

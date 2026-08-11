@@ -57,6 +57,32 @@ export async function getPgid(pid: number): Promise<number | null> {
 }
 
 /**
+ * Check whether any process still belongs to the given process group.
+ *
+ * Unlike re-checking the original leader's own PGID (which goes stale the moment
+ * SIGTERM kills the leader while a SIGTERM-trapping sibling survives in the same
+ * group), this lists group MEMBERS directly, so a survived sibling is still
+ * detected even after the leader itself is gone.
+ *
+ * @param pgid - Process group ID to check
+ * @returns true if at least one process in the group is still alive
+ */
+export async function hasLiveGroupMembers(pgid: number): Promise<boolean> {
+  try {
+    const proc = _cleanupDeps.spawn(["ps", "-o", "pid=", "-g", String(pgid)], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const output = await Bun.readableStreamToText(proc.stdout);
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) return false;
+    return output.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Clean up an entire process tree by killing all processes in the process group.
  *
  * Uses SIGTERM first (graceful shutdown), then SIGKILL after a delay if processes persist.
@@ -94,15 +120,11 @@ export async function cleanupProcessTree(pid: number, gracePeriodMs = 3000): Pro
     // Wait for graceful shutdown
     await _cleanupDeps.sleep(gracePeriodMs);
 
-    // Re-check PGID before SIGKILL to prevent race condition
-    // If the original process exited and a new process inherited its PID,
-    // we don't want to kill the wrong process group
-    const pgidAfterWait = await getPgid(pid);
-
-    // Only send SIGKILL if:
-    // 1. Process still exists (pgidAfterWait is not null)
-    // 2. PGID hasn't changed (still the same process group)
-    if (pgidAfterWait && pgidAfterWait === pgid) {
+    // Re-check the GROUP (not just the original leader pid) before SIGKILL. SIGTERM
+    // commonly kills the leader while a SIGTERM-trapping child survives in the same
+    // group — re-checking only the leader's own PGID would see it gone and skip the
+    // SIGKILL escalation, orphaning that survivor (BUG-23).
+    if (await hasLiveGroupMembers(pgid)) {
       _cleanupDeps.killProcessGroupFn(pgid, "SIGKILL");
     }
   } catch (error) {

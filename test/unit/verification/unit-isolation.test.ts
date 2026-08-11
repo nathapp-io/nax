@@ -166,6 +166,11 @@ describe("verifyTestWriterIsolation: strict vs. lite mode", () => {
             controller.close();
           },
         }),
+        stderr: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.close();
+          },
+        }),
         exited: Promise.resolve(0),
       } as unknown as ReturnType<typeof Bun.spawn>;
     }) as unknown as typeof _isolationDeps.spawn;
