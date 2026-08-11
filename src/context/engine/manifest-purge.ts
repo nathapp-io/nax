@@ -13,7 +13,7 @@
  * `monorepo-awareness.md` section 6.
  */
 
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { getLogger } from "@/logger";
 
 /** Maximum number of manifest entries the sweep will examine per invocation. */
@@ -32,8 +32,8 @@ export interface ManifestPurgeDeps {
   /**
    * Capped glob scan. Returns entries relative to `cwd` (matches the
    * `Bun.Glob(...).scanSync({ cwd, absolute: false })` contract). Returns
-   * at most `cap` entries. When the cap is reached, the dep emits a
-   * debug-level log naming MAX_MANIFEST_SCAN.
+   * at most `cap` entries. `purgeStaleManifests` is responsible for logging
+   * when the cap is reached.
    */
   scan: (pattern: string, cwd: string, cap: number) => Promise<string[]>;
   /**
@@ -57,32 +57,19 @@ export const _manifestPurgeDeps: ManifestPurgeDeps = {
   now: () => Date.now(),
   scan: async (pattern: string, cwd: string, cap: number): Promise<string[]> => {
     const results: string[] = [];
-    let truncated = false;
     const g = new Bun.Glob(pattern);
     // `dot: true` lets the pattern walk into the `.nax/` directory; without it
     // Bun.Glob treats leading-dot segments as hidden and matches nothing.
     for (const entry of g.scanSync({ cwd, absolute: false, dot: true })) {
-      if (results.length >= cap) {
-        truncated = true;
-        break;
-      }
+      if (results.length >= cap) break;
       results.push(entry);
-    }
-    if (truncated) {
-      _manifestPurgeDeps.debugLog(
-        "manifest-purge",
-        `Manifest scan cap reached at MAX_MANIFEST_SCAN=${MAX_MANIFEST_SCAN}`,
-        { cap: MAX_MANIFEST_SCAN },
-      );
     }
     return results;
   },
   statMtime: async (path: string): Promise<number> => {
     const file = Bun.file(path);
     if (!(await file.exists())) throw new Error(`stat: file not found: ${path}`);
-    // Bun.file().stat() returns { mtimeMs } in Bun 1.3.x. Cast through unknown to avoid
-    // depending on a type that may not be in @types/bun yet.
-    const stat = await (file as unknown as { stat: () => Promise<{ mtimeMs: number }> }).stat();
+    const stat = await file.stat();
     return stat.mtimeMs;
   },
   unlink: async (path: string): Promise<void> => {
@@ -148,7 +135,7 @@ export async function purgeStaleManifests(projectDir: string, retentionDays: num
     try {
       await _manifestPurgeDeps.unlink(absPath);
       deleted++;
-      touchedDirs.add(dirnameOf(absPath));
+      touchedDirs.add(dirname(absPath));
     } catch {
       // Best-effort — leave the file in place on failure.
     }
@@ -159,9 +146,4 @@ export async function purgeStaleManifests(projectDir: string, retentionDays: num
   }
 
   return deleted;
-}
-
-function dirnameOf(filePath: string): string {
-  const idx = filePath.lastIndexOf("/");
-  return idx === -1 ? filePath : filePath.slice(0, idx);
 }
