@@ -59,7 +59,9 @@ export const _manifestPurgeDeps: ManifestPurgeDeps = {
     const results: string[] = [];
     let truncated = false;
     const g = new Bun.Glob(pattern);
-    for (const entry of g.scanSync({ cwd, absolute: false })) {
+    // `dot: true` lets the pattern walk into the `.nax/` directory; without it
+    // Bun.Glob treats leading-dot segments as hidden and matches nothing.
+    for (const entry of g.scanSync({ cwd, absolute: false, dot: true })) {
       if (results.length >= cap) {
         truncated = true;
         break;

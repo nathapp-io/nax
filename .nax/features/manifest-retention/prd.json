@@ -3,7 +3,7 @@
   "feature": "manifest-retention",
   "branchName": "feat/manifest-retention",
   "createdAt": "2026-08-11T00:00:00.000Z",
-  "updatedAt": "2026-08-11T03:16:33.407Z",
+  "updatedAt": "2026-08-11T03:32:02.329Z",
   "userStories": [
     {
       "id": "US-001",
@@ -89,8 +89,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

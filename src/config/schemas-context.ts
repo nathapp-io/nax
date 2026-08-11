@@ -267,8 +267,17 @@ export const ContextV2ConfigSchema = z
   }));
 
 export const ContextConfigSchema = z.object({
-  testCoverage: TestCoverageConfigSchema,
-  autoDetect: ContextAutoDetectConfigSchema,
+  testCoverage: TestCoverageConfigSchema.default(() => ({
+    enabled: true,
+    detail: "names-and-counts" as const,
+    maxTokens: 500,
+    scopeToStory: true,
+  })),
+  autoDetect: ContextAutoDetectConfigSchema.default(() => ({
+    enabled: true,
+    maxFiles: 5,
+    traceImports: false,
+  })),
   fileInjection: z.enum(["keyword", "disabled"]).default("disabled"),
   featureEngine: FeatureContextEngineConfigSchema.optional(),
   /** Context Engine settings (Phase 6: enabled by default) */
