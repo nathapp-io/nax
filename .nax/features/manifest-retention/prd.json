@@ -3,7 +3,7 @@
   "feature": "manifest-retention",
   "branchName": "feat/manifest-retention",
   "createdAt": "2026-08-11T00:00:00.000Z",
-  "updatedAt": "2026-08-11T02:41:47.138Z",
+  "updatedAt": "2026-08-11T02:58:30.546Z",
   "userStories": [
     {
       "id": "US-001",
@@ -45,7 +45,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/session/scratch-purge.ts",
@@ -58,11 +60,12 @@
         "src/context/engine/manifest-purge.ts",
         "test/unit/context/engine/manifest-purge.test.ts"
       ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0e371130ec89e809c5287456a878cf8cd4f408ea",
       "outOfScope": [
-        "Wire the manifest purge into run completion; that belongs to US-002.",
-        "Whole feature-directory retention — `prd.json`, `plan/`, `checkpoint.jsonl`, `status.json` and acceptance artifacts are not pruned by this feature, which touches context manifests only.",
-        "Archiving manifests to an `_archive/` directory instead of deleting them; the sweep deletes only.",
-        "A keep-newest-N retention policy; retention is age-based on file mtime only."
+        "Wire the manifest purge into run completion; that belongs to US-002."
       ]
     },
     {
@@ -107,12 +110,11 @@
         "src/context/engine/manifest-purge.ts",
         "test/unit/execution/lifecycle-completion.test.ts"
       ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
       "outOfScope": [
-        "Define the config key and purge algorithm; that belongs to US-001.",
-        "Session scratch retention is unchanged — `purgeStaleScratch()` and the `context.v2.session` config keep their existing behaviour.",
-        "A log message advertising the retention knob when it is unset.",
-        "Concurrency safety of any kind: neither a second nax process purging the same directories, nor a concurrent reader such as `nax context inspect` or `loadContextManifests` observing a directory mid-purge, is addressed. The sweep runs at run completion and is best-effort.",
-        "A CLI command to trigger the manifest purge manually."
+        "Define the config key and purge algorithm; that belongs to US-001."
       ]
     }
   ],
