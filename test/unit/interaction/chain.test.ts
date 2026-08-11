@@ -152,22 +152,21 @@ describe("InteractionChain.prompt() — choose normalization", () => {
  * (InteractionChain → AutoInteractionPlugin → decide()) must continue to
  * correctly preserve requestId for human-review triggers.
  *
- * The in-process path calls plugin.decide(request) which returns a response
- * carrying request.id. The chain surfaces this through prompt()'s receive()
- * call; for the auto plugin the receive() delegate calls decide() internally.
+ * AutoInteractionPlugin.receive() always throws because it only receives
+ * requestId (not the full request) and cannot call decide() without the
+ * request object. The in-process path is: callers use chain.getPrimary() to
+ * obtain the plugin instance and call decide(request) directly — bypassing
+ * chain.prompt() entirely for the auto plugin.
  */
 describe("InteractionChain + AutoInteractionPlugin — in-process human-review path (US-003)", () => {
   let origCallLlm: typeof _autoPluginDeps.callLlm;
-  let origAgentManager: typeof _autoPluginDeps.agentManager;
 
   beforeEach(() => {
     origCallLlm = _autoPluginDeps.callLlm;
-    origAgentManager = _autoPluginDeps.agentManager;
   });
 
   afterEach(() => {
     _autoPluginDeps.callLlm = origCallLlm;
-    _autoPluginDeps.agentManager = origAgentManager;
     mock.restore();
   });
 
@@ -179,24 +178,17 @@ describe("InteractionChain + AutoInteractionPlugin — in-process human-review p
       const plugin = await makeAutoPlugin();
       const chain = makeChain(plugin);
 
-      // Auto-plugin receive() is the in-process entry point that calls decide().
-      // It needs the full request to call decide(request). We capture it via
-      // receive()'s call signature (requestId string) by patching send() to
-      // store the request, then have receive() return the decide() result.
-      let capturedRequest: InteractionRequest | undefined;
-      plugin.send = mock(async (req: InteractionRequest) => {
-        capturedRequest = req;
-      });
-      plugin.receive = mock(async () => {
-        // In-process path: decide() is called with the original request
-        const response = await plugin.decide(capturedRequest!);
-        return response!;
-      });
+      // Obtain the plugin via chain.getPrimary() — this is the production path.
+      // AutoInteractionPlugin.receive() always throws (needs full request, not
+      // just requestId), so callers invoke decide(request) directly.
+      const primaryPlugin = chain.getPrimary() as AutoInteractionPlugin;
+      expect(primaryPlugin).toBeDefined();
 
       const request = makeRequest({ id: requestId, type: "confirm", metadata: { trigger: "human-review" } });
-      const response = await chain.prompt(request);
+      const response = await primaryPlugin.decide(request);
 
-      expect(response.requestId).toBe(requestId);
+      expect(response).not.toBeUndefined();
+      expect(response!.requestId).toBe(requestId);
     },
   );
 });
