@@ -1,0 +1,184 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `stripRemovedNoOpKeys` receives all four removed paths and an injected warn sink, then the sink is invoked exactly four times and each message names exactly one of `execution.rectification.escalateOnExhaustion`, `tdd.autoVerifyIsolation`, `tdd.autoApproveVerifier`, or `acceptance.generateTests`.",
+    "refined": "Call `stripRemovedNoOpKeys({ \"execution.rectification.escalateOnExhaustion\": true, \"tdd.autoVerifyIsolation\": false, \"tdd.autoApproveVerifier\": true, \"acceptance.generateTests\": false }, warn)`. Assert: `warn.callCount === 4`; each call's message includes one of the four keys: `execution.rectification.escalateOnExhaustion`, `tdd.autoVerifyIsolation`, `tdd.autoApproveVerifier`, `acceptance.generateTests`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `stripRemovedNoOpKeys` receives `tdd.autoVerifyIsolation`, then its returned `tdd` object omits `autoVerifyIsolation` while the input object still contains that property.",
+    "refined": "Call `stripRemovedNoOpKeys({ tdd: { autoVerifyIsolation: true, maxRetries: 3 } }, warn)`. Assert: `result.tdd.autoVerifyIsolation` is `undefined`; `input.tdd.autoVerifyIsolation === true`; `result.tdd.maxRetries === 3`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `stripRemovedNoOpKeys` receives no removed paths, then it invokes the injected warn sink zero times and returns a value deeply equal to its input.",
+    "refined": "Call `stripRemovedNoOpKeys({ execution: { timeout: 3000 }, tdd: { maxRetries: 3 } }, warn)`. Assert: `warn.callCount === 0` and `JSON.stringify(result) === JSON.stringify(input)`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `stripRemovedNoOpKeys` strips a removed `tdd` sibling, then the returned configuration retains the original `tdd.maxRetries` value.",
+    "refined": "Call `stripRemovedNoOpKeys({ tdd: { autoVerifyIsolation: false, maxRetries: 5 } }, warn)`. Assert: `result.tdd.maxRetries === 5`; `result.tdd.autoVerifyIsolation` is `undefined`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `stripRemovedNoOpKeys` strips a removed `acceptance` sibling, then the returned configuration retains the original `acceptance.enabled` value.",
+    "refined": "Call `stripRemovedNoOpKeys({ acceptance: { generateTests: false, enabled: true } }, warn)`. Assert: `result.acceptance.enabled === true`; `result.acceptance.generateTests` is `undefined`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When `stripRemovedNoOpKeys` strips a removed `execution.rectification` sibling, then the returned configuration retains the original `execution.rectification.abortOnNoProgress` value.",
+    "refined": "Call `stripRemovedNoOpKeys({ execution: { rectification: { escalateOnExhaustion: true, abortOnNoProgress: 10 } } }, warn)`. Assert: `result.execution.rectification.abortOnNoProgress === 10`; `result.execution.rectification.escalateOnExhaustion` is `undefined`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When `stripRemovedNoOpKeys` receives a configuration with no `tdd` property, then it invokes the sink zero times, does not throw, and returns the configuration unchanged.",
+    "refined": "Call `stripRemovedNoOpKeys({ execution: { timeout: 3000 } }, warn)`. Assert: `warn.callCount === 0`; `result` equals `input`; no exception thrown.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When `stripRemovedNoOpKeys` receives `{ tdd: 42 }`, then it invokes the sink zero times, does not throw, and returns `tdd` equal to `42`.",
+    "refined": "Call `stripRemovedNoOpKeys({ tdd: 42 }, warn)`. Assert: `warn.callCount === 0`; `result.tdd === 42`; no exception thrown.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When `stripRemovedNoOpKeys` receives `tdd.autoVerifyIsolation: \"yes\"`, then it strips the property and invokes the warn sink once with a message containing `tdd.autoVerifyIsolation`.",
+    "refined": "Call `stripRemovedNoOpKeys({ tdd: { autoVerifyIsolation: \"yes\" } }, warn)`. Assert: `warn.callCount === 1`; `warn.calls[0]` includes `tdd.autoVerifyIsolation`; `result.tdd.autoVerifyIsolation` is `undefined`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "Given a project `.nax/config.json` setting `tdd.autoVerifyIsolation` to `false`, when `loadConfig` resolves it, then the returned `tdd` section has no `autoVerifyIsolation` property.",
+    "refined": "Write `{ tdd: { autoVerifyIsolation: false } }` to `project/.nax/config.json`. Call `loadConfig(project)`. Assert: `result.tdd.autoVerifyIsolation` is `undefined`. Cleanup: remove file.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given a global config setting `acceptance.generateTests` to `false` and no project config, when `loadConfig` resolves it, then the returned `acceptance` section has no `generateTests` property.",
+    "refined": "Write `{ acceptance: { generateTests: false } }` to `~/.nax/config.json`. Call `loadConfig(projectWithNoConfig)`. Assert: `result.acceptance.generateTests` is `undefined`. Cleanup: remove global config.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given both global and project config set `execution.rectification.escalateOnExhaustion`, when `loadConfig` resolves them, then the returned `execution.rectification` section has no `escalateOnExhaustion` property.",
+    "refined": "Write `{ execution: { rectification: { escalateOnExhaustion: true } } }` to both `~/.nax/config.json` and `project/.nax/config.json`. Call `loadConfig(project)`. Assert: `result.execution.rectification.escalateOnExhaustion` is `undefined`. Cleanup: remove configs.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Given a per-package overlay setting `tdd.autoApproveVerifier`, when `loadConfigForWorkdir` resolves that package, then the returned `tdd` section has no `autoApproveVerifier` property.",
+    "refined": "Write `{ tdd: { autoApproveVerifier: true } }` to `package/.nax/config.json`. Call `loadConfigForWorkdir(package)`. Assert: `result.tdd.autoApproveVerifier` is `undefined`. Cleanup: remove file.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When `NaxConfigSchema` parses an empty object, then `execution.rectification` has no `escalateOnExhaustion` property.",
+    "refined": "Call `NaxConfigSchema.parse({})`. Assert: `result.execution.rectification.escalateOnExhaustion` is `undefined`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When `NaxConfigSchema` parses an empty object, then `tdd` has no `autoVerifyIsolation` property.",
+    "refined": "Call `NaxConfigSchema.parse({})`. Assert: `result.tdd.autoVerifyIsolation` is `undefined`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When `NaxConfigSchema` parses an empty object, then `tdd` has no `autoApproveVerifier` property.",
+    "refined": "Call `NaxConfigSchema.parse({})`. Assert: `result.tdd.autoApproveVerifier` is `undefined`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When `NaxConfigSchema` parses an empty object, then `acceptance` has no `generateTests` property.",
+    "refined": "Call `NaxConfigSchema.parse({})`. Assert: `result.acceptance.generateTests` is `undefined`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When `FIELD_DESCRIPTIONS` is queried for `execution.rectification.escalateOnExhaustion`, then it returns `undefined`.",
+    "refined": "Assert: `FIELD_DESCRIPTIONS['execution.rectification.escalateOnExhaustion'] === undefined`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When `FIELD_DESCRIPTIONS` is queried for `tdd.autoVerifyIsolation`, then it returns `undefined`.",
+    "refined": "Assert: `FIELD_DESCRIPTIONS['tdd.autoVerifyIsolation'] === undefined`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When `FIELD_DESCRIPTIONS` is queried for `tdd.autoApproveVerifier`, then it returns `undefined`.",
+    "refined": "Assert: `FIELD_DESCRIPTIONS['tdd.autoApproveVerifier'] === undefined`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When `FIELD_DESCRIPTIONS` is queried for `acceptance.generateTests`, then it returns `undefined`.",
+    "refined": "Assert: `FIELD_DESCRIPTIONS['acceptance.generateTests'] === undefined`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When `FIELD_DESCRIPTIONS` is queried for `acceptance.enabled`, then it returns a non-empty string.",
+    "refined": "Assert: `typeof FIELD_DESCRIPTIONS['acceptance.enabled'] === 'string'` and `FIELD_DESCRIPTIONS['acceptance.enabled'].length > 0`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Given a feature directory with an `interactions` subdirectory containing one well-formed pending request, when the `nax status` feature display runs, then its output contains no `Waiting for Interaction` text.",
+    "refined": "Setup a temp directory with: (1) a `PRD.md` containing a valid feature block, (2) an `interactions/` subdirectory containing one JSON file with a well-formed pending interaction object. Execute `nax status` with `--dir <tempdir>`. Assert that: (a) exit code is 0, (b) stdout does NOT contain the substring 'Waiting for Interaction'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Given that same feature directory, when the `nax status` feature display runs, then its output includes the PRD feature name.",
+    "refined": "Setup a temp directory with a `PRD.md` containing a feature with name 'User Authentication'. Execute `nax status` with `--dir <tempdir>`. Assert that: (a) exit code is 0, (b) stdout contains the substring 'User Authentication' (the feature name from the PRD).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-25",
+    "original": "Given that same feature directory, when the `nax status` feature display runs, then its output includes the feature story listing.",
+    "refined": "Setup a temp directory with a `PRD.md` containing a feature with at least 2 stories (e.g., id: 'S1' with title 'Setup auth flow', id: 'S2' with title 'Add login endpoint'). Execute `nax status` with `--dir <tempdir>`. Assert that: (a) exit code is 0, (b) stdout contains 'S1' and 'S2' (or story IDs), (c) stdout contains 'Setup auth flow' and 'Add login endpoint' (or story titles).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Given an `InteractionChain` configured with `AutoInteractionPlugin`, when it resolves a `human-review` interaction request through the in-process path, then the returned response `requestId` matches the submitted request ID.",
+    "refined": "1. Instantiate InteractionChain and register AutoInteractionPlugin.\n2. Submit a human-review interaction request with a known UUID as requestId.\n3. Await the response from the in-process resolution path.\n4. Assert response.requestId equals the submitted requestId (exact string equality).\n5. Assert response is non-null and is a valid HumanReviewResponse object.",
+    "testable": true,
+    "storyId": "US-003"
+  }
+]
