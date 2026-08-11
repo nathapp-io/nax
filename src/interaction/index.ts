@@ -22,19 +22,6 @@ export { TRIGGER_METADATA } from "./types";
 export { InteractionChain } from "./chain";
 export type { ChainConfig } from "./chain";
 
-// State persistence
-export {
-  serializeRunState,
-  deserializeRunState,
-  clearRunState,
-  savePendingInteraction,
-  loadPendingInteraction,
-  deletePendingInteraction,
-  listPendingInteractions,
-  validateInteractionId,
-} from "./state";
-export type { RunState } from "./state";
-
 // Plugins
 export { CLIInteractionPlugin } from "./plugins/cli";
 export { TelegramInteractionPlugin, _telegramPluginDeps, normalizeChatId } from "./plugins/telegram";

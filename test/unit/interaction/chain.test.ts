@@ -10,7 +10,8 @@
  * Fix is in chain.ts prompt() — normalize once, fix everywhere.
  */
 
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { AutoInteractionPlugin, _autoPluginDeps } from "../../../src/interaction/plugins/auto";
 import { InteractionChain } from "../../../src/interaction/chain";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../../../src/interaction/types";
 
@@ -56,6 +57,21 @@ function makeChain(plugin: InteractionPlugin): InteractionChain {
   const chain = new InteractionChain({ defaultTimeout: 5000, defaultFallback: "abort" });
   chain.register(plugin, 10);
   return chain;
+}
+
+/**
+ * Creates an AutoInteractionPlugin pre-configured with a mock callLlm that
+ * returns an approve response with confidence above the default threshold.
+ */
+async function makeAutoPlugin(): Promise<AutoInteractionPlugin> {
+  const plugin = new AutoInteractionPlugin();
+  await plugin.init({ confidenceThreshold: 0.7 });
+  _autoPluginDeps.callLlm = mock(async () => ({
+    action: "approve" as const,
+    confidence: 0.95,
+    reasoning: "human-review is safe to auto-approve",
+  }));
+  return plugin;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -122,4 +138,65 @@ describe("InteractionChain.prompt() — choose normalization", () => {
     const response = await chain.prompt(makeRequest());
     expect(response.action).toBe("reject");
   });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-003 Regression: in-process human-review path requestId preservation
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Regression guard: AutoInteractionPlugin.decide() returns InteractionResponse
+ * whose requestId matches the submitted request.id.
+ *
+ * After deleting src/interaction/state.ts, the in-process interaction path
+ * (InteractionChain → AutoInteractionPlugin → decide()) must continue to
+ * correctly preserve requestId for human-review triggers.
+ *
+ * The in-process path calls plugin.decide(request) which returns a response
+ * carrying request.id. The chain surfaces this through prompt()'s receive()
+ * call; for the auto plugin the receive() delegate calls decide() internally.
+ */
+describe("InteractionChain + AutoInteractionPlugin — in-process human-review path (US-003)", () => {
+  let origCallLlm: typeof _autoPluginDeps.callLlm;
+  let origAgentManager: typeof _autoPluginDeps.agentManager;
+
+  beforeEach(() => {
+    origCallLlm = _autoPluginDeps.callLlm;
+    origAgentManager = _autoPluginDeps.agentManager;
+  });
+
+  afterEach(() => {
+    _autoPluginDeps.callLlm = origCallLlm;
+    _autoPluginDeps.agentManager = origAgentManager;
+    mock.restore();
+  });
+
+  test(
+    "AC1: InteractionChain+AutoPlugin resolves human-review request " +
+      "→ response.requestId matches submitted request.id",
+    async () => {
+      const requestId = "ix-US003-review-001";
+      const plugin = await makeAutoPlugin();
+      const chain = makeChain(plugin);
+
+      // Auto-plugin receive() is the in-process entry point that calls decide().
+      // It needs the full request to call decide(request). We capture it via
+      // receive()'s call signature (requestId string) by patching send() to
+      // store the request, then have receive() return the decide() result.
+      let capturedRequest: InteractionRequest | undefined;
+      plugin.send = mock(async (req: InteractionRequest) => {
+        capturedRequest = req;
+      });
+      plugin.receive = mock(async () => {
+        // In-process path: decide() is called with the original request
+        const response = await plugin.decide(capturedRequest!);
+        return response!;
+      });
+
+      const request = makeRequest({ id: requestId, type: "confirm", metadata: { trigger: "human-review" } });
+      const response = await chain.prompt(request);
+
+      expect(response.requestId).toBe(requestId);
+    },
+  );
 });
