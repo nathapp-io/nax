@@ -252,6 +252,6 @@ Each of the eleven fixtures above carries the keys only because the fields are c
 
 ### US-003 — Delete the orphaned interaction state layer
 
-1. `[integration]` An `InteractionChain` configured with `AutoInteractionPlugin` resolves a `human-review` interaction request through the in-process path and returns a response whose `requestId` matches the submitted request, confirming the interaction subsystem still functions after the disk-persistence layer is removed.
+1. `[integration]` An `InteractionChain` configured with `AutoInteractionPlugin`, calling the primary plugin's `decide()` directly with a `human-review` interaction request (the production path — `AutoInteractionPlugin.receive()` unconditionally throws and is not invoked), returns a response whose `requestId` matches the submitted request, confirming the interaction subsystem still functions after the disk-persistence layer is removed.
 
 <!-- spec-writing: completed-through-phase-6 -->
