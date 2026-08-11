@@ -38,7 +38,6 @@ const AcceptanceFixConfigSchema = z.object({
 export const AcceptanceConfigSchema = z.object({
   enabled: z.boolean(),
   maxRetries: z.number().int().nonnegative(),
-  generateTests: z.boolean(),
   testPath: z.string().min(1, "acceptance.testPath must be non-empty"),
   command: z.string().optional(),
   model: ConfiguredModelSchema.default("fast"),

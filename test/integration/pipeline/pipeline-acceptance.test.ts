@@ -75,7 +75,7 @@ function createTestPRD(stories: Array<{ id: string; status: string }>): PRD {
 describe("acceptanceStage.enabled", () => {
   test("disabled when acceptance disabled in config, or any story is pending/in-progress", () => {
     const ctxDisabled = createTestContext(createTestPRD([{ id: "US-001", status: "passed" }]), {
-      acceptance: { enabled: false, maxRetries: 2, generateTests: true, testPath: "acceptance.test.ts" },
+      acceptance: { enabled: false, maxRetries: 2, testPath: "acceptance.test.ts" },
     });
     expect(acceptanceStage.enabled(ctxDisabled)).toBe(false);
 

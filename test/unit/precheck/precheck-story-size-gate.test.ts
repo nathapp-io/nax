@@ -72,15 +72,13 @@ const createMockConfig = (
     },
     tdd: {
       maxRetries: 0,
-      autoVerifyIsolation: false,
-      autoApproveVerifier: false,
       strategy: "off",
     },
     constitution: { enabled: false, path: "", maxTokens: 2000 },
     analyze: { llmEnhanced: false, model: "fast", fallbackToKeywords: true, maxCodebaseSummaryTokens: 5000 },
     review: { enabled: false, checks: [], commands: {} },
     plan: { model: "balanced", outputPath: "" },
-    acceptance: { enabled: false, maxRetries: 0, generateTests: false, testPath: "" },
+    acceptance: { enabled: false, maxRetries: 0, testPath: "" },
     context: {
       testCoverage: {
         enabled: false,

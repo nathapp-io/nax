@@ -290,7 +290,6 @@ describe("mergePackageConfig", () => {
     test.each([
       ["enabled", (a: NaxConfig["acceptance"]) => a.enabled, true, { enabled: false } as Partial<NaxConfig["acceptance"]>, false],
       ["testPath", (a: NaxConfig["acceptance"]) => a.testPath, "acceptance.test.ts", { testPath: "e2e/acceptance.test.ts" } as Partial<NaxConfig["acceptance"]>, "e2e/acceptance.test.ts"],
-      ["generateTests", (a: NaxConfig["acceptance"]) => a.generateTests, true, { generateTests: false } as Partial<NaxConfig["acceptance"]>, false],
     ] as const)("overrides acceptance.%s per package", (_field, getField, rootVal, override, expected) => {
       const root: NaxConfig = {
         ...makeRoot(),

@@ -14,6 +14,7 @@ import {
   rejectLegacyAgentKeys,
   rejectLegacyRectificationKeys,
   rejectUnimplementedScopedProfile,
+  stripRemovedNoOpKeys,
 } from "./config-guards";
 import { resolveEnvVars } from "./dotenv";
 import { mergePackageConfig } from "./merge";
@@ -359,6 +360,12 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   // Fail fast on the not-yet-implemented scoped permission profile (GitHub #374)
   // rather than letting it silently degrade to "safe".
   rejectUnimplementedScopedProfile(rawConfig);
+  // Strip the four inert no-op keys (warn-and-strip, not throw — see
+  // config-guards.ts for the divergence rationale). Runs AFTER the reject guards
+  // and BEFORE safeParse, so the removed key is gone before the schema sees it.
+  // Post-merge placement yields one warning per resolved config regardless of
+  // which layer supplied the key.
+  rawConfig = stripRemovedNoOpKeys(rawConfig, defaultConfigWarn);
 
   const result = NaxConfigSchema.safeParse(rawConfig);
   if (!result.success) {
@@ -487,6 +494,10 @@ export async function loadConfigForWorkdir(
     rejectLegacyRectificationKeys(rawMerged);
     rejectDeadQualityFlags(rawMerged);
     rejectUnimplementedScopedProfile(rawMerged);
+    // Strip the four inert no-op keys from the per-package overlay result.
+    // Runs after the reject guards and before safeParse, mirroring the root
+    // chain. Post-merge placement yields one warning per resolved config.
+    rawMerged = stripRemovedNoOpKeys(rawMerged, defaultConfigWarn);
     const result = NaxConfigSchema.safeParse(rawMerged);
     if (!result.success) {
       // Fail-fast — consistent with root-chain resolution (a missing profile file

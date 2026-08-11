@@ -54,12 +54,12 @@ describe("SmartTestRunner config coercion", () => {
         shell: "/bin/sh",
         stripEnvVars: [],
       },
-      tdd: { maxRetries: 0, autoVerifyIsolation: false, autoApproveVerifier: false },
+      tdd: { maxRetries: 0 },
       constitution: { enabled: false, path: "constitution.md", maxTokens: 100 },
       analyze: { llmEnhanced: false, model: "balanced", fallbackToKeywords: true, maxCodebaseSummaryTokens: 100 },
       review: { enabled: false, checks: [], commands: {} },
       plan: { model: "balanced", outputPath: "spec.md" },
-      acceptance: { enabled: false, maxRetries: 0, generateTests: false, testPath: "acceptance.test.ts" },
+      acceptance: { enabled: false, maxRetries: 0, testPath: "acceptance.test.ts" },
       context: {
         testCoverage: {
           enabled: false,

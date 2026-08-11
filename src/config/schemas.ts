@@ -127,7 +127,6 @@ export const NaxConfigSchema = z
         consecutiveIncreasesToBail: 2,
         abortOnNoProgress: true,
         consecutiveNoProgressToBail: 3,
-        escalateOnExhaustion: true,
         storyScopedFixBudget: true,
         rethinkAtAttempt: 2,
         urgencyAtAttempt: 3,
@@ -215,8 +214,6 @@ export const NaxConfigSchema = z
     }),
     tdd: TddConfigSchema.default({
       maxRetries: 2,
-      autoVerifyIsolation: true,
-      autoApproveVerifier: true,
       strategy: "auto",
       sessionTiers: {
         testWriter: "fast",
@@ -288,7 +285,6 @@ export const NaxConfigSchema = z
     acceptance: AcceptanceConfigSchema.default({
       enabled: true,
       maxRetries: 3,
-      generateTests: true,
       testPath: ".nax-acceptance.test.ts",
       model: "fast",
       refinement: true,

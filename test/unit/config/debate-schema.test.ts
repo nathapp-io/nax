@@ -40,7 +40,6 @@ const baseConfig = {
       fullSuiteTimeoutSeconds: 60,
       maxFailureSummaryChars: 500,
       abortOnIncreasingFailures: true,
-      escalateOnExhaustion: true,
       rethinkAtAttempt: 2,
       urgencyAtAttempt: 3,
     },
@@ -52,12 +51,12 @@ const baseConfig = {
   quality: {
     commands: {},
   },
-  tdd: { maxRetries: 1, autoVerifyIsolation: false, autoApproveVerifier: false },
+  tdd: { maxRetries: 1 },
   constitution: { enabled: false, path: "constitution.md", maxTokens: 100 },
   analyze: { llmEnhanced: false, model: "fast", fallbackToKeywords: true, maxCodebaseSummaryTokens: 100 },
   review: { enabled: false, checks: [], commands: {} },
   plan: { model: "balanced", outputPath: "spec.md" },
-  acceptance: { enabled: false, maxRetries: 0, generateTests: false, testPath: "acceptance.test.ts" },
+  acceptance: { enabled: false, maxRetries: 0, testPath: "acceptance.test.ts" },
   context: {
     testCoverage: { enabled: false, detail: "names-only", maxTokens: 100, testPattern: "**/*.test.ts", scopeToStory: false },
     autoDetect: { enabled: false, maxFiles: 5, traceImports: false },

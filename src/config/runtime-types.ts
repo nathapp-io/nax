@@ -66,8 +66,6 @@ export interface RectificationConfig {
   abortOnNoProgress: boolean;
   /** Consecutive no-progress iterations before abortOnNoProgress bails. (default: 3) */
   consecutiveNoProgressToBail: number;
-  /** Escalate to higher model tier after exhausting maxAttemptsTotal (default: true) */
-  escalateOnExhaustion: boolean;
   storyScopedFixBudget: boolean;
   /** Per-strategy attempt number at which "rethink your approach" language is injected. (default: 2) */
   rethinkAtAttempt: number;
@@ -228,12 +226,8 @@ export interface QualityConfig {
 export interface TddConfig {
   /** Max retries for each session before escalating */
   maxRetries: number;
-  /** Auto-verify isolation between sessions */
-  autoVerifyIsolation: boolean;
   /** TDD strategy override (default: 'auto') */
   strategy: TddStrategy;
-  /** Session 3 verifier: auto-approve legitimate fixes */
-  autoApproveVerifier: boolean;
   /** Per-session model tier overrides. Defaults: test-writer=fast, implementer=story tier, verifier=fast */
   sessionTiers?: {
     /** ConfiguredModel for test-writer session (default: "fast") */
@@ -301,8 +295,6 @@ export interface AcceptanceConfig {
   enabled: boolean;
   /** Maximum retry loops for the acceptance fix flow (default: 3) */
   maxRetries: number;
-  /** Generate acceptance tests during analyze (default: true) */
-  generateTests: boolean;
   /** Path to acceptance test file (relative to feature directory) */
   testPath: string;
   /** Model selector for AC refinement/generation calls (tier string or explicit { agent, model }) */
