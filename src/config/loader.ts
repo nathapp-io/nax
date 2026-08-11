@@ -475,6 +475,17 @@ export async function loadConfigForWorkdir(
   const { profile: packageProfile, ...packageFields } = packageOverride;
   let merged = mergePackageConfig(rootConfig, packageFields);
 
+  // Strip the four inert no-op keys from the per-package overlay result.
+  // Runs for BOTH ordinary package overlays and package profiles (the profile
+  // branch re-runs the strip on the profile-merged result, so this also covers
+  // the case where a per-package overlay introduces a no-op key on a mergeable
+  // field like acceptance.generateTests). Post-merge placement yields one
+  // warning per resolved config regardless of which layer supplied the key.
+  merged = stripRemovedNoOpKeys(
+    merged as unknown as Record<string, unknown>,
+    defaultConfigWarn,
+  ) as unknown as NaxConfig;
+
   // Per-package profile: apply the profile chain overlay on top of merged config.
   // Accepts the comma form; profiles overlay left-to-right (later overrides earlier).
   const packageChain = parseProfileList(packageProfile as string | string[] | undefined).filter(

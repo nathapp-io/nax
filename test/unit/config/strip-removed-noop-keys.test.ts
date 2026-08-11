@@ -237,6 +237,42 @@ describe("stripRemovedNoOpKeys via loadConfig — end-to-end", () => {
     const config = await loadConfigForWorkdir(join(naxDir, "config.json"), "packages/api");
     expect("autoApproveVerifier" in config.tdd).toBe(false);
   });
+
+  // AC-13b: tdd is a root-only field, so the per-package overlay above does
+  // not actually exercise the strip call — the override is silently dropped
+  // by mergePackageConfig. The mergeable-field companion test below covers the
+  // case where a per-package overlay can actually contribute a no-op key to
+  // the merged result, which is when the strip has something to do.
+  test("AC-13b: loadConfigForWorkdir strips acceptance.generateTests from a per-package overlay on a mergeable field", async () => {
+    const root = makeTempDir("nax-noop-mono-mergeable-");
+    tempDirs.push(root);
+    const naxDir = join(root, ".nax");
+    await mkdir(naxDir, { recursive: true });
+    await Bun.write(join(naxDir, "config.json"), JSON.stringify({}));
+    const monoDir = join(naxDir, "mono", "packages", "api");
+    await mkdir(monoDir, { recursive: true });
+    await Bun.write(join(monoDir, "config.json"), JSON.stringify({ acceptance: { generateTests: false } }));
+
+    const config = await loadConfigForWorkdir(join(naxDir, "config.json"), "packages/api");
+    expect("generateTests" in config.acceptance).toBe(false);
+  });
+
+  test("AC-13c: loadConfigForWorkdir strips execution.rectification.escalateOnExhaustion from a per-package overlay on a mergeable field", async () => {
+    const root = makeTempDir("nax-noop-mono-rect-");
+    tempDirs.push(root);
+    const naxDir = join(root, ".nax");
+    await mkdir(naxDir, { recursive: true });
+    await Bun.write(join(naxDir, "config.json"), JSON.stringify({}));
+    const monoDir = join(naxDir, "mono", "packages", "api");
+    await mkdir(monoDir, { recursive: true });
+    await Bun.write(
+      join(monoDir, "config.json"),
+      JSON.stringify({ execution: { rectification: { escalateOnExhaustion: false } } }),
+    );
+
+    const config = await loadConfigForWorkdir(join(naxDir, "config.json"), "packages/api");
+    expect("escalateOnExhaustion" in config.execution.rectification).toBe(false);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
