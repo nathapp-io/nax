@@ -62,8 +62,9 @@ export async function logsCommand(options: LogsOptions): Promise<void> {
   const naxDir = join(resolved.projectDir, ".nax");
 
   // config.json never carries a feature field — derive the single feature from
-  // .nax/features/* (BUG-02).
-  const featureName = resolveSingleFeature(naxDir);
+  // .nax/features/* (BUG-02). `logs` has no -f/--feature flag (-f is --follow here),
+  // so the only way to disambiguate is -r/--run against the central run registry.
+  const featureName = resolveSingleFeature(naxDir, "pass -r <runId> (see `nax runs list`)");
 
   const featureDir = join(naxDir, "features", featureName);
   const runsDir = join(featureDir, "runs");
