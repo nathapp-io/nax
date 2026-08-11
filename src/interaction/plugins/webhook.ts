@@ -60,11 +60,17 @@ function installServePortZeroCompat(): void {
   const originalFetch = globalThis.fetch.bind(globalThis);
   const patchedServe = ((options: ServeCompatOptions): ServeCompatReturn => {
     const requestedPort = typeof options.port === "number" ? options.port : 0;
-    if (requestedPort !== 0 && !inMemoryServers.has(requestedPort)) {
+    // Route port 0 through the real Bun.serve too — the OS assigns a real available
+    // port for it same as any other bind, so there is nothing to compat-shim there.
+    // Only fall back to the in-memory server when Bun.serve genuinely fails (e.g. no
+    // network permission in a sandboxed environment) — previously port 0 was routed
+    // to the in-memory server unconditionally, so a real webhook responder posting to
+    // the advertised callback URL could never reach it: ECONNREFUSED every time (BUG-24).
+    if (!inMemoryServers.has(requestedPort)) {
       try {
         return originalServe(options);
       } catch {
-        return createInMemoryServer(options, requestedPort);
+        return createInMemoryServer(options, requestedPort === 0 ? nextCompatPort() : requestedPort);
       }
     }
 

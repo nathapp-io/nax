@@ -15,6 +15,7 @@ import {
   rejectLegacyRectificationKeys,
   rejectUnimplementedScopedProfile,
 } from "./config-guards";
+import { resolveEnvVars } from "./dotenv";
 import { mergePackageConfig } from "./merge";
 import { deepMergeConfig } from "./merger";
 import { migrateLegacyReviewModelKey, migrateLegacyTestPattern } from "./migrations";
@@ -312,9 +313,18 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   // profile file throws fail-fast (loadProfile). "default"-only chains apply no overlay.
   for (const name of overlayChain) {
     const profileData = await loadProfile(name, projectRoot);
-    rawConfig = deepMergeConfig(rawConfig, profileData);
-    // Load companion .env for $VAR resolution — do NOT write to process.env (AC 9)
-    await loadProfileEnv(name, projectRoot);
+    // Load companion .env for $VAR resolution — do NOT write to process.env (AC 9).
+    // Must resolve BEFORE merging, otherwise a "$MODEL_FAST"-style reference lands
+    // in the run config as the literal unresolved string (BUG-17) — the load path
+    // previously discarded loadProfileEnv's return value and never called
+    // resolveEnvVars, so this only ever worked via the separate `config profile show
+    // --unmask` command path.
+    const profileEnv = await loadProfileEnv(name, projectRoot);
+    const resolvedProfileData =
+      Object.keys(profileEnv).length > 0
+        ? (resolveEnvVars(profileData, profileEnv) as Record<string, unknown>)
+        : profileData;
+    rawConfig = deepMergeConfig(rawConfig, resolvedProfileData);
   }
 
   // Layer 4: CLI overrides (highest priority)

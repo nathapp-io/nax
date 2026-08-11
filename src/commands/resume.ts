@@ -142,10 +142,11 @@ export function registerResumeCommand(program: Command): void {
       const { findProjectDir } = await import("../config");
       const { run } = await import("../execution");
       const { applyResumeModeDeps } = await import("../execution/checkpoint");
-      const { existsSync } = await import("node:fs");
+      const { existsSync, mkdirSync } = await import("node:fs");
       const { loadConfig } = await import("../config");
       const { loadPRD } = await import("../prd");
       const { loadHooksConfig } = await import("../hooks");
+      const { initLogger } = await import("../logger");
 
       const naxDir = findProjectDir(cmdOpts.dir);
       if (!naxDir) {
@@ -180,6 +181,16 @@ export function registerResumeCommand(program: Command): void {
           const outputDir = projectOutputDir(projectKey, config.outputDir);
           const statusFilePath = join(outputDir, "status.json");
 
+          // Mirror bin/nax.ts's `nax run` logger init — without it, `getLogger()`
+          // returns the silent noopLogger for the whole resumed run: no console
+          // output, no runs/<id>.jsonl, so crash-recovery/replay have nothing to
+          // read for a resumed run (BUG-38).
+          const runsDir = join(outputDir, "features", feature, "runs");
+          mkdirSync(runsDir, { recursive: true });
+          const runId = new Date().toISOString().replace(/:/g, "-").replace(/\..+/, "");
+          const logFilePath = join(runsDir, `${runId}.jsonl`);
+          initLogger({ level: "info", filePath: logFilePath, useChalk: true, headless: true, suppressConsole: false });
+
           const result = await run({
             prdPath,
             workdir: cmdOpts.dir,
@@ -190,7 +201,7 @@ export function registerResumeCommand(program: Command): void {
             dryRun: false,
             useBatch: true,
             statusFile: statusFilePath,
-            logFilePath: undefined,
+            logFilePath,
             formatterMode: "normal",
             headless: true,
             skipPrecheck: false,

@@ -403,9 +403,10 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     // Check callback query (button click)
     if (update.callback_query) {
       const data = update.callback_query.data;
-      if (!data.startsWith(requestId)) return null;
-
       const parts = data.split(":");
+      // Exact match on the id segment — startsWith let one tap answer the wrong
+      // prompt whenever one request's id was a prefix of another's (BUG-34).
+      if (parts[0] !== requestId) return null;
       if (parts.length < 2) return null;
 
       const action = parts[1] as InteractionResponse["action"];

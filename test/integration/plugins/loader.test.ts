@@ -650,8 +650,12 @@ export default {
 
       const registry = await loadPlugins(globalDir, projectDir, []);
 
-      // Both plugins are loaded (last loaded wins in registry getters)
-      expect(registry.plugins).toHaveLength(2);
+      // BUG-25: the later entry replaces the earlier one on a name collision — it
+      // used to log "overrides" but push both anyway, so the earlier one stayed
+      // registered too and ran twice per invocation of getPostRunActions()/
+      // getReporters(), breaking the "each finding appears exactly once" invariant.
+      expect(registry.plugins).toHaveLength(1);
+      expect(registry.plugins[0].extensions?.optimizer?.name).toBe("project");
     });
   });
 });

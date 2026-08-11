@@ -145,6 +145,39 @@ export function resolveProject(options: ResolveProjectOptions = {}): ResolvedPro
 }
 
 /**
+ * Derives the single feature name from `.nax/features/*` when the caller didn't pass
+ * `-f`/`--feature` explicitly. `config.json` never carries a `feature` field (there is
+ * no such key in `NaxConfigSchema`) — commands that read `config.feature` always get
+ * `undefined` and fail unconditionally without an explicit flag.
+ *
+ * @throws {NaxError} when there are zero or more than one feature directories —
+ *   the caller must pass the flag explicitly in either case.
+ */
+export function resolveSingleFeature(naxDir: string): string {
+  const featuresDir = join(naxDir, "features");
+  const available = existsSync(featuresDir)
+    ? readdirSync(featuresDir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort()
+    : [];
+
+  if (available.length === 1) return available[0];
+
+  if (available.length === 0) {
+    throw new NaxError("No feature specified and no features found — pass -f <name>.", "FEATURE_NOT_SPECIFIED", {
+      featuresDir,
+    });
+  }
+
+  throw new NaxError(
+    `No feature specified and multiple features exist — pass -f <name>.\n\nAvailable features:\n${available.map((f) => `  - ${f}`).join("\n")}`,
+    "FEATURE_AMBIGUOUS",
+    { featuresDir, available },
+  );
+}
+
+/**
  * Resolves a project by name from the global identity registry (~/.nax/<name>/.identity).
  * Falls back to path-based resolution when the value looks like a filesystem path.
  *

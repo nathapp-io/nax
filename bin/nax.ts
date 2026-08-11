@@ -85,6 +85,7 @@ import { countStories, loadPRD } from "../src/prd";
 import { AgentStreamEventBus, projectOutputDir } from "../src/runtime";
 import { resolveScheduleGate, waitForSchedule } from "../src/schedule";
 import { PipelineEventEmitter, type StoryDisplayState, renderTui } from "../src/tui";
+import { validateFeatureName } from "../src/utils/feature-name";
 import { NAX_BUILD_INFO, NAX_VERSION } from "../src/version";
 
 const program = new Command();
@@ -424,6 +425,16 @@ program
     new Option("--no-resume", "Alias for --fresh: never auto-resume from a prior checkpoint").default("__UNSET__"),
   )
   .action(async (options) => {
+    // Reject path-traversal / multi-segment names before they become a directory
+    // segment under .nax/features/ — `nax run -f ../x` would otherwise mkdir
+    // outside the features tree the same way `nax features create` could (BUG-35).
+    try {
+      validateFeatureName(options.feature);
+    } catch (err) {
+      console.error(chalk.red(`Invalid feature name: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
     // Validate directory path
     let workdir: string;
     try {
@@ -548,6 +559,13 @@ program
       console.error(chalk.red("nax not initialized. Run: nax init"));
       process.exit(1);
     }
+    // Resolved project root (naxDir's parent) — plan strategies build their own
+    // `.nax` path as `join(workdir, ".nax")` without walking up, so passing the
+    // raw (possibly-subdirectory) `workdir` here lands prd.json in
+    // <subdir>/.nax/... while the run-side read-back above already correctly
+    // resolved naxDir by walking up — the two disagree and "run" then can't find
+    // the PRD it just planned (BUG-36).
+    const projectRoot = join(naxDir, "..");
 
     const featureDir = join(naxDir, "features", options.feature);
     const prdPath = join(featureDir, "prd.json");
@@ -585,7 +603,7 @@ program
         console.log(chalk.dim(`   [Plan log: ${planLogPath}]`));
 
         console.log(chalk.dim("   [Planning phase: generating PRD from spec]"));
-        const planResult = await planCommand(workdir, config, {
+        const planResult = await planCommand(projectRoot, config, {
           from: options.from,
           feature: options.feature,
           auto: options.oneShot ?? false, // interactive by default; --one-shot skips Q&A
@@ -920,6 +938,16 @@ features
   .description("Create a new feature")
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .action(async (name, options) => {
+    // Reject path-traversal / multi-segment names before they become a directory
+    // segment under .nax/features/ — `nax features create ../../evil` would
+    // otherwise write outside the features tree (BUG-35).
+    try {
+      validateFeatureName(name);
+    } catch (err) {
+      console.error(chalk.red(`Invalid feature name: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
     // Validate directory path
     let workdir: string;
     try {
@@ -1124,6 +1152,11 @@ program
       console.error(chalk.red("nax not initialized. Run: nax init"));
       process.exit(1);
     }
+    // Resolved project root (naxDir's parent) — see the `run --plan` comment above
+    // (BUG-36): planCommand/planDecomposeCommand build `.nax` as
+    // `join(workdir, ".nax")` without walking up, so a raw subdirectory workdir
+    // writes prd.json where findProjectDir's naxDir won't be able to read it back.
+    const projectRoot = join(naxDir, "..");
 
     // Load config — --profile accepts a chain (comma-separated or repeated flags).
     const cliOverrides: Record<string, unknown> = {};
@@ -1131,7 +1164,7 @@ program
     if (cliProfiles.length > 0) {
       cliOverrides.profile = cliProfiles;
     }
-    const config = await loadConfig(workdir, cliOverrides);
+    const config = await loadConfig(projectRoot, cliOverrides);
 
     // Initialize logger — writes to nax/features/<feature>/plan/<timestamp>.jsonl
     const featureLogDir = join(naxDir, "features", options.feature, "plan");
@@ -1143,7 +1176,7 @@ program
 
     try {
       if (options.decompose) {
-        await planDecomposeCommand(workdir, config, {
+        await planDecomposeCommand(projectRoot, config, {
           feature: options.feature,
           storyId: options.decompose,
         });
@@ -1154,7 +1187,7 @@ program
           console.error(chalk.red("Error: --from <spec-path> is required unless --decompose is used"));
           process.exit(1);
         }
-        const planResult = await planCommand(workdir, config, {
+        const planResult = await planCommand(projectRoot, config, {
           from: options.from,
           feature: options.feature,
           auto: options.auto || options.oneShot, // --auto and --one-shot are aliases
