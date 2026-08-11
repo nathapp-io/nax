@@ -8,6 +8,7 @@
  * - Update final status
  */
 
+import { purgeStaleManifests } from "@/context/engine";
 import { pipelineEventBus } from "@/pipeline";
 import { resolveDefaultAgent } from "../../agents";
 import type { IAgentManager } from "../../agents";
@@ -40,6 +41,7 @@ export const _runCompletionDeps = {
   runDeferredRegression,
   fireHook,
   closeAllRunSessions,
+  purgeStaleManifests,
 };
 
 export interface RunCompletionOptions extends DispatchContext {
@@ -475,6 +477,20 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
       }
     } catch (err) {
       logger?.warn("run.complete", "Failed to purge stale session scratch", { error: String(err) });
+    }
+  }
+
+  // US-002: purge stale context manifests (opt-in via context.v2.manifest.retentionDays).
+  // Fail-open: a rejection is logged at warn level and completion continues normally.
+  const manifestCfg = config.context?.v2?.manifest;
+  if (manifestCfg?.retentionDays) {
+    try {
+      const purged = await _runCompletionDeps.purgeStaleManifests(effectiveProjectDir, manifestCfg.retentionDays);
+      if (purged > 0) {
+        logger?.info("run.complete", "Purged stale context manifests", { purged });
+      }
+    } catch (err) {
+      logger?.warn("run.complete", "Failed to purge stale context manifests", { error: String(err) });
     }
   }
 

@@ -5,20 +5,21 @@
  * Extracted from lifecycle.test.ts for size management.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { NaxConfig } from "../../../src/config";
-import type { PRD, UserStory } from "../../../src/prd";
-import type { StoryMetrics } from "../../../src/metrics";
+import type { NaxConfig } from "@/config";
 import {
+  type RunCompletionOptions,
   _runCompletionDeps,
   handleRunCompletion,
-  type RunCompletionOptions,
-} from "../../../src/execution/lifecycle/run-completion";
-import type { DeferredRegressionResult } from "../../../src/execution/lifecycle/run-regression";
-import type { RunCompletedEvent } from "../../../src/pipeline/event-bus";
-import { pipelineEventBus } from "../../../src/pipeline/event-bus";
-import { makeNaxConfig, makeMockRuntime } from "../../helpers";
+} from "@/execution/lifecycle";
+import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
+import * as loggerModule from "@/logger";
+import type { StoryMetrics } from "@/metrics";
+import type { RunCompletedEvent } from "@/pipeline";
+import { pipelineEventBus } from "@/pipeline";
+import type { PRD, UserStory } from "@/prd";
+import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -50,10 +51,7 @@ function makePRD(stories: Array<{ id: string; status: UserStory["status"] }>): P
   };
 }
 
-function makeConfig(
-  regressionMode?: "deferred" | "per-story" | "disabled",
-  testCommand?: string,
-): NaxConfig {
+function makeConfig(regressionMode?: "deferred" | "per-story" | "disabled", testCommand?: string): NaxConfig {
   return makeNaxConfig({
     execution: {
       regressionGate: {
@@ -172,7 +170,10 @@ describe("RL-002 AC#1: on-complete hook fires after handleRunCompletion()", () =
       capturedEvents.push(ev);
     });
 
-    const prd = makePRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "passed" }]);
+    const prd = makePRD([
+      { id: "US-001", status: "passed" },
+      { id: "US-002", status: "passed" },
+    ]);
     const config = makeConfig("deferred", "bun test");
 
     try {
@@ -231,11 +232,7 @@ describe("RL-002 AC#1: on-complete hook fires after handleRunCompletion()", () =
 
 describe("RL-002 AC#3: run:completed payload reflects final success status", () => {
   test("run:completed event has correct story counts (not placeholder 0/0/0)", async () => {
-    const stories = [
-      makeStory("US-001", "passed"),
-      makeStory("US-002", "passed"),
-      makeStory("US-003", "failed"),
-    ];
+    const stories = [makeStory("US-001", "passed"), makeStory("US-002", "passed"), makeStory("US-003", "failed")];
     const prd = makePRD(stories.map((s) => ({ id: s.id, status: s.status })));
     const config = makeConfig("disabled");
 
@@ -259,7 +256,10 @@ describe("RL-002 AC#3: run:completed payload reflects final success status", () 
       capturedEvents.push(ev);
     });
 
-    const stories = [{ id: "US-001", status: "passed" as const }, { id: "US-002", status: "passed" as const }];
+    const stories = [
+      { id: "US-001", status: "passed" as const },
+      { id: "US-002", status: "passed" as const },
+    ];
     const prd = makePRD(stories);
     const config = makeConfig("deferred", "bun test");
 
@@ -285,10 +285,17 @@ describe("RL-002 AC#3: run:completed payload reflects final success status", () 
     const config = makeConfig("disabled");
     const opts = makeOpts(config, prd);
     opts.runtime.costAggregator.record({
-      ts: Date.now(), runId: "run-001", agentName: "claude", model: "test",
-      storyId: "US-001", tokens: { input: 0, output: 0 },
-      estimatedCostUsd: 2.75, exactCostUsd: 2.75, costUsd: 2.75,
-      confidence: "exact", durationMs: 0,
+      ts: Date.now(),
+      runId: "run-001",
+      agentName: "claude",
+      model: "test",
+      storyId: "US-001",
+      tokens: { input: 0, output: 0 },
+      estimatedCostUsd: 2.75,
+      exactCostUsd: 2.75,
+      costUsd: 2.75,
+      confidence: "exact",
+      durationMs: 0,
     });
 
     try {
@@ -309,13 +316,15 @@ describe("RL-002 AC#3: run:completed payload reflects final success status", () 
 let mockRunDeferredRegression: ReturnType<typeof mock>;
 
 beforeEach(() => {
-  mockRunDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => ({
-    success: true,
-    failedTests: 0,
-    passedTests: 5,
-    rectificationAttempts: 0,
-    affectedStories: [],
-  }));
+  mockRunDeferredRegression = mock(
+    async (): Promise<DeferredRegressionResult> => ({
+      success: true,
+      failedTests: 0,
+      passedTests: 5,
+      rectificationAttempts: 0,
+      affectedStories: [],
+    }),
+  );
   _runCompletionDeps.runDeferredRegression =
     mockRunDeferredRegression as typeof _runCompletionDeps.runDeferredRegression;
 });
@@ -323,17 +332,35 @@ beforeEach(() => {
 describe("handleRunCompletion - deferred regression is not smart-skipped", () => {
   test("always runs regression regardless of fullSuiteGatePassed values (true, false, or undefined) in sequential mode", async () => {
     const cfg = makeConfig("deferred", "bun test");
-    const prd2 = makePRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "passed" }]);
+    const prd2 = makePRD([
+      { id: "US-001", status: "passed" },
+      { id: "US-002", status: "passed" },
+    ]);
 
-    await handleRunCompletion(makeOpts(cfg, prd2, SMART_SKIP_WORKDIR, { allStoryMetrics: [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", true)], isSequential: true }));
+    await handleRunCompletion(
+      makeOpts(cfg, prd2, SMART_SKIP_WORKDIR, {
+        allStoryMetrics: [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", true)],
+        isSequential: true,
+      }),
+    );
     expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
     mockRunDeferredRegression.mockClear();
 
-    await handleRunCompletion(makeOpts(cfg, prd2, SMART_SKIP_WORKDIR, { allStoryMetrics: [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", false)], isSequential: true }));
+    await handleRunCompletion(
+      makeOpts(cfg, prd2, SMART_SKIP_WORKDIR, {
+        allStoryMetrics: [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", false)],
+        isSequential: true,
+      }),
+    );
     expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
     mockRunDeferredRegression.mockClear();
 
-    await handleRunCompletion(makeOpts(cfg, prd2, SMART_SKIP_WORKDIR, { allStoryMetrics: [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", undefined)], isSequential: true }));
+    await handleRunCompletion(
+      makeOpts(cfg, prd2, SMART_SKIP_WORKDIR, {
+        allStoryMetrics: [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", undefined)],
+        isSequential: true,
+      }),
+    );
     expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
   });
 
@@ -371,11 +398,21 @@ describe("handleRunCompletion - deferred regression is not smart-skipped", () =>
     const cfg = makeConfig("deferred", "bun test");
     const prd1 = makePRD([{ id: "US-001", status: "passed" }]);
 
-    await handleRunCompletion(makeOpts(cfg, prd1, SMART_SKIP_WORKDIR, { allStoryMetrics: [makeStoryMetrics("US-001", false)], isSequential: true }));
+    await handleRunCompletion(
+      makeOpts(cfg, prd1, SMART_SKIP_WORKDIR, {
+        allStoryMetrics: [makeStoryMetrics("US-001", false)],
+        isSequential: true,
+      }),
+    );
     expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
     mockRunDeferredRegression.mockClear();
 
-    await handleRunCompletion(makeOpts(cfg, prd1, SMART_SKIP_WORKDIR, { allStoryMetrics: [makeStoryMetrics("US-001", true)], isSequential: true }));
+    await handleRunCompletion(
+      makeOpts(cfg, prd1, SMART_SKIP_WORKDIR, {
+        allStoryMetrics: [makeStoryMetrics("US-001", true)],
+        isSequential: true,
+      }),
+    );
     expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
     mockRunDeferredRegression.mockClear();
 
@@ -399,7 +436,11 @@ describe("handleRunCompletion - deferred regression gate", () => {
     const prd = makePRD([{ id: story.id, status: story.status }]);
     const config = makeConfig("deferred", "bun test");
 
-    try { await handleRunCompletion(makeOpts(config, prd)); } catch { /* ignore */ }
+    try {
+      await handleRunCompletion(makeOpts(config, prd));
+    } catch {
+      /* ignore */
+    }
 
     expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
     const call0 = mockRunDeferredRegression.mock.calls[0][0] as { workdir: string; config: NaxConfig; prd: PRD };
@@ -408,7 +449,11 @@ describe("handleRunCompletion - deferred regression gate", () => {
     expect(call0.prd).toBe(prd);
     mockRunDeferredRegression.mockClear();
 
-    try { await handleRunCompletion(makeOpts(config, prd, "/custom/workdir")); } catch { /* ignore */ }
+    try {
+      await handleRunCompletion(makeOpts(config, prd, "/custom/workdir"));
+    } catch {
+      /* ignore */
+    }
     expect((mockRunDeferredRegression.mock.calls[0][0] as { workdir: string }).workdir).toBe("/custom/workdir");
   });
 
@@ -417,7 +462,11 @@ describe("handleRunCompletion - deferred regression gate", () => {
     const prd = makePRD([{ id: story.id, status: story.status }]);
     const config = makeConfig("per-story", "bun test");
 
-    try { await handleRunCompletion(makeOpts(config, prd)); } catch { /* ignore */ }
+    try {
+      await handleRunCompletion(makeOpts(config, prd));
+    } catch {
+      /* ignore */
+    }
 
     expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
   });
@@ -456,12 +505,23 @@ describe("handleRunCompletion - regression-failed story marking (RL-004)", () =>
     const config = makeConfig("deferred", "bun test");
 
     const prd1 = makePRD([{ id: "US-001", status: "passed" }]);
-    _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => MOCK_REGRESSION_FAILURE) as typeof _runCompletionDeps.runDeferredRegression;
+    _runCompletionDeps.runDeferredRegression = mock(
+      async (): Promise<DeferredRegressionResult> => MOCK_REGRESSION_FAILURE,
+    ) as typeof _runCompletionDeps.runDeferredRegression;
     await handleRunCompletion(makeOpts(config, prd1));
     expect(prd1.userStories[0].status).toBe("regression-failed");
 
-    const prd3 = makePRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "passed" }, { id: "US-003", status: "passed" }]);
-    _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => ({ ...MOCK_REGRESSION_FAILURE, affectedStories: ["US-001", "US-003"] })) as typeof _runCompletionDeps.runDeferredRegression;
+    const prd3 = makePRD([
+      { id: "US-001", status: "passed" },
+      { id: "US-002", status: "passed" },
+      { id: "US-003", status: "passed" },
+    ]);
+    _runCompletionDeps.runDeferredRegression = mock(
+      async (): Promise<DeferredRegressionResult> => ({
+        ...MOCK_REGRESSION_FAILURE,
+        affectedStories: ["US-001", "US-003"],
+      }),
+    ) as typeof _runCompletionDeps.runDeferredRegression;
     await handleRunCompletion(makeOpts(config, prd3));
     expect(prd3.userStories[0].status).toBe("regression-failed");
     expect(prd3.userStories[1].status).toBe("passed");
@@ -486,16 +546,28 @@ describe("handleRunCompletion - run status on regression failure (RL-004)", () =
     const config = makeConfig("deferred", "bun test");
 
     const failWriter = makeStatusWriter();
-    _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => MOCK_REGRESSION_FAILURE) as typeof _runCompletionDeps.runDeferredRegression;
-    const prd2 = makePRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "passed" }]);
-    await handleRunCompletion({ ...makeOpts(config, prd2), statusWriter: failWriter as unknown as RunCompletionOptions["statusWriter"] });
+    _runCompletionDeps.runDeferredRegression = mock(
+      async (): Promise<DeferredRegressionResult> => MOCK_REGRESSION_FAILURE,
+    ) as typeof _runCompletionDeps.runDeferredRegression;
+    const prd2 = makePRD([
+      { id: "US-001", status: "passed" },
+      { id: "US-002", status: "passed" },
+    ]);
+    await handleRunCompletion({
+      ...makeOpts(config, prd2),
+      statusWriter: failWriter as unknown as RunCompletionOptions["statusWriter"],
+    });
     expect(failWriter.setRunStatus).toHaveBeenCalledWith("failed");
 
     // Restore success mock for second sub-scenario
-    _runCompletionDeps.runDeferredRegression = mockRunDeferredRegression as typeof _runCompletionDeps.runDeferredRegression;
+    _runCompletionDeps.runDeferredRegression =
+      mockRunDeferredRegression as typeof _runCompletionDeps.runDeferredRegression;
     const passWriter = makeStatusWriter();
     const prd1 = makePRD([{ id: "US-001", status: "passed" }]);
-    await handleRunCompletion({ ...makeOpts(config, prd1), statusWriter: passWriter as unknown as RunCompletionOptions["statusWriter"] });
+    await handleRunCompletion({
+      ...makeOpts(config, prd1),
+      statusWriter: passWriter as unknown as RunCompletionOptions["statusWriter"],
+    });
     expect(passWriter.setRunStatus).not.toHaveBeenCalledWith("failed");
   });
 });
@@ -504,7 +576,10 @@ describe("handleRunCompletion - cost-limit exitReason surfaces distinctly", () =
   test("sets run status to 'cost-limit' when exitReason is 'cost-limit', regardless of PRD completeness", async () => {
     const config = makeConfig("deferred", "bun test");
     const statusWriter = makeStatusWriter();
-    const prd = makePRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "pending" }]);
+    const prd = makePRD([
+      { id: "US-001", status: "passed" },
+      { id: "US-002", status: "pending" },
+    ]);
 
     await handleRunCompletion({
       ...makeOpts(config, prd, undefined, { exitReason: "cost-limit" }),
@@ -517,7 +592,10 @@ describe("handleRunCompletion - cost-limit exitReason surfaces distinctly", () =
   test("does not set 'cost-limit' when exitReason is absent, even with an incomplete PRD", async () => {
     const config = makeConfig("deferred", "bun test");
     const statusWriter = makeStatusWriter();
-    const prd = makePRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "pending" }]);
+    const prd = makePRD([
+      { id: "US-001", status: "passed" },
+      { id: "US-002", status: "pending" },
+    ]);
 
     await handleRunCompletion({
       ...makeOpts(config, prd),
@@ -542,5 +620,178 @@ describe("handleRunCompletion - cost-limit exitReason surfaces distinctly", () =
     });
 
     expect(statusWriter.setRunStatus).toHaveBeenLastCalledWith("failed");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-002: Run manifest retention during completion
+//
+// handleRunCompletion must invoke purgeStaleManifests when
+// config.context.v2.manifest.retentionDays is configured, must not invoke it
+// when the manifest block is unset, and must absorb any rejection as a
+// warn-level log without failing the run.
+// ---------------------------------------------------------------------------
+
+describe("US-002: handleRunCompletion — manifest retention sweep", () => {
+  type LogCall = [string, string, Record<string, unknown>];
+
+  function makeCapturingLogger() {
+    const infoCalls: LogCall[] = [];
+    const warnCalls: LogCall[] = [];
+    const logger = {
+      info: (stage: string, msg: string, ctx: Record<string, unknown>) => infoCalls.push([stage, msg, ctx]),
+      warn: (stage: string, msg: string, ctx: Record<string, unknown>) => warnCalls.push([stage, msg, ctx]),
+      debug: () => {},
+      error: () => {},
+    };
+    return { logger, infoCalls, warnCalls };
+  }
+
+  function makeConfigWithManifest(retentionDays?: number): NaxConfig {
+    const base = makeConfig("disabled");
+    if (retentionDays === undefined) return base;
+    return makeNaxConfig({
+      ...base,
+      context: {
+        ...base.context,
+        v2: {
+          ...base.context.v2,
+          manifest: { retentionDays },
+        },
+      },
+    });
+  }
+
+  // biome-ignore lint/suspicious/noExplicitAny: spy type varies by mock helper
+  let loggerSpy: any;
+
+  beforeEach(() => {
+    // Force the regression gate off so we test the manifest branch in isolation.
+    _runCompletionDeps.runDeferredRegression = mock(
+      async (): Promise<DeferredRegressionResult> => ({
+        success: true,
+        failedTests: 0,
+        failedTestFiles: [],
+        passedTests: 0,
+        rectificationAttempts: 0,
+        affectedStories: [],
+      }),
+    );
+    // Default mock: returns 0 deleted (so info branch is not hit unless AC5 asks).
+    _runCompletionDeps.purgeStaleManifests = mock(
+      async (_projectDir: string, _retentionDays: number) => 0,
+    ) as typeof _runCompletionDeps.purgeStaleManifests;
+  });
+
+  afterEach(() => {
+    Object.assign(_runCompletionDeps, {
+      runDeferredRegression: mockRunDeferredRegression as typeof _runCompletionDeps.runDeferredRegression,
+      purgeStaleManifests: undefined,
+    });
+    loggerSpy?.mockRestore();
+    pipelineEventBus.clear();
+    mock.restore();
+  });
+
+  test("AC1: invokes purgeStaleManifests exactly once with resolved projectDir and retentionDays when configured", async () => {
+    const { logger } = makeCapturingLogger();
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    const config = makeConfigWithManifest(30);
+    const prd = makePRD([{ id: "US-001", status: "passed" }]);
+
+    await handleRunCompletion(makeOpts(config, prd, "/workdir-root", { projectDir: "/project-root" }));
+
+    expect(_runCompletionDeps.purgeStaleManifests).toHaveBeenCalledTimes(1);
+    expect(_runCompletionDeps.purgeStaleManifests).toHaveBeenCalledWith("/project-root", 30);
+  });
+
+  test("AC1: falls back to workdir when projectDir is not provided", async () => {
+    const { logger } = makeCapturingLogger();
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    const config = makeConfigWithManifest(14);
+    const prd = makePRD([{ id: "US-001", status: "passed" }]);
+
+    await handleRunCompletion(makeOpts(config, prd, "/workdir-only"));
+
+    expect(_runCompletionDeps.purgeStaleManifests).toHaveBeenCalledTimes(1);
+    expect(_runCompletionDeps.purgeStaleManifests).toHaveBeenCalledWith("/workdir-only", 14);
+  });
+
+  test("AC2: does not invoke purgeStaleManifests when context.v2.manifest is unset", async () => {
+    const { logger } = makeCapturingLogger();
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    const config = makeConfigWithManifest(undefined);
+    expect(config.context.v2.manifest).toBeUndefined();
+    const prd = makePRD([{ id: "US-001", status: "passed" }]);
+
+    await handleRunCompletion(makeOpts(config, prd, "/workdir-root", { projectDir: "/project-root" }));
+
+    // The dep is wired (see beforeEach); it must NOT be invoked when the config is unset.
+    expect(_runCompletionDeps.purgeStaleManifests).not.toHaveBeenCalled();
+  });
+
+  test("AC3: handleRunCompletion resolves with normal completion result when purgeStaleManifests rejects", async () => {
+    const { logger } = makeCapturingLogger();
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    _runCompletionDeps.purgeStaleManifests = mock(async () => {
+      throw new Error("disk full");
+    }) as typeof _runCompletionDeps.purgeStaleManifests;
+    const config = makeConfigWithManifest(30);
+    const prd = makePRD([{ id: "US-001", status: "passed" }]);
+
+    const result = await handleRunCompletion(makeOpts(config, prd, "/workdir-root"));
+
+    // Must have actually called the dep — otherwise the test vacuously passes
+    // when the implementation simply forgets to invoke the sweep.
+    expect(_runCompletionDeps.purgeStaleManifests).toHaveBeenCalledTimes(1);
+    expect(result.durationMs).toBeGreaterThanOrEqual(0);
+    expect(result.finalCounts.total).toBe(1);
+    expect(result.finalCounts.passed).toBe(1);
+    expect(typeof result.runCompletedAt).toBe("string");
+    expect(typeof result.reportedTotal).toBe("number");
+  });
+
+  test("AC4: emits warn-level log when purgeStaleManifests rejects", async () => {
+    const { logger, warnCalls } = makeCapturingLogger();
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    _runCompletionDeps.purgeStaleManifests = mock(async () => {
+      throw new Error("manifest sweep failed");
+    }) as typeof _runCompletionDeps.purgeStaleManifests;
+    const config = makeConfigWithManifest(30);
+    const prd = makePRD([{ id: "US-001", status: "passed" }]);
+
+    await handleRunCompletion(makeOpts(config, prd, "/workdir-root"));
+
+    expect(warnCalls).toHaveLength(1);
+    expect(warnCalls[0]?.[0]).toBe("run.complete");
+    expect(warnCalls[0]?.[1]).toMatch(/manifest/i);
+    expect(warnCalls[0]?.[2].error).toBeDefined();
+  });
+
+  test("AC5: emits info-level log carrying the deleted count when purgeStaleManifests returns > 0", async () => {
+    const { logger, infoCalls } = makeCapturingLogger();
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    _runCompletionDeps.purgeStaleManifests = mock(async () => 7) as typeof _runCompletionDeps.purgeStaleManifests;
+    const config = makeConfigWithManifest(30);
+    const prd = makePRD([{ id: "US-001", status: "passed" }]);
+
+    await handleRunCompletion(makeOpts(config, prd, "/workdir-root"));
+
+    const manifestInfo = infoCalls.find(([stage, msg]) => stage === "run.complete" && /manifest/i.test(msg));
+    expect(manifestInfo).toBeDefined();
+    expect(manifestInfo?.[2].purged).toBe(7);
+  });
+
+  test("AC5 (boundary): does NOT emit info-level manifest log when purgeStaleManifests returns 0", async () => {
+    const { logger, infoCalls } = makeCapturingLogger();
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    _runCompletionDeps.purgeStaleManifests = mock(async () => 0) as typeof _runCompletionDeps.purgeStaleManifests;
+    const config = makeConfigWithManifest(30);
+    const prd = makePRD([{ id: "US-001", status: "passed" }]);
+
+    await handleRunCompletion(makeOpts(config, prd, "/workdir-root"));
+
+    const manifestInfo = infoCalls.find(([stage, msg]) => stage === "run.complete" && /manifest/i.test(msg));
+    expect(manifestInfo).toBeUndefined();
   });
 });
