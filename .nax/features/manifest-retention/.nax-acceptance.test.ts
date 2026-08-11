@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { NaxConfigSchema } from "../../../src/config";
+import { DEFAULT_CONFIG, NaxConfigSchema, deepMergeConfig } from "../../../src/config";
 import type { NaxConfig } from "../../../src/config";
 import { contextManifestPath, rebuildManifestPath } from "../../../src/context/engine/manifest-store";
 import {
@@ -76,9 +76,12 @@ describe("US-001: context.v2.manifest config", () => {
   });
 
   test("AC-2: context.v2.manifest.retentionDays round-trips to 30", () => {
-    const result = NaxConfigSchema.parse({
+    // Mirrors real config loading (config-patterns.md): merge onto DEFAULT_CONFIG
+    // before parsing, rather than parsing a raw partial object directly.
+    const merged = deepMergeConfig(DEFAULT_CONFIG as unknown as Record<string, unknown>, {
       context: { v2: { manifest: { retentionDays: 30 } } },
     });
+    const result = NaxConfigSchema.parse(merged);
     expect(result.context.v2.manifest?.retentionDays).toBe(30);
   });
 
