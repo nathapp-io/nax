@@ -195,6 +195,13 @@ describe("gate fixes re-enter the quality review", () => {
     expect(gateSwitch().cases.changed).toBe("review_quality");
   });
 
+  // #1510: `tests-only` used to route straight to quality_gates. A gate fix can
+  // turn a red suite green by degrading the tests it repairs, and quality_gates
+  // is satisfied by exactly that — so every committed gate fix is now read.
+  test("a tests-only gate fix also goes back through review_quality", () => {
+    expect(gateSwitch().cases["tests-only"]).toBe("review_quality");
+  });
+
   test("a gate fix that changed nothing skips the re-review", () => {
     expect(gateSwitch().cases.unchanged).toBe("quality_gates");
   });
@@ -205,11 +212,11 @@ describe("gate fixes re-enter the quality review", () => {
   });
 });
 
-// Chosen tradeoff, not an oversight: the re-review is the flow's most expensive
-// node and a gate fix is usually a mechanical test repair. It is a real hole —
-// the defect that motivated the re-entry (rs-stock b6fb66dd) was itself
-// test-only — so these tests pin the boundary precisely.
-describe("gate re-entry is scoped to non-test changes", () => {
+// The classification outlives the skip it used to gate (#1510). Both routes now
+// re-enter review_quality, so these tests pin what a gate fix *touched* — which
+// is what a scoped test-quality prompt would key off if the re-review ever needs
+// to get cheaper — not whether a reviewer runs.
+describe("gate commits are classified by what they touched", () => {
   const originalRun = _gitDeps.run;
   const originalAppend = _resultDeps.appendText;
   afterEach(() => {
@@ -246,13 +253,15 @@ describe("gate re-entry is scoped to non-test changes", () => {
     expect((await runGateCommit(["src/scheduler.ts", "test/unit/scheduler.test.ts"])).route).toBe("changed");
   });
 
-  test("a fix touching only test files skips the re-review", async () => {
+  test("a fix touching only test files is classified tests-only", async () => {
     expect((await runGateCommit(["test/unit/a.test.ts", "test/unit/b.test.ts"])).route).toBe("tests-only");
   });
 
   // Fail-safe: an older nax whose `features resolve` predates testPatterns, or a
-  // config the resolver choked on, must review rather than skip.
-  test("with no patterns to classify by, it reviews rather than skipping", async () => {
+  // config the resolver choked on, classifies as `changed`. Since #1510 both
+  // routes review, so this no longer decides whether a reviewer runs — it still
+  // pins that an unclassifiable fix is never reported as a mere test repair.
+  test("with no patterns to classify by, it falls back to changed", async () => {
     expect((await runGateCommit(["test/unit/a.test.ts"], [])).route).toBe("changed");
   });
 
@@ -260,22 +269,20 @@ describe("gate re-entry is scoped to non-test changes", () => {
     expect((await runGateCommit(["test/unit/a.test.ts"], ["\\.test\\.ts$", "([unclosed"])).route).toBe("tests-only");
   });
 
-  test("an empty file list (git show failed) reviews rather than skipping", async () => {
+  test("an empty file list (git show failed) falls back to changed", async () => {
     expect((await runGateCommit([])).route).toBe("changed");
   });
 
-  // The skip is a deliberate cost tradeoff, but until it says so in the audit
-  // it is indistinguishable from a gate fix that WAS re-reviewed — both wrote
-  // `no-reviewer`. That is the #1507 failure mode surviving on the one path
-  // where the omission is on purpose, which is exactly where a reader most
-  // needs to know. Recording it is also what makes "how often does this fire?"
-  // answerable before anyone decides whether to close the hole.
-  test("a skipped re-review says so in the audit trail", async () => {
+  // Regression for #1510: a tests-only gate fix used to record `review-skipped`,
+  // which was true then and would be a lie now — review_quality reads this diff.
+  // An outcome claiming a review was skipped when one ran is the #1507 failure
+  // mode pointing the other way.
+  test("a tests-only gate fix is no longer recorded as a skipped review", async () => {
     await runGateCommit(["test/unit/a.test.ts"]);
-    expect(gateRounds[0]).toMatchObject({ phase: "gate", outcome: "review-skipped" });
+    expect(gateRounds[0]).toMatchObject({ phase: "gate", outcome: "no-reviewer" });
   });
 
-  test("a gate fix that IS re-reviewed is not marked skipped", async () => {
+  test("a gate fix touching production code is also `no-reviewer`", async () => {
     await runGateCommit(["src/scheduler.ts"]);
     expect(gateRounds[0]).toMatchObject({ phase: "gate", outcome: "no-reviewer" });
   });

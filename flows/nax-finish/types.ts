@@ -80,16 +80,17 @@ export type FinishRoundOutcome =
    */
   | "no-reviewer"
   /**
-   * A re-review was owed and deliberately skipped — today only a `gate` fix
-   * that touched test files exclusively (`gateCommitRoute` → `tests-only`).
+   * A re-review was owed and deliberately skipped.
    *
-   * Distinct from `no-reviewer`, which the same node writes when the fix *is*
-   * routed on to `review_quality`. Without the distinction both wrote
-   * `no-reviewer`, so the audit could not tell a gate fix that was re-reviewed
-   * from one whose re-review was skipped by policy — the #1507 failure mode
-   * surviving on the one path where the omission is intentional, and the path
-   * where a reader most needs to know. Recording it is also what makes "how
-   * often does this fire?" answerable before anyone decides to close the hole.
+   * **No longer emitted.** It described the `gate` → `tests-only` route, which
+   * skipped `review_quality` as a cost tradeoff; #1510 closed that hole, so
+   * every committed gate fix is now re-reviewed and nothing writes this.
+   *
+   * Retained because the audit trail is read, not just written: a project that
+   * ran an earlier nax can hold rounds carrying this outcome, and dropping it
+   * from the union would make those unrenderable. Do not reuse the name for a
+   * new meaning — a reader hitting it in an old artifact must still be told
+   * what it meant when it was written.
    */
   | "review-skipped";
 
