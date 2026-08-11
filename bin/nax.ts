@@ -812,25 +812,35 @@ program
       process.exit(exitOutcome);
     }
 
-    const result = await run({
-      prdPath,
-      workdir,
-      config,
-      hooks,
-      feature: options.feature,
-      featureDir,
-      dryRun: options.dryRun,
-      useBatch: options.batch ?? true,
-      parallel,
-      eventEmitter,
-      statusFile: statusFilePath,
-      logFilePath,
-      formatterMode: useHeadless ? formatterMode : undefined,
-      headless: useHeadless,
-      skipPrecheck: options.skipPrecheck ?? false,
-      agentStreamEvents,
-      resumeMode: options.fresh === true || options.resume === false ? "fresh" : "auto",
-    });
+    let result: Awaited<ReturnType<typeof run>>;
+    try {
+      result = await run({
+        prdPath,
+        workdir,
+        config,
+        hooks,
+        feature: options.feature,
+        featureDir,
+        dryRun: options.dryRun,
+        useBatch: options.batch ?? true,
+        parallel,
+        eventEmitter,
+        statusFile: statusFilePath,
+        logFilePath,
+        formatterMode: useHeadless ? formatterMode : undefined,
+        headless: useHeadless,
+        skipPrecheck: options.skipPrecheck ?? false,
+        agentStreamEvents,
+        resumeMode: options.fresh === true || options.resume === false ? "fresh" : "auto",
+      });
+    } finally {
+      // Unmount the TUI even when run() throws — otherwise a thrown error prints
+      // over the still-mounted TUI frame instead of a clean error message, and the
+      // headless summary below never runs either (BUG-51).
+      if (tuiInstance) {
+        tuiInstance.unmount();
+      }
+    }
 
     // Create/update latest.jsonl symlink
     const latestSymlink = join(runsDir, "latest.jsonl");
@@ -845,11 +855,6 @@ program
       });
     } catch (error) {
       console.error(chalk.yellow(`Warning: Failed to create latest.jsonl symlink: ${error}`));
-    }
-
-    // Cleanup TUI if it was rendered
-    if (tuiInstance) {
-      tuiInstance.unmount();
     }
 
     // Summary (only in headless mode; TUI shows summary itself)

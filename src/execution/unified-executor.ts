@@ -248,7 +248,6 @@ export async function executeUnified(
           const batchStartedAt = new Date().toISOString();
           const storyStartMs = new Map<string, number>();
           for (const s of batch) storyStartMs.set(s.id, Date.now());
-
           const batchResult = await _unifiedExecutorDeps.runParallelBatch({
             stories: batch,
             ctx: {
@@ -277,11 +276,11 @@ export async function executeUnified(
             },
             prd,
           });
-
           // Route parallel failures through handlePipelineFailure (AC-6)
           for (const { story, pipelineResult } of batchResult.failed) {
             const storyRouting = prd.userStories.find((s) => s.id === story.id)?.routing;
-            await handlePipelineFailure(
+            // BUG-04: capture the escalated prd, or canEscalate never trips.
+            const failureResult = await handlePipelineFailure(
               {
                 config: ctx.config,
                 prd,
@@ -313,13 +312,14 @@ export async function executeUnified(
               },
               pipelineResult,
             );
+            // (Cost not re-added: batchResult.totalCost below already includes it.)
+            prd = failureResult.prd;
           }
 
           // Single-writer PRD reconciliation (H-1): worktree pipelines skipped
           // persistence, so record completed + merge-conflict outcomes here.
           reconcileBatchOutcome(prd, batchResult);
           await savePRD(prd, ctx.prdPath);
-
           await pipelineEventBus.drain();
           totalCost += batchResult.totalCost;
           storiesCompleted +=
@@ -335,7 +335,6 @@ export async function executeUnified(
               }
             }
           }
-
           // Build per-story metrics for completed parallel batch stories
           const batchCompletedAt = new Date().toISOString();
           for (const story of batchResult.completed) {

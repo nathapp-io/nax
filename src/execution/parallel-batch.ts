@@ -127,6 +127,12 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
   const worktreeManager = await _parallelBatchDeps.createWorktreeManager();
   const worktreePaths = new Map<string, string>();
   const storyStartTimes = new Map<string, number>();
+  // Contained per-story like every other failure path below (preExecutionFailures is
+  // declared here, not further down, so this loop can push into it too) — one story's
+  // worktree-creation failure must not abort the whole batch and strand the worktrees
+  // already created for its siblings (BUG-05). A synthesized failure matches the shape
+  // the dependency-prep loop already produces below.
+  const preExecutionFailures: RunParallelBatchResult["failed"] = [];
   for (const story of stories) {
     storyStartTimes.set(story.id, Date.now());
     try {
@@ -136,7 +142,17 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
         storyId: story.id,
         error: error instanceof Error ? error.message : String(error),
       });
-      throw error;
+      preExecutionFailures.push({
+        story,
+        pipelineResult: {
+          success: false,
+          finalAction: "fail",
+          reason: error instanceof Error ? error.message : String(error),
+          stoppedAtStage: "worktree-create",
+          context: { ...pipelineContext, story, stories: [story], workdir } as PipelineContext,
+        },
+      });
+      continue;
     }
     worktreePaths.set(story.id, path.join(workdir, ".nax-wt", story.id));
   }
@@ -181,7 +197,6 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
 
   const dependencyContexts = new Map<string, WorktreeDependencyContext>();
   const readyStories: UserStory[] = [];
-  const preExecutionFailures: RunParallelBatchResult["failed"] = [];
   for (const story of stories) {
     const worktreeRoot = worktreePaths.get(story.id);
     if (!worktreeRoot) continue;
