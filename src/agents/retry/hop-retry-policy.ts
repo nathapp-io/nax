@@ -108,7 +108,12 @@ export function trySameAgentRetry(
         outcome: "timeout-retry",
         timeoutRetryAttempts: newAttempts,
         kind: { kind: "timeout-retry", attempt: newAttempts },
-        currentRunOptions: resolveTimeoutRetryOptions(currentRunOptions, timeoutConfig, config.execution),
+        currentRunOptions: resolveTimeoutRetryOptions(
+          currentRunOptions,
+          timeoutConfig,
+          config.execution,
+          requestRunOptions,
+        ),
         fallbackRecord: {
           outcome: result.adapterFailure?.outcome ?? "fail-timeout",
           category: result.adapterFailure?.category ?? "quality",
@@ -158,9 +163,14 @@ export function resolveTimeoutRetryOptions(
   prev: AgentRunOptions,
   timeoutConfig: TimeoutRetryConfig,
   executionConfig?: { sessionTimeoutSeconds?: number },
+  baseRunOptions?: AgentRunOptions,
 ): AgentRunOptions {
-  const budget =
-    prev.timeoutSeconds ?? executionConfig?.sessionTimeoutSeconds ?? DEFAULT_CONFIG.execution.sessionTimeoutSeconds;
+  // Always reduce from the ORIGINAL request budget, never from a previously-reduced
+  // `prev.timeoutSeconds` — otherwise the budget compounds on every retry
+  // (3600s -> 1800s -> 900s), making later retries time out faster than the
+  // original failure they're supposed to recover from.
+  const baseBudget = baseRunOptions?.timeoutSeconds ?? prev.timeoutSeconds;
+  const budget = baseBudget ?? executionConfig?.sessionTimeoutSeconds ?? DEFAULT_CONFIG.execution.sessionTimeoutSeconds;
   return { ...prev, timeoutSeconds: budget * timeoutConfig.budgetMultiplier };
 }
 

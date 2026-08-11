@@ -45,6 +45,7 @@ import {
 } from "./adapter-lifecycle";
 import { buildTurnResult, extractContextToolCall, extractOutput, extractQuestion } from "./adapter-output";
 import { resolveRegistryEntry } from "./agent-entries";
+import { classifyCompleteError } from "./parse-agent-error";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Backward-compat re-exports (consumers import from this file via barrel)
@@ -156,7 +157,9 @@ export class AcpAgentAdapter implements AgentAdapter {
 
         let response: import("./adapter-session-types").AcpSessionResponse;
         try {
-          response = await Promise.race([session.prompt(prompt), timeoutPromise]);
+          const promptPromise = session.prompt(prompt);
+          promptPromise.catch(() => {});
+          response = await Promise.race([promptPromise, timeoutPromise]);
         } finally {
           clearTimeout(timeoutId);
         }
@@ -175,7 +178,8 @@ export class AcpAgentAdapter implements AgentAdapter {
               cancelled: true,
             };
           }
-          throw new CompleteError("complete() failed: stop reason is error");
+          // response.retryable may be undefined vs explicit false — preserved as-is (see classifyCompleteError).
+          throw new CompleteError("complete() failed: stop reason is error", undefined, response.retryable);
         }
 
         const text = response.messages
@@ -202,7 +206,9 @@ export class AcpAgentAdapter implements AgentAdapter {
           ? this._mapper.toInternal(response.cumulative_token_usage)
           : { inputTokens: 0, outputTokens: 0 };
         const estimatedCostUsd =
-          tokenUsage.inputTokens > 0 ? estimateCostFromTokenUsage(tokenUsage, _options.modelDef.model) : 0;
+          tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0
+            ? estimateCostFromTokenUsage(tokenUsage, _options.modelDef.model)
+            : 0;
         const exactCostUsd = response.exactCostUsd;
 
         if (exactCostUsd !== undefined) {
@@ -234,6 +240,10 @@ export class AcpAgentAdapter implements AgentAdapter {
       return await tryOneAgent(this.name);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
+      if (error instanceof CompleteError) {
+        const classified = classifyCompleteError(error);
+        if (classified) return classified;
+      }
       const parsed = _fallbackDeps.parseAgentError(error.message);
       if (parsed.type === "auth") {
         return {

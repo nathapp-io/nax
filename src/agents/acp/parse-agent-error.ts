@@ -1,4 +1,29 @@
-import type { AgentError } from "../types";
+import type { AgentError, CompleteError, CompleteResult } from "../types";
+
+/**
+ * Classify a `CompleteError` that already carries a transport-level retryable
+ * verdict (set by the acp adapter when acpx's stop-reason-error response included
+ * `retryable`). Returning `null` means the caller should fall back to
+ * `parseAgentError(error.message)`'s stderr-pattern classification instead.
+ */
+export function classifyCompleteError(error: CompleteError): CompleteResult | null {
+  if (error.retryable === undefined) return null;
+  // Transport (acpx) already classified this stop-reason-error turn as
+  // retryable or not — preserve that instead of falling through to the
+  // stderr-pattern-matching classifier, which has nothing to match on
+  // for this constant message and would misreport it as "unknown".
+  return {
+    output: error.message,
+    tokenUsage: { inputTokens: 0, outputTokens: 0 },
+    estimatedCostUsd: 0,
+    adapterFailure: {
+      category: "quality",
+      outcome: "fail-adapter-error",
+      retriable: error.retryable,
+      message: error.message.slice(0, 500),
+    },
+  };
+}
 
 /**
  * Parse structured adapter error output to identify agent error type.
