@@ -108,6 +108,19 @@ export interface FinishRound {
   /** Gate commands that were red this round (gate phase). */
   failing?: string[];
   /**
+   * The successor this round's commit routed to — `changed` / `tests-only` /
+   * `unchanged` for `gate`, `changed` / `unchanged` elsewhere.
+   *
+   * Recorded because `outcome` stopped carrying it. Until #1510 a tests-only
+   * gate fix was the only round writing `review-skipped`, so the outcome
+   * doubled as the classification; now every committed gate fix is reviewed
+   * and writes `no-reviewer`, which would leave "what did this fix touch?"
+   * unanswerable from the trail. That question is the input to deciding
+   * whether the re-review ever needs a cheaper, test-scoped form, so it has to
+   * survive the round it was computed in.
+   */
+  route?: string;
+  /**
    * `HEAD` SHA after this round's commit (set only when `committed`); absent
    * on no-op rounds so a reader can distinguish "no commit" from "record lost".
    * Lets "Fixed in `<sha>`" be reconstructed from the audit trail alone, rather

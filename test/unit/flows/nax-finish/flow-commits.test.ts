@@ -287,6 +287,18 @@ describe("gate commits are classified by what they touched", () => {
     expect(gateRounds[0]).toMatchObject({ phase: "gate", outcome: "no-reviewer" });
   });
 
+  // With both routes writing `no-reviewer`, the outcome no longer says what the
+  // fix touched — so the route itself has to reach the trail. Without this the
+  // classification is computed on every gate commit and observed by nobody, and
+  // "how often is a gate fix tests-only?" (the input to making the re-review
+  // cheaper) stops being answerable.
+  test("the classification reaches the audit trail now that outcome no longer carries it", async () => {
+    await runGateCommit(["test/unit/a.test.ts"]);
+    expect(gateRounds[0]).toMatchObject({ route: "tests-only" });
+    await runGateCommit(["src/scheduler.ts"]);
+    expect(gateRounds[0]).toMatchObject({ route: "changed" });
+  });
+
   test("a gate fix that committed nothing is not marked skipped — there was nothing to review", async () => {
     _resultDeps.appendText = async (_p, s) => {
       gateRounds.push(JSON.parse(s));

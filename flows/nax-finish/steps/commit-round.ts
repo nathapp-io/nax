@@ -57,6 +57,7 @@ export function buildCommitRound(i: CommitRoundInput): FinishRound {
     committed: i.committed,
     outcome: commitRoundOutcome(i.phase, i.route),
     findings: i.findings,
+    route: i.route,
     ...(i.failing ? { failing: i.failing } : {}),
     ...(i.committed && i.shaAfter ? { sha: i.shaAfter } : {}),
   };
