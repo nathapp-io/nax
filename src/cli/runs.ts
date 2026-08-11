@@ -64,6 +64,29 @@ async function parseRunLog(logPath: string): Promise<LogEntry[]> {
 }
 
 /**
+ * Locate a run's boundary events in its JSONL log.
+ *
+ * Both are identified by `stage`, never `message`: the runner passes the event
+ * name as the stage and leaves the message free text ("Starting feature: …"), so
+ * matching on `message` finds nothing and every run reads as missing its start
+ * event. `logs-reader.ts`, `replay/reconstruct.ts` and `log-format/formatter.ts`
+ * all key on `stage` — this module was the lone outlier.
+ *
+ * `run.complete` needs more than its stage. The completion phase emits several
+ * entries under it — retention purges, metric-save warnings — and only one
+ * carries the run summary. Matching the stage alone takes whichever fired first,
+ * reporting a completed run with zeroed totals. The summary is therefore
+ * identified by the payload this module actually reads.
+ */
+function findRunStart(entries: LogEntry[]): LogEntry | undefined {
+  return entries.find((e) => e.stage === "run.start");
+}
+
+function findRunSummary(entries: LogEntry[]): LogEntry | undefined {
+  return entries.find((e) => e.stage === "run.complete" && e.data?.totalStories !== undefined);
+}
+
+/**
  * List all runs for a feature.
  *
  * @param options - Command options
@@ -101,8 +124,8 @@ export async function runsListCommand(options: RunsListOptions): Promise<void> {
     const entries = await parseRunLog(logPath);
 
     // Find run.start and run.complete events
-    const startEvent = entries.find((e) => e.message === "run.start");
-    const completeEvent = entries.find((e) => e.message === "run.complete");
+    const startEvent = findRunStart(entries);
+    const completeEvent = findRunSummary(entries);
 
     if (!startEvent) {
       logger.warn("cli", "Run log missing run.start event", { file });
@@ -151,8 +174,8 @@ export async function runsShowCommand(options: RunsShowOptions): Promise<void> {
   const entries = await parseRunLog(logPath);
 
   // Find key events
-  const startEvent = entries.find((e) => e.message === "run.start");
-  const completeEvent = entries.find((e) => e.message === "run.complete");
+  const startEvent = findRunStart(entries);
+  const completeEvent = findRunSummary(entries);
   const storyEvents = entries.filter((e) => e.stage === "execution" && e.data?.storyId);
 
   if (!startEvent) {
