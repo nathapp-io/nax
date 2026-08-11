@@ -333,7 +333,14 @@ export async function finalizePlanRun(
 
   let finalOutcome = outcome.outcome;
   let winningOutput: string | undefined = outcome.output ?? finalizedProposals[0]?.output;
-  winningOutput = await readWinnerOutput(selectionSummary.winnerOutputPath ?? outputPaths[0], winningOutput);
+  // Only read the winner FILE when the verifier-pick selector actually named one.
+  // Falling back to outputPaths[0] here would silently swap the synthesized/merged
+  // PRD (from resolveOutcome's synthesis pass, with its AC-merge/preservation rules)
+  // for debater 0's raw individual file on every default (non-verifier-pick) run,
+  // since that file exists in the normal flow (BUG-15).
+  if (selectionSummary.winnerOutputPath) {
+    winningOutput = await readWinnerOutput(selectionSummary.winnerOutputPath, winningOutput);
+  }
 
   let runCostUsd = totalCostUsd;
   if (config.postDebateVerifier && winningOutput) {

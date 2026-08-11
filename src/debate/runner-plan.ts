@@ -276,12 +276,15 @@ export async function runPlan(
     });
 
     // Propagate callOp settlement to rebuttalBarriers (mirrors AC9 from Path A).
+    // Also reject proposalBarriers[i] on failure — otherwise peers can block forever
+    // in `Promise.all(proposalBarriers...)` waiting on a barrier that never settles (BUG-14).
     for (let i = 0; i < callOpPromisesB.length; i++) {
       callOpPromisesB[i].then(
         (result) => {
           rebuttalBarriers[i].resolve(result.rebut ?? "");
         },
         (err) => {
+          proposalBarriers[i].reject(err);
           rebuttalBarriers[i].reject(err);
         },
       );

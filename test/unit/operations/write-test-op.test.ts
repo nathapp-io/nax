@@ -191,6 +191,7 @@ describe("testWriterOp.verify — isolation", () => {
     const origSpawn = _isolationDeps.spawn;
     _isolationDeps.spawn = ((_cmd: string[]) => ({
       stdout: new Response("test/foo.test.ts\n").body,
+      stderr: new Response("").body,
       exited: Promise.resolve(0),
     })) as any;
 
@@ -229,6 +230,7 @@ describe("testWriterOp.verify — isolation", () => {
     const origSpawn = _isolationDeps.spawn;
     _isolationDeps.spawn = ((_cmd: string[]) => ({
       stdout: new Response("src/foo.ts\ntest/foo.test.ts\n").body,
+      stderr: new Response("").body,
       exited: Promise.resolve(0),
     })) as any;
 

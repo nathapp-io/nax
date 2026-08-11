@@ -80,13 +80,19 @@ export const hybridDebaterOp: RunOperation<DebateHybridInput, DebateHybridOutput
         return { ...proposal, output: `Agent "failed" during rebuttal`, estimatedCostUsd: totalCostUsd };
       }
       if (round < ctx.input.rounds) {
+        // allSettled here too (see the proposal-round comment above) — Promise.all would
+        // let one failing peer's rejected barrier cascade into every surviving debater's
+        // hopBody, aborting their own callOp and rejecting THEIR barriers in turn
+        // (BUG-13), turning a single proposal/rebuttal-stage failure into a total
+        // hybrid-debate failure despite the documented allSettled intent.
         const settledRound = await raceAgainstAbort(
-          Promise.all(ctx.input.rebutBarriers[round - 1].map((b) => b.promise)),
+          Promise.allSettled(ctx.input.rebutBarriers[round - 1].map((b) => b.promise)),
           ctx.input.signal,
           ctx.input.storyId,
         );
-        priorRoundOutputs.push(settledRound);
-        roundInputs = settledRound;
+        const roundOutputs = settledRound.map((r) => (r.status === "fulfilled" ? r.value : ""));
+        priorRoundOutputs.push(roundOutputs);
+        roundInputs = roundOutputs;
       }
     }
     return { ...lastTurn, estimatedCostUsd: totalCostUsd };
