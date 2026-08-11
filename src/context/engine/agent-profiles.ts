@@ -99,8 +99,8 @@ export const AGENT_PROFILES: Record<string, AgentProfile> = {
   },
   codex: {
     caps: {
-      maxContextTokens: 128_000,
-      preferredPromptTokens: 12_000,
+      maxContextTokens: 200_000,
+      preferredPromptTokens: 16_000,
       supportsToolCalls: true,
       supportsSystemPrompt: true,
       supportsMarkdown: true,
@@ -132,8 +132,19 @@ export const AGENT_PROFILES: Record<string, AgentProfile> = {
   },
   opencode: {
     caps: {
-      maxContextTokens: 128_000,
-      preferredPromptTokens: 12_000,
+      maxContextTokens: 200_000,
+      preferredPromptTokens: 16_000,
+      supportsToolCalls: true,
+      supportsSystemPrompt: true,
+      supportsMarkdown: true,
+      systemPromptStyle: "markdown-sections",
+      toolSchemaDialect: "openai",
+    },
+  },
+  pi: {
+    caps: {
+      maxContextTokens: 200_000,
+      preferredPromptTokens: 16_000,
       supportsToolCalls: true,
       supportsSystemPrompt: true,
       supportsMarkdown: true,
