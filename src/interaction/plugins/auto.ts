@@ -95,8 +95,6 @@ export const _autoPluginDeps = {
 export class AutoInteractionPlugin implements InteractionPlugin {
   name = "auto";
   private config: AutoConfig = {};
-  /** In-flight requests keyed by requestId — set by send(), consumed by receive(). */
-  private pendingRequests = new Map<string, InteractionRequest>();
 
   async init(config: Record<string, unknown>): Promise<void> {
     const cfg = AutoConfigSchema.parse(config);
@@ -112,29 +110,15 @@ export class AutoInteractionPlugin implements InteractionPlugin {
     // No-op
   }
 
-  async send(request: InteractionRequest): Promise<void> {
-    // Store the request so receive() can look it up by requestId
-    this.pendingRequests.set(request.id, request);
+  async send(_request: InteractionRequest): Promise<void> {
+    // No-op — in-process plugin
   }
 
-  async receive(requestId: string, _timeout = 60000): Promise<InteractionResponse> {
-    const request = this.pendingRequests.get(requestId);
-    if (!request) {
-      throw new Error(`Auto plugin has no pending request for id: ${requestId}`);
-    }
-    this.pendingRequests.delete(requestId);
-    const response = await this.decide(request);
-    if (!response) {
-      // Auto-decision returned undefined (low confidence / security-review / error)
-      // Escalate to human — return a skip response with the original requestId
-      return {
-        requestId: request.id,
-        action: "skip",
-        respondedBy: "auto-ai-escalate",
-        respondedAt: Date.now(),
-      };
-    }
-    return response;
+  async receive(_requestId: string, _timeout = 60000): Promise<InteractionResponse> {
+    // For auto plugin, we need to fetch the request from somewhere
+    // In practice, the chain should pass the request to us
+    // For now, throw an error since we need the full request
+    throw new Error("Auto plugin requires full request context (not just requestId)");
   }
 
   /**
