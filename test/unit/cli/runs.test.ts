@@ -67,9 +67,18 @@ async function seedRunLog(outputDir: string, opts: { complete: boolean }): Promi
   await writeFile(join(runsDir, `${RUN_ID}.jsonl`), runLogLines(opts));
 }
 
-/** Capture what the commands emit — both write exclusively through the logger. */
+/**
+ * Capture what the commands emit — both write exclusively through the logger.
+ *
+ * The `resetLogger()` first is not redundant: `initLogger` THROWS when an instance
+ * already exists, and Bun shares one module registry across test files. Without it
+ * this suite would fail with "Logger already initialized" — an error about the
+ * previous file, not this one — the moment any other test leaves a logger standing.
+ * The patch itself cannot leak forward: `resetLogger` discards the instance it is on.
+ */
 function captureLogger(): { entries: { message: string; data?: Record<string, unknown> }[] } {
   const entries: { message: string; data?: Record<string, unknown> }[] = [];
+  resetLogger();
   initLogger({ level: "info", useChalk: false });
   const logger = getLogger();
   const origInfo = logger.info.bind(logger);
