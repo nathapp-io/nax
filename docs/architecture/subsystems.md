@@ -1582,7 +1582,7 @@ Human-facing presentation layer for log entries and run summaries. Consumes `Log
 
 ## §42 CLI (`src/cli/`)
 
-High-level CLI command implementations. Each file maps to one user-facing command (`init`, `setup`, `plan`, `accept`, `runs`, `status`, `rules`, `interact`, `generate`, `config`). Commands are wired to the Bun binary in `bin/nax.ts` via `src/commands/` (§43). This is one of two directories permitted to call `process.cwd()` as the bootstrap workdir default.
+High-level CLI command implementations. Each file maps to one user-facing command (`init`, `setup`, `plan`, `accept`, `runs`, `status`, `rules`, `generate`, `config`). Commands are wired to the Bun binary in `bin/nax.ts` via `src/commands/` (§43). This is one of two directories permitted to call `process.cwd()` as the bootstrap workdir default.
 
 **Key exports:**
 - `initCommand(opts)` — interactive project initialisation
@@ -1594,7 +1594,6 @@ High-level CLI command implementations. Each file maps to one user-facing comman
 - `generateCommand(opts)` — `nax generate` (regenerates CLAUDE.md from context.md)
 - `configCommand(opts)` — config get / set / diff display
 - `rulesExportCommand()`, `rulesLintCommand()`, `rulesMigrateCommand()` — rules management
-- `interactListCommand()`, `interactRespondCommand()`, `interactCancelCommand()` — interaction queue
 - `resolveRunProfileOverride(opts)` — resolves `--profile` CLI flag to a permission profile name
 
 **Entry point:** `src/cli/index.ts`
