@@ -1,0 +1,128 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "[ContextV2ConfigSchema.parse] returns a configuration whose manifest is undefined when parsing an empty configuration object.",
+    "refined": "Calling `ContextV2ConfigSchema.parse({})` returns an object where `result.context.v2.manifest` is `undefined` (not `null`, not an empty object).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "[ContextV2ConfigSchema.parse] returns context.v2.manifest.retentionDays equal to 30 when parsing a configuration that sets that field to 30.",
+    "refined": "Calling `ContextV2ConfigSchema.parse({ context: { v2: { manifest: { retentionDays: 30 } } } })` returns an object where `result.context.v2.manifest.retentionDays === 30`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "[ContextV2ConfigSchema.parse] throws schema validation when context.v2.manifest.retentionDays is 0.",
+    "refined": "Calling `ContextV2ConfigSchema.parse({ context: { v2: { manifest: { retentionDays: 0 } } } })` throws a `ZodError` (or subclass) and does not return a valid result.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "[purgeStaleManifests] returns 0 when the project directory contains no .nax/features directory.",
+    "refined": "Calling `purgeStaleManifests(projectDir, 30)` where `projectDir` has no `.nax/features` subdirectory returns `0`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "[purgeStaleManifests] deletes a context-manifest-context.json file whose mtime is 31 days old when retentionDays is 30.",
+    "refined": "Given a file at `<projectDir>/.nax/features/F/stories/S/context-manifest-context.json` with mtime of `Date.now() - 31 * 86_400_000`, after calling `purgeStaleManifests(projectDir, 30)` that file does not exist on disk.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "[purgeStaleManifests] leaves a context-manifest-context.json file present when its mtime is 29 days old and retentionDays is 30.",
+    "refined": "Given a file at `<projectDir>/.nax/features/F/stories/S/context-manifest-context.json` with mtime of `Date.now() - 29 * 86_400_000`, after calling `purgeStaleManifests(projectDir, 30)` that file still exists on disk.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "[purgeStaleManifests] returns the number of manifest files it deleted.",
+    "refined": "When `purgeStaleManifests(projectDir, 30)` deletes exactly N files matching the glob pattern, the returned value equals N (an integer >= 0).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "[purgeStaleManifests] deletes a rebuild-manifest.json file whose mtime is 31 days old when retentionDays is 30.",
+    "refined": "Given a file at `<projectDir>/.nax/features/F/stories/S/rebuild-manifest.json` with mtime of `Date.now() - 31 * 86_400_000`, after calling `purgeStaleManifests(projectDir, 30)` that file does not exist on disk.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When the injected statMtime lookup throws for a manifest, then purgeStaleManifests leaves that file on disk.",
+    "refined": "When `_manifestPurgeDeps.statMtime` (injected via `_manifestPurgeDeps`) throws an error for a manifest path, that file still exists on disk after `purgeStaleManifests` completes.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When the injected statMtime lookup throws for a manifest, then purgeStaleManifests excludes that file from its returned deletion count.",
+    "refined": "When `_manifestPurgeDeps.statMtime` throws for a manifest path, the integer returned by `purgeStaleManifests` does not count that file as deleted.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When purgeStaleManifests deletes the last manifest in a story directory, then that story directory no longer exists.",
+    "refined": "Given a story directory `<projectDir>/.nax/features/F/stories/S/` containing only one manifest file (context-manifest-*.json or rebuild-manifest.json) that is older than `retentionDays`, after calling `purgeStaleManifests(projectDir, retentionDays)` the directory `S` does not exist on disk.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When a story directory contains a file that is neither a context manifest nor a rebuild manifest, then purgeStaleManifests leaves both the directory and that file in place.",
+    "refined": "Given a story directory `<projectDir>/.nax/features/F/stories/S/` containing a non-manifest file (e.g., `other.txt`) alongside stale manifest files, after calling `purgeStaleManifests(projectDir, 30)` the directory `S` and the file `other.txt` still exist on disk.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When purgeStaleManifests reaches MAX_MANIFEST_SCAN entries, then it stops examining entries and emits a debug-level log naming MAX_MANIFEST_SCAN.",
+    "refined": "When the glob scan returns more than `MAX_MANIFEST_SCAN` entries, `purgeStaleManifests` stops processing after `MAX_MANIFEST_SCAN` entries and the injected logger's `debug` method is called with a message containing the stringified value of `MAX_MANIFEST_SCAN`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given context.v2.manifest.retentionDays is 30, when handleRunCompletion runs, then it invokes purgeStaleManifests exactly once with the resolved project directory and 30.",
+    "refined": "Assert purgeStaleManifests was called exactly once with [projectDir, 30] where projectDir is the resolved absolute path of the project directory.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given context.v2.manifest is unset, when handleRunCompletion runs, then it does not invoke purgeStaleManifests.",
+    "refined": "Assert purgeStaleManifests was never called (i.e., callCount === 0).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given purgeStaleManifests rejects, when handleRunCompletion runs with manifest retention configured, then handleRunCompletion resolves with its normal completion result.",
+    "refined": "Assert handleRunCompletion resolves to a non-rejected Promise with a result object that contains a status or exit code indicating normal completion (not rejected, not an error).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given purgeStaleManifests rejects, when handleRunCompletion runs with manifest retention configured, then it emits a warn-level log recording the failure.",
+    "refined": "Assert a warn-level log entry was emitted containing the word 'purgeStaleManifests' or 'manifest retention' or 'failed' (case-insensitive match on log message payload).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given purgeStaleManifests returns a count greater than zero, when handleRunCompletion runs, then it emits an info-level log carrying that count.",
+    "refined": "Assert an info-level log entry was emitted where the logged count value equals the returned count from purgeStaleManifests (e.g., if purgeStaleManifests returns 5, assert info log contains 5).",
+    "testable": true,
+    "storyId": "US-002"
+  }
+]

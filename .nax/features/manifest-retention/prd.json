@@ -1,0 +1,132 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "manifest-retention",
+  "branchName": "feat/manifest-retention",
+  "createdAt": "2026-08-11T00:00:00.000Z",
+  "updatedAt": "2026-08-11T02:41:47.138Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add manifest retention configuration and purge module",
+      "description": "**Goal** — Add opt-in manifest-retention configuration and an age-based purge module that bounds Context Engine v2 manifest growth.\n\n**Motivation** — `src/context/engine/manifest-store.ts` has no prune, retention, or TTL path of any kind — manifests accumulate for the life of the repository.\n\n**Approach** — Retention is **age-based on file mtime**, not keep-newest-N. `ContextManifest` carries no timestamp field of its own, so mtime is the only available age signal; a keep-newest-N policy would need mtime anyway to rank recency, making it strictly more machinery for the same input. Age also matches the mental model operators already have from `context.v2.session.retentionDays`.\n\nThe sweep covers **all** feature directories, not just the feature being run. This is a deliberate divergence from `purgeStaleScratch()`, which is scoped to a single feature. Per-feature scoping cannot bound growth: a run touches one feature, so the other 70 feature directories observed on this repo would never be swept.\n\nDiscovery uses one capped glob rather than a nested directory walk, scanned relative to `projectDir`:\n\n```\n.nax/features/*/stories/*/{context-manifest-*,rebuild-manifest}.json\n```\n\nFor each match: read its mtime, and delete it when `mtimeMs < now - retentionDays * 86_400_000`. After processing a story directory, attempt a **non-recursive** directory removal on it. Non-recursive removal is the safety property that matters here: it fails harmlessly when any non-manifest artifact remains, so no recursive deletion is ever performed against a path built from feature and story names.\n\nFollowing `.nax/rules/project-conventions.md` and `forbidden-patterns-source.md`, the module exposes an injectable `_manifestPurgeDeps` object (`now`, `scan`, `statMtime`, `unlink`, `rmdirIfEmpty`) — `mock.module()` is banned in this codebase, so dependency injection is the only testable seam. Glob scans pass `cwd` explicitly and are capped, per `monorepo-awareness.md` §6.\n\n**Scope** — In: add the optional `context.v2.manifest.retentionDays` schema and runtime field; create the purge module; scan every feature's manifest paths with the specified cap; preserve unreadable files; and safely attempt non-recursive cleanup of story directories. Out: wiring `handleRunCompletion` to invoke the purge (US-002); modifying `manifest-store.ts`; whole feature-directory retention — `prd.json`, `plan/`, `checkpoint.jsonl`, `status.json` and acceptance artifacts are not pruned by this feature, which touches context manifests only; archiving manifests to an `_archive/` directory instead of deleting them; and a keep-newest-N retention policy.\n\n**Interface**\n```typescript\n// src/context/engine/manifest-purge.ts\nexport async function purgeStaleManifests(\n  projectDir: string,\n  retentionDays: number,\n): Promise<number>;\n```\n\nConfig schema: add a `manifest` block to `ContextV2ConfigSchema` in `src/config/schemas-context.ts:114`, mirroring the `session` block at `:164-171` — but with `.optional()` and **no** `.default()`, so an unset key resolves to `undefined`. Because Zod omits an optional-without-default key entirely, `DEFAULT_CONFIG` keeps its current shape and no existing config assertion changes. Runtime type: add the matching optional `manifest` field to `ContextV2Config` in `src/config/runtime-types-context.ts:85`, mirroring the `session` type at `:112-118`. Barrel: export `purgeStaleManifests` from `src/context/engine/index.ts`.",
+      "acceptanceCriteria": [
+        "[ContextV2ConfigSchema.parse] returns a configuration whose manifest is undefined when parsing an empty configuration object.",
+        "[ContextV2ConfigSchema.parse] returns context.v2.manifest.retentionDays equal to 30 when parsing a configuration that sets that field to 30.",
+        "[ContextV2ConfigSchema.parse] throws schema validation when context.v2.manifest.retentionDays is 0.",
+        "[purgeStaleManifests] returns 0 when the project directory contains no .nax/features directory.",
+        "[purgeStaleManifests] deletes a context-manifest-context.json file whose mtime is 31 days old when retentionDays is 30.",
+        "[purgeStaleManifests] leaves a context-manifest-context.json file present when its mtime is 29 days old and retentionDays is 30.",
+        "[purgeStaleManifests] returns the number of manifest files it deleted.",
+        "[purgeStaleManifests] deletes a rebuild-manifest.json file whose mtime is 31 days old when retentionDays is 30.",
+        "When the injected statMtime lookup throws for a manifest, then purgeStaleManifests leaves that file on disk.",
+        "When the injected statMtime lookup throws for a manifest, then purgeStaleManifests excludes that file from its returned deletion count.",
+        "When purgeStaleManifests deletes the last manifest in a story directory, then that story directory no longer exists.",
+        "When a story directory contains a file that is neither a context manifest nor a rebuild manifest, then purgeStaleManifests leaves both the directory and that file in place.",
+        "When purgeStaleManifests reaches MAX_MANIFEST_SCAN entries, then it stops examining entries and emits a debug-level log naming MAX_MANIFEST_SCAN."
+      ],
+      "tags": [
+        "feature",
+        "context-engine",
+        "config",
+        "retention",
+        "filesystem"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The story adds one bounded filesystem module plus established config and barrel updates, with safety-sensitive retention behavior but no new cross-system abstraction.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/session/scratch-purge.ts",
+        "src/context/engine/manifest-store.ts",
+        "src/config/schemas-context.ts",
+        "src/config/runtime-types-context.ts",
+        "src/context/engine/index.ts"
+      ],
+      "expectedFiles": [
+        "src/context/engine/manifest-purge.ts",
+        "test/unit/context/engine/manifest-purge.test.ts"
+      ],
+      "outOfScope": [
+        "Wire the manifest purge into run completion; that belongs to US-002.",
+        "Whole feature-directory retention — `prd.json`, `plan/`, `checkpoint.jsonl`, `status.json` and acceptance artifacts are not pruned by this feature, which touches context manifests only.",
+        "Archiving manifests to an `_archive/` directory instead of deleting them; the sweep deletes only.",
+        "A keep-newest-N retention policy; retention is age-based on file mtime only."
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Run manifest retention during completion",
+      "description": "**Goal** — Invoke the opt-in manifest retention sweep from run completion without allowing housekeeping failures to fail the run.\n\n**Motivation** — Session scratch already solved the same problem next door: `context.v2.session.retentionDays` drives `purgeStaleScratch()` from `run-completion.ts`. Manifests were simply never given the equivalent.\n\n**Approach** — Call site: `handleRunCompletion()` in `src/execution/lifecycle/run-completion.ts:110`, immediately after the existing scratch-purge block at `:460-479`, gated by `if (manifestCfg?.retentionDays)` — the identical truthiness idiom that gates the scratch purge at `:463`.\n\n**Scope** — In: import and invoke `purgeStaleManifests` through the injectable completion dependency seam after session scratch retention; use the resolved project directory and configured retention days; log positive deletions at info; and catch rejection at warn level while preserving normal completion. Out: defining the config key and implementing the sweep (US-001); changing session scratch retention; emitting a retention-knob advertisement when it is unset; adding concurrency safety; or adding a manual CLI purge command.\n\n**Interface**\n```typescript\nexport async function purgeStaleManifests(\n  projectDir: string,\n  retentionDays: number,\n): Promise<number>;\n```\n\nFailure handling: `purgeStaleManifests` rejection is fail-open — `handleRunCompletion` logs at warn level and completes normally. A retention sweep never fails a run.\n\n**File-size constraint:** `run-completion.ts` is at **549 lines** against the repo's 600-line hard limit (`bun run check:file-sizes`). The new block must stay small; if it would breach 600, extract it rather than growing the file.",
+      "acceptanceCriteria": [
+        "Given context.v2.manifest.retentionDays is 30, when handleRunCompletion runs, then it invokes purgeStaleManifests exactly once with the resolved project directory and 30.",
+        "Given context.v2.manifest is unset, when handleRunCompletion runs, then it does not invoke purgeStaleManifests.",
+        "Given purgeStaleManifests rejects, when handleRunCompletion runs with manifest retention configured, then handleRunCompletion resolves with its normal completion result.",
+        "Given purgeStaleManifests rejects, when handleRunCompletion runs with manifest retention configured, then it emits a warn-level log recording the failure.",
+        "Given purgeStaleManifests returns a count greater than zero, when handleRunCompletion runs, then it emits an info-level log carrying that count."
+      ],
+      "tags": [
+        "feature",
+        "context-engine",
+        "lifecycle",
+        "integration",
+        "retention"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a small but convention-sensitive lifecycle integration that must preserve completion semantics, logging behavior, test injection, and the source-file size limit.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/execution/lifecycle/run-completion.ts",
+        "src/session/scratch-purge.ts",
+        "src/context/engine/manifest-purge.ts",
+        "test/unit/execution/lifecycle-completion.test.ts"
+      ],
+      "outOfScope": [
+        "Define the config key and purge algorithm; that belongs to US-001.",
+        "Session scratch retention is unchanged — `purgeStaleScratch()` and the `context.v2.session` config keep their existing behaviour.",
+        "A log message advertising the retention knob when it is unset.",
+        "Concurrency safety of any kind: neither a second nax process purging the same directories, nor a concurrent reader such as `nax context inspect` or `loadContextManifests` observing a directory mid-purge, is addressed. The sweep runs at run completion and is best-effort.",
+        "A CLI command to trigger the manifest purge manually."
+      ]
+    }
+  ],
+  "analysis": "This is an additive Context Engine v2 retention enhancement, not a greenfield feature. `src/context/engine/manifest-store.ts:44-54` establishes the target layout as `<projectDir>/.nax/features/<featureId>/stories/<storyId>/` with `context-manifest-<stage>.json` and `rebuild-manifest.json`; it must remain unmodified. `src/session/scratch-purge.ts:17-41,53-95` is the direct retention-module precedent: an exported injectable dependency object, injected clock, bounded age calculation using `86_400_000`, fail-safe discovery, and a numeric purge count. The new module should use its own `_manifestPurgeDeps` (`now`, `scan`, `statMtime`, `unlink`, `rmdirIfEmpty`) to permit tests without banned `mock.module()`. Its scan must be a capped Bun glob with explicit `cwd: projectDir`, using `.nax/features/*/stories/*/{context-manifest-*,rebuild-manifest}.json`; it needs to process all features rather than only the current feature so old manifest growth is actually bounded. A stat failure must retain and not count that path. Once a story directory has been processed, it must only attempt non-recursive removal, preserving any directory that retains a non-manifest artifact. Missing `.nax/features` must be a zero-result, and cap exhaustion must generate a debug record naming `MAX_MANIFEST_SCAN`. `src/config/schemas-context.ts:114-254` has `ContextV2ConfigSchema`: add an optional `manifest` object alongside its defaulted `session` object, with `retentionDays: z.number().int().min(1)` and no object or field default. This preserves `DEFAULT_CONFIG`'s current shape and makes `ContextV2ConfigSchema.parse({}).manifest` undefined; through `ContextConfigSchema`, that is `context.v2.manifest`. `src/config/runtime-types-context.ts:85-141` must expose the matching optional runtime field. `src/context/engine/index.ts:58-65` is the public barrel location for the new export. `src/execution/lifecycle/run-completion.ts:20-39` imports scratch retention and exposes `_runCompletionDeps`, while `:460-479` calculates `effectiveProjectDir`, gates the sibling purge by truthiness, logs a positive purge count at info, and catches errors at warn level. Add the manifest call immediately after that block, gated with `if (manifestCfg?.retentionDays)`, routed through the injectable completion dependency seam so the integration test can stub it. The sweep is best-effort: a rejection must not alter the normal completion result. `run-completion.ts` is currently 549 lines, below the 600-line hard limit, so the new block must stay small or be extracted if it grows too far. Existing coverage patterns are `test/unit/session/scratch-purge.test.ts` for injectable retention behavior and `test/unit/execution/lifecycle-completion.test.ts` plus `test/unit/execution/lifecycle/run-completion-*.test.ts` for `handleRunCompletion`; add focused tests without using module mocks. Backward compatibility is intentional: absent config means no purge and no newly defaulted config state, preserving existing `nax context inspect` history. There is no data migration: operators opt in by setting `context.v2.manifest.retentionDays`; enabling it irreversibly removes only manifests older than the configured mtime cutoff. Main risks are path safety (never recursively remove a path derived from feature/story names), accidental pruning after stat errors, unbounded scans, and allowing housekeeping errors to fail completed runs.",
+  "outOfScope": [
+    "Whole feature-directory retention — `prd.json`, `plan/`, `checkpoint.jsonl`, `status.json` and acceptance artifacts are not pruned by this feature, which touches context manifests only.",
+    "Archiving manifests to an `_archive/` directory instead of deleting them; the sweep deletes only.",
+    "Curator rollup garbage collection (issue #1445) is unchanged by this feature.",
+    "A keep-newest-N retention policy; retention is age-based on file mtime only.",
+    "Session scratch retention is unchanged — `purgeStaleScratch()` and the `context.v2.session` config keep their existing behaviour.",
+    "A log message advertising the retention knob when it is unset.",
+    "Concurrency safety of any kind: neither a second nax process purging the same directories, nor a concurrent reader such as `nax context inspect` or `loadContextManifests` observing a directory mid-purge, is addressed. The sweep runs at run completion and is best-effort.",
+    "Retention of manifests belonging to a feature that is still in progress is not treated specially — age is the only criterion, so a long-running feature's early manifests are eligible for deletion like any other.",
+    "A CLI command to trigger the manifest purge manually."
+  ],
+  "routingProfile": "cross-agent"
+}
