@@ -179,8 +179,7 @@
       "title": "Delete the orphaned interaction state layer",
       "description": "**Goal** \u2014 Remove the disk-persistence interaction state module after its CLI consumers have been deleted, while preserving in-process interaction responses.\n\n**Motivation** \u2014 The disk-based protocol is orphaned end to end: nothing ever writes `<featureDir>/interactions/`, and `<featureDir>/responses/` is written only by `interact.ts` and read by nobody.\n\n**Approach** \u2014 Terminal cleanup. Deletes `src/interaction/state.ts` in full and its re-exports from `src/interaction/index.ts`. Every consumer is removed by US-002, so this story adds no production code. Carries one regression guard proving the in-process interaction path is unaffected.\n\n**Scope** \u2014 In: delete `state.ts`, its barrel exports, and add the in-process chain regression assertion. Out: the CLI deletion and status branch removal (US-002); building a disk-backed producer; modifications to `chain.ts`, `triggers.ts`, `bridge-builder.ts`, or plugins.\n\n**Interface** \u2014 No new interface is introduced; all eight state exports and the `RunState` type from `src/interaction/state.ts` are removed. The unrelated local `RunState` interface at `src/plugins/builtin/otel-reporter/index.ts:55` must not be touched.",
       "acceptanceCriteria": [
-        "Given an `InteractionChain` configured with `AutoInteractionPlugin`, when it resolves a `human-review` interaction request through the in-process path, then the returned response `requestId` matches the submitted request ID.",
-        "Given an initialized `AutoInteractionPlugin` receives an interaction request whose metadata trigger is `security-review`, when it decides the request, then it returns `undefined` rather than an auto-approved response."
+        "Given an `InteractionChain` configured with `AutoInteractionPlugin`, when it resolves a `human-review` interaction request through the in-process path, then the returned response `requestId` matches the submitted request ID."
       ],
       "tags": [
         "interaction",
@@ -228,6 +227,7 @@
     "Adding replacement configuration keys for any of the four removed keys.",
     "Making isolation verification, verifier auto-approval, or acceptance test generation conditionally disableable. Each currently runs unconditionally and continues to.",
     "Modifying `src/interaction/chain.ts`, `triggers.ts`, `bridge-builder.ts`, or any plugin under `src/interaction/plugins/`.",
+    "Adding test coverage for existing `AutoInteractionPlugin` decision behaviour, including its refusal to auto-approve requests whose metadata trigger is `security-review`. That guard already exists at `src/interaction/plugins/auto.ts:128`, is unchanged by this work, and a test for it could not fail first.",
     "Changing the behaviour of `acceptance.enabled`, which remains the single switch governing acceptance test generation."
   ],
   "routingProfile": "cross-agent-pi"

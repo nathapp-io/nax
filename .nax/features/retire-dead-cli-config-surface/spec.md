@@ -156,6 +156,7 @@ The `RunState` interface at `src/plugins/builtin/otel-reporter/index.ts:55` is a
 - Adding replacement configuration keys for any of the four removed keys.
 - Making isolation verification, verifier auto-approval, or acceptance test generation conditionally disableable. Each currently runs unconditionally and continues to.
 - Modifying `src/interaction/chain.ts`, `triggers.ts`, `bridge-builder.ts`, or any plugin under `src/interaction/plugins/`.
+- Adding test coverage for existing `AutoInteractionPlugin` decision behaviour, including its refusal to auto-approve requests whose metadata trigger is `security-review`. That guard already exists at `src/interaction/plugins/auto.ts:128`, is unchanged by this work, and a test for it could not fail first.
 - Changing the behaviour of `acceptance.enabled`, which remains the single switch governing acceptance test generation.
 
 ## Stories
