@@ -1,2 +1,3 @@
 [2026-08-11T09:57:45.623Z] US-001 — PASSED — Remove four no-op config keys behind a warn-and-strip guard — Cost: $0.2058
 [2026-08-11T10:07:03.847Z] US-002 — PASSED — Delete the dead interact CLI surface and status branch — Cost: $0.0852
+[2026-08-11T10:27:22.362Z] US-003 — PASSED — Delete the orphaned interaction state layer — Cost: $0.2925

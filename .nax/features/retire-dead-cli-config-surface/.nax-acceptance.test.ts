@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FIELD_DESCRIPTIONS } from "../../../src/cli/config-descriptions";
+import { stripRemovedNoOpKeys } from "../../../src/config/config-guards";
 import {
   _clearRootConfigCache,
   loadConfig,
   loadConfigForWorkdir,
-  stripRemovedNoOpKeys,
 } from "../../../src/config/loader";
 import { NaxConfigSchema } from "../../../src/config/schema";
 import { InteractionChain } from "../../../src/interaction/chain";
@@ -25,7 +25,7 @@ let tempDir = "";
 let originalGlobalConfigDir: string | undefined;
 
 beforeEach(() => {
-  tempDir = Bun.mkdtempSync("/tmp/nax-retire-config-");
+  tempDir = mkdtempSync("/tmp/nax-retire-config-");
   originalGlobalConfigDir = process.env.NAX_GLOBAL_CONFIG_DIR;
   process.env.NAX_GLOBAL_CONFIG_DIR = join(tempDir, "global", ".nax");
   _clearRootConfigCache();
@@ -88,7 +88,10 @@ async function runStatus(project: string, feature: string): Promise<{ exitCode: 
 function createStatusProject(feature: string, stories: Array<{ id: string; title: string }>): { project: string; featureDir: string } {
   const project = join(tempDir, "project");
   const featureDir = join(project, ".nax", "features", feature);
-  writeJson(join(project, ".nax", "config.json"), {});
+  // Pin `outputDir` to the project's `.nax` dir so the status command resolves
+  // the feature dir here (its default `globalConfigDir()/projectKey` would
+  // otherwise look in a temp-global location with no prd.json).
+  writeJson(join(project, ".nax", "config.json"), { outputDir: join(project, ".nax") });
   writeJson(join(featureDir, "prd.json"), makePrd(feature, stories));
   return { project, featureDir };
 }
@@ -97,10 +100,9 @@ describe("retire-dead-cli-config-surface acceptance", () => {
   test("AC-1: warns once for every removed no-op key", () => {
     const warn = warnSpy();
     stripRemovedNoOpKeys({
-      "execution.rectification.escalateOnExhaustion": true,
-      "tdd.autoVerifyIsolation": false,
-      "tdd.autoApproveVerifier": true,
-      "acceptance.generateTests": false,
+      execution: { rectification: { escalateOnExhaustion: true } },
+      tdd: { autoVerifyIsolation: false, autoApproveVerifier: true },
+      acceptance: { generateTests: false },
     }, warn);
     expect(warn.mock.calls).toHaveLength(4);
     const messages = warn.mock.calls.map(([message]) => String(message));
