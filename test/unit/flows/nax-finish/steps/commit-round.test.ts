@@ -17,14 +17,19 @@ describe("commitRoundOutcome", () => {
     expect(commitRoundOutcome("quality", "changed")).toBe("fixed");
   });
 
-  // The distinction this function exists for: both of these are gate rounds
-  // that committed, and only one of them is about to be re-reviewed.
+  // Every gate round that commits is now routed on to review_quality (#1510),
+  // so `changed` and `tests-only` describe what the fix touched, not whether
+  // anyone looked at it. Both therefore carry the same outcome.
   test("a gate fix routed on to the re-review is `no-reviewer`", () => {
     expect(commitRoundOutcome("gate", "changed")).toBe("no-reviewer");
   });
 
-  test("a gate fix whose re-review was skipped by policy is `review-skipped`", () => {
-    expect(commitRoundOutcome("gate", "tests-only")).toBe("review-skipped");
+  // Regression for #1510: this returned `review-skipped` while `tests-only`
+  // bypassed the reviewer. It no longer does, and a round that claims a review
+  // was skipped when one actually ran misleads exactly as `no-reviewer` did
+  // before #1507.
+  test("a tests-only gate fix is re-reviewed, so it is not marked skipped", () => {
+    expect(commitRoundOutcome("gate", "tests-only")).toBe("no-reviewer");
   });
 
   test("a gate fix that committed nothing is not marked skipped — nothing was owed", () => {

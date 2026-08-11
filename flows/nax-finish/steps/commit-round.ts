@@ -16,16 +16,15 @@ const REVIEWED_PHASES: FinishPhase[] = ["spec", "quality"];
 /**
  * What produced this round, given the successor the commit routed to.
  *
- * The `route` argument is why this is computed after the commit rather than
- * alongside it: `tests-only` is only known once the committed paths have been
- * classified, and it is the difference between "no reviewer exists for this
- * phase" and "a reviewer exists, was owed a look, and was skipped".
+ * `route` no longer changes the answer, and that is the point: since #1510
+ * every committed gate fix re-enters `review_quality`, so no route can skip an
+ * owed re-review. The parameter stays because the round is still keyed on the
+ * successor conceptually, and a future route that *does* bypass a reviewer
+ * would need to be reflected here rather than silently inheriting
+ * `no-reviewer`.
  */
-export function commitRoundOutcome(phase: FinishPhase, route: string): FinishRoundOutcome {
+export function commitRoundOutcome(phase: FinishPhase, _route: string): FinishRoundOutcome {
   if (REVIEWED_PHASES.includes(phase)) return "fixed";
-  // Only `gate` can skip an owed re-review; `acceptance` has no reviewer to
-  // skip, so its `tests-only`-shaped routes (it has none today) stay honest.
-  if (phase === "gate" && route === "tests-only") return "review-skipped";
   return "no-reviewer";
 }
 
@@ -58,6 +57,7 @@ export function buildCommitRound(i: CommitRoundInput): FinishRound {
     committed: i.committed,
     outcome: commitRoundOutcome(i.phase, i.route),
     findings: i.findings,
+    route: i.route,
     ...(i.failing ? { failing: i.failing } : {}),
     ...(i.committed && i.shaAfter ? { sha: i.shaAfter } : {}),
   };

@@ -31,11 +31,11 @@
  *   the `acceptance` node last passed, and the repo-root `test` command does
  *   not cover per-feature acceptance tests — so without this a fix could break
  *   the contract the first gate proved and still ship.
- * - `commit_gate` re-enters `review_quality` when its fix touched non-test code
- *   — the gate loop was previously the one editing loop whose output only ever
- *   faced mechanical checks. A test-only fix skips the re-review by explicit
- *   cost tradeoff; see `gateCommitRoute` for why that is a known hole. The skip
- *   records `review-skipped`, so it is visible in the audit.
+ * - `commit_gate` re-enters `review_quality` whenever its fix committed — the
+ *   gate loop was otherwise the one editing loop whose output faced only
+ *   mechanical checks, which a fix that degrades the tests it repairs will
+ *   satisfy. A test-only fix used to skip the re-review as a cost tradeoff;
+ *   #1510 closed that hole. See `gateCommitRoute`.
  * - `load_ctx` and `open_pr` both route to `escalate` rather than throwing on
  *   their own failures. acpx has no error edge, so a throw ends the run with no
  *   result file for the plugin to read or notify from — the one outcome that
@@ -103,14 +103,23 @@ export const _openPrDeps = {
  *
  * - `unchanged` — nothing committed; no new diff, so nothing to review.
  * - `tests-only` — every touched path matched the repo's test-file patterns.
- *   Skipped by explicit choice: the re-review is the flow's most expensive node
- *   and a gate fix is usually a mechanical test repair. **This is a real hole.**
- *   The defect that motivated the re-entry (rs-stock `b6fb66dd`) was itself
- *   test-only — 8 copy-pasted stubs across 3 test files — so this route would
- *   not have caught it. Widen it here if test-quality regressions start
- *   shipping — the audit's `review-skipped` rounds are the evidence.
  * - `changed` — production code was touched, or the paths could not be
  *   classified at all. "Cannot classify" reviews rather than skips.
+ *
+ * `tests-only` and `changed` both re-enter `review_quality` (#1510). They used
+ * to diverge: `tests-only` skipped the re-review as a cost tradeoff, on the
+ * reasoning that a gate fix is usually a mechanical test repair. That was a
+ * real hole — the defect that motivated the re-entry was itself test-only, 8
+ * copy-pasted stubs across 3 test files, so the skip would not have caught the
+ * very thing it was built for. A gate fix can turn a red suite green by
+ * degrading the tests it repairs, and `quality_gates` is satisfied by exactly
+ * that; nothing else read that diff. The audit settled the cost side: across
+ * every finish recorded, exactly one `gate` round has ever fired, so the skip
+ * was saving a review that almost never runs.
+ *
+ * The classification is kept even though both routes now review. It is what a
+ * cheaper test-quality-scoped reviewer would key off if gate rounds ever become
+ * frequent enough for the full re-review to hurt.
  */
 async function gateCommitRoute(
   i: FinishInput,
@@ -509,7 +518,7 @@ export default defineFlow({
       from: "commit_gate",
       switch: {
         on: "$.route",
-        cases: { changed: "review_quality", "tests-only": "quality_gates", unchanged: "quality_gates" },
+        cases: { changed: "review_quality", "tests-only": "review_quality", unchanged: "quality_gates" },
       },
     },
     // The narrative runs only once the PR exists. acpx has no error edge, so an
