@@ -240,6 +240,8 @@ export async function runPlan(
     for (const resolver of selectionResolvers) resolver.resolve({});
     const proposalBarriers = resolved.map(() => Promise.withResolvers<string>());
     const rebuttalBarriers = resolved.map(() => Promise.withResolvers<string>());
+    // Mark observed up front — a lone/early-failing debater's barrier can otherwise reject with no subscriber.
+    for (const barrier of proposalBarriers) barrier.promise.catch(() => {});
 
     const rebutBuilder = new DebatePromptBuilder(
       { taskContext, outputFormat: "", stage: "plan" },
