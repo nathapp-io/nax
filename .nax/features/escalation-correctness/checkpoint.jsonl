@@ -14,3 +14,6 @@
 {"storyId":"US-002","phase":"typecheck-check","headSha":"3f7b296a02221d45f065dfc002ab5eb870238885","dirtyDigest":"08ea2e60161e7bb0920d86a0a2e780147b5fef3e29aedccae2b859d9ddcc6159","runId":"run-2026-08-12T05-03-33-335Z","ts":1786513814466}
 {"storyId":"US-002","phase":"semantic-review","headSha":"3f7b296a02221d45f065dfc002ab5eb870238885","dirtyDigest":"c11cc0f199dfbc9403479202b191c31c30844c4e29dcdbe0683d1d4263ddf1ed","runId":"run-2026-08-12T05-03-33-335Z","ts":1786513887675}
 {"storyId":"US-002","phase":"adversarial-review","headSha":"3f7b296a02221d45f065dfc002ab5eb870238885","dirtyDigest":"289726541e4b70b20caeca2a5bf3eb221b5cbeccf594f9e071b445fb99e2472a","runId":"run-2026-08-12T05-03-33-335Z","ts":1786514385032}
+{"storyId":"US-003","phase":"test-writer","headSha":"b8eebe2a2c0a5bb88750e98937f99c7ace924bae","dirtyDigest":"","runId":"run-2026-08-12T05-03-33-335Z","ts":1786516809833}
+{"storyId":"US-003","phase":"greenfield-gate","headSha":"b8eebe2a2c0a5bb88750e98937f99c7ace924bae","dirtyDigest":"7e483d0fe275cf5008e2230a4c758580fc97fc4e08e3aebbe8ea0e66a51fd639","runId":"run-2026-08-12T05-03-33-335Z","ts":1786516809923}
+{"storyId":"US-003","phase":"implementer","headSha":"a444111c9ee4dadd73610344db3e2f6c5f406ba0","dirtyDigest":"8df31a270e09bbc3818c2ef8ba717bd5f745f6ed03f345f3e2ea6c7813ebcc28","runId":"run-2026-08-12T05-03-33-335Z","ts":1786517383564}
