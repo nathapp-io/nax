@@ -1,6 +1,6 @@
 import { computeAcpHandle } from "../agents";
 import type { AgentRunOutcome } from "../agents";
-import { ParseValidationError, classifyProviderRefusalFailure, resolveRetryPreset } from "../agents/retry";
+import { ParseValidationError, resolveRetryPreset } from "../agents/retry";
 import type { RetryPreset, RetryStrategy } from "../agents/retry";
 import type { TurnResult } from "../agents/types";
 import { DEFAULT_CONFIG, pickSelector, resolveConfiguredModel } from "../config";
@@ -23,7 +23,7 @@ import {
   resolveTimeoutMs,
   synthesizeStory,
 } from "./call-resolvers";
-import { classifyEmptyOutputFailure } from "./turn-failure-classification";
+import { classifyEmptyOutputFailure, classifyProviderRefusalFailure } from "./turn-failure-classification";
 import type {
   BuildContext,
   CallContext,
@@ -268,7 +268,15 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       // an AdapterFailure routes it through the same manager-tier backoff/swap
       // logic as any other infra failure instead of being parsed as a verdict.
       const refusal = classifyProviderRefusalFailure(effective.output);
-      if (refusal) return { ...effective, adapterFailure: refusal };
+      if (refusal) {
+        getSafeLogger()?.warn("callop", "Provider refusal classified as infra failure", {
+          storyId: ctx.storyId,
+          opName: op.name,
+          agentName: dispatchAgent,
+          outcome: refusal.outcome,
+        });
+        return { ...effective, adapterFailure: refusal };
+      }
     }
     return effective;
   };

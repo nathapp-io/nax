@@ -261,16 +261,16 @@ describe("makeParseRetryStrategy", () => {
   });
 
   describe("AC-13: pre-classified adapterFailure on a non-empty turn skips the reformat retry (BUG-62)", () => {
-    test("returns { retry: false } without calling exhaustedFallback when lastTurnResult.adapterFailure is set", () => {
-      let exhaustedFallbackCalled = false;
+    test("returns { retry: false, fallback } immediately (no reformat attempt) when lastTurnResult.adapterFailure is set", () => {
+      let exhaustedFallbackCalls = 0;
       const strategy = makeParseRetryStrategy({
         validate: () => false,
         reviewerKind: "test",
         parse: () => null,
         prompts: { invalid: () => "invalid-prompt", truncated: () => "truncated-prompt" },
-        exhaustedFallback: () => {
-          exhaustedFallbackCalled = true;
-          return { passed: false };
+        exhaustedFallback: (lastOutput) => {
+          exhaustedFallbackCalls++;
+          return { passed: false, failOpen: true, unparsedPreview: lastOutput };
         },
       });
       const result = strategy.shouldRetry(
@@ -287,8 +287,49 @@ describe("makeParseRetryStrategy", () => {
           },
         }),
       );
-      expect(result).toEqual({ retry: false });
-      expect(exhaustedFallbackCalled).toBe(false);
+      // The escape hatch still fires — a strict-parser op with no op.recover
+      // must not fall through to a raw-TurnResult passthrough (retry-strategy.md
+      // "Strict-parser interaction"). What's saved is the wasted reformat turn
+      // (attempt stays at 0, no nextPrompt sent), not the fallback call itself.
+      expect(result).toEqual({
+        retry: false,
+        fallback: {
+          passed: false,
+          failOpen: true,
+          unparsedPreview: "Selected model is at capacity. Please try a different model.",
+        },
+      });
+      expect(exhaustedFallbackCalls).toBe(1);
+    });
+
+    test("skips straight to fallback on attempt 0 — does not wait for maxAttempts to exhaust first", () => {
+      let sawAttempt: number | undefined;
+      const strategy = makeParseRetryStrategy({
+        validate: () => false,
+        reviewerKind: "test",
+        maxAttempts: 5,
+        parse: () => null,
+        prompts: { invalid: () => "invalid-prompt", truncated: () => "truncated-prompt" },
+        exhaustedFallback: () => {
+          sawAttempt = 0;
+          return { passed: false };
+        },
+      });
+      strategy.shouldRetry(
+        parseError,
+        0,
+        makeCtx({
+          lastOutput: "Selected model is at capacity.",
+          lastTurnResult: {
+            output: "Selected model is at capacity.",
+            tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            estimatedCostUsd: 0,
+            internalRoundTrips: 0,
+            adapterFailure: { category: "availability", outcome: "fail-rate-limit", retriable: true, message: "" },
+          },
+        }),
+      );
+      expect(sawAttempt).toBe(0);
     });
 
     test("empty-output exhaustedFallback path is unaffected — still fires when lastOutput is empty", () => {

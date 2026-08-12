@@ -361,4 +361,70 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
       message: "pre-existing",
     });
   });
+
+  test("classification runs against the file-overlay content, not the agent's stdout text (BUG-62)", async () => {
+    const outputPath = "/tmp/refusal-overlay.json";
+    _callOpDeps.readFileOutput = async () => "Selected model is at capacity. Please try a different model.";
+
+    let capturedAdapterFailure: unknown;
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        capturedAdapterFailure = (hopResult.result as { adapterFailure?: unknown }).adapterFailure;
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      // The agent's own stdout acknowledgement is benign — only the overlay file matters.
+      runAsSessionFn: async () => ({
+        output: "done, see file",
+        estimatedCostUsd: 0,
+        internalRoundTrips: 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      }),
+    });
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      makeRunOp("overlay-refusal-op", outputPath),
+      "hello",
+    );
+
+    expect(capturedAdapterFailure).toEqual({
+      category: "availability",
+      outcome: "fail-rate-limit",
+      retriable: true,
+      message: "Selected model is at capacity. Please try a different model.",
+    });
+  });
+
+  test("ordinary file-overlay content is not misclassified as a refusal", async () => {
+    const outputPath = "/tmp/normal-overlay.json";
+    _callOpDeps.readFileOutput = async () => JSON.stringify({ passed: true, findings: [] });
+
+    let capturedAdapterFailure: unknown;
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        capturedAdapterFailure = (hopResult.result as { adapterFailure?: unknown }).adapterFailure;
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: "",
+        estimatedCostUsd: 0,
+        internalRoundTrips: 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      }),
+    });
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      makeRunOp("overlay-normal-op", outputPath),
+      "hello",
+    );
+
+    expect(capturedAdapterFailure).toBeUndefined();
+  });
 });

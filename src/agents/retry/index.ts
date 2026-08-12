@@ -5,7 +5,6 @@ export { resolveRetryPreset } from "./presets";
 export { composeRetry } from "./compose";
 export { UNPARSED_PREVIEW_BYTES, makeParseRetryStrategy, previewOutput } from "./parse-retry";
 export type { ParseRetryOpts } from "./parse-retry";
-export { classifyProviderRefusalFailure } from "./provider-refusal";
 export { makeTieredParseRetryStrategy } from "./tiered-parse-retry";
 export type { TieredInspection, TieredParseRetryOpts } from "./tiered-parse-retry";
 export {

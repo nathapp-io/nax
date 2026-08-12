@@ -61,13 +61,19 @@ export function makeParseRetryStrategy(opts: ParseRetryOpts): RetryStrategy {
       // A non-empty turn already carrying an AdapterFailure (e.g. a provider
       // refusal classified by callOp's sendWithFileOutput — BUG-62) is an infra
       // failure, not a JSON-formatting problem. Re-prompting "reformat as JSON"
-      // against an at-capacity model wastes an attempt; exit immediately without
-      // calling exhaustedFallback so the turn's adapterFailure propagates to the
-      // manager-tier retry/swap machinery instead of being parsed as a verdict.
+      // against an at-capacity model wastes an attempt, so skip straight to
+      // exhaustedFallback instead of spending the retry budget on it. Still
+      // surface the fallback (when declared) so callOp doesn't fall through to
+      // its last-resort raw-TurnResult passthrough for strict-parser ops that
+      // have no `op.recover` — see "Strict-parser interaction" in
+      // .claude/rules/retry-strategy.md. The turn's adapterFailure itself still
+      // propagates to the manager-tier retry/swap machinery regardless of what
+      // this returns, since that's driven by the TurnResult, not this decision.
       // Guarded on `ctx.lastOutput` so this doesn't shadow the empty-output
       // branch below, which depends on exhaustedFallback("") still firing.
       if (ctx.lastOutput && ctx.lastTurnResult?.adapterFailure) {
-        return { retry: false };
+        const fallback = opts.exhaustedFallback ? opts.exhaustedFallback(ctx.lastOutput) : undefined;
+        return { retry: false, ...(fallback !== undefined ? { fallback } : {}) };
       }
 
       if (!ctx.lastOutput) {

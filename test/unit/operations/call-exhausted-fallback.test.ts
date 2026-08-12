@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { callOp } from "../../../src/operations";
 import type { RunOperation } from "../../../src/operations";
 import { DEFAULT_CONFIG, pickSelector } from "../../../src/config";
-import { ParseValidationError } from "../../../src/agents/retry";
+import { ParseValidationError, makeParseRetryStrategy } from "../../../src/agents/retry";
 import type { RetryStrategy } from "../../../src/agents/retry";
 import { makeMockAgentManager, makeMockRuntime, makeSessionManager } from "../../helpers";
 import type { NaxRuntime } from "../../../src/runtime";
@@ -395,5 +395,67 @@ describe("callOp empty-output — no regression: non-empty output uses op.parse"
 
     // op.parse ran and returned the trimmed output — the fallback was NOT returned
     expect(result).toBe("hello world");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BUG-62 regression: a provider-refusal turn (non-empty output, no op.recover,
+// strict op.parse that throws on non-JSON) must still return exhaustedFallback,
+// not a raw TurnResult — mirrors adversarialReviewOp's shape (strict parser +
+// exhaustedFallback + no op.recover).
+// ---------------------------------------------------------------------------
+
+describe("callOp — BUG-62: provider-refusal turn with a strict parser returns exhaustedFallback", () => {
+  test("returns the exhaustedFallback object, not a raw TurnResult, for a refusal-classified turn", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: "Selected model is at capacity. Please try a different model.",
+        estimatedCostUsd: 0.01,
+        internalRoundTrips: 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      }),
+    });
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    const FAIL_OPEN = { passed: true, findings: [] as unknown[], failOpen: true };
+    const op: RunOperation<
+      string,
+      { passed: boolean; findings: unknown[]; failOpen?: boolean; looksLikeFail?: boolean; estimatedCostUsd?: number },
+      Pick<typeof DEFAULT_CONFIG, "routing">
+    > = {
+      kind: "run",
+      name: "strict-review-op",
+      stage: "run",
+      config: testSel,
+      session: { role: "reviewer-semantic", lifetime: "fresh" },
+      build: (input) => ({
+        role: { id: "role", content: "You review a diff.", overridable: false },
+        task: { id: "task", content: input, overridable: false },
+      }),
+      retry: () =>
+        makeParseRetryStrategy({
+          validate: (parsed) => parsed !== null && typeof parsed === "object",
+          reviewerKind: "strict-review-op",
+          prompts: { invalid: () => "reformat as JSON", truncated: () => "truncated — resend" },
+          exhaustedFallback: () => FAIL_OPEN,
+        }),
+      // Strict — mirrors adversarialReviewOp: throws on non-JSON instead of degrading gracefully.
+      parse: (output) => {
+        return JSON.parse(output);
+      },
+    };
+
+    const result = await callOp(makeCallCtx(runtime), op, "review this");
+
+    // Must be the declared exhaustedFallback object (a typed O), never the raw
+    // TurnResult passthrough — that would silently corrupt every downstream
+    // consumer reading `.passed` / `.findings` off a shape that doesn't have them.
+    expect(result).toEqual({ ...FAIL_OPEN, estimatedCostUsd: 0.01 });
+    expect((result as { output?: unknown }).output).toBeUndefined();
   });
 });

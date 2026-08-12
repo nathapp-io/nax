@@ -1,6 +1,6 @@
 export { callOp, _callOpDeps, _runPostParseForTest } from "./call";
 export { newCorrelationId } from "./call-resolvers";
-export { classifyEmptyOutputFailure } from "./turn-failure-classification";
+export { classifyEmptyOutputFailure, classifyProviderRefusalFailure } from "./turn-failure-classification";
 export { planInteractiveOp } from "./plan";
 export type { PlanInteractiveInput } from "./plan";
 export { planRefineOp, _planRefineDeps, normalizeCreatedContextFiles } from "./plan-refine";

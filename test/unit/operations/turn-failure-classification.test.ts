@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { TurnResult } from "@/agents";
-import { classifyEmptyOutputFailure } from "@/operations";
+import { classifyEmptyOutputFailure, classifyProviderRefusalFailure } from "@/operations";
 
 function makeTurnResult(overrides: Partial<TurnResult> = {}): TurnResult {
   return {
@@ -90,5 +90,54 @@ describe("classifyEmptyOutputFailure — non-empty output", () => {
       makeTurnResult({ output: "content", timedOut: true }),
     );
     expect(failure).toBeNull();
+  });
+});
+
+describe("classifyProviderRefusalFailure (BUG-62)", () => {
+  test("classifies the measured capacity-refusal literal as a retriable availability failure", () => {
+    const failure = classifyProviderRefusalFailure("Selected model is at capacity. Please try a different model.");
+    expect(failure).toEqual({
+      category: "availability",
+      outcome: "fail-rate-limit",
+      retriable: true,
+      message: "Selected model is at capacity. Please try a different model.",
+    });
+  });
+
+  test("matches case-insensitively and trims surrounding whitespace", () => {
+    const failure = classifyProviderRefusalFailure("  Selected model is at capacity right now  ");
+    expect(failure).not.toBeNull();
+    expect(failure?.outcome).toBe("fail-rate-limit");
+    expect(failure?.message).toBe("Selected model is at capacity right now");
+  });
+
+  test("returns null for empty or whitespace-only output", () => {
+    expect(classifyProviderRefusalFailure("")).toBeNull();
+    expect(classifyProviderRefusalFailure("   ")).toBeNull();
+  });
+
+  test("returns null when the phrase appears mid-output rather than at the start", () => {
+    // A refusal is the whole message; prose that merely mentions the phrase later
+    // (e.g. an implementer's summary, or a reviewer discussing it) must not match.
+    expect(
+      classifyProviderRefusalFailure("I checked the retry handling and confirmed selected model is at capacity errors are now handled."),
+    ).toBeNull();
+  });
+
+  test("returns null for a genuine review verdict, even one that quotes the phrase as finding evidence", () => {
+    const verdict = JSON.stringify({
+      passed: false,
+      findings: [{ message: "Missing test for the 'Selected model is at capacity' refusal path" }],
+    });
+    expect(classifyProviderRefusalFailure(verdict)).toBeNull();
+  });
+
+  test("returns null for any output over the length cap, even if it starts with the literal", () => {
+    const long = `Selected model is at capacity. ${"x".repeat(400)}`;
+    expect(classifyProviderRefusalFailure(long)).toBeNull();
+  });
+
+  test("returns null for unparseable prose that isn't a provider refusal", () => {
+    expect(classifyProviderRefusalFailure("I reviewed the diff but couldn't reach a conclusion.")).toBeNull();
   });
 });

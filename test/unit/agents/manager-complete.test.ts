@@ -159,6 +159,30 @@ describe("AgentManager.completeWithFallback — hard-exception classification (B
     expect(outcome.fallbacks).toHaveLength(1);
   });
 
+  test("a thrown availability-classified error marks the source agent unavailable for the rest of the run", async () => {
+    // New side effect of correct classification: a thrown auth/rate-limit exception now
+    // reaches shouldSwap's availability branch, which calls markUnavailable before picking
+    // the next candidate. Unlike a pre-classified adapterFailure (already covered by the
+    // "swaps to codex" test above), this path was previously unreachable for thrown
+    // exceptions — they were always tagged "quality" and never called markUnavailable.
+    const registry = makeRegistry({
+      claude: { output: "", throws: new Error(JSON.stringify({ type: "auth" })) },
+      codex: { output: "from codex" },
+    });
+    const m = new AgentManager(makeConfig(), registry);
+    expect(m.isUnavailable("claude")).toBe(false);
+
+    await m.completeWithFallback("prompt", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+      resolvedPermissions: { skipPermissions: false, mode: "approve-reads" as const },
+    });
+
+    expect(m.isUnavailable("claude")).toBe(true);
+    m.reset();
+    expect(m.isUnavailable("claude")).toBe(false);
+  });
+
   test("an unclassifiable thrown error still terminates as non-retriable quality/fail-unknown", async () => {
     const m = new AgentManager(
       makeConfig(),
