@@ -205,7 +205,7 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
     // temp workdir and the source-diff cap path is deterministic. Merged AFTER the
     // execution-plan's deps so these wins (the plan only supplies measureSourceDiff).
     const stubDeps = {
-      captureSnapshotRef: async () => "e2e-nbf-snapshot",
+      captureSnapshotRef: async () => ({ sha: "e2e-nbf-snapshot", untrackedBefore: [] }),
       rollbackToRef: async () => {},
       measureSourceDiff: async () => opts.nonBlockingFixDiff ?? { fileCount: 0, sourceLineCount: 0 },
     };

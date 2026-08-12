@@ -235,6 +235,7 @@ describe("executionStage.execute — runtime-crash on thrown infra errors", () =
     _executionDeps.getAgent = () => makeAgentAdapter({ name: "claude" }) as never;
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.captureGitRef = async () => "HEAD";
+    _executionDeps.getUntrackedPaths = async () => [];
     _executionDeps.assemblePlanInputsFromCtx = async () => ({}) as never;
     (_executionDeps as Record<string, unknown>)["buildPlanForStrategy"] = async () => ({
       run: planRun,

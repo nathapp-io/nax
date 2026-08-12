@@ -16,6 +16,7 @@ import type { NonBlockingFixConfig, TestPatternConfig } from "../config/selector
 import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
 import { captureSnapshotRef, rollbackToRef } from "../tdd/rollback";
+import type { SnapshotRef } from "../tdd/rollback";
 import { createTestFileClassifier, resolveTestFilePatterns } from "../test-runners";
 import { typedSpawn } from "../utils/bun-deps";
 import { packageDirRelative } from "../utils/paths";
@@ -263,7 +264,7 @@ export async function runNonBlockingFix(
   // caller's verdict path": a snapshot failure must degrade to "nbf did not run", never to
   // a hard story failure. The capture sits OUTSIDE the rectify try/catch below, so without
   // this guard its throw would propagate straight through ExecutionPlan.run(). (Audit #1.)
-  let restoreRef: string;
+  let restoreRef: SnapshotRef;
   try {
     restoreRef = await _deps.captureSnapshotRef(args.workdir, args.storyId);
   } catch (err) {
@@ -318,7 +319,7 @@ export async function runNonBlockingFix(
     if (cap) {
       let metrics: SourceDiffMetrics;
       try {
-        metrics = await _deps.measureSourceDiff(args.workdir, restoreRef);
+        metrics = await _deps.measureSourceDiff(args.workdir, restoreRef.sha);
       } catch (err) {
         logger?.warn("non-blocking-fix", "source-diff measurement threw — restoring", {
           storyId: args.storyId,
@@ -403,12 +404,12 @@ function logGateRegression(input: LogGateRegressionInput): void {
 async function restoreToSnapshot(
   args: NonBlockingFixArgs,
   _deps: NonBlockingFixDeps,
-  restoreRef: string,
+  restoreRef: SnapshotRef,
   phaseOutputsSnapshot: Record<string, unknown>,
   phaseCostsSnapshot: Record<string, number>,
   logger: ReturnType<typeof getSafeLogger>,
 ): Promise<NonBlockingFixResult> {
-  await _deps.rollbackToRef(args.workdir, restoreRef);
+  await _deps.rollbackToRef(args.workdir, restoreRef.sha, restoreRef.untrackedBefore);
   // In-place restore required: ExecutionPlan.run holds a direct reference to phaseOutputs
   // and phaseCosts; returning new objects would leave the caller with stale gate/verifier
   // results and inflated costs from the failed best-effort pass. Intentional exception to

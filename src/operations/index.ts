@@ -68,8 +68,6 @@ export { implementTddOp, implementerOp } from "./implement";
 export type { ImplementerInput, ImplementerOutput } from "./implement";
 export { verifyTddOp, verifierOp } from "./verify";
 export type { VerifierInput, VerifierOutput } from "./verify";
-export { autoApproveOp } from "./auto-approve";
-export type { AutoApproveInput, AutoApproveOutput, AutoApproveDecision } from "./auto-approve";
 export { groundOp } from "./ground";
 export type { GrounderInput } from "./ground";
 export { planDraftOp, inspectDraftOutput } from "./plan-draft";

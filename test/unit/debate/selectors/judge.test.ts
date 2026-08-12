@@ -256,10 +256,10 @@ describe("judgeSelector", () => {
     expect(capturedPrompt).toContain("security");
   });
 
-  test("returns outcome: passed when op result is non-empty trimmed string (AC6)", async () => {
+  test("returns outcome: passed when the judge emits a leading JUDGE_VERDICT: ACCEPT marker (BUG-32)", async () => {
     const agentManager = makeMockAgentManager({
       completeAsFn: async () => ({
-        output: "  verdict text  ",
+        output: "JUDGE_VERDICT: ACCEPT\n\nProposal 1 is the strongest approach.",
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
         estimatedCostUsd: 0,
       }),
@@ -269,6 +269,124 @@ describe("judgeSelector", () => {
     const result = await judgeSelector(ctx);
 
     expect(result.outcome).toBe("passed");
+    // The marker line is stripped — downstream consumers (e.g. the persisted
+    // plan/PRD content) must not see the machine-readable prefix.
+    expect(result.output).toBe("Proposal 1 is the strongest approach.");
+  });
+
+  test("returns outcome: failed when the judge emits a leading JUDGE_VERDICT: REJECT marker (BUG-32)", async () => {
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async () => ({
+        output: "JUDGE_VERDICT: REJECT\n\nNone of the proposals are acceptable — reject.",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
+    });
+
+    const ctx = makeCtx({ proposals: makeProposals(["p1"]), agentManager });
+    const result = await judgeSelector(ctx);
+
+    expect(result.outcome).toBe("failed");
+    expect(result.output).toBe("None of the proposals are acceptable — reject.");
+  });
+
+  test("fails closed when the judge's response has no parseable JUDGE_VERDICT marker (BUG-32)", async () => {
+    // Prior behaviour: any non-empty text passed. A judge that ignores the
+    // format instruction and writes free-form prose must not silently pass.
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async () => ({
+        output: "I think proposal 1 is best, going with that.",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
+    });
+
+    const ctx = makeCtx({ proposals: makeProposals(["p1"]), agentManager });
+    const result = await judgeSelector(ctx);
+
+    expect(result.outcome).toBe("failed");
+  });
+
+  test("marker matching is case-insensitive and tolerates a missing trailing newline", async () => {
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async () => ({
+        output: "judge_verdict: accept",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
+    });
+
+    const ctx = makeCtx({ proposals: makeProposals(["p1"]), agentManager });
+    const result = await judgeSelector(ctx);
+
+    expect(result.outcome).toBe("passed");
+    expect(result.output).toBe("");
+  });
+
+  test("tolerates a bolded marker (a model told 'one line' commonly wraps it in **)", async () => {
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async () => ({
+        output: "**JUDGE_VERDICT: ACCEPT**\n\nProposal 1 wins.",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
+    });
+
+    const ctx = makeCtx({ proposals: makeProposals(["p1"]), agentManager });
+    const result = await judgeSelector(ctx);
+
+    expect(result.outcome).toBe("passed");
+    expect(result.output).toBe("Proposal 1 wins.");
+  });
+
+  test("tolerates a short preamble before the marker line", async () => {
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async () => ({
+        output: "Here is my verdict:\nJUDGE_VERDICT: ACCEPT\n\nProposal 1 wins.",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
+    });
+
+    const ctx = makeCtx({ proposals: makeProposals(["p1"]), agentManager });
+    const result = await judgeSelector(ctx);
+
+    expect(result.outcome).toBe("passed");
+    expect(result.output).toBe("Here is my verdict:\n\nProposal 1 wins.");
+  });
+
+  test("does not false-positive-match ACCEPTED as ACCEPT (word boundary)", async () => {
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async () => ({
+        output: "JUDGE_VERDICT: ACCEPTED\n\nProposal 1 wins.",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
+    });
+
+    const ctx = makeCtx({ proposals: makeProposals(["p1"]), agentManager });
+    const result = await judgeSelector(ctx);
+
+    // "ACCEPTED" is not a recognized token — fails closed, and the output is
+    // returned unstripped since no marker was actually matched.
+    expect(result.outcome).toBe("failed");
+    expect(result.output).toBe("JUDGE_VERDICT: ACCEPTED\n\nProposal 1 wins.");
+  });
+
+  test("does not scan past the first few lines for a marker (avoids false matches deep in prose)", async () => {
+    const longPreamble = Array.from({ length: 10 }, (_, i) => `Reasoning line ${i}.`).join("\n");
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async () => ({
+        output: `${longPreamble}\nJUDGE_VERDICT: ACCEPT`,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
+    });
+
+    const ctx = makeCtx({ proposals: makeProposals(["p1"]), agentManager });
+    const result = await judgeSelector(ctx);
+
+    expect(result.outcome).toBe("failed");
   });
 
   test("returns outcome: failed when op result is empty string (AC7)", async () => {

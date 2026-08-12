@@ -48,6 +48,8 @@ export interface InspectionOptions {
   /** Null when this is not a TDD strategy; otherwise carries TDD-specific opts. */
   tddMode: TddMode | null;
   initialRef: string | null;
+  /** Untracked-paths snapshot taken alongside initialRef (BUG-07 rollback baseline). */
+  untrackedBefore: string[] | null;
 }
 
 export interface PostRunInspectionResult {
@@ -489,7 +491,7 @@ export async function decideStageAction(
   if (isTdd && !planResult.success) {
     if (shouldRollback && opts.initialRef) {
       try {
-        await _postRunDeps.rollbackToRef(ctx.workdir, opts.initialRef);
+        await _postRunDeps.rollbackToRef(ctx.workdir, opts.initialRef, opts.untrackedBefore);
         logger.info("execution", "Rolled back git changes due to TDD failure", {
           storyId: ctx.story.id,
           failureCategory,

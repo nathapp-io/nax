@@ -5,9 +5,9 @@
  */
 
 import type { InteractionConfig } from "../config/selectors";
+import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { InteractionChain } from "./chain";
-import { AutoInteractionPlugin } from "./plugins/auto";
 import { CLIInteractionPlugin } from "./plugins/cli";
 import { TelegramInteractionPlugin } from "./plugins/telegram";
 import { WebhookInteractionPlugin } from "./plugins/webhook";
@@ -25,9 +25,20 @@ function createInteractionPlugin(pluginName: string): InteractionPlugin {
     case "webhook":
       return new WebhookInteractionPlugin();
     case "auto":
-      return new AutoInteractionPlugin();
+      // Removed (BUG-09, latent-bugs-v2): decide() was structurally unreachable —
+      // receive() only gets a requestId, not the full request it needs to decide
+      // — and no configured project ever used it. Auto-approval remains available
+      // via `interaction.defaults.fallback: "continue"`.
+      throw new NaxError(
+        'The "auto" interaction plugin was removed — it never functioned (see docs/reviews/2026-08-11-code-review-latent-bugs-v2.md, BUG-09). Use `interaction.defaults.fallback: "continue"` for auto-approval on timeout, or configure "cli", "telegram", or "webhook".',
+        "INTERACTION_PLUGIN_REMOVED",
+        { stage: "run", pluginName },
+      );
     default:
-      throw new Error(`Unknown interaction plugin: ${pluginName}`);
+      throw new NaxError(`Unknown interaction plugin: ${pluginName}`, "INTERACTION_PLUGIN_UNKNOWN", {
+        stage: "run",
+        pluginName,
+      });
   }
 }
 

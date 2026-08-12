@@ -75,6 +75,7 @@ beforeEach(() => {
   _executionDeps.getAgent = () => makeAgentAdapter({ name: "claude" });
   _executionDeps.validateAgentForTier = () => true;
   _executionDeps.captureGitRef = async () => "HEAD";
+  _executionDeps.getUntrackedPaths = async () => [];
   _executionDeps.assemblePlanInputsFromCtx = async () => ({}) as any;
   _executionDeps.buildPlanForStrategy = async (callCtx: CallContext) => {
     capturedCallCtx = callCtx;

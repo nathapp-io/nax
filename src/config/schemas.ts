@@ -238,6 +238,7 @@ export const NaxConfigSchema = z
       blockingThreshold: "error",
 
       pluginMode: "observational",
+      parseRetryMaxAttempts: 3,
       semantic: {
         model: "balanced",
         diffMode: "ref",

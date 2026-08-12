@@ -39,7 +39,6 @@ export {
   type InlineKeyboard,
 } from "./plugins/telegram-format";
 export { WebhookInteractionPlugin } from "./plugins/webhook";
-export { AutoInteractionPlugin } from "./plugins/auto";
 
 // Triggers
 export {

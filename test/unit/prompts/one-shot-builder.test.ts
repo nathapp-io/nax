@@ -1,10 +1,9 @@
 /**
  * Tests for OneShotPromptBuilder (Phase 6)
  *
- * Covers snapshot stability + structural contract for all 3 roles:
+ * Covers snapshot stability + structural contract for both roles:
  *   router       — routes a story to a model tier
  *   decomposer   — decomposes a spec into stories
- *   auto-approver — approves or rejects an agent interaction request
  */
 
 import { describe, expect, test } from "bun:test";
@@ -33,7 +32,7 @@ const STORY_INPUT = "Title: Add login page\nDescription: Implement a basic login
 // ─── Snapshot stability ───────────────────────────────────────────────────────
 
 describe("OneShotPromptBuilder — snapshot stability", () => {
-  const ROLES: OneShotRole[] = ["router", "decomposer", "auto-approver"];
+  const ROLES: OneShotRole[] = ["router", "decomposer"];
 
   for (const role of ROLES) {
     test(`minimal build — ${role}`, () => {
@@ -61,17 +60,6 @@ describe("OneShotPromptBuilder — snapshot stability", () => {
       .build();
     expect(result).toMatchSnapshot();
   });
-
-  test("auto-approver — full build with multiple input sections", () => {
-    const result = OneShotPromptBuilder.for("auto-approver")
-      .constitution("You are a safety reviewer.")
-      .instructions("Approve or reject the agent action.")
-      .inputData("Agent Request", "Write to /etc/hosts")
-      .inputData("Project Context", "Web application with restricted file access")
-      .jsonSchema({ name: "Decision", description: "Approve or reject", example: { approve: false } })
-      .build();
-    expect(result).toMatchSnapshot();
-  });
 });
 
 // ─── Structural contract: fluent API ─────────────────────────────────────────
@@ -82,7 +70,6 @@ describe("OneShotPromptBuilder — fluent API", () => {
     expect(builder).toBeInstanceOf(OneShotPromptBuilder);
     expect(OneShotPromptBuilder.for("router").getRole()).toBe("router");
     expect(OneShotPromptBuilder.for("decomposer").getRole()).toBe("decomposer");
-    expect(OneShotPromptBuilder.for("auto-approver").getRole()).toBe("auto-approver");
   });
 
   test("all builder methods are chainable (instructions, constitution, inputData, candidates, jsonSchema)", () => {
@@ -128,7 +115,7 @@ describe("OneShotPromptBuilder — section content", () => {
   });
 
   test("multiple inputData calls each appear as separate sections", () => {
-    const result = OneShotPromptBuilder.for("auto-approver")
+    const result = OneShotPromptBuilder.for("decomposer")
       .inputData("Request", "Write to disk")
       .inputData("Context", "Read-only environment")
       .build();
@@ -161,8 +148,8 @@ describe("OneShotPromptBuilder — section content", () => {
 // ─── Structural contract: all roles produce distinct output ──────────────────
 
 describe("OneShotPromptBuilder — role independence", () => {
-  test("all 3 roles produce distinct output for the same instructions", () => {
-    const roles: OneShotRole[] = ["router", "decomposer", "auto-approver"];
+  test("both roles produce distinct output for the same instructions", () => {
+    const roles: OneShotRole[] = ["router", "decomposer"];
     const results = roles.map((role) =>
       OneShotPromptBuilder.for(role).instructions(`Instructions for ${role}`).build(),
     );

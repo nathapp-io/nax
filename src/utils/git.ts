@@ -254,9 +254,27 @@ export function detectMergeConflict(output: string): boolean {
  * Imported as a value as well so `autoCommitIfDirty` can call it directly
  * without going through the module re-export indirection.
  */
-import { parsePorcelainForNaxPaths } from "./porcelain";
-export { parsePorcelainForNaxPaths };
+import { parsePorcelainForNaxPaths, parsePorcelainUntrackedPaths } from "./porcelain";
+export { parsePorcelainForNaxPaths, parsePorcelainUntrackedPaths };
 export type { NaxProtectedPath } from "./porcelain";
+
+/**
+ * Snapshot the untracked paths currently in the working tree (BUG-07).
+ * Diffing two snapshots — one taken before an agent phase, one after —
+ * isolates exactly the untracked paths that phase created, so a rollback can
+ * delete those without touching untracked files that predate the phase
+ * (`.env`, WIP notes) and would otherwise be swept up by a blanket `git clean -fd`.
+ *
+ * Returns `null` (not `[]`) when `git status` fails or times out — a failed
+ * read must never be silently treated as "no untracked files", since that
+ * would make an unknown baseline look like an empty one and cause a
+ * subsequent rollback to sweep up files it can't prove appeared post-snapshot.
+ */
+export async function getUntrackedPaths(workdir: string): Promise<string[] | null> {
+  const { stdout, exitCode } = await gitWithTimeout(["status", "--porcelain"], workdir);
+  if (exitCode !== 0) return null;
+  return parsePorcelainUntrackedPaths(stdout);
+}
 
 /**
  * Auto-commit safety net.

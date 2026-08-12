@@ -2,7 +2,7 @@
  * Instructions Section
  *
  * Generic instruction block for one-shot prompts.
- * Used by OneShotPromptBuilder for router, decomposer, and auto-approver roles.
+ * Used by OneShotPromptBuilder for router and decomposer roles.
  */
 
 import type { PromptSection } from "../types";

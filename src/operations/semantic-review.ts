@@ -321,11 +321,11 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
   config: reviewConfigSelector,
   model: (input) => input.semanticConfig.model,
   timeoutMs: (input) => input.semanticConfig.timeoutMs,
-  retry: (input) =>
+  retry: (input, ctx) =>
     makeParseRetryStrategy({
       validate: (parsed) => validateLLMShape(parsed) !== null,
       reviewerKind: "semantic",
-      maxAttempts: 2,
+      maxAttempts: ctx.config.review.parseRetryMaxAttempts,
       prompts: {
         invalid: () => ReviewPromptBuilder.jsonRetry(),
         truncated: () => ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: input.blockingThreshold }),

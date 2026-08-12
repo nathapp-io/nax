@@ -351,6 +351,84 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
     expect(result.passCount).toBe(8);
   });
 
+  test("scoped SUCCESS with zero executed tests → falls back to full suite (BUG-06)", async () => {
+    // Go `[no test files]` on a helper-only `_test.go`, or Mocha on a mapped `.js`
+    // file with no specs: the scoped run exits 0 while executing nothing. A zero-test
+    // exit-0 is inconclusive, not a pass — it must be treated the same as the
+    // zero-test exit-nonzero case above, not returned as a false green.
+    const commands: string[] = [];
+    const deps = fakeDeps({
+      selectScopedTests: async () => ({
+        effectiveCommand: "go test ./pkg/helper/...",
+        isFullSuite: false,
+        thresholdFallback: false,
+        isMonorepoOrchestrator: false,
+      }),
+      regression: async (opts) => {
+        commands.push(opts.command);
+        if (commands.length === 1) {
+          return {
+            status: "SUCCESS" as const,
+            success: true,
+            countsTowardEscalation: true,
+            output: "?   pkg/helper   [no test files]",
+          };
+        }
+        return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "ok  8 passed" };
+      },
+      parseTestOutput: (output) =>
+        output === "ok  8 passed" ? { passed: 8, failed: 0, failures: [] } : { passed: 0, failed: 0, failures: [] },
+    });
+    const ctx = ctxWithQuality({ commands: { test: "go test ./..." } });
+    const result = await verifyScopedOp.execute(
+      { workdir: "/r", storyId: "S-1", storyGitRef: "abc", regressionMode: "per-story" },
+      ctx,
+      deps,
+    );
+    expect(commands).toEqual(["go test ./pkg/helper/...", "go test ./..."]);
+    expect(result.success).toBe(true);
+    expect(result.status).toBe("passed");
+    expect(result.isFullSuite).toBe(true);
+    expect(result.scopeTestFallback).toBe(true);
+    expect(result.passCount).toBe(8);
+  });
+
+  test("scoped SUCCESS with zero tests + full-suite rerun also zero tests → reports success on the full-suite verdict", async () => {
+    // Even the fallback finding zero tests is still a real (if degenerate) full-suite
+    // verdict — matches the pre-existing failure-path sibling test below.
+    let regressionCalls = 0;
+    const deps = fakeDeps({
+      selectScopedTests: async () => ({
+        effectiveCommand: "go test ./pkg/helper/...",
+        isFullSuite: false,
+        thresholdFallback: false,
+        isMonorepoOrchestrator: false,
+      }),
+      regression: async () => {
+        regressionCalls++;
+        return {
+          status: "SUCCESS" as const,
+          success: true,
+          countsTowardEscalation: true,
+          output: "[no test files]",
+        };
+      },
+      parseTestOutput: () => ({ passed: 0, failed: 0, failures: [] }),
+    });
+    const ctx = ctxWithQuality({ commands: { test: "go test ./..." } });
+    const result = await verifyScopedOp.execute(
+      { workdir: "/r", storyId: "S-1", storyGitRef: "abc", regressionMode: "per-story" },
+      ctx,
+      deps,
+    );
+    expect(regressionCalls).toBe(2);
+    expect(result.isFullSuite).toBe(true);
+    expect(result.scopeTestFallback).toBe(true);
+    // Not the BUG-06 false green: this ran through the full-suite fallback, not
+    // the raw scoped exit-0. Still exit 0 (SUCCESS) so it reports passed.
+    expect(result.status).toBe("passed");
+  });
+
   test("scoped failure with real test failures → no full-suite rerun", async () => {
     let regressionCalls = 0;
     const deps = fakeDeps({

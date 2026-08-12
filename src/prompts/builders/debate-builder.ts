@@ -416,7 +416,7 @@ ${this.stageContext.outputFormat}`;
       critiques.length > 0
         ? `\n\n## Critiques\n${critiques.map((c, i) => `### Critique ${i + 1}\n${c}`).join("\n\n")}`
         : "";
-    return `You are a judge evaluating multiple proposals. Review each proposal carefully and make a final authoritative determination.\n\n## Proposals\n${proposalsSection}${critiquesSection}\n\nAs the judge, provide your final verdict with clear reasoning, selecting or synthesizing the best approach.`;
+    return `You are a judge evaluating multiple proposals. Review each proposal carefully and make a final authoritative determination.\n\n## Proposals\n${proposalsSection}${critiquesSection}\n\nAs the judge, provide your final verdict with clear reasoning, selecting or synthesizing the best approach.\n\nYour response MUST begin with exactly one line, before anything else:\nJUDGE_VERDICT: ACCEPT\nif you can select or synthesize an acceptable result from the proposals, or:\nJUDGE_VERDICT: REJECT\nif none of the proposals are acceptable and none can be reasonably synthesized into one. After that line, provide your full verdict and reasoning (and, on ACCEPT, the selected or synthesized result).`;
   }
 }
 

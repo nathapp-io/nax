@@ -217,11 +217,11 @@ async function requoteBlockingAdversarialFindings(
   return { findings: next, changed, extraCostUsd };
 }
 
-const adversarialParseRetry = (input: AdversarialReviewInput) =>
+const adversarialParseRetry = (input: AdversarialReviewInput, maxAttempts: number) =>
   makeParseRetryStrategy({
     validate: (parsed) => validateAdversarialShape(parsed) !== null,
     reviewerKind: "adversarial",
-    maxAttempts: 2,
+    maxAttempts,
     prompts: {
       invalid: () => ReviewPromptBuilder.jsonRetry(),
       truncated: () => ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: input.blockingThreshold }),
@@ -373,7 +373,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
   config: reviewConfigSelector,
   model: (input) => input.adversarialConfig.model,
   timeoutMs: (input) => input.adversarialConfig.timeoutMs,
-  retry: (input) => adversarialParseRetry(input),
+  retry: (input, ctx) => adversarialParseRetry(input, ctx.config.review.parseRetryMaxAttempts),
   async hopBody(initialPrompt, ctx) {
     const turn = await ctx.sendWithParseRetry(initialPrompt);
     const rawObject = tryParseLLMJson<Record<string, unknown>>(turn.output);

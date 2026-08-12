@@ -36,6 +36,7 @@ let origRunFixCycle: typeof _storyOrchestratorDeps.runFixCycle;
 let origCaptureGitRef: typeof _storyOrchestratorDeps.captureGitRef;
 let origRollbackSpawn: typeof _rollbackDeps.spawn;
 let origRollbackAutoCommit: typeof _rollbackDeps.autoCommitIfDirty;
+let origRollbackGetUntrackedPaths: typeof _rollbackDeps.getUntrackedPaths;
 let runtime: NaxRuntime | undefined;
 
 beforeEach(() => {
@@ -44,6 +45,7 @@ beforeEach(() => {
   origCaptureGitRef = _storyOrchestratorDeps.captureGitRef;
   origRollbackSpawn = _rollbackDeps.spawn;
   origRollbackAutoCommit = _rollbackDeps.autoCommitIfDirty;
+  origRollbackGetUntrackedPaths = _rollbackDeps.getUntrackedPaths;
   _storyOrchestratorDeps.captureGitRef = mock(async () => "HEAD");
   // captureSnapshotRef uses _rollbackDeps.spawn for git rev-parse HEAD.
   _rollbackDeps.autoCommitIfDirty = mock(async () => {});
@@ -52,6 +54,8 @@ beforeEach(() => {
     stderr: new Response("").body,
     exited: Promise.resolve(0),
   })) as typeof _rollbackDeps.spawn;
+  // captureSnapshotRef also snapshots untracked paths (BUG-07) — stub deterministic.
+  _rollbackDeps.getUntrackedPaths = mock(async () => []) as typeof _rollbackDeps.getUntrackedPaths;
 });
 
 afterEach(async () => {
@@ -60,6 +64,7 @@ afterEach(async () => {
   _storyOrchestratorDeps.captureGitRef = origCaptureGitRef;
   _rollbackDeps.spawn = origRollbackSpawn;
   _rollbackDeps.autoCommitIfDirty = origRollbackAutoCommit;
+  _rollbackDeps.getUntrackedPaths = origRollbackGetUntrackedPaths;
   await runtime?.close();
   runtime = undefined;
 });

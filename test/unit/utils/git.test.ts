@@ -15,7 +15,9 @@ import {
   captureOutputFiles,
   captureWorkingTreeChanges,
   detectMergeConflict,
+  getUntrackedPaths,
   parsePorcelainForNaxPaths,
+  parsePorcelainUntrackedPaths,
 } from "@/utils/git";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
@@ -709,6 +711,52 @@ describe("autoCommitIfDirty .nax/ restore", () => {
     expect(checkoutCall).toBeDefined();
     expect(checkoutCall!.args).not.toContain("HEAD");
     expect(checkoutCall!.args).toContain("--");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parsePorcelainUntrackedPaths + getUntrackedPaths (BUG-07)
+// ---------------------------------------------------------------------------
+
+describe("parsePorcelainUntrackedPaths", () => {
+  test("returns untracked paths from '?? path' lines", () => {
+    const porcelain = "?? stray-agent-file.ts\n?? scratch/notes.md\n";
+    expect(parsePorcelainUntrackedPaths(porcelain)).toEqual(["stray-agent-file.ts", "scratch/notes.md"]);
+  });
+
+  test("ignores non-untracked status lines", () => {
+    const porcelain = " M src/index.ts\nA  src/new.ts\n?? actually-untracked.ts\n";
+    expect(parsePorcelainUntrackedPaths(porcelain)).toEqual(["actually-untracked.ts"]);
+  });
+
+  test("unquotes a quoted path (space-containing filename)", () => {
+    const porcelain = '?? "with space.ts"\n';
+    expect(parsePorcelainUntrackedPaths(porcelain)).toEqual(["with space.ts"]);
+  });
+
+  test("returns an empty array for empty or all-clean porcelain output", () => {
+    expect(parsePorcelainUntrackedPaths("")).toEqual([]);
+    expect(parsePorcelainUntrackedPaths(" M src/index.ts\n")).toEqual([]);
+  });
+});
+
+describe("getUntrackedPaths", () => {
+  test("spawns git status --porcelain and parses the untracked entries", async () => {
+    _gitDeps.spawn = mockSpawnOutput("?? new-file.ts\n?? dir/other.ts\n");
+    const result = await getUntrackedPaths("/tmp/repo");
+    expect(result).toEqual(["new-file.ts", "dir/other.ts"]);
+    const call = (_gitDeps.spawn as ReturnType<typeof mock>).mock.calls[0];
+    expect(call[0]).toEqual(["git", "status", "--porcelain"]);
+  });
+
+  test("returns an empty array for a clean working tree", async () => {
+    _gitDeps.spawn = mockSpawnOutput("");
+    expect(await getUntrackedPaths("/tmp/repo")).toEqual([]);
+  });
+
+  test("returns null (not []) when git status fails — a failed read must not look like a clean tree", async () => {
+    _gitDeps.spawn = mockSpawnOutput("fatal: not a git repository", 128);
+    expect(await getUntrackedPaths("/tmp/repo")).toBeNull();
   });
 });
 

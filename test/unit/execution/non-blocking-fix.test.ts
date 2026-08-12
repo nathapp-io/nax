@@ -51,7 +51,7 @@ describe("runNonBlockingFix keep vs restore", () => {
     phaseCosts: {} as Record<string, number>,
   };
   const fakeDeps = {
-    captureSnapshotRef: async () => "snap-sha",
+    captureSnapshotRef: async () => ({ sha: "snap-sha", untrackedBefore: [] }),
     rollbackToRef: async () => {},
   };
 
@@ -132,7 +132,7 @@ describe("runNonBlockingFix keep vs restore", () => {
         }),
       },
       {
-        captureSnapshotRef: async () => "snap-sha",
+        captureSnapshotRef: async () => ({ sha: "snap-sha", untrackedBefore: [] }),
         rollbackToRef: async (_w: string, ref: string) => {
           rolled = ref;
         },
@@ -162,7 +162,7 @@ describe("runNonBlockingFix keep vs restore", () => {
         }),
       },
       {
-        captureSnapshotRef: async () => "snap-sha",
+        captureSnapshotRef: async () => ({ sha: "snap-sha", untrackedBefore: [] }),
         rollbackToRef: async (_w: string, ref: string) => {
           rolled = ref;
         },
@@ -370,7 +370,7 @@ describe("runNonBlockingFix keep vs restore", () => {
         },
       },
       {
-        captureSnapshotRef: async () => "snap-sha",
+        captureSnapshotRef: async () => ({ sha: "snap-sha", untrackedBefore: [] }),
         rollbackToRef: async (_w: string, ref: string) => {
           rolled = ref;
         },
@@ -507,7 +507,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
         runRectify: async () => ({ rectificationExhausted: false }),
       },
       {
-        captureSnapshotRef: async () => "snap-sha",
+        captureSnapshotRef: async () => ({ sha: "snap-sha", untrackedBefore: [] }),
         rollbackToRef: async (_w: string, ref: string) => {
           rolled = ref;
         },
@@ -537,7 +537,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
         runRectify: async () => ({ rectificationExhausted: false }),
       },
       {
-        captureSnapshotRef: async () => "snap-sha",
+        captureSnapshotRef: async () => ({ sha: "snap-sha", untrackedBefore: [] }),
         rollbackToRef: async (_w: string, ref: string) => {
           rolled = ref;
         },
@@ -567,7 +567,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
         runRectify: async () => ({ rectificationExhausted: false }),
       },
       {
-        captureSnapshotRef: async () => "snap-sha",
+        captureSnapshotRef: async () => ({ sha: "snap-sha", untrackedBefore: [] }),
         rollbackToRef: async (_w: string, ref: string) => {
           rolled = ref;
         },
@@ -597,7 +597,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
         runRectify: async () => ({ rectificationExhausted: false }),
       },
       {
-        captureSnapshotRef: async () => "snap-sha",
+        captureSnapshotRef: async () => ({ sha: "snap-sha", untrackedBefore: [] }),
         rollbackToRef: async (_w: string, ref: string) => {
           rolled = ref;
         },
@@ -629,7 +629,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
         runRectify: async () => ({ rectificationExhausted: false }),
       },
       {
-        captureSnapshotRef: async () => "snap-sha",
+        captureSnapshotRef: async () => ({ sha: "snap-sha", untrackedBefore: [] }),
         rollbackToRef: async (_w: string, ref: string) => {
           rolled = ref;
         },
