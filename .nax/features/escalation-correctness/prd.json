@@ -3,7 +3,7 @@
   "feature": "escalation-correctness",
   "branchName": "feat/escalation-correctness",
   "createdAt": "2026-08-12T00:00:00+08:00",
-  "updatedAt": "2026-08-12T05:59:51.557Z",
+  "updatedAt": "2026-08-12T07:20:26.639Z",
   "userStories": [
     {
       "id": "US-001",
@@ -135,8 +135,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

@@ -31,6 +31,7 @@ export const _resultHandlerDeps = {
   spawn,
   worktreeManager: new WorktreeManager(),
   mergeEngine: new MergeEngine(new WorktreeManager()),
+  handleTierEscalation,
 };
 
 /**
@@ -370,7 +371,15 @@ export async function handlePipelineFailure(
         pipelineResult.context.tddFailureCategory === "runtime-crash"
           ? { status: "RUNTIME_CRASH" as const, success: false }
           : undefined;
-      const escalationResult = await handleTierEscalation({
+      if (runtimeCrashResult) {
+        prd = {
+          ...prd,
+          userStories: prd.userStories.map((story) =>
+            story.id === ctx.story.id ? { ...story, attempts: (story.attempts ?? 0) + 1 } : story,
+          ),
+        };
+      }
+      const escalationResult = await _resultHandlerDeps.handleTierEscalation({
         story: ctx.story,
         storiesToExecute: ctx.storiesToExecute,
         isBatchExecution: ctx.isBatchExecution,

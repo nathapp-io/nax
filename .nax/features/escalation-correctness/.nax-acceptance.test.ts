@@ -267,9 +267,9 @@ describe("escalation-correctness acceptance", () => {
   });
 
   test("AC-19: default tier order is fast, balanced, powerful with two attempts each", () => {
-    const tiers = (NaxConfigSchema.parse({}).autoMode.escalation.tierOrder as unknown as Array<{ name: string; attempts: number }>);
+    const tiers = (NaxConfigSchema.parse({}).autoMode.escalation.tierOrder as unknown as Array<{ tier: string; attempts: number }>);
     expect(tiers).toHaveLength(3);
-    expect(tiers).toEqual([{ name: "fast", attempts: 2 }, { name: "balanced", attempts: 2 }, { name: "powerful", attempts: 2 }]);
+    expect(tiers).toEqual([{ tier: "fast", attempts: 2 }, { tier: "balanced", attempts: 2 }, { tier: "powerful", attempts: 2 }]);
   });
 
   test("AC-20: calculateMaxIterations sums all three rung budgets", () => {
