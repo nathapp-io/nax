@@ -45,7 +45,7 @@ Also corrected in passing: BUG-33's "pure **synchronous** string builder" — `r
 - **BUG-57** `- **API docs** — [docs](url)` → tags `["docs"]` → entry dropped for every role.
 - **BUG-58** double `**Out of scope:**` marker → `"thing one **Out of scope:**"` (marker text leaks into the item).
 
-Call-graph proofs: `preIterationTierCheck` (BUG-04), `detectRuntimeCrash` (BUG-05), auto-plugin `decide` (BUG-09), `executeParallel` (BUG-40), `AgentManager.reset` (BUG-52) all have **zero production callers** (knowledge-graph in-degree 0, verified by grep); `handleTierEscalation`'s only inbound edge is `handlePipelineFailure` (BUG-05); `AgentManager.reset` is only referenced from test helpers.
+Call-graph proofs at review time: `preIterationTierCheck` (BUG-04), `detectRuntimeCrash` (BUG-05), auto-plugin `decide` (BUG-09), `executeParallel` (BUG-40), `AgentManager.reset` (BUG-52) all had **zero production callers** (knowledge-graph in-degree 0, verified by grep); `handleTierEscalation`'s only inbound edge was `handlePipelineFailure` (BUG-05); `AgentManager.reset` was only referenced from test helpers. These observations describe the reviewed revision, not current `main`; the resolution annotations below record the merged changes.
 
 ---
 
@@ -105,18 +105,22 @@ The regex requires a line break *after* the opening delimiter **and** before the
 **Proof (EXEC):** harness — `parseFrontmatter("---\n---\n")` throws `Canonical rule frontmatter is missing closing '---'`; `---\n\n---\n` parses.
 
 #### BUG-04: Per-tier attempt budgets dead — story escalates after every single failure
-**Severity:** HIGH | **Category:** Bug | **Status:** ✅ confirmed (call-graph verified)
+**Severity:** HIGH | **Category:** Bug | **Status:** ✅ fixed 2026-08-12, PR #1550
 `src/execution/escalation/tier-escalation.ts:130` — `preIterationTierCheck` has **zero callers** outside its own barrel export (`escalation/index.ts:8`; grep-verified). Config declares `tierOrder: [{fast, attempts:5}, {balanced, attempts:3}, {powerful, attempts:2}]` (schemas.ts:87-90) but `handleTierEscalation` resets `attempts: 0` on tier change (:473) and `canEscalate` compares against `calculateMaxIterations` (the *sum* of all tiers).
 **Risk:** The expensive `powerful` tier is reached far earlier than configured; `maxAttempts` effectively never trips mid-ladder; configured budget silently ignored.
 **Fix:** Invoke `preIterationTierCheck` before each iteration, or make `handleTierEscalation` compare against the current rung's `tierCfg.attempts`.
 **Proof (GRAPH):** `preIterationTierCheck` inbound callers = **[]** (knowledge graph + grep); `canEscalate` (tier-escalation.ts:382-383) compares `s.attempts < calculateMaxIterations(tierOrder)` = 10; attempts reset to 0 on tier change (:473).
 
+**Resolution:** `preIterationTierCheck` is now invoked before sequential and parallel dispatch, enforces the current rung's attempt budget, and resets attempts only when advancing to the next rung. The shipped defaults are `fast:2`, `balanced:2`, `powerful:2`.
+
 #### BUG-05: RUNTIME_CRASH same-tier retry unreachable — `runtimeCrashResult` never populated
-**Severity:** HIGH | **Category:** Bug | **Status:** ✅ confirmed (grep + call-site verified)
+**Severity:** HIGH | **Category:** Bug | **Status:** ✅ fixed 2026-08-12, PR #1550
 `src/execution/escalation/tier-escalation.ts:346` — the only `retry-same` exit is gated on `shouldRetrySameTier(ctx.runtimeCrashResult)`, but the sole production call (`pipeline-result-handler.ts:368-384`) passes no such field; the type is populated nowhere in `src/` (grep: definition + consumer only).
 **Risk:** Every `CALL_OP_NO_OUTPUT`/`CALL_OP_MAX_RETRIES` crash escalates to a costlier tier instead of the documented "transient, retry same tier" — over-spend + wrong fix semantics.
 **Fix:** Thread the verify status into `handlePipelineFailure`'s escalation call.
 **Proof (GRAPH):** `detectRuntimeCrash` in-degree **0**; `shouldRetrySameTier`'s only caller is `handleTierEscalation`; the only `handleTierEscalation` caller is `handlePipelineFailure` (pipeline-result-handler.ts:368-384) — passes no `runtimeCrashResult`; the field is assigned nowhere in src/ (grep).
+
+**Resolution:** execution-stage runtime crashes are classified through `tddFailureCategory`, converted to `runtimeCrashResult` by `handlePipelineFailure`, and routed to a bounded same-tier retry (`RUNTIME_CRASH_RETRY_CAP = 2`).
 
 #### BUG-06: Scoped verify reports "passed" on exit 0 with zero tests executed (false green)
 **Severity:** HIGH | **Category:** Bug | **Status:** ✅ confirmed → **fixed 2026-08-12, PR #1553**
@@ -239,7 +243,10 @@ All 10 capacity errors were agent `codex` on 2026-08-11 — a single provider in
 `src/verification/smart-runner.ts:355-376` — the last token containing `/` (smart-runner.ts:357-364) is silently replaced by the scoped test files. Mechanism verified (2026-08-12) but the cited example was wrong: `vitest run --config vitest.config.ts` has no slash-bearing token, so the config is kept and test files are **appended**; only **slash-bearing** config paths are destroyed — `vitest run --config ./vitest.config.ts` → `vitest run '<test files>'` and `jest --config config/jest.config.js --runInBand` → config replaced — scoped runs execute against the wrong/no config. **Fix:** exclude tokens after known flag options / require positional position.
 
 #### BUG-19: LLM routing cache keyed by bare `story.id` — cross-feature contamination
+**Status:** ✅ fixed 2026-08-12, PR #1557
 `src/routing/router.ts:196-238` + `strategies/llm-cache.ts:12` — module-level cache keyed `US-001`; the clear at `routing.ts:32-34` fires only when the story whose id equals the run's **first** story id is routed. Verified 2026-08-12: in a plain sequential run starting with the same id the clear *does* fire, so poisoning is conditional — it bites under parallel routing (stories route concurrently), a skipped/paused `stories[0]` whose routing stage never runs, or a run starting with a different id. **Fix:** key by `${featureName}:${story.id}`.
+
+**Resolution:** the routing-decision cache now lives on `NaxRuntime`; every `createRuntime()` call receives a fresh cache, eliminating cross-run and cross-feature contamination without positional invalidation.
 
 #### BUG-20: `complete()` hard exceptions bypass all retry policy
 **Status:** ✅ confirmed → **fixed 2026-08-12, PR #1551** (see "Fix Status" below)
@@ -306,7 +313,10 @@ All 10 capacity errors were agent `codex` on 2026-08-11 — a single provider in
 `src/findings/cycle.ts:531-559` — the full-validate path drops `normalizeValidateResult(fullRaw).shortCircuited` (cycle.ts:534; the lite path at cycle.ts:424-426,485-511 honors it); a timed-out/crashed gate re-run (`{success:false, findings:[]}`) classifies as `"resolved"` (cycle.ts:54-55) → false "resolved" metrics + lost repair budget. Verified 2026-08-12; mitigated in the common case by `acceptOnTimeout` defaulting to **true** (full-suite-gate.ts:273), so the false-resolved fires on `acceptOnTimeout:false` timeouts or failing phases with zero structured findings. **Fix:** route `shortCircuited` in the full path like the lite branch.
 
 #### BUG-39: Failed-story retry unreachable in default batch mode
+**Status:** ✅ fixed 2026-08-12, PR #1558
 `src/execution/unified-executor.ts:411,507` — `lastStoryId` is only set when `!ctx.useBatch`; `getNextStory`'s retry-current-story branch requires it, so a transiently failed story is terminal in batch mode but retried in single mode. **Fix:** set `lastStoryId` unconditionally or carry the retry id in the batch selector.
+
+**Resolution:** `lastStoryId` is populated unconditionally, and `resolveRetryCandidate` gives an eligible failed story priority before both planned-batch and independent-parallel selection.
 
 #### BUG-40: `executeParallel` crashes the whole run on one malformed per-package config
 `src/execution/parallel-coordinator.ts:194-205` — `Promise.all` on config loads; `parallel-batch.ts` deliberately uses `allSettled` for the identical load. Currently latent (documented as unused in production — grep confirms zero callers of the `execution/parallel` barrel in src/; verified 2026-08-12) but one refactor away from aborting a batch with stranded worktrees. **Fix:** mirror allSettled + warn-and-fallback.
@@ -341,7 +351,9 @@ All 10 capacity errors were agent `codex` on 2026-08-11 — a single provider in
 
 ---
 
-## Priority Fix Order
+## Original Priority Fix Order
+
+This table preserves the review-time ordering. It is historical: the numbered findings were subsequently resolved, rejected as false, or intentionally left unchanged as recorded in the status annotations and triage tables below.
 
 | Priority | IDs | Effort | Description |
 |:---|:---|:---|:---|
@@ -388,8 +400,8 @@ Rulings from the maintainer review of the table above. Undecided rows stay open.
 | **BUG-30, BUG-32** | **Deferred — do not change the gate.** | Superseded by BUG-62: the substring heuristic is correct on 16/16 measured cases, so `derivePhaseOutcome` (`run-phase.ts:410-416`) and `allPassed` (`runner.ts:492`) stay as they are. BUG-32's judge selector (`judge.ts:34`, any non-empty text = passed) is independently wrong and unaffected by that data — see the row below (fixed separately from this deferral). |
 | **BUG-09** | ~~**Delete `auto.ts` and its config surface.**~~ **Fixed 2026-08-12, PR #1553.** | Evidence: across all 8 projects under `~/.nax/`, the only `interaction.plugin` value ever configured is `"telegram"` — `"auto"` has never been used. The feature is advertised, broken (`receive()` throws unconditionally), and unadopted. Deleting also removes the `IInteractionPlugin` signature change from Group 2, since that change existed only to serve this plugin. Auto-approval remains available via `interaction.defaults.fallback: "continue"`, which works today. |
 | **BUG-32** | ~~**Fix `judge.ts:34` only. Leave `synthesis.ts:36` as it is.**~~ **Fixed 2026-08-12, PR #1553** — the judge prompt now requires a leading `JUDGE_VERDICT: ACCEPT\|REJECT` marker, parsed and stripped before the verdict is graded; fails closed if unparseable. Low priority — doubly latent. | The doc conflates two call sites. A judge is *asked for a verdict*, so grading it on "is the output non-empty" is wrong. A synthesis is asked to *produce a plan*, so "did we get output" is a defensible success predicate — no change needed there. Latency: `debate.enabled` defaults **false** (`schemas-debate.ts:112`) and is not enabled in any config on this machine; `judgeSelector` fires only for `resolver.type: "custom"` (`pick.ts:33`), while the shipped defaults are `synthesis` (plan) and `majority-fail-closed` (review). Reachable only if someone both enables debate and configures a custom resolver. |
-| **BUG-04** | **Wire the per-tier budgets — but ship `fast:2, balanced:2, powerful:2`, not the current `5/3/2`. Populate the escalation event's `from` field first.** | The measurement inverts the finding's implied fix. See BUG-63 and the analysis below. |
-| **BUG-05** | Open. | Still requires a separate delete-or-wire decision. |
+| **BUG-04 + BUG-63** | ~~**Wire per-tier budgets with `fast:2, balanced:2, powerful:2`, and populate the escalation event's `from` field.**~~ **Fixed 2026-08-12, PR #1550.** | `preIterationTierCheck` is wired into sequential and parallel dispatch; escalation events record the source tier. |
+| **BUG-05** | ~~**Wire runtime-crash classification into bounded same-tier retry.**~~ **Fixed 2026-08-12, PR #1550.** | `handlePipelineFailure` now supplies `runtimeCrashResult`; retries are capped at two before human review. |
 | **BUG-40** | **Delete the retired coordinator. Implemented 2026-08-12.** | The active `runParallelBatch` path already provides the required `allSettled` fallback behavior. |
 | **BUG-52** | **Reset transient failures at story/batch boundaries; preserve auth/quota failures for the run. Implemented 2026-08-12.** | Restores recovered providers without repeatedly retrying credentials or exhausted quota. |
 | **BUG-55** | **Explicit config fails fast; auto-discovery warns and skips. Implemented 2026-08-12.** | Explicit entries express operator intent; discovery directories may legitimately contain unrelated or temporarily invalid files. |
@@ -410,7 +422,7 @@ The consequence is that wiring the budgets *as currently configured* would make 
 `2/2/2` makes the ladder actually bind (today it does not bind at all) without inflating low-value retries at `fast`, and it is consistent with the observed distribution — a story that has failed twice at a tier has, empirically, near-zero chance of succeeding at attempt 3+ on that same tier.
 
 #### BUG-63: escalation telemetry records `from: ""` — the tier ladder cannot be audited
-**Severity:** MEDIUM | **Category:** Observability | **Status:** ✅ confirmed (measured 2026-08-12)
+**Severity:** MEDIUM | **Category:** Observability | **Status:** ✅ fixed 2026-08-12, PR #1550
 Every one of the 110 recorded escalation events carries an empty `from`:
 ```json
 {"kind":"escalation","payload":{"from":"","to":"powerful"}}
@@ -420,18 +432,20 @@ Every one of the 110 recorded escalation events carries an empty `from`:
 **Fix:** Populate `from` with the pre-escalation tier at the emit site. Prerequisite for validating BUG-04.
 **Proof (DATA):** `grep '"kind":"escalation"' ~/.nax/*/runs/*/observations.jsonl` → 110 events, `"from":""` on all 110.
 
+**Resolution:** both pre-iteration budget escalation and post-failure tier escalation emit `story:escalated` with `fromTier` set to the pre-escalation tier.
+
 ### Group 2 — Needs an architecture change (a local patch moves the bug rather than fixing it)
 
 | Finding | Why a local patch is insufficient |
 |:---|:---|
 | **BUG-08** | ~~The real fix is the storage format: atomic `tmp`+`rename`, or a JSONL append store. Either changes the on-disk contract every reader depends on (`nax metrics`, aggregator, report) and needs a migration for existing `metrics.json`.~~ **Fixed 2026-08-12, PR #1555** — see "Fix Status" below. User took the smaller of the two options (atomic `tmp`+`rename`, not the JSONL rewrite) — no on-disk format change, no migration needed. |
 | **BUG-25 + BUG-26** | ~~These are **one** defect, not two: the queue file has no ownership protocol between the TUI writer and the runner consumer. Patching either side alone just relocates the race. Needs an append-only or lock-based protocol with crash recovery for the orphaned `.processing` file.~~ **Fixed 2026-08-12** on `fix/bug-22-25-26-interaction-queues`: append-only writes and reader/writer ownership locking, with orphaned `.processing` recovery. |
-| **BUG-09** | Wiring `decide()` requires `receive()` to carry the full request, not just a `requestId` — a signature change to `IInteractionPlugin` that every plugin (cli, webhook, telegram) implements. This is why the plugin was left throwing. |
+| **BUG-09** | ~~Wiring `decide()` requires an interaction protocol change.~~ **Resolved 2026-08-12, PR #1553:** the unused `auto.ts` plugin and its config surface were deleted instead. |
 | **BUG-22** | ~~"Single poller, fan-out to callbacks" restructures the Telegram plugin from per-request polling to a shared poller with a subscription registry.~~ **Fixed 2026-08-12** on `fix/bug-22-25-26-interaction-queues`: one poller dispatches updates through a pending-receiver registry. |
 | **BUG-36 + BUG-37** | ~~The rectification pipeline borrows the story pipeline's context without its worktree contract (`skipPrdPersistence`, `prdPath`, cost attribution, event emission). Setting the three missing fields fixes today's symptoms; the durable fix is a first-class rectification context type so the next field added to the story contract isn't silently missed again.~~ **Fixed 2026-08-12, PR #1559** — see "Fix Status" below. Landed the durable version: reuses the worker's own context-builder (`buildWorktreePipelineContext`) over the worker's own context object, rather than a hand-rolled parallel type. |
-| **BUG-19** | Keying by `${featureName}:${story.id}` is a one-liner, but the defect is a **module-level mutable cache** invalidated by a positional heuristic (`story.id === stories[0]?.id`). The cache belongs on the runtime, scoped to the run. |
+| **BUG-19** | ~~The cache belongs on the runtime, scoped to the run.~~ **Fixed 2026-08-12, PR #1557:** `NaxRuntime.routingCache` is fresh for every runtime. |
 | **BUG-20** | ~~Mapping `AGENT_TIMEOUT`/spawn errors to retriable outcomes touches the adapter failure taxonomy shared by the `run()` and `complete()` paths. Done carelessly it makes genuinely fatal errors retry forever.~~ **Fixed 2026-08-12, PR #1551** — see "Fix Status" below. Turned out narrower than the Group-2 framing implied: BUG-62's actual mechanism (a provider refusal returned as ordinary run-kind turn output, not a thrown exception) lives entirely in `callOp`/`makeParseRetryStrategy`, not in the shared adapter-failure taxonomy, so the two fixed independently without touching `run()`'s taxonomy at all. |
-| **BUG-39** | The batch selector has no channel to carry retry state; `lastStoryId` is a single-mode concept. Fixing means extending the selection contract, not flipping the `if`. |
+| **BUG-39** | ~~The batch selector needs a channel to carry retry state.~~ **Fixed 2026-08-12, PR #1558:** `resolveRetryCandidate` preempts both batch selection paths and `lastStoryId` is maintained in every mode. |
 
 ### Group 3 — Mechanical (patch directly; the harness already pins each input)
 
@@ -443,7 +457,7 @@ Two caveats inside this group: **BUG-29**'s loop-until-empty fix is local, but `
 
 ## Fix Status (2026-08-12)
 
-All 39 Group 3 (mechanical) findings above are **fixed** on branch `fix/20260811-bugs`, verified by `bun x tsc --noEmit` (clean), `bun run lint` (clean — biome, deep-relative-import/alias-internal/file-size/nax-error ratchets all hold), the full test suite (`bun run test`: 12596 unit + 1102 integration + 24 UI, 0 failures), and the proof harness (`bun docs/reviews/2026-08-11-latent-bugs-v2-proof.ts`: 32/32 assertions pass — expectations updated in place from "reproduces the bug" to "reproduces the fix"). Group 1 (needs a human product decision) and Group 2 (needs an architecture change) were deliberately **not** touched — see the two tables above for what's still open in each.
+All 39 Group 3 (mechanical) findings above are **fixed** on branch `fix/20260811-bugs`, verified by `bun x tsc --noEmit` (clean), `bun run lint` (clean — biome, deep-relative-import/alias-internal/file-size/nax-error ratchets all hold), the full test suite (`bun run test`: 12596 unit + 1102 integration + 24 UI, 0 failures), and the proof harness (`bun docs/reviews/2026-08-11-latent-bugs-v2-proof.ts`: 32/32 assertions pass — expectations updated in place from "reproduces the bug" to "reproduces the fix"). The Group 1 and Group 2 findings were resolved in follow-up PRs recorded in the tables above. BUG-30 remains an intentional no-change decision rather than a pending fix. The separate post-review follow-ups listed below are not numbered findings.
 
 **Two regressions were caught and corrected before merge, both worth recording as lessons:**
 
