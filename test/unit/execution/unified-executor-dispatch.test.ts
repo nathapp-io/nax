@@ -399,4 +399,71 @@ describe("useBatch scheduling refresh", () => {
 
     expect(selectedStoryIds).toEqual(["US-000", "US-001"]);
   });
+
+  test("BUG-39: a transiently failed story is retried before other ready work, under useBatch:true", async () => {
+    // Before the underlying fix, two separate gaps combined to make a
+    // transient failure terminal under useBatch:true:
+    //  1. lastStoryId was only ever set when !ctx.useBatch, so getNextStory's
+    //     retry-priority branch never even had a candidate to check.
+    //  2. Even with lastStoryId correctly tracked, selectNextStories's
+    //     batch-plan branch only consulted it via the single-story fallback
+    //     (reached when the current batch slot is empty) — with another ready
+    //     story competing (US-001 here), the batch-plan branch would just
+    //     pick that other story every time, never retrying US-000.
+    // This test needs a second, unrelated, always-ready story so the batch
+    // plan is never empty after US-000 fails — proving the fix wins retry
+    // priority over competing work, not just over an empty batch plan.
+    const us000 = {
+      ...makePendingStory("US-000"),
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+    };
+    const us001 = {
+      ...makePendingStory("US-001"),
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+    };
+    const initialPrd = makePrd([us000, us001]);
+    const selectedStoryIds: string[] = [];
+    const callsPerStory: Record<string, number> = {};
+
+    deps.runIteration = mock(async (_ctx: unknown, prdArg: typeof initialPrd, selection: { story: { id: string } }) => {
+      selectedStoryIds.push(selection.story.id);
+      callsPerStory[selection.story.id] = (callsPerStory[selection.story.id] ?? 0) + 1;
+      // US-000 fails on its first dispatch, then passes on retry. US-001
+      // always passes on its first (only) dispatch.
+      const failsThisCall = selection.story.id === "US-000" && callsPerStory[selection.story.id] === 1;
+      const nextPrd = {
+        ...prdArg,
+        userStories: prdArg.userStories.map((story) =>
+          story.id === selection.story.id
+            ? failsThisCall
+              ? { ...story, status: "failed" as const, attempts: story.attempts + 1 }
+              : { ...story, status: "passed" as const, passes: true }
+            : story,
+        ),
+      };
+      return {
+        prd: nextPrd,
+        storiesCompletedDelta: failsThisCall ? 0 : 1,
+        costDelta: 0,
+        prdDirty: false,
+      };
+    });
+
+    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const baseCtx = makeCtx();
+    const ctx = {
+      ...baseCtx,
+      config: {
+        ...baseCtx.config,
+        execution: { ...baseCtx.config.execution, maxIterations: 3 },
+      },
+      useBatch: true,
+      batchPlan: precomputeBatchPlan([us000, us001], 4),
+    };
+
+    await executeUnified(ctx as never, initialPrd as never);
+
+    // US-000 retried immediately after failing — before US-001 ever runs.
+    expect(selectedStoryIds).toEqual(["US-000", "US-000", "US-001"]);
+  });
 });

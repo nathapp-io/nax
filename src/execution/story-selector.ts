@@ -22,6 +22,17 @@ export interface StorySelection {
 /**
  * Select the next story (or batch) to execute.
  * Returns null when there are no more stories to run.
+ *
+ * Retry priority (BUG-39): checked before either the batch-plan branch or the
+ * single-story fallback. Previously getNextStory's "retry the current story
+ * if it just failed" logic was only reachable from the single-story fallback
+ * — a story competing against other ready work under an active batch plan
+ * would lose to that other work every time (the batch-plan branch filters out
+ * `status === "failed"` stories and picks whatever remains), so a transient
+ * failure was effectively terminal as long as any other story stayed ready.
+ * Checking retry-eligibility unconditionally up front makes a failed story
+ * with retry budget win regardless of which downstream branch would otherwise
+ * have been taken.
  */
 export function selectNextStories(
   prd: PRD,
@@ -31,6 +42,25 @@ export function selectNextStories(
   lastStoryId: string | null,
   useBatch: boolean,
 ): { selection: StorySelection; nextBatchIndex: number } | null {
+  if (lastStoryId != null) {
+    const maxRetries = config.execution.rectification?.maxAttemptsTotal ?? 12;
+    const retryStory = getNextStory(prd, lastStoryId, maxRetries);
+    // getNextStory falls back to its own normal eligible-pool selection when
+    // lastStoryId isn't itself retry-eligible — only trust the result as a
+    // retry when it actually matches lastStoryId, not just any story.
+    if (retryStory && retryStory.id === lastStoryId) {
+      return {
+        selection: {
+          story: retryStory,
+          storiesToExecute: [retryStory],
+          routing: buildPreviewRouting(retryStory, config),
+          isBatchExecution: false,
+        },
+        nextBatchIndex: currentBatchIndex,
+      };
+    }
+  }
+
   if (useBatch && currentBatchIndex < batchPlan.length) {
     const batch = batchPlan[currentBatchIndex];
     const storiesToExecute = batch.stories.filter(

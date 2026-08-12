@@ -62,6 +62,8 @@ export async function executeUnified(
   let iterations = 0;
   let storiesCompleted = 0;
   let totalCost = 0;
+  // Story dispatched last iteration — feeds getNextStory's retry-priority
+  // (BUG-39). Set unconditionally now; was gated on !ctx.useBatch before.
   let lastStoryId: string | null = null;
   const allStoryMetrics: StoryMetrics[] = [];
   let warningSent = false;
@@ -431,7 +433,7 @@ export async function executeUnified(
             isBatchExecution: false,
           };
 
-          if (!ctx.useBatch) lastStoryId = singleStory.id;
+          lastStoryId = singleStory.id; // BUG-39: unconditional (was !ctx.useBatch-gated)
 
           {
             // Consult the aggregator so completion-phase spend cannot silently bypass the limit.
@@ -543,7 +545,7 @@ export async function executeUnified(
       if (!selected) return buildResult("no-stories");
       const { selection } = selected;
       if (!selection) return buildResult("no-stories"); // defensive: type contract guarantees non-null when selected is non-null
-      if (!ctx.useBatch) lastStoryId = selection.story.id;
+      lastStoryId = selection.story.id; // BUG-39: unconditional (was !ctx.useBatch-gated)
 
       {
         // Consult the aggregator so completion-phase spend cannot silently bypass the limit.
