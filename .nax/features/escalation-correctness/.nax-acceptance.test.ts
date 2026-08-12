@@ -254,10 +254,10 @@ describe("escalation-correctness acceptance", () => {
     expect(result.prd.userStories[0].routing.modelTier).toBe("fast");
   });
 
-  test("AC-17: pipeline runtime crashes still record an attempt", async () => {
-    const selectedStory = story({ attempts: 0 });
+  test("AC-17: pipeline runtime crashes do not change story attempts", async () => {
+    const selectedStory = story({ attempts: 2 });
     const result = await handlePipelineFailure(pipelineContext(selectedStory) as never, pipelineResult("runtime-crash") as never);
-    expect(result.prd.userStories[0].attempts).not.toBe(0);
+    expect(result.prd.userStories[0].attempts).toBe(2);
   });
 
   test("AC-18: pipeline compile errors escalate one tier", async () => {

@@ -366,19 +366,14 @@ export async function handlePipelineFailure(
       break;
 
     case "escalate": {
-      // US-002: derive runtimeCrashResult for same-tier retry
+      // US-002: derive runtimeCrashResult for same-tier retry. handleTierEscalation's
+      // retry-same branch returns the PRD unmodified — story tier and attempts must
+      // stay untouched per the spec's Failure Handling table, so prd is passed through
+      // as-is rather than pre-mutated here.
       const runtimeCrashResult =
         pipelineResult.context.tddFailureCategory === "runtime-crash"
           ? { status: "RUNTIME_CRASH" as const, success: false }
           : undefined;
-      if (runtimeCrashResult) {
-        prd = {
-          ...prd,
-          userStories: prd.userStories.map((story) =>
-            story.id === ctx.story.id ? { ...story, attempts: (story.attempts ?? 0) + 1 } : story,
-          ),
-        };
-      }
       const escalationResult = await _resultHandlerDeps.handleTierEscalation({
         story: ctx.story,
         storiesToExecute: ctx.storiesToExecute,
