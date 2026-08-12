@@ -8,6 +8,10 @@ import { parseAcpxJsonLine } from "@/agents";
 import { getSafeLogger } from "@/logger";
 
 /**
+ * @internal Not part of the `@/agents` public surface. It is re-exported from
+ * the barrel only so `test/unit/agents/acp/stdout-line-reader.test.ts` can reach
+ * it without a deep internal import. Production callers use `spawn-client.ts`.
+ *
  * Maximum bytes buffered in `remainder` while waiting for a newline. Guards
  * against unbounded memory growth from a newline-less or multi-MB line on
  * the acpx stdout stream (BUG-49) — without a cap, a single pathological
@@ -17,6 +21,10 @@ import { getSafeLogger } from "@/logger";
 export const MAX_BUFFERED_LINE_BYTES = 10 * 1024 * 1024; // 10MB
 
 /**
+ * @internal Not part of the `@/agents` public surface — see the note on
+ * `MAX_BUFFERED_LINE_BYTES` above. The sole production caller is
+ * `spawn-client.ts`, which imports it directly from this module.
+ *
  * Read chunks from a stream, split on newlines, and feed each complete line
  * into an AcpxParseState incrementally. Discards raw bytes immediately after
  * parsing so only the extracted fields (strings + numbers) are held in memory.

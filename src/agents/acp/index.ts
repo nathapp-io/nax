@@ -36,4 +36,6 @@ export { AcpTokenUsageMapper, defaultAcpTokenUsageMapper } from "./token-mapper"
 export { parseModelSpec } from "./model-spec";
 export type { ModelSpec } from "./model-spec";
 export { parseSessionIds } from "./session-ids";
+// @internal — test-reachability re-export only; production code imports
+// stdout-line-reader directly from spawn-client.ts.
 export { MAX_BUFFERED_LINE_BYTES, readAndParseLines } from "./stdout-line-reader";
