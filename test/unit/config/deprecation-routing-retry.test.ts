@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { applyRoutingRetryDeprecationWarning } from "../../../src/config/loader";
+import { applyRoutingRetryDeprecationWarning } from "../../../src/config/compat-shims";
 
 describe("applyRoutingRetryDeprecationWarning", () => {
   test("warns when routing.llm.retries is set", () => {

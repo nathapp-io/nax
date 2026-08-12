@@ -13,11 +13,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import {
-  _applyLegacyReviewExecutionShim,
-  _applyRemovedRoutingKeysShim,
-  loadConfig,
-} from "../../../src/config/loader";
+import { _applyLegacyReviewExecutionShim, _applyRemovedRoutingKeysShim } from "../../../src/config/compat-shims";
+import { loadConfig } from "../../../src/config/loader";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
@@ -266,5 +263,65 @@ describe("loadConfig — legacy key deprecation shim", () => {
     const config = await loadConfig(tempDir, { routing: { strategy: "adaptive" } });
 
     expect(config.routing.strategy).toBe("keyword");
+  });
+
+  // BUG-51's fix routed every layer (global, project, profile, CLI) through the
+  // same compat-shim chain. Correct, but it made the deprecation warning fire
+  // once per layer that carries the key — the same advice repeated up to four
+  // times reads as four distinct problems.
+  async function captureLoadWarnings(
+    load: () => Promise<unknown>,
+  ): Promise<string[]> {
+    const captured: string[] = [];
+    resetLogger();
+    initLogger({ level: "warn" });
+    const removeSink = addSink((entry) => captured.push(entry.message));
+    try {
+      await load();
+    } finally {
+      removeSink();
+      resetLogger();
+    }
+    return captured;
+  }
+
+  test("a deprecation warning is emitted once even when several config layers carry the same legacy key", async () => {
+    await Bun.write(
+      join(tempDir, ".global-nax", "config.json"),
+      JSON.stringify({ routing: { strategy: "keyword", adaptive: { costThreshold: 0.1 } } }),
+    );
+    await writeProjectConfig({ routing: { strategy: "keyword", adaptive: { costThreshold: 0.5 } } });
+    await Bun.write(
+      join(tempDir, ".nax", "profiles", "legacy.json"),
+      JSON.stringify({ routing: { adaptive: { costThreshold: 0.7 } } }),
+    );
+
+    const captured = await captureLoadWarnings(() =>
+      loadConfig(tempDir, { profile: "legacy", routing: { adaptive: { costThreshold: 0.9 } } }),
+    );
+
+    const hits = captured.filter((m) => m.includes("routing.adaptive"));
+    expect(hits).toHaveLength(1);
+  });
+
+  test("distinct deprecation warnings are all still emitted", async () => {
+    await writeProjectConfig({
+      routing: { strategy: "keyword", adaptive: { costThreshold: 0.5 }, customStrategyPath: "./x.ts" },
+    });
+
+    const captured = await captureLoadWarnings(() => loadConfig(tempDir));
+
+    expect(captured.filter((m) => m.includes("routing.adaptive"))).toHaveLength(1);
+    expect(captured.filter((m) => m.includes("routing.customStrategyPath"))).toHaveLength(1);
+  });
+
+  test("dedupe is scoped per load — a second loadConfig warns again", async () => {
+    await writeProjectConfig({ routing: { strategy: "keyword", adaptive: { costThreshold: 0.5 } } });
+
+    const first = await captureLoadWarnings(() => loadConfig(tempDir));
+    const second = await captureLoadWarnings(() => loadConfig(tempDir));
+
+    expect(first.filter((m) => m.includes("routing.adaptive"))).toHaveLength(1);
+    expect(second.filter((m) => m.includes("routing.adaptive"))).toHaveLength(1);
   });
 });
