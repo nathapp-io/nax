@@ -432,7 +432,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       failedACs: failures.failedACs,
     });
 
-    if (acceptanceRetries >= maxRetries) {
+    if (acceptanceRetries > maxRetries) {
       logger?.error("acceptance", "Max acceptance retries reached", { storyId: firstStory?.id });
       await fireHook(
         ctx.hooks,

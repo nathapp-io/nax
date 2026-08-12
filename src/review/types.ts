@@ -311,6 +311,11 @@ export interface ReviewConfig {
    * "gating": any failing plugin reviewer marks the run failed (RunResult.success = false).
    */
   pluginMode: "observational" | "gating";
+  /**
+   * Total call attempts (initial call + corrective re-prompts) the semantic/adversarial
+   * parse-retry strategy gets before exhausting to its fallback. Default 3.
+   */
+  parseRetryMaxAttempts: number;
   /** Semantic review configuration (when 'semantic' is in checks) */
   semantic?: SemanticReviewConfig;
   /** Adversarial review configuration (when 'adversarial' is in checks) */

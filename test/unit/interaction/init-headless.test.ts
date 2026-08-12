@@ -64,4 +64,29 @@ describe("initInteractionChain — headless mode", () => {
     const result = await initInteractionChain(makeConfig("telegram"), false);
     expect(result).not.toBeNull();
   });
+
+  test("the removed 'auto' plugin throws a migration-hint error instead of resolving (BUG-09)", async () => {
+    const { initInteractionChain } = await import("../../../src/interaction/init");
+    let thrown: (Error & { code?: string }) | undefined;
+    try {
+      await initInteractionChain(makeConfig("auto"), false);
+    } catch (err) {
+      thrown = err as Error & { code?: string };
+    }
+    expect(thrown).toBeDefined();
+    expect(thrown?.code).toBe("INTERACTION_PLUGIN_REMOVED");
+    expect(thrown?.message).toContain('interaction.defaults.fallback: "continue"');
+  });
+
+  test("an unrecognized plugin name throws INTERACTION_PLUGIN_UNKNOWN", async () => {
+    const { initInteractionChain } = await import("../../../src/interaction/init");
+    let thrown: (Error & { code?: string }) | undefined;
+    try {
+      await initInteractionChain(makeConfig("bogus-plugin"), false);
+    } catch (err) {
+      thrown = err as Error & { code?: string };
+    }
+    expect(thrown).toBeDefined();
+    expect(thrown?.code).toBe("INTERACTION_PLUGIN_UNKNOWN");
+  });
 });

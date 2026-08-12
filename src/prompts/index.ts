@@ -49,7 +49,7 @@ export { timeoutRetry } from "./builders/timeout-retry-builder";
 export type { TimeoutRetryInput } from "./builders/timeout-retry-builder";
 
 // One-shot prompt builder — escape hatch for structurally trivial prompts.
-// Used by router, decomposer, and auto-approver.
+// Used by router and decomposer.
 export { OneShotPromptBuilder } from "./builders/one-shot-builder";
 export type { OneShotRole } from "./builders/one-shot-builder";
 export type { RoutingCandidate } from "./core/sections/routing-candidates";

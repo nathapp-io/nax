@@ -19,7 +19,7 @@ import type { AgentRunRequest } from "@/agents";
 import { ParseValidationError } from "@/agents";
 import { _callOpDeps, callOp, adversarialReviewOp, type CallContext } from "@/operations";
 import type { AdversarialReviewInput } from "@/operations/adversarial-review";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import { makeMockAgentManager, makeNaxConfig, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -172,9 +172,9 @@ describe("AC4: retry behavior — invalid but non-truncated response", () => {
   });
 });
 
-// ─── AC5: Two consecutive invalid = no third send() (maxAttempts: 2) ────────
+// ─── AC5: budget exhaustion at the configured maxAttempts (default 3, parse-retry budget) ───
 
-describe("AC5: retry behavior — budget exhaustion at maxAttempts: 2", () => {
+describe("AC5: retry behavior — budget exhaustion at review.parseRetryMaxAttempts (default 3)", () => {
   test("retry strategy does not retry after maxAttempts exhausted", () => {
     const ctx = makeBuildCtx();
     const opCtx = { packageView: ctx.packageView, config: ctx.config };
@@ -190,27 +190,42 @@ describe("AC5: retry behavior — budget exhaustion at maxAttempts: 2", () => {
       lastOutput: invalidOutput,
     };
 
-    const firstResult = strategy.shouldRetry(
-      new ParseValidationError("Parse failed"),
-      0,
-      retryCtx,
-    );
+    // Default review.parseRetryMaxAttempts is 3 (BUG-62 parse-retry budget) — attempts
+    // 0 and 1 retry; attempt 2 (the 3rd call) exhausts the budget.
+    const firstResult = strategy.shouldRetry(new ParseValidationError("Parse failed"), 0, retryCtx);
     expect(firstResult.retry).toBe(true);
 
-    const secondResult = strategy.shouldRetry(
-      new ParseValidationError("Parse failed again"),
-      1,
-      retryCtx,
-    );
+    const secondResult = strategy.shouldRetry(new ParseValidationError("Parse failed again"), 1, retryCtx);
+    expect(secondResult.retry).toBe(true);
 
-    expect(secondResult.retry).toBe(false);
+    const thirdResult = strategy.shouldRetry(new ParseValidationError("Parse failed a third time"), 2, retryCtx);
+    expect(thirdResult.retry).toBe(false);
+  });
+
+  test("a lower review.parseRetryMaxAttempts override exhausts sooner", () => {
+    const runtime = makeTestRuntime({ config: makeNaxConfig({ review: { parseRetryMaxAttempts: 2 } }) });
+    createdRuntimes.push(runtime);
+    const view = runtime.packages.repo();
+    const opCtx = { packageView: view, config: view.select(adversarialReviewOp.config as any) };
+    const strategy = (adversarialReviewOp.retry as any)(SAMPLE_INPUT, opCtx);
+
+    const retryCtx = {
+      site: "complete" as const,
+      agentName: "claude",
+      stage: "review" as const,
+      storyId: SAMPLE_STORY.id,
+      lastOutput: "not json",
+    };
+
+    expect(strategy.shouldRetry(new ParseValidationError("Parse failed"), 0, retryCtx).retry).toBe(true);
+    expect(strategy.shouldRetry(new ParseValidationError("Parse failed again"), 1, retryCtx).retry).toBe(false);
   });
 });
 
-// ─── AC6: cost accumulation = sum of both turns ──────────────────────────────
+// ─── AC6: cost accumulation = sum of all turns ───────────────────────────────
 
-describe("AC6: cost accumulation — estimatedCostUsd sums both turns", () => {
-  test("callOp accumulates estimatedCostUsd from both initial and retry turns", async () => {
+describe("AC6: cost accumulation — estimatedCostUsd sums all turns", () => {
+  test("callOp accumulates estimatedCostUsd across all retry turns up to the default budget", async () => {
     let turnCount = 0;
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
@@ -222,7 +237,7 @@ describe("AC6: cost accumulation — estimatedCostUsd sums both turns", () => {
         return {
           output: "not valid json output",
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          estimatedCostUsd: turnCount === 1 ? 0.001 : 0.002,
+          estimatedCostUsd: turnCount * 0.001,
           internalRoundTrips: 0,
         };
       },
@@ -255,8 +270,9 @@ describe("AC6: cost accumulation — estimatedCostUsd sums both turns", () => {
       _callOpDeps.sleep = origSleep;
     }
 
-    expect(turnCount).toBe(2);
-    expect((result as any).estimatedCostUsd).toBeCloseTo(0.003, 6);
+    // Default review.parseRetryMaxAttempts is 3 — one initial call + two re-prompts.
+    expect(turnCount).toBe(3);
+    expect((result as any).estimatedCostUsd).toBeCloseTo(0.001 + 0.002 + 0.003, 6);
   });
 });
 

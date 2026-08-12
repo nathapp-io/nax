@@ -221,6 +221,18 @@ export const ReviewConfigSchema = z.object({
    * (issue #1146 G1) was intentionally not restored.
    */
   pluginMode: z.enum(["observational", "gating"]).default("observational"),
+  /**
+   * Total call attempts (initial call + corrective re-prompts) makeParseRetryStrategy
+   * gives semantic/adversarial review before giving up and exhausting to a fail-open
+   * or fail-closed fallback. Was hardcoded to 2 (one initial call, one re-prompt);
+   * measured over 4570 review-audit records (nax latent-bugs-v2, BUG-62 measurement)
+   * the dominant give-up cause is provider capacity errors, which this budget does not
+   * help — those are now classified and retried through the manager-tier backoff/swap
+   * path instead (see classifyProviderRefusalFailure). Raising the default to 3 gives
+   * the truncation/malformed-JSON population (the minority where a re-prompt actually
+   * works) one extra corrective attempt.
+   */
+  parseRetryMaxAttempts: z.number().int().min(1).max(10).default(3),
   semantic: SemanticReviewConfigSchema.optional(),
   adversarial: AdversarialReviewConfigSchema.optional(),
   conflictDetection: z

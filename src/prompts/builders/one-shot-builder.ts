@@ -1,9 +1,9 @@
 /**
  * OneShotPromptBuilder — escape hatch for structurally trivial one-shot prompts.
  *
- * Covers router, decomposer, auto-approver, and classifier: each is a short
- * instruction + optional input data + optional JSON schema. They share no domain
- * and do not justify dedicated builder classes.
+ * Covers router, decomposer, and classifier: each is a short instruction +
+ * optional input data + optional JSON schema. They share no domain and do
+ * not justify dedicated builder classes.
  *
  * CONSTRAINT: ≤160 lines. If you find yourself adding domain-specific methods
  * here, promote the prompt to its own dedicated builder instead.
@@ -19,7 +19,7 @@ import {
 } from "../core";
 import type { RoutingCandidate, SchemaDescriptor } from "../core";
 
-export type OneShotRole = "router" | "decomposer" | "auto-approver";
+export type OneShotRole = "router" | "decomposer";
 
 export class OneShotPromptBuilder {
   private acc = new SectionAccumulator();
@@ -39,7 +39,7 @@ export class OneShotPromptBuilder {
     return this.role;
   }
 
-  /** Optional constitution — benefits decomposer and auto-approver; router does not use it. */
+  /** Optional constitution — benefits decomposer; router does not use it. */
   constitution(c: string | undefined): this {
     this.acc.add(universalConstitutionSection(c));
     return this;
@@ -116,11 +116,6 @@ export class OneShotPromptBuilder {
   /** Role content for the story classifier (classifyRouteOp / classifyRouteBatchOp). */
   static classifierRoleContent(): string {
     return "You are a story classifier that assigns complexity and model tier to user stories.\nRespond with JSON only — no explanation text before or after.";
-  }
-
-  /** Role content for the auto-approver (autoApproveOp). */
-  static autoApproverRoleContent(): string {
-    return "You are an AI orchestration decision-maker.";
   }
 
   /**

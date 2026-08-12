@@ -31,6 +31,7 @@ export function makeInspectionOpts(overrides: Partial<InspectionOptions> = {}): 
     capturedCostUsd: 0,
     tddMode: null,
     initialRef: null,
+    untrackedBefore: null,
     ...overrides,
   };
 }

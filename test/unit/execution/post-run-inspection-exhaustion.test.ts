@@ -209,10 +209,10 @@ describe("AC8: mechanicalFailedOnly — non-mechanical source present → escala
 
   test("rectificationExhausted does not bypass TDD isolation rollback", async () => {
     const ctx = makeTestContext();
-    const rollbackCalls: Array<{ workdir: string; ref: string }> = [];
+    const rollbackCalls: Array<{ workdir: string; ref: string; untrackedBefore: string[] }> = [];
     const origRollback = _postRunDeps.rollbackToRef;
-    _postRunDeps.rollbackToRef = mock(async (workdir: string, ref: string) => {
-      rollbackCalls.push({ workdir, ref });
+    _postRunDeps.rollbackToRef = mock(async (workdir: string, ref: string, untrackedBefore: string[]) => {
+      rollbackCalls.push({ workdir, ref, untrackedBefore });
     }) as typeof _postRunDeps.rollbackToRef;
 
     try {
@@ -229,12 +229,50 @@ describe("AC8: mechanicalFailedOnly — non-mechanical source present → escala
       const opts = makeInspectionOpts({
         tddMode: { isLite: false, rollbackEnabled: true },
         initialRef: "def456",
+        // BUG-07: the snapshot taken at phase start flows through to rollbackToRef.
+        untrackedBefore: [".env"],
       });
       const inspection = await applyPostRunInspection(ctx, planResult, opts);
       const result = await decideStageAction(ctx, planResult, inspection, opts);
 
       expect(result.action).toBe("escalate");
-      expect(rollbackCalls).toEqual([{ workdir: ctx.workdir, ref: "def456" }]);
+      expect(rollbackCalls).toEqual([{ workdir: ctx.workdir, ref: "def456", untrackedBefore: [".env"] }]);
+    } finally {
+      _postRunDeps.rollbackToRef = origRollback;
+    }
+  });
+
+  test("rectificationExhausted TDD isolation rollback passes untrackedBefore through as null (BUG-07: unknown baseline is never treated as empty)", async () => {
+    const ctx = makeTestContext();
+    const rollbackCalls: Array<{ untrackedBefore: string[] | null }> = [];
+    const origRollback = _postRunDeps.rollbackToRef;
+    _postRunDeps.rollbackToRef = mock(async (_workdir: string, _ref: string, untrackedBefore: string[] | null) => {
+      rollbackCalls.push({ untrackedBefore });
+    }) as typeof _postRunDeps.rollbackToRef;
+
+    try {
+      const planResult = makePlanResult({
+        success: false,
+        rectificationExhausted: true,
+        unfixedFindings: [TEST_RUNNER_FINDING],
+        phaseOutputs: {
+          [testWriterOp.name]: { success: true },
+          [implementerOp.name]: { success: true, estimatedCostUsd: 0, durationMs: 50 },
+          [verifierOp.name]: { success: false, failureCategory: "isolation-violation" },
+        },
+      });
+      const opts = makeInspectionOpts({
+        tddMode: { isLite: false, rollbackEnabled: true },
+        initialRef: "def456",
+        untrackedBefore: null,
+      });
+      const inspection = await applyPostRunInspection(ctx, planResult, opts);
+      await decideStageAction(ctx, planResult, inspection, opts);
+
+      // null propagates unchanged — rollbackToRef itself skips the untracked
+      // sweep on a null baseline. Coercing to [] here would make an unknown
+      // baseline look empty and let the sweep delete pre-existing files.
+      expect(rollbackCalls).toEqual([{ untrackedBefore: null }]);
     } finally {
       _postRunDeps.rollbackToRef = origRollback;
     }

@@ -21,7 +21,7 @@ import type { StoryOrchestratorResult } from "../../execution/story-orchestrator
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { getLogger } from "../../logger";
 import type { CallContext } from "../../operations/types";
-import { captureGitRef } from "../../utils/git";
+import { captureGitRef, getUntrackedPaths } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 // Re-export helpers so existing importers continue to work.
@@ -124,6 +124,10 @@ export const executionStage: PipelineStage = {
         }
       : null;
     const initialRef = tddMode ? ((await _executionDeps.captureGitRef(ctx.workdir)) ?? "HEAD") : null;
+    // BUG-07: snapshot untracked paths alongside initialRef so a TDD-failure
+    // rollback can delete only what the phase itself created, not pre-existing
+    // untracked files (.env, WIP notes).
+    const untrackedBefore = tddMode ? await _executionDeps.getUntrackedPaths(ctx.workdir) : null;
 
     const inputs = await _executionDeps.assemblePlanInputsFromCtx(ctx);
     const plan = await _executionDeps.buildPlanForStrategy(
@@ -154,6 +158,7 @@ export const executionStage: PipelineStage = {
       capturedCostUsd,
       tddMode,
       initialRef,
+      untrackedBefore,
     };
     const inspection = await _executionDeps.applyPostRunInspection(ctx, planResult, opts);
     return _executionDeps.decideStageAction(ctx, planResult, inspection, opts);
@@ -165,6 +170,7 @@ export const _executionDeps = {
   getAgent: (_name: string): AgentAdapter | undefined => undefined,
   validateAgentForTier,
   captureGitRef,
+  getUntrackedPaths,
   assemblePlanInputsFromCtx,
   buildPlanForStrategy,
   applyPostRunInspection,

@@ -2,13 +2,12 @@
 /**
  * Interaction Plugins Unit Tests (v0.15.0 Phase 2)
  *
- * Tests for Webhook and Auto plugins.
+ * Tests for the Webhook plugin.
  */
 
 import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { InteractionRequest } from "../../../src/interaction";
-import { AutoInteractionPlugin } from "../../../src/interaction/plugins/auto";
 import { WebhookInteractionPlugin } from "../../../src/interaction/plugins/webhook";
 
 describe("WebhookInteractionPlugin", () => {
@@ -44,89 +43,6 @@ describe("WebhookInteractionPlugin", () => {
     expect(plugin.name).toBe("webhook");
 
     await plugin.destroy();
-  });
-});
-
-describe("AutoInteractionPlugin", () => {
-  test("should initialize with defaults", async () => {
-    const plugin = new AutoInteractionPlugin();
-
-    await plugin.init({});
-
-    expect(plugin.name).toBe("auto");
-  });
-
-  test("should respect config overrides", async () => {
-    const plugin = new AutoInteractionPlugin();
-
-    await plugin.init({
-      model: "balanced",
-      confidenceThreshold: 0.8,
-      maxCostPerDecision: 0.05,
-    });
-
-    expect(plugin.name).toBe("auto");
-  });
-
-  test("should reject security-review triggers", async () => {
-    const plugin = new AutoInteractionPlugin();
-
-    // Mock config
-    await plugin.init({
-      naxConfig: {
-        models: {
-          fast: { model: "claude-haiku-3-5" },
-        },
-      } as unknown as import("../../src/config").NaxConfig,
-    });
-
-    const request: InteractionRequest = {
-      id: "test-security-review",
-      type: "confirm",
-      featureName: "test-feature",
-      stage: "review",
-      summary: "Security review failed",
-      fallback: "abort",
-      createdAt: Date.now(),
-      metadata: {
-        trigger: "security-review",
-        safety: "red",
-      },
-    };
-
-    const response = await plugin.decide(request);
-
-    // Should return undefined to escalate to human
-    expect(response).toBeUndefined();
-  });
-
-  test("should escalate on low confidence", async () => {
-    const plugin = new AutoInteractionPlugin();
-
-    // Set high threshold
-    await plugin.init({
-      confidenceThreshold: 0.9,
-      naxConfig: {
-        models: {
-          fast: { model: "claude-haiku-3-5" },
-        },
-      } as unknown as import("../../src/config").NaxConfig,
-    });
-
-    // Mock a request that would get low confidence
-    const request: InteractionRequest = {
-      id: "test-low-confidence",
-      type: "confirm",
-      featureName: "test-feature",
-      stage: "custom",
-      summary: "Ambiguous decision",
-      fallback: "continue",
-      createdAt: Date.now(),
-    };
-
-    // Note: This would require mocking the LLM call in a real test
-    // For now, we just verify the plugin is configured correctly
-    expect(plugin.name).toBe("auto");
   });
 });
 
