@@ -83,6 +83,7 @@ import { getLogger } from "../logger";
 import type { Logger } from "../logger";
 import { ReviewAuditor, createNoOpReviewAuditor } from "../review/review-audit";
 import type { IReviewAuditor } from "../review/review-audit";
+import type { RoutingDecision } from "../routing/decision";
 import type { ISessionManager } from "../session";
 import { SessionManager } from "../session";
 import { type QuarantineMemo, createQuarantineMemo } from "../verification/flake-triage";
@@ -156,6 +157,17 @@ export interface NaxRuntime {
    * failed revert blocks anything.
    */
   readonly dirtyWorktrees: Set<string>;
+  /**
+   * Run-scoped LLM routing-decision cache (BUG-19). Previously a module-level
+   * singleton keyed by bare `story.id`, which persisted across `createRuntime()`
+   * calls in the same process and could leak a decision from one feature/run
+   * into another whose first story happened to route concurrently (or whose
+   * `stories[0]` was skipped/paused) — see BUG-19 in
+   * docs/reviews/2026-08-11-code-review-latent-bugs-v2.md for the full
+   * mechanism. Scoping the cache to the runtime means each run starts with
+   * an empty cache; no explicit "clear on first story" heuristic is needed.
+   */
+  readonly routingCache: Map<string, RoutingDecision>;
   close(): Promise<void>;
 }
 
@@ -282,6 +294,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const storyFixHistory = createStoryFixHistory();
   const mutationSummaries = new Map<string, MutationStorySummary>();
   const dirtyWorktrees = new Set<string>();
+  const routingCache = new Map<string, RoutingDecision>();
 
   let closed = false;
 
@@ -311,6 +324,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     storyFixHistory,
     mutationSummaries,
     dirtyWorktrees,
+    routingCache,
 
     get signal() {
       return controller.signal;

@@ -15,7 +15,6 @@ import type { AgentGetFn } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD } from "../prd";
 import { tryLlmBatchRoute } from "../routing";
-import { clearCache as clearLlmCache } from "../routing/strategies/llm";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { SessionManager } from "../session";
 import { precomputeBatchPlan } from "./batching";
@@ -123,8 +122,8 @@ export async function runExecutionPhase(
     batchingEnabled: options.useBatch,
   });
 
-  // Clear LLM routing cache at start of new run
-  clearLlmCache();
+  // The LLM routing cache is run-scoped (options.runtime.routingCache, BUG-19)
+  // and already starts empty — no explicit clear needed here.
 
   // Create package directories for stories targeting not-yet-existing packages
   // (new feature on a new package). Must run before any session opens — both the

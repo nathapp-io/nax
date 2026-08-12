@@ -15,7 +15,6 @@ export { validateRoutingDecision, stripCodeFences, parseRoutingResponse } from "
 
 // Re-export cache utilities (now live in llm-cache.ts) — backward compat
 export {
-  cachedDecisions,
   MAX_CACHE_SIZE,
   clearCache,
   getCacheSize,

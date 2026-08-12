@@ -47,6 +47,31 @@ describe("createRuntime", () => {
     expect(rt.mutationSummaries.size).toBe(0);
   });
 
+  test("runtime initializes an empty routing-decision cache (BUG-19)", () => {
+    const rt = makeRuntime(DEFAULT_CONFIG, "/tmp/test");
+    expect(rt.routingCache).toBeInstanceOf(Map);
+    expect(rt.routingCache.size).toBe(0);
+  });
+
+  test("two runtimes never share a routing cache, even with colliding story ids (BUG-19)", () => {
+    // The original defect: cachedDecisions was a module-level singleton, so a
+    // decision cached under "US-001" in one run/feature could be served back
+    // to an unrelated run/feature whose story ids happened to collide.
+    const runA = makeRuntime(DEFAULT_CONFIG, "/tmp/test-a");
+    const runB = makeRuntime(DEFAULT_CONFIG, "/tmp/test-b");
+
+    runA.routingCache.set("US-001", {
+      complexity: "simple",
+      modelTier: "fast",
+      testStrategy: "tdd-simple",
+      reasoning: "run A",
+    });
+
+    expect(runA.routingCache.has("US-001")).toBe(true);
+    expect(runB.routingCache.has("US-001")).toBe(false);
+    expect(runB.routingCache.size).toBe(0);
+  });
+
   test("packages.repo() returns root-equivalent view", () => {
     const rt = makeRuntime(DEFAULT_CONFIG, "/tmp/test");
     const view = rt.packages.repo();

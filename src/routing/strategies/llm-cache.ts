@@ -1,41 +1,60 @@
 /**
  * LLM Routing Cache
  *
- * Module-level cache for routing decisions.
+ * Helpers for the run-scoped routing-decision cache (BUG-19). The cache
+ * itself lives on `NaxRuntime.routingCache` — a fresh `Map` per `createRuntime()`
+ * call — rather than as a module-level singleton. A module-level `Map` persisted
+ * across every `createRuntime()` call in the same process, so a decision cached
+ * for `story.id` "US-001" in one run/feature could be served back to an
+ * unrelated run/feature whose story ids happened to collide (e.g. two features
+ * both starting from "US-001"), gated only by a per-story-id "first story of
+ * the run" clear heuristic that itself missed parallel-routing and
+ * skipped/paused-first-story cases. Scoping the `Map` to the runtime removes
+ * both problems: each run starts with an empty cache, so no clear-on-first-story
+ * heuristic is needed at all.
+ *
  * Extracted from llm.ts so router.ts can import it without pulling in the full
  * LLM strategy dependencies (IAgentManager, Bun.spawn, etc.).
  */
 
 import type { RoutingDecision } from "../decision";
 
-/** Module-level cache for routing decisions (PERF-1 fix: max 100 entries LRU) */
-export const cachedDecisions = new Map<string, RoutingDecision>();
+/** Max entries per run-scoped cache before eviction kicks in (PERF-1). */
 export const MAX_CACHE_SIZE = 100;
 
-/** Clear the routing cache (for testing or new runs) */
-export function clearCache(): void {
-  cachedDecisions.clear();
+/** Clear every entry in a routing cache. */
+export function clearCache(cache: Map<string, RoutingDecision>): void {
+  cache.clear();
 }
 
-/** Get the current cache size (for testing) */
-export function getCacheSize(): number {
-  return cachedDecisions.size;
+/** Get the current size of a routing cache (for testing). */
+export function getCacheSize(cache: Map<string, RoutingDecision>): number {
+  return cache.size;
 }
 
-/** Clear routing cache entry for a specific story (used on tier escalation) */
-export function clearCacheForStory(storyId: string): void {
-  cachedDecisions.delete(storyId);
+/** Clear a routing cache entry for a specific story. */
+export function clearCacheForStory(cache: Map<string, RoutingDecision>, storyId: string): void {
+  cache.delete(storyId);
 }
 
-/** Inject a cache entry directly (test helper only) */
-export function injectCacheEntry(storyId: string, decision: RoutingDecision): void {
-  cachedDecisions.set(storyId, decision);
+/** Inject a cache entry directly (test helper only). */
+export function injectCacheEntry(
+  cache: Map<string, RoutingDecision>,
+  storyId: string,
+  decision: RoutingDecision,
+): void {
+  cache.set(storyId, decision);
 }
 
-/** Evict oldest entry when cache is full (LRU) */
-export function evictOldest(): void {
-  const firstKey = cachedDecisions.keys().next().value;
+/**
+ * Evict the oldest-inserted entry when a routing cache is full. FIFO by
+ * insertion order (`Map` iteration order), not true LRU — a cache hit does
+ * not move an entry to the back, so a frequently-reread early entry can still
+ * be evicted before a write-once-never-read later one.
+ */
+export function evictOldest(cache: Map<string, RoutingDecision>): void {
+  const firstKey = cache.keys().next().value;
   if (firstKey !== undefined) {
-    cachedDecisions.delete(firstKey);
+    cache.delete(firstKey);
   }
 }
