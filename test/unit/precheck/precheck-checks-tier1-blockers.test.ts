@@ -188,10 +188,11 @@ describe("checkStaleLock (Tier 1 blocker)", () => {
     expect(result.message).toContain("Lock file is fresh");
   });
 
-  test("fails when lock file is stale (> 2 hours old)", async () => {
+  test("fails when lock file is stale (> 2 hours old) and the holder PID is dead", async () => {
     const lockPath = join(testDir, "nax.lock");
     const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
-    writeFileSync(lockPath, JSON.stringify({ pid: 12345, startedAt: threeHoursAgo.toISOString() }));
+    // PID 999999 is astronomically unlikely to exist on any real system.
+    writeFileSync(lockPath, JSON.stringify({ pid: 999999, startedAt: threeHoursAgo.toISOString() }));
 
     const result = await checkStaleLock(testDir);
 
@@ -202,14 +203,28 @@ describe("checkStaleLock (Tier 1 blocker)", () => {
     expect(result.message).toContain("2 hours");
   });
 
-  test("detects exactly 2 hours as the threshold", async () => {
+  test("detects exactly 2 hours as the threshold when the holder PID is dead", async () => {
     const lockPath = join(testDir, "nax.lock");
     const twoHoursOneMinuteAgo = new Date(Date.now() - (2 * 60 * 60 * 1000 + 60 * 1000));
-    writeFileSync(lockPath, JSON.stringify({ pid: 12345, startedAt: twoHoursOneMinuteAgo.toISOString() }));
+    writeFileSync(lockPath, JSON.stringify({ pid: 999999, startedAt: twoHoursOneMinuteAgo.toISOString() }));
 
     const result = await checkStaleLock(testDir);
 
     expect(result.passed).toBe(false);
+  });
+
+  test("does not flag an old lock as stale when the holder PID is still alive (clock-skew / sleep-resume guard)", async () => {
+    // BUG-42: a system sleep/resume cycle or NTP skew can make Date.now() jump
+    // relative to a stale-looking `startedAt`, even though the holder process
+    // is still running. A live holder is authoritative and immune to clock
+    // jumps — elapsed-time math alone is not.
+    const lockPath = join(testDir, "nax.lock");
+    const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    writeFileSync(lockPath, JSON.stringify({ pid: process.pid, startedAt: threeHoursAgo.toISOString() }));
+
+    const result = await checkStaleLock(testDir);
+
+    expect(result.passed).toBe(true);
   });
 });
 

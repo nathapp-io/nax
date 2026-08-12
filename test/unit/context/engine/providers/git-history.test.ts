@@ -40,11 +40,12 @@ function makeRequest(overrides: Partial<ContextRequest> = {}): ContextRequest {
   };
 }
 
-function mockGit(responses: Map<string, { stdout: string; exitCode: number }>) {
+function mockGit(responses: Map<string, { stdout: string; stderr?: string; exitCode: number }>) {
   _gitHistoryDeps.gitWithTimeout = async (args: string[], _workdir: string) => {
     // Last arg in git log is the file path (after "--")
     const fileArg = args[args.length - 1] ?? "";
-    return responses.get(fileArg) ?? { stdout: "", exitCode: 0 };
+    const r = responses.get(fileArg) ?? { stdout: "", exitCode: 0 };
+    return { stderr: "", ...r };
   };
 }
 
@@ -53,7 +54,7 @@ function captureWorkdirs(): string[] {
   const captured: string[] = [];
   _gitHistoryDeps.gitWithTimeout = async (_args: string[], workdir: string) => {
     captured.push(workdir);
-    return { stdout: "abc1234 feat: something", exitCode: 0 };
+    return { stdout: "abc1234 feat: something", stderr: "", exitCode: 0 };
   };
   return captured;
 }
@@ -240,7 +241,7 @@ describe("GitHistoryProvider — SEC-503 path traversal prevention", () => {
     const queriedFiles: string[] = [];
     _gitHistoryDeps.gitWithTimeout = async (args: string[]) => {
       queriedFiles.push(args[args.length - 1] ?? "");
-      return { stdout: "abc1234 feat: something", exitCode: 0 };
+      return { stdout: "abc1234 feat: something", stderr: "", exitCode: 0 };
     };
 
     const p = new GitHistoryProvider();
@@ -254,7 +255,7 @@ describe("GitHistoryProvider — SEC-503 path traversal prevention", () => {
     const queriedFiles: string[] = [];
     _gitHistoryDeps.gitWithTimeout = async (args: string[]) => {
       queriedFiles.push(args[args.length - 1] ?? "");
-      return { stdout: "abc1234 feat: something", exitCode: 0 };
+      return { stdout: "abc1234 feat: something", stderr: "", exitCode: 0 };
     };
 
     const p = new GitHistoryProvider();
@@ -268,7 +269,7 @@ describe("GitHistoryProvider — SEC-503 path traversal prevention", () => {
     let gitCalled = false;
     _gitHistoryDeps.gitWithTimeout = async () => {
       gitCalled = true;
-      return { stdout: "", exitCode: 0 };
+      return { stdout: "", stderr: "", exitCode: 0 };
     };
 
     const p = new GitHistoryProvider();

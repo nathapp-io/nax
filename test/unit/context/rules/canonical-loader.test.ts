@@ -13,7 +13,6 @@ import {
   lintForNeutrality,
   loadCanonicalRules,
   NeutralityLintError,
-  RulesFrontmatterError,
   CANONICAL_RULES_DIR,
   _canonicalLoaderDeps,
 } from "../../../../src/context/rules/canonical-loader";
@@ -257,12 +256,20 @@ Only for agent files.`,
     expect(rules[0]?.paths).toEqual(["packages/api/**"]);
   });
 
+  // BUG-03: loadCanonicalRules previously let a per-file RulesFrontmatterError
+  // propagate and abort the entire corpus load. It now catches the error per file,
+  // warns, and skips just that file — other valid rules still load.
   test.each([
     ["empty string paths", `---\npaths: ""\n---\nContent.`],
     ["malformed frontmatter", `---\npriority: [not-a-number]\n---\nBroken`],
-  ] as const)("throws RulesFrontmatterError for %s", async (_label, content) => {
-    setupFiles({ "/project/.nax/rules/bad.md": content });
-    await expect(loadCanonicalRules("/project")).rejects.toBeInstanceOf(RulesFrontmatterError);
+  ] as const)("skips (does not throw for) a file with %s, warns, and keeps other valid rules", async (_label, content) => {
+    setupFiles({
+      "/project/.nax/rules/bad.md": content,
+      "/project/.nax/rules/good.md": "## Good\n\nContent.",
+    });
+    const rules = await loadCanonicalRules("/project");
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.fileName).toBe("good.md");
   });
 
   test("[US-002] soft-by-default: loadCanonicalRules keeps every rule when budgetTokens is provided but enforcement is off", async () => {
@@ -290,33 +297,29 @@ ${"C".repeat(800)}`,
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("loadCanonicalRules — frontmatter key validation (US-004)", () => {
-  test("[US-004 AC 1] throws RulesFrontmatterError naming the offending file for an unknown top-level key", async () => {
+  // BUG-03: an invalid single file must not abort the whole rules corpus load —
+  // loadCanonicalRules catches the per-file RulesFrontmatterError, warns, and skips it.
+  test("[US-004 AC 1 / BUG-03] skips (does not throw for) an unknown top-level key, and loads other files", async () => {
     setupFiles({
       "/project/.nax/rules/bad.md": ["---", "priority: 10", "scope: everywhere", "---", "", "Body."].join("\n"),
+      "/project/.nax/rules/good.md": "## Good\n\nContent.",
     });
-    let threw: unknown;
-    try {
-      await loadCanonicalRules("/project");
-    } catch (e) {
-      threw = e;
-    }
-    expect(threw).toBeInstanceOf(RulesFrontmatterError);
-    expect((threw as RulesFrontmatterError).context?.filePath).toBe("/project/.nax/rules/bad.md");
+    const rules = await loadCanonicalRules("/project");
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.fileName).toBe("good.md");
   });
 
   test.each([
     ["not a string or array", "---\nappliesTo: 42\n---\nBody."],
     ["an array containing a non-string entry", '---\nappliesTo:\n  - "src/**"\n  - 7\n---\nBody.'],
-  ])("[US-004 AC 2] throws RulesFrontmatterError naming the offending file when appliesTo is %s", async (_label, content) => {
-    setupFiles({ "/project/.nax/rules/bad.md": content });
-    let threw: unknown;
-    try {
-      await loadCanonicalRules("/project");
-    } catch (e) {
-      threw = e;
-    }
-    expect(threw).toBeInstanceOf(RulesFrontmatterError);
-    expect((threw as RulesFrontmatterError).context?.filePath).toBe("/project/.nax/rules/bad.md");
+  ])("[US-004 AC 2 / BUG-03] skips (does not throw for) an invalid appliesTo (%s), and loads other files", async (_label, content) => {
+    setupFiles({
+      "/project/.nax/rules/bad.md": content,
+      "/project/.nax/rules/good.md": "## Good\n\nContent.",
+    });
+    const rules = await loadCanonicalRules("/project");
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.fileName).toBe("good.md");
   });
 
   test("[US-004 AC 3] resolves normally when a rule declares priority, paths, and appliesTo together", async () => {

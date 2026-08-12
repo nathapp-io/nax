@@ -268,6 +268,49 @@ describe("worktree dependency preparation", () => {
 
     expect(callOrder).toEqual(["prepare", "execute"]);
   });
+
+  // BUG-60 regression: a dependency-prep failure must record its own failure
+  // timestamp, not fall back to batchEndMs (which would report a duration
+  // spanning the whole batch's wall-clock time for what is really a
+  // near-instant failure).
+  test("records the actual failure moment for a dependency-prep failure, not batchEndMs", async () => {
+    const failing = makeStory("US-011", { workdir: "packages/app" });
+    const surviving = makeStory("US-012", { workdir: "packages/lib" });
+    const prd = makePrd([failing, surviving]);
+    const ctx = makeCtx(tmpDir);
+
+    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
+      create: mock(async () => {}),
+      remove: mock(async () => {}),
+    })) as unknown as typeof _parallelBatchDeps.createWorktreeManager; // test-ratchet-allow: as-unknown-as
+
+    _parallelBatchDeps.prepareWorktreeDependencies = mock(async (opts: { storyId: string }) => {
+      if (opts.storyId === "US-011") {
+        throw new Error("dependency prep failed");
+      }
+      return { cwd: `${tmpDir}/.nax-wt/${opts.storyId}`, env: {} };
+    }) as typeof _parallelBatchDeps.prepareWorktreeDependencies;
+
+    _parallelBatchDeps.executeParallelBatch = mock(async () => {
+      // Simulate the surviving story taking a while to execute — batchEndMs
+      // is stamped well after the dependency-prep failure actually happened.
+      await new Promise((r) => setTimeout(r, 50));
+      return makeWorkerBatchResult({ pipelinePassed: [surviving], merged: [surviving] });
+    });
+    _parallelBatchDeps.createMergeEngine = mock(async () => ({
+      mergeAll: mock(async () => [{ success: true, storyId: "US-012" }]),
+    })) as unknown as typeof _parallelBatchDeps.createMergeEngine; // test-ratchet-allow: as-unknown-as
+
+    const result = await runParallelBatch({ stories: [failing, surviving], ctx, prd });
+
+    expect(result.failed.some((f) => f.story.id === "US-011")).toBe(true);
+    const failingDuration = result.storyDurations?.get("US-011") ?? 0;
+    const survivingDuration = result.storyDurations?.get("US-012") ?? 0;
+    // The failing story's duration must not stretch out to cover the batch's
+    // full wall-clock time — it should be small (near-instant failure), well
+    // under the surviving story's duration.
+    expect(failingDuration).toBeLessThan(survivingDuration);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

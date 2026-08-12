@@ -36,3 +36,4 @@ export { AcpTokenUsageMapper, defaultAcpTokenUsageMapper } from "./token-mapper"
 export { parseModelSpec } from "./model-spec";
 export type { ModelSpec } from "./model-spec";
 export { parseSessionIds } from "./session-ids";
+export { MAX_BUFFERED_LINE_BYTES, readAndParseLines } from "./stdout-line-reader";

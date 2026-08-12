@@ -48,4 +48,13 @@ describe("parseMochaOutput", () => {
     expect(summary.failed).toBe(0);
     expect(summary.failures).toEqual([]);
   });
+
+  // BUG-15: an early spec's own "0 passing"/progress line must not win over
+  // the true final summary — the LAST "N passing"/"N failing" match wins.
+  test("BUG-15: the final summary wins over an earlier per-spec progress line", () => {
+    const output = "spec1: 0 passing\nspec2: 5 passing, 1 failing\n\n5 passing\n1 failing\n";
+    const summary = parseMochaOutput(output);
+    expect(summary.passed).toBe(5);
+    expect(summary.failed).toBe(1);
+  });
 });

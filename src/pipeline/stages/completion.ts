@@ -12,6 +12,7 @@
  * - `continue`: Stories marked complete, events emitted
  */
 
+import { GIT_TIMEOUT_MS } from "@/utils/git";
 import { persistSemanticVerdict } from "../../acceptance/semantic-verdict";
 import { annotateManifestEffectiveness } from "../../context/engine/effectiveness";
 import { appendProgress } from "../../execution/progress";
@@ -191,12 +192,35 @@ async function getDiffText(workdir: string, baseRef: string | undefined): Promis
       stdout: "pipe",
       stderr: "pipe",
     });
-    const [output] = await Promise.all([
-      readTextStreamPrefix(proc.stdout, MAX_EFFECTIVENESS_DIFF_CHARS),
-      readTextStreamPrefix(proc.stderr, 0),
-      proc.exited,
-    ]);
-    return output;
+
+    // Same GIT_TIMEOUT_MS guard every sibling git call in the pipeline uses —
+    // without it a hung git process (locked repo, network mount) can stall
+    // run completion forever.
+    let timedOut = false;
+    const timerId = setTimeout(() => {
+      timedOut = true;
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        // Process may have already exited
+      }
+    }, GIT_TIMEOUT_MS);
+
+    let output: string;
+    try {
+      [output] = await Promise.all([
+        readTextStreamPrefix(proc.stdout, MAX_EFFECTIVENESS_DIFF_CHARS),
+        readTextStreamPrefix(proc.stderr, 0),
+        proc.exited,
+      ]);
+    } finally {
+      // finally, not a trailing call: a stream read that throws would otherwise
+      // leak the timer, holding the event loop open for GIT_TIMEOUT_MS and then
+      // SIGKILLing an unrelated (already-reaped) pid slot.
+      clearTimeout(timerId);
+    }
+
+    return timedOut ? "" : output;
   } catch {
     return "";
   }

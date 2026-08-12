@@ -20,7 +20,12 @@ export function sweepOrphansImpl(sessions: Map<string, SessionDescriptor>, ttlMs
 
   for (const [id, session] of sessions.entries()) {
     if (!terminal.includes(session.state)) continue;
-    if (new Date(session.lastActivityAt).getTime() < cutoff) {
+    // A missing or unparseable lastActivityAt yields NaN, and `NaN < cutoff` is
+    // always false — a terminal session with no usable timestamp has no
+    // defensible retention window, so treat it as expired rather than leaking
+    // the map entry forever.
+    const lastActivityMs = session.lastActivityAt ? new Date(session.lastActivityAt).getTime() : Number.NaN;
+    if (!Number.isFinite(lastActivityMs) || lastActivityMs < cutoff) {
       sessions.delete(id);
       removed++;
     }

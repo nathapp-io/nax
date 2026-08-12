@@ -151,6 +151,19 @@ export const routingStage: PipelineStage = {
           });
           routing.testStrategy = "tdd-simple";
           routing.reasoning = `${routing.reasoning} [GREENFIELD OVERRIDE: No test files exist, using tdd-simple (test-first, single-session) instead of three-session TDD]`;
+
+          // BUG-35: the write-back above (ctx.story.routing) already happened before this
+          // override decided, so it still holds the pre-override testStrategy
+          // (three-session-tdd). Escalation code and rectifier prompts read
+          // story.routing, not ctx.routing — re-sync it and re-persist so both agree.
+          ctx.story.routing = {
+            ...ctx.story.routing,
+            testStrategy: routing.testStrategy,
+            reasoning: routing.reasoning,
+          };
+          if (ctx.prdPath) {
+            await _routingDeps.savePRD(ctx.prd, ctx.prdPath);
+          }
         }
       }
     }

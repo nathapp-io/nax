@@ -186,6 +186,22 @@ describe("parseLLMJson", () => {
   test("throws SyntaxError when all tiers fail", () => {
     expect(() => parseLLMJson("no JSON here at all")).toThrow(SyntaxError);
   });
+
+  // BUG-46: prose braces before the real JSON payload used to mis-slice a
+  // naive first-{/last-} extraction (the slice spanned from the prose's
+  // opening brace to the payload's closing brace, producing invalid JSON).
+  // A brace-balancing scan that tries each `{` candidate in turn fixes this.
+  test("parses the real object when prose braces precede it", () => {
+    const input = 'the { payload } was: {"a": 1}';
+    expect(parseLLMJson<Obj>(input)).toEqual({ a: 1 });
+  });
+
+  // Counter-example — a `}` inside a JSON string must still parse correctly
+  // (string-state tracking must not be broken by the brace-balancing fix).
+  test("counter-example — a closing brace inside a JSON string still parses", () => {
+    const input = '{"ok": true, "note": "closing brace } inside string"}';
+    expect(parseLLMJson<Obj>(input)).toEqual({ ok: true, note: "closing brace } inside string" });
+  });
 });
 
 // ---------------------------------------------------------------------------

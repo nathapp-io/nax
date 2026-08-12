@@ -24,6 +24,8 @@ export {
   parseAcpxJsonOutput,
   parseModelSpec,
   parseSessionIds,
+  MAX_BUFFERED_LINE_BYTES,
+  readAndParseLines,
 } from "./acp";
 export type { BuildTurnResultInput, ModelSpec } from "./acp";
 export type {

@@ -112,6 +112,26 @@ describe("mergePackageConfig — models section", () => {
     mergePackageConfig(root, override as unknown as Partial<NaxConfig>);
     expect(root.models.claude?.fast).toBe(origFast);
   });
+
+  // BUG-10: overriding a single tier for one agent (e.g. models.claude.fast) must not
+  // drop that agent's other tiers (balanced/powerful) from root — the merge is deep
+  // per-agent, not a shallow spread of the top-level agent keys.
+  test("BUG-10: a partial per-agent tier override preserves the agent's other root tiers", () => {
+    const root = {
+      ...makeRoot(),
+      models: {
+        claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
+        gemini: { fast: "gem-fast", balanced: "gem-bal", powerful: "gem-pow" },
+      },
+    };
+    const result = mergePackageConfig(root, {
+      models: { claude: { fast: "pkg-claude-fast" } },
+    } as unknown as Partial<NaxConfig>); // test-ratchet-allow: as-unknown-as
+
+    expect(result.models.claude).toEqual({ fast: "pkg-claude-fast", balanced: "sonnet", powerful: "opus" });
+    // Agent not mentioned in the override is untouched.
+    expect(result.models.gemini).toEqual({ fast: "gem-fast", balanced: "gem-bal", powerful: "gem-pow" });
+  });
 });
 
 describe("mergePackageConfig — routing section", () => {

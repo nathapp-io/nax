@@ -361,6 +361,21 @@ describe("SessionManager.sweepOrphans()", () => {
     expect(mgr2.get(oldSess.id)).toBeNull();
     expect(mgr2.get(newSess.id)).not.toBeNull();
   });
+
+  test("sweeps a terminal session with an unparseable lastActivityAt instead of retaining it forever (BUG-43)", () => {
+    const mgr = new SessionManager();
+    const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
+    mgr.transition(sess.id, "RUNNING");
+    mgr.transition(sess.id, "COMPLETED");
+    // Corrupt the timestamp after the fact — `new Date("not-a-date").getTime()`
+    // is NaN, and `NaN < cutoff` is always false, which previously meant this
+    // branch fell through and retained the session forever.
+    const descriptor = mgr.get(sess.id);
+    if (descriptor) descriptor.lastActivityAt = "not-a-date";
+
+    expect(mgr.sweepOrphans(0)).toBe(1);
+    expect(mgr.get(sess.id)).toBeNull();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

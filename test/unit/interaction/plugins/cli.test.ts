@@ -48,4 +48,31 @@ describe("CLIInteractionPlugin.promptUser — setTimeout cleanup", () => {
     expect(r2.respondedBy).toBe("timeout");
     expect(r3.respondedBy).toBe("timeout");
   });
+
+  test("BUG-21: timeout closes the stale readline and recreates it, so the next question() gets a live callback", async () => {
+    const plugin = new CLIInteractionPlugin();
+    let closeCalls = 0;
+    const staleRl = {
+      question: (_prompt: string, _cb: (a: string) => void) => {
+        // Never calls cb — simulates the user not answering before timeout.
+      },
+      close: () => {
+        closeCalls++;
+      },
+    };
+    (plugin as any).rl = staleRl;
+
+    const promptUser = (plugin as any).promptUser.bind(plugin);
+    const response = await promptUser(makeRequest("req-1"), 5);
+
+    expect(response.respondedBy).toBe("timeout");
+    // The stale readline interface must have been closed...
+    expect(closeCalls).toBe(1);
+    // ...and replaced, so a subsequent question() is not swallowed by the
+    // abandoned callback registered on the old interface.
+    expect((plugin as any).rl).not.toBe(staleRl);
+    expect((plugin as any).rl).not.toBeNull();
+
+    await plugin.destroy();
+  });
 });

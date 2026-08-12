@@ -147,6 +147,10 @@ export async function finalizePlanSelection(
     return { winnerOutput: winner.proposal.output, winnerOutputPath };
   }
 
+  if (patchPrompts.length === 0) {
+    return { winnerOutput: winner.proposal.output, winnerOutputPath };
+  }
+
   const prompt = await runPatchStep(selectorCtx, winner, runnerUp, patchConfig.maxDeltas ?? 5);
   for (let index = 0; index < patchPrompts.length; index++) {
     patchPrompts[index].resolve(

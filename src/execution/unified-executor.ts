@@ -2,7 +2,7 @@
 
 import { pipelineEventBus } from "@/pipeline";
 import { resolveDefaultAgent } from "../agents";
-import { checkCostExceeded, checkCostWarning, checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
+import { checkCostExceeded, checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import { runPipeline } from "../pipeline/runner";
@@ -17,6 +17,7 @@ import { countStories, isComplete, isStalled, loadPRD, markStoryFailed, markStor
 import type { PRD } from "../prd/types";
 import { buildNaxIgnoreIndex } from "../utils/path-filters";
 import { precomputeBatchPlan } from "./batching";
+import { maybeSendCostWarning } from "./cost-warning";
 import { startHeartbeat } from "./crash-recovery";
 import { captureRunStartRef, runDeferredReview } from "./deferred-review";
 import type { DeferredReviewResult } from "./deferred-review";
@@ -394,6 +395,8 @@ export async function executeUnified(
             return buildResult("cost-limit");
           }
 
+          warningSent = await maybeSendCostWarning(ctx, enforcedCostAfterBatch, costLimit, warningSent);
+
           continue;
         }
 
@@ -569,19 +572,12 @@ export async function executeUnified(
       ];
       await closeStoryIfTerminal(ctx, selection.story.id, iter);
 
-      if (ctx.interactionChain && isTriggerEnabled("cost-warning", ctx.config) && !warningSent) {
-        const triggerCfg = ctx.config.interaction?.triggers?.["cost-warning"];
-        const threshold = typeof triggerCfg === "object" ? (triggerCfg.threshold ?? 0.8) : 0.8;
-        const enforcedCostWarn = Math.max(totalCost, ctx.runtime.costAggregator.snapshot().totalCostUsd);
-        if (enforcedCostWarn >= costLimit * threshold) {
-          await checkCostWarning(
-            { featureName: ctx.feature, cost: enforcedCostWarn, limit: costLimit },
-            ctx.config,
-            ctx.interactionChain,
-          );
-          warningSent = true;
-        }
-      }
+      warningSent = await maybeSendCostWarning(
+        ctx,
+        Math.max(totalCost, ctx.runtime.costAggregator.snapshot().totalCostUsd),
+        costLimit,
+        warningSent,
+      );
 
       if (iter.prdDirty) {
         prd = await loadPRD(ctx.prdPath);

@@ -27,12 +27,15 @@ export { CLIInteractionPlugin } from "./plugins/cli";
 export { TelegramInteractionPlugin, _telegramPluginDeps, normalizeChatId } from "./plugins/telegram";
 export {
   MAX_MESSAGE_CHARS,
+  TELEGRAM_CALLBACK_DATA_MAX_BYTES,
   buildBody,
   buildHeader,
   buildKeyboard,
   getStageEmoji,
   sanitizeMarkdown,
   splitText,
+  truncateIdForCallbackData,
+  truncateUtf8Bytes,
   type InlineKeyboard,
 } from "./plugins/telegram-format";
 export { WebhookInteractionPlugin } from "./plugins/webhook";

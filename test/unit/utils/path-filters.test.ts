@@ -169,4 +169,38 @@ describe("path-filters (#542)", () => {
       expect(index.toPathspecExcludes()).toEqual([":!*.generated.ts"]);
     });
   });
+
+  // BUG-45: `**` without flanking slashes must not cross directory
+  // boundaries, and backslash-escaped spaces in a pattern must be preserved
+  // rather than lost during normalization.
+  describe("glob edge cases (#BUG-45)", () => {
+    test("mid-token '**' (e.g. a**b) does not cross a directory separator", async () => {
+      const files = new Map<string, string>([["/repo/.naxignore", "a**b\n"]]);
+      _pathFilterDeps.fileExists = async (path) => files.has(path);
+      _pathFilterDeps.readFile = async (path) => files.get(path) ?? "";
+
+      const matchers = await resolveNaxIgnorePatterns("/repo");
+      expect(matchers.some((m) => m.test("a/x/b"))).toBe(false);
+    });
+
+    test("standalone '**' segments (leading/trailing) still cross directory boundaries", async () => {
+      const files = new Map<string, string>([["/repo/.naxignore", "**/foo\nbar/**\n"]]);
+      _pathFilterDeps.fileExists = async (path) => files.has(path);
+      _pathFilterDeps.readFile = async (path) => files.get(path) ?? "";
+
+      const matchers = await resolveNaxIgnorePatterns("/repo");
+      expect(matchers.some((m) => m.test("a/x/foo"))).toBe(true);
+      expect(matchers.some((m) => m.test("bar/x/y"))).toBe(true);
+    });
+
+    test("backslash-escaped space in a pattern matches a literal space, not a directory separator", async () => {
+      const files = new Map<string, string>([["/repo/.naxignore", "foo\\ bar\n"]]);
+      _pathFilterDeps.fileExists = async (path) => files.has(path);
+      _pathFilterDeps.readFile = async (path) => files.get(path) ?? "";
+
+      const matchers = await resolveNaxIgnorePatterns("/repo");
+      expect(matchers.some((m) => m.test("foo bar"))).toBe(true);
+      expect(matchers.some((m) => m.test("foo/ bar"))).toBe(false);
+    });
+  });
 });

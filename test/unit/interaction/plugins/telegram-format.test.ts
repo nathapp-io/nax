@@ -2,12 +2,14 @@ import { describe, expect, test } from "bun:test";
 import type { InteractionRequest } from "@/interaction";
 import {
   MAX_MESSAGE_CHARS,
+  TELEGRAM_CALLBACK_DATA_MAX_BYTES,
   buildBody,
   buildHeader,
   buildKeyboard,
   getStageEmoji,
   sanitizeMarkdown,
   splitText,
+  truncateIdForCallbackData,
 } from "@/interaction";
 
 function makeRequest(overrides: Partial<InteractionRequest> = {}): InteractionRequest {
@@ -144,6 +146,58 @@ describe("buildKeyboard", () => {
   test("input and notify are button-free", () => {
     expect(buildKeyboard(makeRequest({ type: "input" }))).toBeNull();
     expect(buildKeyboard(makeRequest({ type: "notify" }))).toBeNull();
+  });
+
+  test("BUG-48: every callback_data stays within Telegram's 64-byte limit even with a long request id", () => {
+    const longId = "s".repeat(120);
+    const confirmData = (buildKeyboard(makeRequest({ id: longId })) ?? []).flat().map((b) => b.callback_data);
+    for (const cb of confirmData) {
+      expect(Buffer.byteLength(cb, "utf8")).toBeLessThanOrEqual(TELEGRAM_CALLBACK_DATA_MAX_BYTES);
+    }
+
+    const chooseData = (
+      buildKeyboard(
+        makeRequest({
+          id: longId,
+          type: "choose",
+          options: [
+            { key: "resume", label: "Resume" },
+            { key: "abort-now", label: "Abort now" },
+          ],
+        }),
+      ) ?? []
+    )
+      .flat()
+      .map((b) => b.callback_data);
+    for (const cb of chooseData) {
+      expect(Buffer.byteLength(cb, "utf8")).toBeLessThanOrEqual(TELEGRAM_CALLBACK_DATA_MAX_BYTES);
+    }
+  });
+
+  test("BUG-48: short ids are left untouched (no unnecessary truncation)", () => {
+    const keyboard = buildKeyboard(makeRequest({ id: "k-1" }));
+    const data = (keyboard ?? []).flat().map((b) => b.callback_data);
+    expect(data).toEqual(["k-1:approve", "k-1:reject", "k-1:skip", "k-1:abort"]);
+  });
+});
+
+describe("truncateIdForCallbackData", () => {
+  test("leaves the id untouched when it already fits", () => {
+    expect(truncateIdForCallbackData("short-id", ":approve")).toBe("short-id");
+  });
+
+  test("truncates a long id so id+suffix fits the 64-byte budget", () => {
+    const longId = "x".repeat(200);
+    const suffix = ":choose:resume";
+    const result = truncateIdForCallbackData(longId, suffix);
+    expect(Buffer.byteLength(result + suffix, "utf8")).toBeLessThanOrEqual(TELEGRAM_CALLBACK_DATA_MAX_BYTES);
+  });
+
+  test("is deterministic — same inputs produce the same truncated id (parse-side must reproduce this)", () => {
+    const longId = "y".repeat(150);
+    const a = truncateIdForCallbackData(longId, ":skip");
+    const b = truncateIdForCallbackData(longId, ":skip");
+    expect(a).toBe(b);
   });
 });
 

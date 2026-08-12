@@ -10,7 +10,7 @@ import { realOrRaw } from "./realpath";
  * Default timeout for git subprocess calls.
  * Prevents git from hanging indefinitely on locked repos or network mounts.
  */
-const GIT_TIMEOUT_MS = 10_000;
+export const GIT_TIMEOUT_MS = 10_000;
 
 /**
  * Timeout for the git subprocesses captureWorkingTreeChanges spawns during
@@ -19,6 +19,14 @@ const GIT_TIMEOUT_MS = 10_000;
  * etc.) — a hung git here must not stall the already-timed-out agent turn.
  */
 const TIMEOUT_RETRY_GIT_TIMEOUT_MS = 3_000;
+
+/**
+ * Timeout for the `git add -A` / `git commit` pair in autoCommitIfDirty.
+ * Staging a large monorepo's full working tree routinely exceeds the default
+ * GIT_TIMEOUT_MS; a mutating auto-commit call deserves more budget than a
+ * read-only status/diff check before being treated as hung.
+ */
+const AUTO_COMMIT_GIT_TIMEOUT_MS = 30_000;
 
 /**
  * Injectable dependencies for git subprocess calls — allows tests to intercept
@@ -62,7 +70,7 @@ export async function gitWithTimeout(
   args: string[],
   workdir: string,
   timeoutMs: number = GIT_TIMEOUT_MS,
-): Promise<{ stdout: string; exitCode: number }> {
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = _gitDeps.spawn(["git", ...args], {
     cwd: workdir,
     stdout: "pipe",
@@ -79,15 +87,28 @@ export async function gitWithTimeout(
     }
   }, timeoutMs);
 
+  // Drain stdout/stderr concurrently with awaiting exit — a process that fills
+  // either pipe's OS buffer (>64KB) before being read would otherwise block on
+  // the write and never reach `exited`, defeating the timeout's own SIGKILL.
+  // `.catch()` is attached eagerly: on the timeout path below we return without
+  // awaiting these, and an unawaited rejection (a SIGKILLed process can error its
+  // pipes) would surface as an unhandled rejection and take the process down.
+  const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
+  const stderrPromise = new Response(proc.stderr).text().catch(() => "");
+
   const exitCode = await proc.exited;
   clearTimeout(timerId);
 
   if (timedOut) {
-    return { stdout: "", exitCode: 1 };
+    // Don't await the drain promises here — a SIGKILL'd process's pipes may
+    // never close in test mocks (and are irrelevant either way since the
+    // output is discarded), so awaiting them could re-introduce a hang on
+    // the very path this timeout exists to bound.
+    return { stdout: "", stderr: "", exitCode: 1 };
   }
 
-  const stdout = await new Response(proc.stdout).text();
-  return { stdout, exitCode };
+  const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
+  return { stdout, stderr, exitCode };
 }
 
 /**
@@ -268,13 +289,8 @@ export async function autoCommitIfDirty(
     // Without this, a workdir nested inside another git repo (e.g. a temp dir
     // created inside the nax repo during tests) would cause git to walk up and
     // commit files from the parent repo instead.
-    const topLevelProc = _gitDeps.spawn(["git", "rev-parse", "--show-toplevel"], {
-      cwd: workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const gitRoot = (await new Response(topLevelProc.stdout).text()).trim();
-    await topLevelProc.exited;
+    const { stdout: topLevelOut } = await gitWithTimeout(["rev-parse", "--show-toplevel"], workdir);
+    const gitRoot = topLevelOut.trim();
 
     // Normalize paths to handle symlinks (e.g. /tmp → /private/tmp on macOS)
     const { realpathSync } = await import("node:fs");
@@ -323,13 +339,7 @@ export async function autoCommitIfDirty(
       }
     }
 
-    const statusProc = _gitDeps.spawn(["git", "status", "--porcelain"], {
-      cwd: workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const statusOutput = await new Response(statusProc.stdout).text();
-    await statusProc.exited;
+    const { stdout: statusOutput } = await gitWithTimeout(["status", "--porcelain"], workdir);
 
     if (!statusOutput.trim()) return;
 
@@ -363,28 +373,20 @@ export async function autoCommitIfDirty(
         path: protectedPath,
         staged,
       });
-      const checkoutArgs = staged
-        ? ["git", "checkout", "HEAD", "--", protectedPath]
-        : ["git", "checkout", "--", protectedPath];
+      const checkoutArgs = staged ? ["checkout", "HEAD", "--", protectedPath] : ["checkout", "--", protectedPath];
       // Porcelain paths are repo-root-relative regardless of the cwd `git status`
       // ran from, so the restore must spawn from realGitRoot too — matching the
       // `git add -A` staging call below. Spawning from `workdir` (a monorepo
       // package subdir) makes the pathspec resolve against the wrong root and
       // the restore silently no-ops.
-      const checkoutProc = _gitDeps.spawn(checkoutArgs, {
-        cwd: realGitRoot,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const checkoutExit = await checkoutProc.exited;
+      const { exitCode: checkoutExit, stderr: checkoutStderr } = await gitWithTimeout(checkoutArgs, realGitRoot);
       if (checkoutExit !== 0) {
-        const stderr = await new Response(checkoutProc.stderr).text();
         logger?.error(stage, "Failed to restore .nax/ path before auto-commit", {
           storyId,
           role,
           path: protectedPath,
           exitCode: checkoutExit,
-          stderr: stderr.trim(),
+          stderr: checkoutStderr.trim(),
         });
       }
     }
@@ -393,15 +395,40 @@ export async function autoCommitIfDirty(
     // (e.g. monorepo root package.json after `bun add`) are captured. Using
     // "git add . from workdir" misses those files, leaving them permanently dirty
     // and causing false-positive escalations in the review dirty-file check.
-    const addProc = _gitDeps.spawn(["git", "add", "-A"], { cwd: realGitRoot, stdout: "pipe", stderr: "pipe" });
-    await addProc.exited;
+    //
+    // `git add -A` on a large monorepo routinely exceeds the default
+    // GIT_TIMEOUT_MS, and gitWithTimeout never throws on a non-zero exit — a
+    // timeout would otherwise silently skip the auto-commit, leaving the tree
+    // dirty and triggering the very escalation this function exists to avoid.
+    // Use a longer budget and log (not throw — still best-effort) on failure.
+    const { exitCode: addExit, stderr: addStderr } = await gitWithTimeout(
+      ["add", "-A"],
+      realGitRoot,
+      AUTO_COMMIT_GIT_TIMEOUT_MS,
+    );
+    if (addExit !== 0) {
+      logger?.error(stage, "auto-commit: git add -A failed or timed out", {
+        storyId,
+        role,
+        exitCode: addExit,
+        stderr: addStderr.trim(),
+      });
+      return;
+    }
 
-    const commitProc = _gitDeps.spawn(["git", "commit", "-m", `chore(${storyId}): auto-commit after ${role} session`], {
-      cwd: workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    await commitProc.exited;
+    const { exitCode: commitExit, stderr: commitStderr } = await gitWithTimeout(
+      ["commit", "-m", `chore(${storyId}): auto-commit after ${role} session`],
+      workdir,
+      AUTO_COMMIT_GIT_TIMEOUT_MS,
+    );
+    if (commitExit !== 0) {
+      logger?.error(stage, "auto-commit: git commit failed or timed out", {
+        storyId,
+        role,
+        exitCode: commitExit,
+        stderr: commitStderr.trim(),
+      });
+    }
   } catch {
     // Silently ignore — auto-commit is best-effort
   }

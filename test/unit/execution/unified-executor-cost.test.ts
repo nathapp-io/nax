@@ -7,6 +7,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { InteractionChain } from "../../../src/interaction/chain";
+import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../../../src/interaction/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixture helpers
@@ -181,5 +183,85 @@ describe("AC-7 — cost-limit exit after parallel batch (runtime)", () => {
       () => ({ exitReason: "error" }) as { exitReason: string },
     );
     expect(result.exitReason).not.toBe("cost-limit");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUG-61 — cost-warning trigger must also fire on the parallel/batch path
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("BUG-61 — cost-warning trigger fires after a parallel batch, not just sequentially", () => {
+  let deps: Record<string, unknown>;
+  let origRunParallelBatch: unknown;
+  let origSelectIndependentBatch: unknown;
+
+  beforeEach(async () => {
+    const mod = await import("../../../src/execution/unified-executor");
+    deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
+    origRunParallelBatch = deps.runParallelBatch;
+    origSelectIndependentBatch = deps.selectIndependentBatch;
+  });
+
+  afterEach(() => {
+    if (deps) {
+      deps.runParallelBatch = origRunParallelBatch;
+      deps.selectIndependentBatch = origSelectIndependentBatch;
+    }
+    mock.restore();
+  });
+
+  test("fires the cost-warning trigger once totalCost crosses 80% of costLimit after a parallel batch", async () => {
+    const story1 = makePendingStory("US-001");
+    const story2 = makePendingStory("US-002");
+
+    deps.selectIndependentBatch = mock(() => [story1, story2]);
+    deps.runParallelBatch = mock(async () => ({
+      completed: [story1, story2],
+      failed: [],
+      mergeConflicts: [],
+      storyCosts: new Map<string, number>([
+        [story1.id, 4],
+        [story2.id, 4],
+      ]),
+      totalCost: 8, // 80% of a costLimit of 10
+    }));
+
+    const sentTriggers: string[] = [];
+    const fakePlugin: InteractionPlugin = {
+      name: "fake",
+      send: async (request: InteractionRequest) => {
+        const trigger = (request.metadata as { trigger?: string } | undefined)?.trigger;
+        if (trigger) sentTriggers.push(trigger);
+      },
+      receive: async (requestId: string): Promise<InteractionResponse> => ({
+        requestId,
+        action: "reject",
+        respondedBy: "test",
+        respondedAt: Date.now(),
+      }),
+    };
+    const interactionChain = new InteractionChain({ defaultTimeout: 1000, defaultFallback: "continue" });
+    interactionChain.register(fakePlugin, 0);
+
+    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const prd = makePrd([story1, story2]);
+    const baseCtx = makeCtx({ parallelCount: 2 });
+    const ctx = {
+      ...baseCtx,
+      interactionChain,
+      config: {
+        ...baseCtx.config,
+        interaction: { triggers: { "cost-warning": { enabled: true, threshold: 0.8 } } },
+        execution: {
+          ...baseCtx.config.execution,
+          costLimit: 10, // totalCost=8 is 80% of this — crosses the warning threshold but not the hard limit
+          maxIterations: 1,
+        },
+      },
+    };
+
+    await executeUnified(ctx as never, prd as never).catch(() => undefined);
+
+    expect(sentTriggers).toContain("cost-warning");
   });
 });

@@ -6,7 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { InteractionRequest } from "@/interaction";
-import { TelegramInteractionPlugin, _telegramPluginDeps } from "@/interaction";
+import { TelegramInteractionPlugin, _telegramPluginDeps, truncateIdForCallbackData } from "@/interaction";
 
 describe("TelegramInteractionPlugin", () => {
   let savedToken: string | undefined;
@@ -247,6 +247,72 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
 
     expect(response.action).toBe("choose");
     expect(response.value).toBe("option-b");
+  });
+
+  test("BUG-48: receive() matches a callback_query built from a long (truncated) request id", async () => {
+    // A long id (e.g. a UUID-prefixed story/request id) means buildKeyboard()
+    // truncates the id in callback_data to stay within Telegram's 64-byte
+    // limit. Telegram echoes back exactly what was sent, so the response
+    // received on getUpdates() carries the truncated id — receive() must
+    // still resolve it to the original (full) requestId.
+    const longId = `req-${"z".repeat(80)}`;
+
+    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+
+      if (urlStr.includes("sendMessage")) {
+        const body = JSON.parse((init?.body as string) ?? "{}") as {
+          reply_markup?: { inline_keyboard: Array<Array<{ callback_data: string }>> };
+        };
+        const approveBtn = body.reply_markup?.inline_keyboard.flat().find((b) => b.callback_data.endsWith(":approve"));
+        expect(approveBtn).toBeDefined();
+        // Every callback_data Telegram would accept must be <=64 bytes.
+        for (const btn of body.reply_markup?.inline_keyboard.flat() ?? []) {
+          expect(Buffer.byteLength(btn.callback_data, "utf8")).toBeLessThanOrEqual(64);
+        }
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 13, chat: { id: 99999 } } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (urlStr.includes("getUpdates")) {
+        // The truncated id, as Telegram would actually echo it back — computed
+        // via the real truncation function so build/parse can't silently drift.
+        const truncatedId = truncateIdForCallbackData(longId, ":approve");
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            result: [
+              {
+                update_id: 4,
+                callback_query: {
+                  id: "cq-long-id",
+                  data: `${truncatedId}:approve`,
+                  message: { message_id: 13, chat: { id: 99999 } },
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (urlStr.includes("answerCallbackQuery")) {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+
+      return new Response("not found", { status: 404 });
+    }) as unknown as typeof fetch; // test-ratchet-allow: as-unknown-as
+
+    const plugin = new TelegramInteractionPlugin();
+    await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
+
+    await plugin.send(makeConfirmRequest(longId));
+    const response = await plugin.receive(longId, 5000);
+
+    expect(response.action).toBe("approve");
+    expect(response.requestId).toBe(longId);
   });
 
   test("receive() acknowledges callback queries even when requestId does not match", async () => {

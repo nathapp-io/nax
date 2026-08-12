@@ -192,6 +192,25 @@ describe("CostAggregator", () => {
     });
   });
 
+  test("snapshot() reflects the full persisted total after drain() completes, not zero (BUG-29)", async () => {
+    await withTempDir(async (dir) => {
+      const drainDir = join(dir, "cost");
+      const agg = new CostAggregator("r-test-persist", drainDir);
+      agg.record(makeEvent({ ts: 1000, costUsd: 0.01 }));
+      agg.record(makeEvent({ ts: 2000, costUsd: 0.02 }));
+
+      await agg.drain();
+
+      // drain() repopulates _events/_errors from the fully-committed set — a
+      // post-drain snapshot must still report the real total, not reset to
+      // zero, so cost-limit enforcement reading this snapshot after close
+      // doesn't under-report spend.
+      const snap = agg.snapshot();
+      expect(snap.callCount).toBe(2);
+      expect(snap.totalCostUsd).toBeCloseTo(0.03);
+    });
+  });
+
   test("snapshot() returns zero totalExactCostUsd when empty and accumulates across events", () => {
     const agg = new CostAggregator("r-001", "/tmp/drain");
     expect(agg.snapshot().totalExactCostUsd).toBe(0);

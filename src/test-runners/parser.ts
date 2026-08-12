@@ -88,8 +88,9 @@ function parseBunOutput(output: string): TestSummary {
   while (i < lines.length) {
     const line = lines[i];
 
-    // Extract file path from headers like "test/example.test.ts:"
-    if (line.trim().endsWith(".test.ts:") || line.trim().endsWith(".test.js:")) {
+    // Extract file path from headers like "test/example.test.ts:" — also matches
+    // .test.tsx/.spec.ts/.test.mts/.test.cts, not just .test.ts/.test.js.
+    if (/\.(?:test|spec)\.[cm]?[jt]sx?:$/.test(line.trim())) {
       currentFile = line.trim().replace(/:$/, "");
       i++;
       continue;
@@ -113,7 +114,9 @@ function parseBunOutput(output: string): TestSummary {
     // Do not increment failed here. In verbose mode, the ✗ glyph line above already
     // counted this failure. In batch mode, no ✗ lines are emitted — the summary-line
     // backstop below (Math.max) corrects the count from the authoritative summary.
-    const failMatch = line.match(/^\(fail\)\s+(.+?)\s+\[[\d.]+m?s\]/);
+    // Anchored to end-of-line with a greedy capture, so a name containing its own
+    // "[Nms]"-shaped substring captures up to the LAST duration marker.
+    const failMatch = line.match(/^\(fail\)\s+(.+)\s+\[[\d.]+m?s\]\s*$/);
     if (failMatch) {
       const testName = failMatch[1].trim();
       i++;
@@ -478,9 +481,13 @@ function parseCommonOutput(output: string): TestSummary {
     }
   }
 
-  // Fallback: pick up a bare fail count if not already found
+  // Fallback: pick up a bare fail count if not already found. Excludes a count
+  // preceded by a "LABEL: " log prefix (e.g. "WARN: 3 failed requests") so app-log
+  // noise can't masquerade as a test summary.
   if (failed === 0) {
-    const failMatches = Array.from(output.matchAll(/(\d+)\s+fail/gi));
+    const failMatches = Array.from(
+      output.matchAll(/(?<!\b(?:warn|warning|info|debug|trace|error|notice|log|fatal):\s)(\d+)\s+fail/gi),
+    );
     if (failMatches.length > 0) {
       failed = Number.parseInt(failMatches[failMatches.length - 1][1], 10);
     }

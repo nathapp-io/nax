@@ -227,6 +227,11 @@ describe("Routing Stage - Greenfield Detection forces test-after strategy when n
     expect(result.action).toBe("continue");
     expect(ctx.routing?.testStrategy).toBe("tdd-simple");
     expect(ctx.routing?.reasoning).toContain("GREENFIELD OVERRIDE");
+    // BUG-35: ctx.story.routing must stay in sync with ctx.routing after the
+    // greenfield override — escalation code and rectifier prompts read story.routing,
+    // not ctx.routing, and previously kept the stale pre-override value here.
+    expect(ctx.story.routing?.testStrategy).toBe("tdd-simple");
+    expect(ctx.story.routing?.reasoning).toContain("GREENFIELD OVERRIDE");
   });
 
   test("preserves TDD when test files exist", async () => {

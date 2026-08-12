@@ -50,7 +50,16 @@ interface FeatureSummary {
   costLimitStopped?: boolean;
 }
 
-/** Check if a process is alive via POSIX signal 0 (portable, no subprocess) */
+/**
+ * Check if a process is alive via POSIX signal 0 (portable, no subprocess).
+ *
+ * Known limitation: PIDs are recycled by the OS, so a long-dead run's PID can
+ * be reassigned to an unrelated live process, producing a false "⚡ Running"
+ * report. There is no cheap secondary signal available here — status.json
+ * carries no process-start-time or lock-token alongside the PID — so this is
+ * a best-effort liveness check, not a guarantee. Cross-checking against a
+ * lock/start-time token would require a status.json schema change.
+ */
 function isPidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -120,37 +129,47 @@ async function getFeatureSummary(featureName: string, featureDir: string): Promi
     total: counts.total,
   };
 
-  // Load status.json if available
-  const status = await loadStatusFile(featureDir);
-  if (status) {
-    summary.cost = status.cost.spent;
+  // Load status.json if available. Wrapped in its own try/catch — a stale or
+  // schema-drifted status.json must not crash the whole feature summary (and
+  // by extension the aggregate Promise.all in displayAllFeatures) when a
+  // nested field like `cost` or `run` is missing.
+  try {
+    const status = await loadStatusFile(featureDir);
+    if (status) {
+      summary.cost = status.cost?.spent;
 
-    // Check if run is active or crashed
-    const pidAlive = isPidAlive(status.run.pid);
+      // Check if run is active or crashed
+      const pid = status.run?.pid;
+      const pidAlive = typeof pid === "number" ? isPidAlive(pid) : false;
 
-    if (status.run.status === "running" && pidAlive) {
-      summary.activeRun = {
-        runId: status.run.id,
-        pid: status.run.pid,
-        startedAt: status.run.startedAt,
-      };
-    } else if (status.run.status === "running" && !pidAlive) {
-      // Run is marked "running" but PID is dead — crashed
-      summary.crashedRun = {
-        runId: status.run.id,
-        pid: status.run.pid,
-        crashedAt: status.run.crashedAt,
-      };
-    } else if (status.run.status === "crashed") {
-      // Run explicitly marked as crashed
-      summary.crashedRun = {
-        runId: status.run.id,
-        pid: status.run.pid,
-        crashedAt: status.run.crashedAt,
-      };
-    } else if (status.run.status === "cost-limit") {
-      summary.costLimitStopped = true;
+      if (status.run?.status === "running" && pidAlive) {
+        summary.activeRun = {
+          runId: status.run.id,
+          pid: status.run.pid,
+          startedAt: status.run.startedAt,
+        };
+      } else if (status.run?.status === "running" && !pidAlive) {
+        // Run is marked "running" but PID is dead — crashed
+        summary.crashedRun = {
+          runId: status.run.id,
+          pid: status.run.pid,
+          crashedAt: status.run.crashedAt,
+        };
+      } else if (status.run?.status === "crashed") {
+        // Run explicitly marked as crashed
+        summary.crashedRun = {
+          runId: status.run.id,
+          pid: status.run.pid,
+          crashedAt: status.run.crashedAt,
+        };
+      } else if (status.run?.status === "cost-limit") {
+        summary.costLimitStopped = true;
+      }
     }
+  } catch {
+    // status.json is schema-drifted or otherwise unreadable in a way
+    // loadStatusFile's own try/catch didn't already absorb — leave the
+    // summary at its prd.json-derived defaults rather than crashing.
   }
 
   // Get last run timestamp from runs/ directory

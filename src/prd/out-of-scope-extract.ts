@@ -240,8 +240,18 @@ function itemsFromInlineMarkers(lines: string[], fenced: Set<number>, start: num
 
     if (remainder.length === 0) {
       // Bare marker — consume the bullet list (or prose block) beneath it.
+      // Stop at a line that is itself a new "**Out of scope:**" marker — that's a
+      // fresh section boundary, not content belonging to this one. The outer loop
+      // picks it up on its next iteration, so a second marker in the same block
+      // starts its own item instead of leaking marker text into the first item.
       const body: string[] = [];
-      while (j < lines.length && !fenced.has(j) && lines[j].trim().length > 0 && !ANY_HEADING.test(lines[j])) {
+      while (
+        j < lines.length &&
+        !fenced.has(j) &&
+        lines[j].trim().length > 0 &&
+        !ANY_HEADING.test(lines[j]) &&
+        !INLINE_MARKER.test(lines[j])
+      ) {
         body.push(lines[j]);
         j += 1;
       }

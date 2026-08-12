@@ -134,6 +134,59 @@ describe("validatePlanOutput — dependency validation", () => {
     expect(() => validatePlanOutput(makeInput([makeStory({ id: "ST-001", dependencies: ["ST-999"] })]), "feat", "branch")).toThrow(/ST-999/);
     expect(() => validatePlanOutput(makeInput([makeStory({ id: "ST-001", dependencies: [] }), makeStory({ id: "ST-002", dependencies: ["ST-001"] })]), "feat", "branch")).not.toThrow();
   });
+
+  // BUG-01: dependencies are validated against normalizeStoryId(id) but were previously
+  // stored raw/unnormalized, so a dep like "ST001" passed validation (matches "ST-001"
+  // after normalization) yet was never equal to any stored story id downstream.
+  test("BUG-01: normalizes stored dependency ids to match normalized story ids", () => {
+    const prd = validatePlanOutput(
+      makeInput([makeStory({ id: "ST-001", dependencies: [] }), makeStory({ id: "ST-002", dependencies: ["ST001"] })]),
+      "feat",
+      "branch",
+    );
+    const storyIds = new Set(prd.userStories.map((s) => s.id));
+    const storedDep = prd.userStories[1]!.dependencies[0];
+    expect(storedDep).toBe("ST-001");
+    expect(storyIds.has(storedDep as string)).toBe(true);
+  });
+
+  test("BUG-01: dedupes normalized dependency ids", () => {
+    const prd = validatePlanOutput(
+      makeInput([
+        makeStory({ id: "ST-001", dependencies: [] }),
+        makeStory({ id: "ST-002", dependencies: ["ST-001", "ST001", "ST-001"] }),
+      ]),
+      "feat",
+      "branch",
+    );
+    expect(prd.userStories[1]!.dependencies).toEqual(["ST-001"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BUG-02: a story whose OWN id duplicates an earlier story's id must be rejected
+// ---------------------------------------------------------------------------
+
+describe("validatePlanOutput — duplicate story id validation", () => {
+  test("BUG-02: throws when two stories share the same normalized id", () => {
+    expect(() =>
+      validatePlanOutput(
+        makeInput([makeStory({ id: "ST-001" }), makeStory({ id: "ST-001" })]),
+        "feat",
+        "branch",
+      ),
+    ).toThrow(/duplicate/i);
+  });
+
+  test("BUG-02: throws when two stories share the same id after normalization (e.g. 'ST001' vs 'ST-001')", () => {
+    expect(() =>
+      validatePlanOutput(
+        makeInput([makeStory({ id: "ST-001" }), makeStory({ id: "ST001" })]),
+        "feat",
+        "branch",
+      ),
+    ).toThrow(/duplicate/i);
+  });
 });
 
 // ---------------------------------------------------------------------------

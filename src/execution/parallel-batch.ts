@@ -229,6 +229,11 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
           context: { ...pipelineContext, story, stories: [story], workdir: worktreeRoot } as PipelineContext,
         },
       });
+      // Record the failure timestamp now, matching the worktree-create failure
+      // path above — without this, storyEndTimes falls back to batchEndMs for
+      // dependency-prep failures, reporting a duration spanning the whole
+      // batch's wall-clock time instead of the actual (near-instant) failure.
+      preExecutionFailureEndTimes.set(story.id, Date.now());
       try {
         await worktreeManager.remove(workdir, story.id);
       } catch {

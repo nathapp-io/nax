@@ -25,6 +25,18 @@ describe("parseAudienceTags", () => {
   ])("parses %s", (_label, input, expected) => {
     expect(parseAudienceTags(input)).toEqual(expected);
   });
+
+  // BUG-57: a trailing markdown link `[text](url)` was previously mistaken for the
+  // audience tag block (the LAST `[...]` on the line), shadowing a real tag earlier
+  // in the headline and defaulting untagged headlines to a bogus tag that matches no
+  // role. A bracket group immediately followed by '(' is link text, not a tag.
+  test.each([
+    ["untagged headline ending in a markdown link defaults to [all]", "- **API docs** — [docs](url)", ["all"]],
+    ["a real tag earlier in the line is not shadowed by a trailing link", "- [implementer] — see [docs](url)", ["implementer"]],
+    ["multiple trailing links still fall back to [all]", "- See [one](url1) and [two](url2)", ["all"]],
+  ])("BUG-57: %s", (_label, input, expected) => {
+    expect(parseAudienceTags(input)).toEqual(expected);
+  });
 });
 
 describe("shouldIncludeEntry", () => {

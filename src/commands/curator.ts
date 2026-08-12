@@ -103,11 +103,25 @@ function listRunIds(runsDir: string): string[] {
 async function parseObservations(observationsPath: string): Promise<Observation[]> {
   const text = await _curatorCmdDeps.readFile(observationsPath).catch(() => "");
   if (!text.trim()) return [];
-  return text
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Observation);
+
+  const observations: Observation[] = [];
+  let skipped = 0;
+  for (const line of text.trim().split("\n")) {
+    if (!line) continue;
+    try {
+      observations.push(JSON.parse(line) as Observation);
+    } catch {
+      // A crash mid-write (or any other truncation) can leave the final line
+      // of observations.jsonl partial. Skip it rather than letting one bad
+      // line kill the whole read — this file is inspected specifically to
+      // diagnose crashes, so it must tolerate the artifacts crashes leave.
+      skipped++;
+    }
+  }
+  if (skipped > 0) {
+    console.log(`[WARN] Skipped ${skipped} unparseable line(s) in ${observationsPath}`);
+  }
+  return observations;
 }
 
 function getThresholds(config: NaxConfig): CuratorThresholds {

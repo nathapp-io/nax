@@ -338,6 +338,70 @@ describe("US-002: per-package acceptance runner", () => {
       (Bun as any).file = origFile;
     }
   });
+
+  // BUG-12: each package numbers its acceptance criteria independently, so
+  // package A's AC-2 and package B's unrelated AC-2 must both be reported in
+  // the aggregate — not collapsed into a single entry by bare-id dedup.
+  test("BUG-12: colliding AC-2 ids from two different packages are not deduped in the aggregate", async () => {
+    const origSpawn = _executorDeps.spawn;
+    _executorDeps.spawn = ((_cmd: string[], opts: any) => {
+      const isApi = opts.cwd === "/tmp/test-workdir/apps/api";
+      const output = isApi ? "FAIL AC-2 api boom\n" : "FAIL AC-2 web boom\n";
+      return {
+        exited: Promise.resolve(1),
+        stdout: new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(output));
+            controller.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(controller) {
+            controller.close();
+          },
+        }),
+      };
+    }) as unknown as typeof _executorDeps.spawn;  // test-ratchet-allow: as-unknown-as
+
+    const origFile = Bun.file;
+    (Bun as any).file = (_p: string) => ({
+      exists: () => Promise.resolve(true),
+      text: () => Promise.resolve(""),
+    });
+
+    const ctx = makeCtx({
+      acceptanceTestPaths: [
+        {
+          testPath: "/tmp/test-workdir/apps/api/.nax-acceptance.test.ts",
+          packageDir: "/tmp/test-workdir/apps/api",
+          testFramework: "jest",
+          commandOverride: "npx jest {{FILE}}",
+        },
+        {
+          testPath: "/tmp/test-workdir/apps/web/.nax-acceptance.test.ts",
+          packageDir: "/tmp/test-workdir/apps/web",
+          testFramework: "vitest",
+          commandOverride: "pnpm vitest run {{FILE}}",
+        },
+      ],
+    });
+
+    try {
+      const result = await acceptanceStage.execute(ctx);
+      expect(result.action).toBe("fail");
+      const pkgs = ctx.acceptanceFailures?.failedPackages ?? [];
+      const api = pkgs.find((p) => p.packageDir === "/tmp/test-workdir/apps/api");
+      const web = pkgs.find((p) => p.packageDir === "/tmp/test-workdir/apps/web");
+      expect(api?.failedACs).toEqual(["AC-2"]);
+      expect(web?.failedACs).toEqual(["AC-2"]);
+      // Both packages' AC-2 must survive into the aggregate — not collapsed to one.
+      expect(ctx.acceptanceFailures?.failedACs).toEqual(["AC-2", "AC-2"]);
+      expect(ctx.acceptanceFailures?.findings).toHaveLength(2);
+    } finally {
+      _executorDeps.spawn = origSpawn;
+      (Bun as any).file = origFile;
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -490,6 +554,46 @@ describe("parseTestFailures()", () => {
     const output = "FAILED tests/test_feature.py::test_AC_2_empty_input - AssertionError";
 
     expect(parseTestFailures(output)).toEqual(["AC-2"]);
+  });
+
+  // BUG-13: an unanchored `AC[-_]?(\d+)` regex fabricated a phantom AC id
+  // from any test merely NAMED with a lookalike substring (e.g. "TestMac_2"
+  // contains "ac_2" case-insensitively). These must not produce findings.
+  describe("BUG-13: does not fabricate phantom AC ids from lookalike test names", () => {
+    test("counter-example — 'TestACL2_Check' still does not produce a phantom AC", () => {
+      expect(parseTestFailures("--- FAIL: TestACL2_Check (0.00s)\n    x_test.go:10: failed")).toEqual([]);
+    });
+
+    test("go branch — 'TestMac_2' does not fabricate AC-2", () => {
+      expect(parseTestFailures("--- FAIL: TestMac_2 (0.00s)\n    mac_test.go:10: failed")).toEqual([]);
+    });
+
+    test("go branch — a genuine 'TestAC2' reference still matches", () => {
+      expect(parseTestFailures("--- FAIL: TestAC2_handles_empty (0.00s)")).toEqual(["AC-2"]);
+    });
+
+    // Review follow-up: go prints nested subtest failures indented, so the
+    // "--- FAIL:" anchor must tolerate leading whitespace or every subtest AC
+    // failure is silently dropped.
+    test("go branch — an INDENTED subtest FAIL line still matches", () => {
+      expect(parseTestFailures("    --- FAIL: TestAC2/empty_input (0.00s)")).toEqual(["AC-2"]);
+    });
+
+    test("jest/vitest branch — 'TestMac2' does not fabricate AC-2", () => {
+      expect(parseTestFailures("● TestMac2 > does stuff\n\n  AssertionError: nope")).toEqual([]);
+    });
+
+    test("jest/vitest branch — a genuine 'TestAC2' reference still matches", () => {
+      expect(parseTestFailures("● TestAC2 > does stuff\n\n  AssertionError: nope")).toEqual(["AC-2"]);
+    });
+
+    test("pytest branch — 'test_mac_2.py' does not fabricate AC-2", () => {
+      expect(parseTestFailures("FAILED tests/test_mac_2.py::test_x - AssertionError")).toEqual([]);
+    });
+
+    test("pytest branch — a genuine 'AC-2' reference still matches", () => {
+      expect(parseTestFailures("FAILED tests/test_AC-2_empty.py::test_x - AssertionError")).toEqual(["AC-2"]);
+    });
   });
 });
 

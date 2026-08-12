@@ -527,11 +527,14 @@ export async function runFixCycle<F extends Finding>(
 
     // ── Validate ──────────────────────────────────────────────────────────────
     let findingsAfter: F[];
+    let fullShortCircuited = false;
     let validatorAttempt = 0;
     for (;;) {
       try {
         const fullRaw = await cycle.validate(ctx, { mode: "full", strategiesRun: group.map((s) => s.name) });
-        findingsAfter = normalizeValidateResult(fullRaw).findings as F[];
+        const fullResult = normalizeValidateResult(fullRaw);
+        findingsAfter = fullResult.findings as F[];
+        fullShortCircuited = fullResult.shortCircuited ?? false;
         break;
       } catch (err) {
         if (validatorAttempt >= cycle.config.validatorRetries) {
@@ -580,6 +583,17 @@ export async function runFixCycle<F extends Finding>(
     totalCostUsd += iterationCostUsd;
 
     if (outcome === "resolved") {
+      // A short-circuited full validate (stopped on a failing phase before the gate)
+      // must never read as "resolved" — the false-green case this guards against.
+      if (fullShortCircuited) {
+        logger?.info("findings.cycle", "cycle exited — validate short-circuited", { ...logCtx });
+        return finish({
+          iterations: cycle.iterations,
+          finalFindings: findingsAfter,
+          exitReason: "validate-short-circuit",
+          costUsd: totalCostUsd,
+        });
+      }
       return { iterations: cycle.iterations, finalFindings: [], exitReason: "resolved", costUsd: totalCostUsd };
     }
   }
