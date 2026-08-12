@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-08-12T05-03-33-335Z",
+    "feature": "escalation-correctness",
+    "startedAt": "2026-08-12T05:03:33.335Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 91667
+  },
+  "progress": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 0.057393,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 4,
+  "updatedAt": "2026-08-12T07:26:39.122Z",
+  "durationMs": 8585787,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-08-12T07:26:16.303Z"
+    },
+    "regression": {
+      "status": "failed",
+      "failedTests": [
+        "test/unit/execution/pipeline-result-handler.test.ts",
+        "test/unit/execution/unified-executor-failure.test.ts"
+      ],
+      "affectedStories": [],
+      "lastRunAt": "2026-08-12T07:26:37.854Z"
+    }
+  }
+}

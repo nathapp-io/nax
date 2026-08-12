@@ -85,8 +85,8 @@ export const NaxConfigSchema = z
       escalation: {
         enabled: true,
         tierOrder: [
-          { tier: "fast", attempts: 5 },
-          { tier: "balanced", attempts: 3 },
+          { tier: "fast", attempts: 2 },
+          { tier: "balanced", attempts: 2 },
           { tier: "powerful", attempts: 2 },
         ],
         escalateEntireBatch: true,

@@ -141,7 +141,7 @@ export async function preIterationTierCheck(
 ): Promise<PreIterationCheckResult> {
   const logger = _tierEscalationDeps.getSafeLogger();
   const currentTier = story.routing?.modelTier ?? routing.modelTier;
-  const tierOrder = config.autoMode.escalation?.tierOrder || [];
+  const tierOrder = config.autoMode?.escalation?.tierOrder || [];
   const hasAgentRungs = tierOrder.some((r) => r.agent !== undefined);
   const currentRungForBudget = hasAgentRungs
     ? { tier: currentTier, agent: story.routing?.agent }
@@ -166,12 +166,12 @@ export async function preIterationTierCheck(
   const currentRung = hasAgentRungs ? { tier: currentTier, agent: story.routing?.agent } : { tier: currentTier };
   const escalationResult = escalateTier(currentRung, tierOrder);
   const nextAgent = escalationResult?.agent;
-  const routingMode = config.routing.llm?.mode ?? "hybrid";
+  const routingMode = config.routing?.llm?.mode ?? "hybrid";
 
-  if (escalationResult && config.autoMode.escalation.enabled) {
+  if (escalationResult && config.autoMode?.escalation?.enabled) {
     const escalatedTier = escalationResult.tier;
 
-    logger?.warn("escalation", "Story exceeded tier budget, escalating", {
+    logger?.warn("escalation", "Escalating story to next tier after exceeding tier budget", {
       storyId: story.id,
       attempts: story.attempts,
       tierAttempts: tierCfg.attempts,
@@ -246,7 +246,12 @@ export async function preIterationTierCheck(
     return { shouldSkipIteration: true, prdDirty: true, prd: updatedPrd };
   }
 
-  // No next tier or escalation disabled — mark story as failed
+  // Escalation disabled — budget exhaustion does not block iteration
+  if (!config.autoMode?.escalation?.enabled) {
+    return { shouldSkipIteration: false, prdDirty: false, prd };
+  }
+
+  // No next tier — mark story as failed
   logger?.error("execution", "Story failed - all tiers exhausted", {
     storyId: story.id,
     attempts: story.attempts,
@@ -327,6 +332,20 @@ export function shouldRetrySameTier(runtimeCrashResult: { status: string; succes
 }
 
 /**
+ * Max consecutive same-tier retries allowed for a runtime crash before the
+ * story pauses for human review. Bounds BUG-070's retry-same loop.
+ */
+export const RUNTIME_CRASH_RETRY_CAP = 2;
+
+/**
+ * In-memory-only counter for consecutive runtime-crash retry-same outcomes,
+ * keyed by story id. Deliberately NOT persisted to the PRD — AC-4/AC-5
+ * require retry-same to never write to disk or dirty the PRD — so this
+ * bounds the retry loop only within a single process; it resets on restart.
+ */
+export const _runtimeCrashRetryCounts = new Map<string, number>();
+
+/**
  * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
  */
 export const _tierEscalationDeps = {
@@ -340,13 +359,29 @@ export const _tierEscalationDeps = {
  * Escalates to next tier or marks story as paused/failed based on failure category.
  */
 export async function handleTierEscalation(ctx: EscalationHandlerContext): Promise<EscalationHandlerResult> {
-  const logger = getSafeLogger();
+  const logger = _tierEscalationDeps.getSafeLogger();
 
   // @design: BUG-070: Runtime crashes are transient — retry same tier, do NOT escalate
   if (shouldRetrySameTier(ctx.runtimeCrashResult)) {
+    const retries = (_runtimeCrashRetryCounts.get(ctx.story.id) ?? 0) + 1;
+
+    if (retries > RUNTIME_CRASH_RETRY_CAP) {
+      _runtimeCrashRetryCounts.delete(ctx.story.id);
+      logger?.warn("escalation", "Runtime crash retry cap exceeded — pausing for human review", {
+        storyId: ctx.story.id,
+        retries,
+        cap: RUNTIME_CRASH_RETRY_CAP,
+      });
+      return await handleMaxAttemptsReached(ctx, "runtime-crash");
+    }
+
+    _runtimeCrashRetryCounts.set(ctx.story.id, retries);
     logger?.warn("escalation", "Runtime crash detected — retrying same tier (transient, not a code issue)", {
       storyId: ctx.story.id,
+      retries,
     });
+    // AC-4/AC-5: retry-same must never write to disk or dirty the PRD — story
+    // tier and attempts stay unchanged, per the spec's Failure Handling table.
     return { outcome: "retry-same", prdDirty: false, prd: ctx.prd };
   }
 
@@ -407,6 +442,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
     } else {
       logger?.warn("escalation", "Escalating story to next tier", {
         storyId: s.id,
+        fromTier: ctx.routing.modelTier,
         nextTier: escalatedTier,
         retryAsLite: escalateRetryAsLite,
       });

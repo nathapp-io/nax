@@ -31,6 +31,7 @@ export const _resultHandlerDeps = {
   spawn,
   worktreeManager: new WorktreeManager(),
   mergeEngine: new MergeEngine(new WorktreeManager()),
+  handleTierEscalation,
 };
 
 /**
@@ -365,7 +366,15 @@ export async function handlePipelineFailure(
       break;
 
     case "escalate": {
-      const escalationResult = await handleTierEscalation({
+      // US-002: derive runtimeCrashResult for same-tier retry. handleTierEscalation's
+      // retry-same branch returns the PRD unmodified — story tier and attempts must
+      // stay untouched per the spec's Failure Handling table, so prd is passed through
+      // as-is rather than pre-mutated here.
+      const runtimeCrashResult =
+        pipelineResult.context.tddFailureCategory === "runtime-crash"
+          ? { status: "RUNTIME_CRASH" as const, success: false }
+          : undefined;
+      const escalationResult = await _resultHandlerDeps.handleTierEscalation({
         story: ctx.story,
         storiesToExecute: ctx.storiesToExecute,
         isBatchExecution: ctx.isBatchExecution,
@@ -381,6 +390,7 @@ export async function handlePipelineFailure(
         workdir: ctx.workdir,
         attemptCost: pipelineResult.context.agentResult?.estimatedCostUsd || 0,
         agentManager: ctx.agentManager,
+        ...(runtimeCrashResult ? { runtimeCrashResult } : {}),
       });
       prd = escalationResult.prd;
       prdDirty = escalationResult.prdDirty;

@@ -1,0 +1,3 @@
+[2026-08-12T05:35:43.880Z] US-001 — PASSED — Record escalation source tiers in telemetry — Cost: $0.0574
+[2026-08-12T05:59:48.096Z] US-002 — PASSED — Retry runtime crashes on the current tier — Cost: $0.0000
+[2026-08-12T07:20:26.639Z] US-003 — PASSED — Enforce per-tier attempt budgets before dispatch — Cost: $0.0000

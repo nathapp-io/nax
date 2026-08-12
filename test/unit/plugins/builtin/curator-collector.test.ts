@@ -646,3 +646,99 @@ describe("collectObservations", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// US-001: collectObservations projects escalation log entries into an
+// EscalationObservation whose payload.from/to fields carry the source tier.
+//   - AC-4: fromTier/nextTier fields → payload.from/to
+//   - AC-5: legacy currentTier field (no fromTier) → payload.from
+//   - AC-8: payload.from is always a non-empty string
+// ---------------------------------------------------------------------------
+
+describe("collectObservations — escalation log entries (US-001)", () => {
+  async function runWithLogEntry(root: string, entry: Record<string, unknown>) {
+    const logFilePath = join(root, "run.jsonl");
+    await writeFile(logFilePath, `${JSON.stringify(entry)}\n`);
+    const context: CuratorPostRunContext = {
+      runId: "run-us001-collector",
+      feature: "feat-us001",
+      workdir: root,
+      prdPath: join(root, ".nax", "features", "feat-us001", "prd.json"),
+      branch: "main",
+      totalDurationMs: 1000,
+      totalCost: 0,
+      storySummary: { completed: 0, failed: 0, skipped: 0, paused: 0 },
+      stories: [],
+      version: "0.1.0",
+      pluginConfig: {},
+      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+      config: {} as any,
+      outputDir: join(root, "out"),
+      globalDir: join(root, "global"),
+      projectKey: "test-project-us001",
+      curatorRollupPath: join(root, "rollup.jsonl"),
+      logFilePath,
+    };
+    return collectObservations(context);
+  }
+
+  test("AC-4: fromTier/nextTier log entry yields escalation observation with payload.from 'fast'", async () => {
+    const root = await mkdtemp(join(tmpdir(), "us001-collector-fromnext-"));
+    const entry = {
+      timestamp: "2026-05-04T00:00:00.000Z",
+      level: "warn",
+      stage: "escalation",
+      message: "Escalating story to next tier",
+      storyId: "US-001",
+      data: { storyId: "US-001", fromTier: "fast", nextTier: "balanced" },
+    };
+    const observations = await runWithLogEntry(root, entry);
+    const escalationObs = observations.filter((o) => o.kind === "escalation");
+    expect(escalationObs).toHaveLength(1);
+    const obs = escalationObs[0];
+    if (obs?.kind === "escalation") {
+      expect(obs.payload.from).toBe("fast");
+      expect(obs.payload.to).toBe("balanced");
+    }
+  });
+
+  test("AC-5: legacy currentTier log entry (no fromTier) yields payload.from 'fast'", async () => {
+    const root = await mkdtemp(join(tmpdir(), "us001-collector-current-"));
+    const entry = {
+      timestamp: "2026-05-04T00:00:00.000Z",
+      level: "warn",
+      stage: "escalation",
+      message: "Escalating story to next tier after exceeding tier budget",
+      storyId: "US-001",
+      data: { storyId: "US-001", currentTier: "fast", nextTier: "balanced" },
+    };
+    const observations = await runWithLogEntry(root, entry);
+    const escalationObs = observations.filter((o) => o.kind === "escalation");
+    expect(escalationObs).toHaveLength(1);
+    const obs = escalationObs[0];
+    if (obs?.kind === "escalation") {
+      expect(obs.payload.from).toBe("fast");
+      expect(obs.payload.to).toBe("balanced");
+    }
+  });
+
+  test("AC-8: escalation observation payload.from is a non-empty string", async () => {
+    const root = await mkdtemp(join(tmpdir(), "us001-collector-nonempty-"));
+    const entry = {
+      timestamp: "2026-05-04T00:00:00.000Z",
+      level: "warn",
+      stage: "escalation",
+      message: "Escalating story to next tier",
+      storyId: "US-001",
+      data: { storyId: "US-001", fromTier: "fast", nextTier: "balanced" },
+    };
+    const observations = await runWithLogEntry(root, entry);
+    const escalationObs = observations.filter((o) => o.kind === "escalation");
+    expect(escalationObs).toHaveLength(1);
+    const obs = escalationObs[0];
+    if (obs?.kind === "escalation") {
+      expect(typeof obs.payload.from).toBe("string");
+      expect(obs.payload.from.length).toBeGreaterThan(0);
+    }
+  });
+});

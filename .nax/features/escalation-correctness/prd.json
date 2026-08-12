@@ -1,0 +1,180 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "escalation-correctness",
+  "branchName": "feat/escalation-correctness",
+  "createdAt": "2026-08-12T00:00:00+08:00",
+  "updatedAt": "2026-08-12T07:20:26.639Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Record escalation source tiers in telemetry",
+      "description": "**Goal** — Make every newly emitted escalation observation auditable by logging the source rung and ensuring both escalation emitters are collected.\n\n**Motivation** — Every escalation observation records an empty source tier, so the ladder cannot be audited.\n\n**Approach** — Logger routed through `_tierEscalationDeps`; emits source tier. `collectObservations` is unchanged; the escalation entries it reads gain the missing field. Its private `collectEscalation` helper needs no change — it already falls back through `fromTier ?? from ?? currentTier`.\n\n**Scope** — In: route `handleTierEscalation` logger resolution through `_tierEscalationDeps.getSafeLogger`; emit `fromTier` alongside the existing `nextTier`; align the pre-iteration escalation message with the collector’s case-sensitive `message.includes(\"Escalating\")` dispatch; cover collector fallback inputs and entries from both emitters. Out: runtime-crash retry behavior (US-002); per-tier budget dispatch and defaults (US-003); Backfilling `payload.from` on escalation observations already written to disk by earlier runs.\n\n**Interface** — Existing symbols this feature modifies — all verified present at the cited lines:\n\n```typescript\nhandleTierEscalation(ctx: EscalationHandlerContext): Promise<EscalationHandlerResult>\ncollectObservations(context: CuratorPostRunContext): Promise<Observation[]>\n```\n\n**Design notes** — `_tierEscalationDeps` (`tier-escalation.ts:332`) already exports `savePRD` and `getSafeLogger`. `preIterationTierCheck:142` resolves its logger through it; `handleTierEscalation:343` calls the imported `getSafeLogger()` directly. That asymmetry is why the escalation log line is currently untestable, so US-001 routes `handleTierEscalation` through `_tierEscalationDeps.getSafeLogger` as well.",
+      "acceptanceCriteria": [
+        "When `handleTierEscalation` emits an escalation log, then it obtains the logger through `_tierEscalationDeps.getSafeLogger` so a replacement dependency observes the call.",
+        "When `handleTierEscalation` escalates a story from `fast` to `balanced`, then it logs at stage `escalation` with `data.fromTier` equal to `\"fast\"`.",
+        "When `handleTierEscalation` escalates a story from `fast` to `balanced`, then the same escalation log has `data.nextTier` equal to `\"balanced\"`.",
+        "Given an escalation log entry with `fromTier: \"fast\"` and `nextTier: \"balanced\"`, when `collectObservations` reads the log, then it returns one `escalation` observation whose `payload.from` is `\"fast\"`.",
+        "Given an escalation log entry with `currentTier: \"fast\"` and no `fromTier`, when `collectObservations` reads the log, then it returns an observation whose `payload.from` is `\"fast\"`.",
+        "Given the log entry written by `handleTierEscalation` for an escalation, when `collectObservations` reads the log, then it returns exactly one observation of kind `escalation`.",
+        "Given the log entry written by `preIterationTierCheck` when a story exceeds its rung budget, when `collectObservations` reads the log, then it returns exactly one observation of kind `escalation`.",
+        "Given an escalation log entry, when `collectObservations` reads the log, then the returned observation has a non-empty string `payload.from`."
+      ],
+      "tags": [
+        "fix",
+        "telemetry",
+        "escalation",
+        "curator"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Touches an existing escalation emitter and collector dispatch using established dependency injection and structured-log conventions.",
+        "agentProfileId": "pi-medium",
+        "agent": "pi",
+        "profileModelTier": "balanced",
+        "initialAgent": "pi",
+        "initialProfileId": "pi-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/execution/escalation/tier-escalation.ts",
+        "src/plugins/builtin/curator/collect.ts",
+        "src/plugins/builtin/curator/types.ts",
+        "test/unit/execution/escalation/tier-escalation.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5ab57863ee45fc0d23bab4c683e133de5c41fc98"
+    },
+    {
+      "id": "US-002",
+      "title": "Retry runtime crashes on the current tier",
+      "description": "**Goal** — Translate the existing runtime-crash failure category into the existing same-tier escalation outcome and honor that outcome in the pipeline-result handler.\n\n**Motivation** — Runtime crashes escalate to a costlier model tier instead of retrying the same one.\n\n**Approach** — The crash signal is **not** given new plumbing. `tddFailureCategory === \"runtime-crash\"` already reaches the escalation call site, so `handlePipelineFailure` derives `runtimeCrashResult` from it rather than threading a parallel field from the verify layer. `shouldRetrySameTier`'s `{ status: \"RUNTIME_CRASH\" }` shape is preserved so the existing predicate and its tests stay valid.\n\n**Scope** — In: derive `runtimeCrashResult` in the `escalate` branch from `pipelineResult.context.tddFailureCategory`; pass it to `handleTierEscalation`; read `EscalationHandlerResult.outcome` so `retry-same` returns the original PRD with `prdDirty: false`, unchanged tier, and unchanged attempts; preserve non-crash escalation. Out: source-tier telemetry emission and collector behavior (US-001); per-tier budget wiring and default changes (US-003); Provider capacity errors and transient adapter failures (BUG-62 / BUG-20) — a separate transient-failure taxonomy, not part of tier escalation.; Agent unavailability persisting for a whole run after one transient failure (BUG-52).\n\n**Interface** — Existing symbols this feature modifies — all verified present at the cited lines:\n\n```typescript\nshouldRetrySameTier(runtimeCrashResult: { status: string; success: boolean } | undefined): boolean\nhandleTierEscalation(ctx: EscalationHandlerContext): Promise<EscalationHandlerResult>\n```\n\n**Failure handling** — Runtime crash detected | Same tier retried; story tier and `attempts` unchanged.",
+      "acceptanceCriteria": [
+        "When `shouldRetrySameTier` receives `{ status: \"RUNTIME_CRASH\" }`, then it returns `true`.",
+        "When `shouldRetrySameTier` receives `undefined`, then it returns `false`.",
+        "When `shouldRetrySameTier` receives `{ status: \"TEST_FAILURE\" }`, then it returns `false`.",
+        "When `handleTierEscalation` receives a context with a runtime-crash result, then it returns `outcome: \"retry-same\"`.",
+        "When `handleTierEscalation` returns `outcome: \"retry-same\"`, then it returns `prdDirty: false` and the unmodified PRD supplied in its context.",
+        "When `handleTierEscalation` receives a `tddFailureCategory` other than `\"runtime-crash\"`, then it returns `outcome: \"escalated\"` and advances the story `routing.modelTier` by one rung.",
+        "When `handlePipelineFailure` handles an `escalate` action whose `pipelineResult.context.tddFailureCategory` is `\"runtime-crash\"`, then it derives and passes a runtime-crash result to `handleTierEscalation`.",
+        "When `handlePipelineFailure` handles an `escalate` action for a runtime-crash failure, then the resulting story `routing.modelTier` is unchanged from before the call.",
+        "When `handlePipelineFailure` handles an `escalate` action for a runtime-crash failure, then the resulting story `attempts` is not reset to `0`.",
+        "When `handlePipelineFailure` handles an `escalate` action for a non-crash failure, then the resulting story `routing.modelTier` advances by one rung."
+      ],
+      "tags": [
+        "fix",
+        "escalation",
+        "runtime-crash",
+        "pipeline"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A clear two-module integration change must preserve a discriminated outcome and persisted story state.",
+        "agentProfileId": "pi-medium",
+        "agent": "pi",
+        "profileModelTier": "balanced",
+        "initialAgent": "pi",
+        "initialProfileId": "pi-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/execution/escalation/tier-escalation.ts",
+        "src/execution/pipeline-result-handler.ts",
+        "src/pipeline/stages/execution.ts",
+        "test/unit/execution/escalation/tier-escalation.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3f7b296a02221d45f065dfc002ab5eb870238885"
+    },
+    {
+      "id": "US-003",
+      "title": "Enforce per-tier attempt budgets before dispatch",
+      "description": "**Goal** — Bind the configured per-rung attempt budget to sequential and batch execution while shipping the measured 2/2/2 default ladder.\n\n**Motivation** — The per-tier attempt budgets in `autoMode.escalation.tierOrder` are never consulted, so the shipped ladder has never been in force or validated.\n\n**Approach** — Budget enforcement reuses `preIterationTierCheck` as written — it already handles agent-qualified rungs, missing rungs, and the escalation-disabled case. This feature supplies callers, not a reimplementation.\n\n**Scope** — In: change Zod schema defaults only from 5/3/2 to 2/2/2; add `preIterationTierCheck` to `_unifiedExecutorDeps`; invoke it before `runIteration` in sequential dispatch and once per story before batch dispatch; skip dispatch when its result has `shouldSkipIteration: true`; preserve resulting PRD state and existing dispatch semantics. Out: runtime-crash outcome plumbing (US-002); source-tier telemetry (US-001); Concurrent `savePRD` writes from simultaneous escalations in parallel/batch mode — the existing single-writer contract is unchanged by this feature.; `escalateEntireBatch` semantics — whether a batch escalates as a unit is unchanged.; `resetMode` semantics — how routing resets on escalation is unchanged.; Retuning the `2/2/2` budget values after measurement — this feature ships the corrected defaults, not a follow-up tuning pass.; US-003 only: retuning `maxIterations` or `execution.rectification.maxAttemptsTotal` to match the new per-rung budgets.\n\n**Interface** — Existing symbols this feature modifies — all verified present at the cited lines:\n\n```typescript\npreIterationTierCheck(\n  story: UserStory,\n  routing: { modelTier: string },\n  config: NaxConfig,\n  prd: PRD,\n  prdPath: string,\n  featureDir: string | undefined,\n  hooks: LoadedHooksConfig,\n  feature: string,\n  totalCost: number,\n  workdir: string,\n): Promise<PreIterationCheckResult>\ncalculateMaxIterations(tierOrder: TierConfig[]): number\n```\n\n**Design notes** — **Executor seam** — `_unifiedExecutorDeps.runIteration` (`unified-executor.ts:565`) is the established injection point for the sequential dispatch; the new pre-iteration call is added to the same deps object so tests can stub it without `mock.module()`. **Config defaults** — per `.nax/rules/config-patterns.md`, defaults live in the Zod schema and `DEFAULT_CONFIG` is derived via `NaxConfigSchema.parse({})`. Change the schema only.\n\n**Failure handling** — Story's current rung absent from `tierOrder` | Budget is unbounded for that story; warn and proceed. `autoMode.escalation.enabled` is `false` | Budget exhaustion does not escalate; the iteration proceeds.",
+      "acceptanceCriteria": [
+        "When `NaxConfigSchema.parse({})` is evaluated, then `autoMode.escalation.tierOrder` is `[fast, balanced, powerful]` with `attempts: 2` on every rung.",
+        "When `calculateMaxIterations` receives the default ladder, then it returns `6`.",
+        "When `preIterationTierCheck` receives a story with `attempts: 1` and a current-rung budget of `2`, then it returns `shouldSkipIteration: false`.",
+        "When `preIterationTierCheck` receives a story with `attempts: 2` and a current-rung budget of `2`, then it returns `shouldSkipIteration: true`.",
+        "When `preIterationTierCheck` returns `shouldSkipIteration: true` for an exhausted rung, then its returned PRD advances that story `routing.modelTier` to the next rung.",
+        "When `preIterationTierCheck` returns `shouldSkipIteration: true` for an exhausted rung, then its returned PRD resets that story `attempts` to `0`.",
+        "When `preIterationTierCheck` receives a story whose current tier is absent from `tierOrder`, then it returns `shouldSkipIteration: false` regardless of the story attempts value.",
+        "When `preIterationTierCheck` receives a story at its rung budget and `autoMode.escalation.enabled` is `false`, then it returns `shouldSkipIteration: false`.",
+        "When the sequential executor dispatches a selected story, then it invokes `preIterationTierCheck` once with that story before it invokes `runIteration`.",
+        "When the sequential executor receives `shouldSkipIteration: true` from `preIterationTierCheck`, then it does not invoke `runIteration` for that story.",
+        "When the batch executor dispatches a batch, then it invokes `preIterationTierCheck` once per batch story before the batch is dispatched.",
+        "When a story fails twice at the `fast` rung under the default ladder, then it reaches `balanced` and not `powerful`."
+      ],
+      "tags": [
+        "fix",
+        "escalation",
+        "execution",
+        "config",
+        "integration"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-module execution scheduling changes sequential and batch control flow, persistent PRD transitions, dependency injection, and configuration defaults.",
+        "agentProfileId": "pi-medium-balanced",
+        "agent": "pi",
+        "profileModelTier": "powerful",
+        "initialAgent": "pi",
+        "initialProfileId": "pi-medium-balanced",
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/execution/escalation/tier-escalation.ts",
+        "src/execution/escalation/escalation.ts",
+        "src/config/schemas.ts",
+        "src/execution/unified-executor.ts",
+        "test/unit/execution/escalation/escalation.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3f7b296a02221d45f065dfc002ab5eb870238885"
+    }
+  ],
+  "analysis": "This is a TypeScript/Bun enhancement to the existing execution escalation path. The execution cluster owns tier transitions, persists PRD state through injectable savePRD seams, and emits structured logs consumed by the curator. `preIterationTierCheck` in src/execution/escalation/tier-escalation.ts:130 already resolves an injectable logger, evaluates an agent-qualified or tier-only rung through getTierConfig, warns and proceeds for an absent rung, escalates/reset-attempts when the current rung budget is exhausted, then saves the updated PRD. Graph analysis shows it has zero production callers, so the sequential and batch dispatches in src/execution/unified-executor.ts must call it before their respective iteration/batch execution paths and make it injectable via _unifiedExecutorDeps. `handleTierEscalation` in the same module (342-515) currently uses the imported getSafeLogger directly, returns the existing retry-same outcome when runtimeCrashResult has status RUNTIME_CRASH, then logs only nextTier while normal escalation is performed. `handlePipelineFailure` in src/execution/pipeline-result-handler.ts:279-392 is the sole direct caller: its escalate branch currently forwards PRD and prdDirty only, so it must derive runtimeCrashResult from pipelineResult.context.tddFailureCategory === \"runtime-crash\" and honor outcome to preserve tier/attempts on same-tier retries. The execution stage already classifies CALL_OP_NO_OUTPUT and CALL_OP_MAX_RETRIES as runtime-crash, so no parallel signal plumbing is required. `calculateMaxIterations` in src/execution/escalation/escalation.ts:66-68 remains a sum utility; the new default ladder is 2/2/2 and therefore sums to six, but the per-rung decision belongs exclusively to the pre-iteration check. `NaxConfigSchema` at src/config/schemas.ts:46-593 owns schema defaults; DEFAULT_CONFIG is derived from parsing this schema, so only its 5/3/2 ladder literals should change. The curator collector at src/plugins/builtin/curator/collect.ts:404-419 already maps fromTier, from, or currentTier into payload.from and nextTier into payload.to, but its stage/message dispatcher must recognize the pre-iteration warning's exact capitalization so it can create observations for both emitters. Existing tests are concentrated in test/unit/execution/escalation/tier-escalation.test.ts, test/unit/execution/escalation/escalation.test.ts, test/unit/config/schemas.test.ts, executor tests, pipeline-result-handler tests, and curator collection tests; expand those instead of creating isolated new abstractions. Risks are behavioral: an incorrect skip result can silently omit a scheduled iteration; accidental mutation on retry-same can reset attempts; and changing batch sequencing can alter existing batch semantics. Keep savePRD’s existing single-writer behavior, maintain agent-qualified rung matching, preserve the collector’s fallback chain, and test call ordering through the documented injectable seams. There is no config migration: user-provided tierOrder values retain their explicit values, while only empty-schema/default consumers receive 2/2/2. Historical observations are intentionally not rewritten.",
+  "outOfScope": [
+    "Concurrent `savePRD` writes from simultaneous escalations in parallel/batch mode — the existing single-writer contract is unchanged by this feature.",
+    "`escalateEntireBatch` semantics — whether a batch escalates as a unit is unchanged.",
+    "`resetMode` semantics — how routing resets on escalation is unchanged.",
+    "Retuning the `2/2/2` budget values after measurement — this feature ships the corrected defaults, not a follow-up tuning pass.",
+    "Provider capacity errors and transient adapter failures (BUG-62 / BUG-20) — a separate transient-failure taxonomy, not part of tier escalation.",
+    "Agent unavailability persisting for a whole run after one transient failure (BUG-52).",
+    "Backfilling `payload.from` on escalation observations already written to disk by earlier runs.",
+    "US-003 only: retuning `maxIterations` or `execution.rectification.maxAttemptsTotal` to match the new per-rung budgets."
+  ],
+  "routingProfile": "cross-agent-pi"
+}
