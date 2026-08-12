@@ -74,6 +74,76 @@ export function extractJsonObject(text: string): string | null {
 }
 
 /**
+ * Find the span of a balanced `{...}` or `[...]` container starting at
+ * `openIndex`, tracking bracket nesting depth and string state (respecting
+ * escaped quotes) so prose braces before or inside the real payload don't
+ * mis-slice it. Returns the end index (inclusive) of the matching closer, or
+ * -1 if the container never closes.
+ */
+function findBalancedSpanEnd(text: string, openIndex: number): number {
+  const openChar = text[openIndex];
+  const closeChar = openChar === "{" ? "}" : "]";
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = openIndex; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === openChar) {
+      depth++;
+    } else if (ch === closeChar) {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** Cap on candidate openers tried per call — each candidate's balanced-span
+ *  scan is O(text.length), so an adversarial/malformed response with many
+ *  bare `{`/`[` characters and no valid JSON must not become O(n^2) on the
+ *  retry-storm path. */
+const MAX_JSON_CANDIDATES = 50;
+
+/**
+ * Scan `text` for `openChar`/matching-closer candidates in order, and return
+ * the parsed value of the first candidate whose balanced span is valid JSON.
+ * This handles prose braces preceding the real payload (e.g.
+ * `the { payload } was: {"a": 1}`) — the first candidate is structurally
+ * balanced but not valid JSON, so the scan moves on to the next `{`.
+ * Returns undefined when no candidate parses.
+ */
+function parseFirstBalancedJsonCandidate<T>(text: string, openChar: "{" | "["): T | undefined {
+  let candidates = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== openChar) continue;
+    if (candidates++ >= MAX_JSON_CANDIDATES) return undefined;
+    const end = findBalancedSpanEnd(text, i);
+    if (end === -1) continue;
+    try {
+      return JSON.parse(stripTrailingCommas(text.slice(i, end + 1))) as T;
+    } catch {
+      /* this candidate's span isn't valid JSON — try the next one */
+    }
+  }
+  return undefined;
+}
+
+/**
  * Wrap a prompt to instruct the LLM to respond with JSON only.
  *
  * Adds a JSON-only instruction at the top (primacy) and a reinforcement
@@ -138,27 +208,14 @@ export function parseLLMJson<T = unknown>(text: string): T {
     }
   }
 
-  // Tier 3a: bare JSON object — try { … } first
-  const objStart = trimmed.indexOf("{");
-  const objEnd = trimmed.lastIndexOf("}");
-  if (objStart !== -1 && objEnd > objStart) {
-    try {
-      return JSON.parse(stripTrailingCommas(trimmed.slice(objStart, objEnd + 1))) as T;
-    } catch {
-      /* extracted object not valid JSON */
-    }
-  }
+  // Tier 3a: bare JSON object — brace-balanced scan for { … }, trying each
+  // `{` candidate in order (handles prose braces before the real payload).
+  const objResult = parseFirstBalancedJsonCandidate<T>(trimmed, "{");
+  if (objResult !== undefined) return objResult;
 
-  // Tier 3b: bare JSON array — fallback to [ … ]
-  const arrStart = trimmed.indexOf("[");
-  const arrEnd = trimmed.lastIndexOf("]");
-  if (arrStart !== -1 && arrEnd > arrStart) {
-    try {
-      return JSON.parse(stripTrailingCommas(trimmed.slice(arrStart, arrEnd + 1))) as T;
-    } catch {
-      /* extracted array not valid JSON */
-    }
-  }
+  // Tier 3b: bare JSON array — fallback to a bracket-balanced [ … ] scan
+  const arrResult = parseFirstBalancedJsonCandidate<T>(trimmed, "[");
+  if (arrResult !== undefined) return arrResult;
 
   throw new SyntaxError("[llm-json] Failed to parse LLM response as JSON");
 }

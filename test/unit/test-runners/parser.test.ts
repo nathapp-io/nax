@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { analyzeTestExitCode, parseTestOutput } from "@/test-runners";
+import { analyzeTestExitCode, parseBunTestOutput, parseTestOutput } from "@/test-runners";
 
 describe("pytest output — structured error/stack extraction", () => {
   test("extracts stackTrace file:line reference from verbose FAILURES block", () => {
@@ -228,6 +228,38 @@ ERROR tests/unit/test_alpaca_adapter.py - ImportError while importing test modul
     expect(analysis.allTestsPassed).toBe(false);
     expect(analysis.isEnvironmentalFailure).toBe(false);
   });
+
+  // BUG-14: the bare "N fail" fallback regex used to match anywhere in the
+  // output, so an app log line like "WARN: 3 failed requests" mid-output
+  // turned an all-green, exit-0 run red.
+  test("analyzeTestExitCode does NOT misread an app-log line as a fail summary", () => {
+    const output = "suite start\nWARN: 3 failed requests in the log\ntests ran fine\n";
+
+    const analysis = analyzeTestExitCode(output, 0);
+
+    expect(analysis.allTestsPassed).toBe(false);
+    expect(analysis.failCount).toBe(0);
+    expect(analysis.isEnvironmentalFailure).toBe(false);
+  });
+
+  // Review follow-up: the exclusion must target log-level prefixes only. A real
+  // runner summary of the form "Tests: 1 failed, 2 passed" is also "Word: N fail"
+  // and must NOT be excluded.
+  test("analyzeTestExitCode still catches a 'Tests: N failed' runner summary", () => {
+    const analysis = analyzeTestExitCode("Tests: 3 failed, 2 passed\n", 1);
+
+    expect(analysis.failCount).toBe(3);
+    expect(analysis.allTestsPassed).toBe(false);
+  });
+
+  test("analyzeTestExitCode still catches a genuine 'N failing' summary line", () => {
+    const output = "5 passing\n3 failing\n";
+
+    const analysis = analyzeTestExitCode(output, 1);
+
+    expect(analysis.failCount).toBe(3);
+    expect(analysis.allTestsPassed).toBe(false);
+  });
 });
 
 describe("go test output — structured error/file/stack extraction", () => {
@@ -335,5 +367,51 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; 
     const s = parseTestOutput(output);
     expect(s.failed).toBe(1);
     expect(s.failures[0].file).toBe("test/a.test.js");
+  });
+});
+
+describe("parseBunTestOutput — file attribution and (fail) name parsing", () => {
+  // BUG-16: a ".test.tsx" (or ".spec.ts"/".test.mts"/".test.cts") header used to
+  // be missed by the endsWith(".test.ts:")/(".test.js:") check, leaving
+  // currentFile empty and the failure mis-attributed to file "unknown".
+  test("BUG-16: recognizes a .test.tsx header and attributes the failure to it", () => {
+    const output = [
+      "test/foo.test.tsx:",
+      "  ✗ it renders",
+      "(fail) render [5ms] timeout handling [1.2ms]",
+      "0 pass",
+      "1 fail",
+    ].join("\n");
+
+    const r = parseBunTestOutput(output);
+
+    expect(r.failures[0]?.file).toBe("test/foo.test.tsx");
+  });
+
+  // BUG-17: the lazy `.+?` capture up to the FIRST bracket truncated a test name
+  // that itself contains a "[Nms]"-shaped substring. The fix anchors to
+  // end-of-line with a greedy capture, so the name is captured up to the LAST
+  // duration marker.
+  test("BUG-17: captures the full test name up to the last duration marker", () => {
+    const output = [
+      "test/foo.test.tsx:",
+      "  ✗ it renders",
+      "(fail) render [5ms] timeout handling [1.2ms]",
+      "0 pass",
+      "1 fail",
+    ].join("\n");
+
+    const r = parseBunTestOutput(output);
+
+    expect(r.failures[0]?.testName).toBe("render [5ms] timeout handling");
+  });
+
+  test("still attributes a plain .test.ts header (no regression)", () => {
+    const output = ["test/foo.test.ts:", "(fail) simple case [1ms]"].join("\n");
+
+    const r = parseBunTestOutput(output);
+
+    expect(r.failures[0]?.file).toBe("test/foo.test.ts");
+    expect(r.failures[0]?.testName).toBe("simple case");
   });
 });

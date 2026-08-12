@@ -97,8 +97,10 @@ export class CLIInteractionPlugin implements InteractionPlugin {
     }
 
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
     const timeoutPromise = new Promise<InteractionResponse>((resolve) => {
       timeoutId = setTimeout(() => {
+        timedOut = true;
         resolve({
           requestId: request.id,
           action: "skip",
@@ -111,10 +113,34 @@ export class CLIInteractionPlugin implements InteractionPlugin {
     const userPromise = this.getUserInput(request);
 
     try {
-      return await Promise.race([userPromise, timeoutPromise]);
+      const result = await Promise.race([userPromise, timeoutPromise]);
+      // On timeout, the readline `question()` callback registered by
+      // getUserInput() is still pending — readline supports only one
+      // in-flight question, so the NEXT prompt would silently register no
+      // callback and the user's next answer would be consumed by this
+      // stale one. Close and recreate the interface to discharge it.
+      if (timedOut) {
+        this.recreateReadline();
+      }
+      return result;
     } finally {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
     }
+  }
+
+  /**
+   * Close and recreate the readline interface, discarding any pending
+   * (stale) `question()` callback. Used after a prompt timeout so the
+   * next `question()` call isn't shadowed by the abandoned one.
+   */
+  private recreateReadline(): void {
+    if (this.rl) {
+      this.rl.close();
+    }
+    this.rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
   }
 
   /**

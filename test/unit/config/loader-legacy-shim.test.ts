@@ -246,4 +246,25 @@ describe("loadConfig — legacy key deprecation shim", () => {
 
     expect(config.review as unknown as Record<string, unknown>).toHaveProperty("pluginMode", "gating");
   });
+
+  // BUG-51: profile/CLI config layers must run through the same compat-shim chain as
+  // file-based layers (global/project config), or a legacy value set via a profile
+  // (or CLI override) hard-fails Zod validation instead of being remapped.
+  test("BUG-51: loadConfig remaps a removed routing.strategy set via a profile instead of failing", async () => {
+    await Bun.write(
+      join(tempDir, ".nax", "profiles", "legacy-manual.json"),
+      JSON.stringify({ routing: { strategy: "manual" } }),
+    );
+
+    const config = await loadConfig(tempDir, { profile: "legacy-manual" });
+
+    // "manual" was removed in ROUTE-001 and mapped to "keyword" by applyRemovedStrategyCompat.
+    expect(config.routing.strategy).toBe("keyword");
+  });
+
+  test("BUG-51: loadConfig remaps a removed routing.strategy set via a CLI override instead of failing", async () => {
+    const config = await loadConfig(tempDir, { routing: { strategy: "adaptive" } });
+
+    expect(config.routing.strategy).toBe("keyword");
+  });
 });

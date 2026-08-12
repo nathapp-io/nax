@@ -331,24 +331,41 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
   /**
    * Deliver a response to a waiting receive() callback, or store for later pickup.
    * Responses for unknown (unregistered) request IDs are rejected.
+   *
+   * Returns "capacity-exceeded" when the early-pickup store is full
+   * (MAX_PENDING_RESPONSES) and the response was silently discarded — the
+   * caller must surface this as an error status rather than reporting
+   * success (BUG-47). Other outcomes are informational only; existing
+   * callers already return a generic 200/reject for those.
    */
-  private deliverResponse(requestId: string, response: InteractionResponse): void {
+  private deliverResponse(
+    requestId: string,
+    response: InteractionResponse,
+  ): "delivered" | "unknown-id" | "destroyed" | "capacity-exceeded" {
     if (this.isDestroyed) {
-      return;
+      return "destroyed";
     }
 
     // Reject callbacks for IDs that were never sent — prevents DoS via unknown IDs
     if (!this.registeredRequestIds.has(requestId)) {
-      return;
+      return "unknown-id";
     }
 
     const cb = this.receiveCallbacks.get(requestId);
     if (cb) {
       cb(response);
-    } else if (this.pendingResponses.size < MAX_PENDING_RESPONSES) {
+      return "delivered";
+    }
+
+    if (this.pendingResponses.size < MAX_PENDING_RESPONSES) {
       // receive() hasn't been called yet — store for early-pickup path
       this.pendingResponses.set(requestId, response);
+      return "delivered";
     }
+
+    // Capacity exceeded — the response was NOT stored. Caller must not
+    // report success to the webhook caller.
+    return "capacity-exceeded";
   }
 
   private clearReceiveTimer(requestId: string): void {
@@ -397,7 +414,17 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
         fetch: (req) => this.handleRequest(req),
       }) as unknown as Server;
     })();
-    await this.serverStartPromise;
+    try {
+      await this.serverStartPromise;
+    } catch (err) {
+      // BUG-50: if Bun.serve rejects, serverStartPromise must not stay
+      // wedged on a rejected promise — reset it so the next startServer()
+      // call gets a clean retry instead of permanently reusing this
+      // rejected promise (every future send()/receive() would await it and
+      // immediately re-throw, wedging the plugin until a full re-init).
+      this.serverStartPromise = null;
+      throw err;
+    }
     this.serverStartPromise = null;
   }
 
@@ -460,13 +487,21 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
     }
 
     // Parse and validate body
+    let deliveryResult: "delivered" | "unknown-id" | "destroyed" | "capacity-exceeded";
     try {
       const parsed = JSON.parse(body);
       const response = InteractionResponseSchema.parse(parsed);
-      this.deliverResponse(requestId, response);
+      deliveryResult = this.deliverResponse(requestId, response);
     } catch {
       // Sanitize error - do not leak parse/validation details
       return new Response("Bad Request: Invalid response format", { status: 400 });
+    }
+
+    // BUG-47: capacity exceeded means the response was silently discarded —
+    // returning 200 here would mislead the caller into thinking it was
+    // recorded. Surface a retryable error status instead.
+    if (deliveryResult === "capacity-exceeded") {
+      return new Response("Service Unavailable: pending response capacity exceeded", { status: 503 });
     }
 
     return new Response("OK", { status: 200 });

@@ -8,7 +8,14 @@
 import { z } from "zod";
 import { getSafeLogger } from "../../logger";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
-import { MAX_MESSAGE_CHARS, buildBody, buildHeader, buildKeyboard, splitText } from "./telegram-format";
+import {
+  MAX_MESSAGE_CHARS,
+  buildBody,
+  buildHeader,
+  buildKeyboard,
+  splitText,
+  truncateIdForCallbackData,
+} from "./telegram-format";
 
 /**
  * Injectable dependencies for testing.
@@ -404,13 +411,20 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     if (update.callback_query) {
       const data = update.callback_query.data;
       const parts = data.split(":");
-      // Exact match on the id segment — startsWith let one tap answer the wrong
-      // prompt whenever one request's id was a prefix of another's (BUG-34).
-      if (parts[0] !== requestId) return null;
       if (parts.length < 2) return null;
 
       const action = parts[1] as InteractionResponse["action"];
       const value = parts.length > 2 ? parts[2] : undefined;
+
+      // The id segment may have been truncated at construction time to keep
+      // callback_data within Telegram's 64-byte limit (BUG-48), so compare
+      // against the same truncation of the known-good requestId rather than
+      // the full, untruncated id. Exact match (not startsWith) — startsWith
+      // let one tap answer the wrong prompt whenever one request's id was a
+      // prefix of another's (BUG-34).
+      const suffix = value !== undefined ? `:${action}:${value}` : `:${action}`;
+      const expectedIdPart = truncateIdForCallbackData(requestId, suffix);
+      if (parts[0] !== expectedIdPart) return null;
 
       return {
         requestId,

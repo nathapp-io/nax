@@ -88,7 +88,10 @@ export function calculateAggregateMetrics(runs: RunMetrics[]): AggregateMetrics 
   const modelEfficiency: AggregateMetrics["modelEfficiency"] = {};
   for (const [modelKey, stats] of modelStats) {
     const passRate = stats.attempts > 0 ? stats.successes / stats.attempts : 0;
-    const avgCost = stats.successes > 0 ? stats.totalCost / stats.successes : 0;
+    // avgCost is "average cost per attempt" (see report.ts buildModelEfficiency,
+    // shown alongside `attempts`) — dividing by successes instead silently
+    // reports $0 for a model with real spend but zero successes.
+    const avgCost = stats.attempts > 0 ? stats.totalCost / stats.attempts : 0;
 
     modelEfficiency[modelKey] = {
       attempts: stats.attempts,

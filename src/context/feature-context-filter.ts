@@ -51,8 +51,9 @@ const REVIEWER_AUDIENCE_MAP: Record<string, AudienceTag[]> = {
  * Case-insensitive. The tag block is the LAST `[...]` on the line.
  */
 export function parseAudienceTags(headline: string): string[] {
-  // Match the last occurrence of [...] on the headline
-  const matches = [...headline.matchAll(/\[([^\]]+)\]/g)];
+  // Match [...] occurrences, excluding markdown links (`[text](url)`) — a bracket
+  // group immediately followed by '(' is link text, not an audience tag.
+  const matches = [...headline.matchAll(/\[([^\]]+)\]/g)].filter((m) => headline[(m.index ?? 0) + m[0].length] !== "(");
   if (matches.length === 0) return ["all"];
 
   const lastMatch = matches[matches.length - 1];

@@ -239,6 +239,55 @@ describe("coerceVerdict", () => {
     expect(result?.acceptanceCriteria.criteria[0].met).toBe(true);
     expect(result?.acceptanceCriteria.criteria[1].met).toBe(false);
   });
+
+  // BUG-31: verdict coercion regressions
+  test("does not approve 'VERIFIED FAILED' — a contradicted VERIFIED prefix", () => {
+    const result = coerceVerdict({
+      verdict: "VERIFIED FAILED: 3 tests red",
+      verification_summary: { test_results: "3/3 FAIL" },
+    });
+    expect(result?.approved).toBe(false);
+  });
+
+  test("plain 'VERIFIED' with no failure indicator is still approved", () => {
+    const result = coerceVerdict({ verdict: "VERIFIED" });
+    expect(result?.approved).toBe(true);
+  });
+
+  test("does not mistake a date for a pass/fail ratio", () => {
+    const result = coerceVerdict({
+      verdict: "VERIFIED",
+      verification_summary: { test_results: "2024/05/13 ran 5 tests, 5/5 PASS" },
+    });
+    expect(result?.tests.passCount).toBe(5);
+    expect(result?.tests.failCount).toBe(0);
+  });
+
+  test("does not parse a ratio when there is no test-count context at all", () => {
+    const result = coerceVerdict({
+      verdict: "VERIFIED",
+      verification_summary: { test_results: "created on 2024/05/13" },
+    });
+    expect(result?.tests.passCount).toBe(0);
+    expect(result?.tests.failCount).toBe(0);
+  });
+
+  // Review follow-up: the ratio regex must still recognise the FAIL side of a
+  // ratio ("42/45 FAIL"), otherwise a summary contradicting an approving verdict
+  // silently reports failCount 0 / allPassing true.
+  test("parses a FAIL-side ratio so a contradicting summary is not reported as all-passing", () => {
+    const result = coerceVerdict({
+      verdict: "VERIFIED",
+      verification_summary: { test_results: "42/45 FAIL" },
+    });
+    expect(result?.tests.passCount).toBe(42);
+    expect(result?.tests.failCount).toBe(3);
+    expect(result?.tests.allPassing).toBe(false);
+  });
+
+  test("'PASSED' is accepted as an approval token", () => {
+    expect(coerceVerdict({ verdict: "PASSED" })?.approved).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -11,6 +11,8 @@
  *   Kept for backward compatibility and direct use in tests.
  */
 
+import { getSafeLogger } from "@/logger";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -78,6 +80,31 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
       // state.text, so it can't become a permanent prefix of the real response.
       state.text = "";
       state.sawJsonLine = true;
+    }
+
+    // ── Protocol-version drift guard (BUG-53) ──────────────────────────────
+    // A message shaped like JSON-RPC (has method+params, or id with an
+    // object result/error) but with a missing/mismatched jsonrpc field must
+    // not silently fall into the legacy flat-NDJSON branch below — the
+    // legacy branch expects different field shapes (string result/content,
+    // not the object-valued fields JSON-RPC uses) and would corrupt
+    // state.text or drop the data outright. Treat it as an unsupported
+    // protocol version instead of misparsing it.
+    const looksLikeJsonRpcShape =
+      (typeof event.method === "string" && event.params !== undefined) ||
+      (event.id !== undefined &&
+        ((event.result && typeof event.result === "object") || (event.error && typeof event.error === "object")));
+
+    if (event.jsonrpc !== "2.0" && looksLikeJsonRpcShape) {
+      getSafeLogger()?.error("acp-adapter", "Unsupported or missing JSON-RPC protocol version in acpx output", {
+        jsonrpc: event.jsonrpc,
+        method: typeof event.method === "string" ? event.method : undefined,
+      });
+      // Surface the drift on state.error — otherwise the caller sees
+      // {text: "", error: undefined} and reports a successful empty turn
+      // instead of failing on the unsupported protocol version.
+      state.error ??= "Unsupported acpx JSON-RPC protocol version";
+      return undefined;
     }
 
     // ── JSON-RPC envelope format (acpx v0.3+) ──────────────────────────────
@@ -158,18 +185,28 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
 
         if (result.usage && typeof result.usage === "object") {
           const u = result.usage as Record<string, unknown>;
-          const asNumber = (...values: unknown[]): number => {
+          const asNumber = (...values: unknown[]): number | undefined => {
             for (const v of values) {
               if (typeof v === "number" && Number.isFinite(v)) return v;
             }
-            return 0;
+            return undefined;
           };
-          state.tokenUsage = {
-            input_tokens: asNumber(u.inputTokens, u.input_tokens),
-            output_tokens: asNumber(u.outputTokens, u.output_tokens),
-            cache_read_input_tokens: asNumber(u.cachedReadTokens, u.cache_read_input_tokens),
-            cache_creation_input_tokens: asNumber(u.cachedWriteTokens, u.cache_creation_input_tokens),
-          };
+          const inputTokens = asNumber(u.inputTokens, u.input_tokens);
+          const outputTokens = asNumber(u.outputTokens, u.output_tokens);
+          // BUG-54: a partial usage object (missing the required token
+          // counts) must not fabricate a zero-filled record — that makes a
+          // genuinely free/zero-usage call indistinguishable from a call
+          // where usage reporting was simply incomplete. Only accept the
+          // record when both required fields are present; cache fields
+          // remain optional (default to 0 when absent).
+          if (inputTokens !== undefined && outputTokens !== undefined) {
+            state.tokenUsage = {
+              input_tokens: inputTokens,
+              output_tokens: outputTokens,
+              cache_read_input_tokens: asNumber(u.cachedReadTokens, u.cache_read_input_tokens) ?? 0,
+              cache_creation_input_tokens: asNumber(u.cachedWriteTokens, u.cache_creation_input_tokens) ?? 0,
+            };
+          }
         }
       }
 
@@ -208,10 +245,16 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
 
     if (event.cumulative_token_usage) state.tokenUsage = event.cumulative_token_usage;
     if (event.usage) {
-      state.tokenUsage = {
-        input_tokens: event.usage.input_tokens ?? event.usage.prompt_tokens ?? 0,
-        output_tokens: event.usage.output_tokens ?? event.usage.completion_tokens ?? 0,
-      };
+      const legacyInputTokens = event.usage.input_tokens ?? event.usage.prompt_tokens;
+      const legacyOutputTokens = event.usage.output_tokens ?? event.usage.completion_tokens;
+      // BUG-54: same rule as the JSON-RPC branch above — don't fabricate a
+      // zero-filled usage record when the required fields are missing.
+      if (typeof legacyInputTokens === "number" && typeof legacyOutputTokens === "number") {
+        state.tokenUsage = {
+          input_tokens: legacyInputTokens,
+          output_tokens: legacyOutputTokens,
+        };
+      }
     }
 
     if (event.stopReason) state.stopReason = event.stopReason;

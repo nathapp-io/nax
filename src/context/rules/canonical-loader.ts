@@ -413,7 +413,19 @@ export async function loadCanonicalRules(
 
     if (!content.trim()) continue;
 
-    const parsed = parseFrontmatter(content, filePath);
+    let parsed: ReturnType<typeof parseFrontmatter>;
+    try {
+      parsed = parseFrontmatter(content, filePath);
+    } catch (err) {
+      if (err instanceof RulesFrontmatterError) {
+        logger.warn("canonical-loader", "Invalid rule frontmatter — skipping file", {
+          file: filePath,
+          error: err.message,
+        });
+        continue;
+      }
+      throw err;
+    }
     if (!parsed.content) continue;
 
     // AC14: emit each parser warning through the injectable logger for runtime visibility

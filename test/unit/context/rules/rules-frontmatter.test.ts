@@ -52,15 +52,36 @@ describe("parseFrontmatter — AC4", () => {
     expect((threw as RulesFrontmatterError).context?.filePath).toBe("/project/.nax/rules/bad.md");
   });
 
-  test("[AC4] throws on empty frontmatter with no body", () => {
-    let threw: unknown;
-    try {
-      parseFrontmatter("---\n---\n", "/project/.nax/rules/empty.md");
-    } catch (e) {
-      threw = e;
-    }
-    expect(threw).toBeInstanceOf(RulesFrontmatterError);
-    expect((threw as RulesFrontmatterError).message).toContain("missing closing '---'");
+  // BUG-03: the compact empty frontmatter block ("---\n---\n", no blank line between
+  // the delimiters) previously failed to match the closing-delimiter regex (which
+  // requires a line break both after the opening '---' and before the closing '---')
+  // and was rejected as "missing closing '---'". It is now treated as an empty
+  // frontmatter document — no error, default priority, empty body.
+  test("[AC4/BUG-03] a compact empty frontmatter block ('---\\n---\\n') parses as no-op frontmatter, not an error", () => {
+    const result = parseFrontmatter("---\n---\n", "/project/.nax/rules/empty.md");
+    expect(result.priority).toBe(FRONTMATTER_PRIORITY_DEFAULT);
+    expect(result.content).toBe("");
+  });
+
+  // Review follow-up: the compact-empty-block probe must require a real line end
+  // after the closing '---', or a document whose second line is a longer dash rule
+  // ("---\n----") gets silently truncated instead of parsed.
+  test("[AC4/BUG-03] a longer dash rule on line 2 is not mistaken for an empty frontmatter block", () => {
+    // The compact-empty-block probe must require a real line end after the
+    // closing '---'. Without that, "---\n------\n..." matches the probe's first
+    // six characters and the body is silently truncated to "-\n...". Falling
+    // through to the normal "missing closing '---'" error is the correct
+    // outcome (loadCanonicalRules catches it per-file and skips) — silent
+    // content corruption is not.
+    expect(() => parseFrontmatter("---\n------\nRule body text.", "/project/.nax/rules/rule.md")).toThrow(
+      /missing closing/,
+    );
+  });
+
+  test("[AC4/BUG-03] a body still follows a compact empty frontmatter block", () => {
+    const result = parseFrontmatter("---\n---\nRule body text.", "/project/.nax/rules/empty-body.md");
+    expect(result.priority).toBe(FRONTMATTER_PRIORITY_DEFAULT);
+    expect(result.content).toBe("Rule body text.");
   });
 });
 

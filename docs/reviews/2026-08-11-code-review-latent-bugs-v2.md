@@ -365,6 +365,41 @@ Two caveats inside this group: **BUG-29**'s loop-until-empty fix is local, but `
 
 ---
 
+## Fix Status (2026-08-12)
+
+All 39 Group 3 (mechanical) findings above are **fixed** on branch `fix/20260811-bugs`, verified by `bun x tsc --noEmit` (clean), `bun run lint` (clean — biome, deep-relative-import/alias-internal/file-size/nax-error ratchets all hold), the full test suite (`bun run test`: 12596 unit + 1102 integration + 24 UI, 0 failures), and the proof harness (`bun docs/reviews/2026-08-11-latent-bugs-v2-proof.ts`: 32/32 assertions pass — expectations updated in place from "reproduces the bug" to "reproduces the fix"). Group 1 (needs a human product decision) and Group 2 (needs an architecture change) were deliberately **not** touched — see the two tables above for what's still open in each.
+
+**Two regressions were caught and corrected before merge, both worth recording as lessons:**
+
+- **BUG-38** (`src/findings/cycle.ts`): the first-pass fix exited the entire fix-cycle retry loop on *any* `shortCircuited=true` validate result. That flag is also set on every ordinary mid-cycle iteration where a phase fails and the cycle is expected to keep retrying — so the first-pass fix broke 19 rectification-budget tests (dispatch counts collapsing from the configured cap to 1). Corrected to only intercept when the outcome would otherwise misclassify as `"resolved"` — proven exact via `classifyOutcome`: `findingsAfter.length === 0` is necessary and sufficient for a `"resolved"` outcome, so gating on `outcome === "resolved" && fullShortCircuited` catches precisely the false-green case this bug describes and nothing else.
+- **BUG-42** (`src/precheck/checks-config.ts`): the first-pass fix took `Math.min` of two elapsed-time signals (recorded timestamp, file mtime) to guard against clock skew — but both signals are `Date.now()`-derived, so a clock jump corrupts them identically and `Math.min` is a no-op on every real code path (the lock file is written once, never touched again, so the two readings are already equal). Where the two genuinely diverge (an external `git checkout`/restore touching the lock file), the fix actively introduced a **false negative**: a 3-hour-old lock from a dead process would read as fresh, blocking `nax run` behind a phantom lock in a Tier-1 blocker check. A post-fix code review caught this before merge (flagged by the tell that two passing tests needed `utimesSync` backdating to keep working — the signature of a weakened detector) and it was corrected to use PID liveness (`process.kill(pid, 0)`) as the authoritative signal, with elapsed time only as a backstop for a dead-but-recycled PID.
+
+**A post-fix independent code review** (`code-reviewer` agent, standard-depth, scope = the full diff) additionally found and fixed, before merge:
+
+| Bug | Issue | Fix |
+|:---|:---|:---|
+| BUG-13 | Go anchor `^--- FAIL:` dropped every **indented** subtest failure (Go nests subtest failure lines) | Anchor widened to `^\s*--- FAIL:` |
+| BUG-14 | Log-noise exclusion lookbehind `(?<!\b[A-Za-z]+:\s)` excluded *any* `Word: N fail`, including real Jest/vitest summary lines like `"Tests: 3 failed"` | Narrowed to actual log-level prefixes (warn/info/debug/error/etc.) |
+| BUG-17 | New `$`-anchored `(fail)` regex broke on CRLF output (trailing `\r` after `split("\n")`) | `$` → `\s*$` |
+| BUG-23 | `git.ts` timeout-path drain promises were unawaited without a `.catch()` — a SIGKILLed process erroring its pipes could surface as an unhandled rejection | Eager `.catch(() => "")` attached |
+| BUG-31 | Ratio regex `(?:pass\|PASS)` didn't recognize the FAIL side of a ratio (`"42/45 FAIL"`), so a summary contradicting an approving verdict silently reported `failCount 0` | Widened to `(?:pass\|fail)` |
+| BUG-42 | See above — merge-blocking, corrected to PID liveness | |
+| BUG-43 | The `manager-sweep.ts` NaN guard (`if (!session.lastActivityAt) continue`) was a no-op — `continue` and falling through to `NaN < cutoff` both retain the session, so the fix changed nothing for the case it was written for (a *truthy-but-unparseable* timestamp) | Rewritten to treat any non-finite parsed timestamp as expired |
+| BUG-45 | (style) a literal raw NUL byte in `path-filters.ts` made the file report as binary to `file`/`git diff`/`grep` | Replaced with `" "` escape |
+| BUG-48 | Prefix truncation of `request.id` for Telegram's 64-byte `callback_data` limit strips the trailing UUID first — i.e. exactly the entropy — so two same-trigger prompts in the same window could truncate to an identical id and collide, re-opening BUG-34's cross-prompt mixup on approve/reject/**abort** buttons | Switched to a SHA-256 hash of the id instead of a prefix, so truncation can no longer destroy uniqueness |
+| BUG-53 | Protocol-drift guard returned `undefined` without setting `state.error`, so a version-drifted acpx would read as a *successful empty turn* instead of a failure | `state.error ??= "Unsupported acpx JSON-RPC protocol version"` before the early return |
+| n/a | `rules-frontmatter.ts` empty-block probe `/^---\r?\n---\r?\n?/` also matched the first 6 chars of a doc whose second line was a longer dash rule (`"---\n------\nbody"`), silently truncating the body | Tightened to require a real line end after the closing `---` |
+| n/a | `completion.ts`'s new `GIT_TIMEOUT_MS` guard called `clearTimeout` after the `await`, so a throwing read leaked the timer | Moved into `finally` |
+| n/a | `parseLLMJson`'s brace-balancing candidate scan was unbounded — O(n·k) on adversarial/malformed LLM output on the retry-storm path | Capped at `MAX_JSON_CANDIDATES = 50` |
+| n/a | `CostAggregator.drain()`'s write-until-empty loop (BUG-29) had no iteration ceiling | Added `MAX_DRAIN_PASSES = 20` with a warn log if hit; added a regression test pinning that `snapshot()` reflects the full total after drain, not zero |
+| n/a | `autoCommitIfDirty`'s `git add -A` / `git commit` (BUG-23's `gitWithTimeout` routing) inherited the default 10s timeout, which a large monorepo's `git add -A` can exceed — a timeout was silently swallowed, leaving the tree dirty | Given an explicit 30s budget (`AUTO_COMMIT_GIT_TIMEOUT_MS`) and now logs on non-zero exit instead of discarding it |
+
+Remaining open items from that review (not merge-blocking, tracked as follow-ups, not yet actioned): `src/agents/acp/parser.ts`'s legacy-branch `id`+object-`error` overlap with JSON-RPC error shape (worth confirming against acpx's legacy emitter); Telegram `callback_data` keys containing `:` desync build/parse (fails closed, but silently — validate at `buildKeyboard`); config compat-shim deprecation warnings now fire once per layer (up to 3×) instead of once — dedupe the warning sink; `truncateUtf8Bytes` is O(n²) per truncation (irrelevant at id-length sizes, would matter if reused for longer strings); `readAndParseLines`/`MAX_BUFFERED_LINE_BYTES` are now public barrel exports purely so a test could reach them through `@/agents` — consider tagging `@internal`.
+
+**PR:** branch `fix/20260811-bugs` → `main`.
+
+---
+
 ## Appendix A — Proof & Evidence (2026-08-12)
 
 Proof kinds: **EXEC** = reproduced by running the real production module (see `docs/reviews/2026-08-11-latent-bugs-v2-proof.ts`); **GRAPH** = knowledge-graph call trace (zero callers / in-degree 0, cross-checked by grep); **SRC** = call-site/source trace at the cited lines; **GIT** = empirical git experiment in a scratch repo.

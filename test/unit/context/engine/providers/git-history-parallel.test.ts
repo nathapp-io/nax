@@ -57,7 +57,7 @@ describe("GitHistoryProvider — concurrency", () => {
       await Promise.resolve();
       active--;
       const fileArg = args[args.length - 1] ?? "file";
-      return { stdout: `abc1234 feat: change in ${fileArg}`, exitCode: 0 };
+      return { stdout: `abc1234 feat: change in ${fileArg}`, stderr: "", exitCode: 0 };
     };
 
     const provider = new GitHistoryProvider();
@@ -80,8 +80,8 @@ describe("GitHistoryProvider — concurrency", () => {
   test("collects all file sections even when some files have no history", async () => {
     _gitHistoryDeps.gitWithTimeout = async (args: string[], _workdir: string) => {
       const fileArg = args[args.length - 1] ?? "";
-      if (fileArg === "src/b.ts") return { stdout: "", exitCode: 0 }; // no history
-      return { stdout: `abc1234 feat: change in ${fileArg}`, exitCode: 0 };
+      if (fileArg === "src/b.ts") return { stdout: "", stderr: "", exitCode: 0 }; // no history
+      return { stdout: `abc1234 feat: change in ${fileArg}`, stderr: "", exitCode: 0 };
     };
 
     const provider = new GitHistoryProvider();

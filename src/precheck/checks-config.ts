@@ -6,6 +6,16 @@ import { existsSync, statSync } from "node:fs";
 import type { PRD } from "../prd/types";
 import type { Check } from "./types";
 
+/** Check if a process with the given PID is still alive. */
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Check if nax.lock is older than 2 hours. */
 export async function checkStaleLock(workdir: string): Promise<Check> {
   const lockPath = `${workdir}/nax.lock`;
@@ -35,9 +45,14 @@ export async function checkStaleLock(workdir: string): Promise<Check> {
       lockTimeMs = stat.mtimeMs;
     }
 
+    // A live holder is authoritative and immune to wall-clock sleep/NTP skew
+    // (which corrupts both the recorded timestamp and the file mtime equally,
+    // since both are Date.now()-based). The elapsed-time check is only a
+    // backstop for a dead-but-recycled PID.
+    const holderAlive = typeof lockData.pid === "number" && isProcessAlive(lockData.pid);
     const ageMs = Date.now() - lockTimeMs;
     const twoHoursMs = 2 * 60 * 60 * 1000;
-    const passed = ageMs < twoHoursMs;
+    const passed = holderAlive || ageMs < twoHoursMs;
 
     return {
       name: "no-stale-lock",

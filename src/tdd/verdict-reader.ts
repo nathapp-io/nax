@@ -89,10 +89,15 @@ export function coerceVerdict(obj: Record<string, unknown>): VerifierVerdict | n
   try {
     // Determine approval status
     const verdictStr = String(obj.verdict ?? "").toUpperCase();
+    // A "VERIFIED" prefix only counts as approval when it isn't immediately
+    // contradicted by a failure indicator later in the string (e.g. the
+    // agent writing "VERIFIED FAILED: 3 tests red").
+    const isVerifiedButFailed = /VERIFIED\b.*\b(FAIL|FAILED|RED|NOT MET)\b/.test(verdictStr);
     const approved =
       verdictStr === "PASS" ||
+      verdictStr === "PASSED" ||
       verdictStr === "APPROVED" ||
-      verdictStr.startsWith("VERIFIED") ||
+      (verdictStr.startsWith("VERIFIED") && !isVerifiedButFailed) ||
       verdictStr.includes("ALL ACCEPTANCE CRITERIA MET") ||
       obj.approved === true;
 
@@ -102,8 +107,10 @@ export function coerceVerdict(obj: Record<string, unknown>): VerifierVerdict | n
     let allPassing = approved;
     const summary = obj.verification_summary as Record<string, unknown> | undefined;
     if (summary?.test_results && typeof summary.test_results === "string") {
-      // Parse "45/45 PASS" or "42/45 PASS" patterns
-      const match = (summary.test_results as string).match(/(\d+)\/(\d+)/);
+      // Parse "45/45 PASS" or "42/45 PASS" patterns — anchored to test-count
+      // context so an unrelated "N/N" substring (e.g. a "2024/05/13" date)
+      // is never mistaken for a pass/fail ratio.
+      const match = (summary.test_results as string).match(/(\d+)\/(\d+)\s+(?:tests?\s+)?(?:pass|fail)/i);
       if (match) {
         passCount = Number.parseInt(match[1], 10);
         const total = Number.parseInt(match[2], 10);

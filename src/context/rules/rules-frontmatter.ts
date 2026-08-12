@@ -158,7 +158,15 @@ export function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatt
     return { content: raw.trim(), priority: FRONTMATTER_PRIORITY_DEFAULT, warnings };
   }
 
-  const close = effectiveContent.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  // Compact empty frontmatter block (`---\n---\n`) has no blank line between the
+  // delimiters, so the general closing-delimiter regex below (which requires a
+  // line break both after the opening '---' and before the closing '---')
+  // never matches it. Special-case it here and treat it as "no frontmatter" /
+  // all defaults, matching an empty YAML document, rather than erroring.
+  const emptyBlock = effectiveContent.match(/^---\r?\n---[ \t]*(?:\r?\n|$)/);
+  const close = emptyBlock
+    ? ([emptyBlock[0], ""] as const)
+    : effectiveContent.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if (!close) {
     if (warnings.length > 0) {
       return { content: effectiveContent.trim(), priority: FRONTMATTER_PRIORITY_DEFAULT, warnings };

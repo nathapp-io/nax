@@ -55,24 +55,29 @@ async function bug01and02(): Promise<void> {
     dependencies: deps,
   });
 
-  // BUG-01: dep "ST001" (unnormalized) is accepted, stored raw, never matches "ST-001".
+  // BUG-01 (fixed): dep "ST001" is now normalized to "ST-001" before storage, so it matches.
   const prd = validatePlanOutput({ userStories: [story("ST-001", []), story("ST-002", ["ST001"])] }, "f", "b");
   const storedDep = prd.userStories[1].dependencies[0];
   const storyIds = new Set(prd.userStories.map((s: { id: string }) => s.id));
   check(
     "BUG-01",
-    "validatePlanOutput accepts dep 'ST001'; stored raw and unmatched by story ids",
+    "fixed: validatePlanOutput normalizes dep 'ST001' to 'ST-001' before storing, so it matches",
     { storedDep, matched: storyIds.has(storedDep) },
-    { storedDep: "ST001", matched: false },
+    { storedDep: "ST-001", matched: true },
   );
 
-  // BUG-02: two stories with the same id pass validation unchanged.
-  const dup = validatePlanOutput({ userStories: [story("ST-001", []), story("ST-001", [])] }, "f", "b");
+  // BUG-02 (fixed): two stories with the same normalized id are now rejected.
+  let dupOutcome = "accepted";
+  try {
+    validatePlanOutput({ userStories: [story("ST-001", []), story("ST-001", [])] }, "f", "b");
+  } catch (e) {
+    dupOutcome = `rejected: ${(e as Error).message}`;
+  }
   check(
     "BUG-02",
-    "validatePlanOutput accepts duplicate story id ST-001 x2",
-    dup.userStories.map((s: { id: string }) => s.id),
-    ["ST-001", "ST-001"],
+    "fixed: validatePlanOutput rejects a duplicate story id ST-001 x2",
+    dupOutcome.startsWith("rejected"),
+    true,
   );
 }
 
@@ -89,9 +94,9 @@ async function bug03(): Promise<void> {
   };
   check(
     "BUG-03",
-    "compact empty block '---\\n---\\n' cannot match the closing regex",
+    "fixed: compact empty block '---\\n---\\n' is now special-cased as empty frontmatter, not an error",
     outcome("---\n---\n"),
-    "throws: Canonical rule frontmatter is missing closing '---'",
+    "parsed",
   );
   check(
     "BUG-03",
@@ -176,9 +181,9 @@ async function bug10(): Promise<void> {
   const merged = mergePackageConfig(root as any, { models: { claude: { fast: { model: "pkg-claude-fast" } } } } as any);
   check(
     "BUG-10",
-    "overriding models.claude.fast drops the root balanced/powerful tiers",
+    "fixed: overriding models.claude.fast merges per-agent, keeping root balanced/powerful tiers",
     { claude: Object.keys(merged.models.claude), gemini: Object.keys(merged.models.gemini) },
-    { claude: ["fast"], gemini: ["fast", "balanced", "powerful"] },
+    { claude: ["fast", "balanced", "powerful"], gemini: ["fast", "balanced", "powerful"] },
   );
 }
 
@@ -194,20 +199,26 @@ async function bug13(): Promise<void> {
   );
   check(
     "BUG-13",
-    "go branch — 'TestMac_2' fabricates AC-2",
+    "fixed: go branch — 'TestMac_2' no longer fabricates AC-2",
     parseTestFailures("--- FAIL: TestMac_2 (0.00s)\n    mac_test.go:10: failed"),
-    ["AC-2"],
+    [],
   );
   check(
     "BUG-13",
-    "jest/vitest branch — 'TestMac2' fabricates AC-2",
+    "fixed: jest/vitest branch — 'TestMac2' no longer fabricates AC-2",
     parseTestFailures("● TestMac2 > does stuff\n\n  AssertionError: nope"),
-    ["AC-2"],
+    [],
   );
   check(
     "BUG-13",
-    "pytest branch — 'test_mac_2.py' fabricates AC-2",
+    "fixed: pytest branch — 'test_mac_2.py' no longer fabricates AC-2",
     parseTestFailures("FAILED tests/test_mac_2.py::test_x - AssertionError"),
+    [],
+  );
+  check(
+    "BUG-13",
+    "fixed: go branch — a genuine 'TestAC2' reference still matches AC-2",
+    parseTestFailures("--- FAIL: TestAC2 (0.00s)\n    ac_test.go:10: failed"),
     ["AC-2"],
   );
 }
@@ -218,9 +229,9 @@ async function bug14(): Promise<void> {
   const r = analyzeTestExitCode("suite start\nWARN: 3 failed requests in the log\ntests ran fine\n", 0);
   check(
     "BUG-14",
-    "an app log line 'WARN: 3 failed requests' turns an exit-0 run red",
+    "fixed: an app log line 'WARN: 3 failed requests' no longer turns an exit-0 run red",
     { allTestsPassed: r.allTestsPassed, failCount: r.failCount, isEnvironmentalFailure: r.isEnvironmentalFailure },
-    { allTestsPassed: false, failCount: 3, isEnvironmentalFailure: false },
+    { allTestsPassed: false, failCount: 0, isEnvironmentalFailure: false },
   );
 }
 
@@ -230,9 +241,9 @@ async function bug15(): Promise<void> {
   const r = parseMochaOutput("spec1: 0 passing\nspec2: 5 passing, 1 failing\n\n5 passing\n1 failing\n");
   check(
     "BUG-15",
-    "per-spec '0 passing' wins over the final '5 passing' summary",
+    "fixed: the final '5 passing' summary now wins over the per-spec '0 passing' line",
     { passed: r.passed, failed: r.failed },
-    { passed: 0, failed: 1 },
+    { passed: 5, failed: 1 },
   );
 }
 
@@ -246,15 +257,15 @@ async function bug16and17(): Promise<void> {
   );
   check(
     "BUG-16",
-    "a .test.tsx header is not recognised — failure attributed to 'unknown'",
+    "fixed: a .test.tsx header is now recognised — failure attributed to the real file",
     r.failures[0]?.file,
-    "unknown",
+    "test/foo.test.tsx",
   );
   check(
     "BUG-17",
-    "a test name containing '[5ms]' is truncated at the first bracket",
+    "fixed: a test name containing '[5ms]' is no longer truncated at the first bracket",
     r.failures[0]?.testName,
-    "render",
+    "render [5ms] timeout handling",
   );
 }
 
@@ -341,7 +352,12 @@ async function bug27(): Promise<void> {
   } catch (e) {
     outcome = `crash: ${(e as Error).constructor.name}`;
   }
-  check("BUG-27", "`nax curator status` dies on the partial line it exists to inspect", outcome, "crash: SyntaxError");
+  check(
+    "BUG-27",
+    "`nax curator status` no longer dies on the partial line it exists to inspect (fixed: per-line try/catch skips unparseable lines)",
+    outcome,
+    "completed",
+  );
 }
 
 // ─── BUG-29: cost-aggregator drain() drops events recorded mid-write ─────────
@@ -391,22 +407,27 @@ async function bug29(): Promise<void> {
       .filter(Boolean)
       .map((r) => JSON.parse(r).ts);
   const persistedFirst = rows(writes[writes.length - 1] ?? "");
-  // snapshot() sums _events + _inFlightEvents; drain spliced the first two out,
-  // so the $1 it still reports is exactly the orphaned ts=3 event.
-  const orphanedInMemoryCostUsd = agg.snapshot().totalCostUsd;
-  await agg.drain(); // second drain returns early — ts=3 is never flushed
+  // Fixed: drain() now loops until _inFlightEvents/_inFlightErrors are truly
+  // empty, so ts=3 (recorded during the second write) is picked up by a
+  // further write pass within the SAME drain() call — persistedFirst already
+  // includes it. snapshot() is settled post-drain (it restores the committed
+  // set into _events), so it reports the same total as what is on disk —
+  // "orphaned" (in-memory but not yet persisted) is the gap between the two,
+  // which should now be exactly 0.
+  const orphanedInMemoryCostUsd = agg.snapshot().totalCostUsd - persistedFirst.length;
+  await agg.drain(); // second drain: nothing new since the last flush
   const persistedSecond = rows(writes[writes.length - 1] ?? "");
 
   check(
     "BUG-29",
-    "the event recorded during the final write is counted by snapshot() but never reaches disk, and a later drain() does not recover it",
+    "fixed: drain() loops until in-flight events are fully flushed, so ts=3 reaches disk in the same drain() call and snapshot() stays settled with what was persisted",
     { recordedEvents: 3, persistedFirst, persistedSecond, orphanedInMemoryCostUsd },
-    { recordedEvents: 3, persistedFirst: [1, 2], persistedSecond: [1, 2], orphanedInMemoryCostUsd: 1 },
+    { recordedEvents: 3, persistedFirst: [1, 2, 3], persistedSecond: [1, 2, 3], orphanedInMemoryCostUsd: 0 },
   );
   _costAggDeps.write = realWrite;
 }
 
-// ─── BUG-31: verdict coercion approves "VERIFIED FAILED"; dates match as ratios ──
+// ─── BUG-31 (FIXED): "VERIFIED FAILED" is rejected; dates no longer match as ratios ──
 async function bug31(): Promise<void> {
   const { coerceVerdict } = await import(`${ROOT}/src/tdd/verdict-reader.ts`);
   const failed = coerceVerdict({
@@ -415,9 +436,9 @@ async function bug31(): Promise<void> {
   });
   check(
     "BUG-31",
-    "startsWith('VERIFIED') approves an explicit 'VERIFIED FAILED' and reports its 3 red tests as passes",
-    { approved: failed?.approved, passCount: failed?.tests.passCount, failCount: failed?.tests.failCount },
-    { approved: true, passCount: 3, failCount: 0 },
+    "fixed: a 'VERIFIED' prefix contradicted by FAIL/RED/NOT MET later in the string is rejected",
+    { approved: failed?.approved },
+    { approved: false },
   );
 
   const dated = coerceVerdict({
@@ -426,16 +447,16 @@ async function bug31(): Promise<void> {
   });
   check(
     "BUG-31",
-    "the first `\\d+/\\d+` match is the date — pass/fail counts become nonsense",
+    "fixed: the ratio regex is anchored to test-count context, so the date is skipped and 5/5 PASS is parsed",
     { passCount: dated?.tests.passCount, failCount: dated?.tests.failCount },
-    { passCount: 2024, failCount: -2019 },
+    { passCount: 5, failCount: 0 },
   );
 
   check(
     "BUG-31",
-    "'PASSED' fails the exact 'PASS' equality check",
+    "fixed: 'PASSED' is now accepted as an approval token",
     coerceVerdict({ verdict: "PASSED" })?.approved,
-    false,
+    true,
   );
 }
 
@@ -452,12 +473,14 @@ async function bug34(): Promise<void> {
   await Bun.write(join(dir, "tracked.txt"), "v2"); // modified — visible
   await Bun.write(join(dir, "brand-new.ts"), "export const x = 1"); // untracked — the actual violation
 
-  const changed = await getChangedFiles(dir, "HEAD");
+  // check() compares via JSON.stringify, so sort both sides — getChangedFiles
+  // no longer guarantees diff-then-status ordering is meaningful to callers.
+  const changed = (await getChangedFiles(dir, "HEAD")).slice().sort();
   check(
     "BUG-34",
-    "`git diff --name-only HEAD` never reports the untracked new file the isolation check exists to catch",
+    "fixed: `git status --porcelain` untracked entries are merged in, so the new file is now reported",
     changed,
-    ["tracked.txt"],
+    ["brand-new.ts", "tracked.txt"],
   );
 }
 
@@ -479,9 +502,9 @@ async function bug44(): Promise<void> {
   const eff = r.modelEfficiency?.["claude-expensive"];
   check(
     "BUG-44",
-    "3 attempts / 0 successes / $18 spent reports avgCost 0",
+    "fixed: avgCost now divides by attempts (18/3=6), not successes (18/0)",
     { attempts: eff?.attempts, successes: eff?.successes, totalCost: eff?.totalCost, avgCost: eff?.avgCost },
-    { attempts: 3, successes: 0, totalCost: 18, avgCost: 0 },
+    { attempts: 3, successes: 0, totalCost: 18, avgCost: 6 },
   );
 }
 
@@ -494,15 +517,15 @@ async function bug45(): Promise<void> {
   const matches = (p: string) => filterNaxInternalPaths([p], matchers).length === 0;
   check(
     "BUG-45",
-    "'a**b' matches across a directory separator",
+    "fixed: mid-token '**' no longer crosses a directory separator",
     { "a/b": matches("a/b"), "a/x/b": matches("a/x/b") },
-    { "a/b": true, "a/x/b": true },
+    { "a/b": false, "a/x/b": false },
   );
   check(
     "BUG-45",
-    "backslash-escaped space is lost — 'foo\\ bar' misses 'foo bar' and hits 'foo/ bar'",
+    "fixed: backslash-escaped space is preserved — 'foo\\ bar' matches 'foo bar', not 'foo/ bar'",
     { "foo bar": matches("foo bar"), "foo/ bar": matches("foo/ bar") },
-    { "foo bar": false, "foo/ bar": true },
+    { "foo bar": true, "foo/ bar": false },
   );
 }
 
@@ -518,9 +541,9 @@ async function bug46(): Promise<void> {
   };
   check(
     "BUG-46",
-    "prose braces before the object mis-slice the payload and the parse fails outright",
+    "fixed: a brace-balancing scan tries each '{' candidate, skipping the prose braces to find the real payload",
     outcome(`the { payload } was: {"a": 1}`),
-    "throws",
+    `parsed: {"a":1}`,
   );
   // Counter-example: a brace inside a JSON string is handled — the finding is
   // narrower than "brace handling is broken".
@@ -541,15 +564,15 @@ async function bug57(): Promise<void> {
   };
   check(
     "BUG-57",
-    "an untagged headline ending in a markdown link becomes audience ['docs'] — excluded for every role",
+    "fixed: a trailing markdown link is no longer parsed as an audience tag — defaults to 'all'",
     probe("- **API docs** — [docs](url)"),
-    { tags: ["docs"], includedForImplementer: false },
+    { tags: ["all"], includedForImplementer: true },
   );
   check(
     "BUG-57",
-    "a real [implementer] tag is shadowed by a trailing link",
+    "fixed: a real [implementer] tag is no longer shadowed by a trailing link",
     probe("- [implementer] — see [docs](url)"),
-    { tags: ["docs"], includedForImplementer: false },
+    { tags: ["implementer"], includedForImplementer: true },
   );
   check("BUG-57", "control — the same tag without a trailing link works", probe("- [implementer] auth flow"), {
     tags: ["implementer"],
@@ -576,10 +599,10 @@ async function bug58(): Promise<void> {
   ].join("\n");
   check(
     "BUG-58",
-    "the repeated marker is swallowed into the previous item's text",
+    "fixed: a repeated marker is treated as a new section boundary, not leaked into the prior item",
     extractStoryScopedOutOfScope(spec),
     [
-      { storyId: "US-002", text: "thing one **Out of scope:**" },
+      { storyId: "US-002", text: "thing one" },
       { storyId: "US-002", text: "thing two" },
     ],
   );

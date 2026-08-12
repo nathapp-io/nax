@@ -61,8 +61,19 @@ function basename(path: string): string {
   return idx === -1 ? stripped : stripped.slice(idx + 1);
 }
 
+/** Placeholder used to protect backslash-escaped spaces from the "\\" -> "/" pass below. */
+const ESCAPED_SPACE_PLACEHOLDER = "\u0000";
+
 function normalizePath(path: string): string {
-  return path.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "");
+  // Preserve backslash-escaped spaces (`\ ` -> literal space) before the
+  // generic backslash-to-slash normalization would otherwise turn `foo\ bar`
+  // into `foo/ bar`, changing its meaning.
+  const withProtectedSpaces = path.replaceAll("\\ ", ESCAPED_SPACE_PLACEHOLDER);
+  return withProtectedSpaces
+    .replaceAll("\\", "/")
+    .replace(/^\.\//, "")
+    .replace(/^\/+/, "")
+    .replaceAll(ESCAPED_SPACE_PLACEHOLDER, " ");
 }
 
 function globToRegex(pattern: string): RegExp {
@@ -72,8 +83,19 @@ function globToRegex(pattern: string): RegExp {
     const c = pattern[i];
     if (c === "*") {
       if (pattern[i + 1] === "*") {
+        // `**` only crosses directory boundaries when it stands alone as a
+        // full path segment (flanked by `/` or the start/end of the
+        // pattern) — standard gitignore-style glob semantics. A `**`
+        // embedded mid-token (e.g. `a**b`) must not cross `/`.
         const beforeSlash = i > 0 && pattern[i - 1] === "/";
         const afterSlash = pattern[i + 2] === "/";
+        const isSegmentStart = i === 0 || beforeSlash;
+        const isSegmentEnd = i + 2 === pattern.length || afterSlash;
+        if (!isSegmentStart || !isSegmentEnd) {
+          regex += "[^/]*";
+          i += 2;
+          continue;
+        }
         if (beforeSlash && afterSlash) {
           regex = `${regex.slice(0, -1)}(?:.*\\/)?`;
           i += 3;

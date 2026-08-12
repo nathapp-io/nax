@@ -227,6 +227,35 @@ export function applyRoutingRetryDeprecationWarning(
 }
 
 /**
+ * @internal Apply the full compat-shim chain (legacy key migrations + deprecation
+ * mappings) to a single raw config layer, in the fixed order the migrations depend on.
+ *
+ * Every layer that can carry legacy config shape (global file, project file, profile
+ * overlays, CLI overrides) must run through this same chain before merging — otherwise
+ * a legacy value set via a profile or CLI (e.g. `routing.strategy: "manual"`) skips the
+ * remap that file-based config gets and hard-fails Zod validation instead of being
+ * migrated (BUG-51).
+ *
+ * @param conf - Raw config layer object
+ * @param logger - Logger for shim deprecation warnings (may be null before init)
+ * @returns New config object with all compat shims applied (immutable — does not mutate input)
+ */
+function applyConfigCompatShims(
+  conf: Record<string, unknown>,
+  logger: ReturnType<typeof getLogger> | null,
+): Record<string, unknown> {
+  return _applyLegacyReviewExecutionShim(
+    _applyRemovedRoutingKeysShim(
+      applyRoutingRetryDeprecationWarning(
+        applyBatchModeCompat(
+          applyRemovedStrategyCompat(migrateLegacyReviewModelKey(migrateLegacyTestPattern(conf, logger), logger)),
+        ),
+      ),
+    ),
+  );
+}
+
+/**
  * Load merged configuration (defaults < global < project < CLI overrides).
  *
  * @param startDir - Either the project root (workdir) OR the `.nax/` directory.
@@ -275,17 +304,7 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   }
   if (globalConfRaw) {
     const { profile: _gProfile, ...globalConfStripped } = globalConfRaw;
-    const globalConf = _applyLegacyReviewExecutionShim(
-      _applyRemovedRoutingKeysShim(
-        applyRoutingRetryDeprecationWarning(
-          applyBatchModeCompat(
-            applyRemovedStrategyCompat(
-              migrateLegacyReviewModelKey(migrateLegacyTestPattern(globalConfStripped, logger), logger),
-            ),
-          ),
-        ),
-      ),
-    );
+    const globalConf = applyConfigCompatShims(globalConfStripped, logger);
     rawConfig = deepMergeConfig(rawConfig, globalConf);
   }
 
@@ -294,17 +313,7 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
     const projConf = await loadJsonFile<Record<string, unknown>>(join(projDir, "config.json"), "config");
     if (projConf) {
       const { profile: _pProfile, ...projConfStripped } = projConf;
-      const resolvedProjConf = _applyLegacyReviewExecutionShim(
-        _applyRemovedRoutingKeysShim(
-          applyRoutingRetryDeprecationWarning(
-            applyBatchModeCompat(
-              applyRemovedStrategyCompat(
-                migrateLegacyReviewModelKey(migrateLegacyTestPattern(projConfStripped, logger), logger),
-              ),
-            ),
-          ),
-        ),
-      );
+      const resolvedProjConf = applyConfigCompatShims(projConfStripped, logger);
       rawConfig = deepMergeConfig(rawConfig, resolvedProjConf);
     }
   }
@@ -325,12 +334,17 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
       Object.keys(profileEnv).length > 0
         ? (resolveEnvVars(profileData, profileEnv) as Record<string, unknown>)
         : profileData;
-    rawConfig = deepMergeConfig(rawConfig, resolvedProfileData);
+    // Same compat-shim chain as the file layers above (BUG-51) — a profile can carry
+    // the same legacy shapes (e.g. routing.strategy: "manual") and must be remapped
+    // rather than hard-failing Zod validation.
+    const shimmedProfileData = applyConfigCompatShims(resolvedProfileData, logger);
+    rawConfig = deepMergeConfig(rawConfig, shimmedProfileData);
   }
 
   // Layer 4: CLI overrides (highest priority)
   if (cliOverrides) {
-    rawConfig = deepMergeConfig(rawConfig, cliOverrides);
+    const shimmedCliOverrides = applyConfigCompatShims(cliOverrides, logger);
+    rawConfig = deepMergeConfig(rawConfig, shimmedCliOverrides);
   }
 
   // Force-set profile + chain to the resolved values after all merges (AC 6).

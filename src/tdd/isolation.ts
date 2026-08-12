@@ -27,9 +27,21 @@ export function isSourceFile(filePath: string): boolean {
   return SRC_PATTERNS.some((pattern) => pattern.test(filePath));
 }
 
-/** Get changed files from git diff */
+/**
+ * Get changed files from git diff, merged with untracked files from git status.
+ *
+ * `git diff --name-only` alone is blind to untracked files (e.g. a brand-new
+ * stub or test file a TDD session created), which would let an isolation
+ * violation pass silently. Untracked entries (`?? path`) from `git status
+ * --porcelain` are merged in and deduped.
+ */
 export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promise<string[]> {
-  const proc = _isolationDeps.spawn(["git", "diff", "--name-only", fromRef], {
+  const diffProc = _isolationDeps.spawn(["git", "diff", "--name-only", fromRef], {
+    cwd: workdir,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const statusProc = _isolationDeps.spawn(["git", "status", "--porcelain"], {
     cwd: workdir,
     stdout: "pipe",
     stderr: "pipe",
@@ -41,10 +53,13 @@ export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promis
   // Drain stdout+stderr concurrently with proc.exited — sequential reads would
   // deadlock on a pipe-buffer-sized stderr (~64KB), and stderr must be read
   // regardless of exit code so a failure isn't silently discarded.
-  const [output, stderr, exitCode] = await Promise.all([
-    Bun.readableStreamToText(proc.stdout),
-    Bun.readableStreamToText(proc.stderr),
-    proc.exited,
+  const [output, stderr, exitCode, statusOutput, statusStderr, statusExitCode] = await Promise.all([
+    Bun.readableStreamToText(diffProc.stdout),
+    Bun.readableStreamToText(diffProc.stderr),
+    diffProc.exited,
+    Bun.readableStreamToText(statusProc.stdout),
+    Bun.readableStreamToText(statusProc.stderr),
+    statusProc.exited,
   ]);
 
   if (exitCode !== 0) {
@@ -59,7 +74,26 @@ export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promis
     );
   }
 
-  return output.trim().split("\n").filter(Boolean);
+  if (statusExitCode !== 0) {
+    throw new NaxError(
+      `git status --porcelain failed (exit ${statusExitCode}): ${statusStderr.trim()}`,
+      "GIT_DIFF_FAILED",
+      {
+        stage: "tdd-isolation",
+        fromRef,
+        exitCode: statusExitCode,
+      },
+    );
+  }
+
+  const diffFiles = output.trim().split("\n").filter(Boolean);
+  const untrackedFiles = statusOutput
+    .split("\n")
+    .filter((line) => line.startsWith("??"))
+    .map((line) => line.slice(2).trim())
+    .filter(Boolean);
+
+  return [...new Set([...diffFiles, ...untrackedFiles])];
 }
 
 /**

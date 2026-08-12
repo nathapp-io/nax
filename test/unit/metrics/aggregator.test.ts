@@ -162,3 +162,45 @@ describe("calculateAggregateMetrics - complexityAccuracy uses initialComplexity"
     expect(aggregate.complexityAccuracy["complex"].predicted).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// modelEfficiency.avgCost — BUG-44
+// ---------------------------------------------------------------------------
+
+describe("calculateAggregateMetrics — modelEfficiency.avgCost", () => {
+  test("reflects real spend per attempt for a model with zero successes", () => {
+    const story = makeStoryMetrics({
+      storyId: "US-001",
+      success: false,
+      attempts: 3,
+      cost: 18,
+      modelUsed: "claude-expensive",
+    });
+
+    const runs = [makeRun([story])];
+    const aggregate = calculateAggregateMetrics(runs);
+
+    const eff = aggregate.modelEfficiency["claude-expensive"];
+    expect(eff.attempts).toBe(3);
+    expect(eff.successes).toBe(0);
+    expect(eff.totalCost).toBe(18);
+    // 18/3, not 18/0 -> 0
+    expect(eff.avgCost).toBe(6);
+  });
+
+  test("still divides by attempts (not successes) when some attempts succeeded", () => {
+    const story = makeStoryMetrics({
+      storyId: "US-002",
+      success: true,
+      attempts: 2,
+      cost: 10,
+      modelUsed: "claude-mixed",
+    });
+
+    const runs = [makeRun([story])];
+    const aggregate = calculateAggregateMetrics(runs);
+
+    const eff = aggregate.modelEfficiency["claude-mixed"];
+    expect(eff.avgCost).toBe(5); // 10/2, not 10/1
+  });
+});

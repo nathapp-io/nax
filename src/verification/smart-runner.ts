@@ -344,6 +344,13 @@ function buildTestCandidates(
  * // => "bun test test/"
  * ```
  */
+// BUG-18: flags that take a path argument. A token immediately following one
+// of these (or a `--flag=<path>` combined form) is a flag's config path, not a
+// positional test-path argument, and must never be replaced by scoped test
+// files — doing so silently drops the flag's value (e.g. `--config
+// ./vitest.config.ts` -> `--config '<test files>'`).
+const PATH_TAKING_FLAGS = ["--config", "-c", "--project", "-p"];
+
 export function buildSmartTestCommand(testFiles: string[], baseCommand: string): string {
   if (testFiles.length === 0) {
     return baseCommand;
@@ -354,13 +361,16 @@ export function buildSmartTestCommand(testFiles: string[], baseCommand: string):
 
   const parts = baseCommand.trim().split(/\s+/);
 
-  // Find the last token that looks like a path (contains '/')
+  // Find the last token that looks like a path (contains '/') and is a
+  // genuinely positional argument — not the value of a path-taking flag.
   let lastPathIndex = -1;
   for (let i = parts.length - 1; i >= 0; i--) {
-    if (parts[i].includes("/")) {
-      lastPathIndex = i;
-      break;
-    }
+    if (!parts[i].includes("/")) continue;
+    const precededByPathFlag = i > 0 && PATH_TAKING_FLAGS.includes(parts[i - 1]);
+    const isCombinedFlagValue = PATH_TAKING_FLAGS.some((flag) => parts[i].startsWith(`${flag}=`));
+    if (precededByPathFlag || isCombinedFlagValue) continue;
+    lastPathIndex = i;
+    break;
   }
 
   if (lastPathIndex === -1) {

@@ -54,7 +54,7 @@ function normalizeComplexity(raw: string): Complexity | null {
  * Validate a single story from raw LLM output.
  * Returns a normalized UserStory or throws with field-level error.
  */
-function validateStory(raw: unknown, index: number, allIds: Set<string>): UserStory {
+function validateStory(raw: unknown, index: number, allIds: Set<string>, seenIds: Set<string>): UserStory {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     throw new NaxError(`[schema] story[${index}] must be an object`, "SCHEMA_VALIDATION_FAILED", {
       stage: "schema",
@@ -80,6 +80,18 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
   }
   const id = normalizeStoryId(rawId);
   validateStoryId(id);
+  if (seenIds.has(id)) {
+    throw new NaxError(
+      `[schema] story[${index}].id "${id}" is a duplicate of an earlier story`,
+      "SCHEMA_VALIDATION_FAILED",
+      {
+        stage: "schema",
+        index,
+        id,
+      },
+    );
+  }
+  seenIds.add(id);
 
   // title
   const title = s.title;
@@ -212,9 +224,11 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
   const noTestJustification: string | undefined =
     typeof rawJustification === "string" && rawJustification.trim() !== "" ? rawJustification.trim() : undefined;
 
-  // dependencies
+  // dependencies — normalize to match how IDs are stored/compared elsewhere, and dedup
   const rawDeps = s.dependencies;
-  const dependencies: string[] = Array.isArray(rawDeps) ? (rawDeps as string[]) : [];
+  const dependencies: string[] = Array.isArray(rawDeps)
+    ? Array.from(new Set((rawDeps as string[]).map((dep) => normalizeStoryId(dep))))
+    : [];
 
   // Validate dependency references (against already-known IDs)
   for (const dep of dependencies) {
@@ -536,8 +550,11 @@ export function validatePlanOutput(raw: unknown, feature: string, branch: string
     }
   }
 
-  // Second pass: full validation
-  const userStories: UserStory[] = rawStories.map((story, index) => validateStory(story, index, allIds));
+  // Second pass: full validation. seenIds accumulates across the pass to reject
+  // a story whose own id duplicates an earlier story's id (allIds already
+  // contains every id up front, so it cannot be used to detect duplicates).
+  const seenIds = new Set<string>();
+  const userStories: UserStory[] = rawStories.map((story, index) => validateStory(story, index, allIds, seenIds));
 
   const now = new Date().toISOString();
   const featureOutOfScope = normalizeOutOfScopeList(obj.outOfScope);

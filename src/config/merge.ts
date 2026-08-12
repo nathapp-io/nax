@@ -10,6 +10,21 @@
 import type { NaxConfig } from "./schema";
 
 /**
+ * Deep-merge per-agent model tier maps. A package override of one agent's
+ * tiers (e.g. `models.claude.fast`) must not drop that agent's other tiers
+ * from root, nor drop agents that root defines but the override doesn't
+ * mention. Merges each agent key present in either root or the override.
+ */
+function mergeModels(rootModels: NaxConfig["models"], overrideModels: NaxConfig["models"]): NaxConfig["models"] {
+  const agents = new Set([...Object.keys(rootModels ?? {}), ...Object.keys(overrideModels ?? {})]);
+  const merged: NaxConfig["models"] = {};
+  for (const agent of agents) {
+    merged[agent] = { ...rootModels?.[agent], ...overrideModels?.[agent] };
+  }
+  return merged;
+}
+
+/**
  * Merge a package-level partial config override into a root config.
  *
  * Mergeable sections:
@@ -64,7 +79,7 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
             },
           }
         : root.agent,
-    models: packageOverride.models !== undefined ? { ...root.models, ...packageOverride.models } : root.models,
+    models: packageOverride.models !== undefined ? mergeModels(root.models, packageOverride.models) : root.models,
     routing:
       packageOverride.routing !== undefined
         ? { ...root.routing, ...packageOverride.routing, llm: { ...root.routing?.llm, ...packageOverride.routing.llm } }

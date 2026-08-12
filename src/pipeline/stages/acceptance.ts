@@ -157,6 +157,10 @@ export const acceptanceStage: PipelineStage = {
 
     // Collect combined results across all packages
     const allFailedACs: string[] = [];
+    // BUG-12: each package numbers its acceptance criteria AC-1..N independently, so
+    // package A's AC-2 and package B's different AC-2 are distinct failures. Dedup by
+    // packageDir+acId (not the bare acId) so the aggregate never under-reports.
+    const seenAcKeys = new Set<string>();
     const allFindings: Finding[] = [];
     const failedPackages: Array<{
       testPath: string;
@@ -259,7 +263,9 @@ export const acceptanceStage: PipelineStage = {
       }
 
       for (const acId of actualFailures) {
-        if (!allFailedACs.includes(acId)) {
+        const acKey = `${packageDir}::${acId}`;
+        if (!seenAcKeys.has(acKey)) {
+          seenAcKeys.add(acKey);
           allFailedACs.push(acId);
           allFindings.push(
             acId === "AC-HOOK" ? acSentinelToFinding("AC-HOOK", output) : acFailureToFinding(acId, output),

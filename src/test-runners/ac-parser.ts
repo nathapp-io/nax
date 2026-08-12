@@ -53,9 +53,12 @@ export function parseTestFailures(output: string): string[] {
     }
 
     // Go: "--- FAIL: TestAC-1_desc (0.00s)" or "--- FAIL: TestAC1Desc"
+    // Anchored to immediately follow the "--- FAIL: " marker (with an optional
+    // "Test" prefix) so a test merely NAMED like "TestMac_2" — which contains
+    // "ac_2" as a case-insensitive substring — does not fabricate a phantom AC.
     if (framework === "go" || framework === "unknown") {
       if (line.includes("--- FAIL:")) {
-        const acMatch = line.match(/AC[-_]?(\d+)/i);
+        const acMatch = line.match(/^\s*--- FAIL: (?:Test)?AC[-_]?(\d+)/i);
         if (acMatch) {
           const acId = `AC-${acMatch[1]}`;
           if (!failedACs.includes(acId)) failedACs.push(acId);
@@ -64,9 +67,12 @@ export function parseTestFailures(output: string): string[] {
     }
 
     // pytest: "FAILED tests/...::test_AC_1_desc"
+    // Requires the "AC" token not be preceded by a letter, so "test_mac_2.py"
+    // (the "ac" in "mac" is a case-insensitive substring) does not fabricate
+    // a phantom AC, while "test_AC_2_desc" (preceded by "_") still matches.
     if (framework === "pytest" || framework === "unknown") {
       if (/FAILED\s/.test(line)) {
-        const acMatch = line.match(/AC[-_]?(\d+)/i);
+        const acMatch = line.match(/(?<![A-Za-z])AC[-_]?(\d+)/i);
         if (acMatch) {
           const acId = `AC-${acMatch[1]}`;
           if (!failedACs.includes(acId)) failedACs.push(acId);
@@ -82,9 +88,14 @@ export function parseTestFailures(output: string): string[] {
     // The FAIL badge is anchored to the (ANSI-stripped) line start, so a passing line
     // whose title merely contains the word "FAIL" is not matched; `\s` after FAIL also
     // excludes pytest's "FAILED" (handled by its own branch above).
+    // Anchored so the AC token must immediately follow a bullet marker, the
+    // line-start "FAIL" marker, or the "> " suite-path separator (optionally
+    // with a "Test" prefix) — otherwise a test merely NAMED like "TestMac2"
+    // (a case-insensitive "ac2" substring) would fabricate a phantom AC
+    // unrelated to any real acceptance criterion.
     if (framework === "jest" || framework === "vitest" || framework === "unknown") {
       if (/[●×✕]/.test(line) || /^\s*FAIL\s/.test(line)) {
-        const acMatch = line.match(/AC[-_]?(\d+)/i);
+        const acMatch = line.match(/(?:^\s*FAIL\b|[●×✕]|>)\s*(?:Test)?AC[-_]?(\d+)/i);
         if (acMatch) {
           const acId = `AC-${acMatch[1]}`;
           if (!failedACs.includes(acId)) failedACs.push(acId);

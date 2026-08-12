@@ -632,6 +632,26 @@ callOp: makeCallOpMock() as unknown as CallOpFn });
     expect(result.exitReason).toBe("resolved");
     expect(result.finalFindings).toHaveLength(0);
   });
+
+  // BUG-38: the lite-validate path (terminal-exhausted branch, AC3 above)
+  // already honored `shortCircuited`. The full-validate path — the normal,
+  // non-exhausted per-iteration branch — dropped it, so a timed-out/crashed
+  // gate re-run reporting `{ findings: [], shortCircuited: true }` was
+  // misclassified as "resolved" instead of "validate-short-circuit". Use
+  // maxAttempts high enough that the first iteration is NOT terminal-exhausted,
+  // so this exercises the full-validate branch specifically (not AC3's lite path).
+  test("BUG-38: full-validate shortCircuited:true is never classified as resolved", async () => {
+    const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 5 });
+    const validateResult: ValidateResult<Finding> = { findings: [], shortCircuited: true };
+    const cycle = makeCycle([lintA], [strategy], async () => validateResult as unknown as Finding[]); // test-ratchet-allow: as-unknown-as
+
+    const result = await runFixCycle(cycle, makeCtx(), "sc-cycle", {
+      callOp: makeCallOpMock() as unknown as CallOpFn, // test-ratchet-allow: as-unknown-as
+    });
+
+    expect(result.exitReason).toBe("validate-short-circuit");
+    expect(result.finalFindings).toHaveLength(0);
+  });
 });
 
 // ─── runFixCycle — iteration-completed log emission (US-001 AC8-14) ──────────

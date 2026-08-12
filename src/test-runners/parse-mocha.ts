@@ -11,15 +11,20 @@ const MAX_STACK_LINES = 5;
 
 export function parseMochaOutput(output: string): TestSummary {
   return {
-    passed: matchCount(output, /(\d+)\s+passing\b/),
-    failed: matchCount(output, /(\d+)\s+failing\b/),
+    passed: lastMatchCount(output, /(\d+)\s+passing\b/g),
+    failed: lastMatchCount(output, /(\d+)\s+failing\b/g),
     failures: extractMochaFailures(output),
   };
 }
 
-function matchCount(output: string, re: RegExp): number {
-  const m = output.match(re);
-  return m ? Number.parseInt(m[1], 10) : 0;
+// BUG-15: mocha/cypress emit a running "N passing"/"N failing" progress line
+// per spec, then the true totals in a final summary. Using the first match
+// (output.match()) let an early spec's "0 passing" win over the real final
+// count — matchAll + last match picks up the summary instead.
+function lastMatchCount(output: string, re: RegExp): number {
+  const matches = Array.from(output.matchAll(re));
+  if (matches.length === 0) return 0;
+  return Number.parseInt(matches[matches.length - 1][1], 10);
 }
 
 function extractMochaFailures(output: string): TestFailure[] {

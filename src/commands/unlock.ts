@@ -5,6 +5,7 @@
  * Checks if lock-holding process is still alive before removing.
  */
 
+import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 import chalk from "chalk";
 
@@ -82,11 +83,34 @@ export async function unlockCommand(options: UnlockOptions): Promise<void> {
   // Print lock info before removing
   console.log(`Stale lock found (PID ${pid}, age: ${formatLockAge(ageMs)})`);
 
-  // Remove lock file
-  const proc = Bun.spawn(["rm", lockPath], { stdout: "pipe" });
-  const rmExitCode = await proc.exited;
-  if (rmExitCode !== 0) {
-    console.error(chalk.red(`Failed to remove lock: rm exited with code ${rmExitCode}`));
+  // TOCTOU guard: re-read the lock file and re-verify the PID immediately before
+  // deleting it. A new run could have acquired the lock in the window between the
+  // liveness check above and this point — deleting unconditionally would wrongly
+  // remove that new run's lock. Only delete if the PID we're about to remove is
+  // still the one on disk.
+  if (!options.force) {
+    let currentLockData: { pid: number; timestamp: number };
+    try {
+      const currentContent = await Bun.file(lockPath).text();
+      currentLockData = JSON.parse(currentContent);
+    } catch {
+      console.log("Lock file disappeared before removal — nothing to do");
+      process.exit(0);
+    }
+    if (currentLockData.pid !== pid) {
+      console.error(
+        chalk.red(`Lock now held by a different PID (${currentLockData.pid}) — refusing to remove. Re-run nax unlock.`),
+      );
+      process.exit(1);
+    }
+  }
+
+  // Remove lock file — native unlink, not a shelled-out `rm` (portable across
+  // systems/PATHs without an `rm` binary).
+  try {
+    await unlink(lockPath);
+  } catch (error) {
+    console.error(chalk.red(`Failed to remove lock: ${error instanceof Error ? error.message : String(error)}`));
     process.exit(1);
   }
   // Wait a bit for filesystem to sync (prevents race in tests)

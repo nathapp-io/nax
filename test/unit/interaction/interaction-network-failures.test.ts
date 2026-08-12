@@ -7,7 +7,7 @@
 
 import { afterAll, describe, expect, test } from "bun:test";
 import type { InteractionRequest } from "../../../src/interaction";
-import { _telegramPluginDeps, TelegramInteractionPlugin } from "../../../src/interaction/plugins/telegram";
+import { TelegramInteractionPlugin, _telegramPluginDeps } from "../../../src/interaction/plugins/telegram";
 import { WebhookInteractionPlugin, _webhookPluginDeps } from "../../../src/interaction/plugins/webhook";
 import { mockFetch } from "../../helpers/mock-fetch";
 
@@ -321,10 +321,7 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
 
     const secondReceive = plugin.receive("duplicate-id", 60_000);
 
-    const firstSettled = await Promise.race([
-      firstReceive,
-      timeoutResult(null),
-    ]);
+    const firstSettled = await Promise.race([firstReceive, timeoutResult(null)]);
 
     expect(firstSettled).not.toBeNull();
     expect(firstSettled?.action).toBe("skip");
@@ -344,6 +341,73 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
     };
     expect(internals.receiveCallbacks.size).toBe(0);
     expect(internals.receiveTimers?.size ?? -1).toBe(0);
+  });
+});
+
+describe("WebhookInteractionPlugin - Capacity & Startup Recovery", () => {
+  test("BUG-47: returns 503 (not 200) when pending-response capacity is exceeded", async () => {
+    const plugin = new WebhookInteractionPlugin();
+    await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
+
+    // Reaching private plugin state — no public accessor.
+    const internals = plugin as unknown as { registeredRequestIds: Set<string>; pendingResponses: Map<string, unknown> }; // test-ratchet-allow: as-unknown-as
+
+    // Fill the early-pickup store to MAX_PENDING_RESPONSES (500) with
+    // registered-but-unclaimed IDs, then deliver one more.
+    for (let i = 0; i < 500; i++) {
+      const id = `capacity-filler-${i}`;
+      internals.registeredRequestIds.add(id);
+      internals.pendingResponses.set(id, {
+        requestId: id,
+        action: "skip",
+        respondedAt: Date.now(),
+      });
+    }
+
+    const overflowId = "capacity-overflow";
+    internals.registeredRequestIds.add(overflowId);
+
+    const handleRequest = (plugin as unknown as { handleRequest: (req: Request) => Promise<Response> }).handleRequest; // test-ratchet-allow: as-unknown-as
+    const response = await handleRequest.call(
+      plugin,
+      new Request(`http://localhost:8765/nax/interact/${overflowId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId: overflowId, action: "approve", respondedAt: Date.now() }),
+      }),
+    );
+
+    expect(response.status).not.toBe(200);
+    expect([429, 503]).toContain(response.status);
+    // The overflow response must not have been silently stored either.
+    expect(internals.pendingResponses.has(overflowId)).toBe(false);
+
+    await plugin.destroy();
+  });
+
+  test("BUG-50: serverStartPromise is reset after a Bun.serve failure so a retry can succeed", async () => {
+    const plugin = new WebhookInteractionPlugin();
+    await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
+
+    const originalServe = Bun.serve;
+    (Bun as { serve: typeof Bun.serve }).serve = (() => {
+      throw new Error("simulated Bun.serve startup failure");
+    }) as typeof Bun.serve;
+
+    const startServer = (plugin as unknown as { startServer: () => Promise<void> }).startServer.bind(plugin); // test-ratchet-allow: as-unknown-as
+
+    await expect(startServer()).rejects.toThrow("simulated Bun.serve startup failure");
+
+    const internals = plugin as unknown as { serverStartPromise: Promise<void> | null }; // test-ratchet-allow: as-unknown-as
+    expect(internals.serverStartPromise).toBeNull();
+
+    // Restore Bun.serve and confirm a subsequent start attempt is not
+    // permanently wedged on the old rejected promise.
+    (Bun as { serve: typeof Bun.serve }).serve = originalServe;
+    await startServer();
+    expect((plugin as unknown as { server: unknown }).server).not.toBeNull(); // test-ratchet-allow: as-unknown-as
+
+    await plugin.destroy();
   });
 });
 

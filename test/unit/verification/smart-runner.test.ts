@@ -27,6 +27,38 @@ describe("buildSmartTestCommand", () => {
     const result = buildSmartTestCommand(testFiles as string[], command);
     expect(result).toBe(expected);
   });
+
+  // BUG-18: `--config <path>` (and other path-taking flags) must never be
+  // replaced by scoped test files — the config path is not a positional arg.
+  test.each([
+    [
+      "vitest --config <path> — appends scoped tests instead of clobbering the config flag",
+      ["test/unit/foo.test.ts"],
+      "vitest run --config ./vitest.config.ts",
+      "vitest run --config ./vitest.config.ts 'test/unit/foo.test.ts'",
+    ],
+    [
+      "jest --config <path> followed by a flag — config preserved",
+      ["test/unit/foo.test.ts"],
+      "jest --config config/jest.config.js --runInBand",
+      "jest --config config/jest.config.js --runInBand 'test/unit/foo.test.ts'",
+    ],
+    [
+      "combined --config=<path> form — config preserved",
+      ["test/unit/foo.test.ts"],
+      "jest --config=config/jest.config.js",
+      "jest --config=config/jest.config.js 'test/unit/foo.test.ts'",
+    ],
+    [
+      "a genuine trailing positional path after --config is still replaced",
+      ["test/unit/foo.test.ts"],
+      "jest --config config/jest.config.js test/",
+      "jest --config config/jest.config.js 'test/unit/foo.test.ts'",
+    ],
+  ])("%s", (_label, testFiles, command, expected) => {
+    const result = buildSmartTestCommand(testFiles as string[], command);
+    expect(result).toBe(expected);
+  });
 });
 
 // ---------------------------------------------------------------------------

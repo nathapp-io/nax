@@ -449,6 +449,31 @@ describe("extractStoryScopedOutOfScope", () => {
       { storyId: "US-002", text: "rate-limiting on this endpoint, deferred to arc 3" },
     ]);
   });
+
+  // BUG-58: a second bare "**Out of scope:**" marker inside the same story block
+  // previously got swallowed into the first item's text (as trailing marker text)
+  // instead of starting a fresh item — the bare-marker loop only stopped at a blank
+  // line or heading, not at a repeated marker.
+  test("BUG-58: a second bare marker inside the same block starts a new item instead of leaking into the first", () => {
+    const spec = [
+      "## Acceptance Criteria",
+      "",
+      "### US-002 — B",
+      "",
+      "**Out of scope:**",
+      "- thing one",
+      "**Out of scope:**",
+      "- thing two",
+      "",
+      "### US-003 — C",
+      "",
+      "- AC-1: works",
+    ].join("\n");
+    expect(extractStoryScopedOutOfScope(spec)).toEqual([
+      { storyId: "US-002", text: "thing one" },
+      { storyId: "US-002", text: "thing two" },
+    ]);
+  });
 });
 
 describe("demoteStoryScopedOutOfScope", () => {
