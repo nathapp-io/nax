@@ -90,6 +90,36 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
     };
   }
 
+  // A ":" in the request id cannot round-trip through the callback_data grammar,
+  // so buildKeyboard rejects it. That rejection must not escape send(): the
+  // interaction chain has no fallback cascade on the send path, so a throw here
+  // would take down the run, where every other interaction failure degrades to
+  // the request's own `fallback`. Degrade loudly instead — send the prompt
+  // without buttons rather than crashing.
+  test("send() degrades to a button-free message when the request id cannot round-trip", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+
+    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+      if (urlStr.includes("sendMessage")) calls.push(JSON.parse((init?.body as string) ?? "{}"));
+      if (urlStr.includes("getUpdates")) {
+        return new Response(JSON.stringify({ ok: true, result: [] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 7, chat: { id: 12345 } } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const plugin = new TelegramInteractionPlugin();
+    await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
+
+    await plugin.send(makeConfirmRequest("tg:bad:id"));
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).not.toHaveProperty("reply_markup");
+  });
+
   test("send() POSTs to correct Telegram API URL with message text and inline keyboard", async () => {
     const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
 

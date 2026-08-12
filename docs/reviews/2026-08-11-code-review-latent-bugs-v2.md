@@ -498,6 +498,14 @@ Remaining open items from that review (not merge-blocking, tracked as follow-ups
 
 One structural consequence: `loader.ts` crossed the 600-line limit, so the whole compat-shim chain moved to `src/config/compat-shims.ts` (loader keeps layering and file I/O). The two test files that reached the shims through `loader` now import them from their real home.
 
+**Quality review of the above (`post-impl-review --phase quality`, 2026-08-12): 3 MEDIUM, all actioned.** Two were regressions the follow-ups themselves introduced; one was a pre-existing gap the narrowing made reachable.
+
+| Finding | Verdict on re-check | Resolution |
+|:---|:---|:---|
+| Narrowing the drift guard drops `retryable` / `acpxCode` for a drifted JSON-RPC error | **Half right — the mechanism is real, the stated cost is not.** The reviewer claimed the change "now misclassifies" a retriable failure as terminal. It does not: the pre-change guard `return`ed *before* touching `state.retryable`, so that flag was `false` on this path both before and after — no regression, and the change still strictly improves the message. Its first proposed fix (revert the guard) would have reinstated the original bug. But the residual gap is genuine: the legacy branch never read `error.data`, and narrowing made that branch reachable for id-bearing errors | Took the reviewer's *second* option — the legacy error branch now mirrors the JSON-RPC one (`acpxCode`/`detailCode` suffix, `retryable`, first-error-wins). Corrected the overclaiming "nothing is lost" comment |
+| Warning dedupe keys on message text only, dropping differing `data` | **Confirmed — a real regression introduced by the dedupe.** Several shims emit fixed message text with the offending value in `data` (`{ legacyPattern }`, `{ value: modelTier }`), so two layers configured with *different* values collapsed to one warning and the second value was never shown | Dedupe key is now message + serialised `data`, so genuine repeats still collapse but a differing payload still surfaces |
+| `buildCallbackData`'s throw is un-catchable in the send path | **Confirmed.** `buildKeyboard` is called at `telegram.ts:154`, outside the `try`, and `InteractionChain.send()` has no catch — the fallback cascade exists only on `receive()`. The fix traded a silent desync for a hard crash, where every other interaction failure degrades to `request.fallback` | `send()` catches it, logs the cause, and posts the prompt without buttons — loud in the log, still resolvable via `fallback`. Pushed `telegram.ts` over 600 lines, so config validation + Bot API wire types moved to `src/interaction/plugins/telegram-config.ts` |
+
 **PR:** branch `fix/20260811-bugs` → `main`.
 
 ### BUG-20 / BUG-62 — fixed 2026-08-12, PR #1551 (merged)

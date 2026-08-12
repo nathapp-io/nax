@@ -265,8 +265,24 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
     if (event.stopReason) state.stopReason = event.stopReason;
     if (event.stop_reason) state.stopReason = event.stop_reason;
     if (event.error) {
-      state.error =
-        typeof event.error === "string" ? event.error : (event.error.message ?? JSON.stringify(event.error));
+      if (typeof event.error === "string") {
+        state.error ??= event.error;
+      } else {
+        // Mirror the JSON-RPC branch's diagnostics. Narrowing the drift guard
+        // routed id-bearing error responses here, and `retryable` is not
+        // cosmetic — adapter.ts and spawn-client.ts read it to decide whether a
+        // failure is retriable, so dropping it would classify a recoverable
+        // QUEUE_DISCONNECTED as terminal.
+        let errorMsg = typeof event.error.message === "string" ? event.error.message : JSON.stringify(event.error);
+        const data = event.error.data;
+        if (data && typeof data === "object") {
+          const suffix = [data.acpxCode, data.detailCode].filter(Boolean).join("/");
+          if (suffix) errorMsg = `${errorMsg} [${suffix}]`;
+          if (!state.error && data.retryable === true) state.retryable = true;
+        }
+        // First error wins, as in the JSON-RPC branch — preserves the root cause.
+        state.error ??= errorMsg;
+      }
     }
   } catch {
     // Only treat an unparseable line as legacy plain-text output when no NDJSON

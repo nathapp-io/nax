@@ -278,6 +278,32 @@ describe("BUG-53 — protocol-version drift is not silently misparsed as legacy 
     expect(finalizeParseState(state).error).toBe("auth failed");
   });
 
+  // Narrowing the guard made the legacy error branch reachable for id-bearing
+  // errors, so that branch must extract the same diagnostics the JSON-RPC one
+  // does — otherwise `retryable` silently stays false and a retriable failure
+  // (QUEUE_DISCONNECTED) is classified as terminal.
+  test("a legacy error response carries through retryable and the acpxCode suffix", () => {
+    const state = createParseState();
+    parseAcpxJsonLine(
+      JSON.stringify({
+        id: 7,
+        error: { message: "queue gone", data: { retryable: true, acpxCode: "QUEUE_DISCONNECTED" } },
+      }),
+      state,
+    );
+    const result = finalizeParseState(state);
+    expect(result.error).toBe("queue gone [QUEUE_DISCONNECTED]");
+    expect(result.retryable).toBe(true);
+  });
+
+  test("a legacy error response without a data block leaves retryable false", () => {
+    const state = createParseState();
+    parseAcpxJsonLine(JSON.stringify({ id: 7, error: { message: "fatal" } }), state);
+    const result = finalizeParseState(state);
+    expect(result.error).toBe("fatal");
+    expect(result.retryable).toBe(false);
+  });
+
   test("an id with an object result is still rejected as protocol drift", () => {
     const state = createParseState();
     parseAcpxJsonLine(JSON.stringify({ id: 5, result: { stopReason: "end_turn" } }), state);

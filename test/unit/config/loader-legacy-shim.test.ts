@@ -315,6 +315,22 @@ describe("loadConfig — legacy key deprecation shim", () => {
     expect(captured.filter((m) => m.includes("routing.customStrategyPath"))).toHaveLength(1);
   });
 
+  // Dedupe must collapse genuine repeats, not distinct diagnostics that happen
+  // to share a message string. The testPattern shim emits fixed text with the
+  // offending value in its structured data, so keying on the message alone
+  // would hide the second layer's differing value entirely.
+  test("the same deprecated key with different values in two layers reports both", async () => {
+    await Bun.write(
+      join(tempDir, ".global-nax", "config.json"),
+      JSON.stringify({ context: { testCoverage: { testPattern: "**/*.spec.ts" } } }),
+    );
+    await writeProjectConfig({ context: { testCoverage: { testPattern: "**/*.test.ts" } } });
+
+    const captured = await captureLoadWarnings(() => loadConfig(tempDir));
+
+    expect(captured.filter((m) => m.includes("context.testCoverage.testPattern"))).toHaveLength(2);
+  });
+
   test("dedupe is scoped per load — a second loadConfig warns again", async () => {
     await writeProjectConfig({ routing: { strategy: "keyword", adaptive: { costThreshold: 0.5 } } });
 

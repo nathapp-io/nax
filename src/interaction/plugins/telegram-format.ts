@@ -6,7 +6,7 @@
  * its arguments.
  */
 
-import { NaxError } from "../../errors";
+import { NaxError } from "@/errors";
 import type { InteractionRequest } from "../types";
 
 /** Telegram message length limit (4096 max, keep buffer) */
