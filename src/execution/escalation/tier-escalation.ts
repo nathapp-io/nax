@@ -141,7 +141,7 @@ export async function preIterationTierCheck(
 ): Promise<PreIterationCheckResult> {
   const logger = _tierEscalationDeps.getSafeLogger();
   const currentTier = story.routing?.modelTier ?? routing.modelTier;
-  const tierOrder = config.autoMode.escalation?.tierOrder || [];
+  const tierOrder = config.autoMode?.escalation?.tierOrder || [];
   const hasAgentRungs = tierOrder.some((r) => r.agent !== undefined);
   const currentRungForBudget = hasAgentRungs
     ? { tier: currentTier, agent: story.routing?.agent }
@@ -166,9 +166,9 @@ export async function preIterationTierCheck(
   const currentRung = hasAgentRungs ? { tier: currentTier, agent: story.routing?.agent } : { tier: currentTier };
   const escalationResult = escalateTier(currentRung, tierOrder);
   const nextAgent = escalationResult?.agent;
-  const routingMode = config.routing.llm?.mode ?? "hybrid";
+  const routingMode = config.routing?.llm?.mode ?? "hybrid";
 
-  if (escalationResult && config.autoMode.escalation.enabled) {
+  if (escalationResult && config.autoMode?.escalation?.enabled) {
     const escalatedTier = escalationResult.tier;
 
     logger?.warn("escalation", "Escalating story to next tier after exceeding tier budget", {
@@ -247,7 +247,7 @@ export async function preIterationTierCheck(
   }
 
   // Escalation disabled — budget exhaustion does not block iteration
-  if (!config.autoMode.escalation.enabled) {
+  if (!config.autoMode?.escalation?.enabled) {
     return { shouldSkipIteration: false, prdDirty: false, prd };
   }
 
