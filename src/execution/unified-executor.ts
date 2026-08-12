@@ -30,7 +30,7 @@ import { runIteration } from "./iteration-runner";
 import type { RunParallelBatchOptions, RunParallelBatchResult } from "./parallel-batch";
 import { handlePipelineFailure } from "./pipeline-result-handler";
 import { closeStorySessions } from "./session-manager-runtime";
-import { selectIndependentBatch, selectNextStories } from "./story-selector";
+import { resolveRetryCandidate, selectIndependentBatch, selectNextStories } from "./story-selector";
 
 export type { SequentialExecutionContext, SequentialExecutionResult } from "./executor-types";
 
@@ -62,7 +62,9 @@ export async function executeUnified(
   let iterations = 0;
   let storiesCompleted = 0;
   let totalCost = 0;
-  let lastStoryId: string | null = null;
+  let lastStoryId: string | null = null; // feeds retry-priority (BUG-39)
+  // Only cleared on preIterationTierCheck's terminal skip — a post-runIteration
+  // terminal fail self-heals via markStoryFailed's attempts increment instead.
   const allStoryMetrics: StoryMetrics[] = [];
   let warningSent = false;
   let deferredReview: DeferredReviewResult | undefined;
@@ -211,12 +213,12 @@ export async function executeUnified(
       }
 
       const costLimit = ctx.config.execution.costLimit;
-
       // Parallel dispatch: when parallelCount > 0 and batch has more than 1 story
       if ((ctx.parallelCount ?? 0) > 0) {
+        const retryStory = resolveRetryCandidate(prd, lastStoryId, ctx.config); // BUG-39: pre-empts selectIndependentBatch too
         const readyStories = getAllReadyStories(prd);
-        const batch = _unifiedExecutorDeps.selectIndependentBatch(readyStories, ctx.parallelCount as number);
-
+        const selectBatch = _unifiedExecutorDeps.selectIndependentBatch;
+        const batch = retryStory ? [retryStory] : selectBatch(readyStories, ctx.parallelCount as number);
         if (batch.length > 1) {
           // Emit story:started for each batch story before dispatch (AC-5)
           const batchAgent = ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config);
@@ -431,7 +433,7 @@ export async function executeUnified(
             isBatchExecution: false,
           };
 
-          if (!ctx.useBatch) lastStoryId = singleStory.id;
+          lastStoryId = singleStory.id; // BUG-39: unconditional (was !ctx.useBatch-gated)
 
           {
             // Consult the aggregator so completion-phase spend cannot silently bypass the limit.
@@ -498,6 +500,7 @@ export async function executeUnified(
             ctx.workdir,
           );
           if (singlePre.shouldSkipIteration) {
+            if (singlePre.prd.userStories.find((s) => s.id === singleStory.id)?.status === "failed") lastStoryId = null; // BUG-39
             prdDirty = singlePre.prdDirty;
             continue;
           }
@@ -518,7 +521,6 @@ export async function executeUnified(
             singleIter.prdDirty,
           ];
           await closeStoryIfTerminal(ctx, singleStory.id, singleIter);
-
           if (singleIter.prdDirty) {
             prd = await loadPRD(ctx.prdPath);
             prdDirty = false;
@@ -543,7 +545,7 @@ export async function executeUnified(
       if (!selected) return buildResult("no-stories");
       const { selection } = selected;
       if (!selection) return buildResult("no-stories"); // defensive: type contract guarantees non-null when selected is non-null
-      if (!ctx.useBatch) lastStoryId = selection.story.id;
+      lastStoryId = selection.story.id; // BUG-39: unconditional (was !ctx.useBatch-gated)
 
       {
         // Consult the aggregator so completion-phase spend cannot silently bypass the limit.
@@ -610,6 +612,7 @@ export async function executeUnified(
         ctx.workdir,
       );
       if (seqPre.shouldSkipIteration) {
+        if (seqPre.prd.userStories.find((s) => s.id === selection.story.id)?.status === "failed") lastStoryId = null; // BUG-39
         prdDirty = seqPre.prdDirty;
         continue;
       }
@@ -623,7 +626,6 @@ export async function executeUnified(
         iter.prdDirty,
       ];
       await closeStoryIfTerminal(ctx, selection.story.id, iter);
-
       warningSent = await maybeSendCostWarning(
         ctx,
         Math.max(totalCost, ctx.runtime.costAggregator.snapshot().totalCostUsd),
