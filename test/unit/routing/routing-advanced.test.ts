@@ -82,14 +82,10 @@ describe("LLM Cache Clearing on Tier Escalation", () => {
     expect(getCacheSize(cache)).toBe(0);
   });
 
-  test("two independent caches (simulating two runtimes) never see each other's entries", () => {
-    const runA = new Map<string, RoutingDecision>();
-    const runB = new Map<string, RoutingDecision>();
-
-    // Same story id colliding across two "runs" — the BUG-19 scenario.
-    injectCacheEntry(runA, "US-001", { ...DECISION, reasoning: "run A" });
-
-    expect(runB.has("US-001")).toBe(false);
-    expect(getCacheSize(runB)).toBe(0);
-  });
+  // Instance-identity coverage — two real NaxRuntime instances never sharing a
+  // cache, and resolveRouting() actually reading/writing per-runtime — lives in
+  // test/unit/runtime/runtime.test.ts and test/unit/routing/llm-batch-route.test.ts.
+  // A test built from two bare `new Map()`s here would prove nothing about
+  // production wiring — two different Maps are trivially different regardless
+  // of whether the fix exists.
 });

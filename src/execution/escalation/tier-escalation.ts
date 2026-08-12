@@ -16,7 +16,6 @@ import { getSafeLogger } from "../../logger";
 import type { PRD, StructuredFailure, UserStory } from "../../prd";
 import { markStoryFailed, savePRD } from "../../prd";
 import { tryLlmBatchRoute } from "../../routing";
-import { clearCacheForStory } from "../../routing/strategies/llm";
 import type { FailureCategory } from "../../tdd/types";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "../escalation";
 import { hookCtx } from "../helpers";
@@ -231,11 +230,13 @@ export async function preIterationTierCheck(
       toTier: escalatedTier,
     });
 
-    // Routing-cache invalidation now needs a NaxRuntime (BUG-19: the cache is
-    // runtime-scoped, not a module singleton) — preIterationTierCheck has no
-    // runtime parameter, matching the hybrid re-route immediately below, which
-    // already passes `runtime: undefined` and no-ops. Both are inert pending
-    // BUG-04 (this function has zero production callers).
+    // No routing-cache invalidation needed here: resolveRouting's "PRD wins"
+    // branch (router.ts) short-circuits on story.routing.complexity +
+    // testStrategy, which this function sets on the story above and never
+    // clears. Any story reaching escalation has already been routed, so its
+    // cache entry — if any — is never read again regardless of whether it's
+    // cleared. The hybrid re-route immediately below (`runtime: undefined`)
+    // is inert for the same reason, independent of its missing runtime.
 
     // Hybrid mode: re-route story after escalation
     if (routingMode === "hybrid") {
@@ -526,13 +527,11 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
 
   await _tierEscalationDeps.savePRD(updatedPrd, ctx.prdPath);
 
-  // Clear routing cache for all escalated stories to avoid returning old cached decisions
-  if (ctx.runtime) {
-    const routingCache = ctx.runtime.routingCache;
-    for (const story of storiesToEscalate) {
-      clearCacheForStory(routingCache, story.id);
-    }
-  }
+  // No routing-cache invalidation needed here, for the same reason as
+  // preIterationTierCheck above: updatedRouting preserves complexity and
+  // testStrategy, so resolveRouting's "PRD wins" short-circuit means any
+  // cache entry for an escalated story is never read again regardless of
+  // whether it's cleared.
 
   // Hybrid mode: re-route escalated stories
   if (routingMode === "hybrid") {

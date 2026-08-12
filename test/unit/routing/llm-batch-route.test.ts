@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { UserStory } from "../../../src/prd/types";
 import { _callOpDeps } from "../../../src/operations";
-import { tryLlmBatchRoute } from "../../../src/routing/router";
-import { makeNaxConfig, makeStory } from "../../helpers";
+import { resolveRouting, tryLlmBatchRoute } from "../../../src/routing/router";
+import { makeMockAgentManager, makeNaxConfig, makeStory } from "../../helpers";
 import { makeMockRuntime } from "../../helpers/runtime";
+import type { DispatchContext } from "../../../src/runtime/dispatch-context";
 import type { NaxRuntime } from "../../../src/runtime";
 
 // The mock runtime makes the routing LLM call fail, which the classify-route op
@@ -91,5 +92,86 @@ describe("tryLlmBatchRoute", () => {
     };
 
     await expect(tryLlmBatchRoute(config, [story], "routing", deps)).resolves.toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// resolveRouting <-> runtime.routingCache instance-identity (BUG-19)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("resolveRouting reads runtime.routingCache, scoped per runtime instance", () => {
+  const cacheConfig = makeNaxConfig({
+    routing: {
+      strategy: "llm",
+      llm: { model: "fast", fallbackToKeywords: true, cacheDecisions: true, mode: "hybrid", timeoutMs: 5000 },
+    },
+  });
+
+  function makeDispatchContext(runtime: NaxRuntime): DispatchContext {
+    return {
+      agentManager: runtime.agentManager,
+      sessionManager: runtime.sessionManager,
+      runtime,
+      abortSignal: runtime.signal,
+    };
+  }
+
+  test("a cache hit on this runtime's routingCache never calls the agent", async () => {
+    const completeAsFn = mock(async () => {
+      throw new Error("should not be called — cache hit expected");
+    });
+    const runtime = makeMockRuntime({
+      config: cacheConfig,
+      agentManager: makeMockAgentManager({ completeAsFn }),
+    });
+    createdRuntimes.push(runtime);
+
+    runtime.routingCache.set("US-cache-hit", {
+      complexity: "complex",
+      modelTier: "powerful",
+      testStrategy: "three-session-tdd",
+      reasoning: "pre-cached",
+    });
+    const story: UserStory = { ...makeStory(), id: "US-cache-hit" };
+
+    const decision = await resolveRouting(story, cacheConfig, undefined, makeDispatchContext(runtime));
+
+    expect(decision.complexity).toBe("complex");
+    expect(decision.modelTier).toBe("powerful");
+    expect(completeAsFn).not.toHaveBeenCalled();
+  });
+
+  test("an entry cached on one runtime is invisible to resolveRouting on a different runtime", async () => {
+    const runtimeA = makeMockRuntime({ config: cacheConfig });
+    const completeAsFn = mock(async () => ({
+      output: JSON.stringify({ complexity: "simple", modelTier: "fast", reasoning: "fresh classification" }),
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: 0,
+    }));
+    const runtimeB = makeMockRuntime({
+      config: cacheConfig,
+      agentManager: makeMockAgentManager({ completeAsFn }),
+    });
+    createdRuntimes.push(runtimeA, runtimeB);
+
+    // Populated on runtime A only — the BUG-19 scenario is a decision cached
+    // under one runtime being served back under an unrelated one.
+    runtimeA.routingCache.set("US-cross-runtime", {
+      complexity: "complex",
+      modelTier: "powerful",
+      testStrategy: "three-session-tdd",
+      reasoning: "cached on runtime A",
+    });
+    const story: UserStory = { ...makeStory(), id: "US-cross-runtime" };
+
+    const decision = await resolveRouting(story, cacheConfig, undefined, makeDispatchContext(runtimeB));
+
+    // runtimeB's cache is empty, so resolveRouting must fall through to real
+    // classification instead of returning runtime A's cached decision.
+    expect(decision.complexity).toBe("simple");
+    expect(decision.modelTier).toBe("fast");
+    expect(completeAsFn).toHaveBeenCalledTimes(1);
+    expect(runtimeB.routingCache.has("US-cross-runtime")).toBe(true);
+    expect(runtimeA.routingCache.get("US-cross-runtime")?.complexity).toBe("complex");
   });
 });

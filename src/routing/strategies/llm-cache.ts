@@ -19,7 +19,7 @@
 
 import type { RoutingDecision } from "../decision";
 
-/** Max entries per run-scoped cache before LRU eviction kicks in (PERF-1). */
+/** Max entries per run-scoped cache before eviction kicks in (PERF-1). */
 export const MAX_CACHE_SIZE = 100;
 
 /** Clear every entry in a routing cache. */
@@ -32,7 +32,7 @@ export function getCacheSize(cache: Map<string, RoutingDecision>): number {
   return cache.size;
 }
 
-/** Clear a routing cache entry for a specific story (used on tier escalation). */
+/** Clear a routing cache entry for a specific story. */
 export function clearCacheForStory(cache: Map<string, RoutingDecision>, storyId: string): void {
   cache.delete(storyId);
 }
@@ -46,7 +46,12 @@ export function injectCacheEntry(
   cache.set(storyId, decision);
 }
 
-/** Evict the oldest entry when a routing cache is full (LRU). */
+/**
+ * Evict the oldest-inserted entry when a routing cache is full. FIFO by
+ * insertion order (`Map` iteration order), not true LRU — a cache hit does
+ * not move an entry to the back, so a frequently-reread early entry can still
+ * be evicted before a write-once-never-read later one.
+ */
 export function evictOldest(cache: Map<string, RoutingDecision>): void {
   const firstKey = cache.keys().next().value;
   if (firstKey !== undefined) {
