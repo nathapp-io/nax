@@ -11,6 +11,21 @@ import { describe, expect, test } from "bun:test";
 import type { RectifyConflictedStoryOptions } from "../../../src/execution/merge-conflict-rectify";
 import { rectifyConflictedStory, rectifyMergeFailure } from "../../../src/execution/merge-conflict-rectify";
 import { makeMockAgentManager, makeNaxConfig, makePRD, makeSessionManager, makeStory } from "../../helpers";
+import { makeTestContext } from "../../helpers/pipeline-context";
+
+const FAKE_RUNTIME = {
+  outputDir: "/tmp/nax-rect-test-output",
+  costAggregator: {
+    snapshot: () => ({
+      totalCostUsd: 0,
+      totalEstimatedCostUsd: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      callCount: 0,
+      errorCount: 0,
+    }),
+  },
+} as never;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // rect AC-7 — errors are caught, not propagated; returns { success: false }
@@ -30,22 +45,15 @@ describe("rect AC-7: rectifyConflictedStory catches errors and returns failure �
       hooks: { hooks: {} },
       pluginRegistry: { getReporters: () => [], getContextProviders: () => [] } as never,
       prd,
-      agentManager: makeMockAgentManager(),
-      sessionManager: makeSessionManager(),
-      runtime: {
-        outputDir: "/tmp/nax-rect-test-output",
-        costAggregator: {
-          snapshot: () => ({
-            totalCostUsd: 0,
-            totalEstimatedCostUsd: 0,
-            totalInputTokens: 0,
-            totalOutputTokens: 0,
-            callCount: 0,
-            errorCount: 0,
-          }),
-        },
-      } as never,
-      abortSignal: undefined as never,
+      pipelineContextBase: makeTestContext({
+        config,
+        prd,
+        workdir: "/tmp/nonexistent-workdir-for-test",
+        agentManager: makeMockAgentManager(),
+        sessionManager: makeSessionManager(),
+        runtime: FAKE_RUNTIME,
+        abortSignal: undefined as never,
+      }),
       ...overrides,
     };
   }
@@ -86,22 +94,15 @@ describe("rect AC-7: rectifyConflictedStory catches errors and returns failure �
       hooks: { hooks: {} },
       pluginRegistry: { getReporters: () => [], getContextProviders: () => [] } as never,
       prd,
-      agentManager: makeMockAgentManager(),
-      sessionManager: makeSessionManager(),
-      runtime: {
-        outputDir: "/tmp",
-        costAggregator: {
-          snapshot: () => ({
-            totalCostUsd: 0,
-            totalEstimatedCostUsd: 0,
-            totalInputTokens: 0,
-            totalOutputTokens: 0,
-            callCount: 0,
-            errorCount: 0,
-          }),
-        },
-      } as never,
-      abortSignal: undefined as never,
+      pipelineContextBase: makeTestContext({
+        config,
+        prd,
+        workdir: "/tmp/nonexistent-workdir-for-test",
+        agentManager: makeMockAgentManager(),
+        sessionManager: makeSessionManager(),
+        runtime: FAKE_RUNTIME,
+        abortSignal: undefined as never,
+      }),
     };
 
     let result: Awaited<ReturnType<typeof rectifyConflictedStory>>;

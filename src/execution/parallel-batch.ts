@@ -361,10 +361,11 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
         prd,
         eventEmitter,
         agentGetFn,
-        agentManager: ctx.pipelineContext.agentManager,
-        sessionManager: ctx.pipelineContext.sessionManager,
-        runtime: ctx.pipelineContext.runtime,
-        abortSignal: ctx.pipelineContext.abortSignal,
+        // BUG-36: reuse the same worktree-pipeline base the workers ran with, so the
+        // rectification re-run inherits the identical worktree contract (skipPrdPersistence,
+        // prdPath, featureDir, cost/session wiring) instead of a hand-rolled subset that
+        // silently drifts whenever a field is added to one side and not the other.
+        pipelineContextBase: pipelineContext,
       });
       mergeConflicts.push({ story, rectified: rectResult.success, cost: rectResult.cost });
     } catch (err) {
@@ -379,9 +380,12 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
     storyEndTimes.set(conflict.storyId, Date.now());
   }
 
-  // 6. Costs from worker (not even-split)
+  // 6. Costs from worker (not even-split) plus rectification spend (BUG-37) — a
+  // rectified story's full re-run cost lands only in mergeConflicts[].cost, never
+  // in storyCosts, so the batch total previously under-reported it.
   const storyCosts = workerResult.storyCosts;
-  const totalCost = [...storyCosts.values()].reduce((sum, c) => sum + c, 0);
+  const totalCost =
+    [...storyCosts.values()].reduce((sum, c) => sum + c, 0) + mergeConflicts.reduce((sum, c) => sum + c.cost, 0);
 
   // 7. Build storyDurations: elapsed time from worktree creation to merge/rectification completion
   const storyDurations = new Map<string, number>();

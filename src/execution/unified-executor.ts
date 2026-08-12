@@ -284,6 +284,7 @@ export async function executeUnified(
                 rootConfig: ctx.config,
                 prd,
                 skipPrdPersistence: true, // CR-1: worktree pipelines must not persist PRD
+                prdPath: ctx.prdPath, // BUG-36: carried through to the rectification re-run
                 projectDir: ctx.workdir,
                 naxIgnoreIndex,
                 hooks: ctx.hooks,
@@ -696,7 +697,6 @@ export async function executeUnified(
     }
   }
 }
-
 /**
  * Single-writer reconciliation of a parallel batch outcome onto the in-memory PRD.
  * Worktree pipelines no longer persist PRD (skipPrdPersistence), so the executor

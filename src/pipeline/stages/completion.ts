@@ -107,23 +107,27 @@ export const completionStage: PipelineStage = {
         );
       }
 
-      // Emit story:completed event — hooks + reporter subscribers handle the rest
-      const storyMetric = ctx.storyMetrics?.find((m) => m.storyId === completedStory.id) ?? ctx.storyMetrics?.[0];
-      pipelineEventBus.emit({
-        type: "story:completed",
-        storyId: completedStory.id,
-        story: {
-          id: completedStory.id,
-          title: completedStory.title,
-          status: completedStory.status,
-          attempts: completedStory.attempts,
-        },
-        passed: true,
-        runElapsedMs: storyMetric?.durationMs ?? 0,
-        cost: costPerStory,
-        modelTier: ctx.routing?.modelTier,
-        testStrategy: ctx.routing?.testStrategy,
-      });
+      // Emit story:completed event — hooks + reporter subscribers handle the rest.
+      // Skipped on a rectification re-run (BUG-36): the worktree pipeline's first
+      // pass already emitted this event before the merge conflict was found.
+      if (ctx.skipCompletionEvents !== true) {
+        const storyMetric = ctx.storyMetrics?.find((m) => m.storyId === completedStory.id) ?? ctx.storyMetrics?.[0];
+        pipelineEventBus.emit({
+          type: "story:completed",
+          storyId: completedStory.id,
+          story: {
+            id: completedStory.id,
+            title: completedStory.title,
+            status: completedStory.status,
+            attempts: completedStory.attempts,
+          },
+          passed: true,
+          runElapsedMs: storyMetric?.durationMs ?? 0,
+          cost: costPerStory,
+          modelTier: ctx.routing?.modelTier,
+          testStrategy: ctx.routing?.testStrategy,
+        });
+      }
 
       // review-gate trigger: check if story needs re-review after passing
       if (ctx.interaction && isTriggerEnabled("review-gate", ctx.config)) {

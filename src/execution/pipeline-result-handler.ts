@@ -231,10 +231,20 @@ export async function handlePipelineSuccess(
         hooks: ctx.hooks,
         pluginRegistry: ctx.pluginRegistry,
         prd,
-        agentManager: ctx.agentManager,
-        sessionManager: ctx.sessionManager,
-        runtime: ctx.runtime,
-        abortSignal: ctx.abortSignal,
+        pipelineContextBase: {
+          config: ctx.config,
+          rootConfig: ctx.config,
+          prd,
+          projectDir: ctx.workdir,
+          hooks: ctx.hooks,
+          plugins: ctx.pluginRegistry,
+          prdPath: ctx.prdPath,
+          featureDir: ctx.featureDir,
+          agentManager: ctx.agentManager,
+          sessionManager: ctx.sessionManager,
+          runtime: ctx.runtime,
+          abortSignal: ctx.abortSignal,
+        },
       });
       if (!rectifyResult.success) {
         logger?.error("worktree", "Merge conflict could not be rectified — marking story as failed", {
