@@ -103,4 +103,86 @@ describe("handleTierEscalation — runtime-crash retry cap", () => {
       _runtimeCrashRetryCounts.delete(storyId);
     }
   });
+
+  test("resets the retry cap after a non-runtime-crash escalation", async () => {
+    const mod = await import("@/execution/escalation");
+    const { handleTierEscalation, _tierEscalationDeps, _runtimeCrashRetryCounts, RUNTIME_CRASH_RETRY_CAP } = mod;
+
+    const storyId = "US-002-retry-cap-reset";
+    const origSavePRD = _tierEscalationDeps.savePRD;
+    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    _runtimeCrashRetryCounts.delete(storyId);
+
+    try {
+      const story = {
+        id: storyId,
+        title: "Story",
+        description: "Test",
+        acceptanceCriteria: [],
+        tags: [],
+        dependencies: [],
+        status: "in-progress" as const,
+        passes: false,
+        escalations: [],
+        attempts: 1,
+        routing: { modelTier: "fast", testStrategy: "test-after" },
+      };
+      const prd = {
+        project: "test",
+        feature: "f",
+        branchName: "b",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userStories: [story],
+      };
+      const buildCtx = (runtimeCrash: boolean) => ({
+        story,
+        storiesToExecute: [story],
+        isBatchExecution: false,
+        routing: { modelTier: "fast", testStrategy: "test-after" },
+        pipelineResult: { reason: "Test failure", context: {} },
+        config: {
+          autoMode: {
+            escalation: {
+              enabled: true,
+              tierOrder: [
+                { tier: "fast", attempts: 2 },
+                { tier: "balanced", attempts: 3 },
+              ],
+            },
+          },
+          routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+          models: {},
+        },
+        prd,
+        prdPath: "/tmp/test-prd-us002-retry-cap-reset.json",
+        featureDir: undefined,
+        hooks: { hooks: {} },
+        feature: "f",
+        totalCost: 0,
+        workdir: "/tmp",
+        ...(runtimeCrash ? { runtimeCrashResult: { status: "RUNTIME_CRASH", success: false } } : {}),
+      });
+
+      for (let i = 0; i < RUNTIME_CRASH_RETRY_CAP; i++) {
+        const result = await handleTierEscalation(
+          buildCtx(true) as unknown as Parameters<typeof handleTierEscalation>[0], // test-ratchet-allow: as-unknown-as
+        );
+        expect(result.outcome).toBe("retry-same");
+      }
+
+      const ordinaryFailure = await handleTierEscalation(
+        buildCtx(false) as unknown as Parameters<typeof handleTierEscalation>[0], // test-ratchet-allow: as-unknown-as
+      );
+      expect(ordinaryFailure.outcome).toBe("escalated");
+
+      const nextCrash = await handleTierEscalation(
+        buildCtx(true) as unknown as Parameters<typeof handleTierEscalation>[0], // test-ratchet-allow: as-unknown-as
+      );
+      expect(nextCrash.outcome).toBe("retry-same");
+    } finally {
+      _tierEscalationDeps.savePRD = origSavePRD;
+      _runtimeCrashRetryCounts.delete(storyId);
+    }
+  });
 });

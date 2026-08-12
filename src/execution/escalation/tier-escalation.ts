@@ -389,6 +389,11 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
     return { outcome: "retry-same", prdDirty: false, prd: ctx.prd };
   }
 
+  // The cap is for *consecutive* runtime crashes. Any ordinary pipeline
+  // outcome breaks that sequence (including an escalation to another tier),
+  // so a later transient runtime crash starts with a fresh retry budget.
+  _runtimeCrashRetryCounts.delete(ctx.story.id);
+
   // Only match by (tier, agent) tuple when the tierOrder contains agent-qualified
   // rungs (cross-agent ladder). Standard tier orders with no agent fields fall back
   // to tier-name-only matching so escalation still works for stories that carry a
