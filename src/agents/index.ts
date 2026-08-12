@@ -51,6 +51,7 @@ export { validateAgentForTier, validateAgentFeature, describeAgentCapabilities }
 export type { AgentVersionInfo } from "./shared/version-detection";
 export { getAgentVersion, getAgentVersions } from "./shared/version-detection";
 export { AgentManager, _agentManagerDeps } from "./manager";
+export { classifyCompleteException } from "./complete-exception-classifier";
 export type {
   IAgentManager,
   AgentFallbackRecord,

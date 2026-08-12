@@ -294,4 +294,137 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
 
     expect(result).toBe("substantial agent output");
   });
+
+  test("provider-refusal output (non-empty) synthesises a retriable availability AdapterFailure (BUG-62)", async () => {
+    let capturedAdapterFailure: unknown;
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        capturedAdapterFailure = (hopResult.result as { adapterFailure?: unknown }).adapterFailure;
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: "Selected model is at capacity. Please try a different model.",
+        estimatedCostUsd: 0,
+        internalRoundTrips: 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      }),
+    });
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    // The mock manager doesn't retry/swap on its own — we're only asserting the
+    // synthesis fired on the TurnResult produced by sendWithFileOutput.
+    await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      makeRunOp("provider-refusal-op"),
+      "hello",
+    );
+
+    expect(capturedAdapterFailure).toEqual({
+      category: "availability",
+      outcome: "fail-rate-limit",
+      retriable: true,
+      message: "Selected model is at capacity. Please try a different model.",
+    });
+  });
+
+  test("non-empty output that already carries an adapterFailure is left unchanged", async () => {
+    let capturedAdapterFailure: unknown;
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        capturedAdapterFailure = (hopResult.result as { adapterFailure?: unknown }).adapterFailure;
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: "Agent \"claude\" failed: some session-level failure",
+        estimatedCostUsd: 0,
+        internalRoundTrips: 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        adapterFailure: { category: "quality" as const, outcome: "fail-adapter-error" as const, retriable: false, message: "pre-existing" },
+      }),
+    });
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      makeRunOp("preexisting-failure-op"),
+      "hello",
+    );
+
+    expect(capturedAdapterFailure).toEqual({
+      category: "quality",
+      outcome: "fail-adapter-error",
+      retriable: false,
+      message: "pre-existing",
+    });
+  });
+
+  test("classification runs against the file-overlay content, not the agent's stdout text (BUG-62)", async () => {
+    const outputPath = "/tmp/refusal-overlay.json";
+    _callOpDeps.readFileOutput = async () => "Selected model is at capacity. Please try a different model.";
+
+    let capturedAdapterFailure: unknown;
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        capturedAdapterFailure = (hopResult.result as { adapterFailure?: unknown }).adapterFailure;
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      // The agent's own stdout acknowledgement is benign — only the overlay file matters.
+      runAsSessionFn: async () => ({
+        output: "done, see file",
+        estimatedCostUsd: 0,
+        internalRoundTrips: 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      }),
+    });
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      makeRunOp("overlay-refusal-op", outputPath),
+      "hello",
+    );
+
+    expect(capturedAdapterFailure).toEqual({
+      category: "availability",
+      outcome: "fail-rate-limit",
+      retriable: true,
+      message: "Selected model is at capacity. Please try a different model.",
+    });
+  });
+
+  test("ordinary file-overlay content is not misclassified as a refusal", async () => {
+    const outputPath = "/tmp/normal-overlay.json";
+    _callOpDeps.readFileOutput = async () => JSON.stringify({ passed: true, findings: [] });
+
+    let capturedAdapterFailure: unknown;
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        capturedAdapterFailure = (hopResult.result as { adapterFailure?: unknown }).adapterFailure;
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: "",
+        estimatedCostUsd: 0,
+        internalRoundTrips: 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      }),
+    });
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      makeRunOp("overlay-normal-op", outputPath),
+      "hello",
+    );
+
+    expect(capturedAdapterFailure).toBeUndefined();
+  });
 });

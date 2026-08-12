@@ -26,6 +26,7 @@ import { DispatchEventBus } from "../runtime/dispatch-events";
 import { formatSessionName } from "../runtime/session-name";
 import { cancellableDelay } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
+import { classifyCompleteException } from "./complete-exception-classifier";
 import { buildCompleteEvent, buildDispatchErrorEvent, buildSessionTurnEvent } from "./manager-dispatch";
 import type {
   AgentCompleteOutcome,
@@ -505,12 +506,7 @@ export class AgentManager implements IAgentManager {
             output: "",
             tokenUsage: { inputTokens: 0, outputTokens: 0 },
             estimatedCostUsd: 0,
-            adapterFailure: {
-              category: "quality",
-              outcome: "fail-unknown",
-              retriable: false,
-              message: String(err).slice(0, 500),
-            },
+            adapterFailure: classifyCompleteException(err),
           };
         }
 

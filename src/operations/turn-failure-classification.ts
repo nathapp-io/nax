@@ -22,6 +22,7 @@
 
 import type { TurnResult } from "../agents/types";
 import type { AdapterFailure } from "../context/engine";
+import { tryParseLLMJson } from "../utils/llm-json";
 
 export function classifyEmptyOutputFailure(turn: TurnResult): AdapterFailure | null {
   if (turn.adapterFailure) return turn.adapterFailure;
@@ -43,5 +44,36 @@ export function classifyEmptyOutputFailure(turn: TurnResult): AdapterFailure | n
     retriable: true,
     message: "[callOp] agent returned no output",
     reason: "empty-output",
+  };
+}
+
+/**
+ * A provider capacity refusal returned as ordinary turn output rather than
+ * raised as a transport error — e.g. "Selected model is at capacity. Please
+ * try a different model." Measured over 4570 review-audit records (nax#1550
+ * follow-up, "BUG-62"): 9 of 10 unparseable review give-ups attributed to
+ * this exact literal, none were genuine review verdicts.
+ *
+ * Anchored to the start of the (trimmed) output, length-capped, and rejected
+ * outright when the output parses as LLM JSON — a genuine verdict payload
+ * (which may legitimately quote this phrase as review-finding evidence) can
+ * never match, since it neither starts with the literal nor fails to parse.
+ * `parseAgentError` deliberately excludes free-text inference for structured
+ * transport errors; this is the one place a free-text match is warranted,
+ * because the refusal never reaches the transport layer as an error at all.
+ */
+const PROVIDER_REFUSAL_PATTERN = /^selected model is at capacity\b/i;
+const MAX_REFUSAL_OUTPUT_CHARS = 300;
+
+export function classifyProviderRefusalFailure(output: string): AdapterFailure | null {
+  const trimmed = output.trim();
+  if (!trimmed || trimmed.length > MAX_REFUSAL_OUTPUT_CHARS) return null;
+  if (!PROVIDER_REFUSAL_PATTERN.test(trimmed)) return null;
+  if (tryParseLLMJson(trimmed) !== null) return null;
+  return {
+    category: "availability",
+    outcome: "fail-rate-limit",
+    retriable: true,
+    message: trimmed.slice(0, 500),
   };
 }

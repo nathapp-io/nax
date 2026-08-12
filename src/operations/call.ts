@@ -23,7 +23,7 @@ import {
   resolveTimeoutMs,
   synthesizeStory,
 } from "./call-resolvers";
-import { classifyEmptyOutputFailure } from "./turn-failure-classification";
+import { classifyEmptyOutputFailure, classifyProviderRefusalFailure } from "./turn-failure-classification";
 import type {
   BuildContext,
   CallContext,
@@ -261,6 +261,22 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     if (!effective.output?.trim()) {
       const failure = classifyEmptyOutputFailure(effective);
       if (failure) return { ...effective, adapterFailure: failure };
+    } else if (!effective.adapterFailure) {
+      // A provider refusal (e.g. "model is at capacity") comes back as ordinary,
+      // non-empty turn output — not a thrown transport error — so it reaches
+      // op.parse's own fail-open logic unless classified here first. Attaching
+      // an AdapterFailure routes it through the same manager-tier backoff/swap
+      // logic as any other infra failure instead of being parsed as a verdict.
+      const refusal = classifyProviderRefusalFailure(effective.output);
+      if (refusal) {
+        getSafeLogger()?.warn("callop", "Provider refusal classified as infra failure", {
+          storyId: ctx.storyId,
+          opName: op.name,
+          agentName: dispatchAgent,
+          outcome: refusal.outcome,
+        });
+        return { ...effective, adapterFailure: refusal };
+      }
     }
     return effective;
   };
