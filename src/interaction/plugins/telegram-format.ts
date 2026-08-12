@@ -6,6 +6,7 @@
  * its arguments.
  */
 
+import { NaxError } from "@/errors";
 import type { InteractionRequest } from "../types";
 
 /** Telegram message length limit (4096 max, keep buffer) */
@@ -29,12 +30,20 @@ export type InlineKeyboard = Array<Array<{ text: string; callback_data: string }
  */
 export function truncateUtf8Bytes(text: string, maxBytes: number): string {
   if (maxBytes <= 0) return "";
-  if (Buffer.byteLength(text, "utf8") <= maxBytes) return text;
-  let end = text.length;
-  while (end > 0 && Buffer.byteLength(text.slice(0, end), "utf8") > maxBytes) {
+  const encoded = Buffer.from(text, "utf8");
+  if (encoded.length <= maxBytes) return text;
+
+  // Cut at the byte budget, then walk back off any UTF-8 continuation byte
+  // (0b10xxxxxx) so the cut lands on a codepoint boundary. At most 3 steps —
+  // no UTF-8 sequence is longer than 4 bytes. Slicing the *string* one
+  // character at a time and re-encoding the prefix each iteration was O(n^2),
+  // which is invisible at id lengths but pathological if this is ever reused
+  // for longer text.
+  let end = maxBytes;
+  while (end > 0 && (encoded[end] & 0b1100_0000) === 0b1000_0000) {
     end--;
   }
-  return text.slice(0, end);
+  return encoded.toString("utf8", 0, end);
 }
 
 /**
@@ -58,8 +67,27 @@ export function truncateIdForCallbackData(id: string, suffix: string): string {
   return truncateUtf8Bytes(`h${digest}`, maxIdBytes);
 }
 
-/** Build a `callback_data` string bounded to Telegram's 64-byte limit. */
+/**
+ * Build a `callback_data` string bounded to Telegram's 64-byte limit.
+ *
+ * `callback_data` is a `:`-delimited grammar (`<id>:<action>[:<value>]`), and
+ * `parseUpdate` recovers the id as the segment before the FIRST `:`. A colon
+ * inside `id` therefore makes the id unrecoverable: every tap fails the id
+ * comparison, `parseUpdate` returns null, and the prompt can only ever resolve
+ * by timing out into its fallback — a silent failure with no diagnostic. Reject
+ * it here, at the point the malformed id enters the system.
+ *
+ * Colons in the *value* segment are fine — `parseUpdate` rejoins everything
+ * after the action, so multi-segment option keys round-trip intact.
+ */
 function buildCallbackData(id: string, suffix: string): string {
+  if (id.includes(":")) {
+    throw new NaxError(
+      `Interaction request id must not contain ":" — it is the callback_data field separator, and an id containing it can never be matched back to its prompt (id: ${id})`,
+      "INTERACTION_INVALID_REQUEST_ID",
+      { stage: "interaction", requestId: id },
+    );
+  }
   return `${truncateIdForCallbackData(id, suffix)}${suffix}`;
 }
 

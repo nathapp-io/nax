@@ -24,7 +24,8 @@ export type { ChainConfig } from "./chain";
 
 // Plugins
 export { CLIInteractionPlugin } from "./plugins/cli";
-export { TelegramInteractionPlugin, _telegramPluginDeps, normalizeChatId } from "./plugins/telegram";
+export { TelegramInteractionPlugin, _telegramPluginDeps } from "./plugins/telegram";
+export { normalizeChatId } from "./plugins/telegram-config";
 export {
   MAX_MESSAGE_CHARS,
   TELEGRAM_CALLBACK_DATA_MAX_BYTES,

@@ -5,9 +5,10 @@
  * Poll for callback query or reply message responses.
  */
 
-import { z } from "zod";
+import { errorMessage } from "@/utils/errors";
 import { getSafeLogger } from "../../logger";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
+import { TelegramConfigSchema, type TelegramMessage, type TelegramUpdate, normalizeChatId } from "./telegram-config";
 import {
   MAX_MESSAGE_CHARS,
   buildBody,
@@ -34,54 +35,6 @@ export const _telegramPluginDeps = {
 };
 
 const CALLBACK_API_TIMEOUT_MS = 4000;
-
-/** Telegram numeric chat ids; negative for groups and supergroups. */
-const NUMERIC_CHAT_ID = /^-?\d+$/;
-
-/**
- * Normalize a configured chat id and report whether it can ever match an
- * inbound update.
- *
- * The ingestion filter compares `String(update.chat.id)` against the configured
- * value, and getUpdates only ever reports NUMERIC chat ids. An `@channelusername`
- * is accepted by sendMessage — which is precisely why a mismatch here is silent:
- * outbound posting keeps working, so nothing looks broken until an answer never
- * arrives and every interactive prompt quietly falls through to its timeout
- * fallback. Same for a chat id that picked up whitespace from a .env file.
- *
- * Whitespace is stripped (unambiguously a typo). A non-numeric id is reported
- * as `unmatchable` rather than rejected, because send-only usage — `notify`
- * requests, which never wait for a response — is legitimate against an
- * `@channelusername`.
- */
-export function normalizeChatId(raw: string): { chatId: string; unmatchable: boolean } {
-  const chatId = raw.trim();
-  return { chatId, unmatchable: !NUMERIC_CHAT_ID.test(chatId) };
-}
-
-/** Zod schema for validating telegram plugin config */
-const TelegramConfigSchema = z.object({
-  botToken: z.string().optional(),
-  chatId: z.string().optional(),
-});
-
-/** Telegram API response types */
-interface TelegramMessage {
-  message_id: number;
-  chat: { id: number };
-  text?: string;
-  reply_to_message?: TelegramMessage;
-}
-
-interface TelegramUpdate {
-  update_id: number;
-  callback_query?: {
-    id: string;
-    data: string;
-    message: TelegramMessage;
-  };
-  message?: TelegramMessage;
-}
 
 interface PendingReceiver {
   resolve: (response: InteractionResponse) => void;
@@ -199,7 +152,20 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     }
 
     const header = buildHeader(request);
-    const keyboard = buildKeyboard(request);
+    // buildKeyboard rejects an id that can't round-trip the callback_data
+    // grammar. Don't let that escape: InteractionChain has a fallback cascade
+    // on receive() but none on send(), so throwing here aborts the run where
+    // every other interaction failure degrades to the request's `fallback`.
+    // Post without buttons — loud in the log, still resolvable via fallback.
+    let keyboard: ReturnType<typeof buildKeyboard> = null;
+    try {
+      keyboard = buildKeyboard(request);
+    } catch (err) {
+      this.logger?.error("interaction", "Cannot build Telegram keyboard — sending prompt without buttons", {
+        requestId: request.id,
+        error: errorMessage(err),
+      });
+    }
     const body = buildBody(request);
 
     // Split body into chunks that fit within Telegram's 4000-char limit.
@@ -454,7 +420,13 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       if (parts.length < 2) return null;
 
       const action = parts[1] as InteractionResponse["action"];
-      const value = parts.length > 2 ? parts[2] : undefined;
+      // Rejoin everything after the action: an option key may itself contain
+      // ":" (e.g. "scope:api"). Taking only parts[2] truncated the value, so
+      // the reconstructed suffix no longer matched the one used at build time
+      // and the id comparison below failed — the tap was silently dropped and
+      // the prompt could only resolve by timeout. The id segment cannot carry
+      // a ":" at all; buildCallbackData rejects that at construction.
+      const value = parts.length > 2 ? parts.slice(2).join(":") : undefined;
 
       // The id segment may have been truncated at construction time to keep
       // callback_data within Telegram's 64-byte limit (BUG-48), so compare

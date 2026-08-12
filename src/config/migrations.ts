@@ -15,6 +15,13 @@
 import type { Logger } from "../logger";
 
 /**
+ * The only logger capability these shims use. Narrowed from `Logger` so the
+ * loader can pass a deduping wrapper (see `createConfigWarnDedupe`) without
+ * having to reconstruct the whole logger surface.
+ */
+export type ConfigWarnLogger = Pick<Logger, "warn">;
+
+/**
  * Alias the deprecated `context.testCoverage.testPattern` (single glob string)
  * to `execution.smartTestRunner.testFilePatterns` (string array) — ADR-009 §4.5.
  *
@@ -31,7 +38,10 @@ import type { Logger } from "../logger";
  * @param logger Nullable logger — logger may not be initialized yet at call time.
  * @returns New config object with migration applied.
  */
-export function migrateLegacyTestPattern(raw: Record<string, unknown>, logger: Logger | null): Record<string, unknown> {
+export function migrateLegacyTestPattern(
+  raw: Record<string, unknown>,
+  logger: ConfigWarnLogger | null,
+): Record<string, unknown> {
   type RawContext = { testCoverage?: { testPattern?: unknown; [k: string]: unknown }; [k: string]: unknown };
   type RawExecution = { smartTestRunner?: { testFilePatterns?: unknown; [k: string]: unknown }; [k: string]: unknown };
 
@@ -89,7 +99,7 @@ export function migrateLegacyTestPattern(raw: Record<string, unknown>, logger: L
  */
 export function migrateLegacyReviewModelKey(
   raw: Record<string, unknown>,
-  logger: Logger | null,
+  logger: ConfigWarnLogger | null,
 ): Record<string, unknown> {
   type Block = { modelTier?: unknown; model?: unknown; [k: string]: unknown };
   type RawReview = { semantic?: Block; adversarial?: Block; [k: string]: unknown };
@@ -110,7 +120,7 @@ export function migrateLegacyReviewModelKey(
     },
   };
 
-  function migrateBlock(block: Block | undefined, path: string, log: Logger | null): Block | undefined {
+  function migrateBlock(block: Block | undefined, path: string, log: ConfigWarnLogger | null): Block | undefined {
     if (!block || block.modelTier === undefined) return block;
     const { modelTier, ...rest } = block;
     if (block.model !== undefined) {

@@ -260,6 +260,55 @@ describe("BUG-53 — protocol-version drift is not silently misparsed as legacy 
     parseAcpxJsonLine('{"result":"legacy plain text"}', state);
     expect(finalizeParseState(state).text).toBe("legacy plain text");
   });
+
+  // The drift guard's `id` + object-`error` disjunct overlapped a shape the
+  // legacy branch handles correctly (it reads `event.error.message`), so a
+  // legacy error response carrying an id had its real failure reason replaced
+  // by a bogus protocol-version message. Only object-`result` is genuinely
+  // unrepresentable in the legacy branch (which requires a *string* result).
+  test("a legacy error response carrying an id surfaces the real error message, not a protocol-drift message", () => {
+    const state = createParseState();
+    parseAcpxJsonLine(JSON.stringify({ id: 7, error: { message: "model not available" } }), state);
+    expect(finalizeParseState(state).error).toBe("model not available");
+  });
+
+  test("a legacy error response without an id still surfaces the real error message", () => {
+    const state = createParseState();
+    parseAcpxJsonLine(JSON.stringify({ error: { message: "auth failed" } }), state);
+    expect(finalizeParseState(state).error).toBe("auth failed");
+  });
+
+  // Narrowing the guard made the legacy error branch reachable for id-bearing
+  // errors, so that branch must extract the same diagnostics the JSON-RPC one
+  // does — otherwise `retryable` silently stays false and a retriable failure
+  // (QUEUE_DISCONNECTED) is classified as terminal.
+  test("a legacy error response carries through retryable and the acpxCode suffix", () => {
+    const state = createParseState();
+    parseAcpxJsonLine(
+      JSON.stringify({
+        id: 7,
+        error: { message: "queue gone", data: { retryable: true, acpxCode: "QUEUE_DISCONNECTED" } },
+      }),
+      state,
+    );
+    const result = finalizeParseState(state);
+    expect(result.error).toBe("queue gone [QUEUE_DISCONNECTED]");
+    expect(result.retryable).toBe(true);
+  });
+
+  test("a legacy error response without a data block leaves retryable false", () => {
+    const state = createParseState();
+    parseAcpxJsonLine(JSON.stringify({ id: 7, error: { message: "fatal" } }), state);
+    const result = finalizeParseState(state);
+    expect(result.error).toBe("fatal");
+    expect(result.retryable).toBe(false);
+  });
+
+  test("an id with an object result is still rejected as protocol drift", () => {
+    const state = createParseState();
+    parseAcpxJsonLine(JSON.stringify({ id: 5, result: { stopReason: "end_turn" } }), state);
+    expect(finalizeParseState(state).error).toBe("Unsupported acpx JSON-RPC protocol version");
+  });
 });
 
 describe("BUG-54 — partial usage objects do not fabricate zero-filled token usage", () => {

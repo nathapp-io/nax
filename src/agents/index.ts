@@ -24,6 +24,8 @@ export {
   parseAcpxJsonOutput,
   parseModelSpec,
   parseSessionIds,
+  // @internal — test-reachability re-exports only, not part of the public
+  // `@/agents` surface. See src/agents/acp/stdout-line-reader.ts.
   MAX_BUFFERED_LINE_BYTES,
   readAndParseLines,
 } from "./acp";
