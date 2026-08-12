@@ -10,11 +10,12 @@ import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import { getSafeLogger } from "../logger";
 import type { PipelineEventEmitter } from "../pipeline/events";
-import type { AgentGetFn, PipelineContext } from "../pipeline/types";
+import type { AgentGetFn, PipelineContext, RoutingResult } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
-import type { PRD } from "../prd";
+import type { PRD, UserStory } from "../prd";
 import { errorMessage } from "../utils/errors";
 import type { MergeResult } from "../worktree";
+import { buildWorktreePipelineContext } from "./parallel-worker";
 
 /**
  * Close a stale ACP session by name — best-effort, swallows all errors.
@@ -102,6 +103,45 @@ export interface RectifyConflictedStoryOptions extends ConflictedStoryInfo {
 }
 
 /**
+ * Build the PipelineContext for a rectification re-run (BUG-36).
+ *
+ * Pulled out of rectifyConflictedStory as a pure function so the worktree-contract
+ * fields (skipPrdPersistence, prdPath, featureDir, agentManager/sessionManager/
+ * runtime/abortSignal) flowing through from `pipelineContextBase` — and
+ * `skipCompletionEvents` being forced on — can be asserted directly in a unit
+ * test, without mocking runPipeline/WorktreeManager/MergeEngine.
+ */
+export function buildRectificationPipelineContext(options: {
+  pipelineContextBase: RectifyConflictedStoryOptions["pipelineContextBase"];
+  story: UserStory;
+  config: NaxConfig;
+  hooks: LoadedHooksConfig;
+  pluginRegistry: PluginRegistry;
+  workdir: string;
+  worktreePath: string;
+  routing: RoutingResult;
+  agentGetFn?: AgentGetFn;
+}): PipelineContext {
+  const { pipelineContextBase, story, config, hooks, pluginRegistry, workdir, worktreePath, routing, agentGetFn } =
+    options;
+  return {
+    ...buildWorktreePipelineContext(pipelineContextBase, story),
+    config,
+    rootConfig: config,
+    story,
+    stories: [story],
+    projectDir: workdir,
+    workdir: worktreePath,
+    hooks,
+    plugins: pluginRegistry,
+    storyStartTime: new Date().toISOString(),
+    routing,
+    agentGetFn: agentGetFn ?? pipelineContextBase.agentGetFn,
+    skipCompletionEvents: true, // BUG-36: the worker's first pass already emitted story:completed
+  };
+}
+
+/**
  * Actual implementation of rectifyConflictedStory.
  *
  * Steps:
@@ -124,7 +164,6 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
     const { runPipeline } = await import("../pipeline/runner");
     const { defaultPipeline } = await import("../pipeline/stages");
     const { routeTask } = await import("../routing");
-    const { buildWorktreePipelineContext } = await import("./parallel-worker");
 
     const worktreeManager = new WorktreeManager();
     const mergeEngine = new MergeEngine(worktreeManager);
@@ -164,21 +203,17 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
     // BUG-36: built from the same worktree-pipeline base the worker ran with, via the
     // one shared builder (parallel-worker.ts), instead of a hand-rolled object literal
     // that previously omitted skipPrdPersistence/prdPath and mutated the shared PRD.
-    const pipelineContext: PipelineContext = {
-      ...buildWorktreePipelineContext(pipelineContextBase, story),
-      config,
-      rootConfig: config,
+    const pipelineContext = buildRectificationPipelineContext({
+      pipelineContextBase,
       story,
-      stories: [story],
-      projectDir: workdir,
-      workdir: worktreePath,
+      config,
       hooks,
-      plugins: pluginRegistry,
-      storyStartTime: new Date().toISOString(),
-      routing: routing as import("../pipeline/types").RoutingResult,
+      pluginRegistry,
+      workdir,
+      worktreePath,
+      routing: routing as RoutingResult,
       agentGetFn,
-      skipCompletionEvents: true, // BUG-36: the worker's first pass already emitted story:completed
-    };
+    });
 
     const pipelineResult = await runPipeline(defaultPipeline, pipelineContext, eventEmitter);
     const cost = pipelineResult.context.agentResult?.estimatedCostUsd ?? 0;

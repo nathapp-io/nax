@@ -97,8 +97,10 @@ export const completionStage: PipelineStage = {
         cost: costPerStory,
       });
 
-      // Log progress
-      if (ctx.featureDir) {
+      // Log progress. Skipped on a rectification re-run (BUG-36) for the same reason
+      // as the story:completed emit below — the worktree pipeline's first pass already
+      // logged this story "passed" once, before the merge conflict was found.
+      if (ctx.featureDir && ctx.skipCompletionEvents !== true) {
         await appendProgress(
           ctx.featureDir,
           completedStory.id,

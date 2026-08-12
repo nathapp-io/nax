@@ -9,7 +9,11 @@
 
 import { describe, expect, test } from "bun:test";
 import type { RectifyConflictedStoryOptions } from "../../../src/execution/merge-conflict-rectify";
-import { rectifyConflictedStory, rectifyMergeFailure } from "../../../src/execution/merge-conflict-rectify";
+import {
+  buildRectificationPipelineContext,
+  rectifyConflictedStory,
+  rectifyMergeFailure,
+} from "../../../src/execution/merge-conflict-rectify";
 import { makeMockAgentManager, makeNaxConfig, makePRD, makeSessionManager, makeStory } from "../../helpers";
 import { makeTestContext } from "../../helpers/pipeline-context";
 
@@ -178,5 +182,83 @@ describe("rectifyMergeFailure: carries the merge classification instead of assum
     const r = rectifyMergeFailure("US-001", 0, undefined);
 
     expect(r).toMatchObject({ finalConflict: true, conflictFiles: [] });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildRectificationPipelineContext — BUG-36: the constructed PipelineContext
+// must actually carry the worktree contract, not just forward a reference to it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildRectificationPipelineContext: the rectification re-run inherits the worktree contract", () => {
+  function makeBase(overrides: Partial<RectifyConflictedStoryOptions["pipelineContextBase"]> = {}) {
+    const config = makeNaxConfig();
+    return makeTestContext({
+      config,
+      prd: makePRD({ userStories: [] }),
+      workdir: "/tmp/nax-rect-ctx",
+      prdPath: "/real/feature/prd.json",
+      featureDir: "/real/feature",
+      skipPrdPersistence: true,
+      agentManager: makeMockAgentManager(),
+      sessionManager: makeSessionManager(),
+      runtime: FAKE_RUNTIME,
+      abortSignal: undefined as never,
+      ...overrides,
+    });
+  }
+
+  test("carries skipPrdPersistence, prdPath, and featureDir through from the base", () => {
+    const story = makeStory({ id: "US-001" });
+    const ctx = buildRectificationPipelineContext({
+      pipelineContextBase: makeBase(),
+      story,
+      config: makeNaxConfig(),
+      hooks: { hooks: {} },
+      pluginRegistry: { getReporters: () => [], getContextProviders: () => [] } as never,
+      workdir: "/tmp/nax-rect-ctx",
+      worktreePath: "/tmp/nax-rect-ctx/.nax-wt/US-001",
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    });
+
+    expect(ctx.skipPrdPersistence).toBe(true);
+    expect(ctx.prdPath).toBe("/real/feature/prd.json");
+    expect(ctx.featureDir).toBe("/real/feature");
+  });
+
+  test("always forces skipCompletionEvents: true, regardless of the base", () => {
+    const story = makeStory({ id: "US-001" });
+    const ctx = buildRectificationPipelineContext({
+      // Base explicitly omits skipCompletionEvents — the override must set it anyway.
+      pipelineContextBase: makeBase(),
+      story,
+      config: makeNaxConfig(),
+      hooks: { hooks: {} },
+      pluginRegistry: { getReporters: () => [], getContextProviders: () => [] } as never,
+      workdir: "/tmp/nax-rect-ctx",
+      worktreePath: "/tmp/nax-rect-ctx/.nax-wt/US-001",
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    });
+
+    expect(ctx.skipCompletionEvents).toBe(true);
+  });
+
+  test("scopes story/stories/workdir/projectDir to the rectified story's fresh worktree", () => {
+    const story = makeStory({ id: "US-002", title: "Second story" });
+    const ctx = buildRectificationPipelineContext({
+      pipelineContextBase: makeBase(),
+      story,
+      config: makeNaxConfig(),
+      hooks: { hooks: {} },
+      pluginRegistry: { getReporters: () => [], getContextProviders: () => [] } as never,
+      workdir: "/tmp/nax-rect-ctx",
+      worktreePath: "/tmp/nax-rect-ctx/.nax-wt/US-002",
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    });
+
+    expect(ctx.story).toBe(story);
+    expect(ctx.stories).toEqual([story]);
+    expect(ctx.projectDir).toBe("/tmp/nax-rect-ctx");
+    expect(ctx.workdir).toBe("/tmp/nax-rect-ctx/.nax-wt/US-002");
   });
 });

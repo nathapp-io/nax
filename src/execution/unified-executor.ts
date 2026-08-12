@@ -398,9 +398,9 @@ export async function executeUnified(
                 attempts: 1,
                 finalTier: conflict.story.routing?.modelTier ?? "balanced",
                 success: true,
-                // cost = total per-story agent cost including rectification work.
-                // rectificationCost = only the conflict resolution portion (conflict.cost).
-                cost: batchResult.storyCosts.get(conflict.story.id) ?? 0,
+                // cost = total per-story cost incl. rectification (BUG-37: storyCosts alone is
+                // only the pre-conflict first pass); rectificationCost = conflict.cost alone.
+                cost: (batchResult.storyCosts.get(conflict.story.id) ?? 0) + conflict.cost,
                 durationMs: storyDuration,
                 firstPassSuccess: false,
                 startedAt: batchStartedAt,

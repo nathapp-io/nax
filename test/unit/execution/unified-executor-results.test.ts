@@ -333,8 +333,11 @@ describe("results AC-3 / exec AC-31: rectified merge-conflict stories produce co
   test("AC-3 / AC-31: rectified conflict entry has source='rectification' and rectificationCost", async () => {
     const story1 = makePendingStory("US-001");
     const conflictStory = makePendingStory("US-002");
+    // storyCosts holds only the pre-conflict first-pass cost (BUG-37: rectification's own
+    // re-run spend lands solely in mergeConflicts[].cost, never folded into storyCosts).
+    const conflictFirstPassCost = 0.38;
     const conflictRectificationCost = 0.42;
-    const conflictTotalCost = 0.8; // total including original attempt + rectification
+    const conflictTotalCost = conflictFirstPassCost + conflictRectificationCost;
 
     deps.selectIndependentBatch = mock(() => [story1, conflictStory]);
     deps.runParallelBatch = mock(async () => ({
@@ -349,7 +352,7 @@ describe("results AC-3 / exec AC-31: rectified merge-conflict stories produce co
       ],
       storyCosts: new Map([
         [story1.id, 0.3],
-        [conflictStory.id, conflictTotalCost],
+        [conflictStory.id, conflictFirstPassCost],
       ]),
       totalCost: 0.3 + conflictTotalCost,
     }));
@@ -365,7 +368,8 @@ describe("results AC-3 / exec AC-31: rectified merge-conflict stories produce co
     expect(conflictMetric?.source).toBe("rectification");
     // AC-31: rectificationCost reflects only the rectification phase (conflict.cost)
     expect(conflictMetric?.rectificationCost).toBe(conflictRectificationCost);
-    // total cost (cost field) comes from storyCosts for the story
+    // BUG-37: total cost (cost field) is the first-pass storyCosts entry plus the
+    // rectification re-run cost — not storyCosts alone.
     expect(conflictMetric?.cost).toBe(conflictTotalCost);
     // firstPassSuccess is false for a conflict
     expect(conflictMetric?.firstPassSuccess).toBe(false);

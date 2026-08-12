@@ -240,6 +240,14 @@ export async function handlePipelineSuccess(
           plugins: ctx.pluginRegistry,
           prdPath: ctx.prdPath,
           featureDir: ctx.featureDir,
+          // BUG-36 (review follow-up): buildWorktreePipelineContext structuredClones prd
+          // for the rectification re-run, so a completion-stage write there would persist
+          // a stale clone over the real prd.json and diverge from `story` (kept live, found
+          // from the live `prd` above). This function is already the single writer for this
+          // path — it always returns { prd /* live */, prdDirty: true } below, so the caller
+          // persists the live object with this re-run's mutations, same as the executor does
+          // for the parallel batch (reconcileBatchOutcome + savePRD).
+          skipPrdPersistence: true,
           agentManager: ctx.agentManager,
           sessionManager: ctx.sessionManager,
           runtime: ctx.runtime,
