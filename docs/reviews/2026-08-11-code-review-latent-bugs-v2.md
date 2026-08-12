@@ -142,7 +142,7 @@ const cleanProc = _rollbackDeps.spawn(["git", "clean", "-fd"], { cwd: workdir, .
 **Proof (GIT):** scratch-repo experiment — `git clean -fd` semantics confirmed (deletes every untracked non-ignored file); `.gitignore:43-66` does **not** ignore e.g. `.nax/features/<id>/status.json`/`checkpoint.jsonl` (git check-ignore), so run-owned state outside the ignored list is also destroyed.
 
 #### BUG-08: `metrics.json` read-modify-write race — history silently wiped
-**Severity:** HIGH | **Category:** Memory/Persistence | **Status:** ✅ confirmed
+**Severity:** HIGH | **Category:** Memory/Persistence | **Status:** ✅ confirmed → **fixed 2026-08-12, PR #1555**
 `src/metrics/tracker.ts:388-396` + `src/utils/json-file.ts:60-72`:
 ```ts
 const existing = await loadJsonFile<RunMetrics[]>(metricsPath, "metrics");
@@ -415,7 +415,7 @@ Every one of the 110 recorded escalation events carries an empty `from`:
 
 | Finding | Why a local patch is insufficient |
 |:---|:---|
-| **BUG-08** | The real fix is the storage format: atomic `tmp`+`rename`, or a JSONL append store. Either changes the on-disk contract every reader depends on (`nax metrics`, aggregator, report) and needs a migration for existing `metrics.json`. |
+| **BUG-08** | ~~The real fix is the storage format: atomic `tmp`+`rename`, or a JSONL append store. Either changes the on-disk contract every reader depends on (`nax metrics`, aggregator, report) and needs a migration for existing `metrics.json`.~~ **Fixed 2026-08-12, PR #1555** — see "Fix Status" below. User took the smaller of the two options (atomic `tmp`+`rename`, not the JSONL rewrite) — no on-disk format change, no migration needed. |
 | **BUG-25 + BUG-26** | These are **one** defect, not two: the queue file has no ownership protocol between the TUI writer and the runner consumer. Patching either side alone just relocates the race. Needs an append-only or lock-based protocol with crash recovery for the orphaned `.processing` file. |
 | **BUG-09** | Wiring `decide()` requires `receive()` to carry the full request, not just a `requestId` — a signature change to `IInteractionPlugin` that every plugin (cli, webhook, telegram) implements. This is why the plugin was left throwing. |
 | **BUG-22** | "Single poller, fan-out to callbacks" restructures the Telegram plugin from per-request polling to a shared poller with a subscription registry. |
@@ -492,6 +492,19 @@ Six Group 1 rulings (table above) shipped together as one batch.
 - Verified: `bun x tsc --noEmit` clean, `bun run lint` clean (test-typecheck and test-as-unknown-as ratchets both improved), full suite green (12645 unit + 1102 integration + 24 UI, 0 failures).
 
 **PR:** `fix/latent-bugs-v2-group3-batch2` → `main` (#1553, merged `20a6602f`).
+
+---
+
+### BUG-08 — fixed 2026-08-12, PR #1555 (merged)
+
+First of the Group 2 (architecture-change) findings to ship, taken alone rather than batched — Group 1/2 items are triaged individually, not batched, matching the BUG-20/BUG-62 precedent.
+
+- `saveJsonFile()` (`src/utils/json-file.ts`) previously wrote via `Bun.write(path, json)`, which truncates the destination in place. A concurrent `loadJsonFile()` call from another process (e.g. two parallel `nax` runs sharing `projectOutputDir`) could observe a torn/partial write, fail to parse it, and return `null` — which `src/metrics/tracker.ts` (and the other two callers, `src/cli/routing-calibrate.ts` and `src/prd/index.ts`) coerced into "no prior history", silently wiping accumulated history on the next write.
+- Fix: `saveJsonFile()` now writes to a sibling `<path>.tmp-<uuid>` file, then `rename()`s it over the destination — the same pattern already used by `src/plugins/builtin/curator/rollup-prune.ts`. A reader always observes either the fully-written old content or the fully-written new content, never a torn write. Scoped narrowly per the user's explicit choice between the two options the review posed: atomic `tmp`+`rename` (no on-disk format change, no migration), not a JSONL append-store rewrite. Documented as *not* eliminating the read-modify-write race between two concurrent appenders — both can still read the same prior array and one write can still lose the other's entry — only the torn-read/history-wipe failure mode.
+- A pre-merge `code-reviewer` pass caught that the first draft's regression test raced writer and reader in the *same process*, which can never observe a torn write regardless of atomicity (same-process writes complete as one microtask-scheduled unit) — it passed unchanged against the pre-fix code, so it gave zero real coverage. Corrected to a genuine cross-process test: a spawned subprocess (`test/fixtures/json-file-writer.ts`) hammers the same path while the test process polls `loadJsonFile`, asserting zero torn/null reads — verified to fail against the pre-fix `Bun.write`-in-place implementation (2 torn reads) and pass against the fix.
+- Verified: `bun x tsc --noEmit` clean, `bun run lint` clean, full suite green (12649 unit + 1102 integration + 24 UI, 0 failures).
+
+**PR:** `fix/bug-08-metrics-atomic-write` → `main` (#1555, merged `2c0839b0`).
 
 ---
 
