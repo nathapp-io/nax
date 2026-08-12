@@ -19,6 +19,29 @@ export interface StorySelection {
   isBatchExecution: boolean;
 }
 
+const DEFAULT_MAX_STORY_RETRIES = 12;
+
+/**
+ * Resolve lastStoryId to its story only when that story is genuinely
+ * retry-eligible (BUG-39) — a `status === "failed"` story with attempts
+ * remaining, or a resumable in-flight `"pending"` story. Returns null
+ * otherwise, including when getNextStory falls back to its own normal
+ * eligible-pool selection and returns some *other* story: that's not a
+ * retry, so callers must not treat it as one.
+ *
+ * Shared by selectNextStories (single-story fallback + batch-plan pre-empt)
+ * and unified-executor.ts's parallel-dispatch branch (pre-empting
+ * selectIndependentBatch, which has no id-based override and excludes
+ * "failed" stories outright) — both need the identical "is this really a
+ * retry" check.
+ */
+export function resolveRetryCandidate(prd: PRD, lastStoryId: string | null, config: NaxConfig): UserStory | null {
+  if (lastStoryId == null) return null;
+  const maxRetries = config.execution.rectification?.maxAttemptsTotal ?? DEFAULT_MAX_STORY_RETRIES;
+  const story = getNextStory(prd, lastStoryId, maxRetries);
+  return story?.id === lastStoryId ? story : null;
+}
+
 /**
  * Select the next story (or batch) to execute.
  * Returns null when there are no more stories to run.
@@ -42,23 +65,17 @@ export function selectNextStories(
   lastStoryId: string | null,
   useBatch: boolean,
 ): { selection: StorySelection; nextBatchIndex: number } | null {
-  if (lastStoryId != null) {
-    const maxRetries = config.execution.rectification?.maxAttemptsTotal ?? 12;
-    const retryStory = getNextStory(prd, lastStoryId, maxRetries);
-    // getNextStory falls back to its own normal eligible-pool selection when
-    // lastStoryId isn't itself retry-eligible — only trust the result as a
-    // retry when it actually matches lastStoryId, not just any story.
-    if (retryStory && retryStory.id === lastStoryId) {
-      return {
-        selection: {
-          story: retryStory,
-          storiesToExecute: [retryStory],
-          routing: buildPreviewRouting(retryStory, config),
-          isBatchExecution: false,
-        },
-        nextBatchIndex: currentBatchIndex,
-      };
-    }
+  const retryStory = resolveRetryCandidate(prd, lastStoryId, config);
+  if (retryStory) {
+    return {
+      selection: {
+        story: retryStory,
+        storiesToExecute: [retryStory],
+        routing: buildPreviewRouting(retryStory, config),
+        isBatchExecution: false,
+      },
+      nextBatchIndex: currentBatchIndex,
+    };
   }
 
   if (useBatch && currentBatchIndex < batchPlan.length) {
@@ -78,7 +95,11 @@ export function selectNextStories(
       // Batch exhausted for this slot (e.g. only a `decomposed` parent left, whose
       // sub-stories live outside this batch) — fall through to the single-story
       // fallback instead of ending the run with pending sub-stories still queued.
-      const fallbackStory = getNextStory(prd, lastStoryId, config.execution.rectification?.maxAttemptsTotal ?? 12);
+      const fallbackStory = getNextStory(
+        prd,
+        lastStoryId,
+        config.execution.rectification?.maxAttemptsTotal ?? DEFAULT_MAX_STORY_RETRIES,
+      );
       if (!fallbackStory) return null;
 
       return {
@@ -105,7 +126,11 @@ export function selectNextStories(
   }
 
   // Single-story fallback
-  const story = getNextStory(prd, lastStoryId, config.execution.rectification?.maxAttemptsTotal ?? 12);
+  const story = getNextStory(
+    prd,
+    lastStoryId,
+    config.execution.rectification?.maxAttemptsTotal ?? DEFAULT_MAX_STORY_RETRIES,
+  );
   if (!story) return null;
 
   return {

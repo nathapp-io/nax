@@ -267,5 +267,35 @@ describe("selectNextStories — retry priority under useBatch:true (BUG-39)", ()
 
     expect(result).not.toBeNull();
     expect(result?.selection.story.id).toBe("s1");
+    // Not consumed from the batch plan — a retry, not a plan advance.
+    expect(result?.nextBatchIndex).toBe(0);
+  });
+
+  test("a lastStoryId that is no longer retry-eligible does not pre-empt the batch-plan branch", () => {
+    // Regression guard for a variant that would satisfy the two tests above
+    // while being subtly wrong: deleting the `retryStory.id === lastStoryId`
+    // guard entirely (trusting getNextStory's own eligible-pool fallback as
+    // if it were always a retry) makes selectNextStories always return a
+    // single-story, isBatchExecution:false selection for ANY non-null
+    // lastStoryId — silently killing the batch-plan branch even when
+    // lastStoryId refers to a story that is done and not being retried.
+    const done = makeStory({ id: "s1", status: "passed", passes: true });
+    const a = makeStory({
+      id: "s2",
+      status: "pending",
+      routing: { complexity: "simple", testStrategy: "test-after", modelTier: "fast", reasoning: "" },
+    });
+    const b = makeStory({
+      id: "s3",
+      status: "pending",
+      routing: { complexity: "simple", testStrategy: "test-after", modelTier: "fast", reasoning: "" },
+    });
+    const prd = makePRD({ userStories: [done, a, b] });
+    const batch: StoryBatch[] = [{ stories: [a, b], isBatch: true }];
+    const result = selectNextStories(prd, DEFAULT_CONFIG, batch, 0, "s1", true);
+
+    expect(result?.selection.isBatchExecution).toBe(true);
+    expect(result?.selection.storiesToExecute.map((s) => s.id)).toEqual(["s2", "s3"]);
+    expect(result?.nextBatchIndex).toBe(1);
   });
 });

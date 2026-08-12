@@ -30,7 +30,7 @@ import { runIteration } from "./iteration-runner";
 import type { RunParallelBatchOptions, RunParallelBatchResult } from "./parallel-batch";
 import { handlePipelineFailure } from "./pipeline-result-handler";
 import { closeStorySessions } from "./session-manager-runtime";
-import { selectIndependentBatch, selectNextStories } from "./story-selector";
+import { resolveRetryCandidate, selectIndependentBatch, selectNextStories } from "./story-selector";
 
 export type { SequentialExecutionContext, SequentialExecutionResult } from "./executor-types";
 
@@ -62,9 +62,7 @@ export async function executeUnified(
   let iterations = 0;
   let storiesCompleted = 0;
   let totalCost = 0;
-  // Story dispatched last iteration — feeds getNextStory's retry-priority
-  // (BUG-39). Set unconditionally now; was gated on !ctx.useBatch before.
-  let lastStoryId: string | null = null;
+  let lastStoryId: string | null = null; // feeds retry-priority (BUG-39)
   const allStoryMetrics: StoryMetrics[] = [];
   let warningSent = false;
   let deferredReview: DeferredReviewResult | undefined;
@@ -213,12 +211,12 @@ export async function executeUnified(
       }
 
       const costLimit = ctx.config.execution.costLimit;
-
+      const retryStory = resolveRetryCandidate(prd, lastStoryId, ctx.config); // BUG-39: pre-empts selectIndependentBatch too
       // Parallel dispatch: when parallelCount > 0 and batch has more than 1 story
       if ((ctx.parallelCount ?? 0) > 0) {
         const readyStories = getAllReadyStories(prd);
-        const batch = _unifiedExecutorDeps.selectIndependentBatch(readyStories, ctx.parallelCount as number);
-
+        const selectBatch = _unifiedExecutorDeps.selectIndependentBatch;
+        const batch = retryStory ? [retryStory] : selectBatch(readyStories, ctx.parallelCount as number);
         if (batch.length > 1) {
           // Emit story:started for each batch story before dispatch (AC-5)
           const batchAgent = ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config);
@@ -500,6 +498,7 @@ export async function executeUnified(
             ctx.workdir,
           );
           if (singlePre.shouldSkipIteration) {
+            if (singlePre.prd.userStories.find((s) => s.id === singleStory.id)?.status === "failed") lastStoryId = null; // BUG-39
             prdDirty = singlePre.prdDirty;
             continue;
           }
@@ -612,6 +611,7 @@ export async function executeUnified(
         ctx.workdir,
       );
       if (seqPre.shouldSkipIteration) {
+        if (seqPre.prd.userStories.find((s) => s.id === selection.story.id)?.status === "failed") lastStoryId = null; // BUG-39
         prdDirty = seqPre.prdDirty;
         continue;
       }

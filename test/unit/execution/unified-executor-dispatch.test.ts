@@ -332,16 +332,19 @@ describe("AC-5 — story:started per-batch story via _deps injection", () => {
 describe("useBatch scheduling refresh", () => {
   let deps: Record<string, unknown>;
   let origRunIteration: unknown;
+  let origPreIterationTierCheck: unknown;
 
   beforeEach(async () => {
     const mod = await import("../../../src/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origRunIteration = deps.runIteration;
+    origPreIterationTierCheck = deps.preIterationTierCheck;
   });
 
   afterEach(() => {
     if (deps) {
       deps.runIteration = origRunIteration;
+      deps.preIterationTierCheck = origPreIterationTierCheck;
     }
     mock.restore();
   });
@@ -464,6 +467,144 @@ describe("useBatch scheduling refresh", () => {
     await executeUnified(ctx as never, initialPrd as never);
 
     // US-000 retried immediately after failing — before US-001 ever runs.
+    expect(selectedStoryIds).toEqual(["US-000", "US-000", "US-001"]);
+  });
+
+  test("BUG-39: a story that exhausts its tier ladder stops winning retry priority (no starvation)", async () => {
+    // A first pass at this fix retried lastStoryId unconditionally whenever it
+    // was still resumable per getNextStory — but preIterationTierCheck (real,
+    // unmocked in production) marks a tier-exhausted story permanently
+    // "failed" via markStoryFailed, which getNextStory's own retry check also
+    // treats as resumable (status "failed", attempts <= maxAttemptsTotal).
+    // Without clearing lastStoryId once a story goes terminal, retry-priority
+    // would keep re-selecting it every iteration — preIterationTierCheck skips
+    // it again every time, dispatching nothing and starving every other story
+    // in the PRD until maxIterations/maxAttemptsTotal is exhausted.
+    const us000 = {
+      ...makePendingStory("US-000"),
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+    };
+    const us001 = {
+      ...makePendingStory("US-001"),
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+    };
+    const initialPrd = makePrd([us000, us001]);
+    const selectedStoryIds: string[] = [];
+    let tierCheckCallsForUs000 = 0;
+
+    // US-000 always fails its (mocked) dispatch; US-001 always passes. This
+    // makes US-000 retry-eligible after its first attempt, so retry-priority
+    // re-selects it — at which point the preIterationTierCheck mock below
+    // simulates the tier ladder being exhausted on that second check.
+    deps.runIteration = mock(async (_ctx: unknown, prdArg: typeof initialPrd, selection: { story: { id: string } }) => {
+      selectedStoryIds.push(selection.story.id);
+      const nextPrd = {
+        ...prdArg,
+        userStories: prdArg.userStories.map((story) =>
+          story.id === selection.story.id
+            ? story.id === "US-000"
+              ? { ...story, status: "failed" as const, attempts: story.attempts + 1 }
+              : { ...story, status: "passed" as const, passes: true }
+            : story,
+        ),
+      };
+      return { prd: nextPrd, storiesCompletedDelta: selection.story.id === "US-000" ? 0 : 1, costDelta: 0, prdDirty: false };
+    });
+
+    deps.preIterationTierCheck = mock(async (story: { id: string }, _routing: unknown, _config: unknown, prd: typeof initialPrd) => {
+      if (story.id !== "US-000") {
+        return { shouldSkipIteration: false, prdDirty: false, prd };
+      }
+      tierCheckCallsForUs000++;
+      // First check (before US-000 has failed yet): still has budget, proceed.
+      if (tierCheckCallsForUs000 === 1) {
+        return { shouldSkipIteration: false, prdDirty: false, prd };
+      }
+      // Second check (the retry attempt, after US-000 already failed once):
+      // tier ladder exhausted — markStoryFailed's real effect, status stays
+      // "failed" and the run must move on instead of retrying forever.
+      // prdDirty:false (unlike production, which saves to real disk and
+      // reloads) — prd already carries the failed status from the runIteration
+      // mock above, so no reload is needed here.
+      return { shouldSkipIteration: true, prdDirty: false, prd };
+    });
+
+    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const baseCtx = makeCtx();
+    const ctx = {
+      ...baseCtx,
+      config: {
+        ...baseCtx.config,
+        execution: { ...baseCtx.config.execution, maxIterations: 3 },
+      },
+      useBatch: true,
+      batchPlan: precomputeBatchPlan([us000, us001], 4),
+    };
+
+    await executeUnified(ctx as never, initialPrd as never);
+
+    // US-000 dispatched once (fails), retried once more (goes terminal via
+    // preIterationTierCheck, never reaching runIteration again) — US-001 must
+    // still get a turn instead of the run spinning on US-000 until maxIterations.
+    expect(selectedStoryIds).toEqual(["US-000", "US-001"]);
+  });
+
+  test("BUG-39: a failed story is retried before other ready work under --parallel (batch.length===1)", async () => {
+    // The batch.length===1 dispatch branch (parallelCount > 0, exactly one
+    // independent story) never consulted selectNextStories/lastStoryId at
+    // all — it dispatched whatever selectIndependentBatch returned, which
+    // excludes "failed" stories outright. Unconditionally tracking
+    // lastStoryId there was a real improvement (retry works once the failed
+    // story is the ONLY remaining work) but did not fix the case where a
+    // competing story is still ready: selectIndependentBatch would just pick
+    // that other story and overwrite lastStoryId, never returning to retry
+    // the failed one. resolveRetryCandidate must pre-empt
+    // selectIndependentBatch here too, exactly as it does for the
+    // batch-plan-active path in selectNextStories.
+    const us000 = {
+      ...makePendingStory("US-000"),
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+    };
+    const us001 = {
+      ...makePendingStory("US-001"),
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+    };
+    const initialPrd = makePrd([us000, us001]);
+    const selectedStoryIds: string[] = [];
+    const callsPerStory: Record<string, number> = {};
+
+    deps.runIteration = mock(async (_ctx: unknown, prdArg: typeof initialPrd, selection: { story: { id: string } }) => {
+      selectedStoryIds.push(selection.story.id);
+      callsPerStory[selection.story.id] = (callsPerStory[selection.story.id] ?? 0) + 1;
+      const failsThisCall = selection.story.id === "US-000" && callsPerStory[selection.story.id] === 1;
+      const nextPrd = {
+        ...prdArg,
+        userStories: prdArg.userStories.map((story) =>
+          story.id === selection.story.id
+            ? failsThisCall
+              ? { ...story, status: "failed" as const, attempts: story.attempts + 1 }
+              : { ...story, status: "passed" as const, passes: true }
+            : story,
+        ),
+      };
+      return { prd: nextPrd, storiesCompletedDelta: failsThisCall ? 0 : 1, costDelta: 0, prdDirty: false };
+    });
+
+    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const baseCtx = makeCtx();
+    const ctx = {
+      ...baseCtx,
+      config: {
+        ...baseCtx.config,
+        execution: { ...baseCtx.config.execution, maxIterations: 3 },
+      },
+      parallelCount: 1,
+      useBatch: false,
+      batchPlan: [],
+    };
+
+    await executeUnified(ctx as never, initialPrd as never);
+
     expect(selectedStoryIds).toEqual(["US-000", "US-000", "US-001"]);
   });
 });
