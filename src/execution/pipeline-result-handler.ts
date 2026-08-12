@@ -231,10 +231,28 @@ export async function handlePipelineSuccess(
         hooks: ctx.hooks,
         pluginRegistry: ctx.pluginRegistry,
         prd,
-        agentManager: ctx.agentManager,
-        sessionManager: ctx.sessionManager,
-        runtime: ctx.runtime,
-        abortSignal: ctx.abortSignal,
+        pipelineContextBase: {
+          config: ctx.config,
+          rootConfig: ctx.config,
+          prd,
+          projectDir: ctx.workdir,
+          hooks: ctx.hooks,
+          plugins: ctx.pluginRegistry,
+          prdPath: ctx.prdPath,
+          featureDir: ctx.featureDir,
+          // BUG-36 (review follow-up): buildWorktreePipelineContext structuredClones prd
+          // for the rectification re-run, so a completion-stage write there would persist
+          // a stale clone over the real prd.json and diverge from `story` (kept live, found
+          // from the live `prd` above). This function is already the single writer for this
+          // path — it always returns { prd /* live */, prdDirty: true } below, so the caller
+          // persists the live object with this re-run's mutations, same as the executor does
+          // for the parallel batch (reconcileBatchOutcome + savePRD).
+          skipPrdPersistence: true,
+          agentManager: ctx.agentManager,
+          sessionManager: ctx.sessionManager,
+          runtime: ctx.runtime,
+          abortSignal: ctx.abortSignal,
+        },
       });
       if (!rectifyResult.success) {
         logger?.error("worktree", "Merge conflict could not be rectified — marking story as failed", {

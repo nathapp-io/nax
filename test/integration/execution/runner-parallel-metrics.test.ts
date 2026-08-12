@@ -217,8 +217,10 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     expect(rectM!.rectificationCost).toBe(0.04);
   });
 
-  test("rectified story cost (total) equals storyCosts.get(story.id), not just conflict.cost", async () => {
-    // Total cost includes pre-conflict agent work; rectificationCost is only the conflict portion
+  test("rectified story cost (total) = storyCosts.get(story.id) + conflict.cost (BUG-37)", async () => {
+    // storyCosts holds only the pre-conflict first-pass cost; conflict.cost is the
+    // rectification re-run's own spend — the metric's total must fold in both, or
+    // sum(allStoryMetrics.cost) silently under-reports against totalCost/costLimit.
     const conflictStory = makePendingStory("US-TOTALCOST");
     const cleanStory = makePendingStory("US-CLEANC");
     const costMap = new Map([[conflictStory.id, 0.15], [cleanStory.id, 0.06]]);
@@ -227,18 +229,18 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     deps.runParallelBatch = mock(async () => ({
       completed: [cleanStory],
       failed: [],
-      // conflict.cost (0.04) is only the rectification portion; story total is 0.15 from the map
+      // conflict.cost (0.04) is only the rectification portion; first-pass cost is 0.15 from the map
       mergeConflicts: [{ story: conflictStory, rectified: true, cost: 0.04 }],
       storyCosts: costMap,
-      totalCost: 0.21,
+      totalCost: 0.25,
     }));
 
     const { executeUnified } = await import("../../../src/execution/unified-executor");
     const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([conflictStory, cleanStory]) as never);
 
     const rectM = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
-    // Full per-story cost from the map (0.15), not the conflict slice (0.04)
-    expect(rectM!.cost).toBe(0.15);
+    // First-pass cost (0.15) plus the rectification re-run (0.04) = 0.19
+    expect(rectM!.cost).toBe(0.19);
     expect(rectM!.rectificationCost).toBe(0.04);
   });
 

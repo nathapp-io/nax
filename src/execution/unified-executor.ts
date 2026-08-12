@@ -284,6 +284,7 @@ export async function executeUnified(
                 rootConfig: ctx.config,
                 prd,
                 skipPrdPersistence: true, // CR-1: worktree pipelines must not persist PRD
+                prdPath: ctx.prdPath, // BUG-36: carried through to the rectification re-run
                 projectDir: ctx.workdir,
                 naxIgnoreIndex,
                 hooks: ctx.hooks,
@@ -397,9 +398,9 @@ export async function executeUnified(
                 attempts: 1,
                 finalTier: conflict.story.routing?.modelTier ?? "balanced",
                 success: true,
-                // cost = total per-story agent cost including rectification work.
-                // rectificationCost = only the conflict resolution portion (conflict.cost).
-                cost: batchResult.storyCosts.get(conflict.story.id) ?? 0,
+                // cost = total per-story cost incl. rectification (BUG-37: storyCosts alone is
+                // only the pre-conflict first pass); rectificationCost = conflict.cost alone.
+                cost: (batchResult.storyCosts.get(conflict.story.id) ?? 0) + conflict.cost,
                 durationMs: storyDuration,
                 firstPassSuccess: false,
                 startedAt: batchStartedAt,
@@ -696,7 +697,6 @@ export async function executeUnified(
     }
   }
 }
-
 /**
  * Single-writer reconciliation of a parallel batch outcome onto the in-memory PRD.
  * Worktree pipelines no longer persist PRD (skipPrdPersistence), so the executor

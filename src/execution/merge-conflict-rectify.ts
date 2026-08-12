@@ -10,12 +10,12 @@ import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import { getSafeLogger } from "../logger";
 import type { PipelineEventEmitter } from "../pipeline/events";
-import type { AgentGetFn } from "../pipeline/types";
+import type { AgentGetFn, PipelineContext, RoutingResult } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
-import type { PRD } from "../prd";
-import type { DispatchContext } from "../runtime/dispatch-context";
+import type { PRD, UserStory } from "../prd";
 import { errorMessage } from "../utils/errors";
 import type { MergeResult } from "../worktree";
+import { buildWorktreePipelineContext } from "./parallel-worker";
 
 /**
  * Close a stale ACP session by name — best-effort, swallows all errors.
@@ -83,7 +83,7 @@ export function rectifyMergeFailure(
 }
 
 /** Options passed to rectifyConflictedStory */
-export interface RectifyConflictedStoryOptions extends ConflictedStoryInfo, DispatchContext {
+export interface RectifyConflictedStoryOptions extends ConflictedStoryInfo {
   workdir: string;
   config: NaxConfig;
   hooks: LoadedHooksConfig;
@@ -92,6 +92,53 @@ export interface RectifyConflictedStoryOptions extends ConflictedStoryInfo, Disp
   eventEmitter?: PipelineEventEmitter;
   /** Protocol-aware agent resolver. When set (ACP mode), resolves AcpAgentAdapter; falls back to getAgent (CLI) when absent. */
   agentGetFn?: AgentGetFn;
+  /**
+   * The same worktree-pipeline base the worker ran with (BUG-36). Carries the
+   * worktree contract — skipPrdPersistence, prdPath, featureDir, agentManager,
+   * sessionManager, runtime, abortSignal — so the rectification re-run can never
+   * silently drift from the worker's context: a field added to one flows to both
+   * because both build from this same object via buildWorktreePipelineContext.
+   */
+  pipelineContextBase: Omit<PipelineContext, "story" | "stories" | "workdir" | "routing" | "storyGitRef">;
+}
+
+/**
+ * Build the PipelineContext for a rectification re-run (BUG-36).
+ *
+ * Pulled out of rectifyConflictedStory as a pure function so the worktree-contract
+ * fields (skipPrdPersistence, prdPath, featureDir, agentManager/sessionManager/
+ * runtime/abortSignal) flowing through from `pipelineContextBase` — and
+ * `skipCompletionEvents` being forced on — can be asserted directly in a unit
+ * test, without mocking runPipeline/WorktreeManager/MergeEngine.
+ */
+export function buildRectificationPipelineContext(options: {
+  pipelineContextBase: RectifyConflictedStoryOptions["pipelineContextBase"];
+  story: UserStory;
+  config: NaxConfig;
+  hooks: LoadedHooksConfig;
+  pluginRegistry: PluginRegistry;
+  workdir: string;
+  worktreePath: string;
+  routing: RoutingResult;
+  agentGetFn?: AgentGetFn;
+}): PipelineContext {
+  const { pipelineContextBase, story, config, hooks, pluginRegistry, workdir, worktreePath, routing, agentGetFn } =
+    options;
+  return {
+    ...buildWorktreePipelineContext(pipelineContextBase, story),
+    config,
+    rootConfig: config,
+    story,
+    stories: [story],
+    projectDir: workdir,
+    workdir: worktreePath,
+    hooks,
+    plugins: pluginRegistry,
+    storyStartTime: new Date().toISOString(),
+    routing,
+    agentGetFn: agentGetFn ?? pipelineContextBase.agentGetFn,
+    skipCompletionEvents: true, // BUG-36: the worker's first pass already emitted story:completed
+  };
 }
 
 /**
@@ -105,7 +152,8 @@ export interface RectifyConflictedStoryOptions extends ConflictedStoryInfo, Disp
  * 5. Return success/finalConflict
  */
 export async function rectifyConflictedStory(options: RectifyConflictedStoryOptions): Promise<RectificationResult> {
-  const { storyId, workdir, config, hooks, pluginRegistry, prd, eventEmitter, agentGetFn } = options;
+  const { storyId, workdir, config, hooks, pluginRegistry, prd, eventEmitter, agentGetFn, pipelineContextBase } =
+    options;
   const logger = getSafeLogger();
 
   logger?.info("parallel", "Rectifying story on updated base", { storyId, attempt: "rectification" });
@@ -152,25 +200,20 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
 
     const routing = routeTask(story.title, story.description, story.acceptanceCriteria, story.tags, config);
 
-    const pipelineContext = {
-      config,
-      rootConfig: config,
-      prd,
+    // BUG-36: built from the same worktree-pipeline base the worker ran with, via the
+    // one shared builder (parallel-worker.ts), instead of a hand-rolled object literal
+    // that previously omitted skipPrdPersistence/prdPath and mutated the shared PRD.
+    const pipelineContext = buildRectificationPipelineContext({
+      pipelineContextBase,
       story,
-      stories: [story],
-      projectDir: workdir,
-      workdir: worktreePath,
-      featureDir: undefined,
+      config,
       hooks,
-      plugins: pluginRegistry,
-      storyStartTime: new Date().toISOString(),
-      routing: routing as import("../pipeline/types").RoutingResult,
+      pluginRegistry,
+      workdir,
+      worktreePath,
+      routing: routing as RoutingResult,
       agentGetFn,
-      agentManager: options.agentManager,
-      sessionManager: options.sessionManager,
-      runtime: options.runtime,
-      abortSignal: options.abortSignal,
-    };
+    });
 
     const pipelineResult = await runPipeline(defaultPipeline, pipelineContext, eventEmitter);
     const cost = pipelineResult.context.agentResult?.estimatedCostUsd ?? 0;

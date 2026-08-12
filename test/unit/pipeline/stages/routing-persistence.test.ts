@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
+import { routingStage, _routingDeps } from "../../../../src/pipeline/stages/routing";
 import type { PRD, UserStory } from "../../../../src/prd";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { StoryRouting } from "../../../../src/prd/types";
@@ -357,5 +358,74 @@ describe("routingStage - escalation overwrites modelTier even after persistence"
 
     // ROUTE-001: routing is always persisted (no contentHash cache)
     expect(savePRDCalled).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BUG-36 (review follow-up): skipPrdPersistence must gate savePRD here too.
+// Worktree pipelines now carry a real prdPath (needed by rectification), so
+// without this guard every concurrent worker in a parallel batch would save
+// its own per-story clone over the shared prd.json on the routing stage's
+// very first classification write.
+// ---------------------------------------------------------------------------
+
+describe("routingStage - skipPrdPersistence gates savePRD (BUG-36)", () => {
+  let origRoutingDeps: typeof _routingDeps;
+
+  afterEach(() => {
+    mock.restore();
+    if (origRoutingDeps) {
+      Object.assign(_routingDeps, origRoutingDeps);
+    }
+  });
+
+  test("does NOT call savePRD when skipPrdPersistence is true, even with a real prdPath", async () => {
+    origRoutingDeps = { ..._routingDeps };
+
+    let savePRDCalled = false;
+    _routingDeps.resolveRouting = mock(() => Promise.resolve({ ...FRESH_ROUTING_RESULT }));
+    _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
+    _routingDeps.savePRD = mock(() => {
+      savePRDCalled = true;
+      return Promise.resolve();
+    });
+
+    const story = makeStory({ routing: undefined });
+    const ctx = makeCtx(story, { skipPrdPersistence: true } as Partial<PipelineContext>);
+
+    await routingStage.execute(ctx as Parameters<typeof routingStage.execute>[0]);
+
+    expect(savePRDCalled).toBe(false);
+    // ctx.story.routing is still populated locally — only the disk write is skipped.
+    expect(ctx.story.routing).toBeDefined();
+  });
+
+  test("still calls savePRD on the greenfield re-save path when skipPrdPersistence is unset", async () => {
+    origRoutingDeps = { ..._routingDeps };
+
+    let savePRDCallCount = 0;
+    _routingDeps.resolveRouting = mock(() =>
+      Promise.resolve({
+        complexity: "medium" as const,
+        modelTier: "balanced" as const,
+        testStrategy: "three-session-tdd" as const,
+        reasoning: "classified",
+      }),
+    );
+    _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(true));
+    _routingDeps.savePRD = mock(() => {
+      savePRDCallCount++;
+      return Promise.resolve();
+    });
+
+    const story = makeStory({ routing: undefined, tags: [] });
+    const ctx = makeCtx(story, {
+      config: makeNaxConfig({ tdd: { greenfieldDetection: true } }),
+    } as Partial<PipelineContext>);
+
+    await routingStage.execute(ctx as Parameters<typeof routingStage.execute>[0]);
+
+    // First classification save, plus the greenfield-override re-save.
+    expect(savePRDCallCount).toBe(2);
   });
 });

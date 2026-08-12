@@ -8,6 +8,7 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { pipelineEventBus } from "../../../../src/pipeline";
 import { _completionDeps, completionStage } from "../../../../src/pipeline/stages/completion";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { makeNaxConfig, makePRD, makeStory } from "../../../helpers";
@@ -101,6 +102,48 @@ describe("completionStage skipPrdPersistence", () => {
     const result = await completionStage.execute(ctx);
 
     expect(result.action).toBe("continue");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// skipCompletionEvents tests (BUG-36) — a rectification re-run must not
+// double-emit story:completed for a story whose worktree pipeline already
+// emitted it once, before the merge conflict that triggered rectification.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("completionStage skipCompletionEvents", () => {
+  afterEach(() => {
+    pipelineEventBus.clear();
+  });
+
+  test("does NOT emit story:completed when skipCompletionEvents is true", async () => {
+    _completionDeps.savePRD = mock(async () => {});
+    _completionDeps.getDiffText = mock(async () => "");
+    const ctx = makeCtx({ skipPrdPersistence: true, skipCompletionEvents: true });
+
+    const received: unknown[] = [];
+    pipelineEventBus.on("story:completed", (ev) => {
+      received.push(ev);
+    });
+
+    await completionStage.execute(ctx);
+
+    expect(received).toHaveLength(0);
+  });
+
+  test("still emits story:completed when skipCompletionEvents is unset (normal worktree pass)", async () => {
+    _completionDeps.savePRD = mock(async () => {});
+    _completionDeps.getDiffText = mock(async () => "");
+    const ctx = makeCtx({ skipPrdPersistence: true });
+
+    const received: unknown[] = [];
+    pipelineEventBus.on("story:completed", (ev) => {
+      received.push(ev);
+    });
+
+    await completionStage.execute(ctx);
+
+    expect(received).toHaveLength(1);
   });
 });
 

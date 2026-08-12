@@ -119,6 +119,15 @@ export interface PipelineContext extends DispatchContext {
    * executor becomes the single PRD writer after the batch (see plan A4).
    */
   skipPrdPersistence?: boolean;
+  /**
+   * When true, the completion stage must NOT emit `story:completed`. Set on a
+   * rectification re-run (BUG-36): the story's original worktree pipeline pass
+   * already emitted the event before the merge conflict was discovered, so an
+   * unconditional re-emit here would double-count hooks/reporters for the same
+   * story. Independent of `skipPrdPersistence` — a fresh worktree pipeline pass
+   * still needs its one and only completion event.
+   */
+  skipCompletionEvents?: boolean;
   /** Feature directory (optional, e.g., nax/features/my-feature/) */
   featureDir?: string;
   /** Hooks configuration */
