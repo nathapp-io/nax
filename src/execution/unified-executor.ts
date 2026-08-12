@@ -21,6 +21,7 @@ import { maybeSendCostWarning } from "./cost-warning";
 import { startHeartbeat } from "./crash-recovery";
 import { captureRunStartRef, runDeferredReview } from "./deferred-review";
 import type { DeferredReviewResult } from "./deferred-review";
+import { runBatchPreChecks } from "./escalation";
 import { preIterationTierCheck } from "./escalation/tier-escalation";
 import type { SequentialExecutionContext, SequentialExecutionResult } from "./executor-types";
 import { buildPreviewRouting } from "./executor-types";
@@ -250,29 +251,26 @@ export async function executeUnified(
           const batchStartedAt = new Date().toISOString();
           const storyStartMs = new Map<string, number>();
           for (const s of batch) storyStartMs.set(s.id, Date.now());
-          for (const batchStory of batch) {
-            const batchPre = await _unifiedExecutorDeps.preIterationTierCheck(
-              batchStory,
-              { modelTier: batchStory.routing?.modelTier ?? "balanced" },
-              ctx.config,
-              prd,
-              ctx.prdPath,
-              ctx.featureDir,
-              ctx.hooks,
-              ctx.feature,
-              totalCost,
-              ctx.workdir,
-            );
-            if (batchPre.prdDirty) prdDirty = true;
-            if (batchPre.shouldSkipIteration) {
-              // Story escalated — reload PRD so runParallelBatch sees updated tier.
-              // Batch escalation semantics (escalateEntireBatch) are unchanged.
-              prd = await loadPRD(ctx.prdPath);
-              prdDirty = false;
-            }
+          const batchPreCheck = await runBatchPreChecks({
+            batch,
+            prd,
+            config: ctx.config,
+            prdPath: ctx.prdPath,
+            featureDir: ctx.featureDir,
+            hooks: ctx.hooks,
+            feature: ctx.feature,
+            totalCost,
+            workdir: ctx.workdir,
+            preIterationTierCheckFn: _unifiedExecutorDeps.preIterationTierCheck,
+            loadPRDFn: loadPRD,
+          });
+          prd = batchPreCheck.prd;
+          if (batchPreCheck.prdDirty) prdDirty = true;
+          if (batchPreCheck.dispatchable.length === 0) {
+            continue;
           }
           const batchResult = await _unifiedExecutorDeps.runParallelBatch({
-            stories: batch,
+            stories: batchPreCheck.dispatchable,
             ctx: {
               workdir: ctx.workdir,
               config: ctx.config,

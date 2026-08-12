@@ -325,3 +325,101 @@ describe("US-003 AC-11: batch executor invokes preIterationTierCheck once per ba
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Quality-review follow-up: a batch story preIterationTierCheck marks
+// shouldSkipIteration must not also be dispatched to runParallelBatch — the
+// sequential and single-story paths already `continue` on shouldSkipIteration;
+// batch mode previously computed the skip and discarded it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("US-003: batch executor excludes shouldSkipIteration stories from dispatch", () => {
+  let origPreIterationTierCheck: unknown;
+  let origRunParallelBatch: unknown;
+  let origSelectIndependentBatch: unknown;
+
+  beforeEach(() => {
+    const deps = depsView()._unifiedExecutorDeps;
+    origPreIterationTierCheck = deps["preIterationTierCheck"];
+    origRunParallelBatch = deps["runParallelBatch"];
+    origSelectIndependentBatch = deps["selectIndependentBatch"];
+  });
+
+  afterEach(() => {
+    const deps = depsView()._unifiedExecutorDeps;
+    deps["preIterationTierCheck"] = origPreIterationTierCheck;
+    deps["runParallelBatch"] = origRunParallelBatch;
+    deps["selectIndependentBatch"] = origSelectIndependentBatch;
+    mock.restore();
+  });
+
+  test("a story whose pre-check returns shouldSkipIteration is excluded from runParallelBatch's stories", async () => {
+    const story1 = makePendingStory("US-101");
+    const story2 = makePendingStory("US-102"); // this one exhausts its budget
+    const story3 = makePendingStory("US-103");
+
+    const preIterationTierCheckMock = mock(async (s: ReturnType<typeof makePendingStory>) => {
+      if (s.id === "US-102") {
+        return { shouldSkipIteration: true, prdDirty: true, prd: makePrd([story1, story2, story3]) };
+      }
+      return { shouldSkipIteration: false, prdDirty: false, prd: makePrd([story1, story2, story3]) };
+    });
+    const runParallelBatchMock = mock(async (opts: { stories: Array<{ id: string }> }) => {
+      return {
+        completed: opts.stories,
+        failed: [],
+        mergeConflicts: [],
+        storyCosts: new Map(opts.stories.map((s) => [s.id, 0])),
+        totalCost: 0,
+      };
+    });
+
+    const deps = depsView()._unifiedExecutorDeps;
+    deps["preIterationTierCheck"] = preIterationTierCheckMock;
+    deps["runParallelBatch"] = runParallelBatchMock;
+    deps["selectIndependentBatch"] = mock(() => [story1, story2, story3]);
+
+    const prd = makePrd([story1, story2, story3]);
+    const ctx = makeCtx({ parallelCount: 3 });
+
+    await executeUnified(ctx as never, prd as never).catch(() => {});
+
+    expect(runParallelBatchMock).toHaveBeenCalledTimes(1);
+    const dispatchedIds = (runParallelBatchMock.mock.calls[0]?.[0] as { stories: Array<{ id: string }> }).stories.map(
+      (s) => s.id,
+    );
+    expect(dispatchedIds).toContain("US-101");
+    expect(dispatchedIds).toContain("US-103");
+    expect(dispatchedIds).not.toContain("US-102");
+  });
+
+  test("when every batch story is skipped, runParallelBatch is never called", async () => {
+    const story1 = makePendingStory("US-201");
+    const story2 = makePendingStory("US-202");
+
+    const preIterationTierCheckMock = mock(async () => ({
+      shouldSkipIteration: true,
+      prdDirty: true,
+      prd: makePrd([story1, story2]),
+    }));
+    const runParallelBatchMock = mock(async () => ({
+      completed: [],
+      failed: [],
+      mergeConflicts: [],
+      storyCosts: new Map(),
+      totalCost: 0,
+    }));
+
+    const deps = depsView()._unifiedExecutorDeps;
+    deps["preIterationTierCheck"] = preIterationTierCheckMock;
+    deps["runParallelBatch"] = runParallelBatchMock;
+    deps["selectIndependentBatch"] = mock(() => [story1, story2]);
+
+    const prd = makePrd([story1, story2]);
+    const ctx = makeCtx({ parallelCount: 2 });
+
+    await executeUnified(ctx as never, prd as never).catch(() => {});
+
+    expect(runParallelBatchMock).not.toHaveBeenCalled();
+  });
+});
