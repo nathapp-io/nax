@@ -84,16 +84,21 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
 
     // ── Protocol-version drift guard (BUG-53) ──────────────────────────────
     // A message shaped like JSON-RPC (has method+params, or id with an
-    // object result/error) but with a missing/mismatched jsonrpc field must
-    // not silently fall into the legacy flat-NDJSON branch below — the
-    // legacy branch expects different field shapes (string result/content,
-    // not the object-valued fields JSON-RPC uses) and would corrupt
-    // state.text or drop the data outright. Treat it as an unsupported
-    // protocol version instead of misparsing it.
+    // object result) but with a missing/mismatched jsonrpc field must not
+    // silently fall into the legacy flat-NDJSON branch below — that branch
+    // expects a *string* result and would drop an object-valued one outright.
+    // Treat it as an unsupported protocol version instead of misparsing it.
+    //
+    // An object-valued `error` is deliberately NOT part of this test: the
+    // legacy branch handles that shape correctly (it reads `event.error.message`,
+    // see below), so including it stole a representable shape and replaced the
+    // agent's real failure reason with a bogus protocol message — destroying
+    // the only diagnostic the caller had. A genuinely drifted JSON-RPC error
+    // response falls through to the same legacy handler and still surfaces its
+    // message, so nothing is lost by narrowing this.
     const looksLikeJsonRpcShape =
       (typeof event.method === "string" && event.params !== undefined) ||
-      (event.id !== undefined &&
-        ((event.result && typeof event.result === "object") || (event.error && typeof event.error === "object")));
+      (event.id !== undefined && event.result && typeof event.result === "object");
 
     if (event.jsonrpc !== "2.0" && looksLikeJsonRpcShape) {
       getSafeLogger()?.error("acp-adapter", "Unsupported or missing JSON-RPC protocol version in acpx output", {
