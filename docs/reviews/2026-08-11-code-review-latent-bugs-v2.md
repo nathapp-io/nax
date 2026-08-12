@@ -119,7 +119,7 @@ The regex requires a line break *after* the opening delimiter **and** before the
 **Proof (GRAPH):** `detectRuntimeCrash` in-degree **0**; `shouldRetrySameTier`'s only caller is `handleTierEscalation`; the only `handleTierEscalation` caller is `handlePipelineFailure` (pipeline-result-handler.ts:368-384) — passes no `runtimeCrashResult`; the field is assigned nowhere in src/ (grep).
 
 #### BUG-06: Scoped verify reports "passed" on exit 0 with zero tests executed (false green)
-**Severity:** HIGH | **Category:** Bug | **Status:** ✅ confirmed
+**Severity:** HIGH | **Category:** Bug | **Status:** ✅ confirmed → **fixed 2026-08-12, PR #1553**
 `src/operations/verify-scoped.ts:216-217`:
 ```ts
 const ranNoTests = parsed.passed === 0 && parsed.failed === 0 && parsed.failures.length === 0;
@@ -131,7 +131,7 @@ The zero-test guard only fires when the run **failed**. A scoped run that exits 
 **Proof (EXEC):** harness — the real `verifyScopedOp` (injected `regression` returning exit 0 + `[no test files]`) returns `{success: true, status: "passed", passCount: 0}`. `verify-scoped.test.ts:313` only covers the *failed* zero-test path (#1207) — the exit-0 case is untested.
 
 #### BUG-07: TDD rollback runs `git clean -fd` — deletes user's untracked work
-**Severity:** HIGH | **Category:** Bug (data loss) | **Status:** ✅ confirmed
+**Severity:** HIGH | **Category:** Bug (data loss) | **Status:** ✅ confirmed → **fixed 2026-08-12, PR #1553**
 `src/tdd/rollback.ts:30-39`:
 ```ts
 const cleanProc = _rollbackDeps.spawn(["git", "clean", "-fd"], { cwd: workdir, ... });
@@ -156,7 +156,7 @@ Parallel runs each live in their own git worktree/process sharing the same `proj
 **Proof (SRC):** `json-file.ts:31-41` returns `null` on any parse failure → `tracker.ts:389-390` maps that to `[]` → history wiped on next append; `json-file.ts:60-72` is an in-place `Bun.write` (truncate-then-write, no temp file).
 
 #### BUG-09: "auto" interaction plugin is dead code — configured auto-mode throws on every prompt
-**Severity:** HIGH | **Category:** Bug | **Status:** ✅ confirmed
+**Severity:** HIGH | **Category:** Bug | **Status:** ✅ confirmed → **fixed 2026-08-12, PR #1553** (deleted per the Group 1 ruling below)
 `src/interaction/plugins/auto.ts:117-122`:
 ```ts
 async receive(_requestId: string, _timeout = 60000): Promise<InteractionResponse> {
@@ -180,7 +180,7 @@ Docstring says "deep", but a package override of `models.claude.fast` silently d
 **Proof (EXEC):** harness — override of `models.claude.fast` only → merged claude tiers: `fast` (balanced/powerful silently dropped); gemini tiers intact. `merge.test.ts` has no `models` cases; `merge-agent-models-routing.test.ts:85-114` only passes complete tier maps.
 
 #### BUG-11: Acceptance retry loop off-by-one — last configured retry never used
-**Severity:** HIGH | **Category:** Bug | **Status:** ✅ confirmed (call-site semantics)
+**Severity:** HIGH | **Category:** Bug | **Status:** ✅ confirmed (call-site semantics) → **fixed 2026-08-12, PR #1553**
 `src/execution/lifecycle/acceptance-loop.ts:429-455`:
 ```ts
 acceptanceRetries++;
@@ -281,6 +281,7 @@ All 10 capacity errors were agent `codex` on 2026-08-11 — a single provider in
 `src/tdd/verdict-reader.ts:91-113` — (a) `"VERIFIED FAILED: 3 tests red"` → approved; (b) `"2024/05/13"` in the summary yields pass=2024/total=5 → negative fail counts; (c) `"PASSED"` fails the exact `"PASS"` equality. All three verified (2026-08-12); note the failures are largely *false-negative* (a date first-match under-reports pass counts), and the whole coercion path only affects the free-form fallback — the strict schema path requires boolean `approved` (verdict-reader.ts:39). **Fix:** anchor ratio regex; reject `VERIFIED*` containing FAIL/RED/NOT MET.
 
 #### BUG-32: Judge selector: any non-empty verdict text = "passed"
+**Status:** fixed 2026-08-12, PR #1553 (`judge.ts:34` only, per the Group 1 ruling — `synthesis.ts:36` intentionally left alone)
 `src/debate/selectors/judge.ts:34` + `synthesis.ts:36` — the judge is asked for a verdict, but `output.trim() ? "passed" : "failed"` converts "None of the proposals are acceptable — reject" into a pass; judge debates can never fail closed. **Fix:** parse a machine-readable pass/fail token (`jsonMode: true`).
 
 #### BUG-33: Debate plan selection's second patch-step is a no-op — runner-up patch feature lost (severity: LOW, amended 2026-08-12)
@@ -375,13 +376,13 @@ Rulings from the maintainer review of the table above. Undecided rows stay open.
 
 | Finding | Ruling | Notes |
 |:---|:---|:---|
-| **BUG-07** | **Snapshot-diff clean.** Capture `git status --porcelain` at phase start; on rollback delete only untracked paths that appeared since. | Rejects both options as framed. Agent-created files all post-date the snapshot so they are still cleaned; the user's pre-existing `.env`/WIP predates it and survives. No config knob, no policy call. |
-| **BUG-06** | **Route to the full-suite rerun.** Treat exit-0-with-zero-tests as *inconclusive*, not as pass or fail — fall into the existing zero-test fallback at `verify-scoped.ts:216`. | Docs-only and helper-only changes still pass via the full suite; a story whose tests silently didn't run is caught. Avoids the false green without failing legitimately test-free work. |
-| **BUG-11** | **`maxRetries` means fix cycles. Fix the off-by-one and keep the default at 3.** | Deliberate cost increase: every user on defaults gains a third acceptance fix round they don't get today, traded for a higher pass rate. The fix does **not** ship with a compensating default change. |
-| **Parse-retry budget** | **Make the review parse-retry attempt count configurable, default 3** (currently hardcoded `maxAttempts: 2` at `semantic-review.ts:329` and `adversarial-review.ts:224` — one initial call plus one corrective re-prompt). | Taken with BUG-62's measurement on the record: raising the count does **not** address the dominant give-up cause (provider capacity errors, which retry immediately at `delayMs: 0` against an at-capacity model). It is a real improvement for the truncation population, which is the minority but the one where retries work. Not yet implemented. |
-| **BUG-30, BUG-32** | **Deferred — do not change the gate.** | Superseded by BUG-62: the substring heuristic is correct on 16/16 measured cases, so `derivePhaseOutcome` (`run-phase.ts:410-416`) and `allPassed` (`runner.ts:492`) stay as they are. BUG-32's judge selector (`judge.ts:34`, any non-empty text = passed) is independently wrong and unaffected by that data — it remains open. |
-| **BUG-09** | **Delete `auto.ts` and its config surface.** | Evidence: across all 8 projects under `~/.nax/`, the only `interaction.plugin` value ever configured is `"telegram"` — `"auto"` has never been used. The feature is advertised, broken (`receive()` throws unconditionally), and unadopted. Deleting also removes the `IInteractionPlugin` signature change from Group 2, since that change existed only to serve this plugin. Auto-approval remains available via `interaction.defaults.fallback: "continue"`, which works today. |
-| **BUG-32** | **Fix `judge.ts:34` only. Leave `synthesis.ts:36` as it is.** Low priority — doubly latent. | The doc conflates two call sites. A judge is *asked for a verdict*, so grading it on "is the output non-empty" is wrong. A synthesis is asked to *produce a plan*, so "did we get output" is a defensible success predicate — no change needed there. Latency: `debate.enabled` defaults **false** (`schemas-debate.ts:112`) and is not enabled in any config on this machine; `judgeSelector` fires only for `resolver.type: "custom"` (`pick.ts:33`), while the shipped defaults are `synthesis` (plan) and `majority-fail-closed` (review). Reachable only if someone both enables debate and configures a custom resolver. |
+| **BUG-07** | ~~**Snapshot-diff clean.** Capture `git status --porcelain` at phase start; on rollback delete only untracked paths that appeared since.~~ **Fixed 2026-08-12, PR #1553.** | Rejects both options as framed. Agent-created files all post-date the snapshot so they are still cleaned; the user's pre-existing `.env`/WIP predates it and survives. No config knob, no policy call. Implementation note: a null baseline (snapshot read failed) skips the untracked cleanup entirely rather than being coerced to "nothing pre-existed" — caught by a pre-merge code review. |
+| **BUG-06** | ~~**Route to the full-suite rerun.** Treat exit-0-with-zero-tests as *inconclusive*, not as pass or fail — fall into the existing zero-test fallback at `verify-scoped.ts:216`.~~ **Fixed 2026-08-12, PR #1553.** | Docs-only and helper-only changes still pass via the full suite; a story whose tests silently didn't run is caught. Avoids the false green without failing legitimately test-free work. |
+| **BUG-11** | ~~**`maxRetries` means fix cycles. Fix the off-by-one and keep the default at 3.**~~ **Fixed 2026-08-12, PR #1553** (`>=` → `>`). | Deliberate cost increase: every user on defaults gains a third acceptance fix round they don't get today, traded for a higher pass rate. The fix does **not** ship with a compensating default change. |
+| **Parse-retry budget** | ~~**Make the review parse-retry attempt count configurable, default 3** (currently hardcoded `maxAttempts: 2` at `semantic-review.ts:329` and `adversarial-review.ts:224` — one initial call plus one corrective re-prompt).~~ **Fixed 2026-08-12, PR #1553** — new `review.parseRetryMaxAttempts` config field. | Taken with BUG-62's measurement on the record: raising the count does **not** address the dominant give-up cause (provider capacity errors, which retry immediately at `delayMs: 0` against an at-capacity model — that population is now handled separately by PR #1551's provider-refusal classification). It is a real improvement for the truncation population, which is the minority but the one where retries work. |
+| **BUG-30, BUG-32** | **Deferred — do not change the gate.** | Superseded by BUG-62: the substring heuristic is correct on 16/16 measured cases, so `derivePhaseOutcome` (`run-phase.ts:410-416`) and `allPassed` (`runner.ts:492`) stay as they are. BUG-32's judge selector (`judge.ts:34`, any non-empty text = passed) is independently wrong and unaffected by that data — see the row below (fixed separately from this deferral). |
+| **BUG-09** | ~~**Delete `auto.ts` and its config surface.**~~ **Fixed 2026-08-12, PR #1553.** | Evidence: across all 8 projects under `~/.nax/`, the only `interaction.plugin` value ever configured is `"telegram"` — `"auto"` has never been used. The feature is advertised, broken (`receive()` throws unconditionally), and unadopted. Deleting also removes the `IInteractionPlugin` signature change from Group 2, since that change existed only to serve this plugin. Auto-approval remains available via `interaction.defaults.fallback: "continue"`, which works today. |
+| **BUG-32** | ~~**Fix `judge.ts:34` only. Leave `synthesis.ts:36` as it is.**~~ **Fixed 2026-08-12, PR #1553** — the judge prompt now requires a leading `JUDGE_VERDICT: ACCEPT\|REJECT` marker, parsed and stripped before the verdict is graded; fails closed if unparseable. Low priority — doubly latent. | The doc conflates two call sites. A judge is *asked for a verdict*, so grading it on "is the output non-empty" is wrong. A synthesis is asked to *produce a plan*, so "did we get output" is a defensible success predicate — no change needed there. Latency: `debate.enabled` defaults **false** (`schemas-debate.ts:112`) and is not enabled in any config on this machine; `judgeSelector` fires only for `resolver.type: "custom"` (`pick.ts:33`), while the shipped defaults are `synthesis` (plan) and `majority-fail-closed` (review). Reachable only if someone both enables debate and configures a custom resolver. |
 | **BUG-04** | **Wire the per-tier budgets — but ship `fast:2, balanced:2, powerful:2`, not the current `5/3/2`. Populate the escalation event's `from` field first.** | The measurement inverts the finding's implied fix. See BUG-63 and the analysis below. |
 | **BUG-05, BUG-40, BUG-52, BUG-55, BUG-56** | Open. | Mechanical once approved; see the discussion note below the Group 2 table. |
 
@@ -474,6 +475,23 @@ Shipped as a follow-up, separately from the Group 3 batch above (Group 1/2 items
 - Verified: `bun x tsc --noEmit` clean, `bun run lint` clean, full suite green (12653 unit + 1102 integration + 24 UI, 0 failures).
 
 **PR:** `fix/bug-20-62-retriable-failures` → `main` (#1551, merged `5f2db96f`).
+
+---
+
+### BUG-06 / BUG-07 / BUG-09 / BUG-11 / BUG-32 + parse-retry budget — fixed 2026-08-12, PR #1553 (merged)
+
+Six Group 1 rulings (table above) shipped together as one batch.
+
+- **BUG-06**: `verify-scoped.ts`'s zero-test-rerun guard dropped its `!result.success` requirement — a scoped run that exits 0 while executing nothing is now routed into the same full-suite fallback as the failing case, rather than reported as a false-green pass.
+- **BUG-07**: new `getUntrackedPaths`/`parsePorcelainUntrackedPaths` (`src/utils/git.ts`, `src/utils/porcelain.ts`) snapshot untracked paths at TDD phase start (`execution.ts`, alongside `initialRef`) and again at `captureSnapshotRef` (ADR-024 non-blocking-fix path, after `autoCommitIfDirty`). `rollbackToRef` now diffs the before/after snapshots and deletes only paths that appeared since, instead of `git clean -fd`.
+- **BUG-09**: deleted `AutoInteractionPlugin`, `autoApproveOp`, and the dead `"auto-approver"` `OneShotPromptBuilder` role. `interaction/init.ts` throws `INTERACTION_PLUGIN_REMOVED` with a migration hint (`interaction.defaults.fallback: "continue"`) for `plugin: "auto"`.
+- **BUG-11**: the acceptance retry-budget check in `acceptance-loop.ts` changed `acceptanceRetries >= maxRetries` to `> maxRetries` — the retry whose count just reached the budget now still runs its own fix cycle.
+- **BUG-32**: `judge.ts` now requires and parses a leading `JUDGE_VERDICT: ACCEPT|REJECT` marker (added to the prompt in `debate-builder.ts`), strips it from the returned output, and fails closed when the marker is missing or unparseable. `synthesis.ts:36` deliberately left untouched per the ruling.
+- **Parse-retry budget**: new `review.parseRetryMaxAttempts` config field (default 3, was hardcoded `maxAttempts: 2` in both `semantic-review.ts` and `adversarial-review.ts`). Required updating two places that must stay in sync by convention, not by type-sharing: the Zod schema (`schemas-review.ts`) and the hand-maintained `ReviewConfig` interface (`src/review/types.ts`) that `NaxConfig.review` is actually typed as.
+- A pre-merge `code-reviewer` pass caught a **critical regression** in the BUG-07 fix: `getUntrackedPaths` returning `[]` on git failure/timeout (instead of signaling "unknown") would, at snapshot time, make an unreadable baseline look like an empty one — so a later rollback would treat every currently-untracked file as "appeared since the phase started" and delete it, reintroducing BUG-07's exact data-loss failure mode through the very code meant to fix it. Corrected: `getUntrackedPaths` returns `null` on failure, and both `rollbackToRef` and `captureSnapshotRef` treat `null` as "skip the untracked cleanup" — never as "nothing pre-existed". The same pass also caught that `git status --porcelain` paths are always repo-root-relative, not `cwd`-relative, so joining them onto `workdir` directly silently no-ops in a monorepo package subdirectory; `rollbackToRef` now resolves against `getGitRoot()` instead. Also widened the BUG-32 verdict regex to tolerate markdown decoration (bold, code fences) and a short preamble, and added a word boundary so `JUDGE_VERDICT: ACCEPTED` doesn't match `ACCEPT`.
+- Verified: `bun x tsc --noEmit` clean, `bun run lint` clean (test-typecheck and test-as-unknown-as ratchets both improved), full suite green (12645 unit + 1102 integration + 24 UI, 0 failures).
+
+**PR:** `fix/latent-bugs-v2-group3-batch2` → `main` (#1553, merged `20a6602f`).
 
 ---
 
