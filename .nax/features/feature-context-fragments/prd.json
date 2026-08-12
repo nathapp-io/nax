@@ -1,0 +1,227 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "feature-context-fragments",
+  "branchName": "feat/feature-context-fragments",
+  "createdAt": "2026-08-12T00:00:00+08:00",
+  "updatedAt": "2026-08-12T14:29:57.324Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Fragment store and configuration",
+      "description": "**Goal** — Introduce feature-scoped fragment persistence and resolved v2 fragment configuration defaults.\n\n**Motivation** — The write path that would give FeatureContextProviderV2 content does not exist: there is no capture, extractor, summarizer, or promotion code anywhere under `src/context/`.\n\n**Approach** — One fragment per story at `<projectDir>/features/<featureId>/fragments/<storyId>.md`. Attribution is the filename; the file body carries no metadata. Fragment base score is `1.0`, matching the existing `context.md` chunk. Config defaults live in two places, and the outer one wins. `ContextV2ConfigSchema` in `schemas-context.ts` declares the v2 defaults, and `schemas.ts` carries a hand-written `.default({...})` literal for the whole `context` block that restates them. Zod does not re-parse a default value, so the outer literal shadows the inner schema's defaults entirely. Both sites must carry the new block.\n\n**Interface** — Export `writeFragment`, `readFragment`, `listFragmentStoryIds`, and `deleteFragment` from `@/context/fragments`; provide `_fragmentStoreDeps` injectable file I/O following `_manifestStoreDeps`. `writeFragment` accepts project directory, feature id, story id, body, and max-token budget; it truncates before overwriting the story file.\n\n**Scope** — In: the Zod fragments block, both resolved default sites, feature-scoped storage, deterministic truncation, and the required barrel. Out: capture from `completionStage` belongs to US-002; dependency traversal and provider chunks belong to US-003; CLI inspection/pruning belongs to US-004; LLM extraction, promotion, summarization, and cross-feature memory are deferred.",
+      "acceptanceCriteria": [
+        "When `NaxConfigSchema.parse({})` is evaluated, then `context.v2.fragments.enabled` equals `false`.",
+        "When `NaxConfigSchema.parse({})` is evaluated, then `context.v2.fragments.decay` equals `0.6`.",
+        "When `NaxConfigSchema.parse({})` is evaluated, then `context.v2.fragments.maxTokens` equals `400`.",
+        "When `NaxConfigSchema.parse({})` is evaluated, then `context.v2.fragments.extractor` equals `\"deterministic\"`.",
+        "When configuration sets `context.v2.fragments.decay` to `1.5`, then schema parsing fails validation.",
+        "When `writeFragment` writes a body and `readFragment` reads the same project directory, feature id, and story id, then `readFragment` returns exactly that body.",
+        "When `readFragment` is called for a story with no fragment, then it returns `null`.",
+        "When `writeFragment` receives a body longer than its configured `maxTokens` budget, then the subsequently read body is no longer than that budget.",
+        "When fragments are written for two story IDs and `listFragmentStoryIds` is called, then it returns both IDs and no ID without a fragment.",
+        "When `deleteFragment` is called for an existing story fragment, then a subsequent `readFragment` returns `null`.",
+        "When `deleteFragment` is called for a story with no fragment, then it completes without raising.",
+        "When `writeFragment` writes two different bodies for the same story, then `readFragment` returns only the second body."
+      ],
+      "tags": [
+        "feature",
+        "context",
+        "config",
+        "storage"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Adds a new filesystem abstraction and configuration defaults across two schema sites using established patterns.",
+        "agentProfileId": "pi-medium",
+        "agent": "pi",
+        "profileModelTier": "balanced",
+        "initialAgent": "pi",
+        "initialProfileId": "pi-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/config/schemas-context.ts",
+        "src/config/schemas.ts",
+        "src/context/engine/manifest-store.ts"
+      ],
+      "expectedFiles": [
+        "src/context/fragments/store.ts",
+        "src/context/fragments/index.ts",
+        "test/unit/context/fragments/store.test.ts"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Capture a fragment when a story passes",
+      "description": "**Goal** — Persist a deterministic per-story fragment from successful non-batch completion.\n\n**Motivation** — The result is that a story learns nothing from the stories it depends on. If US-001 settles a convention, US-002 rediscovers it.\n\n**Approach** — The capture host already computes every input a fragment needs, under the guard this feature wants, and already performs a best-effort write next to it: `if (!isBatch && ctx.projectDir && featureId && ctx.config.context?.v2?.enabled) { const diffText = await _completionDeps.getDiffText(ctx.workdir, ctx.storyGitRef); // ctx.agentResult?.output, ctx.reviewFindings are in scope here }`. No new pipeline stage is introduced. A stage-1 body is derived deterministically from the story title, its acceptance criteria, and the files touched in the story's diff: `# US-001 — Add the fragment store`, `## Acceptance criteria`, criterion bullets, `## Files touched`, and changed-file bullets. Fragment write failures fail open — log at debug and continue; the story must not fail because its fragment did not persist. Batch-mode capture is deferred; the host block in `completionStage` is guarded by `!isBatch`, so batch runs write no fragments.\n\n**Interface** — Add the capture dependency to `_completionDeps` and call `writeFragment` through the `@/context/fragments` barrel with `ctx.projectDir`, feature id, the completing story id, deterministic body, and configured `fragments.maxTokens`.\n\n**Scope** — In: completion-stage capture, deterministic body rendering, changed-path extraction, config guards, and best-effort logging. Out: store/config implementation belongs to US-001; provider reads belong to US-003; fragment CLI belongs to US-004; LLM extraction and batch capture are deferred.",
+      "acceptanceCriteria": [
+        "When `completionStage` runs for a passing non-batch story with v2 context and fragments enabled, then it invokes `writeFragment` exactly once with that story's ID.",
+        "When `completionStage` runs with `context.v2.fragments.enabled` set to `false`, then it does not invoke `writeFragment`.",
+        "When `completionStage` runs with `context.v2.enabled` set to `false`, then it does not invoke `writeFragment`.",
+        "When `completionStage` captures a fragment, then the body passed to `writeFragment` includes the story title.",
+        "When `completionStage` captures a fragment, then the body passed to `writeFragment` includes each story acceptance criterion.",
+        "When `completionStage` captures a fragment from a diff, then the body passed to `writeFragment` names each changed file reported by that diff.",
+        "When `writeFragment` raises during `completionStage`, then `completionStage.execute` resolves with `{ action: \"continue\" }` and marks the story passed.",
+        "When `completionStage` runs twice for the same story, then it invokes `writeFragment` twice with that story's ID."
+      ],
+      "tags": [
+        "feature",
+        "context",
+        "pipeline",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Integrates an established best-effort completion seam with deterministic rendering and injected dependencies.",
+        "agentProfileId": "pi-medium",
+        "agent": "pi",
+        "profileModelTier": "balanced",
+        "initialAgent": "pi",
+        "initialProfileId": "pi-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/completion.ts",
+        "src/context/engine/effectiveness.ts",
+        "src/context/fragments/index.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/pipeline/stages/completion-fragment-capture.test.ts"
+      ],
+      "outOfScope": [
+        "Batch-mode capture is deferred; the host block in `completionStage` is guarded by `!isBatch`, so batch runs write no fragments, matching the existing behaviour of effectiveness annotation."
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Read dependency-scoped fragments with distance decay",
+      "description": "**Goal** — Extend `FeatureContextProviderV2` to supply fragments only from transitive story dependencies, scored by shortest dependency distance.\n\n**Motivation** — Give the dormant `FeatureContextProviderV2` content for the first time by capturing a short fragment per passing story and reading it back only into stories that transitively depend on it, weighted down by dependency distance.\n\n**Approach** — Score decay is folded into `rawScore` at fetch time rather than expressed through the existing `scoreMultiplier` field. `scoring.ts` applies `scoreMultiplier` only to chunks already judged stale: `const freshnessMultiplier = isStale ? (chunk.scoreMultiplier ?? STALENESS_PENALTY) : 1.0;`. Setting `scoreMultiplier` for dependency decay would therefore be inert on every fresh fragment. Computing the decayed value directly into `rawScore` needs no change to `scoring.ts` and composes with staleness. Fragment base score is `1.0`; at default decay a direct dependency is `0.6`. Walk the same-feature PRD dependency graph with a visited set and shortest-distance tracking: a cycle terminates, each story contributes at most once, a diamond uses the shorter path, and a missing fragment skips that story while traversal continues. Missing or unreadable fragments are skipped. If `prd.json` is missing or unparseable, emit no fragments but still return `context.md`.\n\n**Interface** — `FeatureContextProviderV2.fetch(request: ContextRequest)` imports `readFragment` and `listFragmentStoryIds` from `@/context/fragments` and emits `RawChunk` values with `kind: \"feature\"`, fragment-identifying IDs, and `rawScore = decay ** dependencyDistance`.\n\n**Scope** — In: same-feature PRD graph loading, dependency traversal, fragment reads, chunk construction, and decay. Out: fragment storage belongs to US-001; completion capture belongs to US-002; CLI curation belongs to US-004; cross-feature/durable memory, promotion, and a summarizer are deferred.",
+      "acceptanceCriteria": [
+        "When `FeatureContextProviderV2.fetch` is called for a story with no dependencies, then it returns no fragment-identifying chunk.",
+        "When a story directly depends on one story with a fragment, then `fetch` returns exactly one fragment chunk identifying that dependency story ID.",
+        "When the requesting story depends on a second story that depends on a third and all have fragments, then `fetch` returns chunks for the second and third stories and none for the requesting story.",
+        "When `fetch` reads a two-hop dependency chain, then the third-story fragment chunk has a strictly lower score than the direct second-story fragment chunk.",
+        "When two dependency paths reach the same story, then `fetch` returns exactly one fragment chunk for it scored at the shorter distance.",
+        "When the dependency graph contains a cycle, then `fetch` returns without raising and returns at most one fragment chunk per story.",
+        "When a fragment is reached at dependency distance `d`, then its chunk `rawScore` equals configured `decay` raised to `d` with base score `1.0`.",
+        "When a reached story has no fragment file but has dependencies with fragments, then it contributes no chunk and its dependencies still contribute chunks.",
+        "When the feature `prd.json` is absent, then `fetch` returns no fragment chunks and still returns the `context.md` chunk.",
+        "When `context.v2.fragments.enabled` is `false`, then `fetch` returns no fragment chunks even when fragment files exist.",
+        "When `fetch` returns a fragment chunk, then that chunk has kind `feature`."
+      ],
+      "tags": [
+        "feature",
+        "context",
+        "dependency-graph",
+        "algorithm"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Extends one provider using a bounded breadth-first dependency walk and existing RawChunk conventions; focused unit fixtures can cover the scoring and legacy-context compatibility cases.",
+        "agentProfileId": "pi-medium",
+        "agent": "pi",
+        "profileModelTier": "balanced",
+        "initialAgent": "pi",
+        "initialProfileId": "pi-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/context/engine/providers/feature-context.ts",
+        "src/context/engine/types.ts",
+        "src/prd/schema.ts",
+        "src/context/fragments/index.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/context/engine/providers/feature-context-fragments.test.ts"
+      ],
+      "outOfScope": [
+        "Cross-feature and durable memory is deferred; fragments live and die with their own feature and are never read by another feature.",
+        "The summarizer is deferred; budget pressure is handled by score decay and the existing packer, and a summarizer is worth revisiting only once fragments are measured to overflow a real budget."
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Inspect and prune fragments",
+      "description": "**Goal** — Add `nax context fragments` inspection and scoped/all-fragment pruning commands.\n\n**Motivation** — The provider is registered in `PHASE_0_PROVIDERS`, so it runs on every stage of every story by default and returns an empty chunk list every time.\n\n**Approach** — Add on-demand curation using the existing `nax context` surface and its pure formatter plus thin command precedent. Inspect lists fragments for one feature and, for each fragment, the story IDs that transitively depend on it. Prune with a story ID removes only that file; prune without one removes every fragment for the feature. No fragments is a successful, informative no-op. The fragments output formatter is pure: it takes listing input, produces identical output for identical input, and performs no file access. `nax context fragments prune` is the only removal mechanism this spec ships.\n\n**Interface** — Create `src/cli/context-fragments.ts` with a pure formatter and thin inspect/prune commands that consume `listFragmentStoryIds` and `deleteFragment` from `@/context/fragments`.\n\n**Scope** — In: feature-local command wiring, pure display formatting, reverse transitive dependent listing, and explicit prune behavior. Out: fragment store APIs belong to US-001; provider fetching belongs to US-003; automatic garbage collection for archived/deleted features is deferred.",
+      "acceptanceCriteria": [
+        "When the fragments inspect command runs for a feature with two fragments, then its output lists both story IDs.",
+        "When the fragments inspect command runs for a feature with no fragments, then it reports that none were found and exits with status `0`.",
+        "When the fragments inspect command prints a fragment, then it prints the IDs of stories that transitively depend on that fragment's story.",
+        "When the fragments prune command receives a story ID, then it removes only that story fragment and leaves other fragments readable.",
+        "When the fragments prune command receives no story ID, then it removes every fragment for that feature.",
+        "When the fragments prune command runs for a feature with no fragments, then it exits with status `0` and reports that nothing was removed.",
+        "When the fragments output formatter is called twice with the same fragment listing, then it returns identical output and performs no file access."
+      ],
+      "tags": [
+        "feature",
+        "context",
+        "cli",
+        "curation"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Adds a focused CLI module built on existing formatter and store patterns plus a small reverse-graph presentation calculation.",
+        "agentProfileId": "pi-medium",
+        "agent": "pi",
+        "profileModelTier": "balanced",
+        "initialAgent": "pi",
+        "initialProfileId": "pi-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/cli/context.ts",
+        "src/prd/schema.ts",
+        "src/context/fragments/index.ts"
+      ],
+      "expectedFiles": [
+        "src/cli/context-fragments.ts",
+        "test/unit/cli/context-fragments.test.ts"
+      ],
+      "outOfScope": [
+        "Garbage collection of fragments belonging to archived or deleted features is deferred; `nax context fragments prune` is the only removal mechanism this spec ships."
+      ]
+    }
+  ],
+  "analysis": "This is an enhancement to Context Engine v2, not a greenfield feature. `src/context/engine/providers/feature-context.ts` currently adapts only the legacy `.nax/features/<featureId>/context.md` through `FeatureContextProviderV1`; its `fetch()` builds feature-kind `RawChunk`s at rawScore 1.0 and soft-fails the entire provider on errors (lines 59-160). The enhancement must preserve this legacy chunk even if fragment graph loading fails. `RawChunk` exposes `id`, `kind`, `scope`, `role`, `content`, `tokens`, and `rawScore` (src/context/engine/types.ts:355-390); dependency decay must be written into `rawScore`, not `scoreMultiplier`, because the scorer uses the latter only for stale chunks. `ContextRequest` supplies `storyId`, optional `featureId`, and repoRoot (src/context/engine/types.ts:198-217). The provider constructor already receives the requesting `UserStory`, while `src/prd/schema.ts:227-241` normalizes, deduplicates, and validates dependency IDs, so the traversal must not add defensive ID normalization.\n\nConfiguration is split across `src/config/schemas-context.ts` and an outer `ContextConfigSchema.default({...})` literal in `src/config/schemas.ts:303-329`. The v2 schema has defaults and a `.default()` object (schemas-context.ts:107-267), but Zod does not parse the outer default literal; therefore `fragments` must be present in both places or `NaxConfigSchema.parse({})` leaves it undefined. The fragment schema should constrain decay to [0, 1], default enabled false, decay 0.6, maxTokens 400, and allow only extractor `deterministic`.\n\n`src/context/engine/manifest-store.ts:10-49` is the storage precedent: it uses feature-scoped paths, Bun APIs, sorted discovery, and an exported injectable `_manifestStoreDeps` object. The new store belongs at `src/context/fragments/store.ts`, uses `<projectDir>/.nax/features/<featureId>/fragments/<storyId>.md`, overwrites on write, returns null for missing reads, lists only existing `.md` story IDs, and makes absent deletes idempotent. Its barrel is required because every consumer must import `@/context/fragments`, preventing singleton/dependency seam fragmentation. Token truncation must happen before write and needs a defined deterministic token-estimation convention consistent with surrounding context code.\n\n`completionStage` is the correct capture host (src/pipeline/stages/completion.ts:51-152). It already has the exact `!isBatch && ctx.projectDir && featureId && ctx.config.context?.v2?.enabled` guard and a sibling best-effort effectiveness annotation using `_completionDeps.getDiffText` (lines 78-94). Capture should mirror this non-fatal structure, add the fragments-enabled condition, use `_completionDeps` to expose its external write dependency, obtain changed paths from the diff, and compose the specified deterministic markdown from the story title, acceptance criteria, and files touched. It must occur on every non-batch successful completion, including retries, without making completion fail when disk I/O fails.\n\n`src/cli/context.ts:1-96` provides the pure formatter plus thin command pattern. The fragments CLI should follow it with pure formatting, a read-only inspect that computes reverse transitive dependents from the feature PRD, and prune commands that use the store. Missing/unparseable `prd.json` must never hide legacy context at provider read time; fragment reads simply yield no fragment chunks. Traversal uses breadth-first shortest-distance semantics with a visited/distance map, continues through missing fragments, emits each reachable dependency at most once, and terminates cycles. The feature has no migration: existing context.md is unchanged and remains readable, fragment storage starts empty, and only the new prune command removes fragments. Main risks are accidentally disabling the legacy chunk when PRD loading fails, using stale-only scoreMultiplier for decay, missing the outer config default, non-deterministic traversal ordering, batch writes, path/filename handling, and tests that mock an internal module rather than the published barrel/dependency seam.",
+  "outOfScope": [
+    "The LLM-backed fragment extractor is deferred to a later spec; this spec ships only a deterministic fragment body, and `fragments.extractor` accepts only the value `\"deterministic\"`.",
+    "Cross-feature and durable memory is deferred; fragments live and die with their own feature and are never read by another feature.",
+    "The promotion gate is deferred, because promotion exists to move knowledge between features and this spec keeps fragments feature-local.",
+    "The summarizer is deferred; budget pressure is handled by score decay and the existing packer, and a summarizer is worth revisiting only once fragments are measured to overflow a real budget.",
+    "Batch-mode capture is deferred; the host block in `completionStage` is guarded by `!isBatch`, so batch runs write no fragments, matching the existing behaviour of effectiveness annotation.",
+    "Adding `context-extract` and `context-summarize` entries to `STAGE_CONTEXT_MAP` is deferred; it is independent of this feature and is tracked separately.",
+    "Changing, migrating, or writing `.nax/features/<id>/context.md` is deferred; this spec only ever reads it, exactly as today.",
+    "Garbage collection of fragments belonging to archived or deleted features is deferred; `nax context fragments prune` is the only removal mechanism this spec ships."
+  ],
+  "routingProfile": "cross-agent-pi"
+}
