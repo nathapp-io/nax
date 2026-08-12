@@ -27,18 +27,21 @@ function makeConfig() {
 }
 
 function makeRegistry(
-  results: Record<string, { output: string; failure?: typeof availFailure }>,
+  results: Record<string, { output: string; failure?: typeof availFailure; throws?: unknown }>,
 ) {
   return {
     getAgent: (name: string) => {
       const r = results[name];
       if (!r) return undefined;
       return {
-        complete: mock(async () => ({
-          output: r.output,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0.01, exactCostUsd: 0.01,
-          adapterFailure: r.failure,
-        })),
+        complete: mock(async () => {
+          if (r.throws !== undefined) throw r.throws;
+          return {
+            output: r.output,
+            tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0.01, exactCostUsd: 0.01,
+            adapterFailure: r.failure,
+          };
+        }),
       };
     },
   } as unknown as AgentRegistry;
@@ -137,6 +140,41 @@ describe("AgentManager.completeWithFallback (#567)", () => {
     );
     const outcome = await m.completeWithFallback("prompt", { modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} }, workdir: "/tmp/test", resolvedPermissions: { skipPermissions: false, mode: "approve-reads" as const } });
     expect(outcome.result.adapterFailure?.outcome).toBe("fail-auth");
+  });
+});
+
+describe("AgentManager.completeWithFallback — hard-exception classification (BUG-20)", () => {
+  test("a thrown auth error now swaps to the fallback agent instead of a blanket fail-unknown", async () => {
+    const registry = makeRegistry({
+      claude: { output: "", throws: new Error(JSON.stringify({ type: "auth" })) },
+      codex: { output: "from codex" },
+    });
+    const m = new AgentManager(makeConfig(), registry);
+    const outcome = await m.completeWithFallback("prompt", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+      resolvedPermissions: { skipPermissions: false, mode: "approve-reads" as const },
+    });
+    expect(outcome.result.output).toBe("from codex");
+    expect(outcome.fallbacks).toHaveLength(1);
+  });
+
+  test("an unclassifiable thrown error still terminates as non-retriable quality/fail-unknown", async () => {
+    const m = new AgentManager(
+      makeConfig(),
+      makeRegistry({ claude: { output: "", throws: new Error("totally unexpected explosion") } }),
+    );
+    const outcome = await m.completeWithFallback("prompt", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+      resolvedPermissions: { skipPermissions: false, mode: "approve-reads" as const },
+    });
+    expect(outcome.result.adapterFailure).toEqual({
+      category: "quality",
+      outcome: "fail-unknown",
+      retriable: false,
+      message: "totally unexpected explosion",
+    });
   });
 });
 

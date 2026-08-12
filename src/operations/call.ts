@@ -1,6 +1,6 @@
 import { computeAcpHandle } from "../agents";
 import type { AgentRunOutcome } from "../agents";
-import { ParseValidationError, resolveRetryPreset } from "../agents/retry";
+import { ParseValidationError, classifyProviderRefusalFailure, resolveRetryPreset } from "../agents/retry";
 import type { RetryPreset, RetryStrategy } from "../agents/retry";
 import type { TurnResult } from "../agents/types";
 import { DEFAULT_CONFIG, pickSelector, resolveConfiguredModel } from "../config";
@@ -261,6 +261,14 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     if (!effective.output?.trim()) {
       const failure = classifyEmptyOutputFailure(effective);
       if (failure) return { ...effective, adapterFailure: failure };
+    } else if (!effective.adapterFailure) {
+      // A provider refusal (e.g. "model is at capacity") comes back as ordinary,
+      // non-empty turn output — not a thrown transport error — so it reaches
+      // op.parse's own fail-open logic unless classified here first. Attaching
+      // an AdapterFailure routes it through the same manager-tier backoff/swap
+      // logic as any other infra failure instead of being parsed as a verdict.
+      const refusal = classifyProviderRefusalFailure(effective.output);
+      if (refusal) return { ...effective, adapterFailure: refusal };
     }
     return effective;
   };
