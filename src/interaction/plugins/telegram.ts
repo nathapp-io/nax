@@ -454,7 +454,13 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       if (parts.length < 2) return null;
 
       const action = parts[1] as InteractionResponse["action"];
-      const value = parts.length > 2 ? parts[2] : undefined;
+      // Rejoin everything after the action: an option key may itself contain
+      // ":" (e.g. "scope:api"). Taking only parts[2] truncated the value, so
+      // the reconstructed suffix no longer matched the one used at build time
+      // and the id comparison below failed — the tap was silently dropped and
+      // the prompt could only resolve by timeout. The id segment cannot carry
+      // a ":" at all; buildCallbackData rejects that at construction.
+      const value = parts.length > 2 ? parts.slice(2).join(":") : undefined;
 
       // The id segment may have been truncated at construction time to keep
       // callback_data within Telegram's 64-byte limit (BUG-48), so compare

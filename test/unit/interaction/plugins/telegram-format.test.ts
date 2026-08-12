@@ -10,6 +10,7 @@ import {
   sanitizeMarkdown,
   splitText,
   truncateIdForCallbackData,
+  truncateUtf8Bytes,
 } from "@/interaction";
 
 function makeRequest(overrides: Partial<InteractionRequest> = {}): InteractionRequest {
@@ -198,6 +199,81 @@ describe("truncateIdForCallbackData", () => {
     const a = truncateIdForCallbackData(longId, ":skip");
     const b = truncateIdForCallbackData(longId, ":skip");
     expect(a).toBe(b);
+  });
+});
+
+describe("truncateUtf8Bytes", () => {
+  test("leaves text that already fits untouched", () => {
+    expect(truncateUtf8Bytes("hello", 10)).toBe("hello");
+  });
+
+  test("returns empty for a non-positive budget", () => {
+    expect(truncateUtf8Bytes("hello", 0)).toBe("");
+    expect(truncateUtf8Bytes("hello", -1)).toBe("");
+  });
+
+  test("truncates ASCII at exactly the byte budget", () => {
+    expect(truncateUtf8Bytes("abcdef", 3)).toBe("abc");
+  });
+
+  test("never splits a multi-byte codepoint", () => {
+    // "é" is 2 bytes; a 3-byte budget over "ééé" must stop at one full "é".
+    expect(truncateUtf8Bytes("ééé", 3)).toBe("é");
+    // "😀" is 4 bytes; budgets of 1..3 can hold none of it.
+    expect(truncateUtf8Bytes("😀", 3)).toBe("");
+    expect(truncateUtf8Bytes("😀", 4)).toBe("😀");
+    // Mixed: 1-byte "a" then a 4-byte emoji — a 4-byte budget keeps only "a".
+    expect(truncateUtf8Bytes("a😀", 4)).toBe("a");
+    expect(truncateUtf8Bytes("a😀", 5)).toBe("a😀");
+  });
+
+  test("output always fits the requested byte budget", () => {
+    for (const text of ["ééé", "a😀b", "日本語テキスト", "plain"]) {
+      for (let budget = 0; budget <= 12; budget++) {
+        expect(Buffer.byteLength(truncateUtf8Bytes(text, budget), "utf8")).toBeLessThanOrEqual(budget);
+      }
+    }
+  });
+
+  test("handles a large input without quadratic rescanning", () => {
+    // Under the previous one-character-at-a-time implementation this walked
+    // ~1M slices, each re-encoding the prefix. Bounded here so a regression
+    // to O(n^2) shows up as a timeout rather than passing silently.
+    const big = "é".repeat(500_000);
+    const started = Bun.nanoseconds();
+    const out = truncateUtf8Bytes(big, 64);
+    expect(Buffer.byteLength(out, "utf8")).toBe(64);
+    expect((Bun.nanoseconds() - started) / 1e6).toBeLessThan(500);
+  });
+});
+
+describe("callback_data round-trip integrity", () => {
+  test("an option key containing a colon still round-trips through the callback_data grammar", () => {
+    const request = makeRequest({
+      id: "req-9",
+      type: "choose",
+      options: [{ key: "scope:api", label: "API" }],
+    });
+    const keyboard = buildKeyboard(request);
+    const data = keyboard?.[0]?.[0]?.callback_data as string;
+
+    // Parse side (telegram.ts parseUpdate): action is parts[1], and the value
+    // is everything after it — not just parts[2], which would drop ":api".
+    const parts = data.split(":");
+    const action = parts[1];
+    const value = parts.slice(2).join(":");
+    expect(action).toBe("choose");
+    expect(value).toBe("scope:api");
+
+    // The id segment must reproduce under the same suffix the parser rebuilds.
+    expect(parts[0]).toBe(truncateIdForCallbackData(request.id, `:${action}:${value}`));
+  });
+
+  test("a request id containing a colon is rejected loudly rather than producing an unanswerable button", () => {
+    const request = makeRequest({ id: "req:1", type: "confirm" });
+    // A colon in the id makes parts[0] unrecoverable, so every tap silently
+    // fails to match and the prompt can only ever resolve by timeout.
+    expect(() => buildKeyboard(request)).toThrow(/id/i);
   });
 });
 
