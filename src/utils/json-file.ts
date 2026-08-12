@@ -59,6 +59,12 @@ export async function loadJsonFile<T>(path: string, context = "json-file"): Prom
  * where a reader mid-write parses truncated JSON and callers coerce that
  * `null` into "no prior history".
  *
+ * Two narrower caveats: the rename is not crash-durable (no `fsync` before
+ * it — a power loss between `Bun.write` and `rename` can still leave a
+ * zero-length destination on some filesystems), and a hard kill between the
+ * two steps leaves an orphaned `<path>.tmp-<uuid>` sibling (the `catch`
+ * cleanup only runs on a thrown error, not a killed process).
+ *
  * @param path - File path to write to
  * @param data - Object to serialize
  * @param context - Logger context (for errors)

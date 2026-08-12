@@ -1,8 +1,10 @@
+import { describe, expect, test } from "bun:test";
 import { mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, test } from "bun:test";
-import { loadJsonFile, saveJsonFile } from "../../../src/utils/json-file";
-import { withTempDir } from "../../helpers/temp";
+import { loadJsonFile, saveJsonFile } from "@/utils/json-file";
+import { withTempDir } from "@test/helpers";
+
+const WRITER_FIXTURE = join(import.meta.dir, "..", "..", "fixtures", "json-file-writer.ts");
 
 describe("saveJsonFile (BUG-08: atomic write)", () => {
   test("round-trips data through loadJsonFile", async () => {
@@ -23,26 +25,39 @@ describe("saveJsonFile (BUG-08: atomic write)", () => {
     });
   });
 
-  test("a reader never observes a torn/partial write (rename is atomic)", async () => {
+  test("a reader in another process never observes a torn/partial write (rename is atomic)", async () => {
     await withTempDir(async (dir) => {
       const path = join(dir, "data.json");
-      const large = { items: Array.from({ length: 5000 }, (_, i) => ({ id: i, note: "x".repeat(50) })) };
-      await saveJsonFile(path, large, "test");
+      // Seed the file so the first read has something to parse.
+      await saveJsonFile(path, { items: [] }, "test");
 
-      // A second write races a concurrent load — the loader must always see
-      // either the old complete content or the new complete content.
-      const writePromise = saveJsonFile(path, { items: [{ id: -1, note: "replaced" }] }, "test");
-      const loaded = await loadJsonFile<{ items: unknown[] }>(path, "test");
-      await writePromise;
+      const proc = Bun.spawn(["bun", WRITER_FIXTURE, path], { stdout: "ignore", stderr: "inherit" });
 
-      expect(loaded).not.toBeNull();
-      expect(Array.isArray(loaded?.items)).toBe(true);
+      let nullReads = 0;
+      let reads = 0;
+      while (proc.exitCode === null && reads < 5000) {
+        const loaded = await loadJsonFile<{ items: unknown[] }>(path, "test");
+        reads++;
+        if (loaded === null) nullReads++;
+      }
+      await proc.exited;
+      // Drain a few more reads after the writer exits to catch a trailing torn state.
+      for (let i = 0; i < 20; i++) {
+        const loaded = await loadJsonFile<{ items: unknown[] }>(path, "test");
+        reads++;
+        if (loaded === null) nullReads++;
+      }
+
+      expect(proc.exitCode).toBe(0);
+      expect(reads).toBeGreaterThan(0);
+      expect(nullReads).toBe(0);
     });
-  });
+  }, 15000);
 
-  test("cleans up the temp file when the write fails", async () => {
+  test("cleans up the temp file when rename() fails", async () => {
     await withTempDir(async (dir) => {
-      // Directory as the destination path makes Bun.write fail (EISDIR).
+      // The destination is a directory, so Bun.write to the sibling .tmp-*
+      // file succeeds but rename(tmpPath, path) fails with EISDIR.
       const path = join(dir, "subdir");
       mkdirSync(path);
 
