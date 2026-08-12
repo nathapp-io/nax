@@ -30,6 +30,7 @@ export const _telegramPluginDeps = {
    * multi-poll behaviour without burning seconds of wall-clock per test.
    */
   basePollBackoffMs: 1000,
+  sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
 };
 
 const CALLBACK_API_TIMEOUT_MS = 4000;
@@ -82,6 +83,16 @@ interface TelegramUpdate {
   message?: TelegramMessage;
 }
 
+interface PendingReceiver {
+  resolve: (response: InteractionResponse) => void;
+  timeoutId: ReturnType<typeof setTimeout>;
+}
+
+interface BufferedResponse {
+  response: InteractionResponse;
+  update: TelegramUpdate;
+}
+
 /**
  * Telegram plugin for remote interaction via Telegram Bot API
  */
@@ -92,6 +103,9 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   private chatId: string | null = null;
   // requestId -> { type of the request (gates which update kinds count as an answer), sent message ids }
   private pendingMessages = new Map<string, { type: InteractionRequest["type"]; ids: number[] }>();
+  private pendingReceivers = new Map<string, PendingReceiver>();
+  private bufferedResponses = new Map<string, BufferedResponse>();
+  private poller: Promise<void> | null = null;
   private lastUpdateId = 0;
   // Exponential backoff for getUpdates (starts at the injectable base, 1s in production)
   private backoffMs = _telegramPluginDeps.basePollBackoffMs;
@@ -166,8 +180,9 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   }
 
   async destroy(): Promise<void> {
-    // Cleanup pending messages
+    for (const requestId of this.pendingReceivers.keys()) this.resolveReceiver(requestId, "skip", "timeout");
     this.pendingMessages.clear();
+    this.bufferedResponses.clear();
   }
 
   async send(request: InteractionRequest): Promise<void> {
@@ -179,7 +194,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     // predates it (stray chat message, old button tap) can never be picked up by
     // receive() as the answer. Only interactive types ever wait for a response, so
     // fire-and-forget notify/webhook sends skip the round-trip.
-    if (TelegramInteractionPlugin.INTERACTIVE_REQUEST_TYPES.has(request.type)) {
+    if (TelegramInteractionPlugin.INTERACTIVE_REQUEST_TYPES.has(request.type) && this.pendingReceivers.size === 0) {
       await this.drainBacklog();
     }
 
@@ -237,69 +252,94 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       throw new Error("Telegram plugin not initialized");
     }
 
-    const startTime = Date.now();
-
-    while (Date.now() - startTime < timeout) {
-      const updates = await this.getUpdates();
-
-      for (const update of updates) {
-        if (update.callback_query) {
-          // Always acknowledge callback queries to prevent Telegram client spinner loops
-          // when users tap stale/mismatched inline buttons.
-          void this.answerCallbackQuery(update.callback_query.id);
-        }
-
-        const response = this.parseUpdate(requestId, update);
-        if (response) {
-          if (update.callback_query) {
-            this.logger?.debug("interaction", "Telegram callback matched", {
-              requestId,
-              updateId: update.update_id,
-              action: response.action,
-              value: response.value,
-            });
-          }
-
-          if (update.callback_query?.message?.message_id !== undefined) {
-            void this.clearInlineKeyboard(update.callback_query.message.message_id);
-          }
-
-          // Clean up tracking entry before returning to avoid accumulating stale entries
-          this.pendingMessages.delete(requestId);
-          // Reset backoff on successful response
-          this.backoffMs = _telegramPluginDeps.basePollBackoffMs;
-          return response;
-        }
-
-        if (update.callback_query) {
-          this.logger?.debug("interaction", "Telegram callback ignored (stale/mismatched)", {
-            requestId,
-            updateId: update.update_id,
-            callbackData: update.callback_query.data,
-          });
-        }
+    return new Promise<InteractionResponse>((resolve) => {
+      const timeoutId = setTimeout(() => void this.expireReceiver(requestId), timeout);
+      this.pendingReceivers.set(requestId, { resolve, timeoutId });
+      const buffered = this.bufferedResponses.get(requestId);
+      if (buffered) {
+        this.bufferedResponses.delete(requestId);
+        this.completeReceiver(requestId, buffered.response, buffered.update);
+        return;
       }
-
-      // Use dynamic backoff (set by getUpdates on error), capped to remaining timeout
-      const remaining = timeout - (Date.now() - startTime);
-      if (remaining <= 0) break;
-      await Bun.sleep(Math.min(this.backoffMs, remaining));
-    }
-
-    // Timeout reached — send expiration message
-    await this.sendTimeoutMessage(requestId);
-
-    return {
-      requestId,
-      action: "skip", // This will be overridden by the chain's applyFallback if respondedBy is "timeout"
-      respondedBy: "timeout",
-      respondedAt: Date.now(),
-    };
+      this.ensurePoller();
+    });
   }
 
   async cancel(requestId: string): Promise<void> {
     await this.sendTimeoutMessage(requestId);
+    this.resolveReceiver(requestId, "skip", "timeout");
+  }
+
+  private ensurePoller(): void {
+    if (this.poller) return;
+    this.poller = this.runPoller().finally(() => {
+      this.poller = null;
+      if (this.pendingReceivers.size > 0) this.ensurePoller();
+    });
+  }
+
+  private async runPoller(): Promise<void> {
+    while (this.pendingReceivers.size > 0) {
+      this.dispatchUpdates(await this.getUpdates());
+      if (this.pendingReceivers.size > 0) await _telegramPluginDeps.sleep(this.backoffMs);
+    }
+  }
+
+  private dispatchUpdates(updates: TelegramUpdate[]): void {
+    for (const update of updates) {
+      if (update.callback_query) void this.answerCallbackQuery(update.callback_query.id);
+      let matched = false;
+      for (const requestId of this.pendingMessages.keys()) {
+        const response = this.parseUpdate(requestId, update);
+        if (!response) continue;
+        if (this.pendingReceivers.has(requestId)) this.completeReceiver(requestId, response, update);
+        else this.bufferedResponses.set(requestId, { response, update });
+        matched = true;
+        break;
+      }
+      if (!matched && update.callback_query) this.logIgnoredCallback(update);
+    }
+  }
+
+  private completeReceiver(requestId: string, response: InteractionResponse, update: TelegramUpdate): void {
+    if (update.callback_query) {
+      this.logger?.debug("interaction", "Telegram callback matched", {
+        requestId,
+        updateId: update.update_id,
+        action: response.action,
+        value: response.value,
+      });
+    }
+    const messageId = update.callback_query?.message?.message_id;
+    if (messageId !== undefined) void this.clearInlineKeyboard(messageId);
+    this.resolveReceiverWithResponse(requestId, response);
+    this.backoffMs = _telegramPluginDeps.basePollBackoffMs;
+  }
+
+  private logIgnoredCallback(update: TelegramUpdate): void {
+    this.logger?.debug("interaction", "Telegram callback ignored (stale/mismatched)", {
+      updateId: update.update_id,
+      callbackData: update.callback_query?.data,
+    });
+  }
+
+  private async expireReceiver(requestId: string): Promise<void> {
+    await this.sendTimeoutMessage(requestId);
+    this.resolveReceiver(requestId, "skip", "timeout");
+  }
+
+  private resolveReceiver(requestId: string, action: InteractionResponse["action"], respondedBy: string): void {
+    this.resolveReceiverWithResponse(requestId, { requestId, action, respondedBy, respondedAt: Date.now() });
+  }
+
+  private resolveReceiverWithResponse(requestId: string, response: InteractionResponse): void {
+    const receiver = this.pendingReceivers.get(requestId);
+    if (!receiver) return;
+    clearTimeout(receiver.timeoutId);
+    this.pendingReceivers.delete(requestId);
     this.pendingMessages.delete(requestId);
+    this.bufferedResponses.delete(requestId);
+    receiver.resolve(response);
   }
 
   /**

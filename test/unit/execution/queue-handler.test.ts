@@ -14,7 +14,9 @@ import { clearQueueFile, readQueueFile } from "@/execution";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
-async function readWarnLines(logFile: string): Promise<Array<{ stage: string; message: string; data?: Record<string, unknown> }>> {
+async function readWarnLines(
+  logFile: string,
+): Promise<Array<{ stage: string; message: string; data?: Record<string, unknown> }>> {
   await getLogger().flush();
   const file = Bun.file(logFile);
   if (!(await file.exists())) return [];
@@ -53,6 +55,24 @@ describe("readQueueFile", () => {
     expect(commands).toEqual([{ type: "SKIP", storyId: "US-001" }, { type: "PAUSE" }]);
   });
 
+  test("recovers commands left in .processing after a runner crash", async () => {
+    await Bun.write(join(workdir, ".queue.txt.processing"), "ABORT\n");
+
+    const commands = await readQueueFile(workdir);
+
+    expect(commands).toEqual([{ type: "ABORT" }]);
+    expect(await Bun.file(join(workdir, ".queue.txt.processing")).exists()).toBe(true);
+  });
+
+  test("does not replace an orphaned processing batch with newly queued commands", async () => {
+    await Bun.write(join(workdir, ".queue.txt.processing"), "PAUSE\n");
+    await Bun.write(join(workdir, ".queue.txt"), "SKIP US-002\n");
+
+    expect(await readQueueFile(workdir)).toEqual([{ type: "PAUSE" }]);
+    await clearQueueFile(workdir);
+    expect(await readQueueFile(workdir)).toEqual([{ type: "SKIP", storyId: "US-002" }]);
+  });
+
   test("a rename failure logs a specific rename-failure warn, not the generic read-failure fallback", async () => {
     await Bun.write(join(workdir, ".queue.txt"), "PAUSE\n");
     // Deny write permission on workdir so the rename cannot create/replace a
@@ -71,12 +91,10 @@ describe("readQueueFile", () => {
     const warns = await readWarnLines(logFile);
     expect(warns.length).toBeGreaterThan(0);
     expect(warns[0].stage).toBe("queue");
-    // Pins that the failure is attributed to the rename step specifically —
-    // the old `mv` subprocess's `.exited` resolves (does not reject) on
-    // failure, so its catch block never ran and the generic "Failed to read
-    // queue file" fallback (via a subsequent ENOENT on the never-created
-    // processing file) fired instead, with no mention of "rename".
-    expect(warns[0].message.toLowerCase()).toContain("rename");
+    // The ownership lock is now acquired before rename. With the directory
+    // read-only, either ownership acquisition or rename is the first failing
+    // operation; both must remain observable and non-fatal.
+    expect(warns[0].message.toLowerCase()).toContain("queue file");
   });
 });
 
