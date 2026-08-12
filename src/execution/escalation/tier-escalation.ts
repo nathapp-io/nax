@@ -171,7 +171,7 @@ export async function preIterationTierCheck(
   if (escalationResult && config.autoMode.escalation.enabled) {
     const escalatedTier = escalationResult.tier;
 
-    logger?.warn("escalation", "Story exceeded tier budget, escalating", {
+    logger?.warn("escalation", "Escalating story to next tier after exceeding tier budget", {
       storyId: story.id,
       attempts: story.attempts,
       tierAttempts: tierCfg.attempts,
@@ -340,7 +340,7 @@ export const _tierEscalationDeps = {
  * Escalates to next tier or marks story as paused/failed based on failure category.
  */
 export async function handleTierEscalation(ctx: EscalationHandlerContext): Promise<EscalationHandlerResult> {
-  const logger = getSafeLogger();
+  const logger = _tierEscalationDeps.getSafeLogger();
 
   // @design: BUG-070: Runtime crashes are transient — retry same tier, do NOT escalate
   if (shouldRetrySameTier(ctx.runtimeCrashResult)) {
@@ -407,6 +407,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
     } else {
       logger?.warn("escalation", "Escalating story to next tier", {
         storyId: s.id,
+        fromTier: ctx.routing.modelTier,
         nextTier: escalatedTier,
         retryAsLite: escalateRetryAsLite,
       });

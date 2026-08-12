@@ -7,6 +7,7 @@ export {
   resolveMaxAttemptsOutcome,
   preIterationTierCheck,
   handleTierEscalation,
+  _tierEscalationDeps,
   type PreIterationCheckResult,
   type EscalationHandlerContext,
   type EscalationHandlerResult,
