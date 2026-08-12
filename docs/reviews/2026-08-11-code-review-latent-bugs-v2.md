@@ -191,6 +191,30 @@ The counter consumes a retry *before* any fix runs. Default `acceptance.maxRetri
 **Fix:** Move the `>= maxRetries` check to after the fix-cycle phase (or start counter at -1 / compare `>`).
 **Proof (SRC):** acceptance-loop.ts:429 `acceptanceRetries++` precedes the fix cycle; the `>= maxRetries` gate at :435 fires before `runAcceptanceFixCycle` ever runs; default 3 (schemas.ts:287) → 2 fix rounds; `maxRetries: 1` → 0 fix rounds.
 
+#### BUG-62: Provider capacity errors are parsed as review verdicts and fail-open — story ships unreviewed
+**Severity:** HIGH | **Category:** Bug | **Status:** ✅ confirmed (measured over 4570 review-audit records, 2026-08-12)
+Found while measuring BUG-30, and it displaces BUG-30 as the real defect. When the provider refuses a call, the refusal text is returned as the reviewer's *output* rather than raised as an adapter failure. It therefore flows into the review op's parse path, fails `validateLLMShape`, exhausts the parse-retry budget, and lands in `reviewExhaustedFallback` (`_review-fallback.ts:21`) — which asks only whether the blob contains `"passed": false`. It doesn't, so the op returns `FAIL_OPEN`, `runner.ts:492` counts it as `success: true`, and the story completes with **no story-level review at all**.
+
+Measured over every `~/.nax/*/review-audit/` record (4570 records, 8 projects):
+
+| | count | share |
+|:---|---:|---:|
+| Parse give-ups (`parsed: false`) | 75 | 1.64% of reviews |
+| → fail-open (silently passes) | 57 | 76% of give-ups |
+| → looksLikeFail (blocks) | 18 | 24% of give-ups |
+
+Of the 16 give-ups carrying `unparsedPreview` (the diagnostic is recent; the other 59 predate it — a 21% sample, all from the recent window):
+
+- **6 blocks** — every one a genuinely truncated `{"passed":false,"inspectedFiles":[…` verdict. Blocking was correct.
+- **10 fail-opens** — 9 were the literal provider string `"Selected model is at capacity. Please try a different model."`; 1 was a reviewer prose preamble. **None were verdicts.**
+
+All 10 capacity errors were agent `codex` on 2026-08-11 — a single provider incident burst that silently skipped 10 reviews across the `nax` and `rs-stock` projects. `grep -rn "capacity" src/agents/` returns **nothing**: the condition is entirely unhandled.
+**Risk:** Provider incidents silently disable story-level review. The run reports success and the audit record is the only trace. Bursty by nature, so a single bad provider afternoon can ship a whole feature unreviewed.
+**Fix:** Classify provider-refusal / non-verdict output as a retriable **infrastructure** failure before it reaches `reviewExhaustedFallback`, and route it to backoff + agent swap. This is the same underlying gap as **BUG-20** (`manager.ts:503-515` maps every hard exception to `retriable: false`) seen from the reviewer end — the two should be fixed together. Note `parse-retry.ts:117` returns `delayMs: 0`, so the existing parse-retry is not a usable vehicle for this: it re-calls an at-capacity model immediately, with a `jsonRetry()` prompt instructing it to emit valid JSON — nonsense advice for a provider refusal.
+**Proof (DATA):** `find ~/.nax -path "*/review-audit/*" -name "*.json"` → 4570 records; `parsed:false` = 75; `failOpen:true` = 57; `looksLikeFail:true` = 18; all 16 `unparsedPreview` values classified above.
+
+**Corollary — BUG-30 is not the bug it was written as.** The `/"passed"\s*:\s*false/` heuristic was directionally **correct on 16 of 16** measured cases: every blob it blocked was a real truncated failure verdict, and every blob it passed was not a verdict at all. The fail-open/fail-closed policy question posed in Group 1 is adjudicating a coin-flip that isn't flipping; the fix belongs at classification, not at the gate. The give-up rate is also bursty rather than uniform — 0.79.0's apparent 8/48 (16.7%) is the 2026-08-11 provider incident plus one large-deletion feature (`retire-dead-cli-config-surface`, 4 give-ups in 11 records), not a version regression.
+
 ### 🟡 MEDIUM
 
 #### BUG-12: Cross-package acceptance AC-id collision under-reports failures
@@ -344,6 +368,47 @@ The Priority Fix Order above ranks by *impact*. This section ranks by *who can a
 | **BUG-32** | Define a machine-readable judge verdict. | The judge is *asked* for a verdict but graded on "is the output non-empty". Fixing means changing the debate prompt contract and its parsing together — a protocol change, not a predicate change. |
 | **BUG-55, BUG-56** | Should a mis-configured plugin fail the run? Should dead `writeReviewVerdict` be deleted or hardened? | Both are one-line changes in either direction; the direction is the call. |
 
+### Group 1 — Decisions taken (2026-08-12)
+
+Rulings from the maintainer review of the table above. Undecided rows stay open.
+
+| Finding | Ruling | Notes |
+|:---|:---|:---|
+| **BUG-07** | **Snapshot-diff clean.** Capture `git status --porcelain` at phase start; on rollback delete only untracked paths that appeared since. | Rejects both options as framed. Agent-created files all post-date the snapshot so they are still cleaned; the user's pre-existing `.env`/WIP predates it and survives. No config knob, no policy call. |
+| **BUG-06** | **Route to the full-suite rerun.** Treat exit-0-with-zero-tests as *inconclusive*, not as pass or fail — fall into the existing zero-test fallback at `verify-scoped.ts:216`. | Docs-only and helper-only changes still pass via the full suite; a story whose tests silently didn't run is caught. Avoids the false green without failing legitimately test-free work. |
+| **BUG-11** | **`maxRetries` means fix cycles. Fix the off-by-one and keep the default at 3.** | Deliberate cost increase: every user on defaults gains a third acceptance fix round they don't get today, traded for a higher pass rate. The fix does **not** ship with a compensating default change. |
+| **Parse-retry budget** | **Make the review parse-retry attempt count configurable, default 3** (currently hardcoded `maxAttempts: 2` at `semantic-review.ts:329` and `adversarial-review.ts:224` — one initial call plus one corrective re-prompt). | Taken with BUG-62's measurement on the record: raising the count does **not** address the dominant give-up cause (provider capacity errors, which retry immediately at `delayMs: 0` against an at-capacity model). It is a real improvement for the truncation population, which is the minority but the one where retries work. Not yet implemented. |
+| **BUG-30, BUG-32** | **Deferred — do not change the gate.** | Superseded by BUG-62: the substring heuristic is correct on 16/16 measured cases, so `derivePhaseOutcome` (`run-phase.ts:410-416`) and `allPassed` (`runner.ts:492`) stay as they are. BUG-32's judge selector (`judge.ts:34`, any non-empty text = passed) is independently wrong and unaffected by that data — it remains open. |
+| **BUG-09** | **Delete `auto.ts` and its config surface.** | Evidence: across all 8 projects under `~/.nax/`, the only `interaction.plugin` value ever configured is `"telegram"` — `"auto"` has never been used. The feature is advertised, broken (`receive()` throws unconditionally), and unadopted. Deleting also removes the `IInteractionPlugin` signature change from Group 2, since that change existed only to serve this plugin. Auto-approval remains available via `interaction.defaults.fallback: "continue"`, which works today. |
+| **BUG-32** | **Fix `judge.ts:34` only. Leave `synthesis.ts:36` as it is.** Low priority — doubly latent. | The doc conflates two call sites. A judge is *asked for a verdict*, so grading it on "is the output non-empty" is wrong. A synthesis is asked to *produce a plan*, so "did we get output" is a defensible success predicate — no change needed there. Latency: `debate.enabled` defaults **false** (`schemas-debate.ts:112`) and is not enabled in any config on this machine; `judgeSelector` fires only for `resolver.type: "custom"` (`pick.ts:33`), while the shipped defaults are `synthesis` (plan) and `majority-fail-closed` (review). Reachable only if someone both enables debate and configures a custom resolver. |
+| **BUG-04** | **Wire the per-tier budgets — but ship `fast:2, balanced:2, powerful:2`, not the current `5/3/2`. Populate the escalation event's `from` field first.** | The measurement inverts the finding's implied fix. See BUG-63 and the analysis below. |
+| **BUG-05, BUG-40, BUG-52, BUG-55, BUG-56** | Open. | Mechanical once approved; see the discussion note below the Group 2 table. |
+
+**BUG-04 analysis (measured 2026-08-12 over 1101 story verdicts + 110 escalation events in `~/.nax/*/runs/*/observations.jsonl`).**
+
+Attempt distribution across every recorded story verdict:
+
+| attempts | 0 | 1 | 2 | 3 | 4 | 5+ |
+|:---|---:|---:|---:|---:|---:|---:|
+| stories | 132 | 865 | 90 | 10 | 4 | **0** |
+
+**No story has ever reached 5 attempts** — the `fast` rung's configured budget. 78.6% succeed on the first attempt and only 14 stories (1.3%) ever exceed two. Escalation is correspondingly eager: 97 distinct stories escalated, 86 of them exactly once.
+
+The consequence is that wiring the budgets *as currently configured* would make things worse, not better. A binding 5-attempt `fast` rung would add up to four extra iterations at the weakest tier for stories that today escalate after one failure — and the July-2026 baseline already attributes 31.5% of fix iterations to waste. The shipped `5/3/2` numbers were never validated against behaviour because they have never been in force. Wiring them is not "restoring intended behaviour"; it is enabling an untested configuration.
+
+`2/2/2` makes the ladder actually bind (today it does not bind at all) without inflating low-value retries at `fast`, and it is consistent with the observed distribution — a story that has failed twice at a tier has, empirically, near-zero chance of succeeding at attempt 3+ on that same tier.
+
+#### BUG-63: escalation telemetry records `from: ""` — the tier ladder cannot be audited
+**Severity:** MEDIUM | **Category:** Observability | **Status:** ✅ confirmed (measured 2026-08-12)
+Every one of the 110 recorded escalation events carries an empty `from`:
+```json
+{"kind":"escalation","payload":{"from":"","to":"powerful"}}
+```
+60 escalations land on `powerful` and 50 on `balanced`, but with `from` unpopulated it is impossible to distinguish a story that *skipped* a rung (`fast` → `powerful`, the BUG-04 defect) from one that legitimately started mid-ladder (a `medium`-classified story starting at `balanced` and escalating once). Of the 58 distinct stories that reached `powerful`, 47 have no accompanying `balanced` event — consistent with rung-skipping, but not provable without `from`.
+**Risk:** The most expensive routing decision in the system is unauditable. BUG-04's fix cannot be verified after it ships.
+**Fix:** Populate `from` with the pre-escalation tier at the emit site. Prerequisite for validating BUG-04.
+**Proof (DATA):** `grep '"kind":"escalation"' ~/.nax/*/runs/*/observations.jsonl` → 110 events, `"from":""` on all 110.
+
 ### Group 2 — Needs an architecture change (a local patch moves the bug rather than fixing it)
 
 | Finding | Why a local patch is insufficient |
@@ -354,7 +419,7 @@ The Priority Fix Order above ranks by *impact*. This section ranks by *who can a
 | **BUG-22** | "Single poller, fan-out to callbacks" restructures the Telegram plugin from per-request polling to a shared poller with a subscription registry. |
 | **BUG-36 + BUG-37** | The rectification pipeline borrows the story pipeline's context without its worktree contract (`skipPrdPersistence`, `prdPath`, cost attribution, event emission). Setting the three missing fields fixes today's symptoms; the durable fix is a first-class rectification context type so the next field added to the story contract isn't silently missed again. |
 | **BUG-19** | Keying by `${featureName}:${story.id}` is a one-liner, but the defect is a **module-level mutable cache** invalidated by a positional heuristic (`story.id === stories[0]?.id`). The cache belongs on the runtime, scoped to the run. |
-| **BUG-20** | Mapping `AGENT_TIMEOUT`/spawn errors to retriable outcomes touches the adapter failure taxonomy shared by the `run()` and `complete()` paths. Done carelessly it makes genuinely fatal errors retry forever. |
+| **BUG-20** | Mapping `AGENT_TIMEOUT`/spawn errors to retriable outcomes touches the adapter failure taxonomy shared by the `run()` and `complete()` paths. Done carelessly it makes genuinely fatal errors retry forever. **Priority raised 2026-08-12:** BUG-62 shows this same gap is the root cause of the largest measured population of silently unreviewed stories, so this is no longer a latent MEDIUM — it is the highest-value item in either group by measured impact. |
 | **BUG-39** | The batch selector has no channel to carry retry state; `lastStoryId` is a single-mode concept. Fixing means extending the selection contract, not flipping the `if`. |
 
 ### Group 3 — Mechanical (patch directly; the harness already pins each input)
