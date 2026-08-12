@@ -246,7 +246,12 @@ export async function preIterationTierCheck(
     return { shouldSkipIteration: true, prdDirty: true, prd: updatedPrd };
   }
 
-  // No next tier or escalation disabled — mark story as failed
+  // Escalation disabled — budget exhaustion does not block iteration
+  if (!config.autoMode.escalation.enabled) {
+    return { shouldSkipIteration: false, prdDirty: false, prd };
+  }
+
+  // No next tier — mark story as failed
   logger?.error("execution", "Story failed - all tiers exhausted", {
     storyId: story.id,
     attempts: story.attempts,

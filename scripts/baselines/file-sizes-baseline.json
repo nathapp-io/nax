@@ -1,10 +1,10 @@
 {
-  "updatedAt": "2026-08-12T05:43:50.759Z",
+  "updatedAt": "2026-08-12T06:49:26.627Z",
   "byFile": {
     "src/agents/acp/spawn-client.ts": 696,
     "src/agents/manager.ts": 790,
     "src/context/engine/providers/code-neighbor.ts": 613,
-    "src/execution/unified-executor.ts": 684,
+    "src/execution/unified-executor.ts": 732,
     "src/prompts/builders/rectifier-builder.ts": 902,
     "src/session/manager.ts": 707,
     "test/unit/cli/plan.test.ts": 1087,
