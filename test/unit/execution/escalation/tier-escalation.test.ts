@@ -941,3 +941,163 @@ describe("handleTierEscalation — ADR-025 gap #2: cross-agent escalation proven
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// handleTierEscalation — runtime-crash retry-same (US-002)
+//
+// The verify layer no longer threads a parallel runtimeCrashResult — instead
+// the runtime-crash signal rides on `pipelineResult.context.tddFailureCategory`
+// and the pipeline-result handler is expected to derive a runtimeCrashResult
+// from it. These tests pin the contract on the receiving side: a context that
+// already carries a runtimeCrashResult must short-circuit to "retry-same"
+// (no tier advance, no PRD mutation, no savePRD) so the next iteration can
+// re-run on the same tier.
+// ---------------------------------------------------------------------------
+
+describe("handleTierEscalation — runtime-crash retry-same (US-002)", () => {
+  test("returns outcome: 'retry-same' when runtimeCrashResult is RUNTIME_CRASH (AC-4)", async () => {
+    const mod = await import("@/execution/escalation");
+    const { handleTierEscalation, _tierEscalationDeps } = mod;
+
+    const origSavePRD = _tierEscalationDeps.savePRD;
+    let saveCalls = 0;
+    _tierEscalationDeps.savePRD = () => {
+      saveCalls++;
+      return Promise.resolve();
+    };
+
+    try {
+      const story = {
+        id: "US-002-retry-1",
+        title: "Story",
+        description: "Test",
+        acceptanceCriteria: [],
+        tags: [],
+        dependencies: [],
+        status: "in-progress" as const,
+        passes: false,
+        escalations: [],
+        attempts: 2,
+        routing: { modelTier: "fast", testStrategy: "test-after" },
+      };
+
+      const ctx = {
+        story,
+        storiesToExecute: [story],
+        isBatchExecution: false,
+        routing: { modelTier: "fast", testStrategy: "test-after" },
+        pipelineResult: { reason: "Bun runtime crash", context: { tddFailureCategory: "runtime-crash" } },
+        config: {
+          autoMode: {
+            escalation: {
+              enabled: true,
+              tierOrder: [
+                { tier: "fast", attempts: 2 },
+                { tier: "balanced", attempts: 3 },
+              ],
+            },
+          },
+          routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+          models: {},
+        },
+        prd: {
+          project: "test",
+          feature: "f",
+          branchName: "b",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          userStories: [story],
+        },
+        prdPath: "/tmp/test-prd-us002-retry-1.json",
+        featureDir: undefined,
+        hooks: { hooks: {} },
+        feature: "f",
+        totalCost: 0,
+        workdir: "/tmp",
+        runtimeCrashResult: { status: "RUNTIME_CRASH", success: false },
+      };
+
+      const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]);
+
+      expect(result.outcome).toBe("retry-same");
+      // retry-same must not write to disk — a save here would corrupt the
+      // existing in-flight PRD with a tier-unchanged-but-prdDirty=true record
+      expect(saveCalls).toBe(0);
+    } finally {
+      _tierEscalationDeps.savePRD = origSavePRD;
+    }
+  });
+
+  test("returns prdDirty: false and the unmodified PRD by reference when outcome is 'retry-same' (AC-5)", async () => {
+    const mod = await import("@/execution/escalation");
+    const { handleTierEscalation, _tierEscalationDeps } = mod;
+
+    const origSavePRD = _tierEscalationDeps.savePRD;
+    _tierEscalationDeps.savePRD = () => Promise.resolve();
+
+    try {
+      const story = {
+        id: "US-002-retry-2",
+        title: "Story",
+        description: "Test",
+        acceptanceCriteria: [],
+        tags: [],
+        dependencies: [],
+        status: "in-progress" as const,
+        passes: false,
+        escalations: [],
+        attempts: 1,
+        routing: { modelTier: "balanced", testStrategy: "test-after" },
+      };
+
+      const originalPrd = {
+        project: "test",
+        feature: "f",
+        branchName: "b",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userStories: [story],
+      };
+
+      const ctx = {
+        story,
+        storiesToExecute: [story],
+        isBatchExecution: false,
+        routing: { modelTier: "balanced", testStrategy: "test-after" },
+        pipelineResult: { reason: "Runtime crash", context: {} },
+        config: {
+          autoMode: {
+            escalation: {
+              enabled: true,
+              tierOrder: [
+                { tier: "fast", attempts: 2 },
+                { tier: "balanced", attempts: 3 },
+              ],
+            },
+          },
+          routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+          models: {},
+        },
+        prd: originalPrd,
+        prdPath: "/tmp/test-prd-us002-retry-2.json",
+        featureDir: undefined,
+        hooks: { hooks: {} },
+        feature: "f",
+        totalCost: 0,
+        workdir: "/tmp",
+        runtimeCrashResult: { status: "RUNTIME_CRASH", success: false },
+      };
+
+      const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]);
+
+      expect(result.outcome).toBe("retry-same");
+      expect(result.prdDirty).toBe(false);
+      // PRD reference must be unchanged — no copy, no new object
+      expect(result.prd).toBe(originalPrd);
+      // The story in the result must also be the same reference (no spread)
+      expect(result.prd.userStories[0]).toBe(story);
+    } finally {
+      _tierEscalationDeps.savePRD = origSavePRD;
+    }
+  });
+});

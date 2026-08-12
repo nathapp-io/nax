@@ -29,8 +29,10 @@ describe("exec AC-23 (source): handlePipelineFailure routes escalate action to h
     const tierEscalationIdx = source.indexOf("handleTierEscalation", escalateCaseIdx);
     expect(escalateCaseIdx).toBeGreaterThan(0);
     expect(tierEscalationIdx).toBeGreaterThan(escalateCaseIdx);
-    // The call is within 300 chars of the case start (same block)
-    expect(tierEscalationIdx - escalateCaseIdx).toBeLessThan(300);
+    // The call is within ~500 chars of the case start (same block). US-002
+    // added the runtimeCrashResult derivation inline in the same case body,
+    // so the distance grew but the call is still inside the escalate case.
+    expect(tierEscalationIdx - escalateCaseIdx).toBeLessThan(500);
   });
 
   test("AC-23: handlePipelineFailure is imported from pipeline-result-handler in unified-executor.ts", async () => {

@@ -1,6 +1,6 @@
 {
-  "count": 2851,
-  "updatedAt": "2026-08-12T03:04:32.935Z",
+  "count": 2852,
+  "updatedAt": "2026-08-12T06:21:51.685Z",
   "byFile": {
     "src/pipeline/stages/acceptance-setup.ts": 1,
     "src/pipeline/stages/prompt.ts": 5,
@@ -477,6 +477,7 @@
     "test/unit/execution/unified-executor-rl002.test.ts": 7,
     "test/unit/execution/pid-registry-freeze.test.ts": 1,
     "test/unit/execution/crash-recovery.test.ts": 4,
+    "test/unit/execution/unified-executor-tier-budget.test.ts": 1,
     "test/unit/execution/pid-registry-serialization.test.ts": 2,
     "test/unit/execution/merge.test.ts": 2,
     "test/unit/execution/lifecycle-execution.test.ts": 6,

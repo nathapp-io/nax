@@ -564,3 +564,169 @@ describe("handlePipelineSuccess — a failed worktree merge is not a passed stor
     expect(result.storiesCompletedDelta).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// US-002: handlePipelineFailure — runtime-crash derives retry-same
+//
+// When the pipeline hands back an `escalate` finalAction and the
+// pipelineResult.context.tddFailureCategory is `runtime-crash`,
+// handlePipelineFailure must derive a runtimeCrashResult and pass it to
+// handleTierEscalation. The observable consequence: the returned PRD is the
+// same reference (retry-same returns ctx.prd verbatim), prdDirty is false,
+// the story's routing.modelTier is unchanged, and the story's attempts is
+// not reset. A non-crash failure (e.g. tests-failing) must still escalate
+// and advance the tier by one rung.
+// ---------------------------------------------------------------------------
+
+describe("handlePipelineFailure — runtime-crash derives retry-same (US-002)", () => {
+  test("derives runtimeCrashResult and routes to retry-same when tddFailureCategory is 'runtime-crash' (AC-7)", async () => {
+    const story = makeStory("US-002-handler-7", {
+      status: "in-progress",
+      passes: false,
+      attempts: 2,
+      routing: {
+        modelTier: "fast",
+        testStrategy: "test-after",
+        complexity: "medium",
+        reasoning: "",
+      },
+    });
+    const ctx = makeCtx(story, {
+      routing: { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    });
+
+    const escalateResult: PipelineRunResult = {
+      success: false,
+      finalAction: "escalate",
+      reason: "Bun runtime crash",
+      context: {
+        agentResult: { estimatedCostUsd: 0 },
+        tddFailureCategory: "runtime-crash",
+      } as unknown as PipelineRunResult["context"],
+    };
+
+    const result = await handlePipelineFailure(ctx, escalateResult);
+
+    // retry-same returns the original PRD by reference; prdDirty is false
+    // because nothing was written or updated. If the derive-and-pass step
+    // is missing, handleTierEscalation escalates to "balanced" and produces
+    // a brand-new PRD object — this assertion catches that.
+    expect(result.prd).toBe(ctx.prd);
+    expect(result.prdDirty).toBe(false);
+  });
+
+  test("does not change story routing.modelTier for a runtime-crash escalation (AC-8)", async () => {
+    const story = makeStory("US-002-handler-8", {
+      status: "in-progress",
+      passes: false,
+      attempts: 2,
+      routing: {
+        modelTier: "fast",
+        testStrategy: "test-after",
+        complexity: "medium",
+        reasoning: "",
+      },
+    });
+    const ctx = makeCtx(story, {
+      routing: { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    });
+
+    const escalateResult: PipelineRunResult = {
+      success: false,
+      finalAction: "escalate",
+      reason: "Bun runtime crash",
+      context: {
+        agentResult: { estimatedCostUsd: 0 },
+        tddFailureCategory: "runtime-crash",
+      } as unknown as PipelineRunResult["context"],
+    };
+
+    const result = await handlePipelineFailure(ctx, escalateResult);
+
+    const resultStory = result.prd.userStories.find((s) => s.id === "US-002-handler-8");
+    expect(resultStory).toBeDefined();
+    // Model tier must remain "fast" — the entire point of US-002 is that
+    // runtime crashes do not trigger tier escalation. A non-crash path
+    // would advance to "balanced" (the next rung in DEFAULT_CONFIG).
+    expect(resultStory?.routing?.modelTier).toBe("fast");
+  });
+
+  test("does not reset story attempts to 0 for a runtime-crash escalation (AC-9)", async () => {
+    const story = makeStory("US-002-handler-9", {
+      status: "in-progress",
+      passes: false,
+      // Use a non-zero attempts value distinct from a tier reset (0) and
+      // distinct from a no-op leave-as-1 (1) so a regression on either
+      // side is observable. 3 is also above the default "fast" budget (5
+      // in DEFAULT_CONFIG but the assertion is order-independent).
+      attempts: 3,
+      routing: {
+        modelTier: "fast",
+        testStrategy: "test-after",
+        complexity: "medium",
+        reasoning: "",
+      },
+    });
+    const ctx = makeCtx(story, {
+      routing: { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    });
+
+    const escalateResult: PipelineRunResult = {
+      success: false,
+      finalAction: "escalate",
+      reason: "Bun runtime crash",
+      context: {
+        agentResult: { estimatedCostUsd: 0 },
+        tddFailureCategory: "runtime-crash",
+      } as unknown as PipelineRunResult["context"],
+    };
+
+    const result = await handlePipelineFailure(ctx, escalateResult);
+
+    const resultStory = result.prd.userStories.find((s) => s.id === "US-002-handler-9");
+    expect(resultStory).toBeDefined();
+    // BUG regression guard: an escalated tier-change normally resets
+    // attempts to 0. For runtime-crash we want neither a reset nor an
+    // increment — the same tier is being retried with the existing counter.
+    expect(resultStory?.attempts).toBe(3);
+  });
+
+  test("advances story routing.modelTier by one rung for a non-crash escalation (AC-10)", async () => {
+    const story = makeStory("US-002-handler-10", {
+      status: "in-progress",
+      passes: false,
+      attempts: 1,
+      routing: {
+        modelTier: "fast",
+        testStrategy: "test-after",
+        complexity: "medium",
+        reasoning: "",
+      },
+    });
+    const ctx = makeCtx(story, {
+      routing: { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    });
+
+    const escalateResult: PipelineRunResult = {
+      success: false,
+      finalAction: "escalate",
+      reason: "Tests failed",
+      context: {
+        agentResult: { estimatedCostUsd: 0 },
+        tddFailureCategory: "tests-failing",
+      } as unknown as PipelineRunResult["context"],
+    };
+
+    const result = await handlePipelineFailure(ctx, escalateResult);
+
+    // Non-crash path must take the existing escalation flow:
+    // produce a new PRD, advance "fast" → "balanced", mark prdDirty.
+    const resultStory = result.prd.userStories.find((s) => s.id === "US-002-handler-10");
+    expect(resultStory).toBeDefined();
+    expect(resultStory?.routing?.modelTier).toBe("balanced");
+    expect(result.prdDirty).toBe(true);
+    // And the returned PRD must be a different reference (escalation
+    // builds a new userStories array via .map()).
+    expect(result.prd).not.toBe(ctx.prd);
+  });
+});

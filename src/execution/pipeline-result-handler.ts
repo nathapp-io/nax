@@ -365,6 +365,11 @@ export async function handlePipelineFailure(
       break;
 
     case "escalate": {
+      // US-002: derive runtimeCrashResult for same-tier retry
+      const runtimeCrashResult =
+        pipelineResult.context.tddFailureCategory === "runtime-crash"
+          ? { status: "RUNTIME_CRASH" as const, success: false }
+          : undefined;
       const escalationResult = await handleTierEscalation({
         story: ctx.story,
         storiesToExecute: ctx.storiesToExecute,
@@ -381,6 +386,7 @@ export async function handlePipelineFailure(
         workdir: ctx.workdir,
         attemptCost: pipelineResult.context.agentResult?.estimatedCostUsd || 0,
         agentManager: ctx.agentManager,
+        ...(runtimeCrashResult ? { runtimeCrashResult } : {}),
       });
       prd = escalationResult.prd;
       prdDirty = escalationResult.prdDirty;

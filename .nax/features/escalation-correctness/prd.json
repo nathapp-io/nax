@@ -3,7 +3,7 @@
   "feature": "escalation-correctness",
   "branchName": "feat/escalation-correctness",
   "createdAt": "2026-08-12T00:00:00+08:00",
-  "updatedAt": "2026-08-12T04:57:05.313Z",
+  "updatedAt": "2026-08-12T05:59:51.557Z",
   "userStories": [
     {
       "id": "US-001",
@@ -26,8 +26,8 @@
         "curator"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -39,14 +39,20 @@
         "profileModelTier": "balanced",
         "initialAgent": "pi",
         "initialProfileId": "pi-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/escalation/tier-escalation.ts",
         "src/plugins/builtin/curator/collect.ts",
         "src/plugins/builtin/curator/types.ts",
         "test/unit/execution/escalation/tier-escalation.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5ab57863ee45fc0d23bab4c683e133de5c41fc98"
     },
     {
       "id": "US-002",
@@ -73,8 +79,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -86,14 +92,20 @@
         "profileModelTier": "balanced",
         "initialAgent": "pi",
         "initialProfileId": "pi-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/escalation/tier-escalation.ts",
         "src/execution/pipeline-result-handler.ts",
         "src/pipeline/stages/execution.ts",
         "test/unit/execution/escalation/tier-escalation.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3f7b296a02221d45f065dfc002ab5eb870238885"
     },
     {
       "id": "US-003",
@@ -136,7 +148,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "pi",
         "initialProfileId": "pi-medium-balanced",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/execution/escalation/tier-escalation.ts",
@@ -145,9 +159,10 @@
         "src/execution/unified-executor.ts",
         "test/unit/execution/escalation/escalation.test.ts"
       ],
-      "outOfScope": [
-        "US-003 only: retuning `maxIterations` or `execution.rectification.maxAttemptsTotal` to match the new per-rung budgets."
-      ]
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3f7b296a02221d45f065dfc002ab5eb870238885"
     }
   ],
   "analysis": "This is a TypeScript/Bun enhancement to the existing execution escalation path. The execution cluster owns tier transitions, persists PRD state through injectable savePRD seams, and emits structured logs consumed by the curator. `preIterationTierCheck` in src/execution/escalation/tier-escalation.ts:130 already resolves an injectable logger, evaluates an agent-qualified or tier-only rung through getTierConfig, warns and proceeds for an absent rung, escalates/reset-attempts when the current rung budget is exhausted, then saves the updated PRD. Graph analysis shows it has zero production callers, so the sequential and batch dispatches in src/execution/unified-executor.ts must call it before their respective iteration/batch execution paths and make it injectable via _unifiedExecutorDeps. `handleTierEscalation` in the same module (342-515) currently uses the imported getSafeLogger directly, returns the existing retry-same outcome when runtimeCrashResult has status RUNTIME_CRASH, then logs only nextTier while normal escalation is performed. `handlePipelineFailure` in src/execution/pipeline-result-handler.ts:279-392 is the sole direct caller: its escalate branch currently forwards PRD and prdDirty only, so it must derive runtimeCrashResult from pipelineResult.context.tddFailureCategory === \"runtime-crash\" and honor outcome to preserve tier/attempts on same-tier retries. The execution stage already classifies CALL_OP_NO_OUTPUT and CALL_OP_MAX_RETRIES as runtime-crash, so no parallel signal plumbing is required. `calculateMaxIterations` in src/execution/escalation/escalation.ts:66-68 remains a sum utility; the new default ladder is 2/2/2 and therefore sums to six, but the per-rung decision belongs exclusively to the pre-iteration check. `NaxConfigSchema` at src/config/schemas.ts:46-593 owns schema defaults; DEFAULT_CONFIG is derived from parsing this schema, so only its 5/3/2 ladder literals should change. The curator collector at src/plugins/builtin/curator/collect.ts:404-419 already maps fromTier, from, or currentTier into payload.from and nextTier into payload.to, but its stage/message dispatcher must recognize the pre-iteration warning's exact capitalization so it can create observations for both emitters. Existing tests are concentrated in test/unit/execution/escalation/tier-escalation.test.ts, test/unit/execution/escalation/escalation.test.ts, test/unit/config/schemas.test.ts, executor tests, pipeline-result-handler tests, and curator collection tests; expand those instead of creating isolated new abstractions. Risks are behavioral: an incorrect skip result can silently omit a scheduled iteration; accidental mutation on retry-same can reset attempts; and changing batch sequencing can alter existing batch semantics. Keep savePRD’s existing single-writer behavior, maintain agent-qualified rung matching, preserve the collector’s fallback chain, and test call ordering through the documented injectable seams. There is no config migration: user-provided tierOrder values retain their explicit values, while only empty-schema/default consumers receive 2/2/2. Historical observations are intentionally not rewritten.",

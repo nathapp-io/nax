@@ -1,15 +1,15 @@
 {
-  "updatedAt": "2026-08-10T06:14:46.745Z",
+  "updatedAt": "2026-08-12T05:43:50.759Z",
   "byFile": {
-    "src/agents/acp/spawn-client.ts": 734,
+    "src/agents/acp/spawn-client.ts": 696,
     "src/agents/manager.ts": 790,
     "src/context/engine/providers/code-neighbor.ts": 613,
-    "src/execution/unified-executor.ts": 689,
+    "src/execution/unified-executor.ts": 684,
     "src/prompts/builders/rectifier-builder.ts": 902,
     "src/session/manager.ts": 707,
     "test/unit/cli/plan.test.ts": 1087,
     "test/unit/debate/runner-plan.test.ts": 1048,
-    "test/unit/execution/escalation/tier-escalation.test.ts": 943,
+    "test/unit/execution/escalation/tier-escalation.test.ts": 1103,
     "test/unit/execution/story-orchestrator.test.ts": 1734
   }
 }
