@@ -231,8 +231,11 @@ export async function preIterationTierCheck(
       toTier: escalatedTier,
     });
 
-    // Clear routing cache for story to avoid returning old cached decision
-    clearCacheForStory(story.id);
+    // Routing-cache invalidation now needs a NaxRuntime (BUG-19: the cache is
+    // runtime-scoped, not a module singleton) — preIterationTierCheck has no
+    // runtime parameter, matching the hybrid re-route immediately below, which
+    // already passes `runtime: undefined` and no-ops. Both are inert pending
+    // BUG-04 (this function has zero production callers).
 
     // Hybrid mode: re-route story after escalation
     if (routingMode === "hybrid") {
@@ -524,8 +527,11 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   await _tierEscalationDeps.savePRD(updatedPrd, ctx.prdPath);
 
   // Clear routing cache for all escalated stories to avoid returning old cached decisions
-  for (const story of storiesToEscalate) {
-    clearCacheForStory(story.id);
+  if (ctx.runtime) {
+    const routingCache = ctx.runtime.routingCache;
+    for (const story of storiesToEscalate) {
+      clearCacheForStory(routingCache, story.id);
+    }
   }
 
   // Hybrid mode: re-route escalated stories

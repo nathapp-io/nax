@@ -14,7 +14,7 @@
 import { isGreenfieldStory } from "@/context";
 import { getLogger } from "@/logger";
 import { savePRD } from "@/prd";
-import { clearCache, complexityToModelTier, isSecurityCriticalStory, resolveRouting } from "@/routing";
+import { complexityToModelTier, isSecurityCriticalStory, resolveRouting } from "@/routing";
 import { resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
 import { packageDirRelative } from "@/utils/paths";
@@ -27,11 +27,9 @@ export const routingStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
-    // Clear LLM routing cache at the start of each run (first story only) to prevent
-    // cross-run cache pollution when story IDs repeat across features (e.g. "us-001").
-    if (ctx.story.id === ctx.stories[0]?.id) {
-      _routingDeps.clearCache();
-    }
+    // The LLM routing cache lives on ctx.runtime.routingCache (BUG-19) — a
+    // fresh Map per createRuntime() call — so it already starts empty for
+    // this run. No explicit clear-on-first-story step is needed here.
 
     // Classify story via resolveRouting() (plugin routers > LLM > keyword)
     const decision = await _routingDeps.resolveRouting(ctx.story, ctx.config, ctx.plugins, ctx);
@@ -193,6 +191,5 @@ export const _routingDeps = {
   complexityToModelTier,
   isGreenfieldStory,
   resolveTestFilePatterns,
-  clearCache,
   savePRD,
 };

@@ -53,40 +53,41 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("LLM routing cache utilities", () => {
+  // Each test builds its own Map — the cache is run-scoped (NaxRuntime.routingCache,
+  // BUG-19), not a module-level singleton, so there's nothing to reset between tests.
+
   test("clearCache empties the cache", async () => {
     const { clearCache, getCacheSize, injectCacheEntry } = await import("../../../../src/routing/strategies/llm");
-    injectCacheEntry("CACHE-UTIL-001", {
+    const cache = new Map();
+    injectCacheEntry(cache, "CACHE-UTIL-001", {
       complexity: "simple",
       modelTier: "fast",
       testStrategy: "tdd-simple",
       reasoning: "test",
     });
-    expect(getCacheSize()).toBeGreaterThan(0);
-    clearCache();
-    expect(getCacheSize()).toBe(0);
+    expect(getCacheSize(cache)).toBeGreaterThan(0);
+    clearCache(cache);
+    expect(getCacheSize(cache)).toBe(0);
   });
 
   test("clearCacheForStory removes only that entry", async () => {
-    const { clearCache, getCacheSize, injectCacheEntry, clearCacheForStory } = await import(
-      "../../../../src/routing/strategies/llm"
-    );
-    clearCache();
-    injectCacheEntry("CACHE-A", {
+    const { getCacheSize, injectCacheEntry, clearCacheForStory } = await import("../../../../src/routing/strategies/llm");
+    const cache = new Map();
+    injectCacheEntry(cache, "CACHE-A", {
       complexity: "simple",
       modelTier: "fast",
       testStrategy: "tdd-simple",
       reasoning: "a",
     });
-    injectCacheEntry("CACHE-B", {
+    injectCacheEntry(cache, "CACHE-B", {
       complexity: "medium",
       modelTier: "balanced",
       testStrategy: "tdd-simple",
       reasoning: "b",
     });
-    expect(getCacheSize()).toBe(2);
-    clearCacheForStory("CACHE-A");
-    expect(getCacheSize()).toBe(1);
-    clearCache();
+    expect(getCacheSize(cache)).toBe(2);
+    clearCacheForStory(cache, "CACHE-A");
+    expect(getCacheSize(cache)).toBe(1);
   });
 });
 

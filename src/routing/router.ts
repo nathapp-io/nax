@@ -20,7 +20,7 @@ import type { NaxRuntime } from "../runtime";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { RoutingDecision } from "./decision";
 export type { RoutingDecision } from "./decision";
-import { MAX_CACHE_SIZE, cachedDecisions, evictOldest } from "./strategies/llm-cache";
+import { MAX_CACHE_SIZE, evictOldest } from "./strategies/llm-cache";
 
 // Pure classification logic lives in classify.ts (no agent-registry dep) — re-exported here for back-compat.
 export { classifyComplexity, determineTestStrategy, isSecurityCriticalStory } from "./classify";
@@ -188,13 +188,14 @@ export async function resolveRouting(
   // 2. LLM fallback (if configured)
   if (config.routing.strategy === "llm" && dispatchContext.runtime) {
     const llmConfig = config.routing.llm;
+    const routingCache = dispatchContext.runtime.routingCache;
     if (llmConfig) {
       try {
         const mode = llmConfig.mode ?? "hybrid";
 
         // Cache hit: return cached decision with fresh testStrategy
-        if (llmConfig.cacheDecisions && cachedDecisions.has(story.id)) {
-          const cached = cachedDecisions.get(story.id);
+        if (llmConfig.cacheDecisions && routingCache.has(story.id)) {
+          const cached = routingCache.get(story.id);
           if (cached) {
             const tddStrategy = config.tdd?.strategy ?? "auto";
             const freshTestStrategy = determineTestStrategy(
@@ -234,8 +235,8 @@ export async function resolveRouting(
           });
 
           if (llmConfig.cacheDecisions) {
-            if (cachedDecisions.size >= MAX_CACHE_SIZE) evictOldest();
-            cachedDecisions.set(story.id, decision);
+            if (routingCache.size >= MAX_CACHE_SIZE) evictOldest(routingCache);
+            routingCache.set(story.id, decision);
           }
 
           logger?.info("routing", "LLM classified story", {
@@ -380,9 +381,10 @@ export async function tryLlmBatchRoute(
     const decisions = await callOp(ctx, classifyRouteBatchOp, needsRouting);
 
     if (llmConfig.cacheDecisions) {
+      const routingCache = runtime.routingCache;
       for (const [storyId, decision] of decisions.entries()) {
-        if (cachedDecisions.size >= MAX_CACHE_SIZE) evictOldest();
-        cachedDecisions.set(storyId, decision);
+        if (routingCache.size >= MAX_CACHE_SIZE) evictOldest(routingCache);
+        routingCache.set(storyId, decision);
       }
     }
 
