@@ -1,0 +1,212 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `handleTierEscalation` emits an escalation log, then it obtains the logger through `_tierEscalationDeps.getSafeLogger` so a replacement dependency observes the call.",
+    "refined": "Assert that when `handleTierEscalation` is invoked with a story requiring escalation, the `getSafeLogger` method of `_tierEscalationDeps` is called at least once, verified via dependency injection mock/spy.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `handleTierEscalation` escalates a story from `fast` to `balanced`, then it logs at stage `escalation` with `data.fromTier` equal to `\"fast\"`.",
+    "refined": "Assert that after calling `handleTierEscalation` with an escalation from tier `\"fast\"` to `\"balanced\"`, the captured log entry contains `stage === \"escalation\"` and `data.fromTier === \"fast\"`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `handleTierEscalation` escalates a story from `fast` to `balanced`, then the same escalation log has `data.nextTier` equal to `\"balanced\"`.",
+    "refined": "Assert that after calling `handleTierEscalation` with an escalation from tier `\"fast\"` to `\"balanced\"`, the captured log entry contains `data.nextTier === \"balanced\"`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Given an escalation log entry with `fromTier: \"fast\"` and `nextTier: \"balanced\"`, when `collectObservations` reads the log, then it returns one `escalation` observation whose `payload.from` is `\"fast\"`.",
+    "refined": "Assert that given a log file containing a single entry with `\"fromTier\": \"fast\"` and `\"nextTier\": \"balanced\"`, calling `collectObservations(context)` returns an array of length 1, where `result[0].kind === \"escalation\"` and `result[0].payload.from === \"fast\"`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "Given an escalation log entry with `currentTier: \"fast\"` and no `fromTier`, when `collectObservations` reads the log, then it returns an observation whose `payload.from` is `\"fast\"`.",
+    "refined": "Assert that given a log file containing a single entry with `\"currentTier\": \"fast\"` and no `fromTier` field, calling `collectObservations(context)` returns an array where `result[0].payload.from === \"fast\"`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Given the log entry written by `handleTierEscalation` for an escalation, when `collectObservations` reads the log, then it returns exactly one observation of kind `escalation`.",
+    "refined": "Assert that after calling `handleTierEscalation` and writing its log output, calling `collectObservations(context)` returns an array of length 1 where `result[0].kind === \"escalation\"`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "Given the log entry written by `preIterationTierCheck` when a story exceeds its rung budget, when `collectObservations` reads the log, then it returns exactly one observation of kind `escalation`.",
+    "refined": "Assert that after calling `preIterationTierCheck` for a story exceeding its rung budget and writing its log output, calling `collectObservations(context)` returns an array of length 1 where `result[0].kind === \"escalation\"`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "Given an escalation log entry, when `collectObservations` reads the log, then the returned observation has a non-empty string `payload.from`.",
+    "refined": "Assert that given a log file containing any escalation entry (with or without `fromTier`, using `currentTier` or `from` fallback), calling `collectObservations(context)` returns an array where every `escalation` observation satisfies `typeof result[i].payload.from === \"string\" && result[i].payload.from.length > 0`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When `shouldRetrySameTier` receives `{ status: \"RUNTIME_CRASH\" }`, then it returns `true`.",
+    "refined": "`const result = shouldRetrySameTier({ status: \"RUNTIME_CRASH\", success: false }); expect(result).toBe(true);`",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `shouldRetrySameTier` receives `undefined`, then it returns `false`.",
+    "refined": "`const result = shouldRetrySameTier(undefined); expect(result).toBe(false);`",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When `shouldRetrySameTier` receives `{ status: \"TEST_FAILURE\" }`, then it returns `false`.",
+    "refined": "`const result = shouldRetrySameTier({ status: \"TEST_FAILURE\", success: false }); expect(result).toBe(false);`",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When `handleTierEscalation` receives a context with a runtime-crash result, then it returns `outcome: \"retry-same\"`.",
+    "refined": "`const result = await handleTierEscalation({ story, prd, runtimeCrashResult: { status: \"RUNTIME_CRASH\", success: false } }); expect(result.outcome).toBe(\"retry-same\");`",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When `handleTierEscalation` returns `outcome: \"retry-same\"`, then it returns `prdDirty: false` and the unmodified PRD supplied in its context.",
+    "refined": "`const originalPrd = context.prd; const result = await handleTierEscalation(context); expect(result.outcome === \"retry-same\" ? (result.prdDirty === false && deepEqual(result.prd, originalPrd)) : true).toBe(true);`",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When `handleTierEscalation` receives a `tddFailureCategory` other than `\"runtime-crash\"`, then it returns `outcome: \"escalated\"` and advances the story `routing.modelTier` by one rung.",
+    "refined": "`const initialTier = context.story.routing.modelTier; const result = await handleTierEscalation({ ...context, tddFailureCategory: \"compile-error\" }); expect(result.outcome).toBe(\"escalated\"); expect(result.story.routing.modelTier).toBe(initialTier + 1);`",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When `handlePipelineFailure` handles an `escalate` action whose `pipelineResult.context.tddFailureCategory` is `\"runtime-crash\"`, then it derives and passes a runtime-crash result to `handleTierEscalation`.",
+    "refined": "`const spy = vi.spyOn(escalationModule, \"handleTierEscalation\"); await handlePipelineFailure({ action: \"escalate\", pipelineResult: { context: { tddFailureCategory: \"runtime-crash\" } } }); expect(spy).toHaveBeenCalledWith(expect.objectContaining({ runtimeCrashResult: expect.objectContaining({ status: \"RUNTIME_CRASH\" }) }));`",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When `handlePipelineFailure` handles an `escalate` action for a runtime-crash failure, then the resulting story `routing.modelTier` is unchanged from before the call.",
+    "refined": "`const initialTier = story.routing.modelTier; const result = await handlePipelineFailure({ action: \"escalate\", pipelineResult: { context: { tddFailureCategory: \"runtime-crash\" } }, story }); expect(result.story.routing.modelTier).toBe(initialTier);`",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When `handlePipelineFailure` handles an `escalate` action for a runtime-crash failure, then the resulting story `attempts` is not reset to `0`.",
+    "refined": "`const result = await handlePipelineFailure({ action: \"escalate\", pipelineResult: { context: { tddFailureCategory: \"runtime-crash\" } }, story }); expect(result.story.attempts).not.toBe(0);`",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When `handlePipelineFailure` handles an `escalate` action for a non-crash failure, then the resulting story `routing.modelTier` advances by one rung.",
+    "refined": "`const initialTier = story.routing.modelTier; const result = await handlePipelineFailure({ action: \"escalate\", pipelineResult: { context: { tddFailureCategory: \"compile-error\" } }, story }); expect(result.story.routing.modelTier).toBe(initialTier + 1);`",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When `NaxConfigSchema.parse({})` is evaluated, then `autoMode.escalation.tierOrder` is `[fast, balanced, powerful]` with `attempts: 2` on every rung.",
+    "refined": "Assert `NaxConfigSchema.parse({}).autoMode.escalation.tierOrder` has length 3, elements[0].name === 'fast' with attempts === 2, elements[1].name === 'balanced' with attempts === 2, elements[2].name === 'powerful' with attempts === 2.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When `calculateMaxIterations` receives the default ladder, then it returns `6`.",
+    "refined": "Assert `calculateMaxIterations([{name:'fast',attempts:2},{name:'balanced',attempts:2},{name:'powerful',attempts:2}])` returns `6` (2+2+2).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When `preIterationTierCheck` receives a story with `attempts: 1` and a current-rung budget of `2`, then it returns `shouldSkipIteration: false`.",
+    "refined": "Assert `preIterationTierCheck({...story, attempts:1, routing:{modelTier:'fast'}}, routing:{modelTier:'fast'}, config:{autoMode:{escalation:{tierOrder:[{name:'fast',attempts:2}]}}}, prd, prdPath, featureDir, hooks, feature, totalCost, workdir)` returns `{shouldSkipIteration: false}`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When `preIterationTierCheck` receives a story with `attempts: 2` and a current-rung budget of `2`, then it returns `shouldSkipIteration: true`.",
+    "refined": "Assert `preIterationTierCheck({...story, attempts:2, routing:{modelTier:'fast'}}, routing:{modelTier:'fast'}, config:{autoMode:{escalation:{tierOrder:[{name:'fast',attempts:2}]}}}, prd, prdPath, featureDir, hooks, feature, totalCost, workdir)` returns `{shouldSkipIteration: true}`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When `preIterationTierCheck` returns `shouldSkipIteration: true` for an exhausted rung, then its returned PRD advances that story `routing.modelTier` to the next rung.",
+    "refined": "Assert the returned PRD from `preIterationTierCheck({routing:{modelTier:'fast'},attempts:2},...)` has `stories[0].routing.modelTier` equal to `'balanced'` (the next rung after 'fast').",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When `preIterationTierCheck` returns `shouldSkipIteration: true` for an exhausted rung, then its returned PRD resets that story `attempts` to `0`.",
+    "refined": "Assert the returned PRD from `preIterationTierCheck({attempts:2},...)` has `stories[0].attempts` equal to `0`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When `preIterationTierCheck` receives a story whose current tier is absent from `tierOrder`, then it returns `shouldSkipIteration: false` regardless of the story attempts value.",
+    "refined": "When `preIterationTierCheck` receives a story whose current tier is absent from `tierOrder`, then it returns `shouldSkipIteration: false` regardless of the story attempts value.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When `preIterationTierCheck` receives a story at its rung budget and `autoMode.escalation.enabled` is `false`, then it returns `shouldSkipIteration: false`.",
+    "refined": "Assert `preIterationTierCheck({attempts:2},...,config:{autoMode:{escalation:{enabled:false,tierOrder:[{name:'fast',attempts:2}]}}})` returns `{shouldSkipIteration: false}`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When the sequential executor dispatches a selected story, then it invokes `preIterationTierCheck` once with that story before it invokes `runIteration`.",
+    "refined": "Assert the sequential executor calls `preIterationTierCheck` with the selected story as first argument before calling `runIteration`, verified by call-order spy (e.g., `expect(preIterationTierCheck).toHaveBeenCalledBefore(runIteration)`).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When the sequential executor receives `shouldSkipIteration: true` from `preIterationTierCheck`, then it does not invoke `runIteration` for that story.",
+    "refined": "Assert that when `preIterationTierCheck` returns `{shouldSkipIteration:true}`, `runIteration` is not called (spy/mock verification: `expect(runIteration).not.toHaveBeenCalled()`).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When the batch executor dispatches a batch, then it invokes `preIterationTierCheck` once per batch story before the batch is dispatched.",
+    "refined": "Assert the batch executor calls `preIterationTierCheck` exactly N times for a batch of N stories, verified by `expect(preIterationTierCheck).toHaveBeenCalledTimes(N)` with each call receiving a distinct story.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When a story fails twice at the `fast` rung under the default ladder, then it reaches `balanced` and not `powerful`.",
+    "refined": "Assert that after 2 consecutive failures at fast rung (attempts:2, shouldSkipIteration:true twice), the story's `routing.modelTier` is `'balanced'` and not `'powerful'`.",
+    "testable": true,
+    "storyId": "US-003"
+  }
+]
