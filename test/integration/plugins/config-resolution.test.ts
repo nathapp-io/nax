@@ -278,15 +278,14 @@ describe("Plugin config path resolution (US-007)", () => {
         },
       ];
 
-      const registry = await loadPlugins(
-        path.join(tempDir, "nonexistent-global"),
-        path.join(tempDir, "nonexistent-project"),
-        configPlugins,
-        projectRoot,
-      );
-
-      // SEC-1/SEC-2: traversal outside project root is blocked
-      expect(registry.plugins).toHaveLength(0);
+      await expect(
+        loadPlugins(
+          path.join(tempDir, "nonexistent-global"),
+          path.join(tempDir, "nonexistent-project"),
+          configPlugins,
+          projectRoot,
+        ),
+      ).rejects.toMatchObject({ code: "PLUGIN_LOAD_FAILED" });
     });
   });
 
@@ -335,9 +334,9 @@ describe("Plugin config path resolution (US-007)", () => {
       expect(registry.plugins[0].name).toBe("absolute-plugin");
     });
 
-    test("treats non-relative paths as npm packages (doesn't crash)", async () => {
+    test("treats non-relative paths as required npm packages", async () => {
       // This test verifies that npm package names (no ./ or ../) are passed through as-is
-      // They will fail to load since we don't have real npm packages, but shouldn't crash
+      // They fail to load since we don't have real npm packages; explicit entries fail fast.
       const configPlugins: PluginConfigEntry[] = [
         {
           module: "nonexistent-npm-package",
@@ -345,15 +344,14 @@ describe("Plugin config path resolution (US-007)", () => {
         },
       ];
 
-      const registry = await loadPlugins(
-        path.join(tempDir, "nonexistent-global"),
-        path.join(tempDir, "nonexistent-project"),
-        configPlugins,
-        tempDir,
-      );
-
-      // Should return empty registry since package doesn't exist
-      expect(registry.plugins).toHaveLength(0);
+      await expect(
+        loadPlugins(
+          path.join(tempDir, "nonexistent-global"),
+          path.join(tempDir, "nonexistent-project"),
+          configPlugins,
+          tempDir,
+        ),
+      ).rejects.toMatchObject({ code: "PLUGIN_LOAD_FAILED" });
     });
   });
 
@@ -372,12 +370,14 @@ describe("Plugin config path resolution (US-007)", () => {
           },
         ];
 
-        await loadPlugins(
-          path.join(tempDir, "nonexistent-global"),
-          path.join(tempDir, "nonexistent-project"),
-          configPlugins,
-          tempDir,
-        );
+        await expect(
+          loadPlugins(
+            path.join(tempDir, "nonexistent-global"),
+            path.join(tempDir, "nonexistent-project"),
+            configPlugins,
+            tempDir,
+          ),
+        ).rejects.toMatchObject({ code: "PLUGIN_LOAD_FAILED" });
 
         // Should log error with original path
         const errorOutput = errorLogs.join("\n");
@@ -405,12 +405,14 @@ describe("Plugin config path resolution (US-007)", () => {
           },
         ];
 
-        await loadPlugins(
-          path.join(tempDir, "nonexistent-global"),
-          path.join(tempDir, "nonexistent-project"),
-          configPlugins,
-          tempDir,
-        );
+        await expect(
+          loadPlugins(
+            path.join(tempDir, "nonexistent-global"),
+            path.join(tempDir, "nonexistent-project"),
+            configPlugins,
+            tempDir,
+          ),
+        ).rejects.toMatchObject({ code: "PLUGIN_LOAD_FAILED" });
 
         const errorOutput = errorLogs.join("\n");
         expect(errorOutput).toContain("Failed to load plugin module");
@@ -532,5 +534,67 @@ describe("Plugin config path resolution (US-007)", () => {
       const receivedConfig = JSON.parse(await fs.readFile(configFile, "utf-8"));
       expect(receivedConfig).toEqual({});
     });
+  });
+
+  describe("explicit plugin failures", () => {
+    test("fails fast when an explicitly configured plugin is invalid", async () => {
+      const pluginPath = path.join(tempDir, "invalid-plugin.ts");
+      await fs.writeFile(pluginPath, "export default { name: 'invalid' };", "utf-8");
+
+      await expect(
+        loadPlugins(
+          path.join(tempDir, "nonexistent-global"),
+          path.join(tempDir, "nonexistent-project"),
+          [{ module: pluginPath }],
+          tempDir,
+        ),
+      ).rejects.toMatchObject({ code: "PLUGIN_LOAD_FAILED" });
+    });
+
+    test("fails fast when an explicitly configured plugin setup throws", async () => {
+      const pluginPath = path.join(tempDir, "broken-setup-plugin.ts");
+      await fs.writeFile(
+        pluginPath,
+        `export default {
+          name: "broken-setup",
+          version: "1.0.0",
+          provides: [],
+          extensions: {},
+          async setup() { throw new Error("setup exploded"); }
+        };`,
+        "utf-8",
+      );
+
+      await expect(
+        loadPlugins(
+          path.join(tempDir, "nonexistent-global"),
+          path.join(tempDir, "nonexistent-project"),
+          [{ module: pluginPath }],
+          tempDir,
+        ),
+      ).rejects.toMatchObject({ code: "PLUGIN_LOAD_FAILED" });
+    });
+  });
+
+  test("auto-discovered invalid plugins warn and skip", async () => {
+    const projectPlugins = path.join(tempDir, "project-plugins");
+    await fs.mkdir(projectPlugins, { recursive: true });
+    await fs.writeFile(path.join(projectPlugins, "invalid.ts"), "export default { name: 'invalid' };", "utf-8");
+    const errors: string[] = [];
+    _setPluginErrorSink((message) => errors.push(String(message)));
+
+    try {
+      const registry = await loadPlugins(
+        path.join(tempDir, "nonexistent-global"),
+        projectPlugins,
+        [],
+        tempDir,
+      );
+
+      expect(registry.plugins).toHaveLength(0);
+      expect(errors).toContainEqual(expect.stringContaining("Plugin validation failed"));
+    } finally {
+      _resetPluginErrorSink();
+    }
   });
 });

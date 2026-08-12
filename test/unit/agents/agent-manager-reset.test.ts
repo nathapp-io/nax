@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { AgentManager } from "../../../src/agents/manager";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 
-describe("AgentManager.reset — called between stories", () => {
-  test("unavailable state from one story does not bleed into the next", () => {
+describe("AgentManager availability recovery between stories", () => {
+  test("transient unavailable state from one story does not bleed into the next", () => {
     const config = {
       ...DEFAULT_CONFIG,
       agent: { default: "claude" },
@@ -12,15 +12,29 @@ describe("AgentManager.reset — called between stories", () => {
 
     manager.markUnavailable("claude", {
       category: "availability",
-      outcome: "fail-auth",
-      retriable: false,
-      message: "story 1 auth failure",
+      outcome: "fail-rate-limit",
+      retriable: true,
+      message: "story 1 rate limit",
     });
 
     expect(manager.isUnavailable("claude")).toBe(true);
 
-    manager.reset();
+    manager.resetTransientUnavailable();
 
     expect(manager.isUnavailable("claude")).toBe(false);
+  });
+
+  test.each(["fail-auth", "fail-quota"] as const)("keeps permanent %s failures unavailable", (outcome) => {
+    const manager = new AgentManager({ ...DEFAULT_CONFIG, agent: { default: "claude" } } as never);
+    manager.markUnavailable("claude", {
+      category: "availability",
+      outcome,
+      retriable: false,
+      message: "permanent failure",
+    });
+
+    manager.resetTransientUnavailable();
+
+    expect(manager.isUnavailable("claude")).toBe(true);
   });
 });

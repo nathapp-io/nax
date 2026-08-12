@@ -138,6 +138,9 @@ export interface IAgentManager {
   /** Reset per-run state. Called at run boundary. */
   reset(): void;
 
+  /** Clear transient failures at a story boundary while retaining permanent failures. */
+  resetTransientUnavailable?(): void;
+
   /** Release internal resources (EventEmitter listeners). Called from NaxRuntime.close(). */
   close(): void;
 

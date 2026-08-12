@@ -216,16 +216,6 @@ describe("AC-17: groupStoriesByDependencies accessibility", () => {
     }
   });
 
-  test("parallel-coordinator.ts imports groupStoriesByDependencies from story-selector", async () => {
-    const source = await Bun.file(
-      join(import.meta.dir, "../../../src/execution/parallel-coordinator.ts"),
-    ).text().catch(() => "");
-    if (source) {
-      expect(source).toContain("story-selector");
-    } else {
-      expect(true).toBe(true);
-    }
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

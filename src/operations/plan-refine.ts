@@ -158,7 +158,7 @@ interface StoryNormalization {
  * time but WILL exist at this story's execution time — sequential mode shares one
  * workdir (the producer ran first), and parallel mode merges each batch back to
  * HEAD before the next batch's worktrees branch from it (see
- * docs/architecture/spec-to-prd-pipeline.md, src/execution/parallel-coordinator.ts,
+ * docs/architecture/spec-to-prd-pipeline.md, src/execution/parallel-batch.ts,
  * src/worktree/manager.ts). So an absent `contextFiles` entry that an upstream
  * story creates is a legitimate read hint, NOT a file this story authors.
  */

@@ -40,16 +40,15 @@ const TERMINAL_ACTIONS = new Set(["fail", "skip", "pause"]);
 // calling pipelineEventBus.clear(), which would also wipe external subscribers
 // like the TUI's usePipelineBusEvents hook.
 let _prevRunUnsubscribers: Array<() => void> = [];
-
 async function closeStoryIfTerminal(
   ctx: SequentialExecutionContext,
   storyId: string,
   iter: { storiesCompletedDelta: number; finalAction?: string },
 ): Promise<void> {
-  if (!ctx.sessionManager) return;
-  if (iter.storiesCompletedDelta > 0 || (iter.finalAction && TERMINAL_ACTIONS.has(iter.finalAction))) {
-    await closeStorySessions(ctx.sessionManager, storyId, ctx.agentGetFn);
-  }
+  const isTerminal = iter.storiesCompletedDelta > 0 || (iter.finalAction && TERMINAL_ACTIONS.has(iter.finalAction));
+  if (!isTerminal) return;
+  if (ctx.sessionManager) await closeStorySessions(ctx.sessionManager, storyId, ctx.agentGetFn);
+  ctx.agentManager?.resetTransientUnavailable?.();
 }
 
 export async function executeUnified(
@@ -359,6 +358,7 @@ export async function executeUnified(
               }
             }
           }
+          ctx.agentManager?.resetTransientUnavailable?.();
           // Build per-story metrics for completed parallel batch stories
           const batchCompletedAt = new Date().toISOString();
           for (const story of batchResult.completed) {
