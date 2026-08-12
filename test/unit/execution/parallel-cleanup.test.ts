@@ -5,10 +5,8 @@
  * BUG-069: Fix batch summary field semantics (successful -> pipelinePassed, add merged).
  * BUG-071: Fix story.complete duration field naming (durationMs -> runElapsedMs).
  *
- * NOTE: After Phase 3 file split (refactor/code-audit), the implementation lives in:
- *   - parallel-coordinator.ts  -> executeParallel(), batch log, "Parallel execution complete"
- *   - parallel-worker.ts       -> ParallelBatchResult interface, executeParallelBatch()
- *   - parallel.ts              -> hub re-exporter only (no implementation)
+ * NOTE: The active parallel implementation lives in parallel-batch.ts and
+ * parallel-worker.ts. The retired parallel coordinator was removed by BUG-40.
  *   - plugins/extensions.ts    -> StoryCompleteEvent definition
  *   - plugins/types.ts         -> hub re-exporter only
  * Tests must read the canonical implementation files, not the hub files.
@@ -24,89 +22,7 @@ async function readSrc(relativePath: string): Promise<string> {
   return (await file.exists()) ? await file.text() : "";
 }
 
-// ---------------------------------------------------------------------------
-// BUG-068: "Parallel execution complete" must be logged exactly once
-// ---------------------------------------------------------------------------
-
-// BUG-068
-describe("'Parallel execution complete' log appears exactly once (no duplicate)", () => {
-  test("the log message appears exactly once across parallel-coordinator.ts and parallel-executor.ts", async () => {
-    const coordinatorSrc = await readSrc("execution/parallel-coordinator.ts");
-    // parallel-executor.ts was deleted as part of parallel-unify-001; its log was moved to parallel-batch.ts
-    const executorSrc = await readSrc("execution/parallel-executor.ts");
-
-    const combined = coordinatorSrc + executorSrc;
-    const occurrences = (combined.match(/Parallel execution complete/g) ?? []).length;
-
-    // Must be exactly 1 -- coordinator owns the log, executor must not duplicate it
-    // (executor may be deleted, in which case combined is just coordinator content)
-    expect(occurrences).toBeLessThanOrEqual(1);
-  });
-
-  test("parallel-coordinator.ts alone does not duplicate the log in both the merge loop and function return", async () => {
-    const src = await readSrc("execution/parallel-coordinator.ts");
-    const occurrences = (src.match(/Parallel execution complete/g) ?? []).length;
-
-    // coordinator may keep at most one occurrence
-    expect(occurrences).toBeLessThanOrEqual(1);
-  });
-
-  test("parallel-executor.ts alone does not duplicate the log in both the merge loop and function return", async () => {
-    // parallel-executor.ts was deleted as part of parallel-unify-001 (US-003)
-    // The log line moved to parallel-batch.ts inside the unified executor
-    const src = await readSrc("execution/parallel-executor.ts");
-    const occurrences = (src.match(/Parallel execution complete/g) ?? []).length;
-
-    // Deleted file returns empty string => 0 occurrences <= 1
-    expect(occurrences).toBeLessThanOrEqual(1);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// BUG-069: batch summary field semantics
-// ---------------------------------------------------------------------------
-
-// BUG-069
 describe("batch summary uses pipelinePassed and merged fields instead of successful", () => {
-  test("batch complete log uses 'pipelinePassed' field (not 'successful')", async () => {
-    // Batch log is in the coordinator (executeParallel implementation)
-    const src = await readSrc("execution/parallel-coordinator.ts");
-
-    // After fix: batch log must contain pipelinePassed
-    expect(src).toMatch(/pipelinePassed\s*:/);
-  });
-
-  test("batch complete log uses 'merged' field for actually-merged stories", async () => {
-    // Batch log is in the coordinator (executeParallel implementation)
-    const src = await readSrc("execution/parallel-coordinator.ts");
-
-    // After fix: batch log must contain merged
-    expect(src).toMatch(/\bmerged\s*:/);
-  });
-
-  test("batch complete log does NOT use raw 'successful' as a field key", async () => {
-    // Batch log is in the coordinator (executeParallel implementation)
-    const src = await readSrc("execution/parallel-coordinator.ts");
-
-    // The old field name must be gone from batch summary log
-    const batchLogMatch = src.match(/Batch.*?complete[\s\S]*?\{([\s\S]*?)\}/);
-    if (batchLogMatch) {
-      // The captured block inside the batch log object should not have a "successful:" key
-      expect(batchLogMatch[1]).not.toMatch(/\bsuccessful\s*:/);
-    } else {
-      // If we can't find the batch log block, check the whole file for the old field
-      expect(src).not.toMatch(/\bsuccessful\s*:\s*batchResult\.successfulStories/);
-    }
-  });
-
-  test("batch complete log uses 'mergeConflicts' field (not 'conflicts')", async () => {
-    // Batch log is in the coordinator (executeParallel implementation)
-    const src = await readSrc("execution/parallel-coordinator.ts");
-
-    // After fix: should use mergeConflicts not plain conflicts
-    expect(src).toMatch(/mergeConflicts\s*:/);
-  });
-
   test("ParallelBatchResult interface does not export 'successfulStories' at the top level", async () => {
     // ParallelBatchResult interface is defined in parallel-worker.ts after Phase 3 split
     const src = await readSrc("execution/parallel-worker.ts");

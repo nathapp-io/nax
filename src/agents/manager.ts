@@ -160,7 +160,11 @@ export class AgentManager implements IAgentManager {
     this._unavailable.clear();
     this._prunedFallback.clear();
   }
-
+  resetTransientUnavailable(): void {
+    for (const [agent, failure] of this._unavailable) {
+      if (failure.outcome !== "fail-auth" && failure.outcome !== "fail-quota") this._unavailable.delete(agent);
+    }
+  }
   async validateCredentials(): Promise<void> {
     const primary = this.getDefault();
     const map = (this._config.agent?.fallback?.map ?? {}) as Record<string, string[]>;

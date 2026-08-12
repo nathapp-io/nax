@@ -10,6 +10,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ReportersConfig } from "../config/schemas-reporters";
+import { NaxError } from "../errors";
 import { getSafeLogger as _getSafeLoggerFromModule } from "../logger";
 import { errorMessage } from "../utils/errors";
 import { validateModulePath } from "../utils/path-security";
@@ -280,15 +281,23 @@ export async function loadPlugins(
       [globalDir, projectDir, effectiveProjectRoot].filter(Boolean),
       entry.module,
     );
-    if (validated) {
-      if (pluginNames.has(validated.name)) {
-        logger?.warn("plugins", `Plugin name collision: '${validated.name}' (config entry overrides previous)`);
-      }
-      registerLoadedPlugin({
-        plugin: validated,
-        source: { type: "config", path: entry.module },
-      });
+    if (!validated) {
+      throw new NaxError(
+        `[plugins] Explicitly configured plugin failed to load: '${entry.module}'`,
+        "PLUGIN_LOAD_FAILED",
+        {
+          stage: "plugins",
+          module: entry.module,
+        },
+      );
     }
+    if (pluginNames.has(validated.name)) {
+      logger?.warn("plugins", `Plugin name collision: '${validated.name}' (config entry overrides previous)`);
+    }
+    registerLoadedPlugin({
+      plugin: validated,
+      source: { type: "config", path: entry.module },
+    });
   }
 
   return new PluginRegistry(loadedPlugins, builtinPostRunActions);
@@ -430,6 +439,9 @@ async function loadAndValidatePlugin(
     // Validate plugin shape
     const validated = validatePlugin(module);
     if (!validated) {
+      const msg = `Plugin validation failed for '${originalPath ?? initialModulePath}'`;
+      getSafeLogger()?.warn("plugins", msg);
+      _pluginErrorSink(`[plugins] ${msg}`);
       return null;
     }
 

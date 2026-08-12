@@ -268,7 +268,7 @@ export default {
     expect(tracker.absolutePath).toBe(true);
   });
 
-  test("missing plugin module from config.plugins[] logs clear error (does not crash runner)", async () => {
+  test("missing plugin module from config.plugins[] logs a clear error and fails fast", async () => {
     // Capture plugin error output via the swappable sink (Bun ESM caches console at import time)
     const errorLogs: string[] = [];
     _setPluginErrorSink((...args: unknown[]) => {
@@ -292,15 +292,14 @@ export default {
       expect(config.plugins).toBeDefined();
       expect(config.plugins).toHaveLength(1);
 
-      // Pass to loadPlugins (should not throw)
+      // Explicit config entries express operator intent and must fail fast.
       const globalPluginsDir = tempGlobalPluginsDir;
       const projectPluginsDir = path.join(naxDir, "plugins");
       const configPlugins = config.plugins || [];
 
-      const registry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, projectRoot);
-
-      // Should return empty registry (plugin failed to load)
-      expect(registry.plugins).toHaveLength(0);
+      await expect(
+        loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, projectRoot),
+      ).rejects.toMatchObject({ code: "PLUGIN_LOAD_FAILED" });
 
       // Verify helpful error was logged
       const errorOutput = errorLogs.join("\n");

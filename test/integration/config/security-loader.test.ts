@@ -39,14 +39,9 @@ describe("Loader Security (SEC-1, SEC-2)", () => {
     // Attempt to load from /etc/passwd (outside project/global roots)
     const configPlugins = [{ module: "/etc/passwd", config: {} }];
     
-    const registry = await loadPlugins(
-      globalPluginsDir,
-      projectPluginsDir,
-      configPlugins,
-      projectRoot
-    );
-
-    expect(registry.plugins).toHaveLength(0);
+    await expect(
+      loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, projectRoot),
+    ).rejects.toMatchObject({ code: "PLUGIN_LOAD_FAILED" });
     expect(capturedErrors.some(err => err.includes("Security: Path \"/etc/passwd\" is outside allowed roots"))).toBe(true);
   });
 
