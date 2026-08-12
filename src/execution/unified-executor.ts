@@ -251,7 +251,7 @@ export async function executeUnified(
           const storyStartMs = new Map<string, number>();
           for (const s of batch) storyStartMs.set(s.id, Date.now());
           for (const batchStory of batch) {
-            await _unifiedExecutorDeps.preIterationTierCheck(
+            const batchPre = await _unifiedExecutorDeps.preIterationTierCheck(
               batchStory,
               { modelTier: batchStory.routing?.modelTier ?? "balanced" },
               ctx.config,
@@ -263,6 +263,13 @@ export async function executeUnified(
               totalCost,
               ctx.workdir,
             );
+            if (batchPre.prdDirty) prdDirty = true;
+            if (batchPre.shouldSkipIteration) {
+              // Story escalated — reload PRD so runParallelBatch sees updated tier.
+              // Batch escalation semantics (escalateEntireBatch) are unchanged.
+              prd = await loadPRD(ctx.prdPath);
+              prdDirty = false;
+            }
           }
           const batchResult = await _unifiedExecutorDeps.runParallelBatch({
             stories: batch,
