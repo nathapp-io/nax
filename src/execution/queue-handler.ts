@@ -10,6 +10,7 @@ import path from "node:path";
 import { getLogger } from "../logger";
 import { parseQueueFile } from "../queue";
 import type { QueueCommand } from "../queue";
+import { withQueueFileLock } from "../utils/queue-file-lock";
 
 /**
  * Safely get logger instance, returns null if not initialized
@@ -51,33 +52,40 @@ export async function readQueueFile(workdir: string): Promise<QueueCommand[]> {
   const logger = getSafeLogger();
 
   try {
-    // Check if queue file exists
-    const file = Bun.file(queuePath);
-    const exists = await file.exists();
-    if (!exists) {
-      return [];
-    }
+    return await withQueueFileLock(queuePath, async () => {
+      const processingFile = Bun.file(processingPath);
+      if (await processingFile.exists()) {
+        return parseQueueFile(await processingFile.text()).commands;
+      }
 
-    // Atomically rename to .processing (prevents concurrent reads).
-    // Uses node:fs/promises rename (not a `mv` subprocess) — unlike a spawned
-    // `mv`, whose exit code we'd have to inspect manually, `rename()` rejects
-    // on failure so a genuine failure (permission denied, cross-device, the
-    // file already moved by another process) is always caught here.
-    try {
-      await rename(queuePath, processingPath);
-    } catch (error) {
-      logger?.warn("queue", "Failed to rename queue file for processing", {
-        error: (error as Error).message,
-      });
-      return [];
-    }
+      // Check if queue file exists
+      const file = Bun.file(queuePath);
+      const exists = await file.exists();
+      if (!exists) {
+        return [];
+      }
 
-    // Read from processing file
-    const processingFile = Bun.file(processingPath);
-    const content = await processingFile.text();
-    const result = parseQueueFile(content);
+      // Atomically rename to .processing (prevents concurrent reads).
+      // Uses node:fs/promises rename (not a `mv` subprocess) — unlike a spawned
+      // `mv`, whose exit code we'd have to inspect manually, `rename()` rejects
+      // on failure so a genuine failure (permission denied, cross-device, the
+      // file already moved by another process) is always caught here.
+      try {
+        await rename(queuePath, processingPath);
+      } catch (error) {
+        logger?.warn("queue", "Failed to rename queue file for processing", {
+          error: (error as Error).message,
+        });
+        return [];
+      }
 
-    return result.commands;
+      // Read from processing file
+      const claimedFile = Bun.file(processingPath);
+      const content = await claimedFile.text();
+      const result = parseQueueFile(content);
+
+      return result.commands;
+    });
   } catch (error) {
     logger?.warn("queue", "Failed to read queue file", {
       error: (error as Error).message,
@@ -100,14 +108,14 @@ export async function readQueueFile(workdir: string): Promise<QueueCommand[]> {
  * ```
  */
 export async function clearQueueFile(workdir: string): Promise<void> {
+  const queuePath = path.join(workdir, ".queue.txt");
   const processingPath = path.join(workdir, ".queue.txt.processing");
   const logger = getSafeLogger();
   try {
-    const file = Bun.file(processingPath);
-    const exists = await file.exists();
-    if (exists) {
-      await unlink(processingPath);
-    }
+    await withQueueFileLock(queuePath, async () => {
+      const file = Bun.file(processingPath);
+      if (await file.exists()) await unlink(processingPath);
+    });
   } catch (error) {
     logger?.warn("queue", "Failed to clear queue file", {
       error: (error as Error).message,

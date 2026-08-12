@@ -5,7 +5,9 @@
  * Used by the TUI to translate keyboard shortcuts into queue commands.
  */
 
+import { appendFile } from "node:fs/promises";
 import type { QueueCommand } from "../queue/types";
+import { withQueueFileLock } from "./queue-file-lock";
 
 /** Per-file write chains. Exported underscore-prefixed for test introspection only. */
 export const _writeChains = new Map<string, Promise<void>>();
@@ -61,11 +63,7 @@ export async function writeQueueCommand(queueFilePath: string, command: QueueCom
   // multiple commands are issued concurrently (e.g. rapid PAUSE + SKIP from TUI).
   const chain = _writeChains.get(queueFilePath) ?? Promise.resolve();
   const next = chain.then(async () => {
-    const existing = await Bun.file(queueFilePath)
-      .text()
-      .catch(() => "");
-    const content = existing ? `${existing.trimEnd()}\n${commandLine}\n` : `${commandLine}\n`;
-    await Bun.write(queueFilePath, content);
+    await withQueueFileLock(queueFilePath, () => appendFile(queueFilePath, `${commandLine}\n`, "utf8"));
   });
   const settled = next.catch(() => {});
   _writeChains.set(queueFilePath, settled);

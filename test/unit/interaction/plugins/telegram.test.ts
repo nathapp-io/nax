@@ -249,6 +249,102 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
     expect(response.value).toBe("option-b");
   });
 
+  test("one shared poll dispatches concurrent prompt responses to their matching receivers", async () => {
+    let interactive = false;
+    let updatePolls = 0;
+    _telegramPluginDeps.fetch = Object.assign(
+      async (url: string | URL | Request) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("sendMessage")) {
+          return new Response(JSON.stringify({ ok: true, result: { message_id: 12, chat: { id: 99999 } } }));
+        }
+        if (urlStr.includes("getUpdates")) {
+          if (!interactive) return new Response(JSON.stringify({ ok: true, result: [] }));
+          updatePolls++;
+          const result =
+            updatePolls === 1
+              ? [
+                  {
+                    update_id: 10,
+                    callback_query: {
+                      id: "cq-a",
+                      data: "tg-a:approve",
+                      message: { message_id: 12, chat: { id: 99999 } },
+                    },
+                  },
+                  {
+                    update_id: 11,
+                    callback_query: {
+                      id: "cq-b",
+                      data: "tg-b:reject",
+                      message: { message_id: 12, chat: { id: 99999 } },
+                    },
+                  },
+                ]
+              : [];
+          return new Response(JSON.stringify({ ok: true, result }));
+        }
+        return new Response(JSON.stringify({ ok: true }));
+      },
+      { preconnect: globalThis.fetch.preconnect },
+    );
+
+    const plugin = new TelegramInteractionPlugin();
+    await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
+    await plugin.send(makeConfirmRequest("tg-a"));
+    await plugin.send(makeConfirmRequest("tg-b"));
+    interactive = true;
+
+    const [first, second] = await Promise.all([plugin.receive("tg-a", 100), plugin.receive("tg-b", 100)]);
+
+    expect(first.action).toBe("approve");
+    expect(second.action).toBe("reject");
+    expect(updatePolls).toBe(1);
+  });
+
+  test("buffers a prompt response fetched before that prompt calls receive", async () => {
+    let interactive = false;
+    _telegramPluginDeps.fetch = Object.assign(
+      async (url: string | URL | Request) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("sendMessage")) {
+          return new Response(JSON.stringify({ ok: true, result: { message_id: 13, chat: { id: 99999 } } }));
+        }
+        if (urlStr.includes("getUpdates")) {
+          const result = interactive
+            ? [
+                {
+                  update_id: 20,
+                  callback_query: {
+                    id: "cq-b",
+                    data: "tg-late-b:reject",
+                    message: { message_id: 13, chat: { id: 99999 } },
+                  },
+                },
+              ]
+            : [];
+          interactive = false;
+          return new Response(JSON.stringify({ ok: true, result }));
+        }
+        return new Response(JSON.stringify({ ok: true }));
+      },
+      { preconnect: globalThis.fetch.preconnect },
+    );
+
+    const plugin = new TelegramInteractionPlugin();
+    await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
+    await plugin.send(makeConfirmRequest("tg-a"));
+    await plugin.send(makeConfirmRequest("tg-late-b"));
+    interactive = true;
+
+    const firstReceiver = plugin.receive("tg-a", 30);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const secondReceiver = plugin.receive("tg-late-b", 30);
+
+    expect((await secondReceiver).action).toBe("reject");
+    expect((await firstReceiver).action).toBe("skip");
+  });
+
   test("BUG-48: receive() matches a callback_query built from a long (truncated) request id", async () => {
     // A long id (e.g. a UUID-prefixed story/request id) means buildKeyboard()
     // truncates the id in callback_data to stay within Telegram's 64-byte

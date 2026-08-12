@@ -62,6 +62,26 @@ describe("writeQueueCommand", () => {
     // Once settled with no newer write queued, the entry is evicted.
     expect(_writeChains.has(queueFile)).toBe(false);
   });
+
+  test("recovers an ownership lock left by a crashed writer", async () => {
+    const orphan = `${queueFile}.lock.0000000000001.2147483647.orphan`;
+    await Bun.write(orphan, "");
+
+    await writeQueueCommand(queueFile, { type: "PAUSE" });
+
+    expect(parseQueueFile(await Bun.file(queueFile).text()).commands).toEqual([{ type: "PAUSE" }]);
+    expect(await Bun.file(orphan).exists()).toBe(false);
+  });
+
+  test("expires an old ownership lock even when its PID has been reused", async () => {
+    const orphan = `${queueFile}.lock.0000000000001.${process.pid}.reused`;
+    await Bun.write(orphan, "");
+
+    await writeQueueCommand(queueFile, { type: "ABORT" });
+
+    expect(parseQueueFile(await Bun.file(queueFile).text()).commands).toEqual([{ type: "ABORT" }]);
+    expect(await Bun.file(orphan).exists()).toBe(false);
+  });
 });
 
 describe("writeRetryCommand", () => {
