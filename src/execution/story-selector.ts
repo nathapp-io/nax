@@ -22,24 +22,28 @@ export interface StorySelection {
 const DEFAULT_MAX_STORY_RETRIES = 12;
 
 /**
- * Resolve lastStoryId to its story only when that story is genuinely
- * retry-eligible (BUG-39) — a `status === "failed"` story with attempts
- * remaining, or a resumable in-flight `"pending"` story. Returns null
- * otherwise, including when getNextStory falls back to its own normal
- * eligible-pool selection and returns some *other* story: that's not a
- * retry, so callers must not treat it as one.
+ * Resolve lastStoryId to its story only when it needs the pre-empt this
+ * powers (BUG-39): specifically a `status === "failed"` story with attempts
+ * remaining. Deliberately narrower than getNextStory's own resumability
+ * check, which also treats an escalated-but-still-`"pending"` story as
+ * retryable — that class was never excluded by the batch-plan filter or by
+ * selectIndependentBatch (both only exclude `"failed"`), so pre-empting for
+ * it bought nothing and instead silently downgraded a multi-story batch to
+ * one-story-at-a-time dispatch after its first escalation. A `"pending"`
+ * story's own existing retry path (getNextStory's single-story fallback,
+ * reached without going through this function) is untouched.
  *
  * Shared by selectNextStories (single-story fallback + batch-plan pre-empt)
  * and unified-executor.ts's parallel-dispatch branch (pre-empting
  * selectIndependentBatch, which has no id-based override and excludes
  * "failed" stories outright) — both need the identical "is this really a
- * retry" check.
+ * failed-story retry" check.
  */
 export function resolveRetryCandidate(prd: PRD, lastStoryId: string | null, config: NaxConfig): UserStory | null {
   if (lastStoryId == null) return null;
   const maxRetries = config.execution.rectification?.maxAttemptsTotal ?? DEFAULT_MAX_STORY_RETRIES;
   const story = getNextStory(prd, lastStoryId, maxRetries);
-  return story?.id === lastStoryId ? story : null;
+  return story?.id === lastStoryId && story.status === "failed" ? story : null;
 }
 
 /**

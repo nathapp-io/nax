@@ -298,4 +298,37 @@ describe("selectNextStories — retry priority under useBatch:true (BUG-39)", ()
     expect(result?.selection.storiesToExecute.map((s) => s.id)).toEqual(["s2", "s3"]);
     expect(result?.nextBatchIndex).toBe(1);
   });
+
+  test("an escalated-but-pending lastStoryId does not collapse a multi-story batch either", () => {
+    // resolveRetryCandidate is deliberately narrower than getNextStory's own
+    // resumability check: it only pre-empts for status:"failed". A story that
+    // was escalated (handleTierEscalation leaves it "pending" with a non-empty
+    // escalations[]) is also "resumable" per isResumableCurrentStory, but was
+    // never excluded by the batch-plan filter or selectIndependentBatch (both
+    // only exclude "failed") — so pre-empting for it bought nothing and would
+    // silently downgrade the whole batch to one-story-at-a-time dispatch after
+    // the first escalation.
+    const escalated = makeStory({
+      id: "s1",
+      status: "pending",
+      attempts: 1,
+      escalations: [{ fromTier: "fast", toTier: "balanced", reason: "test", timestamp: new Date().toISOString() }],
+    });
+    const a = makeStory({
+      id: "s2",
+      status: "pending",
+      routing: { complexity: "simple", testStrategy: "test-after", modelTier: "fast", reasoning: "" },
+    });
+    const b = makeStory({
+      id: "s3",
+      status: "pending",
+      routing: { complexity: "simple", testStrategy: "test-after", modelTier: "fast", reasoning: "" },
+    });
+    const prd = makePRD({ userStories: [escalated, a, b] });
+    const batch: StoryBatch[] = [{ stories: [escalated, a, b], isBatch: true }];
+    const result = selectNextStories(prd, DEFAULT_CONFIG, batch, 0, "s1", true);
+
+    expect(result?.selection.isBatchExecution).toBe(true);
+    expect(result?.selection.storiesToExecute.map((s) => s.id)).toEqual(["s1", "s2", "s3"]);
+  });
 });
