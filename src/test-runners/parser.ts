@@ -183,20 +183,16 @@ function parseBunOutput(output: string): TestSummary {
 /**
  * Parse Jest / Vitest test output.
  *
- * Jest summary line examples:
- *   "Tests:       41 failed, 38 passed, 79 total"
- *   "Tests:       38 passed, 38 total"
- *
- * Vitest summary line examples:
- *   "Test Files  1 failed | 2 passed (3)"
+ * Jest: "Tests:       41 failed, 38 passed, 79 total" (colon-suffixed)
+ * Vitest: "     Tests  41 failed, 38 passed, 79 total" (no colon)
  */
 function parseJestOutput(output: string): TestSummary {
   const failures: TestFailure[] = [];
   let passed = 0;
   let failed = 0;
 
-  // Extract counts from the "Tests:" summary line (use the last occurrence)
-  const summaryMatches = Array.from(output.matchAll(/^\s*Tests:\s+(.*)/gm));
+  // Colon is optional — matches both Jest's "Tests:" and Vitest's "Tests" (no colon).
+  const summaryMatches = Array.from(output.matchAll(/^\s*Tests:?\s+(.*)/gm));
   if (summaryMatches.length > 0) {
     const summaryLine = summaryMatches[summaryMatches.length - 1][1];
     const failedMatch = summaryLine.match(/(\d+)\s+failed/);
