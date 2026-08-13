@@ -391,18 +391,18 @@ describe("scoreEffectiveness (AC7)", () => {
 
 describe("scoreEffectiveness (AC8)", () => {
   test("[AC8] sizeCorrelation absolute value < 0.2 when followed is evenly distributed across diff lengths", () => {
-    // Interleave followed/ignored across short/medium/long diffs so the
+    // Followed spans short/medium/long without a monotonic size bias, so the
     // Spearman rank correlation between diff size and 'followed' is ~0.
     const cases: LabelCase[] = [
       makeCase({ caseId: "1", label: "followed", diffText: "x".repeat(100) }),
       makeCase({ caseId: "2", label: "ignored", diffText: "x".repeat(200) }),
       makeCase({ caseId: "3", label: "followed", diffText: "x".repeat(300) }),
       makeCase({ caseId: "4", label: "ignored", diffText: "x".repeat(400) }),
-      makeCase({ caseId: "5", label: "followed", diffText: "x".repeat(500) }),
-      makeCase({ caseId: "6", label: "ignored", diffText: "x".repeat(600) }),
+      makeCase({ caseId: "5", label: "ignored", diffText: "x".repeat(500) }),
+      makeCase({ caseId: "6", label: "followed", diffText: "x".repeat(600) }),
     ];
     const classifier: Classifier = (c) => {
-      if (c.caseId === "1" || c.caseId === "3" || c.caseId === "5") return "followed";
+      if (c.caseId === "1" || c.caseId === "3" || c.caseId === "6") return "followed";
       return "ignored";
     };
     const report = scoreEffectiveness(cases, classifier);
@@ -417,10 +417,10 @@ describe("scoreEffectiveness (AC8)", () => {
     const cases: LabelCase[] = [
       makeCase({ caseId: "1", label: "followed", diffText: "x".repeat(50) }),
       makeCase({ caseId: "2", label: "ignored", diffText: "x".repeat(150) }),
-      makeCase({ caseId: "3", label: "followed", diffText: "x".repeat(250) }),
-      makeCase({ caseId: "4", label: "ignored", diffText: "x".repeat(350) }),
+      makeCase({ caseId: "3", label: "ignored", diffText: "x".repeat(250) }),
+      makeCase({ caseId: "4", label: "followed", diffText: "x".repeat(350) }),
     ];
-    const classifier: Classifier = (c) => (c.caseId === "1" || c.caseId === "3" ? "followed" : "ignored");
+    const classifier: Classifier = (c) => (c.caseId === "1" || c.caseId === "4" ? "followed" : "ignored");
     const report = scoreEffectiveness(cases, classifier);
     expect(Math.abs(report.sizeCorrelation)).toBeLessThan(0.2);
   });

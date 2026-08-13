@@ -10,7 +10,7 @@ import {
   _manifestStoreDeps,
   loadContextManifests,
   writeContextManifest,
-} from "@/context/engine/manifest-store";
+} from "@/context/engine";
 import type { ContextManifest } from "@/context/engine/types";
 import { withDepsRestore } from "@test/helpers";
 
