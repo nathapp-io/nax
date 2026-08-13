@@ -3,7 +3,7 @@
   "feature": "effectiveness-scoring-loop",
   "branchName": "feat/effectiveness-scoring-loop",
   "createdAt": "2026-08-13T11:45:22.000Z",
-  "updatedAt": "2026-08-13T12:37:22.887Z",
+  "updatedAt": "2026-08-13T14:25:35.353Z",
   "userStories": [
     {
       "id": "US-001",
@@ -144,8 +144,8 @@
         "algorithm"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -209,17 +209,28 @@
       "status": "pending",
       "passes": false,
       "attempts": 0,
-      "escalations": [],
+      "escalations": [
+        {
+          "fromTier": "powerful",
+          "toTier": "balanced",
+          "fromAgent": "pi",
+          "toAgent": "claude",
+          "reason": "TDD tests-failing",
+          "timestamp": "2026-08-13T14:25:33.317Z"
+        }
+      ],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "This crosses scoring, request transport, orchestration, and the production stage DI seam while preserving floor-policy behavior.",
         "agentProfileId": "pi-medium-balanced",
-        "agent": "pi",
+        "agent": "claude",
         "profileModelTier": "powerful",
         "initialAgent": "pi",
         "initialProfileId": "pi-medium-balanced",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/context/engine/scoring.ts",
@@ -232,9 +243,23 @@
         "test/unit/context/engine/scoring-effectiveness-weight.test.ts",
         "test/unit/pipeline/stages/context-provider-weights.test.ts"
       ],
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: powerful: TDD tests-failing"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "powerful",
+          "stage": "escalation",
+          "summary": "Tier powerful [tests-failing]: TDD tests-failing",
+          "cost": 0.7465029999999999,
+          "timestamp": "2026-08-13T14:25:33.317Z",
+          "agent": "pi",
+          "agentProfileId": "pi-medium-balanced"
+        }
+      ],
       "storyPoints": 1,
+      "storyGitRef": "f79e8e6919d45df7c8c0bd7c102e869ded6a8944",
       "outOfScope": [
         "US-004 only: clamping or validating weights at the consumption site — `deriveProviderWeights` owns the clamp, and the scorer applies whatever mapping it is given."
       ]

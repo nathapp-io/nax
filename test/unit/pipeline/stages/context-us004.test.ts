@@ -16,10 +16,6 @@
  *       with config.context.v2.enabled true, then it is invoked with the
  *       pipeline context feature ID.
  *
- * The current stub calls both deps (so AC7 and AC10 pass) but does NOT yet
- * apply weights in scoreChunk, so AC8 fails — the recorded score is the same
- * regardless of weight.
- *
  * Stub strategy:
  *   - loadFeatureManifests → returns an empty manifest list so deriveProviderWeights
  *     always has known input.
@@ -28,7 +24,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import type { ContextBundle, ContextRequest, ContextManifest, StoredContextManifest } from "@/context/engine";
+import type { ContextBundle, ContextRequest, ContextManifest, IContextProvider, StoredContextManifest } from "@/context/engine";
+import { ContextOrchestrator } from "@/context/engine";
 import { _contextStageDeps, contextStage } from "@/pipeline/stages";
 import type { PipelineContext } from "@/pipeline/types";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
@@ -202,20 +199,17 @@ describe("contextStage — deriveProviderWeights invocation (AC7)", () => {
 
 describe("contextStage — written manifest reflects lower weight (AC8)", () => {
   /**
-   * Build a context stage stub that:
-   *   - calls a real-shaped orchestrator that runs `scoreChunks` against the
-   *     one chunk in the bundle so the resulting manifest records the actual
-   *     score on the chunk id (not the placeholder `includedChunks.length`);
-   *   - then returns a bundle whose manifest lists the chunk id with the
-   *     scored value carried over.
+   * AC8 is end-to-end: it must verify the production orchestrator + manifest
+   * writing path persists a weighted score, not a fabricated stub.
    *
-   * To keep the test hermetic, we run scoreChunks manually inside the stub
-   * (not the real orchestrator) — this exercises the production scoring code
-   * path against the weights supplied by `deriveProviderWeights`.
+   * The context stage is invoked twice — once with deriveProviderWeights
+   * returning 1.0 for the neighbor provider, once returning 0.2 — and the test
+   * reads the score recorded on the real bundle the real ContextOrchestrator
+   * produces. The bundle's chunks array is what buildManifest() walks to
+   * populate chunkTokens / chunkProviders / chunkSummaries on the manifest;
+   * a score field on the manifest would be populated from the same source.
    */
-
   test("AC8: low-weight run records a score strictly lower than weight-1.0 run for a non-floor provider", async () => {
-    const { scoreChunks } = await import("@/context/engine");
     const chunkRecord = {
       id: "code-neighbor:file-x",
       kind: "neighbor" as const,
@@ -224,63 +218,70 @@ describe("contextStage — written manifest reflects lower weight (AC8)", () => 
       content: "stub neighbor content",
       tokens: 100,
       rawScore: 0.5,
-      providerId: "code-neighbor",
     };
 
-    // Stub the orchestrator so each contextStage.execute run scores the chunk
-    // under whatever weight deriveProviderWeights hands back; the recorded
-    // score on the bundle's chunks array is what the production orchestrator
-    // would write. We mirror that into the manifest's includedChunks list so
-    // the AC8 invariant ("records the chunk") holds end-to-end.
-    function buildStubOrchestrator() {
-      return async (req: ContextRequest) => {
-        const weights = req.providerWeights;
-        const [scored] = scoreChunks([chunkRecord], "implementer", undefined, weights);
-        return makeBundle(
-          { includedChunks: [scored.id] },
-          { [scored.id]: scored.score },
-          [
-            {
-              ...scored,
-              providerId: chunkRecord.providerId,
-            },
-          ],
-        );
-      };
-    }
+    // Real-shaped provider that returns the test chunk. The orchestrator
+    // stamps providerId onto the chunk before scoring.
+    const provider: IContextProvider = {
+      id: "code-neighbor",
+      kind: "neighbor",
+      fetch: async () => ({ chunks: [chunkRecord], pullTools: [] }),
+    };
+
+    // The "context" stage's provider allowlist (PHASE_3_EXECUTION in
+    // stage-config.ts) includes several other provider IDs; the orchestrator
+    // throws CONTEXT_UNKNOWN_PROVIDER_IDS for any allowlisted ID that has no
+    // registered provider. Register empty stubs for the rest so only
+    // "code-neighbor" contributes chunks.
+    const emptyProviderIds = ["static-rules", "feature-context", "session-scratch", "git-history", "test-coverage"];
+    const emptyProviders: IContextProvider[] = emptyProviderIds.map((id) => ({
+      id,
+      kind: "static",
+      fetch: async () => ({ chunks: [], pullTools: [] }),
+    }));
 
     _contextStageDeps.readDigest = async () => "";
     _contextStageDeps.writeDigest = async () => {};
     _contextStageDeps.uuid = () =>
       "stub-uuid-us004-low-weight" as `${string}-${string}-${string}-${string}-${string}`;
     _contextStageDeps.loadFeatureManifests = (async () => []) as typeof _contextStageDeps.loadFeatureManifests;
-    _contextStageDeps.createOrchestrator = () =>
-      ({
-        assemble: buildStubOrchestrator(),
-        rebuildForAgent: () => makeBundle(),
-      }) as unknown as ReturnType<typeof _contextStageDeps.createOrchestrator>; // test-ratchet-allow: as-unknown-as
+    _contextStageDeps.createOrchestrator = () => new ContextOrchestrator([provider, ...emptyProviders]);
 
-    // Run #1: deriveProviderWeights returns 1.0 for the neighbor provider.
-    _contextStageDeps.deriveProviderWeights = (() => ({ "code-neighbor": 1.0 })) as typeof _contextStageDeps.deriveProviderWeights;
-    const ctx1 = makeCtx({ sessionId: "sess-weight-1" });
-    await contextStage.execute(ctx1);
-    const bundleWithUnitWeight = ctx1.contextBundle;
-    expect(bundleWithUnitWeight).toBeDefined();
-    expect(bundleWithUnitWeight?.manifest.includedChunks).toContain(chunkRecord.id);
-    const scoreWithUnitWeight = bundleWithUnitWeight?.chunks.find((c) => c.id === chunkRecord.id)?.score;
+    // Helper that runs the context stage with the supplied weight and returns
+    // the production bundle (real orchestrator path — no fabrication).
+    async function runWithWeight(weight: number): Promise<ContextBundle> {
+      _contextStageDeps.deriveProviderWeights = (() => ({
+        "code-neighbor": weight,
+      })) as typeof _contextStageDeps.deriveProviderWeights;
+      const ctx = makeCtx({ sessionId: `sess-weight-${weight}` });
+      await contextStage.execute(ctx);
+      if (!ctx.contextBundle) throw new Error("contextStage did not produce a bundle");
+      return ctx.contextBundle;
+    }
+
+    // Run #1: weight 1.0 for the neighbor provider.
+    const bundleUnitWeight = await runWithWeight(1.0);
+    // The manifest records the chunk in includedChunks (so a downstream consumer
+    // can find it via the per-chunk carrier fields the implementer adds).
+    expect(bundleUnitWeight.manifest.includedChunks).toContain(chunkRecord.id);
+    // The production orchestrator scores the chunk and stamps the result on
+    // bundle.chunks (what buildManifest walks). Verify the score source.
+    const scoreWithUnitWeight = bundleUnitWeight.chunks.find((c) => c.id === chunkRecord.id)?.score;
     expect(scoreWithUnitWeight).toBeDefined();
 
-    // Run #2: deriveProviderWeights returns 0.2 for the neighbor provider.
-    _contextStageDeps.deriveProviderWeights = (() => ({ "code-neighbor": 0.2 })) as typeof _contextStageDeps.deriveProviderWeights;
-    const ctx2 = makeCtx({ sessionId: "sess-weight-low" });
-    await contextStage.execute(ctx2);
-    const bundleWithLowWeight = ctx2.contextBundle;
-    expect(bundleWithLowWeight).toBeDefined();
-    expect(bundleWithLowWeight?.manifest.includedChunks).toContain(chunkRecord.id);
-    const scoreWithLowWeight = bundleWithLowWeight?.chunks.find((c) => c.id === chunkRecord.id)?.score;
+    // Run #2: a lower (but not minScore-crossing) weight for the neighbor
+    // provider. rawScore 0.5 * kindWeight 0.75 * weight must stay >= MIN_SCORE
+    // (0.1) so the chunk remains included — AC6 (exclusion below minScore) is
+    // covered separately; this test isolates the score-lowering effect.
+    const bundleLowWeight = await runWithWeight(0.5);
+    expect(bundleLowWeight.manifest.includedChunks).toContain(chunkRecord.id);
+    const scoreWithLowWeight = bundleLowWeight.chunks.find((c) => c.id === chunkRecord.id)?.score;
     expect(scoreWithLowWeight).toBeDefined();
 
-    // AC8: under a low weight the manifest records a strictly lower score.
+    // AC8: under a low weight the production-scored chunk records a strictly
+    // lower score. This exercises ContextOrchestrator.assemble → scoreChunks →
+    // scoreChunk, so the assertion fails until scoreChunk applies the keyed
+    // weight.
     expect(scoreWithLowWeight as number).toBeLessThan(scoreWithUnitWeight as number);
   });
 });
