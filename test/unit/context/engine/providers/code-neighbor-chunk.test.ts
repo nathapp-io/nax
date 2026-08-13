@@ -260,13 +260,37 @@ describe("assembleCodeNeighborChunk — truncation contract (AC2: scope only wha
 
   test("first section is always included even when it would exceed the cap (atomic inclusion)", () => {
     // A single section that itself exceeds the 2000-char cap. The chunk
-    // still emits a result with that section's paths in scopePaths — the
-    // cap slices the body but never drops the only section.
+    // still emits a result with the section in the body — the cap slices
+    // the body but never drops the only section. Per AC2, however, the
+    // sliced neighbour (whose full form is not in chunk.content) is
+    // excluded from scopePaths; only the section's file path (which lives
+    // in the section header and fits inside the slice) is kept.
     const hugeSection = "n".repeat(3000);
     const sections: NeighborSection[] = [{ file: "src/only.ts", neighbors: [hugeSection] }];
     const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 }) as RawChunk;
     expect(chunk.content.length).toBeLessThanOrEqual(2000);
-    expect(chunk.scopePaths).toEqual(["src/only.ts", hugeSection]);
+    expect(chunk.scopePaths).toEqual(["src/only.ts"]);
+  });
+
+  test("scopePaths excludes a neighbour that was sliced mid-name (AC2: only fully-rendered paths are scoped)", () => {
+    // Section with two neighbours where the second is sliced mid-name.
+    // Section rendering: `### src/multi.ts\n- src/multi/a.ts\n- src/multi/b.ts`
+    // Make the second neighbour so long that the cap slice cuts through
+    // its name. The first neighbour is fully in the body; the second's
+    // full form is not.
+    const longB = "src/multi/b/" + "x".repeat(2000);
+    const sections: NeighborSection[] = [
+      { file: "src/multi.ts", neighbors: ["src/multi/a.ts", longB] },
+    ];
+    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 }) as RawChunk;
+    expect(chunk.content.length).toBeLessThanOrEqual(2000);
+    // file is fully in body (it's in the section header which fits inside
+    // the slice), first neighbour is fully in body, second is sliced.
+    expect(chunk.scopePaths).toEqual(["src/multi.ts", "src/multi/a.ts"]);
+    // The sliced neighbour's full form is NOT in scopePaths.
+    expect(chunk.scopePaths).not.toContain(longB);
+    // Sanity: the sliced neighbour is also not in chunk.content in full.
+    expect(chunk.content.includes(longB)).toBe(false);
   });
 });
 

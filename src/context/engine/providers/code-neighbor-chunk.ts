@@ -71,34 +71,6 @@ export function contentHash8(content: string): string {
   return createHash("sha256").update(content).digest("hex").slice(0, 8);
 }
 
-/**
- * Build the deduped `scopePaths` list for a set of sections.
- *
- * Order is preserved by first-occurrence: each section contributes its
- * touched file first, then each neighbour in declaration order. A neighbour
- * already seen in an earlier section is skipped, satisfying AC4 (shared
- * neighbour across two touched files appears exactly once).
- *
- * Pure / stateless — exposed so tests and the provider can share one
- * implementation of the dedup rule.
- */
-export function buildScopePaths(sections: readonly NeighborSection[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const section of sections) {
-    if (!seen.has(section.file)) {
-      seen.add(section.file);
-      out.push(section.file);
-    }
-    for (const neighbor of section.neighbors) {
-      if (seen.has(neighbor)) continue;
-      seen.add(neighbor);
-      out.push(neighbor);
-    }
-  }
-  return out;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // assembleCodeNeighborChunk
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,13 +90,16 @@ export function buildScopePaths(sections: readonly NeighborSection[]): string[] 
  *   - the visible truncation note when `truncated === true`
  *
  * Truncation contract (US-002 AC2): `scopePaths` must list ONLY the paths
- * whose sections actually appear in `chunk.content`. Sections are added
- * atomically — a section that would push the body over the cap is dropped
- * entirely (never sliced mid-section) so the chunk never claims scope over
- * a path whose section is absent from the rendered body. The first section
- * is always included so the chunk emits at least the header + something;
- * subsequent sections must fit atomically. Mirrors the git-history
- * truncation pattern (US-001).
+ * whose full form appears in `chunk.content`.
+ *   1. Whole sections that would overflow the cap are dropped atomically
+ *      (never sliced mid-section) — their paths are absent from the body.
+ *   2. The first section is always included so the chunk emits at least
+ *      the header + something; if its rendered length exceeds the cap the
+ *      body is sliced mid-section. Neighbour paths sliced by that cut
+ *      are excluded from `scopePaths` (their full form is not in the
+ *      body), while the section's file path is kept (it lives in the
+ *      section header which fits inside the slice).
+ * Mirrors the git-history truncation pattern (US-001).
  */
 export function assembleCodeNeighborChunk(input: AssembleCodeNeighborChunkInput): RawChunk | null {
   const { sections, truncated, maxGlobFiles } = input;
@@ -135,9 +110,8 @@ export function assembleCodeNeighborChunk(input: AssembleCodeNeighborChunkInput)
   const maxChars = MAX_CHUNK_TOKENS * 4;
 
   // Build the body incrementally, dropping sections that would push the
-  // total past the cap. `includedSections` is the SSOT for both content
-  // and scopePaths — anything not included here is invisible to the
-  // downstream consumer.
+  // total past the cap. `includedSections` records which sections were
+  // admitted into the body so the second pass can resolve scopePaths.
   const accumulatedParts: string[] = [`${header}${SECTION_SEPARATOR}`];
   let accumulatedLength = header.length + SECTION_SEPARATOR.length;
   const includedSections: NeighborSection[] = [];
@@ -160,6 +134,27 @@ export function assembleCodeNeighborChunk(input: AssembleCodeNeighborChunkInput)
   const content = body + truncationNote;
   const tokens = Math.ceil(content.length / 4);
 
+  // Resolve scopePaths to only those paths whose full form is rendered in
+  // the (possibly sliced) body. A path that was sliced mid-name is absent
+  // — its full form is not in chunk.content, so it doesn't qualify as
+  // "rendered in the chunk body" (AC2). Dedup by first-occurrence per the
+  // existing AC4 contract.
+  const scopePaths: string[] = [];
+  const seen = new Set<string>();
+  for (const section of includedSections) {
+    if (!seen.has(section.file) && body.includes(section.file)) {
+      seen.add(section.file);
+      scopePaths.push(section.file);
+    }
+    for (const neighbor of section.neighbors) {
+      if (seen.has(neighbor)) continue;
+      if (body.includes(neighbor)) {
+        seen.add(neighbor);
+        scopePaths.push(neighbor);
+      }
+    }
+  }
+
   return {
     id: `code-neighbor:${contentHash8(content)}`,
     kind: "neighbor",
@@ -168,6 +163,6 @@ export function assembleCodeNeighborChunk(input: AssembleCodeNeighborChunkInput)
     content,
     tokens,
     rawScore: 0.65,
-    scopePaths: buildScopePaths(includedSections),
+    scopePaths,
   };
 }
