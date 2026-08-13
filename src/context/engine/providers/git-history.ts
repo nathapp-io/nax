@@ -125,22 +125,42 @@ export class GitHistoryProvider implements IContextProvider {
       return { chunks: [], pullTools: [] };
     }
 
+    // US-001 (truncation contract): scopePaths must list ONLY the files
+    // whose sections actually appear in chunk.content. If the combined
+    // history exceeds MAX_CHUNK_TOKENS, later sections are dropped
+    // entirely (added atomically — never sliced mid-section) so the chunk
+    // never claims scope over a file whose history it has truncated away.
+    //
     // Preserve the declared touchedFiles order for both sections and
     // scopePaths — concurrent fetchFileHistory completion order is not
     // guaranteed to match input order, but AC2 requires the chunk's
     // scopePaths list to mirror the order files were declared in
     // touchedFiles. fileSections was built via map() over filesToProcess
     // so its order already matches the declaration order.
-    const sections = fileSections.map((entry) => entry.section);
-    const scopePaths = fileSections.map((entry) => entry.file);
-
     const header = "## Recent Git History\n\nCommits touching story files:";
-    const rawContent = `${header}\n\n${sections.join("\n\n")}`;
-
-    // Cap content to avoid overrunning token budget
     const maxChars = MAX_CHUNK_TOKENS * 4;
-    const content = rawContent.length > maxChars ? rawContent.slice(0, maxChars) : rawContent;
+    const SECTION_SEPARATOR = "\n\n";
+    const accumulatedParts: string[] = [`${header}${SECTION_SEPARATOR}`];
+    let accumulatedLength = header.length + SECTION_SEPARATOR.length;
+    const includedFileSections: Array<{ file: string; section: string }> = [];
+    for (const entry of fileSections) {
+      // Cost to add this section: a trailing separator (except for the very
+      // first section that follows the header — the header already ends in
+      // SECTION_SEPARATOR) plus the section text.
+      const separatorCost = includedFileSections.length === 0 ? 0 : SECTION_SEPARATOR.length;
+      const candidateLength = accumulatedLength + separatorCost + entry.section.length;
+      // First section is always included so the chunk emits at least the
+      // header + something; subsequent sections must fit within the cap
+      // atomically.
+      if (includedFileSections.length > 0 && candidateLength > maxChars) break;
+      if (separatorCost > 0) accumulatedParts.push(SECTION_SEPARATOR);
+      accumulatedParts.push(entry.section);
+      accumulatedLength = candidateLength;
+      includedFileSections.push(entry);
+    }
+    const content = accumulatedParts.join("").slice(0, maxChars);
     const tokens = Math.ceil(content.length / 4);
+    const scopePaths = includedFileSections.map((entry) => entry.file);
 
     const chunk: RawChunk = {
       id: `git-history:${contentHash8(content)}`,

@@ -335,6 +335,29 @@ describe("GitHistoryProvider — US-001 scope attribution", () => {
     const result = await provider.fetch(makeRequest({ touchedFiles: ["src/a.ts", "src/b.ts"] }));
     expect(result.chunks[0]?.scopePaths).toEqual(["src/a.ts", "src/b.ts"]);
   });
+
+  test("scopePaths excludes a file whose section was truncated away from chunk.content", async () => {
+    // Two files with sections large enough that the second one is dropped
+    // by the MAX_CHUNK_TOKENS cap. The chunk must NOT claim scope over the
+    // truncated file — its section is absent from chunk.content.
+    // Each section is `### <path>\n` (14 chars) + 1800 chars of log output
+    // (~1814 chars). Header + "\n\n" is ~52 chars. The first section
+    // (~1814) fits under the 2400-char cap; the second pushes the total
+    // above the cap and must be excluded entirely.
+    const bigStdout = "x".repeat(1800);
+    mockGit(
+      new Map([
+        ["src/a.ts", { stdout: bigStdout, exitCode: 0 }],
+        ["src/b.ts", { stdout: bigStdout, exitCode: 0 }],
+      ]),
+    );
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/a.ts", "src/b.ts"] }));
+    expect(result.chunks).toHaveLength(1);
+    // The chunk's content was capped — src/b.ts's section is absent.
+    expect(result.chunks[0]?.content).not.toContain("src/b.ts");
+    // Therefore src/b.ts must NOT appear in scopePaths.
+    expect(result.chunks[0]?.scopePaths).toEqual(["src/a.ts"]);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
