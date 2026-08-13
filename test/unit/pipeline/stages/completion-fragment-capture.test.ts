@@ -401,3 +401,43 @@ describe("completionStage — fragment capture on re-run (AC8)", () => {
     });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC6 (rectification) — getDiffFilePaths reads `--name-only` output in full.
+// The semantic reviewer flagged that a 1 MiB character cap on the --name-only
+// stream drops paths past the prefix, breaking AC6's "every changed file"
+// contract. This test proves the read is bounded by file count, not content.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("completionStage — getDiffFilePaths reads --name-only output in full (AC6)", () => {
+  test("retains every path when --name-only output exceeds MAX_DIFF_TEXT_CHARS (1 MiB)", async () => {
+    const encoder = new TextEncoder();
+    // 60,000 paths × 18 chars ≈ 1.08 MiB — past the 1 MiB diff-text cap. A
+    // capped read would drop every path after ~58,250 lines; the full read
+    // keeps all 60,000.
+    const pathCount = 60_000;
+    const output = Array.from({ length: pathCount }, (_, i) => `src/file-${i.toString().padStart(5, "0")}.ts\n`).join("");
+    expect(output.length).toBeGreaterThan(1_048_576);
+
+    _completionDeps.spawn = (() => ({
+      stdout: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(output));
+          controller.close();
+        },
+      }),
+      stderr: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      exited: Promise.resolve(0),
+    })) as unknown as typeof _completionDeps.spawn;
+
+    const paths = await _completionDeps.getDiffFilePaths("/repo", "base-ref");
+
+    expect(paths.size).toBe(pathCount);
+    expect(paths.has("src/file-00000.ts")).toBe(true);
+    expect(paths.has(`src/file-${pathCount - 1}.ts`)).toBe(true);
+  });
+});

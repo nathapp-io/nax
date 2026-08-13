@@ -299,7 +299,11 @@ async function getDiffFilePaths(workdir: string, baseRef: string | undefined): P
     let output: string;
     try {
       [output] = await Promise.all([
-        readTextStreamPrefix(proc.stdout, MAX_DIFF_TEXT_CHARS),
+        // `--name-only` output is one path per line, bounded by file count —
+        // not content size — so it is read in full. Capping it (as getDiffText
+        // does) would drop paths past the prefix and break AC6's "every
+        // changed file" contract.
+        new Response(proc.stdout).text(),
         readTextStreamPrefix(proc.stderr, 0),
         proc.exited,
       ]);
