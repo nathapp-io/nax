@@ -18,7 +18,13 @@
 import { randomUUID } from "node:crypto";
 import { NaxError } from "@/errors";
 import { packageDirRelative } from "@/utils/paths";
-import { NeutralityLintError, createDefaultOrchestrator, createRunCallCounter } from "../../context/engine";
+import {
+  NeutralityLintError,
+  createDefaultOrchestrator,
+  createRunCallCounter,
+  deriveProviderWeights,
+  loadFeatureManifests,
+} from "../../context/engine";
 import type { ContextRequest, IContextProvider } from "../../context/engine";
 import { estimateAvailableBudgetTokens } from "../../context/engine/available-budget";
 import { writeContextManifest } from "../../context/engine/manifest-store";
@@ -46,6 +52,11 @@ export const _contextStageDeps = {
   uuid: () => randomUUID(),
   readDigest: readDigestFile,
   writeDigest: writeDigestFile,
+  // US-004: V2 stage derives per-provider weights from the current feature's
+  // stored manifests before calling the orchestrator. Injectable so tests can
+  // stub both functions without touching the disk or the real implementation.
+  loadFeatureManifests,
+  deriveProviderWeights,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -188,6 +199,36 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     ...(ctx.naxIgnoreIndex && { naxIgnoreIndex: ctx.naxIgnoreIndex }),
   };
 
+  // US-004: derive per-provider effectiveness weights from the current feature's
+  // stored manifests. loadFeatureManifests reads `.nax/features/<featureId>/stories/*`
+  // off disk; deriveProviderWeights aggregates ignored-verdict ratios per provider.
+  // Best-effort: a throw or empty result keeps the request as-is and the scorer
+  // behaves as if no weights were supplied (identity = 1.0 for every provider).
+  // Runs unconditionally on V2 — same "_unattached" sentinel used for
+  // sessionScratchDir above when ctx.featureDir is absent, so unattached runs
+  // still derive weights instead of silently skipping this step.
+  // When ctx.providerWeightsCache is present (full runner path), reuse the
+  // per-run cache instead of re-reading and re-parsing every manifest in the
+  // feature on every story's context stage.
+  const providerWeightsFeatureId = request.featureId ?? "_unattached";
+  try {
+    request.providerWeights = ctx.providerWeightsCache
+      ? await ctx.providerWeightsCache.loadOrGet(providerWeightsFeatureId, ctx.projectDir ?? ctx.workdir)
+      : await _contextStageDeps.deriveProviderWeights(
+          (
+            await _contextStageDeps.loadFeatureManifests({
+              featureId: providerWeightsFeatureId,
+              projectDir: ctx.projectDir ?? ctx.workdir,
+            })
+          ).map((s) => s.manifest),
+        );
+  } catch (err) {
+    logger.warn("context", "Failed to derive provider weights — continuing without them", {
+      storyId: ctx.story.id,
+      error: errorMessage(err),
+    });
+  }
+
   // Phase 7: load any plugin providers (RAG, graph, KB) configured for this project.
   // Non-fatal: failures are logged inside loadPluginProviders and skipped.
   // Defensive fallback: test fixtures may bypass Zod and omit `pluginProviders`.
@@ -209,6 +250,7 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     ctx.contextBundle = bundle;
     if (ctx.prd.feature) {
       await writeContextManifest(ctx.projectDir, ctx.prd.feature, ctx.story.id, "context", bundle.manifest);
+      ctx.providerWeightsCache?.invalidate(ctx.prd.feature);
     }
 
     // Phase 2: persist digest for next pipeline pass or crash resume.

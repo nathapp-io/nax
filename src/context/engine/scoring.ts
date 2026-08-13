@@ -5,7 +5,11 @@
  * Chunks that fall below minScore after adjustment are dropped (noise filter).
  *
  * Score formula:
- *   adjustedScore = rawScore × roleMultiplier × kindWeight × freshnessMultiplier
+ *   adjustedScore = rawScore × roleMultiplier × kindWeight × freshnessMultiplier × effectivenessMultiplier
+ *
+ * The effectiveness multiplier is caller-derived (US-004): when a
+ * `providerWeights` map keys the chunk's `providerId`, the score is multiplied
+ * by that weight; otherwise it is identity (1.0).
  *
  * "static" and "feature" chunks are always floor-included regardless of score —
  * the scorer still computes a score for them so the manifest is accurate.
@@ -81,8 +85,16 @@ export interface ScoredChunk extends RawChunk {
  * @param callerRole - role of the requesting pipeline stage
  * @param minScore - minimum score threshold (from config.context.v2.minScore)
  * @param stale - whether the chunk is detected as stale (Post-GA)
+ * @param providerWeights - per-provider effectiveness weights keyed by chunk.providerId (US-004).
+ *                          When the key is absent, the weight is treated as 1.0 (identity).
  */
-export function scoreChunk(chunk: RawChunk, callerRole: ChunkRole, minScore = MIN_SCORE, stale = false): ScoredChunk {
+export function scoreChunk(
+  chunk: RawChunk,
+  callerRole: ChunkRole,
+  minScore = MIN_SCORE,
+  stale = false,
+  providerWeights?: Record<string, number>,
+): ScoredChunk {
   const rm = roleMultiplier(chunk.role, callerRole);
   const roleFiltered = rm === 0;
 
@@ -93,7 +105,11 @@ export function scoreChunk(chunk: RawChunk, callerRole: ChunkRole, minScore = MI
   const isStale = chunk.staleCandidate === true || stale;
   const freshnessMultiplier = isStale ? (chunk.scoreMultiplier ?? STALENESS_PENALTY) : 1.0;
 
-  const score = chunk.rawScore * rm * kindWeight * freshnessMultiplier;
+  // US-004: caller-derived effectiveness multiplier keyed on chunk.providerId.
+  // Identity (1.0) when the chunk carries no providerId or the map omits it.
+  const effectivenessMultiplier = chunk.providerId !== undefined ? (providerWeights?.[chunk.providerId] ?? 1.0) : 1.0;
+
+  const score = chunk.rawScore * rm * kindWeight * freshnessMultiplier * effectivenessMultiplier;
   const belowMinScore = !roleFiltered && score < minScore;
 
   return { ...chunk, score, roleFiltered, belowMinScore };
@@ -106,7 +122,13 @@ export function scoreChunk(chunk: RawChunk, callerRole: ChunkRole, minScore = MI
  * @param chunks - raw chunks to score
  * @param callerRole - role of the requesting pipeline stage
  * @param minScore - minimum score threshold (from config.context.v2.minScore, default: MIN_SCORE)
+ * @param providerWeights - per-provider effectiveness weights threaded to scoreChunk (US-004)
  */
-export function scoreChunks(chunks: RawChunk[], callerRole: ChunkRole, minScore = MIN_SCORE): ScoredChunk[] {
-  return chunks.map((c) => scoreChunk(c, callerRole, minScore));
+export function scoreChunks(
+  chunks: RawChunk[],
+  callerRole: ChunkRole,
+  minScore = MIN_SCORE,
+  providerWeights?: Record<string, number>,
+): ScoredChunk[] {
+  return chunks.map((c) => scoreChunk(c, callerRole, minScore, false, providerWeights));
 }

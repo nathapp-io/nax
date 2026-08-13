@@ -7,14 +7,14 @@
  * See: docs/specs/SPEC-context-engine-v2.md §CodeNeighborProvider
  */
 
-import { createHash } from "node:crypto";
 import { join, relative, resolve } from "node:path";
 import { getLogger } from "../../../logger";
 import { detectLanguage } from "../../../project";
 import { discoverWorkspacePackages } from "../../../test-runners/detect/workspace";
 import type { NaxIgnoreMatcher } from "../../../utils/path-filters";
 import { isRelativeAndSafe } from "../../../utils/path-security";
-import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
+import type { ContextProviderResult, ContextRequest, IContextProvider } from "../types";
+import { type NeighborSection, assembleCodeNeighborChunk } from "./code-neighbor-chunk";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Options
@@ -60,9 +60,6 @@ const MAX_NEIGHBORS_PER_FILE = 8;
 
 /** Default maximum files scanned during reverse-dep glob (#895) */
 const MAX_GLOB_FILES_DEFAULT = 500;
-
-/** Token ceiling for the combined neighbor chunk */
-const MAX_CHUNK_TOKENS = 500;
 
 // Per-language globs for reverse-dep scanning (#895, L1). Polyglot/unknown falls back to FALLBACK_SOURCE_GLOB.
 const SOURCE_GLOB_BY_LANGUAGE: Record<string, string> = {
@@ -141,10 +138,6 @@ export const _codeNeighborDeps = {
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-function contentHash8(content: string): string {
-  return createHash("sha256").update(content).digest("hex").slice(0, 8);
-}
 
 /** Patterns that match JS/TS import/require statements — used with matchAll() */
 const FROM_PATTERN = /from\s+['"]([^'"]+)['"]/g;
@@ -566,7 +559,7 @@ export class CodeNeighborProvider implements IContextProvider {
     }
     const contentCache = new Map<string, string>();
 
-    const sections: string[] = [];
+    const sections: NeighborSection[] = [];
     let anyTruncated = false;
     for (const file of filesToProcess) {
       const { neighbors, truncated } = await collectNeighbors(
@@ -578,35 +571,21 @@ export class CodeNeighborProvider implements IContextProvider {
       );
       if (truncated) anyTruncated = true;
       if (neighbors.length > 0) {
-        sections.push(`### ${file}\n${neighbors.map((n) => `- ${n}`).join("\n")}`);
+        sections.push({ file, neighbors });
       }
     }
 
-    if (sections.length === 0) {
+    // US-002: chunk assembly (and `scopePaths` attribution) lives in
+    // `code-neighbor-chunk.ts`. The provider collects sections; the chunk
+    // module owns the section→RawChunk pipeline so this file stays flat.
+    const chunk = assembleCodeNeighborChunk({
+      sections,
+      truncated: anyTruncated,
+      maxGlobFiles: this.maxGlobFiles,
+    });
+    if (chunk === null) {
       return { chunks: [], pullTools: [] };
     }
-
-    const header = "## Code Neighbors\n\nRelated files (imports, reverse-deps, tests):";
-    const rawContent = `${header}\n\n${sections.join("\n\n")}`;
-
-    // Cap body first so the truncation note (when present) is never sliced off.
-    const maxChars = MAX_CHUNK_TOKENS * 4;
-    const body = rawContent.length > maxChars ? rawContent.slice(0, maxChars) : rawContent;
-    const truncationNote = anyTruncated
-      ? `\n\n> Note: reverse-dep scan capped at ${this.maxGlobFiles} files; some neighbors may be missing.\n> Increase \`context.v2.providers.maxGlobFiles\` or set \`sourceGlob\` to a narrower pattern (e.g. \`**/*.go\`) to reduce the scan footprint.`
-      : "";
-    const content = body + truncationNote;
-    const tokens = Math.ceil(content.length / 4);
-
-    const chunk: RawChunk = {
-      id: `code-neighbor:${contentHash8(content)}`,
-      kind: "neighbor",
-      scope: "story",
-      role: ["implementer", "tdd"],
-      content,
-      tokens,
-      rawScore: 0.65,
-    };
 
     return { chunks: [chunk], pullTools: [] };
   }

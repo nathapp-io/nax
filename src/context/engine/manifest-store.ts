@@ -49,6 +49,23 @@ export const _manifestStoreDeps = {
       return [];
     }
   },
+  /**
+   * Story subdirectories under a feature's `stories/` dir (US-003).
+   * The trailing-slash glob pattern + onlyFiles:false yields directories
+   * only, so stray files alongside story dirs are excluded rather than
+   * throwing.
+   */
+  listStoryDirs: async (storiesDir: string): Promise<string[]> => {
+    try {
+      const dirs: string[] = [];
+      for await (const entry of new Bun.Glob("*/").scan({ cwd: storiesDir, absolute: false, onlyFiles: false })) {
+        dirs.push(entry);
+      }
+      return dirs.sort();
+    } catch {
+      return [];
+    }
+  },
 };
 
 export function contextStoryDir(projectDir: string, featureId: string, storyId: string): string {
@@ -155,6 +172,42 @@ function stageFromFileName(fileName: string): string {
   return fileName.replace(/^context-manifest-/, "").replace(/\.json$/, "");
 }
 
+/**
+ * Read and parse every `context-manifest-*.json` file in one story directory
+ * into `StoredContextManifest[]`, tagged with the given `featureId`. Shared by
+ * `loadContextManifests` (features → one story) and `loadFeatureManifests`
+ * (one feature → stories) so their read/parse/skip-malformed behaviour can't
+ * drift between the two outer directory-enumeration strategies.
+ * Best-effort: a missing or malformed file is skipped, never thrown.
+ */
+async function loadStoryManifests(
+  projectDir: string,
+  featureId: string,
+  storyDir: string,
+): Promise<StoredContextManifest[]> {
+  const manifestFiles = await _manifestStoreDeps.listManifestFiles(storyDir);
+  const results: StoredContextManifest[] = [];
+
+  for (const fileName of manifestFiles) {
+    const fullPath = join(storyDir, fileName);
+    if (!(await _manifestStoreDeps.fileExists(fullPath))) continue;
+    try {
+      const raw = await _manifestStoreDeps.readFile(fullPath);
+      const parsed = JSON.parse(raw) as ContextManifest;
+      results.push({
+        featureId,
+        stage: stageFromFileName(fileName),
+        path: fullPath,
+        manifest: hydrateManifestPaths(projectDir, parsed),
+      });
+    } catch {
+      // Skip malformed files so callers stay best-effort.
+    }
+  }
+
+  return results;
+}
+
 export async function loadContextManifests(
   projectDir: string,
   storyId: string,
@@ -165,23 +218,56 @@ export async function loadContextManifests(
 
   for (const feature of featureIds) {
     const storyDir = contextStoryDir(projectDir, feature, storyId);
-    const manifestFiles = await _manifestStoreDeps.listManifestFiles(storyDir);
-    for (const fileName of manifestFiles) {
-      const fullPath = join(storyDir, fileName);
-      if (!(await _manifestStoreDeps.fileExists(fullPath))) continue;
-      try {
-        const raw = await _manifestStoreDeps.readFile(fullPath);
-        const parsed = JSON.parse(raw) as ContextManifest;
-        results.push({
-          featureId: feature,
-          stage: stageFromFileName(fileName),
-          path: fullPath,
-          manifest: hydrateManifestPaths(projectDir, parsed),
-        });
-      } catch {
-        // Skip malformed files so inspect stays best-effort.
-      }
-    }
+    results.push(...(await loadStoryManifests(projectDir, feature, storyDir)));
+  }
+
+  return results.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+export interface LoadFeatureManifestsOptions {
+  /** Project root containing `.nax/` (canonical key, used by pipeline callers). */
+  projectDir?: string;
+  /** Alias for `projectDir` accepted from direct API callers. */
+  featureDir?: string;
+  /** Only meaningful when passed inside the single-object call form. */
+  featureId?: string;
+}
+
+/**
+ * Load every stored context manifest under a feature directory (US-003).
+ *
+ * Best-effort, fail-open: a missing or empty feature dir returns []. The
+ * function reads every story subdirectory's manifest files and returns them
+ * flattened, sorted by absolute path. Non-directory entries alongside story
+ * directories (stray files, symlinks) are ignored rather than throwing,
+ * matching `loadContextManifests`'s malformed-skip behaviour.
+ *
+ * Distinct from `loadContextManifests`: this takes a feature ID, not a
+ * story ID, and returns manifests across every story in the feature.
+ *
+ * Two call forms are supported:
+ *   - `loadFeatureManifests(featureId, { featureDir: projectDir })` — direct API callers.
+ *   - `loadFeatureManifests({ featureId, projectDir })` — single-object form used
+ *     by pipeline callers so the invocation can be asserted on as one argument.
+ */
+export async function loadFeatureManifests(
+  featureIdOrOptions?: string | LoadFeatureManifestsOptions,
+  options: LoadFeatureManifestsOptions = {},
+): Promise<StoredContextManifest[]> {
+  const opts: LoadFeatureManifestsOptions =
+    typeof featureIdOrOptions === "string" ? { featureId: featureIdOrOptions, ...options } : { ...featureIdOrOptions };
+
+  const featureId = opts.featureId;
+  const projectDir = opts.projectDir ?? opts.featureDir;
+  if (!featureId || !projectDir) return [];
+
+  const storiesDir = join(projectDir, ".nax", "features", featureId, "stories");
+  const storyDirs = await _manifestStoreDeps.listStoryDirs(storiesDir);
+  const results: StoredContextManifest[] = [];
+
+  for (const storyDirName of storyDirs) {
+    const storyDir = join(storiesDir, storyDirName);
+    results.push(...(await loadStoryManifests(projectDir, featureId, storyDir)));
   }
 
   return results.sort((a, b) => a.path.localeCompare(b.path));

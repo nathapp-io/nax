@@ -146,6 +146,16 @@ export interface ContextManifest {
    * persisted schema other readers index by ID.
    */
   chunkTokens?: Record<string, number>;
+  /**
+   * Per-chunk final score, keyed by chunk ID, for every chunk in
+   * `includedChunks`. Absent when nothing was packed.
+   *
+   * Written so downstream consumers (US-004 AC8) can observe the effectiveness
+   * weighting applied during scoring — the same chunk scores strictly lower
+   * under a lower provider weight than under weight 1.0. A sibling map rather
+   * than a shape change to `includedChunks`, mirroring `chunkTokens`.
+   */
+  chunkScores?: Record<string, number>;
   /** Tokens used by the digest string */
   digestTokens: number;
   /** Wall-clock time for the assemble() call in milliseconds */
@@ -248,4 +258,19 @@ export interface ContextManifest {
    * fields already rely on.
    */
   chunkScopePaths?: Record<string, string[]>;
+  /**
+   * Per-chunk provider attribution carrier (US-003).
+   *
+   * Populated by `buildManifest()` from `PackedChunk.providerId` (stamped by
+   * `enrichRaw()` in the orchestrator before scoring) for every packed chunk
+   * that carries one. Keyed by chunk ID; the value is the provider ID string.
+   *
+   * Used by `deriveProviderWeights()` to aggregate chunkEffectiveness verdicts
+   * per provider — the manifest records no chunk-ID → provider mapping
+   * otherwise, and splitting the chunk ID on `:` is a convention, not an
+   * invariant. Chunks without a `providerId` leave no key. Omitted entirely
+   * when no packed chunk carries a `providerId` (legacy manifests / synthetic
+   * callers) — same "absent means unknown" contract as `chunkScopePaths`.
+   */
+  chunkProviders?: Record<string, string>;
 }

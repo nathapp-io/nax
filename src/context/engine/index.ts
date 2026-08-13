@@ -23,6 +23,8 @@ export { FeatureContextProviderV2, _featureContextV2Deps } from "./providers/fea
 export { SessionScratchProvider, _sessionScratchDeps } from "./providers/session-scratch";
 export { GitHistoryProvider, _gitHistoryDeps } from "./providers/git-history";
 export { CodeNeighborProvider, _codeNeighborDeps } from "./providers/code-neighbor";
+export { assembleCodeNeighborChunk, contentHash8 } from "./providers/code-neighbor-chunk";
+export type { NeighborSection, AssembleCodeNeighborChunkInput } from "./providers/code-neighbor-chunk";
 export {
   loadPluginProviders,
   resolveModuleSpecifier,
@@ -30,6 +32,7 @@ export {
 } from "./providers/plugin-loader";
 export type { InitialisableProvider } from "./providers/plugin-loader";
 export { PluginProviderCache, _pluginCacheDeps } from "./providers/plugin-cache";
+export { ProviderWeightsCache, _providerWeightsCacheDeps } from "./provider-weights-cache";
 export {
   loadCanonicalRules,
   lintForNeutrality,
@@ -63,10 +66,12 @@ export {
   writeContextManifest,
   writeRebuildManifest,
   loadContextManifests,
+  loadFeatureManifests,
   contextManifestPath,
+  contextStoryDir,
   rebuildManifestPath,
 } from "./manifest-store";
-export type { StoredContextManifest, RebuildManifestEntry } from "./manifest-store";
+export type { StoredContextManifest, RebuildManifestEntry, LoadFeatureManifestsOptions } from "./manifest-store";
 
 export {
   _effectivenessDeps,
@@ -79,6 +84,8 @@ export {
 
 export { purgeStaleManifests, _manifestPurgeDeps, MAX_MANIFEST_SCAN } from "./manifest-purge";
 export type { ManifestPurgeDeps } from "./manifest-purge";
+
+export { deriveProviderWeights } from "./provider-weights";
 
 export type {
   AdapterFailure,

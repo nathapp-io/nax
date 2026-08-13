@@ -1,0 +1,261 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `GitHistoryProvider.fetch` receives two relative `touchedFiles` and only the first has commit history, then it returns one chunk whose `scopePaths` contains only the first path.",
+    "refined": "Call `GitHistoryProvider.fetch({ touchedFiles: ['fileA.ts', 'fileB.ts'] })` where `fileA.ts` has commit history and `fileB.ts` has no commit history. Assert: `result.chunks.length === 1` AND `result.chunks[0].scopePaths` is an array containing exactly `['fileA.ts']` AND `result.chunks[0].scopePaths` does not include `'fileB.ts'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `GitHistoryProvider.fetch` receives `touchedFiles` where every requested file has commit history, then its returned chunk `scopePaths` lists those files in the same order as `touchedFiles`.",
+    "refined": "Call `GitHistoryProvider.fetch({ touchedFiles: ['a.ts', 'b.ts', 'c.ts'] })` where all three files have commit history. Assert: `result.chunks.length >= 1` AND `result.chunks[0].scopePaths` is an array where `result.chunks[0].scopePaths[0] === 'a.ts'` AND `result.chunks[0].scopePaths[1] === 'b.ts'` AND `result.chunks[0].scopePaths[2] === 'c.ts'` AND `result.chunks[0].scopePaths.length === 3`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `GitHistoryProvider.fetch` receives `touchedFiles` where no requested file has commit history, then it returns an empty `chunks` list.",
+    "refined": "Call `GitHistoryProvider.fetch({ touchedFiles: ['noHistory1.txt', 'noHistory2.txt'] })` where neither file has commit history. Assert: `result.chunks` is an array AND `result.chunks.length === 0`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `GitHistoryProvider.fetch` returns a chunk, then that chunk's `scopePaths` is non-empty.",
+    "refined": "Call `GitHistoryProvider.fetch({ touchedFiles: ['hasHistory.ts'] })` where the file has commit history. Assert: `result.chunks.length > 0` AND for every chunk in `result.chunks`, `Array.isArray(chunk.scopePaths) === true` AND `chunk.scopePaths.length > 0`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When a packed git-history chunk carrying `scopePaths` is passed to `buildManifest`, then `chunkScopePaths` maps that chunk ID to the same list.",
+    "refined": "Call `buildManifest({ chunks: [{ id: 'chunk-1', provider: 'git-history', scopePaths: ['a.ts', 'b.ts'] }] })`. Assert: `result.chunkScopePaths` is an object AND `result.chunkScopePaths['chunk-1']` is an array AND `JSON.stringify(result.chunkScopePaths['chunk-1']) === JSON.stringify(['a.ts', 'b.ts'])`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When the committed effectiveness fixture includes a labelled git-history chunk with scoped files, then `scoreEffectiveness` under the scoped classifier has a `sizeCorrelation` magnitude strictly smaller than under the whole-diff classifier.",
+    "refined": "Load the effectiveness fixture at `fixtures/effectiveness.json` containing a git-history chunk labelled with `scopePaths: ['target.ts']`. Call `scoreEffectiveness(fixture, { classifier: 'scoped' })` and capture `result.sizeCorrelation.magnitude`. Call `scoreEffectiveness(fixture, { classifier: 'whole-diff' })` and capture `result.sizeCorrelation.magnitude`. Assert: `scopedMagnitude < wholeDiffMagnitude` AND both magnitudes are finite numbers.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When `CodeNeighborProvider.fetch` processes a story touching one file with neighbors, then its returned chunk `scopePaths` contains the touched file path.",
+    "refined": "Given a ContextRequest where contextDiff.touchedFiles contains exactly one path \"src/foo.ts\" with at least one neighbor, calling await codeNeighborProvider.fetch(request) returns a ContextProviderResult where result.chunks[0].scopePaths includes \"src/foo.ts\".",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When `CodeNeighborProvider.fetch` returns a chunk, then its `scopePaths` contains each neighbor path rendered in the chunk body.",
+    "refined": "Given a ContextRequest with touched files that have neighbors, calling await codeNeighborProvider.fetch(request) returns chunks where for every file path P that appears in a chunk's content body, result.chunks[i].scopePaths includes P, verified by parsing the markdown content and extracting file path patterns.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When `CodeNeighborProvider.fetch` processes touched files with no neighbors, then it returns an empty `chunks` list.",
+    "refined": "Given a ContextRequest where all touched files have empty neighbor arrays (or no neighbors exist), calling await codeNeighborProvider.fetch(request) returns { chunks: [] } with chunks array length === 0.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `CodeNeighborProvider.fetch` processes two touched files sharing one neighbor, then the returned chunk `scopePaths` lists that shared neighbor path exactly once.",
+    "refined": "Given a ContextRequest where touchedFiles contains \"fileA.ts\" and \"fileB.ts\" both listing \"shared.ts\" as a neighbor, calling await codeNeighborProvider.fetch(request) returns a chunk where chunk.scopePaths has length 1 and scopePaths[0] === \"shared.ts\" (no duplicates).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When a packed code-neighbor chunk carrying `scopePaths` is passed to `buildManifest`, then `chunkScopePaths` maps that chunk ID to the same list.",
+    "refined": "Given a RawChunk with id \"chunk-1\" and scopePaths [\"src/a.ts\", \"src/b.ts\"], calling buildManifest([chunk], ...) returns a Manifest where manifest.chunkScopePaths.get(\"chunk-1\") is an array containing exactly [\"src/a.ts\", \"src/b.ts\"] in any order.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When the committed effectiveness fixture includes a labelled code-neighbor chunk with scoped files, then `scoreEffectiveness` under the scoped classifier has a `sizeCorrelation` magnitude strictly smaller than under the whole-diff classifier.",
+    "refined": "Given the fixture file at fixtures/effectiveness/code-neighbor-scoped.json containing a code-neighbor chunk with scopePaths populated, calling scoreEffectiveness(fixture, { classifier: 'scoped' }) returns a result where result.sizeCorrelation.magnitude < scoreEffectiveness(fixture, { classifier: 'wholeDiff' }).sizeCorrelation.magnitude.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When packed chunks with `providerId` values are passed to `buildManifest`, then `chunkProviders` maps every chunk ID to its provider ID.",
+    "refined": "Calling `buildManifest({ chunks: [{ id: \"abc:123\", providerId: \"provider-x\" }] })` returns a manifest where `manifest.chunkProviders['abc:123'] === 'provider-x'`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When a packed chunk without `providerId` is passed to `buildManifest`, then `chunkProviders` has no key for that chunk ID.",
+    "refined": "Calling `buildManifest({ chunks: [{ id: \"abc:123\" }] })` returns a manifest where `'abc:123' in manifest.chunkProviders` is `false`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When only packed chunks without `providerId` are passed to `buildManifest`, then `chunkProviders` is absent from the manifest.",
+    "refined": "Calling `buildManifest({ chunks: [{ id: \"abc:123\" }] })` returns a manifest where `'chunkProviders' in manifest` is `false` (or `chunkProviders` is `undefined`).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When `loadFeatureManifests` reads a feature directory with two story subdirectories each containing one manifest, then it returns both manifests.",
+    "refined": "Setting up a directory at `<featureDir>/feature-id/` containing `story-a/manifest.json` and `story-b/manifest.json` with valid manifest content; calling `loadFeatureManifests('feature-id', { featureDir })` returns an array of length 2.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When `loadFeatureManifests` reads a feature directory containing a stray non-directory entry alongside story directories, then it returns the story manifests without throwing.",
+    "refined": "Setting up a directory containing `story-a/manifest.json`, `story-b/manifest.json`, and a file `readme.txt`; calling `loadFeatureManifests('feature-id', { featureDir })` returns an array of length 2 and does not throw.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When `deriveProviderWeights` receives an empty manifest list, then its mapping yields weight `1.0` for any queried provider ID.",
+    "refined": "Calling `deriveProviderWeights([])` returns an object where for any string key (e.g., `'any-provider'`), `result['any-provider'] === 1.0`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When a provider has fewer classified chunks than the minimum observation count, then `deriveProviderWeights` yields weight `1.0` for that provider.",
+    "refined": "Passing manifests where provider 'p1' has `classifiedCount < MIN_OBSERVATIONS` (e.g., 2 classified chunks); calling `deriveProviderWeights(manifests)['p1']` returns exactly `1.0`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When a provider clears the observation count with no `ignored` verdicts, then `deriveProviderWeights` yields weight `1.0` for that provider.",
+    "refined": "Passing manifests where provider 'p1' has `classifiedCount >= MIN_OBSERVATIONS` and `ignoredCount === 0`; calling `deriveProviderWeights(manifests)['p1']` returns exactly `1.0`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When two providers both clear the observation count and the first has a strictly higher ignored ratio, then `deriveProviderWeights` yields a first weight less than or equal to the second weight.",
+    "refined": "Passing manifests where provider 'p1' has ignoredRatio 0.6 and 'p2' has ignoredRatio 0.2 (both meeting MIN_OBSERVATIONS); calling `deriveProviderWeights(manifests)` returns weights where `result['p1'] < result['p2']`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When `deriveProviderWeights` receives any input, then no returned weight is greater than `1.0`.",
+    "refined": "Calling `deriveProviderWeights` with any valid input; all values in the returned object satisfy `weight <= 1.0`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When every classified chunk for a provider is `ignored`, then `deriveProviderWeights` yields a weight greater than zero for that provider.",
+    "refined": "Passing manifests where provider 'p1' has `ignoredCount === classifiedCount >= MIN_OBSERVATIONS`; calling `deriveProviderWeights(manifests)['p1']` returns a value greater than `0`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When a manifest has `chunkEffectiveness` but no `chunkProviders`, then `deriveProviderWeights` yields weight `1.0` for every queried provider ID.",
+    "refined": "Passing a manifest with `chunkEffectiveness` populated but `chunkProviders` absent/undefined; calling `deriveProviderWeights([manifest])` returns an object where every weight value is exactly `1.0`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When one manifest in a derivation input is malformed, then `deriveProviderWeights` derives weights from the remaining well-formed manifests without throwing.",
+    "refined": "Passing an array containing one valid manifest and one malformed manifest (e.g., invalid JSON or missing required fields); calling `deriveProviderWeights(manifests)` returns a result object without throwing.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When only ignored verdicts for providers of `FLOOR_KINDS` chunks are supplied, then `deriveProviderWeights` still returns weights for those providers.",
+    "refined": "Passing manifests containing only `FLOOR_KINDS` chunks with `ignored` verdicts for provider 'p1'; calling `deriveProviderWeights(manifests)` returns an object containing key 'p1' with a numeric weight value.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When `loadFeatureManifests` is called without a feature ID, then it returns an empty manifest list without throwing.",
+    "refined": "Calling `loadFeatureManifests()` with no arguments or `undefined`; the function returns an empty array `[]` and does not throw an error.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When `scoreChunk` receives a provider weight below `1.0` for its chunk's `providerId`, then its score equals the score without weights multiplied by that weight.",
+    "refined": "Assert `scoreChunk(chunk, callerRole, minScore, stale, { [chunk.providerId]: w })` returns `scoreChunk(chunk, callerRole, minScore, stale, {}) * w` for all `w` in `[0.1, 0.5, 0.9]`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When `scoreChunk` receives weights that omit its chunk's `providerId`, then its score equals the score with no weights supplied.",
+    "refined": "Assert `scoreChunk(chunk, callerRole, minScore, stale, { otherProviderId: 1.5 })` returns the same score as `scoreChunk(chunk, callerRole, minScore, stale, {})`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When `scoreChunk` receives no weights, then its score equals `rawScore` multiplied by its role multiplier, kind weight, and freshness multiplier.",
+    "refined": "Assert `scoreChunk(chunk, callerRole, minScore, stale, undefined)` returns `chunk.rawScore * roleMultiplier(callerRole) * kindWeight(chunk.kind) * freshnessMultiplier(chunk.stalenessSeconds)`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When `scoreChunks` receives differing weights for two equal chunks from different providers, then it applies each chunk's provider weight and returns different scores.",
+    "refined": "Given two chunks with identical `rawScore`, `role`, `kind`, `stalenessSeconds` but different `providerId`, assert `scoreChunks([chunkA, chunkB], role, minScore, { [chunkA.providerId]: 1.0, [chunkB.providerId]: 0.7 })` returns an array where `result[0].score !== result[1].score`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When context is assembled with a static-kind chunk whose low provider weight puts its score below the minimum, then the manifest lists that chunk in `includedChunks` and not `excludedChunks`.",
+    "refined": "Given a static-kind chunk with `rawScore * roleMultiplier * kindWeight * freshnessMultiplier >= minScore` but `rawScore * roleMultiplier * kindWeight * freshnessMultiplier * w < minScore` for weight `w`, assert `executeContextStage(ctx).manifest.includedChunks` contains the chunk and `excludedChunks` does not.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When context is assembled with a neighbor-kind chunk whose low provider weight puts its score below the minimum, then the manifest lists that chunk in `excludedChunks` with reason `below-min-score`.",
+    "refined": "Given a neighbor-kind chunk with `rawScore * roleMultiplier * kindWeight * freshnessMultiplier * w < minScore` for weight `w < 1.0`, assert `executeContextStage(ctx).manifest.excludedChunks` contains an entry where `chunkId` matches, `reason === 'below-min-score'`, and `includedChunks` does not contain the chunk.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When `deriveProviderWeights` is stubbed to return known weights and `contextStage.execute` runs with `config.context.v2.enabled` true, then `deriveProviderWeights` is invoked once.",
+    "refined": "Stub `deriveProviderWeights` to return `{ providerA: 1.0 }`; call `contextStage.execute(request, config)` where `config.context.v2.enabled === true`; assert `deriveProviderWeights` was called exactly 1 time via `expect(mock).toHaveBeenCalledTimes(1)`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "When `deriveProviderWeights` is stubbed with a weight below `1.0` for a non-floor provider and `contextStage.execute` runs with `config.context.v2.enabled` true, then its written manifest records that provider chunk with a score strictly lower than the same run using weight `1.0`.",
+    "refined": "Run `contextStage.execute` twice with `deriveProviderWeights` stubbed to `{ nonFloorProvider: 0.3 }` vs `{ nonFloorProvider: 1.0 }`; assert the manifest from the first run records the chunk's score as strictly less than (`<`) the score recorded in the second run's manifest for the same chunk.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-36",
+    "original": "When context is assembled from a `ContextRequest` without `providerWeights`, then its manifest `includedChunks` and `excludedChunks` equal an otherwise identical request with an empty weight mapping.",
+    "refined": "Call `assembleContext({ ...baseRequest })` vs `assembleContext({ ...baseRequest, providerWeights: {} })`; assert both returned manifests have identical `includedChunks` (same chunkIds in same order) and identical `excludedChunks` (same chunkIds with same reasons).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-37",
+    "original": "When `loadFeatureManifests` is stubbed and `contextStage.execute` runs with `config.context.v2.enabled` true, then it is invoked with the pipeline context feature ID.",
+    "refined": "Stub `loadFeatureManifests`; call `contextStage.execute(request, config)` where `config.context.v2.enabled === true` and `pipelineCtx.featureId === 'feat-123'`; assert `loadFeatureManifests` was called with `featureId === 'feat-123'` via `expect(mock).toHaveBeenCalledWith(expect.objectContaining({ featureId: 'feat-123' }))`.",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]

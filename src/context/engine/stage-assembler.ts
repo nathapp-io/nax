@@ -22,8 +22,9 @@ import type { PipelineContext } from "../../pipeline/types";
 import { getContextFiles } from "../../prd/types";
 import { errorMessage } from "../../utils/errors";
 import { estimateAvailableBudgetTokens } from "./available-budget";
-import { writeContextManifest } from "./manifest-store";
+import { loadFeatureManifests, writeContextManifest } from "./manifest-store";
 import { createDefaultOrchestrator } from "./orchestrator-factory";
+import { deriveProviderWeights } from "./provider-weights";
 import { loadPluginProviders } from "./providers/plugin-loader";
 import { getStageContextConfig } from "./stage-config";
 import type { ContextBundle, ContextRequest } from "./types";
@@ -44,6 +45,13 @@ export const _stageAssemblerDeps = {
   },
   now: (): number => Date.now(),
   createOrchestrator: createDefaultOrchestrator,
+  // Mirrors _contextStageDeps in pipeline/stages/context.ts — the context stage's
+  // own ContextRequest is not the only one scored. assembleForStage() builds a
+  // fresh request per stage (execution, rectify, tdd-*, review-*) and must derive
+  // the same per-provider effectiveness weights or the learned multiplier never
+  // reaches the bundle that actually becomes the agent's prompt.
+  loadFeatureManifests,
+  deriveProviderWeights,
 };
 
 export interface StageAssembleOptions {
@@ -231,9 +239,37 @@ export async function assembleForStage(
       ...(ctx.naxIgnoreIndex && { naxIgnoreIndex: ctx.naxIgnoreIndex }),
     };
 
+    // US-004 follow-up: derive per-provider effectiveness weights the same way
+    // the context stage does (src/pipeline/stages/context.ts), so every stage
+    // assembled here — execution, rectify, tdd, review — scores against the
+    // learned multiplier instead of silently reverting to identity (1.0).
+    // Best-effort: a throw or empty result leaves the request as-is. When
+    // ctx.providerWeightsCache is present (full runner path), reuse the
+    // per-run cache instead of re-reading and re-parsing every manifest in
+    // the feature on every stage assembly.
+    const providerWeightsFeatureId = request.featureId ?? "_unattached";
+    try {
+      request.providerWeights = ctx.providerWeightsCache
+        ? await ctx.providerWeightsCache.loadOrGet(providerWeightsFeatureId, ctx.projectDir ?? ctx.workdir)
+        : await _stageAssemblerDeps.deriveProviderWeights(
+            (
+              await _stageAssemblerDeps.loadFeatureManifests({
+                featureId: providerWeightsFeatureId,
+                projectDir: ctx.projectDir ?? ctx.workdir,
+              })
+            ).map((s) => s.manifest),
+          );
+    } catch (err) {
+      logger.warn("context-v2", "Failed to derive provider weights — continuing without them", {
+        storyId: ctx.story.id,
+        error: errorMessage(err),
+      });
+    }
+
     const bundle = await orchestrator.assemble(request);
     if (ctx.projectDir && ctx.prd.feature) {
       await writeContextManifest(ctx.projectDir, ctx.prd.feature, ctx.story.id, stage, bundle.manifest);
+      ctx.providerWeightsCache?.invalidate(ctx.prd.feature);
     }
     return bundle;
   } catch (err) {

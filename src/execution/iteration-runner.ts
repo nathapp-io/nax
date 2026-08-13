@@ -197,6 +197,7 @@ export async function runIteration(
     sessionManager: ctx.sessionManager,
     agentManager: ctx.agentManager,
     pluginProviderCache: ctx.pluginProviderCache,
+    providerWeightsCache: ctx.providerWeightsCache,
     accumulatedAttemptCost: accumulatedAttemptCost > 0 ? accumulatedAttemptCost : undefined,
     runtime: ctx.runtime,
   };

@@ -508,3 +508,107 @@ describe("assembleForStage — Issue #556 monorepo workdir contamination", () =>
     expect(mock.ref.captured?.packageDir).toBe("/repo");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// nax-finish escalation finding (effectiveness-scoring-loop, HIGH) — the context
+// stage's own ContextRequest is not the only one scored. assembleForStage()
+// builds a fresh request per non-three-session-tdd stage (execution, rectify,
+// tdd-*, review-*), and until this fix it never derived providerWeights, so the
+// learned effectiveness multiplier never reached the bundle that actually
+// becomes the agent's prompt.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("assembleForStage — provider-weights threading (effectiveness-scoring-loop)", () => {
+  let origReaddir: typeof _stageAssemblerDeps.readdir;
+  let origReadDescriptor: typeof _stageAssemblerDeps.readDescriptor;
+  let origCreateOrchestrator: typeof _stageAssemblerDeps.createOrchestrator;
+  let origLoadFeatureManifests: typeof _stageAssemblerDeps.loadFeatureManifests;
+  let origDeriveProviderWeights: typeof _stageAssemblerDeps.deriveProviderWeights;
+
+  beforeEach(() => {
+    origReaddir = _stageAssemblerDeps.readdir;
+    origReadDescriptor = _stageAssemblerDeps.readDescriptor;
+    origCreateOrchestrator = _stageAssemblerDeps.createOrchestrator;
+    origLoadFeatureManifests = _stageAssemblerDeps.loadFeatureManifests;
+    origDeriveProviderWeights = _stageAssemblerDeps.deriveProviderWeights;
+    _stageAssemblerDeps.readdir = async () => {
+      throw new Error("ENOENT");
+    };
+    _stageAssemblerDeps.readDescriptor = async () => null;
+  });
+
+  afterEach(() => {
+    _stageAssemblerDeps.readdir = origReaddir;
+    _stageAssemblerDeps.readDescriptor = origReadDescriptor;
+    _stageAssemblerDeps.createOrchestrator = origCreateOrchestrator;
+    _stageAssemblerDeps.loadFeatureManifests = origLoadFeatureManifests;
+    _stageAssemblerDeps.deriveProviderWeights = origDeriveProviderWeights;
+  });
+
+  test("threads deriveProviderWeights' result into the request as providerWeights", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () =>
+      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.loadFeatureManifests =
+      (async () => []) as typeof _stageAssemblerDeps.loadFeatureManifests;
+    const weights = { "static-rules": 1.0, "code-neighbor": 0.4 };
+    _stageAssemblerDeps.deriveProviderWeights =
+      (() => weights) as typeof _stageAssemblerDeps.deriveProviderWeights;
+
+    await assembleForStage(makeCtx(), "execution");
+
+    expect(mock.ref.captured?.providerWeights).toEqual(weights);
+  });
+
+  test("calls loadFeatureManifests with the request's featureId and projectDir", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () =>
+      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    let capturedArgs: { featureId?: string; projectDir?: string } = {};
+    _stageAssemblerDeps.loadFeatureManifests = (async (opts?: { featureId?: string; projectDir?: string }) => {
+      capturedArgs = { featureId: opts?.featureId, projectDir: opts?.projectDir };
+      return [];
+    }) as typeof _stageAssemblerDeps.loadFeatureManifests;
+    _stageAssemblerDeps.deriveProviderWeights = (() => ({})) as typeof _stageAssemblerDeps.deriveProviderWeights;
+
+    await assembleForStage(makeCtx(), "execution");
+
+    expect(capturedArgs.featureId).toBe("test-feature");
+    expect(capturedArgs.projectDir).toBe("/repo");
+  });
+
+  test("falls back to the '_unattached' sentinel when the pipeline context has no feature id", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () =>
+      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    let capturedFeatureId: string | undefined;
+    _stageAssemblerDeps.loadFeatureManifests = (async (opts?: { featureId?: string }) => {
+      capturedFeatureId = opts?.featureId;
+      return [];
+    }) as typeof _stageAssemblerDeps.loadFeatureManifests;
+    _stageAssemblerDeps.deriveProviderWeights = (() => ({})) as typeof _stageAssemblerDeps.deriveProviderWeights;
+
+    const ctx = makeCtx();
+    (ctx.prd as unknown as { feature?: string }).feature = undefined;
+
+    await assembleForStage(ctx, "execution");
+
+    expect(capturedFeatureId).toBe("_unattached");
+  });
+
+  test("degrades to no providerWeights when deriveProviderWeights throws", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () =>
+      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.loadFeatureManifests =
+      (async () => []) as typeof _stageAssemblerDeps.loadFeatureManifests;
+    _stageAssemblerDeps.deriveProviderWeights = (() => {
+      throw new Error("boom");
+    }) as typeof _stageAssemblerDeps.deriveProviderWeights;
+
+    const bundle = await assembleForStage(makeCtx(), "execution");
+
+    expect(bundle).not.toBeNull();
+    expect(mock.ref.captured?.providerWeights).toBeUndefined();
+  });
+});

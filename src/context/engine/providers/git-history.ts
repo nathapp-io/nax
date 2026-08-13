@@ -105,21 +105,62 @@ export class GitHistoryProvider implements IContextProvider {
 
     const filesToProcess = touchedFiles.filter(isRelativeAndSafe).slice(0, MAX_FILES);
 
-    const sections = (await Promise.all(filesToProcess.map((file) => fetchFileHistory(file, workdir)))).filter(
-      (section): section is string => section !== null,
-    );
+    // US-001: scope attribution must follow the file-to-section association,
+    // not the input list. fetchFileHistory returns null for files with no
+    // history (or git failures); only the files whose history was actually
+    // surfaced contribute a section, so only those files are attributed to
+    // the chunk via RawChunk.scopePaths. Files declared in touchedFiles but
+    // absent from the result are deliberately excluded — the chunk says
+    // nothing about them and must not claim scope.
+    const fileSections: Array<{ file: string; section: string }> = (
+      await Promise.all(
+        filesToProcess.map(async (file) => ({
+          file,
+          section: await fetchFileHistory(file, workdir),
+        })),
+      )
+    ).filter((entry): entry is { file: string; section: string } => entry.section !== null);
 
-    if (sections.length === 0) {
+    if (fileSections.length === 0) {
       return { chunks: [], pullTools: [] };
     }
 
+    // US-001 (truncation contract): scopePaths must list ONLY the files
+    // whose sections actually appear in chunk.content. If the combined
+    // history exceeds MAX_CHUNK_TOKENS, later sections are dropped
+    // entirely (added atomically — never sliced mid-section) so the chunk
+    // never claims scope over a file whose history it has truncated away.
+    //
+    // Preserve the declared touchedFiles order for both sections and
+    // scopePaths — concurrent fetchFileHistory completion order is not
+    // guaranteed to match input order, but AC2 requires the chunk's
+    // scopePaths list to mirror the order files were declared in
+    // touchedFiles. fileSections was built via map() over filesToProcess
+    // so its order already matches the declaration order.
     const header = "## Recent Git History\n\nCommits touching story files:";
-    const rawContent = `${header}\n\n${sections.join("\n\n")}`;
-
-    // Cap content to avoid overrunning token budget
     const maxChars = MAX_CHUNK_TOKENS * 4;
-    const content = rawContent.length > maxChars ? rawContent.slice(0, maxChars) : rawContent;
+    const SECTION_SEPARATOR = "\n\n";
+    const accumulatedParts: string[] = [`${header}${SECTION_SEPARATOR}`];
+    let accumulatedLength = header.length + SECTION_SEPARATOR.length;
+    const includedFileSections: Array<{ file: string; section: string }> = [];
+    for (const entry of fileSections) {
+      // Cost to add this section: a trailing separator (except for the very
+      // first section that follows the header — the header already ends in
+      // SECTION_SEPARATOR) plus the section text.
+      const separatorCost = includedFileSections.length === 0 ? 0 : SECTION_SEPARATOR.length;
+      const candidateLength = accumulatedLength + separatorCost + entry.section.length;
+      // First section is always included so the chunk emits at least the
+      // header + something; subsequent sections must fit within the cap
+      // atomically.
+      if (includedFileSections.length > 0 && candidateLength > maxChars) break;
+      if (separatorCost > 0) accumulatedParts.push(SECTION_SEPARATOR);
+      accumulatedParts.push(entry.section);
+      accumulatedLength = candidateLength;
+      includedFileSections.push(entry);
+    }
+    const content = accumulatedParts.join("").slice(0, maxChars);
     const tokens = Math.ceil(content.length / 4);
+    const scopePaths = includedFileSections.map((entry) => entry.file);
 
     const chunk: RawChunk = {
       id: `git-history:${contentHash8(content)}`,
@@ -129,6 +170,7 @@ export class GitHistoryProvider implements IContextProvider {
       content,
       tokens,
       rawScore: 0.7,
+      scopePaths,
     };
 
     return { chunks: [chunk], pullTools: [] };

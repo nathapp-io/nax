@@ -48,6 +48,22 @@
       "chunkSummary": "Unclear attribution: the chunk's guidance overlaps with the diff but only on stylistic grounds, so the operator was unable to decide.",
       "diffText": "diff --git a/src/style.ts b/src/style.ts\n@@\n-const a = 1;\n+const a = 1;",
       "label": "unclear"
+    },
+    {
+      "caseId": "fixture-007",
+      "chunkId": "git-history:src/active.ts:abc00007",
+      "chunkSummary": "Replace direct module-level imports with the injectable dependency seam to enable unit tests to substitute external calls without process-level mocking.",
+      "scopePaths": ["src/missing.ts"],
+      "diffText": "diff --git a/src/active.ts b/src/active.ts\n@@\n-import { spawnSync } from 'node:child_process';\n+import { _deps } from './_deps';\n\n-const fetchHistory = (args) => spawnSync('git', args);\n+async function fetchHistory(args) {\n+  const result = await _deps.gitWithTimeout(args, workdir);\n+  return result.stdout;\n+}\n\n-// module-level call to external system\n+// module-level injection for tests\n+const externalCall = _deps.someExternalCall;",
+      "label": "followed"
+    },
+    {
+      "caseId": "fixture-008",
+      "chunkId": "code-neighbor:src/active.ts:abc00008",
+      "chunkSummary": "Related files (imports, reverse-deps, tests) for the touched code module listing the immediate neighbours the importer should consult before extending the dependency seam across the codebase.",
+      "scopePaths": ["src/missing.ts", "src/missing/neighbor.ts"],
+      "diffText": "diff --git a/src/active.ts b/src/active.ts\n@@\n-import { helper } from './old-path';\n+import { helper } from './active/neighbor';\n-const call = helper();\n+const call = helper(args);\n-const fallback = () => null;\n+const fallback = () => null;\n-const trace = logInfo;\n+const trace = logInfo;\n-const wrap = (v) => v;\n+const wrap = (v) => v;",
+      "label": "followed"
     }
   ]
 }

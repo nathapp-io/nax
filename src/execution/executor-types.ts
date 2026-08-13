@@ -38,6 +38,8 @@ export interface SequentialExecutionContext extends DispatchContext {
    * reused across all assemble() calls for every story in this run.
    */
   pluginProviderCache?: import("../context/engine").PluginProviderCache;
+  /** Per-run effectiveness provider-weights cache. See PipelineContext.providerWeightsCache. */
+  providerWeightsCache?: import("../context/engine").ProviderWeightsCache;
   runId: string;
   startTime: number;
   batchPlan: StoryBatch[];

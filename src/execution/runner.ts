@@ -14,7 +14,7 @@
  */
 
 import type { NaxConfig } from "../config";
-import { PluginProviderCache } from "../context/engine";
+import { PluginProviderCache, ProviderWeightsCache } from "../context/engine";
 import { NaxError } from "../errors";
 import type { LoadedHooksConfig } from "../hooks";
 import { fireHook } from "../hooks";
@@ -180,6 +180,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
   const allStoryMetrics: StoryMetrics[] = [];
 
   const pluginProviderCache = new PluginProviderCache();
+  const providerWeightsCache = new ProviderWeightsCache();
 
   // Declare prd before crash handler setup to avoid TDZ if SIGTERM arrives during setup
   let prd: PRD | undefined;
@@ -262,6 +263,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         sessionManager,
         agentManager,
         pluginProviderCache,
+        providerWeightsCache,
         runtime,
       },
       prd,

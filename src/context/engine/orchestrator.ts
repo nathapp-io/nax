@@ -359,9 +359,11 @@ export class ContextOrchestrator {
       ? buildPullToolDescriptors(stageConfig.pullToolNames ?? [], request.pullConfig)
       : [];
 
-    // Step 3: score (role × freshness × kind). Role-mismatch sets roleFiltered
+    // Step 3: score (role × freshness × kind × effectiveness). Role-mismatch sets roleFiltered
     // but the chunk still enters dedupe so audience unions can promote it.
-    const scored = scoreChunks(allRaw, role, effectiveMinScore);
+    // US-004: providerWeights threaded from request — scoreChunk multiplies by
+    // the keyed weight on chunk.providerId (identity when omitted).
+    const scored = scoreChunks(allRaw, role, effectiveMinScore, request.providerWeights);
 
     // Step 4: dedupe ALL scored chunks (AC-9). The dedupe pass unions audience
     // tags onto the kept representative; role filtering runs on the unioned

@@ -241,7 +241,11 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
     const logger = getSafeLogger();
     const storyId = input.story.id;
     try {
-      const verdict = await readVerdict(packageDir);
+      // An empty packageDir means no resolvable workdir (no repoRoot either).
+      // readVerdict/cleanupVerdict join onto the empty string, which resolves
+      // against the process cwd — that would read (or delete) a verdict file
+      // in the wrong place. Fail closed without touching the filesystem.
+      const verdict = packageDir ? await readVerdict(packageDir) : null;
       if (verdict) {
         const testsAllPassing = verdict.tests.allPassing === true;
         const categorization = categorizeVerdict(verdict, testsAllPassing);
@@ -281,7 +285,7 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
           "verifier produced unparseable verdict in stdout after retries and no usable verdict file on disk",
       };
     } finally {
-      await cleanupVerdict(packageDir);
+      if (packageDir) await cleanupVerdict(packageDir);
     }
   },
 };

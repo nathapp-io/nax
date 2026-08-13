@@ -53,6 +53,8 @@ export interface RunnerExecutionOptions extends DispatchContext {
   interactionChain?: InteractionChain | null;
   /** Per-run plugin-provider cache (Finding 5 / issue #473). */
   pluginProviderCache?: import("../context/engine").PluginProviderCache;
+  /** Per-run effectiveness provider-weights cache. See PipelineContext.providerWeightsCache. */
+  providerWeightsCache?: import("../context/engine").ProviderWeightsCache;
 }
 
 /**
@@ -198,6 +200,7 @@ export async function runExecutionPhase(
       interactionChain: options.interactionChain,
       agentManager: options.agentManager,
       pluginProviderCache: options.pluginProviderCache,
+      providerWeightsCache: options.providerWeightsCache,
       runtime: options.runtime,
       batchPlan,
     },
