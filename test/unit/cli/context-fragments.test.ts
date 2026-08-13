@@ -364,9 +364,35 @@ describe("fragmentsPruneCommand — feature-wide (US-004 AC5, AC6)", () => {
     const flat = captured.join("\n").toLowerCase();
     expect(flat).toMatch(/nothing|no fragment/);
   });
-});
 
-// ─────────────────────────────────────────────────────────────────────────────
+  test("[US-004 AC6] prune with a storyId for a non-existent fragment exits 0 and reports nothing was removed", async () => {
+    // Regression: previously this falsely reported "Removed fragment for US-MISSING".
+    _fragmentStoreDeps.fileExists = async () => false;
+    _fragmentStoreDeps.removeFile = async () => undefined;
+
+    const captured: string[][] = [];
+    const orig = console.log;
+    console.log = (...args: unknown[]) => {
+      captured.push(args.map((a) => String(a)));
+    };
+
+    let exitCode = -1;
+    try {
+      exitCode = await fragmentsPruneCommand({
+        dir: "/repo",
+        feature: "feat-empty",
+        storyId: "US-MISSING",
+      });
+    } finally {
+      console.log = orig;
+    }
+
+    expect(exitCode).toBe(0);
+    const flat = captured.join("\n").toLowerCase();
+    expect(flat).toMatch(/nothing|no fragment/);
+    expect(flat).not.toContain("removed fragment for us-missing");
+  });
+});
 // AC1, AC2 — fragmentsInspectCommand shape (return value & exit code)
 // ─────────────────────────────────────────────────────────────────────────────
 

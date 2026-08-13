@@ -19,7 +19,12 @@
  * No fragments is a successful, informative no-op for both commands.
  */
 
-import { deleteFragment as deleteFragmentImpl, listFragmentStoryIds as listFragmentStoryIdsImpl } from "@/context";
+import {
+  _fragmentStoreDeps,
+  deleteFragment as deleteFragmentImpl,
+  fragmentPath,
+  listFragmentStoryIds as listFragmentStoryIdsImpl,
+} from "@/context";
 import type { PRD } from "@/prd";
 import chalk from "chalk";
 
@@ -251,11 +256,17 @@ export async function fragmentsPruneCommand(options: FragmentsPruneOptions): Pro
   const featureId = options.feature;
 
   if (options.storyId !== undefined) {
+    // AC6: a missing single-story fragment is also an informative no-op.
+    // `deleteFragment` silently no-ops on a missing file, so we must
+    // observe the file beforehand to avoid falsely reporting it as
+    // removed when it never existed.
+    const path = fragmentPath(projectDir, featureId, options.storyId);
+    const existed = await _fragmentStoreDeps.fileExists(path);
     await deleteFragmentImpl(projectDir, featureId, options.storyId);
     const summary: FragmentsPruneSummary = {
       featureId,
       requestedStoryId: options.storyId,
-      removedStoryIds: [options.storyId],
+      removedStoryIds: existed ? [options.storyId] : [],
     };
     for (const line of formatFragmentsPrune(summary)) {
       console.log(line);
