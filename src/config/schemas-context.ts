@@ -5,7 +5,7 @@
 
 import { z } from "zod";
 
-const TestCoverageConfigSchema = z.object({
+const TestCoverageConfigBase = z.object({
   enabled: z.boolean().default(true),
   detail: z.enum(["names-only", "names-and-counts", "describe-blocks"]).default("names-and-counts"),
   maxTokens: z.number().int().min(50).max(5000).default(500),
@@ -15,11 +15,20 @@ const TestCoverageConfigSchema = z.object({
   scopeToStory: z.boolean().default(true),
 });
 
-const ContextAutoDetectConfigSchema = z.object({
+/**
+ * Object-level defaults are derived by re-parsing the schema, never hand-written.
+ * A literal here would have to restate every field's `.default()`, and the copy
+ * silently rots the moment a field is added — see the note on ContextConfigSchema.
+ */
+const TestCoverageConfigSchema = TestCoverageConfigBase.default(() => TestCoverageConfigBase.parse({}));
+
+const ContextAutoDetectConfigBase = z.object({
   enabled: z.boolean().default(true),
   maxFiles: z.number().int().min(1).max(20).default(5),
   traceImports: z.boolean().default(false),
 });
+
+const ContextAutoDetectConfigSchema = ContextAutoDetectConfigBase.default(() => ContextAutoDetectConfigBase.parse({}));
 
 const FeatureContextEngineConfigSchema = z.object({
   enabled: z.boolean().default(false),
@@ -142,168 +151,149 @@ const ContextV2StageOverrideSchema = z.object({
 });
 
 // Context Engine config (Phase 6: selective on; operators opt in per project)
-export const ContextV2ConfigSchema = z
-  .object({
-    /**
-     * Enable Context Engine orchestrator.
-     * Default: false — operators opt in by setting this true in their project config.
-     * Phase 6: selective on; Phase 7: plugin providers available once enabled.
-     */
-    enabled: z.boolean().default(false),
-    /**
-     * Minimum score threshold — chunks below this are dropped as noise.
-     * Phase 0: near-zero (0.1) so existing content is almost never filtered.
-     * Post-GA: tuned upward once effectiveness signal data is available.
-     */
-    minScore: z.number().min(0).max(1).default(0.1),
-    /**
-     * Per-provider fetch timeout in ms (spec :841, AC-5). A provider that
-     * exceeds it is dropped with a warning; the stage still assembles.
-     * Was hardcoded at 5000 in the orchestrator before this key existed.
-     */
-    providerTimeoutMs: z.number().int().min(1000).default(5000),
-    /** Pull tool configuration (Phase 4+) */
-    pull: ContextV2PullConfigSchema,
-    /** Canonical rules store configuration (Phase 5.1+) */
-    rules: ContextV2RulesConfigSchema,
-    /**
-     * Feature-scoped fragment configuration (US-001). Defaults live here AND
-     * in the outer literal at `NaxConfigSchema.context.v2` in `schemas.ts`
-     * because Zod does not re-parse default values; both sites must agree or
-     * `NaxConfigSchema.parse({})` shadows the inner defaults.
-     */
-    fragments: ContextV2FragmentsConfigSchema,
-    /**
-     * External plugin provider registrations (Phase 7+).
-     * Each entry loads a module that exports an IContextProvider-compatible object.
-     * Empty by default — operators add providers for RAG, graph, or KB use cases.
-     */
-    pluginProviders: z.array(ContextPluginProviderConfigSchema).default([]),
-    /**
-     * Per-stage token budget overrides (AC-59).
-     * Keys are pipeline stage names (e.g. "execution", "tdd-implementer").
-     * Set in per-package config (<repoRoot>/.nax/mono/<packageDir>/config.json)
-     * to override the default stage budget for a specific package.
-     *
-     * Example: { "execution": { "budgetTokens": 15000 } }
-     */
-    stages: z.record(z.string().min(1), ContextV2StageOverrideSchema).default({}),
-    /**
-     * Determinism mode (AC-24).
-     * When true, providers that declare `deterministic: false` are excluded from assembly.
-     * Guarantees two runs with identical inputs produce identical push blocks.
-     * Default: false — all providers run regardless of determinism declaration.
-     */
-    deterministic: z.boolean().default(false),
-    /**
-     * Session scratch retention settings (AC-20).
-     * Controls how long completed session scratch dirs are kept on disk.
-     */
-    session: z
-      .object({
-        /** Days to keep completed session scratch dirs before purging. Default: 7. */
-        retentionDays: z.number().int().min(1).default(7),
-        /** When true and the feature run completes fully, archive scratch to _archive/ instead of deleting. Default: true. */
-        archiveOnFeatureArchive: z.boolean().default(true),
-      })
-      .default(() => ({ retentionDays: 7, archiveOnFeatureArchive: true })),
-    /**
-     * Built-in provider scope configuration (#507).
-     * Controls which working directory each built-in provider uses when
-     * executing git/glob queries in monorepo setups.
-     */
-    providers: z
-      .object({
-        /**
-         * Working directory scope for GitHistoryProvider (#507).
-         * "package" — run git log in packageDir (monorepo-safe default).
-         * "repo" — run git log in repoRoot (full repo history).
-         */
-        historyScope: z.enum(["repo", "package"]).default("package"),
-        /**
-         * Working directory scope for CodeNeighborProvider (#507).
-         * "package" — scan neighbours within packageDir (monorepo-safe default).
-         * "repo" — scan neighbours in repoRoot.
-         */
-        neighborScope: z.enum(["repo", "package"]).default("package"),
-        /**
-         * Cross-package scan depth for CodeNeighborProvider in monorepo mode (#507).
-         * 0 disables cross-package scanning. Default: 1 (one package level up).
-         * Only active when neighborScope is "package" and the story has a workdir.
-         */
-        crossPackageDepth: z.number().int().min(0).default(1),
-        /**
-         * Override the source-file glob for CodeNeighborProvider reverse-dep scanning.
-         * When omitted (default), the glob is derived from detectLanguage(packageDir).
-         * Tunable per-package via .nax/mono/<pkg>/config.json.
-         */
-        sourceGlob: z.string().optional(),
-        /**
-         * Maximum files scanned per directory during reverse-dep glob.
-         * Raised from 200 to 500: language-aware globbing now produces less noise,
-         * so a higher default rarely hurts and reduces silent truncation in mid-size
-         * monorepos. Tunable per-package via .nax/mono/<pkg>/config.json.
-         */
-        maxGlobFiles: z.number().int().min(1).default(500),
-      })
-      .default({ historyScope: "package", neighborScope: "package", crossPackageDepth: 1, maxGlobFiles: 500 }),
-    /**
-     * Staleness detection for feature context entries (Amendment A AC-46/AC-47).
-     * Downweights old or contradicted entries in context.md so stale advice
-     * does not crowd out fresh context. No chunks are auto-removed — humans
-     * must edit context.md to remove stale entries.
-     */
-    staleness: z
-      .object({
-        /** Enable staleness detection. Default: true. */
-        enabled: z.boolean().default(true),
-        /**
-         * Number of completed stories after which a context entry is considered
-         * age-stale. Measured by position in context.md (entries are appended
-         * in story order). Default: 10.
-         */
-        maxStoryAge: z.number().int().min(1).default(10),
-        /**
-         * Score multiplier applied to stale chunks (0–1).
-         * 0.4 = stale entry scores 40% of its normal weight, making it less
-         * likely to beat fresh context for the same budget slot.
-         */
-        scoreMultiplier: z.number().min(0).max(1).default(0.4),
-      })
-      .default(() => ({ enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 })),
-    /**
-     * Manifest retention settings (US-001).
-     * Opt-in: when unset, purgeStaleManifests is not invoked. When set,
-     * `context-manifest-*.json` and `rebuild-manifest.json` files older
-     * than `retentionDays` are deleted at run completion. `.optional()`
-     * with no `.default()` so an unset key resolves to `undefined`.
-     */
-    manifest: z
-      .object({
-        /** Days to keep context-manifest and rebuild-manifest files before purging. */
-        retentionDays: z.number().int().min(1),
-      })
-      .optional(),
-  })
-  .default(() => ({
-    enabled: false,
-    minScore: 0.1,
-    providerTimeoutMs: 5000,
-    pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
-    rules: { allowLegacyClaudeMd: false, budgetTokens: 8192, rulesShare: 0.4, enforceBudget: true },
-    fragments: { enabled: false, decay: 0.6, maxTokens: 400, extractor: "deterministic" as const },
-    pluginProviders: [],
-    stages: {},
-    deterministic: false,
-    session: { retentionDays: 7, archiveOnFeatureArchive: true },
-    staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
-    providers: {
-      historyScope: "package" as const,
-      neighborScope: "package" as const,
-      crossPackageDepth: 1,
-      maxGlobFiles: 500,
-    },
-  }));
+const ContextV2ConfigBase = z.object({
+  /**
+   * Enable Context Engine orchestrator.
+   * Default: false — operators opt in by setting this true in their project config.
+   * Phase 6: selective on; Phase 7: plugin providers available once enabled.
+   */
+  enabled: z.boolean().default(false),
+  /**
+   * Minimum score threshold — chunks below this are dropped as noise.
+   * Phase 0: near-zero (0.1) so existing content is almost never filtered.
+   * Post-GA: tuned upward once effectiveness signal data is available.
+   */
+  minScore: z.number().min(0).max(1).default(0.1),
+  /**
+   * Per-provider fetch timeout in ms (spec :841, AC-5). A provider that
+   * exceeds it is dropped with a warning; the stage still assembles.
+   * Was hardcoded at 5000 in the orchestrator before this key existed.
+   */
+  providerTimeoutMs: z.number().int().min(1000).default(5000),
+  /** Pull tool configuration (Phase 4+) */
+  pull: ContextV2PullConfigSchema,
+  /** Canonical rules store configuration (Phase 5.1+) */
+  rules: ContextV2RulesConfigSchema,
+  /**
+   * Feature-scoped fragment configuration (US-001). Defaults are schema-derived
+   * only — `schemas.ts` calls `ContextConfigSchema.default(() => …parse({}))`,
+   * so there is no second copy to keep in sync. Do not reintroduce one.
+   */
+  fragments: ContextV2FragmentsConfigSchema,
+  /**
+   * External plugin provider registrations (Phase 7+).
+   * Each entry loads a module that exports an IContextProvider-compatible object.
+   * Empty by default — operators add providers for RAG, graph, or KB use cases.
+   */
+  pluginProviders: z.array(ContextPluginProviderConfigSchema).default([]),
+  /**
+   * Per-stage token budget overrides (AC-59).
+   * Keys are pipeline stage names (e.g. "execution", "tdd-implementer").
+   * Set in per-package config (<repoRoot>/.nax/mono/<packageDir>/config.json)
+   * to override the default stage budget for a specific package.
+   *
+   * Example: { "execution": { "budgetTokens": 15000 } }
+   */
+  stages: z.record(z.string().min(1), ContextV2StageOverrideSchema).default({}),
+  /**
+   * Determinism mode (AC-24).
+   * When true, providers that declare `deterministic: false` are excluded from assembly.
+   * Guarantees two runs with identical inputs produce identical push blocks.
+   * Default: false — all providers run regardless of determinism declaration.
+   */
+  deterministic: z.boolean().default(false),
+  /**
+   * Session scratch retention settings (AC-20).
+   * Controls how long completed session scratch dirs are kept on disk.
+   */
+  session: z
+    .object({
+      /** Days to keep completed session scratch dirs before purging. Default: 7. */
+      retentionDays: z.number().int().min(1).default(7),
+      /** When true and the feature run completes fully, archive scratch to _archive/ instead of deleting. Default: true. */
+      archiveOnFeatureArchive: z.boolean().default(true),
+    })
+    .default(() => ({ retentionDays: 7, archiveOnFeatureArchive: true })),
+  /**
+   * Built-in provider scope configuration (#507).
+   * Controls which working directory each built-in provider uses when
+   * executing git/glob queries in monorepo setups.
+   */
+  providers: z
+    .object({
+      /**
+       * Working directory scope for GitHistoryProvider (#507).
+       * "package" — run git log in packageDir (monorepo-safe default).
+       * "repo" — run git log in repoRoot (full repo history).
+       */
+      historyScope: z.enum(["repo", "package"]).default("package"),
+      /**
+       * Working directory scope for CodeNeighborProvider (#507).
+       * "package" — scan neighbours within packageDir (monorepo-safe default).
+       * "repo" — scan neighbours in repoRoot.
+       */
+      neighborScope: z.enum(["repo", "package"]).default("package"),
+      /**
+       * Cross-package scan depth for CodeNeighborProvider in monorepo mode (#507).
+       * 0 disables cross-package scanning. Default: 1 (one package level up).
+       * Only active when neighborScope is "package" and the story has a workdir.
+       */
+      crossPackageDepth: z.number().int().min(0).default(1),
+      /**
+       * Override the source-file glob for CodeNeighborProvider reverse-dep scanning.
+       * When omitted (default), the glob is derived from detectLanguage(packageDir).
+       * Tunable per-package via .nax/mono/<pkg>/config.json.
+       */
+      sourceGlob: z.string().optional(),
+      /**
+       * Maximum files scanned per directory during reverse-dep glob.
+       * Raised from 200 to 500: language-aware globbing now produces less noise,
+       * so a higher default rarely hurts and reduces silent truncation in mid-size
+       * monorepos. Tunable per-package via .nax/mono/<pkg>/config.json.
+       */
+      maxGlobFiles: z.number().int().min(1).default(500),
+    })
+    .default({ historyScope: "package", neighborScope: "package", crossPackageDepth: 1, maxGlobFiles: 500 }),
+  /**
+   * Staleness detection for feature context entries (Amendment A AC-46/AC-47).
+   * Downweights old or contradicted entries in context.md so stale advice
+   * does not crowd out fresh context. No chunks are auto-removed — humans
+   * must edit context.md to remove stale entries.
+   */
+  staleness: z
+    .object({
+      /** Enable staleness detection. Default: true. */
+      enabled: z.boolean().default(true),
+      /**
+       * Number of completed stories after which a context entry is considered
+       * age-stale. Measured by position in context.md (entries are appended
+       * in story order). Default: 10.
+       */
+      maxStoryAge: z.number().int().min(1).default(10),
+      /**
+       * Score multiplier applied to stale chunks (0–1).
+       * 0.4 = stale entry scores 40% of its normal weight, making it less
+       * likely to beat fresh context for the same budget slot.
+       */
+      scoreMultiplier: z.number().min(0).max(1).default(0.4),
+    })
+    .default(() => ({ enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 })),
+  /**
+   * Manifest retention settings (US-001).
+   * Opt-in: when unset, purgeStaleManifests is not invoked. When set,
+   * `context-manifest-*.json` and `rebuild-manifest.json` files older
+   * than `retentionDays` are deleted at run completion. `.optional()`
+   * with no `.default()` so an unset key resolves to `undefined`.
+   */
+  manifest: z
+    .object({
+      /** Days to keep context-manifest and rebuild-manifest files before purging. */
+      retentionDays: z.number().int().min(1),
+    })
+    .optional(),
+});
+
+export const ContextV2ConfigSchema = ContextV2ConfigBase.default(() => ContextV2ConfigBase.parse({}));
 
 export const ContextConfigSchema = z.object({
   testCoverage: TestCoverageConfigSchema,

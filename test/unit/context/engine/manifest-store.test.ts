@@ -2,12 +2,13 @@ import { describe, expect, test } from "bun:test";
 import {
   _manifestStoreDeps,
   contextManifestPath,
+  contextStoryDir,
   loadContextManifests,
   rebuildManifestPath,
   writeContextManifest,
   writeRebuildManifest,
 } from "../../../../src/context/engine/manifest-store";
-import { withDepsRestore } from "../../../helpers/deps";
+import { withDepsRestore, withTempDir } from "@test/helpers";
 
 withDepsRestore(_manifestStoreDeps);
 
@@ -22,9 +23,8 @@ describe("manifest-store", () => {
     const writes = new Map<string, string>();
 
     _manifestStoreDeps.mkdirp = async () => undefined;
-    _manifestStoreDeps.writeFile = async (path, content) => {
-      writes.set(path, content);
-      return content.length;
+    _manifestStoreDeps.writeJson = async (path, data) => {
+      writes.set(path, JSON.stringify(data, null, 2));
     };
     _manifestStoreDeps.listFeatureDirs = async () => ["feat-auth"];
     _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-review-semantic.json"];
@@ -137,10 +137,10 @@ describe("manifest-store", () => {
     expect(manifests[0]?.manifest.packageDir).toBe("/repo");
   });
 
-  test("writeContextManifest rejects when writeFile rejects", async () => {
+  test("writeContextManifest rejects when the JSON write rejects", async () => {
     const writeError = new Error("disk full");
     _manifestStoreDeps.mkdirp = async () => undefined;
-    _manifestStoreDeps.writeFile = async () => {
+    _manifestStoreDeps.writeJson = async () => {
       throw writeError;
     };
 
@@ -162,9 +162,8 @@ describe("manifest-store", () => {
   test("writeRebuildManifest appends rebuild events into rebuild-manifest.json", async () => {
     const writes = new Map<string, string>();
     _manifestStoreDeps.mkdirp = async () => undefined;
-    _manifestStoreDeps.writeFile = async (path, content) => {
-      writes.set(path, content);
-      return content.length;
+    _manifestStoreDeps.writeJson = async (path, data) => {
+      writes.set(path, JSON.stringify(data, null, 2));
     };
     _manifestStoreDeps.fileExists = async (path) => writes.has(path);
     _manifestStoreDeps.readFile = async (path) => writes.get(path) ?? "";
@@ -204,5 +203,35 @@ describe("manifest-store", () => {
     expect(parsed.events).toHaveLength(2);
     expect(parsed.events[0]?.requestId).toBe("req-1");
     expect(parsed.events[1]?.requestId).toBe("req-2");
+  });
+
+  // Real deps, no stubs — the only test here that exercises the filesystem.
+  // Covers two things stubs hid: the tmp+rename write must not orphan a
+  // `<path>.tmp-<uuid>` sibling, and discovery must work with no featureId
+  // (listFeatureDirs globbed files only, so it returned [] for every repo).
+  test("real round-trip: no temp sibling, and discovery works without a featureId", async () => {
+    await withTempDir(async (dir) => {
+      for (let i = 1; i <= 5; i++) {
+        await writeContextManifest(dir, "feat-atomic", "US-002", "execution", {
+          requestId: `req-${i}`,
+          stage: "execution",
+          totalBudgetTokens: 8_000,
+          usedTokens: i,
+          includedChunks: ["chunk:1"],
+          excludedChunks: [],
+          floorItems: [],
+          digestTokens: 12,
+          buildMs: 1,
+        });
+      }
+
+      const storyDir = contextStoryDir(dir, "feat-atomic", "US-002");
+      const entries: string[] = [];
+      for await (const entry of new Bun.Glob("*").scan({ cwd: storyDir, absolute: false })) entries.push(entry);
+      expect(entries).toEqual(["context-manifest-execution.json"]);
+
+      const manifests = await loadContextManifests(dir, "US-002");
+      expect(manifests[0]?.manifest.requestId).toBe("req-5");
+    });
   });
 });

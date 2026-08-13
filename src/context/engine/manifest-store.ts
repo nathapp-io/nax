@@ -9,18 +9,28 @@
 
 import { mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { saveJsonFile } from "@/utils/json-file";
 import type { ContextManifest } from "./types";
 
 export const _manifestStoreDeps = {
   mkdirp: (path: string): Promise<string | undefined> => mkdir(path, { recursive: true }),
-  writeFile: (path: string, content: string): Promise<number> => Bun.write(path, content),
+  /**
+   * Atomic JSON write (tmp file + rename). Manifests are read concurrently by
+   * `nax context inspect` and by the effectiveness annotator while a run is
+   * still writing them, so a torn read would surface as "no manifest" rather
+   * than as an error. `saveJsonFile` owns the tmp+rename and the serialisation.
+   */
+  writeJson: (path: string, data: unknown): Promise<void> => saveJsonFile(path, data, "context-manifest"),
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
   listFeatureDirs: async (projectDir: string): Promise<string[]> => {
     const baseDir = join(projectDir, ".nax", "features");
     try {
       const dirs: string[] = [];
-      for await (const entry of new Bun.Glob("*").scan({ cwd: baseDir, absolute: false })) {
+      // `"*/"` + onlyFiles:false is what yields directories. A bare `"*"` scan
+      // defaults to files only, so this returned [] for every real repo —
+      // `.nax/features/` holds nothing but feature directories.
+      for await (const entry of new Bun.Glob("*/").scan({ cwd: baseDir, absolute: false, onlyFiles: false })) {
         dirs.push(entry);
       }
       return dirs.sort();
@@ -87,7 +97,7 @@ export async function writeContextManifest(
 ): Promise<void> {
   const filePath = contextManifestPath(projectDir, featureId, storyId, stage);
   await _manifestStoreDeps.mkdirp(dirname(filePath));
-  await _manifestStoreDeps.writeFile(filePath, `${JSON.stringify(toStoredManifest(projectDir, manifest), null, 2)}\n`);
+  await _manifestStoreDeps.writeJson(filePath, toStoredManifest(projectDir, manifest));
 }
 
 export interface RebuildManifestEntry {
@@ -131,7 +141,7 @@ export async function writeRebuildManifest(
   }
 
   current.events.push(entry);
-  await _manifestStoreDeps.writeFile(filePath, `${JSON.stringify(current, null, 2)}\n`);
+  await _manifestStoreDeps.writeJson(filePath, current);
 }
 
 export interface StoredContextManifest {

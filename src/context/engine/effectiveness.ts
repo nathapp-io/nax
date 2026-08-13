@@ -217,7 +217,7 @@ export async function annotateManifestEffectiveness(
       const raw = await _manifestStoreDeps.readFile(item.path);
       const parsed = JSON.parse(raw) as Record<string, unknown>;
       parsed.chunkEffectiveness = effectiveness;
-      await _manifestStoreDeps.writeFile(item.path, `${JSON.stringify(parsed, null, 2)}\n`);
+      await _manifestStoreDeps.writeJson(item.path, parsed);
     } catch (err) {
       _effectivenessDeps.getLogger().warn("context-v2", "Failed to annotate chunk effectiveness", {
         path: item.path,
