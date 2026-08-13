@@ -22,15 +22,11 @@ export const _fragmentStoreDeps = {
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
   listFragments: async (fragmentsDir: string): Promise<string[]> => {
-    try {
-      const files: string[] = [];
-      for await (const entry of new Bun.Glob("*.md").scan({ cwd: fragmentsDir, absolute: false })) {
-        files.push(entry);
-      }
-      return files.sort();
-    } catch {
-      return [];
+    const files: string[] = [];
+    for await (const entry of new Bun.Glob("*.md").scan({ cwd: fragmentsDir, absolute: false })) {
+      files.push(entry);
     }
+    return files.sort();
   },
   removeFile: async (path: string): Promise<void> => {
     await rm(path, { force: true });
@@ -39,11 +35,38 @@ export const _fragmentStoreDeps = {
 
 /** Resolve the on-disk path for a fragment file. */
 export function fragmentPath(projectDir: string, featureId: string, storyId: string): string {
+  validatePathSegment(featureId, "featureId");
+  validatePathSegment(storyId, "storyId");
   return join(projectDir, "features", featureId, "fragments", `${storyId}.md`);
 }
 
 function fragmentsDir(projectDir: string, featureId: string): string {
+  validatePathSegment(featureId, "featureId");
   return join(projectDir, "features", featureId, "fragments");
+}
+
+/**
+ * Reject path-traversal in fragment identifiers. `featureId` and `storyId`
+ * flow directly into a `node:path.join` call, and `join` silently collapses
+ * `..` segments — e.g. `join("/repo", "features", "..", "etc", "fragments",
+ * "x.md")` resolves to `/repo/etc/x.md`. Without this guard, an untrusted
+ * caller could escape the feature fragments dir. Each id must be a single
+ * non-empty path segment with no separators, NUL, or dot/dot-dot values.
+ */
+const NUL = "\0";
+function validatePathSegment(value: string, name: string): void {
+  if (value.length === 0) {
+    throw new Error(`[fragments] ${name} must be non-empty`);
+  }
+  if (value === "." || value === "..") {
+    throw new Error(`[fragments] ${name} must not be '.' or '..'`);
+  }
+  for (let i = 0; i < value.length; i++) {
+    const c = value.charCodeAt(i);
+    if (c === 47 /* '/' */ || c === 92 /* '\\' */ || c === NUL.charCodeAt(0)) {
+      throw new Error(`[fragments] ${name} must not contain path separators or NUL`);
+    }
+  }
 }
 
 /** Truncate a body to fit within the given token budget. */
@@ -84,7 +107,14 @@ export async function readFragment(projectDir: string, featureId: string, storyI
 
 /** List the story ids that have a fragment under the given feature. */
 export async function listFragmentStoryIds(projectDir: string, featureId: string): Promise<string[]> {
-  const files = await _fragmentStoreDeps.listFragments(fragmentsDir(projectDir, featureId));
+  const dir = fragmentsDir(projectDir, featureId);
+  // The fragments dir is created lazily on the first write. A cold-start
+  // feature with no fragments yet has no dir — that is the expected "no
+  // fragments" case and must return []. Other I/O failures (permissions,
+  // corrupt paths) propagate so persistence problems aren't hidden as a
+  // silent empty result.
+  if (!(await _fragmentStoreDeps.fileExists(dir))) return [];
+  const files = await _fragmentStoreDeps.listFragments(dir);
   return files.map((file) => file.replace(/\.md$/, ""));
 }
 

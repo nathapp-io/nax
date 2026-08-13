@@ -125,6 +125,7 @@ describe("fragment store — writeFragment / readFragment (US-001)", () => {
 
 describe("fragment store — listFragmentStoryIds (US-001)", () => {
   test("[US-001 AC 9] listFragmentStoryIds returns both story ids when two fragments exist", async () => {
+    _fragmentStoreDeps.fileExists = async () => true;
     _fragmentStoreDeps.listFragments = async () => ["US-001.md", "US-002.md"];
 
     const ids = await listFragmentStoryIds("/repo", "feat-auth");
@@ -132,15 +133,114 @@ describe("fragment store — listFragmentStoryIds (US-001)", () => {
   });
 
   test("listFragmentStoryIds returns [] when no fragments exist", async () => {
+    _fragmentStoreDeps.fileExists = async () => true;
     _fragmentStoreDeps.listFragments = async () => [];
     const ids = await listFragmentStoryIds("/repo", "feat-auth");
     expect(ids).toEqual([]);
   });
 
+  test("listFragmentStoryIds returns [] when the fragments dir has not been created yet (cold start)", async () => {
+    let listCalled = false;
+    _fragmentStoreDeps.fileExists = async () => false;
+    _fragmentStoreDeps.listFragments = async () => {
+      listCalled = true;
+      return [];
+    };
+
+    const ids = await listFragmentStoryIds("/repo", "feat-auth");
+    expect(ids).toEqual([]);
+    expect(listCalled).toBe(false);
+  });
+
+  test("listFragmentStoryIds propagates I/O errors from the scan", async () => {
+    _fragmentStoreDeps.fileExists = async () => true;
+    _fragmentStoreDeps.listFragments = async () => {
+      throw new Error("EACCES: permission denied");
+    };
+
+    await expect(listFragmentStoryIds("/repo", "feat-auth")).rejects.toThrow("EACCES");
+  });
+
   test("listFragmentStoryIds strips the .md suffix", async () => {
+    _fragmentStoreDeps.fileExists = async () => true;
     _fragmentStoreDeps.listFragments = async () => ["US-abc-1.md", "story-with-dashes.md"];
     const ids = await listFragmentStoryIds("/repo", "feat-auth");
     expect(ids).toEqual(["US-abc-1", "story-with-dashes"]);
+  });
+});
+
+describe("fragment store — path-segment validation (US-001)", () => {
+  test("fragmentPath rejects featureId containing '..'", () => {
+    expect(() => fragmentPath("/repo", "../etc", "US-001")).toThrow(/featureId/);
+  });
+
+  test("fragmentPath rejects featureId containing a slash", () => {
+    expect(() => fragmentPath("/repo", "feat/other", "US-001")).toThrow(/featureId/);
+  });
+
+  test("fragmentPath rejects featureId containing a backslash", () => {
+    expect(() => fragmentPath("/repo", "feat\\other", "US-001")).toThrow(/featureId/);
+  });
+
+  test("fragmentPath rejects featureId equal to '.'", () => {
+    expect(() => fragmentPath("/repo", ".", "US-001")).toThrow(/featureId/);
+  });
+
+  test("fragmentPath rejects empty featureId", () => {
+    expect(() => fragmentPath("/repo", "", "US-001")).toThrow(/featureId/);
+  });
+
+  test("fragmentPath rejects storyId containing '..' before the .md suffix", () => {
+    expect(() => fragmentPath("/repo", "feat-auth", "../etc/passwd")).toThrow(/storyId/);
+  });
+
+  test("fragmentPath rejects storyId containing a forward slash", () => {
+    expect(() => fragmentPath("/repo", "feat-auth", "US/001")).toThrow(/storyId/);
+  });
+
+  test("fragmentPath rejects storyId containing a NUL byte", () => {
+    expect(() => fragmentPath("/repo", "feat-auth", "US\u0000bad")).toThrow(/storyId/);
+  });
+
+  test("writeFragment rejects a traversal featureId before touching disk", async () => {
+    let writeCalled = false;
+    _fragmentStoreDeps.mkdirp = async () => undefined;
+    _fragmentStoreDeps.writeFile = async () => {
+      writeCalled = true;
+      return 0;
+    };
+    _fragmentStoreDeps.fileExists = async () => false;
+    _fragmentStoreDeps.listFragments = async () => [];
+    _fragmentStoreDeps.removeFile = async () => undefined;
+
+    await expect(writeFragment("/repo", "../etc", "US-001", "body", 400)).rejects.toThrow(/featureId/);
+    expect(writeCalled).toBe(false);
+  });
+
+  test("readFragment rejects a traversal featureId before touching disk", async () => {
+    let readCalled = false;
+    _fragmentStoreDeps.fileExists = async () => {
+      readCalled = true;
+      return false;
+    };
+    _fragmentStoreDeps.readFile = async () => "";
+    _fragmentStoreDeps.listFragments = async () => [];
+    _fragmentStoreDeps.removeFile = async () => undefined;
+
+    await expect(readFragment("/repo", "../etc", "US-001")).rejects.toThrow(/featureId/);
+    expect(readCalled).toBe(false);
+  });
+
+  test("deleteFragment rejects a traversal storyId before touching disk", async () => {
+    let removeCalled = false;
+    _fragmentStoreDeps.fileExists = async () => false;
+    _fragmentStoreDeps.removeFile = async () => {
+      removeCalled = true;
+    };
+    _fragmentStoreDeps.listFragments = async () => [];
+
+    await expect(deleteFragment("/repo", "feat-auth", "../escape")).rejects.toThrow(/storyId/);
+    expect(removeCalled).toBe(false);
   });
 });
 
