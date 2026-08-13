@@ -1,1 +1,2 @@
 [2026-08-13T12:16:55.515Z] US-001 — PASSED — Add Git history scope attribution — Cost: $7.2619
+[2026-08-13T12:37:19.391Z] US-002 — PASSED — Add code-neighbor scope attribution — Cost: $0.3181

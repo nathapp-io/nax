@@ -3,7 +3,7 @@
   "feature": "effectiveness-scoring-loop",
   "branchName": "feat/effectiveness-scoring-loop",
   "createdAt": "2026-08-13T11:45:22.000Z",
-  "updatedAt": "2026-08-13T11:48:16.128Z",
+  "updatedAt": "2026-08-13T12:37:22.887Z",
   "userStories": [
     {
       "id": "US-001",
@@ -24,8 +24,8 @@
         "attribution"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -37,7 +37,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "pi",
         "initialProfileId": "pi-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/context/engine/providers/git-history.ts",
@@ -49,6 +51,10 @@
       "expectedFiles": [
         "test/unit/context/engine/providers/git-history-scope.test.ts"
       ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1136a0285cf228edc3b9769e74a0fe6b9b9c93d0",
       "outOfScope": [
         "US-001 only: attributing scope to files a commit touched but the story did not declare in `touchedFiles` — the chunk only reports history for requested files."
       ]
@@ -73,8 +79,8 @@
         "refactor"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -86,7 +92,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "pi",
         "initialProfileId": "pi-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/context/engine/providers/code-neighbor.ts",
@@ -99,6 +107,10 @@
         "src/context/engine/providers/code-neighbor-chunk.ts",
         "test/unit/context/engine/providers/code-neighbor-scope.test.ts"
       ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "dd83eb3d1e6b1040c70cb703745ad77e0c217079",
       "outOfScope": [
         "US-002 only: cross-package neighbour scope when `crossPackageDepth` is greater than zero — scope is recorded for the paths the chunk renders, whichever package they resolve to."
       ]
@@ -145,7 +157,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "pi",
         "initialProfileId": "pi-medium-balanced",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/context/engine/manifest-builder.ts",
@@ -158,6 +172,10 @@
         "src/context/engine/provider-weights.ts",
         "test/unit/context/engine/provider-weights.test.ts"
       ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "f4bcb9176217bb1de053014136ad1a80c0a2553a",
       "outOfScope": [
         "US-003 only: consuming the `followed`, `contradicted` or `unknown` verdicts — only `ignored` contributes to the ratio."
       ]
@@ -214,6 +232,9 @@
         "test/unit/context/engine/scoring-effectiveness-weight.test.ts",
         "test/unit/pipeline/stages/context-provider-weights.test.ts"
       ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
       "outOfScope": [
         "US-004 only: clamping or validating weights at the consumption site — `deriveProviderWeights` owns the clamp, and the scorer applies whatever mapping it is given."
       ]
