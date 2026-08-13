@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "caseId": "rules-mock-pattern__US-014",
+      "chunkId": "static-rules:mock-pattern:banned-mock:a1b2c3d4",
+      "chunkSummary": "Forbidden patterns: mock.module() is banned for production code. Use the _deps injection pattern instead so tests can mock external boundaries without monkey-patching global modules.",
+      "scopePaths": ["src/**/*.ts"],
+      "diffText": "diff --git a/src/agents/acp/adapter.ts b/src/agents/acp/adapter.ts\n@@ -1,5 +1,5 @@\n-import { mock } from 'bun:test';\n+import { _acpAdapterDeps } from './_deps';\n const adapter = new AcpAdapter();\n-const mocked = mock.module('./real-module');\n+const realModule = await _acpAdapterDeps.loadModule('./real-module');\n",
+      "label": "followed",
+      "note": "diff replaces a mock.module call with _deps injection"
+    },
+    {
+      "caseId": "rules-context-pollution__US-018",
+      "chunkId": "static-rules:context-pollution:pollution-metric:deadbeef",
+      "chunkSummary": "Context pollution metric: the pollutionRatio field is a useful signal for whether stored context chunks are pulling weight in the current story diff. Operators should review the manifest after every story.",
+      "scopePaths": ["src/**/*.ts"],
+      "diffText": "diff --git a/src/runtime/manifest.ts b/src/runtime/manifest.ts\n@@ -10,3 +10,4 @@\n export interface StoredContextManifest {\n   requestId: string;\n+  pollutionRatio?: number;\n }\n",
+      "label": "contradicted",
+      "note": "review finding: pollutionRatio was removed; the chunk is stale"
+    },
+    {
+      "caseId": "rules-chunk-tokens__US-021",
+      "chunkId": "static-rules:chunk-tokens:tokens-field:1234abcd",
+      "chunkSummary": "Every packed chunk must carry a tokens field so the orchestrator can verify it does not exceed the per-chunk budget. Audit the packing helper for missing fields.",
+      "diffText": "diff --git a/src/packing/packing.test.ts b/src/packing/packing.test.ts\n@@ -1,2 +1,2 @@\n-import { packChunks } from './packing';\n+import { packChunks } from './packing';\n",
+      "label": "ignored",
+      "note": "diff only edits a test, no production code references the tokens field"
+    },
+    {
+      "caseId": "rules-pipeline-stages__US-005",
+      "chunkId": "static-rules:pipeline-stages:stage-list:cafe5678",
+      "chunkSummary": "Pipeline stages must be registered in src/pipeline/stages/index.ts before they can be invoked. Add an entry to STAGE_REGISTRY to make the new stage discoverable.",
+      "diffText": "diff --git a/docs/notes.md b/docs/notes.md\n@@ -1,1 +1,1 @@\n-old note\n+new note",
+      "label": "unclear",
+      "note": "diff touches only docs; cannot determine if rule was followed"
+    }
+  ]
+}

@@ -2,9 +2,11 @@
  * `nax context` CLI commands
  */
 
+import { existsSync } from "node:fs";
 import chalk from "chalk";
 import { loadContextManifests } from "../context/engine";
 import type { StoredContextManifest } from "../context/engine/manifest-store";
+import { errorMessage } from "../utils/errors";
 
 export interface ContextInspectOptions {
   dir?: string;
@@ -100,3 +102,60 @@ export async function contextInspectCommand(options: ContextInspectOptions): Pro
     console.log(line);
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// `nax context effectiveness eval` — US-001 evaluation harness (stubs)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface EffectivenessEvalOptions {
+  /** Project directory (defaults to process.cwd()). */
+  dir?: string;
+  /** Path to the labels JSON file. */
+  labels?: string;
+  /** Emit a single EvalReport JSON to stdout, suppressing the table. */
+  json?: boolean;
+}
+
+/** Reserved so tests can stub I/O without touching the real fs/logger. */
+export const _effectivenessEvalDeps = {
+  existsSync,
+  readLabels: async (_path: string): Promise<string> => {
+    // Implementer replaces with `Bun.file(path).text()` (or similar).
+    // Stub: never invoked; the command stub short-circuits before this.
+    throw new Error("not implemented");
+  },
+  log: (stage: string, level: "warn" | "error", message: string, data?: Record<string, unknown>): void => {
+    // Use console for stub; implementer swaps to getLogger().
+    const fn = level === "error" ? console.error : console.warn;
+    fn(`[${stage}] ${message}`, data ?? "");
+  },
+};
+
+/**
+ * `nax context effectiveness eval [--labels <path>] [--json]` — stub.
+ *
+ * STUB: always returns -1 so every CLI-level AC fails. Implementer
+ * replaces with: loadLabelSet → classifier (the real one from
+ * effectiveness.ts once US-003 lands) → scoreEffectiveness → format →
+ * exit 0/1/2 per the spec.
+ */
+export async function effectivenessEvalCommand(options: EffectivenessEvalOptions): Promise<number> {
+  // Surface the option in stderr once so a real invocation is observable.
+  _effectivenessEvalDeps.log("effectiveness-eval", "error", "not implemented", { labels: options.labels });
+  return -1;
+}
+
+/** STUB: pure formatter for the per-signal table (AC10/AC11/AC12). */
+export function formatEffectivenessReport(
+  _report: import("../context/engine/effectiveness-eval").EvalReport,
+): string[] {
+  return ["not implemented"];
+}
+
+/** STUB: pure error-message formatter. */
+export function formatEffectivenessError(reason: string, path?: string): string {
+  return `not implemented: ${reason}${path ? ` (${path})` : ""}`;
+}
+
+/** Re-export errorMessage for downstream call sites that need a safe str. */
+export { errorMessage };

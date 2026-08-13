@@ -50,6 +50,13 @@ export { configCommand, type ConfigCommandOptions } from "./config";
 export { agentsListCommand } from "./agents";
 export { contextInspectCommand, type ContextInspectOptions } from "./context";
 export {
+  effectivenessEvalCommand,
+  formatEffectivenessReport,
+  formatEffectivenessError,
+  _effectivenessEvalDeps,
+  type EffectivenessEvalOptions,
+} from "./context";
+export {
   _contextFragmentsDeps,
   formatFragmentsInspect,
   formatFragmentsPrune,
