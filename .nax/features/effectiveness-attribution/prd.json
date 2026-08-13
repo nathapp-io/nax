@@ -3,7 +3,7 @@
   "feature": "effectiveness-attribution",
   "branchName": "feat/effectiveness-attribution",
   "createdAt": "2026-08-13T14:05:05+08:00",
-  "updatedAt": "2026-08-13T10:09:09.453Z",
+  "updatedAt": "2026-08-13T10:19:19.898Z",
   "userStories": [
     {
       "id": "US-001",
@@ -206,8 +206,8 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

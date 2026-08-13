@@ -1,36 +1,37 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-08-13T06-26-23-632Z",
+    "id": "run-2026-08-13T08-16-11-851Z",
     "feature": "effectiveness-attribution",
-    "startedAt": "2026-08-13T06:26:23.632Z",
-    "status": "failed",
+    "startedAt": "2026-08-13T08:16:11.851Z",
+    "status": "completed",
     "dryRun": false,
-    "pid": 6469
+    "pid": 24975
   },
   "progress": {
     "total": 4,
-    "passed": 1,
+    "passed": 4,
     "failed": 0,
-    "paused": 1,
+    "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 0
   },
   "cost": {
-    "spent": 0.81637394,
+    "spent": 0.607648,
     "limit": 60
   },
   "current": null,
   "iterations": 3,
-  "updatedAt": "2026-08-13T08:05:01.710Z",
-  "durationMs": 5918078,
+  "updatedAt": "2026-08-13T10:27:23.574Z",
+  "durationMs": 7871723,
   "postRun": {
     "acceptance": {
-      "status": "not-run"
+      "status": "passed",
+      "lastRunAt": "2026-08-13T10:26:48.372Z"
     },
     "regression": {
       "status": "passed",
-      "lastRunAt": "2026-08-13T08:05:00.464Z"
+      "lastRunAt": "2026-08-13T10:27:22.356Z"
     }
   }
 }
