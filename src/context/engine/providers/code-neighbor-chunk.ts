@@ -99,17 +99,6 @@ export function buildScopePaths(sections: readonly NeighborSection[]): string[] 
   return out;
 }
 
-/**
- * Render the chunk body from a list of sections. Each section produces a
- * `### <file>` header followed by `- <neighbor>` lines. Sections are joined
- * with a blank line. Returns the empty string for an empty `sections` list.
- */
-export function renderSections(sections: readonly NeighborSection[]): string {
-  const header = "## Code Neighbors\n\nRelated files (imports, reverse-deps, tests):";
-  const body = sections.map((s) => `### ${s.file}\n${s.neighbors.map((n) => `- ${n}`).join("\n")}`).join("\n\n");
-  return `${header}\n\n${body}`;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // assembleCodeNeighborChunk
 // ─────────────────────────────────────────────────────────────────────────────
@@ -128,21 +117,43 @@ export function renderSections(sections: readonly NeighborSection[]): string {
  *   - `tokens = ceil(content.length / 4)`
  *   - the visible truncation note when `truncated === true`
  *
- * The chunk's content is capped at `MAX_CHUNK_TOKENS * 4` characters
- * (unchanged from the prior implementation). When the cap kicks in, the
- * truncation note (if any) is appended AFTER the cap is applied so the note
- * itself is never sliced off.
+ * Truncation contract (US-002 AC2): `scopePaths` must list ONLY the paths
+ * whose sections actually appear in `chunk.content`. Sections are added
+ * atomically — a section that would push the body over the cap is dropped
+ * entirely (never sliced mid-section) so the chunk never claims scope over
+ * a path whose section is absent from the rendered body. The first section
+ * is always included so the chunk emits at least the header + something;
+ * subsequent sections must fit atomically. Mirrors the git-history
+ * truncation pattern (US-001).
  */
 export function assembleCodeNeighborChunk(input: AssembleCodeNeighborChunkInput): RawChunk | null {
   const { sections, truncated, maxGlobFiles } = input;
   if (sections.length === 0) return null;
 
-  const scopePaths = buildScopePaths(sections);
-  const rawContent = renderSections(sections);
-
-  // Cap body first so the truncation note (when present) is never sliced off.
+  const header = "## Code Neighbors\n\nRelated files (imports, reverse-deps, tests):";
+  const SECTION_SEPARATOR = "\n\n";
   const maxChars = MAX_CHUNK_TOKENS * 4;
-  const body = rawContent.length > maxChars ? rawContent.slice(0, maxChars) : rawContent;
+
+  // Build the body incrementally, dropping sections that would push the
+  // total past the cap. `includedSections` is the SSOT for both content
+  // and scopePaths — anything not included here is invisible to the
+  // downstream consumer.
+  const accumulatedParts: string[] = [`${header}${SECTION_SEPARATOR}`];
+  let accumulatedLength = header.length + SECTION_SEPARATOR.length;
+  const includedSections: NeighborSection[] = [];
+  for (const section of sections) {
+    const rendered = `### ${section.file}\n${section.neighbors.map((n) => `- ${n}`).join("\n")}`;
+    const separatorCost = includedSections.length === 0 ? 0 : SECTION_SEPARATOR.length;
+    const candidateLength = accumulatedLength + separatorCost + rendered.length;
+    // First section is always included; subsequent sections must fit
+    // atomically — drop entirely when adding would overflow.
+    if (includedSections.length > 0 && candidateLength > maxChars) break;
+    if (separatorCost > 0) accumulatedParts.push(SECTION_SEPARATOR);
+    accumulatedParts.push(rendered);
+    accumulatedLength = candidateLength;
+    includedSections.push(section);
+  }
+  const body = accumulatedParts.join("").slice(0, maxChars);
   const truncationNote = truncated
     ? `\n\n> Note: reverse-dep scan capped at ${maxGlobFiles} files; some neighbors may be missing.\n> Increase \`context.v2.providers.maxGlobFiles\` or set \`sourceGlob\` to a narrower pattern (e.g. \`**/*.go\`) to reduce the scan footprint.`
     : "";
@@ -157,6 +168,6 @@ export function assembleCodeNeighborChunk(input: AssembleCodeNeighborChunkInput)
     content,
     tokens,
     rawScore: 0.65,
-    scopePaths,
+    scopePaths: buildScopePaths(includedSections),
   };
 }

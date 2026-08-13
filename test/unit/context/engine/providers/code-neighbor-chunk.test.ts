@@ -213,6 +213,64 @@ describe("assembleCodeNeighborChunk — truncation note", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Truncation contract — atomic section drop + scopePaths from included only.
+// Mirrors the git-history pattern: when MAX_CHUNK_TOKENS*4 cap kicks in,
+// later sections are dropped entirely (never sliced mid-section) so the
+// chunk never claims scope over a path whose section was truncated away.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("assembleCodeNeighborChunk — truncation contract (AC2: scope only what is rendered)", () => {
+  test("scopePaths excludes paths from sections that were dropped at the cap", () => {
+    // Each rendered section is large enough that the second section pushes
+    // the total over the 2000-char cap and must be dropped atomically.
+    // Section shape: "### <file>\n- <neighbor>\n" (~30 chars) + 1900 chars
+    // of long neighbor names → ~1930 chars per section.
+    // Header + "\n\n" is ~52 chars. First section (~1930) fits under the
+    // cap; the second pushes the total over and is excluded entirely.
+    const longNeighborName = "n".repeat(1900);
+    const sections: NeighborSection[] = [
+      { file: "src/a.ts", neighbors: [longNeighborName] },
+      { file: "src/b.ts", neighbors: [longNeighborName] },
+    ];
+    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 }) as RawChunk;
+    // src/b.ts was dropped — must NOT be in chunk.content.
+    expect(chunk.content).not.toContain("src/b.ts");
+    // src/b.ts must NOT be in scopePaths either (AC2: scopePaths contains
+    // only neighbor paths rendered in the chunk body).
+    expect(chunk.scopePaths).toEqual(["src/a.ts", longNeighborName]);
+  });
+
+  test("scopePaths preserves order across included sections when only some fit", () => {
+    // Choose neighbor-name length so the first two sections fit under the
+    // 2000-char cap and the third pushes the total over.
+    //   header + sep + section1(1500) + sep + section2 + sep + section3(1500)
+    //   ≈ 66 + 1515 + 2 + 27 + 2 + 1515 = 3127  → over cap, section 3 dropped.
+    const smallNeighborName = "n".repeat(1500);
+    const sections: NeighborSection[] = [
+      { file: "src/a.ts", neighbors: [smallNeighborName] },
+      { file: "src/b.ts", neighbors: ["src/b/dep.ts"] },
+      { file: "src/c.ts", neighbors: [smallNeighborName] },
+    ];
+    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 }) as RawChunk;
+    // src/a.ts fits, src/b.ts fits, src/c.ts pushes over the cap and is dropped.
+    expect(chunk.scopePaths).toEqual(["src/a.ts", smallNeighborName, "src/b.ts", "src/b/dep.ts"]);
+    // And src/c.ts is not rendered.
+    expect(chunk.content).not.toContain("src/c.ts");
+  });
+
+  test("first section is always included even when it would exceed the cap (atomic inclusion)", () => {
+    // A single section that itself exceeds the 2000-char cap. The chunk
+    // still emits a result with that section's paths in scopePaths — the
+    // cap slices the body but never drops the only section.
+    const hugeSection = "n".repeat(3000);
+    const sections: NeighborSection[] = [{ file: "src/only.ts", neighbors: [hugeSection] }];
+    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 }) as RawChunk;
+    expect(chunk.content.length).toBeLessThanOrEqual(2000);
+    expect(chunk.scopePaths).toEqual(["src/only.ts", hugeSection]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Determinism — same sections + same inputs → same id
 // ─────────────────────────────────────────────────────────────────────────────
 
