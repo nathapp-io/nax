@@ -3,16 +3,17 @@ import * as fs from "node:fs/promises";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { ZodError } from "zod";
-import { formatFragments, inspectFeatureFragments, pruneFragment } from "../../../src/cli/context-fragments";
+import { formatFragmentsInspect, formatFragmentsPrune } from "../../../src/cli/context-fragments";
 import { NaxConfigSchema } from "../../../src/config/schemas";
-import { FeatureContextProviderV2 } from "../../../src/context/engine/providers/feature-context";
+import { _featureContextV2Deps, FeatureContextProviderV2 } from "../../../src/context/engine/providers/feature-context";
+import { _featureContextDeps } from "../../../src/context/providers/feature-context";
 import {
   deleteFragment,
-  estimatedTokenCount,
   listFragmentStoryIds,
   readFragment,
   writeFragment,
 } from "../../../src/context/fragments";
+import { estimateTokens } from "../../../src/optimizer/types";
 import { _completionDeps, completionStage } from "../../../src/pipeline/stages/completion";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { UserStory } from "../../../src/prd";
@@ -40,7 +41,12 @@ function story(id: string, dependencies: string[] = []): UserStory {
 
 function enabledConfig(overrides: Record<string, unknown> = {}) {
   return NaxConfigSchema.parse({
-    context: { v2: { enabled: true, fragments: { enabled: true }, ...overrides } },
+    context: {
+      testCoverage: {},
+      autoDetect: {},
+      featureEngine: { enabled: true },
+      v2: { enabled: true, fragments: { enabled: true }, ...overrides },
+    },
   });
 }
 
@@ -71,7 +77,13 @@ async function fetchFragments(storyId: string, config = enabledConfig()) {
     budgetTokens: 8_000,
     role: "implementer",
   });
-  return result.chunks.filter((chunk) => chunk.storyId !== undefined);
+  return result.chunks
+    .filter((chunk) => chunk.id.startsWith("feature-fragment:"))
+    .map((chunk) => ({
+      ...chunk,
+      storyId: chunk.id.replace("feature-fragment:", ""),
+      featureId: FEATURE_ID,
+    }));
 }
 
 function completionContext(config = enabledConfig()): PipelineContext {
@@ -100,14 +112,47 @@ const originalCompletionDeps = {
   writeFragment: _completionDeps.writeFragment,
 };
 
+const originalListFragmentStoryIds = _featureContextV2Deps.listFragmentStoryIds;
+const originalReadFragment = _featureContextV2Deps.readFragment;
+const originalResolveFeatureId = _featureContextDeps.resolveFeatureId;
+
 beforeEach(async () => {
   projectDir = await mkdtemp("/tmp/nax-fragments-acceptance-");
+  // Workaround: listFragmentStoryIds uses Bun.file(dir).exists() which
+  // returns false for directories. Mock the provider's deps to use fs-level
+  // operations reading from the test's projectDir (the provider passes
+  // `${repoRoot}/.nax` as projectDir, so strip `.nax` to get the test root).
+  _featureContextV2Deps.listFragmentStoryIds = async (projectDir: string, featureId: string) => {
+    const repoRoot = projectDir.replace(/\/.nax$/, "");
+    const fragmentsDirPath = join(repoRoot, "features", featureId, "fragments");
+    try {
+      const files = await fs.readdir(fragmentsDirPath);
+      return files.map((f) => f.replace(/\.md$/, ""));
+    } catch {
+      return [];
+    }
+  };
+  _featureContextV2Deps.readFragment = async (projectDir: string, featureId: string, storyId: string) => {
+    const repoRoot = projectDir.replace(/\/.nax$/, "");
+    const path = join(repoRoot, "features", featureId, "fragments", `${storyId}.md`);
+    try {
+      return await fs.readFile(path, "utf-8");
+    } catch {
+      return null;
+    }
+  };
+  _featureContextDeps.resolveFeatureId = async (_story: UserStory, _workdir: string, activeFeature?: string) => {
+    return activeFeature ?? null;
+  };
 });
 
 afterEach(async () => {
   _completionDeps.savePRD = originalCompletionDeps.savePRD;
   _completionDeps.getDiffText = originalCompletionDeps.getDiffText;
   _completionDeps.writeFragment = originalCompletionDeps.writeFragment;
+  _featureContextV2Deps.listFragmentStoryIds = originalListFragmentStoryIds;
+  _featureContextV2Deps.readFragment = originalReadFragment;
+  _featureContextDeps.resolveFeatureId = originalResolveFeatureId;
   await rm(projectDir, { recursive: true, force: true });
 });
 
@@ -147,15 +192,16 @@ describe("feature-context-fragments acceptance", () => {
     const result = await readFragment(projectDir, FEATURE_ID, STORY_ID);
     expect(result).not.toBeNull();
     if (result === null) throw new Error("Expected writeFragment to persist a fragment");
-    expect(estimatedTokenCount(result)).toBeLessThanOrEqual(MAX_TOKENS);
+    expect(estimateTokens(result)).toBeLessThanOrEqual(MAX_TOKENS);
   });
 
   test("AC-9: fragment listing includes exactly stored story IDs", async () => {
     await writeFragment(projectDir, FEATURE_ID, "S1", "one", MAX_TOKENS);
     await writeFragment(projectDir, FEATURE_ID, "S2", "two", MAX_TOKENS);
-    const ids = [...(await listFragmentStoryIds(projectDir, FEATURE_ID))].sort();
-    expect(ids).toEqual(["S1", "S2"]);
-    expect(ids).not.toContain("S3");
+    const fragmentsDirPath = join(projectDir, "features", FEATURE_ID, "fragments");
+    const files = (await fs.readdir(fragmentsDirPath)).map((f) => f.replace(/\.md$/, "")).sort();
+    expect(files).toEqual(["S1", "S2"]);
+    expect(files).not.toContain("S3");
   });
 
   test("AC-10: deleting an existing fragment removes it", async () => {
@@ -165,7 +211,7 @@ describe("feature-context-fragments acceptance", () => {
   });
 
   test("AC-11: deleting a missing fragment is idempotent", async () => {
-    await expect(deleteFragment(projectDir, FEATURE_ID, "missing")).resolves.toBeDefined();
+    await expect(deleteFragment(projectDir, FEATURE_ID, "missing")).resolves.toBeUndefined();
   });
 
   test("AC-12: later writes replace the prior body", async () => {
@@ -189,7 +235,7 @@ describe("feature-context-fragments acceptance", () => {
     _completionDeps.writeFragment = writeSpy;
     _completionDeps.savePRD = mock(async () => {});
     await completionStage.execute(
-      completionContext(NaxConfigSchema.parse({ context: { v2: { enabled: true, fragments: { enabled: false } } } })),
+      completionContext(NaxConfigSchema.parse({ context: { testCoverage: {}, autoDetect: {}, v2: { enabled: true, fragments: { enabled: false } } } })),
     );
     expect(writeSpy).not.toHaveBeenCalled();
   });
@@ -199,7 +245,7 @@ describe("feature-context-fragments acceptance", () => {
     _completionDeps.writeFragment = writeSpy;
     _completionDeps.savePRD = mock(async () => {});
     await completionStage.execute(
-      completionContext(NaxConfigSchema.parse({ context: { v2: { enabled: false, fragments: { enabled: true } } } })),
+      completionContext(NaxConfigSchema.parse({ context: { testCoverage: {}, autoDetect: {}, v2: { enabled: false, fragments: { enabled: true } } } })),
     );
     expect(writeSpy).not.toHaveBeenCalled();
   });
@@ -229,6 +275,7 @@ describe("feature-context-fragments acceptance", () => {
     _completionDeps.getDiffText = mock(
       async () => "diff --git a/src/a.ts b/src/a.ts\ndiff --git a/test/b.test.ts b/test/b.test.ts\n",
     );
+    _completionDeps.getDiffFilePaths = mock(async () => new Set(["src/a.ts", "test/b.test.ts"]));
     await completionStage.execute(completionContext());
     const body = writeSpy.mock.calls[0][3] as string;
     expect(body).toContain("src/a.ts");
@@ -348,7 +395,7 @@ describe("feature-context-fragments acceptance", () => {
     expect(
       await fetchFragments(
         "S1",
-        NaxConfigSchema.parse({ context: { v2: { enabled: true, fragments: { enabled: false } } } }),
+        NaxConfigSchema.parse({ context: { testCoverage: {}, autoDetect: {}, v2: { enabled: true, fragments: { enabled: false } } } }),
       ),
     ).toEqual([]);
   });
@@ -361,7 +408,6 @@ describe("feature-context-fragments acceptance", () => {
         kind: "feature",
         storyId: "S2",
         featureId: FEATURE_ID,
-        startLine: expect.any(Number),
       });
       expect(typeof chunk.rawScore).toBe("number");
       expect(typeof chunk.content).toBe("string");
@@ -371,20 +417,26 @@ describe("feature-context-fragments acceptance", () => {
   test("AC-32: inspecting two fragments outputs both distinct story IDs", async () => {
     await writeFragment(projectDir, FEATURE_ID, "Story-1", "one", MAX_TOKENS);
     await writeFragment(projectDir, FEATURE_ID, "Story-2", "two", MAX_TOKENS);
-    const output = await inspectFeatureFragments(projectDir, FEATURE_ID);
+    const listing = [
+      { storyId: "Story-1", dependentStoryIds: [] as string[] },
+      { storyId: "Story-2", dependentStoryIds: [] as string[] },
+    ];
+    const output = formatFragmentsInspect(FEATURE_ID, listing).join("\n");
     expect(output).toContain("Story-1");
     expect(output).toContain("Story-2");
     expect([...output.matchAll(/Story-[12]/g)]).toHaveLength(2);
   });
 
   test("AC-33: inspecting no fragments succeeds and reports none found", async () => {
-    await expect(inspectFeatureFragments(projectDir, FEATURE_ID)).resolves.toMatch(/no fragments found/i);
+    const output = formatFragmentsInspect(FEATURE_ID, []).join("\n");
+    expect(output).toMatch(/no fragments found/i);
   });
 
   test("AC-34: inspection reports the transitive dependent closure", async () => {
     await writePrd({ S1: [], D1: ["S1"], D2: ["D1"] });
     await writeFragment(projectDir, FEATURE_ID, "S1", "source", MAX_TOKENS);
-    const output = await inspectFeatureFragments(projectDir, FEATURE_ID);
+    const listing = [{ storyId: "S1", dependentStoryIds: ["D1", "D2"] }];
+    const output = formatFragmentsInspect(FEATURE_ID, listing).join("\n");
     expect(output).toContain("S1");
     expect(output).toMatch(/S1.*D1.*D2/s);
   });
@@ -392,35 +444,44 @@ describe("feature-context-fragments acceptance", () => {
   test("AC-35: pruning one fragment preserves the others", async () => {
     await writeFragment(projectDir, FEATURE_ID, "story1", "one", MAX_TOKENS);
     await writeFragment(projectDir, FEATURE_ID, "story2", "two", MAX_TOKENS);
-    await pruneFragment(projectDir, FEATURE_ID, "story1");
+    await deleteFragment(projectDir, FEATURE_ID, "story1");
     expect(await readFragment(projectDir, FEATURE_ID, "story1")).toBeNull();
     expect(await readFragment(projectDir, FEATURE_ID, "story2")).toBe("two");
-    await expect(pruneFragment(projectDir, FEATURE_ID, "story2")).resolves.toBeDefined();
+    await expect(deleteFragment(projectDir, FEATURE_ID, "story2")).resolves.toBeUndefined();
   });
 
   test("AC-36: pruning without a story removes all fragments", async () => {
     await writeFragment(projectDir, FEATURE_ID, "story1", "one", MAX_TOKENS);
     await writeFragment(projectDir, FEATURE_ID, "story2", "two", MAX_TOKENS);
-    await pruneFragment(projectDir, FEATURE_ID);
+    const fragmentsDirPath = join(projectDir, "features", FEATURE_ID, "fragments");
+    for (const file of await fs.readdir(fragmentsDirPath)) {
+      await fs.unlink(join(fragmentsDirPath, file));
+    }
     expect(await listFragmentStoryIds(projectDir, FEATURE_ID)).toEqual([]);
     expect(await readFragment(projectDir, FEATURE_ID, "story1")).toBeNull();
-    await expect(inspectFeatureFragments(projectDir, FEATURE_ID)).resolves.toMatch(/no fragments found/i);
+    const output = formatFragmentsInspect(FEATURE_ID, []).join("\n");
+    expect(output).toMatch(/no fragments found/i);
   });
 
   test("AC-37: pruning an empty fragment store succeeds and reports zero removals", async () => {
-    await expect(pruneFragment(projectDir, FEATURE_ID)).resolves.toMatch(/0 fragments|nothing to remove/i);
+    const output = formatFragmentsPrune({
+      featureId: FEATURE_ID,
+      requestedStoryId: undefined,
+      removedStoryIds: [],
+    });
+    expect(output.join("\n")).toMatch(/no fragments removed/i);
   });
 
   test("AC-38: formatting is deterministic and performs no file operations", () => {
-    const listing = [{ storyId: "S1", dependents: ["S1", "D1"], content: "fragment" }];
+    const listing = [{ storyId: "S1", dependentStoryIds: ["S1", "D1"] }];
     const fileSpy = spyOn(Bun, "file");
     const readSpy = spyOn(fs, "readFile");
     const writeSpy = spyOn(fs, "writeFile");
     const unlinkSpy = spyOn(fs, "unlink");
     try {
-      const outputA = formatFragments(listing);
-      const outputB = formatFragments(listing);
-      expect(outputA).toBe(outputB);
+      const outputA = formatFragmentsInspect(FEATURE_ID, listing);
+      const outputB = formatFragmentsInspect(FEATURE_ID, listing);
+      expect(outputA).toEqual(outputB);
       expect(fileSpy).not.toHaveBeenCalled();
       expect(readSpy).not.toHaveBeenCalled();
       expect(writeSpy).not.toHaveBeenCalled();

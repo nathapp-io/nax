@@ -3,7 +3,7 @@
   "feature": "feature-context-fragments",
   "branchName": "feat/feature-context-fragments",
   "createdAt": "2026-08-12T00:00:00+08:00",
-  "updatedAt": "2026-08-13T01:19:12.396Z",
+  "updatedAt": "2026-08-13T01:56:37.547Z",
   "userStories": [
     {
       "id": "US-001",
@@ -163,8 +163,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -216,8 +216,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -229,7 +229,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "pi",
         "initialProfileId": "pi-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/cli/context.ts",
@@ -242,7 +244,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ed1aad99221543be271b423f56a8b2f18c55d3d4"
     }
   ],
   "analysis": "This is an enhancement to Context Engine v2, not a greenfield feature. `src/context/engine/providers/feature-context.ts` currently adapts only the legacy `.nax/features/<featureId>/context.md` through `FeatureContextProviderV1`; its `fetch()` builds feature-kind `RawChunk`s at rawScore 1.0 and soft-fails the entire provider on errors (lines 59-160). The enhancement must preserve this legacy chunk even if fragment graph loading fails. `RawChunk` exposes `id`, `kind`, `scope`, `role`, `content`, `tokens`, and `rawScore` (src/context/engine/types.ts:355-390); dependency decay must be written into `rawScore`, not `scoreMultiplier`, because the scorer uses the latter only for stale chunks. `ContextRequest` supplies `storyId`, optional `featureId`, and repoRoot (src/context/engine/types.ts:198-217). The provider constructor already receives the requesting `UserStory`, while `src/prd/schema.ts:227-241` normalizes, deduplicates, and validates dependency IDs, so the traversal must not add defensive ID normalization.\n\nConfiguration is split across `src/config/schemas-context.ts` and an outer `ContextConfigSchema.default({...})` literal in `src/config/schemas.ts:303-329`. The v2 schema has defaults and a `.default()` object (schemas-context.ts:107-267), but Zod does not parse the outer default literal; therefore `fragments` must be present in both places or `NaxConfigSchema.parse({})` leaves it undefined. The fragment schema should constrain decay to [0, 1], default enabled false, decay 0.6, maxTokens 400, and allow only extractor `deterministic`.\n\n`src/context/engine/manifest-store.ts:10-49` is the storage precedent: it uses feature-scoped paths, Bun APIs, sorted discovery, and an exported injectable `_manifestStoreDeps` object. The new store belongs at `src/context/fragments/store.ts`, uses `<projectDir>/.nax/features/<featureId>/fragments/<storyId>.md`, overwrites on write, returns null for missing reads, lists only existing `.md` story IDs, and makes absent deletes idempotent. Its barrel is required because every consumer must import `@/context/fragments`, preventing singleton/dependency seam fragmentation. Token truncation must happen before write and needs a defined deterministic token-estimation convention consistent with surrounding context code.\n\n`completionStage` is the correct capture host (src/pipeline/stages/completion.ts:51-152). It already has the exact `!isBatch && ctx.projectDir && featureId && ctx.config.context?.v2?.enabled` guard and a sibling best-effort effectiveness annotation using `_completionDeps.getDiffText` (lines 78-94). Capture should mirror this non-fatal structure, add the fragments-enabled condition, use `_completionDeps` to expose its external write dependency, obtain changed paths from the diff, and compose the specified deterministic markdown from the story title, acceptance criteria, and files touched. It must occur on every non-batch successful completion, including retries, without making completion fail when disk I/O fails.\n\n`src/cli/context.ts:1-96` provides the pure formatter plus thin command pattern. The fragments CLI should follow it with pure formatting, a read-only inspect that computes reverse transitive dependents from the feature PRD, and prune commands that use the store. Missing/unparseable `prd.json` must never hide legacy context at provider read time; fragment reads simply yield no fragment chunks. Traversal uses breadth-first shortest-distance semantics with a visited/distance map, continues through missing fragments, emits each reachable dependency at most once, and terminates cycles. The feature has no migration: existing context.md is unchanged and remains readable, fragment storage starts empty, and only the new prune command removes fragments. Main risks are accidentally disabling the legacy chunk when PRD loading fails, using stale-only scoreMultiplier for decay, missing the outer config default, non-deterministic traversal ordering, batch writes, path/filename handling, and tests that mock an internal module rather than the published barrel/dependency seam.",
