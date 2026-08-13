@@ -1,6 +1,6 @@
 # SPEC: Effectiveness → Scoring Feedback Loop
 
-<!-- spec-writing: completed-through-phase-5 -->
+<!-- spec-writing: completed-through-phase-6 -->
 
 ## Summary
 
@@ -205,8 +205,11 @@ unaffected by provider-side changes and by the addition of a sibling
 - **US-003 → US-004.** `deriveProviderWeights` is a new export consumed by the
   context stage. US-004 declares the seam invariant: stub the symbol, trigger
   `contextStage.execute`, assert it was invoked and its result reached scoring.
-- **US-003 internal.** `loadFeatureManifests` is a new export from
-  `manifest-store`; `deriveProviderWeights`'s own ACs exercise it.
+- **US-003 → US-004.** `loadFeatureManifests` is a new export from
+  `manifest-store`. `deriveProviderWeights` takes manifests as a parameter and
+  does **not** call it; the context stage does. US-004 therefore declares its
+  seam invariant: stub the symbol, trigger `contextStage.execute`, assert it was
+  invoked with the feature id.
 - **US-001 / US-002 → existing carrier.** Both providers write to the existing
   `RawChunk.scopePaths` field already forwarded by `buildManifest`; no new
   carrier and therefore no new seam.
@@ -220,7 +223,7 @@ unaffected by provider-side changes and by the addition of a sibling
 3. `[unit]` Calling `GitHistoryProvider.fetch` where no requested file has commit history returns an empty `chunks` list.
 4. `[unit]` Whenever `GitHistoryProvider.fetch` returns a chunk, that chunk's `scopePaths` is a non-empty list.
 5. `[unit]` Passing a packed git-history chunk carrying `scopePaths` to `buildManifest` produces a manifest whose `chunkScopePaths` maps that chunk's id to the same list.
-6. `[unit]` Running `scoreEffectiveness` over the committed effectiveness fixture extended with a `history`-kind labelled case yields a `sizeCorrelation` whose magnitude is strictly smaller than the same fixture scored with whole-diff classification.
+6. `[unit]` Loading the committed effectiveness fixture extended with a labelled case whose `chunkId` identifies a git-history chunk and whose `scopePaths` lists that chunk's scoped files, then scoring it with `scoreEffectiveness` under the scoped classifier and again under a whole-diff classifier, yields a scoped `sizeCorrelation` whose magnitude is strictly smaller than the whole-diff one.
 
 **Out of scope:** US-001 only: attributing scope to files a commit touched but the story did not declare in `touchedFiles` — the chunk only reports history for requested files.
 
@@ -229,9 +232,9 @@ unaffected by provider-side changes and by the addition of a sibling
 1. `[unit]` Calling `CodeNeighborProvider.fetch` for a story touching one file that has neighbours returns a chunk whose `scopePaths` contains that touched file's path.
 2. `[unit]` The chunk returned by `CodeNeighborProvider.fetch` has `scopePaths` containing each neighbour path rendered in the chunk body.
 3. `[unit]` Calling `CodeNeighborProvider.fetch` when no touched file has neighbours returns an empty `chunks` list.
-4. `[unit]` The chunk-assembly function extracted to `code-neighbor-chunk.ts` is importable from that module and, given a list of per-file neighbour sections, returns a chunk whose `kind` is `neighbor` and whose `scopePaths` is non-empty.
+4. `[unit]` Calling `CodeNeighborProvider.fetch` for a story touching two files that share one neighbour returns a chunk whose `scopePaths` lists that shared neighbour path exactly once.
 5. `[unit]` Passing a packed code-neighbor chunk carrying `scopePaths` to `buildManifest` produces a manifest whose `chunkScopePaths` maps that chunk's id to the same list.
-6. `[unit]` Running `scoreEffectiveness` over the committed effectiveness fixture extended with a `neighbor`-kind labelled case yields a `sizeCorrelation` whose magnitude is strictly smaller than the same fixture scored with whole-diff classification.
+6. `[unit]` Loading the committed effectiveness fixture extended with a labelled case whose `chunkId` identifies a code-neighbor chunk and whose `scopePaths` lists that chunk's scoped files, then scoring it with `scoreEffectiveness` under the scoped classifier and again under a whole-diff classifier, yields a scoped `sizeCorrelation` whose magnitude is strictly smaller than the whole-diff one.
 
 Verification note: the 600-line source limit on `code-neighbor.ts` is enforced by the build/static gate `bun run lint` (which runs `check:file-sizes`), not by an acceptance criterion.
 
@@ -260,12 +263,13 @@ Verification note: the 600-line source limit on `code-neighbor.ts` is enforced b
 
 1. `[unit]` Calling `scoreChunk` for a chunk whose `providerId` has a weight below `1.0` in the supplied weights returns a score equal to the score computed without weights multiplied by that weight.
 2. `[unit]` Calling `scoreChunk` for a chunk whose `providerId` is absent from the supplied weights returns the same score as calling it with no weights supplied.
-3. `[unit]` Calling `scoreChunk` with no weights supplied returns the same score as before this feature for the same chunk, role and minimum score.
+3. `[unit]` Calling `scoreChunk` with no weights supplied returns a score equal to the chunk's `rawScore` multiplied by its role multiplier, its kind weight and its freshness multiplier.
 4. `[unit]` Calling `scoreChunks` with a weights mapping applies each chunk's own provider weight, so two chunks from different providers with equal `rawScore`, kind and role receive different scores when their providers' weights differ.
 5. `[integration]` Assembling context where a `static`-kind chunk's provider carries a weight low enough to put its score below the minimum score returns a bundle whose manifest lists that chunk in `includedChunks` and not in `excludedChunks`.
 6. `[integration]` Assembling context where a `neighbor`-kind chunk's provider carries a weight low enough to put its score below the minimum score returns a manifest listing that chunk in `excludedChunks` with reason `below-min-score`.
 7. `[integration]` Stubbing `deriveProviderWeights` to return a known weight mapping and invoking `contextStage.execute` with a pipeline context whose `config.context.v2.enabled` is true results in `deriveProviderWeights` being invoked once.
 8. `[integration]` Stubbing `deriveProviderWeights` to return a weight below `1.0` for a non-floor provider and invoking `contextStage.execute` with `config.context.v2.enabled` true produces a written manifest in which that provider's chunk scores strictly lower than the same run with the stub returning weight `1.0`.
-9. `[unit]` Constructing a `ContextRequest` without `providerWeights` and passing it to the orchestrator produces a bundle identical to the pre-feature behaviour for the same providers and budget.
+9. `[unit]` Assembling context from a `ContextRequest` with `providerWeights` absent produces a manifest whose `includedChunks` and `excludedChunks` equal those produced from an otherwise identical request whose `providerWeights` is an empty mapping.
+10. `[integration]` Stubbing `loadFeatureManifests` and invoking `contextStage.execute` with a pipeline context whose `config.context.v2.enabled` is true results in `loadFeatureManifests` being invoked with the feature id from the pipeline context.
 
 **Out of scope:** US-004 only: clamping or validating weights at the consumption site — `deriveProviderWeights` owns the clamp, and the scorer applies whatever mapping it is given.
