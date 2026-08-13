@@ -98,7 +98,7 @@ interface EffectivenessEvidenceTerms {
   combined?: ReadonlySet<string>;
 }
 
-function buildEvidenceTerms(
+export function buildEvidenceTerms(
   agentOutput: string,
   diffText: string,
   findingMessages: string[],
@@ -117,7 +117,25 @@ function buildEvidenceTerms(
   };
 }
 
-function classifyWithTerms(chunkSummary: string, evidence: EffectivenessEvidenceTerms): ChunkEffectiveness {
+/**
+ * Optional scope context for classifyWithTerms (US-003).
+ *
+ * scopePaths restricts which diff sections contribute evidence. The classifier
+ * splits the diff per file once and considers only the added lines of files
+ * whose paths match the globs. diffText is the raw unified diff (required when
+ * scopePaths is provided; ignored otherwise). When omitted or empty, the
+ * classifier falls back to the legacy whole-diff behaviour.
+ */
+export interface ClassifyScopeOptions {
+  scopePaths?: string[];
+  diffText?: string;
+}
+
+export function classifyWithTerms(
+  chunkSummary: string,
+  evidence: EffectivenessEvidenceTerms,
+  _scopeOptions?: ClassifyScopeOptions,
+): ChunkEffectiveness {
   const summaryTerms = _effectivenessDeps.tokenize(chunkSummary);
   if (summaryTerms.size < MIN_SIGNIFICANT_TERMS) return { signal: "unknown" };
 
@@ -136,6 +154,24 @@ function classifyWithTerms(chunkSummary: string, evidence: EffectivenessEvidence
   }
 
   return { signal: "unknown" };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// splitDiffByFile — US-003: per-file diff sections keyed by post-image path
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Split a unified diff into per-file sections keyed by post-image path.
+ *
+ * Returns an empty object for inputs that contain no parseable file headers.
+ * Binary-marked files map to an empty string (they have no textual hunks to
+ * attribute). Renames are keyed by the post-rename path. The implementer
+ * replaces the stub body with the real parser — the public shape is fixed so
+ * callers (and tests) can rely on it.
+ */
+export function splitDiffByFile(_diff: string): Record<string, string> {
+  // Stub — implementer replaces with the real unified-diff parser.
+  return {};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

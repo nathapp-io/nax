@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { _effectivenessEvalDeps, effectivenessEvalCommand, formatEffectivenessReport } from "@/cli";
+import { type LabelCase, loadLabelSet } from "../../../src/context/engine/effectiveness-eval";
 import { withTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -396,6 +397,110 @@ describe("formatEffectivenessReport", () => {
     expect(joined).toContain("precision");
     expect(joined).toContain("recall");
     expect(joined).toContain("f1");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-003 AC14 — `nax context effectiveness eval` invokes the scoreEffectiveness
+// seam exactly once with the fixture's full case list. This test stubs the
+// `_effectivenessEvalDeps.scoreEffectiveness` seam so the CLI's call is
+// observable without depending on the real classifier.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("effectivenessEvalCommand (US-003 AC14)", () => {
+  let originalProcessExit: typeof process.exit;
+
+  beforeEach(() => {
+    originalProcessExit = process.exit;
+  });
+
+  afterEach(() => {
+    process.exit = originalProcessExit;
+    mock.restore();
+  });
+
+  test("[AC14] invokes the scoreEffectiveness seam exactly once with the fixture's full case list", async () => {
+    let capturedCases: readonly LabelCase[] = [];
+    let callCount = 0;
+    const originalScore = _effectivenessEvalDeps.scoreEffectiveness;
+    _effectivenessEvalDeps.scoreEffectiveness = (cases, _classifier) => {
+      callCount++;
+      capturedCases = cases;
+      return {
+        perSignal: {
+          followed: { precision: 1, recall: 1, f1: 1 },
+          ignored: { precision: 1, recall: 1, f1: 1 },
+          contradicted: { precision: 1, recall: 1, f1: 1 },
+        },
+        baseline: { precision: 1, recall: 1, f1: 1 },
+        sizeCorrelation: 0,
+        scoredCount: cases.length,
+        excludedCount: 0,
+      };
+    };
+
+    process.exit = mock(() => {
+      throw new Error("process.exit");
+    }) as never;
+
+    try {
+      try {
+        await effectivenessEvalCommand({ labels: COMMITTED_FIXTURE });
+      } catch {
+        // The stub returns a perfect report; the CLI will exit 0. The mock
+        // exit throws regardless — we only care about the captured calls.
+      }
+    } finally {
+      _effectivenessEvalDeps.scoreEffectiveness = originalScore;
+    }
+
+    expect(callCount).toBe(1);
+
+    // The captured cases must equal the committed fixture's case list, in
+    // the same order — the seam must not filter, slice, or reorder.
+    const raw = await Bun.file(COMMITTED_FIXTURE).text();
+    const labelSet = loadLabelSet(raw);
+    expect(capturedCases.length).toBe(labelSet.cases.length);
+    for (let i = 0; i < capturedCases.length; i++) {
+      expect(capturedCases[i].caseId).toBe(labelSet.cases[i].caseId);
+    }
+  });
+
+  test("[AC14, boundary] does not invoke scoreEffectiveness when the labels path is missing (read fails before scoring)", async () => {
+    let callCount = 0;
+    const originalScore = _effectivenessEvalDeps.scoreEffectiveness;
+    _effectivenessEvalDeps.scoreEffectiveness = (() => {
+      callCount++;
+      return {
+        perSignal: {
+          followed: { precision: 0, recall: 0, f1: 0 },
+          ignored: { precision: 0, recall: 0, f1: 0 },
+          contradicted: { precision: 0, recall: 0, f1: 0 },
+        },
+        baseline: { precision: 0, recall: 0, f1: 0 },
+        sizeCorrelation: 0,
+        scoredCount: 0,
+        excludedCount: 0,
+      };
+    }) as typeof _effectivenessEvalDeps.scoreEffectiveness;
+
+    process.exit = mock(() => {
+      throw new Error("process.exit");
+    }) as never;
+
+    try {
+      try {
+        await effectivenessEvalCommand({ labels: "/nonexistent/labels.json" });
+      } catch {
+        // expected — process.exit mocked
+      }
+    } finally {
+      _effectivenessEvalDeps.scoreEffectiveness = originalScore;
+    }
+
+    // The seam must not have been called — the missing-path exit fires
+    // before any scoring happens.
+    expect(callCount).toBe(0);
   });
 });
 
