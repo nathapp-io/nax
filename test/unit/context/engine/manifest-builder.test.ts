@@ -222,3 +222,42 @@ describe("buildManifest — chunkScopePaths omitted when empty (AC6)", () => {
     ]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC5 (git-history specific): a packed git-history chunk carrying
+// scopePaths (US-001) must map to its scopePaths list under chunkScopePaths.
+// Mirrors the AC5 mapping test above but with a git-history chunk ID and the
+// scopePaths the US-001 provider emits (relative file paths that actually
+// contributed a history section).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildManifest — git-history chunkScopePaths (US-001 AC5)", () => {
+  test("AC5 (git-history): chunkScopePaths maps a packed git-history chunk ID to its scopePaths list", () => {
+    const packed: PackedChunk[] = [
+      makePacked({
+        id: "git-history:abcdef0123456789",
+        scopePaths: ["src/foo.ts", "src/bar.ts"],
+        tokens: 250,
+      }),
+    ];
+    const inputs = makeInputs({ packed, usedTokens: 250 });
+    const manifest = buildManifest(inputs);
+
+    expect(manifest.chunkScopePaths).toBeDefined();
+    expect(manifest.chunkScopePaths?.["git-history:abcdef0123456789"]).toEqual(["src/foo.ts", "src/bar.ts"]);
+  });
+
+  test("AC5 (git-history, single-file): chunkScopePaths preserves a one-element list", () => {
+    const packed: PackedChunk[] = [
+      makePacked({
+        id: "git-history:12345678",
+        scopePaths: ["src/only.ts"],
+        tokens: 100,
+      }),
+    ];
+    const inputs = makeInputs({ packed, usedTokens: 100 });
+    const manifest = buildManifest(inputs);
+
+    expect(manifest.chunkScopePaths?.["git-history:12345678"]).toEqual(["src/only.ts"]);
+  });
+});

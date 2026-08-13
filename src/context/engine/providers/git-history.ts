@@ -105,13 +105,34 @@ export class GitHistoryProvider implements IContextProvider {
 
     const filesToProcess = touchedFiles.filter(isRelativeAndSafe).slice(0, MAX_FILES);
 
-    const sections = (await Promise.all(filesToProcess.map((file) => fetchFileHistory(file, workdir)))).filter(
-      (section): section is string => section !== null,
-    );
+    // US-001: scope attribution must follow the file-to-section association,
+    // not the input list. fetchFileHistory returns null for files with no
+    // history (or git failures); only the files whose history was actually
+    // surfaced contribute a section, so only those files are attributed to
+    // the chunk via RawChunk.scopePaths. Files declared in touchedFiles but
+    // absent from the result are deliberately excluded — the chunk says
+    // nothing about them and must not claim scope.
+    const fileSections: Array<{ file: string; section: string }> = (
+      await Promise.all(
+        filesToProcess.map(async (file) => ({
+          file,
+          section: await fetchFileHistory(file, workdir),
+        })),
+      )
+    ).filter((entry): entry is { file: string; section: string } => entry.section !== null);
 
-    if (sections.length === 0) {
+    if (fileSections.length === 0) {
       return { chunks: [], pullTools: [] };
     }
+
+    // Preserve the declared touchedFiles order for both sections and
+    // scopePaths — concurrent fetchFileHistory completion order is not
+    // guaranteed to match input order, but AC2 requires the chunk's
+    // scopePaths list to mirror the order files were declared in
+    // touchedFiles. fileSections was built via map() over filesToProcess
+    // so its order already matches the declaration order.
+    const sections = fileSections.map((entry) => entry.section);
+    const scopePaths = fileSections.map((entry) => entry.file);
 
     const header = "## Recent Git History\n\nCommits touching story files:";
     const rawContent = `${header}\n\n${sections.join("\n\n")}`;
@@ -129,6 +150,7 @@ export class GitHistoryProvider implements IContextProvider {
       content,
       tokens,
       rawScore: 0.7,
+      scopePaths,
     };
 
     return { chunks: [chunk], pullTools: [] };
