@@ -33,6 +33,7 @@ import {
 const origWriteFragment = _completionDeps.writeFragment;
 const origRenderFragmentBody = _completionDeps.renderFragmentBody;
 const origGetDiffText = _completionDeps.getDiffText;
+const origGetDiffFilePaths = _completionDeps.getDiffFilePaths;
 const origSavePRD = _completionDeps.savePRD;
 const origCheckReviewGate = _completionDeps.checkReviewGate;
 const origSpawn = _completionDeps.spawn;
@@ -110,6 +111,7 @@ beforeEach(() => {
   _completionDeps.writeFragment = origWriteFragment;
   _completionDeps.renderFragmentBody = origRenderFragmentBody;
   _completionDeps.getDiffText = origGetDiffText;
+  _completionDeps.getDiffFilePaths = origGetDiffFilePaths;
   _completionDeps.savePRD = origSavePRD;
   _completionDeps.checkReviewGate = origCheckReviewGate;
   _completionDeps.spawn = origSpawn;
@@ -119,6 +121,7 @@ afterEach(() => {
   _completionDeps.writeFragment = origWriteFragment;
   _completionDeps.renderFragmentBody = origRenderFragmentBody;
   _completionDeps.getDiffText = origGetDiffText;
+  _completionDeps.getDiffFilePaths = origGetDiffFilePaths;
   _completionDeps.savePRD = origSavePRD;
   _completionDeps.checkReviewGate = origCheckReviewGate;
   _completionDeps.spawn = origSpawn;
@@ -137,7 +140,7 @@ describe("completionStage — fragment capture (AC1)", () => {
       _completionDeps.savePRD = mock(async () => {});
       const writeMock = mock(async () => {});
       _completionDeps.writeFragment = writeMock;
-      _completionDeps.getDiffText = mock(async () => "");
+      _completionDeps.getDiffFilePaths = mock(async () => new Set<string>());
 
       const result = await completionStage.execute(ctx);
 
@@ -161,7 +164,7 @@ describe("completionStage — fragment capture (AC2)", () => {
       _completionDeps.savePRD = mock(async () => {});
       const writeMock = mock(async () => {});
       _completionDeps.writeFragment = writeMock;
-      _completionDeps.getDiffText = mock(async () => "");
+      _completionDeps.getDiffFilePaths = mock(async () => new Set<string>());
 
       await completionStage.execute(ctx);
 
@@ -183,7 +186,7 @@ describe("completionStage — fragment capture (AC3)", () => {
       _completionDeps.savePRD = mock(async () => {});
       const writeMock = mock(async () => {});
       _completionDeps.writeFragment = writeMock;
-      _completionDeps.getDiffText = mock(async () => "");
+      _completionDeps.getDiffFilePaths = mock(async () => new Set<string>());
 
       await completionStage.execute(ctx);
 
@@ -209,7 +212,7 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
       _completionDeps.savePRD = mock(async () => {});
       const writeMock = mock(async () => {});
       _completionDeps.writeFragment = writeMock;
-      _completionDeps.getDiffText = mock(async () => "");
+      _completionDeps.getDiffFilePaths = mock(async () => new Set<string>());
 
       await completionStage.execute(ctx);
 
@@ -232,7 +235,7 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
       _completionDeps.savePRD = mock(async () => {});
       const writeMock = mock(async () => {});
       _completionDeps.writeFragment = writeMock;
-      _completionDeps.getDiffText = mock(async () => "");
+      _completionDeps.getDiffFilePaths = mock(async () => new Set<string>());
 
       await completionStage.execute(ctx);
 
@@ -252,26 +255,9 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
       const ctx = makeCtx(fragmentCaptureConfig(), prd, tempDir);
       _completionDeps.savePRD = mock(async () => {});
 
-      const diff = [
-        "diff --git a/src/foo.ts b/src/foo.ts",
-        "index 1234..5678 100644",
-        "--- a/src/foo.ts",
-        "+++ b/src/foo.ts",
-        "@@ -1,3 +1,4 @@",
-        " line",
-        "+added",
-        "diff --git a/src/bar.ts b/src/bar.ts",
-        "index 1234..5678 100644",
-        "--- a/src/bar.ts",
-        "+++ b/src/bar.ts",
-        "@@ -1,3 +1,4 @@",
-        " line",
-        "+added",
-      ].join("\n");
-
       const writeMock = mock(async () => {});
       _completionDeps.writeFragment = writeMock;
-      _completionDeps.getDiffText = mock(async () => diff);
+      _completionDeps.getDiffFilePaths = mock(async () => new Set(["src/foo.ts", "src/bar.ts"]));
 
       await completionStage.execute(ctx);
 
@@ -284,42 +270,19 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
   });
 
   test("body names each deleted file reported by the diff (AC6)", async () => {
-    // A deletion diff reports the file via the `--- a/<path>` header even
-    // though the `+++` half is `/dev/null`. The fragment body must include the
-    // deleted file path alongside any added or modified files (US-002 AC6).
+    // `git diff --name-only` includes deleted files alongside modified and new
+    // ones — the fragment body must surface the deleted path (US-002 AC6).
     await withTempDir(async (tempDir) => {
       const story = makeStoryWithDefaults({ id: "US-001", title: "Story", acceptanceCriteria: ["c"] });
       const prd = makePRDWithStory(story);
       const ctx = makeCtx(fragmentCaptureConfig(), prd, tempDir);
       _completionDeps.savePRD = mock(async () => {});
 
-      const diff = [
-        "diff --git a/src/foo.ts b/src/foo.ts",
-        "index 1234..5678 100644",
-        "--- a/src/foo.ts",
-        "+++ b/src/foo.ts",
-        "@@ -1,3 +1,4 @@",
-        " line",
-        "+added",
-        "diff --git a/src/gone.ts b/src/gone.ts",
-        "deleted file mode 100644",
-        "--- a/src/gone.ts",
-        "+++ /dev/null",
-        "@@ -1,3 +0,0 @@",
-        "-removed",
-        "diff --git a/src/new.ts b/src/new.ts",
-        "new file mode 100644",
-        "index 0000..1234",
-        "--- /dev/null",
-        "+++ b/src/new.ts",
-        "@@ -0,0 +1,2 @@",
-        "+first",
-        "+second",
-      ].join("\n");
-
       const writeMock = mock(async () => {});
       _completionDeps.writeFragment = writeMock;
-      _completionDeps.getDiffText = mock(async () => diff);
+      _completionDeps.getDiffFilePaths = mock(
+        async () => new Set(["src/foo.ts", "src/gone.ts", "src/new.ts"]),
+      );
 
       await completionStage.execute(ctx);
 
@@ -332,53 +295,40 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
     });
   });
 
-  test("body names files whose headers fall past the prior 8 KiB prefix (AC6)", async () => {
-    // The git-diff text is read with a single per-stream prefix (1 MiB since
-    // US-002). A diff whose early hunks fill more than 8 KiB still has every
-    // file header available to extractDiffFiles, so the fragment body names
-    // every changed file — including ones whose header is past where the old
-    // 8 KiB cap would have chopped the stream.
+  test("body names every changed file for arbitrarily large diffs (AC6)", async () => {
+    // Earlier revisions read the full diff text under a per-stream prefix
+    // (8 KiB, then 1 MiB), and the reviewer correctly noted that any finite
+    // character cap can drop file headers. US-002 now uses
+    // `git diff --name-only` for fragment capture, so the only bound is
+    // file count — AC6 is satisfied regardless of how large the diff is.
+    // This test exercises that contract with a multi-thousand-file diff.
     await withTempDir(async (tempDir) => {
       const story = makeStoryWithDefaults({ id: "US-001", title: "Story", acceptanceCriteria: ["c"] });
       const prd = makePRDWithStory(story);
       const ctx = makeCtx(fragmentCaptureConfig(), prd, tempDir);
       _completionDeps.savePRD = mock(async () => {});
 
-      // First file's hunk is large enough to push later headers past 8 KiB.
-      const padding: string[] = [];
-      for (let i = 0; i < 500; i++) padding.push(`+line ${i} padding the diff past 8 KiB`);
-      const diff = [
-        "diff --git a/src/big.ts b/src/big.ts",
-        "index 1234..5678 100644",
-        "--- a/src/big.ts",
-        "+++ b/src/big.ts",
-        "@@ -1,3 +1,203 @@",
-        " line",
-        ...padding,
-        "diff --git a/src/late.ts b/src/late.ts",
-        "index 1234..5678 100644",
-        "--- a/src/late.ts",
-        "+++ b/src/late.ts",
-        "@@ -1 +1 @@",
-        "-x",
-        "+y",
-      ].join("\n");
-
-      // Sanity check: the late file's header sits past where the old 8 KiB
-      // cap would have truncated.
-      expect(diff.indexOf("a/src/late.ts b/src/late.ts")).toBeGreaterThan(8_000);
+      // 5,000 changed paths — far beyond any plausible character cap and
+      // bigger than any realistic story diff.
+      const paths = new Set<string>();
+      for (let i = 0; i < 5_000; i++) {
+        paths.add(`src/file-${i.toString().padStart(4, "0")}.ts`);
+      }
 
       const writeMock = mock(async () => {});
       _completionDeps.writeFragment = writeMock;
-      _completionDeps.getDiffText = mock(async () => diff);
+      _completionDeps.getDiffFilePaths = mock(async () => paths);
 
       await completionStage.execute(ctx);
 
       expect(writeMock).toHaveBeenCalledTimes(1);
       const calls = (writeMock.mock.calls as any[]);
-      const body = calls[0]?.[3];
-      expect(body).toContain("src/big.ts");
-      expect(body).toContain("src/late.ts");
+      const body = calls[0]?.[3] as string;
+      // Spot-check the first and last file paths appear in the body.
+      expect(body).toContain("src/file-0000.ts");
+      expect(body).toContain("src/file-4999.ts");
+      // And a middle one, to make sure iteration didn't stop early.
+      expect(body).toContain("src/file-2500.ts");
     });
   });
 });
@@ -405,7 +355,7 @@ describe("completionStage — fragment capture fail-open (AC7)", () => {
       _completionDeps.writeFragment = mock(async () => {
         throw boom;
       });
-      _completionDeps.getDiffText = mock(async () => "");
+      _completionDeps.getDiffFilePaths = mock(async () => new Set<string>());
 
       const result = await completionStage.execute(ctx);
 
@@ -435,7 +385,7 @@ describe("completionStage — fragment capture on re-run (AC8)", () => {
       _completionDeps.savePRD = mock(async () => {});
       const writeMock = mock(async () => {});
       _completionDeps.writeFragment = writeMock;
-      _completionDeps.getDiffText = mock(async () => "");
+      _completionDeps.getDiffFilePaths = mock(async () => new Set<string>());
 
       await completionStage.execute(ctx);
       // Reset story status so the second run exercises the same code path.

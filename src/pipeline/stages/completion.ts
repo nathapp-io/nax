@@ -13,7 +13,6 @@
  */
 
 import { renderFragmentBody, writeFragment } from "@/context";
-import { extractDiffFiles } from "@/utils/diff-files";
 import { GIT_TIMEOUT_MS } from "@/utils/git";
 import { persistSemanticVerdict } from "../../acceptance/semantic-verdict";
 import { annotateManifestEffectiveness } from "../../context/engine/effectiveness";
@@ -26,14 +25,12 @@ import { errorMessage } from "../../utils/errors";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
-// Bound on the captured git-diff text. Two consumers share this read:
-//   - Amendment A AC-45 (effectiveness annotation) — tokenises the diff and
-//     uses it as evidence against chunk summaries.
-//   - US-002 (fragment capture) — extracts the file headers to enumerate
-//     "files touched by the story" (AC6).
-// 8,000 chars was tight enough for effectiveness annotation to lose file
-// headers past the prefix, so US-002 widened the bound. It is still
-// well-bounded: a single story's diff rarely exceeds a few hundred KB.
+// Bound on the captured git-diff text. Only the effectiveness annotation
+// (Amendment A AC-45) reads this text now — the fragment capture (US-002)
+// enumerates file paths via `git diff --name-only` instead, so it is not
+// subject to the character cap. The bound is generous enough for any
+// single-story diff but still well-bounded to prevent pathological inputs
+// from blowing up completion.
 const MAX_DIFF_TEXT_CHARS = 1_048_576;
 const HIGH_MEMORY_TELEMETRY_BYTES = 512 * 1_024 * 1_024;
 
@@ -102,7 +99,13 @@ export const completionStage: PipelineStage = {
 
       if (fragmentsEnabled) {
         try {
-          const changedFiles = [...extractDiffFiles(diffText)];
+          // AC6: "names each changed file reported by that diff". Using
+          // `git diff --name-only` instead of re-parsing the bounded diff
+          // text means every changed file (including the deletion side and
+          // paths past any character cap on `getDiffText`) reaches the
+          // fragment body — the only bound is git's own per-line output,
+          // which is naturally small.
+          const changedFiles = [...(await _completionDeps.getDiffFilePaths(ctx.workdir, ctx.storyGitRef))];
           const body = _completionDeps.renderFragmentBody(
             ctx.story.id,
             ctx.story.title,
@@ -268,6 +271,55 @@ async function getDiffText(workdir: string, baseRef: string | undefined): Promis
 }
 
 /**
+ * Set of file paths changed by the story, derived from `git diff --name-only`.
+ * Used by US-002 fragment capture (AC6) so the fragment body names every
+ * changed file — including the deletion side and paths past any character cap
+ * on `getDiffText`. Output is one path per line and naturally bounded by
+ * file count, not content size.
+ */
+async function getDiffFilePaths(workdir: string, baseRef: string | undefined): Promise<Set<string>> {
+  if (!baseRef) return new Set();
+  try {
+    const proc = _completionDeps.spawn(["git", "diff", "--name-only", `${baseRef}..HEAD`], {
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    let timedOut = false;
+    const timerId = setTimeout(() => {
+      timedOut = true;
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        // Process may have already exited
+      }
+    }, GIT_TIMEOUT_MS);
+
+    let output: string;
+    try {
+      [output] = await Promise.all([
+        readTextStreamPrefix(proc.stdout, MAX_DIFF_TEXT_CHARS),
+        readTextStreamPrefix(proc.stderr, 0),
+        proc.exited,
+      ]);
+    } finally {
+      clearTimeout(timerId);
+    }
+
+    if (timedOut) return new Set();
+    return new Set(
+      output
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+/**
  * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
  */
 export const _completionDeps = {
@@ -275,6 +327,7 @@ export const _completionDeps = {
   persistSemanticVerdict,
   savePRD,
   getDiffText,
+  getDiffFilePaths,
   readTextStreamPrefix,
   writeFragment,
   renderFragmentBody,
