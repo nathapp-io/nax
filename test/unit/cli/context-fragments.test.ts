@@ -22,6 +22,7 @@ import {
   fragmentsInspectCommand,
   fragmentsPruneCommand,
   listDependentStoryIds,
+  type LoadPRDResult,
 } from "@/cli";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -30,6 +31,10 @@ import {
 
 function makeStoriesPRD(stories: readonly UserStory[]): PRD {
   return makePRD({ feature: "feat-x", userStories: [...stories] });
+}
+
+function loadedPRD(stories: readonly UserStory[]): LoadPRDResult {
+  return { kind: "loaded", prd: makeStoriesPRD(stories) };
 }
 
 function stripAnsi(s: string): string {
@@ -435,7 +440,7 @@ describe("_contextFragmentsDeps — loadPRD override for AC3 (US-004 AC3)", () =
 
     // US-001 → US-002 → US-003
     _contextFragmentsDeps.loadPRD = async () =>
-      makeStoriesPRD([
+      loadedPRD([
         makeStory({ id: "US-001", dependencies: [] }),
         makeStory({ id: "US-002", dependencies: ["US-001"] }),
         makeStory({ id: "US-003", dependencies: ["US-002"] }),
@@ -468,7 +473,7 @@ describe("_contextFragmentsDeps — loadPRD override for AC3 (US-004 AC3)", () =
     _fragmentStoreDeps.fileExists = async () => true;
     _fragmentStoreDeps.listFragments = async () => ["US-001.md", "US-002.md"];
 
-    _contextFragmentsDeps.loadPRD = async () => null;
+    _contextFragmentsDeps.loadPRD = async () => ({ kind: "missing" });
 
     const captured: string[][] = [];
     const orig = console.log;
@@ -489,6 +494,76 @@ describe("_contextFragmentsDeps — loadPRD override for AC3 (US-004 AC3)", () =
     const flat = captured.join("\n");
     expect(flat).toContain("US-001");
     expect(flat).toContain("US-002");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC3 — PRD load failure surfaces in the output instead of being silently
+// misrepresented as 'no dependents'. The fix distinguishes missing files
+// (expected, silent) from load errors (logged + surfaced).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("formatFragmentsInspect — PRD load error surfaced", () => {
+  test("loadError prepends a warning line and still lists fragments", () => {
+    const listing = [{ storyId: "US-001", dependentStoryIds: [] as readonly string[] }];
+    const out = lines(formatFragmentsInspect("feat-x", listing, { loadError: "PRD file is malformed JSON" }));
+    const flat = out.join("\n").toLowerCase();
+    expect(flat).toContain("warning");
+    expect(flat).toContain("prd load failed");
+    expect(flat).toContain("us-001");
+  });
+
+  test("loadError is shown even when the listing is empty", () => {
+    const out = lines(formatFragmentsInspect("feat-x", [], { loadError: "EACCES: permission denied" }));
+    const flat = out.join("\n").toLowerCase();
+    expect(flat).toContain("no fragments");
+    expect(flat).toContain("prd load failed");
+  });
+
+  test("no loadError ⇒ no warning line", () => {
+    const out = lines(formatFragmentsInspect("feat-x", [{ storyId: "US-001", dependentStoryIds: [] }]));
+    const flat = out.join("\n").toLowerCase();
+    expect(flat).not.toContain("warning");
+  });
+
+  test("loadError does not affect determinism: same input → identical output", () => {
+    const listing = [{ storyId: "US-001", dependentStoryIds: [] as readonly string[] }];
+    const a = formatFragmentsInspect("feat-x", listing, { loadError: "boom" });
+    const b = formatFragmentsInspect("feat-x", listing, { loadError: "boom" });
+    expect(a).toEqual(b);
+  });
+});
+
+describe("fragmentsInspectCommand — PRD load failure is visible (not silent)", () => {
+  test("load error is surfaced in the output and the command still exits 0", async () => {
+    _fragmentStoreDeps.fileExists = async () => true;
+    _fragmentStoreDeps.listFragments = async () => ["US-001.md"];
+
+    _contextFragmentsDeps.loadPRD = async (): Promise<LoadPRDResult> => ({
+      kind: "error",
+      error: "PRD file is malformed JSON",
+    });
+
+    const captured: string[][] = [];
+    const orig = console.log;
+    console.log = (...args: unknown[]) => {
+      captured.push(args.map((a) => String(a)));
+    };
+
+    let exitCode = -1;
+    try {
+      exitCode = await fragmentsInspectCommand({
+        dir: "/repo",
+        feature: "feat-x",
+      });
+    } finally {
+      console.log = orig;
+    }
+
+    expect(exitCode).toBe(0);
+    const flat = captured.join("\n").toLowerCase();
+    expect(flat).toContain("warning");
+    expect(flat).toContain("prd load failed");
   });
 });
 

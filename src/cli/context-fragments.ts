@@ -19,12 +19,14 @@
  * No fragments is a successful, informative no-op for both commands.
  */
 
+import { existsSync } from "node:fs";
 import {
   _fragmentStoreDeps,
   deleteFragment as deleteFragmentImpl,
   fragmentPath,
   listFragmentStoryIds as listFragmentStoryIdsImpl,
 } from "@/context";
+import { getLogger } from "@/logger";
 import type { PRD } from "@/prd";
 import chalk from "chalk";
 
@@ -32,14 +34,36 @@ import chalk from "chalk";
 // Injectable deps
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Result of attempting to load the feature PRD for dependent analysis.
+ *
+ * - `loaded`  — PRD parsed cleanly, ready for the reverse-graph walk.
+ * - `missing` — PRD file does not exist. Expected for cold features;
+ *   dep analysis is skipped silently (no warning, no error).
+ * - `error`   — PRD file exists but could not be read / parsed (malformed
+ *   JSON, permission denied, schema-invalid). Logged via `logger.warn`
+ *   and surfaced in the inspect output so the failure isn't misrepresented
+ *   as a clean "no dependents" result.
+ */
+export type LoadPRDResult = { kind: "loaded"; prd: PRD } | { kind: "missing" } | { kind: "error"; error: string };
+
 export const _contextFragmentsDeps = {
   /** Default uses the real `loadPRD`. Tests override for AC3 verification. */
-  loadPRD: async (path: string): Promise<PRD | null> => {
-    const { loadPRD } = await import("@/prd");
+  loadPRD: async (path: string): Promise<LoadPRDResult> => {
+    if (!existsSync(path)) {
+      return { kind: "missing" };
+    }
     try {
-      return await loadPRD(path);
-    } catch {
-      return null;
+      const { loadPRD } = await import("@/prd");
+      const prd = await loadPRD(path);
+      return { kind: "loaded", prd };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      getLogger().warn("cli", "Failed to load PRD for fragment dependent analysis", {
+        path,
+        error: message,
+      });
+      return { kind: "error", error: message };
     }
   },
   /** Default resolves the on-disk `.nax` projectDir from repoRoot. */
@@ -138,17 +162,33 @@ export interface FragmentsPruneSummary {
 // Pure formatters (US-004 AC7)
 // ─────────────────────────────────────────────────────────────────────────────
 
+export interface FragmentsInspectFormatOptions {
+  /**
+   * When set, the formatter prepends a warning line explaining why the
+   * dependent analysis is unavailable. Used by the inspect command when
+   * `_contextFragmentsDeps.loadPRD` returns `{ kind: "error" }`.
+   */
+  loadError?: string;
+}
+
 /**
- * Render the inspect listing. Pure: takes `featureId` and a pre-computed
- * listing, produces identical output for identical input, performs no
- * file access. The dep-walk must happen before this is called — this
- * function is rendering, not reading.
+ * Render the inspect listing. Pure: takes `featureId`, a pre-computed
+ * listing, and an optional `options` bag, produces identical output for
+ * identical input, performs no file access. The dep-walk must happen
+ * before this is called — this function is rendering, not reading.
  */
-export function formatFragmentsInspect(featureId: string, listing: readonly FragmentInspectEntry[]): string[] {
+export function formatFragmentsInspect(
+  featureId: string,
+  listing: readonly FragmentInspectEntry[],
+  options: FragmentsInspectFormatOptions = {},
+): string[] {
   const lines: string[] = [];
 
   if (listing.length === 0) {
     lines.push(chalk.yellow(`No fragments found for feature ${featureId}.`));
+    if (options.loadError) {
+      lines.push(chalk.yellow(`Warning: PRD load failed: ${options.loadError}.`));
+    }
     return lines;
   }
 
@@ -157,6 +197,11 @@ export function formatFragmentsInspect(featureId: string, listing: readonly Frag
       `\nFragments for feature ${featureId}  (${listing.length} fragment${listing.length === 1 ? "" : "s"})\n`,
     ),
   );
+
+  if (options.loadError) {
+    lines.push(chalk.yellow(`Warning: PRD load failed (${options.loadError}). Dependents analysis unavailable.`));
+    lines.push("");
+  }
 
   for (const entry of listing) {
     const { storyId, dependentStoryIds } = entry;
@@ -224,14 +269,20 @@ export async function fragmentsInspectCommand(options: FragmentsInspectOptions):
   const featureId = options.feature;
   const storyIds = await listFragmentStoryIdsImpl(projectDir, featureId);
 
-  // AC3: build the reverse-dep listing. PRD is best-effort; missing PRD
-  // yields empty dependents for every fragment.
-  let prd: PRD | null = null;
+  // AC3: build the reverse-dep listing. PRD load is best-effort; missing
+  // PRD silently yields empty dependents, but a load failure (malformed
+  // JSON, permission denied, schema-invalid) is logged and surfaced in
+  // the inspect output so the failure isn't misrepresented as a clean
+  // "no dependents" result.
   const prdPath = options.prdPath ?? featurePrdPath(projectDir, featureId);
-  try {
-    prd = await _contextFragmentsDeps.loadPRD(prdPath);
-  } catch {
-    prd = null;
+  const loadResult = await _contextFragmentsDeps.loadPRD(prdPath);
+
+  let prd: PRD | null = null;
+  let loadError: string | undefined;
+  if (loadResult.kind === "loaded") {
+    prd = loadResult.prd;
+  } else if (loadResult.kind === "error") {
+    loadError = loadResult.error;
   }
 
   const listing: FragmentInspectEntry[] = storyIds.map((storyId) => ({
@@ -239,7 +290,7 @@ export async function fragmentsInspectCommand(options: FragmentsInspectOptions):
     dependentStoryIds: prd ? listDependentStoryIds(prd, storyId) : [],
   }));
 
-  const output = formatFragmentsInspect(featureId, listing);
+  const output = formatFragmentsInspect(featureId, listing, loadError ? { loadError } : {});
   for (const line of output) {
     console.log(line);
   }

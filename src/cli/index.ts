@@ -57,9 +57,11 @@ export {
   fragmentsPruneCommand,
   listDependentStoryIds,
   type FragmentInspectEntry,
+  type FragmentsInspectFormatOptions,
   type FragmentsInspectOptions,
   type FragmentsPruneOptions,
   type FragmentsPruneSummary,
+  type LoadPRDResult,
 } from "./context-fragments";
 export {
   _rulesCLIDeps,
