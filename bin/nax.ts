@@ -44,6 +44,8 @@ import {
   agentsListCommand,
   contextInspectCommand,
   exportPromptCommand,
+  fragmentsInspectCommand,
+  fragmentsPruneCommand,
   planCommand,
   planDecomposeCommand,
   pluginsListCommand,
@@ -1759,6 +1761,63 @@ context
         json: options.json,
         storyId,
       });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+const contextFragments = context.command("fragments").description("Inspect or prune feature fragments");
+
+contextFragments
+  .command("inspect")
+  .description("List fragments for a feature, with transitively-dependent story IDs")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .requiredOption("-f, --feature <id>", "Feature ID")
+  .action(async (options) => {
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+      return;
+    }
+
+    try {
+      const exitCode = await fragmentsInspectCommand({
+        dir: workdir,
+        feature: options.feature,
+      });
+      if (exitCode !== 0) process.exit(exitCode);
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+contextFragments
+  .command("prune [storyId]")
+  .description("Remove fragments for a feature (one story when given, every fragment otherwise)")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .requiredOption("-f, --feature <id>", "Feature ID")
+  .action(async (storyId, options) => {
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+      return;
+    }
+
+    try {
+      const exitCode = await fragmentsPruneCommand({
+        dir: workdir,
+        feature: options.feature,
+        ...(storyId !== undefined ? { storyId } : {}),
+      });
+      if (exitCode !== 0) process.exit(exitCode);
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);
