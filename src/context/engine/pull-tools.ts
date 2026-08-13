@@ -18,6 +18,7 @@
  * See: docs/specs/SPEC-context-engine-v2.md §Pull tools
  */
 
+import { ContextV2ConfigSchema } from "@/config";
 import type { ContextToolRuntimeConfig } from "@/config/selectors";
 import type { NaxConfig } from "@/config/types";
 import { NaxError } from "@/errors";
@@ -44,9 +45,13 @@ export const _pullToolsDeps = {
  * orchestrator needs it to tell "the operator configured a ceiling" apart from
  * "the schema supplied its default" — `config.context.v2.pull.maxCallsPerSession`
  * always has a value, so the two are otherwise indistinguishable downstream.
- * Must stay in sync with the schema default in `src/config/schemas-context.ts`.
+ *
+ * Derived from the schema rather than hand-written: a second literal that must
+ * silently agree with a Zod default is the same rot this module's sibling config
+ * change removes. If they diverged, an unconfigured run would read as configured
+ * and clobber every descriptor's own ceiling.
  */
-export const DEFAULT_MAX_CALLS_PER_SESSION = 5;
+export const DEFAULT_MAX_CALLS_PER_SESSION = ContextV2ConfigSchema.parse({}).pull.maxCallsPerSession;
 const DEFAULT_MAX_TOKENS_PER_CALL = 2048;
 
 // ─────────────────────────────────────────────────────────────────────────────

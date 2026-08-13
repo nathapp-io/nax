@@ -175,10 +175,9 @@ const ContextV2ConfigBase = z.object({
   /** Canonical rules store configuration (Phase 5.1+) */
   rules: ContextV2RulesConfigSchema,
   /**
-   * Feature-scoped fragment configuration (US-001). Defaults live here AND
-   * in the outer literal at `NaxConfigSchema.context.v2` in `schemas.ts`
-   * because Zod does not re-parse default values; both sites must agree or
-   * `NaxConfigSchema.parse({})` shadows the inner defaults.
+   * Feature-scoped fragment configuration (US-001). Defaults are schema-derived
+   * only — `schemas.ts` calls `ContextConfigSchema.default(() => …parse({}))`,
+   * so there is no second copy to keep in sync. Do not reintroduce one.
    */
   fragments: ContextV2FragmentsConfigSchema,
   /**
