@@ -227,6 +227,41 @@ async function readTextStreamPrefix(stream: ReadableStream<Uint8Array>, maxChars
   }
 }
 
+/**
+ * Read `git diff --name-only` stdout into a Set of file paths, streaming
+ * line-by-line so the full output is never materialised as one string (nor the
+ * split/map/filter arrays a full read would build). The returned Set is
+ * inherently O(file count) — that is the required result for AC6 — but this
+ * avoids the ~4x transient amplification of a full decode on a pathological
+ * many-file diff.
+ */
+async function readDiffFilePaths(stream: ReadableStream<Uint8Array>): Promise<Set<string>> {
+  const paths = new Set<string>();
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let pending = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      pending += decoder.decode(value, { stream: true });
+      const lines = pending.split("\n");
+      // The final element may be a partial line split across a chunk boundary;
+      // carry it forward to the next read instead of emitting a truncated path.
+      pending = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.length > 0) paths.add(trimmed);
+      }
+    }
+    const tail = (pending + decoder.decode()).trim();
+    if (tail.length > 0) paths.add(tail);
+    return paths;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 /** Get a git diff text between baseRef and HEAD. Best-effort, returns "" on failure. */
 async function getDiffText(workdir: string, baseRef: string | undefined): Promise<string> {
   if (!baseRef) return "";
@@ -296,14 +331,16 @@ async function getDiffFilePaths(workdir: string, baseRef: string | undefined): P
       }
     }, GIT_TIMEOUT_MS);
 
-    let output: string;
+    let paths: Set<string>;
     try {
-      [output] = await Promise.all([
+      [paths] = await Promise.all([
         // `--name-only` output is one path per line, bounded by file count —
-        // not content size — so it is read in full. Capping it (as getDiffText
-        // does) would drop paths past the prefix and break AC6's "every
-        // changed file" contract.
-        new Response(proc.stdout).text(),
+        // not content size — so it is streamed in full. Capping it (as
+        // getDiffText does) would drop paths past the prefix and break AC6's
+        // "every changed file" contract, but a single-string read amplifies
+        // transient memory ~4x on pathological diffs; readDiffFilePaths emits
+        // each path into the Set as it is decoded instead.
+        readDiffFilePaths(proc.stdout),
         readTextStreamPrefix(proc.stderr, 0),
         proc.exited,
       ]);
@@ -311,13 +348,7 @@ async function getDiffFilePaths(workdir: string, baseRef: string | undefined): P
       clearTimeout(timerId);
     }
 
-    if (timedOut) return new Set();
-    return new Set(
-      output
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0),
-    );
+    return timedOut ? new Set() : paths;
   } catch {
     return new Set();
   }

@@ -440,4 +440,35 @@ describe("completionStage — getDiffFilePaths reads --name-only output in full 
     expect(paths.has("src/file-00000.ts")).toBe(true);
     expect(paths.has(`src/file-${pathCount - 1}.ts`)).toBe(true);
   });
+
+  test("parses paths split across stream chunk boundaries", async () => {
+    const encoder = new TextEncoder();
+    const paths = ["src/foo.ts", "src/bar.ts", "src/baz.ts"];
+    const bytes = encoder.encode(paths.map((p) => `${p}\n`).join(""));
+    // Emit 7-byte chunks so every path is split across at least one read,
+    // exercising the partial-line carry-over in the streaming reader.
+    const chunks: Uint8Array[] = [];
+    for (let i = 0; i < bytes.length; i += 7) chunks.push(bytes.slice(i, i + 7));
+
+    let chunkIndex = 0;
+    _completionDeps.spawn = (() => ({
+      stdout: new ReadableStream<Uint8Array>({
+        pull(controller) {
+          const chunk = chunks[chunkIndex++];
+          if (chunk) controller.enqueue(chunk);
+          else controller.close();
+        },
+      }),
+      stderr: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      exited: Promise.resolve(0),
+    })) as unknown as typeof _completionDeps.spawn;
+
+    const result = await _completionDeps.getDiffFilePaths("/repo", "base-ref");
+
+    expect(result).toEqual(new Set(paths));
+  });
 });
