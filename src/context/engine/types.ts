@@ -387,6 +387,17 @@ export interface RawChunk {
    * Comes from config.context.v2.staleness.scoreMultiplier (default: 0.4).
    */
   scoreMultiplier?: number;
+  /**
+   * Inherited file-scope attribution carrier (US-002).
+   *
+   * Populated by `StaticRulesProvider.fetch()` from the owning rule's
+   * `appliesTo:` frontmatter (per-section, since each section inherits the
+   * rule's appliesTo). Other providers omit it today — those chunks keep
+   * whole-diff behaviour. Read by `buildManifest()` and persisted onto
+   * `ContextManifest.chunkScopePaths` so downstream attribution can map
+   * chunk IDs back to the files they are scoped to.
+   */
+  scopePaths?: string[];
 }
 
 /** What an IContextProvider returns from fetch(). */

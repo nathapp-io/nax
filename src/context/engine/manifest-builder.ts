@@ -60,9 +60,18 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
   const staleChunkIds = packed.filter((c) => c.staleCandidate).map((c) => c.id);
   const chunkSummaries: Record<string, string> = {};
   const chunkTokens: Record<string, number> = {};
+  // US-002: per-chunk file-scope attribution carrier. Forwarded verbatim
+  // from RawChunk.scopePaths onto the persisted manifest so downstream
+  // attribution can map chunk IDs back to the files they are scoped to.
+  // Built only from chunks that actually carry scopePaths — chunks without
+  // it (whole-diff behaviour from non-rules providers) leave no key.
+  const chunkScopePaths: Record<string, string[]> = {};
   for (const c of packed) {
     chunkSummaries[c.id] = c.content.slice(0, CHUNK_SUMMARY_CHARS);
     chunkTokens[c.id] = c.tokens;
+    if (c.scopePaths && c.scopePaths.length > 0) {
+      chunkScopePaths[c.id] = c.scopePaths;
+    }
   }
 
   // US-001: manifest.usedTokens accounts the digest actually carried in the
@@ -96,5 +105,6 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     ...(Object.keys(chunkSummaries).length > 0 && { chunkSummaries }),
     ...(Object.keys(chunkTokens).length > 0 && { chunkTokens }),
     ...(staleChunkIds.length > 0 && { staleChunks: staleChunkIds }),
+    ...(Object.keys(chunkScopePaths).length > 0 && { chunkScopePaths }),
   };
 }

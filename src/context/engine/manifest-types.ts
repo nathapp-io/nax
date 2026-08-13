@@ -234,4 +234,18 @@ export interface ContextManifest {
    * story pipeline completes; absent until then.
    */
   chunkEffectiveness?: Record<string, ChunkEffectiveness>;
+  /**
+   * Per-chunk file-scope attribution carrier (US-002).
+   *
+   * Populated by `buildManifest()` from `RawChunk.scopePaths` on every packed
+   * chunk that carries it. Keyed by chunk ID; the value is the array of globs
+   * the chunk's owning rule declared under `appliesTo:` frontmatter.
+   *
+   * Only chunks from providers that surface scope attribution (currently
+   * `StaticRulesProvider`) are keyed here. Omitted entirely when no packed
+   * chunk carries scopePaths — keeping the empty case out of the manifest
+   * preserves the existing "absent means unknown" contract other optional
+   * fields already rely on.
+   */
+  chunkScopePaths?: Record<string, string[]>;
 }
