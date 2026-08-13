@@ -100,6 +100,11 @@ export function contentHash8(content: string): string {
  *      body), while the section's file path is kept (it lives in the
  *      section header which fits inside the slice).
  * Mirrors the git-history truncation pattern (US-001).
+ *
+ * Scope attribution uses range tracking (each path's end-position in the
+ * accumulated text) rather than substring matching — substring matching
+ * wrongly attributes a sliced neighbour whose path is a prefix of another
+ * fully-rendered neighbour.
  */
 export function assembleCodeNeighborChunk(input: AssembleCodeNeighborChunkInput): RawChunk | null {
   const { sections, truncated, maxGlobFiles } = input;
@@ -110,49 +115,60 @@ export function assembleCodeNeighborChunk(input: AssembleCodeNeighborChunkInput)
   const maxChars = MAX_CHUNK_TOKENS * 4;
 
   // Build the body incrementally, dropping sections that would push the
-  // total past the cap. `includedSections` records which sections were
-  // admitted into the body so the second pass can resolve scopePaths.
-  const accumulatedParts: string[] = [`${header}${SECTION_SEPARATOR}`];
-  let accumulatedLength = header.length + SECTION_SEPARATOR.length;
+  // total past the cap. Track each path's end-position in the accumulated
+  // text so scopePaths can resolve to fully-rendered paths only.
+  const HEADER_PREFIX = "### ";
+  let body = `${header}${SECTION_SEPARATOR}`;
   const includedSections: NeighborSection[] = [];
+  const renderedPaths: { path: string; end: number }[] = [];
+
   for (const section of sections) {
-    const rendered = `### ${section.file}\n${section.neighbors.map((n) => `- ${n}`).join("\n")}`;
+    const fileText = `${HEADER_PREFIX}${section.file}\n`;
+    const neighborItems = section.neighbors.map((n) => `- ${n}`).join("\n");
+    const sectionText = `${fileText}${neighborItems}`;
     const separatorCost = includedSections.length === 0 ? 0 : SECTION_SEPARATOR.length;
-    const candidateLength = accumulatedLength + separatorCost + rendered.length;
+    const candidateLength = body.length + separatorCost + sectionText.length;
+
     // First section is always included; subsequent sections must fit
     // atomically — drop entirely when adding would overflow.
     if (includedSections.length > 0 && candidateLength > maxChars) break;
-    if (separatorCost > 0) accumulatedParts.push(SECTION_SEPARATOR);
-    accumulatedParts.push(rendered);
-    accumulatedLength = candidateLength;
+
+    // Record path end-positions for this section (positions are in the
+    // final body, before the cap slice).
+    const sectionStart = body.length + separatorCost;
+    renderedPaths.push({ path: section.file, end: sectionStart + HEADER_PREFIX.length + section.file.length });
+    let cursor = sectionStart + fileText.length;
+    for (let i = 0; i < section.neighbors.length; i++) {
+      const neighbor = section.neighbors[i];
+      const prefixLen = i === 0 ? "- ".length : "\n- ".length;
+      cursor += prefixLen;
+      renderedPaths.push({ path: neighbor, end: cursor + neighbor.length });
+      cursor += neighbor.length;
+    }
+
+    if (separatorCost > 0) body += SECTION_SEPARATOR;
+    body += sectionText;
     includedSections.push(section);
   }
-  const body = accumulatedParts.join("").slice(0, maxChars);
+  const cappedBody = body.slice(0, maxChars);
   const truncationNote = truncated
     ? `\n\n> Note: reverse-dep scan capped at ${maxGlobFiles} files; some neighbors may be missing.\n> Increase \`context.v2.providers.maxGlobFiles\` or set \`sourceGlob\` to a narrower pattern (e.g. \`**/*.go\`) to reduce the scan footprint.`
     : "";
-  const content = body + truncationNote;
+  const content = cappedBody + truncationNote;
   const tokens = Math.ceil(content.length / 4);
 
-  // Resolve scopePaths to only those paths whose full form is rendered in
-  // the (possibly sliced) body. A path that was sliced mid-name is absent
-  // — its full form is not in chunk.content, so it doesn't qualify as
-  // "rendered in the chunk body" (AC2). Dedup by first-occurrence per the
-  // existing AC4 contract.
+  // scopePaths: paths whose end-position is within the cap — i.e. whose
+  // full form fits inside chunk.content. Range tracking (vs substring
+  // matching) avoids wrongly attributing a sliced neighbour whose path is
+  // a prefix of another fully-rendered neighbour (e.g. n2="src/foo"
+  // sliced but body.contains("src/foo") returns true via n1="src/foo/dep.ts").
   const scopePaths: string[] = [];
   const seen = new Set<string>();
-  for (const section of includedSections) {
-    if (!seen.has(section.file) && body.includes(section.file)) {
-      seen.add(section.file);
-      scopePaths.push(section.file);
-    }
-    for (const neighbor of section.neighbors) {
-      if (seen.has(neighbor)) continue;
-      if (body.includes(neighbor)) {
-        seen.add(neighbor);
-        scopePaths.push(neighbor);
-      }
-    }
+  for (const rendered of renderedPaths) {
+    if (rendered.end > maxChars) continue;
+    if (seen.has(rendered.path)) continue;
+    seen.add(rendered.path);
+    scopePaths.push(rendered.path);
   }
 
   return {

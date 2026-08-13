@@ -292,6 +292,26 @@ describe("assembleCodeNeighborChunk — truncation contract (AC2: scope only wha
     // Sanity: the sliced neighbour is also not in chunk.content in full.
     expect(chunk.content.includes(longB)).toBe(false);
   });
+
+  test("scopePaths uses range tracking, not substring matching — a sliced neighbour whose path is a prefix of another fully-rendered neighbour is excluded", () => {
+    // Bug scenario: n1="src/foo/dep.ts" fully rendered, n2 starts with
+    // "src/foo" + padding so it is sliced mid-name. Substring matching
+    // would wrongly attribute "src/foo" because body.contains("src/foo")
+    // returns true via n1. Range tracking excludes n2 because its
+    // end-position is past the cap.
+    const file = "src/svc.ts";
+    const n1 = "src/foo/dep.ts"; // 15 chars, fully rendered
+    const n2 = "src/foo" + "x".repeat(1900); // 1907 chars, sliced mid-name
+    const sections: NeighborSection[] = [{ file, neighbors: [n1, n2] }];
+    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 }) as RawChunk;
+    expect(chunk.content.length).toBeLessThanOrEqual(2000);
+    // file and n1 are fully rendered; n2 is sliced mid-name.
+    expect(chunk.scopePaths).toEqual([file, n1]);
+    // "src/foo" (the prefix substring shared with n2) must NOT be in
+    // scopePaths — n2's list item is sliced, so "src/foo" is not a
+    // rendered neighbour path.
+    expect(chunk.scopePaths).not.toContain("src/foo");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
