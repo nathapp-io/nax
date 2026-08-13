@@ -248,4 +248,19 @@ export interface ContextManifest {
    * fields already rely on.
    */
   chunkScopePaths?: Record<string, string[]>;
+  /**
+   * Per-chunk provider attribution carrier (US-003).
+   *
+   * Populated by `buildManifest()` from `PackedChunk.providerId` (stamped by
+   * `enrichRaw()` in the orchestrator before scoring) for every packed chunk
+   * that carries one. Keyed by chunk ID; the value is the provider ID string.
+   *
+   * Used by `deriveProviderWeights()` to aggregate chunkEffectiveness verdicts
+   * per provider — the manifest records no chunk-ID → provider mapping
+   * otherwise, and splitting the chunk ID on `:` is a convention, not an
+   * invariant. Chunks without a `providerId` leave no key. Omitted entirely
+   * when no packed chunk carries a `providerId` (legacy manifests / synthetic
+   * callers) — same "absent means unknown" contract as `chunkScopePaths`.
+   */
+  chunkProviders?: Record<string, string>;
 }

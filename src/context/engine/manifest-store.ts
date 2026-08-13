@@ -49,6 +49,23 @@ export const _manifestStoreDeps = {
       return [];
     }
   },
+  /**
+   * Story subdirectories under a feature's `stories/` dir (US-003).
+   * The trailing-slash glob pattern + onlyFiles:false yields directories
+   * only, so stray files alongside story dirs are excluded rather than
+   * throwing.
+   */
+  listStoryDirs: async (storiesDir: string): Promise<string[]> => {
+    try {
+      const dirs: string[] = [];
+      for await (const entry of new Bun.Glob("*/").scan({ cwd: storiesDir, absolute: false, onlyFiles: false })) {
+        dirs.push(entry);
+      }
+      return dirs.sort();
+    } catch {
+      return [];
+    }
+  },
 };
 
 export function contextStoryDir(projectDir: string, featureId: string, storyId: string): string {
@@ -180,6 +197,50 @@ export async function loadContextManifests(
         });
       } catch {
         // Skip malformed files so inspect stays best-effort.
+      }
+    }
+  }
+
+  return results.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * Load every stored context manifest under a feature directory (US-003).
+ *
+ * Best-effort, fail-open: a missing or empty feature dir returns []. The
+ * caller passes `featureId` as the directory under `.nax/features/` — the
+ * function reads every story subdirectory's manifest files and returns
+ * them flattened, sorted by absolute path. Non-directory entries alongside
+ * story directories (stray files, symlinks) are ignored rather than
+ * throwing, matching `loadContextManifests`'s malformed-skip behaviour.
+ *
+ * Distinct from `loadContextManifests`: this takes a feature ID, not a
+ * story ID, and returns manifests across every story in the feature.
+ */
+export async function loadFeatureManifests(projectDir: string, featureId?: string): Promise<StoredContextManifest[]> {
+  if (!featureId) return [];
+
+  const storiesDir = join(projectDir, ".nax", "features", featureId, "stories");
+  const storyDirs = await _manifestStoreDeps.listStoryDirs(storiesDir);
+  const results: StoredContextManifest[] = [];
+
+  for (const storyDirName of storyDirs) {
+    const storyDir = join(storiesDir, storyDirName);
+    const manifestFiles = await _manifestStoreDeps.listManifestFiles(storyDir);
+    for (const fileName of manifestFiles) {
+      const fullPath = join(storyDir, fileName);
+      if (!(await _manifestStoreDeps.fileExists(fullPath))) continue;
+      try {
+        const raw = await _manifestStoreDeps.readFile(fullPath);
+        const parsed = JSON.parse(raw) as ContextManifest;
+        results.push({
+          featureId,
+          stage: stageFromFileName(fileName),
+          path: fullPath,
+          manifest: hydrateManifestPaths(projectDir, parsed),
+        });
+      } catch {
+        // Skip malformed files so the feature-wide load stays best-effort.
       }
     }
   }

@@ -65,7 +65,9 @@ export {
   writeContextManifest,
   writeRebuildManifest,
   loadContextManifests,
+  loadFeatureManifests,
   contextManifestPath,
+  contextStoryDir,
   rebuildManifestPath,
 } from "./manifest-store";
 export type { StoredContextManifest, RebuildManifestEntry } from "./manifest-store";
@@ -81,6 +83,8 @@ export {
 
 export { purgeStaleManifests, _manifestPurgeDeps, MAX_MANIFEST_SCAN } from "./manifest-purge";
 export type { ManifestPurgeDeps } from "./manifest-purge";
+
+export { deriveProviderWeights } from "./provider-weights";
 
 export type {
   AdapterFailure,

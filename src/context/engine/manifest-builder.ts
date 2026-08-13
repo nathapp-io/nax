@@ -66,11 +66,21 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
   // Built only from chunks that actually carry scopePaths — chunks without
   // it (whole-diff behaviour from non-rules providers) leave no key.
   const chunkScopePaths: Record<string, string[]> = {};
+  // US-003: per-chunk provider attribution carrier. Forwarded from
+  // PackedChunk.providerId (stamped by enrichRaw() before scoring) so
+  // downstream per-provider aggregation has an explicit chunk-ID → provider
+  // mapping. Chunks without a providerId leave no key — the manifest records
+  // no mapping otherwise, and splitting the chunk ID on ":" is a convention,
+  // not an invariant.
+  const chunkProviders: Record<string, string> = {};
   for (const c of packed) {
     chunkSummaries[c.id] = c.content.slice(0, CHUNK_SUMMARY_CHARS);
     chunkTokens[c.id] = c.tokens;
     if (c.scopePaths && c.scopePaths.length > 0) {
       chunkScopePaths[c.id] = c.scopePaths;
+    }
+    if (c.providerId !== undefined) {
+      chunkProviders[c.id] = c.providerId;
     }
   }
 
@@ -106,5 +116,6 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     ...(Object.keys(chunkTokens).length > 0 && { chunkTokens }),
     ...(staleChunkIds.length > 0 && { staleChunks: staleChunkIds }),
     ...(Object.keys(chunkScopePaths).length > 0 && { chunkScopePaths }),
+    ...(Object.keys(chunkProviders).length > 0 && { chunkProviders }),
   };
 }
