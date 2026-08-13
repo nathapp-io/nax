@@ -429,6 +429,13 @@ export class StaticRulesProvider implements IContextProvider {
           const content = `### ${rulePath}\n\n${section.content}`;
           const tokens = estimateTokens(content);
           const hash = contentHash8(section.content);
+          // US-002: thread the owning rule's appliesTo through as the chunk's
+          // scopePaths carrier. Only populated when appliesTo is a non-empty
+          // list — empty/missing appliesTo means "no scoping declared" and the
+          // chunk keeps whole-diff behaviour. The field is the same array the
+          // rule frontmatter declared, in declared order, so buildManifest can
+          // forward it to chunkScopePaths without further mutation.
+          const scopePaths = section.appliesTo && section.appliesTo.length > 0 ? section.appliesTo : undefined;
           return {
             id: `static-rules:${ruleId}:${section.slug}:${hash}`,
             kind: "static" as const,
@@ -437,6 +444,7 @@ export class StaticRulesProvider implements IContextProvider {
             content,
             tokens,
             rawScore: 1.0,
+            ...(scopePaths && { scopePaths }),
           } satisfies RawChunk;
         });
 

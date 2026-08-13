@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "caseId": "fixture-001",
+      "chunkId": "static-rules:rule-1:slug:abc00001",
+      "chunkSummary": "Use the _deps pattern for external calls so tests can inject mocks without reaching for module-level monkey-patching.",
+      "scopePaths": ["src/foo.ts"],
+      "diffText": "diff --git a/src/foo.ts b/src/foo.ts\n@@\n-import { mock } from 'bun:test';\n+import { _deps } from './_deps';",
+      "label": "followed"
+    },
+    {
+      "caseId": "fixture-002",
+      "chunkId": "static-rules:rule-2:slug:abc00002",
+      "chunkSummary": "Biome configuration: prefer single quotes, no semicolons, 100-character line limit, trailing commas in multi-line literals.",
+      "scopePaths": ["src/bar.ts"],
+      "diffText": "diff --git a/src/bar.ts b/src/bar.ts\n@@\n-const x = \"a\";\n+const x = 'a';",
+      "label": "ignored"
+    },
+    {
+      "caseId": "fixture-003",
+      "chunkId": "static-rules:rule-3:slug:abc00003",
+      "chunkSummary": "Always wire NaxError rather than plain Error so error codes and stage metadata survive into CLI exit handling.",
+      "scopePaths": ["src/baz.ts"],
+      "diffText": "diff --git a/src/baz.ts b/src/baz.ts\n@@\n-throw new Error('boom');\n+throw new NaxError('boom', 'BOOM', { stage: 'foo' });",
+      "label": "contradicted"
+    },
+    {
+      "caseId": "fixture-004",
+      "chunkId": "static-rules:rule-4:slug:abc00004",
+      "chunkSummary": "Short diff: replace the inner branch with a guard clause at the top of the function body.",
+      "scopePaths": ["src/qux.ts"],
+      "diffText": "diff --git a/src/qux.ts b/src/qux.ts\n@@\n-if (a) {\n-  return b;\n-}\n-return c;",
+      "label": "ignored"
+    },
+    {
+      "caseId": "fixture-005",
+      "chunkId": "static-rules:rule-5:slug:abc00005",
+      "scopePaths": ["src/small.ts"],
+      "chunkSummary": "Long diff body covering a refactor where the existing rule about preferring arrow functions over function declarations applies across an entire module rewrite that touched many call sites.",
+      "diffText": "diff --git a/src/big.ts b/src/big.ts\n@@\n-function helper() { return 1; }\n+const helper = () => 1;\n-function helper2() { return 2; }\n+const helper2 = () => 2;\n-function helper3() { return 3; }\n+const helper3 = () => 3;\n-function helper4() { return 4; }\n+const helper4 = () => 4;",
+      "label": "followed"
+    },
+    {
+      "caseId": "fixture-006",
+      "chunkId": "static-rules:rule-6:slug:abc00006",
+      "scopePaths": ["src/style.ts"],
+      "chunkSummary": "Unclear attribution: the chunk's guidance overlaps with the diff but only on stylistic grounds, so the operator was unable to decide.",
+      "diffText": "diff --git a/src/style.ts b/src/style.ts\n@@\n-const a = 1;\n+const a = 1;",
+      "label": "unclear"
+    }
+  ]
+}

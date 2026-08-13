@@ -43,6 +43,7 @@ import {
   acceptCommand,
   agentsListCommand,
   contextInspectCommand,
+  effectivenessEvalCommand,
   exportPromptCommand,
   fragmentsInspectCommand,
   fragmentsPruneCommand,
@@ -1761,6 +1762,39 @@ context
         json: options.json,
         storyId,
       });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+const contextEffectiveness = context.command("effectiveness").description("Evaluate the effectiveness classifier");
+
+contextEffectiveness
+  .command("eval")
+  .description("Score a classifier against a labels JSON file (US-001 evaluation harness)")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("-l, --labels <path>", "Path to the labels JSON file")
+  .option("--json", "Emit a single JSON EvalReport to stdout, suppressing the table", false)
+  .action(async (options) => {
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+      return;
+    }
+    // The command itself handles stderr + process.exit(2) on invalid input
+    // (missing path, read failure, schema validation) and returns 0/1 on
+    // success/baseline failure. The dispatcher mirrors the captured behaviour.
+    try {
+      const exitCode = await effectivenessEvalCommand({
+        dir: workdir,
+        ...(options.labels !== undefined ? { labels: options.labels } : {}),
+        json: options.json,
+      });
+      if (exitCode !== 0) process.exit(exitCode);
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);

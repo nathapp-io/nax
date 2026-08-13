@@ -10,6 +10,8 @@ export type { ScoredChunk } from "./scoring";
 export { dedupeChunks, SIMILARITY_THRESHOLD } from "./dedupe";
 export { FLOOR_KINDS, packChunks } from "./packing";
 export type { PackedChunk, PackResult } from "./packing";
+export { buildManifest, CHUNK_SUMMARY_CHARS } from "./manifest-builder";
+export type { ManifestInputs } from "./manifest-builder";
 export { renderChunks, separatorOverheadTokens, FIXED_RENDER_OVERHEAD_TOKENS } from "./render";
 export { buildDigest, DIGEST_RESERVE_TOKENS, digestTokens } from "./digest";
 export { rebuild, type RebuildDeps } from "./rebuild";
@@ -57,6 +59,7 @@ export type { StageAssembleOptions } from "./stage-assembler";
 export { createContextToolRuntime, createSessionToolBudgets } from "./tool-runtime";
 export type { ContextToolRuntime, SessionToolBudgets } from "./tool-runtime";
 export {
+  _manifestStoreDeps,
   writeContextManifest,
   writeRebuildManifest,
   loadContextManifests,
@@ -64,6 +67,15 @@ export {
   rebuildManifestPath,
 } from "./manifest-store";
 export type { StoredContextManifest, RebuildManifestEntry } from "./manifest-store";
+
+export {
+  _effectivenessDeps,
+  annotateManifestEffectiveness,
+  buildEvidenceTerms,
+  classifyWithTerms,
+  splitDiffByFile,
+  type ClassifyScopeOptions,
+} from "./effectiveness";
 
 export { purgeStaleManifests, _manifestPurgeDeps, MAX_MANIFEST_SCAN } from "./manifest-purge";
 export type { ManifestPurgeDeps } from "./manifest-purge";

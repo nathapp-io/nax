@@ -183,6 +183,15 @@ export function rebuild(
   const chunkEffectiveness = prior.manifest.chunkEffectiveness
     ? Object.fromEntries(Object.entries(prior.manifest.chunkEffectiveness).filter(([id]) => includedChunkIds.has(id)))
     : undefined;
+  // US-002: filter chunkScopePaths against the rebuilt chunk set. A rebuild
+  // can drop scoped chunks (e.g. budget repack) without recomputing scope;
+  // forwarding the prior manifest's mapping verbatim would leave dangling
+  // entries keyed on chunks that are no longer in `includedChunks`. Mirror
+  // the chunkEffectiveness pattern: keep entries whose key is in the rebuilt
+  // set, omit the field entirely when nothing remains.
+  const chunkScopePaths = prior.manifest.chunkScopePaths
+    ? Object.fromEntries(Object.entries(prior.manifest.chunkScopePaths).filter(([id]) => includedChunkIds.has(id)))
+    : undefined;
   const excludedChunks = packResult.budgetExcludedIds
     .filter((id) => !includedChunkIds.has(id))
     .map((id) => ({ id, reason: "budget" as const }));
@@ -213,6 +222,7 @@ export function rebuild(
       : undefined,
     chunkEffectiveness:
       chunkEffectiveness && Object.keys(chunkEffectiveness).length > 0 ? chunkEffectiveness : undefined,
+    chunkScopePaths: chunkScopePaths && Object.keys(chunkScopePaths).length > 0 ? chunkScopePaths : undefined,
   };
 
   const rebuiltChunks: ContextChunk[] = orderedChunks.map(toContextChunk);

@@ -1,0 +1,275 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "[loadLabelSet] returns one case with the input caseId for valid version: 1 JSON containing one well-formed case.",
+    "refined": "Given valid JSON input with schema version \"1\" containing exactly one well-formed case, loadLabelSet(caseId) returns an object containing a cases array of length 1 where cases[0].caseId === caseId.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "[loadLabelSet] throws an error naming both caseId and label when a case omits label.",
+    "refined": "Given JSON input with schema version \"1\" where a case is missing the required \"label\" field, loadLabelSet throws an error whose message includes both the case's caseId value and the string \"label\".",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "[loadLabelSet] throws an error code distinguishable from schema errors for invalid JSON.",
+    "refined": "Given malformed JSON input (not parseable), loadLabelSet throws an error with a distinct error code property (e.g., \"E_PARSE\" or \"E_INVALID_JSON\") that is !== the error code thrown for schema validation failures (e.g., \"E_SCHEMA\").",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "[scoreEffectiveness] returns per-signal precision, recall, and f1 values in [0,1] when 3 of 4 scored cases match.",
+    "refined": "Given a label set with 4 scored cases where 3 cases have matching classifier and label outcomes and 1 does not, scoreEffectiveness returns an object where for each signal in perSignal, precision, recall, and f1 are all numbers satisfying 0 <= value <= 1.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "[scoreEffectiveness] excludes unclear cases from every per-signal precision/recall figure and returns their excludedCount.",
+    "refined": "Given a label set containing N cases with label=\"unclear\" and M cases with other labels, scoreEffectiveness returns { excludedCount: N } where N >= 1, and the perSignal metrics are calculated only from the M non-unclear cases.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "[scoreEffectiveness] returns baseline calculated from an always-ignored classifier.",
+    "refined": "Given a label set where all cases have label=\"ignored\", scoreEffectiveness returns baseline with precision=0, recall=0, f1=0, and scoredCount equal to the input case count.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "[scoreEffectiveness] returns sizeCorrelation greater than 0.9 when followed occurs only for the longest half of diffs.",
+    "refined": "Given a label set where all cases with diffLength >= median have label=\"followed\" and all cases with diffLength < median have label=\"ignored\", scoreEffectiveness returns sizeCorrelation > 0.9.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "[scoreEffectiveness] returns sizeCorrelation with absolute value below 0.2 when followed is evenly distributed across diff lengths.",
+    "refined": "Given a label set where cases with label=\"followed\" and label=\"ignored\" are randomly assigned across all diffLength values with equal distribution, scoreEffectiveness returns |sizeCorrelation| < 0.2.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "[scoreEffectiveness] returns perSignal, baseline, sizeCorrelation, scoredCount, and excludedCount.",
+    "refined": "scoreEffectiveness returns an object containing all of the following keys: perSignal (object), baseline (object), sizeCorrelation (number), scoredCount (number), excludedCount (number). Each key's value is not undefined.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `nax context effectiveness eval` uses a fixture whose classifier meets every recorded baseline threshold, then it exits 0.",
+    "refined": "Running `nax context effectiveness eval --labels <path>` where the fixture's classifier results satisfy all per-signal baseline thresholds returns exit code 0.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When `nax context effectiveness eval` receives a nonexistent labels path, then it exits 2 and stderr names that path.",
+    "refined": "Running `nax context effectiveness eval --labels /nonexistent/path.json` returns exit code 2 and stderr contains the literal string \"/nonexistent/path.json\" or the path component.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When `nax context effectiveness eval` cannot read a labels file, then it exits 2 and stderr states the read failure.",
+    "refined": "Running `nax context effectiveness eval --labels <valid-but-unreadable-path>` (e.g., permission denied) returns exit code 2 and stderr contains an error message indicating a read failure (e.g., contains \"read\" or \"permission\").",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When `nax context effectiveness eval` receives a schema-invalid labels file, then it exits 2, writes the validation reason to stderr, and does not score a partial label set.",
+    "refined": "Running `nax context effectiveness eval --labels <schema-invalid-file>` returns exit code 2, stderr contains a validation error message describing the schema violation, and stdout does not contain any EvalReport JSON object.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When `nax context effectiveness eval` runs with --json, then stdout is one parseable object including perSignal and sizeCorrelation and has no table rows.",
+    "refined": "Running `nax context effectiveness eval --labels <path> --json` outputs exactly one valid JSON object to stdout that parses successfully and contains keys \"perSignal\" and \"sizeCorrelation\", and stdout contains no lines matching table formatting patterns (e.g., no \"│\" or \"├\" characters).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When one label case throws while scoring, then a warning names its caseId and the remaining cases are scored.",
+    "refined": "Given a label set where exactly one case has a scoring error (e.g., malformed classification data), running scoreEffectiveness returns a warning or error log containing that case's caseId, returns scoredCount equal to total_cases - 1, and returns per-signal metrics computed from the remaining valid cases.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-16",
+    "original": "[RawChunk] accepts scopePaths: string[] and accepts chunks without it everywhere accepted today.",
+    "refined": "[RawChunk] accepts scopePaths: string[] and accepts chunks without it everywhere accepted today.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "[StaticRulesProvider.fetch] returns scopePaths [\"src/agents/**/*.ts\"] for matching appliesTo frontmatter.",
+    "refined": "[StaticRulesProvider.fetch] returns scopePaths [\"src/agents/**/*.ts\"] for matching appliesTo frontmatter.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "[StaticRulesProvider.fetch] omits scopePaths for a rule without appliesTo.",
+    "refined": "[StaticRulesProvider.fetch] omits scopePaths for a rule without appliesTo.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "[StaticRulesProvider.fetch] gives two sections of one rule the rule's appliesTo globs.",
+    "refined": "[StaticRulesProvider.fetch] gives two sections of one rule the rule's appliesTo globs.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "[buildManifest] maps a packed scoped chunk ID to its globs in chunkScopePaths.",
+    "refined": "[buildManifest] maps a packed scoped chunk ID to its globs in chunkScopePaths.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "[buildManifest] omits chunkScopePaths when no packed chunk has scopePaths.",
+    "refined": "[buildManifest] omits chunkScopePaths when no packed chunk has scopePaths.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When a scoped manifest is written and loaded, then its chunkScopePaths mapping is unchanged.",
+    "refined": "When a scoped manifest is written and loaded, then its chunkScopePaths mapping is unchanged.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-23",
+    "original": "[splitDiffByFile] maps each post-image path to only its section for a two-file unified diff.",
+    "refined": "splitDiffByFile(unifiedDiff: string) returns Record<string, string> where Object.keys(result).length === 2 and result['src/file-a.ts'] contains only lines from file-a and result['src/file-b.ts'] contains only lines from file-b",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "[splitDiffByFile] keys a rename section by its post-rename path.",
+    "refined": "splitDiffByFile('--- a/old.ts\\n+++ b/new.ts\\n+content') returns { 'new.ts': '+content' } and does not include 'old.ts' as a key",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "[splitDiffByFile] returns an empty section for a binary-marked file without throwing.",
+    "refined": "splitDiffByFile('--- a/bin.png\\n+++ b/bin.png\\nBinary files differ') returns { 'bin.png': '' } and does not throw",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When scopePaths is [\"src/agents/**/*.ts\"] and the diff only touches src/cli/context.ts, then classification is ignored despite more than three shared terms.",
+    "refined": "classifyWithTerms({ diff: unifiedDiff, terms: terms, scopePaths: ['src/agents/**/*.ts'], chunkScopePaths: [] }) returns { followed: false, ignored: true } when unifiedDiff contains only src/cli/context.ts changes",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When that scope sees src/agents/acp/adapter.ts and src/cli/context.ts, then it considers only the adapter section's terms.",
+    "refined": "buildEvidenceTerms({ diffSections: splitDiffByFile(diff), scopePaths: ['src/agents/**/*.ts'] }) returns terms only from src/agents/acp/adapter.ts section and excludes terms from src/cli/context.ts",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When scopePaths is absent, then classification considers the whole diff.",
+    "refined": "classifyWithTerms({ diff: unifiedDiff, terms: terms, scopePaths: undefined }) returns the same result as classifyWithTerms({ diff: unifiedDiff, terms: terms, scopePaths: [] }) and evidence covers all diff sections",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When a diff cannot be split into per-file sections, then classification fails open to the whole diff and records unknown for the chunk.",
+    "refined": "classifyWithTerms({ diff: malformedDiff, terms: terms, chunkScopePaths: ['chunk-id'] }) returns { followed: false, unknown: true } and the chunk with id 'chunk-id' in the manifest has unknown: true recorded",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When terms occur exclusively on removed/context lines, then classification is not followed.",
+    "refined": "classifyWithTerms({ diff: diffWithRemovedTerms, terms: ['removed-term'], scopePaths: [...] }) returns { followed: false } when 'removed-term' appears only on lines starting with '-'",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When scoped classification is followed, then evidence names a file path from its scoped slice.",
+    "refined": "classifyWithTerms({ diff: multiFileDiff, terms: matchedTerms, scopePaths: ['src/core/**'] }) where followed=true returns evidence.filePath that matches scopePaths and starts with 'src/core/'",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When annotation processes a persisted scope excluding all changed files, then it writes ignored and not followed.",
+    "refined": "annotateManifestEffectiveness(manifest) where manifest.chunkScopePaths excludes all diffSection keys returns annotatedManifest where all chunks have ignored: true and followed: false",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When the synthetic fixture is scored, then scoped sizeCorrelation absolute value is strictly smaller than pre-change whole-diff sizeCorrelation absolute value.",
+    "refined": "scoreEffectiveness(syntheticFixture) returns { sizeCorrelation: scopedCorr } where Math.abs(scopedCorr) < Math.abs(preChangeWholeDiffCorr) where preChangeWholeDiffCorr is the value recorded in the baseline fixture",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When the synthetic fixture is scored, then followed F1 is strictly greater than baseline.f1 in that report.",
+    "refined": "scoreEffectiveness(syntheticFixture) returns { followed: { f1: scopedF1 } } where scopedF1 > baselineReport.f1 and baselineReport is loaded from the pre-change fixture file",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-35",
+    "original": "When a manifest read-modify-write fails during annotation, then annotation logs the failure and continues to the next manifest.",
+    "refined": "annotateManifestEffectiveness(manifests: Manifest[]) with manifest at index 2 having a write permission error logs { error: 'manifest-2-write-failed', cause: <error> } and returns annotated manifests for indices 0, 1, 3, 4 with index 2 containing the failure marker",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-36",
+    "original": "When `nax context effectiveness eval` is invoked with scoreEffectiveness stubbed, then it calls the stub exactly once with the fixture's full case list.",
+    "refined": "invoke CLI with args ['context', 'effectiveness', 'eval', '--fixture', path] and scoreEffectivenessStub.getCalls().length === 1 and scoreEffectivenessStub.getCalls()[0].args[0] equals the parsed cases array from fixture file",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-37",
+    "original": "When classifyWithTerms classifies a summary against buildEvidenceTerms evidence, then it returns the signal expected by the other effectiveness tests.",
+    "refined": "classifyWithTerms(summary: string, buildEvidenceTerms(sourceText: string)) returns a value that is a member of the EffectivenessSignal union type ('high' | 'medium' | 'low'), and the return value matches the expected classification for the given summary-evidence pair as verified by calling classifyWithTerms with a known summary and buildEvidenceTerms(source) and asserting the returned signal equals the expected signal string.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-38",
+    "original": "When classifyWithTerms is imported through src/context/engine and directly, then both return the identical signal for the same summary and evidence.",
+    "refined": "For any summary string S and any evidence string E, assert that classifyWithTerms(S, buildEvidenceTerms(E)) imported from 'effectiveness.ts' === classifyWithTerms(S, buildEvidenceTerms(E)) imported from 'src/context/engine.ts'. The assertion compares the returned EffectivenessSignal value (typeof result === 'string' && result is one of 'high' | 'medium' | 'low') and verifies strict equality between the two import paths.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-39",
+    "original": "When the effectiveness module is imported after US-004, then it has no classifyEffectiveness export.",
+    "refined": "After the module is imported (import * as effectiveness from 'effectiveness.ts'), Object.keys(effectiveness) does not include 'classifyEffectiveness', and attempting to access effectiveness.classifyEffectiveness returns undefined. TypeScript compilation succeeds with --noEmit flag, confirming classifyEffectiveness is not present in the exported type interface.",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]

@@ -23,12 +23,22 @@ import type { BuildContext, Operation } from "./types";
 /** Hard ceiling for injected RetryStrategy instances that may not self-terminate. */
 export const MAX_COMPLETE_RETRY_ATTEMPTS = 20;
 
+/** Per-process monotonic counter mixed into newCorrelationId to guarantee uniqueness within a millisecond. */
+let correlationSequence = 0;
+
 /**
  * Generates a per-invocation correlation id (≤16 chars, /^[0-9a-z]+-[0-9a-z]+$/).
  * Exported for unit-testing uniqueness and format guarantees.
+ *
+ * Date.now() alone repeats across many calls made within the same millisecond, so
+ * uniqueness cannot rest on randomness alone (36^6 random suffix still collides at
+ * n≈10,000 draws via the birthday paradox). A monotonic counter closes that gap.
  */
 export function newCorrelationId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  correlationSequence = (correlationSequence + 1) % 46_656; // 36^3
+  const seq = correlationSequence.toString(36).padStart(3, "0");
+  const rand = Math.random().toString(36).slice(2, 5);
+  return `${Date.now().toString(36)}-${seq}${rand}`;
 }
 
 export function normalizeRunOutcome(outcome: AgentRunOutcome): AgentRunOutcome {
