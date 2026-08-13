@@ -31,7 +31,7 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
 // subject to the character cap. The bound is generous enough for any
 // single-story diff but still well-bounded to prevent pathological inputs
 // from blowing up completion.
-const MAX_DIFF_TEXT_CHARS = 1_048_576;
+const MAX_DIFF_TEXT_CHARS = 8_000;
 const HIGH_MEMORY_TELEMETRY_BYTES = 512 * 1_024 * 1_024;
 
 function logHighMemoryCheckpoint(logger: ReturnType<typeof getLogger>, ctx: PipelineContext): void {

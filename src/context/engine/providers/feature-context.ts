@@ -45,7 +45,11 @@ export const _featureContextV2Deps = {
   loadPRD: async (path: string): Promise<PRD | null> => {
     try {
       return await loadPRDImpl(path);
-    } catch {
+    } catch (err) {
+      getLogger().warn("feature-context-v2", "Failed to load feature PRD for fragment reads", {
+        path,
+        error: errorMessage(err),
+      });
       return null;
     }
   },
@@ -57,7 +61,12 @@ export const _featureContextV2Deps = {
   readFragment: async (projectDir: string, featureId: string, storyId: string): Promise<string | null> => {
     try {
       return await readFragmentImpl(projectDir, featureId, storyId);
-    } catch {
+    } catch (err) {
+      getLogger().warn("feature-context-v2", "Failed to read fragment", {
+        storyId,
+        featureId,
+        error: errorMessage(err),
+      });
       return null;
     }
   },
@@ -69,7 +78,11 @@ export const _featureContextV2Deps = {
   listFragmentStoryIds: async (projectDir: string, featureId: string): Promise<string[]> => {
     try {
       return await listFragmentStoryIdsImpl(projectDir, featureId);
-    } catch {
+    } catch (err) {
+      getLogger().warn("feature-context-v2", "Failed to list fragment story ids", {
+        featureId,
+        error: errorMessage(err),
+      });
       return [];
     }
   },

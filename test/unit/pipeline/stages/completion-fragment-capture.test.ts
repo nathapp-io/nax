@@ -347,27 +347,32 @@ describe("completionStage — fragment capture fail-open (AC7)", () => {
 
       const logger = getLogger();
       const debugSpy = spyOn(logger, "debug").mockImplementation(() => {});
-      spyOn(logger, "info").mockImplementation(() => {});
-      spyOn(logger, "warn").mockImplementation(() => {});
-      spyOn(logger, "error").mockImplementation(() => {});
+      const infoSpy = spyOn(logger, "info").mockImplementation(() => {});
+      const warnSpy = spyOn(logger, "warn").mockImplementation(() => {});
+      const errorSpy = spyOn(logger, "error").mockImplementation(() => {});
 
-      const boom = new Error("disk full");
-      _completionDeps.writeFragment = mock(async () => {
-        throw boom;
-      });
-      _completionDeps.getDiffFilePaths = mock(async () => new Set<string>());
+      try {
+        const boom = new Error("disk full");
+        _completionDeps.writeFragment = mock(async () => {
+          throw boom;
+        });
+        _completionDeps.getDiffFilePaths = mock(async () => new Set<string>());
 
-      const result = await completionStage.execute(ctx);
+        const result = await completionStage.execute(ctx);
 
-      expect(result.action).toBe("continue");
-      expect(ctx.prd.userStories[0]!.status).toBe("passed");
-      const debugCalls = debugSpy.mock.calls;
-      const fragmentCall = debugCalls.find((c) => typeof c[1] === "string" && c[1].includes("Fragment"));
-      expect(fragmentCall).toBeDefined();
-      const data = fragmentCall?.[2] as Record<string, unknown> | undefined;
-      expect(data?.error).toBe(errorMessage(boom));
-
-      debugSpy.mockRestore();
+        expect(result.action).toBe("continue");
+        expect(ctx.prd.userStories[0]!.status).toBe("passed");
+        const debugCalls = debugSpy.mock.calls;
+        const fragmentCall = debugCalls.find((c) => typeof c[1] === "string" && c[1].includes("Fragment"));
+        expect(fragmentCall).toBeDefined();
+        const data = fragmentCall?.[2] as Record<string, unknown> | undefined;
+        expect(data?.error).toBe(errorMessage(boom));
+      } finally {
+        debugSpy.mockRestore();
+        infoSpy.mockRestore();
+        warnSpy.mockRestore();
+        errorSpy.mockRestore();
+      }
     });
   });
 });

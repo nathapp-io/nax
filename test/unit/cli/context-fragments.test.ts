@@ -11,7 +11,7 @@
  *  AC7 — formatter is pure: same input → identical output, zero file I/O
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { _fragmentStoreDeps, listFragmentStoryIds, readFragment } from "@/context";
 import type { PRD, UserStory } from "@/prd";
 import { makePRD, makeStory, withDepsRestore } from "@test/helpers";
@@ -47,6 +47,7 @@ function lines(output: string[]): string[] {
 }
 
 withDepsRestore(_fragmentStoreDeps);
+withDepsRestore(_contextFragmentsDeps);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC7 — formatter purity
@@ -420,20 +421,6 @@ describe("fragmentsInspectCommand — exit code (US-004 AC2)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("_contextFragmentsDeps — loadPRD override for AC3 (US-004 AC3)", () => {
-  let originalDeps: typeof _contextFragmentsDeps;
-
-  beforeEach(() => {
-    originalDeps = {
-      loadPRD: _contextFragmentsDeps.loadPRD,
-      projectDirFor: _contextFragmentsDeps.projectDirFor,
-    };
-  });
-
-  afterEach(() => {
-    _contextFragmentsDeps.loadPRD = originalDeps.loadPRD;
-    _contextFragmentsDeps.projectDirFor = originalDeps.projectDirFor;
-  });
-
   test("[US-004 AC3] inspect command reads the PRD and lists transitive dependents", async () => {
     _fragmentStoreDeps.fileExists = async () => true;
     _fragmentStoreDeps.listFragments = async () => ["US-001.md"];

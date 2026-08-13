@@ -148,19 +148,13 @@ describe("completionStage skipCompletionEvents", () => {
 });
 
 describe("completionStage bounded stream reading", () => {
-  test("getDiffText retains up to MAX_DIFF_TEXT_CHARS (1 MiB) and drains stderr", async () => {
-    // US-002 widens the per-read prefix from 8 KiB to 1 MiB so the fragment
-    // capture can enumerate every file header in the diff (AC6: "names each
-    // changed file reported by that diff"). The bound is still in place — a
-    // diff larger than 1 MiB is truncated to its first MiB — but is now large
-    // enough for realistic story-sized diffs.
+  test("getDiffText retains 8,000 characters and drains stderr", async () => {
     const encoder = new TextEncoder();
     let stderrPulls = 0;
-    const streamLength = 2_000_000; // exceeds the 1 MiB cap
     _completionDeps.spawn = (() => ({
       stdout: new ReadableStream<Uint8Array>({
         start(controller) {
-          controller.enqueue(encoder.encode("x".repeat(streamLength)));
+          controller.enqueue(encoder.encode("x".repeat(9_000)));
           controller.close();
         },
       }),
@@ -175,7 +169,7 @@ describe("completionStage bounded stream reading", () => {
 
     const output = await _completionDeps.getDiffText("/repo", "base-ref");
 
-    expect(output).toBe("x".repeat(1_048_576));
+    expect(output).toBe("x".repeat(8_000));
     expect(stderrPulls).toBe(2);
   });
 
