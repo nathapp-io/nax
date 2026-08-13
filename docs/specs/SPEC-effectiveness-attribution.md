@@ -210,8 +210,6 @@ shared-term threshold with a size-independent criterion. Gated by the US-001
 harness against the recorded baseline.
 
 - Context Files: `src/context/engine/manifest-store.ts`, `src/context/engine/effectiveness-eval.ts` — created by US-001, consumed here
-- Modifies:
-  - **US-003** `test/unit/context/engine/effectiveness.test.ts` — its `classifyEffectiveness` cases assert whole-diff term-overlap outcomes that scoped attribution deliberately changes. Replace each with the equivalent assertion through `classifyWithTerms` plus `buildEvidenceTerms`, holding scope constant.
 
 **US-004 — Retire the test-only wrapper** (depends on US-003; terminal cleanup)
 Delete the exported `classifyEffectiveness` wrapper, which has zero `src/`
@@ -219,11 +217,19 @@ callers and let the bias survive a green suite by giving tests a path production
 never runs. Deletion-only: no new behaviour.
 
 - Context Files: `src/context/engine/index.ts`, `src/context/index.ts`
-- Modifies:
-  - **US-004** `test/unit/context/engine/effectiveness.test.ts` — every remaining reference to the deleted `classifyEffectiveness` export must move to the `classifyWithTerms` + `buildEvidenceTerms` pair that US-003 exports.
 
 Verification note for US-004: removals are verified by the build/static gate, not
 by runtime acceptance criteria. Gate command: `bun run typecheck && bun run lint`.
+
+### Modifies
+
+**US-003**
+
+- `test/unit/context/engine/effectiveness.test.ts` — its `classifyEffectiveness` cases assert whole-diff term-overlap outcomes that scoped attribution deliberately changes; a correct implementation fails them. Replace each with the equivalent assertion through `classifyWithTerms` plus `buildEvidenceTerms`, holding scope constant, so the invariant becomes "the same evidence under a fixed scope yields the same signal" rather than "the whole diff yields the same signal".
+
+**US-004**
+
+- `test/unit/context/engine/effectiveness.test.ts` — every remaining reference to the deleted `classifyEffectiveness` export must move to the `classifyWithTerms` + `buildEvidenceTerms` pair US-003 exports; the file cannot compile against a symbol this story removes.
 
 ### Seams
 
