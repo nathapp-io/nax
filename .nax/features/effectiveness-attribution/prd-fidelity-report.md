@@ -4,7 +4,7 @@
 **PRD:** `.nax/features/effectiveness-attribution/prd.json` (cross-agent-pi profile)
 **Date:** 2026-08-13
 **Phases run:** 9 only (phases 1-8 ran during spec-writing; this invocation is the post-plan fidelity gate)
-**Verdict:** ⚠️ revisions needed — 0 blockers, 4 majors (all remediated), 3 minors
+**Verdict:** ⚠️ revisions needed — 0 blockers, 5 majors (all remediated), 3 minors
 
 ## Summary
 
@@ -13,10 +13,10 @@
 | 1. Spec AC → PRD AC mapping | 33 → 39, every spec AC maps; all 6 additions traceable |
 | 2. Behavioural fidelity + signature reality | 1 major (locus token degraded) — fixed |
 | 3. Orphan PRD ACs | 1 planner-authored AC, accepted (no material scope) |
-| 4. File-role delta | clean — no self-`Creates` in any `contextFiles` |
+| 4. File-role delta | no self-`Creates` in any `contextFiles`; 1 major — an upstream fixture US-003 reads was undeclared (see Major 5) |
 | 5. Meta-AC / correction survival | corrections reached `description` + `acceptanceCriteria`, never `analysis`-only |
 | 5c. PRD-AC satisfiability | Class A (both seam endpoints new) — no trace required |
-| 6. Out-of-scope preservation | 7/7 survived; none inverted into an AC |
+| 6. Out-of-scope preservation | 7/7 survived; 8th added post-report with a `US-003 only:` prefix; none inverted into an AC |
 | 7. Terminal-cleanup integrity | 1 major (gate note dropped) — fixed |
 | 8. `Modifies` → `modifiedFiles` | 1 major (all entries dropped) — fixed |
 
@@ -110,10 +110,30 @@ compensated by the planner's absence AC, which makes the removal runtime-checked
 1. **Before the next spec:** write `### Modifies` as one section between `## Stories`
    and `## Acceptance Criteria`, `**US-00N**` alone on its line, one backticked path
    per bullet. This is the second time the inline shape has cost a round trip.
-2. **Consider hoisting US-003's coverage-constant deferral** to the feature-level
-   `## Out of Scope` with a `US-003 only:` prefix. It survived in US-003's
-   `description`, but only the feature-level list is backfilled deterministically and
-   propagated to every story, and "the spec never pins the threshold" is exactly the
-   kind of gap an adversarial reviewer cites.
-3. **Author the synthetic label fixture before starting US-001** — its ACs score
-   against a committed fixture that does not exist yet.
+2. ~~Consider hoisting US-003's coverage-constant deferral~~ — **applied.** Now a
+   feature-level bullet prefixed `US-003 only:`, so propagation cannot waive the
+   property in the other three stories.
+3. ~~Author the synthetic label fixture before starting US-001~~ — **withdrawn, this
+   recommendation was wrong.** `test/fixtures/effectiveness/labels.sample.json` is in
+   US-001's `expectedFiles`: the story authors it. Nothing needs to pre-exist. The
+   genuinely hand-labelled set remains the Out-of-Scope manual task, which is a
+   different artefact.
+
+## Post-report patches (2026-08-13)
+
+Checking recommendation 3 surfaced a real gap it had masked:
+
+### Major 5 — US-003 scores against a fixture it never declared as a read
+
+**Spec reference:** US-003 AC-10/AC-11 ("scoring the committed synthetic fixture") and
+the seam AC's `--labels <fixture>`.
+**Reality:** `test/fixtures/effectiveness/labels.sample.json` appeared in neither the
+spec's US-003 `Context Files` nor the PRD's `contextFiles`. Not planner drift — the
+spec never listed it, so Phase 9 §4c had nothing to compare against.
+**Impact:** US-003's implementer gets no read hint for the file three of its ACs score
+against, and would hit a missing-context warning rather than a pointer.
+**Fix applied:** added to the spec's US-003 `Context Files` and the PRD's
+`contextFiles`, annotated as produced by US-001 — the legitimate cross-story read.
+
+Both patches verified isolated: only `contextFiles` and `outOfScope` changed in the
+PRD. Out-of-scope count is now 8 in both spec and PRD, well under the 25-item cap.

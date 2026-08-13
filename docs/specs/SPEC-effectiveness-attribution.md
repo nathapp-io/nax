@@ -171,6 +171,9 @@ size-correlation (spearman)  0.11   cases scored 84   excluded (unclear) 12
   selection-time filtering.
 - No change to `context.md`, to `pollutionRatio`'s formula, or to the
   `POLLUTION_WARN_THRESHOLD` value.
+- US-003 only: the classifier's coverage-ratio constant is not pinned to a
+  specific value. It is whatever value makes US-003's two fixture-scored ACs
+  pass, and the measured value is recorded alongside the fixture.
 
 ## Stories
 
@@ -209,7 +212,7 @@ added lines of the files its `scopePaths` admits, and replace the absolute
 shared-term threshold with a size-independent criterion. Gated by the US-001
 harness against the recorded baseline.
 
-- Context Files: `src/context/engine/manifest-store.ts`, `src/context/engine/effectiveness-eval.ts` — created by US-001, consumed here
+- Context Files: `src/context/engine/manifest-store.ts`, `src/context/engine/effectiveness-eval.ts` — created by US-001, consumed here, `test/fixtures/effectiveness/labels.sample.json` — created by US-001, scored against here
 
 **US-004 — Retire the test-only wrapper** (depends on US-003; terminal cleanup)
 Delete the exported `classifyEffectiveness` wrapper, which has zero `src/`

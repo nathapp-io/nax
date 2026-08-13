@@ -158,7 +158,8 @@
         "src/context/engine/manifest-store.ts",
         "src/context/engine/effectiveness-eval.ts",
         "src/cli/context.ts",
-        "bin/nax.ts"
+        "bin/nax.ts",
+        "test/fixtures/effectiveness/labels.sample.json"
       ],
       "outOfScope": [
         "tuning the classifier's coverage-ratio constant to a specific value is deliberately not pinned here; the constant is whatever value makes AC-10 and AC-11 pass, and the measured value is recorded alongside the fixture."
@@ -224,7 +225,8 @@
     "Authoring the hand-labelled evaluation cases is a manual data task performed outside any implementation story; stories here are verified against a synthetic fixture committed with the code.",
     "Populating `scopePaths` for providers other than `StaticRulesProvider` is deferred; those chunks keep today's whole-diff behaviour.",
     "No change to how chunks are selected for a bundle. This spec reads `appliesTo` at classification time and does not alter `ruleMatchesScopeFiles` or any selection-time filtering.",
-    "No change to `context.md`, to `pollutionRatio`'s formula, or to the `POLLUTION_WARN_THRESHOLD` value."
+    "No change to `context.md`, to `pollutionRatio`'s formula, or to the `POLLUTION_WARN_THRESHOLD` value.",
+    "US-003 only: the classifier's coverage-ratio constant is not pinned to a specific value. It is whatever value makes US-003's two fixture-scored ACs pass, and the measured value is recorded alongside the fixture."
   ],
   "routingProfile": "cross-agent-pi"
 }
