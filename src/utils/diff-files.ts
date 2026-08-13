@@ -73,6 +73,13 @@ function isMinusHeader(rawLine: string): boolean {
   return rawLine.startsWith("--- ");
 }
 
+/** True for the `+++ /dev/null` half of a unified-diff file-header pair. */
+function isPlusDevNullHeader(rawLine: string): boolean {
+  return (
+    rawLine.startsWith(HEADER_PREFIX_NOPREFIX) && rawLine.slice(HEADER_PREFIX_NOPREFIX.length).trim() === "/dev/null"
+  );
+}
+
 export interface LineRange {
   readonly start: number;
   readonly end: number;
@@ -82,16 +89,25 @@ export function extractDiffFiles(diff: string): Set<string> {
   const files = new Set<string>();
   if (!diff) return files;
 
-  let prevWasMinusHeader = false;
-  for (const rawLine of diff.split(/\r?\n/)) {
+  const lines = diff.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i] ?? "";
+    if (isMinusHeader(rawLine)) {
+      // A `---` header names the deletion side. It is a changed file only when
+      // the paired `+++` header is `/dev/null` (a deletion). A rename's
+      // `--- a/<old>` half is the source path — Git's --name-only reports only
+      // the destination — so it must not be reported here.
+      if (isPlusDevNullHeader(lines[i + 1] ?? "")) {
+        const path = parseMinusHeaderPath(rawLine);
+        if (path) files.add(path);
+      }
+      continue;
+    }
     if (rawLine.startsWith(HEADER_PREFIX_NOPREFIX)) {
+      const prevWasMinusHeader = i > 0 && isMinusHeader(lines[i - 1] ?? "");
       const path = parsePlusHeaderPath(rawLine, prevWasMinusHeader);
       if (path) files.add(path);
-    } else if (isMinusHeader(rawLine)) {
-      const path = parseMinusHeaderPath(rawLine);
-      if (path) files.add(path);
     }
-    prevWasMinusHeader = isMinusHeader(rawLine);
   }
   return files;
 }

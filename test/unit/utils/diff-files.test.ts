@@ -54,6 +54,25 @@ deleted file mode 100644
     expect(extractDiffFiles(diff)).toEqual(new Set(["src/gone.ts"]));
   });
 
+  test("does not report the rename source side (--- a/<old>) as changed", () => {
+    // A rename with content changes emits `--- a/<old>` / `+++ b/<new>`. The
+    // `---` half is the source path, not a deletion; Git's --name-only reports
+    // only the destination. Reporting the old path would diverge from
+    // --name-only and mislead the fileInDiff telemetry and mutation spot-check.
+    const diff = `diff --git a/src/old.ts b/src/new.ts
+similarity index 90%
+rename from src/old.ts
+rename to src/new.ts
+index 111..222 100644
+--- a/src/old.ts
++++ b/src/new.ts
+@@ -1 +1 @@
+-old
++new
+`;
+    expect(extractDiffFiles(diff)).toEqual(new Set(["src/new.ts"]));
+  });
+
   test("handles CRLF line endings", () => {
     const diff = "+++ b/src/win.ts\r\n@@ -1 +1 @@\r\n-x\r\n+y\r\n";
     expect(extractDiffFiles(diff)).toEqual(new Set(["src/win.ts"]));
