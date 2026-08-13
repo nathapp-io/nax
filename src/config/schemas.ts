@@ -40,7 +40,7 @@ import { AdversarialReviewConfigSchema, ReviewConfigSchema } from "./schemas-rev
 // Re-export named schemas consumed by other modules (via config/schema.ts barrel)
 export { AcceptanceConfigSchema, PlanConfigSchema } from "./schemas-infra";
 export { AdversarialReviewConfigSchema } from "./schemas-review";
-export { ContextV2ConfigSchema } from "./schemas-context";
+export { ContextConfigSchema, ContextV2ConfigSchema } from "./schemas-context";
 export { PromptsConfigSchema } from "./schemas-infra";
 
 export const NaxConfigSchema = z
@@ -300,34 +300,13 @@ export const NaxConfigSchema = z
       },
       hardening: { enabled: true },
     }),
-    context: ContextConfigSchema.default({
-      fileInjection: "disabled",
-      testCoverage: {
-        enabled: true,
-        detail: "names-and-counts",
-        maxTokens: 500,
-        scopeToStory: true,
-      },
-      autoDetect: {
-        enabled: true,
-        maxFiles: 5,
-        traceImports: false,
-      },
-      v2: {
-        enabled: false,
-        minScore: 0.1,
-        providerTimeoutMs: 5000,
-        pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
-        rules: { allowLegacyClaudeMd: false, budgetTokens: 8192, rulesShare: 0.4, enforceBudget: true },
-        fragments: { enabled: false, decay: 0.6, maxTokens: 400, extractor: "deterministic" as const },
-        pluginProviders: [],
-        stages: {},
-        deterministic: false,
-        session: { retentionDays: 7, archiveOnFeatureArchive: true },
-        staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
-        providers: { historyScope: "package", neighborScope: "package", crossPackageDepth: 1, maxGlobFiles: 500 },
-      },
-    }),
+    // Derived, not hand-written. Zod does not re-parse a `.default()` value, so a
+    // literal here would shadow every inner `.default()` in ContextConfigSchema —
+    // any field added there but forgotten here would be missing from
+    // `NaxConfigSchema.parse({})` (and therefore from DEFAULT_CONFIG) while still
+    // resolving correctly when the operator supplies the parent partially. That
+    // asymmetry is invisible to a green suite. Re-parsing keeps one source of truth.
+    context: ContextConfigSchema.default(() => ContextConfigSchema.parse({})),
     optimizer: OptimizerConfigSchema.optional(),
     plugins: z.array(PluginConfigEntrySchema).optional(),
     disabledPlugins: z.array(z.string()).optional(),

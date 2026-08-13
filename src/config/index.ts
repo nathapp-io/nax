@@ -47,6 +47,7 @@ export {
   NaxConfigSchema,
   AcceptanceConfigSchema,
   PlanConfigSchema,
+  ContextConfigSchema,
   ContextV2ConfigSchema,
 } from "./schema";
 export { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
