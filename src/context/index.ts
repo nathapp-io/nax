@@ -59,3 +59,13 @@ export {
 export { autoDetectContextFiles, extractKeywords, type AutoDetectOptions } from "./auto-detect";
 
 export { isGreenfieldStory } from "./greenfield";
+export {
+  writeFragment,
+  readFragment,
+  listFragmentStoryIds,
+  deleteFragment,
+  fragmentPath,
+  truncateToFragmentBudget,
+  _fragmentStoreDeps,
+  type WriteFragmentOptions,
+} from "./fragments";

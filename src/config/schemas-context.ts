@@ -50,6 +50,37 @@ const ContextV2PullConfigSchema = z
   })
   .default(() => ({ enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 }));
 
+// Context Engine v2 fragments config (US-001)
+const ContextV2FragmentsConfigSchema = z
+  .object({
+    /**
+     * Enable feature-scoped fragment capture and read-back. Off by default
+     * because fragment capture is opt-in per project — operators must
+     * explicitly flip this on in their project config.
+     */
+    enabled: z.boolean().default(false),
+    /**
+     * Score multiplier applied to fragments in [0, 1]. A fragment's base
+     * score is 1.0; the decayed score is `baseScore * decay`. Default 0.6
+     * matches the typical mid-tier freshness weight so fragments compete
+     * with staleness-downweighted context entries rather than fresh ones.
+     */
+    decay: z.number().min(0).max(1).default(0.6),
+    /**
+     * Per-fragment token budget. Bodies longer than this are truncated before
+     * being written so a single fragment cannot blow past its slice of the
+     * provider budget. Default 400 tokens (~1600 chars).
+     */
+    maxTokens: z.number().int().min(1).default(400),
+    /**
+     * Extractor implementation. This spec ships only the deterministic
+     * fragment body — the LLM-backed extractor lands in a later spec and is
+     * deliberately not yet wired into the schema as a valid value.
+     */
+    extractor: z.enum(["deterministic"] as const).default("deterministic"),
+  })
+  .default(() => ({ enabled: false, decay: 0.6, maxTokens: 400, extractor: "deterministic" as const }));
+
 // Context Engine v2 rules config (Phase 5.1)
 const ContextV2RulesConfigSchema = z
   .object({
@@ -135,6 +166,13 @@ export const ContextV2ConfigSchema = z
     pull: ContextV2PullConfigSchema,
     /** Canonical rules store configuration (Phase 5.1+) */
     rules: ContextV2RulesConfigSchema,
+    /**
+     * Feature-scoped fragment configuration (US-001). Defaults live here AND
+     * in the outer literal at `NaxConfigSchema.context.v2` in `schemas.ts`
+     * because Zod does not re-parse default values; both sites must agree or
+     * `NaxConfigSchema.parse({})` shadows the inner defaults.
+     */
+    fragments: ContextV2FragmentsConfigSchema,
     /**
      * External plugin provider registrations (Phase 7+).
      * Each entry loads a module that exports an IContextProvider-compatible object.
@@ -253,6 +291,7 @@ export const ContextV2ConfigSchema = z
     providerTimeoutMs: 5000,
     pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
     rules: { allowLegacyClaudeMd: false, budgetTokens: 8192, rulesShare: 0.4, enforceBudget: true },
+    fragments: { enabled: false, decay: 0.6, maxTokens: 400, extractor: "deterministic" as const },
     pluginProviders: [],
     stages: {},
     deterministic: false,

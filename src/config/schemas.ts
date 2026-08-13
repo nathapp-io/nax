@@ -319,6 +319,7 @@ export const NaxConfigSchema = z
         providerTimeoutMs: 5000,
         pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
         rules: { allowLegacyClaudeMd: false, budgetTokens: 8192, rulesShare: 0.4, enforceBudget: true },
+        fragments: { enabled: false, decay: 0.6, maxTokens: 400, extractor: "deterministic" as const },
         pluginProviders: [],
         stages: {},
         deterministic: false,
