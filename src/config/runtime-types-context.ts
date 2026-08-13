@@ -68,6 +68,24 @@ export interface ContextV2RulesConfig {
   enforceBudget: boolean;
 }
 
+/** Feature-scoped fragment configuration (US-001). */
+export interface ContextV2FragmentsConfig {
+  /** Enable fragment capture and read-back. Default: false (opt-in). */
+  enabled: boolean;
+  /**
+   * Score multiplier applied to fragments in [0, 1]. A fragment's base
+   * score is 1.0; the decayed score is `baseScore * decay`. Default: 0.6.
+   */
+  decay: number;
+  /** Per-fragment token budget. Default: 400. */
+  maxTokens: number;
+  /**
+   * Extractor implementation. This spec accepts only "deterministic".
+   * LLM-backed extraction is deferred to a later spec.
+   */
+  extractor: "deterministic";
+}
+
 /**
  * Registration entry for an external plugin provider (Phase 7+).
  * The engine loads the module and passes config to provider.init() if present.
@@ -96,6 +114,8 @@ export interface ContextV2Config {
   pull: ContextV2PullConfig;
   /** Canonical rules store configuration (Phase 5.1+) */
   rules: ContextV2RulesConfig;
+  /** Feature-scoped fragment configuration (US-001). */
+  fragments: ContextV2FragmentsConfig;
   /** External plugin providers to load (Phase 7+). Empty by default. */
   pluginProviders: ContextPluginProviderConfig[];
   /**

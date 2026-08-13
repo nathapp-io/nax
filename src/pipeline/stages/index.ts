@@ -60,5 +60,5 @@ export { contextStage, _contextStageDeps } from "./context";
 export { promptStage } from "./prompt";
 export { optimizerStage } from "./optimizer";
 export { executionStage, _executionDeps } from "./execution";
-export { completionStage } from "./completion";
+export { completionStage, _completionDeps } from "./completion";
 export { acceptanceStage } from "./acceptance";

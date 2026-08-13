@@ -32,6 +32,7 @@ describe("ContextV2ConfigSchema — manifest retentionDays (US-001)", () => {
       providerTimeoutMs: 5000,
       pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
       rules: { allowLegacyClaudeMd: false, budgetTokens: 8192, rulesShare: 0.4, enforceBudget: true },
+      fragments: { enabled: false, decay: 0.6, maxTokens: 400, extractor: "deterministic" },
       pluginProviders: [],
       stages: {},
       deterministic: false,

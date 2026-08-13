@@ -12,6 +12,7 @@
  * - `continue`: Stories marked complete, events emitted
  */
 
+import { renderFragmentBody, writeFragment } from "@/context/fragments";
 import { GIT_TIMEOUT_MS } from "@/utils/git";
 import { persistSemanticVerdict } from "../../acceptance/semantic-verdict";
 import { annotateManifestEffectiveness } from "../../context/engine/effectiveness";
@@ -24,7 +25,13 @@ import { errorMessage } from "../../utils/errors";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
-const MAX_EFFECTIVENESS_DIFF_CHARS = 8_000;
+// Bound on the captured git-diff text. Only the effectiveness annotation
+// (Amendment A AC-45) reads this text now — the fragment capture (US-002)
+// enumerates file paths via `git diff --name-only` instead, so it is not
+// subject to the character cap. The bound is generous enough for any
+// single-story diff but still well-bounded to prevent pathological inputs
+// from blowing up completion.
+const MAX_DIFF_TEXT_CHARS = 8_000;
 const HIGH_MEMORY_TELEMETRY_BYTES = 512 * 1_024 * 1_024;
 
 function logHighMemoryCheckpoint(logger: ReturnType<typeof getLogger>, ctx: PipelineContext): void {
@@ -67,11 +74,18 @@ export const completionStage: PipelineStage = {
     }
 
     // Amendment A AC-45: annotate context manifests with effectiveness signals.
-    // Best-effort — non-fatal if the annotation fails or v2 context was not active.
+    // US-002: capture a per-story fragment on successful non-batch completion.
+    // Both writes are best-effort — the effectiveness annotation runs a full
+    // `git diff` and fragment capture runs a separate `git diff --name-only`;
+    // a failure in either one is logged at debug and never blocks the story.
+    // Batch mode is intentionally skipped (mirroring the existing effectiveness
+    // behaviour and matching the spec's "deferred" batch capture rule).
     const featureId = ctx.prd?.feature;
+    const fragmentsEnabled = ctx.config.context?.v2?.fragments?.enabled === true;
     if (!isBatch && ctx.projectDir && featureId && ctx.config.context?.v2?.enabled) {
+      let diffText = "";
       try {
-        const diffText = await _completionDeps.getDiffText(ctx.workdir, ctx.storyGitRef);
+        diffText = await _completionDeps.getDiffText(ctx.workdir, ctx.storyGitRef);
         await annotateManifestEffectiveness(ctx.projectDir, featureId, ctx.story.id, {
           agentOutput: ctx.agentResult?.output ?? "",
           diffText,
@@ -82,6 +96,31 @@ export const completionStage: PipelineStage = {
           storyId: ctx.story.id,
           error: errorMessage(err),
         });
+      }
+
+      if (fragmentsEnabled) {
+        try {
+          // AC6: "names each changed file reported by that diff". Using
+          // `git diff --name-only` instead of re-parsing the bounded diff
+          // text means every changed file (including the deletion side and
+          // paths past any character cap on `getDiffText`) reaches the
+          // fragment body — the only bound is git's own per-line output,
+          // which is naturally small.
+          const changedFiles = [...(await _completionDeps.getDiffFilePaths(ctx.workdir, ctx.storyGitRef))];
+          const body = _completionDeps.renderFragmentBody(
+            ctx.story.id,
+            ctx.story.title,
+            ctx.story.acceptanceCriteria,
+            changedFiles,
+          );
+          const maxTokens = ctx.config.context.v2.fragments.maxTokens;
+          await _completionDeps.writeFragment(ctx.projectDir, featureId, ctx.story.id, body, maxTokens);
+        } catch (err) {
+          logger.debug("completion", "Fragment capture failed — non-fatal", {
+            storyId: ctx.story.id,
+            error: errorMessage(err),
+          });
+        }
       }
     }
 
@@ -189,6 +228,41 @@ async function readTextStreamPrefix(stream: ReadableStream<Uint8Array>, maxChars
   }
 }
 
+/**
+ * Read `git diff --name-only` stdout into a Set of file paths, streaming
+ * line-by-line so the full output is never materialised as one string (nor the
+ * split/map/filter arrays a full read would build). The returned Set is
+ * inherently O(file count) — that is the required result for AC6 — but this
+ * avoids the ~4x transient amplification of a full decode on a pathological
+ * many-file diff.
+ */
+async function readDiffFilePaths(stream: ReadableStream<Uint8Array>): Promise<Set<string>> {
+  const paths = new Set<string>();
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let pending = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      pending += decoder.decode(value, { stream: true });
+      const lines = pending.split("\n");
+      // The final element may be a partial line split across a chunk boundary;
+      // carry it forward to the next read instead of emitting a truncated path.
+      pending = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.length > 0) paths.add(trimmed);
+      }
+    }
+    const tail = (pending + decoder.decode()).trim();
+    if (tail.length > 0) paths.add(tail);
+    return paths;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 /** Get a git diff text between baseRef and HEAD. Best-effort, returns "" on failure. */
 async function getDiffText(workdir: string, baseRef: string | undefined): Promise<string> {
   if (!baseRef) return "";
@@ -215,7 +289,7 @@ async function getDiffText(workdir: string, baseRef: string | undefined): Promis
     let output: string;
     try {
       [output] = await Promise.all([
-        readTextStreamPrefix(proc.stdout, MAX_EFFECTIVENESS_DIFF_CHARS),
+        readTextStreamPrefix(proc.stdout, MAX_DIFF_TEXT_CHARS),
         readTextStreamPrefix(proc.stderr, 0),
         proc.exited,
       ]);
@@ -233,6 +307,55 @@ async function getDiffText(workdir: string, baseRef: string | undefined): Promis
 }
 
 /**
+ * Set of file paths changed by the story, derived from `git diff --name-only`.
+ * Used by US-002 fragment capture (AC6) so the fragment body names every
+ * changed file — including the deletion side and paths past any character cap
+ * on `getDiffText`. Output is one path per line and naturally bounded by
+ * file count, not content size.
+ */
+async function getDiffFilePaths(workdir: string, baseRef: string | undefined): Promise<Set<string>> {
+  if (!baseRef) return new Set();
+  try {
+    const proc = _completionDeps.spawn(["git", "diff", "--name-only", `${baseRef}..HEAD`], {
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    let timedOut = false;
+    const timerId = setTimeout(() => {
+      timedOut = true;
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        // Process may have already exited
+      }
+    }, GIT_TIMEOUT_MS);
+
+    let paths: Set<string>;
+    try {
+      [paths] = await Promise.all([
+        // `--name-only` output is one path per line, bounded by file count —
+        // not content size — so it is streamed in full. Capping it (as
+        // getDiffText does) would drop paths past the prefix and break AC6's
+        // "every changed file" contract, but a single-string read amplifies
+        // transient memory ~4x on pathological diffs; readDiffFilePaths emits
+        // each path into the Set as it is decoded instead.
+        readDiffFilePaths(proc.stdout),
+        readTextStreamPrefix(proc.stderr, 0),
+        proc.exited,
+      ]);
+    } finally {
+      clearTimeout(timerId);
+    }
+
+    return timedOut ? new Set() : paths;
+  } catch {
+    return new Set();
+  }
+}
+
+/**
  * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
  */
 export const _completionDeps = {
@@ -240,6 +363,9 @@ export const _completionDeps = {
   persistSemanticVerdict,
   savePRD,
   getDiffText,
+  getDiffFilePaths,
   readTextStreamPrefix,
+  writeFragment,
+  renderFragmentBody,
   spawn: Bun.spawn,
 };

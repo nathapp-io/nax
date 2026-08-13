@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-08-13T00-02-38-756Z",
+    "feature": "feature-context-fragments",
+    "startedAt": "2026-08-13T00:02:38.756Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 92759
+  },
+  "progress": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 0.924041,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 6,
+  "updatedAt": "2026-08-13T02:25:37.761Z",
+  "durationMs": 8579005,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-08-13T02:25:03.770Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-08-13T02:25:36.491Z"
+    }
+  }
+}

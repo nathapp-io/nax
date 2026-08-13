@@ -173,6 +173,32 @@ describe("completionStage bounded stream reading", () => {
     expect(stderrPulls).toBe(2);
   });
 
+  test("getDiffText passes through a diff shorter than MAX_DIFF_TEXT_CHARS", async () => {
+    // The cap must not chop shorter diffs — the fragment capture (and the
+    // effectiveness annotation) rely on every byte of a small diff being
+    // preserved verbatim.
+    const encoder = new TextEncoder();
+    const diff = "diff --git a/src/foo.ts b/src/foo.ts\n--- a/src/foo.ts\n+++ b/src/foo.ts\n@@ -1 +1 @@\n-x\n+y\n";
+    _completionDeps.spawn = (() => ({
+      stdout: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(diff));
+          controller.close();
+        },
+      }),
+      stderr: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      exited: Promise.resolve(0),
+    })) as unknown as typeof _completionDeps.spawn;
+
+    const output = await _completionDeps.getDiffText("/repo", "base-ref");
+
+    expect(output).toBe(diff);
+  });
+
   test("retains only the requested prefix while draining the full stream", async () => {
     const encoder = new TextEncoder();
     let pulls = 0;

@@ -50,6 +50,20 @@ export { configCommand, type ConfigCommandOptions } from "./config";
 export { agentsListCommand } from "./agents";
 export { contextInspectCommand, type ContextInspectOptions } from "./context";
 export {
+  _contextFragmentsDeps,
+  formatFragmentsInspect,
+  formatFragmentsPrune,
+  fragmentsInspectCommand,
+  fragmentsPruneCommand,
+  listDependentStoryIds,
+  type FragmentInspectEntry,
+  type FragmentsInspectFormatOptions,
+  type FragmentsInspectOptions,
+  type FragmentsPruneOptions,
+  type FragmentsPruneSummary,
+  type LoadPRDResult,
+} from "./context-fragments";
+export {
   _rulesCLIDeps,
   rulesExportCommand,
   rulesLintCommand,
