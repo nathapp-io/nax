@@ -201,7 +201,9 @@ describe("annotateManifestEffectiveness — #506 catch block logging", () => {
     });
 
     expect(readCount).toBe(2);
-    // Three chunk summaries plus one agent output, diff, and finding tokenization.
-    expect(tokenizeCalls).toBe(6);
+    // Three chunk summaries plus one agent output, one whole-diff, one
+    // added-lines, and one finding tokenization — each shared evidence term
+    // set is still tokenized exactly once across all included chunks.
+    expect(tokenizeCalls).toBe(7);
   });
 });

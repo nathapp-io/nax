@@ -106,11 +106,13 @@ describe("effectiveness gate (AC11)", () => {
     );
   });
 
-  test("[AC11, boundary] the gate holds even when case.scopePaths is undefined (whole-diff fallback path)", async () => {
-    // Construct a synthetic mini-fixture where every case has no scopePaths.
-    // Both classifiers must collapse to whole-diff behaviour, so the gate
-    // must reduce to |x| < |x| which FAILS — this is the boundary case the
-    // gate exists to catch: it must NOT hold without scopePaths.
+  test("[AC11, boundary] added-lines-only attribution reduces size correlation even without scopePaths", async () => {
+    // Strip scopePaths from every case so the scoped classifier falls back to
+    // the whole diff. US-003 restricts evidence to added lines even without
+    // scopePaths, so this fallback is NOT the pre-change full-diff classifier
+    // (which tokenized removed/context lines too). The added-lines restriction
+    // is itself size-independent and shrinks the size correlation below the
+    // pre-change value — the gate still holds.
     const raw = await Bun.file(COMMITTED_FIXTURE).text();
     const labelSet = loadLabelSet(raw);
     const casesNoScope = labelSet.cases.map((c) => ({ ...c, scopePaths: undefined })) as LabelCase[];
@@ -118,11 +120,9 @@ describe("effectiveness gate (AC11)", () => {
     const wholeDiffReport = scoreEffectiveness(casesNoScope, makeWholeDiffClassifier());
     const scopedReport = scoreEffectiveness(casesNoScope, makeScopedClassifier());
 
-    // Without scopePaths the scoped classifier is whole-diff — the gate's
-    // strict-less-than cannot hold (they are equal). This boundary test
-    // documents that the gate is meaningful only when the fixture carries
-    // scopePaths (which the committed fixture does).
-    expect(wholeDiffReport.sizeCorrelation).toBe(scopedReport.sizeCorrelation);
+    expect(Math.abs(scopedReport.sizeCorrelation)).toBeLessThan(
+      Math.abs(wholeDiffReport.sizeCorrelation),
+    );
   });
 });
 

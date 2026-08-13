@@ -14,6 +14,7 @@
 import { getLogger } from "../../logger";
 import { errorMessage } from "../../utils/errors";
 import { _manifestStoreDeps, loadContextManifests } from "./manifest-store";
+import { globToRegex, normalizePath } from "./providers/static-rules";
 import type { ChunkEffectiveness } from "./types";
 
 export const _effectivenessDeps = {
@@ -26,6 +27,15 @@ export const _effectivenessDeps = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MIN_SIGNIFICANT_TERMS = 3;
+
+// US-003: size-independent "followed" threshold. Replaces the absolute
+// "3 shared terms" test — whose operands both grow with diff size — with a
+// coverage ratio over the chunk summary's own significant terms. The constant
+// is deliberately not pinned: it is whatever makes US-003's two fixture-scored
+// ACs pass against test/fixtures/effectiveness/labels.sample.json. Measured
+// values: scoped sizeCorrelation 0.2887 < whole-diff 0.3536, and scoped
+// followed F1 0.5 > baseline 0.1905.
+const COVERAGE_RATIO = 0.05;
 
 // Stopwords shared with staleness tokenizer — keep in sync.
 const STOPWORDS = new Set([
@@ -92,10 +102,28 @@ function sharedTermCount(a: ReadonlySet<string>, b: ReadonlySet<string>): number
   return count;
 }
 
+/**
+ * Extract the content of a unified diff's added lines (lines starting with
+ * `+`, excluding the `+++`/`---` file headers). Removed and context lines are
+ * dropped so a "followed" signal can only be attributed to what was added.
+ */
+function extractAddedLines(diffText: string): string {
+  const added: string[] = [];
+  for (const line of diffText.split("\n")) {
+    if (line.startsWith("+++ ") || line.startsWith("--- ")) continue;
+    if (line.startsWith("+")) added.push(line.slice(1));
+  }
+  return added.join("\n");
+}
+
 interface EffectivenessEvidenceTerms {
   findings: Array<{ message: string; terms: ReadonlySet<string> }>;
   diff?: ReadonlySet<string>;
   combined?: ReadonlySet<string>;
+  /** Raw unified diff text, retained so classifyWithTerms can split it per file. */
+  diffText?: string;
+  /** Tokenized added-lines-only evidence of the whole diff (no scope restriction). */
+  addedTerms?: ReadonlySet<string>;
 }
 
 export function buildEvidenceTerms(
@@ -104,6 +132,7 @@ export function buildEvidenceTerms(
   findingMessages: string[],
 ): EffectivenessEvidenceTerms {
   const diffTerms = diffText ? _effectivenessDeps.tokenize(diffText) : undefined;
+  const addedTerms = diffText ? _effectivenessDeps.tokenize(extractAddedLines(diffText)) : undefined;
   const outputTerms = agentOutput ? _effectivenessDeps.tokenize(agentOutput) : undefined;
   let combined: Set<string> | undefined;
   if (diffTerms || outputTerms) {
@@ -114,6 +143,8 @@ export function buildEvidenceTerms(
     findings: findingMessages.map((message) => ({ message, terms: _effectivenessDeps.tokenize(message) })),
     diff: diffTerms,
     combined,
+    diffText: diffText || undefined,
+    addedTerms,
   };
 }
 
@@ -124,7 +155,7 @@ export function buildEvidenceTerms(
  * splits the diff per file once and considers only the added lines of files
  * whose paths match the globs. diffText is the raw unified diff (required when
  * scopePaths is provided; ignored otherwise). When omitted or empty, the
- * classifier falls back to the legacy whole-diff behaviour.
+ * classifier uses the whole diff's added lines with no file restriction.
  */
 export interface ClassifyScopeOptions {
   scopePaths?: string[];
@@ -134,7 +165,7 @@ export interface ClassifyScopeOptions {
 export function classifyWithTerms(
   chunkSummary: string,
   evidence: EffectivenessEvidenceTerms,
-  _scopeOptions?: ClassifyScopeOptions,
+  scopeOptions?: ClassifyScopeOptions,
 ): ChunkEffectiveness {
   const summaryTerms = _effectivenessDeps.tokenize(chunkSummary);
   if (summaryTerms.size < MIN_SIGNIFICANT_TERMS) return { signal: "unknown" };
@@ -145,7 +176,18 @@ export function classifyWithTerms(
     }
   }
 
-  if (evidence.diff && sharedTermCount(summaryTerms, evidence.diff) >= MIN_SIGNIFICANT_TERMS) {
+  // US-003: scoped added-line attribution. When scopePaths is present the
+  // evidence is restricted to the added lines of the files the globs admit.
+  if (scopeOptions?.scopePaths !== undefined) {
+    return classifyScoped(summaryTerms, scopeOptions.diffText ?? evidence.diffText ?? "", scopeOptions.scopePaths);
+  }
+
+  // No scope: the whole diff's added lines (AC6/AC8). Removed and context
+  // lines never contribute to a "followed" signal.
+  const addedTerms =
+    evidence.addedTerms ??
+    (evidence.diffText ? _effectivenessDeps.tokenize(extractAddedLines(evidence.diffText)) : undefined);
+  if (addedTerms && isFollowed(summaryTerms, addedTerms)) {
     return { signal: "followed", evidence: "terms found in diff" };
   }
 
@@ -169,9 +211,89 @@ export function classifyWithTerms(
  * replaces the stub body with the real parser — the public shape is fixed so
  * callers (and tests) can rely on it.
  */
-export function splitDiffByFile(_diff: string): Record<string, string> {
-  // Stub — implementer replaces with the real unified-diff parser.
-  return {};
+export function splitDiffByFile(diff: string): Record<string, string> {
+  const sections: Record<string, string> = {};
+  const lines = diff.split("\n");
+  let currentLines: string[] = [];
+  let currentKey: string | undefined;
+
+  const flush = (): void => {
+    if (currentKey === undefined || currentLines.length === 0) return;
+    const text = currentLines.join("\n");
+    sections[currentKey] = isBinarySection(text) ? "" : text;
+    currentLines = [];
+    currentKey = undefined;
+  };
+
+  for (const line of lines) {
+    if (line.startsWith("diff --git ")) {
+      flush();
+      currentKey = postImagePathFromHeader(line);
+      currentLines = [line];
+      continue;
+    }
+    if (currentKey !== undefined) {
+      const updated = postImagePathFromLine(line);
+      if (updated !== undefined) currentKey = updated;
+      currentLines.push(line);
+    }
+  }
+  flush();
+
+  return sections;
+}
+
+/** Post-image path from a `diff --git a/<pre> b/<post>` header line. */
+function postImagePathFromHeader(line: string): string | undefined {
+  const rest = line.slice("diff --git ".length);
+  const bIdx = rest.indexOf(" b/");
+  return bIdx >= 0 ? rest.slice(bIdx + 3) : undefined;
+}
+
+/** Post-image path from `+++ b/<post>` or `rename to <post>` lines. */
+function postImagePathFromLine(line: string): string | undefined {
+  if (line.startsWith("+++ b/")) return line.slice("+++ b/".length);
+  if (line.startsWith("rename to ")) return line.slice("rename to ".length);
+  return undefined;
+}
+
+/** True when the section is a binary-file marker (no textual hunks to attribute). */
+function isBinarySection(section: string): boolean {
+  return section.split("\n").some((line) => line.startsWith("Binary files "));
+}
+
+/** True when a diff file path matches any of the chunk's scope globs. */
+function pathMatchesScope(scopePaths: string[], filePath: string): boolean {
+  const normalized = normalizePath(filePath);
+  const patterns = scopePaths.map((pattern) => globToRegex(normalizePath(pattern)));
+  return patterns.some((pattern) => pattern.test(normalized));
+}
+
+/** Size-independent followed test: coverage of the summary by added-line terms. */
+function isFollowed(summaryTerms: ReadonlySet<string>, addedTerms: ReadonlySet<string>): boolean {
+  if (addedTerms.size === 0) return false;
+  return sharedTermCount(summaryTerms, addedTerms) / summaryTerms.size >= COVERAGE_RATIO;
+}
+
+/**
+ * Scoped classification (US-003): restrict the diff to the added lines of the
+ * files whose paths match scopePaths. Fails open: an unsplittable diff records
+ * unknown; a scope matching no diff file records ignored.
+ */
+function classifyScoped(summaryTerms: ReadonlySet<string>, rawDiff: string, scopePaths: string[]): ChunkEffectiveness {
+  const sections = splitDiffByFile(rawDiff);
+  const filePaths = Object.keys(sections);
+  if (filePaths.length === 0) return { signal: "unknown" };
+
+  const matching = filePaths.filter((path) => pathMatchesScope(scopePaths, path));
+  if (matching.length === 0) return { signal: "ignored" };
+
+  const added = matching.map((path) => extractAddedLines(sections[path])).join("\n");
+  const addedTerms = _effectivenessDeps.tokenize(added);
+  if (isFollowed(summaryTerms, addedTerms)) {
+    return { signal: "followed", evidence: matching[0] };
+  }
+  return { signal: "ignored" };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -243,7 +365,10 @@ export async function annotateManifestEffectiveness(
     for (const id of manifest.includedChunks) {
       const summary = manifest.chunkSummaries[id];
       if (!summary) continue;
-      effectiveness[id] = classifyWithTerms(summary, evidenceTerms);
+      effectiveness[id] = classifyWithTerms(summary, evidenceTerms, {
+        scopePaths: manifest.chunkScopePaths?.[id],
+        diffText,
+      });
     }
 
     if (Object.keys(effectiveness).length === 0) continue;

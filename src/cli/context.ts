@@ -190,7 +190,7 @@ export async function effectivenessEvalCommand(options: EffectivenessEvalOptions
     process.exit(2);
   }
 
-  const report = scoreEffectiveness(labelSet.cases, _effectivenessEvalDeps.classify);
+  const report = _effectivenessEvalDeps.scoreEffectiveness(labelSet.cases, _effectivenessEvalDeps.classify);
 
   if (options.json) {
     console.log(JSON.stringify(report));
