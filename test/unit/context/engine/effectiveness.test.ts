@@ -5,13 +5,14 @@
  *   - classifyEffectiveness (per-chunk signal based on diff / output / findings)
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
   _effectivenessDeps,
   annotateManifestEffectiveness,
   classifyEffectiveness,
 } from "../../../../src/context/engine/effectiveness";
 import { _manifestStoreDeps } from "../../../../src/context/engine/manifest-store";
+import { withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // classifyEffectiveness
@@ -100,27 +101,12 @@ const VALID_MANIFEST = JSON.stringify({
 });
 
 describe("annotateManifestEffectiveness — #506 catch block logging", () => {
-  let origReadFile: typeof _manifestStoreDeps.readFile;
-  let origListManifestFiles: typeof _manifestStoreDeps.listManifestFiles;
-  let origFileExists: typeof _manifestStoreDeps.fileExists;
-  let origGetLogger: typeof _effectivenessDeps.getLogger;
-  let origTokenize: typeof _effectivenessDeps.tokenize;
-
-  beforeEach(() => {
-    origReadFile = _manifestStoreDeps.readFile;
-    origListManifestFiles = _manifestStoreDeps.listManifestFiles;
-    origFileExists = _manifestStoreDeps.fileExists;
-    origGetLogger = _effectivenessDeps.getLogger;
-    origTokenize = _effectivenessDeps.tokenize;
-  });
-
-  afterEach(() => {
-    _manifestStoreDeps.readFile = origReadFile;
-    _manifestStoreDeps.listManifestFiles = origListManifestFiles;
-    _manifestStoreDeps.fileExists = origFileExists;
-    _effectivenessDeps.getLogger = origGetLogger;
-    _effectivenessDeps.tokenize = origTokenize;
-  });
+  // Save/restore ALL keys of both deps objects. The previous hand-rolled
+  // version listed only readFile/listManifestFiles/fileExists, so the write
+  // stub leaked out of this file and into every test that ran after it in
+  // the same process.
+  withDepsRestore(_manifestStoreDeps);
+  withDepsRestore(_effectivenessDeps);
 
   test("calls logger.warn when manifest read-modify-write throws", async () => {
     const warnArgs: Array<[string, string, Record<string, unknown>]> = [];
@@ -168,9 +154,8 @@ describe("annotateManifestEffectiveness — #506 catch block logging", () => {
       if (path.includes("execution")) throw new Error("disk full");
       return VALID_MANIFEST; // tdd rmw succeeds
     };
-    _manifestStoreDeps.writeFile = async (path: string) => {
+    _manifestStoreDeps.writeJson = async (path: string) => {
       written.push(path);
-      return 0;
     };
 
     await annotateManifestEffectiveness("/repo", "feat", "US-001", {
@@ -207,7 +192,7 @@ describe("annotateManifestEffectiveness — #506 catch block logging", () => {
       readCount++;
       return manifest;
     };
-    _manifestStoreDeps.writeFile = async () => 0;
+    _manifestStoreDeps.writeJson = async () => {};
 
     await annotateManifestEffectiveness("/repo", "feat", "US-001", {
       agentOutput: "unrelated agent response content",
