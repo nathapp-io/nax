@@ -392,34 +392,7 @@ function classifyScoped(
   return { signal: "ignored" };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Classification
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Classify a single chunk's effectiveness signal.
- *
- * Signal priority (first match wins):
- *   1. contradicted — a review finding shares >= MIN_SIGNIFICANT_TERMS terms
- *      with the chunk summary (finding contradicts the chunk's advice)
- *   2. followed — the git diff shares >= MIN_SIGNIFICANT_TERMS terms with
- *      the chunk summary (agent implemented what the chunk recommended)
- *   3. ignored — the chunk terms appear in neither diff nor agent output
- *   4. unknown — fallback (all inputs empty, or summary too short to compare)
- *
- * @param chunkSummary - first 300 chars of the chunk content
- * @param agentOutput  - agent stdout from AgentResult.output
- * @param diffText     - git diff text from `git diff <ref>..HEAD`
- * @param findingMessages - review finding messages from ReviewFinding.message[]
- */
-export function classifyEffectiveness(
-  chunkSummary: string,
-  agentOutput: string,
-  diffText: string,
-  findingMessages: string[],
-): ChunkEffectiveness {
-  return classifyWithTerms(chunkSummary, buildEvidenceTerms(agentOutput, diffText, findingMessages));
-}
+// classifyEffectiveness removed — US-004
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Post-story manifest annotation

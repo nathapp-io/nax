@@ -68,6 +68,15 @@ export {
 } from "./manifest-store";
 export type { StoredContextManifest, RebuildManifestEntry } from "./manifest-store";
 
+export {
+  _effectivenessDeps,
+  annotateManifestEffectiveness,
+  buildEvidenceTerms,
+  classifyWithTerms,
+  splitDiffByFile,
+  type ClassifyScopeOptions,
+} from "./effectiveness";
+
 export { purgeStaleManifests, _manifestPurgeDeps, MAX_MANIFEST_SCAN } from "./manifest-purge";
 export type { ManifestPurgeDeps } from "./manifest-purge";
 

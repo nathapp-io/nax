@@ -2,82 +2,155 @@
  * Amendment A AC-45: Effectiveness signal
  *
  * Unit tests for effectiveness.ts pure helpers:
- *   - classifyEffectiveness (per-chunk signal based on diff / output / findings)
+ *   - classifyWithTerms + buildEvidenceTerms (per-chunk signal based on diff / output / findings)
+ *
+ * US-004: classifyEffectiveness wrapper removed — tests migrated to production helpers.
  */
 
 import { describe, expect, test } from "bun:test";
 import {
   _effectivenessDeps,
   annotateManifestEffectiveness,
-  classifyEffectiveness,
-} from "../../../../src/context/engine/effectiveness";
+  buildEvidenceTerms,
+  classifyWithTerms,
+} from "@/context/engine";
+import * as EngineBarrel from "@/context/engine";
 import { _manifestStoreDeps } from "../../../../src/context/engine/manifest-store";
 import { withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// classifyEffectiveness
+// US-004: classifyWithTerms + buildEvidenceTerms (production helpers)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("classifyEffectiveness", () => {
-  test("returns 'contradicted' when review finding message shares >=3 significant terms with chunk", () => {
-    const result = classifyEffectiveness(
-      "Use JWT authentication tokens stored in secure cookies for session management",
+describe("classifyWithTerms with buildEvidenceTerms", () => {
+  // Helper to build the evidence once
+  const makeEvidence = (agentOutput: string, diffText: string, findingMessages: string[]) =>
+    buildEvidenceTerms(agentOutput, diffText, findingMessages);
+
+  test("US-004 AC1: returns 'contradicted' when review finding shares >=3 significant terms", () => {
+    const evidence = makeEvidence(
       "",
       "",
       ["JWT authentication tokens should not be stored in cookies — use Bearer headers"],
     );
+    const result = classifyWithTerms(
+      "Use JWT authentication tokens stored in secure cookies for session management",
+      evidence,
+    );
     expect(result.signal).toBe("contradicted");
   });
 
-  test("returns 'followed' when diff shares >=3 significant terms with chunk", () => {
-    const result = classifyEffectiveness(
-      "Use argon2 for password hashing in authentication module",
+  test("US-004 AC1: returns 'followed' when diff shares sufficient coverage ratio with summary", () => {
+    const evidence = makeEvidence(
       "argon2 password hashing authentication implementation complete",
       "-old hash\n+argon2 password hashing authentication",
       [],
     );
+    const result = classifyWithTerms(
+      "Use argon2 for password hashing in authentication module",
+      evidence,
+    );
     expect(result.signal).toBe("followed");
   });
 
-  test("returns 'ignored' when chunk terms appear in neither diff nor output", () => {
-    const result = classifyEffectiveness(
-      "Cache invalidation should use distributed Redis cluster for session storage invalidation",
+  test("US-004 AC1: returns 'ignored' when chunk terms appear in neither diff nor output", () => {
+    const evidence = makeEvidence(
       "Updated the database connection pool settings",
       "-old setting\n+new setting for connection pool",
       [],
     );
+    const result = classifyWithTerms(
+      "Cache invalidation should use distributed Redis cluster for session storage invalidation",
+      evidence,
+    );
     expect(result.signal).toBe("ignored");
   });
 
-  test("returns 'unknown' when all inputs are empty", () => {
-    const result = classifyEffectiveness("Some context chunk content here", "", "", []);
+  test("US-004 AC1: returns 'unknown' when summary is too short for meaningful comparison", () => {
+    const evidence = makeEvidence("ok", "+ok", ["ok"]);
+    const result = classifyWithTerms("ok", evidence);
     expect(result.signal).toBe("unknown");
   });
 
-  test("contradicted takes priority over followed", () => {
-    const result = classifyEffectiveness(
-      "Use JWT authentication tokens for session management validation",
+  test("US-004 AC1: contradicted takes priority over followed", () => {
+    const evidence = makeEvidence(
       "jwt authentication session management",
       "-old\n+jwt authentication session management",
       ["JWT authentication tokens are no longer valid for session management validation"],
     );
+    const result = classifyWithTerms(
+      "Use JWT authentication tokens for session management validation",
+      evidence,
+    );
     expect(result.signal).toBe("contradicted");
   });
 
-  test("returns 'unknown' when chunk summary is too short for meaningful comparison", () => {
-    const result = classifyEffectiveness("ok", "ok", "+ok", ["ok"]);
-    expect(result.signal).toBe("unknown");
-  });
-
-  test("includes evidence string when signal is not unknown", () => {
-    const result = classifyEffectiveness(
-      "Use JWT authentication tokens stored in secure cookies for session management",
+  test("US-004 AC1: includes evidence string when signal is not unknown", () => {
+    const evidence = makeEvidence(
       "",
       "",
       ["JWT authentication tokens should not be stored in cookies — use Bearer headers"],
     );
+    const result = classifyWithTerms(
+      "Use JWT authentication tokens stored in secure cookies for session management",
+      evidence,
+    );
     expect(result.evidence).toBeDefined();
     expect(typeof result.evidence).toBe("string");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-004 AC2: barrel import == direct import
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("US-004 AC2: classifyWithTerms barrel vs direct import", () => {
+  test("barrel-exported classifyWithTerms returns identical signal as direct import", () => {
+    const summary = "Use JWT authentication tokens for secure session management";
+    const evidence = buildEvidenceTerms(
+      "jwt authentication session management implemented",
+      "+jwt auth token session",
+      [],
+    );
+
+    // Direct import
+    const directResult = classifyWithTerms(summary, evidence);
+
+    // Barrel import (EngineBarrel should have classifyWithTerms)
+    const barrelResult = EngineBarrel.classifyWithTerms(summary, evidence);
+
+    expect(barrelResult.signal).toBe(directResult.signal);
+  });
+
+  test("barrel-exported classifyWithTerms returns identical evidence as direct import", () => {
+    const summary = "Use JWT authentication tokens stored in secure cookies for session management";
+    const evidence = buildEvidenceTerms(
+      "",
+      "",
+      ["JWT authentication tokens should not be stored in cookies — use Bearer headers"],
+    );
+
+    const directResult = classifyWithTerms(summary, evidence);
+    const barrelResult = EngineBarrel.classifyWithTerms(summary, evidence);
+
+    expect(barrelResult.signal).toBe(directResult.signal);
+    expect(barrelResult.evidence).toBe(directResult.evidence);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-004 AC3: no classifyEffectiveness export
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("US-004 AC3: classifyEffectiveness is not exported", () => {
+  test("classifyEffectiveness is not exported from effectiveness.ts", () => {
+    // This test verifies the symbol no longer exists
+    const effectivenessModule = require("@/context/engine");
+    expect("classifyEffectiveness" in effectivenessModule).toBe(false);
+  });
+
+  test("classifyEffectiveness is not in the engine barrel", () => {
+    expect("classifyEffectiveness" in EngineBarrel).toBe(false);
   });
 });
 

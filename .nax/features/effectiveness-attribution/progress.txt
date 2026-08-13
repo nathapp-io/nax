@@ -1,1 +1,2 @@
 [2026-08-13T08:03:27.382Z] US-002 — PASSED — Persist rule scope as an attribution carrier — Cost: $0.1074
+[2026-08-13T10:09:05.435Z] US-003 — PASSED — Classify effectiveness from scoped added diff lines — Cost: $0.4643
