@@ -12,9 +12,12 @@ import {
   _effectivenessDeps,
   annotateManifestEffectiveness,
   buildEvidenceTerms,
+  // Barrel import — this is the production public API (used in AC1 tests)
   classifyWithTerms,
 } from "@/context/engine";
 import * as EngineBarrel from "@/context/engine";
+// AC2: must import directly from effectiveness.ts to verify direct-vs-barrel equivalence
+import { classifyWithTerms as classifyWithTermsDirect } from "@/context/engine/effectiveness";
 import { _manifestStoreDeps } from "../../../../src/context/engine/manifest-store";
 import { withDepsRestore } from "@test/helpers";
 
@@ -113,10 +116,10 @@ describe("US-004 AC2: classifyWithTerms barrel vs direct import", () => {
       [],
     );
 
-    // Direct import
-    const directResult = classifyWithTerms(summary, evidence);
+    // Direct import from effectiveness.ts
+    const directResult = classifyWithTermsDirect(summary, evidence);
 
-    // Barrel import (EngineBarrel should have classifyWithTerms)
+    // Barrel import via engine barrel
     const barrelResult = EngineBarrel.classifyWithTerms(summary, evidence);
 
     expect(barrelResult.signal).toBe(directResult.signal);
@@ -130,7 +133,7 @@ describe("US-004 AC2: classifyWithTerms barrel vs direct import", () => {
       ["JWT authentication tokens should not be stored in cookies — use Bearer headers"],
     );
 
-    const directResult = classifyWithTerms(summary, evidence);
+    const directResult = classifyWithTermsDirect(summary, evidence);
     const barrelResult = EngineBarrel.classifyWithTerms(summary, evidence);
 
     expect(barrelResult.signal).toBe(directResult.signal);
@@ -143,12 +146,13 @@ describe("US-004 AC2: classifyWithTerms barrel vs direct import", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("US-004 AC3: classifyEffectiveness is not exported", () => {
+  // Verify effectiveness.ts module no longer exports classifyEffectiveness
   test("classifyEffectiveness is not exported from effectiveness.ts", () => {
-    // This test verifies the symbol no longer exists
-    const effectivenessModule = require("@/context/engine");
+    const effectivenessModule = require("@/context/engine/effectiveness");
     expect("classifyEffectiveness" in effectivenessModule).toBe(false);
   });
 
+  // Verify the engine barrel does not re-export classifyEffectiveness
   test("classifyEffectiveness is not in the engine barrel", () => {
     expect("classifyEffectiveness" in EngineBarrel).toBe(false);
   });

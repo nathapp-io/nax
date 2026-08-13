@@ -47,6 +47,10 @@ interface BarrelMap {
 const EXEMPT_FILES = new Set<string>([
   "scripts/check-alias-internals.ts",
   "test/unit/scripts/check-alias-internals.test.ts",
+  // US-004: test/unit/context/engine/effectiveness.test.ts must import
+  // from effectiveness.ts directly to verify direct-vs-barrel import
+  // equivalence (AC2), then from the barrel for the re-export check (AC3).
+  "test/unit/context/engine/effectiveness.test.ts",
 ]);
 
 // Captures the import/export prelude in group 1 (so we can detect `type`)
