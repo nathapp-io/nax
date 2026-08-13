@@ -33,8 +33,9 @@ export interface ManifestInputs {
 /**
  * Build the manifest for one assemble() call.
  *
- * `chunkSummaries`, `chunkTokens`, and `staleChunks` are optional and omitted
- * when empty, so an empty bundle does not persist three empty objects.
+ * `chunkSummaries`, `chunkTokens`, `chunkScores`, and `staleChunks` are
+ * optional and omitted when empty, so an empty bundle does not persist four
+ * empty objects.
  */
 export function buildManifest(inputs: ManifestInputs): ContextManifest {
   const {
@@ -60,6 +61,10 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
   const staleChunkIds = packed.filter((c) => c.staleCandidate).map((c) => c.id);
   const chunkSummaries: Record<string, string> = {};
   const chunkTokens: Record<string, number> = {};
+  // US-004: per-chunk final score, keyed by chunk ID for every packed chunk.
+  // Persists the effectiveness-weighted score so the written manifest records
+  // how a provider weight moved the chunk's score (AC8).
+  const chunkScores: Record<string, number> = {};
   // US-002: per-chunk file-scope attribution carrier. Forwarded verbatim
   // from RawChunk.scopePaths onto the persisted manifest so downstream
   // attribution can map chunk IDs back to the files they are scoped to.
@@ -78,6 +83,7 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
   for (const c of packed) {
     chunkSummaries[c.id] = c.content.slice(0, CHUNK_SUMMARY_CHARS);
     chunkTokens[c.id] = c.tokens;
+    chunkScores[c.id] = c.score;
     if (c.scopePaths && c.scopePaths.length > 0) {
       chunkScopePaths[c.id] = c.scopePaths;
     }
@@ -116,6 +122,7 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     packageDir: request.packageDir,
     ...(Object.keys(chunkSummaries).length > 0 && { chunkSummaries }),
     ...(Object.keys(chunkTokens).length > 0 && { chunkTokens }),
+    ...(Object.keys(chunkScores).length > 0 && { chunkScores }),
     ...(staleChunkIds.length > 0 && { staleChunks: staleChunkIds }),
     ...(Object.keys(chunkScopePaths).length > 0 && { chunkScopePaths }),
     ...(Object.keys(chunkProviders).length > 0 && { chunkProviders }),

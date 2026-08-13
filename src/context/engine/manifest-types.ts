@@ -146,6 +146,16 @@ export interface ContextManifest {
    * persisted schema other readers index by ID.
    */
   chunkTokens?: Record<string, number>;
+  /**
+   * Per-chunk final score, keyed by chunk ID, for every chunk in
+   * `includedChunks`. Absent when nothing was packed.
+   *
+   * Written so downstream consumers (US-004 AC8) can observe the effectiveness
+   * weighting applied during scoring — the same chunk scores strictly lower
+   * under a lower provider weight than under weight 1.0. A sibling map rather
+   * than a shape change to `includedChunks`, mirroring `chunkTokens`.
+   */
+  chunkScores?: Record<string, number>;
   /** Tokens used by the digest string */
   digestTokens: number;
   /** Wall-clock time for the assemble() call in milliseconds */

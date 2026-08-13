@@ -204,6 +204,9 @@ export function rebuild(
     // Recomputed chunk tokens — a rebuild can add a chunk (the failure note)
     // that the prior map has no entry for, which would record tokens:0 (#1421).
     chunkTokens: Object.fromEntries(orderedChunks.map((c) => [c.id, c.tokens])),
+    // US-004: recompute per-chunk scores alongside tokens so a rebuild that
+    // adds a chunk (the failure note) carries a truthful score entry.
+    chunkScores: Object.fromEntries(orderedChunks.map((c) => [c.id, c.score])),
     usedTokens,
     digestTokens: dTokens,
     buildMs: 0,
