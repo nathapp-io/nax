@@ -294,8 +294,8 @@ describe("contextStage — written manifest reflects lower weight (AC8)", () => 
 describe("contextStage — loadFeatureManifests invocation (AC10)", () => {
   test("AC10: loadFeatureManifests is invoked with the pipeline context feature ID", async () => {
     let capturedArgs: { projectDir?: string; featureId?: string } = {};
-    _contextStageDeps.loadFeatureManifests = (async (projectDir: string, featureId?: string) => {
-      capturedArgs = { projectDir, featureId };
+    _contextStageDeps.loadFeatureManifests = (async (opts?: { projectDir?: string; featureId?: string }) => {
+      capturedArgs = { projectDir: opts?.projectDir, featureId: opts?.featureId };
       return [];
     }) as typeof _contextStageDeps.loadFeatureManifests;
     _contextStageDeps.deriveProviderWeights = (() => ({})) as typeof _contextStageDeps.deriveProviderWeights;
@@ -307,8 +307,8 @@ describe("contextStage — loadFeatureManifests invocation (AC10)", () => {
 
   test("AC10 (projectDir passed): loadFeatureManifests receives the pipeline context projectDir", async () => {
     let capturedProjectDir: string | undefined;
-    _contextStageDeps.loadFeatureManifests = (async (projectDir: string) => {
-      capturedProjectDir = projectDir;
+    _contextStageDeps.loadFeatureManifests = (async (opts?: { projectDir?: string }) => {
+      capturedProjectDir = opts?.projectDir;
       return [];
     }) as typeof _contextStageDeps.loadFeatureManifests;
     _contextStageDeps.deriveProviderWeights = (() => ({})) as typeof _contextStageDeps.deriveProviderWeights;
@@ -321,8 +321,8 @@ describe("contextStage — loadFeatureManifests invocation (AC10)", () => {
   test("AC7/AC10 (no featureDir): deriveProviderWeights still runs, keyed on v2 being enabled rather than a featureDir being set", async () => {
     let capturedFeatureId: string | undefined;
     let deriveCallCount = 0;
-    _contextStageDeps.loadFeatureManifests = (async (_projectDir: string, featureId?: string) => {
-      capturedFeatureId = featureId;
+    _contextStageDeps.loadFeatureManifests = (async (opts?: { featureId?: string }) => {
+      capturedFeatureId = opts?.featureId;
       return [];
     }) as typeof _contextStageDeps.loadFeatureManifests;
     _contextStageDeps.deriveProviderWeights = (() => {

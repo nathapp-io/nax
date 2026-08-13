@@ -209,11 +209,11 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   // still derive weights instead of silently skipping this step.
   try {
     const providerWeightsFeatureId = request.featureId ?? "_unattached";
-    const stored = await _contextStageDeps.loadFeatureManifests(
-      ctx.projectDir ?? ctx.workdir,
-      providerWeightsFeatureId,
-    );
-    const weights = _contextStageDeps.deriveProviderWeights(stored.map((s) => s.manifest));
+    const stored = await _contextStageDeps.loadFeatureManifests({
+      featureId: providerWeightsFeatureId,
+      projectDir: ctx.projectDir ?? ctx.workdir,
+    });
+    const weights = await _contextStageDeps.deriveProviderWeights(stored.map((s) => s.manifest));
     request.providerWeights = weights;
   } catch (err) {
     logger.warn("context", "Failed to derive provider weights — continuing without them", {

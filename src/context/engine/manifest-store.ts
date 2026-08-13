@@ -204,21 +204,42 @@ export async function loadContextManifests(
   return results.sort((a, b) => a.path.localeCompare(b.path));
 }
 
+export interface LoadFeatureManifestsOptions {
+  /** Project root containing `.nax/` (canonical key, used by pipeline callers). */
+  projectDir?: string;
+  /** Alias for `projectDir` accepted from direct API callers. */
+  featureDir?: string;
+  /** Only meaningful when passed inside the single-object call form. */
+  featureId?: string;
+}
+
 /**
  * Load every stored context manifest under a feature directory (US-003).
  *
  * Best-effort, fail-open: a missing or empty feature dir returns []. The
- * caller passes `featureId` as the directory under `.nax/features/` — the
- * function reads every story subdirectory's manifest files and returns
- * them flattened, sorted by absolute path. Non-directory entries alongside
- * story directories (stray files, symlinks) are ignored rather than
- * throwing, matching `loadContextManifests`'s malformed-skip behaviour.
+ * function reads every story subdirectory's manifest files and returns them
+ * flattened, sorted by absolute path. Non-directory entries alongside story
+ * directories (stray files, symlinks) are ignored rather than throwing,
+ * matching `loadContextManifests`'s malformed-skip behaviour.
  *
  * Distinct from `loadContextManifests`: this takes a feature ID, not a
  * story ID, and returns manifests across every story in the feature.
+ *
+ * Two call forms are supported:
+ *   - `loadFeatureManifests(featureId, { featureDir: projectDir })` — direct API callers.
+ *   - `loadFeatureManifests({ featureId, projectDir })` — single-object form used
+ *     by pipeline callers so the invocation can be asserted on as one argument.
  */
-export async function loadFeatureManifests(projectDir: string, featureId?: string): Promise<StoredContextManifest[]> {
-  if (!featureId) return [];
+export async function loadFeatureManifests(
+  featureIdOrOptions?: string | LoadFeatureManifestsOptions,
+  options: LoadFeatureManifestsOptions = {},
+): Promise<StoredContextManifest[]> {
+  const opts: LoadFeatureManifestsOptions =
+    typeof featureIdOrOptions === "string" ? { featureId: featureIdOrOptions, ...options } : { ...featureIdOrOptions };
+
+  const featureId = opts.featureId;
+  const projectDir = opts.projectDir ?? opts.featureDir;
+  if (!featureId || !projectDir) return [];
 
   const storiesDir = join(projectDir, ".nax", "features", featureId, "stories");
   const storyDirs = await _manifestStoreDeps.listStoryDirs(storiesDir);

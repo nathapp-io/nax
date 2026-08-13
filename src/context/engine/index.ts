@@ -70,7 +70,7 @@ export {
   contextStoryDir,
   rebuildManifestPath,
 } from "./manifest-store";
-export type { StoredContextManifest, RebuildManifestEntry } from "./manifest-store";
+export type { StoredContextManifest, RebuildManifestEntry, LoadFeatureManifestsOptions } from "./manifest-store";
 
 export {
   _effectivenessDeps,

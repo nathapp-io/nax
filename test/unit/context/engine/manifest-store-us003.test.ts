@@ -85,7 +85,7 @@ describe("loadFeatureManifests — two story subdirs (AC4)", () => {
     const pathA = writeManifestFile(projectDir, FEATURE, "US-001", "execution");
     const pathB = writeManifestFile(projectDir, FEATURE, "US-002", "execution");
 
-    const loaded = await loadFeatureManifests(projectDir, FEATURE);
+    const loaded = await loadFeatureManifests(FEATURE, { featureDir: projectDir });
 
     // Order is path-sorted alphabetically: US-001 sorts before US-002.
     expect(loaded).toHaveLength(2);
@@ -109,7 +109,7 @@ describe("loadFeatureManifests — two story subdirs (AC4)", () => {
     const path2a = writeManifestFile(projectDir, FEATURE, "US-B", "execution");
     const path2b = writeManifestFile(projectDir, FEATURE, "US-B", "review-semantic");
 
-    const loaded = await loadFeatureManifests(projectDir, FEATURE);
+    const loaded = await loadFeatureManifests(FEATURE, { featureDir: projectDir });
     expect(loaded).toHaveLength(4);
 
     const allPaths = loaded.map((m) => m.path).sort();
@@ -154,7 +154,7 @@ describe("loadFeatureManifests — stray non-directory entry (AC5)", () => {
     let threw = false;
     let loaded: Awaited<ReturnType<typeof loadFeatureManifests>> = [];
     try {
-      loaded = await loadFeatureManifests(projectDir, FEATURE);
+      loaded = await loadFeatureManifests(FEATURE, { featureDir: projectDir });
     } catch {
       threw = true;
     }
@@ -182,7 +182,7 @@ describe("loadFeatureManifests — stray non-directory entry (AC5)", () => {
     let threw = false;
     let loaded: Awaited<ReturnType<typeof loadFeatureManifests>> = [];
     try {
-      loaded = await loadFeatureManifests(projectDir, FEATURE);
+      loaded = await loadFeatureManifests(FEATURE, { featureDir: projectDir });
     } catch {
       threw = true;
     }
