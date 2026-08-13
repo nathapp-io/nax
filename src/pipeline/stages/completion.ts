@@ -75,7 +75,8 @@ export const completionStage: PipelineStage = {
 
     // Amendment A AC-45: annotate context manifests with effectiveness signals.
     // US-002: capture a per-story fragment on successful non-batch completion.
-    // Both writes are best-effort and share a single `git diff` invocation;
+    // Both writes are best-effort — the effectiveness annotation runs a full
+    // `git diff` and fragment capture runs a separate `git diff --name-only`;
     // a failure in either one is logged at debug and never blocks the story.
     // Batch mode is intentionally skipped (mirroring the existing effectiveness
     // behaviour and matching the spec's "deferred" batch capture rule).
