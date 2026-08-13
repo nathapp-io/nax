@@ -344,12 +344,25 @@ describe("fragmentsPruneCommand — feature-wide (US-004 AC5, AC6)", () => {
     _fragmentStoreDeps.listFragments = async () => [];
     _fragmentStoreDeps.removeFile = async () => undefined;
 
-    const exitCode = await fragmentsPruneCommand({
-      dir: "/repo",
-      feature: "feat-empty",
-    });
+    const captured: string[][] = [];
+    const orig = console.log;
+    console.log = (...args: unknown[]) => {
+      captured.push(args.map((a) => String(a)));
+    };
+
+    let exitCode = -1;
+    try {
+      exitCode = await fragmentsPruneCommand({
+        dir: "/repo",
+        feature: "feat-empty",
+      });
+    } finally {
+      console.log = orig;
+    }
 
     expect(exitCode).toBe(0);
+    const flat = captured.join("\n").toLowerCase();
+    expect(flat).toMatch(/nothing|no fragment/);
   });
 });
 
