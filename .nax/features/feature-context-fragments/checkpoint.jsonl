@@ -1,0 +1,6 @@
+{"storyId":"US-001","phase":"implementer","headSha":"7492e4bd25f114d4b79d8321363403a16f00899a","dirtyDigest":"","runId":"run-2026-08-13T00-02-38-756Z","ts":1786580364180}
+{"storyId":"US-001","phase":"test-presence-gate","headSha":"7492e4bd25f114d4b79d8321363403a16f00899a","dirtyDigest":"785ec8d2aa1e3a3306220f86ab3e69adf7e8aad7a0fad7d94c97104b75d74158","runId":"run-2026-08-13T00-02-38-756Z","ts":1786580364250}
+{"storyId":"US-001","phase":"mutation-check","headSha":"7492e4bd25f114d4b79d8321363403a16f00899a","dirtyDigest":"426e8d4c862e920f2c5fbe502b3cd700190ca9528ad2687e63cb7e6f690720d2","runId":"run-2026-08-13T00-02-38-756Z","ts":1786580370746}
+{"storyId":"US-001","phase":"verify-scoped","headSha":"7492e4bd25f114d4b79d8321363403a16f00899a","dirtyDigest":"bef0d95721e1fe67ffbae6511c871ca2df9729e478a420998d0ed0ac35c131ed","runId":"run-2026-08-13T00-02-38-756Z","ts":1786580372943}
+{"storyId":"US-001","phase":"lint-check","headSha":"7492e4bd25f114d4b79d8321363403a16f00899a","dirtyDigest":"2f4ce38f90185b5a26b30d087d739424830fe3c031879aabfcf25c6b84caddae","runId":"run-2026-08-13T00-02-38-756Z","ts":1786580373263}
+{"storyId":"US-001","phase":"typecheck-check","headSha":"7492e4bd25f114d4b79d8321363403a16f00899a","dirtyDigest":"9b876c665ffff037250667e36d305c2d3c5791e850c6bcc2e0bff22f3b8bb0b8","runId":"run-2026-08-13T00-02-38-756Z","ts":1786580373839}
