@@ -254,6 +254,17 @@ Error: JS test error
       expect(result.passed).toBe(0);
       expect(result.failed).toBe(0);
     });
+
+    test("ignores app-log noise starting with 'Tests ' that isn't the real summary line", () => {
+      // A line starting with "Tests " but not shaped like "<n> passed|failed" (e.g.
+      // incidental app output) must not be mistaken for the framework summary.
+      const output = `Tests  processed 3 items this run\n\n Test Files  1 passed (1)\n      Tests  5 passed (5)`;
+
+      const result = parseTestOutput(output);
+
+      expect(result.passed).toBe(5);
+      expect(result.failed).toBe(0);
+    });
   });
 
   test("handles alternative check marks (✔ and ✘)", () => {

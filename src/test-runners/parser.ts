@@ -192,7 +192,11 @@ function parseJestOutput(output: string): TestSummary {
   let failed = 0;
 
   // Colon is optional — matches both Jest's "Tests:" and Vitest's "Tests" (no colon).
-  const summaryMatches = Array.from(output.matchAll(/^\s*Tests:?\s+(.*)/gm));
+  // Require a leading "<n> passed|failed" immediately after "Tests" so incidental
+  // app-log lines starting with "Tests " (e.g. "Tests  3 items processed") can't
+  // masquerade as the real summary — same class of false-positive guard as the
+  // app-log-noise exclusion in parseCommonOutput below.
+  const summaryMatches = Array.from(output.matchAll(/^\s*Tests:?\s+(\d+\s+(?:passed|failed).*)/gm));
   if (summaryMatches.length > 0) {
     const summaryLine = summaryMatches[summaryMatches.length - 1][1];
     const failedMatch = summaryLine.match(/(\d+)\s+failed/);
