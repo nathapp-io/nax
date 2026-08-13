@@ -1,0 +1,235 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "effectiveness-scoring-loop",
+  "branchName": "feat/effectiveness-scoring-loop",
+  "createdAt": "2026-08-13T11:45:22.000Z",
+  "updatedAt": "2026-08-13T11:48:16.128Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add Git history scope attribution",
+      "description": "**Goal** — Attribute each git-history chunk to only the requested files that actually produced a history section.\n\n**Motivation** — Scoped attribution currently exists only where scoring is a no-op.\n\n**Approach** — Populate `RawChunk.scopePaths` on the git-history chunk with the files that actually contributed a history section. `fetchFileHistory` returns `null` for files with no history and those are filtered out, so scope must be derived from the files that produced a section — not from the input `filesToProcess` list, which would claim scope over files the chunk says nothing about.\n\n**Scope** — In: preserve successful file-to-history-section association, preserve safe touched-file order, populate the existing `RawChunk.scopePaths` carrier, and add the scoped effectiveness fixture case. Out: attributing scope to files a commit touched but the story did not declare in `touchedFiles`; code-neighbor attribution belongs to US-002, while provider learning and score consumption belong to US-003 and US-004.\n\n**Interface** — `GitHistoryProvider.fetch(request: ContextRequest): Promise<ContextProviderResult>` returns `RawChunk` values using the existing `scopePaths?: string[]` field; no new carrier is introduced.",
+      "acceptanceCriteria": [
+        "When `GitHistoryProvider.fetch` receives two relative `touchedFiles` and only the first has commit history, then it returns one chunk whose `scopePaths` contains only the first path.",
+        "When `GitHistoryProvider.fetch` receives `touchedFiles` where every requested file has commit history, then its returned chunk `scopePaths` lists those files in the same order as `touchedFiles`.",
+        "When `GitHistoryProvider.fetch` receives `touchedFiles` where no requested file has commit history, then it returns an empty `chunks` list.",
+        "When `GitHistoryProvider.fetch` returns a chunk, then that chunk's `scopePaths` is non-empty.",
+        "When a packed git-history chunk carrying `scopePaths` is passed to `buildManifest`, then `chunkScopePaths` maps that chunk ID to the same list.",
+        "When the committed effectiveness fixture includes a labelled git-history chunk with scoped files, then `scoreEffectiveness` under the scoped classifier has a `sizeCorrelation` magnitude strictly smaller than under the whole-diff classifier."
+      ],
+      "tags": [
+        "feature",
+        "context",
+        "provider",
+        "attribution"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A contained provider behavior change plus deterministic attribution evaluation and fixture update across existing seams.",
+        "agentProfileId": "pi-medium",
+        "agent": "pi",
+        "profileModelTier": "balanced",
+        "initialAgent": "pi",
+        "initialProfileId": "pi-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/context/engine/providers/git-history.ts",
+        "src/context/engine/types.ts",
+        "src/context/engine/manifest-builder.ts",
+        "src/context/engine/effectiveness-eval.ts",
+        "test/fixtures/effectiveness/labels.sample.json"
+      ],
+      "expectedFiles": [
+        "test/unit/context/engine/providers/git-history-scope.test.ts"
+      ],
+      "outOfScope": [
+        "US-001 only: attributing scope to files a commit touched but the story did not declare in `touchedFiles` — the chunk only reports history for requested files."
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Add code-neighbor scope attribution",
+      "description": "**Goal** — Attribute code-neighbor chunks to each analysed file and every rendered neighbor while moving chunk assembly out of the over-limit provider source.\n\n**Motivation** — Every provider the loop can act on still classifies against the whole diff.\n\n**Approach** — Populate `RawChunk.scopePaths` on the code-neighbor chunk with each analysed file plus the neighbour paths listed beneath it.\n`src/context/engine/providers/code-neighbor.ts` is 613 lines — over the 600-line limit and grandfathered by `bun run check:file-sizes`, so it cannot grow. Extract the chunk-assembly path into a sibling module.\n\n**Scope** — In: collect each analysed file alongside the neighbor paths rendered beneath it, include each shared neighbor once, retain the empty-chunk behavior, and create `code-neighbor-chunk.ts` for assembly. Out: cross-package neighbour scope when `crossPackageDepth` is greater than zero — scope is recorded for the paths the chunk renders, whichever package they resolve to; Git history scope belongs to US-001, and provider weights/scoring belong to US-003 and US-004.\n\n**Interface** — `CodeNeighborProvider.fetch(request: ContextRequest): Promise<ContextProviderResult>` continues to return existing `RawChunk` values. The extracted sibling module owns chunk assembly and returns the same chunk shape, including existing `scopePaths?: string[]`.",
+      "acceptanceCriteria": [
+        "When `CodeNeighborProvider.fetch` processes a story touching one file with neighbors, then its returned chunk `scopePaths` contains the touched file path.",
+        "When `CodeNeighborProvider.fetch` returns a chunk, then its `scopePaths` contains each neighbor path rendered in the chunk body.",
+        "When `CodeNeighborProvider.fetch` processes touched files with no neighbors, then it returns an empty `chunks` list.",
+        "When `CodeNeighborProvider.fetch` processes two touched files sharing one neighbor, then the returned chunk `scopePaths` lists that shared neighbor path exactly once.",
+        "When a packed code-neighbor chunk carrying `scopePaths` is passed to `buildManifest`, then `chunkScopePaths` maps that chunk ID to the same list.",
+        "When the committed effectiveness fixture includes a labelled code-neighbor chunk with scoped files, then `scoreEffectiveness` under the scoped classifier has a `sizeCorrelation` magnitude strictly smaller than under the whole-diff classifier."
+      ],
+      "tags": [
+        "feature",
+        "context",
+        "provider",
+        "attribution",
+        "refactor"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The work is a provider refactor and scoped path aggregation across two modules using established deterministic seams.",
+        "agentProfileId": "pi-medium",
+        "agent": "pi",
+        "profileModelTier": "balanced",
+        "initialAgent": "pi",
+        "initialProfileId": "pi-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/context/engine/providers/code-neighbor.ts",
+        "src/context/engine/types.ts",
+        "src/context/engine/manifest-builder.ts",
+        "src/context/engine/effectiveness-eval.ts",
+        "test/fixtures/effectiveness/labels.sample.json"
+      ],
+      "expectedFiles": [
+        "src/context/engine/providers/code-neighbor-chunk.ts",
+        "test/unit/context/engine/providers/code-neighbor-scope.test.ts"
+      ],
+      "outOfScope": [
+        "US-002 only: cross-package neighbour scope when `crossPackageDepth` is greater than zero — scope is recorded for the paths the chunk renders, whichever package they resolve to."
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Derive fail-open per-provider effectiveness weights",
+      "description": "**Goal** — Persist packed-chunk provider attribution, load a feature's prior manifests, and derive bounded per-provider multipliers from ignored verdicts only.\n\n**Motivation** — `chunkEffectiveness` has been written to stored manifests since Amendment A AC-45 and has never been read back into scoring.\n\n**Approach** — The multiplier is a function of the `ignored` ratio alone:\n\n```\nweight(provider) = clamp(1 - k × ignoredRatio(provider), MIN_WEIGHT, 1.0)\n```\n\napplied only once a provider has at least `MIN_OBSERVATIONS` classified chunks in the window; below that the weight is exactly `1.0`.\n\n`k`, `MIN_WEIGHT` and `MIN_OBSERVATIONS` are **not** pinned by acceptance criteria — they are not knowable at authoring time. The ACs pin the properties (monotone non-increasing, never above `1.0`, identity below the observation gate, never below `MIN_WEIGHT`) and the constants are whatever satisfies them. This follows the §9 arc, where pinning a classifier constant was rejected for the same reason.\n\nA gap this feature must close: **the manifest records no chunk-ID → provider mapping.** `includedChunks` is `string[]` and `chunkEffectiveness` is keyed by chunk ID alone, so per-provider aggregation has nothing to group by. Deriving the provider by splitting the chunk ID on `:` is a convention, not an invariant, and plugin providers are free to break it. US-003 therefore persists an explicit `chunkProviders` sibling map.\n\nA second gap: **`loadContextManifests` requires a `storyId`** and so cannot load a whole feature. US-003 adds a feature-wide loader alongside it.\n\n**Scope** — In: add optional `chunkProviders` sibling-map typing and persistence; add/export a best-effort `loadFeatureManifests`; add/export pure `deriveProviderWeights(manifests)` that aggregates only mapped classified ignored verdicts; preserve identity behavior for empty, malformed, and legacy input. Out: consuming other verdicts, score consumption, cross-run persistence, granular learning, and reporting.\n\n**Interface** — `deriveProviderWeights` takes manifests as a parameter and does **not** call `loadFeatureManifests`; the context stage does. `loadFeatureManifests` is a new export from `manifest-store`. `chunkProviders` follows the existing sibling ID-keyed map precedent exactly.",
+      "acceptanceCriteria": [
+        "When packed chunks with `providerId` values are passed to `buildManifest`, then `chunkProviders` maps every chunk ID to its provider ID.",
+        "When a packed chunk without `providerId` is passed to `buildManifest`, then `chunkProviders` has no key for that chunk ID.",
+        "When only packed chunks without `providerId` are passed to `buildManifest`, then `chunkProviders` is absent from the manifest.",
+        "When `loadFeatureManifests` reads a feature directory with two story subdirectories each containing one manifest, then it returns both manifests.",
+        "When `loadFeatureManifests` reads a feature directory containing a stray non-directory entry alongside story directories, then it returns the story manifests without throwing.",
+        "When `deriveProviderWeights` receives an empty manifest list, then its mapping yields weight `1.0` for any queried provider ID.",
+        "When a provider has fewer classified chunks than the minimum observation count, then `deriveProviderWeights` yields weight `1.0` for that provider.",
+        "When a provider clears the observation count with no `ignored` verdicts, then `deriveProviderWeights` yields weight `1.0` for that provider.",
+        "When two providers both clear the observation count and the first has a strictly higher ignored ratio, then `deriveProviderWeights` yields a first weight less than or equal to the second weight.",
+        "When `deriveProviderWeights` receives any input, then no returned weight is greater than `1.0`.",
+        "When every classified chunk for a provider is `ignored`, then `deriveProviderWeights` yields a weight greater than zero for that provider.",
+        "When a manifest has `chunkEffectiveness` but no `chunkProviders`, then `deriveProviderWeights` yields weight `1.0` for every queried provider ID.",
+        "When one manifest in a derivation input is malformed, then `deriveProviderWeights` derives weights from the remaining well-formed manifests without throwing.",
+        "When only ignored verdicts for providers of `FLOOR_KINDS` chunks are supplied, then `deriveProviderWeights` still returns weights for those providers.",
+        "When `loadFeatureManifests` is called without a feature ID, then it returns an empty manifest list without throwing."
+      ],
+      "tags": [
+        "feature",
+        "context",
+        "manifest",
+        "scoring",
+        "algorithm"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "This adds a backwards-compatible persisted schema extension, resilient feature-wide I/O, and a bounded aggregation module with multiple failure-open paths.",
+        "agentProfileId": "pi-medium-balanced",
+        "agent": "pi",
+        "profileModelTier": "powerful",
+        "initialAgent": "pi",
+        "initialProfileId": "pi-medium-balanced",
+        "initialModelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/context/engine/manifest-builder.ts",
+        "src/context/engine/manifest-types.ts",
+        "src/context/engine/manifest-store.ts",
+        "src/context/engine/index.ts",
+        "src/context/engine/effectiveness.ts"
+      ],
+      "expectedFiles": [
+        "src/context/engine/provider-weights.ts",
+        "test/unit/context/engine/provider-weights.test.ts"
+      ],
+      "outOfScope": [
+        "US-003 only: consuming the `followed`, `contradicted` or `unknown` verdicts — only `ignored` contributes to the ratio."
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Apply effectiveness weights during scoring",
+      "description": "**Goal** — Thread feature-derived provider weights from the V2 context stage through ContextRequest and scoring while retaining floor inclusion.\n\n**Motivation** — Only the `ignored` half of the signal is safe to consume.\n\n**Approach** — The score formula becomes:\n\n```\nadjustedScore = rawScore × roleMultiplier × kindWeight × freshnessMultiplier × effectivenessMultiplier\n```\n\n`RawChunk.scoreMultiplier` is already owned by staleness and is not overloaded. The effectiveness multiplier is caller-derived rather than provider-declared, so it reaches the orchestrator through `ContextRequest.providerWeights`.\n\n**Scope** — In: add optional `providerWeights` to `ContextRequest`; update `scoreChunk` and `scoreChunks`; pass weights through orchestration; have the V2 stage load manifests by feature ID and derive weights through injectable dependencies; preserve floor inclusion while allowing non-floor exclusion. Out: consumption-site clamping/validation, changes to `FLOOR_KINDS` or `MIN_SCORE`, persistence/reporting, and provider scope work.\n\n**Interface** — `scoreChunk(chunk, callerRole, minScore, stale)` gains a fifth multiplier operand. `scoreChunks(chunks, callerRole, minScore)` threads weights to `scoreChunk`. `ContextRequest.providerWeights` follows the existing caller-controlled `minScore` route. The context stage calls `loadFeatureManifests` and passes its result to `deriveProviderWeights`; `deriveProviderWeights` does not load manifests itself.",
+      "acceptanceCriteria": [
+        "When `scoreChunk` receives a provider weight below `1.0` for its chunk's `providerId`, then its score equals the score without weights multiplied by that weight.",
+        "When `scoreChunk` receives weights that omit its chunk's `providerId`, then its score equals the score with no weights supplied.",
+        "When `scoreChunk` receives no weights, then its score equals `rawScore` multiplied by its role multiplier, kind weight, and freshness multiplier.",
+        "When `scoreChunks` receives differing weights for two equal chunks from different providers, then it applies each chunk's provider weight and returns different scores.",
+        "When context is assembled with a static-kind chunk whose low provider weight puts its score below the minimum, then the manifest lists that chunk in `includedChunks` and not `excludedChunks`.",
+        "When context is assembled with a neighbor-kind chunk whose low provider weight puts its score below the minimum, then the manifest lists that chunk in `excludedChunks` with reason `below-min-score`.",
+        "When `deriveProviderWeights` is stubbed to return known weights and `contextStage.execute` runs with `config.context.v2.enabled` true, then `deriveProviderWeights` is invoked once.",
+        "When `deriveProviderWeights` is stubbed with a weight below `1.0` for a non-floor provider and `contextStage.execute` runs with `config.context.v2.enabled` true, then its written manifest records that provider chunk with a score strictly lower than the same run using weight `1.0`.",
+        "When context is assembled from a `ContextRequest` without `providerWeights`, then its manifest `includedChunks` and `excludedChunks` equal an otherwise identical request with an empty weight mapping.",
+        "When `loadFeatureManifests` is stubbed and `contextStage.execute` runs with `config.context.v2.enabled` true, then it is invoked with the pipeline context feature ID."
+      ],
+      "tags": [
+        "feature",
+        "context",
+        "scoring",
+        "pipeline",
+        "integration"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "This crosses scoring, request transport, orchestration, and the production stage DI seam while preserving floor-policy behavior.",
+        "agentProfileId": "pi-medium-balanced",
+        "agent": "pi",
+        "profileModelTier": "powerful",
+        "initialAgent": "pi",
+        "initialProfileId": "pi-medium-balanced",
+        "initialModelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/context/engine/scoring.ts",
+        "src/context/engine/orchestrator.ts",
+        "src/context/engine/types.ts",
+        "src/pipeline/stages/context.ts",
+        "src/context/engine/provider-weights.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/context/engine/scoring-effectiveness-weight.test.ts",
+        "test/unit/pipeline/stages/context-provider-weights.test.ts"
+      ],
+      "outOfScope": [
+        "US-004 only: clamping or validating weights at the consumption site — `deriveProviderWeights` owns the clamp, and the scorer applies whatever mapping it is given."
+      ]
+    }
+  ],
+  "analysis": "This is an enhancement of Context Engine v2, not a greenfield feature. RawChunk already carries optional providerId and scopePaths (src/context/engine/types.ts:356), and ContextOrchestrator stamps providerId with enrichRaw before calling scoreChunks (src/context/engine/orchestrator.ts:139, 337-364). scoreChunk currently applies raw score, role, kind, and freshness only (src/context/engine/scoring.ts:85-100); scoreChunks is its sole in-engine caller (src/context/engine/scoring.ts:110-112), so an optional providerWeights mapping can be threaded without changing provider contracts. ContextRequest is the established caller-controlled transport for minScore (src/context/engine/types.ts:250-260), while the V2 stage constructs the request and exposes _contextStageDeps for test stubbing (src/pipeline/stages/context.ts:42-50, 138-190). The V2 stage has feature identity from ctx.featureDir/ctx.prd.feature and writes the resulting manifest after assembly (src/pipeline/stages/context.ts:142-146, 206-212), making it the production owner of feature-wide loading and derivation.\n\nManifest persistence is explicitly additive and backward-compatible: buildManifest already writes optional sibling ID-keyed maps chunkTokens and chunkScopePaths only when populated (src/context/engine/manifest-builder.ts:55-72, 93-109), and ContextManifest marks optional fields as absent-on-old-data/fail-open (src/context/engine/manifest-types.ts:102-251). Add optional chunkProviders by the same pattern from packed chunks, never infer providers from chunk IDs. Existing loadContextManifests is best-effort over a single story and skips malformed files (src/context/engine/manifest-store.ts:158-188); add a feature-wide sibling loader using its directory-glob dependency pattern, with no feature id returning an empty list. deriveProviderWeights must be pure over supplied manifests so stage tests can independently stub loading and derivation. It must use only classified ignored verdicts and explicit chunkProviders mappings, skip malformed/legacy entries, gate on observations, clamp to (0, 1], and return an identity-default mapping so absence never changes current behavior.\n\nProvider scope work is prerequisite evidence quality. GitHistoryProvider currently filters null history sections but loses their source-file association before creating its history chunk (src/context/engine/providers/git-history.ts:99-135); retain that association to record only successful requested files in input order. CodeNeighborProvider currently builds string sections and the final RawChunk in a 613-line grandfathered source file (src/context/engine/providers/code-neighbor.ts:522-612); extract chunk assembly to code-neighbor-chunk.ts so the provider remains under the enforced 600-line size limit, collect only files represented in rendered sections plus their rendered neighbors, and deduplicate shared neighbors. Both write the existing scopePaths carrier, which buildManifest already persists, and both extend the effectiveness fixture/evaluator evidence for scoped correlation.\n\nInclusion policy must remain unchanged. The orchestrator excludes below-min chunks only when their kinds are not FLOOR_KINDS (src/context/engine/orchestrator.ts:378-383), and packChunks always packs floor chunks regardless of budget (src/context/engine/packing.ts:165-216). Therefore weights affect computed scores for every kind, including floor kinds, but only non-floor providers can be pruned. Tests already mirror this subsystem: scoring.test.ts, manifest-builder.test.ts, manifest-store.test.ts, effectiveness-scoped.test.ts, orchestrator.test.ts, orchestrator-floor-overage.test.ts, the provider tests, and context stage tests. New focused tests should use _manifestStoreDeps and _contextStageDeps restoration, preserving existing dirty-worktree changes. Migration is schema-additive: old manifests lack chunkProviders and contribute no observations; absent ContextRequest.providerWeights is identical to {}. No data migration or new persisted weight state is required.",
+  "outOfScope": [
+    "Cross-run persistence of learned effectiveness weights is out of scope; weights are derived per story from the current feature's stored manifests and nothing new is written to disk.",
+    "Per-rule-section or per-chunk weight granularity is out of scope; `providerId` is the only learning key, because chunk IDs embed a content hash and do not survive a content edit.",
+    "LLM-judged chunk attribution is out of scope; all effectiveness classification remains deterministic.",
+    "Counterfactual attribution from run outcomes is out of scope.",
+    "Populating `scopePaths` for `SessionScratchProvider`, `FeatureContextProvider`, `TestCoverageProvider` and plugin providers is out of scope; chunks from those providers keep whole-diff fail-open classification.",
+    "Consuming the `followed` effectiveness verdict in any scoring path is out of scope; only the `ignored` verdict drives the multiplier.",
+    "Changing `FLOOR_KINDS` or the floor-inclusion policy is out of scope; static, feature and test-coverage chunks remain always-included regardless of any learned weight, so this feature cannot prune static rules.",
+    "Raising the `MIN_SCORE` default is out of scope.",
+    "Surfacing learned weights through a CLI command or report is out of scope."
+  ],
+  "routingProfile": "cross-agent-pi"
+}
