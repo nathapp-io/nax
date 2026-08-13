@@ -13,8 +13,8 @@
 
 import { getLogger } from "../../logger";
 import { errorMessage } from "../../utils/errors";
+import { globToRegex, normalizePath } from "./index";
 import { _manifestStoreDeps, loadContextManifests } from "./manifest-store";
-import { globToRegex, normalizePath } from "./providers/static-rules";
 import type { ChunkEffectiveness } from "./types";
 
 export const _effectivenessDeps = {
