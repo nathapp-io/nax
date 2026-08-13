@@ -25,7 +25,7 @@ import { buildManifest } from "./manifest-builder";
 import { toContextChunk } from "./orchestrator-rebuild-helpers";
 import { FLOOR_KINDS, packChunks } from "./packing";
 import type { PackedChunk } from "./packing";
-import { PULL_TOOL_REGISTRY } from "./pull-tools";
+import { DEFAULT_MAX_CALLS_PER_SESSION, PULL_TOOL_REGISTRY } from "./pull-tools";
 import { type RebuildDeps, rebuild } from "./rebuild";
 import { FIXED_RENDER_OVERHEAD_TOKENS, renderChunks, separatorOverheadTokens } from "./render";
 import { MIN_SCORE, scoreChunks } from "./scoring";
@@ -50,7 +50,14 @@ import type {
  * Build the ToolDescriptor list for an assemble() call.
  * Returns an empty array when pull is disabled or the stage has no pull tools.
  * Filters by pullConfig.allowedTools when non-empty (empty = allow all stage tools).
- * Overrides maxCallsPerSession from the pullConfig if it differs from the descriptor default.
+ *
+ * `maxCallsPerSession` precedence: an operator-configured ceiling wins; otherwise
+ * each descriptor keeps its own per-tool value. Because the config schema defaults
+ * this key, `pullConfig.maxCallsPerSession` is never undefined — a plain `??` here
+ * meant the config value always won and a descriptor could never carry a ceiling
+ * of its own. Treating "equal to the shared default" as "not configured" restores
+ * the documented behaviour; it is only ambiguous for an operator who explicitly
+ * sets the default value, which by definition changes nothing.
  */
 function buildPullToolDescriptors(
   stageToolNames: string[],
@@ -58,11 +65,13 @@ function buildPullToolDescriptors(
 ): ToolDescriptor[] {
   if (!pullConfig?.enabled || stageToolNames.length === 0) return [];
   const allowed = pullConfig.allowedTools;
+  const configured = pullConfig.maxCallsPerSession;
+  const override = configured !== undefined && configured !== DEFAULT_MAX_CALLS_PER_SESSION ? configured : undefined;
   return stageToolNames
     .filter((name) => allowed.length === 0 || allowed.includes(name))
     .map((name) => PULL_TOOL_REGISTRY[name])
     .filter((d): d is ToolDescriptor => d !== undefined)
-    .map((d) => ({ ...d, maxCallsPerSession: pullConfig.maxCallsPerSession ?? d.maxCallsPerSession }));
+    .map((d) => ({ ...d, maxCallsPerSession: override ?? d.maxCallsPerSession }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

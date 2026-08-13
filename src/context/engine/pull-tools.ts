@@ -39,7 +39,14 @@ export const _pullToolsDeps = {
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-const DEFAULT_MAX_CALLS_PER_SESSION = 5;
+/**
+ * Shared per-session ceiling every descriptor starts from. Exported because the
+ * orchestrator needs it to tell "the operator configured a ceiling" apart from
+ * "the schema supplied its default" — `config.context.v2.pull.maxCallsPerSession`
+ * always has a value, so the two are otherwise indistinguishable downstream.
+ * Must stay in sync with the schema default in `src/config/schemas-context.ts`.
+ */
+export const DEFAULT_MAX_CALLS_PER_SESSION = 5;
 const DEFAULT_MAX_TOKENS_PER_CALL = 2048;
 
 // ─────────────────────────────────────────────────────────────────────────────
