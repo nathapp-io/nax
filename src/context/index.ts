@@ -66,5 +66,6 @@ export {
   deleteFragment,
   fragmentPath,
   truncateToFragmentBudget,
+  renderFragmentBody,
   _fragmentStoreDeps,
 } from "./fragments";

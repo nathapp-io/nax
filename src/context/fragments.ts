@@ -124,3 +124,32 @@ export async function deleteFragment(projectDir: string, featureId: string, stor
   if (!(await _fragmentStoreDeps.fileExists(path))) return;
   await _fragmentStoreDeps.removeFile(path);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Deterministic fragment body (US-002 — stage 1 extractor)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Render the deterministic fragment body for a completed story. Pure function;
+ * the calling stage (`completionStage`) supplies the inputs. The LLM-backed
+ * extractor is deferred to a later spec.
+ *
+ * Layout:
+ *   # <storyId> — <title>
+ *
+ *   ## Acceptance criteria
+ *   - <criterion>  (one per item, in order)
+ *
+ *   ## Files touched
+ *   - <changed-file-path>  (one per item, in order)
+ */
+export function renderFragmentBody(
+  storyId: string,
+  title: string,
+  acceptanceCriteria: readonly string[],
+  changedFiles: readonly string[],
+): string {
+  const criteriaLines = acceptanceCriteria.map((c) => `- ${c}`).join("\n");
+  const filesLines = changedFiles.map((f) => `- ${f}`).join("\n");
+  return `# ${storyId} — ${title}\n\n## Acceptance criteria\n${criteriaLines}\n\n## Files touched\n${filesLines}\n`;
+}

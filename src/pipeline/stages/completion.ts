@@ -12,6 +12,8 @@
  * - `continue`: Stories marked complete, events emitted
  */
 
+import { renderFragmentBody, writeFragment } from "@/context";
+import { extractDiffFiles } from "@/utils/diff-files";
 import { GIT_TIMEOUT_MS } from "@/utils/git";
 import { persistSemanticVerdict } from "../../acceptance/semantic-verdict";
 import { annotateManifestEffectiveness } from "../../context/engine/effectiveness";
@@ -67,11 +69,17 @@ export const completionStage: PipelineStage = {
     }
 
     // Amendment A AC-45: annotate context manifests with effectiveness signals.
-    // Best-effort — non-fatal if the annotation fails or v2 context was not active.
+    // US-002: capture a per-story fragment on successful non-batch completion.
+    // Both writes are best-effort and share a single `git diff` invocation;
+    // a failure in either one is logged at debug and never blocks the story.
+    // Batch mode is intentionally skipped (mirroring the existing effectiveness
+    // behaviour and matching the spec's "deferred" batch capture rule).
     const featureId = ctx.prd?.feature;
+    const fragmentsEnabled = ctx.config.context?.v2?.fragments?.enabled === true;
     if (!isBatch && ctx.projectDir && featureId && ctx.config.context?.v2?.enabled) {
+      let diffText = "";
       try {
-        const diffText = await _completionDeps.getDiffText(ctx.workdir, ctx.storyGitRef);
+        diffText = await _completionDeps.getDiffText(ctx.workdir, ctx.storyGitRef);
         await annotateManifestEffectiveness(ctx.projectDir, featureId, ctx.story.id, {
           agentOutput: ctx.agentResult?.output ?? "",
           diffText,
@@ -82,6 +90,25 @@ export const completionStage: PipelineStage = {
           storyId: ctx.story.id,
           error: errorMessage(err),
         });
+      }
+
+      if (fragmentsEnabled) {
+        try {
+          const changedFiles = [...extractDiffFiles(diffText)];
+          const body = _completionDeps.renderFragmentBody(
+            ctx.story.id,
+            ctx.story.title,
+            ctx.story.acceptanceCriteria,
+            changedFiles,
+          );
+          const maxTokens = ctx.config.context.v2.fragments.maxTokens;
+          await _completionDeps.writeFragment(ctx.projectDir, featureId, ctx.story.id, body, maxTokens);
+        } catch (err) {
+          logger.debug("completion", "Fragment capture failed — non-fatal", {
+            storyId: ctx.story.id,
+            error: errorMessage(err),
+          });
+        }
       }
     }
 
@@ -241,5 +268,7 @@ export const _completionDeps = {
   savePRD,
   getDiffText,
   readTextStreamPrefix,
+  writeFragment,
+  renderFragmentBody,
   spawn: Bun.spawn,
 };
