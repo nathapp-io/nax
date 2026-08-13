@@ -25,7 +25,7 @@ import { withTempDir } from "@test/helpers";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Path to the committed synthetic fixture, used by AC10 and AC14. */
-const COMMITTED_FIXTURE = join(import.meta.dir, "..", "..", "..", "fixtures", "effectiveness", "labels.sample.json");
+const COMMITTED_FIXTURE = join(import.meta.dir, "..", "..", "fixtures", "effectiveness", "labels.sample.json");
 
 interface CapturedStreams {
   stdout: string[];
