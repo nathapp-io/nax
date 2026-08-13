@@ -167,6 +167,49 @@ describe("splitDiffByFile (AC3)", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// splitDiffByFile — quoted paths (filenames containing spaces)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("splitDiffByFile — quoted paths", () => {
+  test("keys a section by the unquoted post-image path when git quotes the header", () => {
+    const diff = [
+      'diff --git "a/src/my file.ts" "b/src/my file.ts"',
+      "index abc..def 100644",
+      '--- "a/src/my file.ts"',
+      '+++ "b/src/my file.ts"',
+      "@@ -1,1 +1,1 @@",
+      "-old body",
+      "+new body",
+    ].join("\n");
+
+    const sections = splitDiffByFile(diff);
+
+    expect(Object.keys(sections)).toEqual(["src/my file.ts"]);
+    expect(sections["src/my file.ts"]).toContain("+new body");
+  });
+
+  test("keys a rename section by its unquoted post-rename path", () => {
+    const diff = [
+      'diff --git "a/src/old name.ts" "b/src/new name.ts"',
+      "similarity index 95%",
+      'rename from "src/old name.ts"',
+      'rename to "src/new name.ts"',
+      '--- "a/src/old name.ts"',
+      '+++ "b/src/new name.ts"',
+      "@@ -1,1 +1,1 @@",
+      "-old body",
+      "+new body",
+    ].join("\n");
+
+    const sections = splitDiffByFile(diff);
+
+    expect(sections["src/new name.ts"]).toBeDefined();
+    expect(sections["src/new name.ts"]).toContain("+new body");
+    expect(sections["src/old name.ts"]).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Shared fixtures for AC4-AC9 — build a chunk summary that shares enough
 // terms with the diff's added lines to trip the whole-diff baseline. The
 // scoped classifier must NOT trip on these because the scope excludes the

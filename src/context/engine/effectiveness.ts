@@ -243,17 +243,97 @@ export function splitDiffByFile(diff: string): Record<string, string> {
   return sections;
 }
 
+/**
+ * Read one git diff path token starting at `start`, returning the unquoted
+ * path and the index just past the token. Handles bare paths and C-style
+ * quoted paths — git quotes filenames containing spaces (and other special
+ * bytes), e.g. `diff --git "a/foo bar.ts" "b/foo bar.ts"`.
+ */
+function readGitPath(input: string, start: number): { path: string; next: number } | null {
+  let i = start;
+  while (i < input.length && (input[i] === " " || input[i] === "\t")) i++;
+  if (i >= input.length) return null;
+
+  if (input[i] === '"') {
+    let path = "";
+    i++;
+    while (i < input.length && input[i] !== '"') {
+      const ch = input[i];
+      if (ch === "\\" && i + 1 < input.length) {
+        const esc = input[i + 1];
+        if (esc === '"' || esc === "\\") {
+          path += esc;
+          i += 2;
+          continue;
+        }
+        if (esc === "t") {
+          path += "\t";
+          i += 2;
+          continue;
+        }
+        if (esc === "n") {
+          path += "\n";
+          i += 2;
+          continue;
+        }
+        if (esc === "r") {
+          path += "\r";
+          i += 2;
+          continue;
+        }
+        if (esc >= "0" && esc <= "7") {
+          let code = 0;
+          let digits = 0;
+          let j = i + 1;
+          while (j < input.length && digits < 3 && input[j] >= "0" && input[j] <= "7") {
+            code = code * 8 + (input.charCodeAt(j) - 48);
+            digits++;
+            j++;
+          }
+          path += String.fromCharCode(code);
+          i = j;
+          continue;
+        }
+      }
+      path += ch;
+      i++;
+    }
+    if (i < input.length && input[i] === '"') i++;
+    return { path, next: i };
+  }
+
+  let path = "";
+  while (i < input.length && input[i] !== " " && input[i] !== "\t") {
+    path += input[i];
+    i++;
+  }
+  return { path, next: i };
+}
+
+/** Strip git's `b/` destination prefix from a post-image path. */
+function stripDiffPrefix(path: string): string {
+  return path.startsWith("b/") ? path.slice(2) : path;
+}
+
 /** Post-image path from a `diff --git a/<pre> b/<post>` header line. */
 function postImagePathFromHeader(line: string): string | undefined {
   const rest = line.slice("diff --git ".length);
-  const bIdx = rest.indexOf(" b/");
-  return bIdx >= 0 ? rest.slice(bIdx + 3) : undefined;
+  const pre = readGitPath(rest, 0);
+  if (pre === null) return undefined;
+  const post = readGitPath(rest, pre.next);
+  return post === null ? undefined : stripDiffPrefix(post.path);
 }
 
 /** Post-image path from `+++ b/<post>` or `rename to <post>` lines. */
 function postImagePathFromLine(line: string): string | undefined {
-  if (line.startsWith("+++ b/")) return line.slice("+++ b/".length);
-  if (line.startsWith("rename to ")) return line.slice("rename to ".length);
+  if (line.startsWith("+++ ")) {
+    const token = readGitPath(line, "+++ ".length);
+    return token === null ? undefined : stripDiffPrefix(token.path);
+  }
+  if (line.startsWith("rename to ")) {
+    const token = readGitPath(line, "rename to ".length);
+    return token === null ? undefined : token.path;
+  }
   return undefined;
 }
 
