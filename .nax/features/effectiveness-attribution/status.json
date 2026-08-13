@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-08-13T06-26-23-632Z",
+    "feature": "effectiveness-attribution",
+    "startedAt": "2026-08-13T06:26:23.632Z",
+    "status": "failed",
+    "dryRun": false,
+    "pid": 6469
+  },
+  "progress": {
+    "total": 4,
+    "passed": 1,
+    "failed": 0,
+    "paused": 1,
+    "blocked": 0,
+    "pending": 2
+  },
+  "cost": {
+    "spent": 0.81637394,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 3,
+  "updatedAt": "2026-08-13T08:05:01.710Z",
+  "durationMs": 5918078,
+  "postRun": {
+    "acceptance": {
+      "status": "not-run"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-08-13T08:05:00.464Z"
+    }
+  }
+}
