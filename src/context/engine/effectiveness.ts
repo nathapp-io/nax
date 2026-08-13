@@ -160,6 +160,12 @@ export function buildEvidenceTerms(
 export interface ClassifyScopeOptions {
   scopePaths?: string[];
   diffText?: string;
+  /**
+   * Pre-split per-file diff sections (from splitDiffByFile). When provided,
+   * classifyScoped reuses them instead of re-splitting the diff — so a story
+   * with many scoped chunks splits the diff once, not once per chunk.
+   */
+  sections?: Record<string, string>;
 }
 
 export function classifyWithTerms(
@@ -179,7 +185,12 @@ export function classifyWithTerms(
   // US-003: scoped added-line attribution. When scopePaths is present the
   // evidence is restricted to the added lines of the files the globs admit.
   if (scopeOptions?.scopePaths !== undefined) {
-    return classifyScoped(summaryTerms, scopeOptions.diffText ?? evidence.diffText ?? "", scopeOptions.scopePaths);
+    return classifyScoped(
+      summaryTerms,
+      scopeOptions.diffText ?? evidence.diffText ?? "",
+      scopeOptions.scopePaths,
+      scopeOptions.sections,
+    );
   }
 
   // No scope: the whole diff's added lines (AC6/AC8). Removed and context
@@ -360,8 +371,13 @@ function isFollowed(summaryTerms: ReadonlySet<string>, addedTerms: ReadonlySet<s
  * files whose paths match scopePaths. Fails open: an unsplittable diff records
  * unknown; a scope matching no diff file records ignored.
  */
-function classifyScoped(summaryTerms: ReadonlySet<string>, rawDiff: string, scopePaths: string[]): ChunkEffectiveness {
-  const sections = splitDiffByFile(rawDiff);
+function classifyScoped(
+  summaryTerms: ReadonlySet<string>,
+  rawDiff: string,
+  scopePaths: string[],
+  preSplitSections?: Record<string, string>,
+): ChunkEffectiveness {
+  const sections = preSplitSections ?? splitDiffByFile(rawDiff);
   const filePaths = Object.keys(sections);
   if (filePaths.length === 0) return { signal: "unknown" };
 
@@ -435,6 +451,9 @@ export async function annotateManifestEffectiveness(
 ): Promise<void> {
   const stored = await loadContextManifests(projectDir, storyId, featureId);
   let evidenceTerms: EffectivenessEvidenceTerms | undefined;
+  // US-003: split the diff once per story, not once per scoped chunk. The
+  // per-chunk scope only selects which pre-split sections contribute evidence.
+  const splitSections = splitDiffByFile(diffText);
 
   for (const item of stored) {
     const { manifest } = item;
@@ -448,6 +467,7 @@ export async function annotateManifestEffectiveness(
       effectiveness[id] = classifyWithTerms(summary, evidenceTerms, {
         scopePaths: manifest.chunkScopePaths?.[id],
         diffText,
+        sections: splitSections,
       });
     }
 

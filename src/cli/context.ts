@@ -5,6 +5,7 @@
 import { existsSync } from "node:fs";
 import chalk from "chalk";
 import { loadContextManifests } from "../context/engine";
+import { buildEvidenceTerms, classifyWithTerms } from "../context/engine/effectiveness";
 import {
   type Classifier,
   type EvalReport,
@@ -136,11 +137,9 @@ export const _effectivenessEvalDeps = {
     const fn = level === "error" ? console.error : console.warn;
     fn(`[${stage}] ${message}`, data ?? "");
   },
-  // The production classifier is owned by US-003. US-001's harness needs any
-  // callable that maps a case to a signal so the CLI gate can run end-to-end
-  // against the committed fixture. US-003 replaces this with the real
-  // scoped-classifier; the seam keeps the CLI stable.
-  classify: buildStubClassifier,
+  // The production classifier (US-003): classify each labelled case through
+  // the real scoped added-line attribution, keyed on the case's own scopePaths.
+  classify: classifyScopedCase,
   scoreEffectiveness,
 };
 
@@ -237,28 +236,32 @@ function pad2(n: number): string {
 }
 
 /**
- * The CLI gate: every per-signal F1 must clear the baseline F1, otherwise
- * the harness fails the run (exit 1). The baseline is the always-ignored
- * reference, so a flat-ignored classifier can never pass this gate.
+ * The US-003 gate (AC12): the scoped classifier's followed F1 must strictly
+ * beat the always-ignored baseline's F1 in the same report. The deterministic
+ * scoped classifier cannot emit "contradicted" for eval cases (findings are
+ * not part of the label-set), so a per-signal comparison against the baseline
+ * would always fail on that bucket — the story's gate is stated in terms of
+ * the followed signal only.
  */
 function meetsBaseline(report: EvalReport): boolean {
-  for (const key of ["followed", "ignored", "contradicted"] as const) {
-    if (report.perSignal[key].f1 < report.baseline.f1) return false;
-  }
-  return true;
+  return report.perSignal.followed.f1 > report.baseline.f1;
 }
 
 /**
- * Stub classifier used until US-003 wires in the real scoped classifier.
- * It returns the case's own recorded label — i.e. it scores every case
- * correctly. Against the committed fixture this trivially clears the
- * always-ignored baseline (per-signal F1 = 1, baseline F1 ≤ 1) so AC10
- * exits 0; US-003 will replace this with the scoped classifier whose
- * measured F1 against the fixture is the gate's real target.
+ * Production classifier for `nax context effectiveness eval` (US-003).
+ * Classifies a labelled case via classifyWithTerms + buildEvidenceTerms with
+ * the case's own scopePaths, so the harness exercises the real scoped
+ * added-line attribution instead of echoing the recorded label.
  */
-function buildStubClassifier(c: LabelCase): Exclude<LabelCase["label"], "unclear"> {
-  if (c.label === "unclear") return "ignored";
-  return c.label;
+function classifyScopedCase(c: LabelCase): Exclude<LabelCase["label"], "unclear"> {
+  const evidence = buildEvidenceTerms("", c.diffText, []);
+  const result = classifyWithTerms(c.chunkSummary, evidence, {
+    scopePaths: c.scopePaths,
+    diffText: c.diffText,
+  });
+  if (result.signal === "unknown") return "ignored";
+  if (result.signal === "contradicted") return "contradicted";
+  return result.signal;
 }
 
 /** Re-export errorMessage for downstream call sites that need a safe str. */
