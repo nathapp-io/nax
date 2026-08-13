@@ -286,7 +286,6 @@ function spearman(xs: readonly number[], ys: readonly number[]): number {
   if (n < 2) return 0;
   const rx = rankWithTies(xs);
   const ry = rankWithTies(ys);
-  const sumSq = 0;
   let sumX = 0;
   let sumY = 0;
   let sumXY = 0;

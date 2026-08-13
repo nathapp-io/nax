@@ -77,6 +77,28 @@ describe("newCorrelationId (AC10)", () => {
     }
     expect(ids.size).toBe(10_000);
   });
+
+  test("stays unique across calls sharing the same Date.now() tick and the same random draw", () => {
+    // Neutralize both entropy sources the pre-fix implementation relied on:
+    // Date.now() can repeat within a millisecond, and Math.random() is fixed
+    // here to the same value every call. Only the monotonic counter this fix
+    // introduced can keep the ids distinct under these conditions.
+    const originalNow = Date.now;
+    const originalRandom = Math.random;
+    const frozenNow = originalNow();
+    Date.now = () => frozenNow;
+    Math.random = () => 0.123456;
+    try {
+      const ids = new Set<string>();
+      for (let i = 0; i < 500; i++) {
+        ids.add(newCorrelationId());
+      }
+      expect(ids.size).toBe(500);
+    } finally {
+      Date.now = originalNow;
+      Math.random = originalRandom;
+    }
+  });
 });
 
 // ─── callOp kind:complete — callId stamping (ACs 7, 8) ─────────────────────
