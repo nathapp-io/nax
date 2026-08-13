@@ -13,13 +13,16 @@
  *
  * Phase 0: behavioral parity with v1 — same file, same header, same tokens.
  * Phase 2 (Amendment A): staleness detection (AC-46/AC-47).
+ * US-003: dependency-scoped fragment reads with distance decay.
  */
 
 import { createHash } from "node:crypto";
+import { listFragmentStoryIds as listFragmentStoryIdsImpl, readFragment as readFragmentImpl } from "@/context";
 import type { ContextToolRuntimeConfig } from "../../../config/selectors";
 import type { NaxConfig } from "../../../config/types";
 import { getLogger } from "../../../logger";
-import type { UserStory } from "../../../prd";
+import type { PRD, UserStory } from "../../../prd";
+import { loadPRD as loadPRDImpl } from "../../../prd";
 import { errorMessage } from "../../../utils/errors";
 import { FeatureContextProvider as FeatureContextProviderV1 } from "../../providers/feature-context";
 import { applyStaleness, detectContradictions, parseFeatureContextEntries, selectStaleByAge } from "../staleness";
@@ -31,6 +34,42 @@ import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk 
 
 export const _featureContextV2Deps = {
   createV1Provider: () => new FeatureContextProviderV1(),
+  /**
+   * Load the feature PRD from disk. Default returns `null` when the file is
+   * missing or unparseable so US-003 AC9 (missing `prd.json`) returns no
+   * fragment chunks while still preserving the context.md chunk.
+   */
+  loadPRD: async (path: string): Promise<PRD | null> => {
+    try {
+      return await loadPRDImpl(path);
+    } catch {
+      return null;
+    }
+  },
+  /**
+   * Read a fragment body. Default delegates to `@/context/fragments`.
+   * Unreadable / missing fragments surface as `null`, which the caller
+   * treats as "skip" per the AC8 contract.
+   */
+  readFragment: async (projectDir: string, featureId: string, storyId: string): Promise<string | null> => {
+    try {
+      return await readFragmentImpl(projectDir, featureId, storyId);
+    } catch {
+      return null;
+    }
+  },
+  /**
+   * List story ids that have a fragment under the feature. Default delegates
+   * to `@/context/fragments`. An empty result lets the caller skip the
+   * dependency walk entirely (fast-path for features with no fragments).
+   */
+  listFragmentStoryIds: async (projectDir: string, featureId: string): Promise<string[]> => {
+    try {
+      return await listFragmentStoryIdsImpl(projectDir, featureId);
+    } catch {
+      return [];
+    }
+  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,6 +86,65 @@ function estimateTokens(text: string): number {
 
 function renderEntryContent(section: string, text: string): string {
   return section ? `### ${section}\n\n${text}` : text;
+}
+
+/** Resolve on-disk projectDir for the feature (i.e. the `.nax` dir under repoRoot). */
+function projectDirFor(repoRoot: string): string {
+  // The fragment store and the feature PRD both live under repoRoot/.nax/.
+  return `${repoRoot}/.nax`;
+}
+
+function featurePrdPath(repoRoot: string, featureId: string): string {
+  return `${projectDirFor(repoRoot)}/features/${featureId}/prd.json`;
+}
+
+/**
+ * Build the dependency index from a PRD. Missing fields default to `[]`
+ * (matches `loadPRD`'s normalisation in @/prd).
+ */
+function depsByStoryId(prd: PRD): Map<string, string[]> {
+  const deps = new Map<string, string[]>();
+  for (const story of prd.userStories) {
+    deps.set(story.id, story.dependencies ?? []);
+  }
+  return deps;
+}
+
+/**
+ * Walk the dependency graph from `startId` using BFS. Each story is recorded
+ * with its shortest distance from the requesting story. Cycles terminate via
+ * the visited set; diamonds settle at the shorter path. Returns a Map keyed
+ * by story id, with insertion order = BFS discovery order — useful for stable
+ * chunk ordering downstream.
+ */
+function walkDependencyGraph(prd: PRD, startId: string): Map<string, number> {
+  const deps = depsByStoryId(prd);
+  const reached = new Map<string, number>();
+  const queue: Array<{ id: string; distance: number }> = [];
+
+  const startDeps = deps.get(startId) ?? [];
+  for (const depId of startDeps) {
+    if (!reached.has(depId)) {
+      reached.set(depId, 1);
+      queue.push({ id: depId, distance: 1 });
+    }
+  }
+
+  while (queue.length > 0) {
+    const head = queue.shift();
+    if (!head) break;
+    const { id, distance } = head;
+    const nextDeps = deps.get(id) ?? [];
+    const nextDistance = distance + 1;
+    for (const nextId of nextDeps) {
+      if (!reached.has(nextId)) {
+        reached.set(nextId, nextDistance);
+        queue.push({ id: nextId, distance: nextDistance });
+      }
+    }
+  }
+
+  return reached;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -74,83 +172,166 @@ export class FeatureContextProviderV2 implements IContextProvider {
    * When staleness detection is enabled (Amendment A AC-46/AC-47), the chunk
    * is annotated with staleCandidate: true and a scoreMultiplier when any
    * entries in the content are age-stale or contradiction-stale.
+   *
+   * US-003: additionally walks the dependency graph of the feature's
+   * `prd.json` and emits one fragment chunk per reached story, scored by
+   * `fragments.decay ** dependencyDistance` (base score 1.0).
    */
   async fetch(request: ContextRequest): Promise<ContextProviderResult> {
     const logger = getLogger();
+    const chunks: RawChunk[] = [];
 
+    // ── 1. context.md path (v1) ─────────────────────────────────────────────
     try {
       const v1 = _featureContextV2Deps.createV1Provider();
       const result = await v1.getContext(this.story, request.repoRoot, this.config, request.featureId);
-      if (!result) {
-        return { chunks: [], pullTools: [] };
+      if (result) {
+        chunks.push(...this.buildContextMdChunks(result.content, result.estimatedTokens, request.storyId));
       }
-
-      const hash = contentHash8(result.content);
-      const baseChunk: RawChunk = {
-        id: `feature-context:${hash}`,
-        kind: "feature",
-        scope: "feature",
-        role: ["implementer", "reviewer", "tdd"],
-        content: result.content,
-        tokens: result.estimatedTokens,
-        rawScore: 1.0,
-      };
-
-      let chunks: RawChunk[] = [baseChunk];
-
-      // Amendment A AC-46/AC-47: staleness detection (read-time, no LLM).
-      const stalenessConfig = this.config.context?.v2?.staleness;
-      if (stalenessConfig?.enabled !== false) {
-        const maxStoryAge = stalenessConfig?.maxStoryAge ?? 10;
-        const scoreMultiplier = stalenessConfig?.scoreMultiplier ?? 0.4;
-
-        const entries = parseFeatureContextEntries(result.content);
-        if (entries.length > 1) {
-          const contradicted = detectContradictions(entries);
-          const ageStale = selectStaleByAge(entries, maxStoryAge);
-          chunks = entries.map((entry) => {
-            const entryContent = renderEntryContent(entry.section, entry.text);
-            const entryChunk: RawChunk = {
-              id: `feature-context:${hash}:entry-${entry.index}`,
-              kind: "feature",
-              scope: "feature",
-              role: ["implementer", "reviewer", "tdd"],
-              content: entryContent,
-              tokens: estimateTokens(entryContent),
-              rawScore: 1.0,
-            };
-            const isStale = contradicted.has(entry.index) || ageStale.has(entry.index);
-            return applyStaleness(entryChunk, { isStale, scoreMultiplier });
-          });
-
-          if (chunks.some((chunk) => chunk.staleCandidate)) {
-            logger.debug("feature-context-v2", "Stale entries detected in feature context", {
-              storyId: request.storyId,
-              contradicted: contradicted.size,
-              ageStale: ageStale.size,
-            });
-          }
-        } else if (entries.length === 1) {
-          const contradicted = detectContradictions(entries);
-          const ageStale = selectStaleByAge(entries, maxStoryAge);
-          const isStale = contradicted.has(entries[0].index) || ageStale.has(entries[0].index);
-          chunks = [applyStaleness(baseChunk, { isStale, scoreMultiplier })];
-        }
-      }
-
-      logger.debug("feature-context-v2", "Loaded feature context chunk", {
-        storyId: request.storyId,
-        featureId: result.featureId,
-        tokens: result.estimatedTokens,
-      });
-
-      return { chunks, pullTools: [] };
     } catch (err) {
-      logger.warn("feature-context-v2", "Failed to fetch feature context — returning empty", {
+      logger.warn("feature-context-v2", "Failed to fetch feature context — continuing without it", {
         storyId: request.storyId,
         error: errorMessage(err),
       });
-      return { chunks: [], pullTools: [] };
     }
+
+    // ── 2. fragment path (US-003) ───────────────────────────────────────────
+    try {
+      const fragmentResults = await this.collectFragmentChunks(request);
+      chunks.push(...fragmentResults);
+    } catch (err) {
+      logger.warn("feature-context-v2", "Failed to fetch fragments — continuing without them", {
+        storyId: request.storyId,
+        error: errorMessage(err),
+      });
+    }
+
+    return { chunks, pullTools: [] };
+  }
+
+  /** Translate the v1 context.md result into v2 RawChunks (with staleness applied). */
+  private buildContextMdChunks(content: string, estimatedTokens: number, storyId: string): RawChunk[] {
+    const logger = getLogger();
+    const hash = contentHash8(content);
+    const baseChunk: RawChunk = {
+      id: `feature-context:${hash}`,
+      kind: "feature",
+      scope: "feature",
+      role: ["implementer", "reviewer", "tdd"],
+      content,
+      tokens: estimatedTokens,
+      rawScore: 1.0,
+    };
+
+    // Amendment A AC-46/AC-47: staleness detection (read-time, no LLM).
+    const stalenessConfig = this.config.context?.v2?.staleness;
+    if (stalenessConfig?.enabled === false) {
+      return [baseChunk];
+    }
+
+    const maxStoryAge = stalenessConfig?.maxStoryAge ?? 10;
+    const scoreMultiplier = stalenessConfig?.scoreMultiplier ?? 0.4;
+    const entries = parseFeatureContextEntries(content);
+
+    if (entries.length > 1) {
+      const contradicted = detectContradictions(entries);
+      const ageStale = selectStaleByAge(entries, maxStoryAge);
+      const result = entries.map((entry) => {
+        const entryContent = renderEntryContent(entry.section, entry.text);
+        const entryChunk: RawChunk = {
+          id: `feature-context:${hash}:entry-${entry.index}`,
+          kind: "feature",
+          scope: "feature",
+          role: ["implementer", "reviewer", "tdd"],
+          content: entryContent,
+          tokens: estimateTokens(entryContent),
+          rawScore: 1.0,
+        };
+        const isStale = contradicted.has(entry.index) || ageStale.has(entry.index);
+        return applyStaleness(entryChunk, { isStale, scoreMultiplier });
+      });
+
+      if (result.some((chunk) => chunk.staleCandidate)) {
+        logger.debug("feature-context-v2", "Stale entries detected in feature context", {
+          storyId,
+          contradicted: contradicted.size,
+          ageStale: ageStale.size,
+        });
+      }
+      return result;
+    }
+
+    if (entries.length === 1) {
+      const contradicted = detectContradictions(entries);
+      const ageStale = selectStaleByAge(entries, maxStoryAge);
+      const isStale = contradicted.has(entries[0].index) || ageStale.has(entries[0].index);
+      return [applyStaleness(baseChunk, { isStale, scoreMultiplier })];
+    }
+
+    return [baseChunk];
+  }
+
+  /**
+   * Walk the feature's PRD dependency graph, read each reached story's
+   * fragment, and emit one RawChunk per story with rawScore decayed by
+   * `fragments.decay ** distance`. Returns `[]` when fragments are
+   * disabled, the feature is unknown, the PRD is absent, or no fragments
+   * exist on disk.
+   */
+  private async collectFragmentChunks(request: ContextRequest): Promise<RawChunk[]> {
+    const logger = getLogger();
+    const fragmentsConfig = this.config.context?.v2?.fragments;
+    if (fragmentsConfig?.enabled !== true) return [];
+
+    const featureId = request.featureId;
+    if (!featureId) return [];
+
+    const projectDir = projectDirFor(request.repoRoot);
+
+    // Fast path — empty fragment set means nothing to traverse (AC1 / AC10).
+    const availableFragments = await _featureContextV2Deps.listFragmentStoryIds(projectDir, featureId);
+    if (availableFragments.length === 0) return [];
+
+    const prdPath = featurePrdPath(request.repoRoot, featureId);
+    const prd = await _featureContextV2Deps.loadPRD(prdPath);
+    if (!prd) return [];
+
+    const reached = walkDependencyGraph(prd, request.storyId);
+    if (reached.size === 0) return [];
+
+    // Preserve BFS discovery order via Map iteration (stable across runs).
+    const fragmentSet = new Set(availableFragments);
+    const decay = fragmentsConfig.decay;
+    const out: RawChunk[] = [];
+
+    for (const [storyId, distance] of reached) {
+      // AC8 / AC9: a reached story without a fragment contributes nothing.
+      // The dep walk already terminated for cycles; listFragmentStoryIds
+      // is the source of truth for which story ids have an on-disk file.
+      if (!fragmentSet.has(storyId)) continue;
+
+      const body = await _featureContextV2Deps.readFragment(projectDir, featureId, storyId);
+      if (body === null) continue;
+
+      out.push({
+        id: `feature-fragment:${storyId}`,
+        kind: "feature",
+        scope: "feature",
+        role: ["implementer", "reviewer", "tdd"],
+        content: body,
+        tokens: estimateTokens(body),
+        rawScore: decay ** distance,
+      });
+    }
+
+    if (out.length > 0) {
+      logger.debug("feature-context-v2", "Loaded fragment chunks", {
+        storyId: request.storyId,
+        featureId,
+        fragmentCount: out.length,
+      });
+    }
+
+    return out;
   }
 }
