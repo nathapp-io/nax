@@ -3,7 +3,7 @@
   "feature": "effectiveness-scoring-loop",
   "branchName": "feat/effectiveness-scoring-loop",
   "createdAt": "2026-08-13T11:45:22.000Z",
-  "updatedAt": "2026-08-13T14:25:35.353Z",
+  "updatedAt": "2026-08-13T14:45:25.067Z",
   "userStories": [
     {
       "id": "US-001",
@@ -206,8 +206,8 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [
         {
