@@ -33,8 +33,8 @@
         "evaluation"
       ],
       "dependencies": [],
-      "status": "paused",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 1,
       "escalations": [],
       "routing": {
