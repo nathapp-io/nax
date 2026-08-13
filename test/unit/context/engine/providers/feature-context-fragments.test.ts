@@ -422,4 +422,51 @@ describe("FeatureContextProviderV2 US-003 — fragment dependency walk", () => {
     expect(ids).toContain("feature-fragment:US-002");
     expect(ids).not.toContain("feature-fragment:US-001");
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Regression: a cycle back to the requesting story must not re-emit it.
+  // Walking A → B → A would otherwise put A in the reached set at distance 2
+  // and emit A's own fragment back to A — which violates AC3 ("none for the
+  // requesting story itself").
+  // ─────────────────────────────────────────────────────────────────────────
+
+  test("regression: cycle back to requesting story does not re-emit its own fragment", async () => {
+    mockV1Empty();
+    // A → B; B → A. A (the requesting story) has a fragment on disk.
+    const a = storyWith("US-001", ["US-002"]);
+    const b = storyWith("US-002", ["US-001"]);
+    mockLoadPRD(prdWith([a, b]));
+    mockListFragmentStoryIds(["US-001", "US-002"]);
+    mockReadFragment({
+      "US-001": "a-body",
+      "US-002": "b-body",
+    });
+
+    const provider = new FeatureContextProviderV2(a, makeFragmentsConfig());
+    const result = await provider.fetch(makeRequest({ storyId: "US-001" }));
+
+    const ids = fragmentChunks(result.chunks).map((chunk) => chunk.id).sort();
+    expect(ids).toEqual(["feature-fragment:US-002"]);
+  });
+
+  test("regression: 3-cycle through the requesting story does not re-emit it", async () => {
+    mockV1Empty();
+    // A → B → C → A. A (the requesting story) has a fragment.
+    const a = storyWith("US-001", ["US-002"]);
+    const b = storyWith("US-002", ["US-003"]);
+    const c = storyWith("US-003", ["US-001"]);
+    mockLoadPRD(prdWith([a, b, c]));
+    mockListFragmentStoryIds(["US-001", "US-002", "US-003"]);
+    mockReadFragment({
+      "US-001": "a-body",
+      "US-002": "b-body",
+      "US-003": "c-body",
+    });
+
+    const provider = new FeatureContextProviderV2(a, makeFragmentsConfig());
+    const result = await provider.fetch(makeRequest({ storyId: "US-001" }));
+
+    const ids = fragmentChunks(result.chunks).map((chunk) => chunk.id).sort();
+    expect(ids).toEqual(["feature-fragment:US-002", "feature-fragment:US-003"]);
+  });
 });

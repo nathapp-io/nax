@@ -116,6 +116,10 @@ function depsByStoryId(prd: PRD): Map<string, string[]> {
  * the visited set; diamonds settle at the shorter path. Returns a Map keyed
  * by story id, with insertion order = BFS discovery order — useful for stable
  * chunk ordering downstream.
+ *
+ * `startId` itself is never added to the result even when a cycle returns to
+ * it: fragments are read back from *dependencies*, never from the requesting
+ * story emitting to itself (see AC3 and the cycle-regression test).
  */
 function walkDependencyGraph(prd: PRD, startId: string): Map<string, number> {
   const deps = depsByStoryId(prd);
@@ -124,10 +128,11 @@ function walkDependencyGraph(prd: PRD, startId: string): Map<string, number> {
 
   const startDeps = deps.get(startId) ?? [];
   for (const depId of startDeps) {
-    if (!reached.has(depId)) {
-      reached.set(depId, 1);
-      queue.push({ id: depId, distance: 1 });
-    }
+    // Guard the start too: a self-loop on startId (A → A) would otherwise
+    // emit A's own fragment to itself at distance 1.
+    if (depId === startId || reached.has(depId)) continue;
+    reached.set(depId, 1);
+    queue.push({ id: depId, distance: 1 });
   }
 
   while (queue.length > 0) {
@@ -137,10 +142,13 @@ function walkDependencyGraph(prd: PRD, startId: string): Map<string, number> {
     const nextDeps = deps.get(id) ?? [];
     const nextDistance = distance + 1;
     for (const nextId of nextDeps) {
-      if (!reached.has(nextId)) {
-        reached.set(nextId, nextDistance);
-        queue.push({ id: nextId, distance: nextDistance });
-      }
+      // A cycle returning to the requesting story is a no-op for fragment
+      // emission. Skipping at traversal time also keeps distances consistent
+      // downstream: without the guard, A would be re-entered at a longer
+      // distance and could pollute the reached set.
+      if (nextId === startId || reached.has(nextId)) continue;
+      reached.set(nextId, nextDistance);
+      queue.push({ id: nextId, distance: nextDistance });
     }
   }
 
