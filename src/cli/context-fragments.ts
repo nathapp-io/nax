@@ -25,7 +25,7 @@ import {
   deleteFragment as deleteFragmentImpl,
   fragmentPath,
   listFragmentStoryIds as listFragmentStoryIdsImpl,
-} from "@/context";
+} from "@/context/fragments";
 import { getLogger } from "@/logger";
 import type { PRD } from "@/prd";
 import chalk from "chalk";

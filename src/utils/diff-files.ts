@@ -4,9 +4,8 @@
  * `+++` headers.
  *
  * Used by adversarial review (#986) to compute the `fileInDiff` axis of the
- * structural counterfactual telemetry without re-shelling git, by the mutation
- * spot-check to bound mutation to changed lines, and by the fragment capture
- * in completionStage (US-002) to enumerate every file touched by the story.
+ * structural counterfactual telemetry without re-shelling git, and by the
+ * mutation spot-check to bound mutation to changed lines.
  *
  * A "changed file" includes the deletion side: a `--- a/<path>` with a
  * matching `+++ /dev/null` is a deletion, and the path comes from the `---`

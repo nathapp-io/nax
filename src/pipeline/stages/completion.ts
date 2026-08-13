@@ -12,7 +12,7 @@
  * - `continue`: Stories marked complete, events emitted
  */
 
-import { renderFragmentBody, writeFragment } from "@/context";
+import { renderFragmentBody, writeFragment } from "@/context/fragments";
 import { GIT_TIMEOUT_MS } from "@/utils/git";
 import { persistSemanticVerdict } from "../../acceptance/semantic-verdict";
 import { annotateManifestEffectiveness } from "../../context/engine/effectiveness";

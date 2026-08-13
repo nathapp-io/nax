@@ -13,7 +13,7 @@
 
 import { mkdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { estimateTokens } from "../optimizer/types";
+import { estimateTokens } from "@/optimizer";
 
 /** Injectable file I/O — tests override to use in-memory stores. */
 export const _fragmentStoreDeps = {

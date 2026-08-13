@@ -21,7 +21,7 @@ import {
   listFragmentStoryIds,
   readFragment,
   writeFragment,
-} from "@/context";
+} from "@/context/fragments";
 import { withDepsRestore } from "@test/helpers";
 
 withDepsRestore(_fragmentStoreDeps);

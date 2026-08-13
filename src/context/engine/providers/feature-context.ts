@@ -17,7 +17,10 @@
  */
 
 import { createHash } from "node:crypto";
-import { listFragmentStoryIds as listFragmentStoryIdsImpl, readFragment as readFragmentImpl } from "@/context";
+import {
+  listFragmentStoryIds as listFragmentStoryIdsImpl,
+  readFragment as readFragmentImpl,
+} from "@/context/fragments";
 import type { ContextToolRuntimeConfig } from "../../../config/selectors";
 import type { NaxConfig } from "../../../config/types";
 import { getLogger } from "../../../logger";
