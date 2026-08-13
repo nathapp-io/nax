@@ -1,0 +1,268 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `NaxConfigSchema.parse({})` is evaluated, then `context.v2.fragments.enabled` equals `false`.",
+    "refined": "Assert that `NaxConfigSchema.parse({}).context.v2.fragments.enabled === false`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `NaxConfigSchema.parse({})` is evaluated, then `context.v2.fragments.decay` equals `0.6`.",
+    "refined": "Assert that `NaxConfigSchema.parse({}).context.v2.fragments.decay === 0.6`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `NaxConfigSchema.parse({})` is evaluated, then `context.v2.fragments.maxTokens` equals `400`.",
+    "refined": "Assert that `NaxConfigSchema.parse({}).context.v2.fragments.maxTokens === 400`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `NaxConfigSchema.parse({})` is evaluated, then `context.v2.fragments.extractor` equals `\"deterministic\"`.",
+    "refined": "Assert that `NaxConfigSchema.parse({}).context.v2.fragments.extractor === 'deterministic'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When configuration sets `context.v2.fragments.decay` to `1.5`, then schema parsing fails validation.",
+    "refined": "Assert that `NaxConfigSchema.parse({ context: { v2: { fragments: { decay: 1.5 } } } })` throws a `ZodError`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When `writeFragment` writes a body and `readFragment` reads the same project directory, feature id, and story id, then `readFragment` returns exactly that body.",
+    "refined": "Assert that after calling `writeFragment(projectDir, featureId, storyId, body, maxTokens)` and `readFragment(projectDir, featureId, storyId)`, the returned value strictly equals the input `body` string.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When `readFragment` is called for a story with no fragment, then it returns `null`.",
+    "refined": "Assert that calling `readFragment(projectDir, featureId, nonexistentStoryId)` returns `null`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When `writeFragment` receives a body longer than its configured `maxTokens` budget, then the subsequently read body is no longer than that budget.",
+    "refined": "Assert that calling `writeFragment(projectDir, featureId, storyId, longBody, maxTokens)` followed by `readFragment(projectDir, featureId, storyId)` returns a body with `estimatedTokenCount(result) <= maxTokens`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When fragments are written for two story IDs and `listFragmentStoryIds` is called, then it returns both IDs and no ID without a fragment.",
+    "refined": "Assert that after writing fragments for `storyId1` and `storyId2` (no fragment for `storyId3`), calling `listFragmentStoryIds(projectDir, featureId)` returns a Set or array containing exactly `[storyId1, storyId2]` with length 2 and no inclusion of `storyId3`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `deleteFragment` is called for an existing story fragment, then a subsequent `readFragment` returns `null`.",
+    "refined": "Assert that after writing a fragment and calling `deleteFragment(projectDir, featureId, storyId)`, a subsequent call to `readFragment(projectDir, featureId, storyId)` returns `null`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When `deleteFragment` is called for a story with no fragment, then it completes without raising.",
+    "refined": "Assert that calling `deleteFragment(projectDir, featureId, nonexistentStoryId)` does not throw an exception.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When `writeFragment` writes two different bodies for the same story, then `readFragment` returns only the second body.",
+    "refined": "Assert that after calling `writeFragment(projectDir, featureId, storyId, firstBody, maxTokens)` and then `writeFragment(projectDir, featureId, storyId, secondBody, maxTokens)`, calling `readFragment(projectDir, featureId, storyId)` returns exactly `secondBody` and not `firstBody`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When `completionStage` runs for a passing non-batch story with v2 context and fragments enabled, then it invokes `writeFragment` exactly once with that story's ID.",
+    "refined": "When `completionStage` runs for a passing non-batch story with v2 context and fragments enabled, then it invokes `writeFragment` exactly once with that story's ID.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When `completionStage` runs with `context.v2.fragments.enabled` set to `false`, then it does not invoke `writeFragment`.",
+    "refined": "When `completionStage` runs with `context.v2.fragments.enabled` set to `false`, then it does not invoke `writeFragment`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When `completionStage` runs with `context.v2.enabled` set to `false`, then it does not invoke `writeFragment`.",
+    "refined": "When `completionStage` runs with `context.v2.enabled` set to `false`, then it does not invoke `writeFragment`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When `completionStage` captures a fragment, then the body passed to `writeFragment` includes the story title.",
+    "refined": "When `completionStage` captures a fragment, then the body passed to `writeFragment` includes the story title.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When `completionStage` captures a fragment, then the body passed to `writeFragment` includes each story acceptance criterion.",
+    "refined": "When `completionStage` captures a fragment, then the body passed to `writeFragment` includes each story acceptance criterion.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When `completionStage` captures a fragment from a diff, then the body passed to `writeFragment` names each changed file reported by that diff.",
+    "refined": "When `completionStage` captures a fragment from a diff, then the body passed to `writeFragment` names each changed file reported by that diff.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When `writeFragment` raises during `completionStage`, then `completionStage.execute` resolves with `{ action: \"continue\" }` and marks the story passed.",
+    "refined": "When `writeFragment` raises during `completionStage`, then `completionStage.execute` resolves with `{ action: \"continue\" }` and marks the story passed.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When `completionStage` runs twice for the same story, then it invokes `writeFragment` twice with that story's ID.",
+    "refined": "When `completionStage` runs twice for the same story, then it invokes `writeFragment` twice with that story's ID.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When `FeatureContextProviderV2.fetch` is called for a story with no dependencies, then it returns no fragment-identifying chunk.",
+    "refined": "When fetch(storyId: 'S1', ...) is called with a story S1 that has zero entries in the same-feature prd.json dependencies array, then the returned array contains zero elements where chunk.kind === 'feature'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When a story directly depends on one story with a fragment, then `fetch` returns exactly one fragment chunk identifying that dependency story ID.",
+    "refined": "Given prd.json with dependencies: { 'S1': ['S2'] } and a readable fragment file for S2 at the fragments directory, when fetch(storyId: 'S1', ...) is called, then returned is an array of length 1 with one element where chunk.kind === 'feature', chunk.storyId === 'S2', and chunk.featureId is the current feature identifier.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When the requesting story depends on a second story that depends on a third and all have fragments, then `fetch` returns chunks for the second and third stories and none for the requesting story.",
+    "refined": "Given prd.json with dependencies: { 'S1': ['S2'], 'S2': ['S3'] } and readable fragment files for S2 and S3 (none for S1), when fetch(storyId: 'S1', ...) is called, then returned is an array of length 2 with elements where chunk.storyId values are exactly ['S2', 'S3'] in any order, and no element has chunk.storyId === 'S1'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When `fetch` reads a two-hop dependency chain, then the third-story fragment chunk has a strictly lower score than the direct second-story fragment chunk.",
+    "refined": "Given prd.json with dependencies: { 'S1': ['S2'], 'S2': ['S3'] }, readable fragments for S2 and S3, and default decay value (e.g., 0.6), when fetch(storyId: 'S1', ...) is called, then the chunk with chunk.storyId === 'S2' has rawScore > the chunk with chunk.storyId === 'S3', and rawScore values are 1.0 * decay and 1.0 * decay * decay respectively.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When two dependency paths reach the same story, then `fetch` returns exactly one fragment chunk for it scored at the shorter distance.",
+    "refined": "Given prd.json with dependencies forming a diamond: { 'S1': ['S2', 'S3'], 'S2': ['S4'], 'S3': ['S4'] } and a readable fragment for S4, when fetch(storyId: 'S1', ...) is called, then returned contains exactly one element with chunk.storyId === 'S4' where chunk.rawScore equals 1.0 * decay * decay (the shorter two-hop distance), not decay * decay * decay.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When the dependency graph contains a cycle, then `fetch` returns without raising and returns at most one fragment chunk per story.",
+    "refined": "Given prd.json with dependencies forming a cycle: { 'S1': ['S2'], 'S2': ['S3'], 'S3': ['S1'] } and readable fragments for S1, S2, S3, when fetch(storyId: 'S1', ...) is called, then the function returns without throwing and returned contains at most one chunk per unique storyId (0 to 3 elements total).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When a fragment is reached at dependency distance `d`, then its chunk `rawScore` equals configured `decay` raised to `d` with base score `1.0`.",
+    "refined": "Given a dependency graph where story S1 at distance d from the requesting story has a readable fragment, when fetch(storyId: 'S1', ..., options: { decay: 0.6 }) is called, then the corresponding chunk.rawScore equals Math.pow(0.6, d) where d is the shortest-path distance (direct = 1, two-hop = 2, etc.).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When a reached story has no fragment file but has dependencies with fragments, then it contributes no chunk and its dependencies still contribute chunks.",
+    "refined": "Given prd.json with dependencies: { 'S1': ['S2'], 'S2': ['S3'] }, a readable fragment for S3 but no fragment file for S2, when fetch(storyId: 'S1', ...) is called, then returned is an array of length 1 with chunk.storyId === 'S3' only, and no chunk has storyId === 'S2'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When the feature `prd.json` is absent, then `fetch` returns no fragment chunks and still returns the `context.md` chunk.",
+    "refined": "When the feature directory contains no prd.json file (or the file is unparseable as JSON), and fetch(...) is called, then the returned array contains zero elements where chunk.kind === 'feature' AND contains at least one element where chunk.kind === 'context' and chunk.content contains 'context.md' or equivalent markdown.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When `context.v2.fragments.enabled` is `false`, then `fetch` returns no fragment chunks even when fragment files exist.",
+    "refined": "Given context.v2.fragments.enabled is set to false in config, readable fragment files exist, and prd.json has dependencies, when fetch(storyId: 'S1', ...) is called, then the returned array contains zero elements where chunk.kind === 'feature'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When `fetch` returns a fragment chunk, then that chunk has kind `feature`.",
+    "refined": "When fetch returns any non-empty array, then every element satisfies chunk.kind === 'feature' and the chunk object contains required RawChunk fields: kind, storyId, featureId, rawScore, content (string), and startLine.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When the fragments inspect command runs for a feature with two fragments, then its output lists both story IDs.",
+    "refined": "Calling `inspectFeatureFragments(featureId)` (via CLI or direct function) with a feature containing exactly 2 fragment entries in the fragment store returns output containing 2 distinct story ID strings, one for each fragment, where each story ID matches the pattern `/^[a-z0-9-]+$/i`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When the fragments inspect command runs for a feature with no fragments, then it reports that none were found and exits with status `0`.",
+    "refined": "Calling `inspectFeatureFragments(featureId)` with a feature containing 0 fragment entries: (a) exits with process exit code 0, and (b) output contains the case-insensitive string 'no fragments found' or equivalent localized message indicating zero results.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When the fragments inspect command prints a fragment, then it prints the IDs of stories that transitively depend on that fragment's story.",
+    "refined": "For a fragment with source story ID `S1` that has dependent story IDs `D1` and `D2` (where `D1` depends on `S1` and `D2` depends on `D1`), calling `inspectFeatureFragments(featureId)` outputs a line or entry for that fragment containing: (a) `S1` as the fragment's originating story ID, and (b) an ordered list `[S1, D1, D2]` (or comma-separated equivalent) representing the transitive closure of dependencies, verified by checking that calling `listFragmentStoryIds(featureId, S1)` returns all 3 IDs.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "When the fragments prune command receives a story ID, then it removes only that story fragment and leaves other fragments readable.",
+    "refined": "Given a feature with fragment files `{story1}.txt` and `{story2}.txt` in the fragment store: calling `pruneFragment(featureId, 'story1')` (a) results in file `{story1}.txt` being deleted (file does not exist or `deleteFragment` returns `false` for `story1`), (b) file `{story2}.txt` still exists and is readable, and (c) `pruneFragment(featureId, 'story2')` subsequently succeeds without error.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-36",
+    "original": "When the fragments prune command receives no story ID, then it removes every fragment for that feature.",
+    "refined": "Given a feature with N fragment files in the fragment store (N >= 1): calling `pruneFragment(featureId)` (with no story ID argument) results in all N fragment files being deleted, verified by: (a) calling `listFragmentStoryIds(featureId)` returns an empty array, (b) each deleted file no longer exists, and (c) subsequent `inspectFeatureFragments(featureId)` reports zero fragments.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-37",
+    "original": "When the fragments prune command runs for a feature with no fragments, then it exits with status `0` and reports that nothing was removed.",
+    "refined": "Calling `pruneFragment(featureId)` (with no story ID) on a feature with 0 fragments: (a) exits with process exit code 0 (no error thrown), and (b) output contains a message indicating zero files were removed (e.g., 'removed 0 fragments', 'nothing to remove', or equivalent).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-38",
+    "original": "When the fragments output formatter is called twice with the same fragment listing, then it returns identical output and performs no file access.",
+    "refined": "Calling `formatFragments(listing)` twice with identical input (same array of `FragmentEntry` objects in same order): (a) returns `outputA` and `outputB` where `outputA === outputB` (strict equality), and (b) the function performs zero file system operations, verified by: stubbing/spying on `Bun.file()`, `fs.readFile`, `fs.writeFile`, and `fs.unlink` and asserting no calls were made during either invocation.",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]
