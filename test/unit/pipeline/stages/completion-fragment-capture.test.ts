@@ -282,6 +282,55 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
       expect(body).toContain("src/bar.ts");
     });
   });
+
+  test("body names each deleted file reported by the diff (AC6)", async () => {
+    // A deletion diff reports the file via the `--- a/<path>` header even
+    // though the `+++` half is `/dev/null`. The fragment body must include the
+    // deleted file path alongside any added or modified files (US-002 AC6).
+    await withTempDir(async (tempDir) => {
+      const story = makeStoryWithDefaults({ id: "US-001", title: "Story", acceptanceCriteria: ["c"] });
+      const prd = makePRDWithStory(story);
+      const ctx = makeCtx(fragmentCaptureConfig(), prd, tempDir);
+      _completionDeps.savePRD = mock(async () => {});
+
+      const diff = [
+        "diff --git a/src/foo.ts b/src/foo.ts",
+        "index 1234..5678 100644",
+        "--- a/src/foo.ts",
+        "+++ b/src/foo.ts",
+        "@@ -1,3 +1,4 @@",
+        " line",
+        "+added",
+        "diff --git a/src/gone.ts b/src/gone.ts",
+        "deleted file mode 100644",
+        "--- a/src/gone.ts",
+        "+++ /dev/null",
+        "@@ -1,3 +0,0 @@",
+        "-removed",
+        "diff --git a/src/new.ts b/src/new.ts",
+        "new file mode 100644",
+        "index 0000..1234",
+        "--- /dev/null",
+        "+++ b/src/new.ts",
+        "@@ -0,0 +1,2 @@",
+        "+first",
+        "+second",
+      ].join("\n");
+
+      const writeMock = mock(async () => {});
+      _completionDeps.writeFragment = writeMock;
+      _completionDeps.getDiffText = mock(async () => diff);
+
+      await completionStage.execute(ctx);
+
+      expect(writeMock).toHaveBeenCalledTimes(1);
+      const calls = writeMock.mock.calls as unknown as Array<[string, string, string, string, number]>;
+      const body = calls[0]?.[3];
+      expect(body).toContain("src/foo.ts");
+      expect(body).toContain("src/gone.ts");
+      expect(body).toContain("src/new.ts");
+    });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

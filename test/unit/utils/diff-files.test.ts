@@ -38,7 +38,12 @@ diff --git a/src/a.ts b/src/a.ts
     expect(extractDiffFiles(diff)).toEqual(new Set(["src/a.ts", "src/b.ts"]));
   });
 
-  test("ignores +++ /dev/null (deletion-only side)", () => {
+  test("extracts the file path from the --- a/ header when +++ /dev/null (deletion-only side)", () => {
+    // US-002 AC6: the fragment body must name every file reported by the diff,
+    // and a deletion diff reports the file via the `--- a/<path>` header even
+    // though the `+++` side is `/dev/null`. The function previously dropped the
+    // deletion path; the capture path in completionStage relied on this and so
+    // did the adversarial review's fileInDiff axis.
     const diff = `diff --git a/src/gone.ts b/src/gone.ts
 deleted file mode 100644
 --- a/src/gone.ts
@@ -46,7 +51,7 @@ deleted file mode 100644
 @@ -1,3 +0,0 @@
 -removed
 `;
-    expect(extractDiffFiles(diff)).toEqual(new Set());
+    expect(extractDiffFiles(diff)).toEqual(new Set(["src/gone.ts"]));
   });
 
   test("handles CRLF line endings", () => {
@@ -300,9 +305,13 @@ describe("diff parsing — diff.noprefix output", () => {
     ]);
   });
 
-  test("an unprefixed /dev/null header names no file", () => {
+  test("an unprefixed /dev/null half pairs with the other half to name the deleted file", () => {
+    // US-002 AC6: under diff.noprefix the deletion side is `--- <path>` and the
+    // +++ half is `+++ /dev/null`. The file must still be reported by the diff,
+    // and `extractDiffFiles` now picks it up from the unprefixed `--- <path>`
+    // half.
     const diff = ["--- src/gone.ts", "+++ /dev/null", "@@ -1,2 +0,0 @@", "-a", "-b"].join("\n");
-    expect([...extractDiffFiles(diff)]).toEqual([]);
+    expect([...extractDiffFiles(diff)]).toEqual(["src/gone.ts"]);
     expect(extractDiffLineRanges(diff).size).toBe(0);
   });
 });
