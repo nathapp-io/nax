@@ -264,9 +264,11 @@ describe("contextStage — written manifest reflects lower weight (AC8)", () => 
     // The manifest records the chunk in includedChunks (so a downstream consumer
     // can find it via the per-chunk carrier fields the implementer adds).
     expect(bundleUnitWeight.manifest.includedChunks).toContain(chunkRecord.id);
-    // The production orchestrator scores the chunk and stamps the result on
-    // bundle.chunks (what buildManifest walks). Verify the score source.
-    const scoreWithUnitWeight = bundleUnitWeight.chunks.find((c) => c.id === chunkRecord.id)?.score;
+    // AC8 requires the *written manifest* to carry the weighted score — the
+    // manifest's chunkScores map (buildManifest walks bundle.chunks to
+    // populate it, mirroring chunkTokens) is the persisted artifact, not the
+    // in-memory bundle.chunks array.
+    const scoreWithUnitWeight = bundleUnitWeight.manifest.chunkScores?.[chunkRecord.id];
     expect(scoreWithUnitWeight).toBeDefined();
 
     // Run #2: a lower (but not minScore-crossing) weight for the neighbor
@@ -275,13 +277,12 @@ describe("contextStage — written manifest reflects lower weight (AC8)", () => 
     // covered separately; this test isolates the score-lowering effect.
     const bundleLowWeight = await runWithWeight(0.5);
     expect(bundleLowWeight.manifest.includedChunks).toContain(chunkRecord.id);
-    const scoreWithLowWeight = bundleLowWeight.chunks.find((c) => c.id === chunkRecord.id)?.score;
+    const scoreWithLowWeight = bundleLowWeight.manifest.chunkScores?.[chunkRecord.id];
     expect(scoreWithLowWeight).toBeDefined();
 
-    // AC8: under a low weight the production-scored chunk records a strictly
-    // lower score. This exercises ContextOrchestrator.assemble → scoreChunks →
-    // scoreChunk, so the assertion fails until scoreChunk applies the keyed
-    // weight.
+    // AC8: under a low weight the written manifest records a strictly lower
+    // score for the same chunk. This exercises ContextOrchestrator.assemble →
+    // scoreChunks → scoreChunk → buildManifest's chunkScores carrier end to end.
     expect(scoreWithLowWeight as number).toBeLessThan(scoreWithUnitWeight as number);
   });
 });
