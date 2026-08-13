@@ -172,6 +172,42 @@ function stageFromFileName(fileName: string): string {
   return fileName.replace(/^context-manifest-/, "").replace(/\.json$/, "");
 }
 
+/**
+ * Read and parse every `context-manifest-*.json` file in one story directory
+ * into `StoredContextManifest[]`, tagged with the given `featureId`. Shared by
+ * `loadContextManifests` (features → one story) and `loadFeatureManifests`
+ * (one feature → stories) so their read/parse/skip-malformed behaviour can't
+ * drift between the two outer directory-enumeration strategies.
+ * Best-effort: a missing or malformed file is skipped, never thrown.
+ */
+async function loadStoryManifests(
+  projectDir: string,
+  featureId: string,
+  storyDir: string,
+): Promise<StoredContextManifest[]> {
+  const manifestFiles = await _manifestStoreDeps.listManifestFiles(storyDir);
+  const results: StoredContextManifest[] = [];
+
+  for (const fileName of manifestFiles) {
+    const fullPath = join(storyDir, fileName);
+    if (!(await _manifestStoreDeps.fileExists(fullPath))) continue;
+    try {
+      const raw = await _manifestStoreDeps.readFile(fullPath);
+      const parsed = JSON.parse(raw) as ContextManifest;
+      results.push({
+        featureId,
+        stage: stageFromFileName(fileName),
+        path: fullPath,
+        manifest: hydrateManifestPaths(projectDir, parsed),
+      });
+    } catch {
+      // Skip malformed files so callers stay best-effort.
+    }
+  }
+
+  return results;
+}
+
 export async function loadContextManifests(
   projectDir: string,
   storyId: string,
@@ -182,23 +218,7 @@ export async function loadContextManifests(
 
   for (const feature of featureIds) {
     const storyDir = contextStoryDir(projectDir, feature, storyId);
-    const manifestFiles = await _manifestStoreDeps.listManifestFiles(storyDir);
-    for (const fileName of manifestFiles) {
-      const fullPath = join(storyDir, fileName);
-      if (!(await _manifestStoreDeps.fileExists(fullPath))) continue;
-      try {
-        const raw = await _manifestStoreDeps.readFile(fullPath);
-        const parsed = JSON.parse(raw) as ContextManifest;
-        results.push({
-          featureId: feature,
-          stage: stageFromFileName(fileName),
-          path: fullPath,
-          manifest: hydrateManifestPaths(projectDir, parsed),
-        });
-      } catch {
-        // Skip malformed files so inspect stays best-effort.
-      }
-    }
+    results.push(...(await loadStoryManifests(projectDir, feature, storyDir)));
   }
 
   return results.sort((a, b) => a.path.localeCompare(b.path));
@@ -247,23 +267,7 @@ export async function loadFeatureManifests(
 
   for (const storyDirName of storyDirs) {
     const storyDir = join(storiesDir, storyDirName);
-    const manifestFiles = await _manifestStoreDeps.listManifestFiles(storyDir);
-    for (const fileName of manifestFiles) {
-      const fullPath = join(storyDir, fileName);
-      if (!(await _manifestStoreDeps.fileExists(fullPath))) continue;
-      try {
-        const raw = await _manifestStoreDeps.readFile(fullPath);
-        const parsed = JSON.parse(raw) as ContextManifest;
-        results.push({
-          featureId,
-          stage: stageFromFileName(fileName),
-          path: fullPath,
-          manifest: hydrateManifestPaths(projectDir, parsed),
-        });
-      } catch {
-        // Skip malformed files so the feature-wide load stays best-effort.
-      }
-    }
+    results.push(...(await loadStoryManifests(projectDir, featureId, storyDir)));
   }
 
   return results.sort((a, b) => a.path.localeCompare(b.path));

@@ -173,6 +173,17 @@ export interface PipelineContext extends DispatchContext {
    */
   pluginProviderCache?: import("../context/engine").PluginProviderCache;
   /**
+   * Per-run effectiveness provider-weights cache (nax-finish MEDIUM finding,
+   * effectiveness-scoring-loop). Constructed once in runner.ts. When present,
+   * the context stage and stage-assembler call
+   * providerWeightsCache.loadOrGet() instead of loadFeatureManifests() +
+   * deriveProviderWeights() directly, so a feature's manifests are read and
+   * parsed once per run instead of once per story per stage. Invalidated by
+   * providerWeightsCache.invalidate() whenever a new manifest is written for
+   * the feature, so the next assembly picks up the fresh signal.
+   */
+  providerWeightsCache?: import("../context/engine").ProviderWeightsCache;
+  /**
    * nax session ID for the current story's main execution session.
    * Set by the execution stage after SessionManager.create().
    * Format: sess-<uuid>

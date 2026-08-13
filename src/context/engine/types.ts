@@ -348,9 +348,12 @@ export interface ContextRequest {
   naxIgnoreIndex?: import("@/utils/path-filters").NaxIgnoreIndex;
   /**
    * Per-provider effectiveness weights derived from prior manifests (US-004).
-   * Sourced from `deriveProviderWeights(loadFeatureManifests(projectDir, featureId))`
-   * in the V2 context stage. When present, `scoreChunk` multiplies the chunk's
-   * score by the weight keyed on `chunk.providerId` (identity = 1.0 when omitted).
+   * Sourced from `deriveProviderWeights(await loadFeatureManifests({ featureId, projectDir })
+   * .then(stored => stored.map(s => s.manifest)))` — set by the V2 context
+   * stage's own request, and by every request `assembleForStage()` builds for
+   * the stages it serves (execution, rectify, tdd, review). When present,
+   * `scoreChunk` multiplies the chunk's score by the weight keyed on
+   * `chunk.providerId` (identity = 1.0 when omitted).
    */
   providerWeights?: Record<string, number>;
 }

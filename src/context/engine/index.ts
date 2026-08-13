@@ -32,6 +32,7 @@ export {
 } from "./providers/plugin-loader";
 export type { InitialisableProvider } from "./providers/plugin-loader";
 export { PluginProviderCache, _pluginCacheDeps } from "./providers/plugin-cache";
+export { ProviderWeightsCache, _providerWeightsCacheDeps } from "./provider-weights-cache";
 export {
   loadCanonicalRules,
   lintForNeutrality,

@@ -207,14 +207,21 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   // Runs unconditionally on V2 — same "_unattached" sentinel used for
   // sessionScratchDir above when ctx.featureDir is absent, so unattached runs
   // still derive weights instead of silently skipping this step.
+  // When ctx.providerWeightsCache is present (full runner path), reuse the
+  // per-run cache instead of re-reading and re-parsing every manifest in the
+  // feature on every story's context stage.
+  const providerWeightsFeatureId = request.featureId ?? "_unattached";
   try {
-    const providerWeightsFeatureId = request.featureId ?? "_unattached";
-    const stored = await _contextStageDeps.loadFeatureManifests({
-      featureId: providerWeightsFeatureId,
-      projectDir: ctx.projectDir ?? ctx.workdir,
-    });
-    const weights = await _contextStageDeps.deriveProviderWeights(stored.map((s) => s.manifest));
-    request.providerWeights = weights;
+    request.providerWeights = ctx.providerWeightsCache
+      ? await ctx.providerWeightsCache.loadOrGet(providerWeightsFeatureId, ctx.projectDir ?? ctx.workdir)
+      : await _contextStageDeps.deriveProviderWeights(
+          (
+            await _contextStageDeps.loadFeatureManifests({
+              featureId: providerWeightsFeatureId,
+              projectDir: ctx.projectDir ?? ctx.workdir,
+            })
+          ).map((s) => s.manifest),
+        );
   } catch (err) {
     logger.warn("context", "Failed to derive provider weights — continuing without them", {
       storyId: ctx.story.id,
@@ -243,6 +250,7 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     ctx.contextBundle = bundle;
     if (ctx.prd.feature) {
       await writeContextManifest(ctx.projectDir, ctx.prd.feature, ctx.story.id, "context", bundle.manifest);
+      ctx.providerWeightsCache?.invalidate(ctx.prd.feature);
     }
 
     // Phase 2: persist digest for next pipeline pass or crash resume.
