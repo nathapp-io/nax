@@ -508,6 +508,98 @@ describe("CodeNeighborProvider — glob source file exclusions", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// US-002 — scope attribution: chunk.scopePaths lists each analysed file plus
+// each rendered neighbor path (AC1/AC2/AC3/AC4). The chunk-assembly logic
+// lives in `code-neighbor-chunk.ts`; these tests cover the provider
+// integration that threads scope attribution through `fetch()`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("CodeNeighborProvider — US-002 scope attribution", () => {
+  const provider = new CodeNeighborProvider();
+
+  test("[AC1] scopePaths contains the touched file path when one file has neighbors", async () => {
+    setupDeps({ files: { "src/foo.ts": "" }, globFiles: [] });
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/foo.ts"] }));
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0]?.scopePaths).toBeDefined();
+    expect(result.chunks[0]?.scopePaths).toContain("src/foo.ts");
+  });
+
+  test("[AC2] scopePaths contains each neighbor path rendered in the chunk body", async () => {
+    // Forward dep to src/foo/dep.ts, plus the mirrored sibling test hint
+    // test/unit/foo.test.ts. The sibling-test hint lands in neighbors via
+    // the resolver, so both are included.
+    setupDeps({
+      files: { "src/foo.ts": 'import { dep } from "./foo/dep"' },
+      globFiles: [],
+    });
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/foo.ts"] }));
+    expect(result.chunks).toHaveLength(1);
+
+    const scope = result.chunks[0]?.scopePaths;
+    const body = result.chunks[0]?.content ?? "";
+
+    // AC2 contract: scopePaths is populated AND contains every neighbor
+    // path rendered in the chunk body.
+    expect(scope).toBeDefined();
+    expect(scope!.length).toBeGreaterThan(0);
+    // Forward dep rendered in the body must be in scopePaths.
+    expect(scope!).toContain("src/foo/dep.ts");
+    // Sibling test hint rendered in the body must also be in scopePaths.
+    expect(scope!).toContain("test/unit/foo.test.ts");
+    // Touched file is in scopePaths.
+    expect(scope!).toContain("src/foo.ts");
+    // Every entry in scopePaths appears in the body (no orphan scopes).
+    for (const neighbor of scope!) {
+      expect(body).toContain(neighbor);
+    }
+  });
+
+  test("[AC3] returns empty chunks list when touched files have no neighbors", async () => {
+    // Test files are dropped (sibling-test derivation returns [] for them)
+    // — and there are no reverse-deps or forward-deps.
+    setupDeps({ globFiles: [] });
+    const result = await provider.fetch(
+      makeRequest({ touchedFiles: ["test/unit/existing.test.ts"] }),
+    );
+    expect(result.chunks).toHaveLength(0);
+  });
+
+  test("[AC4] shared neighbor across two touched files appears exactly once in scopePaths", async () => {
+    // src/foo.ts and src/bar.ts both import the same dep — the chunk
+    // renders two sections but scopePaths must dedupe the shared neighbor.
+    setupDeps({
+      files: {
+        "src/foo.ts": 'import { shared } from "./shared"',
+        "src/bar.ts": 'import { shared } from "./shared"',
+      },
+      globFiles: [],
+    });
+    const result = await provider.fetch(
+      makeRequest({ touchedFiles: ["src/foo.ts", "src/bar.ts"] }),
+    );
+    expect(result.chunks).toHaveLength(1);
+
+    const scope = result.chunks[0]?.scopePaths ?? [];
+    const sharedOccurrences = scope.filter((p) => p === "src/shared.ts").length;
+    expect(sharedOccurrences).toBe(1);
+
+    // Both touched files are still present in scopePaths.
+    expect(scope).toContain("src/foo.ts");
+    expect(scope).toContain("src/bar.ts");
+  });
+
+  test("[AC4] chunk.id remains code-neighbor:<hash> with scopePaths attached", async () => {
+    setupDeps({ files: { "src/foo.ts": "" }, globFiles: [] });
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/foo.ts"] }));
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0]?.id).toMatch(/^code-neighbor:[0-9a-f]{8}$/);
+    expect(result.chunks[0]?.scopePaths).toBeDefined();
+    expect(result.chunks[0]?.scopePaths!.length).toBeGreaterThan(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // naxIgnoreIndex threading: ContextRequest → collectNeighbors → glob dep
 // ─────────────────────────────────────────────────────────────────────────────
 

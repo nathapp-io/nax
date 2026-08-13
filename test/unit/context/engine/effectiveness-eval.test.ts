@@ -599,6 +599,90 @@ describe("scoreEffectiveness (US-001 AC6 — git-history chunk in fixture)", () 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// US-002 AC6 — committed fixture includes a labelled code-neighbor chunk with
+// scoped files. Under the scoped classifier (cases use their own scopePaths)
+// the sizeCorrelation magnitude must be strictly smaller than under the
+// whole-diff classifier (cases tokenize the whole diff, no scope).
+// Mirrors the US-001 AC6 test, but for the code-neighbor chunk ID prefix.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("scoreEffectiveness (US-002 AC6 — code-neighbor chunk in fixture)", () => {
+  const COMMITTED_FIXTURE = join(
+    import.meta.dir,
+    "..",
+    "..",
+    "..",
+    "fixtures",
+    "effectiveness",
+    "labels.sample.json",
+  );
+
+  function makeWholeDiffClassifier(): Classifier {
+    return (c) => {
+      const diffTerms = new Set<string>();
+      for (const match of c.diffText.toLowerCase().matchAll(/[^\s_\-./:,;()\[\]{}'"!?]+/g)) {
+        const term = match[0];
+        if (term.length >= 4) diffTerms.add(term);
+      }
+      const summaryTerms = new Set<string>();
+      for (const match of c.chunkSummary.toLowerCase().matchAll(/[^\s_\-./:,;()\[\]{}'"!?]+/g)) {
+        const term = match[0];
+        if (term.length >= 4) summaryTerms.add(term);
+      }
+      let shared = 0;
+      for (const term of summaryTerms) if (diffTerms.has(term)) shared++;
+      if (shared >= 3) return "followed";
+      return "ignored";
+    };
+  }
+
+  function makeScopedClassifier(): Classifier {
+    return (c) => {
+      const evidence = buildEvidenceTerms("", c.diffText, []);
+      const result = classifyWithTerms(c.chunkSummary, evidence, {
+        scopePaths: c.scopePaths,
+        diffText: c.diffText,
+      });
+      if (result.signal === "unknown") return "ignored";
+      if (result.signal === "contradicted") return "contradicted";
+      return result.signal;
+    };
+  }
+
+  test("[AC6] the committed fixture contains a labelled code-neighbor chunk with scoped files", async () => {
+    const raw = await Bun.file(COMMITTED_FIXTURE).text();
+    const set = loadLabelSet(raw);
+    const codeNeighborCases = set.cases.filter((c) => c.chunkId.startsWith("code-neighbor:"));
+    expect(codeNeighborCases.length).toBeGreaterThanOrEqual(1);
+    for (const c of codeNeighborCases) {
+      expect(c.scopePaths).toBeDefined();
+      expect(Array.isArray(c.scopePaths)).toBe(true);
+      expect(c.scopePaths?.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("[AC6] scoreEffectiveness under the scoped classifier has a sizeCorrelation magnitude strictly smaller than under the whole-diff classifier", async () => {
+    const raw = await Bun.file(COMMITTED_FIXTURE).text();
+    const set = loadLabelSet(raw);
+    const cases = set.cases;
+
+    const wholeDiffReport = scoreEffectiveness(cases, makeWholeDiffClassifier());
+    const scopedReport = scoreEffectiveness(cases, makeScopedClassifier());
+
+    // The code-neighbor chunk in the fixture is labelled "followed" with
+    // scopePaths that do NOT match the diff file path, so the scoped
+    // classifier declares it ignored (pathMatchesScope returns empty),
+    // while the whole-diff classifier declares it followed (3+ shared
+    // terms). Adding this long-diff "ignored" under the scoped classifier
+    // breaks the monotonic size→followed relationship and reduces the
+    // |sizeCorrelation| below the whole-diff reference.
+    expect(Math.abs(scopedReport.sizeCorrelation)).toBeLessThan(
+      Math.abs(wholeDiffReport.sizeCorrelation),
+    );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Smoke — LabelSet type compiles
 // ─────────────────────────────────────────────────────────────────────────────
 

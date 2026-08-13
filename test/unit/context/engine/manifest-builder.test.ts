@@ -261,3 +261,51 @@ describe("buildManifest — git-history chunkScopePaths (US-001 AC5)", () => {
     expect(manifest.chunkScopePaths?.["git-history:12345678"]).toEqual(["src/only.ts"]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-002 — code-neighbor chunkScopePaths: a packed code-neighbor chunk
+// carrying scopePaths (the touched file plus each rendered neighbor path)
+// must map to its scopePaths list under chunkScopePaths.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildManifest — code-neighbor chunkScopePaths (US-002 AC5)", () => {
+  test("AC5: chunkScopePaths maps a packed code-neighbor chunk ID to its scopePaths list", () => {
+    const packed: PackedChunk[] = [
+      makePacked({
+        id: "code-neighbor:deadbeef",
+        scopePaths: ["src/foo.ts", "src/foo/dep.ts", "test/unit/foo.test.ts"],
+        tokens: 80,
+      }),
+    ];
+    const inputs = makeInputs({ packed, usedTokens: 80 });
+    const manifest = buildManifest(inputs);
+
+    expect(manifest.chunkScopePaths).toBeDefined();
+    expect(manifest.chunkScopePaths?.["code-neighbor:deadbeef"]).toEqual([
+      "src/foo.ts",
+      "src/foo/dep.ts",
+      "test/unit/foo.test.ts",
+    ]);
+  });
+
+  test("AC5 (multi-chunk): code-neighbor chunk with shared-neighbor dedup is preserved verbatim", () => {
+    // AC4 from the provider: shared neighbour across two touched files
+    // appears exactly once in scopePaths. buildManifest forwards that list
+    // verbatim — it does not re-dedupe or re-order.
+    const packed: PackedChunk[] = [
+      makePacked({
+        id: "code-neighbor:abcdef01",
+        scopePaths: ["src/foo.ts", "src/shared.ts", "src/bar.ts"],
+        tokens: 100,
+      }),
+    ];
+    const inputs = makeInputs({ packed, usedTokens: 100 });
+    const manifest = buildManifest(inputs);
+
+    expect(manifest.chunkScopePaths?.["code-neighbor:abcdef01"]).toEqual([
+      "src/foo.ts",
+      "src/shared.ts",
+      "src/bar.ts",
+    ]);
+  });
+});
