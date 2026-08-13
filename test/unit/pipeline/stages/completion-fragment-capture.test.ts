@@ -214,7 +214,7 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
       await completionStage.execute(ctx);
 
       expect(writeMock).toHaveBeenCalledTimes(1);
-      const calls = writeMock.mock.calls as unknown as Array<[string, string, string, string, number]>;
+      const calls = (writeMock.mock.calls as any[]);
       const body = calls[0]?.[3];
       expect(body).toContain("Add the fragment store");
     });
@@ -237,7 +237,7 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
       await completionStage.execute(ctx);
 
       expect(writeMock).toHaveBeenCalledTimes(1);
-      const calls = writeMock.mock.calls as unknown as Array<[string, string, string, string, number]>;
+      const calls = (writeMock.mock.calls as any[]);
       const body = calls[0]?.[3];
       expect(body).toContain("First criterion");
       expect(body).toContain("Second criterion");
@@ -276,7 +276,7 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
       await completionStage.execute(ctx);
 
       expect(writeMock).toHaveBeenCalledTimes(1);
-      const calls = writeMock.mock.calls as unknown as Array<[string, string, string, string, number]>;
+      const calls = (writeMock.mock.calls as any[]);
       const body = calls[0]?.[3];
       expect(body).toContain("src/foo.ts");
       expect(body).toContain("src/bar.ts");
@@ -324,11 +324,61 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
       await completionStage.execute(ctx);
 
       expect(writeMock).toHaveBeenCalledTimes(1);
-      const calls = writeMock.mock.calls as unknown as Array<[string, string, string, string, number]>;
+      const calls = (writeMock.mock.calls as any[]);
       const body = calls[0]?.[3];
       expect(body).toContain("src/foo.ts");
       expect(body).toContain("src/gone.ts");
       expect(body).toContain("src/new.ts");
+    });
+  });
+
+  test("body names files whose headers fall past the prior 8 KiB prefix (AC6)", async () => {
+    // The git-diff text is read with a single per-stream prefix (1 MiB since
+    // US-002). A diff whose early hunks fill more than 8 KiB still has every
+    // file header available to extractDiffFiles, so the fragment body names
+    // every changed file — including ones whose header is past where the old
+    // 8 KiB cap would have chopped the stream.
+    await withTempDir(async (tempDir) => {
+      const story = makeStoryWithDefaults({ id: "US-001", title: "Story", acceptanceCriteria: ["c"] });
+      const prd = makePRDWithStory(story);
+      const ctx = makeCtx(fragmentCaptureConfig(), prd, tempDir);
+      _completionDeps.savePRD = mock(async () => {});
+
+      // First file's hunk is large enough to push later headers past 8 KiB.
+      const padding: string[] = [];
+      for (let i = 0; i < 500; i++) padding.push(`+line ${i} padding the diff past 8 KiB`);
+      const diff = [
+        "diff --git a/src/big.ts b/src/big.ts",
+        "index 1234..5678 100644",
+        "--- a/src/big.ts",
+        "+++ b/src/big.ts",
+        "@@ -1,3 +1,203 @@",
+        " line",
+        ...padding,
+        "diff --git a/src/late.ts b/src/late.ts",
+        "index 1234..5678 100644",
+        "--- a/src/late.ts",
+        "+++ b/src/late.ts",
+        "@@ -1 +1 @@",
+        "-x",
+        "+y",
+      ].join("\n");
+
+      // Sanity check: the late file's header sits past where the old 8 KiB
+      // cap would have truncated.
+      expect(diff.indexOf("a/src/late.ts b/src/late.ts")).toBeGreaterThan(8_000);
+
+      const writeMock = mock(async () => {});
+      _completionDeps.writeFragment = writeMock;
+      _completionDeps.getDiffText = mock(async () => diff);
+
+      await completionStage.execute(ctx);
+
+      expect(writeMock).toHaveBeenCalledTimes(1);
+      const calls = (writeMock.mock.calls as any[]);
+      const body = calls[0]?.[3];
+      expect(body).toContain("src/big.ts");
+      expect(body).toContain("src/late.ts");
     });
   });
 });
@@ -395,7 +445,7 @@ describe("completionStage — fragment capture on re-run (AC8)", () => {
       await completionStage.execute(ctx);
 
       expect(writeMock).toHaveBeenCalledTimes(2);
-      const calls = writeMock.mock.calls as unknown as Array<[string, string, string, string, number]>;
+      const calls = (writeMock.mock.calls as any[]);
       expect(calls[0]?.[2]).toBe("US-001");
       expect(calls[1]?.[2]).toBe("US-001");
     });

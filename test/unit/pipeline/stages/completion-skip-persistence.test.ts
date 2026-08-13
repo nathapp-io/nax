@@ -148,13 +148,19 @@ describe("completionStage skipCompletionEvents", () => {
 });
 
 describe("completionStage bounded stream reading", () => {
-  test("getDiffText retains 8,000 characters and drains stderr", async () => {
+  test("getDiffText retains up to MAX_DIFF_TEXT_CHARS (1 MiB) and drains stderr", async () => {
+    // US-002 widens the per-read prefix from 8 KiB to 1 MiB so the fragment
+    // capture can enumerate every file header in the diff (AC6: "names each
+    // changed file reported by that diff"). The bound is still in place — a
+    // diff larger than 1 MiB is truncated to its first MiB — but is now large
+    // enough for realistic story-sized diffs.
     const encoder = new TextEncoder();
     let stderrPulls = 0;
+    const streamLength = 2_000_000; // exceeds the 1 MiB cap
     _completionDeps.spawn = (() => ({
       stdout: new ReadableStream<Uint8Array>({
         start(controller) {
-          controller.enqueue(encoder.encode("x".repeat(9_000)));
+          controller.enqueue(encoder.encode("x".repeat(streamLength)));
           controller.close();
         },
       }),
@@ -169,8 +175,34 @@ describe("completionStage bounded stream reading", () => {
 
     const output = await _completionDeps.getDiffText("/repo", "base-ref");
 
-    expect(output).toBe("x".repeat(8_000));
+    expect(output).toBe("x".repeat(1_048_576));
     expect(stderrPulls).toBe(2);
+  });
+
+  test("getDiffText passes through a diff shorter than MAX_DIFF_TEXT_CHARS", async () => {
+    // The cap must not chop shorter diffs — the fragment capture (and the
+    // effectiveness annotation) rely on every byte of a small diff being
+    // preserved verbatim.
+    const encoder = new TextEncoder();
+    const diff = "diff --git a/src/foo.ts b/src/foo.ts\n--- a/src/foo.ts\n+++ b/src/foo.ts\n@@ -1 +1 @@\n-x\n+y\n";
+    _completionDeps.spawn = (() => ({
+      stdout: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(diff));
+          controller.close();
+        },
+      }),
+      stderr: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      exited: Promise.resolve(0),
+    })) as unknown as typeof _completionDeps.spawn;
+
+    const output = await _completionDeps.getDiffText("/repo", "base-ref");
+
+    expect(output).toBe(diff);
   });
 
   test("retains only the requested prefix while draining the full stream", async () => {

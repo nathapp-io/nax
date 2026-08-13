@@ -26,7 +26,15 @@ import { errorMessage } from "../../utils/errors";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
-const MAX_EFFECTIVENESS_DIFF_CHARS = 8_000;
+// Bound on the captured git-diff text. Two consumers share this read:
+//   - Amendment A AC-45 (effectiveness annotation) — tokenises the diff and
+//     uses it as evidence against chunk summaries.
+//   - US-002 (fragment capture) — extracts the file headers to enumerate
+//     "files touched by the story" (AC6).
+// 8,000 chars was tight enough for effectiveness annotation to lose file
+// headers past the prefix, so US-002 widened the bound. It is still
+// well-bounded: a single story's diff rarely exceeds a few hundred KB.
+const MAX_DIFF_TEXT_CHARS = 1_048_576;
 const HIGH_MEMORY_TELEMETRY_BYTES = 512 * 1_024 * 1_024;
 
 function logHighMemoryCheckpoint(logger: ReturnType<typeof getLogger>, ctx: PipelineContext): void {
@@ -242,7 +250,7 @@ async function getDiffText(workdir: string, baseRef: string | undefined): Promis
     let output: string;
     try {
       [output] = await Promise.all([
-        readTextStreamPrefix(proc.stdout, MAX_EFFECTIVENESS_DIFF_CHARS),
+        readTextStreamPrefix(proc.stdout, MAX_DIFF_TEXT_CHARS),
         readTextStreamPrefix(proc.stderr, 0),
         proc.exited,
       ]);
