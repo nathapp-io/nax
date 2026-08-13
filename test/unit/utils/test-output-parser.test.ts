@@ -225,6 +225,48 @@ Error: JS test error
     });
   });
 
+  describe("Vitest output — no-colon summary line", () => {
+    test("parses Vitest's real all-passing summary (no colon after 'Tests')", () => {
+      // Reproduces real `vitest run` output — verified against actual CLI output,
+      // not Jest's colon-suffixed format that a shared parser previously assumed.
+      const output = ` RUN  v4.1.9 /repo/apps/web\n\n\n Test Files  1 passed (1)\n      Tests  5 passed (5)\n   Start at  12:37:53\n   Duration  194ms`;
+
+      const result = parseTestOutput(output);
+
+      expect(result.passed).toBe(5);
+      expect(result.failed).toBe(0);
+    });
+
+    test("parses Vitest's mixed pass/fail summary (no colon)", () => {
+      const output = ` Test Files  1 failed | 1 passed (2)\n      Tests  2 failed | 3 passed (5)`;
+
+      const result = parseTestOutput(output);
+
+      expect(result.passed).toBe(3);
+      expect(result.failed).toBe(2);
+    });
+
+    test("parses Vitest's zero-test summary as a genuine zero, not a parse miss", () => {
+      const output = ` Test Files  1 passed (1)\n      Tests  0 passed (0)`;
+
+      const result = parseTestOutput(output);
+
+      expect(result.passed).toBe(0);
+      expect(result.failed).toBe(0);
+    });
+
+    test("ignores app-log noise starting with 'Tests ' that isn't the real summary line", () => {
+      // A line starting with "Tests " but not shaped like "<n> passed|failed" (e.g.
+      // incidental app output) must not be mistaken for the framework summary.
+      const output = `Tests  processed 3 items this run\n\n Test Files  1 passed (1)\n      Tests  5 passed (5)`;
+
+      const result = parseTestOutput(output);
+
+      expect(result.passed).toBe(5);
+      expect(result.failed).toBe(0);
+    });
+  });
+
   test("handles alternative check marks (✔ and ✘)", () => {
     const output = `
 bun test v1.0.0
