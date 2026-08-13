@@ -71,8 +71,10 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
   // downstream per-provider aggregation has an explicit chunk-ID → provider
   // mapping. Chunks without a providerId leave no key — the manifest records
   // no mapping otherwise, and splitting the chunk ID on ":" is a convention,
-  // not an invariant.
-  const chunkProviders: Record<string, string> = {};
+  // not an invariant. Null prototype so a provider-controlled chunk ID such
+  // as "__proto__" is stored as an ordinary own key rather than setting the
+  // prototype (chunk IDs are not trusted input).
+  const chunkProviders: Record<string, string> = Object.create(null);
   for (const c of packed) {
     chunkSummaries[c.id] = c.content.slice(0, CHUNK_SUMMARY_CHARS);
     chunkTokens[c.id] = c.tokens;
