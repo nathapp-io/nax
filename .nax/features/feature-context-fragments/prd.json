@@ -3,7 +3,7 @@
   "feature": "feature-context-fragments",
   "branchName": "feat/feature-context-fragments",
   "createdAt": "2026-08-12T00:00:00+08:00",
-  "updatedAt": "2026-08-13T00:57:38.094Z",
+  "updatedAt": "2026-08-13T01:19:12.396Z",
   "userStories": [
     {
       "id": "US-001",
@@ -85,8 +85,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [
         {
@@ -176,7 +176,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "pi",
         "initialProfileId": "pi-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/context/engine/providers/feature-context.ts",
@@ -189,7 +191,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c3cb804df79b86a7f0fb991eb6ae1bf98e50c249"
     },
     {
       "id": "US-004",
