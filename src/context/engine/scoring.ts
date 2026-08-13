@@ -5,7 +5,11 @@
  * Chunks that fall below minScore after adjustment are dropped (noise filter).
  *
  * Score formula:
- *   adjustedScore = rawScore × roleMultiplier × kindWeight × freshnessMultiplier
+ *   adjustedScore = rawScore × roleMultiplier × kindWeight × freshnessMultiplier × effectivenessMultiplier
+ *
+ * The effectiveness multiplier is caller-derived (US-004): when a
+ * `providerWeights` map keys the chunk's `providerId`, the score is multiplied
+ * by that weight; otherwise it is identity (1.0).
  *
  * "static" and "feature" chunks are always floor-included regardless of score —
  * the scorer still computes a score for them so the manifest is accurate.
@@ -83,8 +87,6 @@ export interface ScoredChunk extends RawChunk {
  * @param stale - whether the chunk is detected as stale (Post-GA)
  * @param providerWeights - per-provider effectiveness weights keyed by chunk.providerId (US-004).
  *                          When the key is absent, the weight is treated as 1.0 (identity).
- *                          STUB: weights are accepted but not yet applied — the implementer
- *                          in the next session multiplies the score by the keyed weight.
  */
 export function scoreChunk(
   chunk: RawChunk,
@@ -103,13 +105,12 @@ export function scoreChunk(
   const isStale = chunk.staleCandidate === true || stale;
   const freshnessMultiplier = isStale ? (chunk.scoreMultiplier ?? STALENESS_PENALTY) : 1.0;
 
-  const score = chunk.rawScore * rm * kindWeight * freshnessMultiplier;
-  const belowMinScore = !roleFiltered && score < minScore;
+  // US-004: caller-derived effectiveness multiplier keyed on chunk.providerId.
+  // Identity (1.0) when the chunk carries no providerId or the map omits it.
+  const effectivenessMultiplier = chunk.providerId !== undefined ? (providerWeights?.[chunk.providerId] ?? 1.0) : 1.0;
 
-  // STUB: providerWeights accepted but not yet applied — see header JSDoc.
-  // Implementer: multiply `score` by `providerWeights[chunk.providerId] ?? 1.0`
-  // when chunk.providerId is set; identity otherwise. Recompute belowMinScore.
-  void providerWeights;
+  const score = chunk.rawScore * rm * kindWeight * freshnessMultiplier * effectivenessMultiplier;
+  const belowMinScore = !roleFiltered && score < minScore;
 
   return { ...chunk, score, roleFiltered, belowMinScore };
 }
