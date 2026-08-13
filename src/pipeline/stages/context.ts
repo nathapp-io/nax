@@ -204,17 +204,22 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   // off disk; deriveProviderWeights aggregates ignored-verdict ratios per provider.
   // Best-effort: a throw or empty result keeps the request as-is and the scorer
   // behaves as if no weights were supplied (identity = 1.0 for every provider).
-  if (request.featureId) {
-    try {
-      const stored = await _contextStageDeps.loadFeatureManifests(ctx.projectDir ?? ctx.workdir, request.featureId);
-      const weights = _contextStageDeps.deriveProviderWeights(stored.map((s) => s.manifest));
-      request.providerWeights = weights;
-    } catch (err) {
-      logger.warn("context", "Failed to derive provider weights — continuing without them", {
-        storyId: ctx.story.id,
-        error: errorMessage(err),
-      });
-    }
+  // Runs unconditionally on V2 — same "_unattached" sentinel used for
+  // sessionScratchDir above when ctx.featureDir is absent, so unattached runs
+  // still derive weights instead of silently skipping this step.
+  try {
+    const providerWeightsFeatureId = request.featureId ?? "_unattached";
+    const stored = await _contextStageDeps.loadFeatureManifests(
+      ctx.projectDir ?? ctx.workdir,
+      providerWeightsFeatureId,
+    );
+    const weights = _contextStageDeps.deriveProviderWeights(stored.map((s) => s.manifest));
+    request.providerWeights = weights;
+  } catch (err) {
+    logger.warn("context", "Failed to derive provider weights — continuing without them", {
+      storyId: ctx.story.id,
+      error: errorMessage(err),
+    });
   }
 
   // Phase 7: load any plugin providers (RAG, graph, KB) configured for this project.

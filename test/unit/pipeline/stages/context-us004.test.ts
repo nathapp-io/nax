@@ -316,4 +316,24 @@ describe("contextStage — loadFeatureManifests invocation (AC10)", () => {
     await contextStage.execute(makeCtx());
     expect(capturedProjectDir).toBe(tmpDir);
   });
+
+  test("AC7/AC10 (no featureDir): deriveProviderWeights still runs, keyed on v2 being enabled rather than a featureDir being set", async () => {
+    let capturedFeatureId: string | undefined;
+    let deriveCallCount = 0;
+    _contextStageDeps.loadFeatureManifests = (async (_projectDir: string, featureId?: string) => {
+      capturedFeatureId = featureId;
+      return [];
+    }) as typeof _contextStageDeps.loadFeatureManifests;
+    _contextStageDeps.deriveProviderWeights = (() => {
+      deriveCallCount++;
+      return {};
+    }) as typeof _contextStageDeps.deriveProviderWeights;
+    captureContextRequest();
+
+    // No prd.feature and no featureDir — an "unattached" run (e.g. no-story session).
+    await contextStage.execute(makeCtx({ prd: {} as PipelineContext["prd"], featureDir: undefined }));
+
+    expect(deriveCallCount).toBe(1);
+    expect(capturedFeatureId).toBe("_unattached");
+  });
 });
