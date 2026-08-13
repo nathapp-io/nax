@@ -1,3 +1,4 @@
+import { isAbsolute, join } from "node:path";
 import { ParseValidationError, makeParseRetryStrategy } from "../agents/retry";
 import { tddConfigSelector } from "../config";
 import type { TddConfig } from "../config/selectors";
@@ -160,7 +161,23 @@ async function runVerifierIsolation(
     ctx.packageView.config.execution.smartTestRunner !== null
       ? ctx.packageView.config.execution.smartTestRunner.testFilePatterns
       : undefined;
-  return verifyImplementerIsolation(ctx.packageView.packageDir, beforeRef, testFilePatterns);
+  return verifyImplementerIsolation(resolveAbsolutePackageDir(ctx), beforeRef, testFilePatterns);
+}
+
+/**
+ * Resolve the ABSOLUTE package directory from a verify context's package view.
+ * `packageView.packageDir` is a RELATIVE key ("" for the repo root) — it must
+ * never be probed/spawned against directly (see full-suite-gate / verify-scoped).
+ * The verifier writes its verdict and runs isolation against the absolute
+ * workdir, so recover/verify join the key onto the package view's repo root.
+ * Tolerates callers that already pass an absolute `packageDir` (e.g. unit tests
+ * that build a minimal package view without a repo root).
+ */
+function resolveAbsolutePackageDir(ctx: VerifyContext<TddConfig>): string {
+  const { repoRoot, packageDir } = ctx.packageView;
+  if (!packageDir) return repoRoot || "";
+  if (!repoRoot || isAbsolute(packageDir)) return packageDir;
+  return join(repoRoot, packageDir);
 }
 
 export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> = {
@@ -220,7 +237,7 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
     // file is missing or unparseable, return a fail-closed VerifierOutput so
     // the orchestrator records an explicit failure (never null — satisfies
     // the parse-retry escape-hatch rule).
-    const packageDir = verifyCtx.packageView.packageDir;
+    const packageDir = resolveAbsolutePackageDir(verifyCtx);
     const logger = getSafeLogger();
     const storyId = input.story.id;
     try {
