@@ -47,9 +47,14 @@ function clampWeight(value: number): number {
   return Math.min(1.0, Math.max(MIN_WEIGHT, value));
 }
 
-/** True when `value` looks like a well-formed per-chunk verdict entry. */
+/** Signals a classified chunk can carry (mirrors `ChunkEffectiveness.signal`). */
+const CLASSIFIED_SIGNALS = new Set(["followed", "contradicted", "ignored", "unknown"]);
+
+/** True when `value` is a well-formed verdict with a recognised signal. */
 function isClassifiedVerdict(value: unknown): value is { signal: string } {
-  return typeof value === "object" && value !== null && typeof (value as { signal?: unknown }).signal === "string";
+  if (typeof value !== "object" || value === null) return false;
+  const signal = (value as { signal?: unknown }).signal;
+  return typeof signal === "string" && CLASSIFIED_SIGNALS.has(signal);
 }
 
 /**
@@ -68,8 +73,10 @@ function isClassifiedVerdict(value: unknown): value is { signal: string } {
  * throwing; the remaining well-formed manifests drive the result.
  */
 export function deriveProviderWeights(manifests: ContextManifest[]): Record<string, number> {
-  const classifiedCounts: Record<string, number> = {};
-  const ignoredCounts: Record<string, number> = {};
+  // Null-prototype so provider-controlled IDs ("__proto__", "constructor")
+  // become ordinary own numeric counters rather than mutating Object.prototype.
+  const classifiedCounts: Record<string, number> = Object.create(null);
+  const ignoredCounts: Record<string, number> = Object.create(null);
 
   for (const manifest of manifests) {
     if (manifest === null || typeof manifest !== "object") continue;
@@ -91,7 +98,7 @@ export function deriveProviderWeights(manifests: ContextManifest[]): Record<stri
     }
   }
 
-  const computed: Record<string, number> = {};
+  const computed: Record<string, number> = Object.create(null);
   for (const providerId of Object.keys(classifiedCounts)) {
     const observations = classifiedCounts[providerId] ?? 0;
     const ignored = ignoredCounts[providerId] ?? 0;
