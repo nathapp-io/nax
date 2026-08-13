@@ -41,7 +41,7 @@ describe("fragment store — writeFragment / readFragment (US-001)", () => {
     _fragmentStoreDeps.removeFile = async () => undefined;
 
     const body = "Hello, fragment world.\nSecond line.";
-    await writeFragment("/repo", "feat-auth", "US-001", body, { maxTokens: 400 });
+    await writeFragment("/repo", "feat-auth", "US-001", body, 400);
 
     const read = await readFragment("/repo", "feat-auth", "US-001");
     expect(read).toBe(body);
@@ -71,8 +71,8 @@ describe("fragment store — writeFragment / readFragment (US-001)", () => {
     const first = "First body";
     const second = "Second body — completely different content.";
 
-    await writeFragment("/repo", "feat-auth", "US-001", first, { maxTokens: 400 });
-    await writeFragment("/repo", "feat-auth", "US-001", second, { maxTokens: 400 });
+    await writeFragment("/repo", "feat-auth", "US-001", first, 400);
+    await writeFragment("/repo", "feat-auth", "US-001", second, 400);
 
     const read = await readFragment("/repo", "feat-auth", "US-001");
     expect(read).toBe(second);
@@ -94,7 +94,7 @@ describe("fragment store — writeFragment / readFragment (US-001)", () => {
 
     // maxTokens = 4 → budget = 4 tokens ≈ 16 chars. Write 200 chars.
     const longBody = "a".repeat(200);
-    await writeFragment("/repo", "feat-auth", "US-001", longBody, { maxTokens: 4 });
+    await writeFragment("/repo", "feat-auth", "US-001", longBody, 4);
 
     const read = await readFragment("/repo", "feat-auth", "US-001");
     expect(read).not.toBeNull();
@@ -118,7 +118,7 @@ describe("fragment store — writeFragment / readFragment (US-001)", () => {
     _fragmentStoreDeps.listFragments = async () => [];
     _fragmentStoreDeps.removeFile = async () => undefined;
 
-    await writeFragment("/repo", "feat-auth", "US-001", "body", { maxTokens: 400 });
+    await writeFragment("/repo", "feat-auth", "US-001", "body", 400);
     expect(mkdirArgs).toContain("/repo/features/feat-auth/fragments");
   });
 });

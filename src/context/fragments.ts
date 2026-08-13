@@ -61,22 +61,17 @@ export function truncateToFragmentBudget(body: string, maxTokens: number): strin
   return candidate;
 }
 
-export interface WriteFragmentOptions {
-  /** Token budget applied before writing. Bodies longer than this are truncated. */
-  maxTokens: number;
-}
-
 /** Write a fragment body for a story, truncating if the body exceeds the budget. */
 export async function writeFragment(
   projectDir: string,
   featureId: string,
   storyId: string,
   body: string,
-  options: WriteFragmentOptions,
+  maxTokens: number,
 ): Promise<void> {
   const path = fragmentPath(projectDir, featureId, storyId);
   await _fragmentStoreDeps.mkdirp(dirname(path));
-  const truncated = truncateToFragmentBudget(body, options.maxTokens);
+  const truncated = truncateToFragmentBudget(body, maxTokens);
   await _fragmentStoreDeps.writeFile(path, truncated);
 }
 

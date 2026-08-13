@@ -67,5 +67,4 @@ export {
   fragmentPath,
   truncateToFragmentBudget,
   _fragmentStoreDeps,
-  type WriteFragmentOptions,
 } from "./fragments";
