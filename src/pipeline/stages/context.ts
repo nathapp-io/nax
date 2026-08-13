@@ -18,7 +18,13 @@
 import { randomUUID } from "node:crypto";
 import { NaxError } from "@/errors";
 import { packageDirRelative } from "@/utils/paths";
-import { NeutralityLintError, createDefaultOrchestrator, createRunCallCounter } from "../../context/engine";
+import {
+  NeutralityLintError,
+  createDefaultOrchestrator,
+  createRunCallCounter,
+  deriveProviderWeights,
+  loadFeatureManifests,
+} from "../../context/engine";
 import type { ContextRequest, IContextProvider } from "../../context/engine";
 import { estimateAvailableBudgetTokens } from "../../context/engine/available-budget";
 import { writeContextManifest } from "../../context/engine/manifest-store";
@@ -46,6 +52,11 @@ export const _contextStageDeps = {
   uuid: () => randomUUID(),
   readDigest: readDigestFile,
   writeDigest: writeDigestFile,
+  // US-004: V2 stage derives per-provider weights from the current feature's
+  // stored manifests before calling the orchestrator. Injectable so tests can
+  // stub both functions without touching the disk or the real implementation.
+  loadFeatureManifests,
+  deriveProviderWeights,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -187,6 +198,24 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     // patterns from disk on every fetch.
     ...(ctx.naxIgnoreIndex && { naxIgnoreIndex: ctx.naxIgnoreIndex }),
   };
+
+  // US-004: derive per-provider effectiveness weights from the current feature's
+  // stored manifests. loadFeatureManifests reads `.nax/features/<featureId>/stories/*`
+  // off disk; deriveProviderWeights aggregates ignored-verdict ratios per provider.
+  // Best-effort: a throw or empty result keeps the request as-is and the scorer
+  // behaves as if no weights were supplied (identity = 1.0 for every provider).
+  if (request.featureId) {
+    try {
+      const stored = await _contextStageDeps.loadFeatureManifests(ctx.projectDir ?? ctx.workdir, request.featureId);
+      const weights = _contextStageDeps.deriveProviderWeights(stored.map((s) => s.manifest));
+      request.providerWeights = weights;
+    } catch (err) {
+      logger.warn("context", "Failed to derive provider weights — continuing without them", {
+        storyId: ctx.story.id,
+        error: errorMessage(err),
+      });
+    }
+  }
 
   // Phase 7: load any plugin providers (RAG, graph, KB) configured for this project.
   // Non-fatal: failures are logged inside loadPluginProviders and skipped.

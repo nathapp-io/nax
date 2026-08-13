@@ -81,8 +81,18 @@ export interface ScoredChunk extends RawChunk {
  * @param callerRole - role of the requesting pipeline stage
  * @param minScore - minimum score threshold (from config.context.v2.minScore)
  * @param stale - whether the chunk is detected as stale (Post-GA)
+ * @param providerWeights - per-provider effectiveness weights keyed by chunk.providerId (US-004).
+ *                          When the key is absent, the weight is treated as 1.0 (identity).
+ *                          STUB: weights are accepted but not yet applied — the implementer
+ *                          in the next session multiplies the score by the keyed weight.
  */
-export function scoreChunk(chunk: RawChunk, callerRole: ChunkRole, minScore = MIN_SCORE, stale = false): ScoredChunk {
+export function scoreChunk(
+  chunk: RawChunk,
+  callerRole: ChunkRole,
+  minScore = MIN_SCORE,
+  stale = false,
+  providerWeights?: Record<string, number>,
+): ScoredChunk {
   const rm = roleMultiplier(chunk.role, callerRole);
   const roleFiltered = rm === 0;
 
@@ -96,6 +106,11 @@ export function scoreChunk(chunk: RawChunk, callerRole: ChunkRole, minScore = MI
   const score = chunk.rawScore * rm * kindWeight * freshnessMultiplier;
   const belowMinScore = !roleFiltered && score < minScore;
 
+  // STUB: providerWeights accepted but not yet applied — see header JSDoc.
+  // Implementer: multiply `score` by `providerWeights[chunk.providerId] ?? 1.0`
+  // when chunk.providerId is set; identity otherwise. Recompute belowMinScore.
+  void providerWeights;
+
   return { ...chunk, score, roleFiltered, belowMinScore };
 }
 
@@ -106,7 +121,13 @@ export function scoreChunk(chunk: RawChunk, callerRole: ChunkRole, minScore = MI
  * @param chunks - raw chunks to score
  * @param callerRole - role of the requesting pipeline stage
  * @param minScore - minimum score threshold (from config.context.v2.minScore, default: MIN_SCORE)
+ * @param providerWeights - per-provider effectiveness weights threaded to scoreChunk (US-004)
  */
-export function scoreChunks(chunks: RawChunk[], callerRole: ChunkRole, minScore = MIN_SCORE): ScoredChunk[] {
-  return chunks.map((c) => scoreChunk(c, callerRole, minScore));
+export function scoreChunks(
+  chunks: RawChunk[],
+  callerRole: ChunkRole,
+  minScore = MIN_SCORE,
+  providerWeights?: Record<string, number>,
+): ScoredChunk[] {
+  return chunks.map((c) => scoreChunk(c, callerRole, minScore, false, providerWeights));
 }
