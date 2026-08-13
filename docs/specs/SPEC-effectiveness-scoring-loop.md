@@ -124,6 +124,7 @@ it reaches the orchestrator through `ContextRequest.providerWeights`.
 | Condition | Behaviour |
 |:---|:---|
 | No prior manifests for the feature (story 1) | All weights identity `1.0`; no provider is downweighted |
+| Feature id absent from the pipeline context | Treated as no prior manifests — an empty manifest list, so all weights are identity `1.0` |
 | Manifest file malformed or unreadable | Skipped; remaining manifests still contribute |
 | Manifest predates `chunkProviders` (absent field) | Contributes no observations; degrades toward identity |
 | A packed chunk carries no `providerId` | Omitted from `chunkProviders`; contributes no observations |
@@ -222,7 +223,7 @@ unaffected by provider-side changes and by the addition of a sibling
 2. `[unit]` Calling `GitHistoryProvider.fetch` where every requested file has commit history returns a chunk whose `scopePaths` lists those files in the same order they appear in `touchedFiles`.
 3. `[unit]` Calling `GitHistoryProvider.fetch` where no requested file has commit history returns an empty `chunks` list.
 4. `[unit]` Whenever `GitHistoryProvider.fetch` returns a chunk, that chunk's `scopePaths` is a non-empty list.
-5. `[unit]` Passing a packed git-history chunk carrying `scopePaths` to `buildManifest` produces a manifest whose `chunkScopePaths` maps that chunk's id to the same list.
+5. `[unit]` Passing a packed git-history chunk carrying `scopePaths` as `inputs.packed` to `buildManifest` produces a manifest whose `chunkScopePaths` maps that chunk's id to the same list.
 6. `[unit]` Loading the committed effectiveness fixture extended with a labelled case whose `chunkId` identifies a git-history chunk and whose `scopePaths` lists that chunk's scoped files, then scoring it with `scoreEffectiveness` under the scoped classifier and again under a whole-diff classifier, yields a scoped `sizeCorrelation` whose magnitude is strictly smaller than the whole-diff one.
 
 **Out of scope:** US-001 only: attributing scope to files a commit touched but the story did not declare in `touchedFiles` — the chunk only reports history for requested files.
@@ -233,7 +234,7 @@ unaffected by provider-side changes and by the addition of a sibling
 2. `[unit]` The chunk returned by `CodeNeighborProvider.fetch` has `scopePaths` containing each neighbour path rendered in the chunk body.
 3. `[unit]` Calling `CodeNeighborProvider.fetch` when no touched file has neighbours returns an empty `chunks` list.
 4. `[unit]` Calling `CodeNeighborProvider.fetch` for a story touching two files that share one neighbour returns a chunk whose `scopePaths` lists that shared neighbour path exactly once.
-5. `[unit]` Passing a packed code-neighbor chunk carrying `scopePaths` to `buildManifest` produces a manifest whose `chunkScopePaths` maps that chunk's id to the same list.
+5. `[unit]` Passing a packed code-neighbor chunk carrying `scopePaths` as `inputs.packed` to `buildManifest` produces a manifest whose `chunkScopePaths` maps that chunk's id to the same list.
 6. `[unit]` Loading the committed effectiveness fixture extended with a labelled case whose `chunkId` identifies a code-neighbor chunk and whose `scopePaths` lists that chunk's scoped files, then scoring it with `scoreEffectiveness` under the scoped classifier and again under a whole-diff classifier, yields a scoped `sizeCorrelation` whose magnitude is strictly smaller than the whole-diff one.
 
 Verification note: the 600-line source limit on `code-neighbor.ts` is enforced by the build/static gate `bun run lint` (which runs `check:file-sizes`), not by an acceptance criterion.
@@ -242,9 +243,9 @@ Verification note: the 600-line source limit on `code-neighbor.ts` is enforced b
 
 ### US-003 — Per-provider weight derivation
 
-1. `[unit]` Passing packed chunks that each carry a `providerId` to `buildManifest` produces a manifest whose `chunkProviders` maps each chunk id to its provider id.
-2. `[unit]` Passing a packed chunk with no `providerId` to `buildManifest` produces a manifest whose `chunkProviders` has no key for that chunk's id.
-3. `[unit]` Passing only chunks without `providerId` to `buildManifest` produces a manifest whose `chunkProviders` is absent.
+1. `[unit]` Passing packed chunks that each carry a `providerId` as `inputs.packed` to `buildManifest` produces a manifest whose `chunkProviders` maps each chunk id to its provider id.
+2. `[unit]` Passing a packed chunk with no `providerId` as `inputs.packed` to `buildManifest` produces a manifest whose `chunkProviders` has no key for that chunk's id.
+3. `[unit]` Passing only chunks without `providerId` as `inputs.packed` to `buildManifest` produces a manifest whose `chunkProviders` is absent.
 4. `[unit]` Calling `loadFeatureManifests` for a feature whose directory contains two story subdirectories, each holding one manifest file, returns both manifests.
 5. `[unit]` Calling `loadFeatureManifests` for a feature directory containing a stray non-directory entry alongside its story directories returns the story manifests and does not throw.
 6. `[unit]` Calling `deriveProviderWeights` with an empty manifest list returns a mapping that yields weight `1.0` for any provider id queried.
@@ -256,6 +257,7 @@ Verification note: the 600-line source limit on `code-neighbor.ts` is enforced b
 12. `[unit]` Calling `deriveProviderWeights` with a manifest that has `chunkEffectiveness` but no `chunkProviders` returns weight `1.0` for every provider id queried.
 13. `[unit]` Calling `deriveProviderWeights` where one manifest in the list is malformed returns weights derived from the remaining well-formed manifests and does not throw.
 14. `[unit]` Calling `deriveProviderWeights` on manifests whose only `ignored` verdicts belong to providers of a `FLOOR_KINDS` chunk kind still returns a weight for those providers — the derivation does not special-case floor kinds.
+15. `[unit]` Calling `loadFeatureManifests` with no feature id supplied returns an empty manifest list and does not throw.
 
 **Out of scope:** US-003 only: consuming the `followed`, `contradicted` or `unknown` verdicts — only `ignored` contributes to the ratio.
 
