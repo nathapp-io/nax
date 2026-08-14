@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { ZodError } from "zod";
 import { formatFragmentsInspect, formatFragmentsPrune } from "../../../src/cli/context-fragments";
 import { NaxConfigSchema } from "../../../src/config/schemas";
-import { _featureContextV2Deps, FeatureContextProviderV2 } from "../../../src/context/engine/providers/feature-context";
+import { FeatureContextProviderV2 } from "../../../src/context/engine/providers/feature-context";
 import { _featureContextDeps } from "../../../src/context/providers/feature-context";
 import {
   deleteFragment,
@@ -23,6 +23,7 @@ const FEATURE_ID = "feature-context-fragments";
 const STORY_ID = "S1";
 const MAX_TOKENS = 20;
 let projectDir = "";
+let repoRoot = "";
 
 function story(id: string, dependencies: string[] = []): UserStory {
   return {
@@ -51,8 +52,8 @@ function enabledConfig(overrides: Record<string, unknown> = {}) {
 }
 
 async function writeFeatureFile(path: string, content: string): Promise<void> {
-  await mkdir(join(projectDir, ".nax", "features", FEATURE_ID), { recursive: true });
-  await Bun.write(join(projectDir, ".nax", "features", FEATURE_ID, path), content);
+  await mkdir(join(projectDir, "features", FEATURE_ID), { recursive: true });
+  await Bun.write(join(projectDir, "features", FEATURE_ID, path), content);
 }
 
 async function writePrd(dependencies: Record<string, string[]>): Promise<void> {
@@ -71,8 +72,8 @@ async function fetchFragments(storyId: string, config = enabledConfig()) {
   const result = await provider.fetch({
     storyId,
     featureId: FEATURE_ID,
-    repoRoot: projectDir,
-    packageDir: projectDir,
+    repoRoot,
+    packageDir: repoRoot,
     stage: "execution",
     budgetTokens: 8_000,
     role: "implementer",
@@ -95,9 +96,9 @@ function completionContext(config = enabledConfig()): PipelineContext {
     story: completed,
     stories: [completed],
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-    workdir: projectDir,
+    workdir: repoRoot,
     projectDir,
-    prdPath: join(projectDir, "prd.json"),
+    prdPath: join(repoRoot, "prd.json"),
     agentResult: { success: true, output: "", stderr: "", exitCode: 0, rateLimited: false, estimatedCostUsd: 0 },
     hooks: {},
     storyStartTime: new Date().toISOString(),
@@ -112,35 +113,18 @@ const originalCompletionDeps = {
   writeFragment: _completionDeps.writeFragment,
 };
 
-const originalListFragmentStoryIds = _featureContextV2Deps.listFragmentStoryIds;
-const originalReadFragment = _featureContextV2Deps.readFragment;
 const originalResolveFeatureId = _featureContextDeps.resolveFeatureId;
 
 beforeEach(async () => {
-  projectDir = await mkdtemp("/tmp/nax-fragments-acceptance-");
-  // Workaround: listFragmentStoryIds uses Bun.file(dir).exists() which
-  // returns false for directories. Mock the provider's deps to use fs-level
-  // operations reading from the test's projectDir (the provider passes
-  // `${repoRoot}/.nax` as projectDir, so strip `.nax` to get the test root).
-  _featureContextV2Deps.listFragmentStoryIds = async (projectDir: string, featureId: string) => {
-    const repoRoot = projectDir.replace(/\/.nax$/, "");
-    const fragmentsDirPath = join(repoRoot, "features", featureId, "fragments");
-    try {
-      const files = await fs.readdir(fragmentsDirPath);
-      return files.map((f) => f.replace(/\.md$/, ""));
-    } catch {
-      return [];
-    }
-  };
-  _featureContextV2Deps.readFragment = async (projectDir: string, featureId: string, storyId: string) => {
-    const repoRoot = projectDir.replace(/\/.nax$/, "");
-    const path = join(repoRoot, "features", featureId, "fragments", `${storyId}.md`);
-    try {
-      return await fs.readFile(path, "utf-8");
-    } catch {
-      return null;
-    }
-  };
+  // Mirror production layout: `projectDir` IS the `.nax` dir under the repo
+  // root, which is what `completionStage` passes to `writeFragment` and what
+  // the provider derives as `${repoRoot}/.nax`. The store's real read path is
+  // exercised directly — it previously had to be stubbed here because
+  // `listFragmentStoryIds` gated on `Bun.file(dir).exists()`, which is false
+  // for a directory. That defect is fixed; the stub is gone with it.
+  repoRoot = await mkdtemp("/tmp/nax-fragments-acceptance-");
+  projectDir = join(repoRoot, ".nax");
+  await mkdir(projectDir, { recursive: true });
   _featureContextDeps.resolveFeatureId = async (_story: UserStory, _workdir: string, activeFeature?: string) => {
     return activeFeature ?? null;
   };
@@ -150,10 +134,8 @@ afterEach(async () => {
   _completionDeps.savePRD = originalCompletionDeps.savePRD;
   _completionDeps.getDiffText = originalCompletionDeps.getDiffText;
   _completionDeps.writeFragment = originalCompletionDeps.writeFragment;
-  _featureContextV2Deps.listFragmentStoryIds = originalListFragmentStoryIds;
-  _featureContextV2Deps.readFragment = originalReadFragment;
   _featureContextDeps.resolveFeatureId = originalResolveFeatureId;
-  await rm(projectDir, { recursive: true, force: true });
+  await rm(repoRoot, { recursive: true, force: true });
 });
 
 describe("feature-context-fragments acceptance", () => {
@@ -379,8 +361,8 @@ describe("feature-context-fragments acceptance", () => {
     const result = await provider.fetch({
       storyId: "S1",
       featureId: FEATURE_ID,
-      repoRoot: projectDir,
-      packageDir: projectDir,
+      repoRoot,
+      packageDir: repoRoot,
       stage: "execution",
       budgetTokens: 8_000,
       role: "implementer",
