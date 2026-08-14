@@ -19,8 +19,18 @@ export const _profileCLIDeps = {
   env: process.env as Record<string, string | undefined>,
 };
 
-// BUG-37: kept in sync with SENSITIVE_ENV_KEY_PATTERN in config/profile.ts.
-const SENSITIVE_KEY_PATTERN = /key|token|secret|password|credential|auth|session|cookie|private|dsn|url/i;
+// Deliberately narrower than SENSITIVE_ENV_KEY_PATTERN in config/profile.ts.
+// That pattern only gates which ambient process.env vars get folded into a
+// profile's $VAR base — a false positive there just means an explicit .env
+// entry is required. This pattern instead masks KEYS across the entire
+// NaxConfig tree for display (maskProfileValues is reused by both `nax
+// config profile show` and `nax config`/`--explain`, cli/config-display.ts).
+// A false positive here masks a whole subtree of a legitimate config
+// section to a single "***" string, destroying real (non-secret) data — the
+// BUG-37 broadening (adding auth|session|url|...) matched non-secret
+// container keys like "tdd.sessionTiers" and "debate.*.sessionMode",
+// breaking `nax config --explain` output. Keep this pattern narrow.
+const SENSITIVE_KEY_PATTERN = /key|token|secret|password|credential/i;
 const VAR_PATTERN = /\$[A-Za-z_][A-Za-z0-9_]*/;
 
 /**
