@@ -327,7 +327,8 @@ describe("fragmentsPruneCommand — feature-wide (US-004 AC5, AC6)", () => {
       return content.length;
     };
     const dirPath = "/repo/.nax/features/feat-x/fragments";
-    _fragmentStoreDeps.fileExists = async (p) => writes.has(p) || p === dirPath;
+    _fragmentStoreDeps.fileExists = async (p) => writes.has(p);
+    _fragmentStoreDeps.directoryExists = async (p) => p === dirPath;
     _fragmentStoreDeps.readFile = async (p) => writes.get(p) ?? "";
     _fragmentStoreDeps.listFragments = async () => ["US-001.md", "US-002.md", "US-003.md"];
     _fragmentStoreDeps.removeFile = async (p) => {
@@ -422,7 +423,7 @@ describe("fragmentsInspectCommand — exit code (US-004 AC2)", () => {
 
 describe("_contextFragmentsDeps — loadPRD override for AC3 (US-004 AC3)", () => {
   test("[US-004 AC3] inspect command reads the PRD and lists transitive dependents", async () => {
-    _fragmentStoreDeps.fileExists = async () => true;
+    _fragmentStoreDeps.directoryExists = async () => true;
     _fragmentStoreDeps.listFragments = async () => ["US-001.md"];
 
     // US-001 → US-002 → US-003
@@ -457,7 +458,7 @@ describe("_contextFragmentsDeps — loadPRD override for AC3 (US-004 AC3)", () =
   });
 
   test("[US-004 AC1] inspect command lists both fragment story ids", async () => {
-    _fragmentStoreDeps.fileExists = async () => true;
+    _fragmentStoreDeps.directoryExists = async () => true;
     _fragmentStoreDeps.listFragments = async () => ["US-001.md", "US-002.md"];
 
     _contextFragmentsDeps.loadPRD = async () => ({ kind: "missing" });
@@ -523,7 +524,7 @@ describe("formatFragmentsInspect — PRD load error surfaced", () => {
 
 describe("fragmentsInspectCommand — PRD load failure is visible (not silent)", () => {
   test("load error is surfaced in the output and the command still exits 0", async () => {
-    _fragmentStoreDeps.fileExists = async () => true;
+    _fragmentStoreDeps.directoryExists = async () => true;
     _fragmentStoreDeps.listFragments = async () => ["US-001.md"];
 
     _contextFragmentsDeps.loadPRD = async (): Promise<LoadPRDResult> => ({

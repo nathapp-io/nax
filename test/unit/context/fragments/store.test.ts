@@ -125,7 +125,7 @@ describe("fragment store — writeFragment / readFragment (US-001)", () => {
 
 describe("fragment store — listFragmentStoryIds (US-001)", () => {
   test("[US-001 AC 9] listFragmentStoryIds returns both story ids when two fragments exist", async () => {
-    _fragmentStoreDeps.fileExists = async () => true;
+    _fragmentStoreDeps.directoryExists = async () => true;
     _fragmentStoreDeps.listFragments = async () => ["US-001.md", "US-002.md"];
 
     const ids = await listFragmentStoryIds("/repo", "feat-auth");
@@ -133,7 +133,7 @@ describe("fragment store — listFragmentStoryIds (US-001)", () => {
   });
 
   test("listFragmentStoryIds returns [] when no fragments exist", async () => {
-    _fragmentStoreDeps.fileExists = async () => true;
+    _fragmentStoreDeps.directoryExists = async () => true;
     _fragmentStoreDeps.listFragments = async () => [];
     const ids = await listFragmentStoryIds("/repo", "feat-auth");
     expect(ids).toEqual([]);
@@ -141,7 +141,7 @@ describe("fragment store — listFragmentStoryIds (US-001)", () => {
 
   test("listFragmentStoryIds returns [] when the fragments dir has not been created yet (cold start)", async () => {
     let listCalled = false;
-    _fragmentStoreDeps.fileExists = async () => false;
+    _fragmentStoreDeps.directoryExists = async () => false;
     _fragmentStoreDeps.listFragments = async () => {
       listCalled = true;
       return [];
@@ -153,7 +153,7 @@ describe("fragment store — listFragmentStoryIds (US-001)", () => {
   });
 
   test("listFragmentStoryIds propagates I/O errors from the scan", async () => {
-    _fragmentStoreDeps.fileExists = async () => true;
+    _fragmentStoreDeps.directoryExists = async () => true;
     _fragmentStoreDeps.listFragments = async () => {
       throw new Error("EACCES: permission denied");
     };
@@ -162,7 +162,7 @@ describe("fragment store — listFragmentStoryIds (US-001)", () => {
   });
 
   test("listFragmentStoryIds strips the .md suffix", async () => {
-    _fragmentStoreDeps.fileExists = async () => true;
+    _fragmentStoreDeps.directoryExists = async () => true;
     _fragmentStoreDeps.listFragments = async () => ["US-abc-1.md", "story-with-dashes.md"];
     const ids = await listFragmentStoryIds("/repo", "feat-auth");
     expect(ids).toEqual(["US-abc-1", "story-with-dashes"]);

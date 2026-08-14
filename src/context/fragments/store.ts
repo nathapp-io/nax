@@ -11,7 +11,7 @@
  * and cross-feature memory are deferred to later specs (US-002+).
  */
 
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { estimateTokens } from "@/optimizer";
 
@@ -20,6 +20,18 @@ export const _fragmentStoreDeps = {
   mkdirp: (path: string): Promise<string | undefined> => mkdir(path, { recursive: true }),
   writeFile: (path: string, content: string): Promise<number> => Bun.write(path, content),
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
+  /**
+   * Directory existence. Deliberately NOT `Bun.file(dir).exists()` — that
+   * returns `false` for a directory, which silently disabled the entire
+   * fragment read path (`listFragmentStoryIds` always returned `[]`).
+   */
+  directoryExists: async (path: string): Promise<boolean> => {
+    try {
+      return (await stat(path)).isDirectory();
+    } catch {
+      return false;
+    }
+  },
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
   listFragments: async (fragmentsDir: string): Promise<string[]> => {
     const files: string[] = [];
@@ -81,7 +93,11 @@ export function truncateToFragmentBudget(body: string, maxTokens: number): strin
     budget -= 1;
     candidate = body.slice(0, budget);
   }
-  return candidate;
+  // Prefer a line boundary so a fragment never ends mid-sentence. A single
+  // line longer than the whole budget has no boundary to fall back to, so
+  // the hard character cut stands rather than yielding an empty body.
+  const lastBreak = candidate.lastIndexOf("\n");
+  return lastBreak > 0 ? candidate.slice(0, lastBreak) : candidate;
 }
 
 /** Write a fragment body for a story, truncating if the body exceeds the budget. */
@@ -113,7 +129,7 @@ export async function listFragmentStoryIds(projectDir: string, featureId: string
   // fragments" case and must return []. Other I/O failures (permissions,
   // corrupt paths) propagate so persistence problems aren't hidden as a
   // silent empty result.
-  if (!(await _fragmentStoreDeps.fileExists(dir))) return [];
+  if (!(await _fragmentStoreDeps.directoryExists(dir))) return [];
   const files = await _fragmentStoreDeps.listFragments(dir);
   return files.map((file) => file.replace(/\.md$/, ""));
 }
@@ -137,11 +153,18 @@ export async function deleteFragment(projectDir: string, featureId: string, stor
  * Layout:
  *   # <storyId> — <title>
  *
+ *   ## Files touched
+ *   - <changed-file-path>  (one per item, in order)
+ *
  *   ## Acceptance criteria
  *   - <criterion>  (one per item, in order)
  *
- *   ## Files touched
- *   - <changed-file-path>  (one per item, in order)
+ * Files come first deliberately. Bodies are truncated from the tail, and the
+ * acceptance-criteria list is both the longer section and the one that blows
+ * the budget — measured over real features, most bodies exceed the default
+ * `maxTokens` and used to lose the file list entirely. The file list is the
+ * shorter section and tells a dependent story where its dependency landed, so
+ * it is the half worth keeping when only one survives.
  */
 export function renderFragmentBody(
   storyId: string,
@@ -151,5 +174,5 @@ export function renderFragmentBody(
 ): string {
   const criteriaLines = acceptanceCriteria.map((c) => `- ${c}`).join("\n");
   const filesLines = changedFiles.map((f) => `- ${f}`).join("\n");
-  return `# ${storyId} — ${title}\n\n## Acceptance criteria\n${criteriaLines}\n\n## Files touched\n${filesLines}\n`;
+  return `# ${storyId} — ${title}\n\n## Files touched\n${filesLines}\n\n## Acceptance criteria\n${criteriaLines}\n`;
 }
