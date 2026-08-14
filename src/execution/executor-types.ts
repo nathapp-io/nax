@@ -4,6 +4,7 @@
  * Extracted from sequential-executor.ts to slim it below 200 lines.
  */
 
+import { resolveDefaultAgent } from "../agents";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import type { InteractionChain } from "../interaction/chain";
@@ -13,6 +14,7 @@ import type { RoutingResult } from "../pipeline/types";
 import type { AgentGetFn } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
 import type { PRD, UserStory } from "../prd/types";
+import { complexityToModelTier, resolveOperatingTier } from "../routing";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import type { StoryBatch } from "./batching";
@@ -71,19 +73,41 @@ export interface SequentialExecutionResult {
  * Build a preview routing from cached story.routing or config defaults.
  * The pipeline routing stage performs full classification and overwrites ctx.routing.
  * This preview is used only for logging, status display, and event emission.
+ *
+ * #1575: the tier goes through the same precedence the routing stage applies
+ * (resolveOperatingTier), so a profile-assigned story is announced at its
+ * profile's tier rather than at a stale persisted one — and the derived tier is
+ * looked up from the story's OWN cached complexity, not a hardcoded band.
+ * Classification itself has not run yet, so the derived tier remains an estimate.
  */
 export function buildPreviewRouting(story: UserStory, config: NaxConfig): RoutingResult {
   const cached = story.routing;
-  const defaultComplexity = "medium" as const;
-  const defaultTier = "balanced" as const;
   const defaultStrategy = "test-after" as const;
+  const complexity = (cached?.complexity as RoutingResult["complexity"]) ?? "medium";
+  // This is a display path: a partially-populated config must degrade to the
+  // default band, never throw. The schema makes complexityRouting required, so
+  // the guard only matters for hand-built configs.
+  const derivedTier = config.autoMode?.complexityRouting ? complexityToModelTier(complexity, config) : "balanced";
+  const { tier } = resolveOperatingTier({
+    previousTier: cached?.modelTier,
+    profileTier: cached?.profileModelTier,
+    derivedTier,
+    hasEscalationRecords: (story.escalations?.length ?? 0) > 0,
+  });
   return {
-    complexity: (cached?.complexity as RoutingResult["complexity"]) ?? defaultComplexity,
-    modelTier:
-      (cached?.modelTier as RoutingResult["modelTier"]) ??
-      (config.autoMode.complexityRouting?.[defaultComplexity] as RoutingResult["modelTier"]) ??
-      defaultTier,
+    complexity,
+    modelTier: tier as RoutingResult["modelTier"],
     testStrategy: (cached?.testStrategy as RoutingResult["testStrategy"]) ?? defaultStrategy,
     reasoning: cached ? "cached from story.routing" : "preview (pending pipeline routing stage)",
   };
+}
+
+/**
+ * Agent a story will actually run as: its own assignment, else the run default.
+ *
+ * #1575: under cross-agent profiles the run default is not what executes a
+ * profile-assigned story, so announcing it misreports every such story.
+ */
+export function agentFor(story: UserStory, ctx: SequentialExecutionContext): string {
+  return story.routing?.agent ?? ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config);
 }

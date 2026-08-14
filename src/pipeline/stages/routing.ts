@@ -14,7 +14,7 @@
 import { isGreenfieldStory } from "@/context";
 import { getLogger } from "@/logger";
 import { savePRD } from "@/prd";
-import { complexityToModelTier, isSecurityCriticalStory, resolveRouting } from "@/routing";
+import { complexityToModelTier, isSecurityCriticalStory, resolveOperatingTier, resolveRouting } from "@/routing";
 import { resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
 import { packageDirRelative } from "@/utils/paths";
@@ -34,41 +34,25 @@ export const routingStage: PipelineStage = {
     // Classify story via resolveRouting() (plugin routers > LLM > keyword)
     const decision = await _routingDeps.resolveRouting(ctx.story, ctx.config, ctx.plugins, ctx);
 
-    // @design: BUG-032: Only preserve a previously-stored modelTier when it represents an escalation
-    // (i.e., a higher tier than the candidate baseline). This prevents stale tiers
-    // from sticking when complexity changes between runs, while still honoring explicit
-    // escalations set by handleTierEscalation.
-    const TIER_RANK: Record<string, number> = { fast: 0, balanced: 1, powerful: 2 };
-    const derivedTier = decision.modelTier;
-
-    // Open Item B: a selected profile's target tier seeds the STARTING rung and
-    // overrides the complexity-derived tier. Genuine escalation still wins below.
-    const profileTier = ctx.story.routing?.profileModelTier;
-    const candidateTier = profileTier ?? derivedTier;
-    const candidateRank = TIER_RANK[candidateTier];
-
-    const previousTier = ctx.story.routing?.modelTier;
-    const previousRank = previousTier !== undefined ? TIER_RANK[previousTier] : undefined;
+    // @design: BUG-032 / Open Item B / #1522 — the profile target seeds the starting
+    // rung, a genuine escalation is preserved, and a stale leftover tier is not.
+    // The precedence itself lives in resolveOperatingTier so that the executor's
+    // pre-classification preview announces the same tier this stage resolves (#1575).
     const hasEscalationRecords = (ctx.story.escalations?.length ?? 0) > 0;
-    if (previousTier !== undefined && previousRank === undefined && !hasEscalationRecords) {
+    const operating = _routingDeps.resolveOperatingTier({
+      previousTier: ctx.story.routing?.modelTier,
+      profileTier: ctx.story.routing?.profileModelTier,
+      derivedTier: decision.modelTier,
+      hasEscalationRecords,
+    });
+    if (operating.unknownPreviousTier) {
       logger?.warn("routing", "Ignoring unknown previousTier — not escalating", {
         storyId: ctx.story.id,
-        previousTier,
-        candidateTier,
+        previousTier: ctx.story.routing?.modelTier,
+        candidateTier: operating.candidateTier,
       });
     }
-    // Preserve a previously-stored tier only when it is a genuine escalation:
-    // - an escalation record exists for this story -> honor it outright. A cross-agent
-    //   rung ladder can escalate sideways or down (e.g. agentA/powerful -> agentB/balanced),
-    //   so rank comparison alone would discard a real escalation whose tier does not
-    //   outrank the freshly-derived candidate (#1522).
-    // - no escalation record -> fall back to rank comparison, so a stale tier left over
-    //   from a prior, unrelated run does not stick around just because it ranks higher
-    const isEscalated =
-      previousTier !== undefined &&
-      (hasEscalationRecords ||
-        (previousRank !== undefined && candidateRank !== undefined && previousRank > candidateRank));
-    const modelTier = isEscalated ? previousTier : candidateTier;
+    const modelTier = operating.tier;
 
     // PRD-assigned agent wins (plan-time selection, Delta C3). decision.agent is
     // the Part A run-time classifier's choice and applies only when the PRD
@@ -193,6 +177,7 @@ export const routingStage: PipelineStage = {
  */
 export const _routingDeps = {
   resolveRouting,
+  resolveOperatingTier,
   complexityToModelTier,
   isGreenfieldStory,
   resolveTestFilePatterns,
