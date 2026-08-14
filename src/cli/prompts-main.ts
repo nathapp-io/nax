@@ -19,6 +19,9 @@ import { buildFrontmatter } from "./prompts-shared";
 import { handleThreeSessionTddPrompts } from "./prompts-tdd";
 export { buildFrontmatter };
 
+/** Injectable deps for testability — avoids mock.module() contamination. */
+export const _promptsMainDeps = { createRuntime };
+
 export interface PromptsCommandOptions {
   /** Feature name */
   feature: string;
@@ -74,118 +77,127 @@ export async function promptsCommand(options: PromptsCommandOptions): Promise<st
   const prd = await loadPRD(prdPath);
 
   // Create a minimal runtime for PipelineContext conformance (prompts command doesn't dispatch agents)
-  const runtime = createRuntime(config, workdir);
+  const runtime = _promptsMainDeps.createRuntime(config, workdir);
 
-  // Filter stories
-  const stories = storyId ? prd.userStories.filter((s) => s.id === storyId) : prd.userStories;
+  // BUG-24 — createRuntime was never closed on any path through this
+  // function. ACP sessions/streams, auditors, and the idle-watchdog
+  // subscription stayed alive until process exit; every other planning path
+  // closes its runtime. try/finally guarantees close() runs on every return
+  // and every thrown error from here on, not just the success path.
+  try {
+    // Filter stories
+    const stories = storyId ? prd.userStories.filter((s) => s.id === storyId) : prd.userStories;
 
-  if (stories.length === 0) {
-    throw new Error(
-      storyId ? `Story "${storyId}" not found in feature "${feature}"` : `No stories found in feature "${feature}"`,
-    );
-  }
-
-  // Create output directory if specified
-  if (outputDir) {
-    mkdirSync(outputDir, { recursive: true });
-  }
-
-  logger.info("cli", "Assembling prompts", {
-    feature,
-    storyCount: stories.length,
-    outputMode: outputDir ? "files" : "stdout",
-  });
-
-  // Process each story through the pipeline (routing → constitution → context → prompt)
-  const processedStories: string[] = [];
-  const promptPipeline = [routingStage, constitutionStage, contextStage, promptStage];
-
-  for (const story of stories) {
-    // Build initial pipeline context
-    const ctx: PipelineContext = {
-      config,
-      rootConfig: config,
-      prd,
-      story,
-      stories: [story], // Single story, not batch
-      routing: {
-        complexity: "simple",
-        modelTier: "fast",
-        testStrategy: "test-after",
-        reasoning: "Placeholder routing",
-      }, // Will be set by routingStage
-      projectDir: workdir,
-      workdir,
-      featureDir,
-      hooks: { hooks: {} }, // Empty hooks config
-      agentManager: runtime.agentManager,
-      sessionManager: runtime.sessionManager,
-      runtime,
-      abortSignal: runtime.signal,
-    };
-
-    // Run the prompt assembly pipeline
-    const result = await runPipeline(promptPipeline, ctx);
-
-    if (!result.success) {
-      logger.warn("cli", "Failed to assemble prompt for story", {
-        storyId: story.id,
-        reason: result.reason,
-      });
-      continue;
+    if (stories.length === 0) {
+      throw new Error(
+        storyId ? `Story "${storyId}" not found in feature "${feature}"` : `No stories found in feature "${feature}"`,
+      );
     }
 
-    // Handle three-session TDD stories separately
-    if (ctx.routing.testStrategy === "three-session-tdd") {
-      await handleThreeSessionTddPrompts(story, ctx, outputDir, logger);
-      processedStories.push(story.id);
-      continue;
-    }
-
-    // For non-TDD stories, ensure prompt was built
-    if (!ctx.prompt) {
-      logger.warn("cli", "No prompt generated for story", {
-        storyId: story.id,
-      });
-      continue;
-    }
-
-    // Build YAML frontmatter
-    const frontmatter = buildFrontmatter(story, ctx);
-
-    // Full output: frontmatter + prompt
-    const fullOutput = `---\n${frontmatter}---\n\n${ctx.prompt}`;
-
-    // Write to file or stdout
+    // Create output directory if specified
     if (outputDir) {
-      const promptFile = join(outputDir, `${story.id}.prompt.md`);
-      await Bun.write(promptFile, fullOutput);
+      mkdirSync(outputDir, { recursive: true });
+    }
 
-      // Also write context-only file for isolation audit
-      if (ctx.contextMarkdown) {
-        const contextFile = join(outputDir, `${story.id}.context.md`);
-        const contextOutput = `---\n${frontmatter}---\n\n${ctx.contextMarkdown}`;
-        await Bun.write(contextFile, contextOutput);
+    logger.info("cli", "Assembling prompts", {
+      feature,
+      storyCount: stories.length,
+      outputMode: outputDir ? "files" : "stdout",
+    });
+
+    // Process each story through the pipeline (routing → constitution → context → prompt)
+    const processedStories: string[] = [];
+    const promptPipeline = [routingStage, constitutionStage, contextStage, promptStage];
+
+    for (const story of stories) {
+      // Build initial pipeline context
+      const ctx: PipelineContext = {
+        config,
+        rootConfig: config,
+        prd,
+        story,
+        stories: [story], // Single story, not batch
+        routing: {
+          complexity: "simple",
+          modelTier: "fast",
+          testStrategy: "test-after",
+          reasoning: "Placeholder routing",
+        }, // Will be set by routingStage
+        projectDir: workdir,
+        workdir,
+        featureDir,
+        hooks: { hooks: {} }, // Empty hooks config
+        agentManager: runtime.agentManager,
+        sessionManager: runtime.sessionManager,
+        runtime,
+        abortSignal: runtime.signal,
+      };
+
+      // Run the prompt assembly pipeline
+      const result = await runPipeline(promptPipeline, ctx);
+
+      if (!result.success) {
+        logger.warn("cli", "Failed to assemble prompt for story", {
+          storyId: story.id,
+          reason: result.reason,
+        });
+        continue;
       }
 
-      logger.info("cli", "Written prompt files", {
-        storyId: story.id,
-        promptFile,
-      });
-    } else {
-      // Stdout mode: print separator + story ID + prompt
-      console.log(`\n${"=".repeat(80)}`);
-      console.log(`Story: ${story.id} — ${story.title}`);
-      console.log("=".repeat(80));
-      console.log(fullOutput);
+      // Handle three-session TDD stories separately
+      if (ctx.routing.testStrategy === "three-session-tdd") {
+        await handleThreeSessionTddPrompts(story, ctx, outputDir, logger);
+        processedStories.push(story.id);
+        continue;
+      }
+
+      // For non-TDD stories, ensure prompt was built
+      if (!ctx.prompt) {
+        logger.warn("cli", "No prompt generated for story", {
+          storyId: story.id,
+        });
+        continue;
+      }
+
+      // Build YAML frontmatter
+      const frontmatter = buildFrontmatter(story, ctx);
+
+      // Full output: frontmatter + prompt
+      const fullOutput = `---\n${frontmatter}---\n\n${ctx.prompt}`;
+
+      // Write to file or stdout
+      if (outputDir) {
+        const promptFile = join(outputDir, `${story.id}.prompt.md`);
+        await Bun.write(promptFile, fullOutput);
+
+        // Also write context-only file for isolation audit
+        if (ctx.contextMarkdown) {
+          const contextFile = join(outputDir, `${story.id}.context.md`);
+          const contextOutput = `---\n${frontmatter}---\n\n${ctx.contextMarkdown}`;
+          await Bun.write(contextFile, contextOutput);
+        }
+
+        logger.info("cli", "Written prompt files", {
+          storyId: story.id,
+          promptFile,
+        });
+      } else {
+        // Stdout mode: print separator + story ID + prompt
+        console.log(`\n${"=".repeat(80)}`);
+        console.log(`Story: ${story.id} — ${story.title}`);
+        console.log("=".repeat(80));
+        console.log(fullOutput);
+      }
+
+      processedStories.push(story.id);
     }
 
-    processedStories.push(story.id);
+    logger.info("cli", "Prompt assembly complete", {
+      processedCount: processedStories.length,
+    });
+
+    return processedStories;
+  } finally {
+    await runtime.close();
   }
-
-  logger.info("cli", "Prompt assembly complete", {
-    processedCount: processedStories.length,
-  });
-
-  return processedStories;
 }

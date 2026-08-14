@@ -5,7 +5,7 @@
  */
 
 // Main prompts command exports
-export { promptsCommand, buildFrontmatter, type PromptsCommandOptions } from "./prompts-main";
+export { promptsCommand, buildFrontmatter, _promptsMainDeps, type PromptsCommandOptions } from "./prompts-main";
 
 // Init command exports
 export { _promptsInitDeps, promptsInitCommand, type PromptsInitCommandOptions } from "./prompts-init";
