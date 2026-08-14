@@ -5,7 +5,6 @@ import { basename, dirname } from "node:path";
 const LOCK_RETRY_MS = 10;
 const LOCK_TIMEOUT_MS = 5_000;
 const LOCK_TIME_WIDTH = 13;
-const MAX_LOCK_AGE_MS = 30_000;
 
 export const _queueLockDeps = {
   open,
@@ -46,7 +45,20 @@ function candidateTime(fileName: string): number | null {
   }
 }
 
-async function listLiveCandidates(queuePath: string): Promise<string[]> {
+/**
+ * BUG-10: a lock whose holder pid is still alive must never be unlinked,
+ * no matter how old it is — a long-held lock (slow queue command) is not
+ * the same as an abandoned one. The MAX_LOCK_AGE_MS bound only applies
+ * when the candidate's own timestamp can't be parsed (createdAt === null),
+ * since liveness can't be judged from age at all in that case.
+ */
+function isLiveCandidate(pid: number | null, createdAt: number | null): boolean {
+  if (pid === null) return false;
+  if (createdAt === null) return false;
+  return _queueLockDeps.isPidAlive(pid);
+}
+
+export async function listLiveCandidates(queuePath: string): Promise<string[]> {
   const directory = dirname(queuePath);
   const prefix = `${basename(queuePath)}.lock.`;
   const candidates = (await _queueLockDeps.readdir(directory)).filter((name) => name.startsWith(prefix));
@@ -54,9 +66,8 @@ async function listLiveCandidates(queuePath: string): Promise<string[]> {
   for (const candidate of candidates) {
     const pid = candidatePid(candidate);
     const createdAt = candidateTime(candidate);
-    const age = createdAt === null ? MAX_LOCK_AGE_MS + 1 : _queueLockDeps.now() - createdAt;
     const candidatePath = `${directory}/${candidate}`;
-    if (pid !== null && age <= MAX_LOCK_AGE_MS && _queueLockDeps.isPidAlive(pid)) {
+    if (isLiveCandidate(pid, createdAt)) {
       const stats = await _queueLockDeps.stat(candidatePath).catch(() => null);
       if (stats) live.push({ name: candidate, createdAt: stats.birthtimeMs });
     } else await _queueLockDeps.unlink(candidatePath).catch(() => {});
