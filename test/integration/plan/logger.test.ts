@@ -227,6 +227,55 @@ describe("Logger", () => {
     });
   });
 
+  // MED-05: no production caller awaited flush() before process.exit(); a
+  // run's final log lines (run.end / fatal-error) were silently lost since
+  // process.exit() terminates before the batched async appendFile ran.
+  describe("flushSync (MED-05)", () => {
+    test("synchronously writes buffered lines to disk without awaiting", () => {
+      const logger = initLogger({ level: "info", filePath: TEST_LOG_FILE });
+
+      logger.info("test", "sync message one");
+      logger.info("test", "sync message two");
+      logger.flushSync();
+
+      const content = readFileSync(TEST_LOG_FILE, "utf8");
+      const lines = content
+        .trim()
+        .split("\n")
+        .filter((line) => line);
+      expect(lines.length).toBe(2);
+      const entries = lines.map((line) => JSON.parse(line));
+      expect(entries[0].message).toBe("sync message one");
+      expect(entries[1].message).toBe("sync message two");
+    });
+
+    test("is a no-op when there is nothing buffered", () => {
+      const logger = initLogger({ level: "info", filePath: TEST_LOG_FILE });
+      expect(() => logger.flushSync()).not.toThrow();
+      expect(existsSync(TEST_LOG_FILE)).toBe(false);
+    });
+
+    test("is a no-op when no filePath was configured", () => {
+      const logger = initLogger({ level: "info" });
+      logger.info("test", "no file configured");
+      expect(() => logger.flushSync()).not.toThrow();
+    });
+
+    test("registering the process exit listener does not throw across repeated initLogger/resetLogger cycles", () => {
+      // Regression for listener accumulation: every test file that calls
+      // initLogger() with a filePath must not add a new "exit" listener each
+      // time, or a long test run would eventually trip Node's max-listeners
+      // warning / leak detector.
+      const before = process.listenerCount("exit");
+      for (let i = 0; i < 5; i++) {
+        resetLogger();
+        initLogger({ level: "info", filePath: TEST_LOG_FILE });
+      }
+      const after = process.listenerCount("exit");
+      expect(after).toBe(before);
+    });
+  });
+
   describe("withStory", () => {
     test("returns story-scoped logger", () => {
       const logger = initLogger({ level: "info", useChalk: false });

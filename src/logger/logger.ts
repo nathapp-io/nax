@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { NaxError } from "../errors.js";
 import { type FormatterOptions, type VerbosityMode, formatLogEntry } from "../log-format/index.js";
@@ -30,6 +30,15 @@ const MAX_BATCH_BYTES = 64 * 1024;
  * Singleton logger instance
  */
 let instance: Logger | null = null;
+
+/**
+ * Guards the process-level "exit" listener registration below so repeated
+ * initLogger()/resetLogger() cycles (every test file that uses a real
+ * logger) don't accumulate one listener per cycle — the listener always
+ * reads the live `instance` at actual exit time, so one is sufficient for
+ * the process's whole lifetime.
+ */
+let exitFlushRegistered = false;
 
 /**
  * Structured logger with level gating and dual output (console + JSONL file)
@@ -226,6 +235,28 @@ export class Logger {
   }
 
   /**
+   * MED-05 — synchronously drain any lines still buffered in `pendingLines`
+   * (i.e. not yet claimed by an in-flight async batch) to disk.
+   *
+   * `process.exit()` terminates before any async work — including the
+   * batched `appendFile` in writeToFile() — gets a chance to run, so a run's
+   * final log lines (the run.end / fatal-error entries most useful for
+   * diagnosing exactly the failure that triggered the exit) were silently
+   * lost. `process.on("exit", ...)` listeners may only do synchronous work,
+   * so this is a best-effort `appendFileSync` fallback, not a replacement
+   * for flush() — callers that can await should still prefer flush().
+   */
+  flushSync(): void {
+    if (!this.filePath || this.pendingLines.length === 0) return;
+    const batch = this.pendingLines.splice(0, this.pendingLines.length).join("");
+    try {
+      appendFileSync(this.filePath, batch);
+    } catch (error) {
+      process.stderr.write(`[logger] Failed to flush log file on exit: ${error}\n`);
+    }
+  }
+
+  /**
    * Log an error message
    */
   error(stage: string, message: string, data?: Record<string, unknown>): void {
@@ -337,6 +368,13 @@ export function initLogger(options: LoggerOptions = { level: "silent" }): Logger
     throw new Error("Logger already initialized. Call getLogger() to access existing instance.");
   }
   instance = new Logger(options);
+  // MED-05 — catch-all for every process.exit() call site in the CLI: a
+  // synchronous exit-time drain of whatever's still buffered, since none of
+  // those call sites can be relied on to individually await flush() first.
+  if (options.filePath && !exitFlushRegistered) {
+    exitFlushRegistered = true;
+    process.on("exit", () => instance?.flushSync());
+  }
   return instance;
 }
 
