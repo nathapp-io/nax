@@ -9,6 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { clearQueueFile, readQueueFile } from "@/execution";
 import { getLogger, initLogger, resetLogger } from "@/logger";
@@ -32,6 +33,7 @@ describe("readQueueFile", () => {
     workdir = makeTempDir("nax-queue-handler-");
     logFile = join(workdir, "audit.jsonl");
     initLogger({ level: "silent", filePath: logFile });
+    writeFileSync(logFile, "");
   });
 
   afterEach(() => {
@@ -106,6 +108,7 @@ describe("clearQueueFile", () => {
     workdir = makeTempDir("nax-queue-handler-clear-");
     logFile = join(workdir, "audit.jsonl");
     initLogger({ level: "silent", filePath: logFile });
+    writeFileSync(logFile, "");
   });
 
   afterEach(() => {
