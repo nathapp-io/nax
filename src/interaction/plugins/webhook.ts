@@ -77,6 +77,15 @@ const InteractionResponseSchema = z.object({
 /** Max entries in pendingResponses (defense-in-depth; registered-ID gate is the primary control) */
 const MAX_PENDING_RESPONSES = 500;
 
+/**
+ * BUG-18 — client-side deadline on the outbound webhook POST. Without it, a
+ * black-holing webhook URL stalls send() (and thus the story waiting on the
+ * interaction) indefinitely — no OS-level TCP timeout fires for a very long
+ * time. Mirrors the AbortController pattern already used by the Telegram
+ * plugin's outbound calls.
+ */
+const WEBHOOK_SEND_TIMEOUT_MS = 30_000;
+
 /** Default rate-limit window (SEC-8): bounds abuse from a co-tenant local process. */
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 /** Default max authenticated requests accepted per window (the "auth" bucket). */
@@ -250,11 +259,14 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       headers["X-Nax-Signature"] = signature;
     }
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), WEBHOOK_SEND_TIMEOUT_MS);
     try {
       const response = await fetch(this.config.url, {
         method: "POST",
         headers,
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
 
       if (!response.ok) {
@@ -266,6 +278,8 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       this.registeredRequestIds.delete(request.id);
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`Failed to send webhook request: ${msg}`);
+    } finally {
+      clearTimeout(timer);
     }
   }
 

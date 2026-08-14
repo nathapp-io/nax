@@ -482,12 +482,18 @@ export class AcpAgentAdapter implements AgentAdapter {
           ? { kind: "context-tool", name: toolCall.name, error: toolCall.error }
           : { kind: "context-tool", name: toolCall.name, input: toolCall.input };
 
+        // BUG-18 — this path previously raced only against `signal` (abort),
+        // with no deadline: a hung interaction handler (e.g. a black-holing
+        // webhook URL) stalled the story indefinitely. Mirrors the `question`
+        // block below, which already races against INTERACTION_TIMEOUT_MS.
+        let contextToolTimeoutId: ReturnType<typeof setTimeout> | undefined;
         try {
-          const response = await raceWithAbort(
-            interactionHandler.onInteraction(interaction),
-            signal,
-            "Run aborted — shutdown in progress",
-          );
+          const response = await Promise.race([
+            raceWithAbort(interactionHandler.onInteraction(interaction), signal, "Run aborted — shutdown in progress"),
+            new Promise<null>((resolve) => {
+              contextToolTimeoutId = setTimeout(() => resolve(null), INTERACTION_TIMEOUT_MS);
+            }),
+          ]);
           if (response) {
             currentPrompt = response.answer;
             continue;
@@ -501,6 +507,8 @@ export class AcpAgentAdapter implements AgentAdapter {
             "acp-adapter",
             `InteractionHandler.onInteraction failed for context-tool: ${err instanceof Error ? err.message : String(err)}`,
           );
+        } finally {
+          clearTimeout(contextToolTimeoutId);
         }
         break;
       }
