@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import {
+  _profileDeps,
   listProfiles,
   loadProfile,
   loadProfileEnv,
@@ -56,10 +57,7 @@ describe("config/profile", () => {
         join(globalProfilesDir, "fast.json"),
         JSON.stringify({ tier: "fast", timeout: 30, extra: "global-only" }),
       );
-      await Bun.write(
-        join(projectProfilesDir, "fast.json"),
-        JSON.stringify({ tier: "fast", timeout: 60 }),
-      );
+      await Bun.write(join(projectProfilesDir, "fast.json"), JSON.stringify({ tier: "fast", timeout: 60 }));
 
       const result = await loadProfile("fast", projectDir);
 
@@ -75,10 +73,7 @@ describe("config/profile", () => {
       const globalProfilesDir = join(globalDir, "profiles");
       mkdirSync(globalProfilesDir, { recursive: true });
 
-      await Bun.write(
-        join(globalProfilesDir, "fast.json"),
-        JSON.stringify({ tier: "fast", timeout: 30 }),
-      );
+      await Bun.write(join(globalProfilesDir, "fast.json"), JSON.stringify({ tier: "fast", timeout: 30 }));
 
       const result = await loadProfile("fast", projectDir);
 
@@ -112,14 +107,8 @@ describe("config/profile", () => {
       mkdirSync(globalProfilesDir, { recursive: true });
       mkdirSync(projectProfilesDir, { recursive: true });
 
-      await Bun.write(
-        join(globalProfilesDir, "fast.env"),
-        "GLOBAL_ONLY=global_value\nSHARED_KEY=from_global\n",
-      );
-      await Bun.write(
-        join(projectProfilesDir, "fast.env"),
-        "PROJECT_ONLY=project_value\nSHARED_KEY=from_project\n",
-      );
+      await Bun.write(join(globalProfilesDir, "fast.env"), "GLOBAL_ONLY=global_value\nSHARED_KEY=from_global\n");
+      await Bun.write(join(projectProfilesDir, "fast.env"), "PROJECT_ONLY=project_value\nSHARED_KEY=from_project\n");
 
       const result = await loadProfileEnv("fast", projectDir);
 
@@ -157,15 +146,34 @@ describe("config/profile", () => {
       }
     });
 
-    test("returns empty map when no .env files exist for the profile", async () => {
+    // BUG-21: previously returned {} when the profile had no .env companion
+    // files, even though the function's own docstring says values "override
+    // process.env entries" — implying process.env is a base layer. A profile
+    // referencing an ambient var like $HOME with no .env file hard-failed.
+    test("BUG-21: falls back to process.env as the base layer when no .env files exist for the profile", async () => {
       const globalProfilesDir = join(globalDir, "profiles");
       mkdirSync(globalProfilesDir, { recursive: true });
       await Bun.write(join(globalProfilesDir, "fast.json"), JSON.stringify({ tier: "fast" }));
 
-      const result = await loadProfileEnv("fast", projectDir);
+      const origEnv = _profileDeps.env;
+      _profileDeps.env = { AMBIENT_VAR: "ambient_value" };
+      try {
+        const result = await loadProfileEnv("fast", projectDir);
+        expect(result.AMBIENT_VAR).toBe("ambient_value");
+      } finally {
+        _profileDeps.env = origEnv;
+      }
+    });
 
-      expect(typeof result).toBe("object");
-      expect(Object.keys(result).length).toBe(0);
+    test("BUG-21: profile .env values still override process.env for the same key when no profile file at all", async () => {
+      const origEnv = _profileDeps.env;
+      _profileDeps.env = { SHARED: "from_process_env" };
+      try {
+        const result = await loadProfileEnv("nonexistent-profile-name", projectDir);
+        expect(result.SHARED).toBe("from_process_env");
+      } finally {
+        _profileDeps.env = origEnv;
+      }
     });
   });
 
@@ -174,57 +182,41 @@ describe("config/profile", () => {
   // ---------------------------------------------------------------------------
 
   describe("resolveProfileName", () => {
-    test('returns CLI profile when provided — CLI takes priority over NAX_PROFILE env var', async () => {
-      const result = await resolveProfileName(
-        { profile: "cli" },
-        { NAX_PROFILE: "env" },
-        projectDir,
-      );
+    test("returns CLI profile when provided — CLI takes priority over NAX_PROFILE env var", async () => {
+      const result = await resolveProfileName({ profile: "cli" }, { NAX_PROFILE: "env" }, projectDir);
       expect(result).toBe("cli");
     });
 
-    test('returns NAX_PROFILE env var when no CLI override is given', async () => {
+    test("returns NAX_PROFILE env var when no CLI override is given", async () => {
       const result = await resolveProfileName({}, { NAX_PROFILE: "env" }, projectDir);
       expect(result).toBe("env");
     });
 
-    test('returns profile from project config.json when no CLI or env override', async () => {
+    test("returns profile from project config.json when no CLI or env override", async () => {
       const projectNaxDir = join(projectDir, ".nax");
       mkdirSync(projectNaxDir, { recursive: true });
-      await Bun.write(
-        join(projectNaxDir, "config.json"),
-        JSON.stringify({ profile: "persisted" }),
-      );
+      await Bun.write(join(projectNaxDir, "config.json"), JSON.stringify({ profile: "persisted" }));
 
       const result = await resolveProfileName({}, {}, projectDir);
       expect(result).toBe("persisted");
     });
 
-    test('falls back to global config.json profile field when project config has none', async () => {
+    test("falls back to global config.json profile field when project config has none", async () => {
       const globalNaxDir = join(globalDir);
       mkdirSync(globalNaxDir, { recursive: true });
-      await Bun.write(
-        join(globalNaxDir, "config.json"),
-        JSON.stringify({ profile: "global-profile" }),
-      );
+      await Bun.write(join(globalNaxDir, "config.json"), JSON.stringify({ profile: "global-profile" }));
 
       const result = await resolveProfileName({}, {}, projectDir);
       expect(result).toBe("global-profile");
     });
 
-    test('project config.json profile takes precedence over global config.json profile', async () => {
+    test("project config.json profile takes precedence over global config.json profile", async () => {
       const projectNaxDir = join(projectDir, ".nax");
       mkdirSync(projectNaxDir, { recursive: true });
-      await Bun.write(
-        join(projectNaxDir, "config.json"),
-        JSON.stringify({ profile: "project-profile" }),
-      );
+      await Bun.write(join(projectNaxDir, "config.json"), JSON.stringify({ profile: "project-profile" }));
       const globalNaxDir = join(globalDir);
       mkdirSync(globalNaxDir, { recursive: true });
-      await Bun.write(
-        join(globalNaxDir, "config.json"),
-        JSON.stringify({ profile: "global-profile" }),
-      );
+      await Bun.write(join(globalNaxDir, "config.json"), JSON.stringify({ profile: "global-profile" }));
 
       const result = await resolveProfileName({}, {}, projectDir);
       expect(result).toBe("project-profile");
@@ -297,11 +289,7 @@ describe("config/profile", () => {
 
   describe("resolveProfileNames", () => {
     test("returns CLI chain (comma form) — CLI wins over env", async () => {
-      const result = await resolveProfileNames(
-        { profile: "a,b" },
-        { NAX_PROFILE: "env" },
-        projectDir,
-      );
+      const result = await resolveProfileNames({ profile: "a,b" }, { NAX_PROFILE: "env" }, projectDir);
       expect(result).toEqual(["a", "b"]);
     });
 
@@ -398,6 +386,49 @@ describe("config/profile", () => {
       expect(profiles.length).toBeGreaterThan(0);
       expect(typeof profiles[0].name).toBe("string");
       expect(typeof profiles[0].path).toBe("string");
+    });
+  });
+
+  // SEC-08: `profileName` flows into `join(profilesDir, \`${profileName}.json\`)`
+  // with no validation — join silently collapses `..`, so a name like
+  // "../../../etc/foo" escapes the profiles directory. `profileName` can come
+  // from CLI --profile, NAX_PROFILE, or the project-controlled .nax/config.json
+  // `profile` field, so a malicious repo could cause reads of arbitrary *.json
+  // files under the user's home directory.
+  describe("SEC-08: profile name path traversal", () => {
+    test("loadProfile rejects a traversal profile name instead of reading outside profiles dir", async () => {
+      // A file that a traversal could reach: <projectDir's parent>/outside.json,
+      // i.e. escaping .nax/profiles/ via "../../outside".
+      await Bun.write(join(projectDir, "..", "outside.json"), JSON.stringify({ pwned: true }));
+
+      await expect(loadProfile("../../outside", projectDir)).rejects.toThrow(/must not contain path separators/);
+
+      await Bun.file(join(projectDir, "..", "outside.json")).delete?.();
+    });
+
+    test("loadProfile rejects '..' as a profile name", async () => {
+      await expect(loadProfile("..", projectDir)).rejects.toThrow(/must not be "\."/);
+    });
+
+    test("loadProfile rejects an empty profile name", async () => {
+      await expect(loadProfile("", projectDir)).rejects.toThrow(/must be non-empty/);
+    });
+
+    test("loadProfile rejects a backslash traversal profile name", async () => {
+      await expect(loadProfile("..\\..\\outside", projectDir)).rejects.toThrow(/must not contain path separators/);
+    });
+
+    test("loadProfileEnv rejects a traversal profile name", async () => {
+      await expect(loadProfileEnv("../../outside", projectDir)).rejects.toThrow(/must not contain path separators/);
+    });
+
+    test("a legitimate single-segment profile name is unaffected", async () => {
+      const globalProfilesDir = join(globalDir, "profiles");
+      mkdirSync(globalProfilesDir, { recursive: true });
+      await Bun.write(join(globalProfilesDir, "fast.json"), JSON.stringify({ tier: "fast" }));
+
+      const result = await loadProfile("fast", projectDir);
+      expect(result.tier).toBe("fast");
     });
   });
 });

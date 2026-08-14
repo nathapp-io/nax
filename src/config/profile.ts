@@ -16,12 +16,50 @@ interface ProfileEntry {
   path: string;
 }
 
+/** Injectable deps for testability — avoids mutating the real process.env in tests. */
+export const _profileDeps = {
+  env: process.env as Record<string, string | undefined>,
+};
+
+/**
+ * SEC-08: reject path-traversal in a profile name. `profileName` flows
+ * directly into `join(profilesDir, \`${profileName}.json\`)` in loadProfile
+ * and loadProfileEnv, and `join` silently collapses `..` segments — e.g.
+ * `join(profilesDir, "../../../.config/foo.json")` escapes the profiles
+ * directory. `profileName` is attacker-influenced: it can come from CLI
+ * `--profile`, the `NAX_PROFILE` env var, or (most dangerously) the
+ * project-controlled `.nax/config.json` `profile` field, so a malicious repo
+ * can cause reads of arbitrary `*.json` under the user's home directory,
+ * deep-merged into the run config with profile precedence. Each name must be
+ * a single non-empty path segment with no separators, NUL, or dot/dot-dot
+ * values. Mirrors validatePathSegment in context/fragments/store.ts.
+ */
+function validateProfileName(profileName: string): void {
+  if (profileName.length === 0) {
+    throw new NaxError("Profile name must be non-empty", "PROFILE_NAME_INVALID", { stage: "config" });
+  }
+  if (profileName === "." || profileName === "..") {
+    throw new NaxError(`Profile name must not be "." or ".."`, "PROFILE_NAME_INVALID", { stage: "config" });
+  }
+  for (let i = 0; i < profileName.length; i++) {
+    const c = profileName.charCodeAt(i);
+    if (c === 47 /* '/' */ || c === 92 /* '\\' */ || c === 0 /* NUL */) {
+      throw new NaxError(
+        `Profile name "${profileName}" must not contain path separators or NUL`,
+        "PROFILE_NAME_INVALID",
+        { stage: "config", profileName },
+      );
+    }
+  }
+}
+
 /**
  * Loads a named profile by deep-merging global and project-scoped JSON files.
  * Project values take precedence over global values.
  * Throws when neither global nor project profile exists.
  */
 export async function loadProfile(profileName: string, projectRoot: string): Promise<Record<string, unknown>> {
+  validateProfileName(profileName);
   const globalPath = join(globalConfigDir(), "profiles", `${profileName}.json`);
   const projectPath = join(projectConfigDir(projectRoot), "profiles", `${profileName}.json`);
 
@@ -60,6 +98,7 @@ export async function loadProfile(profileName: string, projectRoot: string): Pro
  * Returns an empty record when no .env files exist.
  */
 export async function loadProfileEnv(profileName: string, projectRoot: string): Promise<Record<string, string>> {
+  validateProfileName(profileName);
   const globalPath = join(globalConfigDir(), "profiles", `${profileName}.env`);
   const projectPath = join(projectConfigDir(projectRoot), "profiles", `${profileName}.env`);
 
@@ -68,11 +107,20 @@ export async function loadProfileEnv(profileName: string, projectRoot: string): 
 
   const [globalExists, projectExists] = await Promise.all([globalFile.exists(), projectFile.exists()]);
 
-  if (!globalExists && !projectExists) {
-    return {};
+  // BUG-21 — process.env is the base layer so `$HOME`/`$GITHUB_TOKEN`-style
+  // references resolve even when a profile's own .env files don't redefine
+  // them, matching this function's documented contract ("both override
+  // process.env entries"). Previously process.env was never folded in at
+  // all, so any reference to an ambient (not profile-redefined) var
+  // hard-failed config load before zod ever ran.
+  let merged: Record<string, string> = {};
+  for (const [key, value] of Object.entries(_profileDeps.env)) {
+    if (value !== undefined) merged[key] = value;
   }
 
-  let merged: Record<string, string> = {};
+  if (!globalExists && !projectExists) {
+    return merged;
+  }
 
   if (globalExists) {
     const globalContent = await globalFile.text();
