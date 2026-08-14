@@ -32,16 +32,24 @@ describe("CLIInteractionPlugin.promptUser — setTimeout cleanup", () => {
 
   test("clearTimeout is called when timeout wins — no lingering timers", async () => {
     const plugin = new CLIInteractionPlugin();
-    (plugin as any).rl = {
-      question: (_prompt: string, _cb: (a: string) => void) => {},
-      close: () => {},
+    // `recreateReadline` replaces `rl` with a real readline interface after
+    // every timeout — re-install the mock before each call so the real rl
+    // never sees a `question()` and writes its prompt to stdout.
+    const installMock = () => {
+      (plugin as any).rl = {
+        question: (_prompt: string, _cb: (a: string) => void) => {},
+        close: () => {},
+      };
     };
+    installMock();
 
     const promptUser = (plugin as any).promptUser.bind(plugin);
     // Three sequential short-timeout calls — if clearTimeout were missing, leaked
     // timers would prevent Bun from exiting cleanly after the test suite.
     const r1 = await promptUser(makeRequest("req-1"), 5);
+    installMock();
     const r2 = await promptUser(makeRequest("req-2"), 5);
+    installMock();
     const r3 = await promptUser(makeRequest("req-3"), 5);
 
     expect(r1.respondedBy).toBe("timeout");

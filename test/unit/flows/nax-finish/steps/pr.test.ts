@@ -148,6 +148,7 @@ describe("loadFinishPrContext fail-open behavior (US-003 AC11-AC14)", () => {
 
   test("US-003 AC12 returns empty PRD fields when the PRD JSON is invalid", async () => {
     _prDeps.readText = async (path) => (path.endsWith("prd.json") ? "{ invalid" : null);
+    _prDeps.warn = () => {};
 
     const result = await loadFinishPrContext(input(), { base: "main", gatesRan: [] });
 
@@ -166,6 +167,7 @@ describe("loadFinishPrContext fail-open behavior (US-003 AC11-AC14)", () => {
 
   test("US-003 AC14 leaves status outcomes undefined when status.json is invalid", async () => {
     _prDeps.readText = async (path) => (path.endsWith("status.json") ? "{ invalid" : "{}");
+    _prDeps.warn = () => {};
 
     const result = await loadFinishPrContext(input(), { base: "main", gatesRan: [] });
 
@@ -473,6 +475,7 @@ describe("openOrPromotePr — finish metadata write (US-005 AC1-AC7)", () => {
       if (cmd.includes("edit")) return { exitCode: 1, stdout: "", stderr: "not found" };
       return ok("");
     };
+    _prDeps.warn = () => {};
     const r = await openOrPromotePr("/repo", "feat/x", "t", "b");
     expect(r.status).toBe("promoted");
     expect(r.url).toBe("https://gh/pr/1");
@@ -488,6 +491,7 @@ describe("openOrPromotePr — finish metadata write (US-005 AC1-AC7)", () => {
       if (cmd.includes("update")) return { exitCode: 1, stdout: "", stderr: "forbidden" };
       return ok("");
     };
+    _prDeps.warn = () => {};
     const r = await openOrPromotePr("/repo", "feat/x", "t", "b");
     expect(r.status).toBe("promoted");
     expect(r.url).toBe("https://gitlab/mr/1");
@@ -500,6 +504,7 @@ describe("openOrPromotePr — finish metadata write (US-005 AC1-AC7)", () => {
       if (cmd.includes("update")) return { exitCode: 1, stdout: "", stderr: "forbidden" };
       return ok("");
     };
+    _prDeps.warn = () => {};
     const r = await openOrPromotePr("/repo", "feat/x", "t", "b");
     expect(r.status).toBe("already-ready");
     expect(r.url).toBe("https://gitlab/mr/3");

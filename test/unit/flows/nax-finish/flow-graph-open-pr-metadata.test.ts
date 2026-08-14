@@ -11,6 +11,7 @@ import { _gitDeps } from "@flows/nax-finish/steps/git";
 import { _prDeps } from "@flows/nax-finish/steps/pr";
 import type { FinishPrContext } from "@flows/nax-finish/steps/pr-body";
 import { _resultDeps } from "@flows/nax-finish/steps/result";
+import { _prBodyDeps } from "@flows/nax-finish/steps/pr-body";
 import type { FlowNodeContext } from "acpx/flows";
 import { makeFlowCtx } from "@test/helpers";
 
@@ -41,6 +42,7 @@ describe("open_pr node — finish metadata (US-005 AC8-AC12)", () => {
   const originalLoadFinishPrContext = _openPrDeps.loadFinishPrContext;
   const originalBuildFinishTitle = _openPrDeps.buildFinishTitle;
   const originalBuildFinishBody = _openPrDeps.buildFinishBody;
+  const originalWarn = _prBodyDeps.warn;
   afterEach(() => {
     _prDeps.run = originalPrRun;
     _gitDeps.run = originalGitRun;
@@ -48,6 +50,7 @@ describe("open_pr node — finish metadata (US-005 AC8-AC12)", () => {
     _openPrDeps.loadFinishPrContext = originalLoadFinishPrContext;
     _openPrDeps.buildFinishTitle = originalBuildFinishTitle;
     _openPrDeps.buildFinishBody = originalBuildFinishBody;
+    _prBodyDeps.warn = originalWarn;
   });
 
   const mockCleanCommit = () => {
@@ -114,6 +117,7 @@ describe("open_pr node — finish metadata (US-005 AC8-AC12)", () => {
     _openPrDeps.loadFinishPrContext = async () => {
       throw new Error("artifact read failed");
     };
+    _prBodyDeps.warn = () => {};
 
     await nodeRun("open_pr").run(ctxOf({ outputs: { load_ctx: { route: "proceed", base: "origin/main" } } }));
 
@@ -128,6 +132,7 @@ describe("open_pr node — finish metadata (US-005 AC8-AC12)", () => {
     _openPrDeps.buildFinishTitle = () => {
       throw new Error("builder blew up");
     };
+    _prBodyDeps.warn = () => {};
 
     await nodeRun("open_pr").run(ctxOf({ outputs: { load_ctx: { route: "proceed", base: "origin/main" } } }));
 
@@ -142,6 +147,7 @@ describe("open_pr node — finish metadata (US-005 AC8-AC12)", () => {
     _openPrDeps.buildFinishBody = () => {
       throw new Error("builder blew up");
     };
+    _prBodyDeps.warn = () => {};
 
     await nodeRun("open_pr").run(ctxOf({ outputs: { load_ctx: { route: "proceed", base: "origin/main" } } }));
 

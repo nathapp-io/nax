@@ -7,16 +7,22 @@ import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 describe("logger sink registration", () => {
   let consoleSpy: ReturnType<typeof spyOn>;
+  let stderrSpy: ReturnType<typeof spyOn>;
 
   beforeEach(() => {
     resetLogger();
     consoleSpy = spyOn(console, "log").mockImplementation(() => {});
+    // `SinkRegistry` writes `[logger] Sink threw: …` to stderr when a sink
+    // throws — that's the production contract under test, but the deliberate
+    // fault-isolation tests below don't need the stderr noise in their output.
+    stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
     initLogger({ level: "debug" });
   });
 
   afterEach(() => {
     resetLogger();
     consoleSpy.mockRestore();
+    stderrSpy.mockRestore();
   });
 
   test("AC-1: addSink returns a function when called with a no-op sink", () => {
