@@ -24,6 +24,7 @@ import type {
 } from "@/plugins";
 import { type PRD, countStories } from "@/prd";
 import { errorMessage } from "@/utils/errors";
+import { resetRuntimeCrashRetryCounts } from "../escalation";
 import { releaseLock } from "../helpers";
 
 type PostRunActionOutcome =
@@ -32,7 +33,7 @@ type PostRunActionOutcome =
   | { status: "skipped"; reason: string }
   | { status: "error"; reason: string };
 
-export const _runCleanupDeps = { fireHook };
+export const _runCleanupDeps = { fireHook, resetRuntimeCrashRetryCounts };
 
 export interface RunCleanupOptions {
   runId: string;
@@ -260,6 +261,10 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
 
   // Release per-workdir feature resolver index to prevent memory leak across runs
   disposeFeatureResolver(workdir);
+
+  // BUG-15: clear the runtime-crash retry budget so the next run in this
+  // process starts with a fresh budget (tests, watch mode).
+  _runCleanupDeps.resetRuntimeCrashRetryCounts();
 
   // Always release lock, even if execution fails
   await releaseLock(workdir);

@@ -59,6 +59,44 @@ describe("buildSmartTestCommand", () => {
     const result = buildSmartTestCommand(testFiles as string[], command);
     expect(result).toBe(expected);
   });
+
+  // ENH-2: pnpm/turbo/nx monorepo scoping flags take a path argument and must
+  // never be replaced by scoped test files.
+  test.each([
+    [
+      "pnpm --filter ./packages/api — filter preserved, tests appended",
+      ["packages/api/test/unit/foo.test.ts"],
+      "pnpm --filter ./packages/api test",
+      "pnpm --filter ./packages/api test 'packages/api/test/unit/foo.test.ts'",
+    ],
+    [
+      "pnpm --filter=<pkg> combined form — filter preserved",
+      ["test/unit/foo.test.ts"],
+      "pnpm --filter=@scope/api test",
+      "pnpm --filter=@scope/api test 'test/unit/foo.test.ts'",
+    ],
+    [
+      "pnpm -F ./packages/api short form — filter preserved",
+      ["packages/api/test/unit/foo.test.ts"],
+      "pnpm -F ./packages/api test",
+      "pnpm -F ./packages/api test 'packages/api/test/unit/foo.test.ts'",
+    ],
+    [
+      "turbo --filter <pkg> followed by a flag — filter preserved",
+      ["test/unit/foo.test.ts"],
+      "turbo run test --filter=@scope/api --continue",
+      "turbo run test --filter=@scope/api --continue 'test/unit/foo.test.ts'",
+    ],
+    [
+      "pnpm --dir packages/api — dir preserved, tests appended",
+      ["test/unit/foo.test.ts"],
+      "pnpm --dir packages/api test",
+      "pnpm --dir packages/api test 'test/unit/foo.test.ts'",
+    ],
+  ])("%s", (_label, testFiles, command, expected) => {
+    const result = buildSmartTestCommand(testFiles as string[], command);
+    expect(result).toBe(expected);
+  });
 });
 
 // ---------------------------------------------------------------------------

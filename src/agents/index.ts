@@ -28,6 +28,7 @@ export {
   // `@/agents` surface. See src/agents/acp/stdout-line-reader.ts.
   MAX_BUFFERED_LINE_BYTES,
   readAndParseLines,
+  readStreamTail,
 } from "./acp";
 export type { BuildTurnResultInput, ModelSpec } from "./acp";
 export type {

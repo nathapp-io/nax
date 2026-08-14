@@ -51,4 +51,68 @@ describe("crash-heartbeat — startHeartbeat", () => {
     // The catch handler must log "crashed" / "stopped", not swallow silently.
     expect(warnings.some((w) => w.includes("crashed") || w.includes("stopped"))).toBe(true);
   });
+
+  // MEM-3: stopHeartbeat left one in-flight uncancellable 60s Bun.sleep running —
+  // the loop checked `_heartbeatActive` only AFTER the sleep resolved, so the
+  // timer kept the event loop alive up to 60s in in-process consumers. The stop
+  // must abort the in-flight sleep via an AbortSignal so it settles promptly.
+  test("MEM-3: stopHeartbeat aborts the in-flight sleep instead of leaving a 60s timer armed", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    let sleepSettled = false;
+
+    _heartbeatDeps.sleep = (_ms: number, signal?: AbortSignal) => {
+      capturedSignal = signal;
+      // Hang until aborted — never resolve, so the loop stays parked in the
+      // sleep and no busy-spin starves the event loop.
+      return new Promise<void>((resolve, reject) => {
+        signal?.addEventListener("abort", () => {
+          sleepSettled = true;
+          reject(signal.reason);
+        });
+      });
+    };
+
+    startHeartbeat({ update: async () => {} } as any, () => 0, () => 0);
+    // Let the loop reach the sleep call.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(capturedSignal).toBeDefined();
+
+    stopHeartbeat();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // The abort must reach the in-flight sleep (and settle it promptly —
+    // no 60s wait).
+    expect(capturedSignal?.aborted).toBe(true);
+    expect(sleepSettled).toBe(true);
+  });
+
+  // Regression: the stop-abort rejection must not be rethrown. When
+  // stopHeartbeat() nulled the controller before the loop's catch ran, every
+  // normal stop logged a spurious "Heartbeat loop crashed" warning.
+  test("MEM-3: a normal stop does not log a spurious 'loop crashed' warning", async () => {
+    const warnings: string[] = [];
+
+    _heartbeatDeps.getSafeLogger = () =>
+      ({
+        warn: (_stage: string, msg: string) => {
+          warnings.push(msg);
+        },
+        debug: () => {},
+        info: () => {},
+        error: () => {},
+      }) as any;
+
+    _heartbeatDeps.sleep = (_ms: number, signal?: AbortSignal) =>
+      new Promise<void>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason));
+      });
+
+    startHeartbeat({ update: async () => {} } as any, () => 0, () => 0);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    stopHeartbeat();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(warnings).toEqual([]);
+  });
 });

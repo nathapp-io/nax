@@ -360,6 +360,18 @@ export const RUNTIME_CRASH_RETRY_CAP = 2;
 export const _runtimeCrashRetryCounts = new Map<string, number>();
 
 /**
+ * BUG-15: Clear the runtime-crash retry budget map.
+ *
+ * Called at run teardown (cleanupRun). Entries for stories that crashed,
+ * retried, and then succeeded without another handleTierEscalation call
+ * would otherwise persist for the process lifetime, starving the next run's
+ * budget in in-process consumers (tests, watch mode).
+ */
+export function resetRuntimeCrashRetryCounts(): void {
+  _runtimeCrashRetryCounts.clear();
+}
+
+/**
  * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
  */
 export const _tierEscalationDeps = {

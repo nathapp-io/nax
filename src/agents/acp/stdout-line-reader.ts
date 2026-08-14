@@ -25,6 +25,59 @@ export const MAX_BUFFERED_LINE_BYTES = 10 * 1024 * 1024; // 10MB
  * `MAX_BUFFERED_LINE_BYTES` above. The sole production caller is
  * `spawn-client.ts`, which imports it directly from this module.
  *
+ * MEM-1: read a stream to string, keeping only a rolling tail of at most
+ * `maxBytes`. Prevents unbounded stderr buffering from becoming the response
+ * message content on failure — a verbose agent can emit many MB before dying,
+ * and the tail is where the actual error lives.
+ */
+export const MAX_BUFFERED_STDERR_BYTES = 64 * 1024; // 64KB rolling tail
+
+export function readStreamTail(
+  stream: ReadableStream<Uint8Array>,
+  maxBytes: number = MAX_BUFFERED_STDERR_BYTES,
+): Promise<string> {
+  const decoder = new TextDecoder();
+  const reader = stream.getReader();
+  let tail = "";
+
+  const append = (chunk: string): void => {
+    tail += chunk;
+    const bytes = Buffer.byteLength(tail, "utf8");
+    if (bytes <= maxBytes) return;
+    // Keep the last `maxBytes` bytes, never splitting a multi-byte UTF-8
+    // sequence: find the byte cutoff, then walk forward by whole code points
+    // (surrogate pairs count as one) so the slice lands on a clean boundary.
+    let cutoff = bytes - maxBytes;
+    let index = 0;
+    while (index < tail.length && cutoff > 0) {
+      const cp = tail.codePointAt(index) ?? 0;
+      const units = cp > 0xffff ? 2 : 1;
+      index += units;
+      cutoff -= Buffer.byteLength(String.fromCodePoint(cp), "utf8");
+    }
+    tail = tail.slice(index);
+  };
+
+  return (async () => {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        append(decoder.decode(value, { stream: true }));
+      }
+      append(decoder.decode());
+      return tail;
+    } finally {
+      reader.releaseLock();
+    }
+  })();
+}
+
+/**
+ * @internal Not part of the `@/agents` public surface — see the note on
+ * `MAX_BUFFERED_LINE_BYTES` above. The sole production caller is
+ * `spawn-client.ts`, which imports it directly from this module.
+ *
  * Read chunks from a stream, split on newlines, and feed each complete line
  * into an AcpxParseState incrementally. Discards raw bytes immediately after
  * parsing so only the extracted fields (strings + numbers) are held in memory.

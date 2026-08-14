@@ -344,12 +344,14 @@ function buildTestCandidates(
  * // => "bun test test/"
  * ```
  */
-// BUG-18: flags that take a path argument. A token immediately following one
+// BUG-18/ENH-2: flags that take a path argument. A token immediately following one
 // of these (or a `--flag=<path>` combined form) is a flag's config path, not a
 // positional test-path argument, and must never be replaced by scoped test
 // files — doing so silently drops the flag's value (e.g. `--config
-// ./vitest.config.ts` -> `--config '<test files>'`).
-const PATH_TAKING_FLAGS = ["--config", "-c", "--project", "-p"];
+// ./vitest.config.ts` -> `--config '<test files>'`). ENH-2: pnpm/turbo/nx
+// monorepo scoping flags (`--filter`, `--dir`, `-F`) were missing, silently
+// breaking scoped runs like `pnpm --filter ./packages/api test`.
+const PATH_TAKING_FLAGS = ["--config", "-c", "--project", "-p", "--filter", "--dir", "-F"];
 
 export function buildSmartTestCommand(testFiles: string[], baseCommand: string): string {
   if (testFiles.length === 0) {

@@ -407,3 +407,51 @@ describe("GitHistoryProvider — SEC-503 path traversal prevention", () => {
     expect(result.chunks).toHaveLength(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PERF-2: cooperative cancellation — an aborted fetch must stop doing work
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("GitHistoryProvider — cooperative cancellation (PERF-2)", () => {
+  test("an already-aborted signal never spawns git", async () => {
+    let gitCalls = 0;
+    _gitHistoryDeps.gitWithTimeout = async () => {
+      gitCalls++;
+      return { stdout: "abc1234 feat: something", stderr: "", exitCode: 0 };
+    };
+
+    const controller = new AbortController();
+    controller.abort();
+
+    const p = new GitHistoryProvider();
+    const result = await p.fetch(
+      makeRequest({ touchedFiles: ["src/a.ts", "src/b.ts"] }),
+      controller.signal,
+    );
+
+    expect(result.chunks).toHaveLength(0);
+    expect(gitCalls).toBe(0);
+  });
+
+  test("an abort mid-fetch stops further per-file git spawns", async () => {
+    const queried: string[] = [];
+    const controller = new AbortController();
+    let first = true;
+
+    _gitHistoryDeps.gitWithTimeout = async (args: string[]) => {
+      queried.push(args[args.length - 1] ?? "");
+      if (first) controller.abort();
+      first = false;
+      return { stdout: "abc1234 feat: something", stderr: "", exitCode: 0 };
+    };
+
+    const p = new GitHistoryProvider();
+    await p.fetch(
+      makeRequest({ touchedFiles: ["src/a.ts", "src/b.ts", "src/c.ts"] }),
+      controller.signal,
+    );
+
+    // The first spawn aborts the signal; no further files are queried.
+    expect(queried).toEqual(["src/a.ts"]);
+  });
+});

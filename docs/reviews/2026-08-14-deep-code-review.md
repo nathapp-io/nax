@@ -7,7 +7,7 @@
 **Baseline:** 1142 tests pass / 0 fail; `bun run typecheck` clean; `bun run lint` clean (all 12 custom check scripts green)
 **Status:** triaged 2026-08-14 — see **Decisions** and **Work Order**. Implement from the Work Order; the Findings section is background.
 
-> **Implementation status (2026-08-14).** All CRITICAL/HIGH/MEDIUM findings implemented: W1–W9 and GROWTH-1/GROWTH-2 (from W11) are done, plus BUG-11 and BUG-13 (LOW, bundled into W8/W5 respectively). Only W10 (documentation) and the remainder of the W11 LOW backlog (BUG-12, BUG-14, BUG-15, ENH-1, ENH-2, MEM-1/2/3, PERF-2/3) remain unimplemented. Full suite green (13,071 unit + 1,104 integration + 24 UI tests, 0 fail), `bun run typecheck` clean, `bun run lint` clean. See each finding's **Status** line below for detail.
+> **Implementation status (2026-08-14, follow-up).** Everything from the Work Order is implemented: W1–W9, W10 (trust-boundary documentation), and the full W11 backlog — BUG-12, BUG-14, BUG-15, ENH-1, ENH-2, MEM-1/2/3, PERF-2/3 — plus GROWTH-1/GROWTH-2, BUG-11 and BUG-13 (LOW, bundled into W8/W5 respectively). Full suite green (13,160 unit + 1,129 integration/UI tests, 0 fail), `bun run typecheck` clean, `bun run lint` clean. See each finding's **Status** line below for detail.
 
 ---
 
@@ -253,18 +253,18 @@ if (event.cumulative_token_usage) state.tokenUsage = event.cumulative_token_usag
 
 ### 🟢 LOW
 
-- **ENH-1** — `parseAgentError` cannot classify nested `error.data` codes in a pure-JSON envelope (`parse-agent-error.ts:58-63,278-299`): root parse skips the embedded-object scan; JSON-quoted `"acpxCode":"RATE_LIMIT"` defeats the key-value regex. Walk `payload.error.data`.
-- **MEM-1** — Unbounded stderr buffering in spawn-client (`spawn-client.ts:287,337-338`): full stderr becomes the response message content; only the log line is capped. Rolling-tail cap needed.
-- **ENH-2** — `buildSmartTestCommand` `PATH_TAKING_FLAGS` misses `--filter`, `--dir`, `-F` (pnpm/turbo/nx) (`smart-runner.ts:352-374`): monorepo scoping silently breaks for `pnpm --filter ./packages/api test`.
+- **ENH-1** — ✅ FIXED (2026-08-14) — `parseAgentError` now walks `payload.error.data` so JSON-RPC envelopes carrying `acpxCode` in the nested `data` object classify correctly (`parse-agent-error.ts`): `extractJsonCodeTokens` recurses through `error`/`data` sub-objects and `findRetryAfterSeconds` picks up nested `retryAfterSeconds`.
+- **MEM-1** — ✅ FIXED (2026-08-14) — unbounded stderr buffering in spawn-client (`spawn-client.ts`): `readStreamTail` caps stderr to a 64KB rolling tail (UTF-8-safe trim) instead of `new Response(proc.stderr).text()`.
+- **ENH-2** — ✅ FIXED (2026-08-14) — `buildSmartTestCommand` `PATH_TAKING_FLAGS` now includes `--filter`, `--dir`, `-F` (`smart-runner.ts:352`): pnpm/turbo/nx monorepo scoping survives scoped runs.
 - **BUG-11** — ✅ FIXED (2026-08-14, bundled into W8) — `PidRegistry.freeze()` before `onShutdown` drops PIDs spawned during teardown (`crash-signals.ts:89-98`, `pid-registry.ts:53-56`): a hung `acpx stop` spawned during teardown is never SIGKILLed.
-- **BUG-12** — `removeWorktreeDirectory` awaits `proc.exited` without consuming stdout/stderr (`pipeline-result-handler.ts:46-51`): a git error emitting >64KB stalls the child → hang; non-zero exits are also invisible.
+- **BUG-12** — ✅ FIXED (2026-08-14) — `removeWorktreeDirectory` now drains stdout/stderr concurrently with the exit and logs non-zero exits (`pipeline-result-handler.ts`): a git error emitting >64KB can no longer stall the child.
 - **BUG-13** — ✅ FIXED (2026-08-14, bundled into W5) — Parallel batch path skips `statusWriter` update after batch completion (`unified-executor.ts:342-350`): status.json can show stale story counts during long batches; crash loses progress.
-- **BUG-14** — Dead `completedEarly` branch in `runner.ts:284` / `runner-execution.ts:69`: nothing ever sets the flag; delete or wire it up.
-- **BUG-15** — `_runtimeCrashRetryCounts` module map grows across runs (`tier-escalation.ts:350`): never cleared at run teardown.
-- **PERF-2** — Timed-out provider fetch keeps doing work (`context/engine/orchestrator.ts:116-125`): `controller.abort()` exists but built-in providers aren't audited for cooperative cancellation.
-- **PERF-3** — PidRegistry `killAll` spawns `ps`/`kill` subprocesses with no timeout, re-spawned per target (`pid-registry.ts:160-171,176,235,259-278`): shutdown latency scales O(P×6 spawns).
-- **MEM-2** — TUI `escalationLog` is append-only and never pruned (`usePipelineBusEvents.ts:178`); display caps at 5 but array grows for run lifetime.
-- **MEM-3** — `stopHeartbeat` leaves one in-flight uncancellable 60s `Bun.sleep` (`crash-heartbeat.ts:35-37`): harmless in CLI (explicit process.exit) but keeps the event loop alive up to 60s in in-process consumers; use `cancellableDelay`.
+- **BUG-14** — ✅ FIXED (2026-08-14) — dead `completedEarly` branch removed from `runner.ts:284` / `runner-execution.ts:69`: nothing ever set the flag; the early-return skipped `runCompletionPhase` on an unreachable path.
+- **BUG-15** — ✅ FIXED (2026-08-14) — `_runtimeCrashRetryCounts` module map now cleared at run teardown (`tier-escalation.ts`, `resetRuntimeCrashRetryCounts` wired into `cleanupRun`).
+- **PERF-2** — ✅ FIXED (2026-08-14) — timed-out provider fetch no longer keeps doing work: `CodeNeighborProvider` and `GitHistoryProvider` honor the AbortSignal and stop per-file processing on abort (`code-neighbor.ts`, `git-history.ts`).
+- **PERF-3** — ✅ FIXED (2026-08-14) — PidRegistry `ps`/`kill` subprocesses now bounded by a hard deadline (`pid-registry.ts`): shutdown latency no longer scales with wedged children.
+- **MEM-2** — ✅ FIXED (2026-08-14) — TUI `escalationLog` is pruned to 5 entries in the hook (`usePipelineBusEvents.ts`), matching the display cap, instead of growing for the run lifetime.
+- **MEM-3** — ✅ FIXED (2026-08-14) — `stopHeartbeat` aborts the in-flight sleep via `cancellableDelay` + AbortSignal (`crash-heartbeat.ts`): no 60s uncancellable `Bun.sleep` keeps the event loop alive.
 
 
 ### ⚪ CLOSED — no code change
@@ -305,8 +305,8 @@ This supersedes the original priority table. Findings are grouped into stories t
 | **W7** | **Token accounting validation.** Apply the `Number.isFinite` guard that `event.usage` already has to `cumulative_token_usage`, and coerce in `toInternal`/`addTokenUsage` so a string cannot concatenate into the running total. Pure functions — direct unit tests. | BUG-10 | S |
 | **W8** | **Process lifecycle.** `detached: true` + `killProcessGroup` for acpx spawns, following the pattern `verification/executor.ts:91-92,123` already uses; deadline on `trackedSpawn`; register PIDs spawned during teardown. On BUG-11: `freeze()` currently excludes exactly the hung `acpx sessions close` that the very next line claims to kill — read `crash-signals.ts:88-99` before changing the ordering. | ORPHAN-1, PERF-1, BUG-11 | M |
 | **W9** | **Webhook hardening.** Global request rate limit regardless of HMAC; warn when `requireSecret: false`. Not closed by D-1 — the actor is a local process, not the repo. | SEC-8 | S |
-| **W10** | **Documentation: trust boundary.** State D-1 in `docs/architecture/` beside the permission-resolution spec, and note the Telegram private-chat expectation. No code. | D-1, SEC-11 | S |
-| **W11** | **Hardening backlog.** Independent, low-risk, no decisions pending. | BUG-12, BUG-14, BUG-15, ENH-1, ENH-2, MEM-1/2/3, PERF-2/3, GROWTH-1/2 | L |
+| **W10** | **Documentation: trust boundary.** State D-1 in `docs/architecture/` beside the permission-resolution spec, and note the Telegram private-chat expectation. No code. ✅ DONE (2026-08-14) — §17 Trust Boundary in `docs/architecture/agent-adapters.md`. | D-1, SEC-11 | S |
+| **W11** | **Hardening backlog.** Independent, low-risk, no decisions pending. ✅ DONE (2026-08-14) — all members implemented. | BUG-12, BUG-14, BUG-15, ENH-1, ENH-2, MEM-1/2/3, PERF-2/3, GROWTH-1/2 | L |
 
 **Closed — do not implement:** SEC-1, SEC-3, SEC-5, SEC-6, SEC-7, SEC-9, SEC-10, SEC-11 (code portion).
 

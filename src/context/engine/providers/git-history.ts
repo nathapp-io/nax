@@ -65,7 +65,10 @@ function contentHash8(content: string): string {
  * Fetch git log for a single file and return a formatted section.
  * Returns null when the file has no history or git fails.
  */
-async function fetchFileHistory(filePath: string, workdir: string): Promise<string | null> {
+async function fetchFileHistory(filePath: string, workdir: string, signal?: AbortSignal): Promise<string | null> {
+  // PERF-2: cooperative cancellation — a timed-out fetch must not keep
+  // spawning git for files the orchestrator no longer wants.
+  if (signal?.aborted) return null;
   const { stdout, exitCode } = await _gitHistoryDeps.gitWithTimeout(
     ["log", "--oneline", "--follow", "-n", String(MAX_COMMITS), "--", filePath],
     workdir,
@@ -96,7 +99,7 @@ export class GitHistoryProvider implements IContextProvider {
     this.historyScope = options.historyScope ?? "package";
   }
 
-  async fetch(request: ContextRequest): Promise<ContextProviderResult> {
+  async fetch(request: ContextRequest, signal?: AbortSignal): Promise<ContextProviderResult> {
     const { touchedFiles } = request;
     const workdir = this.historyScope === "package" ? request.packageDir : request.repoRoot;
     if (!touchedFiles || touchedFiles.length === 0) {
@@ -116,7 +119,7 @@ export class GitHistoryProvider implements IContextProvider {
       await Promise.all(
         filesToProcess.map(async (file) => ({
           file,
-          section: await fetchFileHistory(file, workdir),
+          section: await fetchFileHistory(file, workdir, signal),
         })),
       )
     ).filter((entry): entry is { file: string; section: string } => entry.section !== null);

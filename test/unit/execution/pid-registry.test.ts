@@ -376,3 +376,71 @@ describe("PidRegistry", () => {
     expect(entry2.pid).toBe(22222);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PERF-3: ps/kill subprocesses must be bounded by a timeout
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("PidRegistry — PERF-3: bounded ps/kill subprocesses", () => {
+  test("killAll() resolves within the deadline when `ps -eo` never exits", async () => {
+    _pidRegistryDeps.spawn = mock(() => {
+      return {
+        pid: 2000,
+        stdout: new ReadableStream<Uint8Array>({ start() {} }), // never closes
+        stderr: new ReadableStream<Uint8Array>({ start() {} }),
+        exited: new Promise<number>(() => {}), // wedged — never resolves
+      } as unknown as ReturnType<typeof Bun.spawn>;
+    }) as unknown as typeof Bun.spawn; // test-ratchet-allow: as-unknown-as (mock cast, mirrors lines 241/296)
+    _pidRegistryDeps.sleep = mock(async () => {}) as typeof Bun.sleep;
+    _pidRegistryDeps.procExitTimeoutMs = 50;
+
+    const registry = new PidRegistry(TEST_WORKDIR);
+    await registry.register(172446);
+
+    const MARGIN_MS = 500;
+    const timed = Symbol("timed");
+    const result = await Promise.race([
+      registry.killAll(),
+      new Promise<typeof timed>((resolve) => setTimeout(() => resolve(timed), MARGIN_MS)),
+    ]);
+
+    // killAll() must resolve within the deadline, not hang on the wedged ps.
+    expect(result).not.toBe(timed);
+    expect(registry.getPids()).toEqual([]);
+  });
+
+  test("killAll() resolves when a per-pid `ps -p` never exits", async () => {
+    _pidRegistryDeps.spawn = mock((cmd: string[]) => {
+      if (cmd[0] === "ps" && cmd[1] === "-eo") {
+        return {
+          pid: 2000,
+          stdout: makeStream("172446 1 Thu May 15 11:52:44 2026\n"),
+          stderr: makeStream(),
+          exited: Promise.resolve(0),
+        } as unknown as ReturnType<typeof Bun.spawn>;
+      }
+      // Per-pid identity lookup: wedged — never exits.
+      return {
+        pid: 2001,
+        stdout: new ReadableStream<Uint8Array>({ start() {} }),
+        stderr: new ReadableStream<Uint8Array>({ start() {} }),
+        exited: new Promise<number>(() => {}),
+      } as unknown as ReturnType<typeof Bun.spawn>;
+    }) as unknown as typeof Bun.spawn; // test-ratchet-allow: as-unknown-as (mock cast, mirrors lines 241/296)
+    _pidRegistryDeps.sleep = mock(async () => {}) as typeof Bun.sleep;
+    _pidRegistryDeps.procExitTimeoutMs = 50;
+
+    const registry = new PidRegistry(TEST_WORKDIR);
+    await registry.register(172446);
+
+    const MARGIN_MS = 500;
+    const timed = Symbol("timed");
+    const result = await Promise.race([
+      registry.killAll(),
+      new Promise<typeof timed>((resolve) => setTimeout(() => resolve(timed), MARGIN_MS)),
+    ]);
+
+    expect(result).not.toBe(timed);
+    expect(registry.getPids()).toEqual([]);
+  });
+});

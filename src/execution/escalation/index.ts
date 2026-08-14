@@ -10,6 +10,7 @@ export {
   handleTierEscalation,
   _tierEscalationDeps,
   _runtimeCrashRetryCounts,
+  resetRuntimeCrashRetryCounts,
   RUNTIME_CRASH_RETRY_CAP,
   type PreIterationCheckResult,
   type EscalationHandlerContext,

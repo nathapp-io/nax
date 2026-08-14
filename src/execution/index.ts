@@ -88,6 +88,14 @@ export {
   logDeterministicPhaseOutcome,
 } from "./story-orchestrator-logging";
 export { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "./plan-inputs";
+export {
+  handlePipelineFailure,
+  handlePipelineSuccess,
+  _resultHandlerDeps,
+  type PipelineHandlerContext,
+  type PipelineSuccessResult,
+  type PipelineFailureResult,
+} from "./pipeline-result-handler";
 export { runNonBlockingFix } from "./non-blocking-fix";
 export { buildPlanForStrategy, resolveStoryPathAnchors } from "./build-plan-for-strategy";
 export {

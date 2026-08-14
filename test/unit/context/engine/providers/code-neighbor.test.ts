@@ -636,3 +636,61 @@ describe("CodeNeighborProvider — naxIgnoreIndex threaded through fetch", () =>
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PERF-2: cooperative cancellation — an aborted fetch must stop doing work
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("CodeNeighborProvider — cooperative cancellation (PERF-2)", () => {
+  test("an already-aborted signal skips per-file neighbor collection entirely", async () => {
+    let readCalls = 0;
+    _codeNeighborDeps.fileExists = async () => {
+      readCalls++;
+      return true;
+    };
+    _codeNeighborDeps.readFile = async () => {
+      readCalls++;
+      return 'import "./dep"';
+    };
+    _codeNeighborDeps.glob = () => ({ files: ["src/a.ts", "src/b.ts"], truncated: false });
+    _codeNeighborDeps.detectLanguage = async () => undefined;
+
+    const controller = new AbortController();
+    controller.abort();
+
+    const p = new CodeNeighborProvider();
+    const result = await p.fetch(
+      makeRequest({ touchedFiles: ["src/foo.ts", "src/bar.ts"] }),
+      controller.signal,
+    );
+
+    // The fetch must bail out before reading any file or scanning neighbors.
+    expect(result.chunks).toHaveLength(0);
+    expect(readCalls).toBe(0);
+  });
+
+  test("an abort mid-fetch stops further per-file processing", async () => {
+    const reads: string[] = [];
+    let abortAfterFirst = false;
+    const controller = new AbortController();
+
+    _codeNeighborDeps.fileExists = async () => true;
+    _codeNeighborDeps.readFile = async (path: string) => {
+      reads.push(path);
+      if (abortAfterFirst) controller.abort();
+      abortAfterFirst = true;
+      return 'import "./dep"';
+    };
+    _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
+    _codeNeighborDeps.detectLanguage = async () => undefined;
+
+    const p = new CodeNeighborProvider();
+    await p.fetch(
+      makeRequest({ touchedFiles: ["src/foo.ts", "src/bar.ts", "src/baz.ts"] }),
+      controller.signal,
+    );
+
+    // After the first file triggers the abort, no further files are processed.
+    expect(reads.length).toBeLessThan(3);
+  });
+});
+
