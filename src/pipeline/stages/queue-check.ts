@@ -8,9 +8,8 @@
 import path from "node:path";
 import { validateFilePath } from "@/config";
 import { NaxError } from "@/errors";
-import { errorMessage } from "@/utils/errors";
-import { processQueueFile } from "../../execution/queue-handler";
-import { getLogger } from "../../logger";
+import { processQueueFile } from "@/execution";
+import { getLogger } from "@/logger";
 import {
   injectStory,
   markStorySkipped,
@@ -18,8 +17,9 @@ import {
   savePRD,
   setStoryPriority,
   validateInjectedStory,
-} from "../../prd";
-import type { QueueCommand } from "../../queue";
+} from "@/prd";
+import type { QueueCommand } from "@/queue";
+import { errorMessage } from "@/utils/errors";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /**
