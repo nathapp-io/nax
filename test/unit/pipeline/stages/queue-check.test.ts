@@ -635,3 +635,57 @@ describe("queueCheckStage — skipPrdPersistence: unpersisted-command audit", ()
     expect(unpersisted?.data.command).toBe("ABORT");
   });
 });
+
+describe("queueCheckStage — read/process/clear is one atomic unit (BUG-11)", () => {
+  let workdir: string;
+
+  beforeEach(() => {
+    initLogger({ level: "silent" });
+    workdir = makeTempDir("nax-queue-check-atomic-");
+  });
+
+  afterEach(() => {
+    resetLogger();
+    cleanupTempDir(workdir);
+  });
+
+  test("a successful run leaves no .queue.txt.processing behind, so a second run cannot re-apply the same commands", async () => {
+    const s1 = makeStory({ id: "US-001", status: "pending" });
+    const prd = makePRD({ userStories: [s1] });
+    const ctx = makeCtx(workdir, { prd, stories: [s1], story: s1 });
+
+    await Bun.write(join(workdir, ".queue.txt"), "PRIORITY US-001 9\n");
+
+    await queueCheckStage.execute(ctx);
+    expect(ctx.prd.userStories[0].priority).toBe(9);
+    expect(await Bun.file(join(workdir, ".queue.txt.processing")).exists()).toBe(false);
+
+    // Simulates the run restarting and re-checking the queue — before the
+    // fix, a crash between "commands applied" and "processing file cleared"
+    // left .queue.txt.processing behind for the next run to re-read and
+    // re-apply (e.g. re-injecting an INJECT, re-setting a PRIORITY).
+    ctx.prd.userStories[0].priority = undefined;
+    const second = await queueCheckStage.execute(ctx);
+
+    expect(second.action).toBe("continue");
+    expect(ctx.prd.userStories[0].priority).toBeUndefined();
+  });
+
+  test("a processor exception (e.g. savePRD failure) propagates instead of being silently swallowed", async () => {
+    const s1 = makeStory({ id: "US-001", status: "pending" });
+    const prd = makePRD({ userStories: [s1] });
+    const ctx = makeCtx(workdir, { prd, stories: [s1], story: s1 });
+    await Bun.write(join(workdir, ".queue.txt"), "RETRY US-001\n");
+
+    // Force savePRD to fail by pointing featureDir at a location that cannot
+    // be created (a file, not a directory, in its place).
+    await Bun.write(join(workdir, "not-a-dir"), "blocker");
+    ctx.featureDir = join(workdir, "not-a-dir", "nested");
+
+    await expect(queueCheckStage.execute(ctx)).rejects.toThrow();
+
+    // The processing file must still be there — the failed command was never
+    // durably marked as processed, so a retry will see it again.
+    expect(await Bun.file(join(workdir, ".queue.txt.processing")).exists()).toBe(true);
+  });
+});
