@@ -548,7 +548,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
         ? "cost-limit"
         : isComplete(prd)
           ? "completed"
-          : isStalled(prd)
+          : isStalled(prd, config.execution.rectification?.maxAttemptsTotal)
             ? "stalled"
             : "running",
   );
