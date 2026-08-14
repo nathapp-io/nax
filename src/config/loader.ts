@@ -105,9 +105,15 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   } catch {
     /* logger may not be init yet */
   }
+  // SEC-2 — the raw (post-shim, pre-defaults-merge) global layer, kept around so the
+  // project-layer warn check below can tell "the global layer explicitly set this
+  // security-sensitive key" apart from "this key is just the unset schema default
+  // flowing through defaults + global merge". null when there is no global config file.
+  let globalLayerConf: Record<string, unknown> | null = null;
   if (globalConfRaw) {
     const { profile: _gProfile, ...globalConfStripped } = globalConfRaw;
     const globalConf = applyConfigCompatShims(globalConfStripped, logger, warnDedupe);
+    globalLayerConf = globalConf;
     rawConfig = deepMergeConfig(rawConfig, globalConf);
   }
 
@@ -121,7 +127,14 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
       rawConfig = deepMergeConfig(rawConfig, resolvedProjConf);
       // SEC-2 / D-2 — warn (do not block, do not change precedence) when the
       // project layer changed a security-sensitive key from the global value.
-      warnSecuritySensitiveOverrides(preProjectMergeConfig, rawConfig, warnDedupe.warn);
+      // `sourceLayerConf: globalLayerConf` scopes the check to keys the global
+      // layer actually set — with no global config file (globalLayerConf is
+      // null) this never warns, since there is nothing the project layer could
+      // be said to have "changed" from.
+      warnSecuritySensitiveOverrides(preProjectMergeConfig, rawConfig, warnDedupe.warn, {
+        layerName: "project",
+        sourceLayerConf: globalLayerConf,
+      });
     }
   }
 
@@ -145,13 +158,28 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
     // the same legacy shapes (e.g. routing.strategy: "manual") and must be remapped
     // rather than hard-failing Zod validation.
     const shimmedProfileData = applyConfigCompatShims(resolvedProfileData, logger, warnDedupe);
+    const preProfileMergeConfig = rawConfig;
     rawConfig = deepMergeConfig(rawConfig, shimmedProfileData);
+    // SEC-2 — profiles merge AFTER global + project and can just as easily undo a
+    // security-sensitive setting, invisibly (profile files live outside the repo,
+    // outside code review). Only warn when this profile itself sets the key.
+    warnSecuritySensitiveOverrides(preProfileMergeConfig, rawConfig, warnDedupe.warn, {
+      layerName: `profile:${name}`,
+      sourceLayerConf: shimmedProfileData,
+    });
   }
 
   // Layer 4: CLI overrides (highest priority)
   if (cliOverrides) {
     const shimmedCliOverrides = applyConfigCompatShims(cliOverrides, logger, warnDedupe);
+    const preCliMergeConfig = rawConfig;
     rawConfig = deepMergeConfig(rawConfig, shimmedCliOverrides);
+    // SEC-2 — CLI overrides win over every other layer; warn when one changes a
+    // security-sensitive key so the change isn't silently invisible.
+    warnSecuritySensitiveOverrides(preCliMergeConfig, rawConfig, warnDedupe.warn, {
+      layerName: "CLI override",
+      sourceLayerConf: shimmedCliOverrides,
+    });
   }
 
   // Force-set profile + chain to the resolved values after all merges (AC 6).

@@ -39,12 +39,20 @@ function failExec(): ExecResult {
 function envExec(): ExecResult {
   return { success: false, timeout: true, countsTowardEscalation: false };
 }
+type ExecResultWithOutput = ExecResult & { output?: string };
+function noTestsExec(): ExecResultWithOutput {
+  // Mirrors a Go probe built from a space-containing subtest name: Go's -run
+  // filter doesn't match anything, the process exits 0, and it prints this
+  // marker — countsTowardEscalation is true (the executor ran fine) but zero
+  // tests actually executed.
+  return { success: true, timeout: false, countsTowardEscalation: true, output: "no tests to run" };
+}
 
 /**
  * Install a fake executor that records every command string passed in, and
  * returns the supplied `results` (one per probe, cycled if exhausted).
  */
-function installFakeExecutor(results: ExecResult[]) {
+function installFakeExecutor(results: ExecResultWithOutput[]) {
   const calls: Array<{ command: string; cwd?: string; timeoutSeconds: number }> = [];
   const fake = mock(async (command: string, timeoutSeconds: number, _env: any, opts: any) => {
     calls.push({ command, cwd: opts?.cwd, timeoutSeconds });
@@ -266,7 +274,7 @@ describe("runFlakeProbe — verdict logic", () => {
     expect(fake).toHaveBeenCalledTimes(2);
   });
 
-  test("AC11 — all timeouts/env failures → consistent-failure", async () => {
+  test("BUG-8/AC11 — all timeouts/env failures → unprobeable (non-attributable), not consistent-failure", async () => {
     const { fake } = installFakeExecutor([envExec(), envExec(), envExec()]);
 
     const result = await runFlakeProbe({
@@ -278,9 +286,9 @@ describe("runFlakeProbe — verdict logic", () => {
       probeTimeoutSeconds: 30,
     });
 
-    expect(result.verdict).toBe("consistent-failure");
-    if (result.verdict === "consistent-failure") {
-      expect(result.probeRuns).toBe(3);
+    expect(result.verdict).toBe("unprobeable");
+    if (result.verdict === "unprobeable") {
+      expect(result.reason).toBeDefined();
     }
     expect(fake).toHaveBeenCalledTimes(3);
   });
@@ -302,7 +310,7 @@ describe("runFlakeProbe — verdict logic", () => {
     expect(calls[0]?.command).toBeDefined();
   });
 
-  test("executor crash (rejection) counts as failed probe, not propagated", async () => {
+  test("BUG-8 — executor crash on every probe → unprobeable (non-attributable), not consistent-failure", async () => {
     _flakeProbeDeps.execute = mock(async () => {
       throw new Error("spawn EACCES");
     }) as typeof _flakeProbeDeps.execute;
@@ -316,11 +324,11 @@ describe("runFlakeProbe — verdict logic", () => {
       probeTimeoutSeconds: 30,
     });
 
-    // All probes failed (executor crashed every time) → consistent-failure,
-    // and the function did not propagate the rejection.
-    expect(result.verdict).toBe("consistent-failure");
-    if (result.verdict === "consistent-failure") {
-      expect(result.probeRuns).toBe(2);
+    // Every probe crashed — environmental, not an attributable pass or fail —
+    // so the verdict must be unprobeable, and the rejection must not propagate.
+    expect(result.verdict).toBe("unprobeable");
+    if (result.verdict === "unprobeable") {
+      expect(result.reason).toBeDefined();
     }
   });
 
@@ -338,6 +346,138 @@ describe("runFlakeProbe — verdict logic", () => {
       failure: makeFailure(),
       cwd: "/tmp/probe",
       probeRuns: 2,
+      probeTimeoutSeconds: 30,
+    });
+
+    expect(result.verdict).toBe("flaky");
+    if (result.verdict === "flaky") {
+      expect(result.probePasses).toBe(1);
+    }
+  });
+
+  test("BUG-8 — one genuine attributable fail mixed with env failures → consistent-failure (not unprobeable)", async () => {
+    const { fake } = installFakeExecutor([envExec(), failExec(), envExec()]);
+
+    const result = await runFlakeProbe({
+      framework: "bun",
+      baseCommand: "bun test",
+      failure: makeFailure(),
+      cwd: "/tmp/probe",
+      probeRuns: 3,
+      probeTimeoutSeconds: 30,
+    });
+
+    // At least one probe run genuinely executed and failed (countsTowardEscalation
+    // true, success false) — that's an attributable signal, so the verdict stays
+    // consistent-failure even though the other two runs were environmental.
+    expect(result.verdict).toBe("consistent-failure");
+    if (result.verdict === "consistent-failure") {
+      expect(result.probeRuns).toBe(3);
+    }
+    expect(fake).toHaveBeenCalledTimes(3);
+  });
+
+  // BUG-8: zero-tests-matched runs (exit 0, but the isolation filter matched no
+  // tests — e.g. a Go subtest name containing a space) must never count toward
+  // attributableRuns. Before the fix, attributableRuns was incremented BEFORE
+  // checking probeRanNoTests, so an all-zero-matched batch produced
+  // attributableRuns === probeRuns with probePasses === 0 → "consistent-failure",
+  // contradicting the documented "unattributable signal never fails a story"
+  // contract. It must be "unprobeable" instead.
+  test("BUG-8 — all runs report zero tests matched → unprobeable (not consistent-failure)", async () => {
+    const { fake } = installFakeExecutor([noTestsExec(), noTestsExec(), noTestsExec()]);
+
+    const result = await runFlakeProbe({
+      framework: "go",
+      baseCommand: "go test",
+      failure: makeFailure({ file: "pkg/foo/foo_test.go", testName: "Test Handles Two Words" }),
+      cwd: "/tmp/probe",
+      probeRuns: 3,
+      probeTimeoutSeconds: 30,
+    });
+
+    expect(result.verdict).toBe("unprobeable");
+    if (result.verdict === "unprobeable") {
+      expect(result.reason).toBeDefined();
+    }
+    expect(fake).toHaveBeenCalledTimes(3);
+  });
+
+  test("BUG-8 — one zero-matched run mixed with one genuine attributable fail → consistent-failure (not unprobeable, not miscounted)", async () => {
+    const { fake } = installFakeExecutor([noTestsExec(), failExec()]);
+
+    const result = await runFlakeProbe({
+      framework: "go",
+      baseCommand: "go test",
+      failure: makeFailure({ file: "pkg/foo/foo_test.go", testName: "Test Handles Two Words" }),
+      cwd: "/tmp/probe",
+      probeRuns: 2,
+      probeTimeoutSeconds: 30,
+    });
+
+    // Only the genuine fail is attributable — the zero-matched run must not be
+    // counted, so the verdict reflects the one real fail, not a misleading
+    // "2 attributable runs, 0 passes" or an "unprobeable" that would hide the
+    // genuine failure.
+    expect(result.verdict).toBe("consistent-failure");
+    expect(fake).toHaveBeenCalledTimes(2);
+  });
+
+  test("BUG-8 — one zero-matched run mixed with one clean pass → flaky with probePasses=1 (zero-matched run excluded from the count)", async () => {
+    const { fake } = installFakeExecutor([noTestsExec(), okExec()]);
+
+    const result = await runFlakeProbe({
+      framework: "go",
+      baseCommand: "go test",
+      failure: makeFailure({ file: "pkg/foo/foo_test.go", testName: "Test Handles Two Words" }),
+      cwd: "/tmp/probe",
+      probeRuns: 2,
+      probeTimeoutSeconds: 30,
+    });
+
+    expect(result.verdict).toBe("flaky");
+    if (result.verdict === "flaky") {
+      expect(result.probePasses).toBe(1);
+    }
+    expect(fake).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// probeRanNoTests / NO_TESTS_EXECUTED_MARKERS — standalone coverage (BUG-8)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runFlakeProbe — zero-tests-matched output detection (BUG-8)", () => {
+  test.each(["no tests to run", "No test to run", "NO TESTS TO RUN", "ran 0 tests", "Ran 0 test"])(
+    "output %j is treated as a zero-matched probe run",
+    async (output) => {
+      const { fake } = installFakeExecutor([{ success: true, timeout: false, countsTowardEscalation: true, output }]);
+
+      const result = await runFlakeProbe({
+        framework: "go",
+        baseCommand: "go test",
+        failure: makeFailure({ file: "pkg/foo/foo_test.go", testName: "Test Handles Two Words" }),
+        cwd: "/tmp/probe",
+        probeRuns: 1,
+        probeTimeoutSeconds: 30,
+      });
+
+      expect(result.verdict).toBe("unprobeable");
+      expect(fake).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  test("ordinary passing output (no zero-matched marker) is attributable, not treated as zero-matched", async () => {
+    installFakeExecutor([
+      { success: true, timeout: false, countsTowardEscalation: true, output: "PASS\nok  \tpkg/foo\t0.002s" },
+    ]);
+
+    const result = await runFlakeProbe({
+      framework: "go",
+      baseCommand: "go test",
+      failure: makeFailure({ file: "pkg/foo/foo_test.go", testName: "TestFoo" }),
+      cwd: "/tmp/probe",
+      probeRuns: 1,
       probeTimeoutSeconds: 30,
     });
 
@@ -402,11 +542,12 @@ describe("buildIsolationCommand", () => {
     stackTrace: [],
   };
 
-  test.each<Framework>(["bun", "jest", "vitest"])("framework=%s uses '<base> <file> -t <name>'", (framework) => {
-    expect(buildIsolationCommand("bun test", failure, framework)).toBe(
-      "bun test src/foo.test.ts -t 'should work'",
-    );
-  });
+  test.each<Framework>(["bun", "jest", "vitest"])(
+    "framework=%s uses '<base> <quoted file> -t <name>' (SEC-4 — file is shell-quoted)",
+    (framework) => {
+      expect(buildIsolationCommand("bun test", failure, framework)).toBe("bun test 'src/foo.test.ts' -t 'should work'");
+    },
+  );
 
   test("pytest uses '<base> <file>::<name>' addressing", () => {
     expect(buildIsolationCommand("pytest", { ...failure, file: "tests/test_foo.py" }, "pytest")).toBe(
@@ -421,12 +562,8 @@ describe("buildIsolationCommand", () => {
   });
 
   test("escapes regex metacharacters in the name for bun/jest/vitest", () => {
-    const cmd = buildIsolationCommand(
-      "bun test",
-      { ...failure, testName: "handles (edge) case?" },
-      "bun",
-    );
-    expect(cmd).toBe("bun test src/foo.test.ts -t 'handles \\(edge\\) case\\?'");
+    const cmd = buildIsolationCommand("bun test", { ...failure, testName: "handles (edge) case?" }, "bun");
+    expect(cmd).toBe("bun test 'src/foo.test.ts' -t 'handles \\(edge\\) case\\?'");
   });
 
   test("escapes regex metacharacters in the name for go", () => {
@@ -453,23 +590,31 @@ describe("buildIsolationCommand", () => {
   });
 
   test("throws for unsupported frameworks (no silent fallthrough)", () => {
-    expect(() => buildIsolationCommand("bun test", failure, "unknown" as Framework)).toThrow(
-      /unsupported framework/,
-    );
+    expect(() => buildIsolationCommand("bun test", failure, "unknown" as Framework)).toThrow(/unsupported framework/);
   });
 
   test("quotes a multi-word test name so the shell does not word-split it (bun/jest/vitest)", () => {
     const cmd = buildIsolationCommand("bun test", { ...failure, testName: "handles two words" }, "bun");
-    expect(cmd).toBe("bun test src/foo.test.ts -t 'handles two words'");
+    expect(cmd).toBe("bun test 'src/foo.test.ts' -t 'handles two words'");
   });
 
   test("escapes an embedded single quote in the test name (bun/jest/vitest)", () => {
     const cmd = buildIsolationCommand("bun test", { ...failure, testName: "handles it's edge case" }, "bun");
-    expect(cmd).toBe("bun test src/foo.test.ts -t 'handles it'\\''s edge case'");
+    expect(cmd).toBe("bun test 'src/foo.test.ts' -t 'handles it'\\''s edge case'");
   });
 
   test("quotes a multi-word test name for go", () => {
     const cmd = buildIsolationCommand("go test", { ...failure, testName: "handles two words" }, "go");
     expect(cmd).toBe("go test -run '^handles two words$'");
+  });
+
+  test("SEC-4 — quotes a file path containing shell metacharacters so it cannot escape the isolation command (bun/jest/vitest)", () => {
+    const cmd = buildIsolationCommand("bun test", { ...failure, file: "src/foo; rm -rf /tmp/pwned.test.ts" }, "bun");
+    expect(cmd).toBe("bun test 'src/foo; rm -rf /tmp/pwned.test.ts' -t 'should work'");
+  });
+
+  test("SEC-4 — quotes an embedded single quote in the file path (bun/jest/vitest)", () => {
+    const cmd = buildIsolationCommand("bun test", { ...failure, file: "src/it's-a-test.test.ts" }, "bun");
+    expect(cmd).toBe("bun test 'src/it'\\''s-a-test.test.ts' -t 'should work'");
   });
 });

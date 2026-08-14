@@ -13,10 +13,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { _applyLegacyReviewExecutionShim, _applyRemovedRoutingKeysShim } from "../../../src/config/compat-shims";
-import { loadConfig } from "../../../src/config/loader";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { _applyLegacyReviewExecutionShim, _applyRemovedRoutingKeysShim } from "../../../src/config/compat-shims";
+import { loadConfig } from "../../../src/config/loader";
 
 describe("_applyRemovedRoutingKeysShim — routing keys removed with ROUTE-001", () => {
   test("warns and strips routing.customStrategyPath", () => {
@@ -269,9 +269,7 @@ describe("loadConfig — legacy key deprecation shim", () => {
   // same compat-shim chain. Correct, but it made the deprecation warning fire
   // once per layer that carries the key — the same advice repeated up to four
   // times reads as four distinct problems.
-  async function captureLoadWarnings(
-    load: () => Promise<unknown>,
-  ): Promise<string[]> {
+  async function captureLoadWarnings(load: () => Promise<unknown>): Promise<string[]> {
     const captured: string[] = [];
     resetLogger();
     initLogger({ level: "warn" });
@@ -400,6 +398,91 @@ describe("loadConfig — legacy key deprecation shim", () => {
     await writeProjectConfig({ execution: { permissionProfile: "safe" } });
 
     const captured = await captureLoadWarnings(() => loadConfig(tempDir));
+
+    expect(captured.some((m) => m.includes("execution.permissionProfile"))).toBe(false);
+  });
+
+  // SEC-2 follow-up fix: the pre-project-merge snapshot used to be defaults + global
+  // merged, so with NO global config file at all, "the global value" the project
+  // layer was compared against was just the built-in schema default — not anything
+  // the user configured. Opting INTO a safer profile (e.g. "safe") from an unset
+  // default must not be reported as an override.
+  test("SEC-2: does not warn when there is no global config and project config sets execution.permissionProfile (opting into a default-unset value)", async () => {
+    // Deliberately no ~/.nax/config.json written for this test.
+    await writeProjectConfig({ execution: { permissionProfile: "safe" } });
+
+    const captured = await captureLoadWarnings(() => loadConfig(tempDir));
+
+    expect(captured.some((m) => m.includes("execution.permissionProfile"))).toBe(false);
+
+    const config = await loadConfig(tempDir);
+    expect(config.execution.permissionProfile).toBe("safe");
+  });
+
+  test("SEC-2: does not warn when there is no global config and project config sets quality.stripEnvVars", async () => {
+    await writeProjectConfig({ quality: { stripEnvVars: ["GITHUB_TOKEN"] } });
+
+    const captured = await captureLoadWarnings(() => loadConfig(tempDir));
+
+    expect(captured.some((m) => m.includes("quality.stripEnvVars"))).toBe(false);
+  });
+
+  // SEC-2 follow-up fix: profile overlays and CLI overrides merge AFTER the project
+  // layer and can undo a security-sensitive setting just as easily — profiles live
+  // outside the repo (invisible to code review), so this is arguably higher-risk
+  // than the original project-layer case.
+  test("SEC-2: warns once when a profile overlay changes execution.permissionProfile after the project layer set it safely, naming the profile", async () => {
+    await writeProjectConfig({ execution: { permissionProfile: "safe" } });
+    await Bun.write(
+      join(tempDir, ".nax", "profiles", "loose.json"),
+      JSON.stringify({ execution: { permissionProfile: "unrestricted" } }),
+    );
+
+    const captured = await captureLoadWarnings(() => loadConfig(tempDir, { profile: "loose" }));
+
+    const hits = captured.filter((m) => m.includes("execution.permissionProfile"));
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toContain("safe");
+    expect(hits[0]).toContain("unrestricted");
+    expect(hits[0]).toContain("profile:loose");
+
+    const config = await loadConfig(tempDir, { profile: "loose" });
+    expect(config.execution.permissionProfile).toBe("unrestricted");
+  });
+
+  test("SEC-2: does not warn when a profile overlay does not touch a security-sensitive key", async () => {
+    await writeProjectConfig({ execution: { permissionProfile: "safe" } });
+    await Bun.write(
+      join(tempDir, ".nax", "profiles", "neutral.json"),
+      JSON.stringify({ routing: { strategy: "keyword" } }),
+    );
+
+    const captured = await captureLoadWarnings(() => loadConfig(tempDir, { profile: "neutral" }));
+
+    expect(captured.some((m) => m.includes("execution.permissionProfile"))).toBe(false);
+  });
+
+  test("SEC-2: warns once when a CLI override changes execution.permissionProfile, naming the CLI override", async () => {
+    await writeProjectConfig({ execution: { permissionProfile: "safe" } });
+
+    const captured = await captureLoadWarnings(() =>
+      loadConfig(tempDir, { execution: { permissionProfile: "unrestricted" } }),
+    );
+
+    const hits = captured.filter((m) => m.includes("execution.permissionProfile"));
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toContain("safe");
+    expect(hits[0]).toContain("unrestricted");
+    expect(hits[0]).toContain("CLI override");
+
+    const config = await loadConfig(tempDir, { execution: { permissionProfile: "unrestricted" } });
+    expect(config.execution.permissionProfile).toBe("unrestricted");
+  });
+
+  test("SEC-2: does not warn when a CLI override does not touch a security-sensitive key", async () => {
+    await writeProjectConfig({ execution: { permissionProfile: "safe" } });
+
+    const captured = await captureLoadWarnings(() => loadConfig(tempDir, { routing: { strategy: "keyword" } }));
 
     expect(captured.some((m) => m.includes("execution.permissionProfile"))).toBe(false);
   });
