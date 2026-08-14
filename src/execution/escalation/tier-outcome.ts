@@ -27,7 +27,8 @@ export async function handleNoTierAvailable(
   const outcome = resolveMaxAttemptsOutcome(failureCategory);
 
   if (outcome === "pause") {
-    const pauseReason = `Execution stopped (${failureCategory ?? "unknown"} requires human review)`;
+    const pipelineDetail = ctx.pipelineResult.reason ? `: ${ctx.pipelineResult.reason}` : "";
+    const pauseReason = `Execution stopped (${failureCategory ?? "unknown"} requires human review)${pipelineDetail}`;
     const pausedPrd = { ...ctx.prd };
     markStoryPaused(pausedPrd, ctx.story.id, await verifyEscalationQuotes(pauseReason, ctx.workdir, ctx.story.id));
     await savePRD(pausedPrd, ctx.prdPath);
@@ -92,7 +93,8 @@ export async function handleMaxAttemptsReached(
   const outcome = resolveMaxAttemptsOutcome(failureCategory);
 
   if (outcome === "pause") {
-    const pauseReason = `Max attempts reached (${failureCategory ?? "unknown"} requires human review)`;
+    const pipelineDetail = ctx.pipelineResult.reason ? `: ${ctx.pipelineResult.reason}` : "";
+    const pauseReason = `Max attempts reached (${failureCategory ?? "unknown"} requires human review)${pipelineDetail}`;
     const pausedPrd = { ...ctx.prd };
     markStoryPaused(pausedPrd, ctx.story.id, await verifyEscalationQuotes(pauseReason, ctx.workdir, ctx.story.id));
     await savePRD(pausedPrd, ctx.prdPath);

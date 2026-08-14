@@ -137,7 +137,10 @@ describe("withNoProgressBail — US-002", () => {
       iteration([reworded("same defect", index)], [reworded("same defect", index + 1)], index + 1),
     );
     const bail = bailWhen(withNoProgressBail([strategy()], true, 3));
-    expect(bail(iterations)).not.toBeNull();
+    const reason = bail(iterations);
+    expect(reason).not.toBeNull();
+    expect(reason).toContain("3 consecutive iteration(s)");
+    expect(reason).toContain("1 finding(s) persisted");
   });
 
   test("US-002 AC15: no-progress reason outranks count-increase", () => {

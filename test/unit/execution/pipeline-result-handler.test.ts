@@ -377,59 +377,9 @@ describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// nax#1582 — pause path persists the blocking reason
+// nax#1582 — pause path persists the blocking reason: see
+// pipeline-result-handler-pause-reason.test.ts (split out for the 800-line cap)
 // ---------------------------------------------------------------------------
-
-describe("handlePipelineFailure — pause-reason persistence (nax#1582)", () => {
-  let tempDir: string;
-  let prdPath: string;
-
-  beforeEach(() => {
-    tempDir = makeTempDir("nax-pause-reason-");
-    prdPath = join(tempDir, "prd.json");
-  });
-
-  afterEach(() => {
-    cleanupTempDir(tempDir);
-  });
-
-  test("appends the pipeline reason to priorErrors instead of leaving it empty", async () => {
-    const story = makeStory("US-001", { status: "in-progress", passes: false, attempts: 1 });
-    const ctx = makeCtx(story, { prdPath });
-
-    const pauseResult: PipelineRunResult = {
-      success: false,
-      finalAction: "pause",
-      reason: "Semantic review failed: 1 findings",
-      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"], // test-ratchet-allow: as-unknown-as
-    };
-
-    await handlePipelineFailure(ctx, pauseResult);
-
-    const onDisk = await loadPRD(prdPath);
-    const pausedStory = onDisk.userStories.find((s) => s.id === "US-001");
-    expect(pausedStory?.status).toBe("paused");
-    expect(pausedStory?.priorErrors).toEqual(["PAUSED: Semantic review failed: 1 findings"]);
-  });
-
-  test("leaves priorErrors empty when the pipeline result carries no reason", async () => {
-    const story = makeStory("US-002", { status: "in-progress", passes: false, attempts: 1 });
-    const ctx = makeCtx(story, { prdPath });
-
-    const pauseResult: PipelineRunResult = {
-      success: false,
-      finalAction: "pause",
-      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"], // test-ratchet-allow: as-unknown-as
-    };
-
-    await handlePipelineFailure(ctx, pauseResult);
-
-    const onDisk = await loadPRD(prdPath);
-    const pausedStory = onDisk.userStories.find((s) => s.id === "US-002");
-    expect(pausedStory?.status).toBe("paused");
-    expect(pausedStory?.priorErrors ?? []).toHaveLength(0);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // story:skipped event emission

@@ -421,7 +421,12 @@ export function markStoryPaused(prd: PRD, storyId: string, reason?: string): voi
     story.status = "paused";
     story.attempts = (story.attempts ?? 0) + 1;
     if (reason) {
-      story.priorErrors = [...(story.priorErrors || []), `PAUSED: ${reason}`];
+      const entry = `PAUSED: ${reason}`;
+      const prior = story.priorErrors ?? [];
+      // Skip the append when unchanged so repeated pause/resume cycles on the
+      // same blocker don't grow priorErrors unboundedly — every entry is
+      // injected into the resumed agent's context (src/context/builder.ts).
+      if (prior.at(-1) !== entry) story.priorErrors = [...prior, entry];
     }
   }
 }
