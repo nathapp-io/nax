@@ -19,7 +19,8 @@ export const _profileCLIDeps = {
   env: process.env as Record<string, string | undefined>,
 };
 
-const SENSITIVE_KEY_PATTERN = /key|token|secret|password|credential/i;
+// BUG-37: kept in sync with SENSITIVE_ENV_KEY_PATTERN in config/profile.ts.
+const SENSITIVE_KEY_PATTERN = /key|token|secret|password|credential|auth|session|cookie|private|dsn|url/i;
 const VAR_PATTERN = /\$[A-Za-z_][A-Za-z0-9_]*/;
 
 /**
@@ -95,17 +96,27 @@ export async function profileShowCommand(
 export function maskProfileValues(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
-    if (SENSITIVE_KEY_PATTERN.test(key)) {
-      result[key] = "***";
-    } else if (typeof value === "string" && VAR_PATTERN.test(value)) {
-      result[key] = "***";
-    } else if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-      result[key] = maskProfileValues(value as Record<string, unknown>);
-    } else {
-      result[key] = value;
-    }
+    result[key] = SENSITIVE_KEY_PATTERN.test(key) ? "***" : maskProfileValue(value);
   }
   return result;
+}
+
+/**
+ * BUG-36: array elements are recursed into (not just skipped) so secrets
+ * nested inside an array — e.g. `config.plugins[].config.apiKey` — are
+ * masked the same way they would be outside an array.
+ */
+function maskProfileValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return VAR_PATTERN.test(value) ? "***" : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => maskProfileValue(item));
+  }
+  if (value !== null && typeof value === "object") {
+    return maskProfileValues(value as Record<string, unknown>);
+  }
+  return value;
 }
 
 /**

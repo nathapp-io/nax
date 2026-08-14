@@ -30,8 +30,15 @@ export const _profileDeps = {
  * ...) silently substitutable by a project-controlled profile.json — an
  * operator opting a var into a profile still does so explicitly via that
  * profile's own .env file, which is layered on top and always wins.
+ *
+ * BUG-37: broadened beyond the original key|token|secret|password|credential
+ * set — DATABASE_URL, AUTHORIZATION, SESSION_ID, and similar secret-shaped
+ * names carry no "key"/"token"/etc. substring but are equally sensitive.
+ * Over-matching is the safe direction here: a var excluded from the ambient
+ * fallback simply throws UnresolvedEnvVarError unless the profile's own .env
+ * defines it explicitly — it never silently leaks.
  */
-const SENSITIVE_ENV_KEY_PATTERN = /key|token|secret|password|credential/i;
+const SENSITIVE_ENV_KEY_PATTERN = /key|token|secret|password|credential|auth|session|cookie|private|dsn|url/i;
 
 /**
  * SEC-08: reject path-traversal in a profile name. `profileName` flows
