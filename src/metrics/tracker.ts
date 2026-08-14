@@ -10,10 +10,40 @@ import { resolveModelForAgent } from "../config/schema";
 import type { PullCallRecord } from "../context/engine";
 import { loadContextManifests } from "../context/engine/manifest-store";
 import { computePollutionMetrics } from "../context/engine/pollution";
+import { getLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
 import { loadJsonFile, saveJsonFile } from "../utils/json-file";
 import type { ContextProviderMetrics, FloorOverageMetrics, RunMetrics, StoryMetrics } from "./types";
 import { TokenUsage } from "./types";
+
+/**
+ * Maximum number of runs retained in metrics.json (GROWTH-1).
+ *
+ * Per-story entries carry context.providers, pullCalls, failingTestFiles, and
+ * fallback.hops — tens of KB per run — so without a cap the file (and every
+ * in-memory `flatMap` over it in the aggregator) grows unbounded across the
+ * lifetime of a project. Oldest runs are dropped first on write; runs are
+ * always appended chronologically so this keeps the most recent N.
+ */
+export const MAX_RETAINED_RUNS = 200;
+
+/**
+ * One-shot dedupe flag (GROWTH-1): `saveRunMetrics` runs on every completed
+ * run, so once a project is past `MAX_RETAINED_RUNS` this would fire a
+ * warning on every single subsequent run. Log it once per process lifetime
+ * instead — the condition itself is durable (it stays true forever once
+ * true), so a single warning is enough to make the truncation observable
+ * without spamming the log on every run thereafter.
+ */
+let hasWarnedAboutRunTruncation = false;
+
+/**
+ * Reset the one-shot truncation-warning flag (for testing only).
+ * @internal
+ */
+export function _resetRunTruncationWarningForTests(): void {
+  hasWarnedAboutRunTruncation = false;
+}
 
 /**
  * Collect metrics for a single story execution.
@@ -392,8 +422,34 @@ export async function saveRunMetrics(outputDir: string, runMetrics: RunMetrics):
   // Append new run
   allMetrics.push(finalMetrics);
 
+  // GROWTH-1: cap retained history to the last MAX_RETAINED_RUNS runs — drop
+  // the oldest first. Runs are appended chronologically, so a simple tail
+  // slice keeps the most recent ones.
+  const isTruncating = allMetrics.length > MAX_RETAINED_RUNS;
+  const cappedMetrics = isTruncating ? allMetrics.slice(allMetrics.length - MAX_RETAINED_RUNS) : allMetrics;
+
+  // GROWTH-1: make the resulting semantic drift observable — aggregate
+  // metrics (calculateAggregateMetrics) and any downstream consumer (e.g.
+  // `nax status --cost`) silently become "totals across the last
+  // MAX_RETAINED_RUNS runs" instead of true all-time history once this
+  // fires. Logged once per process lifetime (see hasWarnedAboutRunTruncation)
+  // so it doesn't spam on every run after the cap is first hit.
+  if (isTruncating && !hasWarnedAboutRunTruncation) {
+    hasWarnedAboutRunTruncation = true;
+    const droppedCount = allMetrics.length - MAX_RETAINED_RUNS;
+    getLogger().warn(
+      "metrics",
+      "Run-history cap reached — oldest run-entries dropped from metrics.json; aggregate metrics now cover only the retained window",
+      {
+        droppedCount,
+        maxRetainedRuns: MAX_RETAINED_RUNS,
+        metricsPath,
+      },
+    );
+  }
+
   // Write back
-  await saveJsonFile(metricsPath, allMetrics, "metrics");
+  await saveJsonFile(metricsPath, cappedMetrics, "metrics");
 }
 
 /**

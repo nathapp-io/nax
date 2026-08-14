@@ -15,7 +15,14 @@ import type { AggregateMetrics, RunFallbackAggregate, RunMetrics, StoryMetrics }
  * - Complexity prediction accuracy
  * - Cost statistics
  *
- * @param runs - Array of all historical run metrics
+ * NOTE (GROWTH-1): `runs` is whatever `loadRunMetrics` returns from
+ * metrics.json, which `saveRunMetrics` caps to the most recent
+ * `MAX_RETAINED_RUNS` (200) entries — oldest dropped first. So this is
+ * "aggregate across the last MAX_RETAINED_RUNS runs", not genuine all-time
+ * history, once a project has run more than 200 times. See
+ * `src/metrics/tracker.ts` (`MAX_RETAINED_RUNS`, `saveRunMetrics`).
+ *
+ * @param runs - Array of retained run metrics (bounded by MAX_RETAINED_RUNS — see NOTE above)
  * @returns Aggregate metrics
  *
  * @example

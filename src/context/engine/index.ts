@@ -22,7 +22,8 @@ export { StaticRulesProvider, _staticRulesDeps, globToRegex, normalizePath } fro
 export { FeatureContextProviderV2, _featureContextV2Deps } from "./providers/feature-context";
 export { SessionScratchProvider, _sessionScratchDeps } from "./providers/session-scratch";
 export { GitHistoryProvider, _gitHistoryDeps } from "./providers/git-history";
-export { CodeNeighborProvider, _codeNeighborDeps } from "./providers/code-neighbor";
+export { CodeNeighborProvider, _codeNeighborDeps, createContentCacheState } from "./providers/code-neighbor";
+export type { ContentCacheState } from "./providers/code-neighbor";
 export { assembleCodeNeighborChunk, contentHash8 } from "./providers/code-neighbor-chunk";
 export type { NeighborSection, AssembleCodeNeighborChunkInput } from "./providers/code-neighbor-chunk";
 export {
