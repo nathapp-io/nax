@@ -80,6 +80,35 @@ export function formatConsole(entry: LogEntry): string {
  * // {"timestamp":"2026-02-20T10:30:00.123Z","level":"info","stage":"routing","message":"Task classified"}
  * ```
  */
+/**
+ * MED-02: plain `JSON.stringify` throws on a BigInt value anywhere in the
+ * entry ("Do not know how to serialize a BigInt") — a single log line with
+ * one is enough to make writing it throw, losing that line (and, depending
+ * on the caller, possibly more). `redactValue` already guards `entry.data`
+ * against circular references, but a BigInt is a valid, non-circular leaf
+ * value that JSON has no native representation for, so this is a distinct
+ * failure mode with its own fallback: a replacer coerces BigInt to a
+ * string tagged so it stays greppable and doesn't look like the original
+ * numeric value.
+ */
+function jsonlReplacer(_key: string, value: unknown): unknown {
+  return typeof value === "bigint" ? `[BigInt] ${value.toString()}` : value;
+}
+
 export function formatJsonl(entry: LogEntry): string {
-  return JSON.stringify(entry);
+  try {
+    return JSON.stringify(entry);
+  } catch {
+    try {
+      return JSON.stringify(entry, jsonlReplacer);
+    } catch (error) {
+      return JSON.stringify({
+        timestamp: entry.timestamp,
+        level: "error",
+        stage: entry.stage,
+        message: "Failed to serialize log entry",
+        data: { originalMessage: entry.message, error: error instanceof Error ? error.message : String(error) },
+      });
+    }
+  }
 }

@@ -67,15 +67,33 @@ export function redactEntry<T extends { message: string; data?: Record<string, u
   };
 }
 
-function redactValue(input: unknown): unknown {
+/** Depth guard is a backstop against pathological (non-circular but very deep) input; the WeakSet is what actually stops cycles. */
+const MAX_REDACT_DEPTH = 100;
+const CIRCULAR_REF_MARKER = "[Circular]";
+
+/**
+ * MED-02: unguarded recursion here threw a RangeError (stack overflow) out
+ * of every logger call whenever a data payload contained a circular
+ * reference — a single bad log call could crash whatever code path was
+ * trying to log. `seen` tracks objects/arrays currently on the recursion
+ * stack (removed on the way back out, so the same object appearing twice at
+ * different, non-nested positions is still redacted normally) and
+ * `MAX_REDACT_DEPTH` bounds pathologically deep-but-acyclic input.
+ */
+function redactValue(input: unknown, seen: WeakSet<object> = new WeakSet(), depth = 0): unknown {
   if (typeof input === "string") return redactString(input);
-  if (Array.isArray(input)) return input.map(redactValue);
-  if (input !== null && typeof input === "object") {
+  if (input === null || typeof input !== "object") return input;
+  if (depth >= MAX_REDACT_DEPTH || seen.has(input)) return CIRCULAR_REF_MARKER;
+
+  seen.add(input);
+  try {
+    if (Array.isArray(input)) return input.map((item) => redactValue(item, seen, depth + 1));
     const out: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-      out[key] = SECRET_KEY_PATTERN.test(key) ? REDACTED : redactValue(value);
+      out[key] = SECRET_KEY_PATTERN.test(key) ? REDACTED : redactValue(value, seen, depth + 1);
     }
     return out;
+  } finally {
+    seen.delete(input);
   }
-  return input;
 }

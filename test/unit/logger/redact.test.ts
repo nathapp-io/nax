@@ -46,4 +46,53 @@ describe("redactSecrets", () => {
     expect(out.GITHUB_TOKEN).toBe("[REDACTED]");
     expect(out.accessToken).toBe("[REDACTED]");
   });
+
+  // MED-02: unguarded recursion threw RangeError (stack overflow) out of
+  // every logger call whenever a data payload contained a circular reference.
+  describe("circular references (MED-02)", () => {
+    test("a self-referencing object does not throw and marks the cycle", () => {
+      const obj: Record<string, unknown> = { name: "story" };
+      obj.self = obj;
+
+      expect(() => redactSecrets(obj)).not.toThrow();
+      const out = redactSecrets(obj) as any;
+      expect(out.name).toBe("story");
+      expect(out.self).toBe("[Circular]");
+    });
+
+    test("a self-referencing array does not throw", () => {
+      const arr: unknown[] = [1, 2];
+      arr.push(arr);
+
+      expect(() => redactSecrets(arr)).not.toThrow();
+      const out = redactSecrets(arr) as any[];
+      expect(out[0]).toBe(1);
+      expect(out[2]).toBe("[Circular]");
+    });
+
+    test("a mutual reference between two objects does not throw", () => {
+      const a: Record<string, unknown> = { id: "a" };
+      const b: Record<string, unknown> = { id: "b", a };
+      a.b = b;
+
+      expect(() => redactSecrets(a)).not.toThrow();
+    });
+
+    test("the same object appearing twice at non-nested (sibling) positions is not treated as circular", () => {
+      const shared = { value: "shared" };
+      const out = redactSecrets({ first: shared, second: shared }) as any;
+
+      expect(out.first).toEqual({ value: "shared" });
+      expect(out.second).toEqual({ value: "shared" });
+    });
+
+    test("a very deep (but acyclic) object is bounded, not stack-overflowed", () => {
+      let deep: Record<string, unknown> = { leaf: true };
+      for (let i = 0; i < 500; i++) {
+        deep = { nested: deep };
+      }
+
+      expect(() => redactSecrets(deep)).not.toThrow();
+    });
+  });
 });
