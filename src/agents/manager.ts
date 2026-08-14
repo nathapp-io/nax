@@ -6,6 +6,7 @@
  */
 
 import { EventEmitter } from "node:events";
+import { trackedSpawnDeadlines } from "@/config";
 import type { AgentManagerConfig } from "@/config/selectors";
 import { resolvePermissions } from "../config/permissions";
 import type { AdapterFailure } from "../context/engine";
@@ -16,16 +17,10 @@ import { getSafeLogger } from "../logger";
 // src/runtime/index.ts → internal/agent-manager-factory → agents/factory → agents/manager → runtime/index.ts
 import { MiddlewareChain } from "../runtime/agent-middleware";
 import type { MiddlewareContext } from "../runtime/agent-middleware";
-import type {
-  CompleteDispatchEvent,
-  DispatchErrorEvent,
-  IDispatchEventBus,
-  SessionTurnDispatchEvent,
-} from "../runtime/dispatch-events";
+import type { IDispatchEventBus } from "../runtime/dispatch-events";
 import { DispatchEventBus } from "../runtime/dispatch-events";
 import { formatSessionName } from "../runtime/session-name";
 import { cancellableDelay } from "../utils/bun-deps";
-import { errorMessage } from "../utils/errors";
 import { classifyCompleteException } from "./complete-exception-classifier";
 import { buildCompleteEvent, buildDispatchErrorEvent, buildSessionTurnEvent } from "./manager-dispatch";
 import type {
@@ -720,8 +715,12 @@ export class AgentManager implements IAgentManager {
   async completeAs(agentName: string, prompt: string, options: CompleteOptions): Promise<CompleteResult> {
     const stage = options.pipelineStage ?? "complete";
     const resolvedPermissions = resolvePermissions(this._config, stage);
-    const promptRetries = this._config.agent?.acp?.promptRetries;
-    const augmented: ResolvedCompleteOptions = { ...options, resolvedPermissions, promptRetries };
+    const augmented: ResolvedCompleteOptions = {
+      ...options,
+      resolvedPermissions,
+      promptRetries: this._config.agent?.acp?.promptRetries,
+      ...trackedSpawnDeadlines(this._config),
+    };
     const sessionName =
       options.sessionName ??
       formatSessionName({

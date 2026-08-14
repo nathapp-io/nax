@@ -205,14 +205,19 @@ export interface AgentCapabilities {
   readonly features: ReadonlySet<"tdd" | "review" | "refactor" | "batch">;
 }
 
+/** trackedSpawn hard deadlines (ms) — teardown vs startup, resolved from config.agent.acp (#1583). */
+export interface TrackedSpawnDeadlineOptions {
+  trackedSpawnDeadlineMs?: number;
+  trackedSpawnStartupDeadlineMs?: number;
+}
+
 /**
- * Options for one-shot LLM completion calls.
- *
- * Callers pass this to `AgentManager.completeAs()` — the manager fills in
- * `resolvedPermissions`, `promptRetries`, `onPidSpawned`, and `onPidExited`
- * before handing the augmented `ResolvedCompleteOptions` to the adapter.
+ * Options for one-shot LLM completion calls. Callers pass this to
+ * `AgentManager.completeAs()` — the manager fills in `resolvedPermissions`,
+ * `promptRetries`, `onPidSpawned`, and `onPidExited` before handing the
+ * augmented `ResolvedCompleteOptions` to the adapter.
  */
-export interface CompleteOptions {
+export interface CompleteOptions extends TrackedSpawnDeadlineOptions {
   /** Maximum tokens for the response */
   maxTokens?: number;
   /** Request JSON-formatted output (adds --output-format json) */
@@ -386,7 +391,7 @@ export interface SessionHandle {
 }
 
 /** Options for openSession() — protocol-agnostic surface + ACP-specific pass-throughs. */
-export interface OpenSessionOpts {
+export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
   agentName: string;
   workdir: string;
   /** Pre-resolved permissions from AgentManager. */

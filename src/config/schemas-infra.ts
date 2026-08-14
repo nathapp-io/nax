@@ -241,6 +241,21 @@ const AgentIdleWatchdogConfigSchema = z
 
 const AgentAcpConfigSchema = z.object({
   promptRetries: z.number().int().min(0).max(5).default(0),
+  /**
+   * trackedSpawn hard deadline (ms) for teardown ops — `sessions close`,
+   * `acpx stop`, `cancel`. Bounds a wedged acpx subprocess so run teardown
+   * can't hang indefinitely (PERF-1). Issue #1583: keep this tight — it must
+   * NOT be reused for startup ops (see trackedSpawnStartupDeadlineMs).
+   */
+  trackedSpawnDeadlineMs: z.number().int().positive().default(10_000),
+  /**
+   * trackedSpawn hard deadline (ms) for startup ops — `sessions ensure`
+   * (createSession/loadSession) and applyReasoningEffort. Issue #1583:
+   * `sessions ensure` measured a real-world median of 8.15s, so this needs
+   * real headroom over that under concurrency — do not lower toward the
+   * teardown deadline.
+   */
+  trackedSpawnStartupDeadlineMs: z.number().int().positive().default(30_000),
 });
 
 // Bounded same-agent retry after a wall-clock timeout (US-002). `budgetMultiplier`
@@ -270,7 +285,11 @@ export const AgentConfigSchema = z.object({
     onQualityFailure: false,
     rebuildContext: true,
   }),
-  acp: AgentAcpConfigSchema.default({ promptRetries: 0 }),
+  acp: AgentAcpConfigSchema.default({
+    promptRetries: 0,
+    trackedSpawnDeadlineMs: 10_000,
+    trackedSpawnStartupDeadlineMs: 30_000,
+  }),
   idleWatchdog: AgentIdleWatchdogConfigSchema.default(DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG),
   timeoutRetry: AgentTimeoutRetryConfigSchema.default(DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG),
 });

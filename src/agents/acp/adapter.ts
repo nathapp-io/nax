@@ -28,6 +28,7 @@ import type {
   TurnResult,
 } from "../types";
 import { CompleteError, SessionTurnError } from "../types";
+import { closePhysicalSession as closePhysicalSessionImpl } from "./adapter-close-physical";
 import { defaultAcpTokenUsageMapper } from "./token-mapper";
 import type { SessionTokenUsage } from "./wire-types";
 
@@ -140,6 +141,8 @@ export class AcpAgentAdapter implements AgentAdapter {
         {
           onStreamActivity: _options.onStreamActivity,
           onActiveCall: _options.onActiveCall,
+          trackedSpawnDeadlineMs: _options.trackedSpawnDeadlineMs,
+          trackedSpawnStartupDeadlineMs: _options.trackedSpawnStartupDeadlineMs,
         },
       );
       await client.start();
@@ -289,29 +292,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     workdir: string,
     options?: { force?: boolean; signal?: AbortSignal },
   ): Promise<void> {
-    const cmdStr = `acpx ${this.name}`;
-    const client = _acpAdapterDeps.createClient(cmdStr, workdir, undefined, undefined);
-    try {
-      await client.start();
-      try {
-        if (client.closeSession) {
-          await client.closeSession(handle, this.name, options?.signal);
-          // AC-83: hard-terminate (acpx stop) when force=true, e.g. for errored sessions
-          if (options?.force) {
-            await (client as { forceStop?: (agentName: string) => Promise<void> })
-              .forceStop?.(this.name)
-              .catch(() => {});
-          }
-        } else if (client.loadSession) {
-          const session = await client.loadSession(handle, this.name, "approve-reads");
-          if (session) await session.close({ forceTerminate: options?.force, signal: options?.signal }).catch(() => {});
-        }
-      } catch (err) {
-        getSafeLogger()?.warn("acp-adapter", `[close] Failed to close session ${handle}`, { error: String(err) });
-      }
-    } finally {
-      await client.close().catch(() => {});
-    }
+    return closePhysicalSessionImpl(this.name, handle, workdir, options);
   }
 
   async openSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle> {
@@ -343,6 +324,8 @@ export class AcpAgentAdapter implements AgentAdapter {
       {
         onStreamActivity: opts.onStreamActivity,
         onActiveCall: opts.onActiveCall,
+        trackedSpawnDeadlineMs: opts.trackedSpawnDeadlineMs,
+        trackedSpawnStartupDeadlineMs: opts.trackedSpawnStartupDeadlineMs,
       },
     );
     let session: import("./adapter-session-types").AcpSession | undefined;

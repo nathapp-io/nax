@@ -5,10 +5,11 @@
  *        It must use the client's stored permissionMode ("approve-reads" by default).
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import { SpawnAcpClient, _spawnClientDeps } from "@/agents/acp";
 import type { SpawnOptions } from "@/utils/bun-deps";
 import { waitForCondition, withDepsRestore, withTimerSpy } from "@test/helpers";
+import { makeSpawnResult, stubProcessKill } from "./_spawn-client-test-helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SAFETY: file-scope process.kill stub
@@ -25,40 +26,7 @@ import { waitForCondition, withDepsRestore, withTimerSpy } from "@test/helpers";
 // tests either.
 // ─────────────────────────────────────────────────────────────────────────────
 
-let _originalProcessKill: typeof process.kill;
-
-beforeEach(() => {
-  _originalProcessKill = process.kill;
-  process.kill = ((_pid: number | string, _signal?: NodeJS.Signals | number) => true) as typeof process.kill;
-});
-
-afterEach(() => {
-  process.kill = _originalProcessKill;
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Spawn mock helper
-// ─────────────────────────────────────────────────────────────────────────────
-
-function makeSpawnResult(exitCode: number, stdout = ""): ReturnType<typeof _spawnClientDeps.spawn> {
-  const enc = new TextEncoder();
-  const makeStream = (content: string) =>
-    new ReadableStream<Uint8Array>({
-      start(c) {
-        if (content) c.enqueue(enc.encode(content));
-        c.close();
-      },
-    });
-
-  return {
-    stdout: makeStream(stdout),
-    stderr: makeStream(""),
-    stdin: { write: () => 0, end: () => {}, flush: () => {} },
-    exited: Promise.resolve(exitCode),
-    pid: 99999999,
-    kill: () => {},
-  };
-}
+stubProcessKill();
 
 /**
  * Spawn mock where process exit resolves only after stdout starts being consumed.

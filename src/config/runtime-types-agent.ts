@@ -62,6 +62,16 @@ export interface IdleWatchdogConfig {
 export interface AgentAcpConfig {
   /** Retries for transient prompt failures via acpx --prompt-retries (default: 0 — opt-in) */
   promptRetries?: number;
+  /**
+   * trackedSpawn hard deadline (ms) for teardown ops — sessions close/stop/cancel
+   * (default: 10000). #1583.
+   */
+  trackedSpawnDeadlineMs?: number;
+  /**
+   * trackedSpawn hard deadline (ms) for startup ops — sessions ensure
+   * (createSession/loadSession/applyReasoningEffort) (default: 30000). #1583.
+   */
+  trackedSpawnStartupDeadlineMs?: number;
 }
 
 /** Bounded same-agent retry after a wall-clock timeout (US-002) */
