@@ -12,6 +12,7 @@ import { getSafeLogger } from "../../logger";
 import { markStoryFailed, markStoryPaused, savePRD } from "../../prd";
 import type { FailureCategory } from "../../tdd/types";
 import { appendProgress } from "../progress";
+import { verifyEscalationQuotes } from "./quote-integrity";
 import type { EscalationHandlerContext, EscalationHandlerResult } from "./tier-escalation";
 import { resolveMaxAttemptsOutcome } from "./tier-escalation";
 
@@ -26,8 +27,9 @@ export async function handleNoTierAvailable(
   const outcome = resolveMaxAttemptsOutcome(failureCategory);
 
   if (outcome === "pause") {
+    const pauseReason = `Execution stopped (${failureCategory ?? "unknown"} requires human review)`;
     const pausedPrd = { ...ctx.prd };
-    markStoryPaused(pausedPrd, ctx.story.id);
+    markStoryPaused(pausedPrd, ctx.story.id, await verifyEscalationQuotes(pauseReason, ctx.workdir, ctx.story.id));
     await savePRD(pausedPrd, ctx.prdPath);
 
     logger?.warn("execution", "Story paused - no tier available (needs human review)", {
@@ -47,7 +49,7 @@ export async function handleNoTierAvailable(
     pipelineEventBus.emit({
       type: "story:paused",
       storyId: ctx.story.id,
-      reason: `Execution stopped (${failureCategory ?? "unknown"} requires human review)`,
+      reason: pauseReason,
       cost: ctx.runtime?.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? ctx.totalCost,
     });
 
@@ -90,8 +92,9 @@ export async function handleMaxAttemptsReached(
   const outcome = resolveMaxAttemptsOutcome(failureCategory);
 
   if (outcome === "pause") {
+    const pauseReason = `Max attempts reached (${failureCategory ?? "unknown"} requires human review)`;
     const pausedPrd = { ...ctx.prd };
-    markStoryPaused(pausedPrd, ctx.story.id);
+    markStoryPaused(pausedPrd, ctx.story.id, await verifyEscalationQuotes(pauseReason, ctx.workdir, ctx.story.id));
     await savePRD(pausedPrd, ctx.prdPath);
 
     logger?.warn("execution", "Story paused - max attempts reached (needs human review)", {
@@ -111,7 +114,7 @@ export async function handleMaxAttemptsReached(
     pipelineEventBus.emit({
       type: "story:paused",
       storyId: ctx.story.id,
-      reason: `Max attempts reached (${failureCategory ?? "unknown"} requires human review)`,
+      reason: pauseReason,
       cost: ctx.runtime?.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? ctx.totalCost,
     });
 

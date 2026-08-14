@@ -37,6 +37,16 @@ describe("classifyOutcome", () => {
   ])("classifyOutcome($before, $after) → $expected", (before, after, expected) => {
     expect(classifyOutcome(before, after)).toBe(expected);
   });
+
+  test("nax#1581: a reworded LLM finding at the same file:line:rule reads as unchanged, not regressed", () => {
+    const before = [
+      makeFinding({ source: "semantic-review", message: "cannot return X on failure path", file: "src/a.ts", line: 10, rule: "AC-2" }),
+    ];
+    const after = [
+      makeFinding({ source: "semantic-review", message: "violates AC-2, cannot return X", file: "src/a.ts", line: 10, rule: "AC-2" }),
+    ];
+    expect(classifyOutcome(before, after)).toBe("unchanged");
+  });
 });
 
 // ─── runFixCycle — bail: no-strategy ──────────────────────────────────────────

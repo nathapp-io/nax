@@ -1,10 +1,13 @@
-import { findingKey, isNaxBailWrapper, markNaxBailWrapper } from "@/findings";
+import { findingRecurrenceKey, isNaxBailWrapper, markNaxBailWrapper } from "@/findings";
 import type { Finding, FixStrategy, Iteration } from "@/findings";
 
+// Uses the coarse recurrence key (not findingKey) so an LLM reviewer rewording
+// the same finding at the same file:line:rule still reads as "no progress"
+// instead of minting a new identity every iteration (nax#1581).
 function madeNoProgress(iteration: Iteration<Finding>): boolean {
   if (iteration.findingsBefore.length === 0) return false;
-  const after = new Set(iteration.findingsAfter.map(findingKey));
-  return iteration.findingsBefore.every((finding) => after.has(findingKey(finding)));
+  const after = new Set(iteration.findingsAfter.map(findingRecurrenceKey));
+  return iteration.findingsBefore.every((finding) => after.has(findingRecurrenceKey(finding)));
 }
 
 export function withNoProgressBail(

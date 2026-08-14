@@ -165,3 +165,29 @@ describe("markStoryPaused and markStoryPassed — failureCategory not affected",
     expect(prd.userStories[0].failureCategory).toBeUndefined();
   });
 });
+
+// ── nax#1582: markStoryPaused persists the blocking reason ───────────────────
+
+describe("markStoryPaused — reason persistence (nax#1582)", () => {
+  test("appends a PAUSED: entry to priorErrors when reason is given", () => {
+    const prd = makePrd([makeStory("US-001")]);
+    markStoryPaused(prd, "US-001", "Semantic review failed: 1 findings");
+    expect(prd.userStories[0].priorErrors).toEqual(["PAUSED: Semantic review failed: 1 findings"]);
+  });
+
+  test("leaves priorErrors untouched when no reason is given", () => {
+    const prd = makePrd([makeStory("US-001")]);
+    markStoryPaused(prd, "US-001");
+    expect(prd.userStories[0].priorErrors ?? []).toHaveLength(0);
+  });
+
+  test("appends to existing priorErrors rather than replacing them", () => {
+    const prd = makePrd([makeStory("US-001")]);
+    prd.userStories[0].priorErrors = ["Attempt 1 failed with model tier: fast"];
+    markStoryPaused(prd, "US-001", "Rectification exhausted");
+    expect(prd.userStories[0].priorErrors).toEqual([
+      "Attempt 1 failed with model tier: fast",
+      "PAUSED: Rectification exhausted",
+    ]);
+  });
+});

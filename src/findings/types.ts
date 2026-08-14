@@ -245,3 +245,25 @@ export function compareSeverity(a: FindingSeverity, b: FindingSeverity): number 
 export function findingKey(f: Finding): string {
   return JSON.stringify([f.source, f.file ?? null, f.line ?? null, f.rule ?? null, f.message]);
 }
+
+/**
+ * Coarse identity for a Finding, excluding `message` — used wherever the
+ * question is "is this substantively the same finding?" rather than "is this
+ * byte-identical?" (nax#1581).
+ *
+ * `findingKey` including `message` defeats progress detection: an LLM
+ * reviewer (semantic/adversarial) rewording the same finding at the same
+ * `file:line:rule` mints a new key every iteration, so consumers that diff
+ * `before`/`after` by `findingKey` — `madeNoProgress` in
+ * `no-progress-bail.ts`, and `classifySingleSource`'s new/resolved diff in
+ * `cycle.ts` — never see the finding as unchanged. Deterministic sources
+ * (lint, typecheck) have stable messages and are unaffected either way.
+ *
+ * Falls back to `findingKey` (message included) when a finding carries none
+ * of `file`/`line`/`rule` — with no locator at all, dropping `message` would
+ * conflate genuinely distinct findings from the same source into one key.
+ */
+export function findingRecurrenceKey(f: Finding): string {
+  if (f.file == null && f.line == null && f.rule == null) return findingKey(f);
+  return JSON.stringify([f.source, f.file ?? null, f.line ?? null, f.rule ?? null]);
+}
