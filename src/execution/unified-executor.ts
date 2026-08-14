@@ -1,7 +1,6 @@
 /** Unified Story Executor (ADR-005, Phase 4) — sequential loop with optional parallel dispatch. */
 
 import { pipelineEventBus } from "@/pipeline";
-import { resolveDefaultAgent } from "../agents";
 import { checkCostExceeded, checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
@@ -406,7 +405,8 @@ export async function executeUnified(
               storyId: story.id,
               complexity: story.routing?.complexity ?? "medium",
               modelTier: story.routing?.modelTier ?? "balanced",
-              modelUsed: ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config),
+              // #1575: the story's own agent — these metrics feed per-agent cost attribution.
+              modelUsed: agentFor(story, ctx),
               attempts: 1,
               finalTier: story.routing?.modelTier ?? "balanced",
               success: true,
@@ -428,7 +428,7 @@ export async function executeUnified(
                 storyId: conflict.story.id,
                 complexity: conflict.story.routing?.complexity ?? "medium",
                 modelTier: conflict.story.routing?.modelTier ?? "balanced",
-                modelUsed: ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config),
+                modelUsed: agentFor(conflict.story, ctx),
                 attempts: 1,
                 finalTier: conflict.story.routing?.modelTier ?? "balanced",
                 success: true,

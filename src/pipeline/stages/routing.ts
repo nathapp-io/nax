@@ -39,7 +39,7 @@ export const routingStage: PipelineStage = {
     // The precedence itself lives in resolveOperatingTier so that the executor's
     // pre-classification preview announces the same tier this stage resolves (#1575).
     const hasEscalationRecords = (ctx.story.escalations?.length ?? 0) > 0;
-    const operating = _routingDeps.resolveOperatingTier({
+    const operating = resolveOperatingTier({
       previousTier: ctx.story.routing?.modelTier,
       profileTier: ctx.story.routing?.profileModelTier,
       derivedTier: decision.modelTier,
@@ -177,7 +177,6 @@ export const routingStage: PipelineStage = {
  */
 export const _routingDeps = {
   resolveRouting,
-  resolveOperatingTier,
   complexityToModelTier,
   isGreenfieldStory,
   resolveTestFilePatterns,
