@@ -79,6 +79,17 @@ describe("mergePackageConfig — agent section", () => {
     mergePackageConfig(root, { agent: { maxInteractionTurns: 20 } } as Partial<NaxConfig>);
     expect(root.agent?.protocol).toBe(origProtocol);
   });
+
+  // BUG-06: `agent: null` in a per-package override (e.g. a stray key in
+  // config.json) previously crashed with a raw TypeError instead of falling
+  // back to root.agent — the gate was `packageOverride.agent !== undefined`,
+  // and `null !== undefined` is true, so `null.promptAudit` was dereferenced.
+  test("BUG-06: agent: null falls back to root.agent instead of throwing", () => {
+    const root = makeRoot();
+    const override = { agent: null } as unknown as Partial<NaxConfig>; // test-ratchet-allow: as-unknown-as
+    expect(() => mergePackageConfig(root, override)).not.toThrow();
+    expect(mergePackageConfig(root, override).agent).toBe(root.agent);
+  });
 });
 
 describe("mergePackageConfig — models section", () => {
@@ -164,6 +175,17 @@ describe("mergePackageConfig — routing section", () => {
     const origStrategy = root.routing?.strategy;
     mergePackageConfig(root, { routing: { strategy: "llm" } } as Partial<NaxConfig>);
     expect(root.routing?.strategy).toBe(origStrategy);
+  });
+
+  // BUG-06: same `!== undefined` vs. `!= null` gap as agent — `routing: null`
+  // crashed on `packageOverride.routing.llm` (no optional chaining on the
+  // direct `.llm` access) instead of falling back to root.routing.
+  test("BUG-06: routing: null falls back to root.routing instead of throwing", () => {
+    const root = makeRoot();
+    const override = { routing: null } as unknown as Partial<NaxConfig>; // test-ratchet-allow: as-unknown-as
+    expect(() => mergePackageConfig(root, override)).not.toThrow();
+    const result = mergePackageConfig(root, override);
+    expect(result.routing).toBe(root.routing);
   });
 });
 
