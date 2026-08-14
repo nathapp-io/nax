@@ -87,8 +87,10 @@ export async function configCommand(config: NaxConfig, options: ConfigCommandOpt
     console.log(`# Project config: ${sources.project ? sources.project : "(not found)"}`);
     console.log();
 
-    // Recursively display config with descriptions
-    displayConfigWithDescriptions(config, [], sources);
+    // SEC-05: mask resolved secrets before display — this branch was
+    // originally missed when masking was wired into the default JSON view.
+    const masked = maskProfileValues(config as unknown as Record<string, unknown>);
+    displayConfigWithDescriptions(masked, [], sources);
   } else {
     // Default view: JSON with header showing config sources
     console.log("// nax Configuration");
