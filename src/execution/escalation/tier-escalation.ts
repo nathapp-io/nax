@@ -140,6 +140,19 @@ export async function preIterationTierCheck(
   runtime?: import("../../runtime").NaxRuntime,
 ): Promise<PreIterationCheckResult> {
   const logger = _tierEscalationDeps.getSafeLogger();
+
+  // @design: #1575 — a first attempt has no rung to judge yet. The routing stage
+  // (pipeline/stages/routing.ts) is the only writer of story.routing.modelTier and
+  // runs strictly AFTER this check, so any value here predates classification; under
+  // a cross-agent ladder it pairs a stale tier with the profile's agent and warns
+  // "budget is unbounded" for a rung the story never runs on. Behaviour-preserving:
+  // tierOrder rungs carry attempts >= 1 (TierConfigSchema), so `0 < tierCfg.attempts`
+  // always holds here — the check can never skip, escalate, or dirty the PRD at
+  // attempts === 0. Any future tightening of the !tierCfg branch must keep this guard.
+  if ((story.attempts ?? 0) === 0) {
+    return { shouldSkipIteration: false, prdDirty: false, prd };
+  }
+
   const currentTier = story.routing?.modelTier ?? routing.modelTier;
   const tierOrder = config.autoMode?.escalation?.tierOrder || [];
   const hasAgentRungs = tierOrder.some((r) => r.agent !== undefined);

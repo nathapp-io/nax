@@ -16,7 +16,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mock } from "bun:test";
-import { makeNaxConfig, makePRD, makeStory } from "../../helpers";
+import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixture helpers — delegate to shared factories (test-helpers.md); local
@@ -202,6 +202,35 @@ describe("results AC-1 / AC-4 / exec AC-29: completed stories produce correct me
     // source is 'parallel' for batch-completed stories
     expect(m1?.source).toBe("parallel");
     expect(m2?.source).toBe("parallel");
+  });
+
+  test("#1575: modelUsed records the story's own agent, not the run default", async () => {
+    // Under a cross-agent profile the run default is not what executed the story;
+    // booking it to the default misattributes per-agent cost.
+    const profiled = makeStory({
+      id: "US-PROFILE",
+      routing: { complexity: "medium", testStrategy: "test-after", reasoning: "", agent: "pi" },
+    });
+    const plain = makePendingStory("US-PLAIN");
+
+    deps.selectIndependentBatch = mock(() => [profiled, plain]);
+    deps.runParallelBatch = mock(async () => ({
+      completed: [profiled, plain],
+      failed: [],
+      mergeConflicts: [],
+      storyCosts: new Map([
+        [profiled.id, 0.1],
+        [plain.id, 0.1],
+      ]),
+      totalCost: 0.2,
+    }));
+
+    const mod = await import("../../../src/execution/unified-executor");
+    const result = await mod.executeUnified(makeCtx() as never, makePrd([profiled, plain]) as never);
+
+    expect(result.allStoryMetrics.find((m) => m.storyId === profiled.id)?.modelUsed).toBe("pi");
+    // A story with no assigned agent still falls back to the run default.
+    expect(result.allStoryMetrics.find((m) => m.storyId === plain.id)?.modelUsed).not.toBe("pi");
   });
 
   test("exec AC-29: per-story cost != (totalCost / storyCount) when costs are unequal", async () => {

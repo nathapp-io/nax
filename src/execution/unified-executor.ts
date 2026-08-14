@@ -1,7 +1,6 @@
 /** Unified Story Executor (ADR-005, Phase 4) — sequential loop with optional parallel dispatch. */
 
 import { pipelineEventBus } from "@/pipeline";
-import { resolveDefaultAgent } from "../agents";
 import { checkCostExceeded, checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
@@ -24,7 +23,7 @@ import type { DeferredReviewResult } from "./deferred-review";
 import { runBatchPreChecks } from "./escalation";
 import { preIterationTierCheck } from "./escalation/tier-escalation";
 import type { SequentialExecutionContext, SequentialExecutionResult } from "./executor-types";
-import { buildPreviewRouting } from "./executor-types";
+import { agentFor, buildPreviewRouting } from "./executor-types";
 import { getAllReadyStories } from "./helpers";
 import { runIteration } from "./iteration-runner";
 import type { RunParallelBatchOptions, RunParallelBatchResult } from "./parallel-batch";
@@ -256,14 +255,12 @@ export async function executeUnified(
         const batch = retryStory ? [retryStory] : selectBatch(readyStories, ctx.parallelCount as number);
         if (batch.length > 1) {
           // Emit story:started for each batch story before dispatch (AC-5)
-          const batchAgent = ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config);
           const batchCounts = countStories(prd);
           const batchBaseDone = batchCounts.total - batchCounts.pending;
           for (const [batchIndex, story] of batch.entries()) {
-            const modelTier =
-              story.routing?.modelTier ??
-              ctx.config.autoMode.complexityRouting?.[story.routing?.complexity ?? "medium"] ??
-              "balanced";
+            // #1575: announce the tier/agent the story will actually run as.
+            const modelTier = buildPreviewRouting(story, ctx.config).modelTier;
+            const batchAgent = agentFor(story, ctx);
             pipelineEventBus.emit({
               type: "story:started",
               storyId: story.id,
@@ -408,7 +405,8 @@ export async function executeUnified(
               storyId: story.id,
               complexity: story.routing?.complexity ?? "medium",
               modelTier: story.routing?.modelTier ?? "balanced",
-              modelUsed: ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config),
+              // #1575: the story's own agent — these metrics feed per-agent cost attribution.
+              modelUsed: agentFor(story, ctx),
               attempts: 1,
               finalTier: story.routing?.modelTier ?? "balanced",
               success: true,
@@ -430,7 +428,7 @@ export async function executeUnified(
                 storyId: conflict.story.id,
                 complexity: conflict.story.routing?.complexity ?? "medium",
                 modelTier: conflict.story.routing?.modelTier ?? "balanced",
-                modelUsed: ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config),
+                modelUsed: agentFor(conflict.story, ctx),
                 attempts: 1,
                 finalTier: conflict.story.routing?.modelTier ?? "balanced",
                 success: true,
@@ -480,7 +478,7 @@ export async function executeUnified(
           }
 
           const modelTier = singleSelection.routing.modelTier;
-          const singleAgent = ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config);
+          const singleAgent = agentFor(singleStory, ctx);
           const singleCounts = countStories(prd);
           pipelineEventBus.emit({
             type: "story:started",
@@ -573,7 +571,7 @@ export async function executeUnified(
       }
 
       const modelTier = selection.routing.modelTier;
-      const seqAgent = ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config);
+      const seqAgent = agentFor(selection.story, ctx);
       const seqCounts = countStories(prd);
       pipelineEventBus.emit({
         type: "story:started",

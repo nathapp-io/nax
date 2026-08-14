@@ -83,7 +83,14 @@ export interface StoryRouting {
   initialComplexity?: Complexity;
   /** Content hash of story fields at time of routing — used to detect stale cached routing (RRP-003) */
   contentHash?: string;
-  /** Model tier (derived at runtime from config, not persisted) */
+  /**
+   * The rung the story currently operates on. Seeded from `profileModelTier` or
+   * the complexity classification and bumped by escalation — see
+   * `resolveOperatingTier`. It IS persisted (written by the routing stage and by
+   * decompose-mapper), which is what lets escalation survive across runs and what
+   * `resetFailedStoriesToPending` restores from `initialModelTier`. Absent until
+   * a story has been routed at least once.
+   */
   modelTier?: ModelTier;
   testStrategy: TestStrategy;
   /** Required when testStrategy is "no-test" — explains why tests are unnecessary for this story */

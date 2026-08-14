@@ -21,6 +21,11 @@ export {
   _tryLlmBatchRouteDeps,
 } from "./router";
 
+// SSOT for the profile/escalation/persisted tier precedence — shared by the
+// routing stage and the executor's pre-classification preview (#1575).
+export { resolveOperatingTier } from "./operating-tier";
+export type { OperatingTierInput, OperatingTierResult } from "./operating-tier";
+
 // Calibration primitives (US-002 + US-003)
 export { computeBandStats } from "./calibrate/band-stats";
 export type { ComplexityMapping } from "./calibrate/band-stats";
