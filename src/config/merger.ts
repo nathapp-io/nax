@@ -11,6 +11,16 @@
 import type { NaxConfig } from "./schema";
 
 /**
+ * Own-enumerable keys that, if assigned via `result[key] = value` on a plain
+ * object, tamper with the prototype chain (`__proto__`) or defeat
+ * `isPlainObject`'s `constructor === Object` check (`constructor`,
+ * `prototype`). `JSON.parse('{"__proto__": {...}}')` creates `__proto__` as a
+ * normal own data property — `Object.keys` includes it — so an untrusted
+ * project/profile config can smuggle one of these in (SEC-07).
+ */
+const DANGEROUS_MERGE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+/**
  * Deep merge two configuration objects.
  *
  * Rules:
@@ -30,6 +40,13 @@ export function deepMergeConfig<T = NaxConfig>(base: Record<string, unknown>, ov
   const result: Record<string, unknown> = { ...base };
 
   for (const key of Object.keys(override)) {
+    // SEC-07: never assign into __proto__/constructor/prototype — doing so
+    // would tamper with `result`'s actual prototype chain or defeat
+    // isPlainObject's constructor check on a later merge pass.
+    if (DANGEROUS_MERGE_KEYS.has(key)) {
+      continue;
+    }
+
     const overrideValue = override[key];
 
     // Skip undefined values
@@ -84,7 +101,7 @@ export function deepMergeConfig<T = NaxConfig>(base: Record<string, unknown>, ov
 
       // Handle other hook config fields (e.g., skipGlobal)
       for (const hookKey of Object.keys(overrideHooks)) {
-        if (hookKey !== "hooks") {
+        if (hookKey !== "hooks" && !DANGEROUS_MERGE_KEYS.has(hookKey)) {
           merged[hookKey] = overrideHooks[hookKey];
         }
       }
@@ -136,9 +153,17 @@ export function deepMergeConfig<T = NaxConfig>(base: Record<string, unknown>, ov
 /**
  * Check if value is a plain object (not null, not array, not class instance).
  *
+ * SEC-07: checks the actual prototype rather than `value.constructor === Object`
+ * — an object literal like `{ constructor: {...}, ... }` shadows the inherited
+ * `constructor` accessor with an own data property, which would defeat the old
+ * check and cause this branch to treat the object as non-plain, falling
+ * through to full replacement instead of a recursive (key-filtered) merge.
+ *
  * @param value - Value to check
  * @returns True if value is a plain object
  */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value) && value.constructor === Object;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
 }
