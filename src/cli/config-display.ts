@@ -11,6 +11,7 @@ import type { NaxConfig } from "../config/schema";
 import { FIELD_DESCRIPTIONS } from "./config-descriptions";
 import { deepDiffConfigs } from "./config-diff";
 import { loadGlobalConfig, loadProjectConfig } from "./config-get";
+import { maskProfileValues } from "./config-profile";
 
 export { FIELD_DESCRIPTIONS };
 
@@ -95,7 +96,8 @@ export async function configCommand(config: NaxConfig, options: ConfigCommandOpt
     console.log(`// Global config: ${sources.global ? sources.global : "(not found)"}`);
     console.log(`// Project config: ${sources.project ? sources.project : "(not found)"}`);
     console.log();
-    console.log(JSON.stringify(config, null, 2));
+    const masked = maskProfileValues(config as unknown as Record<string, unknown>);
+    console.log(JSON.stringify(masked, null, 2));
   }
 }
 

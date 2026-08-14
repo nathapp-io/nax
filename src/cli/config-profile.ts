@@ -92,7 +92,7 @@ export async function profileShowCommand(
   return JSON.stringify(masked, null, 2);
 }
 
-function maskProfileValues(obj: Record<string, unknown>): Record<string, unknown> {
+export function maskProfileValues(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
     if (SENSITIVE_KEY_PATTERN.test(key)) {
