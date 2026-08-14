@@ -18,6 +18,25 @@ function getSafeLogger() {
   }
 }
 
+/**
+ * Write `content` to `targetPath` only if it doesn't already exist
+ * (O_CREAT | O_EXCL). Returns false (instead of throwing) on EEXIST — used by
+ * the BUG-34 fix to restore a wrongly-stolen lock without ever overwriting a
+ * lock a third process has since legitimately created.
+ */
+async function tryExclusiveCreate(targetPath: string, content: string): Promise<boolean> {
+  const fs = await import("node:fs");
+  try {
+    const fd = fs.openSync(targetPath, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o644);
+    fs.writeSync(fd, content);
+    fs.closeSync(fd);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
+  }
+}
+
 /** Check if a process with given PID is still alive */
 function isProcessAlive(pid: number): boolean {
   try {
@@ -114,9 +133,28 @@ export async function acquireLock(workdir: string): Promise<boolean> {
 
         if (claimedPid !== lockPid) {
           // We renamed away a lock that was replaced out from under us
-          // (racer B claimed racer A's fresh live lock) — put it back
-          // unchanged and let the rightful holder be found on the next check.
-          await rename(tombstonePath, lockPath).catch(() => {});
+          // (racer B claimed racer A's fresh live lock) — put it back so the
+          // rightful holder is found on the next check.
+          //
+          // BUG-34: a blind rename(tombstonePath, lockPath) here would
+          // unconditionally overwrite whatever currently sits at lockPath —
+          // rename() has no create-if-absent semantics. In the window
+          // between our steal and this restore, a third racer (D) can see
+          // lockPath vacant, win its own O_CREAT|O_EXCL create, and start
+          // believing it holds the lock; a blind restore would then silently
+          // clobber D's fresh live lock with B's stale content, leaving two
+          // processes (B and D) both believing they hold the lock. An
+          // exclusive create fails safely instead: if lockPath is occupied
+          // by the time we restore, we drop our tombstone rather than
+          // destroy whoever is there now.
+          const restored = claimedContent !== null && (await tryExclusiveCreate(lockPath, claimedContent));
+          await unlink(tombstonePath).catch(() => {});
+          if (!restored) {
+            const logger = getSafeLogger();
+            logger?.warn("execution", "Stolen lock could not be restored — a newer lock already exists", {
+              lockPath,
+            });
+          }
           return false;
         }
 
