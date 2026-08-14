@@ -192,6 +192,14 @@ export function rebuild(
   const chunkScopePaths = prior.manifest.chunkScopePaths
     ? Object.fromEntries(Object.entries(prior.manifest.chunkScopePaths).filter(([id]) => includedChunkIds.has(id)))
     : undefined;
+  // Mirror the chunkScopePaths/chunkEffectiveness pattern: a chunk dropped
+  // during rebuild (e.g. budget repack) must not keep its provider-attribution
+  // entry forever — a future direct consumer of chunkProviders (rather than
+  // deriving it via chunkEffectiveness's keys) would otherwise double-count
+  // or misattribute chunks that are no longer part of the bundle.
+  const chunkProviders = prior.manifest.chunkProviders
+    ? Object.fromEntries(Object.entries(prior.manifest.chunkProviders).filter(([id]) => includedChunkIds.has(id)))
+    : undefined;
   const excludedChunks = packResult.budgetExcludedIds
     .filter((id) => !includedChunkIds.has(id))
     .map((id) => ({ id, reason: "budget" as const }));
@@ -226,6 +234,7 @@ export function rebuild(
     chunkEffectiveness:
       chunkEffectiveness && Object.keys(chunkEffectiveness).length > 0 ? chunkEffectiveness : undefined,
     chunkScopePaths: chunkScopePaths && Object.keys(chunkScopePaths).length > 0 ? chunkScopePaths : undefined,
+    chunkProviders: chunkProviders && Object.keys(chunkProviders).length > 0 ? chunkProviders : undefined,
   };
 
   const rebuiltChunks: ContextChunk[] = orderedChunks.map(toContextChunk);

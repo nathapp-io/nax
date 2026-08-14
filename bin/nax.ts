@@ -150,7 +150,7 @@ async function promptForConfirmation(question: string): Promise<boolean> {
 
       process.stdout.write("\n");
 
-      if (char === "") {
+      if (char === "\u0003") {
         // Ctrl+C — treat as cancellation, not confirmation
         resolve(false);
         process.exit(130);

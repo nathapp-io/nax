@@ -241,7 +241,7 @@ function dedupeBasenamePatterns(testFilePatterns: readonly string[]): BasenamePa
   for (const pattern of testFilePatterns) {
     const shape = extractBasenamePattern(pattern);
     if (!shape) continue;
-    const key = `${shape.prefix} ${shape.suffix}`;
+    const key = `${shape.prefix}\u0000${shape.suffix}`;
     if (seen.has(key)) continue;
     seen.add(key);
     shapes.push(shape);

@@ -81,7 +81,6 @@ describe("formatFragmentsInspect — purity (US-004 AC7)", () => {
     };
     _fragmentStoreDeps.writeFile = async () => {
       writeCalled = true;
-      return 0;
     };
     _fragmentStoreDeps.listFragments = async () => {
       // The pure formatter must not call back into the dep at all.
@@ -121,7 +120,6 @@ describe("formatFragmentsPrune — purity (US-004 AC7)", () => {
     };
     _fragmentStoreDeps.writeFile = async () => {
       touched = true;
-      return 0;
     };
 
     const summary = { featureId: "feat-x", requestedStoryId: undefined, removedStoryIds: ["US-001", "US-002"] };
@@ -288,7 +286,6 @@ describe("fragmentsPruneCommand — single-story (US-004 AC4)", () => {
     _fragmentStoreDeps.mkdirp = async () => undefined;
     _fragmentStoreDeps.writeFile = async (p, content) => {
       writes.set(p, content);
-      return content.length;
     };
     _fragmentStoreDeps.fileExists = async (p) => writes.has(p);
     _fragmentStoreDeps.readFile = async (p) => writes.get(p) ?? "";
@@ -324,7 +321,6 @@ describe("fragmentsPruneCommand — feature-wide (US-004 AC5, AC6)", () => {
     _fragmentStoreDeps.mkdirp = async () => undefined;
     _fragmentStoreDeps.writeFile = async (p, content) => {
       writes.set(p, content);
-      return content.length;
     };
     const dirPath = "/repo/.nax/features/feat-x/fragments";
     _fragmentStoreDeps.fileExists = async (p) => writes.has(p);

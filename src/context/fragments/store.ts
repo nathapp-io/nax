@@ -14,11 +14,18 @@
 import { mkdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { estimateTokens } from "@/optimizer";
+import { atomicWriteText } from "@/utils/json-file";
 
 /** Injectable file I/O — tests override to use in-memory stores. */
 export const _fragmentStoreDeps = {
   mkdirp: (path: string): Promise<string | undefined> => mkdir(path, { recursive: true }),
-  writeFile: (path: string, content: string): Promise<number> => Bun.write(path, content),
+  /**
+   * Tmp-write + rename, not a direct `Bun.write` — a concurrent reader (a
+   * dependent story's `readFragment`/`listFragmentStoryIds` call under
+   * parallel execution) must never observe a truncated mid-write file. Same
+   * torn-read fix as `manifest-store.ts`'s `writeJson` (BUG-08).
+   */
+  writeFile: (path: string, content: string): Promise<void> => atomicWriteText(path, content, "fragments"),
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
   /**
    * Directory existence. Deliberately NOT `Bun.file(dir).exists()` — that

@@ -76,15 +76,35 @@ export async function loadJsonFile<T>(path: string, context = "json-file"): Prom
  * ```
  */
 export async function saveJsonFile<T>(path: string, data: T, context = "json-file"): Promise<void> {
+  const json = JSON.stringify(data, null, 2);
+  await atomicWriteText(path, json, context);
+}
+
+/**
+ * Write text to a file atomically: sibling temp file first, then `rename()`
+ * over the destination. Same torn-read guarantee as {@link saveJsonFile}
+ * (BUG-08) but for non-JSON payloads (e.g. Markdown fragments) — a
+ * concurrent reader always observes either the fully-written old content or
+ * the fully-written new content, never a truncated partial write.
+ *
+ * Same caveats as `saveJsonFile`: not crash-durable (no `fsync` before the
+ * rename), and a hard kill between the two steps leaves an orphaned
+ * `<path>.tmp-<uuid>` sibling.
+ *
+ * @param path - File path to write to
+ * @param content - Text to write
+ * @param context - Logger context (for errors)
+ * @throws Error if write fails
+ */
+export async function atomicWriteText(path: string, content: string, context = "json-file"): Promise<void> {
   const tmpPath = `${path}.tmp-${crypto.randomUUID()}`;
   try {
-    const json = JSON.stringify(data, null, 2);
-    await Bun.write(tmpPath, json);
+    await Bun.write(tmpPath, content);
     await rename(tmpPath, path);
   } catch (err) {
     await unlink(tmpPath).catch(() => {});
     const logger = getLogger();
-    logger.error(context, "Failed to write JSON file", {
+    logger.error(context, "Failed to write file", {
       path,
       error: String(err),
     });
