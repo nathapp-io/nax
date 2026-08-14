@@ -49,7 +49,15 @@ const NOT_FOUND_EXIT_CODE = 127;
 function spawnCapture(cmd: string[], opts: ExecOptions): Promise<RunResult> {
   return new Promise<RunResult>((resolve) => {
     const [file, ...args] = cmd;
-    const proc = spawn(file as string, args, { cwd: opts.cwd, stdio: ["ignore", "pipe", "pipe"] });
+    // `detached: true` puts the child in its own process group so we can
+    // SIGKILL the whole tree when the timer fires — otherwise a SIGTERM on
+    // `sh` only kills the shell, and any inherited pipes from a still-running
+    // child (e.g. `sleep 30`) keep `close` from firing until the child exits.
+    const proc = spawn(file as string, args, {
+      cwd: opts.cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: true,
+    });
     let stdout = "";
     let stderr = "";
     let timedOut = false;
@@ -70,7 +78,15 @@ function spawnCapture(cmd: string[], opts: ExecOptions): Promise<RunResult> {
       opts.timeoutMs && opts.timeoutMs > 0
         ? setTimeout(() => {
             timedOut = true;
-            proc.kill();
+            if (proc.pid !== undefined) {
+              // Negative pid = process group. SIGKILL cannot be ignored,
+              // guarantees the child tree (and inherited pipes) actually close.
+              try {
+                process.kill(-proc.pid, "SIGKILL");
+              } catch {
+                // Group already gone.
+              }
+            }
           }, opts.timeoutMs)
         : undefined;
 
