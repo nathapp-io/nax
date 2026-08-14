@@ -58,6 +58,35 @@ export class WorktreeManager {
   }
 
   /**
+   * BUG-28: checks `git worktree list` for a record (live or prunable) of a
+   * worktree checked out to `branchName`, BEFORE any cleanup runs. This is
+   * the only reliable proof that the branch was created by a prior nax
+   * worktree — git has no other durable link between a branch and the
+   * worktree that created it once the worktree directory is gone. Matched by
+   * branch (not path) so it isn't defeated by TMPDIR symlinks (e.g. macOS
+   * /var → /private/var) making a naive path comparison miss real matches.
+   */
+  private async hasWorktreeRecord(projectRoot: string, branchName: string): Promise<boolean> {
+    try {
+      const proc = _managerDeps.spawn(["git", "worktree", "list", "--porcelain"], {
+        cwd: projectRoot,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+      if (exitCode !== 0) return false;
+
+      const targetBranch = `refs/heads/${branchName}`;
+      return stdout
+        .split("\n")
+        .filter((line) => line.startsWith("branch "))
+        .some((line) => line.slice("branch ".length).trim() === targetBranch);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Creates a git worktree at .nax-wt/<storyId>/ with branch nax/<storyId>.
    * Dependency preparation is handled outside WorktreeManager; only non-dependency
    * runtime files such as .env are mirrored here when present.
@@ -71,11 +100,22 @@ export class WorktreeManager {
     const worktreePath = join(projectRoot, ".nax-wt", storyId);
     const branchName = `nax/${storyId}`;
 
+    // BUG-28: Step 3 below force-deletes `branchName` when remove() (Step 2)
+    // found no live worktree to remove it via — that path used to run
+    // unconditionally, which can destroy an unmerged *user* branch that
+    // happens to share this name. `git worktree list` is captured before any
+    // cleanup runs specifically so a since-pruned/deleted-directory worktree
+    // still counts as proof this branch pair was actually created by nax's
+    // own create() — only then is Step 3's force-delete "known-orphaned"
+    // rather than a guess.
+    const hadWorktreeRecord = await this.hasWorktreeRecord(projectRoot, branchName);
+
     // Clean up any stale worktree/branch from a previous crashed run.
     // Three cleanup steps handle all orphaned-worktree scenarios:
     // 1. `git worktree prune` — removes admin refs whose directories no longer exist
-    // 2. `git worktree remove --force` — removes worktree if directory still exists
-    // 3. `git branch -D` — removes leftover branch so `-b` flag doesn't conflict
+    // 2. `git worktree remove --force` — removes worktree (and its branch) if directory still exists
+    // 3. `git branch -D` — removes a leftover branch whose worktree directory is already
+    //    gone, but ONLY when hadWorktreeRecord proved it as a nax-created orphan
     try {
       // Step 1: Prune orphaned worktree references (dir deleted but .git/worktrees/ entry remains)
       const pruneProc = _managerDeps.spawn(["git", "worktree", "prune"], {
@@ -88,23 +128,30 @@ export class WorktreeManager {
       // prune is best-effort
     }
 
+    let removedLiveWorktree = false;
     try {
-      // Step 2: Remove worktree if it still exists as a live worktree
+      // Step 2: Remove worktree if it still exists as a live worktree (remove()
+      // also force-deletes branchName once the worktree removal succeeds).
       await this.remove(projectRoot, storyId);
+      removedLiveWorktree = true;
     } catch {
       // remove() throws if worktree doesn't exist — that's fine
     }
 
-    try {
-      // Step 3: Delete orphaned branch (may exist even after worktree is gone)
-      const branchProc = _managerDeps.spawn(["git", "branch", "-D", branchName], {
-        cwd: projectRoot,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      await branchProc.exited;
-    } catch {
-      // branch may not exist — that's fine
+    if (!removedLiveWorktree && hadWorktreeRecord) {
+      try {
+        // Step 3: the worktree directory is already gone (remove() found
+        // nothing), but hadWorktreeRecord proves this branch/worktree pair
+        // was created by a prior nax run — safe to force-delete the orphan.
+        const branchProc = _managerDeps.spawn(["git", "branch", "-D", branchName], {
+          cwd: projectRoot,
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        await branchProc.exited;
+      } catch {
+        // branch may not exist — that's fine
+      }
     }
 
     try {
