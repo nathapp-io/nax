@@ -22,6 +22,18 @@ export const _profileDeps = {
 };
 
 /**
+ * BUG-21 defense-in-depth: names excluded from the ambient process.env
+ * fallback in loadProfileEnv. Mirrors SENSITIVE_KEY_PATTERN in
+ * cli/config-profile.ts. Folding all of process.env into the $VAR
+ * substitution base (to make `$HOME`/`$USER`-style references work) must not
+ * also make secret-shaped ambient vars (AWS_SECRET_ACCESS_KEY, GITHUB_TOKEN,
+ * ...) silently substitutable by a project-controlled profile.json — an
+ * operator opting a var into a profile still does so explicitly via that
+ * profile's own .env file, which is layered on top and always wins.
+ */
+const SENSITIVE_ENV_KEY_PATTERN = /key|token|secret|password|credential/i;
+
+/**
  * SEC-08: reject path-traversal in a profile name. `profileName` flows
  * directly into `join(profilesDir, \`${profileName}.json\`)` in loadProfile
  * and loadProfileEnv, and `join` silently collapses `..` segments — e.g.
@@ -115,7 +127,7 @@ export async function loadProfileEnv(profileName: string, projectRoot: string): 
   // hard-failed config load before zod ever ran.
   let merged: Record<string, string> = {};
   for (const [key, value] of Object.entries(_profileDeps.env)) {
-    if (value !== undefined) merged[key] = value;
+    if (value !== undefined && !SENSITIVE_ENV_KEY_PATTERN.test(key)) merged[key] = value;
   }
 
   if (!globalExists && !projectExists) {

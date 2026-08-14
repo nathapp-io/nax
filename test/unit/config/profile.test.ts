@@ -175,6 +175,45 @@ describe("config/profile", () => {
         _profileDeps.env = origEnv;
       }
     });
+
+    // BUG-21 defense-in-depth: folding all of process.env into the $VAR
+    // substitution base must not make secret-shaped ambient vars silently
+    // substitutable by a project-controlled profile.json.
+    test("BUG-21: secret-shaped ambient env var names are excluded from the process.env fallback", async () => {
+      const origEnv = _profileDeps.env;
+      _profileDeps.env = {
+        AWS_SECRET_ACCESS_KEY: "super-secret",
+        GITHUB_TOKEN: "gh-token-value",
+        DB_PASSWORD: "hunter2",
+        SOME_CREDENTIAL: "cred-value",
+        SAFE_VAR: "safe-value",
+      };
+      try {
+        const result = await loadProfileEnv("nonexistent-profile-name", projectDir);
+        expect(result.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+        expect(result.GITHUB_TOKEN).toBeUndefined();
+        expect(result.DB_PASSWORD).toBeUndefined();
+        expect(result.SOME_CREDENTIAL).toBeUndefined();
+        expect(result.SAFE_VAR).toBe("safe-value");
+      } finally {
+        _profileDeps.env = origEnv;
+      }
+    });
+
+    test("BUG-21: a profile's own .env file can still explicitly set a secret-shaped key", async () => {
+      const projectProfilesDir = join(projectDir, ".nax", "profiles");
+      mkdirSync(projectProfilesDir, { recursive: true });
+      await Bun.write(join(projectProfilesDir, "fast.env"), "GITHUB_TOKEN=explicitly-set-by-profile\n");
+
+      const origEnv = _profileDeps.env;
+      _profileDeps.env = { GITHUB_TOKEN: "ambient-should-be-excluded" };
+      try {
+        const result = await loadProfileEnv("fast", projectDir);
+        expect(result.GITHUB_TOKEN).toBe("explicitly-set-by-profile");
+      } finally {
+        _profileDeps.env = origEnv;
+      }
+    });
   });
 
   // ---------------------------------------------------------------------------
