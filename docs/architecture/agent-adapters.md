@@ -294,3 +294,53 @@ Wire token fields (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `
 - `inputTokens`, `outputTokens`, `cacheReadInputTokens`, `cacheCreationInputTokens`
 
 The parser (`acp/parser.ts`) handles both the JSON-RPC envelope format (acpx v0.3+) and legacy flat NDJSON for backward compatibility.
+
+---
+
+## §17 Trust Boundary
+
+*Added: 2026-08-14 (deep code review, decision D-1).*
+
+**nax trusts the repository it is pointed at.** An untrusted repo is **NOT** in
+nax's threat model.
+
+Running `nax` on a repo grants that repo the same authority as running its own
+`npm test` — because invoking `quality.commands.*` is literally that. A repo
+can execute code, read the environment, and load plugins. This is the design,
+not a defect.
+
+### What is inside the boundary
+
+| Authority | Where | Why it is granted |
+|:----------|:------|:------------------|
+| Run arbitrary commands | `quality.commands.*` (`src/quality/runner.ts`) | Equivalent to running the repo's own `npm test` — the repo's own commands with the repo's own env |
+| Execute hooks | `src/hooks/runner.ts` | Hooks are repo-authored code the user opted into running |
+| Load plugins in-process | `src/plugins/loader.ts` | Plugin loading is the granted authority |
+| Vendor flow modules | `nax-finish/index.ts` | Same authority as any other repo-supplied code path |
+| Provide tool-result content | `src/agents/acp/adapter-output.ts` | File contents are the repo's own — no prompt-injection delimiter escaping |
+| Override security-sensitive config | project `.nax/config.json` (warned, not blocked — see SEC-2 / D-2) | Project layer wins the merge; the loader warns when a project layer changes `execution.permissionProfile` or `quality.stripEnvVars` from their global values |
+
+### Explicitly NOT being built
+
+Sandboxing, out-of-process plugin isolation, env allowlists, prompt-injection
+delimiter escaping, first-run per-repo trust prompts. Do not raise these again
+in reviews — see the D-1 ruling in `docs/reviews/2026-08-14-deep-code-review.md`.
+
+### Scope limits
+
+The trust model excuses a repo exercising authority the user granted. It does
+**not** excuse:
+
+- nax silently overriding a setting the user deliberately chose (SEC-2/D-2 — warned, not blocked)
+- ordinary correctness bugs that merely happen to live in security-shaped code (SEC-4/D-3)
+- attackers outside the repo boundary, e.g. co-tenant local processes (SEC-8 — webhook rate limiting is real work)
+
+### Interaction plugins
+
+- **Webhook** (`src/interaction/plugins/webhook.ts`): binds `127.0.0.1` with an
+  HMAC-SHA256 secret and a global request rate limit. `requireSecret: false` is
+  supported but warns — the loopback endpoint is then unauthenticated against
+  co-tenant local processes.
+- **Telegram** (`src/interaction/plugins/telegram.ts`): authenticates by chat ID
+  only. Use a **private chat with the bot** — any member of a shared/group chat
+  can tap approve/abort/skip buttons. There is no per-user allowlist.

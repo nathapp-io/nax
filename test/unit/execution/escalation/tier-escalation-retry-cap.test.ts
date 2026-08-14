@@ -185,4 +185,82 @@ describe("handleTierEscalation — runtime-crash retry cap", () => {
       _runtimeCrashRetryCounts.delete(storyId);
     }
   });
+
+  test("BUG-15: resets the retry cap map when a story succeeds after a retry-same", async () => {
+    const mod = await import("@/execution/escalation");
+    const { handleTierEscalation, _tierEscalationDeps, _runtimeCrashRetryCounts, RUNTIME_CRASH_RETRY_CAP, resetRuntimeCrashRetryCounts } =
+      mod;
+
+    const storyId = "US-002-retry-cap-succeed";
+    const origSavePRD = _tierEscalationDeps.savePRD;
+    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    _runtimeCrashRetryCounts.delete(storyId);
+
+    try {
+      const story = {
+        id: storyId,
+        title: "Story",
+        description: "Test",
+        acceptanceCriteria: [],
+        tags: [],
+        dependencies: [],
+        status: "in-progress" as const,
+        passes: false,
+        escalations: [],
+        attempts: 1,
+        routing: { modelTier: "fast", testStrategy: "test-after" },
+      };
+
+      const prd = {
+        project: "test",
+        feature: "f",
+        branchName: "b",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userStories: [story],
+      };
+
+      const buildCtx = () => ({
+        story,
+        storiesToExecute: [story],
+        isBatchExecution: false,
+        routing: { modelTier: "fast", testStrategy: "test-after" },
+        pipelineResult: { reason: "Bun runtime crash", context: { tddFailureCategory: "runtime-crash" } },
+        config: {
+          autoMode: {
+            escalation: {
+              enabled: true,
+              tierOrder: [
+                { tier: "fast", attempts: 2 },
+                { tier: "balanced", attempts: 3 },
+              ],
+            },
+          },
+          routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+          models: {},
+        },
+        prd,
+        prdPath: "/tmp/test-prd-us002-retry-cap-succeed.json",
+        featureDir: undefined,
+        hooks: { hooks: {} },
+        feature: "f",
+        totalCost: 0,
+        workdir: "/tmp",
+        runtimeCrashResult: { status: "RUNTIME_CRASH", success: false },
+      });
+
+      // Seed the map with a mid-cap count (story crashed once, then a later
+      // run in the same process retries it).
+      _runtimeCrashRetryCounts.set(storyId, 1);
+
+      // Simulates run teardown between two runs in one process (BUG-15):
+      // the map must be emptied so the next run starts with a fresh budget.
+      resetRuntimeCrashRetryCounts();
+
+      expect(_runtimeCrashRetryCounts.size).toBe(0);
+    } finally {
+      _tierEscalationDeps.savePRD = origSavePRD;
+      _runtimeCrashRetryCounts.delete(storyId);
+    }
+  });
 });

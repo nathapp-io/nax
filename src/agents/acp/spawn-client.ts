@@ -30,7 +30,7 @@ import { parseModelSpec } from "./model-spec";
 import { applyReasoningEffort } from "./reasoning-effort";
 import { parseSessionIds } from "./session-ids";
 import { killProcessTree, runTrackedSpawn } from "./spawn-client-process";
-import { readAndParseLines } from "./stdout-line-reader";
+import { readAndParseLines, readStreamTail } from "./stdout-line-reader";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -302,7 +302,8 @@ export class SpawnAcpSession implements AcpSession {
         : undefined;
       const parseHandle = readAndParseLines(proc.stdout, parseState, onActivity);
       const parsePromise = parseHandle.promise.catch(() => {});
-      const stderrPromise = new Response(proc.stderr).text().catch(() => "");
+      // MEM-1: cap stderr to a 64KB rolling tail instead of buffering the full stream.
+      const stderrPromise = readStreamTail(proc.stderr).catch(() => "");
 
       const exitCode = await proc.exited;
 

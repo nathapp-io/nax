@@ -66,8 +66,6 @@ export interface RunnerExecutionResult {
   storiesCompleted: number;
   totalCost: number;
   allStoryMetrics: StoryMetrics[];
-  completedEarly?: boolean;
-  durationMs?: number;
   /** End-of-run deferred plugin review result (#1146 G2). Forwarded to the completion phase. */
   deferredReview?: DeferredReviewResult;
   /** Date.now() captured before postrun:phase:started for review was emitted. Forwarded for accurate durationMs (AC9). */

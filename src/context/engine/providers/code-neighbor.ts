@@ -499,7 +499,7 @@ export class CodeNeighborProvider implements IContextProvider {
     this.maxGlobFiles = options.maxGlobFiles ?? MAX_GLOB_FILES_DEFAULT;
   }
 
-  async fetch(request: ContextRequest): Promise<ContextProviderResult> {
+  async fetch(request: ContextRequest, signal?: AbortSignal): Promise<ContextProviderResult> {
     const { touchedFiles } = request;
     const workdir = this.neighborScope === "package" ? request.packageDir : request.repoRoot;
     // AC-62: cross-package scanning — detect shared workspace dirs instead of scanning full repoRoot.
@@ -549,6 +549,9 @@ export class CodeNeighborProvider implements IContextProvider {
     const sections: NeighborSection[] = [];
     let anyTruncated = false;
     for (const file of filesToProcess) {
+      // PERF-2: cooperative cancellation — a timed-out fetch must stop doing
+      // work instead of scanning/reading files the orchestrator no longer wants.
+      if (signal?.aborted) break;
       const { neighbors, truncated } = await collectNeighbors(
         file,
         workdir,
@@ -560,6 +563,9 @@ export class CodeNeighborProvider implements IContextProvider {
       if (neighbors.length > 0) {
         sections.push({ file, neighbors });
       }
+    }
+    if (signal?.aborted) {
+      return { chunks: [], pullTools: [] };
     }
 
     // US-002: chunk assembly (and `scopePaths` attribution) lives in

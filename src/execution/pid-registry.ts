@@ -2,14 +2,20 @@
 
 import { existsSync } from "node:fs";
 import { getSafeLogger } from "@/logger";
+import type { SpawnResult } from "@/utils/bun-deps";
 import { errorMessage } from "@/utils/errors";
 
 const PID_REGISTRY_FILE = ".nax-pids";
 const PID_TREE_KILL_GRACE_MS = 250;
+// PERF-3: hard deadline on each ps/kill subprocess exit. Shutdown latency must
+// not scale with wedged subprocesses — a hung `ps` stalls killAll() indefinitely.
+const PROC_EXIT_TIMEOUT_MS = 3_000;
 
 export const _pidRegistryDeps = {
   spawn: Bun.spawn as typeof Bun.spawn,
   sleep: Bun.sleep,
+  /** Hard deadline per subprocess exit — injectable so tests can use a short value. */
+  procExitTimeoutMs: PROC_EXIT_TIMEOUT_MS,
 };
 
 interface PidEntry {
@@ -22,6 +28,70 @@ interface ProcessIdentity {
   pid: number;
   parentPid: number;
   startedAt: string;
+}
+
+/**
+ * PERF-3: read a subprocess to completion with a hard deadline on BOTH the
+ * exit and the stdout drain. A wedged ps/kill child must not stall shutdown —
+ * on timeout the child is SIGKILLed and an empty result is returned (callers
+ * treat exit code -1 as "not found / no output").
+ */
+function boundedProcRead(proc: SpawnResult, timeoutMs: number): Promise<{ exitCode: number; stdout: string }> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (exitCode: number, stdout: string): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ exitCode, stdout });
+    };
+    const timer = setTimeout(() => {
+      if (settled) return;
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        // Process may have already exited
+      }
+      finish(-1, "");
+    }, timeoutMs);
+    Promise.all([proc.exited.catch(() => -1), new Response(proc.stdout).text().catch(() => "")]).then(
+      ([exitCode, stdout]) => finish(exitCode, stdout),
+    );
+  });
+}
+
+/**
+ * PERF-3: await a subprocess exit with a hard deadline. Used for the `kill`
+ * subprocesses whose stdout is not read on the success path.
+ */
+function awaitProcExit(proc: SpawnResult, timeoutMs: number): Promise<number> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        // Process may have already exited
+      }
+      resolve(-1);
+    }, timeoutMs);
+    proc.exited.then(
+      (code) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(code);
+      },
+      () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(-1);
+      },
+    );
+  });
 }
 
 export class PidRegistry {
@@ -177,7 +247,7 @@ export class PidRegistry {
         stdout: "pipe",
         stderr: "pipe",
       });
-      const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text().catch(() => "")]);
+      const { exitCode, stdout } = await boundedProcRead(proc, _pidRegistryDeps.procExitTimeoutMs);
       if (exitCode !== 0) {
         return [];
       }
@@ -236,7 +306,7 @@ export class PidRegistry {
         stdout: "pipe",
         stderr: "pipe",
       });
-      const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text().catch(() => "")]);
+      const { exitCode, stdout } = await boundedProcRead(proc, _pidRegistryDeps.procExitTimeoutMs);
       if (exitCode !== 0) {
         return null;
       }
@@ -296,7 +366,7 @@ export class PidRegistry {
         stdout: "pipe",
         stderr: "pipe",
       });
-      const checkCode = await checkProc.exited;
+      const checkCode = await awaitProcExit(checkProc, _pidRegistryDeps.procExitTimeoutMs);
 
       if (checkCode !== 0) {
         logger?.debug("pid-registry", `PID ${pid} not found (already exited)`, { pid });
@@ -308,7 +378,7 @@ export class PidRegistry {
         stderr: "pipe",
       });
 
-      const killCode = await killProc.exited;
+      const killCode = await awaitProcExit(killProc, _pidRegistryDeps.procExitTimeoutMs);
 
       if (killCode === 0) {
         logger?.debug("pid-registry", `Sent SIG${signal} to PID ${pid}`, { pid, signal });

@@ -587,3 +587,24 @@ function makePluginLogger(): import("../../../../src/plugins/types").PluginLogge
     error: mock(() => {}),
   } as unknown as import("../../../../src/plugins/types").PluginLogger;
 }
+
+// ============================================================================
+// BUG-15: runtime-crash retry budget is reset at run teardown
+// ============================================================================
+
+describe("cleanupRun — resets runtime-crash retry budget (BUG-15)", () => {
+  test("calls resetRuntimeCrashRetryCounts during teardown", async () => {
+    const { resetRuntimeCrashRetryCounts } = await import("@/execution/escalation");
+    const resetMock = mock(() => {});
+    const originalReset = _runCleanupDeps.resetRuntimeCrashRetryCounts;
+    _runCleanupDeps.resetRuntimeCrashRetryCounts = resetMock;
+
+    try {
+      const pluginRegistry = makePluginRegistry();
+      await cleanupRun(makeCleanupOptions({ pluginRegistry }));
+      expect(resetMock).toHaveBeenCalled();
+    } finally {
+      _runCleanupDeps.resetRuntimeCrashRetryCounts = originalReset;
+    }
+  });
+});

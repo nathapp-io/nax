@@ -48,7 +48,22 @@ async function removeWorktreeDirectory(projectRoot: string, storyId: string): Pr
       stdout: "pipe",
       stderr: "pipe",
     });
-    await proc.exited;
+    // BUG-12: drain both streams concurrently with the exit so a git error
+    // emitting >64KB cannot block the child on a full pipe buffer, and so
+    // non-zero exits are observable instead of invisible.
+    const [exitCode, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text().catch(() => ""),
+      new Response(proc.stderr).text().catch(() => ""),
+    ] as const);
+    if (exitCode !== 0) {
+      logger?.warn("worktree", "Failed to remove worktree directory (non-fatal)", {
+        storyId,
+        worktreePath,
+        exitCode,
+        stderr: stderr.slice(0, 500),
+      });
+    }
   } catch (error) {
     logger?.warn("worktree", "Failed to remove worktree directory (non-fatal)", {
       storyId,

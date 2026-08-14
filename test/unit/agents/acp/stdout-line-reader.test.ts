@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { MAX_BUFFERED_LINE_BYTES, createParseState, readAndParseLines } from "@/agents";
+import { MAX_BUFFERED_LINE_BYTES, createParseState, readAndParseLines, readStreamTail } from "@/agents";
 
 function makeStream(chunks: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
@@ -87,5 +87,67 @@ describe("readAndParseLines", () => {
     await promise;
 
     expect(state.text).toBe("ab");
+  });
+});
+
+describe("readStreamTail (MEM-1)", () => {
+  const enc = new TextEncoder();
+
+  function streamOf(content: string): ReadableStream<Uint8Array> {
+    return new ReadableStream<Uint8Array>({
+      start(c) { c.enqueue(enc.encode(content)); c.close(); },
+    });
+  }
+
+  test("small content passes through unchanged", async () => {
+    const result = await readStreamTail(streamOf("connection refused"), 1024);
+    expect(result).toBe("connection refused");
+  });
+
+  test("content over the cap is trimmed to the last maxBytes", async () => {
+    const big = "x".repeat(10_000) + "TAIL";
+    const result = await readStreamTail(streamOf(big), 100);
+    expect(result.endsWith("TAIL")).toBe(true);
+    expect(Buffer.byteLength(result, "utf8")).toBeLessThanOrEqual(100);
+  });
+
+  test("never splits a multi-byte UTF-8 sequence at the trim boundary", async () => {
+    const heart = "❤".repeat(5000); // 3 bytes each
+    const result = await readStreamTail(streamOf(heart), 100);
+    // Trimming may drop whole code points, but must never leave a broken
+    // surrogate / invalid sequence — round-trip through a decoder.
+    const reparsed = new TextDecoder().decode(enc.encode(result));
+    expect(reparsed).toBe(result);
+    expect(Buffer.byteLength(result, "utf8")).toBeLessThanOrEqual(100);
+  });
+
+  test("never splits an astral-plane surrogate pair at the trim boundary", async () => {
+    const clef = "𝄞".repeat(5000); // U+1D11E — 4 bytes, surrogate pair in UTF-16
+    const result = await readStreamTail(streamOf(clef), 100);
+    const reparsed = new TextDecoder().decode(enc.encode(result));
+    expect(reparsed).toBe(result);
+    expect(Buffer.byteLength(result, "utf8")).toBeLessThanOrEqual(100);
+    // No lone surrogates: every code unit pairs up.
+    for (let i = 0; i < result.length; i++) {
+      const unit = result.charCodeAt(i);
+      if (unit >= 0xd800 && unit <= 0xdbff) {
+        const next = result.charCodeAt(i + 1);
+        expect(next >= 0xdc00 && next <= 0xdfff).toBe(true);
+      }
+    }
+  });
+
+  test("chunks split mid-UTF-8-sequence are decoded correctly", async () => {
+    const content = "a❤b";
+    const bytes = enc.encode(content);
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(bytes.slice(0, 2)); // splits the 3-byte heart mid-sequence
+        c.enqueue(bytes.slice(2));
+        c.close();
+      },
+    });
+    const result = await readStreamTail(stream, 1024);
+    expect(result).toBe(content);
   });
 });

@@ -129,6 +129,28 @@ describe("usePipelineBusEvents", () => {
     expect(lastFrame()).toContain("escalations:1");
   });
 
+  // MEM-2: escalationLog was append-only and grew for the whole run lifetime;
+  // only the display capped at 5. The hook must prune so a long run with many
+  // escalations cannot grow memory without bound.
+  test("MEM-2: escalationLog is pruned to a bounded cap, keeping the newest entries", () => {
+    const { lastFrame } = render(
+      <HookOutput stories={[makeInitialStory("US-001")]} />
+    );
+
+    for (let i = 0; i < 30; i++) {
+      act(() => {
+        pipelineEventBus.emit({
+          type: "story:escalated",
+          storyId: `US-${i}`,
+          fromTier: "fast",
+          toTier: "balanced",
+        });
+      });
+    }
+
+    expect(lastFrame()).toContain("escalations:5");
+  });
+
   test("run:completed sets runSummary passedStories", () => {
     const { lastFrame } = render(
       <HookOutput stories={[makeInitialStory("US-001")]} />

@@ -23,6 +23,13 @@ export interface EscalationEntry {
   at: number;
 }
 
+/**
+ * MEM-2: cap on the escalation log. Only the newest entries are kept — a long
+ * run with many escalations must not grow the array for its whole lifetime
+ * (the display already shows at most this many, so nothing is lost).
+ */
+const MAX_ESCALATION_LOG_ENTRIES = 5;
+
 /** Run summary from run:completed event. Export for consumers (e.g. LiveActivityPanel). */
 export interface RunSummary {
   totalStories: number;
@@ -175,7 +182,7 @@ export function usePipelineBusEvents(initialStories: StoryDisplayState[]): Pipel
       setState((prev) => ({
         ...prev,
         stories: prev.stories.map((s) => (s.story.id === event.storyId ? { ...s, status: "retrying" as const } : s)),
-        escalationLog: [...prev.escalationLog, entry],
+        escalationLog: [...prev.escalationLog, entry].slice(-MAX_ESCALATION_LOG_ENTRIES),
       }));
     });
 

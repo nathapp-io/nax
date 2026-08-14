@@ -154,4 +154,39 @@ describe("parseAgentError", () => {
       expect(parseAgentError(input).type).toBe("unknown");
     });
   });
+
+  // ENH-1: JSON-RPC error envelopes carry the classification code in
+  // error.data.acpxCode, not at the top level. A pure-JSON envelope (whole
+  // string parses as JSON) never reaches the embedded-JSON scan, and the
+  // key-value regex defeats JSON-quoted codes — so the nested object must be
+  // walked explicitly.
+  describe("ENH-1 — nested error.data codes", () => {
+    test("detects rate-limit from error.data.acpxCode in a pure-JSON envelope", () => {
+      const stderr =
+        '{"jsonrpc":"2.0","id":null,"error":{"code":-32000,"message":"rate limited","data":{"acpxCode":"RATE_LIMIT","origin":"cli"}}}';
+      const result = parseAgentError(stderr);
+      expect(result.type).toBe("rate-limit");
+    });
+
+    test("detects auth from error.data.acpxCode in a pure-JSON envelope", () => {
+      const stderr =
+        '{"jsonrpc":"2.0","id":null,"error":{"code":-32001,"message":"auth failed","data":{"acpxCode":"AUTH_FAILED"}}}';
+      const result = parseAgentError(stderr);
+      expect(result.type).toBe("auth");
+    });
+
+    test("walks nested error.data when the envelope is embedded in free text", () => {
+      const stderr =
+        'probe failed: {"jsonrpc":"2.0","id":null,"error":{"code":-32000,"message":"quota","data":{"acpxCode":"QUOTA_EXCEEDED","retryAfterSeconds":30}}}';
+      const result = parseAgentError(stderr);
+      expect(result.type).toBe("rate-limit");
+      expect(result.retryAfterSeconds).toBe(30);
+    });
+
+    test("leaves unknown when error.data has no classifiable code", () => {
+      const stderr =
+        '{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"some error","data":{"acpxCode":"RUNTIME"}}}';
+      expect(parseAgentError(stderr).type).toBe("unknown");
+    });
+  });
 });

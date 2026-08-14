@@ -275,26 +275,52 @@ function classifyDirectType(payload: Record<string, unknown>): AgentError | null
   return result;
 }
 
+/**
+ * Collect classification code tokens from a JSON payload (ENH-1).
+ *
+ * Reads top-level code-like fields AND walks `error`/`data` sub-objects so a
+ * JSON-RPC envelope whose classification lives in `error.data.acpxCode`
+ * (e.g. acpx RATE_LIMIT / QUOTA_EXCEEDED) is seen even when the whole string
+ * parses as JSON — the embedded-JSON scan only runs on free text, and the
+ * key-value regex cannot match JSON-quoted values.
+ */
 function extractJsonCodeTokens(payload: Record<string, unknown>): string[] {
   const tokens: string[] = [];
-  const candidates = [
-    payload.code,
-    payload.status,
-    payload.statusCode,
-    payload.httpStatus,
-    payload.errorCode,
-    payload.acpxCode,
-    payload.detailCode,
-  ];
-
-  for (const candidate of candidates) {
+  const pushToken = (candidate: unknown): void => {
     if (typeof candidate === "number" && Number.isFinite(candidate)) {
       tokens.push(String(candidate));
     } else if (typeof candidate === "string" && candidate.trim()) {
       tokens.push(candidate.trim());
     }
-  }
+  };
 
+  // Depth-capped walk: payloads are error envelopes 2-3 levels deep in
+  // practice; a pathological deeply-nested input must not recurse unbounded.
+  const MAX_WALK_DEPTH = 8;
+  const walk = (obj: Record<string, unknown>, depth: number): void => {
+    if (depth > MAX_WALK_DEPTH) return;
+    const candidates = [
+      obj.code,
+      obj.status,
+      obj.statusCode,
+      obj.httpStatus,
+      obj.errorCode,
+      obj.acpxCode,
+      obj.detailCode,
+    ];
+    for (const candidate of candidates) pushToken(candidate);
+
+    // Recurse one level through the JSON-RPC envelope shape
+    // ({error: {data: {...}}}) so nested classification codes are found.
+    for (const key of ["error", "data"] as const) {
+      const nested = obj[key];
+      if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+        walk(nested as Record<string, unknown>, depth + 1);
+      }
+    }
+  };
+
+  walk(payload, 0);
   return tokens;
 }
 
@@ -340,9 +366,7 @@ function classifyFromCodeTokens(tokens: string[], payload?: Record<string, unkno
       token === "QUOTA_EXCEEDED" ||
       token === "RESOURCE_EXHAUSTED"
     ) {
-      const retryAfterSeconds = payload
-        ? toNumber(payload.retryAfterSeconds ?? payload.retry_after_seconds ?? payload.retryAfter)
-        : undefined;
+      const retryAfterSeconds = payload ? findRetryAfterSeconds(payload) : undefined;
       return retryAfterSeconds !== undefined ? { type: "rate-limit", retryAfterSeconds } : { type: "rate-limit" };
     }
 
@@ -367,6 +391,27 @@ function toNumber(value: unknown): number | undefined {
   if (typeof value === "string" && value.trim()) {
     const parsed = Number.parseInt(value, 10);
     if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+/**
+ * ENH-1: find retry-after seconds at the top level or nested in the
+ * JSON-RPC envelope shape ({error: {data: {retryAfterSeconds}}}).
+ */
+function findRetryAfterSeconds(payload: Record<string, unknown>): number | undefined {
+  const topLevel = toNumber(payload.retryAfterSeconds ?? payload.retry_after_seconds ?? payload.retryAfter);
+  if (topLevel !== undefined) return topLevel;
+  const error = payload.error;
+  if (error && typeof error === "object" && !Array.isArray(error)) {
+    const errObj = error as Record<string, unknown>;
+    const inError = toNumber(errObj.retryAfterSeconds ?? errObj.retry_after_seconds ?? errObj.retryAfter);
+    if (inError !== undefined) return inError;
+    const data = errObj.data;
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      const dataObj = data as Record<string, unknown>;
+      return toNumber(dataObj.retryAfterSeconds ?? dataObj.retry_after_seconds ?? dataObj.retryAfter);
+    }
   }
   return undefined;
 }
