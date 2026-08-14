@@ -340,4 +340,67 @@ describe("loadConfig — legacy key deprecation shim", () => {
     expect(first.filter((m) => m.includes("routing.adaptive"))).toHaveLength(1);
     expect(second.filter((m) => m.includes("routing.adaptive"))).toHaveLength(1);
   });
+
+  // SEC-2 / D-2: project config still wins the merge (no precedence change). The
+  // loader must warn — once, via the same warnDedupe — when the project layer
+  // changes a security-sensitive key from the global-resolved value.
+  test("SEC-2: warns once when project config changes execution.permissionProfile from the global value", async () => {
+    await Bun.write(
+      join(tempDir, ".global-nax", "config.json"),
+      JSON.stringify({ execution: { permissionProfile: "safe" } }),
+    );
+    await writeProjectConfig({ execution: { permissionProfile: "unrestricted" } });
+
+    const captured = await captureLoadWarnings(() => loadConfig(tempDir));
+
+    const hits = captured.filter((m) => m.includes("execution.permissionProfile"));
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toContain("safe");
+    expect(hits[0]).toContain("unrestricted");
+
+    // Merge precedence is unchanged — project still wins.
+    const config = await loadConfig(tempDir);
+    expect(config.execution.permissionProfile).toBe("unrestricted");
+  });
+
+  test("SEC-2: warns once when project config changes quality.stripEnvVars from the global value", async () => {
+    await Bun.write(
+      join(tempDir, ".global-nax", "config.json"),
+      JSON.stringify({ quality: { stripEnvVars: ["GITHUB_TOKEN"] } }),
+    );
+    await writeProjectConfig({ quality: { stripEnvVars: [] } });
+
+    const captured = await captureLoadWarnings(() => loadConfig(tempDir));
+
+    const hits = captured.filter((m) => m.includes("quality.stripEnvVars"));
+    expect(hits).toHaveLength(1);
+
+    const config = await loadConfig(tempDir);
+    expect(config.quality.stripEnvVars).toEqual([]);
+  });
+
+  test("SEC-2: does not warn when project config does not touch the security-sensitive keys", async () => {
+    await Bun.write(
+      join(tempDir, ".global-nax", "config.json"),
+      JSON.stringify({ execution: { permissionProfile: "safe" } }),
+    );
+    await writeProjectConfig({ routing: { strategy: "keyword" } });
+
+    const captured = await captureLoadWarnings(() => loadConfig(tempDir));
+
+    expect(captured.some((m) => m.includes("execution.permissionProfile"))).toBe(false);
+    expect(captured.some((m) => m.includes("quality.stripEnvVars"))).toBe(false);
+  });
+
+  test("SEC-2: does not warn when project config sets the same value as the global config", async () => {
+    await Bun.write(
+      join(tempDir, ".global-nax", "config.json"),
+      JSON.stringify({ execution: { permissionProfile: "safe" } }),
+    );
+    await writeProjectConfig({ execution: { permissionProfile: "safe" } });
+
+    const captured = await captureLoadWarnings(() => loadConfig(tempDir));
+
+    expect(captured.some((m) => m.includes("execution.permissionProfile"))).toBe(false);
+  });
 });

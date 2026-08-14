@@ -29,6 +29,7 @@ import { buildAllowedEnv } from "../shared/env";
 import { parseModelSpec } from "./model-spec";
 import { applyReasoningEffort } from "./reasoning-effort";
 import { parseSessionIds } from "./session-ids";
+import { killProcessTree, runTrackedSpawn } from "./spawn-client-process";
 import { readAndParseLines } from "./stdout-line-reader";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,6 +40,16 @@ import { readAndParseLines } from "./stdout-line-reader";
 // piped streams may not close after SIGTERM (e.g. cancelActivePrompt).
 const ACPX_STREAM_DRAIN_TIMEOUT_MS = 5_000;
 
+// ORPHAN-1: SIGTERM->SIGKILL escalation grace period for killProcessTree() (see
+// spawn-client-process.ts). Shorter than executor.ts's since close()/
+// cancelActivePrompt() are already tearing the session down.
+const KILL_TREE_GRACE_MS = 250;
+
+// PERF-1: hard deadline on trackedSpawn's proc.exited await (see
+// spawn-client-process.ts) — bounds the normal-exit teardown path the same way
+// the crash-signal path's outer 10s hard deadline bounds crash-signals.ts.
+const TRACKED_SPAWN_DEADLINE_MS = 10_000;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Spawn helper (injectable for future testing if needed)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,6 +58,10 @@ export const _spawnClientDeps = {
   spawn: typedSpawn,
   /** Stream drain timeout after proc.exited — injectable so tests can use a short value. */
   streamDrainTimeoutMs: ACPX_STREAM_DRAIN_TIMEOUT_MS,
+  /** SIGTERM->SIGKILL escalation grace period — injectable so tests can use a short value. */
+  killTreeGraceMs: KILL_TREE_GRACE_MS,
+  /** trackedSpawn hard deadline — injectable so tests can use a short value. */
+  trackedSpawnDeadlineMs: TRACKED_SPAWN_DEADLINE_MS,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -87,7 +102,7 @@ export class SpawnAcpSession implements AcpSession {
   private readonly runId: string;
   private readonly storyId?: string;
   private readonly stage?: import("../../config/permissions").PipelineStage;
-  private activeProc: { pid: number; kill(signal?: number): void } | null = null;
+  private activeProc: { pid: number; kill(signal?: number): void; exited?: Promise<number> } | null = null;
   /**
    * Transport fact: `cancelActivePrompt()` was invoked during the in-flight
    * prompt(). The resulting AcpSessionResponse is stamped with `cancelled: true`
@@ -191,6 +206,9 @@ export class SpawnAcpSession implements AcpSession {
         stdout: "pipe",
         stderr: "pipe",
         env: this.env,
+        // ORPHAN-1: real process-group leader — close()/cancelActivePrompt() can
+        // killProcessTree() the whole group instead of leaking descendants.
+        detached: true,
       });
     } catch (spawnErr) {
       // Spawn threw before a PID was obtained — AC9: emit call_ended without a prior call_started
@@ -346,15 +364,23 @@ export class SpawnAcpSession implements AcpSession {
 
       try {
         const parsed = finalizeParseState(parseState);
-        // AC8: Emit call_ended on success path
+        // AC8/BUG-2: an exit-0 turn that was externally cancelled (agent exited
+        // cleanly on cancelActivePrompt()'s SIGTERM) is not a clean success.
         callEndedEmitted = true;
-        emit?.({ ...baseEvent, kind: "agent.call_ended", status: "success", timestamp: now() });
-        return {
+        const cancelled = this._externallyCancelled;
+        emit?.({ ...baseEvent, kind: "agent.call_ended", status: cancelled ? "error" : "success", timestamp: now() });
+        // BUG-1: carry parsed.error/retryable through even on the success path —
+        // finalizeParseState can capture a JSON-RPC error envelope on an exit-0 turn.
+        const successResponse: AcpSessionResponse = {
           messages: [{ role: "assistant", content: parsed.text || "" }],
-          stopReason: parsed.stopReason ?? "end_turn",
+          stopReason: cancelled ? "error" : (parsed.stopReason ?? "end_turn"),
           cumulative_token_usage: parsed.tokenUsage,
           exactCostUsd: parsed.exactCostUsd,
+          error: parsed.error,
+          retryable: parsed.retryable,
         };
+        if (cancelled) successResponse.cancelled = true;
+        return successResponse;
       } catch (err) {
         getSafeLogger()?.warn("acp-adapter", "Failed to parse session prompt response", {
           stderr: stderr.slice(0, 200),
@@ -375,45 +401,35 @@ export class SpawnAcpSession implements AcpSession {
   }
 
   /**
-   * Spawn an acpx command. Drains stdout/stderr concurrently to avoid pipe-buffer deadlock.
+   * Spawn an acpx command. Drains stdout/stderr concurrently to avoid pipe-buffer
+   * deadlock. PERF-1: bounded by a hard deadline — see runTrackedSpawn's doc comment.
    */
   private async trackedSpawn(
     cmd: string[],
     opts?: Parameters<typeof _spawnClientDeps.spawn>[1],
+    signal?: AbortSignal,
   ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-    const proc = _spawnClientDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe", ...opts });
-    const pid = proc.pid;
-    this.onPidSpawned?.(pid);
-    const [exitCode, stdout, stderr] = await Promise.all([
-      proc.exited.finally(() => {
-        try {
-          this.onPidExited?.(pid);
-        } catch {
-          // unregister is best-effort — never surface from trackedSpawn
-        }
-      }),
-      new Response(proc.stdout).text().catch(() => ""),
-      new Response(proc.stderr).text().catch(() => ""),
-    ]);
-    return { exitCode, stdout, stderr };
+    return runTrackedSpawn(_spawnClientDeps, cmd, opts, this.onPidSpawned, this.onPidExited, signal);
   }
 
-  async close(options?: { forceTerminate?: boolean }): Promise<void> {
-    // Kill in-flight prompt process first (if any)
+  /** ORPHAN-1: terminate the in-flight prompt's process tree — see killProcessTree's doc comment. */
+  private killActiveProcTree(): void {
+    if (!this.activeProc) return;
+    // BUG-6: pass `exited` so killProcessTree skips SIGKILL if already exited.
+    killProcessTree(this.activeProc.pid, _spawnClientDeps.killTreeGraceMs, this.activeProc.exited);
+  }
+
+  async close(options?: { forceTerminate?: boolean; signal?: AbortSignal }): Promise<void> {
+    // Kill in-flight prompt process tree first (if any)
     if (this.activeProc) {
-      try {
-        this.activeProc.kill(15); // SIGTERM
-        getSafeLogger()?.debug("acp-adapter", `Killed active prompt process PID ${this.activeProc.pid}`);
-      } catch {
-        // Process may have already exited
-      }
+      this.killActiveProcTree();
       this.activeProc = null;
     }
 
     const cmd = ["acpx", "--cwd", this.cwd, this.agentName, "sessions", "close", this.sessionName];
     getSafeLogger()?.debug("acp-adapter", `Closing session: ${this.sessionName}`);
 
-    const { exitCode, stderr } = await this.trackedSpawn(cmd);
+    const { exitCode, stderr } = await this.trackedSpawn(cmd, undefined, options?.signal);
 
     if (exitCode !== 0) {
       getSafeLogger()?.warn("acp-adapter", "Failed to close session", {
@@ -424,7 +440,7 @@ export class SpawnAcpSession implements AcpSession {
 
     if (options?.forceTerminate) {
       try {
-        await this.trackedSpawn(["acpx", this.agentName, "stop"]);
+        await this.trackedSpawn(["acpx", this.agentName, "stop"], undefined, options?.signal);
       } catch (err) {
         getSafeLogger()?.debug("acp-adapter", "acpx stop failed (swallowed)", { cause: String(err) });
       }
@@ -438,14 +454,10 @@ export class SpawnAcpSession implements AcpSession {
     // triggered the cancel).
     this._externallyCancelled = true;
 
-    // Kill in-flight prompt process directly (faster than acpx cancel)
+    // Kill in-flight prompt process tree directly (faster than acpx cancel)
     if (this.activeProc) {
-      try {
-        this.activeProc.kill(15); // SIGTERM
-        getSafeLogger()?.debug("acp-adapter", `Killed active prompt process PID ${this.activeProc.pid}`);
-      } catch {
-        // Process may have already exited
-      }
+      this.killActiveProcTree();
+      this.activeProc = null; // LOW: null out after kill, matching close()
     }
 
     const cmd = ["acpx", this.agentName, "cancel"];
@@ -533,25 +545,12 @@ export class SpawnAcpClient implements AcpClient {
     // No-op — spawn-based client doesn't need upfront initialization
   }
 
-  /**
-   * Spawn an acpx command. Drains stdout/stderr concurrently to avoid pipe-buffer deadlock.
-   */
-  private async trackedSpawn(cmd: string[]): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-    const proc = _spawnClientDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
-    const pid = proc.pid;
-    this.onPidSpawned?.(pid);
-    const [exitCode, stdout, stderr] = await Promise.all([
-      proc.exited.finally(() => {
-        try {
-          this.onPidExited?.(pid);
-        } catch {
-          // unregister is best-effort — never surface from trackedSpawn
-        }
-      }),
-      new Response(proc.stdout).text().catch(() => ""),
-      new Response(proc.stderr).text().catch(() => ""),
-    ]);
-    return { exitCode, stdout, stderr };
+  /** Spawn an acpx command. PERF-1: bounded by the same deadline as SpawnAcpSession.trackedSpawn. */
+  private async trackedSpawn(
+    cmd: string[],
+    signal?: AbortSignal,
+  ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+    return runTrackedSpawn(_spawnClientDeps, cmd, undefined, this.onPidSpawned, this.onPidExited, signal);
   }
 
   async createSession(opts: {
@@ -657,9 +656,9 @@ export class SpawnAcpClient implements AcpClient {
     });
   }
 
-  async closeSession(sessionName: string, agentName: string): Promise<void> {
+  async closeSession(sessionName: string, agentName: string, signal?: AbortSignal): Promise<void> {
     const cmd = ["acpx", "--cwd", this.cwd, agentName, "sessions", "close", sessionName];
-    const { exitCode, stderr } = await this.trackedSpawn(cmd);
+    const { exitCode, stderr } = await this.trackedSpawn(cmd, signal);
     if (exitCode !== 0) {
       getSafeLogger()?.debug("acp-adapter", "Session close failed (ignored)", {
         sessionName,

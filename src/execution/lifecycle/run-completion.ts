@@ -402,7 +402,12 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
 
   if (options.sessionManager) {
     const agentGetFn = options.agentManager ? (name: string) => options.agentManager?.getAgent(name) : undefined;
-    await _runCompletionDeps.closeAllRunSessions(options.sessionManager, agentGetFn);
+    // PERF-1: thread the run's abort signal through so a wedged acpx teardown
+    // spawn can be cut short externally instead of only relying on the
+    // per-call hard deadline inside trackedSpawn.
+    await _runCompletionDeps.closeAllRunSessions(options.sessionManager, agentGetFn, {
+      signal: options.abortSignal,
+    });
   }
 
   if (options.pluginProviderCache) {

@@ -14,9 +14,8 @@
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { ProtocolIds } from "@/runtime/protocol-types";
-import type { TokenUsage } from "../cost";
 import { addTokenUsage, estimateCostFromTokenUsage } from "../cost";
-import type { ITokenUsageMapper } from "../cost";
+import type { ITokenUsageMapper, TokenUsage } from "../cost";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -65,15 +64,10 @@ export { buildContextToolPreamble, buildRunInteractionHandler, buildTurnResult }
 export type { BuildTurnResultInput } from "./adapter-output";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Constants
+// Constants / agent registry
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INTERACTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 min for human to respond
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Agent registry
-// ─────────────────────────────────────────────────────────────────────────────
-
 export { ACP_ADAPTER_NAMES } from "./agent-entries";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -114,6 +108,17 @@ export class AcpAgentAdapter implements AgentAdapter {
   buildAllowedEnv(_options?: AgentRunOptions): Record<string, string | undefined> {
     // createClient manages its own env; no separate env building needed.
     return {};
+  }
+
+  /** Token/cost math shared by complete()'s success and cancelled-but-billable paths. */
+  private deriveTokenUsage(
+    wire: SessionTokenUsage | undefined,
+    model: string,
+  ): { tokenUsage: TokenUsage; estimatedCostUsd: number } {
+    const tokenUsage = wire ? this._mapper.toInternal(wire) : { inputTokens: 0, outputTokens: 0 };
+    const estimatedCostUsd =
+      tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0 ? estimateCostFromTokenUsage(tokenUsage, model) : 0;
+    return { tokenUsage, estimatedCostUsd };
   }
 
   async complete(prompt: string, _options: ResolvedCompleteOptions): Promise<CompleteResult> {
@@ -166,20 +171,13 @@ export class AcpAgentAdapter implements AgentAdapter {
 
         if (response.stopReason === "error") {
           if (response.cancelled) {
-            // Transport-level fact: an external party (e.g. the idle watchdog)
-            // invoked cancelActivePrompt() during this call. The adapter does
-            // not classify _why_ — the wiring layer (AgentManager / consumer
-            // of CompleteResult) maps `cancelled: true` to a policy outcome
-            // such as `fail-stale`.
-            return {
-              output: "",
-              tokenUsage: { inputTokens: 0, outputTokens: 0 },
-              estimatedCostUsd: 0,
-              cancelled: true,
-            };
+            // BUG-57: still count tokens burned before the cancel, not zero.
+            const usage = this.deriveTokenUsage(response.cumulative_token_usage, _options.modelDef.model);
+            return { output: "", ...usage, exactCostUsd: response.exactCostUsd, cancelled: true };
           }
-          // response.retryable may be undefined vs explicit false — preserved as-is (see classifyCompleteError).
-          throw new CompleteError("complete() failed: stop reason is error", undefined, response.retryable);
+          // BUG-1: surface parsed error text (retryable preserved as-is). LOW: truncate to 500 chars.
+          const errSuffix = response.error ? `: ${response.error.slice(0, 500)}` : "";
+          throw new CompleteError(`complete() failed: stop reason is error${errSuffix}`, undefined, response.retryable);
         }
 
         const text = response.messages
@@ -202,13 +200,10 @@ export class AcpAgentAdapter implements AgentAdapter {
           throw new CompleteError("complete() returned empty output");
         }
 
-        const tokenUsage = response.cumulative_token_usage
-          ? this._mapper.toInternal(response.cumulative_token_usage)
-          : { inputTokens: 0, outputTokens: 0 };
-        const estimatedCostUsd =
-          tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0
-            ? estimateCostFromTokenUsage(tokenUsage, _options.modelDef.model)
-            : 0;
+        const { tokenUsage, estimatedCostUsd } = this.deriveTokenUsage(
+          response.cumulative_token_usage,
+          _options.modelDef.model,
+        );
         const exactCostUsd = response.exactCostUsd;
 
         if (exactCostUsd !== undefined) {
@@ -289,14 +284,18 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
   }
 
-  async closePhysicalSession(handle: string, workdir: string, options?: { force?: boolean }): Promise<void> {
+  async closePhysicalSession(
+    handle: string,
+    workdir: string,
+    options?: { force?: boolean; signal?: AbortSignal },
+  ): Promise<void> {
     const cmdStr = `acpx ${this.name}`;
     const client = _acpAdapterDeps.createClient(cmdStr, workdir, undefined, undefined);
     try {
       await client.start();
       try {
         if (client.closeSession) {
-          await client.closeSession(handle, this.name);
+          await client.closeSession(handle, this.name, options?.signal);
           // AC-83: hard-terminate (acpx stop) when force=true, e.g. for errored sessions
           if (options?.force) {
             await (client as { forceStop?: (agentName: string) => Promise<void> })
@@ -305,7 +304,7 @@ export class AcpAgentAdapter implements AgentAdapter {
           }
         } else if (client.loadSession) {
           const session = await client.loadSession(handle, this.name, "approve-reads");
-          if (session) await session.close({ forceTerminate: options?.force }).catch(() => {});
+          if (session) await session.close({ forceTerminate: options?.force, signal: options?.signal }).catch(() => {});
         }
       } catch (err) {
         getSafeLogger()?.warn("acp-adapter", `[close] Failed to close session ${handle}`, { error: String(err) });
@@ -564,17 +563,18 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
 
     if (lastResponse?.stopReason === "error") {
-      // Surface the transport facts (`cancelled`, `retryable`) without classifying _why_.
-      // SessionManager catches SessionTurnError and maps `cancelled: true`
-      // to the `fail-stale` policy outcome.
-      // build-hop-callback maps `retryable: true` to AdapterFailure.retriable so
-      // manager-run's retry loop can apply the higher sessionErrorRetryableMaxRetries cap.
+      // Surface transport facts (SessionManager maps `cancelled`->fail-stale;
+      // build-hop-callback maps `retryable`). BUG-57: also carry accumulated cost.
+      const hasUsage = totalTokenUsage.inputTokens > 0 || totalTokenUsage.outputTokens > 0;
       throw new SessionTurnError(
         lastResponse.cancelled
           ? "Agent session ended with stop reason: error (externally cancelled)"
           : "Agent session ended with stop reason: error",
         lastResponse.cancelled === true,
         lastResponse.retryable === true,
+        totalTokenUsage,
+        hasUsage ? estimateCostFromTokenUsage(totalTokenUsage, modelDef.model) : 0,
+        totalExactCostUsd,
       );
     }
 

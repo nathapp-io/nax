@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { AcpAgentAdapter, AcpSessionHandleImpl, _acpAdapterDeps } from "../../../../src/agents/acp/adapter";
 import { NO_OP_INTERACTION_HANDLER } from "../../../../src/agents/interaction-handler";
+import { SessionTurnError } from "@/agents";
 import type { OpenSessionOpts } from "../../../../src/agents/types";
 import { makeClient, makeSession } from "./adapter.test";
 
@@ -618,6 +619,57 @@ describe("sendTurn()", () => {
         interactionHandler: { onInteraction: async () => null },
       }),
     ).rejects.toThrow();
+  });
+
+  // BUG-57: a turn that ends with stopReason:"error" (e.g. cancelled) must not
+  // drop tokens already burned on that same turn — SessionTurnError now
+  // carries the accumulated tokenUsage/estimatedCostUsd/exactCostUsd so
+  // downstream catch sites (build-hop-callback.ts, session-run-hop.ts) can
+  // record real spend instead of hardcoding zero.
+  test("SessionTurnError carries accumulated token usage/cost from the failed turn (BUG-57)", async () => {
+    const session = makeSession({
+      promptFn: async () => ({
+        messages: [],
+        stopReason: "error",
+        cancelled: true,
+        cumulative_token_usage: { input_tokens: 300, output_tokens: 150 },
+      }),
+    });
+    const handle = await openHandle(session);
+
+    let caught: unknown;
+    try {
+      await adapter.sendTurn(handle, "prompt", { interactionHandler: NO_OP_INTERACTION_HANDLER });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeDefined();
+    expect(caught).toBeInstanceOf(SessionTurnError);
+    const turnError = caught as InstanceType<typeof SessionTurnError>;
+    expect(turnError.cancelled).toBe(true);
+    expect(turnError.tokenUsage?.inputTokens).toBe(300);
+    expect(turnError.tokenUsage?.outputTokens).toBe(150);
+    expect(turnError.estimatedCostUsd).toBeGreaterThan(0);
+  });
+
+  test("SessionTurnError carries zero usage when no tokens were ever reported (not a regression)", async () => {
+    const session = makeSession({
+      promptFn: async () => ({ messages: [], stopReason: "error" }),
+    });
+    const handle = await openHandle(session);
+
+    let caught: unknown;
+    try {
+      await adapter.sendTurn(handle, "prompt", { interactionHandler: NO_OP_INTERACTION_HANDLER });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(SessionTurnError);
+    const turnError = caught as InstanceType<typeof SessionTurnError>;
+    expect(turnError.tokenUsage?.inputTokens).toBe(0);
+    expect(turnError.estimatedCostUsd).toBe(0);
   });
 });
 

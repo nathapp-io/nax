@@ -509,6 +509,17 @@ export class SessionTurnError extends Error {
     message: string,
     public readonly cancelled: boolean,
     public readonly retryable: boolean = false,
+    /**
+     * BUG-57: token usage accumulated across all turns of the sendTurn() call,
+     * including the turn that ended in stopReason:"error" (e.g. a mid-flight
+     * cancel). Callers that catch SessionTurnError (build-hop-callback.ts,
+     * session-run-hop.ts) must read cost/tokens from here instead of
+     * hardcoding zero — tokens already burned before the failure are real
+     * spend and must not be dropped from cost accounting.
+     */
+    public readonly tokenUsage?: TokenUsage,
+    public readonly estimatedCostUsd?: number,
+    public readonly exactCostUsd?: number,
   ) {
     super(message);
     this.name = "SessionTurnError";

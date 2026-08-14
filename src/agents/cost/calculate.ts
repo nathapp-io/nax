@@ -96,16 +96,33 @@ export function formatCostWithConfidence(estimate: CostEstimate): string {
   }
 }
 
+/** Coerce a token count to a finite number, falling back to 0. Defense in
+ * depth (BUG-10): upstream guards in parser.ts / token-mapper.ts should
+ * already keep non-numeric values out, but `addTokenUsage` is a cheap pure
+ * function reachable from multiple call sites, so it validates its own
+ * inputs rather than trusting the static TokenUsage type — a malformed
+ * operand (e.g. a stringified number) would otherwise trigger `+`'s string
+ * concatenation instead of numeric addition, and a genuinely non-numeric
+ * value would propagate NaN into the running total. */
+function toFiniteTokenCount(value: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 /** Sum two internal TokenUsage values. Pure.
  * Optional cache fields are only included when at least one operand has a defined value,
  * preserving the zero-omit serialization semantics from the original adapter code. */
 export function addTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
   const result: TokenUsage = {
-    inputTokens: a.inputTokens + b.inputTokens,
-    outputTokens: a.outputTokens + b.outputTokens,
+    inputTokens: toFiniteTokenCount(a.inputTokens) + toFiniteTokenCount(b.inputTokens),
+    outputTokens: toFiniteTokenCount(a.outputTokens) + toFiniteTokenCount(b.outputTokens),
   };
-  const cacheRead = (a.cacheReadInputTokens ?? 0) + (b.cacheReadInputTokens ?? 0);
-  const cacheCreation = (a.cacheCreationInputTokens ?? 0) + (b.cacheCreationInputTokens ?? 0);
+  // BUG-58: apply the same finite-number guard to the cache fields as
+  // inputTokens/outputTokens above — `?? 0` alone only guards undefined/null,
+  // not a malformed non-numeric operand (e.g. a stringified number), which
+  // would otherwise hit `+`'s string-concatenation behavior here too.
+  const cacheRead = toFiniteTokenCount(a.cacheReadInputTokens ?? 0) + toFiniteTokenCount(b.cacheReadInputTokens ?? 0);
+  const cacheCreation =
+    toFiniteTokenCount(a.cacheCreationInputTokens ?? 0) + toFiniteTokenCount(b.cacheCreationInputTokens ?? 0);
   if (cacheRead > 0 || a.cacheReadInputTokens !== undefined || b.cacheReadInputTokens !== undefined) {
     result.cacheReadInputTokens = cacheRead;
   }

@@ -9,7 +9,12 @@ import { basename, dirname, join, resolve } from "node:path";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { loadJsonFile } from "../utils/json-file";
-import { applyConfigCompatShims, createConfigWarnDedupe, defaultConfigWarn } from "./compat-shims";
+import {
+  applyConfigCompatShims,
+  createConfigWarnDedupe,
+  defaultConfigWarn,
+  warnSecuritySensitiveOverrides,
+} from "./compat-shims";
 import {
   rejectDeadQualityFlags,
   rejectLegacyAgentKeys,
@@ -112,7 +117,11 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
     if (projConf) {
       const { profile: _pProfile, ...projConfStripped } = projConf;
       const resolvedProjConf = applyConfigCompatShims(projConfStripped, logger, warnDedupe);
+      const preProjectMergeConfig = rawConfig;
       rawConfig = deepMergeConfig(rawConfig, resolvedProjConf);
+      // SEC-2 / D-2 — warn (do not block, do not change precedence) when the
+      // project layer changed a security-sensitive key from the global value.
+      warnSecuritySensitiveOverrides(preProjectMergeConfig, rawConfig, warnDedupe.warn);
     }
   }
 

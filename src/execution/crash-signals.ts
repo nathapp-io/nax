@@ -44,6 +44,39 @@ export interface SignalHandlerContext extends RunCompleteContext {
 }
 
 /**
+ * Shared teardown sequence used by every fatal handler (signal, uncaught
+ * exception, unhandled rejection).
+ *
+ * BUG-11: `freeze()` must run AFTER `onShutdown()` completes, not before.
+ * `onShutdown` itself spawns new processes (e.g. `acpx sessions close`/`stop`)
+ * — freezing the registry first meant `register()` silently dropped those
+ * PIDs, so a hung `acpx stop` was never reachable by the `killAll()` sweep
+ * that follows. Freezing here (after onShutdown, before killAll) preserves
+ * both invariants: teardown-spawned PIDs get registered normally, and the
+ * registry is still locked before killAll() enumerates its target list, so
+ * nothing can register after the sweep has started.
+ */
+export async function performTeardown(ctx: SignalHandlerContext): Promise<void> {
+  // Abort in-flight awaits so onShutdown / agent.run can bail fast.
+  ctx.abortController?.abort();
+
+  // Close ACP sessions gracefully first (spawns are tracked by pidRegistry).
+  if (ctx.onShutdown) {
+    await ctx.onShutdown(ctx.abortController?.signal).catch(() => {});
+  }
+
+  // Freeze the PID registry now that onShutdown-spawned PIDs have had a
+  // chance to register — subsequent retry paths cannot register new
+  // processes once the kill sweep below has enumerated its target list.
+  ctx.pidRegistry?.freeze?.();
+
+  // Kill any remaining processes (including hung session-close spawns).
+  if (ctx.pidRegistry) {
+    await ctx.pidRegistry.killAll();
+  }
+}
+
+/**
  * Get numeric signal number for exit code
  */
 function getSignalNumber(signal: NodeJS.Signals): number {
@@ -81,22 +114,7 @@ function createSignalHandler(
 
     logger?.error("crash-recovery", `Received ${signal}, shutting down...`, { signal });
 
-    // Abort in-flight awaits so onShutdown / agent.run can bail fast.
-    ctx.abortController?.abort();
-
-    // Freeze the PID registry so retry paths cannot register new processes
-    // during teardown.
-    ctx.pidRegistry?.freeze?.();
-
-    // Close ACP sessions gracefully first (spawns are tracked by pidRegistry)
-    if (ctx.onShutdown) {
-      await ctx.onShutdown(ctx.abortController?.signal).catch(() => {});
-    }
-
-    // Kill any remaining processes (including hung session-close spawns)
-    if (ctx.pidRegistry) {
-      await ctx.pidRegistry.killAll();
-    }
+    await performTeardown(ctx);
 
     ctx.emitError?.(signal.toLowerCase());
 
@@ -134,16 +152,7 @@ function createUncaughtExceptionHandler(
       stack: error.stack,
     });
 
-    ctx.abortController?.abort();
-    ctx.pidRegistry?.freeze?.();
-
-    if (ctx.onShutdown) {
-      await ctx.onShutdown(ctx.abortController?.signal).catch(() => {});
-    }
-
-    if (ctx.pidRegistry) {
-      await ctx.pidRegistry.killAll();
-    }
+    await performTeardown(ctx);
 
     ctx.emitError?.("uncaughtException");
     await writeFatalLog(ctx.jsonlFilePath, "uncaughtException", error);
@@ -184,16 +193,7 @@ function createUnhandledRejectionHandler(
       stack: error.stack,
     });
 
-    ctx.abortController?.abort();
-    ctx.pidRegistry?.freeze?.();
-
-    if (ctx.onShutdown) {
-      await ctx.onShutdown(ctx.abortController?.signal).catch(() => {});
-    }
-
-    if (ctx.pidRegistry) {
-      await ctx.pidRegistry.killAll();
-    }
+    await performTeardown(ctx);
 
     ctx.emitError?.("unhandledRejection");
     await writeFatalLog(ctx.jsonlFilePath, "unhandledRejection", error);

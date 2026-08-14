@@ -349,7 +349,12 @@ export function buildHopCallback(
           output: `Agent "${agentName}" failed: ${errMessage}`,
           rateLimited: sessionFailure?.outcome === "fail-rate-limit",
           durationMs: 0,
-          estimatedCostUsd: 0,
+          // BUG-57: a SessionTurnError (e.g. mid-flight cancel) can carry real
+          // tokens already burned before the failure — read them instead of
+          // hardcoding zero, or the spend silently disappears from cost accounting.
+          estimatedCostUsd: turnError?.estimatedCostUsd ?? 0,
+          exactCostUsd: turnError?.exactCostUsd,
+          tokenUsage: turnError?.tokenUsage,
           adapterFailure: sessionFailure ?? {
             category: "availability",
             outcome: "fail-adapter-error",

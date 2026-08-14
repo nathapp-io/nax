@@ -260,6 +260,35 @@ describe("buildHopCallback — runAsSession throws", () => {
     expect(hop.result.exitCode).toBe(1);
     expect(hop.result.output).toContain("session error");
   });
+
+  // BUG-57: a SessionTurnError (e.g. a mid-flight cancel) carries whatever
+  // tokenUsage/cost the adapter already accumulated before failing — the
+  // failure AgentResult must surface it instead of hardcoding
+  // estimatedCostUsd: 0, or real spend silently disappears from cost accounting.
+  test("SessionTurnError's carried tokenUsage/cost flow through to the failure AgentResult", async () => {
+    const { SessionTurnError } = await import("@/agents");
+    const turnError = new SessionTurnError(
+      "Agent session ended with stop reason: error (externally cancelled)",
+      true,
+      false,
+      { inputTokens: 400, outputTokens: 175 },
+      0.0123,
+      0.0111,
+    );
+    const agentManager = makeAgentManagerStub(() => Promise.reject(turnError));
+    const sessionManager = makeSessionManager();
+    const ctx = makeCtx({ agentManager, sessionManager });
+    const baseOptions = makeBaseOptions("p", ctx.config);
+    const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
+
+    const hop = await cb("claude", makeBundle(), { kind: "primary" } satisfies HopKind, baseOptions);
+
+    expect(hop.result.success).toBe(false);
+    expect(hop.result.estimatedCostUsd).toBe(0.0123);
+    expect(hop.result.exactCostUsd).toBe(0.0111);
+    expect(hop.result.tokenUsage?.inputTokens).toBe(400);
+    expect(hop.result.tokenUsage?.outputTokens).toBe(175);
+  });
 });
 
 describe("buildHopCallback — failure classification (Finding 3)", () => {

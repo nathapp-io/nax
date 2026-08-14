@@ -15,6 +15,13 @@ export interface AcpSessionResponse {
   exactCostUsd?: number;
   /** True if acpx signalled the error is retryable (e.g. QUEUE_DISCONNECTED_BEFORE_COMPLETION). */
   retryable?: boolean;
+  /**
+   * Parsed JSON-RPC error text (from `finalizeParseState`), when acpx emitted an
+   * error envelope even on an otherwise exit-0 turn. Undefined when no error was
+   * captured. Carried through so `stopReason: "error"` responses always have a
+   * concrete reason instead of a generic message.
+   */
+  error?: string;
   /** acpx exit code — present only on error responses (exitCode !== 0). */
   exitCode?: number;
   /**
@@ -28,7 +35,12 @@ export interface AcpSessionResponse {
 
 export interface AcpSession {
   prompt(text: string): Promise<AcpSessionResponse>;
-  close(options?: { forceTerminate?: boolean }): Promise<void>;
+  /**
+   * `signal` (PERF-1): optional external abort — when provided, threaded into the
+   * underlying trackedSpawn's deadline race so a caller (e.g. run-completion
+   * teardown) can cut the wait short instead of waiting the full hard deadline.
+   */
+  close(options?: { forceTerminate?: boolean; signal?: AbortSignal }): Promise<void>;
   cancelActivePrompt(): Promise<void>;
   /** Volatile session ID: updated by acpx on each Claude Code reconnect (acpxSessionId). */
   readonly id?: string;
@@ -64,6 +76,6 @@ export interface AcpClient {
   /** Resume an existing named session. Returns null if the session is not found. */
   loadSession?(sessionName: string, agentName: string, permissionMode: string): Promise<AcpSession | null>;
   /** Close a named session directly without first ensuring/loading it. */
-  closeSession?(sessionName: string, agentName: string): Promise<void>;
+  closeSession?(sessionName: string, agentName: string, signal?: AbortSignal): Promise<void>;
   close(): Promise<void>;
 }

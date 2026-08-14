@@ -80,6 +80,76 @@ describe("addTokenUsage", () => {
   });
 });
 
+// ─── BUG-10: defense in depth against non-numeric operands ──────────────────
+//
+// addTokenUsage is a pure function reachable from upstream wire parsing (acpx
+// -> parser.ts -> token-mapper.ts). If a malformed value ever slips past those
+// guards, `+` on a string operand silently does concatenation ("123" + 100 ->
+// "123100") instead of numeric addition, corrupting the running total and
+// eventually producing "$NaN" costs. This block asserts the function is
+// robust on its own, independent of whether upstream guards hold.
+describe("addTokenUsage — BUG-10 malformed operand guard", () => {
+  test("a string inputTokens does not trigger string concatenation", () => {
+    // Deliberately violating the TokenUsage contract to simulate a value that
+    // slipped past upstream numeric guards.
+    const a = { inputTokens: "123", outputTokens: 50 } as unknown as TokenUsage; // test-ratchet-allow: as-unknown-as
+    const b: TokenUsage = { inputTokens: 100, outputTokens: 25 };
+    const result = addTokenUsage(a, b);
+
+    expect(result.inputTokens).toBe(100);
+    expect(typeof result.inputTokens).toBe("number");
+  });
+
+  test("a string outputTokens does not trigger string concatenation", () => {
+    const a: TokenUsage = { inputTokens: 100, outputTokens: 25 };
+    const b = { inputTokens: 50, outputTokens: "75" } as unknown as TokenUsage; // test-ratchet-allow: as-unknown-as
+    const result = addTokenUsage(a, b);
+
+    expect(result.outputTokens).toBe(25);
+    expect(typeof result.outputTokens).toBe("number");
+  });
+
+  test("a non-finite operand (NaN) does not propagate NaN into the total", () => {
+    const a: TokenUsage = { inputTokens: Number.NaN, outputTokens: 50 };
+    const b: TokenUsage = { inputTokens: 100, outputTokens: 25 };
+    const result = addTokenUsage(a, b);
+
+    expect(Number.isFinite(result.inputTokens)).toBe(true);
+    expect(result.inputTokens).toBe(100);
+  });
+
+  // BUG-58: cacheReadInputTokens/cacheCreationInputTokens must get the same
+  // malformed-operand guard as inputTokens/outputTokens — previously they were
+  // summed with a bare `+`, reachable to the exact string-concat/NaN corruption
+  // this whole describe block exists to prevent.
+  test("a string cacheReadInputTokens does not trigger string concatenation", () => {
+    const a = { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: "123" } as unknown as TokenUsage; // test-ratchet-allow: as-unknown-as
+    const b: TokenUsage = { inputTokens: 5, outputTokens: 2, cacheReadInputTokens: 10 };
+    const result = addTokenUsage(a, b);
+
+    expect(result.cacheReadInputTokens).toBe(10);
+    expect(typeof result.cacheReadInputTokens).toBe("number");
+  });
+
+  test("a string cacheCreationInputTokens does not trigger string concatenation", () => {
+    const a: TokenUsage = { inputTokens: 10, outputTokens: 5, cacheCreationInputTokens: 7 };
+    const b = { inputTokens: 5, outputTokens: 2, cacheCreationInputTokens: "50" } as unknown as TokenUsage; // test-ratchet-allow: as-unknown-as
+    const result = addTokenUsage(a, b);
+
+    expect(result.cacheCreationInputTokens).toBe(7);
+    expect(typeof result.cacheCreationInputTokens).toBe("number");
+  });
+
+  test("a non-finite cacheReadInputTokens (NaN) does not propagate NaN into the total", () => {
+    const a: TokenUsage = { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: Number.NaN };
+    const b: TokenUsage = { inputTokens: 5, outputTokens: 2, cacheReadInputTokens: 20 };
+    const result = addTokenUsage(a, b);
+
+    expect(Number.isFinite(result.cacheReadInputTokens)).toBe(true);
+    expect(result.cacheReadInputTokens).toBe(20);
+  });
+});
+
 // ─── resolvePricingSource (#1433) ────────────────────────────────────────────
 
 describe("resolvePricingSource", () => {

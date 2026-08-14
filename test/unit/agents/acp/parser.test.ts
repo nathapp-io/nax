@@ -366,4 +366,62 @@ describe("BUG-54 — partial usage objects do not fabricate zero-filled token us
     expect(usage?.input_tokens).toBe(7);
     expect(usage?.output_tokens).toBe(9);
   });
+
+  // BUG-59: legacy `event.usage` branch must reject non-finite values the same
+  // way every other branch in this file does via asFiniteNumber. A bare
+  // `typeof x === "number"` check lets Infinity through uncaught — and acpx
+  // CAN emit a syntactically valid JSON number that overflows to Infinity on
+  // parse (e.g. an exponent large enough to exceed IEEE-754 double range),
+  // so this is a real reachable input, not just a defense-in-depth guard.
+  test("legacy flat NDJSON usage rejects an input_tokens that overflows to Infinity on JSON.parse", () => {
+    const state = createParseState();
+    // 1e400 is valid JSON number syntax but parses to Infinity (exceeds double range).
+    expect(JSON.parse("1e400")).toBe(Number.POSITIVE_INFINITY);
+    parseAcpxJsonLine('{"usage":{"input_tokens":1e400,"output_tokens":9}}', state);
+    expect(finalizeParseState(state).tokenUsage).toBeUndefined();
+  });
+
+  test("legacy flat NDJSON usage still rejects a string input_tokens (unchanged behavior)", () => {
+    const state = createParseState();
+    parseAcpxJsonLine('{"usage":{"input_tokens":"7","output_tokens":9}}', state);
+    expect(finalizeParseState(state).tokenUsage).toBeUndefined();
+  });
+});
+
+describe("BUG-10 — cumulative_token_usage rejects malformed (non-numeric) token values", () => {
+  test("a string input_tokens is not assigned to state.tokenUsage as-is", () => {
+    const state = createParseState();
+    parseAcpxJsonLine('{"cumulative_token_usage":{"input_tokens":"123","output_tokens":50}}', state);
+    const usage = finalizeParseState(state).tokenUsage;
+    // Malformed record must not fabricate/pass through a string field — same
+    // "don't fabricate" convention as BUG-54 above, applied to invalid (not
+    // just missing) required fields.
+    expect(usage).toBeUndefined();
+  });
+
+  test("a non-finite output_tokens (NaN via bad JSON-adjacent value) is rejected", () => {
+    const state = createParseState();
+    parseAcpxJsonLine('{"cumulative_token_usage":{"input_tokens":10,"output_tokens":"not-a-number"}}', state);
+    expect(finalizeParseState(state).tokenUsage).toBeUndefined();
+  });
+
+  test("a well-formed cumulative_token_usage still populates tokenUsage", () => {
+    const state = createParseState();
+    parseAcpxJsonLine(
+      '{"cumulative_token_usage":{"input_tokens":10,"output_tokens":20,"cache_read_input_tokens":5}}',
+      state,
+    );
+    const usage = finalizeParseState(state).tokenUsage;
+    expect(usage?.input_tokens).toBe(10);
+    expect(usage?.output_tokens).toBe(20);
+    expect(usage?.cache_read_input_tokens).toBe(5);
+  });
+
+  test("cache fields default to 0 when absent from an otherwise-valid record", () => {
+    const state = createParseState();
+    parseAcpxJsonLine('{"cumulative_token_usage":{"input_tokens":10,"output_tokens":20}}', state);
+    const usage = finalizeParseState(state).tokenUsage;
+    expect(usage?.cache_read_input_tokens).toBe(0);
+    expect(usage?.cache_creation_input_tokens).toBe(0);
+  });
 });

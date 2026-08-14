@@ -24,6 +24,14 @@ export interface SpawnOptions {
   stdout: "pipe";
   stderr: "pipe" | "inherit";
   env?: Record<string, string | undefined>;
+  /**
+   * Make the spawned process a session/group leader (setsid) so its own PID is
+   * the real process-group ID. Without this, killProcessGroup(-pid) targets a
+   * group the process isn't actually the leader of, leaking descendants once
+   * the direct child exits (ORPHAN-1). See verification/executor.ts for the
+   * established pattern.
+   */
+  detached?: boolean;
 }
 
 /** Injectable typed spawn — wraps Bun.spawn with proper return type */

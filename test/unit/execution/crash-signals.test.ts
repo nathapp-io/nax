@@ -7,7 +7,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { installSignalHandlers } from "../../../src/execution/crash-signals";
+import { installSignalHandlers, performTeardown } from "../../../src/execution/crash-signals";
 import type { SignalHandlerContext } from "../../../src/execution/crash-signals";
 import type { StatusWriter } from "../../../src/execution/status-writer";
 
@@ -61,6 +61,88 @@ describe("installSignalHandlers", () => {
     cleanup = installSignalHandlers(ctx);
     expect(ctx.onShutdown).toBeDefined();
     expect(ctx.pidRegistry).toBeDefined();
+  });
+
+  // BUG-11: freeze() previously ran BEFORE onShutdown, so any PID spawned during
+  // onShutdown (e.g. `acpx sessions close`/`stop`) was silently dropped by
+  // register() and never reachable by the killAll() sweep that follows. freeze()
+  // must run AFTER onShutdown completes — late-spawned PIDs get registered
+  // normally, and freeze() still locks the set before killAll() enumerates it.
+  //
+  // performTeardown() is exercised directly (not via a real signal) so the test
+  // never touches process.exit — see forbidden-patterns-tests.md ("Real signal
+  // sending... can kill the test runner").
+  test("PID registered during onShutdown is present in killAll's target set (BUG-11)", async () => {
+    const registered: number[] = [];
+    const killedPids: number[] = [];
+    let frozenDuringShutdown: boolean | undefined;
+
+    const pidRegistry = {
+      frozen: false,
+      freeze() {
+        this.frozen = true;
+      },
+      isFrozen() {
+        return this.frozen;
+      },
+      async register(pid: number) {
+        if (this.frozen) return;
+        registered.push(pid);
+      },
+      async unregister(_pid: number) {},
+      async killAll() {
+        killedPids.push(...registered);
+      },
+    };
+
+    const ctx: SignalHandlerContext = {
+      ...minimalCtx,
+      pidRegistry: pidRegistry as never,
+      onShutdown: async () => {
+        // Simulates spawning `acpx sessions close` during teardown — must land
+        // in the registry before freeze() locks it.
+        frozenDuringShutdown = pidRegistry.isFrozen();
+        await pidRegistry.register(9876);
+      },
+    };
+
+    await performTeardown(ctx);
+
+    expect(frozenDuringShutdown).toBe(false);
+    expect(killedPids).toContain(9876);
+    expect(pidRegistry.isFrozen()).toBe(true);
+  });
+
+  test("freeze() still blocks a PID registered after killAll's sweep target list is fixed (BUG-11)", async () => {
+    const registered: number[] = [];
+    const pidRegistry = {
+      frozen: false,
+      freeze() {
+        this.frozen = true;
+      },
+      isFrozen() {
+        return this.frozen;
+      },
+      async register(pid: number) {
+        if (this.frozen) return;
+        registered.push(pid);
+      },
+      async unregister(_pid: number) {},
+      async killAll() {
+        // A late registration attempt after the sweep has started must be
+        // rejected — this is the invariant freeze() exists to protect.
+        await pidRegistry.register(11111);
+      },
+    };
+
+    const ctx: SignalHandlerContext = {
+      ...minimalCtx,
+      pidRegistry: pidRegistry as never,
+    };
+
+    await performTeardown(ctx);
+
+    expect(registered).not.toContain(11111);
   });
 
   test("uncaughtException listener is removed after cleanup", () => {

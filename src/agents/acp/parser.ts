@@ -52,6 +52,14 @@ export interface AcpxParseState {
 // Incremental API
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Return the first of several candidates that is a finite number, else undefined. */
+function asFiniteNumber(...values: unknown[]): number | undefined {
+  for (const v of values) {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+  }
+  return undefined;
+}
+
 export function createParseState(): AcpxParseState {
   return {
     text: "",
@@ -190,14 +198,8 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
 
         if (result.usage && typeof result.usage === "object") {
           const u = result.usage as Record<string, unknown>;
-          const asNumber = (...values: unknown[]): number | undefined => {
-            for (const v of values) {
-              if (typeof v === "number" && Number.isFinite(v)) return v;
-            }
-            return undefined;
-          };
-          const inputTokens = asNumber(u.inputTokens, u.input_tokens);
-          const outputTokens = asNumber(u.outputTokens, u.output_tokens);
+          const inputTokens = asFiniteNumber(u.inputTokens, u.input_tokens);
+          const outputTokens = asFiniteNumber(u.outputTokens, u.output_tokens);
           // BUG-54: a partial usage object (missing the required token
           // counts) must not fabricate a zero-filled record — that makes a
           // genuinely free/zero-usage call indistinguishable from a call
@@ -208,8 +210,8 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
             state.tokenUsage = {
               input_tokens: inputTokens,
               output_tokens: outputTokens,
-              cache_read_input_tokens: asNumber(u.cachedReadTokens, u.cache_read_input_tokens) ?? 0,
-              cache_creation_input_tokens: asNumber(u.cachedWriteTokens, u.cache_creation_input_tokens) ?? 0,
+              cache_read_input_tokens: asFiniteNumber(u.cachedReadTokens, u.cache_read_input_tokens) ?? 0,
+              cache_creation_input_tokens: asFiniteNumber(u.cachedWriteTokens, u.cache_creation_input_tokens) ?? 0,
             };
           }
         }
@@ -248,13 +250,37 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
       state.text += event.text;
     }
 
-    if (event.cumulative_token_usage) state.tokenUsage = event.cumulative_token_usage;
+    if (event.cumulative_token_usage && typeof event.cumulative_token_usage === "object") {
+      const c = event.cumulative_token_usage as Record<string, unknown>;
+      const inputTokens = asFiniteNumber(c.input_tokens);
+      const outputTokens = asFiniteNumber(c.output_tokens);
+      // BUG-10: same "don't fabricate" rule as BUG-54 below, applied to
+      // invalid (not just missing) required fields — a malformed wire value
+      // (e.g. a stringified number) must not be assigned as-is. Left
+      // unvalidated, it flows through toInternal()'s `?? 0` (which only
+      // guards undefined/null) and into addTokenUsage()'s `+`, silently
+      // string-concatenating instead of summing.
+      if (inputTokens !== undefined && outputTokens !== undefined) {
+        state.tokenUsage = {
+          input_tokens: inputTokens,
+          output_tokens: outputTokens,
+          cache_read_input_tokens: asFiniteNumber(c.cache_read_input_tokens) ?? 0,
+          cache_creation_input_tokens: asFiniteNumber(c.cache_creation_input_tokens) ?? 0,
+        };
+      }
+    }
     if (event.usage) {
-      const legacyInputTokens = event.usage.input_tokens ?? event.usage.prompt_tokens;
-      const legacyOutputTokens = event.usage.output_tokens ?? event.usage.completion_tokens;
+      // BUG-59: use the module's own asFiniteNumber helper instead of a bare
+      // `typeof x === "number"` check — Infinity/-Infinity are `typeof number`
+      // but not finite, and would otherwise pass through uncaught at this
+      // layer (defense in depth; the mapper's own guard would also catch it
+      // downstream, but this keeps the parser consistent with every other
+      // branch in this file).
+      const legacyInputTokens = asFiniteNumber(event.usage.input_tokens, event.usage.prompt_tokens);
+      const legacyOutputTokens = asFiniteNumber(event.usage.output_tokens, event.usage.completion_tokens);
       // BUG-54: same rule as the JSON-RPC branch above — don't fabricate a
       // zero-filled usage record when the required fields are missing.
-      if (typeof legacyInputTokens === "number" && typeof legacyOutputTokens === "number") {
+      if (legacyInputTokens !== undefined && legacyOutputTokens !== undefined) {
         state.tokenUsage = {
           input_tokens: legacyInputTokens,
           output_tokens: legacyOutputTokens,

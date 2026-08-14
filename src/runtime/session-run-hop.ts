@@ -98,7 +98,12 @@ export function createSessionRunHop(
           output: errMessage,
           rateLimited: sessionFailure?.outcome === "fail-rate-limit",
           durationMs: Date.now() - startMs,
-          estimatedCostUsd: 0,
+          // BUG-57: mirror build-hop-callback.ts — a SessionTurnError (e.g.
+          // mid-flight cancel) can carry real tokens already burned before the
+          // failure; read them instead of hardcoding zero.
+          estimatedCostUsd: turnError?.estimatedCostUsd ?? 0,
+          exactCostUsd: turnError?.exactCostUsd,
+          tokenUsage: turnError?.tokenUsage,
           adapterFailure: sessionFailure ?? {
             category: "availability",
             outcome: "fail-adapter-error",
