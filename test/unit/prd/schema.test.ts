@@ -631,3 +631,62 @@ describe("validatePlanOutput — outOfScope normalization", () => {
     expect(prd.userStories[0].outOfScope).toEqual(["story-specific"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// BUG-26: testStrategy auto-downgrade is gated on the justification text
+// actually explaining absent tests, not merely being non-empty
+// ---------------------------------------------------------------------------
+
+describe("validatePlanOutput — testStrategy auto-downgrade (BUG-26)", () => {
+  test("downgrades to no-test when the justification text signals no tests", () => {
+    const story = makeStory({
+      testStrategy: "test-after",
+      routing: { complexity: "simple", testStrategy: "test-after", reasoning: "r" },
+      noTestJustification: "This is a config-only change with no testable behavior.",
+    });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "branch");
+    expect(prd.userStories[0]!.routing!.testStrategy).toBe("no-test");
+  });
+
+  test("does NOT downgrade when noTestJustification is a stray unrelated note", () => {
+    const story = makeStory({
+      testStrategy: "test-after",
+      routing: { complexity: "simple", testStrategy: "test-after", reasoning: "r" },
+      noTestJustification: "See PR #123 for related discussion.",
+    });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "branch");
+    expect(prd.userStories[0]!.routing!.testStrategy).toBe("test-after");
+  });
+
+  test("still requires noTestJustification when testStrategy is explicitly no-test", () => {
+    const story = makeStory({
+      testStrategy: "no-test",
+      routing: { complexity: "simple", testStrategy: "no-test", reasoning: "r" },
+      // stray note, does not match the no-test signal — but testStrategy is
+      // already "no-test" so the schema's own required-justification check
+      // (not the auto-downgrade) governs this case.
+      noTestJustification: "See PR #123 for related discussion.",
+    });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "branch");
+    expect(prd.userStories[0]!.routing!.testStrategy).toBe("no-test");
+  });
+
+  test("recognizes several real no-test justification phrasings", () => {
+    const phrasings = [
+      "Not testable — pure documentation change.",
+      "This story is untestable in isolation.",
+      "Skipping tests for this config toggle.",
+      "Manual verification only for this release step.",
+      "Out of scope for testing per PRD.",
+    ];
+    for (const noTestJustification of phrasings) {
+      const story = makeStory({
+        testStrategy: "test-after",
+        routing: { complexity: "simple", testStrategy: "test-after", reasoning: "r" },
+        noTestJustification,
+      });
+      const prd = validatePlanOutput(makeInput([story]), "feat", "branch");
+      expect(prd.userStories[0]!.routing!.testStrategy, noTestJustification).toBe("no-test");
+    }
+  });
+});
