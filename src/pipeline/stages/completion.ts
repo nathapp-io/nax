@@ -272,6 +272,23 @@ async function readDiffFilePaths(stream: ReadableStream<Uint8Array>): Promise<Se
   }
 }
 
+/**
+ * Race an already-in-progress stream-read promise against
+ * STREAM_DRAIN_DEADLINE_MS. Callers must only invoke this AFTER `proc.exited`
+ * has already resolved (normal exit or our own SIGKILL) — never concurrently
+ * with it. Racing a live, still-running process against this deadline would
+ * truncate legitimately slow (but healthy) git output — e.g. a large diff
+ * taking 3-9s, well inside GIT_TIMEOUT_MS — and silently resolve to `empty`
+ * instead of the real content (BUG-31). Applied unconditionally once the
+ * process has exited (not just after our own kill) because Bun's piped
+ * streams can fail to close even on a normal exit (BUG-13) — this covers
+ * both.
+ */
+async function drainAfterExit<T>(streamPromise: Promise<T>, empty: T): Promise<T> {
+  const result = await raceWithDeadline(streamPromise, STREAM_DRAIN_DEADLINE_MS);
+  return result === DRAIN_TIMEOUT ? empty : result;
+}
+
 /** Get a git diff text between baseRef and HEAD. Best-effort, returns "" on failure. */
 async function getDiffText(workdir: string, baseRef: string | undefined): Promise<string> {
   if (!baseRef) return "";
@@ -295,14 +312,17 @@ async function getDiffText(workdir: string, baseRef: string | undefined): Promis
       }
     }, GIT_TIMEOUT_MS);
 
+    // Rule 07: stream reads start immediately, concurrently with awaiting
+    // proc.exited, to avoid pipe-buffer deadlock on large diffs. They are
+    // NOT bounded by a deadline while the process is still alive — see
+    // drainAfterExit.
+    const stdoutPromise = readTextStreamPrefix(proc.stdout, MAX_DIFF_TEXT_CHARS);
+    const stderrPromise = readTextStreamPrefix(proc.stderr, 0);
+
     let output: string;
     try {
-      const [rawOutput] = await Promise.all([
-        raceWithDeadline(readTextStreamPrefix(proc.stdout, MAX_DIFF_TEXT_CHARS), STREAM_DRAIN_DEADLINE_MS),
-        raceWithDeadline(readTextStreamPrefix(proc.stderr, 0), STREAM_DRAIN_DEADLINE_MS),
-        proc.exited,
-      ]);
-      output = rawOutput === DRAIN_TIMEOUT ? "" : rawOutput;
+      await proc.exited;
+      [output] = await Promise.all([drainAfterExit(stdoutPromise, ""), drainAfterExit(stderrPromise, "")]);
     } finally {
       // finally, not a trailing call: a stream read that throws would otherwise
       // leak the timer, holding the event loop open for GIT_TIMEOUT_MS and then
@@ -342,20 +362,21 @@ async function getDiffFilePaths(workdir: string, baseRef: string | undefined): P
       }
     }, GIT_TIMEOUT_MS);
 
+    // `--name-only` output is one path per line, bounded by file count — not
+    // content size — so it is streamed in full. Capping it (as getDiffText
+    // does) would drop paths past the prefix and break AC6's "every changed
+    // file" contract, but a single-string read amplifies transient memory ~4x
+    // on pathological diffs; readDiffFilePaths emits each path into the Set as
+    // it is decoded instead. Rule 07: reads start immediately, concurrently
+    // with awaiting proc.exited, to avoid pipe-buffer deadlock; not bounded by
+    // a deadline while the process is still alive — see drainAfterExit.
+    const pathsPromise = readDiffFilePaths(proc.stdout);
+    const stderrPromise = readTextStreamPrefix(proc.stderr, 0);
+
     let paths: Set<string>;
     try {
-      const [rawPaths] = await Promise.all([
-        // `--name-only` output is one path per line, bounded by file count —
-        // not content size — so it is streamed in full. Capping it (as
-        // getDiffText does) would drop paths past the prefix and break AC6's
-        // "every changed file" contract, but a single-string read amplifies
-        // transient memory ~4x on pathological diffs; readDiffFilePaths emits
-        // each path into the Set as it is decoded instead.
-        raceWithDeadline(readDiffFilePaths(proc.stdout), STREAM_DRAIN_DEADLINE_MS),
-        raceWithDeadline(readTextStreamPrefix(proc.stderr, 0), STREAM_DRAIN_DEADLINE_MS),
-        proc.exited,
-      ]);
-      paths = rawPaths === DRAIN_TIMEOUT ? new Set() : rawPaths;
+      await proc.exited;
+      [paths] = await Promise.all([drainAfterExit(pathsPromise, new Set<string>()), drainAfterExit(stderrPromise, "")]);
     } finally {
       clearTimeout(timerId);
     }
