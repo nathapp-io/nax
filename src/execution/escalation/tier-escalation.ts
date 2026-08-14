@@ -7,16 +7,16 @@
  * - Max attempts outcome resolution (pause vs fail)
  */
 
+import { isThreeSessionStrategy } from "@/config";
+import type { NaxConfig, TestStrategy } from "@/config";
+import type { Finding } from "@/findings";
+import type { LoadedHooksConfig } from "@/hooks";
+import { getSafeLogger } from "@/logger";
 import { pipelineEventBus } from "@/pipeline";
-import { isThreeSessionStrategy } from "../../config";
-import type { NaxConfig, TestStrategy } from "../../config";
-import type { Finding } from "../../findings";
-import type { LoadedHooksConfig } from "../../hooks";
-import { getSafeLogger } from "../../logger";
-import type { PRD, StructuredFailure, UserStory } from "../../prd";
-import { markStoryFailed, savePRD } from "../../prd";
-import { tryLlmBatchRoute } from "../../routing";
-import type { FailureCategory } from "../../tdd/types";
+import type { PRD, StructuredFailure, UserStory, VerificationStage } from "@/prd";
+import { markStoryFailed, savePRD } from "@/prd";
+import { tryLlmBatchRoute } from "@/routing";
+import type { FailureCategory } from "@/tdd/types";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "../escalation";
 import { appendProgress } from "../progress";
 import { verifyEscalationQuotes } from "./quote-integrity";
@@ -32,8 +32,7 @@ function buildEscalationFailure(
   failureCategory: FailureCategory | undefined,
 ): StructuredFailure {
   // AC-3: Use stage='review' when there are semantic review findings
-  const stage: import("../../prd/types").VerificationStage =
-    reviewFindings && reviewFindings.length > 0 ? "review" : "escalation";
+  const stage: VerificationStage = reviewFindings && reviewFindings.length > 0 ? "review" : "escalation";
 
   // Compose a meaningful summary from the actual failure context so priorFailures
   // surfaces real signal (category + pipeline reason) into the next tier's prompt
@@ -137,7 +136,7 @@ export async function preIterationTierCheck(
   totalCost: number,
   workdir: string,
   /** Per-run NaxRuntime — used to look up per-story cost via costAggregator.byStory() (BUG: story:failed cost field). */
-  runtime?: import("../../runtime").NaxRuntime,
+  runtime?: import("@/runtime").NaxRuntime,
 ): Promise<PreIterationCheckResult> {
   const logger = _tierEscalationDeps.getSafeLogger();
 
@@ -334,9 +333,9 @@ export interface EscalationHandlerContext {
   /** Cost of the failed attempt being escalated (BUG-067: accumulated across escalations) */
   attemptCost?: number;
   /** Per-run AgentManager — threaded for LLM batch re-routing after escalation */
-  agentManager: import("../../agents").IAgentManager;
+  agentManager: import("@/agents").IAgentManager;
   /** NaxRuntime — threaded for callOp-based LLM batch re-routing after escalation */
-  runtime?: import("../../runtime").NaxRuntime;
+  runtime?: import("@/runtime").NaxRuntime;
 }
 
 export interface EscalationHandlerResult {
