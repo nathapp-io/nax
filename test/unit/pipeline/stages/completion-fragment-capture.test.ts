@@ -477,3 +477,63 @@ describe("completionStage — getDiffFilePaths reads --name-only output in full 
     expect(result).toEqual(new Set(paths));
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUG-13 — post-SIGKILL stream reads previously had no settle deadline. Bun
+// documents that piped streams may not close after a kill; a stream that
+// never closes hung the Promise.all forever even after the process itself
+// had already exited. Simulate that: proc.exited resolves quickly, but
+// stdout/stderr streams never close.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("completionStage — getDiffText/getDiffFilePaths bound the stream drain (BUG-13)", () => {
+  test("getDiffText does not hang when the process exits but its streams never close", async () => {
+    _completionDeps.spawn = (() => ({
+      stdout: new ReadableStream<Uint8Array>({
+        start() {
+          // Never enqueue, never close — simulates the Bun post-kill quirk.
+        },
+      }),
+      stderr: new ReadableStream<Uint8Array>({
+        start() {
+          // Same — never closes.
+        },
+      }),
+      exited: Promise.resolve(0),
+      kill: () => {},
+    })) as unknown as typeof _completionDeps.spawn; // test-ratchet-allow: as-unknown-as
+
+    const start = Date.now();
+    const output = await _completionDeps.getDiffText("/repo", "base-ref");
+    const elapsedMs = Date.now() - start;
+
+    expect(output).toBe("");
+    // Bounded by STREAM_DRAIN_DEADLINE_MS (2s), far under GIT_TIMEOUT_MS (10s)
+    // — generous slack for CI.
+    expect(elapsedMs).toBeLessThan(8_000);
+  });
+
+  test("getDiffFilePaths does not hang when the process exits but its streams never close", async () => {
+    _completionDeps.spawn = (() => ({
+      stdout: new ReadableStream<Uint8Array>({
+        start() {
+          // Never enqueue, never close.
+        },
+      }),
+      stderr: new ReadableStream<Uint8Array>({
+        start() {
+          // Never closes.
+        },
+      }),
+      exited: Promise.resolve(0),
+      kill: () => {},
+    })) as unknown as typeof _completionDeps.spawn; // test-ratchet-allow: as-unknown-as
+
+    const start = Date.now();
+    const paths = await _completionDeps.getDiffFilePaths("/repo", "base-ref");
+    const elapsedMs = Date.now() - start;
+
+    expect(paths).toEqual(new Set());
+    expect(elapsedMs).toBeLessThan(8_000);
+  });
+});

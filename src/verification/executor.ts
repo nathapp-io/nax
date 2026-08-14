@@ -19,8 +19,8 @@ export const _executorDeps = { spawn };
  * Uses setTimeout (not Bun.sleep) so the timer can be cleared once the race settles
  * — prevents timer leaks per rule 07.
  */
-const DRAIN_TIMEOUT = Symbol("drain-timeout");
-function raceWithDeadline<T>(p: Promise<T>, deadlineMs: number): Promise<T | typeof DRAIN_TIMEOUT> {
+export const DRAIN_TIMEOUT = Symbol("drain-timeout");
+export function raceWithDeadline<T>(p: Promise<T>, deadlineMs: number): Promise<T | typeof DRAIN_TIMEOUT> {
   const timer = { id: undefined as ReturnType<typeof setTimeout> | undefined };
   const timeoutP = new Promise<typeof DRAIN_TIMEOUT>((r) => {
     timer.id = setTimeout(() => r(DRAIN_TIMEOUT), deadlineMs);

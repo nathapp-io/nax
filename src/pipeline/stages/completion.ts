@@ -14,6 +14,7 @@
 
 import { renderFragmentBody, writeFragment } from "@/context/fragments";
 import { GIT_TIMEOUT_MS } from "@/utils/git";
+import { DRAIN_TIMEOUT, raceWithDeadline } from "@/verification";
 import { persistSemanticVerdict } from "../../acceptance/semantic-verdict";
 import { annotateManifestEffectiveness } from "../../context/engine/effectiveness";
 import { appendProgress } from "../../execution/progress";
@@ -33,6 +34,14 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
 // from blowing up completion.
 const MAX_DIFF_TEXT_CHARS = 8_000;
 const HIGH_MEMORY_TELEMETRY_BYTES = 512 * 1_024 * 1_024;
+
+/**
+ * BUG-13 — bound on the post-SIGKILL stream drain. Bun documents that piped
+ * streams may not close after a kill; without this, a stream that never
+ * closes hangs the Promise.all below forever even though the SIGKILL timer
+ * already fired. Mirrors verification/executor.ts's drainTimeoutMs default.
+ */
+const STREAM_DRAIN_DEADLINE_MS = 2_000;
 
 function logHighMemoryCheckpoint(logger: ReturnType<typeof getLogger>, ctx: PipelineContext): void {
   const usage = process.memoryUsage();
@@ -288,11 +297,12 @@ async function getDiffText(workdir: string, baseRef: string | undefined): Promis
 
     let output: string;
     try {
-      [output] = await Promise.all([
-        readTextStreamPrefix(proc.stdout, MAX_DIFF_TEXT_CHARS),
-        readTextStreamPrefix(proc.stderr, 0),
+      const [rawOutput] = await Promise.all([
+        raceWithDeadline(readTextStreamPrefix(proc.stdout, MAX_DIFF_TEXT_CHARS), STREAM_DRAIN_DEADLINE_MS),
+        raceWithDeadline(readTextStreamPrefix(proc.stderr, 0), STREAM_DRAIN_DEADLINE_MS),
         proc.exited,
       ]);
+      output = rawOutput === DRAIN_TIMEOUT ? "" : rawOutput;
     } finally {
       // finally, not a trailing call: a stream read that throws would otherwise
       // leak the timer, holding the event loop open for GIT_TIMEOUT_MS and then
@@ -334,17 +344,18 @@ async function getDiffFilePaths(workdir: string, baseRef: string | undefined): P
 
     let paths: Set<string>;
     try {
-      [paths] = await Promise.all([
+      const [rawPaths] = await Promise.all([
         // `--name-only` output is one path per line, bounded by file count —
         // not content size — so it is streamed in full. Capping it (as
         // getDiffText does) would drop paths past the prefix and break AC6's
         // "every changed file" contract, but a single-string read amplifies
         // transient memory ~4x on pathological diffs; readDiffFilePaths emits
         // each path into the Set as it is decoded instead.
-        readDiffFilePaths(proc.stdout),
-        readTextStreamPrefix(proc.stderr, 0),
+        raceWithDeadline(readDiffFilePaths(proc.stdout), STREAM_DRAIN_DEADLINE_MS),
+        raceWithDeadline(readTextStreamPrefix(proc.stderr, 0), STREAM_DRAIN_DEADLINE_MS),
         proc.exited,
       ]);
+      paths = rawPaths === DRAIN_TIMEOUT ? new Set() : rawPaths;
     } finally {
       clearTimeout(timerId);
     }
