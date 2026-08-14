@@ -1,4 +1,3 @@
-import { isAbsolute } from "node:path";
 import { getSafeLogger } from "../logger";
 import { validateModulePath } from "../utils/path-security";
 import type { LLMFinding } from "./semantic-helpers";
@@ -145,13 +144,6 @@ async function readSafeFile(roots: string[], file: string): Promise<string | nul
       } catch {
         // File not present under this root — try the next candidate.
       }
-    }
-  }
-  if (isAbsolute(file)) {
-    try {
-      return await Bun.file(file).text();
-    } catch {
-      return null;
     }
   }
   return null;

@@ -23,6 +23,16 @@ const VALID_COMPLEXITY: Complexity[] = ["simple", "medium", "complex", "expert"]
 const STORY_ID_NO_SEPARATOR = /^([A-Za-z]+)(\d+)$/;
 
 /**
+ * BUG-26 — gates the testStrategy auto-downgrade below (§ noTestJustification
+ * present but testStrategy is not "no-test") on the justification text
+ * actually explaining absent tests, not merely being non-empty. Without this,
+ * a planner emitting testStrategy: "test-after" plus an unrelated stray note
+ * in noTestJustification silently lost all test generation for the story.
+ */
+const NO_TEST_JUSTIFICATION_SIGNAL =
+  /\b(no\s+(automated\s+)?test|not\s+testable|untestable|cannot\s+be\s+tested|can'?t\s+be\s+tested|skip(ping)?\s+test|no\s+test\s+coverage|manual(ly)?\s+(only|verif)|out\s+of\s+scope\s+for\s+test)/i;
+
+/**
  * Normalize a story ID: convert e.g. ST001 → ST-001.
  * Also strips markdown backtick wrapping (e.g. `US-001` → US-001) that LLMs
  * sometimes add for emphasis when writing directly to file in interactive plan mode.
@@ -218,7 +228,18 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>, seenIds
   // This happens when debate synthesis keeps the majority testStrategy but adopts
   // a minority debater's no-test justification. Resolve the contradiction by
   // downgrading to "no-test" — the justification is the stronger signal.
-  if (testStrategy !== "no-test" && typeof rawJustification === "string" && rawJustification.trim() !== "") {
+  //
+  // BUG-26: gated on the justification text actually explaining absent tests
+  // (NO_TEST_JUSTIFICATION_SIGNAL), not merely being non-empty — the
+  // unconditional version downgraded on ANY stray note in this field,
+  // silently discarding test generation for stories the planner correctly
+  // marked as needing tests.
+  if (
+    testStrategy !== "no-test" &&
+    typeof rawJustification === "string" &&
+    rawJustification.trim() !== "" &&
+    NO_TEST_JUSTIFICATION_SIGNAL.test(rawJustification)
+  ) {
     testStrategy = "no-test";
   }
   const noTestJustification: string | undefined =

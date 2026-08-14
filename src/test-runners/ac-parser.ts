@@ -32,12 +32,29 @@ import { detectFramework, stripAnsi } from "./detector";
  * @returns Deduplicated array of AC IDs, e.g. ["AC-1", "AC-3", "AC-HOOK"]
  */
 export function parseTestFailures(output: string): string[] {
+  return parseTestFailuresDetailed(output).failedACs;
+}
+
+/**
+ * Same extraction as {@link parseTestFailures}, but also reports the raw
+ * (non-deduplicated) count of AC-tagged failure lines.
+ *
+ * BUG-32: a single overridden AC can have more than one failing test case
+ * (e.g. 3 failing `it()` blocks all tagged `AC-3`). Comparing a raw
+ * total-failure count (from `analyzeTestExitCode`) against `failedACs.length`
+ * — a deduplicated AC-*id* count — mixes cardinalities and false-positives
+ * "suite may have crashed" whenever an overridden AC's coverage spans more
+ * than one assertion. `taggedFailureCount` counts every matched failure line,
+ * so it's the correct thing to compare a raw fail count against.
+ */
+export function parseTestFailuresDetailed(output: string): { failedACs: string[]; taggedFailureCount: number } {
   // Strip ANSI escapes first: vitest/jest colorize the "FAIL" marker and test titles,
   // and the live reporter prefixes lines with cursor/erase codes — both would otherwise
   // sit between tokens and break matching (and defeat the line-start FAIL anchor below).
   const clean = stripAnsi(output);
   const framework = detectFramework(clean);
   const failedACs: string[] = [];
+  let taggedFailureCount = 0;
   const lines = clean.split("\n");
 
   for (const line of lines) {
@@ -48,6 +65,7 @@ export function parseTestFailures(output: string): string[] {
         if (acMatch) {
           const acId = acMatch[1].toUpperCase();
           if (!failedACs.includes(acId)) failedACs.push(acId);
+          taggedFailureCount++;
         }
       }
     }
@@ -62,6 +80,7 @@ export function parseTestFailures(output: string): string[] {
         if (acMatch) {
           const acId = `AC-${acMatch[1]}`;
           if (!failedACs.includes(acId)) failedACs.push(acId);
+          taggedFailureCount++;
         }
       }
     }
@@ -76,6 +95,7 @@ export function parseTestFailures(output: string): string[] {
         if (acMatch) {
           const acId = `AC-${acMatch[1]}`;
           if (!failedACs.includes(acId)) failedACs.push(acId);
+          taggedFailureCount++;
         }
       }
     }
@@ -99,6 +119,7 @@ export function parseTestFailures(output: string): string[] {
         if (acMatch) {
           const acId = `AC-${acMatch[1]}`;
           if (!failedACs.includes(acId)) failedACs.push(acId);
+          taggedFailureCount++;
         }
       }
     }
@@ -112,7 +133,8 @@ export function parseTestFailures(output: string): string[] {
   const hasHookTimeout = lines.some((l) => /hook timed out|hook failed/i.test(l));
   if (hasUnnamedFail && hasHookTimeout && !failedACs.includes("AC-HOOK")) {
     failedACs.push("AC-HOOK");
+    taggedFailureCount++;
   }
 
-  return failedACs;
+  return { failedACs, taggedFailureCount };
 }

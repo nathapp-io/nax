@@ -12,6 +12,7 @@ import {
   createParseState,
   finalizeParseState,
 } from "@/agents";
+import type { PipelineStage } from "@/config";
 import { getSafeLogger } from "@/logger";
 import type { AgentStreamEvent } from "@/runtime";
 import { _spawnClientDeps } from "./spawn-client-deps";
@@ -35,7 +36,7 @@ export class SpawnAcpSession implements AcpSession {
   private readonly onActiveCall?: (callId: string, cancel: () => Promise<void>) => void;
   private readonly runId: string;
   private readonly storyId?: string;
-  private readonly stage?: import("../../config/permissions").PipelineStage;
+  private readonly stage?: PipelineStage;
   /** Resolved teardown deadline (ms) — config.agent.acp.trackedSpawnDeadlineMs, falling back to the module default (#1583). */
   private readonly trackedSpawnDeadlineMs: number;
   private activeProc: { pid: number; kill(signal?: number): void; exited?: Promise<number> } | null = null;
@@ -69,7 +70,7 @@ export class SpawnAcpSession implements AcpSession {
     onActiveCall?: (callId: string, cancel: () => Promise<void>) => void;
     runId?: string;
     storyId?: string;
-    stage?: import("../../config/permissions").PipelineStage;
+    stage?: PipelineStage;
     trackedSpawnDeadlineMs?: number;
   }) {
     this.agentName = opts.agentName;

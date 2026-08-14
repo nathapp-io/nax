@@ -11,6 +11,7 @@ import type { NaxConfig } from "../config/schema";
 import { FIELD_DESCRIPTIONS } from "./config-descriptions";
 import { deepDiffConfigs } from "./config-diff";
 import { loadGlobalConfig, loadProjectConfig } from "./config-get";
+import { maskProfileValues } from "./config-profile";
 
 export { FIELD_DESCRIPTIONS };
 
@@ -86,8 +87,10 @@ export async function configCommand(config: NaxConfig, options: ConfigCommandOpt
     console.log(`# Project config: ${sources.project ? sources.project : "(not found)"}`);
     console.log();
 
-    // Recursively display config with descriptions
-    displayConfigWithDescriptions(config, [], sources);
+    // SEC-05: mask resolved secrets before display — this branch was
+    // originally missed when masking was wired into the default JSON view.
+    const masked = maskProfileValues(config as unknown as Record<string, unknown>);
+    displayConfigWithDescriptions(masked, [], sources);
   } else {
     // Default view: JSON with header showing config sources
     console.log("// nax Configuration");
@@ -95,7 +98,8 @@ export async function configCommand(config: NaxConfig, options: ConfigCommandOpt
     console.log(`// Global config: ${sources.global ? sources.global : "(not found)"}`);
     console.log(`// Project config: ${sources.project ? sources.project : "(not found)"}`);
     console.log();
-    console.log(JSON.stringify(config, null, 2));
+    const masked = maskProfileValues(config as unknown as Record<string, unknown>);
+    console.log(JSON.stringify(masked, null, 2));
   }
 }
 

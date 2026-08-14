@@ -48,15 +48,15 @@ function mergeModels(rootModels: NaxConfig["models"], overrideModels: NaxConfig[
  */
 export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<NaxConfig>): NaxConfig {
   const hasAnyMergeableField =
-    packageOverride.agent !== undefined ||
-    packageOverride.models !== undefined ||
-    packageOverride.routing !== undefined ||
-    packageOverride.execution !== undefined ||
-    packageOverride.review !== undefined ||
-    packageOverride.acceptance !== undefined ||
-    packageOverride.quality !== undefined ||
-    packageOverride.context !== undefined ||
-    packageOverride.project !== undefined;
+    packageOverride.agent != null ||
+    packageOverride.models != null ||
+    packageOverride.routing != null ||
+    packageOverride.execution != null ||
+    packageOverride.review != null ||
+    packageOverride.acceptance != null ||
+    packageOverride.quality != null ||
+    packageOverride.context != null ||
+    packageOverride.project != null;
 
   if (!hasAnyMergeableField) {
     return root;
@@ -65,7 +65,7 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
   return {
     ...root,
     agent:
-      packageOverride.agent !== undefined
+      packageOverride.agent != null
         ? {
             ...root.agent,
             ...packageOverride.agent,
@@ -79,9 +79,9 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
             },
           }
         : root.agent,
-    models: packageOverride.models !== undefined ? mergeModels(root.models, packageOverride.models) : root.models,
+    models: packageOverride.models != null ? mergeModels(root.models, packageOverride.models) : root.models,
     routing:
-      packageOverride.routing !== undefined
+      packageOverride.routing != null
         ? { ...root.routing, ...packageOverride.routing, llm: { ...root.routing?.llm, ...packageOverride.routing.llm } }
         : root.routing,
     execution: {

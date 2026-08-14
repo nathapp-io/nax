@@ -547,7 +547,7 @@ export async function executeUnified(
           ctx.statusWriter.setCurrentStory(null);
           await ctx.statusWriter.update(totalCost, iterations);
 
-          if (isStalled(prd)) {
+          if (isStalled(prd, ctx.config.execution.rectification?.maxAttemptsTotal)) {
             pipelineEventBus.emit({ type: "run:paused", reason: "All remaining stories blocked", cost: totalCost });
             return buildResult("stalled");
           }
@@ -640,7 +640,7 @@ export async function executeUnified(
       ctx.statusWriter.setCurrentStory(null);
       await ctx.statusWriter.update(totalCost, iterations);
 
-      if (isStalled(prd)) {
+      if (isStalled(prd, ctx.config.execution.rectification?.maxAttemptsTotal)) {
         pipelineEventBus.emit({ type: "run:paused", reason: "All remaining stories blocked", cost: totalCost });
         return buildResult("stalled");
       }

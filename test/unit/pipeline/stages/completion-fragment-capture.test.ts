@@ -477,3 +477,136 @@ describe("completionStage — getDiffFilePaths reads --name-only output in full 
     expect(result).toEqual(new Set(paths));
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUG-13 — post-SIGKILL stream reads previously had no settle deadline. Bun
+// documents that piped streams may not close after a kill; a stream that
+// never closes hung the Promise.all forever even after the process itself
+// had already exited. Simulate that: proc.exited resolves quickly, but
+// stdout/stderr streams never close.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("completionStage — getDiffText/getDiffFilePaths bound the stream drain (BUG-13)", () => {
+  test("getDiffText does not hang when the process exits but its streams never close", async () => {
+    _completionDeps.spawn = (() => ({
+      stdout: new ReadableStream<Uint8Array>({
+        start() {
+          // Never enqueue, never close — simulates the Bun post-kill quirk.
+        },
+      }),
+      stderr: new ReadableStream<Uint8Array>({
+        start() {
+          // Same — never closes.
+        },
+      }),
+      exited: Promise.resolve(0),
+      kill: () => {},
+    })) as unknown as typeof _completionDeps.spawn; // test-ratchet-allow: as-unknown-as
+
+    const start = Date.now();
+    const output = await _completionDeps.getDiffText("/repo", "base-ref");
+    const elapsedMs = Date.now() - start;
+
+    expect(output).toBe("");
+    // Bounded by STREAM_DRAIN_DEADLINE_MS (2s), far under GIT_TIMEOUT_MS (10s)
+    // — generous slack for CI.
+    expect(elapsedMs).toBeLessThan(8_000);
+  });
+
+  test("getDiffFilePaths does not hang when the process exits but its streams never close", async () => {
+    _completionDeps.spawn = (() => ({
+      stdout: new ReadableStream<Uint8Array>({
+        start() {
+          // Never enqueue, never close.
+        },
+      }),
+      stderr: new ReadableStream<Uint8Array>({
+        start() {
+          // Never closes.
+        },
+      }),
+      exited: Promise.resolve(0),
+      kill: () => {},
+    })) as unknown as typeof _completionDeps.spawn; // test-ratchet-allow: as-unknown-as
+
+    const start = Date.now();
+    const paths = await _completionDeps.getDiffFilePaths("/repo", "base-ref");
+    const elapsedMs = Date.now() - start;
+
+    expect(paths).toEqual(new Set());
+    expect(elapsedMs).toBeLessThan(8_000);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUG-31 — the STREAM_DRAIN_DEADLINE_MS (2s) fix for BUG-13 previously raced
+// the drain deadline against the LIVE, still-running process (not just the
+// post-exit drain). A legitimately slow-but-healthy git diff — output takes
+// longer than 2s to arrive, well inside GIT_TIMEOUT_MS (10s) — would hit the
+// 2s deadline first and silently resolve to "" / empty Set, even though the
+// process was never killed and the real content did eventually arrive.
+// Simulate that: content streams in and the process exits only after 2.5s
+// (past STREAM_DRAIN_DEADLINE_MS, well under GIT_TIMEOUT_MS).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("completionStage — getDiffText/getDiffFilePaths do not truncate a slow-but-healthy process (BUG-31)", () => {
+  const SLOW_BUT_HEALTHY_MS = 2_500;
+
+  test("getDiffText returns full output for a diff slower than the drain deadline but faster than GIT_TIMEOUT_MS", async () => {
+    const content = "diff --git a/big.txt b/big.txt\n+".repeat(50);
+    let killed = false;
+
+    _completionDeps.spawn = (() => ({
+      stdout: new ReadableStream<Uint8Array>({
+        async start(controller) {
+          await new Promise((r) => setTimeout(r, SLOW_BUT_HEALTHY_MS));
+          if (killed) return; // process was wrongly killed before it could produce output
+          controller.enqueue(new TextEncoder().encode(content));
+          controller.close();
+        },
+      }),
+      stderr: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      exited: new Promise((resolve) => setTimeout(() => resolve(0), SLOW_BUT_HEALTHY_MS)),
+      kill: () => {
+        killed = true;
+      },
+    })) as unknown as typeof _completionDeps.spawn; // test-ratchet-allow: as-unknown-as
+
+    const output = await _completionDeps.getDiffText("/repo", "base-ref");
+
+    expect(output).toBe(content);
+  }, 8_000);
+
+  test("getDiffFilePaths returns full paths for a diff slower than the drain deadline but faster than GIT_TIMEOUT_MS", async () => {
+    const paths = ["src/a.ts", "src/b.ts"];
+    let killed = false;
+
+    _completionDeps.spawn = (() => ({
+      stdout: new ReadableStream<Uint8Array>({
+        async start(controller) {
+          await new Promise((r) => setTimeout(r, SLOW_BUT_HEALTHY_MS));
+          if (killed) return;
+          controller.enqueue(new TextEncoder().encode(`${paths.join("\n")}\n`));
+          controller.close();
+        },
+      }),
+      stderr: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      exited: new Promise((resolve) => setTimeout(() => resolve(0), SLOW_BUT_HEALTHY_MS)),
+      kill: () => {
+        killed = true;
+      },
+    })) as unknown as typeof _completionDeps.spawn; // test-ratchet-allow: as-unknown-as
+
+    const result = await _completionDeps.getDiffFilePaths("/repo", "base-ref");
+
+    expect(result).toEqual(new Set(paths));
+  }, 8_000);
+});

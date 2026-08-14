@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { WorktreeManager } from "../../../src/worktree/manager";
 import { NAX_GITIGNORE_ENTRIES } from "../../../src/utils/gitignore";
+import { WorktreeManager } from "../../../src/worktree/manager";
 import { makeTempDir } from "../../helpers/temp";
 
 describe("WorktreeManager", () => {
@@ -142,6 +142,80 @@ describe("WorktreeManager", () => {
       // Create the same worktree again — should succeed (removes stale one first)
       await manager.create(projectRoot, storyId);
       expect(existsSync(worktreePath)).toBe(true); // still exists, just recreated
+    });
+  });
+
+  describe("BUG-28: branch deletion is gated on a known-orphaned worktree record", () => {
+    test("does not destroy an unmerged user branch that happens to share the nax/<storyId> name", async () => {
+      const manager = new WorktreeManager();
+      const storyId = "story-user-branch";
+      const branchName = `nax/${storyId}`;
+
+      const defaultBranch = (
+        await new Response(
+          Bun.spawn(["git", "branch", "--show-current"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" }).stdout,
+        ).text()
+      ).trim();
+
+      // Simulate a user's own branch of this exact name — never created via
+      // manager.create(), so `git worktree list` has no record of it.
+      await Bun.spawn(["git", "checkout", "-b", branchName], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" })
+        .exited;
+      writeFileSync(join(projectRoot, "user-work.txt"), "unmerged user work");
+      await Bun.spawn(["git", "add", "user-work.txt"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" }).exited;
+      await Bun.spawn(["git", "commit", "-m", "unmerged user work"], {
+        cwd: projectRoot,
+        stdout: "pipe",
+        stderr: "pipe",
+      }).exited;
+      const revParseBefore = await new Response(
+        Bun.spawn(["git", "rev-parse", branchName], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" }).stdout,
+      ).text();
+      await Bun.spawn(["git", "checkout", defaultBranch], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" }).exited;
+
+      // create() must not silently delete the branch — git itself refuses to
+      // `-b` an already-existing branch name, so this throws loudly instead.
+      await expect(manager.create(projectRoot, storyId)).rejects.toThrow();
+
+      const revParseAfter = await new Response(
+        Bun.spawn(["git", "rev-parse", branchName], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" }).stdout,
+      ).text();
+      expect(revParseAfter.trim()).toBe(revParseBefore.trim());
+
+      const logProc = Bun.spawn(["git", "log", branchName, "--oneline"], {
+        cwd: projectRoot,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const logOutput = await new Response(logProc.stdout).text();
+      expect(logOutput).toContain("unmerged user work");
+    });
+
+    test("still cleans up a genuinely orphaned nax worktree (dir deleted outside git)", async () => {
+      const manager = new WorktreeManager();
+      const storyId = "story-crashed-run";
+      const branchName = `nax/${storyId}`;
+
+      await manager.create(projectRoot, storyId);
+      const worktreePath = join(projectRoot, ".nax-wt", storyId);
+      expect(existsSync(worktreePath)).toBe(true);
+
+      // Simulate a crash: the worktree directory is gone, but git's admin
+      // refs and the branch still exist — hasWorktreeRecord() must still see
+      // it via `git worktree list` (prunable entry) and Step 3 must clean it.
+      rmSync(worktreePath, { recursive: true, force: true });
+
+      await manager.create(projectRoot, storyId);
+
+      expect(existsSync(worktreePath)).toBe(true);
+      const branchProc = Bun.spawn(["git", "branch", "--list"], {
+        cwd: projectRoot,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const branchOutput = await new Response(branchProc.stdout).text();
+      // Exactly one nax/<storyId> branch survives (the freshly recreated one).
+      expect(branchOutput.split(branchName).length - 1).toBe(1);
     });
   });
 

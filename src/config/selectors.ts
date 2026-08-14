@@ -85,6 +85,10 @@ export const precheckConfigSelector = pickSelector(
   "prompts",
   "review",
   "project",
+  // MED-03: checkAgentCLI resolves the configured default agent via
+  // resolveDefaultAgent(config), which reads config.agent.default —
+  // execution has no `agent` field (that was always reading undefined).
+  "agent",
 );
 export const qualityConfigSelector = pickSelector("quality", "quality", "execution");
 export const autofixConfigSelector = pickSelector("autofix", "quality", "execution");

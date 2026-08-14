@@ -115,19 +115,13 @@ describe("countStories - regression-failed (RL-004)", () => {
 
 describe("isComplete - regression-failed (RL-004)", () => {
   test("returns false when any story is regression-failed", () => {
-    const prd = makePRD([
-      makeStory("US-001", "passed"),
-      makeStory("US-002", "regression-failed"),
-    ]);
+    const prd = makePRD([makeStory("US-001", "passed"), makeStory("US-002", "regression-failed")]);
 
     expect(isComplete(prd)).toBe(false);
   });
 
   test("returns false when all stories are regression-failed", () => {
-    const prd = makePRD([
-      makeStory("US-001", "regression-failed"),
-      makeStory("US-002", "regression-failed"),
-    ]);
+    const prd = makePRD([makeStory("US-001", "regression-failed"), makeStory("US-002", "regression-failed")]);
 
     expect(isComplete(prd)).toBe(false);
   });
@@ -139,11 +133,53 @@ describe("isComplete - regression-failed (RL-004)", () => {
 
 describe("isStalled - regression-failed (RL-004)", () => {
   test("returns true when all remaining stories are regression-failed", () => {
-    const prd = makePRD([
-      makeStory("US-001", "passed"),
-      makeStory("US-002", "regression-failed"),
-    ]);
+    const prd = makePRD([makeStory("US-001", "passed"), makeStory("US-002", "regression-failed")]);
 
     expect(isStalled(prd)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isStalled - retryable failed stories (BUG-25)
+// ---------------------------------------------------------------------------
+
+describe("isStalled - a failed story with retry budget remaining is not terminal (BUG-25)", () => {
+  test("returns false when the only remaining story is failed with attempts <= maxRetries", () => {
+    const story = { ...makeStory("US-001", "failed"), attempts: 2 };
+    const prd = makePRD([story]);
+
+    expect(isStalled(prd, 3)).toBe(false);
+  });
+
+  test("returns true when the only remaining story is failed with attempts exhausted", () => {
+    const story = { ...makeStory("US-001", "failed"), attempts: 4 };
+    const prd = makePRD([story]);
+
+    expect(isStalled(prd, 3)).toBe(true);
+  });
+
+  test("a retryable-failed story does not count toward blockedIds for a dependent story", () => {
+    const retryable = { ...makeStory("US-001", "failed"), attempts: 1 };
+    const dependent = { ...makeStory("US-002", "pending"), dependencies: ["US-001"] };
+    const prd = makePRD([retryable, dependent]);
+
+    // US-002 depends on a still-retryable US-001, not a terminally-blocked one —
+    // must not be swept into "all remaining depend on blocked" via dependency chaining.
+    expect(isStalled(prd, 3)).toBe(false);
+  });
+
+  test("uses the default maxRetries (12) when none is passed", () => {
+    const story = { ...makeStory("US-001", "failed"), attempts: 5 };
+    const prd = makePRD([story]);
+
+    expect(isStalled(prd)).toBe(false);
+  });
+
+  test("exhausted-retry failed story still counts as terminal alongside other blocked stories", () => {
+    const exhausted = { ...makeStory("US-001", "failed"), attempts: 10 };
+    const blocked = makeStory("US-002", "blocked");
+    const prd = makePRD([exhausted, blocked]);
+
+    expect(isStalled(prd, 3)).toBe(true);
   });
 });

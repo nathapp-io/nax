@@ -73,15 +73,12 @@ describe("writeQueueCommand", () => {
     expect(await Bun.file(orphan).exists()).toBe(false);
   });
 
-  test("expires an old ownership lock even when its PID has been reused", async () => {
-    const orphan = `${queueFile}.lock.0000000000001.${process.pid}.reused`;
-    await Bun.write(orphan, "");
-
-    await writeQueueCommand(queueFile, { type: "ABORT" });
-
-    expect(parseQueueFile(await Bun.file(queueFile).text()).commands).toEqual([{ type: "ABORT" }]);
-    expect(await Bun.file(orphan).exists()).toBe(false);
-  });
+  // BUG-10: age-based eviction of a lock whose pid is still alive was removed —
+  // a long-held lock from a slow writer must not be treated as abandoned just
+  // because it is old. This intentionally accepts the inverse edge case (an
+  // orphaned lock whose pid number happens to be reused by an unrelated live
+  // process) as a rare, low-risk tradeoff; see queue-file-lock.test.ts for the
+  // pid-alive-vs-dead eviction matrix.
 });
 
 describe("writeRetryCommand", () => {

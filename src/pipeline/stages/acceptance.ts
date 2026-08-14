@@ -35,7 +35,11 @@ import { acFailureToFinding, acSentinelToFinding } from "@/findings";
 import type { Finding } from "@/findings";
 import { getLogger } from "@/logger";
 import { countStories } from "@/prd";
-import { parseTestFailures as _parseTestFailures } from "@/test-runners";
+import {
+  parseTestFailures as _parseTestFailures,
+  analyzeTestExitCode,
+  parseTestFailuresDetailed,
+} from "@/test-runners";
 import { logTestOutput } from "@/utils/log-test-output";
 import { executeWithTimeout, shellQuoteArg } from "@/verification";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -231,7 +235,7 @@ export const acceptanceStage: PipelineStage = {
       const output = execution.output ?? "";
       allOutputParts.push(output);
 
-      const failedACs = parseTestFailures(output);
+      const { failedACs, taggedFailureCount } = parseTestFailuresDetailed(output);
 
       // Check for overridden ACs (skip those)
       const overrides = ctx.prd.acceptanceOverrides ?? {};
@@ -260,6 +264,62 @@ export const acceptanceStage: PipelineStage = {
         allFindings.push(acSentinelToFinding("AC-ERROR", output));
         failedPackages.push({ testPath, packageDir, testFramework, commandOverride, output, failedACs: ["AC-ERROR"] });
         continue;
+      }
+
+      // BUG-12: non-zero exit where every parsed AC failure happens to be
+      // overridden. Without this check, actualFailures ends up empty and the
+      // package falls through both the "failed" branch below (actualFailures
+      // is empty) and the "passed" branch (exitCode !== 0) — it silently
+      // vanishes from the verdict, reporting "all packages passed" despite a
+      // suite crash unrelated to (or beyond) the overridden ACs.
+      //
+      // Distinguishing that from the legitimate case — the exit is non-zero
+      // *because* the single overridden AC's own test failed, and nothing
+      // else did — requires the framework's own pass/fail summary count, not
+      // just the AC-tagged failures parseTestFailures could line-match: a
+      // hook-timeout or import-error failure is real but has no "AC-N:"
+      // label to be parsed as an AC in the first place, so it would never
+      // show up in `failedACs`. If the summary's total fail count exceeds
+      // the number of AC-tagged failure *lines* we found, something failed
+      // beyond the (overridden) ACs.
+      //
+      // BUG-32: compare against `taggedFailureCount` (raw, non-deduplicated
+      // count of matched failure lines), not `failedACs.length` (deduplicated
+      // AC-id count) — a single overridden AC can have more than one failing
+      // test case (e.g. 3 failing `it()` blocks all tagged AC-3), which would
+      // otherwise make failCount (3) exceed the deduplicated count (1) and
+      // false-positive "suite may have crashed" on a legitimately-passing
+      // (post-override) package.
+      if (exitCode !== 0 && failedACs.length > 0 && actualFailures.length === 0) {
+        const { failCount } = analyzeTestExitCode(output, exitCode);
+        if (failCount > taggedFailureCount) {
+          logger.error(
+            "acceptance",
+            "Tests exited non-zero with all failing ACs overridden, but more tests failed than were AC-tagged — suite may have crashed",
+            {
+              storyId: ctx.story.id,
+              exitCode,
+              packageDir,
+              overriddenFailures,
+              failCount,
+              acTaggedFailures: taggedFailureCount,
+            },
+          );
+          logTestOutput(logger, "acceptance", output);
+          anyError = true;
+          errorExitCode = exitCode;
+          allFailedACs.push("AC-ERROR");
+          allFindings.push(acSentinelToFinding("AC-ERROR", output));
+          failedPackages.push({
+            testPath,
+            packageDir,
+            testFramework,
+            commandOverride,
+            output,
+            failedACs: ["AC-ERROR"],
+          });
+          continue;
+        }
       }
 
       for (const acId of actualFailures) {

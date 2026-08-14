@@ -9,6 +9,7 @@
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import { isMonorepoOrchestratorCommand } from "../test-runners";
+import { shellQuoteArg } from "../verification/shell-quote";
 
 export interface ResolvedTestCommands {
   /**
@@ -72,7 +73,8 @@ export async function resolveQualityTestCommands(
   let resolvedScopedTemplate = rawScopedTemplate;
   if (rawScopedTemplate?.includes("{{package}}") && storyWorkdir) {
     const pkgName = await _commandResolverDeps.readPackageName(workdir);
-    resolvedScopedTemplate = pkgName !== null ? rawScopedTemplate.replaceAll("{{package}}", pkgName) : undefined;
+    resolvedScopedTemplate =
+      pkgName !== null ? rawScopedTemplate.replaceAll("{{package}}", shellQuoteArg(pkgName)) : undefined;
   }
 
   // Monorepo orchestrator promotion: turbo/nx handle scoping natively via their own filter syntax.

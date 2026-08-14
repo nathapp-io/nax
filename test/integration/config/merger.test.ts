@@ -387,4 +387,45 @@ describe("config/merger", () => {
       expect(onStart).toEqual({ command: "echo base" });
     });
   });
+
+  describe("SEC-07: __proto__/constructor/prototype keys are not merged", () => {
+    test("does not tamper with the merged object's prototype via a JSON.parse'd __proto__ key", () => {
+      const base = { a: 1 };
+      // JSON.parse creates __proto__ as a normal own enumerable property —
+      // Object.keys(override) includes it, exactly like an untrusted
+      // project/profile config.json would after loadJsonFile parses it.
+      const override = JSON.parse('{"__proto__": {"polluted": true}, "b": 2}') as Record<string, unknown>;
+
+      const result = deepMergeConfig(base, override) as Record<string, unknown>;
+
+      expect(result.b).toBe(2);
+      expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+      expect((result as { polluted?: boolean }).polluted).toBeUndefined();
+      // The global Object.prototype itself must stay clean.
+      expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    });
+
+    test("does not assign a constructor key that would defeat isPlainObject on a later merge", () => {
+      const base = { section: { a: 1 } };
+      const override = { section: { constructor: { fake: true }, b: 2 } };
+
+      const result = deepMergeConfig(base, override) as { section: Record<string, unknown> };
+
+      expect(result.section.b).toBe(2);
+      expect(result.section.a).toBe(1);
+      expect(result.section.constructor).toBe(Object);
+    });
+
+    test("skips a dangerous key inside the hooks special case too", () => {
+      const base = { hooks: { hooks: { "on-start": { command: "echo base" } } } };
+      const override = JSON.parse(
+        '{"hooks": {"hooks": {"on-start": {"command": "echo override"}}, "__proto__": {"polluted": true}}}',
+      ) as Record<string, unknown>;
+
+      const result = deepMergeConfig(base, override) as Record<string, unknown>;
+
+      expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+      expect((result as { polluted?: boolean }).polluted).toBeUndefined();
+    });
+  });
 });

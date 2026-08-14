@@ -46,7 +46,7 @@ export const AutoRouteConfigSchema = z.object({
   }),
 });
 
-const RectificationConfigSchema = z.object({
+export const RectificationConfigSchema = z.object({
   enabled: z.boolean().default(true),
   /** Total iteration cap for the unified fix cycle (shared by story-orchestrator
    * + regression cycles). Per-strategy caps are the granular bound; this is the
@@ -83,7 +83,7 @@ const RectificationConfigSchema = z.object({
   urgencyAtAttempt: z.number().int().min(1).default(3),
 });
 
-const RegressionGateConfigSchema = z.object({
+export const RegressionGateConfigSchema = z.object({
   enabled: z.boolean().default(true),
   timeoutSeconds: z.number().int().min(10).max(600).default(120),
   acceptOnTimeout: z.boolean().default(true),
@@ -215,6 +215,18 @@ export const ExecutionConfigSchema = z.object({
     timeoutSeconds: 60,
   }),
 });
+
+/**
+ * BUG-20 — derived, not hand-written. The outer `NaxConfigSchema`'s
+ * `execution: ExecutionConfigSchema.default({...})` literal (schemas.ts) must
+ * not hardcode this number a second time: zod does not re-parse a
+ * `.default()` value, so a hand-written literal there previously drifted
+ * (600s) from this field's own default (300s) — `parse({})` yielded one
+ * value, a config that merely supplies a partial `execution` object yielded
+ * the other.
+ */
+export const DEFAULT_VERIFICATION_TIMEOUT_SECONDS =
+  ExecutionConfigSchema.shape.verificationTimeoutSeconds.parse(undefined);
 
 export const QualityConfigSchema = z.object({
   scopeTestThreshold: z.number().int().min(0).default(10),

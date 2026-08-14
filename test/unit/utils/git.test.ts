@@ -53,7 +53,7 @@ describe("detectMergeConflict", () => {
 // captureOutputFiles (ENH-005)
 // ---------------------------------------------------------------------------
 
-function mockSpawnOutput(output: string, exitCode = 0) {
+function mockSpawnOutput(output: string, exitCode = 0): typeof _gitDeps.spawn {
   return mock((_args: string[], _opts: unknown) => {
     const bytes = new TextEncoder().encode(output);
     return {
@@ -62,7 +62,7 @@ function mockSpawnOutput(output: string, exitCode = 0) {
       exited: Promise.resolve(exitCode),
       kill: mock(() => {}),
     };
-  });
+  }) as typeof _gitDeps.spawn;
 }
 
 let origSpawn: typeof _gitDeps.spawn;
@@ -145,7 +145,22 @@ describe("captureOutputFiles", () => {
     const result = await captureOutputFiles("/tmp/repo", "abc123");
     expect(result).toEqual([]);
   });
+
+  // MED-04: captureOutputFiles previously spawned raw git with no deadline —
+  // now routes through gitWithTimeout (same _gitDeps.spawn injection point,
+  // so all the tests above are unaffected). A non-zero exit now correctly
+  // discards any stray stdout instead of returning it as if it were real
+  // changed-file output.
+  test("MED-04: discards stdout when git diff exits non-zero", async () => {
+    _gitDeps.spawn = mockSpawnOutput("src/stale-output.ts\n", 128);
+    const result = await captureOutputFiles("/tmp/repo", "abc123");
+    expect(result).toEqual([]);
+  });
 });
+
+// ---------------------------------------------------------------------------
+// captureDiffSummary — see git-capture-diff-summary.test.ts
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // captureWorkingTreeChanges (US-003 — timeout-retry working-tree diff)

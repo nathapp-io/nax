@@ -219,6 +219,14 @@ export type EventSubscriber<T extends PipelineEvent = PipelineEvent> = (event: T
 
 type SubscriberMap = Map<string, EventSubscriber[]>;
 
+/**
+ * BUG-14 — default wall-clock bound for drain() to wait on a single pending
+ * subscriber promise. A subscriber that never settles (hung hook script,
+ * webhook interaction) would otherwise hang drain() forever — it is called
+ * at every story boundary (unified-executor.ts, run-completion.ts).
+ */
+const DRAIN_SETTLE_DEADLINE_MS = 5_000;
+
 // ---------------------------------------------------------------------------
 // Bus implementation
 // ---------------------------------------------------------------------------
@@ -326,10 +334,40 @@ export class PipelineEventBus {
    * Call this between story iterations to create an explicit GC sync point —
    * ensures subscriber closures (and their captured event payloads) are released
    * before the next story begins. See: #253.
+   *
+   * BUG-14: each pending promise is raced against `deadlineMs` — a subscriber
+   * that never settles (hung hook script, webhook interaction) is logged and
+   * dropped from the pending set instead of hanging drain() forever. If it
+   * later does settle, its own `.finally()` (attached in emit()) removes it
+   * from `_pending` again — a harmless no-op re-delete.
+   *
+   * @param deadlineMs - Override for testing; defaults to DRAIN_SETTLE_DEADLINE_MS.
    */
-  async drain(): Promise<void> {
+  async drain(deadlineMs: number = DRAIN_SETTLE_DEADLINE_MS): Promise<void> {
     if (this._pending.size === 0) return;
-    await Promise.allSettled([...this._pending]);
+    const logger = getLogger();
+    const pending = [...this._pending];
+
+    await Promise.all(
+      pending.map(async (p) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timedOut = Symbol("drain-timeout");
+        const timeoutPromise = new Promise<typeof timedOut>((resolve) => {
+          timer = setTimeout(() => resolve(timedOut), deadlineMs);
+        });
+        try {
+          const result = await Promise.race([p.then(() => undefined), timeoutPromise]);
+          if (result === timedOut) {
+            logger.warn("event-bus", "Subscriber promise exceeded drain deadline — dropping from pending set", {
+              deadlineMs,
+            });
+            this._pending.delete(p);
+          }
+        } finally {
+          if (timer !== undefined) clearTimeout(timer);
+        }
+      }),
+    );
   }
 
   /** Remove all subscribers (useful in tests). */

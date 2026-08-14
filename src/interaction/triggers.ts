@@ -133,8 +133,13 @@ export async function checkSecurityReview(
 ): Promise<boolean> {
   if (!isTriggerEnabled("security-review", config)) return true;
 
+  const { fallback } = getTriggerConfig("security-review", config);
   const response = await executeTrigger("security-review", context, config, chain);
-  return response.action !== "abort";
+  // BUG-17 — route through applyFallback so a timeout honors the configured
+  // fallback instead of always taking the "proceed" branch of a direct
+  // response.action comparison.
+  const effectiveAction = chain.applyFallback(response, fallback);
+  return effectiveAction !== "abort";
 }
 
 /**
@@ -147,8 +152,13 @@ export async function checkCostExceeded(
 ): Promise<boolean> {
   if (!isTriggerEnabled("cost-exceeded", config)) return true;
 
+  const { fallback } = getTriggerConfig("cost-exceeded", config);
   const response = await executeTrigger("cost-exceeded", context, config, chain);
-  return response.action !== "abort";
+  // BUG-17 — cost-exceeded is a live gate: on timeout it previously always
+  // proceeded (response.action defaults to "skip" != "abort") even when the
+  // configured fallback was "abort".
+  const effectiveAction = chain.applyFallback(response, fallback);
+  return effectiveAction !== "abort";
 }
 
 /**
@@ -161,8 +171,11 @@ export async function checkMergeConflict(
 ): Promise<boolean> {
   if (!isTriggerEnabled("merge-conflict", config)) return true;
 
+  const { fallback } = getTriggerConfig("merge-conflict", config);
   const response = await executeTrigger("merge-conflict", context, config, chain);
-  return response.action !== "abort";
+  // BUG-17 — see checkCostExceeded.
+  const effectiveAction = chain.applyFallback(response, fallback);
+  return effectiveAction !== "abort";
 }
 
 /**
@@ -175,8 +188,12 @@ export async function checkCostWarning(
 ): Promise<"continue" | "escalate"> {
   if (!isTriggerEnabled("cost-warning", config)) return "continue";
 
+  const { fallback } = getTriggerConfig("cost-warning", config);
   const response = await executeTrigger("cost-warning", context, config, chain);
-  return response.action === "approve" ? "escalate" : "continue";
+  // BUG-17 — see checkCostExceeded. A "continue" fallback maps to "approve"
+  // in applyFallback, correctly still escalating on timeout when configured.
+  const effectiveAction = chain.applyFallback(response, fallback);
+  return effectiveAction === "approve" ? "escalate" : "continue";
 }
 
 /**
@@ -189,8 +206,11 @@ export async function checkMaxRetries(
 ): Promise<"continue" | "skip"> {
   if (!isTriggerEnabled("max-retries", config)) return "continue";
 
+  const { fallback } = getTriggerConfig("max-retries", config);
   const response = await executeTrigger("max-retries", context, config, chain);
-  return response.action === "skip" ? "skip" : "continue";
+  // BUG-17 — see checkCostExceeded.
+  const effectiveAction = chain.applyFallback(response, fallback);
+  return effectiveAction === "skip" ? "skip" : "continue";
 }
 
 /**
@@ -203,8 +223,11 @@ export async function checkPreMerge(
 ): Promise<boolean> {
   if (!isTriggerEnabled("pre-merge", config)) return true;
 
+  const { fallback } = getTriggerConfig("pre-merge", config);
   const response = await executeTrigger("pre-merge", context, config, chain);
-  return response.action === "approve";
+  // BUG-17 — see checkCostExceeded.
+  const effectiveAction = chain.applyFallback(response, fallback);
+  return effectiveAction === "approve";
 }
 
 /**

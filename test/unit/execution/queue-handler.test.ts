@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { clearQueueFile, readQueueFile } from "@/execution";
+import { clearQueueFile, processQueueFile, readQueueFile } from "@/execution";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
@@ -151,5 +151,80 @@ describe("clearQueueFile", () => {
     const warns = await readWarnLines(logFile);
     expect(warns.length).toBeGreaterThan(0);
     expect(warns[0].stage).toBe("queue");
+  });
+});
+
+describe("processQueueFile — read/process/clear in one lock (BUG-11)", () => {
+  let workdir: string;
+  let logFile: string;
+
+  beforeEach(() => {
+    workdir = makeTempDir("nax-queue-handler-process-");
+    logFile = join(workdir, "audit.jsonl");
+    initLogger({ level: "silent", filePath: logFile });
+  });
+
+  afterEach(() => {
+    resetLogger();
+    cleanupTempDir(workdir);
+  });
+
+  test("no queue file: processor is never called, returns undefined", async () => {
+    let called = false;
+    const result = await processQueueFile(workdir, async () => {
+      called = true;
+    });
+
+    expect(called).toBe(false);
+    expect(result).toBeUndefined();
+  });
+
+  test("claims commands, runs the processor, and clears the processing file on success", async () => {
+    await Bun.write(join(workdir, ".queue.txt"), "SKIP US-001\n");
+    let seen: unknown;
+
+    const result = await processQueueFile(workdir, async (commands) => {
+      seen = commands;
+      return "done";
+    });
+
+    expect(seen).toEqual([{ type: "SKIP", storyId: "US-001" }]);
+    expect(result).toBe("done");
+    expect(await Bun.file(join(workdir, ".queue.txt.processing")).exists()).toBe(false);
+  });
+
+  test("a processor throw leaves .queue.txt.processing intact for retry, and the commands are not lost", async () => {
+    await Bun.write(join(workdir, ".queue.txt"), "SKIP US-001\n");
+
+    await expect(
+      processQueueFile(workdir, async () => {
+        throw new Error("crash mid-processing");
+      }),
+    ).rejects.toThrow("crash mid-processing");
+
+    expect(await Bun.file(join(workdir, ".queue.txt.processing")).exists()).toBe(true);
+    // Retrying (as a restarted run would) sees the same, un-lost commands.
+    expect(await readQueueFile(workdir)).toEqual([{ type: "SKIP", storyId: "US-001" }]);
+  });
+
+  test("a successful run cannot be re-processed — the classic BUG-11 double-apply is closed", async () => {
+    await Bun.write(join(workdir, ".queue.txt"), "SKIP US-001\n");
+    let applyCount = 0;
+
+    await processQueueFile(workdir, async () => {
+      applyCount++;
+    });
+
+    // Simulates the process restarting and re-checking the queue after a
+    // successful run — before the fix, a crash between "commands applied" and
+    // "processing file cleared" left the same batch to be claimed again.
+    // Once processQueueFile has returned normally, there is nothing left to
+    // reclaim: the clear already happened inside the same lock.
+    const secondResult = await processQueueFile(workdir, async () => {
+      applyCount++;
+    });
+
+    expect(applyCount).toBe(1);
+    expect(secondResult).toBeUndefined();
   });
 });

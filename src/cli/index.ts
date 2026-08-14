@@ -37,6 +37,7 @@ export {
   promptsCommand,
   promptsInitCommand,
   exportPromptCommand,
+  _promptsMainDeps,
   type PromptsCommandOptions,
   type PromptsInitCommandOptions,
   type ExportPromptCommandOptions,

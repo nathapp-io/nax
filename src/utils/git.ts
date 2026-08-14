@@ -466,10 +466,11 @@ export async function captureOutputFiles(
   try {
     const args = ["diff", "--name-only", `${baseRef}..HEAD`];
     if (scopePrefix) args.push("--", `${scopePrefix}/`);
-    const proc = _gitDeps.spawn(["git", ...args], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
-    const output = await new Response(proc.stdout).text();
-    await proc.exited;
-    return output.trim().split("\n").filter(Boolean);
+    // MED-04 — route through gitWithTimeout so a wedged git (NFS hang,
+    // credential prompt) can't stall this call indefinitely.
+    const { stdout, exitCode } = await gitWithTimeout(args, workdir);
+    if (exitCode !== 0) return [];
+    return stdout.trim().split("\n").filter(Boolean);
   } catch {
     return [];
   }
@@ -542,9 +543,9 @@ export async function captureDiffSummary(
   try {
     const args = ["diff", "--stat", `${baseRef}..HEAD`];
     if (scopePrefix) args.push("--", `${scopePrefix}/`);
-    const proc = _gitDeps.spawn(["git", ...args], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
-    const output = await new Response(proc.stdout).text();
-    await proc.exited;
+    // MED-04 — route through gitWithTimeout; see captureOutputFiles above.
+    const { stdout: output, exitCode } = await gitWithTimeout(args, workdir);
+    if (exitCode !== 0) return "";
     const lines = output.trim().split("\n").filter(Boolean);
     // Cap at 30 lines to stay token-friendly
     if (lines.length > 30) {

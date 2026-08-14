@@ -220,10 +220,7 @@ describe("loadConfig — profile activation (US-002)", () => {
 
     // Create a fast profile with a companion .env file
     writeJson(join(globalDir, "profiles", "fast.json"), {});
-    writeFileSync(
-      join(globalDir, "profiles", "fast.env"),
-      `${envKey}=should-not-leak\n`,
-    );
+    writeFileSync(join(globalDir, "profiles", "fast.env"), `${envKey}=should-not-leak\n`);
 
     process.env.NAX_PROFILE = "fast";
 
@@ -305,6 +302,56 @@ describe("loadConfig — profile activation (US-002)", () => {
     expect(typeof barrel.loadProfile).toBe("function");
     expect(typeof barrel.loadProfileEnv).toBe("function");
     expect(typeof barrel.listProfiles).toBe("function");
+  });
+
+  // BUG-21: a profile referencing an ambient env var (no companion .env file
+  // redefining it) previously hard-failed config load — loadProfileEnv never
+  // folded process.env in, contradicting its own "override process.env
+  // entries" docstring.
+  describe("BUG-21: profile $VAR resolution against process.env", () => {
+    test("a $VAR reference with no profile .env file resolves against process.env", async () => {
+      const envKey = `NAX_TEST_AMBIENT_VAR_${Date.now()}`;
+      process.env[envKey] = "resolved-from-process-env";
+
+      writeJson(join(globalDir, "profiles", "fast.json"), {
+        quality: { commands: { test: `$${envKey}` } },
+      });
+
+      try {
+        const config = await loadConfig(projectDir, { profile: "fast" });
+        expect(config.quality.commands.test).toBe("resolved-from-process-env");
+      } finally {
+        delete process.env[envKey];
+      }
+    });
+
+    test("an unresolved $VAR throws a NaxError naming the profile, not a bare Error", async () => {
+      writeJson(join(globalDir, "profiles", "fast.json"), {
+        quality: { commands: { test: "$NAX_TEST_DEFINITELY_UNDEFINED_VAR_XYZ" } },
+      });
+
+      await expect(loadConfig(projectDir, { profile: "fast" })).rejects.toMatchObject({
+        name: "NaxError",
+        code: "PROFILE_ENV_VAR_UNRESOLVED",
+      });
+    });
+
+    test("unresolved $VAR error message names the profile and the unresolved variable", async () => {
+      writeJson(join(globalDir, "profiles", "fast.json"), {
+        quality: { commands: { test: "$NAX_TEST_DEFINITELY_UNDEFINED_VAR_XYZ" } },
+      });
+
+      let caught: unknown;
+      try {
+        await loadConfig(projectDir, { profile: "fast" });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeDefined();
+      const message = (caught as Error).message;
+      expect(message).toContain("fast");
+      expect(message).toContain("NAX_TEST_DEFINITELY_UNDEFINED_VAR_XYZ");
+    });
   });
 });
 
@@ -403,7 +450,7 @@ describe("loadConfig — multi-profile chain override", () => {
     expect((err as Error).message).toContain("Available:");
   });
 
-  test('a single profile still works and yields a one-element chain', async () => {
+  test("a single profile still works and yields a one-element chain", async () => {
     writeJson(join(globalDir, "profiles", "a.json"), { execution: { sessionTimeoutSeconds: 7 } });
 
     const config = await loadConfig(projectDir, { profile: "a" });
@@ -456,9 +503,7 @@ describe("loadConfig — multi-profile chain override", () => {
     const rootConfigPath = join(projectDir, ".nax", "config.json");
 
     // The old (buggy) behavior passed the composite string; "a+b" is not a profile.
-    const err = await loadConfigForWorkdir(rootConfigPath, undefined, { profile: "a+b" }).catch(
-      (e: Error) => e,
-    );
+    const err = await loadConfigForWorkdir(rootConfigPath, undefined, { profile: "a+b" }).catch((e: Error) => e);
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).message).toContain("a+b");
   });

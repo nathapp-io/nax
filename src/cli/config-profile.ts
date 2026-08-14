@@ -19,6 +19,17 @@ export const _profileCLIDeps = {
   env: process.env as Record<string, string | undefined>,
 };
 
+// Deliberately narrower than SENSITIVE_ENV_KEY_PATTERN in config/profile.ts.
+// That pattern only gates which ambient process.env vars get folded into a
+// profile's $VAR base — a false positive there just means an explicit .env
+// entry is required. This pattern instead masks KEYS across the entire
+// NaxConfig tree for display (maskProfileValues is reused by both `nax
+// config profile show` and `nax config`/`--explain`, cli/config-display.ts).
+// A false positive here masks a whole subtree of a legitimate config
+// section to a single "***" string, destroying real (non-secret) data — the
+// BUG-37 broadening (adding auth|session|url|...) matched non-secret
+// container keys like "tdd.sessionTiers" and "debate.*.sessionMode",
+// breaking `nax config --explain` output. Keep this pattern narrow.
 const SENSITIVE_KEY_PATTERN = /key|token|secret|password|credential/i;
 const VAR_PATTERN = /\$[A-Za-z_][A-Za-z0-9_]*/;
 
@@ -92,20 +103,30 @@ export async function profileShowCommand(
   return JSON.stringify(masked, null, 2);
 }
 
-function maskProfileValues(obj: Record<string, unknown>): Record<string, unknown> {
+export function maskProfileValues(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
-    if (SENSITIVE_KEY_PATTERN.test(key)) {
-      result[key] = "***";
-    } else if (typeof value === "string" && VAR_PATTERN.test(value)) {
-      result[key] = "***";
-    } else if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-      result[key] = maskProfileValues(value as Record<string, unknown>);
-    } else {
-      result[key] = value;
-    }
+    result[key] = SENSITIVE_KEY_PATTERN.test(key) ? "***" : maskProfileValue(value);
   }
   return result;
+}
+
+/**
+ * BUG-36: array elements are recursed into (not just skipped) so secrets
+ * nested inside an array — e.g. `config.plugins[].config.apiKey` — are
+ * masked the same way they would be outside an array.
+ */
+function maskProfileValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return VAR_PATTERN.test(value) ? "***" : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => maskProfileValue(item));
+  }
+  if (value !== null && typeof value === "object") {
+    return maskProfileValues(value as Record<string, unknown>);
+  }
+  return value;
 }
 
 /**

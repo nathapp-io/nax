@@ -241,6 +241,68 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
     await plugin.destroy();
   });
 
+  // BUG-18: send()'s outbound POST previously had no client-side deadline —
+  // a black-holing webhook URL stalled the story indefinitely (no OS-level
+  // TCP timeout fires for a very long time). Assert the fetch call carries
+  // an AbortSignal so a hung request is eventually aborted, and that the
+  // signal firing produces a clean rejection (not an unhandled hang).
+  test("BUG-18: send() passes an AbortSignal to fetch", async () => {
+    const plugin = new WebhookInteractionPlugin();
+    await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
+
+    let capturedSignal: AbortSignal | undefined;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mockFetch(async (_input, init) => {
+      capturedSignal = init?.signal ?? undefined;
+      return new Response("{}", { status: 200 });
+    });
+
+    const request: InteractionRequest = {
+      id: "test-abort-signal",
+      type: "confirm",
+      featureName: "test-feature",
+      stage: "review",
+      summary: "Test abort signal wiring",
+      fallback: "abort",
+      createdAt: Date.now(),
+    };
+
+    await plugin.send(request);
+
+    expect(capturedSignal).toBeInstanceOf(AbortSignal);
+    expect(capturedSignal?.aborted).toBe(false);
+
+    globalThis.fetch = originalFetch;
+    await plugin.destroy();
+  });
+
+  test("BUG-18: send() rejects cleanly when the fetch call itself aborts", async () => {
+    const plugin = new WebhookInteractionPlugin();
+    await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
+
+    const originalFetch = globalThis.fetch;
+    // Simulate what happens when WEBHOOK_SEND_TIMEOUT_MS fires and aborts the
+    // in-flight fetch — real fetch() rejects with an AbortError in that case.
+    globalThis.fetch = mockFetch(async () => {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    });
+
+    const request: InteractionRequest = {
+      id: "test-abort-rejects",
+      type: "confirm",
+      featureName: "test-feature",
+      stage: "review",
+      summary: "Test abort rejects cleanly",
+      fallback: "abort",
+      createdAt: Date.now(),
+    };
+
+    await expect(plugin.send(request)).rejects.toThrow("Failed to send webhook request");
+
+    globalThis.fetch = originalFetch;
+    await plugin.destroy();
+  });
+
   test("should return timeout skip response when no callback arrives", async () => {
     const plugin = new WebhookInteractionPlugin();
     await plugin.init({ url: "https://example.com/webhook", requireSecret: false });

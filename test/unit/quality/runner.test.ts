@@ -226,4 +226,21 @@ describe("runQualityCommand — storyId correlation", () => {
     expect(callArg.cmd).toEqual(["/bin/sh", "-c", "bun run typecheck"]);
     expect(callArg.cwd).toBe("/tmp/project");
   });
+
+  // BUG-02: without detached:true, Bun does not setpgid the /bin/sh wrapper
+  // into its own process group, so killProcessGroup(-pid) on timeout would
+  // only reach the shell and leak the real test-runner grandchild.
+  test("spawns with detached:true so timeout can reach the whole process group", async () => {
+    const spawnMock = makeSpawnMock(0);
+    _qualityRunnerDeps.spawn = spawnMock as unknown as typeof Bun.spawn; // test-ratchet-allow: as-unknown-as
+
+    await runQualityCommand({
+      commandName: "lint",
+      command: "bun run lint",
+      workdir: "/tmp/project",
+    });
+
+    const callArg = (spawnMock.mock.calls[0] as unknown[])[0] as { detached?: boolean };
+    expect(callArg.detached).toBe(true);
+  });
 });

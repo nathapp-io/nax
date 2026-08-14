@@ -93,7 +93,13 @@ export function findRelatedStories(failedAC: string, prd: PRD): string[] {
   // The LLM will figure out which code is relevant
   const passedStories = prd.userStories.filter((s) => s.status === "passed").map((s) => s.id);
 
-  return passedStories.slice(0, 5); // Limit to 5 most recent
+  // BUG-29: userStories carries no per-story completion timestamp, so true
+  // recency can't be sorted directly — but PRD story order reflects the
+  // sequence stories were authored/executed in, so the *last* 5 passed
+  // stories are the closest available approximation to "most recently
+  // completed". slice(0, 5) took the FIRST 5 instead, which is the oldest
+  // work in the PRD, not the most recent.
+  return [...passedStories].reverse().slice(0, 5);
 }
 
 /**

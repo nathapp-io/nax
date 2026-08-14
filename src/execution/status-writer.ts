@@ -207,10 +207,13 @@ export class StatusWriter {
    */
   async update(totalCost: number, iterations: number, overrides: Partial<RunStateSnapshot> = {}): Promise<void> {
     if (!this._prd) return;
-    // Serialize: chain onto the tail of _mutex. On failure, reset _mutex to
-    // resolved so the next caller is not permanently blocked.
-    const write = this._doUpdate(totalCost, iterations, overrides);
-    this._mutex = this._mutex.then(() => write).catch(() => write);
+    // Serialize: chain onto the tail of _mutex. The call to _doUpdate is
+    // deferred inside the .then()/.catch() callbacks so it does not start
+    // running (and does not touch the shared .tmp file) until prior writes
+    // have settled. Invoking it eagerly here would let it run synchronously
+    // up to its first await, racing a concurrent update() on the same file.
+    const write = () => this._doUpdate(totalCost, iterations, overrides);
+    this._mutex = this._mutex.then(write).catch(write);
     return this._mutex;
   }
 

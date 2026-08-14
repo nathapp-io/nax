@@ -200,4 +200,64 @@ describe("PipelineEventBus", () => {
     expect(received).toHaveLength(1);
     expect(received[0].type).toBe("story:escalated");
   });
+
+  // BUG-14: drain() previously awaited Promise.allSettled([...this._pending])
+  // with no per-subscriber deadline — one subscriber promise that never
+  // settles (hung hook script, webhook interaction) hung drain() forever.
+  // drain() runs at every story boundary.
+  describe("drain() deadline (BUG-14)", () => {
+    test("a subscriber promise that never settles does not hang drain()", async () => {
+      const bus = new PipelineEventBus();
+      bus.on("story:completed", () => new Promise<void>(() => {})); // never resolves
+
+      bus.emit(makeStoryCompletedEvent());
+
+      // Small deadline override — real production default is 5s.
+      await bus.drain(20);
+      // If drain() hung, this line is never reached and the test times out.
+      expect(true).toBe(true);
+    });
+
+    test("a settling subscriber is still awaited normally (no premature drop)", async () => {
+      const bus = new PipelineEventBus();
+      let settled = false;
+      bus.on("story:completed", async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        settled = true;
+      });
+
+      bus.emit(makeStoryCompletedEvent());
+      await bus.drain(200);
+
+      expect(settled).toBe(true);
+    });
+
+    test("a hung subscriber is removed from the pending set so a later drain() does not wait on it again", async () => {
+      const bus = new PipelineEventBus();
+      bus.on("story:completed", () => new Promise<void>(() => {}));
+
+      bus.emit(makeStoryCompletedEvent());
+      await bus.drain(20);
+
+      const start = Date.now();
+      await bus.drain(20);
+      // Second drain should resolve immediately — nothing pending (or, if
+      // still pending for some reason, at least not compound the deadline).
+      expect(Date.now() - start).toBeLessThan(100);
+    });
+
+    test("multiple pending subscribers: a hung one does not block a settling one from being awaited", async () => {
+      const bus = new PipelineEventBus();
+      let fastSettled = false;
+      bus.on("story:completed", () => new Promise<void>(() => {})); // hangs
+      bus.on("story:completed", async () => {
+        fastSettled = true;
+      });
+
+      bus.emit(makeStoryCompletedEvent());
+      await bus.drain(20);
+
+      expect(fastSettled).toBe(true);
+    });
+  });
 });

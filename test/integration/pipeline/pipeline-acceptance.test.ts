@@ -187,6 +187,42 @@ describe("test-feature - Acceptance Tests", () => {
     expect(result.action).toBe("continue");
   });
 
+  // BUG-12: when every parsed AC failure is overridden but the suite exit
+  // isn't fully explained by those failures alone (more tests failed than
+  // were AC-tagged — e.g. an unrelated hook/setup failure), the gate must
+  // not silently report "all packages passed".
+  test("BUG-12: fails when an unrelated (non-AC-tagged) test also fails alongside a fully-overridden AC", async () => {
+    const prd = createTestPRD([{ id: "US-001", status: "passed" }]);
+    prd.acceptanceOverrides = {
+      "AC-1": "intentional: lazy expiry instead of exact timing",
+    };
+    const ctx = createTestContext(prd);
+
+    const testPath = path.join(featureDir, ".nax-acceptance.test.ts");
+    await Bun.write(
+      testPath,
+      `
+import { describe, test, expect } from "bun:test";
+
+describe("test-feature - Acceptance Tests", () => {
+  test("AC-1: feature works", () => {
+    expect(true).toBe(false); // overridden — expected to fail
+  });
+
+  test("unrelated setup check (no AC label)", () => {
+    expect(true).toBe(false); // simulates a hook/setup failure unrelated to any AC
+  });
+});
+`,
+    );
+
+    const result = await acceptanceStage.execute(ctx);
+
+    // Both failures are real, but only AC-1 is overridden and AC-tagged —
+    // the unlabeled failure must not be silently absorbed.
+    expect(result.action).toBe("fail");
+  });
+
   test("fails only on non-overridden ACs", async () => {
     const prd = createTestPRD([{ id: "US-001", status: "passed" }]);
     prd.acceptanceOverrides = {

@@ -261,19 +261,33 @@ export function getExpectedFiles(story: UserStory): string[] {
 // ADR-003: Stall Detection Helpers
 // ============================================================================
 
+/** Mirrors execution.rectification.maxAttemptsTotal's schema default (src/config/schemas-execution.ts). */
+const DEFAULT_MAX_STORY_RETRIES = 12;
+
 /**
  * Check if a PRD run is stalled — all remaining stories are blocked, paused, or
  * depend on blocked/paused stories, making forward progress impossible.
+ *
+ * BUG-25: a `status === "failed"` story with attempts remaining (`attempts <=
+ * maxRetries`) is still retryable — getNextStory's Priority-1 retry path picks
+ * it right back up (see `isResumableCurrentStory` in `src/prd/index.ts`). Such
+ * a story must NOT count as terminal here, or a single retryable failure
+ * (with no other ready work) reports the run as stalled instead of retrying.
  */
-export function isStalled(prd: PRD): boolean {
+export function isStalled(prd: PRD, maxRetries: number = DEFAULT_MAX_STORY_RETRIES): boolean {
   const remaining = prd.userStories.filter((s) => s.status !== "passed" && s.status !== "skipped");
   if (remaining.length === 0) return false;
+
+  const isRetryableFailed = (s: UserStory) => s.status === "failed" && (s.attempts ?? 0) <= maxRetries;
 
   const blockedIds = new Set(
     prd.userStories
       .filter(
         (s) =>
-          s.status === "blocked" || s.status === "failed" || s.status === "paused" || s.status === "regression-failed",
+          s.status === "blocked" ||
+          (s.status === "failed" && !isRetryableFailed(s)) ||
+          s.status === "paused" ||
+          s.status === "regression-failed",
       )
       .map((s) => s.id),
   );
@@ -281,7 +295,7 @@ export function isStalled(prd: PRD): boolean {
   return remaining.every(
     (s) =>
       s.status === "blocked" ||
-      s.status === "failed" ||
+      (s.status === "failed" && !isRetryableFailed(s)) ||
       s.status === "paused" ||
       s.status === "regression-failed" ||
       s.dependencies.some((dep) => blockedIds.has(dep)),

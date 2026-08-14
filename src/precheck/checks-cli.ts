@@ -2,6 +2,7 @@
  * CLI availability precheck implementations
  */
 
+import { resolveDefaultAgent } from "../agents";
 import type { PrecheckConfig } from "../config/selectors";
 import { spawn } from "../utils/bun-deps";
 import type { Check } from "./types";
@@ -41,7 +42,11 @@ export async function checkClaudeCLI(): Promise<Check> {
 /** Check if configured agent binary is available. Reads agent from config, defaults to 'claude'.
  * Supports: claude, codex, opencode, gemini, aider */
 export async function checkAgentCLI(config: PrecheckConfig): Promise<Check> {
-  const agent = config.execution?.agent || "claude";
+  // MED-03: config.execution.agent doesn't exist in ExecutionConfigSchema —
+  // this always read undefined and silently fell back to "claude", greenlighting
+  // runs whose real default agent (config.agent.default) was missing, and
+  // falsely blocking when claude wasn't installed but the configured agent was.
+  const agent = resolveDefaultAgent(config);
 
   try {
     const proc = _checkCliDeps.spawn([agent, "--version"], {

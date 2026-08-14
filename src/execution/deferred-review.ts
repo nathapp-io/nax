@@ -8,6 +8,7 @@
 import { spawn } from "bun";
 import type { PluginRegistry } from "../plugins";
 import type { ReviewConfig } from "../review/types";
+import { GIT_TIMEOUT_MS } from "../utils/git";
 import { type NaxIgnoreIndex, filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../utils/path-filters";
 
 /** Injectable deps for testing */
@@ -26,16 +27,40 @@ export interface DeferredReviewResult {
   anyFailed: boolean;
 }
 
+/**
+ * MED-04 — spawn a git command bounded by GIT_TIMEOUT_MS, SIGKILL-ing on
+ * timeout. captureRunStartRef is awaited at the very start of executeUnified,
+ * before crash handlers register the PID — a wedged git (NFS hang,
+ * credential prompt) previously stalled the entire run with no way out.
+ * Keeps `_deferredReviewDeps.spawn` as the injection point (rather than
+ * delegating to utils/git's gitWithTimeout, which uses a separate `_gitDeps`)
+ * so existing tests mocking `_deferredReviewDeps.spawn` are unaffected.
+ */
+async function spawnGitWithDeadline(cmd: string[], workdir: string): Promise<string> {
+  const proc = _deferredReviewDeps.spawn({ cmd, cwd: workdir, stdout: "pipe", stderr: "pipe" });
+
+  let timedOut = false;
+  const timerId = setTimeout(() => {
+    timedOut = true;
+    try {
+      proc.kill("SIGKILL");
+    } catch {
+      // Process may have already exited
+    }
+  }, GIT_TIMEOUT_MS);
+
+  const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
+  await proc.exited;
+  clearTimeout(timerId);
+
+  if (timedOut) return "";
+  return stdoutPromise;
+}
+
 /** Capture the current HEAD git ref. Returns "" on failure. */
 export async function captureRunStartRef(workdir: string): Promise<string> {
   try {
-    const proc = _deferredReviewDeps.spawn({
-      cmd: ["git", "rev-parse", "HEAD"],
-      cwd: workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+    const stdout = await spawnGitWithDeadline(["git", "rev-parse", "HEAD"], workdir);
     return stdout.trim();
   } catch {
     return "";
@@ -44,13 +69,7 @@ export async function captureRunStartRef(workdir: string): Promise<string> {
 
 async function getChangedFilesForDeferred(workdir: string, baseRef: string): Promise<string[]> {
   try {
-    const proc = _deferredReviewDeps.spawn({
-      cmd: ["git", "diff", "--name-only", `${baseRef}...HEAD`],
-      cwd: workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+    const stdout = await spawnGitWithDeadline(["git", "diff", "--name-only", `${baseRef}...HEAD`], workdir);
     return stdout.trim().split("\n").filter(Boolean);
   } catch {
     return [];

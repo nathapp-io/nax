@@ -12,8 +12,11 @@ import {
   AutoModeConfigSchema,
   AutoRouteConfigSchema,
   ConstitutionConfigSchema,
+  DEFAULT_VERIFICATION_TIMEOUT_SECONDS,
   ExecutionConfigSchema,
   QualityConfigSchema,
+  RectificationConfigSchema,
+  RegressionGateConfigSchema,
   TddConfigSchema,
 } from "./schemas-execution";
 import {
@@ -115,28 +118,18 @@ export const NaxConfigSchema = z
       iterationDelayMs: 2000,
       costLimit: 30.0,
       sessionTimeoutSeconds: 3600,
-      verificationTimeoutSeconds: 600,
+      // BUG-20 — derived from the field's own default, not hand-written; see
+      // DEFAULT_VERIFICATION_TIMEOUT_SECONDS in schemas-execution.ts.
+      verificationTimeoutSeconds: DEFAULT_VERIFICATION_TIMEOUT_SECONDS,
       maxStoriesPerFeature: 500,
-      rectification: {
-        enabled: true,
-        maxAttemptsTotal: 12,
-        maxAttemptsPerStrategy: 3,
-        fullSuiteTimeoutSeconds: 300,
-        maxFailureSummaryChars: 2000,
-        abortOnIncreasingFailures: true,
-        consecutiveIncreasesToBail: 2,
-        abortOnNoProgress: true,
-        consecutiveNoProgressToBail: 3,
-        storyScopedFixBudget: true,
-        rethinkAtAttempt: 2,
-        urgencyAtAttempt: 3,
-      },
-      regressionGate: {
-        enabled: true,
-        timeoutSeconds: 300,
-        acceptOnTimeout: true,
-        mode: "deferred",
-      },
+      // BUG-20 — derived, not hand-written (same rationale as `context` below):
+      // a literal here would drift from RectificationConfigSchema's own
+      // per-field defaults, as it already had (fullSuiteTimeoutSeconds: 300
+      // here vs. 120 in the inner schema).
+      rectification: RectificationConfigSchema.parse({}),
+      // BUG-20 — derived, not hand-written; same rationale (timeoutSeconds
+      // drifted to 300 here vs. 120 in RegressionGateConfigSchema).
+      regressionGate: RegressionGateConfigSchema.parse({}),
       contextProviderTokenBudget: 2000,
       permissionProfile: "unrestricted",
       smartTestRunner: true,
