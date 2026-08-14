@@ -4,6 +4,7 @@
 
 export { escalateTier, getTierConfig, calculateMaxIterations } from "./escalation";
 export { runBatchPreChecks, type BatchPreCheckOptions, type BatchPreCheckResult } from "./batch-pre-check";
+export { verifyEscalationQuotes } from "./quote-integrity";
 export {
   resolveMaxAttemptsOutcome,
   preIterationTierCheck,
@@ -16,3 +17,4 @@ export {
   type EscalationHandlerContext,
   type EscalationHandlerResult,
 } from "./tier-escalation";
+export { handleNoTierAvailable, handleMaxAttemptsReached } from "./tier-outcome";

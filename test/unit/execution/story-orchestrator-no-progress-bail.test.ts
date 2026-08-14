@@ -10,6 +10,19 @@ function finding(message: string): Finding {
   return { severity: "error", category: "test", source: "tdd-verifier", message };
 }
 
+/** Same source/file/line/rule as `finding(base)`, but a reworded message — simulates an LLM reviewer paraphrasing the same defect. */
+function reworded(base: string, variant: number): Finding {
+  return {
+    severity: "error",
+    category: "test",
+    source: "semantic-review",
+    file: "src/a.ts",
+    line: 10,
+    rule: "AC-2",
+    message: `${base} (variant ${variant})`,
+  };
+}
+
 function iteration(before: Finding[], after: Finding[], iterationNum: number): Iteration<Finding> {
   return {
     iterationNum,
@@ -117,6 +130,17 @@ describe("withNoProgressBail — US-002", () => {
   test("US-002 AC11: reason reports two persisted findings", () => {
     const bail = bailWhen(withNoProgressBail([strategy()], true, 3));
     expect(bail(stalledIterations([finding("one"), finding("two")], 3))).toContain("2 finding(s) persisted");
+  });
+
+  test("nax#1581: bails on an LLM finding reworded every iteration at the same file:line:rule", () => {
+    const iterations = Array.from({ length: 3 }, (_, index) =>
+      iteration([reworded("same defect", index)], [reworded("same defect", index + 1)], index + 1),
+    );
+    const bail = bailWhen(withNoProgressBail([strategy()], true, 3));
+    const reason = bail(iterations);
+    expect(reason).not.toBeNull();
+    expect(reason).toContain("3 consecutive iteration(s)");
+    expect(reason).toContain("1 finding(s) persisted");
   });
 
   test("US-002 AC15: no-progress reason outranks count-increase", () => {

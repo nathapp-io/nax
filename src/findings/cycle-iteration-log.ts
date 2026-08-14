@@ -17,7 +17,7 @@
 import type { Logger } from "@/logger";
 import type { FixApplied, FixCycle, Iteration, IterationOutcome } from "./cycle-types";
 import type { Finding } from "./types";
-import { findingKey } from "./types";
+import { findingKey, findingRecurrenceKey } from "./types";
 
 export interface RecordIterationInput<F extends Finding> {
   findingsBefore: F[];
@@ -45,6 +45,8 @@ export function recordIteration<F extends Finding>(
   const findingsAfterCount = input.findingsAfter.length;
   const findingKeysBefore = input.findingsBefore.map(findingKey);
   const findingKeysAfter = input.findingsAfter.map(findingKey);
+  const findingRecurrenceKeysBefore = input.findingsBefore.map(findingRecurrenceKey);
+  const findingRecurrenceKeysAfter = input.findingsAfter.map(findingRecurrenceKey);
   const costUsd = input.fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0);
   const seenTargetFiles = new Set<string>();
   const fixTargetFiles: string[] = [];
@@ -67,6 +69,8 @@ export function recordIteration<F extends Finding>(
     finishedAt: input.finishedAt,
     findingKeysBefore,
     findingKeysAfter,
+    findingRecurrenceKeysBefore,
+    findingRecurrenceKeysAfter,
     ...(hasFixes ? { fixTargetFiles, fixSummaries } : {}),
     ...(costUsd > 0 ? { costUsd } : {}),
   };
@@ -83,6 +87,8 @@ export function recordIteration<F extends Finding>(
     findingsAfter: findingsAfterCount,
     findingKeysBefore,
     findingKeysAfter,
+    findingRecurrenceKeysBefore,
+    findingRecurrenceKeysAfter,
     ...(hasFixes ? { fixTargetFiles, fixSummaries } : {}),
     ...(costUsd > 0 ? { costUsd } : {}),
   });

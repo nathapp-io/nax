@@ -23,7 +23,7 @@ import type { DispatchContext } from "../runtime/dispatch-context";
 import { spawn } from "../utils/bun-deps";
 import { captureDiffSummary, captureOutputFiles } from "../utils/git";
 import { MergeEngine, WorktreeManager } from "../worktree";
-import { handleTierEscalation } from "./escalation";
+import { handleTierEscalation, verifyEscalationQuotes } from "./escalation";
 import { appendProgress } from "./progress";
 
 /** Injectable deps for testability */
@@ -321,8 +321,15 @@ export async function handlePipelineFailure(
   const costDelta = (pipelineResult.context.agentResult?.estimatedCostUsd ?? 0) + (pipelineResult.stageCost ?? 0);
 
   switch (pipelineResult.finalAction) {
-    case "pause":
-      markStoryPaused(prd, ctx.story.id);
+    case "pause": {
+      // nax#1582: persist the blocking reason so the resume prompt and the
+      // resumed agent's context aren't left with "no reason recorded".
+      // Quote-scrub first — the reason can carry LLM-sourced text.
+      const rawPauseReason = pipelineResult.reason ?? "";
+      const pauseReason = rawPauseReason
+        ? await verifyEscalationQuotes(rawPauseReason, ctx.workdir, ctx.story.id)
+        : rawPauseReason;
+      markStoryPaused(prd, ctx.story.id, pauseReason || undefined);
       await savePRD(prd, ctx.prdPath);
       prdDirty = true;
       logger?.warn("pipeline", "Story paused", { storyId: ctx.story.id, reason: pipelineResult.reason });
@@ -337,6 +344,7 @@ export async function handlePipelineFailure(
         cost: ctx.runtime.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? ctx.totalCost,
       });
       break;
+    }
 
     case "skip":
       logger?.warn("pipeline", "Story skipped", { storyId: ctx.story.id, reason: pipelineResult.reason });

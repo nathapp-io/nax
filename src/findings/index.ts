@@ -18,7 +18,7 @@ export type {
   FixTarget,
 } from "./types";
 
-export { SEVERITY_ORDER, compareSeverity, findingKey } from "./types";
+export { SEVERITY_ORDER, compareSeverity, findingKey, findingRecurrenceKey } from "./types";
 
 export {
   acceptanceDiagnoseRawArrayToFindings,

@@ -26,7 +26,7 @@ import type {
   ValidateResult,
 } from "./cycle-types";
 import type { Finding } from "./types";
-import { findingKey } from "./types";
+import { findingRecurrenceKey } from "./types";
 
 // ─── Injectable deps (for testing) ───────────────────────────────────────────
 
@@ -43,13 +43,10 @@ function normalizeValidateResult<F extends Finding>(r: F[] | ValidateResult<F>):
 
 // ─── classifyOutcome ─────────────────────────────────────────────────────────
 
-/**
- * Classify the outcome of a single iteration for one finding source.
- * Uses findingKey for stable identity.
- */
+/** Classify the outcome of a single iteration for one finding source. Uses findingRecurrenceKey (excludes message) so a reworded finding doesn't read as a spurious regression (nax#1581). */
 function classifySingleSource<F extends Finding>(before: F[], after: F[]): IterationOutcome {
-  const beforeKeys = new Set(before.map(findingKey));
-  const afterKeys = new Set(after.map(findingKey));
+  const beforeKeys = new Set(before.map(findingRecurrenceKey));
+  const afterKeys = new Set(after.map(findingRecurrenceKey));
 
   if (afterKeys.size === 0 && beforeKeys.size === 0) return "resolved";
   if (afterKeys.size === 0) return "resolved";

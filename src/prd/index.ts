@@ -407,12 +407,27 @@ export function setStoryPriority(prd: PRD, storyId: string, priority: number): v
   }
 }
 
-/** Mark a story as paused */
-export function markStoryPaused(prd: PRD, storyId: string): void {
+/**
+ * Mark a story as paused. `reason`, when supplied, is appended to
+ * `priorErrors` (mirroring the `BLOCKED:` convention below) so the resume
+ * prompt and the resumed agent's context carry the blocking reason instead
+ * of falling back to "no reason recorded" (nax#1582). Callers are
+ * responsible for scrubbing any agent-sourced text (e.g. via
+ * `verifyEscalationQuotes`) before passing it in.
+ */
+export function markStoryPaused(prd: PRD, storyId: string, reason?: string): void {
   const story = prd.userStories.find((s) => s.id === storyId);
   if (story) {
     story.status = "paused";
     story.attempts = (story.attempts ?? 0) + 1;
+    if (reason) {
+      const entry = `PAUSED: ${reason}`;
+      const prior = story.priorErrors ?? [];
+      // Skip the append when unchanged so repeated pause/resume cycles on the
+      // same blocker don't grow priorErrors unboundedly — every entry is
+      // injected into the resumed agent's context (src/context/builder.ts).
+      if (prior.at(-1) !== entry) story.priorErrors = [...prior, entry];
+    }
   }
 }
 export { validatePlanOutput } from "./schema";

@@ -377,6 +377,11 @@ describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// nax#1582 — pause path persists the blocking reason: see
+// pipeline-result-handler-pause-reason.test.ts (split out for the 800-line cap)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // story:skipped event emission
 // ---------------------------------------------------------------------------
 

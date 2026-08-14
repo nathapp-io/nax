@@ -228,20 +228,50 @@ export function compareSeverity(a: FindingSeverity, b: FindingSeverity): number 
 // ─── Stable identity ─────────────────────────────────────────────────────────
 
 /**
- * Stable string identity for a Finding — used by ADR-022's `classifyOutcome`
- * to detect whether two iterations produced equivalent finding sets ("did
- * the fix change anything?"). Also usable for deduplication and persistence.
+ * Stable string identity for a Finding — used for deduplication, persistence,
+ * and (historically) by `classifyOutcome` to detect whether two iterations
+ * produced equivalent finding sets. As of nax#1581, `classifyOutcome`'s
+ * new/resolved diff and the no-progress bail use the coarser
+ * `findingRecurrenceKey` below instead — see that function's docblock for
+ * why. `findingKey` remains the strict identity for callers that genuinely
+ * want byte-identical matching (e.g. the cycle-retirement decline ledger,
+ * structured log fields).
  *
  * Key composition: `(source, file, line, rule, message)` JSON-serialised.
- * Including `message` makes the key strict — LLM rephrasing of the same
- * underlying issue produces a different key. This is the safe direction:
- * over-counting "different findings" is fine because it conservatively
- * classifies the iteration as "changed" rather than "unchanged"; the
- * falsified-hypothesis detection only fires on truly identical output,
- * which validator-emitted (deterministic tool) findings reliably produce.
- *
  * JSON.stringify is used to handle pipe-character collisions in messages.
  */
 export function findingKey(f: Finding): string {
   return JSON.stringify([f.source, f.file ?? null, f.line ?? null, f.rule ?? null, f.message]);
+}
+
+/**
+ * Coarse identity for a Finding, excluding `message` — used wherever the
+ * question is "is this substantively the same finding?" rather than "is this
+ * byte-identical?" (nax#1581).
+ *
+ * `findingKey` including `message` defeats progress detection: an LLM
+ * reviewer (semantic/adversarial) rewording the same finding at the same
+ * `file:line:rule` mints a new key every iteration, so consumers that diff
+ * `before`/`after` by `findingKey` — `madeNoProgress` in
+ * `no-progress-bail.ts`, and `classifySingleSource`'s new/resolved diff in
+ * `cycle.ts` — never see the finding as unchanged. Deterministic sources
+ * (lint, typecheck) have stable messages and are unaffected either way.
+ *
+ * Consequence: `classifySingleSource` now reads a same-location LLM reword as
+ * `"unchanged"`, which `prior-iterations-builder.ts` surfaces to the next fix
+ * attempt as "the prior hypothesis is FALSIFIED". That is the intended read —
+ * a reworded finding at the same location means the fix did not actually
+ * address the underlying defect, which is exactly what "falsified" should
+ * mean here.
+ *
+ * Falls back to `findingKey` (message included) whenever a finding lacks
+ * both `line` and `rule` — `file` alone does not discriminate between
+ * multiple distinct findings in the same file, so dropping `message` in that
+ * case would conflate genuinely different defects into one key. This is
+ * deliberately more conservative than requiring all three locators to be
+ * absent: LLM findings commonly carry `file` without `line`/`rule`.
+ */
+export function findingRecurrenceKey(f: Finding): string {
+  if (f.line == null && f.rule == null) return findingKey(f);
+  return JSON.stringify([f.source, f.file ?? null, f.line ?? null, f.rule ?? null]);
 }

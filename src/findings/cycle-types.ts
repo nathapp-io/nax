@@ -50,15 +50,26 @@ export interface Iteration<F extends Finding = Finding> {
   /** Findings observed after the iteration ran. */
   findingsAfter: F[];
   /**
-   * Exact `findingKey(f)` per entry in the pre-iteration findings, in array
-   * order. Set by `recordIteration`; omitted on carry-forward iterations
-   * recorded by review orchestrators (which retain the array form above).
-   * Identities match `classifyOutcome` so the iteration record can answer
-   * "same defect or different?" without re-deriving the keys.
+   * Exact `findingKey(f)` (message included) per entry in the pre-iteration
+   * findings, in array order. Set by `recordIteration`; omitted on
+   * carry-forward iterations recorded by review orchestrators (which retain
+   * the array form above). This is the strict identity — for the coarser
+   * identity `classifyOutcome` actually classifies by, see
+   * `findingRecurrenceKeysBefore`/`After` (nax#1581).
    */
   findingKeysBefore?: string[];
   /** Mirror of `findingKeysBefore` for the post-iteration findings. */
   findingKeysAfter?: string[];
+  /**
+   * `findingRecurrenceKey(f)` per entry in the pre-iteration findings, in
+   * array order — the coarse (message-excluded) identity `classifyOutcome`
+   * uses to compute `outcome`. Logged alongside the strict `findingKeys*`
+   * fields so a reader can tell why two `message`-differing findings were
+   * classified as the same defect (nax#1581).
+   */
+  findingRecurrenceKeysBefore?: string[];
+  /** Mirror of `findingRecurrenceKeysBefore` for the post-iteration findings. */
+  findingRecurrenceKeysAfter?: string[];
   /**
    * De-duplicated union of `fixesApplied[].targetFiles` in first-seen order.
    * Omitted when `fixesApplied` is empty so carry-forward iterations don't
