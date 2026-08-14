@@ -9,7 +9,7 @@
 
 import type { AgentAdapter, AgentResult, SessionHandle, TurnResult } from "../agents/types";
 import { SessionFailureError, SessionTurnError } from "../agents/types";
-import type { NaxConfig } from "../config";
+import { type NaxConfig, trackedSpawnDeadlines } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { NaxError } from "../errors";
 import type { PidRegistry } from "../execution/pid-registry";
@@ -427,9 +427,8 @@ export class SessionManager implements ISessionManager {
       if (!liveDesc || (liveDesc.state !== "COMPLETED" && liveDesc.state !== "FAILED")) {
         return liveHandle;
       }
-      // Stale handle: keepOpen left it in _liveHandles but runTrackedSession
-      // already transitioned the descriptor to a terminal state. Remove the
-      // stale entry so the full open path runs and resets the descriptor.
+      // Stale handle: keepOpen left it in _liveHandles but runTrackedSession already
+      // transitioned the descriptor to a terminal state. Remove it so the full open path runs.
       this._liveHandles.delete(name);
     }
 
@@ -459,6 +458,7 @@ export class SessionManager implements ISessionManager {
       resume,
       onActiveCall: this._buildOnActiveCall(name),
       onStreamActivity: this._onStreamActivity,
+      ...trackedSpawnDeadlines(this._config), // #1583
     });
     this._liveHandles.set(name, handle);
 

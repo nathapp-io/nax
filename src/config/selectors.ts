@@ -163,3 +163,19 @@ export type AutofixConfig = ReturnType<typeof autofixConfigSelector.select>;
 export type ExecutionGatesConfig = ReturnType<typeof executionGatesConfigSelector.select>;
 export type NonBlockingFixConfig = NonNullable<z.infer<typeof AdversarialReviewConfigSchema>["nonBlockingFix"]>;
 export type FinishConfig = ReturnType<typeof finishConfigSelector.select>;
+
+/**
+ * trackedSpawn teardown/startup deadlines (ms), resolved from config.agent.acp.
+ * Shared by AgentManager.completeAs and SessionManager.openSession so both
+ * wiring layers stay consistent (#1583).
+ */
+export function trackedSpawnDeadlines(config: Pick<NaxConfig, "agent"> | undefined): {
+  trackedSpawnDeadlineMs?: number;
+  trackedSpawnStartupDeadlineMs?: number;
+} {
+  const acp = config?.agent?.acp;
+  return {
+    trackedSpawnDeadlineMs: acp?.trackedSpawnDeadlineMs,
+    trackedSpawnStartupDeadlineMs: acp?.trackedSpawnStartupDeadlineMs,
+  };
+}

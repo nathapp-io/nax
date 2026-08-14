@@ -246,10 +246,12 @@ export interface CompleteOptions {
    */
   timeoutMs?: number;
   /**
-   * Number of prompt retries for ACP sessions.
-   * Pre-resolved by AgentManager.completeAs from config.agent.acp.promptRetries.
+   * Number of prompt retries for ACP sessions, and trackedSpawn teardown/startup
+   * deadlines (ms) — all pre-resolved by AgentManager.completeAs from config.agent.acp (#1583).
    */
   promptRetries?: number;
+  trackedSpawnDeadlineMs?: number;
+  trackedSpawnStartupDeadlineMs?: number;
   /**
    * Named session to use for this completion call.
    * If omitted, a timestamp-based ephemeral session name is generated.
@@ -397,8 +399,10 @@ export interface OpenSessionOpts {
   modelTier?: ModelTier;
   /** ACP: maximum session duration in seconds. */
   timeoutSeconds: number;
-  /** ACP: acpx --prompt-retries value (default 0 — opt-in). */
+  /** ACP: acpx --prompt-retries value (default 0 — opt-in). Deadlines below resolved from config.agent.acp (#1583). */
   promptRetries?: number;
+  trackedSpawnDeadlineMs?: number;
+  trackedSpawnStartupDeadlineMs?: number;
   /** Fired once the session is physically established, before the first prompt. */
   onSessionEstablished?: (protocolIds: ProtocolIds, sessionName: string) => void;
   /** PID registration callback for crash-recovery bookkeeping. */

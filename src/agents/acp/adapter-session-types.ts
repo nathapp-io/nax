@@ -66,6 +66,19 @@ export interface AcpClientOptions {
   storyId?: string;
   /** Pipeline stage threaded into all stream events for log correlation. */
   stage?: PipelineStage;
+  /**
+   * trackedSpawn hard deadline (ms) for teardown ops (sessions close/stop/cancel).
+   * Resolved by the wiring layer from config.agent.acp.trackedSpawnDeadlineMs.
+   * Falls back to the spawn-client module default when omitted (#1583).
+   */
+  trackedSpawnDeadlineMs?: number;
+  /**
+   * trackedSpawn hard deadline (ms) for startup ops (sessions ensure —
+   * createSession/loadSession/applyReasoningEffort). Resolved by the wiring
+   * layer from config.agent.acp.trackedSpawnStartupDeadlineMs. Falls back to
+   * the spawn-client module default when omitted (#1583).
+   */
+  trackedSpawnStartupDeadlineMs?: number;
 }
 
 export interface AcpClient {
