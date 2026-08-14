@@ -1,15 +1,12 @@
 /**
  * Spawn-based ACP Client — default production implementation.
  *
- * Implements AcpClient/AcpSession interfaces by shelling out to acpx CLI.
- * This is the real transport; createClient injectable defaults to this.
- * Tests override createClient with mock implementations.
- *
- * CLI commands used:
- *   acpx <agent> sessions ensure --name <name>      → ensureSession
- *   acpx --cwd <dir> ... <agent> prompt -s <name>   → session.prompt()
- *   acpx <agent> sessions close <name>              → session.close()
- *   acpx <agent> cancel                             → session.cancelActivePrompt()
+ * Implements AcpClient by shelling out to acpx CLI (`sessions ensure` /
+ * `sessions close`). This is the real transport; createClient injectable
+ * defaults to this. Tests override createClient with mock implementations.
+ * The AcpSession side (`prompt` / `close` / `cancelActivePrompt`, i.e. `acpx
+ * ... prompt -s <name>` / `sessions close <name>` / `cancel`) is implemented
+ * by SpawnAcpSession in ./spawn-client-session.
  */
 
 import type { AcpClient, AcpClientOptions, AcpSession } from "@/agents";
