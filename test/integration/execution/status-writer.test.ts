@@ -250,6 +250,26 @@ describe("StatusWriter.update success path", () => {
     expect(existsSync(`${path}.tmp`)).toBe(false);
     expect((JSON.parse(await Bun.file(path).text()) as NaxStatusFile).run.pid).toBe(testPid);
   });
+
+  // BUG-01: update() previously invoked _doUpdate() eagerly (before chaining
+  // onto _mutex), so a heartbeat-timer call and a main-loop call could both
+  // start writing the same .tmp path concurrently. Firing many update() calls
+  // without awaiting between them (the real heartbeat-vs-main-loop shape)
+  // must still leave the file valid and equal to the last call's snapshot —
+  // never a torn/partial write and never a rejected promise.
+  test("concurrent update() calls serialize — no torn writes, final state matches last call", async () => {
+    const path = join(tmpDir, "status.json");
+    const sw = new StatusWriter(path, makeConfig(), makeCtx());
+    sw.setPrd(makePrd());
+
+    const calls = Array.from({ length: 20 }, (_, i) => sw.update(i, i));
+    await Promise.all(calls);
+
+    expect(existsSync(`${path}.tmp`)).toBe(false);
+    const content = JSON.parse(await Bun.file(path).text()) as NaxStatusFile;
+    expect(content.cost.spent).toBe(19);
+    expect(content.iterations).toBe(19);
+  });
 });
 
 // ============================================================================
