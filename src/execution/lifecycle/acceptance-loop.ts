@@ -594,7 +594,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       acceptanceRetries + totalInternalIterations,
       finalCheck.missingTargets,
     );
-  } while (acceptanceRetries < maxRetries);
+  } while (acceptanceRetries <= maxRetries);
 
-  return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
+  return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty); // defensive fallback
 }

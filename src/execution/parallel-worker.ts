@@ -84,7 +84,10 @@ export async function executeStoryInWorktree(
 
     return {
       success: result.success,
-      cost: result.context.agentResult?.estimatedCostUsd || 0,
+      // BUG-7: include stageCost (secondary-agent spend in semantic/adversarial
+      // review, rectification, gate-triage probes) — mirrors
+      // pipeline-result-handler.ts's handlePipelineSuccess/handlePipelineFailure.
+      cost: (result.context.agentResult?.estimatedCostUsd ?? 0) + (result.stageCost ?? 0),
       error: result.success ? undefined : result.reason,
       pipelineResult: result,
     };

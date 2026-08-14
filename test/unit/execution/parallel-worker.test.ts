@@ -1,9 +1,16 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import { _parallelWorkerDeps, executeParallelBatch } from "../../../src/execution/parallel-worker";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import type { NaxConfig } from "../../../src/config";
-import type { PipelineContext } from "../../../src/pipeline/types";
+import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import {
+  _parallelWorkerDeps,
+  executeParallelBatch,
+  executeStoryInWorktree,
+} from "../../../src/execution/parallel-worker";
+import { defaultPipeline } from "../../../src/pipeline/stages";
+import type { PipelineContext, PipelineStage } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd/types";
+import type { WorktreeDependencyContext } from "../../../src/worktree/types";
 
 function makeStory(id: string): UserStory {
   return {
@@ -18,10 +25,12 @@ function makeStory(id: string): UserStory {
     escalations: [],
     attempts: 0,
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
-  } as unknown as UserStory;
+  };
 }
 
-function makeContext(config: NaxConfig = DEFAULT_CONFIG as NaxConfig): Omit<PipelineContext, "story" | "stories" | "workdir" | "routing"> {
+function makeContext(
+  config: NaxConfig = DEFAULT_CONFIG as NaxConfig,
+): Omit<PipelineContext, "story" | "stories" | "workdir" | "routing"> {
   return {
     config,
     rootConfig: config,
@@ -29,7 +38,7 @@ function makeContext(config: NaxConfig = DEFAULT_CONFIG as NaxConfig): Omit<Pipe
     hooks: {} as PipelineContext["hooks"],
     plugins: {} as PipelineContext["plugins"],
     storyStartTime: new Date().toISOString(),
-  } as unknown as Omit<PipelineContext, "story" | "stories" | "workdir" | "routing">;
+  } as Omit<PipelineContext, "story" | "stories" | "workdir" | "routing">;
 }
 
 const originalDeps = { ..._parallelWorkerDeps };
@@ -57,8 +66,7 @@ describe("executeParallelBatch", () => {
       cost: 0.25,
     }));
     _parallelWorkerDeps.routeTask = routeTaskMock as typeof _parallelWorkerDeps.routeTask;
-    _parallelWorkerDeps.executeStoryInWorktree =
-      executeStoryMock as typeof _parallelWorkerDeps.executeStoryInWorktree;
+    _parallelWorkerDeps.executeStoryInWorktree = executeStoryMock as typeof _parallelWorkerDeps.executeStoryInWorktree;
 
     const result = await executeParallelBatch(
       [story],
@@ -101,7 +109,7 @@ describe("executeParallelBatch", () => {
       if (story.id === "US-001") throw new Error("worktree exploded");
       await new Promise((r) => setTimeout(r, 20));
       return { success: true, cost: 0.5 };
-    }) as unknown as typeof _parallelWorkerDeps.executeStoryInWorktree;
+    }) as typeof _parallelWorkerDeps.executeStoryInWorktree;
 
     const result = await executeParallelBatch(
       stories,
@@ -120,5 +128,98 @@ describe("executeParallelBatch", () => {
     // Crucially, the siblings still completed and their results were kept.
     expect(result.pipelinePassed.map((s) => s.id).sort()).toEqual(["US-002", "US-003"]);
     expect(result.totalCost).toBeCloseTo(1.0, 5);
+  });
+});
+
+describe("executeStoryInWorktree — cost includes stageCost (BUG-7)", () => {
+  // Secondary-agent spend within pipeline stages (semantic/adversarial review,
+  // rectification, gate-triage probes) accumulates in PipelineRunResult.stageCost.
+  // executeStoryInWorktree previously reported only agentResult.estimatedCostUsd,
+  // silently dropping stageCost from the parallel-mode cost accounting. Splice a
+  // fake stage into the real defaultPipeline array (no injectable seam exists for
+  // the stage list itself) to exercise the real runPipeline → cost-return path.
+  let workdir: string;
+  let originalStages: PipelineStage[];
+
+  function withFakeStage(stage: PipelineStage): void {
+    defaultPipeline.length = 0;
+    defaultPipeline.push(stage);
+  }
+
+  function restoreStages(): void {
+    defaultPipeline.length = 0;
+    defaultPipeline.push(...originalStages);
+  }
+
+  beforeEach(() => {
+    originalStages = [...defaultPipeline];
+  });
+
+  afterEach(() => {
+    restoreStages();
+  });
+
+  test("sums stageCost with agentResult.estimatedCostUsd when both are present", async () => {
+    workdir = makeTempDir("nax-parallel-worker-cost-");
+    withFakeStage({
+      name: "fake-cost-stage",
+      enabled: () => true,
+      async execute(ctx: PipelineContext) {
+        ctx.agentResult = {
+          success: true,
+          exitCode: 0,
+          output: "",
+          rateLimited: false,
+          durationMs: 0,
+          estimatedCostUsd: 2,
+        };
+        return { action: "fail", reason: "simulated failure", cost: 0.5 };
+      },
+    });
+
+    try {
+      const story = makeStory("US-cost-001");
+      const dependencyContext: WorktreeDependencyContext = { cwd: workdir };
+      const result = await executeStoryInWorktree(story, workdir, dependencyContext, makeContext(), {
+        complexity: "simple",
+        modelTier: "fast",
+        testStrategy: "test-after",
+        reasoning: "",
+      });
+
+      expect(result.success).toBe(false);
+      // Regression guard: (agentResult.estimatedCostUsd ?? 0) + (stageCost ?? 0) = 2 + 0.5
+      expect(result.cost).toBeCloseTo(2.5, 5);
+    } finally {
+      cleanupTempDir(workdir);
+    }
+  });
+
+  test("reports stageCost alone when no agentResult is present", async () => {
+    workdir = makeTempDir("nax-parallel-worker-cost-");
+    withFakeStage({
+      name: "fake-cost-stage",
+      enabled: () => true,
+      async execute() {
+        return { action: "fail", reason: "simulated failure", cost: 1.5 };
+      },
+    });
+
+    try {
+      const story = makeStory("US-cost-002");
+      const dependencyContext: WorktreeDependencyContext = { cwd: workdir };
+      const result = await executeStoryInWorktree(story, workdir, dependencyContext, makeContext(), {
+        complexity: "simple",
+        modelTier: "fast",
+        testStrategy: "test-after",
+        reasoning: "",
+      });
+
+      expect(result.success).toBe(false);
+      // Before BUG-7's fix this was 0 — stageCost was dropped entirely.
+      expect(result.cost).toBeCloseTo(1.5, 5);
+    } finally {
+      cleanupTempDir(workdir);
+    }
   });
 });

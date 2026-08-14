@@ -57,6 +57,30 @@ function logDroppedCommands(
 }
 
 /**
+ * BUG-4 follow-up: in parallel mode (`ctx.skipPrdPersistence: true`) the command
+ * mutates only the worktree's stale PRD clone — `savePRD` is correctly skipped
+ * (see `persistPrd` above) — but the queue file is still cleared unconditionally
+ * after this stage runs, so the command disappears with zero trace once the queue
+ * file is cleared. Log which command and target were dropped so the user has a
+ * record instead of the command silently vanishing.
+ */
+function warnUnpersistedCommand(
+  logger: ReturnType<typeof getLogger>,
+  ctx: PipelineContext,
+  detail: { command: string; target?: string },
+): void {
+  logger.warn(
+    "queue",
+    "Queue command applied to in-memory PRD but NOT persisted — parallel-mode worktree clone is stale, command will be lost when the queue file is cleared",
+    {
+      storyId: ctx.story?.id ?? "unknown",
+      command: detail.command,
+      target: detail.target ?? "unknown",
+    },
+  );
+}
+
+/**
  * Queue Check Stage
  *
  * Checks for queue commands (PAUSE/ABORT/SKIP) before executing a story.
@@ -86,6 +110,12 @@ export const queueCheckStage: PipelineStage = {
       return { action: "continue" };
     }
 
+    // BUG-4: in parallel mode every story's worktree pipeline runs on a
+    // structuredClone of the PRD with skipPrdPersistence: true (CR-1 single-writer
+    // rule) — this stage must not write that stale clone over prd.json. Mirrors
+    // the persistPrd gate in completion.ts / routing.ts.
+    const persistPrd = ctx.skipPrdPersistence !== true;
+
     for (const [index, cmd] of queueCommands.entries()) {
       if (cmd.type === "PAUSE") {
         logger.warn("queue", "Paused by user", { storyId: ctx.story?.id ?? "unknown", command: "PAUSE" });
@@ -105,7 +135,11 @@ export const queueCheckStage: PipelineStage = {
         }
 
         // Save PRD path from featureDir
-        await savePRD(ctx.prd, resolvePrdPath(ctx));
+        if (persistPrd) {
+          await savePRD(ctx.prd, resolvePrdPath(ctx));
+        } else {
+          warnUnpersistedCommand(logger, ctx, { command: "ABORT" });
+        }
         logDroppedCommands(logger, ctx, queueCommands, index);
         await clearQueueFile(ctx.workdir);
 
@@ -116,7 +150,11 @@ export const queueCheckStage: PipelineStage = {
         logger.warn("queue", "Retrying story by user request", { storyId: cmd.storyId });
         resetStoryToPending(ctx.prd, cmd.storyId);
 
-        await savePRD(ctx.prd, resolvePrdPath(ctx));
+        if (persistPrd) {
+          await savePRD(ctx.prd, resolvePrdPath(ctx));
+        } else {
+          warnUnpersistedCommand(logger, ctx, { command: "RETRY", target: cmd.storyId });
+        }
         continue;
       }
 
@@ -127,7 +165,11 @@ export const queueCheckStage: PipelineStage = {
         });
         setStoryPriority(ctx.prd, cmd.storyId, cmd.value);
 
-        await savePRD(ctx.prd, resolvePrdPath(ctx));
+        if (persistPrd) {
+          await savePRD(ctx.prd, resolvePrdPath(ctx));
+        } else {
+          warnUnpersistedCommand(logger, ctx, { command: "PRIORITY", target: cmd.storyId });
+        }
         continue;
       }
 
@@ -152,7 +194,11 @@ export const queueCheckStage: PipelineStage = {
             storyFile: cmd.storyFile,
           });
 
-          await savePRD(ctx.prd, resolvePrdPath(ctx));
+          if (persistPrd) {
+            await savePRD(ctx.prd, resolvePrdPath(ctx));
+          } else {
+            warnUnpersistedCommand(logger, ctx, { command: "INJECT", target: story.id });
+          }
         } catch (err) {
           logger.error("queue", "Failed to inject story — skipping INJECT command", {
             storyId: ctx.story?.id ?? "unknown",
@@ -174,7 +220,11 @@ export const queueCheckStage: PipelineStage = {
         // writing the PRD behind it would be two lies and a wasted write.
         if (markStorySkipped(ctx.prd, cmd.storyId)) {
           logger.warn("queue", "Skipping story by user request", { storyId: cmd.storyId });
-          await savePRD(ctx.prd, resolvePrdPath(ctx));
+          if (persistPrd) {
+            await savePRD(ctx.prd, resolvePrdPath(ctx));
+          } else {
+            warnUnpersistedCommand(logger, ctx, { command: "SKIP", target: cmd.storyId });
+          }
         } else {
           logger.warn("queue", "SKIP names a story that is not in the PRD — ignoring", {
             storyId: cmd.storyId,

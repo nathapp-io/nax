@@ -7,8 +7,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { InteractionChain } from "../../../src/interaction/chain";
-import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../../../src/interaction/types";
+import { InteractionChain } from "@/interaction";
+import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "@/interaction";
+import { pipelineEventBus } from "@/pipeline";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixture helpers
@@ -74,7 +75,14 @@ function makeCtx(overrides: { parallelCount?: number } = {}) {
     runtime: {
       outputDir: "/tmp/nax-test-cost-output",
       costAggregator: {
-        snapshot: () => ({ totalCostUsd: 0, totalEstimatedCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 }),
+        snapshot: () => ({
+          totalCostUsd: 0,
+          totalEstimatedCostUsd: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          callCount: 0,
+          errorCount: 0,
+        }),
         byStage: () => ({}),
         byStory: () => ({}),
         byAgent: () => ({}),
@@ -263,5 +271,200 @@ describe("BUG-61 — cost-warning trigger fires after a parallel batch, not just
     await executeUnified(ctx as never, prd as never).catch(() => undefined);
 
     expect(sentTriggers).toContain("cost-warning");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUG-6 / D-4 — parallel cost-limit stop gets full parity with sequential:
+// emits run:paused (or run:resumed) and consults the cost-exceeded trigger
+// instead of silently returning "cost-limit" with no event and no prompt.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("BUG-6 — parallel cost-limit stop has parity with sequential (event + trigger)", () => {
+  let deps: Record<string, unknown>;
+  let origRunParallelBatch: unknown;
+  let origSelectIndependentBatch: unknown;
+  let capturedRunPaused: Array<{ reason: string; cost: number }>;
+  let capturedRunResumed: number;
+  let unsubPaused: (() => void) | undefined;
+  let unsubResumed: (() => void) | undefined;
+
+  beforeEach(async () => {
+    const mod = await import("../../../src/execution/unified-executor");
+    deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
+    origRunParallelBatch = deps.runParallelBatch;
+    origSelectIndependentBatch = deps.selectIndependentBatch;
+    capturedRunPaused = [];
+    capturedRunResumed = 0;
+    unsubPaused = pipelineEventBus.on("run:paused", (event) => {
+      capturedRunPaused.push({ reason: (event as { reason: string }).reason, cost: (event as { cost: number }).cost });
+    });
+    unsubResumed = pipelineEventBus.on("run:resumed", () => {
+      capturedRunResumed++;
+    });
+  });
+
+  afterEach(() => {
+    if (deps) {
+      deps.runParallelBatch = origRunParallelBatch;
+      deps.selectIndependentBatch = origSelectIndependentBatch;
+    }
+    unsubPaused?.();
+    unsubResumed?.();
+    mock.restore();
+  });
+
+  test("emits run:paused with reason and cost when no interactionChain is present (no silent stop)", async () => {
+    const story1 = makePendingStory("US-001");
+    const story2 = makePendingStory("US-002");
+
+    deps.selectIndependentBatch = mock(() => [story1, story2]);
+    deps.runParallelBatch = mock(async () => ({
+      completed: [story1, story2],
+      failed: [],
+      mergeConflicts: [],
+      storyCosts: new Map<string, number>([
+        [story1.id, 3],
+        [story2.id, 3],
+      ]),
+      totalCost: 6,
+    }));
+
+    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const prd = makePrd([story1, story2]);
+    const baseCtx = makeCtx({ parallelCount: 2 });
+    const ctx = {
+      ...baseCtx,
+      config: {
+        ...baseCtx.config,
+        execution: { ...baseCtx.config.execution, costLimit: 5, maxIterations: 2 },
+      },
+    };
+
+    const result = await executeUnified(ctx as never, prd as never);
+
+    expect(result.exitReason).toBe("cost-limit");
+    expect(capturedRunPaused).toHaveLength(1);
+    expect(capturedRunPaused[0].reason).toContain("Cost limit reached");
+    expect(capturedRunPaused[0].cost).toBeGreaterThanOrEqual(6);
+    expect(capturedRunResumed).toBe(0);
+  });
+
+  test("consults the cost-exceeded trigger and does not stop when the user approves continuing", async () => {
+    const story1 = makePendingStory("US-001");
+    const story2 = makePendingStory("US-002");
+
+    deps.selectIndependentBatch = mock(() => [story1, story2]);
+    deps.runParallelBatch = mock(async () => ({
+      completed: [story1, story2],
+      failed: [],
+      mergeConflicts: [],
+      storyCosts: new Map<string, number>([
+        [story1.id, 3],
+        [story2.id, 3],
+      ]),
+      totalCost: 6,
+    }));
+
+    const fakePlugin: InteractionPlugin = {
+      name: "fake-approve",
+      send: async () => {},
+      receive: async (requestId: string): Promise<InteractionResponse> => ({
+        requestId,
+        action: "approve",
+        respondedBy: "test",
+        respondedAt: Date.now(),
+      }),
+    };
+    const interactionChain = new InteractionChain({ defaultTimeout: 1000, defaultFallback: "continue" });
+    interactionChain.register(fakePlugin, 0);
+
+    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const prd = makePrd([story1, story2]);
+    const baseCtx = makeCtx({ parallelCount: 2 });
+    const ctx = {
+      ...baseCtx,
+      interactionChain,
+      config: {
+        ...baseCtx.config,
+        interaction: { triggers: { "cost-exceeded": { enabled: true } } },
+        execution: { ...baseCtx.config.execution, costLimit: 5, maxIterations: 2 },
+      },
+    };
+
+    // The next iteration reloads the PRD from disk (a path that doesn't exist in
+    // this fixture) — tolerate that the same way the existing "does NOT exit"
+    // AC-7 test above does. What matters here is the trigger was consulted and
+    // the run did not silently stop with exitReason "cost-limit".
+    const result = await executeUnified(ctx as never, prd as never).catch(
+      () => ({ exitReason: "error" }) as { exitReason: string },
+    );
+
+    expect(result.exitReason).not.toBe("cost-limit");
+    expect(capturedRunResumed).toBe(1);
+    expect(capturedRunPaused).toHaveLength(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUG-13 — parallel batch path was missing the statusWriter update sequential
+// dispatch already performs after every iteration.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("BUG-13 — parallel batch updates statusWriter after batch completion", () => {
+  let deps: Record<string, unknown>;
+  let origRunParallelBatch: unknown;
+  let origSelectIndependentBatch: unknown;
+
+  beforeEach(async () => {
+    const mod = await import("../../../src/execution/unified-executor");
+    deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
+    origRunParallelBatch = deps.runParallelBatch;
+    origSelectIndependentBatch = deps.selectIndependentBatch;
+  });
+
+  afterEach(() => {
+    if (deps) {
+      deps.runParallelBatch = origRunParallelBatch;
+      deps.selectIndependentBatch = origSelectIndependentBatch;
+    }
+    mock.restore();
+  });
+
+  test("calls statusWriter.setPrd/setCurrentStory/update after a completed parallel batch", async () => {
+    const story1 = makePendingStory("US-001");
+    const story2 = makePendingStory("US-002");
+
+    deps.selectIndependentBatch = mock(() => [story1, story2]);
+    deps.runParallelBatch = mock(async () => ({
+      completed: [story1, story2],
+      failed: [],
+      mergeConflicts: [],
+      storyCosts: new Map<string, number>([
+        [story1.id, 1],
+        [story2.id, 1],
+      ]),
+      totalCost: 2,
+    }));
+
+    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const prd = makePrd([story1, story2]);
+    const baseCtx = makeCtx({ parallelCount: 2 });
+    const ctx = {
+      ...baseCtx,
+      config: {
+        ...baseCtx.config,
+        execution: { ...baseCtx.config.execution, costLimit: 100, maxIterations: 1 },
+      },
+    };
+
+    await executeUnified(ctx as never, prd as never).catch(() => undefined);
+
+    expect((ctx.statusWriter.setPrd as ReturnType<typeof mock>).mock.calls.length).toBeGreaterThanOrEqual(1);
+    expect((ctx.statusWriter.setCurrentStory as ReturnType<typeof mock>).mock.calls.length).toBeGreaterThanOrEqual(1);
+    expect((ctx.statusWriter.update as ReturnType<typeof mock>).mock.calls.length).toBeGreaterThanOrEqual(1);
+    // setCurrentStory must be cleared (null) once the batch settles.
+    const setCurrentStoryCalls = (ctx.statusWriter.setCurrentStory as ReturnType<typeof mock>).mock.calls;
+    expect(setCurrentStoryCalls[0]?.[0]).toBeNull();
   });
 });

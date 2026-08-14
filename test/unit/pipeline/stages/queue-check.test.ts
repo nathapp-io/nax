@@ -171,6 +171,113 @@ describe("queueCheckStage — RETRY / PRIORITY", () => {
   });
 });
 
+describe("queueCheckStage — skipPrdPersistence (BUG-4)", () => {
+  // In parallel mode every story's worktree pipeline runs on a structuredClone
+  // of the PRD with skipPrdPersistence: true (CR-1 single-writer rule). This
+  // stage must still apply the in-memory mutation (so ctx.stories / ctx.prd
+  // reflect the command within this pipeline run) but must NOT write the
+  // stale clone over prd.json — the unified executor is the single writer.
+  let workdir: string;
+
+  beforeEach(() => {
+    initLogger({ level: "silent" });
+    workdir = makeTempDir("nax-queue-check-skip-persist-");
+  });
+
+  afterEach(() => {
+    resetLogger();
+    cleanupTempDir(workdir);
+  });
+
+  test("RETRY mutates in-memory PRD but does not write prd.json when skipPrdPersistence is true", async () => {
+    const failedStory = makeStory({ id: "US-001", status: "failed", attempts: 2 });
+    const prd = makePRD({ userStories: [failedStory] });
+    const ctx = makeCtx(workdir, {
+      prd,
+      stories: [failedStory],
+      story: failedStory,
+      skipPrdPersistence: true,
+    });
+
+    await Bun.write(join(workdir, ".queue.txt"), "RETRY US-001\n");
+
+    const result = await queueCheckStage.execute(ctx);
+
+    expect(result.action).toBe("continue");
+    expect(ctx.prd.userStories[0].status).toBe("pending");
+    expect(await Bun.file(join(workdir, "prd.json")).exists()).toBe(false);
+  });
+
+  test("PRIORITY mutates in-memory PRD but does not write prd.json when skipPrdPersistence is true", async () => {
+    const ctx = makeCtx(workdir, { skipPrdPersistence: true });
+    await Bun.write(join(workdir, ".queue.txt"), "PRIORITY US-001 7\n");
+
+    const result = await queueCheckStage.execute(ctx);
+
+    expect(result.action).toBe("continue");
+    expect(ctx.prd.userStories[0].priority).toBe(7);
+    expect(await Bun.file(join(workdir, "prd.json")).exists()).toBe(false);
+  });
+
+  test("SKIP for a known story mutates in-memory PRD but does not write prd.json when skipPrdPersistence is true", async () => {
+    const ctx = makeCtx(workdir, { skipPrdPersistence: true });
+    await Bun.write(join(workdir, ".queue.txt"), "SKIP US-001\n");
+
+    const result = await queueCheckStage.execute(ctx);
+
+    expect(result.action).toBe("skip");
+    expect(ctx.prd.userStories[0].status).toBe("skipped");
+    expect(await Bun.file(join(workdir, "prd.json")).exists()).toBe(false);
+  });
+
+  test("ABORT marks stories skipped in-memory but does not write prd.json when skipPrdPersistence is true", async () => {
+    const s1 = makeStory({ id: "US-001", status: "pending" });
+    const s2 = makeStory({ id: "US-002", status: "pending" });
+    const prd = makePRD({ userStories: [s1, s2] });
+    const ctx = makeCtx(workdir, { prd, stories: [s1, s2], story: s1, skipPrdPersistence: true });
+
+    await Bun.write(join(workdir, ".queue.txt"), "ABORT\n");
+
+    const result = await queueCheckStage.execute(ctx);
+
+    expect(result.action).toBe("pause");
+    expect(ctx.prd.userStories[0].status).toBe("skipped");
+    expect(ctx.prd.userStories[1].status).toBe("skipped");
+    expect(await Bun.file(join(workdir, "prd.json")).exists()).toBe(false);
+  });
+
+  test("INJECT adds the story in-memory but does not write prd.json when skipPrdPersistence is true", async () => {
+    const ctx = makeCtx(workdir, { skipPrdPersistence: true });
+    await Bun.write(
+      join(workdir, "new-story.json"),
+      JSON.stringify({
+        title: "Add caching layer",
+        description: "Cache expensive lookups behind a TTL.",
+        acceptanceCriteria: ["Cache hits avoid the DB call"],
+      }),
+    );
+    await Bun.write(join(workdir, ".queue.txt"), "INJECT new-story.json\n");
+
+    const result = await queueCheckStage.execute(ctx);
+
+    expect(result.action).toBe("continue");
+    expect(ctx.prd.userStories).toHaveLength(2);
+    expect(await Bun.file(join(workdir, "prd.json")).exists()).toBe(false);
+  });
+
+  test("RETRY still writes prd.json when skipPrdPersistence is not set (regression guard)", async () => {
+    const failedStory = makeStory({ id: "US-001", status: "failed" });
+    const prd = makePRD({ userStories: [failedStory] });
+    const ctx = makeCtx(workdir, { prd, stories: [failedStory], story: failedStory });
+
+    await Bun.write(join(workdir, ".queue.txt"), "RETRY US-001\n");
+
+    await queueCheckStage.execute(ctx);
+
+    expect(await Bun.file(join(workdir, "prd.json")).exists()).toBe(true);
+  });
+});
+
 describe("queueCheckStage — INJECT", () => {
   let workdir: string;
 
@@ -401,5 +508,130 @@ describe("queueCheckStage — PAUSE/ABORT dropped-command audit", () => {
     expect(dropped.data.droppedCount).toBe(1);
     expect(dropped.data.droppedTypes).toEqual(["RETRY"]);
     expect(Object.keys(dropped.data)[0]).toBe("storyId");
+  });
+});
+
+describe("queueCheckStage — skipPrdPersistence: unpersisted-command audit", () => {
+  // BUG-4 follow-up: in parallel mode (ctx.skipPrdPersistence: true) a queue command
+  // mutates only the worktree's stale PRD clone — savePRD is correctly skipped — but
+  // clearQueueFile still runs, so the command vanishes with no trace once the queue
+  // file is gone. A warn must be logged naming the dropped command whenever
+  // skipPrdPersistence is true, and must NOT be logged in the normal (persisting) path.
+  let workdir: string;
+  let logFile: string;
+
+  beforeEach(() => {
+    workdir = makeTempDir("nax-queue-check-skip-persist-");
+    logFile = join(workdir, "audit.jsonl");
+    initLogger({ level: "silent", filePath: logFile });
+  });
+
+  afterEach(async () => {
+    resetLogger();
+    cleanupTempDir(workdir);
+  });
+
+  async function readWarnEntries(): Promise<Array<{ stage: string; message: string; data: Record<string, unknown> }>> {
+    await getLogger().flush();
+    const lines = (await Bun.file(logFile).text()).trim().split("\n").filter(Boolean);
+    return lines.map((l) => JSON.parse(l));
+  }
+
+  test("RETRY under skipPrdPersistence logs an unpersisted-command warn", async () => {
+    const failedStory = makeStory({ id: "US-001", status: "failed", attempts: 2 });
+    const prd = makePRD({ userStories: [failedStory] });
+    const ctx = makeCtx(workdir, {
+      prd,
+      stories: [failedStory],
+      story: failedStory,
+      skipPrdPersistence: true,
+    });
+
+    await Bun.write(join(workdir, ".queue.txt"), "RETRY US-001\n");
+
+    const result = await queueCheckStage.execute(ctx);
+    expect(result.action).toBe("continue");
+    // Mutation still applied to the in-memory (stale) clone.
+    expect(ctx.prd.userStories[0].status).toBe("pending");
+
+    const entries = await readWarnEntries();
+    const unpersisted = entries.find((e) => e.stage === "queue" && e.message.includes("NOT persisted"));
+    expect(unpersisted).toBeDefined();
+    expect(unpersisted?.data.command).toBe("RETRY");
+    expect(unpersisted?.data.target).toBe("US-001");
+  });
+
+  test("RETRY in the normal (persisting) path does NOT log an unpersisted-command warn", async () => {
+    const failedStory = makeStory({ id: "US-001", status: "failed", attempts: 2 });
+    const prd = makePRD({ userStories: [failedStory] });
+    const ctx = makeCtx(workdir, { prd, stories: [failedStory], story: failedStory });
+
+    await Bun.write(join(workdir, ".queue.txt"), "RETRY US-001\n");
+
+    const result = await queueCheckStage.execute(ctx);
+    expect(result.action).toBe("continue");
+
+    const entries = await readWarnEntries();
+    const unpersisted = entries.find((e) => e.stage === "queue" && e.message.includes("NOT persisted"));
+    expect(unpersisted).toBeUndefined();
+  });
+
+  test("PRIORITY under skipPrdPersistence logs an unpersisted-command warn", async () => {
+    const ctx = makeCtx(workdir, { skipPrdPersistence: true });
+    await Bun.write(join(workdir, ".queue.txt"), "PRIORITY US-001 7\n");
+
+    await queueCheckStage.execute(ctx);
+
+    const entries = await readWarnEntries();
+    const unpersisted = entries.find((e) => e.stage === "queue" && e.message.includes("NOT persisted"));
+    expect(unpersisted).toBeDefined();
+    expect(unpersisted?.data.command).toBe("PRIORITY");
+    expect(unpersisted?.data.target).toBe("US-001");
+  });
+
+  test("INJECT under skipPrdPersistence logs an unpersisted-command warn", async () => {
+    const ctx = makeCtx(workdir, { skipPrdPersistence: true });
+    await Bun.write(
+      join(workdir, "new-story.json"),
+      JSON.stringify({
+        title: "Injected story",
+        description: "A new story",
+        acceptanceCriteria: ["n/a"],
+      }),
+    );
+    await Bun.write(join(workdir, ".queue.txt"), "INJECT new-story.json\n");
+
+    await queueCheckStage.execute(ctx);
+
+    const entries = await readWarnEntries();
+    const unpersisted = entries.find((e) => e.stage === "queue" && e.message.includes("NOT persisted"));
+    expect(unpersisted).toBeDefined();
+    expect(unpersisted?.data.command).toBe("INJECT");
+  });
+
+  test("SKIP under skipPrdPersistence logs an unpersisted-command warn", async () => {
+    const ctx = makeCtx(workdir, { skipPrdPersistence: true, stories: [] });
+    await Bun.write(join(workdir, ".queue.txt"), "SKIP US-001\n");
+
+    await queueCheckStage.execute(ctx);
+
+    const entries = await readWarnEntries();
+    const unpersisted = entries.find((e) => e.stage === "queue" && e.message.includes("NOT persisted"));
+    expect(unpersisted).toBeDefined();
+    expect(unpersisted?.data.command).toBe("SKIP");
+    expect(unpersisted?.data.target).toBe("US-001");
+  });
+
+  test("ABORT under skipPrdPersistence logs an unpersisted-command warn", async () => {
+    const ctx = makeCtx(workdir, { skipPrdPersistence: true });
+    await Bun.write(join(workdir, ".queue.txt"), "ABORT\n");
+
+    const result = await queueCheckStage.execute(ctx);
+    expect(result.action).toBe("pause");
+
+    const entries = await readWarnEntries();
+    const unpersisted = entries.find((e) => e.stage === "queue" && e.message.includes("NOT persisted"));
+    expect(unpersisted).toBeDefined();
+    expect(unpersisted?.data.command).toBe("ABORT");
   });
 });

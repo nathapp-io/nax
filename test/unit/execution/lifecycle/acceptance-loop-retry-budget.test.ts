@@ -7,18 +7,21 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import type { DiagnosisResult } from "@/acceptance";
 import type { Finding } from "@/findings";
+import { addSink, initLogger, resetLogger } from "@/logger";
+import type { PRD } from "@/prd";
+import { cleanupTempDir, makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { _diagnosisDeps } from "../../../../src/execution/lifecycle/acceptance-fix";
 import {
+  type AcceptanceLoopContext,
   _acceptanceFixCycleDeps,
   _acceptanceLoopDeps,
+  _regenerateDeps,
   _runAcceptanceTestsOnceDeps,
   runAcceptanceLoop,
-  type AcceptanceLoopContext,
 } from "../../../../src/execution/lifecycle/acceptance-loop";
-import { _diagnosisDeps } from "../../../../src/execution/lifecycle/acceptance-fix";
-import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
-import type { PRD } from "@/prd";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -72,7 +75,7 @@ function makeCtx(): AcceptanceLoopContext {
     sessionManager: runtime.sessionManager,
     acceptanceTestPaths: [{ testPath: "/tmp/test.ts", packageDir: "/tmp/workdir" }],
     runtime,
-    abortSignal: undefined as unknown as AbortSignal,
+    abortSignal: new AbortController().signal,
   };
 }
 
@@ -149,16 +152,18 @@ describe("runAcceptanceLoop — BUG-11 off-by-one at maxRetries:1", () => {
     // A retry that would EXCEED the budget (the second failure, with maxRetries:1)
     // must still be refused — only the boundary retry itself gets to run.
     let fixCycleRunCount = 0;
-    _acceptanceFixCycleDeps.runFixCycle = async () => {
+    _acceptanceFixCycleDeps.runFixCycle = async <F extends Finding>() => {
       fixCycleRunCount++;
-      const finding: Finding = {
+      const finding = {
         source: "test-runner",
         severity: "error",
         category: "assertion-failure",
         message: "AC-1 still failing",
         fixTarget: "test",
-      };
-      return { iterations: [], finalFindings: [finding], exitReason: "exhausted" };
+      } as F;
+      // "max-attempts-total" — the fix cycle's own retry budget ran out without
+      // resolving the finding (a valid FixCycleExitReason; "exhausted" is not).
+      return { iterations: [], finalFindings: [finding], exitReason: "max-attempts-total" as const };
     };
 
     const origImportAcceptanceStage = _runAcceptanceTestsOnceDeps.importAcceptanceStage;
@@ -202,6 +207,88 @@ describe("runAcceptanceLoop — BUG-11 off-by-one at maxRetries:1", () => {
       expect(result.success).toBe(false);
     } finally {
       (_diagnosisDeps as any).callOp = origCallOp;
+      _runAcceptanceTestsOnceDeps.importAcceptanceStage = origImportAcceptanceStage;
+      _acceptanceLoopDeps.loadAcceptanceTestContent = origLoadContent;
+    }
+  });
+});
+
+// ─── BUG-3: exhaustion must log + fire on-pause, never fall out silently ──────
+
+describe("runAcceptanceLoop — BUG-3 exhaustion logs and fires on-pause", () => {
+  let tempDir: string;
+  let stubTestPath: string;
+  let markerPath: string;
+  let unsubscribeSink: (() => void) | undefined;
+  let logMessages: string[];
+
+  beforeEach(() => {
+    tempDir = makeTempDir("nax-acceptance-loop-bug3-");
+    stubTestPath = join(tempDir, ".nax-acceptance.test.ts");
+    markerPath = join(tempDir, "on-pause-fired.marker");
+    logMessages = [];
+    resetLogger();
+    initLogger({ level: "info", headless: true, useChalk: false });
+    unsubscribeSink = addSink((entry) => {
+      logMessages.push(entry.message);
+    });
+  });
+
+  afterEach(() => {
+    unsubscribeSink?.();
+    resetLogger();
+    cleanupTempDir(tempDir);
+  });
+
+  test("stub-regen exhaustion (maxRetries reached via the do-while's continue path) logs and pauses instead of returning silently", async () => {
+    // Reproduces the do-while's dead guard: the loop's bottom condition
+    // `acceptanceRetries < maxRetries` becomes false immediately after the
+    // stub-regen `continue` reaches the retry budget, so the loop exits
+    // without ever re-checking `if (acceptanceRetries > maxRetries)` — the
+    // function falls out to the unconditional `buildResult(false, ...)`
+    // after the loop with no "Max acceptance retries reached" log and no
+    // `on-pause` hook fired.
+    await Bun.write(stubTestPath, "expect(true).toBe(false);\n");
+
+    const origAcceptanceSetupExecute = _regenerateDeps.acceptanceSetupExecute;
+    _regenerateDeps.acceptanceSetupExecute = async () => {
+      // Regeneration "succeeds" but keeps producing a stub — the retry
+      // budget is what must stop the loop, not stub detection.
+      await Bun.write(stubTestPath, "expect(true).toBe(false);\n");
+    };
+
+    const origImportAcceptanceStage = _runAcceptanceTestsOnceDeps.importAcceptanceStage;
+    const stubbedExecute = (ctx: any) => {
+      ctx.acceptanceFailures = {
+        failedACs: ["AC-1"],
+        findings: [],
+        testOutput: "boom",
+      };
+      return Promise.resolve({ action: "fail" as const });
+    };
+    _runAcceptanceTestsOnceDeps.importAcceptanceStage = async () =>
+      ({ acceptanceStage: { execute: stubbedExecute } }) as any;
+
+    const origLoadContent = _acceptanceLoopDeps.loadAcceptanceTestContent;
+    _acceptanceLoopDeps.loadAcceptanceTestContent = async () => [];
+
+    try {
+      const ctx = makeCtx();
+      ctx.config = makeNaxConfig({ acceptance: { maxRetries: 1, fix: { strategy: "diagnose-first" } } });
+      ctx.workdir = tempDir;
+      ctx.featureDir = tempDir;
+      ctx.acceptanceTestPaths = [{ testPath: stubTestPath, packageDir: tempDir }];
+      ctx.hooks = {
+        hooks: { "on-pause": { command: `touch ${markerPath}`, enabled: true } },
+      } as AcceptanceLoopContext["hooks"];
+
+      const result = await runAcceptanceLoop(ctx);
+
+      expect(result.success).toBe(false);
+      expect(logMessages).toContain("Max acceptance retries reached");
+      expect(await Bun.file(markerPath).exists()).toBe(true);
+    } finally {
+      _regenerateDeps.acceptanceSetupExecute = origAcceptanceSetupExecute;
       _runAcceptanceTestsOnceDeps.importAcceptanceStage = origImportAcceptanceStage;
       _acceptanceLoopDeps.loadAcceptanceTestContent = origLoadContent;
     }
