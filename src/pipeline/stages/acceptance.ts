@@ -35,7 +35,11 @@ import { acFailureToFinding, acSentinelToFinding } from "@/findings";
 import type { Finding } from "@/findings";
 import { getLogger } from "@/logger";
 import { countStories } from "@/prd";
-import { parseTestFailures as _parseTestFailures, analyzeTestExitCode } from "@/test-runners";
+import {
+  parseTestFailures as _parseTestFailures,
+  analyzeTestExitCode,
+  parseTestFailuresDetailed,
+} from "@/test-runners";
 import { logTestOutput } from "@/utils/log-test-output";
 import { executeWithTimeout, shellQuoteArg } from "@/verification";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -231,7 +235,7 @@ export const acceptanceStage: PipelineStage = {
       const output = execution.output ?? "";
       allOutputParts.push(output);
 
-      const failedACs = parseTestFailures(output);
+      const { failedACs, taggedFailureCount } = parseTestFailuresDetailed(output);
 
       // Check for overridden ACs (skip those)
       const overrides = ctx.prd.acceptanceOverrides ?? {};
@@ -276,11 +280,19 @@ export const acceptanceStage: PipelineStage = {
       // hook-timeout or import-error failure is real but has no "AC-N:"
       // label to be parsed as an AC in the first place, so it would never
       // show up in `failedACs`. If the summary's total fail count exceeds
-      // the number of AC-tagged failures we found, something failed beyond
-      // the (overridden) ACs.
+      // the number of AC-tagged failure *lines* we found, something failed
+      // beyond the (overridden) ACs.
+      //
+      // BUG-32: compare against `taggedFailureCount` (raw, non-deduplicated
+      // count of matched failure lines), not `failedACs.length` (deduplicated
+      // AC-id count) — a single overridden AC can have more than one failing
+      // test case (e.g. 3 failing `it()` blocks all tagged AC-3), which would
+      // otherwise make failCount (3) exceed the deduplicated count (1) and
+      // false-positive "suite may have crashed" on a legitimately-passing
+      // (post-override) package.
       if (exitCode !== 0 && failedACs.length > 0 && actualFailures.length === 0) {
         const { failCount } = analyzeTestExitCode(output, exitCode);
-        if (failCount > failedACs.length) {
+        if (failCount > taggedFailureCount) {
           logger.error(
             "acceptance",
             "Tests exited non-zero with all failing ACs overridden, but more tests failed than were AC-tagged — suite may have crashed",
@@ -290,7 +302,7 @@ export const acceptanceStage: PipelineStage = {
               packageDir,
               overriddenFailures,
               failCount,
-              acTaggedFailures: failedACs.length,
+              acTaggedFailures: taggedFailureCount,
             },
           );
           logTestOutput(logger, "acceptance", output);
