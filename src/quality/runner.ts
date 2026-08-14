@@ -117,6 +117,13 @@ export async function runQualityCommand(opts: QualityCommandOptions): Promise<Qu
       stdout: "pipe",
       stderr: "pipe",
       env: { ...baseEnv, ...(env ?? {}) },
+      // Bun.spawn does not setpgid children into their own group by default, so
+      // killProcessGroup(-pid) on timeout would target a group the shell isn't
+      // actually the leader of (ESRCH -> falls back to killing only the /bin/sh
+      // wrapper, leaking the real grandchild process). `detached` makes this
+      // process a session/group leader via setsid(), so its own pid IS the real
+      // pgid. Mirrors executeWithTimeout in verification/executor.ts.
+      detached: true,
     });
 
     let timedOut = false;
