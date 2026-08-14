@@ -33,7 +33,6 @@ describe("fragment store — writeFragment / readFragment (US-001)", () => {
     _fragmentStoreDeps.mkdirp = async () => undefined;
     _fragmentStoreDeps.writeFile = async (path, content) => {
       writes.set(path, content);
-      return content.length;
     };
     _fragmentStoreDeps.fileExists = async (path) => writes.has(path);
     _fragmentStoreDeps.readFile = async (path) => writes.get(path) ?? "";
@@ -61,7 +60,6 @@ describe("fragment store — writeFragment / readFragment (US-001)", () => {
     _fragmentStoreDeps.mkdirp = async () => undefined;
     _fragmentStoreDeps.writeFile = async (path, content) => {
       writes.set(path, content);
-      return content.length;
     };
     _fragmentStoreDeps.fileExists = async (path) => writes.has(path);
     _fragmentStoreDeps.readFile = async (path) => writes.get(path) ?? "";
@@ -85,7 +83,6 @@ describe("fragment store — writeFragment / readFragment (US-001)", () => {
     _fragmentStoreDeps.mkdirp = async () => undefined;
     _fragmentStoreDeps.writeFile = async (path, content) => {
       writes.set(path, content);
-      return content.length;
     };
     _fragmentStoreDeps.fileExists = async (path) => writes.has(path);
     _fragmentStoreDeps.readFile = async (path) => writes.get(path) ?? "";
@@ -114,7 +111,7 @@ describe("fragment store — writeFragment / readFragment (US-001)", () => {
       mkdirArgs.push(path);
       return undefined;
     };
-    _fragmentStoreDeps.writeFile = async () => 0;
+    _fragmentStoreDeps.writeFile = async () => undefined;
     _fragmentStoreDeps.listFragments = async () => [];
     _fragmentStoreDeps.removeFile = async () => undefined;
 
@@ -207,7 +204,6 @@ describe("fragment store — path-segment validation (US-001)", () => {
     _fragmentStoreDeps.mkdirp = async () => undefined;
     _fragmentStoreDeps.writeFile = async () => {
       writeCalled = true;
-      return 0;
     };
     _fragmentStoreDeps.fileExists = async () => false;
     _fragmentStoreDeps.listFragments = async () => [];
@@ -253,7 +249,6 @@ describe("fragment store — deleteFragment (US-001)", () => {
     _fragmentStoreDeps.mkdirp = async () => undefined;
     _fragmentStoreDeps.writeFile = async (p, content) => {
       writes.set(p, content);
-      return content.length;
     };
     _fragmentStoreDeps.fileExists = async (p) => writes.has(p);
     _fragmentStoreDeps.readFile = async (p) => writes.get(p) ?? "";
@@ -288,7 +283,6 @@ describe("fragment store — deleteFragment (US-001)", () => {
     _fragmentStoreDeps.mkdirp = async () => undefined;
     _fragmentStoreDeps.writeFile = async (p, content) => {
       writes.set(p, content);
-      return content.length;
     };
     _fragmentStoreDeps.fileExists = async (p) => writes.has(p);
     _fragmentStoreDeps.readFile = async (p) => writes.get(p) ?? "";
