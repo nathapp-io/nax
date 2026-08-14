@@ -13,7 +13,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { FlakeDetectionConfig } from "@/config/runtime-types";
 import type { Finding } from "@/findings/types";
-import { _flakeTriageDeps, type FlakeTriageInput, triageFlakyFindings } from "@/verification";
+import { type FlakeTriageInput, _flakeTriageDeps, triageFlakyFindings } from "@/verification";
 import type { FlakeProbeVerdict } from "@/verification/flake-probe";
 
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
@@ -188,7 +188,7 @@ describe("triageFlakyFindings — verdict flaky (AC5)", () => {
 
   test("AC5 — relabels to flaky-test with meta.probeRuns and meta.probePasses", async () => {
     _flakeTriageDeps.runFlakeProbe = async () =>
-      ({ verdict: "flaky", probeRuns: 3, probePasses: 2 } satisfies FlakeProbeVerdict);
+      ({ verdict: "flaky", probeRuns: 3, probePasses: 2 }) satisfies FlakeProbeVerdict;
 
     const finding = makeFinding({ file: "test/unit/foo.test.ts", rule: "should work" });
     const result = await triageFlakyFindings(makeInput({ findings: [finding] }));
@@ -210,7 +210,7 @@ describe("triageFlakyFindings — verdict consistent-failure (AC6)", () => {
 
   test("AC6 — keeps category failed-test on consistent-failure verdict", async () => {
     _flakeTriageDeps.runFlakeProbe = async () =>
-      ({ verdict: "consistent-failure", probeRuns: 2 } satisfies FlakeProbeVerdict);
+      ({ verdict: "consistent-failure", probeRuns: 2 }) satisfies FlakeProbeVerdict;
 
     const finding = makeFinding({ file: "test/unit/foo.test.ts", rule: "should work" });
     const result = await triageFlakyFindings(makeInput({ findings: [finding] }));
@@ -249,6 +249,39 @@ describe("triageFlakyFindings — run-scoped quarantine memo (AC7)", () => {
 
     expect(probeCalls).toBe(0);
     expect(result.findings[0]?.category).toBe("flaky-test");
+  });
+
+  test("BUG-9 — memo is NOT honored when a fix cycle re-touches the test file (isProbeCandidate now false)", async () => {
+    let probeCalls = 0;
+    _flakeTriageDeps.runFlakeProbe = async () => {
+      probeCalls += 1;
+      return { verdict: "consistent-failure", probeRuns: 1 } satisfies FlakeProbeVerdict;
+    };
+
+    const memo = new Map<string, true>();
+    memo.set("test/unit/foo.test.ts::should work", true);
+    const quarantineMemo = {
+      has: (key: string) => memo.has(key),
+      add: (key: string) => {
+        memo.set(key, true);
+      },
+    };
+
+    // The story's fix cycle just modified test/unit/foo.test.ts itself, so it
+    // is now in the story diff — isProbeCandidate would return false for it.
+    // The stale quarantine memo must not short-circuit past that baseline
+    // check; the finding must fall through to the normal (non-flaky) path.
+    const finding = makeFinding({ file: "test/unit/foo.test.ts", rule: "should work" });
+    const result = await triageFlakyFindings(
+      makeInput({
+        findings: [finding],
+        diff: { changedTestFiles: ["test/unit/foo.test.ts"], mappedTestFiles: [] },
+        quarantineMemo,
+      }),
+    );
+
+    expect(probeCalls).toBe(0);
+    expect(result.findings[0]?.category).toBe("failed-test");
   });
 });
 

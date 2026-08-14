@@ -13,6 +13,7 @@
  */
 
 import { NaxError } from "../errors";
+import { getSafeLogger } from "../logger";
 import type { Framework } from "../test-runners/detector";
 import type { TestFailure } from "../test-runners/types";
 import { executeWithTimeout } from "./executor";
@@ -86,16 +87,18 @@ function shellQuote(value: string): string {
 /**
  * Build an isolation command for the failing test, scoped to its framework.
  *
- * - bun / jest / vitest: `<base> <file> -t '<escaped name>'`
+ * - bun / jest / vitest: `<base> <quoted file> -t '<escaped name>'`
  * - pytest: `<base> '<file>::<name>'` (raw name, no regex escaping — pytest
  *   uses `::` addressing, not regex; still shell-quoted as a whole node id)
  * - go: `<base> -run '^<escaped name>$'` (cwd scoped to the failing package)
  *
- * Filter values are single-quoted (`shellQuote`) because the command is
- * ultimately executed through a shell (`[shell, "-c", command]`) — an
- * unquoted test name containing whitespace (or shell metacharacters, since
- * the name originates from an arbitrary target repo) would be word-split or
- * interpreted, silently matching the wrong test or reaching the shell.
+ * Filter values — and, for bun/jest/vitest, the file path — are
+ * single-quoted (`shellQuote`) because the command is ultimately executed
+ * through a shell (`[shell, "-c", command]`) — an unquoted test name or file
+ * path containing whitespace (or shell metacharacters, since both originate
+ * from parsed output of an arbitrary target repo) would be word-split or
+ * interpreted, silently matching the wrong test or reaching the shell
+ * (SEC-4). pytest and go already quote their whole node id / filter.
  *
  * Unknown / unsupported frameworks are explicit failures rather than
  * silent fallthroughs — `runFlakeProbe` already rejects `framework === "unknown"`
@@ -114,7 +117,7 @@ export function buildIsolationCommand(baseCommand: string, failure: TestFailure,
     case "bun":
     case "jest":
     case "vitest":
-      return `${baseCommand} ${file} -t ${shellQuote(escapeRegex(name))}`;
+      return `${baseCommand} ${shellQuote(file)} -t ${shellQuote(escapeRegex(name))}`;
     default:
       throw new NaxError(
         `[flake-probe] unsupported framework: ${framework as string}`,
@@ -130,16 +133,27 @@ export function buildIsolationCommand(baseCommand: string, failure: TestFailure,
 /**
  * Run the isolation re-probe and return a discriminated verdict.
  *
- * Pass semantics: a probe run is a "pass" only when the executor reports
- * `countsTowardEscalation: true` AND `success: true` — i.e. the run produced
- * a clean, attributable test pass. Crashes (executor throws), environmental
- * failures (`countsTowardEscalation: false`), and timeouts all count as
- * failed probes. They are not code-failure signals we can attribute to the
- * story, so they neither confirm nor rule out flakiness — they only consume
- * a probe.
+ * Pass semantics: a probe run is an attributable "pass" only when the
+ * executor reports `countsTowardEscalation: true` AND `success: true` (and
+ * didn't merely match zero tests) — i.e. the run produced a clean,
+ * attributable test pass. A probe run is an attributable "fail" when the
+ * executor reports `countsTowardEscalation: true` AND `success: false` —
+ * i.e. the target repo's own test runner genuinely ran the test and it
+ * failed.
+ *
+ * Environmental / non-attributable outcomes — executor crashes (throw),
+ * `countsTowardEscalation: false` (which also covers timeouts, since the
+ * executor always sets `countsTowardEscalation: false` on timeout) — are
+ * NOT code-failure signals we can attribute to the story: they consume a
+ * probe slot but confirm nothing. Per D-5 (docs/reviews/2026-08-14-deep-code-review.md),
+ * if every probe run in the budget was environmental, the verdict must be
+ * `"unprobeable"` (never `"consistent-failure"`), so an unattributable
+ * signal never fails a story. The reason is logged so operators can see why
+ * a probe was inconclusive (BUG-8).
  */
 export async function runFlakeProbe(input: FlakeProbeInput): Promise<FlakeProbeVerdict> {
   const { framework, baseCommand, failure, cwd, probeRuns, probeTimeoutSeconds } = input;
+  const logger = getSafeLogger();
 
   // Unprobeable when either the file or framework can't be addressed.
   if (failure.file === "unknown" || framework === "unknown") {
@@ -157,18 +171,46 @@ export async function runFlakeProbe(input: FlakeProbeInput): Promise<FlakeProbeV
   const command = buildIsolationCommand(baseCommand, failure, framework);
 
   let probePasses = 0;
+  let attributableRuns = 0;
   for (let i = 0; i < probeRuns; i += 1) {
     let result: TestExecutionResult | undefined;
     try {
       result = await _flakeProbeDeps.execute(command, probeTimeoutSeconds, undefined, { cwd });
     } catch {
-      // Executor crashed (e.g. spawn failure). Counts as a failed probe —
-      // environmental, not an attributable flake signal.
+      // Executor crashed (e.g. spawn failure) — environmental, not an
+      // attributable pass or fail. Consumes a probe slot only.
       continue;
     }
-    if (result.success && result.countsTowardEscalation && !probeRanNoTests(result.output)) {
+    if (!result.countsTowardEscalation) {
+      // Environmental (includes timeouts, which always set this false) —
+      // not an attributable pass or fail.
+      continue;
+    }
+    if (probeRanNoTests(result.output)) {
+      // Zero tests matched the isolation filter — the probe never actually
+      // executed the target test (e.g. Go rewrites spaces to underscores in
+      // -run patterns, so a filter built from a space-containing subtest
+      // name matches nothing). This run confirms nothing either way, so it
+      // must not count toward attributableRuns — counting it would let a
+      // batch of all-zero-matched runs read as "consistent-failure" (BUG-8),
+      // directly contradicting the unattributable-never-fails-a-story
+      // contract above.
+      continue;
+    }
+    attributableRuns += 1;
+    if (result.success) {
       probePasses += 1;
     }
+  }
+
+  if (attributableRuns === 0) {
+    const reason = `all ${probeRuns} probe run(s) were environmental (executor crash, timeout, or non-attributable) — no attributable pass or fail`;
+    logger?.warn("flake-probe", `Unprobeable — ${reason}`, {
+      file: failure.file,
+      testName: failure.testName,
+      probeRuns,
+    });
+    return { verdict: "unprobeable", reason };
   }
 
   if (probePasses > 0) {

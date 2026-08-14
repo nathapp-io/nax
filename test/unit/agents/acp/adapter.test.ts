@@ -25,6 +25,8 @@ export interface AcpSessionResponse {
   cumulative_token_usage?: { input_tokens: number; output_tokens: number };
   exactCostUsd?: number;
   retryable?: boolean;
+  error?: string;
+  cancelled?: boolean;
 }
 
 export interface MockAcpSession {
@@ -216,6 +218,42 @@ describe("complete()", () => {
     await expect(new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions())).rejects.toBeInstanceOf(CompleteError);
   });
 
+  // BUG-1: the CompleteError built for a stop-reason-error response must carry the
+  // parsed error text (surfaced via response.error) instead of a generic message,
+  // and preserve the real retryable flag acpx reported.
+  test("CompleteError built from a stop-reason-error response carries the parsed error text (BUG-1)", async () => {
+    const session = makeSession({
+      promptFn: async (_: string) => ({
+        messages: [],
+        stopReason: "error",
+        error: "QUEUE_DISCONNECTED_BEFORE_COMPLETION: queue disconnected",
+        retryable: true,
+      }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    // retryable:true is classifiable, so complete() returns a degraded result
+    // instead of throwing — assert the message text made it into the output/adapterFailure.
+    const result = await new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions());
+    expect(result.adapterFailure?.retriable).toBe(true);
+    expect(result.output).toContain("QUEUE_DISCONNECTED_BEFORE_COMPLETION: queue disconnected");
+  });
+
+  test("CompleteError message includes the parsed error text when retryable is unknown (BUG-1)", async () => {
+    const session = makeSession({
+      promptFn: async (_: string) => ({
+        messages: [],
+        stopReason: "error",
+        error: "acpx internal fault: session lost",
+      }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    await expect(new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions())).rejects.toThrow(
+      /acpx internal fault: session lost/,
+    );
+  });
+
   test("throws CompleteError when assistant output is blank", async () => {
     const session = makeSession({
       promptFn: async (_: string) => ({
@@ -312,6 +350,62 @@ describe("complete()", () => {
       new AcpAgentAdapter("claude").complete("fail", makeCompleteOptions()),
     ).rejects.toBeInstanceOf(CompleteError);
     expect(capturedCloseOpts?.forceTerminate).toBe(true);
+  });
+
+  // BUG-57: a mid-flight cancel (cancelActivePrompt()) must not drop tokens
+  // already burned before the cancel — the cancelled-path return previously
+  // hardcoded { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0
+  // unconditionally, discarding response.cumulative_token_usage entirely.
+  test("cancelled path carries through tokens already burned before the cancel (BUG-57)", async () => {
+    const session = makeSession({
+      promptFn: async (_: string) => ({
+        messages: [],
+        stopReason: "error",
+        cancelled: true,
+        cumulative_token_usage: { input_tokens: 500, output_tokens: 200 },
+      }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    const result = await new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions());
+    expect(result.cancelled).toBe(true);
+    expect(result.tokenUsage.inputTokens).toBe(500);
+    expect(result.tokenUsage.outputTokens).toBe(200);
+    expect(result.estimatedCostUsd).toBeGreaterThan(0);
+  });
+
+  test("cancelled path with no usage reported still returns zero (not a regression)", async () => {
+    const session = makeSession({
+      promptFn: async (_: string) => ({ messages: [], stopReason: "error", cancelled: true }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    const result = await new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions());
+    expect(result.cancelled).toBe(true);
+    expect(result.tokenUsage.inputTokens).toBe(0);
+    expect(result.tokenUsage.outputTokens).toBe(0);
+    expect(result.estimatedCostUsd).toBe(0);
+  });
+
+  // LOW: parity with spawn-client.ts, which truncates parsed error text with
+  // .slice(0, 500) at every sibling site — the CompleteError message built
+  // here was previously unbounded.
+  test("CompleteError message truncates an oversized parsed error text to 500 chars", async () => {
+    const hugeError = "x".repeat(2000);
+    const session = makeSession({
+      promptFn: async (_: string) => ({ messages: [], stopReason: "error", error: hugeError, retryable: undefined }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    try {
+      await new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions());
+      throw new Error("expected complete() to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(CompleteError);
+      const message = (err as Error).message;
+      // Message = "complete() failed: stop reason is error: " + truncated(500) text
+      expect(message.length).toBeLessThan(560);
+    }
   });
 });
 

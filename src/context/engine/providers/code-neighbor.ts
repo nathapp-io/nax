@@ -14,7 +14,11 @@ import { discoverWorkspacePackages } from "../../../test-runners/detect/workspac
 import type { NaxIgnoreMatcher } from "../../../utils/path-filters";
 import { isRelativeAndSafe } from "../../../utils/path-security";
 import type { ContextProviderResult, ContextRequest, IContextProvider } from "../types";
+import { type ContentCacheState, createContentCacheState, readCached } from "./code-neighbor-cache";
 import { type NeighborSection, assembleCodeNeighborChunk } from "./code-neighbor-chunk";
+
+export type { ContentCacheState } from "./code-neighbor-cache";
+export { createContentCacheState } from "./code-neighbor-cache";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Options
@@ -98,6 +102,7 @@ function isExcludedPath(file: string, ignoreMatchers: readonly NaxIgnoreMatcher[
 export const _codeNeighborDeps = {
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
+  fileSize: async (path: string): Promise<number> => (await Bun.file(path).stat()).size,
   discoverWorkspacePackages: (repoRoot: string): Promise<string[]> => discoverWorkspacePackages(repoRoot),
   detectLanguage: (packageDir: string) => detectLanguage(packageDir),
   getLogger,
@@ -349,24 +354,6 @@ function scanDirectory(
 }
 
 /**
- * Read a file's content, using the shared cache to avoid redundant disk reads
- * when multiple touched files inspect the same candidate.
- */
-async function readCached(absolutePath: string, cache: Map<string, string>): Promise<string | null> {
-  const cached = cache.get(absolutePath);
-  if (cached !== undefined) return cached;
-  try {
-    const content = await _codeNeighborDeps.readFile(absolutePath);
-    cache.set(absolutePath, content);
-    return content;
-  } catch {
-    // Mark as unreadable so we don't retry
-    cache.set(absolutePath, "");
-    return null;
-  }
-}
-
-/**
  * Collect neighbors for a single file: forward deps (JS/TS only), reverse deps
  * (language-aware glob, configurable cap), and sibling test (ADR-009 SSOT).
  *
@@ -377,7 +364,7 @@ async function collectNeighbors(
   filePath: string,
   workdir: string,
   scannedDirs: ScannedDir[],
-  contentCache: Map<string, string>,
+  contentCacheState: ContentCacheState,
   siblingTestContext?: { globs: readonly string[]; regex: readonly RegExp[] },
 ): Promise<{ neighbors: string[]; truncated: boolean }> {
   const neighbors = new Set<string>();
@@ -387,7 +374,7 @@ async function collectNeighbors(
   // behaviour), then read via the shared cache.
   const ownAbsPath = join(workdir, filePath);
   if (await _codeNeighborDeps.fileExists(ownAbsPath)) {
-    const ownContent = await readCached(ownAbsPath, contentCache);
+    const ownContent = await readCached(ownAbsPath, contentCacheState, _codeNeighborDeps);
     if (ownContent !== null && ownContent.length > 0) {
       for (const spec of parseImportSpecifiers(ownContent)) {
         const resolved = resolveImport(spec, filePath, workdir);
@@ -406,7 +393,7 @@ async function collectNeighbors(
     for (const srcFile of srcFiles) {
       if (neighbors.size >= MAX_NEIGHBORS_PER_FILE) break outer;
       if (srcFile === filePath) continue;
-      const content = await readCached(join(scanWorkdir, srcFile), contentCache);
+      const content = await readCached(join(scanWorkdir, srcFile), contentCacheState, _codeNeighborDeps);
       if (content?.includes(fileBaseName)) {
         for (const spec of parseImportSpecifiers(content)) {
           const resolved = resolveImport(spec, srcFile, scanWorkdir);
@@ -557,7 +544,7 @@ export class CodeNeighborProvider implements IContextProvider {
         scannedDirs.push(scanDirectory(sourceGlob, extraDir, ignoreMatchers, this.maxGlobFiles, globCtx));
       }
     }
-    const contentCache = new Map<string, string>();
+    const contentCacheState = createContentCacheState();
 
     const sections: NeighborSection[] = [];
     let anyTruncated = false;
@@ -566,7 +553,7 @@ export class CodeNeighborProvider implements IContextProvider {
         file,
         workdir,
         scannedDirs,
-        contentCache,
+        contentCacheState,
         siblingTestContext,
       );
       if (truncated) anyTruncated = true;

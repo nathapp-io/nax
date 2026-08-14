@@ -2,13 +2,18 @@ import type { AgentGetFn } from "../pipeline/types";
 import type { ISessionManager, SessionDescriptor, SessionState } from "../session/types";
 
 interface LegacySessionCloser {
-  closePhysicalSession?: (handle: string, workdir: string, options?: { force?: boolean }) => Promise<void>;
+  closePhysicalSession?: (
+    handle: string,
+    workdir: string,
+    options?: { force?: boolean; signal?: AbortSignal },
+  ) => Promise<void>;
 }
 
 async function closePhysicalSession(
   descriptor: SessionDescriptor,
   agentGetFn?: AgentGetFn,
   force?: boolean,
+  signal?: AbortSignal,
 ): Promise<void> {
   if (!descriptor.handle) return;
 
@@ -17,11 +22,9 @@ async function closePhysicalSession(
 
   try {
     // AC-83: pass force=true for errored sessions so the adapter can hard-terminate
-    await (adapter as LegacySessionCloser).closePhysicalSession?.(
-      descriptor.handle,
-      descriptor.workdir,
-      force ? { force: true } : undefined,
-    );
+    const options: { force?: boolean; signal?: AbortSignal } | undefined =
+      force || signal ? { ...(force && { force: true }), ...(signal && { signal }) } : undefined;
+    await (adapter as LegacySessionCloser).closePhysicalSession?.(descriptor.handle, descriptor.workdir, options);
   } catch {
     // Best-effort cleanup: session close errors must not block run teardown.
   }
@@ -31,7 +34,7 @@ async function closeStorylessSession(
   sessionManager: Pick<ISessionManager, "transition">,
   descriptor: SessionDescriptor,
   agentGetFn?: AgentGetFn,
-  opts?: { force?: boolean },
+  opts?: { force?: boolean; signal?: AbortSignal },
 ): Promise<number> {
   const transitionChain: SessionState[] = getStorylessCloseChain(descriptor.state);
   for (const targetState of transitionChain) {
@@ -45,7 +48,7 @@ async function closeStorylessSession(
   // AC-83: force hard-terminate when the session was already in FAILED state,
   // or when the caller explicitly requests force (e.g. signal-driven shutdown).
   const force = opts?.force === true || descriptor.state === "FAILED";
-  await closePhysicalSession(descriptor, agentGetFn, force);
+  await closePhysicalSession(descriptor, agentGetFn, force, opts?.signal);
   return 1;
 }
 
@@ -70,7 +73,7 @@ export async function closeStorySessions(
   sessionManager: Pick<ISessionManager, "closeStory">,
   storyId: string,
   agentGetFn?: AgentGetFn,
-  opts?: { force?: boolean },
+  opts?: { force?: boolean; signal?: AbortSignal },
 ): Promise<number> {
   const closedSessions = sessionManager.closeStory(storyId);
 
@@ -78,7 +81,7 @@ export async function closeStorySessions(
     // AC-83: force hard-terminate for sessions that were already in FAILED state,
     // or when the caller explicitly requests force (e.g. signal-driven shutdown).
     const force = opts?.force === true || descriptor.state === "FAILED";
-    await closePhysicalSession(descriptor, agentGetFn, force);
+    await closePhysicalSession(descriptor, agentGetFn, force, opts?.signal);
   }
 
   return closedSessions.length;
@@ -120,7 +123,13 @@ export async function failAndClose(
 export async function closeAllRunSessions(
   sessionManager: Pick<ISessionManager, "listActive" | "closeStory" | "transition">,
   agentGetFn?: AgentGetFn,
-  opts?: { force?: boolean },
+  /**
+   * PERF-1: `signal` is threaded all the way down to each physical session
+   * close's trackedSpawn deadline race, so an external abort (e.g. the crash
+   * signal handler's abortController) can cut a wedged teardown short instead
+   * of waiting the full per-call hard deadline.
+   */
+  opts?: { force?: boolean; signal?: AbortSignal },
 ): Promise<number> {
   const storyIds = new Set<string>();
   const storylessSessionIds = new Set<string>();

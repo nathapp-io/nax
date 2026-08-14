@@ -306,14 +306,21 @@ export interface RunMetrics {
 }
 
 /**
- * Aggregate metrics across all runs
+ * Aggregate metrics across all runs.
+ *
+ * NOTE (GROWTH-1): "all runs" here means all runs *currently retained* in
+ * metrics.json, not true all-time history. `saveRunMetrics` caps retained
+ * history to the most recent `MAX_RETAINED_RUNS` (200) runs, dropping the
+ * oldest first — so every field below (totalRuns, totalCost, totalStories,
+ * etc.) is bounded by that retention window once a project has run more than
+ * 200 times. See `src/metrics/tracker.ts` (`MAX_RETAINED_RUNS`).
  */
 export interface AggregateMetrics {
-  /** Total number of runs */
+  /** Total number of runs (bounded by MAX_RETAINED_RUNS — see interface doc) */
   totalRuns: number;
-  /** Total cost across all runs */
+  /** Total cost across all retained runs (bounded by MAX_RETAINED_RUNS — see interface doc) */
   totalCost: number;
-  /** Total stories across all runs */
+  /** Total stories across all retained runs (bounded by MAX_RETAINED_RUNS — see interface doc) */
   totalStories: number;
   /** Percentage of stories passing on first attempt */
   firstPassRate: number;

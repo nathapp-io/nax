@@ -165,7 +165,14 @@ export async function triageFlakyFindings(input: FlakeTriageInput): Promise<Flak
     }
 
     const key = flakeMemoKey(copy);
-    if (quarantineMemo.has(key)) {
+    const eligibleForProbe = isProbeCandidate(copy, changedTestSet, mappedTestSet);
+
+    // BUG-9: only honor the run-scoped quarantine memo when the finding would
+    // also currently be eligible for probing. A story fix cycle can touch the
+    // exact test file that was memoized flaky earlier in the run — once that
+    // happens the baseline (story-diff) check must re-run, not be
+    // short-circuited by a stale memo entry from before the edit.
+    if (quarantineMemo.has(key) && eligibleForProbe) {
       copy.category = "flaky-test";
       keys.push(key);
       reasons.push(`quarantined (memo): ${key}`);
@@ -173,7 +180,7 @@ export async function triageFlakyFindings(input: FlakeTriageInput): Promise<Flak
       continue;
     }
 
-    if (!isProbeCandidate(copy, changedTestSet, mappedTestSet)) {
+    if (!eligibleForProbe) {
       result.push(copy);
       continue;
     }

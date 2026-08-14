@@ -51,6 +51,42 @@ async function closeStoryIfTerminal(
   ctx.agentManager?.resetTransientUnavailable?.();
 }
 
+/**
+ * BUG-6 / D-4: shared costLimit gate for all three dispatch paths (parallel batch,
+ * single-story, sequential). Emits `run:paused` and returns `stop: true` unless the
+ * cost-exceeded trigger is enabled and the user approves continuing (`run:resumed`).
+ */
+async function enforceCostLimit(
+  ctx: SequentialExecutionContext,
+  totalCost: number,
+  costLimit: number,
+  storyId?: string,
+): Promise<{ stop: boolean; enforcedCost: number }> {
+  const enforcedCost = Math.max(totalCost, ctx.runtime.costAggregator.snapshot().totalCostUsd);
+  if (enforcedCost < costLimit) return { stop: false, enforcedCost };
+
+  const shouldProceed =
+    ctx.interactionChain && isTriggerEnabled("cost-exceeded", ctx.config)
+      ? await checkCostExceeded(
+          { featureName: ctx.feature, cost: enforcedCost, limit: costLimit },
+          ctx.config,
+          ctx.interactionChain,
+        )
+      : false;
+
+  if (!shouldProceed) {
+    pipelineEventBus.emit({
+      type: "run:paused",
+      reason: `Cost limit reached: $${enforcedCost.toFixed(2)}`,
+      ...(storyId !== undefined ? { storyId } : {}),
+      cost: enforcedCost,
+    });
+    return { stop: true, enforcedCost };
+  }
+  pipelineEventBus.emit({ type: "run:resumed", feature: ctx.feature });
+  return { stop: false, enforcedCost };
+}
+
 export async function executeUnified(
   ctx: SequentialExecutionContext,
   initialPrd: PRD,
@@ -411,14 +447,16 @@ export async function executeUnified(
             }
           }
 
-          // Cost-limit check after parallel batch (AC-7)
-          // Consult the aggregator so completion-phase spend cannot silently bypass the limit.
-          const enforcedCostAfterBatch = Math.max(totalCost, ctx.runtime.costAggregator.snapshot().totalCostUsd);
-          if (enforcedCostAfterBatch >= costLimit) {
-            return buildResult("cost-limit");
-          }
+          // BUG-13: mirror sequential/single-story dispatch below (statusWriter update).
+          ctx.statusWriter.setPrd(prd);
+          ctx.statusWriter.setCurrentStory(null);
+          await ctx.statusWriter.update(totalCost, iterations);
 
-          warningSent = await maybeSendCostWarning(ctx, enforcedCostAfterBatch, costLimit, warningSent);
+          // Cost-limit check after parallel batch (AC-7). BUG-6 / D-4: parity via enforceCostLimit.
+          const batchCostCheck = await enforceCostLimit(ctx, totalCost, costLimit);
+          if (batchCostCheck.stop) return buildResult("cost-limit");
+
+          warningSent = await maybeSendCostWarning(ctx, batchCostCheck.enforcedCost, costLimit, warningSent);
 
           continue;
         }
@@ -437,28 +475,8 @@ export async function executeUnified(
           lastStoryId = singleStory.id; // BUG-39: unconditional (was !ctx.useBatch-gated)
 
           {
-            // Consult the aggregator so completion-phase spend cannot silently bypass the limit.
-            const enforcedCostSingle = Math.max(totalCost, ctx.runtime.costAggregator.snapshot().totalCostUsd);
-            if (enforcedCostSingle >= costLimit) {
-              const shouldProceed =
-                ctx.interactionChain && isTriggerEnabled("cost-exceeded", ctx.config)
-                  ? await checkCostExceeded(
-                      { featureName: ctx.feature, cost: enforcedCostSingle, limit: costLimit },
-                      ctx.config,
-                      ctx.interactionChain,
-                    )
-                  : false;
-              if (!shouldProceed) {
-                pipelineEventBus.emit({
-                  type: "run:paused",
-                  reason: `Cost limit reached: $${enforcedCostSingle.toFixed(2)}`,
-                  storyId: singleStory.id,
-                  cost: enforcedCostSingle,
-                });
-                return buildResult("cost-limit");
-              }
-              pipelineEventBus.emit({ type: "run:resumed", feature: ctx.feature });
-            }
+            const singleCostCheck = await enforceCostLimit(ctx, totalCost, costLimit, singleStory.id);
+            if (singleCostCheck.stop) return buildResult("cost-limit");
           }
 
           const modelTier = singleSelection.routing.modelTier;
@@ -499,6 +517,7 @@ export async function executeUnified(
             ctx.feature,
             totalCost,
             ctx.workdir,
+            ctx.runtime,
           );
           if (singlePre.shouldSkipIteration) {
             if (singlePre.prd.userStories.find((s) => s.id === singleStory.id)?.status === "failed") lastStoryId = null; // BUG-39
@@ -549,28 +568,8 @@ export async function executeUnified(
       lastStoryId = selection.story.id; // BUG-39: unconditional (was !ctx.useBatch-gated)
 
       {
-        // Consult the aggregator so completion-phase spend cannot silently bypass the limit.
-        const enforcedCostSeq = Math.max(totalCost, ctx.runtime.costAggregator.snapshot().totalCostUsd);
-        if (enforcedCostSeq >= costLimit) {
-          const shouldProceed =
-            ctx.interactionChain && isTriggerEnabled("cost-exceeded", ctx.config)
-              ? await checkCostExceeded(
-                  { featureName: ctx.feature, cost: enforcedCostSeq, limit: costLimit },
-                  ctx.config,
-                  ctx.interactionChain,
-                )
-              : false;
-          if (!shouldProceed) {
-            pipelineEventBus.emit({
-              type: "run:paused",
-              reason: `Cost limit reached: $${enforcedCostSeq.toFixed(2)}`,
-              storyId: selection.story.id,
-              cost: enforcedCostSeq,
-            });
-            return buildResult("cost-limit");
-          }
-          pipelineEventBus.emit({ type: "run:resumed", feature: ctx.feature });
-        }
+        const seqCostCheck = await enforceCostLimit(ctx, totalCost, costLimit, selection.story.id);
+        if (seqCostCheck.stop) return buildResult("cost-limit");
       }
 
       const modelTier = selection.routing.modelTier;
@@ -611,6 +610,7 @@ export async function executeUnified(
         ctx.feature,
         totalCost,
         ctx.workdir,
+        ctx.runtime,
       );
       if (seqPre.shouldSkipIteration) {
         if (seqPre.prd.userStories.find((s) => s.id === selection.story.id)?.status === "failed") lastStoryId = null; // BUG-39

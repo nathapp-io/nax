@@ -557,11 +557,10 @@ describe("preIterationTierCheck — story:escalated event emission", () => {
     }
   });
 });
-
+// BUG-5 story:failed tests: tier-escalation-story-failed.test.ts
 // ---------------------------------------------------------------------------
 // handleTierEscalation — story:escalated event emission
 // ---------------------------------------------------------------------------
-
 describe("handleTierEscalation — story:escalated event emission", () => {
   type StoryEscalatedPayload = { type: "story:escalated"; storyId: string; fromTier: string; toTier: string };
   let capturedEvents: StoryEscalatedPayload[] = [];

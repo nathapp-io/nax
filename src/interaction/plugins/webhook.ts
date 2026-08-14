@@ -7,93 +7,12 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Server } from "node:http";
+import { NaxError } from "@/errors";
+import { getSafeLogger } from "@/logger";
+import { sleep } from "@/utils/bun-deps";
 import { z } from "zod";
-import { NaxError } from "../../errors";
-import { sleep } from "../../utils/bun-deps";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
-
-type ServeCompatOptions = Parameters<typeof Bun.serve>[0];
-type ServeCompatReturn = ReturnType<typeof Bun.serve>;
-
-const PORT_ZERO_COMPAT_BASE = 40_000;
-const PORT_ZERO_COMPAT_SPAN = 20_000;
-
-let servePortZeroCompatInstalled = false;
-let servePortZeroCounter = 0;
-const inMemoryServers = new Map<number, { fetch: (request: Request) => Response | Promise<Response> }>();
-
-function nextCompatPort(): number {
-  const port = PORT_ZERO_COMPAT_BASE + (servePortZeroCounter % PORT_ZERO_COMPAT_SPAN);
-  servePortZeroCounter += 1;
-  return port;
-}
-
-function createInMemoryServer(options: ServeCompatOptions, port: number): ServeCompatReturn {
-  const fetchHandler = options.fetch;
-  if (!fetchHandler) {
-    throw new NaxError(
-      "[interaction] Bun.serve compatibility shim requires a fetch handler",
-      "WEBHOOK_SERVE_SHIM_NO_FETCH",
-      { stage: "interaction" },
-    );
-  }
-
-  inMemoryServers.set(port, {
-    fetch: (request) =>
-      fetchHandler.call(undefined as never, request, undefined as never) as Response | Promise<Response>,
-  });
-
-  return {
-    port,
-    stop: () => {
-      inMemoryServers.delete(port);
-    },
-  } as ServeCompatReturn;
-}
-
-function installServePortZeroCompat(): void {
-  if (servePortZeroCompatInstalled) {
-    return;
-  }
-
-  const originalServe = Bun.serve.bind(Bun);
-  const originalFetch = globalThis.fetch.bind(globalThis);
-  const patchedServe = ((options: ServeCompatOptions): ServeCompatReturn => {
-    const requestedPort = typeof options.port === "number" ? options.port : 0;
-    // Route port 0 through the real Bun.serve too — the OS assigns a real available
-    // port for it same as any other bind, so there is nothing to compat-shim there.
-    // Only fall back to the in-memory server when Bun.serve genuinely fails (e.g. no
-    // network permission in a sandboxed environment) — previously port 0 was routed
-    // to the in-memory server unconditionally, so a real webhook responder posting to
-    // the advertised callback URL could never reach it: ECONNREFUSED every time (BUG-24).
-    if (!inMemoryServers.has(requestedPort)) {
-      try {
-        return originalServe(options);
-      } catch {
-        return createInMemoryServer(options, requestedPort === 0 ? nextCompatPort() : requestedPort);
-      }
-    }
-
-    return createInMemoryServer(options, nextCompatPort());
-  }) as typeof Bun.serve;
-
-  (Bun as { serve: typeof Bun.serve }).serve = patchedServe;
-  globalThis.fetch = (async (input: Request | string | URL, init?: RequestInit): Promise<Response> => {
-    const request =
-      input instanceof Request ? input : new Request(input instanceof URL ? input.toString() : input, init);
-    const url = new URL(request.url);
-    const port = Number.parseInt(url.port, 10);
-    if ((url.hostname === "localhost" || url.hostname === "127.0.0.1") && inMemoryServers.has(port)) {
-      const server = inMemoryServers.get(port);
-      if (!server) {
-        return new Response("Not Found", { status: 404 });
-      }
-      return await server.fetch(request);
-    }
-    return originalFetch(input instanceof URL ? input.toString() : input, init);
-  }) as typeof globalThis.fetch;
-  servePortZeroCompatInstalled = true;
-}
+import { installServePortZeroCompat } from "./webhook-serve-compat";
 
 installServePortZeroCompat();
 
@@ -104,6 +23,11 @@ installServePortZeroCompat();
  */
 export const _webhookPluginDeps = {
   sleep,
+  /**
+   * Injectable clock for the rate limiter (SEC-8). Tests advance this to
+   * exercise fixed-window rollover without real wall-clock sleeps.
+   */
+  now: () => Date.now(),
 };
 
 /** Webhook plugin configuration */
@@ -118,6 +42,10 @@ interface WebhookConfig {
   maxPayloadBytes?: number;
   /** Reject startup when no secret is configured (default: true) */
   requireSecret?: boolean;
+  /** Max callback requests accepted per rate-limit window (default: 30) */
+  rateLimitMaxRequests?: number;
+  /** Rate-limit window size in ms (default: 60_000) */
+  rateLimitWindowMs?: number;
 }
 
 /** Zod schema for validating webhook plugin config */
@@ -133,6 +61,8 @@ const WebhookConfigSchema = z.object({
   secret: z.string().optional(),
   maxPayloadBytes: z.number().int().positive().optional(),
   requireSecret: z.boolean().optional(),
+  rateLimitMaxRequests: z.number().int().positive().optional(),
+  rateLimitWindowMs: z.number().int().positive().optional(),
 });
 
 /** Zod schema for validating webhook callback payloads */
@@ -147,6 +77,23 @@ const InteractionResponseSchema = z.object({
 /** Max entries in pendingResponses (defense-in-depth; registered-ID gate is the primary control) */
 const MAX_PENDING_RESPONSES = 500;
 
+/** Default rate-limit window (SEC-8): bounds abuse from a co-tenant local process. */
+const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
+/** Default max authenticated requests accepted per window (the "auth" bucket). */
+const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 30;
+/**
+ * The pre-auth bucket (SEC-8) applies to every request regardless of outcome,
+ * so it must not share the authenticated bucket's tight budget — otherwise
+ * unauthenticated flood traffic exhausts the SAME counter a legitimate,
+ * authenticated caller depends on, reproducing the exact starvation the
+ * two-bucket split exists to prevent. It is sized as a generous multiple of
+ * `rateLimitMaxRequests` — large enough that ordinary unauthenticated noise
+ * never starves the authenticated bucket, while still capping gross flood
+ * volume (resource exhaustion from a malicious or misbehaving co-tenant
+ * process hammering the loopback endpoint).
+ */
+const PRE_AUTH_RATE_LIMIT_MULTIPLIER = 10;
+
 /**
  * Webhook plugin for HTTP-based interaction
  */
@@ -154,6 +101,19 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
   name = "webhook";
   private config: WebhookConfig = {};
   private server: Server | null = null;
+  /**
+   * Rate-limit window state (SEC-8): two independent fixed-window buckets.
+   * `pre` bounds every request regardless of auth outcome (raw flood volume).
+   * `auth` bounds only requests that PASS HMAC verification, so unauthenticated
+   * noise exhausting `pre` cannot starve a legitimate, authenticated caller —
+   * it has its own separate budget. When `requireSecret: false` there is no
+   * auth check at all, so only `pre` is ever consulted (single-bucket, correct
+   * for that degraded case).
+   */
+  private rateLimitBuckets = {
+    pre: { windowStart: 0, count: 0 },
+    auth: { windowStart: 0, count: 0 },
+  };
   private serverStartPromise: Promise<void> | null = null;
   private isDestroyed = false;
   /** IDs for which send() has been called but no response has been consumed yet */
@@ -180,6 +140,8 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       secret: cfg.secret,
       maxPayloadBytes: cfg.maxPayloadBytes ?? 1024 * 1024, // 1MB default
       requireSecret: cfg.requireSecret ?? true,
+      rateLimitMaxRequests: cfg.rateLimitMaxRequests ?? DEFAULT_RATE_LIMIT_MAX_REQUESTS,
+      rateLimitWindowMs: cfg.rateLimitWindowMs ?? DEFAULT_RATE_LIMIT_WINDOW_MS,
     };
     if (!this.config.url) {
       throw new Error("Webhook plugin requires 'url' config");
@@ -192,6 +154,59 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
           "Set requireSecret: false to allow unsigned callbacks (not recommended).",
       );
     }
+    // SEC-8: requireSecret: false fully disables auth on the loopback callback
+    // endpoint — any co-tenant local process can submit approve/abort actions.
+    // Warn once at config-validation time so the user is not surprised later.
+    // Resolved at call-time (not cached on `this` at construction) because the
+    // plugin can be constructed before initLogger() runs — a cached reference
+    // would silently be permanently null and this warning would never surface.
+    if (!this.config.requireSecret) {
+      getSafeLogger()?.warn(
+        "interaction",
+        "Webhook plugin started with requireSecret: false — the callback endpoint is unauthenticated. " +
+          "Any local process on this machine can submit interaction responses.",
+      );
+    }
+    this.rateLimitBuckets = {
+      pre: { windowStart: 0, count: 0 },
+      auth: { windowStart: 0, count: 0 },
+    };
+  }
+
+  /**
+   * Fixed-window request rate limiter (SEC-8), operating on one of two
+   * independent buckets:
+   * - `"pre"` — checked for every request before auth, bounds raw flood
+   *   volume. When `requireSecret` is true (the `"auth"` bucket exists and is
+   *   the real per-caller budget), `"pre"` is sized to
+   *   `rateLimitMaxRequests * PRE_AUTH_RATE_LIMIT_MULTIPLIER` so it never
+   *   becomes the *effective* budget for authenticated traffic — otherwise
+   *   unauthenticated noise exhausting `"pre"` would starve legitimate
+   *   authenticated requests exactly like the pre-fix single-bucket bug,
+   *   since `"pre"` is still checked ahead of every request including
+   *   authenticated ones. When `requireSecret` is false there is no `"auth"`
+   *   bucket at all (no auth check exists) — `"pre"` IS the single meaningful
+   *   budget in that degraded case, so it stays at the exact configured
+   *   `rateLimitMaxRequests`, unchanged from the pre-split behavior.
+   * - `"auth"` — checked only for requests that pass HMAC verification, at
+   *   the exact configured `rateLimitMaxRequests` — this is the real,
+   *   isolated budget a legitimate caller relies on.
+   */
+  private checkRateLimit(bucket: "pre" | "auth"): boolean {
+    const now = _webhookPluginDeps.now();
+    const windowMs = this.config.rateLimitWindowMs ?? DEFAULT_RATE_LIMIT_WINDOW_MS;
+    const configuredMax = this.config.rateLimitMaxRequests ?? DEFAULT_RATE_LIMIT_MAX_REQUESTS;
+    const maxRequests =
+      bucket === "pre" && this.config.requireSecret ? configuredMax * PRE_AUTH_RATE_LIMIT_MULTIPLIER : configuredMax;
+    const state = this.rateLimitBuckets[bucket];
+
+    if (now - state.windowStart >= windowMs) {
+      state.windowStart = now;
+      state.count = 0;
+    }
+
+    state.count += 1;
+    return state.count <= maxRequests;
   }
 
   async destroy(): Promise<void> {
@@ -457,6 +472,14 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       return new Response("Bad Request", { status: 400 });
     }
 
+    // SEC-8: enforce the pre-auth rate limit before auth/body handling —
+    // applies to every request, authenticated or not, bounding raw flood
+    // volume. This alone must not be able to starve authenticated callers —
+    // see the separate "auth" bucket check after signature verification below.
+    if (!this.checkRateLimit("pre")) {
+      return new Response("Too Many Requests", { status: 429 });
+    }
+
     const maxBytes = this.config.maxPayloadBytes ?? 1024 * 1024;
 
     // Check content length before reading body
@@ -483,6 +506,14 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       const signature = req.headers.get("X-Nax-Signature");
       if (!signature || !this.verify(body, signature)) {
         return new Response("Unauthorized", { status: 401 });
+      }
+      // SEC-8: authenticated requests get their own separate budget, so
+      // unauthenticated noise exhausting the "pre" bucket above cannot starve
+      // a legitimate authenticated caller. Only meaningful when auth is
+      // actually required — with requireSecret: false there is no auth check
+      // at all, so the single "pre" bucket is correct as-is for that case.
+      if (this.config.requireSecret && !this.checkRateLimit("auth")) {
+        return new Response("Too Many Requests", { status: 429 });
       }
     }
 

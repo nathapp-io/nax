@@ -11,14 +11,13 @@ import { pipelineEventBus } from "@/pipeline";
 import { isThreeSessionStrategy } from "../../config";
 import type { NaxConfig, TestStrategy } from "../../config";
 import type { Finding } from "../../findings";
-import { type LoadedHooksConfig, fireHook } from "../../hooks";
+import type { LoadedHooksConfig } from "../../hooks";
 import { getSafeLogger } from "../../logger";
 import type { PRD, StructuredFailure, UserStory } from "../../prd";
 import { markStoryFailed, savePRD } from "../../prd";
 import { tryLlmBatchRoute } from "../../routing";
 import type { FailureCategory } from "../../tdd/types";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "../escalation";
-import { hookCtx } from "../helpers";
 import { appendProgress } from "../progress";
 import { verifyEscalationQuotes } from "./quote-integrity";
 import { handleMaxAttemptsReached, handleNoTierAvailable } from "./tier-outcome";
@@ -137,6 +136,8 @@ export async function preIterationTierCheck(
   feature: string,
   totalCost: number,
   workdir: string,
+  /** Per-run NaxRuntime — used to look up per-story cost via costAggregator.byStory() (BUG: story:failed cost field). */
+  runtime?: import("../../runtime").NaxRuntime,
 ): Promise<PreIterationCheckResult> {
   const logger = _tierEscalationDeps.getSafeLogger();
   const currentTier = story.routing?.modelTier ?? routing.modelTier;
@@ -269,17 +270,26 @@ export async function preIterationTierCheck(
     await appendProgress(featureDir, story.id, "failed", `${story.title} — All tiers exhausted`);
   }
 
-  await fireHook(
-    hooks,
-    "on-story-fail",
-    hookCtx(feature, {
-      storyId: story.id,
-      status: "failed",
-      reason: `All tiers exhausted (${story.attempts} attempts)`,
-      cost: totalCost,
-    }),
-    workdir,
-  );
+  // BUG-5: story:started was already emitted for this story before this
+  // pre-iteration check ran — without a matching story:failed, reporters, the
+  // events file, the TUI, and the max-retries interaction trigger never learn
+  // the story reached a terminal state.
+  //
+  // The on-story-fail hook is NOT fired directly here — wireHooks (src/pipeline/
+  // subscribers/hooks.ts) subscribes to story:failed on the bus and fires it.
+  // Calling fireHook directly here as well double-fired the hook for every
+  // terminal tier-exhaustion. Matches the sibling emitters in tier-outcome.ts.
+  const failedStory = failedPrd.userStories.find((s) => s.id === story.id) ?? story;
+  pipelineEventBus.emit({
+    type: "story:failed",
+    storyId: story.id,
+    story: { id: failedStory.id, title: failedStory.title, status: failedStory.status, attempts: failedStory.attempts },
+    reason: `All tiers exhausted (${story.attempts} attempts)`,
+    countsTowardEscalation: true,
+    feature,
+    attempts: failedStory.attempts,
+    cost: runtime?.costAggregator.byStory()[story.id]?.totalCostUsd ?? totalCost,
+  });
 
   // Skip to next iteration (will pick next story)
   return { shouldSkipIteration: true, prdDirty: true, prd: failedPrd };
