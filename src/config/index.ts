@@ -59,7 +59,14 @@ export {
   DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
 } from "./schemas-infra";
 export { DebateConfigSchema } from "./schemas-debate";
-export { TddConfigSchema, AutoRouteConfigSchema } from "./schemas-execution";
+export {
+  TddConfigSchema,
+  AutoRouteConfigSchema,
+  ExecutionConfigSchema,
+  RectificationConfigSchema,
+  RegressionGateConfigSchema,
+  DEFAULT_VERIFICATION_TIMEOUT_SECONDS,
+} from "./schemas-execution";
 export { AdversarialReviewConfigSchema, ReviewConfigSchema } from "./schemas-review";
 export { loadConfig, loadConfigForWorkdir, loadPackageOverride, findProjectDir, globalConfigPath } from "./loader";
 export { mergePackageConfig } from "./merge";

@@ -10,7 +10,12 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AdversarialReviewConfigSchema } from "@/config";
+import {
+  AdversarialReviewConfigSchema,
+  ExecutionConfigSchema,
+  RectificationConfigSchema,
+  RegressionGateConfigSchema,
+} from "@/config";
 import { loadConfig } from "../../../src/config/loader";
 import { DEFAULT_CONFIG, NaxConfigSchema } from "../../../src/config/schema";
 import type { NaxConfig } from "../../../src/config/schema";
@@ -49,7 +54,6 @@ describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
     test("DEFAULT_CONFIG.execution.rectification.maxAttemptsPerStrategy === 3", () => {
       expect(DEFAULT_CONFIG.execution.rectification.maxAttemptsPerStrategy).toBe(3);
     });
-
   });
 
   describe("NaxConfigSchema.parse({}) produces DEFAULT_CONFIG", () => {
@@ -63,12 +67,39 @@ describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
       expect(parsed.execution.rectification.maxAttemptsTotal).toBe(12);
     });
 
-
     test("schema parse produces NaxConfig type", () => {
       const parsed = NaxConfigSchema.parse({});
       const typed = parsed as NaxConfig;
       expect(typed.execution).toBeDefined();
       expect(typed.quality).toBeDefined();
+    });
+  });
+
+  describe("BUG-20: execution timeout defaults never drift between outer literal and inner schema", () => {
+    // Previously the outer `execution: ExecutionConfigSchema.default({...})`
+    // literal in schemas.ts hardcoded verificationTimeoutSeconds: 600,
+    // rectification.fullSuiteTimeoutSeconds: 300, and
+    // regressionGate.timeoutSeconds: 300 — all of which had drifted from
+    // their own field-level `.default()` in schemas-execution.ts (300, 120,
+    // 120 respectively). `NaxConfigSchema.parse({})` used the outer numbers;
+    // parsing a config that supplied `execution.rectification: {}` used the
+    // inner ones. Pin both to the single source of truth.
+    test("DEFAULT_CONFIG.execution.verificationTimeoutSeconds matches the field's own schema default", () => {
+      const fieldDefault = ExecutionConfigSchema.shape.verificationTimeoutSeconds.parse(undefined);
+      expect(DEFAULT_CONFIG.execution.verificationTimeoutSeconds).toBe(fieldDefault);
+      expect(NaxConfigSchema.parse({}).execution.verificationTimeoutSeconds).toBe(fieldDefault);
+    });
+
+    test("DEFAULT_CONFIG.execution.rectification matches RectificationConfigSchema.parse({})", () => {
+      const schemaDefault = RectificationConfigSchema.parse({});
+      expect(DEFAULT_CONFIG.execution.rectification).toEqual(schemaDefault);
+      expect(NaxConfigSchema.parse({}).execution.rectification).toEqual(schemaDefault);
+    });
+
+    test("DEFAULT_CONFIG.execution.regressionGate matches RegressionGateConfigSchema.parse({})", () => {
+      const schemaDefault = RegressionGateConfigSchema.parse({});
+      expect(DEFAULT_CONFIG.execution.regressionGate).toEqual(schemaDefault);
+      expect(NaxConfigSchema.parse({}).execution.regressionGate).toEqual(schemaDefault);
     });
   });
 
