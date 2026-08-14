@@ -493,6 +493,36 @@ describe("checkFindingEvidence — generalized over Finding shape (Issue #987)",
   });
 });
 
+describe("checkFindingEvidence — SEC-03: absolute paths outside allowed roots are not read", () => {
+  // Previously, any absolute path that failed containment fell through to a
+  // direct Bun.file(file).text() read with no root check — an arbitrary
+  // file-existence/content oracle. A finding citing a path outside workdir
+  // must now come back "unreadable" (the container-blocked, non-oracle
+  // outcome), never leak whether the file exists via "matched"/"unmatched".
+  test("absolute path outside workdir returns unreadable, not matched/unmatched", async () => {
+    await withTempDir(async (workdir) => {
+      // A real file that exists on disk but lives OUTSIDE workdir/repoRoot.
+      await withTempDir(async (outsideDir) => {
+        const outsideFile = join(outsideDir, "secret.txt");
+        writeFileSync(outsideFile, "super-secret-contents-that-should-never-be-read\n");
+
+        const finding = makeFinding({
+          verifiedBy: {
+            command: `cat ${outsideFile}`,
+            file: outsideFile,
+            line: 1,
+            observed: "super-secret-contents-that-should-never-be-read",
+          },
+        });
+
+        const result = await checkFindingEvidence({ finding, workdir });
+
+        expect(result.status).toBe("unreadable");
+      });
+    });
+  });
+});
+
 describe("checkFindingEvidence — monorepo repoRoot resolution", () => {
   test("repo-relative finding path resolves against repoRoot, not packageDir", async () => {
     await withTempDir(async (repoRoot) => {
