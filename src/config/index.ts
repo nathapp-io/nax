@@ -105,8 +105,8 @@ export {
   mutationCheckConfigSelector,
   executionGatesConfigSelector,
   finishConfigSelector,
-  trackedSpawnDeadlines,
 } from "./selectors";
+export { trackedSpawnDeadlines } from "./tracked-spawn-deadlines";
 export { createConfigLoader } from "./loader-runtime";
 export type { ConfigLoader } from "./loader-runtime";
 export {

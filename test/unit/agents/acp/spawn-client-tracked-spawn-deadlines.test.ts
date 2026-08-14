@@ -5,52 +5,12 @@
  * the test-file-size ratchet.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { SpawnAcpClient, _spawnClientDeps } from "@/agents/acp";
 import { withDepsRestore } from "@test/helpers";
+import { makeSpawnResult, makeWedgedSpawnResult, stubProcessKill } from "./_spawn-client-test-helpers";
 
-// SAFETY: file-scope process.kill stub — see spawn-client.test.ts for rationale.
-let _originalProcessKill: typeof process.kill;
-
-beforeEach(() => {
-  _originalProcessKill = process.kill;
-  process.kill = ((_pid: number | string, _signal?: NodeJS.Signals | number) => true) as typeof process.kill;
-});
-
-afterEach(() => {
-  process.kill = _originalProcessKill;
-});
-
-function makeSpawnResult(exitCode: number, stdout = ""): ReturnType<typeof _spawnClientDeps.spawn> {
-  const enc = new TextEncoder();
-  const makeStream = (content: string) =>
-    new ReadableStream<Uint8Array>({
-      start(c) {
-        if (content) c.enqueue(enc.encode(content));
-        c.close();
-      },
-    });
-
-  return {
-    stdout: makeStream(stdout),
-    stderr: makeStream(""),
-    stdin: { write: () => 0, end: () => {}, flush: () => {} },
-    exited: Promise.resolve(exitCode),
-    pid: 99999999,
-    kill: () => {},
-  };
-}
-
-function makeWedgedSpawnResult(): ReturnType<typeof _spawnClientDeps.spawn> {
-  return {
-    stdout: new ReadableStream<Uint8Array>({ start() {} }),
-    stderr: new ReadableStream<Uint8Array>({ start() {} }),
-    stdin: { write: () => 0, end: () => {}, flush: () => {} },
-    exited: new Promise<number>(() => {}), // never resolves — simulates a wedged/slow acpx
-    pid: 99999999,
-    kill: () => {},
-  };
-}
+stubProcessKill();
 
 describe("SpawnAcpClient — startup vs teardown trackedSpawn deadlines (#1583)", () => {
   withDepsRestore(_spawnClientDeps, [

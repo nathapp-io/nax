@@ -205,14 +205,19 @@ export interface AgentCapabilities {
   readonly features: ReadonlySet<"tdd" | "review" | "refactor" | "batch">;
 }
 
+/** trackedSpawn hard deadlines (ms) — teardown vs startup, resolved from config.agent.acp (#1583). */
+export interface TrackedSpawnDeadlineOptions {
+  trackedSpawnDeadlineMs?: number;
+  trackedSpawnStartupDeadlineMs?: number;
+}
+
 /**
- * Options for one-shot LLM completion calls.
- *
- * Callers pass this to `AgentManager.completeAs()` — the manager fills in
- * `resolvedPermissions`, `promptRetries`, `onPidSpawned`, and `onPidExited`
- * before handing the augmented `ResolvedCompleteOptions` to the adapter.
+ * Options for one-shot LLM completion calls. Callers pass this to
+ * `AgentManager.completeAs()` — the manager fills in `resolvedPermissions`,
+ * `promptRetries`, `onPidSpawned`, and `onPidExited` before handing the
+ * augmented `ResolvedCompleteOptions` to the adapter.
  */
-export interface CompleteOptions {
+export interface CompleteOptions extends TrackedSpawnDeadlineOptions {
   /** Maximum tokens for the response */
   maxTokens?: number;
   /** Request JSON-formatted output (adds --output-format json) */
@@ -246,12 +251,10 @@ export interface CompleteOptions {
    */
   timeoutMs?: number;
   /**
-   * Number of prompt retries for ACP sessions, and trackedSpawn teardown/startup
-   * deadlines (ms) — all pre-resolved by AgentManager.completeAs from config.agent.acp (#1583).
+   * Number of prompt retries for ACP sessions.
+   * Pre-resolved by AgentManager.completeAs from config.agent.acp.promptRetries.
    */
   promptRetries?: number;
-  trackedSpawnDeadlineMs?: number;
-  trackedSpawnStartupDeadlineMs?: number;
   /**
    * Named session to use for this completion call.
    * If omitted, a timestamp-based ephemeral session name is generated.
@@ -388,7 +391,7 @@ export interface SessionHandle {
 }
 
 /** Options for openSession() — protocol-agnostic surface + ACP-specific pass-throughs. */
-export interface OpenSessionOpts {
+export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
   agentName: string;
   workdir: string;
   /** Pre-resolved permissions from AgentManager. */
@@ -399,10 +402,8 @@ export interface OpenSessionOpts {
   modelTier?: ModelTier;
   /** ACP: maximum session duration in seconds. */
   timeoutSeconds: number;
-  /** ACP: acpx --prompt-retries value (default 0 — opt-in). Deadlines below resolved from config.agent.acp (#1583). */
+  /** ACP: acpx --prompt-retries value (default 0 — opt-in). */
   promptRetries?: number;
-  trackedSpawnDeadlineMs?: number;
-  trackedSpawnStartupDeadlineMs?: number;
   /** Fired once the session is physically established, before the first prompt. */
   onSessionEstablished?: (protocolIds: ProtocolIds, sessionName: string) => void;
   /** PID registration callback for crash-recovery bookkeeping. */
