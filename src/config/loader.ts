@@ -22,7 +22,7 @@ import {
   rejectUnimplementedScopedProfile,
   stripRemovedNoOpKeys,
 } from "./config-guards";
-import { resolveEnvVars } from "./dotenv";
+import { UnresolvedEnvVarError, resolveEnvVars } from "./dotenv";
 import { mergePackageConfig } from "./merge";
 import { deepMergeConfig } from "./merger";
 import { MAX_DIRECTORY_DEPTH } from "./path-security";
@@ -150,10 +150,23 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
     // resolveEnvVars, so this only ever worked via the separate `config profile show
     // --unmask` command path.
     const profileEnv = await loadProfileEnv(name, projectRoot);
-    const resolvedProfileData =
-      Object.keys(profileEnv).length > 0
-        ? (resolveEnvVars(profileData, profileEnv) as Record<string, unknown>)
-        : profileData;
+    let resolvedProfileData: Record<string, unknown>;
+    try {
+      resolvedProfileData =
+        Object.keys(profileEnv).length > 0
+          ? (resolveEnvVars(profileData, profileEnv) as Record<string, unknown>)
+          : profileData;
+    } catch (err) {
+      // BUG-21 — surface which profile and which key path referenced the
+      // unresolved $VAR, instead of a bare Error with no config context.
+      const varName = err instanceof UnresolvedEnvVarError ? err.varName : undefined;
+      const path = err instanceof UnresolvedEnvVarError ? err.path.join(".") : undefined;
+      throw new NaxError(
+        `Profile "${name}" references an undefined environment variable${varName ? ` $${varName}` : ""}${path ? ` at "${path}"` : ""}.`,
+        "PROFILE_ENV_VAR_UNRESOLVED",
+        { stage: "config", profileName: name, varName, path, cause: err },
+      );
+    }
     // Same compat-shim chain as the file layers above (BUG-51) — a profile can carry
     // the same legacy shapes (e.g. routing.strategy: "manual") and must be remapped
     // rather than hard-failing Zod validation.
@@ -340,41 +353,48 @@ export async function loadConfigForWorkdir(
   const packageChain = parseProfileList(packageProfile as string | string[] | undefined).filter(
     (name) => name && name !== "default",
   );
+  let rawMerged = merged as unknown as Record<string, unknown>;
   if (packageChain.length > 0) {
     const packageRoot = join(repoRoot, packageDir);
-    let rawMerged = merged as unknown as Record<string, unknown>;
     for (const name of packageChain) {
       const profileData = await loadProfile(name, packageRoot);
       rawMerged = deepMergeConfig<Record<string, unknown>>(rawMerged, profileData);
     }
     rawMerged.profile = packageChain.join("+");
     rawMerged.profileChain = packageChain;
-    // ADR-012 Phase 6 — legacy-key guard applies to per-package overlays too.
-    rejectLegacyAgentKeys(rawMerged);
-    rejectLegacyRectificationKeys(rawMerged);
-    rejectDeadQualityFlags(rawMerged);
-    rejectUnimplementedScopedProfile(rawMerged);
-    // Strip the four inert no-op keys from the per-package overlay result.
-    // Runs after the reject guards and before safeParse, mirroring the root
-    // chain. Post-merge placement yields one warning per resolved config.
-    rawMerged = stripRemovedNoOpKeys(rawMerged, defaultConfigWarn);
-    const result = NaxConfigSchema.safeParse(rawMerged);
-    if (!result.success) {
-      // Fail-fast — consistent with root-chain resolution (a missing profile file
-      // throws in loadProfile). Silently dropping the overlay would run the package
-      // with a config the user did not ask for, which is hard to debug.
-      const errors = result.error.issues.map((err) => {
-        const path = String(err.path.join("."));
-        return path ? `${path}: ${err.message}` : err.message;
-      });
-      throw new NaxError(
-        `Per-package profile "${packageChain.join("+")}" produced an invalid config for package "${packageDir}":\n${errors.join("\n")}`,
-        "PER_PACKAGE_PROFILE_INVALID",
-        { stage: "config", packageDir, profileChain: packageChain },
-      );
-    }
-    merged = result.data as NaxConfig;
   }
+
+  // BUG-05: guards + safeParse must cover EVERY per-package overlay, not just
+  // ones that also apply a package-level profile — an overlay with no profile
+  // previously returned `merged` here unvalidated, letting a legacy key or the
+  // not-yet-implemented "scoped" permissionProfile sail through unchecked.
+  // ADR-012 Phase 6 — legacy-key guard applies to per-package overlays too.
+  rejectLegacyAgentKeys(rawMerged);
+  rejectLegacyRectificationKeys(rawMerged);
+  rejectDeadQualityFlags(rawMerged);
+  rejectUnimplementedScopedProfile(rawMerged);
+  // Strip the four inert no-op keys again post-profile-overlay (a package
+  // profile can reintroduce one). Runs after the reject guards and before
+  // safeParse, mirroring the root chain. Post-merge placement yields one
+  // warning per resolved config regardless of which layer supplied the key.
+  rawMerged = stripRemovedNoOpKeys(rawMerged, defaultConfigWarn);
+  const result = NaxConfigSchema.safeParse(rawMerged);
+  if (!result.success) {
+    // Fail-fast — consistent with root-chain resolution (a missing profile file
+    // throws in loadProfile). Silently dropping the overlay would run the package
+    // with a config the user did not ask for, which is hard to debug.
+    const errors = result.error.issues.map((err) => {
+      const path = String(err.path.join("."));
+      return path ? `${path}: ${err.message}` : err.message;
+    });
+    const label = packageChain.length > 0 ? `profile "${packageChain.join("+")}"` : "override";
+    throw new NaxError(
+      `Per-package config ${label} produced an invalid config for package "${packageDir}":\n${errors.join("\n")}`,
+      "PER_PACKAGE_PROFILE_INVALID",
+      { stage: "config", packageDir, profileChain: packageChain },
+    );
+  }
+  merged = result.data as NaxConfig;
 
   return merged;
 }
