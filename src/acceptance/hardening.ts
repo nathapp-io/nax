@@ -16,9 +16,17 @@ import type { PRD, UserStory } from "../prd/types";
 import { detectLanguage as _detectLanguage } from "../project/detector";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { parseTestFailures } from "../test-runners/ac-parser";
+import { killProcessGroup } from "../utils/process-kill";
 import { buildAcceptanceRunCommand, generateSkeletonTests } from "./generator";
 import { resolveSuggestedPackageFeatureTestPath } from "./test-path";
 import type { AcceptanceCriterion, RefinedCriterion } from "./types";
+
+// ─── Constants ──────────────────────────────────────────────────────────────
+
+/** Fallback when config.acceptance.timeoutMs is absent (schema default is 1_800_000). */
+const DEFAULT_HARDENING_TIMEOUT_MS = 1_800_000;
+/** Grace period between SIGTERM and SIGKILL on timeout — mirrors quality/runner.ts. */
+const HARDENING_SIGKILL_GRACE_PERIOD_MS = 5_000;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -155,13 +163,40 @@ async function processPackageGroup(
     ctx.config.acceptance?.command,
     packageDir,
   );
-  const proc = _hardeningDeps.spawn(testCmd, { cwd: packageDir, stdout: "pipe", stderr: "pipe" });
+  // detached: true so killProcessGroup(-pid) below reaches the real test-runner
+  // process (Bun does not setpgid children into their own group by default —
+  // without this the process becomes its own session/group leader via setsid()
+  // and killProcessGroup would only be able to signal the immediate child).
+  const proc = _hardeningDeps.spawn(testCmd, { cwd: packageDir, stdout: "pipe", stderr: "pipe", detached: true });
+
+  // LLM-generated acceptance tests can hang (open server, watch mode) — enforce
+  // a hard wall-clock deadline with SIGTERM -> SIGKILL escalation so the run's
+  // completion phase never wedges indefinitely.
+  let exitedBeforeSigkill = false;
+  let sigkillTimer: ReturnType<typeof setTimeout> | undefined;
+  proc.exited
+    .then(() => {
+      exitedBeforeSigkill = true;
+    })
+    .catch(() => {});
+  const timeoutMs = ctx.config.acceptance?.timeoutMs ?? DEFAULT_HARDENING_TIMEOUT_MS;
+  const killTimer = setTimeout(() => {
+    killProcessGroup(proc.pid, "SIGTERM");
+    sigkillTimer = setTimeout(() => {
+      sigkillTimer = undefined;
+      if (!exitedBeforeSigkill) {
+        killProcessGroup(proc.pid, "SIGKILL");
+      }
+    }, HARDENING_SIGKILL_GRACE_PERIOD_MS);
+  }, timeoutMs);
 
   const [exitCode, stdout, stderr] = await Promise.all([
     proc.exited,
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
+    new Response(proc.stdout).text().catch(() => ""),
+    new Response(proc.stderr).text().catch(() => ""),
   ]);
+  clearTimeout(killTimer);
+  if (sigkillTimer) clearTimeout(sigkillTimer);
   const output = `${stdout}\n${stderr}`;
 
   // Parse results and promote/discard for this group

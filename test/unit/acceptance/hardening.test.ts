@@ -102,12 +102,12 @@ function failingSpawn(output: string) {
   } as ReturnType<typeof Bun.spawn>));
 }
 
-function mockCallOp(refineReturn: object[], generateReturn: object) {
+function mockCallOp(refineReturn: object[], generateReturn: object): typeof _hardeningDeps.callOp {
   return mock(async (_ctx: any, op: any, _input: any) => {
     if (op.name === "acceptance-refine") return refineReturn;
     if (op.name === "acceptance-generate") return generateReturn;
     throw new Error(`Unexpected op: ${op.name}`);
-  });
+  }) as typeof _hardeningDeps.callOp;
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -372,7 +372,7 @@ describe("runHardeningPass()", () => {
         return { testCode: 'test("AC-1", () => {})' };
       }
       throw new Error(`Unexpected op: ${op.name}`);
-    });
+    }) as typeof _hardeningDeps.callOp;
     _hardeningDeps.writeFile = mock(async () => {});
     _hardeningDeps.savePRD = mock(async () => {});
     _hardeningDeps.spawn = passingSpawn();
@@ -412,5 +412,70 @@ describe("runHardeningPass()", () => {
     // Must be under <packageDir>/.nax, not <workdir>/.nax
     expect(writtenPaths[0]).toContain("/tmp/workdir/packages/api/.nax/");
     expect(writtenPaths[0]).not.toMatch(/^\/tmp\/workdir\/\.nax\//);
+  });
+
+  // BUG-04: hardening's acceptance-test spawn previously had no wall-clock
+  // deadline — a hanging LLM-generated test (open server, watch mode) wedged
+  // the run's completion phase forever. Verify SIGTERM->SIGKILL escalation
+  // fires and the pass terminates instead of hanging.
+  test("terminates via SIGTERM when the test command hangs past config.acceptance.timeoutMs", async () => {
+    const story = makeStory({
+      acceptanceCriteria: ["spec AC"],
+      suggestedCriteria: ["edge case"],
+      status: "passed",
+      passes: true,
+      attempts: 1,
+    });
+    const ctx = makeCtx({
+      prd: makePRD({ userStories: [story] }),
+      config: {
+        ...TEST_CONFIG,
+        acceptance: { ...TEST_CONFIG.acceptance, timeoutMs: 50 },
+      } as unknown as NaxConfig, // test-ratchet-allow: as-unknown-as
+    });
+
+    const originalKill = process.kill;
+    const killCalls: Array<[number, string]> = [];
+    let resolveExited!: (code: number) => void;
+    const exitedPromise = new Promise<number>((res) => {
+      resolveExited = res;
+    });
+    process.kill = ((pid: number, signal?: string) => {
+      killCalls.push([pid, signal as string]);
+      if (signal === "SIGTERM") resolveExited(143);
+      return true;
+    }) as typeof process.kill;
+
+    try {
+      _hardeningDeps.callOp = mockCallOp(
+        [{ original: "edge case", refined: "edge case", testable: true, storyId: "US-001" }],
+        { testCode: 'test("AC-1", () => {})' },
+      );
+      _hardeningDeps.writeFile = mock(async () => {});
+      _hardeningDeps.savePRD = mock(async () => {});
+      _hardeningDeps.spawn = mock(
+        () =>
+          ({
+            pid: 4242,
+            exited: exitedPromise,
+            stdout: new ReadableStream({
+              start(ctrl) {
+                ctrl.close();
+              },
+            }),
+            stderr: new ReadableStream({
+              start(ctrl) {
+                ctrl.close();
+              },
+            }),
+          }) as ReturnType<typeof Bun.spawn>,
+      );
+
+      await runHardeningPass(ctx);
+
+      expect(killCalls.some(([pid, signal]) => pid === -4242 && signal === "SIGTERM")).toBe(true);
+    } finally {
+      process.kill = originalKill;
+    }
   });
 });
