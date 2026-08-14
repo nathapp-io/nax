@@ -7,6 +7,8 @@
 **Baseline:** 1142 tests pass / 0 fail; `bun run typecheck` clean; `bun run lint` clean (all 12 custom check scripts green)
 **Status:** triaged 2026-08-14 — see **Decisions** and **Work Order**. Implement from the Work Order; the Findings section is background.
 
+> **Implementation status (2026-08-14).** All CRITICAL/HIGH/MEDIUM findings implemented: W1–W9 and GROWTH-1/GROWTH-2 (from W11) are done, plus BUG-11 and BUG-13 (LOW, bundled into W8/W5 respectively). Only W10 (documentation) and the remainder of the W11 LOW backlog (BUG-12, BUG-14, BUG-15, ENH-1, ENH-2, MEM-1/2/3, PERF-2/3) remain unimplemented. Full suite green (13,071 unit + 1,104 integration + 24 UI tests, 0 fail), `bun run typecheck` clean, `bun run lint` clean. See each finding's **Status** line below for detail.
+
 ---
 
 ## Overall Grade: B+ (81/100)
@@ -62,7 +64,7 @@ An unattributable probe outcome must not fail a story. See the correction in the
 ### 🔴 HIGH
 
 #### SEC-2: Project `.nax/config.json` silently overrides the user's permission profile and secret-stripping policy
-**Severity:** ~~HIGH~~ → **MEDIUM** (D-2) | **Category:** Security | **Status:** FIX — warn only
+**Severity:** ~~HIGH~~ → **MEDIUM** (D-2) | **Category:** Security | **Status:** ✅ FIXED (2026-08-14) — warn only, per D-2
 `src/config/loader.ts:109-117`
 
 ```ts
@@ -76,7 +78,7 @@ if (projConf) { ... rawConfig = deepMergeConfig(rawConfig, resolvedProjConf); }
 Under D-1 the exfiltration framing above no longer applies; the remaining justification is that a user who deliberately set `permissionProfile: "safe"` globally should not have it silently un-done.
 
 #### BUG-1: spawn-client success path discards parsed error + retryable flag; recoverable failures become terminal `fail-unknown`
-**Severity:** HIGH | **Category:** Bug | **Status:** FIX — P0 (W2)
+**Severity:** HIGH | **Category:** Bug | **Status:** ✅ FIXED (2026-08-14) — was P0 (W2)
 `src/agents/acp/spawn-client.ts:347-357`, `src/agents/acp/adapter.ts:167-182`
 
 ```ts
@@ -92,7 +94,7 @@ return {
 **Fix:** Carry `parsed.error` and `parsed.retryable` on the success-path response; include the parsed error text in the `CompleteError` message.
 
 #### BUG-2: `cancelled` flag only stamped on non-zero exit — graceful SIGTERM exit-0 defeats watchdog cancel detection
-**Severity:** HIGH | **Category:** Bug | **Status:** FIX — P0 (W2)
+**Severity:** HIGH | **Category:** Bug | **Status:** ✅ FIXED (2026-08-14) — was P0 (W2)
 `src/agents/acp/spawn-client.ts:320-344` (vs success path 347-357)
 
 ```ts
@@ -104,7 +106,7 @@ if (exitCode !== 0) { ... if (this._externallyCancelled) errResponse.cancelled =
 **Fix:** Check `this._externallyCancelled` on the success path before building the response; stamp `cancelled` (and treat partial text as an error) whenever the cancel was invoked.
 
 #### SEC-4: Unquoted test file path interpolated into `/bin/sh -c` in flake probe (shell injection)
-**Severity:** HIGH | **Category:** Security → **Correctness** (D-3) | **Status:** FIX — P0
+**Severity:** HIGH | **Category:** Security → **Correctness** (D-3) | **Status:** ✅ FIXED (2026-08-14) — was P0
 `src/verification/flake-probe.ts:105-128`
 
 ```ts
@@ -122,7 +124,7 @@ case "vitest":
 ### 🟡 MEDIUM
 
 #### SEC-8: Webhook callback server: no rate limiting; `requireSecret: false` disables auth entirely
-**Severity:** MEDIUM | **Category:** Security | **Status:** FIX — P2
+**Severity:** MEDIUM | **Category:** Security | **Status:** ✅ FIXED (2026-08-14) — was P2
 
 **Not closed by D-1:** the actor here is a co-tenant local process, not the repo. The trust ruling does not reach it.
 `src/interaction/plugins/webhook.ts:447-508,189-194`
@@ -131,7 +133,7 @@ case "vitest":
 **Fix:** Enforce a global request rate limit regardless of HMAC; emit a warning when `requireSecret: false`.
 
 #### BUG-3: Acceptance-loop max-retries branch is dead — exhaustion exits silently
-**Severity:** MEDIUM | **Category:** Bug | **Status:** FIX — P1 (W3)
+**Severity:** MEDIUM | **Category:** Bug | **Status:** ✅ FIXED (2026-08-14) — was P1 (W3)
 `src/execution/lifecycle/acceptance-loop.ts:435` (vs `:597`)
 
 ```ts
@@ -145,7 +147,7 @@ return buildResult(false, ...);   // actual exhaustion path — silent
 **Fix:** Change guard to `>=` (or loop `while (acceptanceRetries <= maxRetries)`) so exhaustion is reported.
 
 #### BUG-4: Queue-command PRD mutations silently lost in parallel mode
-**Severity:** MEDIUM | **Category:** Bug | **Status:** FIX — P1 (W5), highest-value of W5
+**Severity:** MEDIUM | **Category:** Bug | **Status:** ✅ FIXED (2026-08-14) — was P1 (W5), highest-value of W5
 `src/pipeline/stages/queue-check.ts:108,119,131,155,177` vs `src/pipeline/stages/completion.ts:61`, `routing.ts:106`
 
 ```ts
@@ -156,14 +158,14 @@ await savePRD(ctx.prd, resolvePrdPath(ctx));   // unconditional — ignores skip
 **Fix:** Gate `savePRD` behind `ctx.skipPrdPersistence !== true`, mirroring completion.ts.
 
 #### BUG-5: Pre-iteration terminal story outcomes never emit bus events
-**Severity:** MEDIUM | **Category:** Bug | **Status:** FIX — P2 (W5)
+**Severity:** MEDIUM | **Category:** Bug | **Status:** ✅ FIXED (2026-08-14) — was P2 (W5)
 `src/execution/unified-executor.ts:226-272,503-507,615-619`, `src/execution/escalation/tier-escalation.ts:258-285`
 
 **Risk:** When `preIterationTierCheck` terminally fails a story, it fires the `on-story-fail` hook but never emits `story:failed` on the bus — yet `story:started` was already emitted. Reporters never get `onStoryComplete(failed)`, the events file records no terminal line, the TUI shows the story "started" forever, and the `max-retries` interaction trigger never fires. Same gap for stories dropped by the parallel batch pre-check.
 **Fix:** Emit `story:failed` from the terminal-fail path of `preIterationTierCheck`; emit `story:skipped`/`story:failed` for batch stories excluded by the pre-check.
 
 #### BUG-6: Parallel cost-limit stop is silent and asymmetric with sequential
-**Severity:** MEDIUM | **Category:** Bug | **Status:** FIX — full parity (D-4)
+**Severity:** MEDIUM | **Category:** Bug | **Status:** ✅ FIXED (2026-08-14) — full parity per D-4
 `src/execution/unified-executor.ts:414-421`
 
 ```ts
@@ -174,7 +176,7 @@ if (enforcedCostAfterBatch >= costLimit) { return buildResult("cost-limit"); }
 **Fix (as decided — D-4):** Mirror the sequential path exactly: emit `run:paused` with reason/cost and consult `checkCostExceeded` when the trigger is enabled. Parallel gets the same approve-to-continue affordance as sequential — an event-only variant was considered and rejected.
 
 #### BUG-7: Parallel mode drops `stageCost` from per-story/batch cost accounting
-**Severity:** MEDIUM | **Category:** Bug (metrics) | **Status:** FIX — P2 (W5)
+**Severity:** MEDIUM | **Category:** Bug (metrics) | **Status:** ✅ FIXED (2026-08-14) — was P2 (W5)
 `src/execution/parallel-worker.ts:85-90` vs `src/execution/pipeline-result-handler.ts:149`
 
 ```ts
@@ -185,7 +187,7 @@ cost: result.context.agentResult?.estimatedCostUsd || 0,   // stageCost dropped
 **Fix:** Include `result.context.stageCost ?? 0` in the returned cost, mirroring `handlePipelineFailure`.
 
 #### BUG-8: Flake probe: all probes timing out/crashing → `"consistent-failure"` misattribution
-**Severity:** MEDIUM | **Category:** Bug | **Status:** FIX — non-blocking + loud (D-5)
+**Severity:** MEDIUM | **Category:** Bug | **Status:** ✅ FIXED (2026-08-14) — non-blocking + loud, per D-5
 `src/verification/flake-probe.ts:159-177`
 
 ```ts
@@ -199,7 +201,7 @@ return { verdict: "consistent-failure", probeRuns };   // includes 3/3 timeouts/
 > **Correction to the original writeup (verified 2026-08-14):** the `"unprobeable"` verdict is **not** new — it already exists at `flake-probe.ts:146-155`, where it handles `failure.file === "unknown"` / `framework === "unknown"`. This change extends that existing variant to the zero-attributable-outcome case. No new type, no signature change, smaller than the original text implies.
 
 #### BUG-9: Quarantine memo short-circuits the story-diff baseline check (fail-open)
-**Severity:** MEDIUM | **Category:** Bug | **Status:** FIX — P2 (W6)
+**Severity:** MEDIUM | **Category:** Bug | **Status:** ✅ FIXED (2026-08-14) — was P2 (W6)
 `src/verification/flake-triage.ts:167-179`
 
 ```ts
@@ -211,7 +213,7 @@ if (!isProbeCandidate(copy, changedTestSet, mappedTestSet)) { ... }
 **Fix:** Re-run `isProbeCandidate` before honoring the memo, or invalidate the key when the story diff changes.
 
 #### BUG-10: Legacy `cumulative_token_usage` assigned without validation — malformed values corrupt token accounting
-**Severity:** MEDIUM | **Category:** Bug | **Status:** FIX — P2 (W7)
+**Severity:** MEDIUM | **Category:** Bug | **Status:** ✅ FIXED (2026-08-14) — was P2 (W7)
 `src/agents/acp/parser.ts:251-263`, `adapter.ts:487-488`
 
 ```ts
@@ -222,28 +224,28 @@ if (event.cumulative_token_usage) state.tokenUsage = event.cumulative_token_usag
 **Fix:** Apply the same `Number.isFinite` coercion to `cumulative_token_usage` and inside `toInternal`/`addTokenUsage`.
 
 #### PERF-1: Teardown has no hard deadline on the normal-exit path — wedged `acpx` hangs run end
-**Severity:** MEDIUM | **Category:** Performance/Reliability | **Status:** FIX — P1 (W8)
+**Severity:** MEDIUM | **Category:** Performance/Reliability | **Status:** ✅ FIXED (2026-08-14) — was P1 (W8)
 `src/agents/acp/spawn-client.ts:380-399,539-555`
 
 **Risk:** `trackedSpawn` (used by `closeAllRunSessions` → `acpx sessions close`) awaits `proc.exited` with no timeout. On signal/crash this is bounded by the 10s hard deadline in crash-signals, but the normal completion path has no deadline — a wedged acpx stalls run teardown indefinitely; the CLI hangs at exit.
 **Fix:** Race every `trackedSpawn`/`proc.exited` against a cancellable deadline; pass the abort signal through `closeAllRunSessions`.
 
 #### ORPHAN-1: Cancel/close kills only the direct acpx PID, not its process tree
-**Severity:** MEDIUM | **Category:** Resource | **Status:** FIX — P1 (W8)
+**Severity:** MEDIUM | **Category:** Resource | **Status:** ✅ FIXED (2026-08-14) — was P1 (W8)
 `src/agents/acp/spawn-client.ts:188-194,404-410,442-449`
 
 **Risk:** acpx is spawned without `detached` and signals only the single PID — acpx's child (the agent) and its children (long test runs, editors) survive the cancel. Once acpx exits, `onPidExited` unregisters the PID, so a later `killAll()` can never find the orphaned descendants. Each watchdog cancel / run abort can leave a live process tree; they accumulate across many stories. (Contrast: `verification/executor.ts` uses `detached: true` + `killProcessGroup`.)
 **Fix:** Spawn acpx with `detached: true` and terminate via `killProcessGroup(pid, "SIGTERM")` with SIGKILL escalation.
 
 #### GROWTH-1: metrics.json rewrites and re-materializes the entire run history every run
-**Severity:** MEDIUM | **Category:** Performance | **Status:** FIX — P3 (W11)
+**Severity:** MEDIUM | **Category:** Performance | **Status:** ✅ FIXED (2026-08-14) — was P3 (W11)
 `src/metrics/tracker.ts:389-396`, `src/metrics/aggregator.ts:45`
 
 **Risk:** Every run reads the whole history, appends, and rewrites the file; `loadRunMetrics` + `calculateAggregateMetrics` then `flatMap` all runs into memory. Per-story entries carry `context.providers`, `pullCalls`, `failingTestFiles`, `fallback.hops` — tens of KB per run, growing without bound on disk and in transient memory. After hundreds of runs, `nax status --cost` slows.
 **Fix:** Cap history (keep last N runs) or write an append-only metrics.jsonl; aggregate streaming instead of flatMap.
 
 #### GROWTH-2: CodeNeighborProvider buffers full contents of up to 500 files per scanned dir
-**Severity:** MEDIUM | **Category:** Performance | **Status:** FIX — P3 (W11)
+**Severity:** MEDIUM | **Category:** Performance | **Status:** ✅ FIXED (2026-08-14) — was P3 (W11)
 `src/context/engine/providers/code-neighbor.ts:355-367,404-419`
 
 **Risk:** The `includes` pre-filter runs after the full read, so every candidate file (up to `maxGlobFiles=500` per dir × workspace packages) is fully read into a cache that lives for the whole `fetch()` even when it matches nothing. On a repo with large generated files this is hundreds of MB per stage assembly.
@@ -254,9 +256,9 @@ if (event.cumulative_token_usage) state.tokenUsage = event.cumulative_token_usag
 - **ENH-1** — `parseAgentError` cannot classify nested `error.data` codes in a pure-JSON envelope (`parse-agent-error.ts:58-63,278-299`): root parse skips the embedded-object scan; JSON-quoted `"acpxCode":"RATE_LIMIT"` defeats the key-value regex. Walk `payload.error.data`.
 - **MEM-1** — Unbounded stderr buffering in spawn-client (`spawn-client.ts:287,337-338`): full stderr becomes the response message content; only the log line is capped. Rolling-tail cap needed.
 - **ENH-2** — `buildSmartTestCommand` `PATH_TAKING_FLAGS` misses `--filter`, `--dir`, `-F` (pnpm/turbo/nx) (`smart-runner.ts:352-374`): monorepo scoping silently breaks for `pnpm --filter ./packages/api test`.
-- **BUG-11** — `PidRegistry.freeze()` before `onShutdown` drops PIDs spawned during teardown (`crash-signals.ts:89-98`, `pid-registry.ts:53-56`): a hung `acpx stop` spawned during teardown is never SIGKILLed.
+- **BUG-11** — ✅ FIXED (2026-08-14, bundled into W8) — `PidRegistry.freeze()` before `onShutdown` drops PIDs spawned during teardown (`crash-signals.ts:89-98`, `pid-registry.ts:53-56`): a hung `acpx stop` spawned during teardown is never SIGKILLed.
 - **BUG-12** — `removeWorktreeDirectory` awaits `proc.exited` without consuming stdout/stderr (`pipeline-result-handler.ts:46-51`): a git error emitting >64KB stalls the child → hang; non-zero exits are also invisible.
-- **BUG-13** — Parallel batch path skips `statusWriter` update after batch completion (`unified-executor.ts:342-350`): status.json can show stale story counts during long batches; crash loses progress.
+- **BUG-13** — ✅ FIXED (2026-08-14, bundled into W5) — Parallel batch path skips `statusWriter` update after batch completion (`unified-executor.ts:342-350`): status.json can show stale story counts during long batches; crash loses progress.
 - **BUG-14** — Dead `completedEarly` branch in `runner.ts:284` / `runner-execution.ts:69`: nothing ever sets the flag; delete or wire it up.
 - **BUG-15** — `_runtimeCrashRetryCounts` module map grows across runs (`tier-escalation.ts:350`): never cleared at run teardown.
 - **PERF-2** — Timed-out provider fetch keeps doing work (`context/engine/orchestrator.ts:116-125`): `controller.abort()` exists but built-in providers aren't audited for cooperative cancellation.
