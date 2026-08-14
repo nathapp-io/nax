@@ -5,7 +5,7 @@
  * Prevents concurrent runs in the same directory.
  */
 
-import { unlink } from "node:fs/promises";
+import { rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import { getLogger } from "../logger";
 
@@ -74,13 +74,57 @@ export async function acquireLock(workdir: string): Promise<boolean> {
           return false;
         }
 
-        // Process is dead, remove stale lock
+        // BUG-07: two processes racing this same staleness check must not
+        // both unlink-then-create — that lets both believe they hold the
+        // lock. `rename` is atomic at the filesystem level: only one racer's
+        // rename call can succeed against a given source path at a time, so
+        // this claims exclusive rights to whatever currently sits at
+        // lockPath. Everyone else gets ENOENT and backs off (returns false)
+        // instead of racing ahead on a stale read.
+        //
+        // Renaming alone isn't sufficient though: by the time our rename
+        // lands, another racer may have already completed its own
+        // rename+create and be holding a brand-new, LIVE lock at lockPath —
+        // our rename would then unknowingly steal that live lock. So the
+        // content is re-verified after claiming it: only a tombstone whose
+        // pid still matches the stale pid we originally observed is treated
+        // as ours to discard; anything else is restored untouched and we
+        // back off.
+        const tombstonePath = `${lockPath}.stale.${process.pid}.${Date.now()}`;
+        try {
+          await rename(lockPath, tombstonePath);
+        } catch (renameError) {
+          if ((renameError as NodeJS.ErrnoException).code === "ENOENT") {
+            // Another process already claimed cleanup of this stale lock —
+            // let it proceed; we back off rather than racing ahead.
+            return false;
+          }
+          throw renameError;
+        }
+
+        const claimedContent = await Bun.file(tombstonePath)
+          .text()
+          .catch(() => null);
+        let claimedPid: number | undefined;
+        try {
+          claimedPid = claimedContent === null ? undefined : (JSON.parse(claimedContent) as { pid: number }).pid;
+        } catch {
+          claimedPid = undefined;
+        }
+
+        if (claimedPid !== lockPid) {
+          // We renamed away a lock that was replaced out from under us
+          // (racer B claimed racer A's fresh live lock) — put it back
+          // unchanged and let the rightful holder be found on the next check.
+          await rename(tombstonePath, lockPath).catch(() => {});
+          return false;
+        }
+
         const logger = getSafeLogger();
         logger?.warn("execution", "Removing stale lock", {
           pid: lockPid,
         });
-        const fs = await import("node:fs/promises");
-        await fs.unlink(lockPath).catch(() => {});
+        await unlink(tombstonePath).catch(() => {});
       }
     }
 

@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
-import { spawn } from "bun";
 import { acquireLock, formatProgress, releaseLock } from "@/execution";
 import type { StoryCounts } from "@/execution";
+import { spawn } from "bun";
 
 describe("formatProgress", () => {
   test("formats progress with all stories pending", () => {
@@ -291,5 +291,28 @@ describe("acquireLock and releaseLock", () => {
   test("handles release when lock file doesn't exist", async () => {
     // Should not throw when releasing non-existent lock
     await expect(releaseLock(testDir)).resolves.toBeUndefined();
+  });
+
+  test("BUG-07: concurrent racers on the same stale lock — exactly one wins, not all", async () => {
+    // Create a lock file with a fake PID that doesn't exist
+    const stalePid = 999999;
+    const staleLock = { pid: stalePid, timestamp: Date.now() - 60000 };
+    await Bun.write(lockPath, JSON.stringify(staleLock));
+
+    // Before the fix, two concurrent callers could both observe the same
+    // stale lock, both unlink it, and both then win the O_EXCL create —
+    // both believing they hold the lock simultaneously.
+    const results = await Promise.all(Array.from({ length: 10 }, () => acquireLock(testDir)));
+
+    const winners = results.filter(Boolean);
+    expect(winners.length).toBe(1);
+
+    // No `.stale.<pid>.<ts>` tombstone left behind — the winner's rename
+    // target is cleaned up after use.
+    const { readdirSync } = await import("node:fs");
+    const entries = readdirSync(testDir);
+    expect(entries.some((e) => e.includes(".stale."))).toBe(false);
+
+    await releaseLock(testDir);
   });
 });
