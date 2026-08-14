@@ -9,7 +9,15 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { InteractionChain } from "../../../src/interaction/chain";
 import type { InteractionPlugin, InteractionResponse } from "../../../src/interaction/types";
-import { checkCostExceeded, checkCostWarning, checkPreMerge, isTriggerEnabled } from "../../../src/interaction/triggers";
+import {
+  checkCostExceeded,
+  checkCostWarning,
+  checkMaxRetries,
+  checkMergeConflict,
+  checkPreMerge,
+  checkSecurityReview,
+  isTriggerEnabled,
+} from "../../../src/interaction/triggers";
 import { makeNaxConfig } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,6 +33,28 @@ function makeChain(action: InteractionResponse["action"]): InteractionChain {
       requestId: id,
       action,
       respondedBy: "user",
+      respondedAt: Date.now(),
+    })),
+  };
+  chain.register(plugin);
+  return chain;
+}
+
+/**
+ * BUG-17: simulates a trigger that times out — respondedBy: "timeout" with
+ * a plugin-supplied default action (typically "skip"). Distinct from
+ * makeChain() (respondedBy: "user"), which is an explicit response and
+ * bypasses the fallback entirely.
+ */
+function makeTimeoutChain(): InteractionChain {
+  const chain = new InteractionChain({ defaultTimeout: 5000, defaultFallback: "escalate" });
+  const plugin: InteractionPlugin = {
+    name: "test",
+    send: mock(async () => {}),
+    receive: mock(async (id: string): Promise<InteractionResponse> => ({
+      requestId: id,
+      action: "skip",
+      respondedBy: "timeout",
       respondedAt: Date.now(),
     })),
   };
@@ -149,5 +179,67 @@ describe("checkPreMerge — approve/abort responses", () => {
     expect(await checkPreMerge(context, cfg, makeChain("skip"))).toBe(false);
     expect(await checkPreMerge(context, cfg, makeChain("approve"))).toBe(true);
     expect(await checkPreMerge(context, makeConfig({}), makeChain("abort"))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUG-17: every trigger honors its configured fallback on timeout, not just
+// review-gate. Before the fix, checkCostExceeded/checkMergeConflict/
+// checkSecurityReview compared response.action directly — a timeout response
+// (action: "skip") always compared !== "abort" and proceeded, even when
+// fallback: "abort" was configured. checkMaxRetries had the mirror bug
+// (action: "skip" always meant "skip", ignoring a "continue" fallback).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("BUG-17: trigger fallback honored on timeout for every trigger", () => {
+  test("checkCostExceeded aborts on timeout when fallback is abort", async () => {
+    const cfg = makeConfig({ "cost-exceeded": { enabled: true, fallback: "abort" } });
+    const context = { featureName: "feature-x", cost: 1.0, limit: 1.0 };
+    expect(await checkCostExceeded(context, cfg, makeTimeoutChain())).toBe(false);
+  });
+
+  test("checkCostExceeded proceeds on timeout when fallback is continue", async () => {
+    const cfg = makeConfig({ "cost-exceeded": { enabled: true, fallback: "continue" } });
+    const context = { featureName: "feature-x", cost: 1.0, limit: 1.0 };
+    expect(await checkCostExceeded(context, cfg, makeTimeoutChain())).toBe(true);
+  });
+
+  test("checkMergeConflict aborts on timeout when fallback is abort", async () => {
+    const cfg = makeConfig({ "merge-conflict": { enabled: true, fallback: "abort" } });
+    const context = { featureName: "feature-x" };
+    expect(await checkMergeConflict(context, cfg, makeTimeoutChain())).toBe(false);
+  });
+
+  test("checkSecurityReview aborts on timeout when fallback is abort", async () => {
+    const cfg = makeConfig({ "security-review": { enabled: true, fallback: "abort" } });
+    const context = { featureName: "feature-x" };
+    expect(await checkSecurityReview(context, cfg, makeTimeoutChain())).toBe(false);
+  });
+
+  test("checkMaxRetries continues (not skip) on timeout when fallback is continue", async () => {
+    const cfg = makeConfig({ "max-retries": { enabled: true, fallback: "continue" } });
+    const context = { featureName: "feature-x" };
+    // Timeout response action is "skip", but fallback: "continue" maps to
+    // "approve" via applyFallback — the story must not be skipped.
+    expect(await checkMaxRetries(context, cfg, makeTimeoutChain())).toBe("continue");
+  });
+
+  test("checkMaxRetries skips on timeout when fallback is skip", async () => {
+    const cfg = makeConfig({ "max-retries": { enabled: true, fallback: "skip" } });
+    const context = { featureName: "feature-x" };
+    expect(await checkMaxRetries(context, cfg, makeTimeoutChain())).toBe("skip");
+  });
+
+  test("checkPreMerge does not approve on timeout when fallback is abort", async () => {
+    const cfg = makeConfig({ "pre-merge": { enabled: true, fallback: "abort" } });
+    const context = { featureName: "feature-x", totalStories: 1, cost: 0.1 };
+    expect(await checkPreMerge(context, cfg, makeTimeoutChain())).toBe(false);
+  });
+
+  test("an explicit (non-timeout) user response is unaffected by fallback config", async () => {
+    // Regression guard: applyFallback only kicks in for respondedBy timeout/system.
+    const cfg = makeConfig({ "cost-exceeded": { enabled: true, fallback: "abort" } });
+    const context = { featureName: "feature-x", cost: 1.0, limit: 1.0 };
+    expect(await checkCostExceeded(context, cfg, makeChain("approve"))).toBe(true);
   });
 });
