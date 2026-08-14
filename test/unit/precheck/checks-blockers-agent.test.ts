@@ -13,12 +13,19 @@ import { makeNaxConfig } from "../../helpers";
 
 // --- helpers ---
 
+// MED-03: checkAgentCLI now resolves the configured agent via
+// resolveDefaultAgent(config), which reads config.agent.default —
+// config.execution.agent never existed in the schema and was always undefined.
 function makeConfig(agent?: string) {
-  return makeNaxConfig({
-    execution: {
-      agent: agent,
-    },
-  });
+  return makeNaxConfig(
+    agent === undefined
+      ? {}
+      : {
+          agent: {
+            default: agent,
+          },
+        },
+  );
 }
 
 withDepsRestore(_deps, ["spawn"]);

@@ -59,8 +59,12 @@ describe("ConfigSelector — Phase 1 selectors", () => {
         precheck: expect.any(Object),
         quality: expect.any(Object),
         execution: expect.any(Object),
+        // MED-03: checkAgentCLI resolves the agent via resolveDefaultAgent(config),
+        // which reads config.agent.default — precheck's slice must include it.
+        agent: expect.any(Object),
       });
       expect(Object.keys(slice).sort()).toEqual([
+        "agent",
         "execution",
         "precheck",
         "project",
