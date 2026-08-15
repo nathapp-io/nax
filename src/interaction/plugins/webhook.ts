@@ -15,13 +15,7 @@ import type { InteractionPlugin, InteractionRequest, InteractionResponse } from 
 import { PayloadTooLargeError, readBodyWithLimit } from "./webhook-body-limit";
 import { installServePortZeroCompat } from "./webhook-serve-compat";
 
-installServePortZeroCompat();
-
-/**
- * Injectable sleep — kept for backward compat with existing tests that override it.
- * No longer used internally by receive() (replaced by event-driven delivery).
- * @internal
- */
+/** Injectable sleep — kept for backward compat with tests; unused by receive() (event-driven delivery). @internal */
 export const _webhookPluginDeps = {
   sleep,
   /**
@@ -453,6 +447,10 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       await this.serverStartPromise;
       return;
     }
+    // SEC-06: install the compat shim lazily on first actual server start,
+    // not as a module-import side effect (previously patched two
+    // process-wide globals merely by importing webhook.ts).
+    installServePortZeroCompat();
     this.serverStartPromise = (async () => {
       const port = this.config.callbackPort ?? 0;
       this.server = Bun.serve({
