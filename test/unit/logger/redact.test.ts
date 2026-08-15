@@ -82,10 +82,32 @@ describe("redactSecrets", () => {
       expect(out.output).toContain("[REDACTED]");
     });
 
+    // Security-review follow-up: raising the length floor to 16 (an earlier
+    // revision of the over-redaction fix) would have under-redacted a short
+    // but real base64 basic-auth credential. The floor stays at 8 — only
+    // the "must look credential-shaped" requirement excludes prose.
+    test("still redacts a short (8-15 char) credential-shaped Basic value", () => {
+      const out = redactSecrets({ output: "Authorization: Basic Ym9iOjl4Mg==" }) as any; // base64("bob:9x2"), 12 chars
+      expect(out.output).not.toContain("Ym9iOjl4Mg==");
+      expect(out.output).toContain("[REDACTED]");
+    });
+
     test("redacts an x-api-key header captured in free text", () => {
       const out = redactSecrets({ output: "x-api-key: abcd1234efgh5678" }) as any;
       expect(out.output).not.toContain("abcd1234efgh5678");
       expect(out.output).toContain("[REDACTED]");
+    });
+
+    // Security-review follow-up: an earlier revision bounded the BEGIN/END
+    // gap to 8KB, which would silently miss a legitimate multi-cert chain
+    // bundle exceeding that size. The bound is now 64KB.
+    test("redacts a PEM block larger than 8KB (bundled certificate chain)", () => {
+      const bigBody = "A".repeat(20_000); // well past the old 8KB bound, within the new 64KB one
+      const pem = `-----BEGIN CERTIFICATE-----\n${bigBody}\n-----END CERTIFICATE-----`;
+      const out = redactSecrets({ output: `chain:\n${pem}\ndone` }) as any;
+      expect(out.output).not.toContain(bigBody);
+      expect(out.output).toContain("[REDACTED]");
+      expect(out.output).toContain("done");
     });
 
     test("redacts a PGP-style PEM block (' ... BLOCK' suffix)", () => {
