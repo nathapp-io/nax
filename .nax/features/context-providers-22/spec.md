@@ -157,20 +157,6 @@ Add the descriptor, registry entry, runtime handler, and stage wiring for on-dem
 ### Creates
 - `test/unit/context/engine/query-scratch.test.ts`
 
-### Modifies
-
-**US-002**
-- `test/unit/context/engine/scoring.test.ts` — any case asserting the exact set of keys in `KIND_WEIGHTS`, or an exhaustive list of `ChunkKind` values, pins a 9-value union. Adding `diagnostics` necessarily breaks it. The replacing invariant is that each newly added kind resolves to its documented weight, and previously existing kinds keep the weights they had.
-
-**US-003**
-- `test/unit/context/engine/scoring.test.ts` — same closed-set assertion, broken again by adding `prior-failure`. Replacing invariant as above.
-
-**US-004**
-- `test/unit/context/engine/scoring.test.ts` — same closed-set assertion, broken again by adding `lint-config`. Replacing invariant as above.
-
-**US-005**
-- `test/unit/context/engine/pull-tools.test.ts` — any case asserting the complete key set of `PULL_TOOL_REGISTRY` pins exactly two tools. Adding `query_scratch` necessarily breaks it. The replacing invariant is that the registry contains each documented tool name and that each resolves to a descriptor whose `name` matches its key.
-
 ### Seams
 
 - **US-001 → US-002.** `parseDiagnostics` and the `tool-diagnostics` entry kind are consumed by `ToolDiagnosticsProvider`. US-002 carries the seam AC.
@@ -241,9 +227,10 @@ Add the descriptor, registry entry, runtime handler, and stage wiring for on-dem
 9. `[unit]` Calling `fetch` against a package whose lint config file is malformed returns a chunk that names the tool and does not throw.
 10. `[unit]` Every chunk returned by `fetch` has `kind` equal to `lint-config` and `scope` equal to `project`.
 11. `[unit]` Calling `fetch` reads the request's `packageDir` rather than its `repoRoot`, proving the provider is package-scoped: a request whose `packageDir` contains a lint config and whose `repoRoot` does not returns one chunk.
-12. `[integration]` An orchestrator built by `createDefaultOrchestrator` includes a provider whose `id` is `lint-config`.
-13. `[unit]` Resolving the stage context config for the rectify stage yields a `providerIds` list that includes `lint-config`.
-14. `[unit]` Resolving the stage context config for the execution stage yields a `providerIds` list that does not include `lint-config`.
+12. `[unit]` Calling `fetch` with a stubbed `detectProjectProfile` invokes that stub with the request's `packageDir`, proving lint-tool detection goes through the public detector rather than a re-implementation.
+13. `[integration]` An orchestrator built by `createDefaultOrchestrator` includes a provider whose `id` is `lint-config`.
+14. `[unit]` Resolving the stage context config for the rectify stage yields a `providerIds` list that includes `lint-config`.
+15. `[unit]` Resolving the stage context config for the execution stage yields a `providerIds` list that does not include `lint-config`.
 
 ### US-005 — query_scratch pull tool
 
@@ -260,4 +247,6 @@ Add the descriptor, registry entry, runtime handler, and stage wiring for on-dem
 11. `[unit]` Resolving the stage context config for the rectify stage yields a `pullToolNames` list that includes `query_scratch`.
 12. `[unit]` Resolving the stage context config for the execution stage yields a `pullToolNames` list that includes `query_scratch`.
 
-<!-- spec-writing: completed-through-phase-5 -->
+**Out of scope:** enforcement of the per-session call ceiling is existing pull-tool budget behaviour shared with `query_neighbor`; this story pins the descriptor's ceiling value but does not re-verify the budget path.
+
+<!-- spec-writing: completed-through-phase-6 -->
