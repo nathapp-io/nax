@@ -2,7 +2,7 @@ import { qualityConfigSelector } from "../config";
 import type { QualityConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
-import { parseDiagnostics } from "../quality/diagnostics";
+import { detectTool, parseDiagnostics } from "../quality/diagnostics";
 import type { QualityCommandOptions, QualityCommandResult } from "../quality/runner";
 import { runQualityCommand } from "../quality/runner";
 import { parseTypecheckOutput } from "../review/typecheck-parsing";
@@ -138,7 +138,7 @@ export const typecheckCheckOp: DeterministicOperation<TypecheckCheckInput, Typec
     await captureToolDiagnostics(
       input.storyId,
       result,
-      "tsc",
+      detectTool(result.command, result.commandName),
       input.sessionScratchDir ?? deps.sessionScratchDir,
       deps.appendScratchEntry,
     );

@@ -38,6 +38,34 @@ export interface Diagnostic {
 }
 
 /**
+ * Best-effort detection of the tool identity behind a quality command string.
+ *
+ * US-001 only ships parsers for `tsc` and `biome`; every other toolchain takes
+ * the raw-tail path in `parseDiagnostics`. Detection exists so that path carries
+ * honest provenance — an ESLint/Ruff/mypy failure must never be labeled `biome`
+ * or `tsc` — while `biome`/`tsc` still route to their structured parsers even
+ * when wrapped in a package-manager prefix (`bunx`, `npx`, `pnpm exec`, ...).
+ *
+ * Falls back to `commandName` (`"lint"` / `"typecheck"`) when no known tool token
+ * appears (e.g. a package-script alias like `bun run lint`).
+ */
+export function detectTool(command: string, commandName: string): string {
+  const c = command.toLowerCase();
+  // Supported parsers (US-001) — route to structured parsing.
+  if (c.includes("biome")) return "biome";
+  if (/\btsc\b/.test(c)) return "tsc";
+  // Recognised-but-unparsed toolchains — honest raw-tail provenance.
+  if (c.includes("eslint")) return "eslint";
+  if (c.includes("golangci-lint")) return "golangci-lint";
+  if (c.includes("ruff")) return "ruff";
+  if (c.includes("mypy")) return "mypy";
+  if (/\bcargo\b/.test(c)) return "cargo";
+  if (/\bgo\b/.test(c)) return "go";
+  // Unknown (e.g. `bun run lint`) — generic command-name label, never a false tool.
+  return commandName;
+}
+
+/**
  * Parse a QualityCommandResult into a list of structured Diagnostics.
  *
  * Per-toolchain parsing degrades rather than fails: an unrecognised tool (or a

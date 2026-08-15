@@ -2,7 +2,7 @@ import { qualityConfigSelector } from "../config";
 import type { QualityConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
-import { parseDiagnostics } from "../quality/diagnostics";
+import { detectTool, parseDiagnostics } from "../quality/diagnostics";
 import type { QualityCommandOptions, QualityCommandResult } from "../quality/runner";
 import { runQualityCommand } from "../quality/runner";
 import type { LintOutputFormat, LintParseResult } from "../review/lint-parsing";
@@ -136,7 +136,7 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
     await captureToolDiagnostics(
       input.storyId,
       result,
-      "biome",
+      detectTool(result.command, result.commandName),
       input.sessionScratchDir ?? deps.sessionScratchDir,
       deps.appendScratchEntry,
     );
