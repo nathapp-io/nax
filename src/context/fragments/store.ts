@@ -19,6 +19,7 @@
 
 import { mkdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { featureDir } from "@/config";
 import { estimateTokens } from "@/optimizer";
 import { atomicWriteText } from "@/utils/json-file";
 
@@ -66,7 +67,7 @@ export function fragmentPath(projectDir: string, featureId: string, storyId: str
 
 function fragmentsDir(projectDir: string, featureId: string): string {
   validatePathSegment(featureId, "featureId");
-  return join(projectDir, ".nax", "features", featureId, "fragments");
+  return join(featureDir(projectDir, featureId), "fragments");
 }
 
 /**

@@ -16,11 +16,12 @@
 
 import { readdir } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
-import { NaxError } from "../../errors";
-import { getLogger } from "../../logger";
-import type { PipelineContext } from "../../pipeline/types";
-import { getContextFiles } from "../../prd/types";
-import { errorMessage } from "../../utils/errors";
+import { featureDir } from "@/config";
+import { NaxError } from "@/errors";
+import { getLogger } from "@/logger";
+import type { PipelineContext } from "@/pipeline/types";
+import { getContextFiles } from "@/prd";
+import { errorMessage } from "@/utils/errors";
 import { estimateAvailableBudgetTokens } from "./available-budget";
 import { loadFeatureManifests, writeContextManifest } from "./manifest-store";
 import { createDefaultOrchestrator } from "./orchestrator-factory";
@@ -87,7 +88,7 @@ export async function discoverSessionScratchDirsOnDisk(
   ttlMs: number,
 ): Promise<string[]> {
   const logger = getLogger();
-  const sessionsRoot = join(projectDir, ".nax", "features", featureName, "sessions");
+  const sessionsRoot = join(featureDir(projectDir, featureName), "sessions");
 
   let entries: string[];
   try {

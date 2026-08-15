@@ -5,6 +5,7 @@
  */
 
 import * as path from "node:path";
+import { featuresDir } from "@/config";
 import type {
   AcceptanceVerdictObservation,
   ChunkExcludedObservation,
@@ -231,12 +232,12 @@ async function collectFromReviewAudit(context: CuratorPostRunContext): Promise<O
 
 async function collectFromContextManifests(context: CuratorPostRunContext): Promise<Observation[]> {
   const observations: Observation[] = [];
-  const featuresDir = path.join(context.workdir, ".nax", "features");
+  const featuresRoot = featuresDir(context.workdir);
   let skippedManifests = 0;
   try {
     const glob = new Bun.Glob("*/stories/*/context-manifest-*.json");
-    for await (const file of glob.scan({ cwd: featuresDir, absolute: false })) {
-      const fullPath = path.join(featuresDir, file);
+    for await (const file of glob.scan({ cwd: featuresRoot, absolute: false })) {
+      const fullPath = path.join(featuresRoot, file);
       try {
         const parts = file.split("/");
         const featureId = parts[0] ?? context.feature;

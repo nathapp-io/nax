@@ -72,7 +72,14 @@ export { loadConfig, loadConfigForWorkdir, loadPackageOverride, findProjectDir, 
 export { mergePackageConfig } from "./merge";
 export { validateConfig, type ValidationResult } from "./validate"; // @deprecated: Use NaxConfigSchema.safeParse() instead
 export { validateDirectory, validateFilePath, isWithinDirectory, MAX_DIRECTORY_DEPTH } from "./path-security";
-export { globalConfigDir, projectConfigDir } from "./paths";
+export {
+  globalConfigDir,
+  projectConfigDir,
+  featuresDir,
+  featureDir,
+  PROJECT_NAX_DIR,
+  PROJECT_FEATURES_DIR,
+} from "./paths";
 export { deepMergeConfig } from "./merger";
 export type { PipelineStage } from "./permissions";
 export {

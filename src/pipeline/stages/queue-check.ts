@@ -6,7 +6,7 @@
  */
 
 import path from "node:path";
-import { validateFilePath } from "@/config";
+import { featureDir, validateFilePath } from "@/config";
 import { NaxError } from "@/errors";
 import { processQueueFile } from "@/execution";
 import { getLogger } from "@/logger";
@@ -30,7 +30,7 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
  * never writes an untracked, un-ignored file into the repo root.
  */
 function resolvePrdPath(ctx: PipelineContext): string {
-  return ctx.featureDir ? `${ctx.featureDir}/prd.json` : `${ctx.workdir}/.nax/features/unknown/prd.json`;
+  return path.join(ctx.featureDir ?? featureDir(ctx.workdir, "unknown"), "prd.json");
 }
 
 /**

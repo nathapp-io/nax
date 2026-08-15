@@ -5,6 +5,7 @@
  * Each heuristic is a pure function that groups observations and generates proposals.
  */
 
+import { PROJECT_FEATURES_DIR } from "@/config";
 import { normalizeIssueText } from "@/review";
 import type {
   ChunkExcludedObservation,
@@ -219,7 +220,7 @@ function h2PullToolEmptyResult(observations: Observation[], threshold: number): 
     proposals.push({
       id: "H2",
       severity: "MED",
-      target: { canonicalFile: `.nax/features/${data.featureId}/context.md`, action: "add" },
+      target: { canonicalFile: `${PROJECT_FEATURES_DIR}/${data.featureId}/context.md`, action: "add" },
       description: `Pull-tool keyword returned empty: \"${keyword}\" returned zero results ${count}x`,
       evidence: `Keyword \"${keyword}\" returned zero results ${count}× in stories: ${unique.join(", ")}`,
       sourceKinds: ["pull-call"],
@@ -254,7 +255,7 @@ function h3RepeatedRectification(observations: Observation[], threshold: number)
     proposals.push({
       id: "H3",
       severity: "HIGH",
-      target: { canonicalFile: `.nax/features/${featureId}/context.md`, action: "add" },
+      target: { canonicalFile: `${PROJECT_FEATURES_DIR}/${featureId}/context.md`, action: "add" },
       description: `Repeated rectification cycle: story ${storyId} required ${count} rectify attempts`,
       evidence: `Story ${storyId} triggered ${count} rectify cycles`,
       sourceKinds: ["rectify-cycle"],
@@ -292,7 +293,7 @@ function h4EscalationChain(observations: Observation[], threshold: number): Prop
     proposals.push({
       id: "H4",
       severity: "MED",
-      target: { canonicalFile: `.nax/features/${data.featureId}/context.md`, action: "add" },
+      target: { canonicalFile: `${PROJECT_FEATURES_DIR}/${data.featureId}/context.md`, action: "add" },
       description: `Escalation chain: ${escalationPath} occurred ${count}x`,
       evidence: `Escalation ${escalationPath} triggered ${count}× in stories: ${unique.join(", ")}`,
       sourceKinds: ["escalation"],

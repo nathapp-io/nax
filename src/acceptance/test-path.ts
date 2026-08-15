@@ -1,4 +1,5 @@
 import path from "node:path";
+import { featureDir } from "@/config";
 import type { PRD, UserStory } from "../prd/types";
 import { detectLanguage as _detectLanguage } from "../project/detector";
 
@@ -78,7 +79,7 @@ export function resolveAcceptancePackageFeatureTestPath(
   testPathConfig?: string,
   language?: string,
 ): string {
-  return path.join(packageDir, ".nax", "features", featureName, resolveAcceptanceTestFile(language, testPathConfig));
+  return path.join(featureDir(packageDir, featureName), resolveAcceptanceTestFile(language, testPathConfig));
 }
 
 /**
@@ -224,7 +225,7 @@ export function resolveSuggestedPackageFeatureTestPath(
   testPathConfig?: string,
   language?: string,
 ): string {
-  return path.join(packageDir, ".nax", "features", featureName, resolveSuggestedTestFile(language, testPathConfig));
+  return path.join(featureDir(packageDir, featureName), resolveSuggestedTestFile(language, testPathConfig));
 }
 
 /**

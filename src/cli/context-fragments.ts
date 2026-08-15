@@ -20,6 +20,8 @@
  */
 
 import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { featureDir } from "@/config";
 import {
   _fragmentStoreDeps,
   deleteFragment as deleteFragmentImpl,
@@ -258,7 +260,7 @@ function resolveProjectDir(dir: string | undefined): string {
 }
 
 function featurePrdPath(projectDir: string, featureId: string): string {
-  return `${projectDir}/.nax/features/${featureId}/prd.json`;
+  return join(featureDir(projectDir, featureId), "prd.json");
 }
 
 /**

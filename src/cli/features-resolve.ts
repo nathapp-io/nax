@@ -242,7 +242,7 @@ export async function resolveFeatureSpec(name: string | undefined, workdir: stri
     return {
       status: "feature-not-found",
       candidates: [],
-      message: "no features found in .nax/features/",
+      message: "no features found in .nax/features/", // nax-feature-dir-allow: user-facing message
     };
   }
   if (candidates.length > 1) {

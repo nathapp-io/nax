@@ -7,6 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
+import { PROJECT_FEATURES_DIR, featureDir } from "@/config";
 import type { SessionDescriptor } from "./types";
 
 export function resolveProjectDirFromScratchDir(scratchDir: string): string | undefined {
@@ -15,7 +16,7 @@ export function resolveProjectDirFromScratchDir(scratchDir: string): string | un
   if (markerIdx > 0) return scratchDir.slice(0, markerIdx);
 
   // Backstop: tolerate persisted forward-slash paths regardless of platform.
-  const posixIdx = scratchDir.lastIndexOf("/.nax/features/");
+  const posixIdx = scratchDir.lastIndexOf(`/${PROJECT_FEATURES_DIR}/`);
   if (posixIdx > 0) return scratchDir.slice(0, posixIdx);
 
   return undefined;
@@ -31,7 +32,7 @@ export const _sessionManagerDeps = {
   nowMs: () => Date.now(),
   uuid: () => randomUUID(),
   sessionScratchDir: (projectDir: string, featureName: string, sessionId: string): string =>
-    join(projectDir, ".nax", "features", featureName, "sessions", sessionId),
+    join(featureDir(projectDir, featureName), "sessions", sessionId),
   /**
    * Persist a minimal session descriptor to <scratchDir>/descriptor.json for
    * cross-iteration disk discovery (Finding 2 from the Context Engine v2

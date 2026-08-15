@@ -5,7 +5,9 @@
  * Builds a full storyId→featureId index once per workdir (O(1) per lookup after
  * the first call) instead of re-scanning all PRD files on every cache miss.
  */
+import { join } from "node:path";
 import { Glob } from "bun";
+import { PROJECT_FEATURES_DIR, featureDir } from "../config";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { errorMessage } from "../utils/errors";
@@ -62,7 +64,7 @@ async function buildIndex(workdir: string): Promise<Map<string, string | null>> 
   const index = new Map<string, string | null>();
 
   try {
-    const scanner = _resolverDeps.glob(".nax/features/*/prd.json", { cwd: workdir });
+    const scanner = _resolverDeps.glob(`${PROJECT_FEATURES_DIR}/*/prd.json`, { cwd: workdir });
     for await (const relPath of scanner) {
       let prdData: { userStories?: Array<{ id: string }> };
       try {
@@ -113,7 +115,7 @@ async function tryResolveFromActiveFeature(
   activeFeature: string,
 ): Promise<string | null> {
   const logger = getLogger();
-  const prdPath = `${workdir}/.nax/features/${activeFeature}/prd.json`;
+  const prdPath = join(featureDir(workdir, activeFeature), "prd.json");
 
   try {
     const raw = await _resolverDeps.readFile(prdPath);
