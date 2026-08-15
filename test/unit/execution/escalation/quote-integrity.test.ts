@@ -97,6 +97,36 @@ describe("verifyQuoteTriple", () => {
     const triple = { file: "src/f.ts", line: 3, quote: "validateAcQuote  =  (finding)" };
     expect(await verifyQuoteTriple(triple, "/workdir", makeDeps(FILE_CONTENT))).toBe(true);
   });
+
+  // BUG-08: triple.file comes from LLM-authored escalation text and can
+  // contain ".." segments — must not be readable outside workdir even if a
+  // file happens to exist there (the readFile stub below would otherwise
+  // "verify" it).
+  test("path traversal outside workdir is rejected without ever calling readFile", async () => {
+    let called = false;
+    const deps = {
+      readFile: async (_path: string) => {
+        called = true;
+        return "SECRET=exfiltrated";
+      },
+    };
+    const triple = { file: "../../.env", line: 1, quote: "SECRET=exfiltrated" };
+    expect(await verifyQuoteTriple(triple, "/workdir/repo", deps)).toBe(false);
+    expect(called).toBe(false);
+  });
+
+  test("absolute path outside workdir is rejected", async () => {
+    let called = false;
+    const deps = {
+      readFile: async (_path: string) => {
+        called = true;
+        return "root:x:0:0";
+      },
+    };
+    const triple = { file: "/etc/passwd", line: 1, quote: "root:x:0:0" };
+    expect(await verifyQuoteTriple(triple, "/workdir/repo", deps)).toBe(false);
+    expect(called).toBe(false);
+  });
 });
 
 // ─── verifyEscalationQuotes ───────────────────────────────────────────────────
