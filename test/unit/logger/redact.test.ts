@@ -47,6 +47,48 @@ describe("redactSecrets", () => {
     expect(out.accessToken).toBe("[REDACTED]");
   });
 
+  // MED-01: SECRET_VALUE_PATTERNS covered only sk-/ghp_/npm_/AKIA/xox* — PEM
+  // blocks, JWTs, and Authorization headers in free text passed through.
+  describe("MED-01 secret-shaped free-text patterns", () => {
+    test("redacts a PEM private key block", () => {
+      const pem = [
+        "-----BEGIN RSA PRIVATE KEY-----",
+        "MIIEpAIBAAKCAQEA1c7+9z5Pad7OejecsQ0bu3aumnAxuNbaBcEAFy6mBAMzKZzk",
+        "-----END RSA PRIVATE KEY-----",
+      ].join("\n");
+      const out = redactSecrets({ output: `key:\n${pem}\ndone` }) as any;
+      expect(out.output).not.toContain("MIIEpAIBAAKCAQEA1c7");
+      expect(out.output).toContain("[REDACTED]");
+      expect(out.output).toContain("done");
+    });
+
+    test("redacts a JWT", () => {
+      const jwt =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U";
+      const out = redactSecrets({ output: `auth: ${jwt}` }) as any;
+      expect(out.output).not.toContain(jwt);
+      expect(out.output).toContain("[REDACTED]");
+    });
+
+    test("redacts a Bearer authorization header value", () => {
+      const out = redactSecrets({ output: "Authorization: Bearer abc123def456ghi789" }) as any;
+      expect(out.output).not.toContain("abc123def456ghi789");
+      expect(out.output).toContain("[REDACTED]");
+    });
+
+    test("redacts a Basic authorization header value", () => {
+      const out = redactSecrets({ output: "Authorization: Basic dXNlcjpwYXNzd29yZA==" }) as any;
+      expect(out.output).not.toContain("dXNlcjpwYXNzd29yZA==");
+      expect(out.output).toContain("[REDACTED]");
+    });
+
+    test("redacts an x-api-key header captured in free text", () => {
+      const out = redactSecrets({ output: "x-api-key: abcd1234efgh5678" }) as any;
+      expect(out.output).not.toContain("abcd1234efgh5678");
+      expect(out.output).toContain("[REDACTED]");
+    });
+  });
+
   // MED-02: unguarded recursion threw RangeError (stack overflow) out of
   // every logger call whenever a data payload contained a circular reference.
   describe("circular references (MED-02)", () => {

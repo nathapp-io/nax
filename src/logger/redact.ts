@@ -27,6 +27,16 @@ const SECRET_VALUE_PATTERNS: RegExp[] = [
   /xox[baprs]-[A-Za-z0-9-]{10,}/g,
   // KEY=value assignments inside strings (e.g. "NPM_TOKEN=somevalue")
   /(?:SECRET|TOKEN|API_?KEY|PASSWORD|PRIVATE_?KEY|ACCESS_?KEY|WEBHOOK)=[^\s"',]+/gi,
+  // MED-01: PEM-encoded key/cert blocks (private keys, certificates).
+  /-----BEGIN [A-Z ]*(?:PRIVATE KEY|CERTIFICATE)-----[\s\S]*?-----END [A-Z ]*(?:PRIVATE KEY|CERTIFICATE)-----/g,
+  // MED-01: JWTs (header.payload.signature, base64url segments).
+  /eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g,
+  // MED-01: Authorization header values (Bearer/Basic schemes).
+  /\b(?:Bearer|Basic)\s+[A-Za-z0-9\-._~+/]{8,}=*/gi,
+  // MED-01: header-style key:value / key=value pairs for api-key headers
+  // that SECRET_KEY_PATTERN's object-key check can't reach because the
+  // key/value are both embedded in one free-text string (e.g. raw HTTP logs).
+  /(?:x-api-key|api[_-]?key)\s*[:=]\s*[^\s"',]+/gi,
 ];
 
 const REDACTED = "[REDACTED]";
