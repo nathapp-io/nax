@@ -29,8 +29,7 @@ import {
   _toolDiagnosticsDeps,
 } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
-// Use relative path: `scratchFilePath` is not re-exported from `@/session`.
-import { scratchFilePath } from "../../../../../src/session/scratch-writer";
+import { scratchFilePath } from "@/session";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────

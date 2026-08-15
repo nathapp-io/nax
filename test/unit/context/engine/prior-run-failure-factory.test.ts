@@ -39,7 +39,6 @@ function makeStory(): UserStory {
 
 function makeConfig(): NaxConfig {
   return makeNaxConfig({
-    autoMode: { defaultAgent: "claude" },
     context: {
       v2: {
         enabled: true,
@@ -49,7 +48,6 @@ function makeConfig(): NaxConfig {
         stages: {},
         pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5 },
         rules: { allowLegacyClaudeMd: true },
-        fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
         session: { retentionDays: 7, archiveOnFeatureArchive: true },
         staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
         providers: {

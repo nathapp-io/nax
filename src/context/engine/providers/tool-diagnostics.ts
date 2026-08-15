@@ -18,8 +18,8 @@
  */
 
 import { createHash } from "node:crypto";
-import { scratchFilePath } from "../../../session/scratch-writer";
-import type { ToolDiagnosticsScratchEntry } from "../../../session/scratch-writer";
+import { scratchFilePath } from "@/session";
+import type { ToolDiagnosticsScratchEntry } from "@/session";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
