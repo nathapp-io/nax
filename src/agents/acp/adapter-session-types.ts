@@ -79,6 +79,14 @@ export interface AcpClientOptions {
    * the spawn-client module default when omitted (#1583).
    */
   trackedSpawnStartupDeadlineMs?: number;
+  /**
+   * BUG-15: per-model env overrides from config.models.<agent>.<tier>.env.
+   * Merged over the process env baseline in buildAllowedEnv() so a model
+   * entry can supply its own API key / base URL without polluting other
+   * models' subprocess env. Previously accepted by the schema but never
+   * threaded anywhere — silently ignored.
+   */
+  env?: Record<string, string>;
 }
 
 export interface AcpClient {
@@ -90,5 +98,13 @@ export interface AcpClient {
   loadSession?(sessionName: string, agentName: string, permissionMode: string): Promise<AcpSession | null>;
   /** Close a named session directly without first ensuring/loading it. */
   closeSession?(sessionName: string, agentName: string, signal?: AbortSignal): Promise<void>;
+  /**
+   * BUG-16: hard-terminate the acpx queue-owner process for `agentName`
+   * (`acpx <agentName> stop`), regardless of session state. Used by
+   * closePhysicalSession({ force: true }) for errored sessions where a
+   * graceful closeSession is not enough. Optional — clients without a
+   * hard-stop concept may omit it.
+   */
+  forceStop?(agentName: string, signal?: AbortSignal): Promise<void>;
   close(): Promise<void>;
 }

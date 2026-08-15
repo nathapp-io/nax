@@ -13,6 +13,7 @@
  * described in Issue #930 Pattern B.
  */
 
+import { validateModulePath } from "@/utils/path-security";
 import { getSafeLogger } from "../../logger";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -77,8 +78,15 @@ export async function verifyQuoteTriple(
   workdir: string,
   deps = _quoteIntegrityDeps,
 ): Promise<boolean> {
-  const absPath = `${workdir}/${triple.file}`;
-  const content = await deps.readFile(absPath);
+  // BUG-08: triple.file is extracted from LLM-authored (agent-controlled)
+  // escalation text via a regex that admits ".." segments. Without
+  // containment, a citation like "../../.env:1 `SECRET=x`" would read
+  // outside workdir and could get "verified" — evidence from outside the
+  // repo influencing the next-tier agent's decision.
+  const validated = validateModulePath(triple.file, [workdir]);
+  if (!validated.valid || !validated.absolutePath) return false;
+
+  const content = await deps.readFile(validated.absolutePath);
   if (content === null) return false;
 
   const lines = content.split("\n");

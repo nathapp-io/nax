@@ -18,10 +18,22 @@ let servePortZeroCompatInstalled = false;
 let servePortZeroCounter = 0;
 const inMemoryServers = new Map<number, { fetch: (request: Request) => Response | Promise<Response> }>();
 
+/**
+ * SEC-06(b): the counter previously wrapped unconditionally after
+ * PORT_ZERO_COMPAT_SPAN cycles and could reassign a port still held by a
+ * live in-memory server (a long-running process with many webhook
+ * start/stop cycles). Skip forward past any port still in inMemoryServers
+ * instead of blindly overwriting it.
+ */
 function nextCompatPort(): number {
-  const port = PORT_ZERO_COMPAT_BASE + (servePortZeroCounter % PORT_ZERO_COMPAT_SPAN);
-  servePortZeroCounter += 1;
-  return port;
+  for (let i = 0; i < PORT_ZERO_COMPAT_SPAN; i++) {
+    const port = PORT_ZERO_COMPAT_BASE + (servePortZeroCounter % PORT_ZERO_COMPAT_SPAN);
+    servePortZeroCounter += 1;
+    if (!inMemoryServers.has(port)) return port;
+  }
+  // All compat ports are live (pathological) — fall back to the raw
+  // counter value rather than looping forever.
+  return PORT_ZERO_COMPAT_BASE + (servePortZeroCounter % PORT_ZERO_COMPAT_SPAN);
 }
 
 function createInMemoryServer(options: ServeCompatOptions, port: number): ServeCompatReturn {

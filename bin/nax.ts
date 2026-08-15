@@ -71,6 +71,7 @@ import {
 } from "../src/cli/config-profile";
 import { resolveFeatureSpec } from "../src/cli/features-resolve";
 import { generateCommand } from "../src/cli/generate";
+import { resolveUseHeadless } from "../src/cli/run-mode";
 import { registerStatusCommand } from "../src/cli/status-dispatch";
 import { detectCommand } from "../src/commands/detect";
 import { logsCommand } from "../src/commands/logs";
@@ -679,15 +680,11 @@ program
     const runId = new Date().toISOString().replace(/:/g, "-").replace(/\..+/, "");
     const logFilePath = join(runsDir, `${runId}.jsonl`);
 
-    // Determine TUI vs headless mode
-    // TUI activates when:
-    // 1. stdout is a TTY, AND
-    // 2. --headless flag is NOT passed, AND
-    // 3. NAX_HEADLESS env var is NOT set
+    // Determine TUI vs headless mode — see resolveUseHeadless() for the rule.
     const isTTY = process.stdout.isTTY ?? false;
     const headlessFlag = options.headless ?? false;
     const headlessEnv = process.env.NAX_HEADLESS === "1";
-    const useHeadless = !isTTY || headlessFlag || headlessEnv;
+    const useHeadless = resolveUseHeadless({ isTTY, headlessFlag, headlessEnv, formatterMode });
 
     // Initialize logger with selected level, file path, and formatter mode
     initLogger({
@@ -760,6 +757,10 @@ program
     if (options.parallel !== undefined) {
       parallel = Number.parseInt(options.parallel, 10);
       if (Number.isNaN(parallel) || parallel < 0) {
+        // BUG-22: this validation runs after the TUI is already mounted
+        // (renderTui above) — without unmounting first, the error message
+        // printed over the still-live TUI frame instead of a clean error.
+        tuiInstance?.unmount();
         console.error(chalk.red("--parallel must be a non-negative integer"));
         process.exit(1);
       }
@@ -781,6 +782,10 @@ program
       });
       process.removeListener("SIGINT", onSigint);
       if (outcome === "cancelled") {
+        // BUG-22: unmount before exiting — the TUI is already mounted by
+        // this point, and exiting without unmounting left the cancellation
+        // message printed over the still-live TUI frame.
+        tuiInstance?.unmount();
         console.log(chalk.dim("\nScheduled run cancelled."));
         process.exit(0);
       }

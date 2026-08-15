@@ -91,7 +91,11 @@ export class SpawnAcpClient implements AcpClient {
     this.cwd = cwd;
     this.timeoutSeconds = timeoutSeconds || 1800;
     this.promptRetries = promptRetries ?? 0;
-    this.env = buildAllowedEnv();
+    // BUG-15: modelDef.env (config.models.<agent>.<tier>.env) was accepted by
+    // the schema but never threaded here — a per-model API key/base URL
+    // override was silently ignored, and the subprocess ran on ambient env
+    // only, surfacing as confusing auth errors instead of the configured key.
+    this.env = buildAllowedEnv({ modelEnv: opts?.env });
     this.onPidSpawned = onPidSpawned;
     this.onPidExited = onPidExited;
     this.onStreamActivity = opts?.onStreamActivity;
@@ -257,6 +261,33 @@ export class SpawnAcpClient implements AcpClient {
     if (exitCode !== 0) {
       getSafeLogger()?.debug("acp-adapter", "Session close failed (ignored)", {
         sessionName,
+        agentName,
+        exitCode,
+        stderr: stderr.slice(0, 200),
+      });
+    }
+  }
+
+  /**
+   * BUG-16: hard-terminate the acpx queue-owner process for `agentName` via
+   * `acpx --cwd <cwd> <agentName> stop`. `--cwd` is required here — acpx
+   * scopes session/queue-owner lookups to the invoking cwd (mirrors
+   * `sessions close`'s "current cwd" semantics), and without it this would
+   * default to the spawned acpx process's own cwd rather than this client's
+   * worktree, risking a hit against — or a miss of — the wrong queue owner
+   * in a parallel/worktree run where multiple agent instances of the same
+   * `agentName` run concurrently in different directories.
+   * Mirrors the session-level hard-stop already used by
+   * SpawnAcpSession.close({ forceTerminate: true }) (spawn-client-session.ts).
+   * Failures are logged and swallowed — the caller (closePhysicalSession)
+   * already wraps this in a best-effort `.catch(() => {})`, but logging here
+   * gives visibility into why a force-close didn't actually terminate.
+   */
+  async forceStop(agentName: string, signal?: AbortSignal): Promise<void> {
+    const cmd = ["acpx", "--cwd", this.cwd, agentName, "stop"];
+    const { exitCode, stderr } = await this.trackedSpawn(cmd, signal, this.trackedSpawnDeadlineMs);
+    if (exitCode !== 0) {
+      getSafeLogger()?.debug("acp-adapter", "forceStop failed (ignored)", {
         agentName,
         exitCode,
         stderr: stderr.slice(0, 200),

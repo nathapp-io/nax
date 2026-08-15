@@ -12,15 +12,10 @@ import { getSafeLogger } from "@/logger";
 import { sleep } from "@/utils/bun-deps";
 import { z } from "zod";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
+import { PayloadTooLargeError, readBodyWithLimit } from "./webhook-body-limit";
 import { installServePortZeroCompat } from "./webhook-serve-compat";
 
-installServePortZeroCompat();
-
-/**
- * Injectable sleep — kept for backward compat with existing tests that override it.
- * No longer used internally by receive() (replaced by event-driven delivery).
- * @internal
- */
+/** Injectable sleep — kept for backward compat with tests; unused by receive() (event-driven delivery). @internal */
 export const _webhookPluginDeps = {
   sleep,
   /**
@@ -452,6 +447,10 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       await this.serverStartPromise;
       return;
     }
+    // SEC-06: install the compat shim lazily on first actual server start,
+    // not as a module-import side effect (previously patched two
+    // process-wide globals merely by importing webhook.ts).
+    installServePortZeroCompat();
     this.serverStartPromise = (async () => {
       const port = this.config.callbackPort ?? 0;
       this.server = Bun.serve({
@@ -519,17 +518,21 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       return new Response("Payload Too Large", { status: 413 });
     }
 
-    // Read body once, then enforce byte-accurate size limit in both branches
+    // SEC-04: read the body via a stream reader and abort as soon as the
+    // accumulated byte count crosses maxBytes, instead of buffering the
+    // full body with req.text() first. A chunked-transfer request with no
+    // (or a lying) Content-Length header would otherwise be fully read
+    // into memory before size was ever checked — the Content-Length guard
+    // above is bypassable and was the only enforcement that ran before the
+    // buffer existed.
     let body: string;
     try {
-      body = await req.text();
-    } catch {
+      body = await readBodyWithLimit(req, maxBytes);
+    } catch (err) {
+      if (err instanceof PayloadTooLargeError) {
+        return new Response("Payload Too Large", { status: 413 });
+      }
       return new Response("Bad Request", { status: 400 });
-    }
-
-    // Use TextEncoder for byte-accurate measurement (handles multibyte chars correctly)
-    if (new TextEncoder().encode(body).byteLength > maxBytes) {
-      return new Response("Payload Too Large", { status: 413 });
     }
 
     // Verify signature if secret is configured

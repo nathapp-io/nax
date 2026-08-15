@@ -42,15 +42,18 @@ function makeMockProc(stdout: string, exitCode: number) {
 
 let origSpawn: typeof _versionDetectionDeps.spawn;
 let origGetInstalledAgents: typeof _versionDetectionDeps.getInstalledAgents;
+let origGetAllAgents: typeof _versionDetectionDeps.getAllAgents;
 
 beforeEach(() => {
   origSpawn = _versionDetectionDeps.spawn;
   origGetInstalledAgents = _versionDetectionDeps.getInstalledAgents;
+  origGetAllAgents = _versionDetectionDeps.getAllAgents;
 });
 
 afterEach(() => {
   _versionDetectionDeps.spawn = origSpawn;
   _versionDetectionDeps.getInstalledAgents = origGetInstalledAgents;
+  _versionDetectionDeps.getAllAgents = origGetAllAgents;
 });
 
 // ---------------------------------------------------------------------------
@@ -133,14 +136,55 @@ describe("getAgentVersions", () => {
     expect(entry?.version).toBe("v9.9.9");
   });
 
+  // BUG-19: getInstalledAgents() was called twice for no reason.
+  test("calls getInstalledAgents exactly once per getAgentVersions() call", async () => {
+    let calls = 0;
+    _versionDetectionDeps.getInstalledAgents = mock(async () => {
+      calls++;
+      return [];
+    });
+    _versionDetectionDeps.spawn = mock(() => makeMockProc("", 1)) as typeof _versionDetectionDeps.spawn;
+
+    await getAgentVersions();
+    expect(calls).toBe(1);
+  });
+
   test("marks agent as not installed and version null when not in installed list", async () => {
-    // No agents installed — getAgentVersions returns an empty array
+    // No agents installed — every known agent from getAllAgents() should
+    // still be reported, each with installed: false and version: null.
     _versionDetectionDeps.getInstalledAgents = mock(async () => []);
     _versionDetectionDeps.spawn = mock(() => makeMockProc("", 1)) as typeof _versionDetectionDeps.spawn;
 
     const versions = await getAgentVersions();
-    // With no installed agents, agentsByName is empty so versions is empty
-    expect(Array.isArray(versions)).toBe(true);
-    expect(versions.length).toBe(0);
+    expect(versions.length).toBeGreaterThan(0);
+    for (const entry of versions) {
+      expect(entry.installed).toBe(false);
+      expect(entry.version).toBeNull();
+    }
+  });
+
+  // BUG-19 (regression, caught in code review): a version of the BUG-19 fix
+  // collapsed "all known agents" and "installed agents" into the same
+  // source array, making `installed` always true and silently dropping the
+  // "available but not installed" report (multi-agent-health precheck's
+  // second section). getAllAgents() (the full candidate set) must be kept
+  // distinct from getInstalledAgents() (the installed subset).
+  test("known-but-not-installed agents are still reported alongside installed ones", async () => {
+    const installedAgent = { name: "claude", displayName: "Claude Code", binary: "claude" } as AgentAdapter;
+    const notInstalledAgent = { name: "codex", displayName: "Codex", binary: "codex" } as AgentAdapter;
+
+    _versionDetectionDeps.getAllAgents = mock(() => [installedAgent, notInstalledAgent]);
+    _versionDetectionDeps.getInstalledAgents = mock(async () => [installedAgent]);
+    _versionDetectionDeps.spawn = mock(() => makeMockProc("claude v1.0.0\n", 0)) as typeof _versionDetectionDeps.spawn;
+
+    const versions = await getAgentVersions();
+    expect(versions).toHaveLength(2);
+
+    const claude = versions.find((v) => v.name === "claude");
+    const codex = versions.find((v) => v.name === "codex");
+    expect(claude?.installed).toBe(true);
+    expect(claude?.version).toBe("v1.0.0");
+    expect(codex?.installed).toBe(false);
+    expect(codex?.version).toBeNull();
   });
 });

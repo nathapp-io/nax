@@ -78,4 +78,44 @@ describe("LiveActivityPanel", () => {
     expect(frame).toContain("fast");
     expect(frame).toContain("balanced");
   });
+
+  // SEC-09: storyId, lastToolName, runErrored, and escalation storyId are
+  // agent/PRD-controlled — a crafted value containing an ESC sequence must
+  // not reach the terminal raw.
+  describe("SEC-09: ANSI/control-char stripping", () => {
+    test("strips a CSI sequence embedded in an active call's storyId", () => {
+      const calls = new Map([["call-1", makeCall({ storyId: "US-\x1b[2J001" })]]);
+      const { lastFrame } = render(React.createElement(LiveActivityPanel, { activeCalls: calls }));
+      const frame = lastFrame() ?? "";
+      expect(frame).not.toContain("\x1b[2J");
+      expect(frame).toContain("US-001");
+    });
+
+    test("strips a CSI sequence embedded in lastToolName", () => {
+      const calls = new Map([["call-1", makeCall({ lastToolName: "Write\x1b[31mEvil" })]]);
+      const { lastFrame } = render(React.createElement(LiveActivityPanel, { activeCalls: calls }));
+      const frame = lastFrame() ?? "";
+      expect(frame).not.toContain("\x1b[31m");
+      expect(frame).toContain("WriteEvil");
+    });
+
+    test("strips an OSC sequence embedded in runErrored", () => {
+      const { lastFrame } = render(
+        React.createElement(LiveActivityPanel, { runErrored: "config\x1b]52;c;evil\x07 load failed" }),
+      );
+      const frame = lastFrame() ?? "";
+      expect(frame).not.toContain("\x1b]52");
+      expect(frame).toContain("config load failed");
+    });
+
+    test("strips a CSI sequence embedded in an escalation entry's storyId", () => {
+      const escalationLog: EscalationEntry[] = [
+        { storyId: "US-\x1b[2J001", fromTier: "fast", toTier: "balanced", at: Date.now() },
+      ];
+      const { lastFrame } = render(React.createElement(LiveActivityPanel, { escalationLog }));
+      const frame = lastFrame() ?? "";
+      expect(frame).not.toContain("\x1b[2J");
+      expect(frame).toContain("US-001");
+    });
+  });
 });

@@ -294,5 +294,27 @@ describe("MergeEngine", () => {
       expect(results[2].success).toBe(true);
       expect(results[2].storyId).toBe("story-3");
     });
+
+    // BUG-27: topologicalSort() throws on a circular dependency. Before the
+    // fix, that throw propagated out of mergeAll() uncaught, crashing the
+    // whole batch — every story (including any already merged in a
+    // sequential caller) was left with no result at all.
+    test("a circular dependency does not crash the whole batch — every story gets a failed result", async () => {
+      const storyIds = ["story-a", "story-b"];
+      const dependencies = {
+        "story-a": ["story-b"],
+        "story-b": ["story-a"],
+      };
+
+      await manager.create(projectRoot, "story-a");
+      await manager.create(projectRoot, "story-b");
+
+      const results = await engine.mergeAll(projectRoot, storyIds, dependencies);
+
+      expect(results.length).toBe(2);
+      expect(results.every((r) => r.success === false)).toBe(true);
+      expect(results.every((r) => r.failureKind === "error")).toBe(true);
+      expect(results.every((r) => r.error?.includes("Circular dependency"))).toBe(true);
+    });
   });
 });

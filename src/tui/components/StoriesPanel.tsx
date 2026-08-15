@@ -4,6 +4,7 @@
  * Supports scrolling for >15 stories and compact mode for single-column layout.
  */
 
+import { stripControlChars } from "@/utils/strip-control-chars";
 import { Box, Text } from "ink";
 import { useEffect, useState } from "react";
 import { COMPACT_MAX_VISIBLE_STORIES, MAX_VISIBLE_STORIES } from "../hooks/useLayout";
@@ -138,7 +139,7 @@ export function StoriesPanel({
             return (
               <Box key={s.story.id}>
                 <Text>
-                  {icon} {s.story.id}
+                  {icon} {stripControlChars(s.story.id)}
                 </Text>
               </Box>
             );
@@ -154,14 +155,19 @@ export function StoriesPanel({
                 ? shortTier
                 : "";
           const showFailureLine = (s.status === "failed" || s.status === "paused") && s.failureReason;
+          // SEC-09: s.story.id and s.failureReason are PRD/agent-controlled
+          // (planner output, LLM error text) — strip ANSI/control chars
+          // before they reach Ink's <Text>, which does not sanitize.
+          const safeId = stripControlChars(s.story.id);
+          const safeFailureReason = showFailureLine ? stripControlChars((s.failureReason as string).slice(0, 25)) : "";
           return (
             <Box key={s.story.id} flexDirection="column">
               <Text>
-                {icon} {s.story.id}
+                {icon} {safeId}
                 <Text dimColor>{routing}</Text>
                 {tierSuffix ? <Text dimColor> {tierSuffix}</Text> : null}
               </Text>
-              {showFailureLine && <Text dimColor>{`  └ ${(s.failureReason as string).slice(0, 25)}`}</Text>}
+              {showFailureLine && <Text dimColor>{`  └ ${safeFailureReason}`}</Text>}
             </Box>
           );
         })}

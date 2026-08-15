@@ -172,8 +172,24 @@ export class MergeEngine {
    * On 2nd conflict: marks story as failed, continues with remaining stories
    */
   async mergeAll(projectRoot: string, storyIds: string[], dependencies: StoryDependencies): Promise<MergeResult[]> {
-    // Sort stories in topological order
-    const orderedStories = this.topologicalSort(storyIds, dependencies);
+    // BUG-27: topologicalSort() throws on a circular dependency. Schema
+    // validation now rejects cycles at plan time (src/prd/schema.ts), but
+    // this stays defensive — a PRD written or edited outside that path
+    // (manual edit, older artifact) must not crash the whole merge batch,
+    // leaving every story silently "pending"/"running" forever.
+    let orderedStories: string[];
+    try {
+      orderedStories = this.topologicalSort(storyIds, dependencies);
+    } catch (error) {
+      const message = errorMessage(error);
+      return storyIds.map((storyId) => ({
+        success: false,
+        storyId,
+        conflictFiles: [],
+        failureKind: "error",
+        error: `Merge batch aborted: ${message}`,
+      }));
+    }
     const results: MergeResult[] = [];
     const failedStories = new Set<string>();
 

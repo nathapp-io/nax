@@ -47,6 +47,103 @@ describe("redactSecrets", () => {
     expect(out.accessToken).toBe("[REDACTED]");
   });
 
+  // MED-01: SECRET_VALUE_PATTERNS covered only sk-/ghp_/npm_/AKIA/xox* — PEM
+  // blocks, JWTs, and Authorization headers in free text passed through.
+  describe("MED-01 secret-shaped free-text patterns", () => {
+    test("redacts a PEM private key block", () => {
+      const pem = [
+        "-----BEGIN RSA PRIVATE KEY-----",
+        "MIIEpAIBAAKCAQEA1c7+9z5Pad7OejecsQ0bu3aumnAxuNbaBcEAFy6mBAMzKZzk",
+        "-----END RSA PRIVATE KEY-----",
+      ].join("\n");
+      const out = redactSecrets({ output: `key:\n${pem}\ndone` }) as any;
+      expect(out.output).not.toContain("MIIEpAIBAAKCAQEA1c7");
+      expect(out.output).toContain("[REDACTED]");
+      expect(out.output).toContain("done");
+    });
+
+    test("redacts a JWT", () => {
+      const jwt =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U";
+      const out = redactSecrets({ output: `auth: ${jwt}` }) as any;
+      expect(out.output).not.toContain(jwt);
+      expect(out.output).toContain("[REDACTED]");
+    });
+
+    test("redacts a Bearer authorization header value", () => {
+      const out = redactSecrets({ output: "Authorization: Bearer abc123def456ghi789" }) as any;
+      expect(out.output).not.toContain("abc123def456ghi789");
+      expect(out.output).toContain("[REDACTED]");
+    });
+
+    test("redacts a Basic authorization header value", () => {
+      const out = redactSecrets({ output: "Authorization: Basic dXNlcjpwYXNzd29yZA==" }) as any;
+      expect(out.output).not.toContain("dXNlcjpwYXNzd29yZA==");
+      expect(out.output).toContain("[REDACTED]");
+    });
+
+    // Security-review follow-up: raising the length floor to 16 (an earlier
+    // revision of the over-redaction fix) would have under-redacted a short
+    // but real base64 basic-auth credential. The floor stays at 8 — only
+    // the "must look credential-shaped" requirement excludes prose.
+    test("still redacts a short (8-15 char) credential-shaped Basic value", () => {
+      const out = redactSecrets({ output: "Authorization: Basic Ym9iOjl4Mg==" }) as any; // base64("bob:9x2"), 12 chars
+      expect(out.output).not.toContain("Ym9iOjl4Mg==");
+      expect(out.output).toContain("[REDACTED]");
+    });
+
+    test("redacts an x-api-key header captured in free text", () => {
+      const out = redactSecrets({ output: "x-api-key: abcd1234efgh5678" }) as any;
+      expect(out.output).not.toContain("abcd1234efgh5678");
+      expect(out.output).toContain("[REDACTED]");
+    });
+
+    // Security-review follow-up: an earlier revision bounded the BEGIN/END
+    // gap to 8KB, which would silently miss a legitimate multi-cert chain
+    // bundle exceeding that size. The bound is now 64KB.
+    test("redacts a PEM block larger than 8KB (bundled certificate chain)", () => {
+      const bigBody = "A".repeat(20_000); // well past the old 8KB bound, within the new 64KB one
+      const pem = `-----BEGIN CERTIFICATE-----\n${bigBody}\n-----END CERTIFICATE-----`;
+      const out = redactSecrets({ output: `chain:\n${pem}\ndone` }) as any;
+      expect(out.output).not.toContain(bigBody);
+      expect(out.output).toContain("[REDACTED]");
+      expect(out.output).toContain("done");
+    });
+
+    test("redacts a PGP-style PEM block (' ... BLOCK' suffix)", () => {
+      const pem = [
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----",
+        "lQOYBFtestKeyMaterialHerexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "-----END PGP PRIVATE KEY BLOCK-----",
+      ].join("\n");
+      const out = redactSecrets({ output: `key:\n${pem}\ndone` }) as any;
+      expect(out.output).not.toContain("lQOYBFtestKeyMaterialHere");
+      expect(out.output).toContain("[REDACTED]");
+    });
+
+    // Regression: the original Bearer/Basic pattern matched any 8+ char
+    // word-token after the literal word, swallowing ordinary log prose
+    // that just happens to use those English words.
+    test("does NOT redact ordinary prose containing the words Bearer/Basic", () => {
+      const out1 = redactSecrets({ output: "Basic authentication failed for user" }) as any;
+      expect(out1.output).toBe("Basic authentication failed for user");
+
+      const out2 = redactSecrets({ output: "use Bearer authentication scheme" }) as any;
+      expect(out2.output).toBe("use Bearer authentication scheme");
+    });
+
+    // The PEM pattern's BEGIN/END gap is bounded (not [\s\S]*?) so an
+    // unterminated "BEGIN" marker in a large payload (real agent
+    // stdout/stderr) can't force a full end-of-string re-scan per
+    // occurrence. Functional check: content just past the bound is left
+    // untouched rather than folded into a redaction that never finds an END.
+    test("does not redact past the bounded gap when no END marker follows", () => {
+      const beyondBound = "-".repeat(9000);
+      const out = redactSecrets({ output: `-----BEGIN RSA PRIVATE KEY-----${beyondBound}tail-marker` }) as any;
+      expect(out.output).toContain("tail-marker");
+    });
+  });
+
   // MED-02: unguarded recursion threw RangeError (stack overflow) out of
   // every logger call whenever a data payload contained a circular reference.
   describe("circular references (MED-02)", () => {

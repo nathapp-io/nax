@@ -105,6 +105,53 @@ describe("SpawnAcpClient — onPidSpawned callback (#228)", () => {
 
     expect(pids).toHaveLength(1);
   });
+
+  // BUG-16: forceStop was declared on the AcpClient interface but never
+  // implemented anywhere — closePhysicalSession's { force: true } branch was
+  // a dead call site. SpawnAcpClient must actually run `acpx --cwd <cwd>
+  // <agent> stop`. --cwd is required (matches every other acpx invocation
+  // in this client) — without it, the command scopes to the acpx process's
+  // own cwd instead of this client's worktree, risking the wrong queue
+  // owner in a parallel/worktree run with multiple instances of the same agent.
+  test("forceStop spawns `acpx --cwd <cwd> <agentName> stop`", async () => {
+    const spawnedCommands: string[][] = [];
+    _spawnClientDeps.spawn = (cmd, _opts) => {
+      spawnedCommands.push(cmd as string[]);
+      return makeSpawnResult(0);
+    };
+
+    const client = new SpawnAcpClient("acpx claude", "/tmp/my-worktree");
+    await client.forceStop("claude");
+
+    expect(spawnedCommands).toHaveLength(1);
+    expect(spawnedCommands[0]).toEqual(["acpx", "--cwd", "/tmp/my-worktree", "claude", "stop"]);
+  });
+
+  test("forceStop does not throw when the stop command fails", async () => {
+    _spawnClientDeps.spawn = (_cmd, _opts) => makeSpawnResult(1);
+
+    const client = new SpawnAcpClient("acpx claude", "/tmp");
+    await expect(client.forceStop("claude")).resolves.toBeUndefined();
+  });
+
+  // BUG-15: opts.env (config.models.<agent>.<tier>.env) was accepted by the
+  // constructor's AcpClientOptions type but never passed into
+  // buildAllowedEnv() — a per-model API key/base URL override was silently
+  // dropped and the subprocess ran on ambient env only.
+  test("threads AcpClientOptions.env into the client's subprocess env as modelEnv", () => {
+    const client = new SpawnAcpClient("acpx claude", "/tmp", undefined, undefined, undefined, undefined, {
+      env: { ANTHROPIC_BASE_URL: "https://custom.example.com", ANTHROPIC_API_KEY: "from-model-def" },
+    });
+    const internals = client as unknown as { env: Record<string, string | undefined> }; // test-ratchet-allow: as-unknown-as
+    expect(internals.env.ANTHROPIC_BASE_URL).toBe("https://custom.example.com");
+    expect(internals.env.ANTHROPIC_API_KEY).toBe("from-model-def");
+  });
+
+  test("subprocess env is unaffected when no env override is passed", () => {
+    const client = new SpawnAcpClient("acpx claude", "/tmp");
+    const internals = client as unknown as { env: Record<string, string | undefined> }; // test-ratchet-allow: as-unknown-as
+    expect(internals.env.ANTHROPIC_BASE_URL).toBeUndefined();
+  });
 });
 
 describe("SpawnAcpClient — prompt EPIPE resilience", () => {

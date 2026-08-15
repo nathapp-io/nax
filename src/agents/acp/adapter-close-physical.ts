@@ -21,7 +21,7 @@ export async function closePhysicalSession(
         await client.closeSession(handle, agentName, options?.signal);
         // AC-83: hard-terminate (acpx stop) when force=true, e.g. for errored sessions
         if (options?.force) {
-          await (client as { forceStop?: (agentName: string) => Promise<void> }).forceStop?.(agentName).catch(() => {});
+          await client.forceStop?.(agentName, options?.signal).catch(() => {});
         }
       } else if (client.loadSession) {
         const session = await client.loadSession(handle, agentName, "approve-reads");

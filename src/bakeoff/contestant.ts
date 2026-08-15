@@ -98,9 +98,14 @@ export async function runContestant(
     },
   };
 
-  await deps.worktreeManager.create(options.projectRoot, storyId);
-
   try {
+    // BUG-03: worktreeManager.create() used to run before this try block —
+    // a failure there (including the deps being unwired, e.g. undefined in
+    // production before init wiring runs) threw uncaught out of
+    // runContestant entirely, crashing the whole bake-off CLI invocation
+    // instead of reporting this one contestant as "dnf-crashed" and letting
+    // the sequential coordinator continue with the rest.
+    await deps.worktreeManager.create(options.projectRoot, storyId);
     const result = await deps.pipeline(pinnedConfig);
 
     const totals = aggregateTotals(result.metrics);

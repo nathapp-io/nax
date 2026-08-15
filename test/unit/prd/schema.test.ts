@@ -161,6 +161,57 @@ describe("validatePlanOutput — dependency validation", () => {
     );
     expect(prd.userStories[1]!.dependencies).toEqual(["ST-001"]);
   });
+
+  // BUG-27: a dependency cycle was never rejected at plan/validate time —
+  // only worktree/merge.ts's topologicalSort() discovered it, mid-run, by
+  // throwing and aborting the whole merge batch. Fail fast here instead.
+  test("BUG-27: throws on a direct 2-story circular dependency", () => {
+    expect(() =>
+      validatePlanOutput(
+        makeInput([
+          makeStory({ id: "ST-001", dependencies: ["ST-002"] }),
+          makeStory({ id: "ST-002", dependencies: ["ST-001"] }),
+        ]),
+        "feat",
+        "branch",
+      ),
+    ).toThrow(/Circular dependency/);
+  });
+
+  test("BUG-27: throws on a longer transitive cycle (A -> B -> C -> A)", () => {
+    expect(() =>
+      validatePlanOutput(
+        makeInput([
+          makeStory({ id: "ST-001", dependencies: ["ST-003"] }),
+          makeStory({ id: "ST-002", dependencies: ["ST-001"] }),
+          makeStory({ id: "ST-003", dependencies: ["ST-002"] }),
+        ]),
+        "feat",
+        "branch",
+      ),
+    ).toThrow(/Circular dependency/);
+  });
+
+  test("BUG-27: a story depending on itself throws", () => {
+    expect(() =>
+      validatePlanOutput(makeInput([makeStory({ id: "ST-001", dependencies: ["ST-001"] })]), "feat", "branch"),
+    ).toThrow(/Circular dependency/);
+  });
+
+  test("BUG-27: a DAG with shared dependencies (diamond shape) does not throw", () => {
+    expect(() =>
+      validatePlanOutput(
+        makeInput([
+          makeStory({ id: "ST-001", dependencies: [] }),
+          makeStory({ id: "ST-002", dependencies: ["ST-001"] }),
+          makeStory({ id: "ST-003", dependencies: ["ST-001"] }),
+          makeStory({ id: "ST-004", dependencies: ["ST-002", "ST-003"] }),
+        ]),
+        "feat",
+        "branch",
+      ),
+    ).not.toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------
