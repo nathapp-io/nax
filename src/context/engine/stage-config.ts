@@ -92,8 +92,10 @@ const PHASE_3_EXECUTION = [...PHASE_1_PROVIDERS, "git-history", "code-neighbor",
  * the import graph when fixing failures; git history omitted (less relevant).
  * US-002 adds tool-diagnostics so the rectifier gets authoritative
  * lint/typecheck provenance instead of relying on agent self-reports.
+ * US-003 adds prior-run-failure so the rectifier sees this story's historic
+ * failed attempts and failing test files before retrying.
  */
-const PHASE_3_RECTIFY = [...PHASE_1_PROVIDERS, "code-neighbor", "tool-diagnostics"];
+const PHASE_3_RECTIFY = [...PHASE_1_PROVIDERS, "code-neighbor", "tool-diagnostics", "prior-run-failure"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage map

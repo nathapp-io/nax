@@ -12,6 +12,7 @@ import { ContextOrchestrator } from "./orchestrator";
 import { CodeNeighborProvider } from "./providers/code-neighbor";
 import { FeatureContextProviderV2 } from "./providers/feature-context";
 import { GitHistoryProvider } from "./providers/git-history";
+import { PriorRunFailureProvider } from "./providers/prior-run-failure";
 import { SessionScratchProvider } from "./providers/session-scratch";
 import { StaticRulesProvider } from "./providers/static-rules";
 import { TestCoverageProvider } from "./providers/test-coverage";
@@ -67,6 +68,11 @@ export function createDefaultOrchestrator(
   // to "tool-diagnostics" pass AC-16 validation. It returns empty chunks when
   // no scratch dir contains tool-diagnostics entries (defensive read).
   providers.push(new ToolDiagnosticsProvider());
+  // US-003: PriorRunFailureProvider is always registered so the rectify stage's
+  // stage-config reference to "prior-run-failure" resolves. It reads
+  // <request.repoRoot>/metrics.json; returns empty chunks when no prior
+  // failure is recorded for request.storyId (defensive read).
+  providers.push(new PriorRunFailureProvider());
   // Phase 3: git history and code neighbors (always registered; active only when
   // request.touchedFiles is non-empty and the stage includes these provider IDs)
   // #507: scope is read from config so operators can tune for monorepo setups.

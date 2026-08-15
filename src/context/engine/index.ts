@@ -22,6 +22,7 @@ export { StaticRulesProvider, _staticRulesDeps, globToRegex, normalizePath } fro
 export { FeatureContextProviderV2, _featureContextV2Deps } from "./providers/feature-context";
 export { SessionScratchProvider, _sessionScratchDeps } from "./providers/session-scratch";
 export { ToolDiagnosticsProvider, _toolDiagnosticsDeps } from "./providers/tool-diagnostics";
+export { PriorRunFailureProvider, _priorRunFailureDeps } from "./providers/prior-run-failure";
 export { GitHistoryProvider, _gitHistoryDeps } from "./providers/git-history";
 export { CodeNeighborProvider, _codeNeighborDeps, createContentCacheState } from "./providers/code-neighbor";
 export type { ContentCacheState } from "./providers/code-neighbor";
