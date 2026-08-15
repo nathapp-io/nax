@@ -8,10 +8,12 @@
  * bytes exceed the cap, without draining the rest of the stream.
  */
 
+import { NaxError } from "@/errors";
+
 /** Thrown by {@link readBodyWithLimit} when the accumulated stream exceeds the configured cap. */
-export class PayloadTooLargeError extends Error {
+export class PayloadTooLargeError extends NaxError {
   constructor() {
-    super("Payload exceeds configured maxPayloadBytes");
+    super("Payload exceeds configured maxPayloadBytes", "WEBHOOK_PAYLOAD_TOO_LARGE", { stage: "interaction" });
   }
 }
 
@@ -27,6 +29,10 @@ export async function readBodyWithLimit(req: Request, maxBytes: number): Promise
       if (done) break;
       total += value.byteLength;
       if (total > maxBytes) {
+        // Actively abort the ingest rather than leaving the body half-read
+        // and merely unlocked — cancel() signals upstream that we're done
+        // consuming, instead of relying on backpressure alone.
+        await reader.cancel();
         throw new PayloadTooLargeError();
       }
       chunks.push(value);
