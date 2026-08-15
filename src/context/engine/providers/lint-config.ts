@@ -178,7 +178,10 @@ export class LintConfigProvider implements IContextProvider {
       return { chunks: [], pullTools: [] };
     }
 
-    // Try to find a config file. If absent, we still emit a chunk naming the tool.
+    // Try to find a config file. AC8: when no lint configuration source file
+    // exists, fetch returns empty chunks without throwing — even when a lint
+    // tool is detected. A chunk only makes sense when there is content to
+    // surface.
     const candidates = LINT_CONFIG_FILES[tool] ?? [];
     let rawConfig: string | null = null;
     let foundPath: string | null = null;
@@ -200,6 +203,18 @@ export class LintConfigProvider implements IContextProvider {
         // Read failure — try next candidate.
         rawConfig = null;
       }
+    }
+
+    if (rawConfig === null) {
+      // AC8: no lint configuration source file exists → empty chunks.
+      // A chunk that only names the tool is noise — the detector already
+      // produced the tool name; the chunk adds nothing actionable.
+      logger.debug("lint-config", "No lint config source file found — returning empty chunks", {
+        storyId: request.storyId,
+        packageDir,
+        tool,
+      });
+      return { chunks: [], pullTools: [] };
     }
 
     const distilled = rawConfig !== null ? distillLintConfig(tool, rawConfig) : [];

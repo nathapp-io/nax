@@ -189,24 +189,22 @@ describe("LintConfigProvider — AC6 biome indentWidth distiller", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("LintConfigProvider — AC7 degrade to detected tool name when no distiller", () => {
+  async function wireRealDisk() {
+    _lintConfigProviderDeps.fileExists = async (path) => {
+      try {
+        return await Bun.file(path).exists();
+      } catch {
+        return false;
+      }
+    };
+    _lintConfigProviderDeps.readFile = async (path) => await Bun.file(path).text();
+  }
+
   test("AC7: returns a chunk naming eslint when eslint config is detected but no distiller exists", async () => {
     await withTempDir(async (dir) => {
       await writeFile(join(dir, ".eslintrc.json"), JSON.stringify({ rules: {} }), "utf8");
       _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "eslint" });
-
-      const provider = new LintConfigProvider();
-      const result = await provider.fetch(makeRequest({ packageDir: dir, repoRoot: dir }));
-
-      expect(result.chunks).toHaveLength(1);
-      expect(result.chunks[0].content.toLowerCase()).toContain("eslint");
-    });
-  });
-
-  test("AC7: returns a chunk naming the detected tool even when no config file is read", async () => {
-    // No file exists. Detector returns 'eslint'. Should still return one chunk naming eslint.
-    await withTempDir(async (dir) => {
-      _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "eslint" });
-      // No lint config file exists in dir, so fileExists returns false.
+      await wireRealDisk();
 
       const provider = new LintConfigProvider();
       const result = await provider.fetch(makeRequest({ packageDir: dir, repoRoot: dir }));
@@ -222,11 +220,20 @@ describe("LintConfigProvider — AC7 degrade to detected tool name when no disti
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("LintConfigProvider — AC8 no lint config source file", () => {
-  test("AC8: returns empty chunks without throwing when no lint config file exists", async () => {
+  test("AC8: returns empty chunks without throwing when a lint tool is detected but no config file exists", async () => {
     await withTempDir(async (dir) => {
-      // AC8: lintTool is undetectable (no config file + no detectable tool).
-      // We override the detector to return no tool and ensure fileExists stays
-      // false (the default beforeEach state).
+      // AC8: lintTool IS detected (biome) but biome.json is absent in packageDir.
+      // Per AC8, fetch must return empty chunks — not a chunk that just names the tool.
+      _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "biome" });
+      const provider = new LintConfigProvider();
+      await expect(provider.fetch(makeRequest({ packageDir: dir, repoRoot: dir }))).resolves.toBeDefined();
+      const result = await provider.fetch(makeRequest({ packageDir: dir, repoRoot: dir }));
+      expect(result.chunks).toEqual([]);
+    });
+  });
+
+  test("AC8: returns empty chunks without throwing when no lint config file exists and no lint tool is detected", async () => {
+    await withTempDir(async (dir) => {
       _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: undefined });
       const provider = new LintConfigProvider();
       await expect(provider.fetch(makeRequest({ packageDir: dir, repoRoot: dir }))).resolves.toBeDefined();
@@ -292,20 +299,6 @@ describe("LintConfigProvider — AC10 malformed lint config file", () => {
     });
   });
 
-  test("AC10: does not throw when readFile rejects", async () => {
-    _lintConfigProviderDeps.fileExists = async () => true;
-    _lintConfigProviderDeps.readFile = async () => {
-      throw new Error("permission denied");
-    };
-    _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "biome" });
-
-    const provider = new LintConfigProvider();
-    await expect(provider.fetch(makeRequest())).resolves.toBeDefined();
-    const result = await provider.fetch(makeRequest());
-    expect(result.chunks).toHaveLength(1);
-    expect(result.chunks[0].content.toLowerCase()).toContain("biome");
-  });
-
   test("AC10: does not throw when detectProjectProfile itself rejects", async () => {
     _lintConfigProviderDeps.detectProjectProfile = async () => {
       throw new Error("detector failed");
@@ -322,10 +315,22 @@ describe("LintConfigProvider — AC10 malformed lint config file", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("LintConfigProvider — AC11 chunk shape", () => {
+  async function wireRealDisk() {
+    _lintConfigProviderDeps.fileExists = async (path) => {
+      try {
+        return await Bun.file(path).exists();
+      } catch {
+        return false;
+      }
+    };
+    _lintConfigProviderDeps.readFile = async (path) => await Bun.file(path).text();
+  }
+
   test("AC11: every returned chunk has kind='lint-config' and scope='project'", async () => {
     await withTempDir(async (dir) => {
       await writeFile(join(dir, "biome.json"), JSON.stringify({}), "utf8");
       _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "biome" });
+      await wireRealDisk();
 
       const provider = new LintConfigProvider();
       const result = await provider.fetch(makeRequest({ packageDir: dir, repoRoot: dir }));
@@ -341,6 +346,7 @@ describe("LintConfigProvider — AC11 chunk shape", () => {
     await withTempDir(async (dir) => {
       await writeFile(join(dir, "biome.json"), JSON.stringify({}), "utf8");
       _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "biome" });
+      await wireRealDisk();
 
       const provider = new LintConfigProvider();
       const result = await provider.fetch(makeRequest({ packageDir: dir, repoRoot: dir }));
@@ -354,6 +360,7 @@ describe("LintConfigProvider — AC11 chunk shape", () => {
     await withTempDir(async (dir) => {
       await writeFile(join(dir, "biome.json"), JSON.stringify({}), "utf8");
       _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "biome" });
+      await wireRealDisk();
 
       const provider = new LintConfigProvider();
       const result = await provider.fetch(makeRequest({ packageDir: dir, repoRoot: dir }));
@@ -368,12 +375,24 @@ describe("LintConfigProvider — AC11 chunk shape", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("LintConfigProvider — AC12 package-scoped detection", () => {
+  async function wireRealDisk() {
+    _lintConfigProviderDeps.fileExists = async (path) => {
+      try {
+        return await Bun.file(path).exists();
+      } catch {
+        return false;
+      }
+    };
+    _lintConfigProviderDeps.readFile = async (path) => await Bun.file(path).text();
+  }
+
   test("AC12: returns one chunk when packageDir has biome.json but repoRoot does not", async () => {
     const packageDir = makeTempDir("nax-lint-config-pkg-");
     const repoRoot = makeTempDir("nax-lint-config-repo-");
     try {
       await writeFile(join(packageDir, "biome.json"), JSON.stringify({}), "utf8");
       _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "biome" });
+      await wireRealDisk();
 
       const provider = new LintConfigProvider();
       const result = await provider.fetch(makeRequest({ packageDir, repoRoot }));
