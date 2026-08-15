@@ -87,6 +87,39 @@ describe("redactSecrets", () => {
       expect(out.output).not.toContain("abcd1234efgh5678");
       expect(out.output).toContain("[REDACTED]");
     });
+
+    test("redacts a PGP-style PEM block (' ... BLOCK' suffix)", () => {
+      const pem = [
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----",
+        "lQOYBFtestKeyMaterialHerexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "-----END PGP PRIVATE KEY BLOCK-----",
+      ].join("\n");
+      const out = redactSecrets({ output: `key:\n${pem}\ndone` }) as any;
+      expect(out.output).not.toContain("lQOYBFtestKeyMaterialHere");
+      expect(out.output).toContain("[REDACTED]");
+    });
+
+    // Regression: the original Bearer/Basic pattern matched any 8+ char
+    // word-token after the literal word, swallowing ordinary log prose
+    // that just happens to use those English words.
+    test("does NOT redact ordinary prose containing the words Bearer/Basic", () => {
+      const out1 = redactSecrets({ output: "Basic authentication failed for user" }) as any;
+      expect(out1.output).toBe("Basic authentication failed for user");
+
+      const out2 = redactSecrets({ output: "use Bearer authentication scheme" }) as any;
+      expect(out2.output).toBe("use Bearer authentication scheme");
+    });
+
+    // The PEM pattern's BEGIN/END gap is bounded (not [\s\S]*?) so an
+    // unterminated "BEGIN" marker in a large payload (real agent
+    // stdout/stderr) can't force a full end-of-string re-scan per
+    // occurrence. Functional check: content just past the bound is left
+    // untouched rather than folded into a redaction that never finds an END.
+    test("does not redact past the bounded gap when no END marker follows", () => {
+      const beyondBound = "-".repeat(9000);
+      const out = redactSecrets({ output: `-----BEGIN RSA PRIVATE KEY-----${beyondBound}tail-marker` }) as any;
+      expect(out.output).toContain("tail-marker");
+    });
   });
 
   // MED-02: unguarded recursion threw RangeError (stack overflow) out of

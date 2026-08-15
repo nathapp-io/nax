@@ -27,12 +27,22 @@ const SECRET_VALUE_PATTERNS: RegExp[] = [
   /xox[baprs]-[A-Za-z0-9-]{10,}/g,
   // KEY=value assignments inside strings (e.g. "NPM_TOKEN=somevalue")
   /(?:SECRET|TOKEN|API_?KEY|PASSWORD|PRIVATE_?KEY|ACCESS_?KEY|WEBHOOK)=[^\s"',]+/gi,
-  // MED-01: PEM-encoded key/cert blocks (private keys, certificates).
-  /-----BEGIN [A-Z ]*(?:PRIVATE KEY|CERTIFICATE)-----[\s\S]*?-----END [A-Z ]*(?:PRIVATE KEY|CERTIFICATE)-----/g,
+  // MED-01: PEM-encoded key/cert blocks (private keys, certificates, incl.
+  // PGP's " ... BLOCK" suffix). The gap between BEGIN/END is bounded
+  // (real PEM blocks are a few KB) — an unbounded [\s\S]*? re-scans to
+  // end-of-string for every unterminated "BEGIN" marker, which is
+  // quadratic on large agent stdout/stderr payloads on this synchronous
+  // logger write path.
+  /-----BEGIN [A-Z ]*(?:PRIVATE KEY|CERTIFICATE)(?: BLOCK)?-----[\s\S]{0,8192}?-----END [A-Z ]*(?:PRIVATE KEY|CERTIFICATE)(?: BLOCK)?-----/g,
   // MED-01: JWTs (header.payload.signature, base64url segments).
   /eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g,
-  // MED-01: Authorization header values (Bearer/Basic schemes).
-  /\b(?:Bearer|Basic)\s+[A-Za-z0-9\-._~+/]{8,}=*/gi,
+  // MED-01: Authorization header values (Bearer/Basic schemes). Requires a
+  // credential-shaped value (>=16 chars, at least one digit/symbol) so
+  // ordinary prose like "Basic authentication failed" or "Bearer token
+  // scheme" isn't swallowed — real bearer tokens and base64 basic creds
+  // always contain non-alphabetic characters at that length; English words
+  // essentially never do.
+  /\b(?:Bearer|Basic)\s+(?=[A-Za-z0-9\-._~+/]*[0-9+/_-])[A-Za-z0-9\-._~+/]{16,}={0,2}/gi,
   // MED-01: header-style key:value / key=value pairs for api-key headers
   // that SECRET_KEY_PATTERN's object-key check can't reach because the
   // key/value are both embedded in one free-text string (e.g. raw HTTP logs).
