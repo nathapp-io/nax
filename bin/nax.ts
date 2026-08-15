@@ -71,6 +71,7 @@ import {
 } from "../src/cli/config-profile";
 import { resolveFeatureSpec } from "../src/cli/features-resolve";
 import { generateCommand } from "../src/cli/generate";
+import { resolveUseHeadless } from "../src/cli/run-mode";
 import { registerStatusCommand } from "../src/cli/status-dispatch";
 import { detectCommand } from "../src/commands/detect";
 import { logsCommand } from "../src/commands/logs";
@@ -679,15 +680,11 @@ program
     const runId = new Date().toISOString().replace(/:/g, "-").replace(/\..+/, "");
     const logFilePath = join(runsDir, `${runId}.jsonl`);
 
-    // Determine TUI vs headless mode
-    // TUI activates when:
-    // 1. stdout is a TTY, AND
-    // 2. --headless flag is NOT passed, AND
-    // 3. NAX_HEADLESS env var is NOT set
+    // Determine TUI vs headless mode — see resolveUseHeadless() for the rule.
     const isTTY = process.stdout.isTTY ?? false;
     const headlessFlag = options.headless ?? false;
     const headlessEnv = process.env.NAX_HEADLESS === "1";
-    const useHeadless = !isTTY || headlessFlag || headlessEnv;
+    const useHeadless = resolveUseHeadless({ isTTY, headlessFlag, headlessEnv, formatterMode });
 
     // Initialize logger with selected level, file path, and formatter mode
     initLogger({
