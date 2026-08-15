@@ -3,7 +3,7 @@
   "feature": "context-providers-22",
   "branchName": "feat/context-providers-22",
   "createdAt": "2026-08-15T00:00:00.000Z",
-  "updatedAt": "2026-08-15T05:32:30.997Z",
+  "updatedAt": "2026-08-15T06:04:17.841Z",
   "userStories": [
     {
       "id": "US-001",
@@ -93,8 +93,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -154,8 +154,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -167,7 +167,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "pi",
         "initialProfileId": "pi-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/metrics/tracker.ts",
@@ -182,7 +184,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c14cf1be07ff1fe9f14f7c4dd1a59fadf1b257c9"
     },
     {
       "id": "US-004",
@@ -228,7 +231,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "pi",
         "initialProfileId": "pi-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/project/detector.ts",
@@ -243,7 +248,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9fb853f13ba35e7faf0cbac5c0b9508e2b88a6c0"
     },
     {
       "id": "US-005",

@@ -34,6 +34,7 @@ const KIND_WEIGHTS: Record<ChunkKind, number> = {
   "test-coverage": 1.0,
   diagnostics: 0.95, // US-002: authoritative tool diagnostics — the most actionable context a rectifier can receive
   "prior-failure": 0.85, // US-003: historic failures from prior runs — deterministic, scope story
+  "lint-config": 0.8, // US-004: package lint configuration — relevant when a lint failure is in play
   session: 0.9,
   history: 0.8,
   neighbor: 0.75,
