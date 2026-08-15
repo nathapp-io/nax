@@ -25,3 +25,5 @@ export type {
   SelfVerificationStatus,
   SelfVerificationTool,
 } from "./self-verification";
+export { parseDiagnostics, MAX_RAW_TAIL_CHARS } from "./diagnostics";
+export type { Diagnostic } from "./diagnostics";

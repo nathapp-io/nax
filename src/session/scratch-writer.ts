@@ -82,11 +82,27 @@ export interface SelfVerificationScratchEntry {
   writtenByAgent?: string;
 }
 
+/**
+ * Entry written when a lint or typecheck command returns non-zero.
+ * Carries authoritative `Diagnostic` records (parsed provenance) instead
+ * of the agent's prose self-verification. Consumed by `SessionScratchProvider`
+ * (filtered out — kept on disk for the diagnostics provider / `query_scratch`).
+ *
+ * @see docs/specs/context-providers-22/spec.md (US-001)
+ */
+export interface ToolDiagnosticsScratchEntry {
+  kind: "tool-diagnostics";
+  timestamp: string;
+  storyId: string;
+  diagnostics: ReadonlyArray<import("../quality/diagnostics").Diagnostic>;
+}
+
 export type ScratchEntry =
   | VerifyScratchEntry
   | RectifyScratchEntry
   | TddSessionScratchEntry
-  | SelfVerificationScratchEntry;
+  | SelfVerificationScratchEntry
+  | ToolDiagnosticsScratchEntry;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps

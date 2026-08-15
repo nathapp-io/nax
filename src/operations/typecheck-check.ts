@@ -2,10 +2,12 @@ import { qualityConfigSelector } from "../config";
 import type { QualityConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
+import { parseDiagnostics } from "../quality/diagnostics";
 import type { QualityCommandOptions, QualityCommandResult } from "../quality/runner";
 import { runQualityCommand } from "../quality/runner";
 import { parseTypecheckOutput } from "../review/typecheck-parsing";
 import type { TypecheckOutputFormat, TypecheckParseResult } from "../review/typecheck-parsing/types";
+import { errorMessage } from "../utils/errors";
 import type { CallContext, DeterministicOperation } from "./types";
 
 export interface TypecheckCheckInput {
@@ -27,12 +29,50 @@ export interface TypecheckCheckDeps {
     format?: TypecheckOutputFormat,
     opts?: { workdir: string },
   ) => TypecheckParseResult | null;
+  /**
+   * Optional scratch dir for tool-diagnostics capture (US-001). When set, a
+   * failed typecheck run writes a `tool-diagnostics` scratch entry to this
+   * dir using `appendScratchEntry`. Capture is best-effort — errors are
+   * swallowed so the typecheck result is never blocked.
+   */
+  sessionScratchDir?: string;
+  appendScratchEntry?: (scratchDir: string, entry: import("../session/scratch-writer").ScratchEntry) => Promise<void>;
 }
 
 export const _typecheckCheckDeps: TypecheckCheckDeps = {
   runQualityCommand,
   parseTypecheckOutput,
 };
+
+/**
+ * Best-effort capture of authoritative tool diagnostics into the story scratch
+ * dir (US-001). Only fires when a scratch dir AND append fn are wired. Errors
+ * are logged at warn and swallowed — capture never blocks the typecheck result.
+ */
+async function captureToolDiagnostics(
+  storyId: string,
+  result: QualityCommandResult,
+  tool: string,
+  sessionScratchDir: string | undefined,
+  appendScratchEntry: TypecheckCheckDeps["appendScratchEntry"],
+): Promise<void> {
+  if (!sessionScratchDir || !appendScratchEntry) return;
+  try {
+    const diagnostics = await parseDiagnostics(result, tool);
+    await appendScratchEntry(sessionScratchDir, {
+      kind: "tool-diagnostics",
+      timestamp: new Date().toISOString(),
+      storyId,
+      diagnostics,
+    });
+  } catch (err) {
+    getSafeLogger()?.warn("quality", "Failed to write tool-diagnostics scratch entry — continuing", {
+      storyId,
+      tool,
+      error: errorMessage(err),
+    });
+  }
+}
 
 export const typecheckCheckOp: DeterministicOperation<TypecheckCheckInput, TypecheckCheckOutput, QualityConfig> = {
   kind: "deterministic",
@@ -86,6 +126,8 @@ export const typecheckCheckOp: DeterministicOperation<TypecheckCheckInput, Typec
     if (result.exitCode === 0) {
       return { success: true, status: "passed", findings: [], durationMs: Date.now() - start };
     }
+
+    await captureToolDiagnostics(input.storyId, result, "tsc", deps.sessionScratchDir, deps.appendScratchEntry);
 
     const parsed = deps.parseTypecheckOutput(result.output, "auto", { workdir: input.workdir });
     const parsedFindings = parsed?.findings ?? [];
