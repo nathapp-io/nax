@@ -68,7 +68,7 @@ test("AC-1: parseDiagnostics returns an array for a successful tsc QualityComman
 });
 
 test("AC-2: parseDiagnostics parses a tsc error line into file/line/severity", () => {
-  const result = parseDiagnostics("src/a.ts(12,1): error TS2304: Missing}", "tsc");
+  const result = parseDiagnostics(qcr({ output: "src/a.ts(12,1): error TS2304: Missing}" }), "tsc");
   expect(result.length).toBe(1);
   expect(result[0].file).toBe("src/a.ts");
   expect(result[0].line).toBe(12);
@@ -76,13 +76,26 @@ test("AC-2: parseDiagnostics parses a tsc error line into file/line/severity", (
 });
 
 test("AC-3: parseDiagnostics parses a biome diagnostic naming a rule", () => {
-  const result = parseDiagnostics('{"severity":"error","rule":"no-empty"}', "biome");
+  const output = JSON.stringify({
+    diagnostics: [
+      {
+        category: "no-empty",
+        severity: "error",
+        description: "Empty block",
+        location: {
+          path: { file: "src/x.ts" },
+          span: { line: 1, column: 1 },
+        },
+      },
+    ],
+  });
+  const result = parseDiagnostics(qcr({ output }), "biome");
   expect(result.length).toBe(1);
   expect(result[0].rule).toBe("no-empty");
 });
 
 test("AC-4: parseDiagnostics degrades unknown toolchains to one Diagnostic with tool + message", () => {
-  const result = parseDiagnostics("some raw output from unknown tool", "unknown-linter");
+  const result = parseDiagnostics(qcr({ output: "some raw output from unknown tool" }), "unknown-linter");
   expect(result.length).toBe(1);
   expect(result[0].message.length).toBeGreaterThan(0);
   expect(result[0].tool).toBe("unknown-linter");
@@ -91,7 +104,7 @@ test("AC-4: parseDiagnostics degrades unknown toolchains to one Diagnostic with 
 test("AC-5: parseDiagnostics bounds the raw tail for unknown toolchains", () => {
   const BOUNDED_TAIL_LIMIT = 4000;
   const longOutput = "x".repeat(BOUNDED_TAIL_LIMIT + 1000);
-  const result = parseDiagnostics(longOutput, "unknown-linter");
+  const result = parseDiagnostics(qcr({ output: longOutput }), "unknown-linter");
   expect(result.length).toBe(1);
   expect(result[0].message.length).toBeLessThanOrEqual(BOUNDED_TAIL_LIMIT);
 });
@@ -268,7 +281,7 @@ test("AC-15: scoreChunk applies kind weight 0.95 to diagnostics chunks", () => {
     id: "c1",
     kind: "diagnostics" as const,
     scope: "session" as const,
-    role: ["all" as const],
+    role: ["implementer" as const],
     content: '{"tool":"tsc","diagnostics":[]}',
     tokens: 25,
     rawScore: 1,
@@ -282,7 +295,7 @@ test("AC-16: scoreChunk still applies kind weight 0.9 to session chunks", () => 
     id: "c1",
     kind: "session" as const,
     scope: "session" as const,
-    role: ["all" as const],
+    role: ["implementer" as const],
     content: "summary",
     tokens: 10,
     rawScore: 1,
@@ -299,9 +312,6 @@ test("AC-17: fetch with no storyScratchDirs returns empty chunks", async () => {
 
 test("AC-18: fetch against a nonexistent scratch dir returns empty chunks and does not throw", async () => {
   const provider = new ToolDiagnosticsProvider();
-  await expect(
-    provider.fetch(makeReq({ storyScratchDirs: ["/nonexistent/path/abc123"] })),
-  ).resolves.not.toThrow();
   const result = await provider.fetch(makeReq({ storyScratchDirs: ["/nonexistent/path/abc123"] }));
   expect(result.chunks).toEqual([]);
 });
@@ -312,8 +322,7 @@ test("AC-19: fetch skips a malformed JSONL line and keeps the valid tool-diagnos
       kind: "tool-diagnostics",
       timestamp: "2024-01-01T00:00:00.000Z",
       storyId: "s1",
-      file: "tsconfig.json",
-      diagnostics: [],
+      diagnostics: [{ file: "tsconfig.json", severity: "error", message: "test error", tool: "tsc" }],
     })}\n`;
     await mkdir(dir, { recursive: true });
     await writeFile(scratchFilePath(dir), content, "utf8");
@@ -335,8 +344,7 @@ test("AC-20: combined content across two scratch dirs names both diagnostic file
           kind: "tool-diagnostics",
           timestamp: "2024-01-01T00:00:00.000Z",
           storyId: "s1",
-          file: "tsconfig.json",
-          diagnostics: [],
+          diagnostics: [{ file: "tsconfig.json", severity: "error", message: "test error", tool: "tsc" }],
         })}\n`,
         "utf8",
       );
@@ -346,8 +354,7 @@ test("AC-20: combined content across two scratch dirs names both diagnostic file
           kind: "tool-diagnostics",
           timestamp: "2024-01-01T00:00:00.000Z",
           storyId: "s1",
-          file: "src/index.ts",
-          diagnostics: [],
+          diagnostics: [{ file: "src/index.ts", severity: "error", message: "test error", tool: "tsc" }],
         })}\n`,
         "utf8",
       );
@@ -445,7 +452,7 @@ test("AC-28: scoreChunk applies weight 0.85 to prior-failure chunks", () => {
       id: "c1",
       kind: "prior-failure" as const,
       scope: "story" as const,
-      role: ["all" as const],
+      role: ["implementer" as const],
       content: "...",
       tokens: 10,
       rawScore: 1,
@@ -460,7 +467,7 @@ test("AC-29: fetch with no metrics.json resolves to empty chunks without throwin
     const provider = new PriorRunFailureProvider();
     await expect(
       provider.fetch(makeReq({ storyId: "story-1", repoRoot: dir })),
-    ).resolves.toEqual({ chunks: [] });
+    ).resolves.toEqual({ chunks: [], pullTools: [] });
   });
 });
 
@@ -535,7 +542,7 @@ test("AC-34: fetch against invalid JSON metrics.json resolves to empty chunks wi
     const provider = new PriorRunFailureProvider();
     await expect(
       provider.fetch(makeReq({ storyId: "story-1", repoRoot: dir })),
-    ).resolves.toEqual({ chunks: [] });
+    ).resolves.toEqual({ chunks: [], pullTools: [] });
   });
 });
 
@@ -614,7 +621,7 @@ test("AC-41: scoreChunk applies kindWeight 0.8 to lint-config chunks", () => {
       id: "c1",
       kind: "lint-config" as const,
       scope: "project" as const,
-      role: ["all" as const],
+      role: ["implementer" as const],
       content: "x",
       tokens: 10,
       rawScore: 1,
@@ -630,7 +637,7 @@ test("AC-42: scoreChunk still applies kindWeight 1.0 to static chunks", () => {
       id: "c1",
       kind: "static" as const,
       scope: "project" as const,
-      role: ["all" as const],
+      role: ["implementer" as const],
       content: "x",
       tokens: 10,
       rawScore: 1,
@@ -679,7 +686,6 @@ test("AC-46: fetch returns empty chunks without throwing when no lint config fil
   await withTempDir(async (dir) => {
     _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "biome" });
     const provider = new LintConfigProvider();
-    await expect(provider.fetch(makeReq({ packageDir: dir, repoRoot: dir }))).resolves.not.toThrow();
     const result = await provider.fetch(makeReq({ packageDir: dir, repoRoot: dir }));
     expect(result.chunks).toEqual([]);
   });
@@ -689,7 +695,6 @@ test("AC-47: fetch returns empty chunks without throwing when no lint tool is de
   await withTempDir(async (dir) => {
     _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: undefined });
     const provider = new LintConfigProvider();
-    await expect(provider.fetch(makeReq({ packageDir: dir, repoRoot: dir }))).resolves.not.toThrow();
     const result = await provider.fetch(makeReq({ packageDir: dir, repoRoot: dir }));
     expect(result.chunks).toEqual([]);
   });
@@ -701,7 +706,6 @@ test("AC-48: fetch names the tool without throwing when lint config JSON is malf
     _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "biome" });
 
     const provider = new LintConfigProvider();
-    await expect(provider.fetch(makeReq({ packageDir: dir, repoRoot: dir }))).resolves.not.toThrow();
     const result = await provider.fetch(makeReq({ packageDir: dir, repoRoot: dir }));
     expect(result.chunks.length).toBe(1);
     expect(result.chunks[0].content.toLowerCase()).toContain("biome");
@@ -743,8 +747,8 @@ test("AC-51: detectProjectProfile is invoked with (packageDir, existingProfiles)
       return { lintTool: undefined };
     };
     const existingProfiles = { lintTool: undefined };
-    const provider = new LintConfigProvider();
-    await provider.fetch(makeReq({ packageDir: dir, repoRoot: dir }), existingProfiles);
+    const provider = new LintConfigProvider(existingProfiles);
+    await provider.fetch(makeReq({ packageDir: dir, repoRoot: dir }));
     expect(captured).toBeDefined();
     expect(captured?.[0]).toBe(dir);
     expect(captured?.[1]).toBe(existingProfiles);
@@ -888,7 +892,6 @@ test("AC-61: query_scratch with limit=1 against three entries names exactly one"
 
 test("AC-62: query_scratch for a story with no scratch dir returns a no-entries message without throwing", async () => {
   const runtime = makeRuntime(undefined);
-  await expect(runtime!.callTool("query_scratch", {})).resolves.not.toThrow();
   const output = await runtime!.callTool("query_scratch", {});
   expect(output.length).toBeGreaterThan(0);
 });

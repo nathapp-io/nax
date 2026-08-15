@@ -75,7 +75,7 @@ export function detectTool(command: string, commandName: string): string {
  *
  * Empty output returns `[]` regardless of tool.
  */
-export async function parseDiagnostics(result: QualityCommandResult, tool: string): Promise<Diagnostic[]> {
+export function parseDiagnostics(result: QualityCommandResult, tool: string): Diagnostic[] {
   const output = result.output ?? "";
   if (!output.trim()) return [];
 
