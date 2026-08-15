@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { STAGE_CONTEXT_MAP, getStageContextConfig } from "../../../../src/context/engine/stage-config";
+import { STAGE_CONTEXT_MAP, getStageContextConfig } from "@/context/engine";
 
 describe("stage-config — prior-run-failure provider registration (US-003 AC13)", () => {
   test("AC13: rectify stage includes 'prior-run-failure' in providerIds", () => {

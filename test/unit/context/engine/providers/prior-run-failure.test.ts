@@ -24,12 +24,9 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { PriorRunFailureProvider, _priorRunFailureDeps } from "@/context/engine";
+import type { ContextRequest } from "@/context/engine/types";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import {
-  PriorRunFailureProvider,
-  _priorRunFailureDeps,
-} from "../../../../../src/context/engine/providers/prior-run-failure";
-import type { ContextRequest } from "../../../../../src/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -418,7 +415,7 @@ describe("PriorRunFailureProvider — real-filesystem integration (loadRunMetric
     await writeFile(join(tempDir, "metrics.json"), JSON.stringify(runs), "utf8");
 
     // Wire the dep to call the real loadRunMetrics from src/metrics/tracker.
-    const { loadRunMetrics } = await import("../../../../../src/metrics/tracker");
+    const { loadRunMetrics } = await import("@/metrics");
     _priorRunFailureDeps.loadRunMetrics = loadRunMetrics;
 
     const provider = new PriorRunFailureProvider();
@@ -432,7 +429,7 @@ describe("PriorRunFailureProvider — real-filesystem integration (loadRunMetric
 
   test("returns empty chunks when real metrics.json is missing", async () => {
     // tempDir exists but has no metrics.json
-    const { loadRunMetrics } = await import("../../../../../src/metrics/tracker");
+    const { loadRunMetrics } = await import("@/metrics");
     _priorRunFailureDeps.loadRunMetrics = loadRunMetrics;
 
     const provider = new PriorRunFailureProvider();
@@ -444,7 +441,7 @@ describe("PriorRunFailureProvider — real-filesystem integration (loadRunMetric
   test("returns empty chunks when real metrics.json is malformed", async () => {
     await writeFile(join(tempDir, "metrics.json"), "not valid json {{{", "utf8");
 
-    const { loadRunMetrics } = await import("../../../../../src/metrics/tracker");
+    const { loadRunMetrics } = await import("@/metrics");
     _priorRunFailureDeps.loadRunMetrics = loadRunMetrics;
 
     const provider = new PriorRunFailureProvider();
@@ -457,7 +454,7 @@ describe("PriorRunFailureProvider — real-filesystem integration (loadRunMetric
     const runs = [makeRunMetrics([makeStoryMetrics({ storyId: "US-OTHER", success: false })])];
     await writeFile(join(tempDir, "metrics.json"), JSON.stringify(runs), "utf8");
 
-    const { loadRunMetrics } = await import("../../../../../src/metrics/tracker");
+    const { loadRunMetrics } = await import("@/metrics");
     _priorRunFailureDeps.loadRunMetrics = loadRunMetrics;
 
     const provider = new PriorRunFailureProvider();
@@ -469,4 +466,143 @@ describe("PriorRunFailureProvider — real-filesystem integration (loadRunMetric
   // Reference unused-import warning avoidance
   void mkdir;
   void existsSync;
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Defensive parsing — adversarial regression coverage
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("PriorRunFailureProvider — defensive parsing of structurally corrupt metrics", () => {
+  test("does not throw when a run entry omits the stories array", async () => {
+    const provider = new PriorRunFailureProvider();
+    _priorRunFailureDeps.loadRunMetrics = async () => [
+      // Hand-edited / partial: stories is missing entirely. Must be skipped.
+      {
+        runId: "run-1",
+        feature: "f",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        completedAt: "2026-01-01T00:01:00.000Z",
+        totalCost: 0,
+        totalStories: 0,
+        storiesCompleted: 0,
+        storiesFailed: 0,
+        totalDurationMs: 0,
+        stories: undefined,
+      } as unknown as ReturnType<typeof makeRunMetrics>, // test-ratchet-allow: as-unknown-as
+    ];
+
+    await expect(provider.fetch(makeRequest({ storyId: "US-003" }))).resolves.toEqual({
+      chunks: [],
+      pullTools: [],
+    });
+  });
+
+  test("does not throw when a story entry lacks a string storyId", async () => {
+    const provider = new PriorRunFailureProvider();
+    _priorRunFailureDeps.loadRunMetrics = async () => [
+      {
+        runId: "run-1",
+        feature: "f",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        completedAt: "2026-01-01T00:01:00.000Z",
+        totalCost: 0,
+        totalStories: 1,
+        storiesCompleted: 0,
+        storiesFailed: 1,
+        totalDurationMs: 0,
+        stories: [
+          {
+            // storyId is missing — must be skipped, not crash the iteration.
+            storyId: undefined,
+            complexity: "medium",
+            modelTier: "balanced",
+            modelUsed: "claude-sonnet-4",
+            attempts: 1,
+            finalTier: "balanced",
+            success: false,
+            cost: 0,
+            durationMs: 0,
+            firstPassSuccess: false,
+            startedAt: "2026-01-01T00:00:00.000Z",
+            completedAt: "2026-01-01T00:01:00.000Z",
+          } as unknown as ReturnType<typeof makeStoryMetrics>, // test-ratchet-allow: as-unknown-as
+        ],
+      },
+    ];
+
+    await expect(provider.fetch(makeRequest({ storyId: "US-003" }))).resolves.toEqual({
+      chunks: [],
+      pullTools: [],
+    });
+  });
+
+  test("skips entries with non-finite or negative attempts; counts valid entries", async () => {
+    const provider = new PriorRunFailureProvider();
+    _priorRunFailureDeps.loadRunMetrics = async () => [
+      {
+        runId: "run-1",
+        feature: "f",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        completedAt: "2026-01-01T00:01:00.000Z",
+        totalCost: 0,
+        totalStories: 3,
+        storiesCompleted: 0,
+        storiesFailed: 3,
+        totalDurationMs: 0,
+        stories: [
+          makeStoryMetrics({ storyId: "US-003", success: false, attempts: 2 }),
+          {
+            // attempts: NaN — must be skipped, not poison the sum.
+            storyId: "US-003",
+            complexity: "medium",
+            modelTier: "balanced",
+            modelUsed: "claude-sonnet-4",
+            attempts: Number.NaN,
+            finalTier: "balanced",
+            success: false,
+            cost: 0,
+            durationMs: 0,
+            firstPassSuccess: false,
+            startedAt: "2026-01-01T00:00:00.000Z",
+            completedAt: "2026-01-01T00:01:00.000Z",
+          } as unknown as ReturnType<typeof makeStoryMetrics>, // test-ratchet-allow: as-unknown-as
+          {
+            // attempts: -1 — must be skipped, not produce a negative total.
+            storyId: "US-003",
+            complexity: "medium",
+            modelTier: "balanced",
+            modelUsed: "claude-sonnet-4",
+            attempts: -1,
+            finalTier: "balanced",
+            success: false,
+            cost: 0,
+            durationMs: 0,
+            firstPassSuccess: false,
+            startedAt: "2026-01-01T00:00:00.000Z",
+            completedAt: "2026-01-01T00:01:00.000Z",
+          } as unknown as ReturnType<typeof makeStoryMetrics>, // test-ratchet-allow: as-unknown-as
+        ],
+      },
+    ];
+
+    const result = await provider.fetch(makeRequest({ storyId: "US-003" }));
+
+    expect(result.chunks).toHaveLength(1);
+    // Only the first entry (attempts=2) contributes. NaN and -1 are skipped.
+    // If either NaN leaked in, the chunk would contain the literal "NaN".
+    expect(result.chunks[0].content).not.toContain("NaN");
+    expect(result.chunks[0].content).toMatch(/Prior attempts: 2/);
+  });
+
+  test("loadRunMetrics throwing still returns empty chunks (logger receives the error)", async () => {
+    const provider = new PriorRunFailureProvider();
+    _priorRunFailureDeps.loadRunMetrics = async () => {
+      throw new Error("simulated dep failure");
+    };
+
+    await expect(provider.fetch(makeRequest({ storyId: "US-003" }))).resolves.toEqual({
+      chunks: [],
+      pullTools: [],
+    });
+  });
 });

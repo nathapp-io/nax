@@ -6,17 +6,17 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { NaxConfig } from "../../../../src/config";
-import { createDefaultOrchestrator } from "../../../../src/context/engine/orchestrator-factory";
-import { _codeNeighborDeps } from "../../../../src/context/engine/providers/code-neighbor";
-import { _gitHistoryDeps } from "../../../../src/context/engine/providers/git-history";
+import type { NaxConfig } from "@/config";
 import {
+  createDefaultOrchestrator,
+  _codeNeighborDeps,
+  _gitHistoryDeps,
   PriorRunFailureProvider,
   _priorRunFailureDeps,
-} from "../../../../src/context/engine/providers/prior-run-failure";
-import type { ContextRequest } from "../../../../src/context/engine/types";
-import type { UserStory } from "../../../../src/prd";
-import { makeNaxConfig } from "../../../helpers";
+} from "@/context/engine";
+import type { ContextRequest } from "@/context/engine/types";
+import type { UserStory } from "@/prd";
+import { makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
