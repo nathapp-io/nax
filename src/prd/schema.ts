@@ -9,6 +9,7 @@ import { resolveTestStrategy } from "../config/test-strategy";
 import { NaxError } from "../errors";
 import { extractJsonFromMarkdown, extractJsonObject, stripTrailingCommas } from "../utils/llm-json";
 export { extractJsonFromMarkdown };
+import { assertNoDependencyCycle } from "./dependency-cycle";
 import { normalizeOutOfScopeList } from "./out-of-scope";
 import type { ContextFileEntry, ModifiedFileEntry, PRD, UserStory } from "./types";
 import { validateStoryId } from "./validate";
@@ -576,6 +577,9 @@ export function validatePlanOutput(raw: unknown, feature: string, branch: string
   // contains every id up front, so it cannot be used to detect duplicates).
   const seenIds = new Set<string>();
   const userStories: UserStory[] = rawStories.map((story, index) => validateStory(story, index, allIds, seenIds));
+
+  // BUG-27: fail fast on a cycle instead of letting worktree/merge.ts discover it mid-run.
+  assertNoDependencyCycle(userStories);
 
   const now = new Date().toISOString();
   const featureOutOfScope = normalizeOutOfScopeList(obj.outOfScope);
