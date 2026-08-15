@@ -383,5 +383,67 @@ describe("ToolDiagnosticsProvider — defensive parsing", () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Adversarial-rectification: defensive tolerance beyond the spec's two cases
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("ToolDiagnosticsProvider — adversarial-rectification defensive tolerance", () => {
+  test("a null element inside the diagnostics array is skipped without throwing fetch()", async () => {
+    // Syntactically valid JSON, but the diagnostics array contains a null element.
+    // The spec's 'never throws' contract requires fetch() to skip the unreadable
+    // unit and return whatever parsed.
+    const entry = JSON.stringify({
+      kind: "tool-diagnostics",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      storyId: "US-002",
+      diagnostics: [null, { file: "src/keep.ts", line: 1, severity: "error", message: "kept", tool: "tsc" }],
+    });
+    mockScratchFile(`${entry}\n`);
+
+    const provider = new ToolDiagnosticsProvider();
+    const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"] }));
+
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0].content).toContain("src/keep.ts");
+  });
+
+  test("a non-object element inside the diagnostics array is skipped without throwing fetch()", async () => {
+    const entry = JSON.stringify({
+      kind: "tool-diagnostics",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      storyId: "US-002",
+      diagnostics: ["oops-string", 42, { file: "src/ok.ts", line: 1, severity: "error", message: "ok", tool: "tsc" }],
+    });
+    mockScratchFile(`${entry}\n`);
+
+    const provider = new ToolDiagnosticsProvider();
+    const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"] }));
+
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0].content).toContain("src/ok.ts");
+  });
+
+  test("fetch() does not throw and still emits chunks for other dirs when readFile rejects for one dir", async () => {
+    // First dir's file exists but readFile throws (file vanished between checks).
+    // Second dir's file exists and reads cleanly. fetch() must skip dir-1 and
+    // return dir-2's chunk — never abort the whole fetch.
+    _toolDiagnosticsDeps.fileExists = async () => true;
+    _toolDiagnosticsDeps.readFile = async (path) => {
+      if (path.includes("vanished")) {
+        throw new Error("ENOENT: scratch file vanished after exists check");
+      }
+      return `${DIAG_ENTRY("src/ok.ts", "kept")}\n`;
+    };
+
+    const provider = new ToolDiagnosticsProvider();
+    const result = await provider.fetch(
+      makeRequest({ storyScratchDirs: ["/sess/vanished", "/sess/present"] }),
+    );
+
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0].content).toContain("src/ok.ts");
+  });
+});
+
 // Reference unused-import warning avoidance (tmpdir is used by AC8 setup helper).
 void tmpdir;

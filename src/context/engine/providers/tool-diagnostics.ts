@@ -81,6 +81,10 @@ function renderEntries(entries: ToolDiagnosticsScratchEntry[]): string {
   for (const entry of entries) {
     const diagnostics = Array.isArray(entry.diagnostics) ? entry.diagnostics : [];
     for (const d of diagnostics) {
+      // Defensive: skip null / non-object elements so a malformed-but-valid-JSON
+      // entry (e.g. `diagnostics: [null]`) cannot make formatDiagnostic throw.
+      // The spec's "never throws" contract covers more than just bad JSONL lines.
+      if (d === null || typeof d !== "object") continue;
       lines.push(formatDiagnostic(d));
     }
   }
@@ -89,14 +93,22 @@ function renderEntries(entries: ToolDiagnosticsScratchEntry[]): string {
 
 /**
  * Read a scratch dir and produce a RawChunk for its tool-diagnostics entries.
- * Returns null when the dir has no scratch file, the file is empty, or contains
- * no tool-diagnostics entries.
+ * Returns null when the dir has no scratch file, the file is empty, contains
+ * no tool-diagnostics entries, or becomes unreadable after the existence check.
  */
 async function readDiagnosticsDir(scratchDir: string): Promise<RawChunk | null> {
   const filePath = scratchFilePath(scratchDir);
   if (!(await _toolDiagnosticsDeps.fileExists(filePath))) return null;
 
-  const raw = await _toolDiagnosticsDeps.readFile(filePath);
+  let raw: string;
+  try {
+    raw = await _toolDiagnosticsDeps.readFile(filePath);
+  } catch {
+    // File vanished or became unreadable after exists() returned true (race).
+    // Skip this dir rather than aborting fetch() — other scratch dirs may still
+    // be readable. Mirrors the "never throws" contract for malformed JSONL.
+    return null;
+  }
   const entries = parseToolDiagnosticsJsonl(raw);
   if (entries.length === 0) return null;
 
