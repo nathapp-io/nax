@@ -275,8 +275,9 @@ describe("formatFragmentsPrune — content (US-004 AC4, AC5, AC6)", () => {
 
 describe("fragmentsPruneCommand — single-story (US-004 AC4)", () => {
   test("[US-004 AC4] removes only the targeted story fragment; other fragments stay readable", async () => {
-    // Fragments live at <projectDir>/features/<featureId>/fragments/<storyId>.md
-    // where projectDir = <repoRoot>/.nax (default for the command).
+    // Fragments live at <projectDir>/.nax/features/<featureId>/fragments/<storyId>.md
+    // where projectDir is the repo root — the same anchor `ctx.projectDir` and
+    // `manifest-store.ts` use. The store owns the `.nax` segment.
     const writes = new Map<string, string>();
     const path1 = "/repo/.nax/features/feat-x/fragments/US-001.md";
     const path2 = "/repo/.nax/features/feat-x/fragments/US-002.md";
@@ -301,8 +302,8 @@ describe("fragmentsPruneCommand — single-story (US-004 AC4)", () => {
     });
 
     expect(exitCode).toBe(0);
-    const removed = await readFragment("/repo/.nax", "feat-x", "US-001");
-    const kept = await readFragment("/repo/.nax", "feat-x", "US-002");
+    const removed = await readFragment("/repo", "feat-x", "US-001");
+    const kept = await readFragment("/repo", "feat-x", "US-002");
     expect(removed).toBeNull();
     expect(kept).toBe("keep me");
   });
@@ -337,9 +338,9 @@ describe("fragmentsPruneCommand — feature-wide (US-004 AC5, AC6)", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(await readFragment("/repo/.nax", "feat-x", "US-001")).toBeNull();
-    expect(await readFragment("/repo/.nax", "feat-x", "US-002")).toBeNull();
-    expect(await readFragment("/repo/.nax", "feat-x", "US-003")).toBeNull();
+    expect(await readFragment("/repo", "feat-x", "US-001")).toBeNull();
+    expect(await readFragment("/repo", "feat-x", "US-002")).toBeNull();
+    expect(await readFragment("/repo", "feat-x", "US-003")).toBeNull();
   });
 
   test("[US-004 AC6] prune with no fragments exits 0 and reports nothing was removed", async () => {

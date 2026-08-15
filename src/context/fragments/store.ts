@@ -2,7 +2,13 @@
  * Context Engine — Fragment Store
  *
  * Feature-scoped fragment persistence. One fragment per story at:
- *   <projectDir>/features/<featureId>/fragments/<storyId>.md
+ *   <projectDir>/.nax/features/<featureId>/fragments/<storyId>.md
+ *
+ * `projectDir` is the repo root, so the `.nax` segment is required — it is what
+ * puts fragments in the same feature directory as `prd.json` and the context
+ * manifests (`manifest-store.ts`, `stage-assembler.ts` join it the same way).
+ * Omitting it wrote fragments to a stray top-level `features/` dir that no
+ * `.nax`-scoped gitignore entry covered.
  *
  * Attribution is the filename; the file body carries no metadata. Fragment
  * base score is 1.0 (matches the existing context.md chunk score).
@@ -54,14 +60,13 @@ export const _fragmentStoreDeps = {
 
 /** Resolve the on-disk path for a fragment file. */
 export function fragmentPath(projectDir: string, featureId: string, storyId: string): string {
-  validatePathSegment(featureId, "featureId");
   validatePathSegment(storyId, "storyId");
-  return join(projectDir, "features", featureId, "fragments", `${storyId}.md`);
+  return join(fragmentsDir(projectDir, featureId), `${storyId}.md`);
 }
 
 function fragmentsDir(projectDir: string, featureId: string): string {
   validatePathSegment(featureId, "featureId");
-  return join(projectDir, "features", featureId, "fragments");
+  return join(projectDir, ".nax", "features", featureId, "fragments");
 }
 
 /**

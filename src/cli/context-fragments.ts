@@ -66,8 +66,14 @@ export const _contextFragmentsDeps = {
       return { kind: "error", error: message };
     }
   },
-  /** Default resolves the on-disk `.nax` projectDir from repoRoot. */
-  projectDirFor: (repoRoot: string): string => `${repoRoot}/.nax`,
+  /**
+   * `projectDir` is the repo root — the `.nax` segment belongs to the store
+   * (`fragmentPath`) and to `featurePrdPath`, not here. This used to append
+   * `.nax` to compensate for a store that omitted it, which left the CLI
+   * reading the correct directory while capture wrote to a stray top-level
+   * `features/` one, so `inspect`/`prune` never saw a captured fragment.
+   */
+  projectDirFor: (repoRoot: string): string => repoRoot,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -252,7 +258,7 @@ function resolveProjectDir(dir: string | undefined): string {
 }
 
 function featurePrdPath(projectDir: string, featureId: string): string {
-  return `${projectDir}/features/${featureId}/prd.json`;
+  return `${projectDir}/.nax/features/${featureId}/prd.json`;
 }
 
 /**

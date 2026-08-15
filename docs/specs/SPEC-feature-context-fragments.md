@@ -63,7 +63,7 @@ Fragment base score is `1.0`, matching the existing `context.md` chunk, so at th
 
 ### File Format
 
-One fragment per story at `<projectDir>/features/<featureId>/fragments/<storyId>.md`. Attribution is the filename; the file body carries no metadata. A stage-1 body is derived deterministically from the story title, its acceptance criteria, and the files touched in the story's diff:
+One fragment per story at `<projectDir>/.nax/features/<featureId>/fragments/<storyId>.md` -- the same feature directory that holds `prd.json` and the context manifests. Attribution is the filename; the file body carries no metadata. A stage-1 body is derived deterministically from the story title, its acceptance criteria, and the files touched in the story's diff:
 
 ```markdown
 # US-001 — Add the fragment store

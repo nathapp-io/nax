@@ -10,7 +10,7 @@
  * (see src/context/engine/providers/feature-context.ts):
  *   - createV1Provider: v1 context.md path (kept for context.md continuity)
  *   - loadPRD:          reads <repoRoot>/.nax/features/<featureId>/prd.json
- *   - readFragment:     reads <projectDir>/features/<featureId>/fragments/<storyId>.md
+ *   - readFragment:     reads <projectDir>/.nax/features/<featureId>/fragments/<storyId>.md
  *   - listFragmentStoryIds: returns the set of stories that have fragments
  *
  * No real disk I/O is performed. v1 is mocked to keep its chunks easy to

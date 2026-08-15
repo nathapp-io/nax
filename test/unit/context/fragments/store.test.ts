@@ -3,7 +3,7 @@
  *
  * AC 6–12 cover the runtime behaviour of the fragment store.
  *
- * Layout: <projectDir>/features/<featureId>/fragments/<storyId>.md
+ * Layout: <projectDir>/.nax/features/<featureId>/fragments/<storyId>.md
  *
  * Truncation: when the configured `maxTokens` budget is exceeded, the
  * subsequently-read body must be no longer than that budget. Token counting
@@ -99,9 +99,9 @@ describe("fragment store — writeFragment / readFragment (US-001)", () => {
     expect(read?.length ?? 0).toBeLessThanOrEqual(16);
   });
 
-  test("writeFragment builds the path under <projectDir>/features/<featureId>/fragments/<storyId>.md", () => {
+  test("writeFragment builds the path under <projectDir>/.nax/features/<featureId>/fragments/<storyId>.md", () => {
     expect(fragmentPath("/repo", "feat-auth", "US-001")).toBe(
-      "/repo/features/feat-auth/fragments/US-001.md",
+      "/repo/.nax/features/feat-auth/fragments/US-001.md",
     );
   });
 
@@ -116,7 +116,7 @@ describe("fragment store — writeFragment / readFragment (US-001)", () => {
     _fragmentStoreDeps.removeFile = async () => undefined;
 
     await writeFragment("/repo", "feat-auth", "US-001", "body", 400);
-    expect(mkdirArgs).toContain("/repo/features/feat-auth/fragments");
+    expect(mkdirArgs).toContain("/repo/.nax/features/feat-auth/fragments");
   });
 });
 
@@ -243,7 +243,7 @@ describe("fragment store — path-segment validation (US-001)", () => {
 describe("fragment store — deleteFragment (US-001)", () => {
   test("[US-001 AC 10] deleteFragment removes the file so a subsequent readFragment returns null", async () => {
     const writes = new Map<string, string>();
-    const path = "/repo/features/feat-auth/fragments/US-001.md";
+    const path = "/repo/.nax/features/feat-auth/fragments/US-001.md";
     writes.set(path, "old body");
 
     _fragmentStoreDeps.mkdirp = async () => undefined;
@@ -275,8 +275,8 @@ describe("fragment store — deleteFragment (US-001)", () => {
 
   test("deleteFragment removes only the targeted story fragment", async () => {
     const writes = new Map<string, string>();
-    const target = "/repo/features/feat-auth/fragments/US-001.md";
-    const other = "/repo/features/feat-auth/fragments/US-002.md";
+    const target = "/repo/.nax/features/feat-auth/fragments/US-001.md";
+    const other = "/repo/.nax/features/feat-auth/fragments/US-002.md";
     writes.set(target, "remove me");
     writes.set(other, "keep me");
 
