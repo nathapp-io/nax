@@ -82,6 +82,7 @@ Diagnostics persist as a new `tool-diagnostics` entry in the existing scratch JS
 - RAG, graph, and KB providers are not implemented; they remain separate spec'd follow-ups.
 - Diagnostics are not backfilled for runs that completed before this feature shipped.
 - Diagnostic parsers beyond `tsc` and `biome` are not implemented; other toolchains take the raw-tail path.
+- US-005 only: enforcement of the `query_scratch` per-session call ceiling is not verified by this spec; it is existing pull-tool budget behaviour shared with `query_neighbor`, and only the descriptor's ceiling value is pinned.
 
 ## Stories
 
@@ -116,7 +117,7 @@ Add the `diagnostics` chunk kind and a provider that reads `tool-diagnostics` en
 
 **US-003 — PriorRunFailureProvider** (depends on US-002)
 
-Add the `prior-failure` chunk kind and a provider that reports this story's own failures from earlier runs.
+Add the `prior-failure` chunk kind and a provider that reports this story's own failures from earlier runs. This story must run after US-002: both add a member to the `ChunkKind` union and an entry to `KIND_WEIGHTS`, so running them concurrently means two edits to the same union and the same `Record` in one tree.
 
 ### Context Files
 - `src/metrics/tracker.ts`
@@ -131,7 +132,7 @@ Add the `prior-failure` chunk kind and a provider that reports this story's own 
 
 **US-004 — LintConfigProvider** (depends on US-002)
 
-Add the `lint-config` chunk kind and a provider that names the governing linter and distils the settings most likely to cause a retry loop.
+Add the `lint-config` chunk kind and a provider that names the governing linter and distils the settings most likely to cause a retry loop. This story must run after US-002 for the same reason as US-003: both edit the `ChunkKind` union and `KIND_WEIGHTS`.
 
 ### Context Files
 - `src/project/detector.ts`
