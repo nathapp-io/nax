@@ -24,11 +24,12 @@ export interface CallContext {
    */
   readonly contextToolRunCounter?: import("../context/engine").RunCallCounter;
   /**
-   * Story session scratch directory (US-005). Threaded from the pipeline
-   * context so the pull-tool runtime can hand it to query_scratch without
-   * re-discovering disk. Absent / empty disables the scratch handler.
+   * Story scratch directories (US-005). Threaded from the pipeline context
+   * (PipelineContext.storyScratchDirs) so the pull-tool runtime can hand the
+   * full set to query_scratch without re-discovering disk. Absent / empty
+   * disables the scratch handler (it returns a no-entries message).
    */
-  readonly sessionScratchDir?: string;
+  readonly storyScratchDirs?: string[];
   readonly storyId?: string;
   readonly featureName?: string;
   /**

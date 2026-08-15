@@ -278,11 +278,11 @@ describe("handleQueryScratch", () => {
     const crossStory = makeStory({ id: STORY_ID });
     const { budget } = makeBudget();
 
-    // Cross-agent read: sourceAgent=claude (the writer) and targetAgent=codex
-    // (the requester). The neutralizer runs because sourceAgent != targetAgent
-    // AND sourceAgent is "claude" (the known tool-name catalogue).
+    // Cross-agent read: the entry's writer is `writtenByAgent: "claude"` and
+    // the requester is `targetAgent: "codex"`. The neutralizer runs because
+    // the writer differs from the requester AND the writer is "claude" (the
+    // known tool-name catalogue).
     const result = await handleQueryScratch({}, crossStory, [scratchDir], budget, {
-      sourceAgent: "claude",
       targetAgent: "codex",
     });
 

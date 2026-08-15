@@ -222,6 +222,37 @@ describe("createContextToolRuntime — query_scratch dispatch", () => {
     expect(result).toContain("runtime-dispatch");
   });
 
+  test("threads the requesting agent so cross-agent scratch is neutralized (AC10)", async () => {
+    const scratchDir = join(tmpDir, "sess-neutralize");
+    await writeScratch(scratchDir, [
+      {
+        kind: "verify-result",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        storyId: "US-005",
+        stage: "verify",
+        success: false,
+        status: "TEST_FAILURE",
+        passCount: 0,
+        failCount: 1,
+        rawOutputTail: "I used the Read tool to inspect the failure.",
+        writtenByAgent: "claude",
+      },
+    ]);
+
+    const runtime = createContextToolRuntime({
+      bundle: makeBundleWithQueryScratch(),
+      story,
+      config: RUNTIME_CONFIG,
+      repoRoot: "/tmp",
+      storyScratchDirs: [scratchDir],
+      agentId: "codex",
+    });
+
+    const result = await runtime?.callTool("query_scratch", {});
+    expect(result).not.toContain("the Read tool");
+    expect(result).toContain("a file read");
+  });
+
   test("invocations past the per-session ceiling are rejected via the existing pull-tool budget", async () => {
     const scratchDir = join(tmpDir, "sess-budget");
     await writeScratch(scratchDir, [

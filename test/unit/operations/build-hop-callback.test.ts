@@ -640,8 +640,8 @@ describe("buildHopCallback — timeoutRetry wiring (AC6/AC7)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("buildHopCallback — storyScratchDirs handoff to runtime (US-005)", () => {
-  test("passes ctx.sessionScratchDir as storyScratchDirs to createContextToolRuntime", async () => {
-    const SCRATCH_DIR = "/tmp/nax-scratch-sess-001";
+  test("passes ctx.storyScratchDirs through to createContextToolRuntime unchanged", async () => {
+    const SCRATCH_DIRS = ["/tmp/nax-scratch-sess-001", "/tmp/nax-scratch-sess-002"];
     let capturedOptions: Parameters<typeof _buildHopCallbackDeps.createContextToolRuntime>[0] | undefined;
     const createRuntimeMock = mock((opts: Parameters<typeof _buildHopCallbackDeps.createContextToolRuntime>[0]) => {
       capturedOptions = opts;
@@ -655,8 +655,8 @@ describe("buildHopCallback — storyScratchDirs handoff to runtime (US-005)", ()
     const ctx = makeCtx({
       agentManager,
       sessionManager,
-    }) as BuildHopCallbackContext & { sessionScratchDir?: string };
-    ctx.sessionScratchDir = SCRATCH_DIR;
+    }) as BuildHopCallbackContext & { storyScratchDirs?: string[] };
+    ctx.storyScratchDirs = SCRATCH_DIRS;
 
     const baseOptions = makeBaseOptions("p", ctx.config);
     const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
@@ -664,10 +664,13 @@ describe("buildHopCallback — storyScratchDirs handoff to runtime (US-005)", ()
     await cb("claude", makeBundle(), { kind: "primary" } satisfies HopKind, baseOptions);
 
     expect(capturedOptions).toBeDefined();
-    expect(capturedOptions?.storyScratchDirs).toEqual([SCRATCH_DIR]);
+    expect(capturedOptions?.storyScratchDirs).toEqual(SCRATCH_DIRS);
+    // The requesting (hop) agent must be threaded so query_scratch neutralizes
+    // tool references for the actual reader (AC10), not the story.id default.
+    expect(capturedOptions?.agentId).toBe("claude");
   });
 
-  test("omits storyScratchDirs when ctx.sessionScratchDir is absent", async () => {
+  test("omits storyScratchDirs when ctx.storyScratchDirs is absent", async () => {
     let capturedOptions: Parameters<typeof _buildHopCallbackDeps.createContextToolRuntime>[0] | undefined;
     const createRuntimeMock = mock((opts: Parameters<typeof _buildHopCallbackDeps.createContextToolRuntime>[0]) => {
       capturedOptions = opts;
@@ -685,7 +688,7 @@ describe("buildHopCallback — storyScratchDirs handoff to runtime (US-005)", ()
     await cb("claude", makeBundle(), { kind: "primary" } satisfies HopKind, baseOptions);
 
     expect(capturedOptions).toBeDefined();
-    // No sessionScratchDir — either undefined or empty array
+    // No storyScratchDirs — either undefined or empty array
     expect(capturedOptions?.storyScratchDirs ?? []).toEqual([]);
   });
 });

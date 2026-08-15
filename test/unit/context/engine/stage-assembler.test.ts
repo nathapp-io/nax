@@ -612,3 +612,49 @@ describe("assembleForStage — provider-weights threading (effectiveness-scoring
     expect(mock.ref.captured?.providerWeights).toBeUndefined();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-005: assembleForStage publishes the full storyScratchDirs so the pull-tool
+// runtime (query_scratch) can read the same dirs the push providers read, rather
+// than only ctx.sessionScratchDir.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("assembleForStage — publishes storyScratchDirs (US-005)", () => {
+  let origReaddir: typeof _stageAssemblerDeps.readdir;
+  let origReadDescriptor: typeof _stageAssemblerDeps.readDescriptor;
+  let origCreateOrchestrator: typeof _stageAssemblerDeps.createOrchestrator;
+
+  beforeEach(() => {
+    origReaddir = _stageAssemblerDeps.readdir;
+    origReadDescriptor = _stageAssemblerDeps.readDescriptor;
+    origCreateOrchestrator = _stageAssemblerDeps.createOrchestrator;
+    // Suppress disk discovery
+    _stageAssemblerDeps.readdir = async () => {
+      throw new Error("ENOENT");
+    };
+    _stageAssemblerDeps.readDescriptor = async () => null;
+  });
+
+  afterEach(() => {
+    _stageAssemblerDeps.readdir = origReaddir;
+    _stageAssemblerDeps.readDescriptor = origReadDescriptor;
+    _stageAssemblerDeps.createOrchestrator = origCreateOrchestrator;
+  });
+
+  test("publishes the resolved storyScratchDirs onto the pipeline context and the request", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () =>
+      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+
+    const ctx = makeCtx();
+    ctx.sessionScratchDir = "/tmp/nax-sessions/sess-1";
+
+    await assembleForStage(ctx, "execution");
+
+    // The pull runtime reads this published list so it sees the same dirs as
+    // the push providers, not just the single sessionScratchDir.
+    expect(ctx.storyScratchDirs).toEqual(["/tmp/nax-sessions/sess-1"]);
+    // The push providers receive the same dirs via the assembled request.
+    expect(mock.ref.captured?.storyScratchDirs).toEqual(["/tmp/nax-sessions/sess-1"]);
+  });
+});

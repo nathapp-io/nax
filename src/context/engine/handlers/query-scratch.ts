@@ -25,15 +25,15 @@ import type { PullToolBudget, ScratchEntry } from "../pull-tools";
 import { neutralizeForAgent } from "../scratch-neutralizer";
 
 /**
- * Options for the query_scratch handler. `sourceAgent` and `targetAgent`
- * drive cross-agent neutralization (AC-42): when the requesting agent differs
- * from the writer, agent-specific tool references in entry free-text fields
- * are substituted. Default to the story's id for both when the runtime
- * didn't pass them — covers same-agent reads (no neutralization needed)
- * and tests that don't care about cross-agent specifics.
+ * Options for the query_scratch handler. `targetAgent` is the agent that
+ * invoked query_scratch (the requesting/reading agent). The writer is read
+ * per-entry from `entry.writtenByAgent`, mirroring SessionScratchProvider, so
+ * cross-agent neutralization (AC-42) substitutes agent-specific tool
+ * references when the requesting agent differs from the writer. Defaults to
+ * the story's id when the runtime didn't pass it — covers same-agent reads
+ * (no neutralization needed) and direct tests.
  */
 export interface QueryScratchOptions {
-  sourceAgent?: string;
   targetAgent?: string;
 }
 
@@ -63,16 +63,17 @@ async function readScratchEntries(scratchDir: string): Promise<ScratchEntry[]> {
  * Render a single scratch entry to a one-line-ish Markdown fragment.
  * Mirrors SessionScratchProvider.renderEntry closely so the agent sees the
  * same shape pull-side as push-side. Free-text fields pass through
- * neutralizeForAgent() so cross-agent reads see neutralized tool references.
+ * neutralizeForAgent() using the entry's own `writtenByAgent` as the writer,
+ * so cross-agent reads see neutralized tool references.
  */
-function renderScratchEntry(entry: ScratchEntry, sourceAgent: string, targetAgent: string): string {
-  const neutralize = (content: string): string => neutralizeForAgent(content, sourceAgent, targetAgent);
+function renderScratchEntry(entry: ScratchEntry, targetAgent: string): string {
   switch (entry.kind) {
     case "verify-result": {
       const status = entry.success ? "PASS" : `FAIL (${entry.failCount} failures)`;
       const lines = [`**Verify** at ${entry.timestamp}: ${status} — ${entry.passCount} pass / ${entry.failCount} fail`];
       if (!entry.success && entry.rawOutputTail) {
-        lines.push("```", neutralize(entry.rawOutputTail.trim()), "```");
+        const tail = neutralizeForAgent(entry.rawOutputTail.trim(), entry.writtenByAgent ?? "", targetAgent);
+        lines.push("```", tail, "```");
       }
       return lines.join("\n");
     }
@@ -85,7 +86,8 @@ function renderScratchEntry(entry: ScratchEntry, sourceAgent: string, targetAgen
         }`,
       ];
       if (entry.outputTail.trim()) {
-        lines.push("```", neutralize(entry.outputTail.trim()), "```");
+        const tail = neutralizeForAgent(entry.outputTail.trim(), entry.writtenByAgent ?? "", targetAgent);
+        lines.push("```", tail, "```");
       }
       if (entry.selfVerification) {
         lines.push(
@@ -132,7 +134,6 @@ export async function handleQueryScratch(
 ): Promise<string> {
   budget.consume();
 
-  const sourceAgent = options.sourceAgent ?? story.id;
   const targetAgent = options.targetAgent ?? story.id;
 
   // Read every scratch dir; union the entries. Mirrors SessionScratchProvider's
@@ -158,7 +159,7 @@ export async function handleQueryScratch(
     return "No matching scratch entries.";
   }
 
-  const content = limited.map((e) => renderScratchEntry(e, sourceAgent, targetAgent)).join("\n\n");
+  const content = limited.map((e) => renderScratchEntry(e, targetAgent)).join("\n\n");
 
   // Mantra: respect the configured per-call token ceiling.
   const maxChars = DEFAULT_MAX_TOKENS_PER_CALL * 4;

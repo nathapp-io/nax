@@ -196,6 +196,16 @@ export interface PipelineContext extends DispatchContext {
    * Written by verify and rectify; read by SessionScratchProvider via storyScratchDirs.
    */
   sessionScratchDir?: string;
+  /**
+   * Full set of story scratch directories resolved by the stage-assembly path
+   * (assembleForStage). Includes ctx.sessionScratchDir plus any sibling/prior
+   * session dirs the SessionManager or on-disk discovery surfaced. Published so
+   * the pull-tool runtime's query_scratch handler reads the same dirs the push
+   * providers read, rather than only the single sessionScratchDir. Absent when
+   * no stage assembly has resolved it (the execution stage falls back to
+   * [sessionScratchDir]).
+   */
+  storyScratchDirs?: string[];
   /** Final prompt sent to agent (set by promptStage) */
   prompt?: string;
   /** Agent execution result (set by executionStage) */

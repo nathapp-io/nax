@@ -69,6 +69,13 @@ export function createContextToolRuntime(options: {
    * (it returns a no-entries message on its own — never throws).
    */
   storyScratchDirs?: string[];
+  /**
+   * Agent id of the requester (the agent invoking the pull tools). Threaded
+   * from buildHopCallback's hop agent so query_scratch neutralizes
+   * agent-specific tool references for the actual reader (AC-42 / US-005 AC10)
+   * instead of the handler's story.id default.
+   */
+  agentId?: string;
 }): ContextToolRuntime | undefined {
   const { bundle, story, config, repoRoot } = options;
   if (bundle.pullTools.length === 0) return undefined;
@@ -146,6 +153,7 @@ export function createContextToolRuntime(options: {
             story,
             options.storyScratchDirs ?? [],
             getBudget(tool),
+            options.agentId ? { targetAgent: options.agentId } : {},
           );
         default:
           throw new NaxError(`No runtime handler for context tool: ${name}`, "PULL_TOOL_NO_HANDLER", {
