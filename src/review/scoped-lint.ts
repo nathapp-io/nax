@@ -5,6 +5,7 @@ import { type UserStory, getContextFiles } from "../prd";
 import { type QualityCommandResult, runQualityCommand } from "../quality";
 import { findPackageDir } from "../test-runners/resolver";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
+import { shellQuoteArg } from "../verification/shell-quote";
 import { formatDiagnosticsOutput, parseLintOutput } from "./lint-parsing";
 import type { LintOutputFormat } from "./lint-parsing";
 import type { ReviewCheckResult, ReviewConfig } from "./types";
@@ -40,10 +41,6 @@ interface ScopeResult {
 
 const SCOPED_LINT_CHECK = "lint";
 
-function shellQuotePath(path: string): string {
-  return `'${path.replaceAll("'", "'\\''")}'`;
-}
-
 function normalizePath(path: string): string {
   return path.replaceAll("\\", "/").replace(/^\.\//, "");
 }
@@ -57,7 +54,7 @@ function isSupportedDerivedScopedCommand(command: string): boolean {
 }
 
 function appendFilesToCommand(command: string, files: readonly string[]): string {
-  const fileArgs = files.map(shellQuotePath).join(" ");
+  const fileArgs = files.map(shellQuoteArg).join(" ");
   return `${command} ${fileArgs}`;
 }
 
@@ -275,7 +272,7 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
   }
 
   if (scopedTemplate) {
-    const scopedCommand = scopedTemplate.replaceAll("{{files}}", scope.files.map(shellQuotePath).join(" "));
+    const scopedCommand = scopedTemplate.replaceAll("{{files}}", scope.files.map(shellQuoteArg).join(" "));
     const scopedResult = await _scopedLintDeps.runLintCommand(
       args.workdir,
       args.storyId,

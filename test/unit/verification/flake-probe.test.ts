@@ -193,6 +193,7 @@ describe("runFlakeProbe — verdict logic", () => {
     if (result.verdict === "flaky") {
       expect(result.probeRuns).toBe(2);
       expect(result.probePasses).toBe(1);
+      expect(result.attributableRuns).toBe(2);
     }
     expect(fake).toHaveBeenCalledTimes(2);
   });
@@ -212,6 +213,7 @@ describe("runFlakeProbe — verdict logic", () => {
     expect(result.verdict).toBe("consistent-failure");
     if (result.verdict === "consistent-failure") {
       expect(result.probeRuns).toBe(3);
+      expect(result.attributableRuns).toBe(3);
     }
     expect(fake).toHaveBeenCalledTimes(3);
   });
@@ -270,6 +272,10 @@ describe("runFlakeProbe — verdict logic", () => {
     if (result.verdict === "flaky") {
       expect(result.probeRuns).toBe(2);
       expect(result.probePasses).toBe(1);
+      // Only 1 of the 2 raw attempts was attributable (the other was an
+      // environmental timeout) — attributableRuns must reflect that, distinct
+      // from the raw probeRuns count.
+      expect(result.attributableRuns).toBe(1);
     }
     expect(fake).toHaveBeenCalledTimes(2);
   });
@@ -373,6 +379,9 @@ describe("runFlakeProbe — verdict logic", () => {
     expect(result.verdict).toBe("consistent-failure");
     if (result.verdict === "consistent-failure") {
       expect(result.probeRuns).toBe(3);
+      // Only the one genuine fail is attributable — the two env failures
+      // consumed a probe slot but confirmed nothing.
+      expect(result.attributableRuns).toBe(1);
     }
     expect(fake).toHaveBeenCalledTimes(3);
   });

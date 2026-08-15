@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { analyzeTestExitCode } from "../test-runners";
 import { sleep } from "../utils/bun-deps";
 import { buildTestCommand, executeWithTimeout, normalizeEnvironment } from "./executor";
+import { shellQuoteArg } from "./shell-quote";
 import type { AssetVerificationResult, VerificationGateOptions, VerificationResult } from "./types";
 
 /** Verify all expected files exist before running tests. */
@@ -124,19 +125,11 @@ export async function fullSuite(options: VerificationGateOptions): Promise<Verif
   return runVerificationCore(options);
 }
 
-/**
- * Single-quote a path for safe shell interpolation.
- * Escapes any single quotes within the path so metacharacters can't break out.
- */
-function shellQuotePath(p: string): string {
-  return `'${p.replace(/'/g, "'\\''")}'`;
-}
-
 /** Run tests scoped to modified files. */
 export async function scoped(options: VerificationGateOptions): Promise<VerificationResult> {
   let scopedCommand = options.command;
   if (options.scopedTestPaths && options.scopedTestPaths.length > 0) {
-    const quotedPaths = options.scopedTestPaths.map(shellQuotePath).join(" ");
+    const quotedPaths = options.scopedTestPaths.map(shellQuoteArg).join(" ");
     scopedCommand = `${options.command} ${quotedPaths}`;
   }
   return runVerificationCore({ ...options, command: scopedCommand });

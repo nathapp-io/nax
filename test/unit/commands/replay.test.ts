@@ -32,6 +32,7 @@ import { NaxError } from "@/errors";
 import { registerReplayCommand } from "@/replay";
 import type { MetaJson } from "@/pipeline/subscribers/registry";
 import type { LogEntry } from "@/logger/types";
+import type { RunMetrics } from "@/metrics";
 import type { RunTimeline } from "@/replay";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
@@ -472,6 +473,60 @@ describe("runReplay — AC10: crashed-run end-to-end", () => {
     expect(reportArg.status).toBe("crashed");
     expect(reportArg.runId).toBe("run-crash-x");
     expect(stdoutWrites.join("")).toContain("CRASHED");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Metrics-retention follow-up: missing metrics is surfaced, not silent.
+// ---------------------------------------------------------------------------
+
+describe("runReplay — missing metrics is surfaced on stderr, not silent", () => {
+  let runsDir: string;
+  let stdoutWrites: string[];
+  let stderrWrites: string[];
+  let deps: ReplayCommandDeps;
+
+  beforeEach(() => {
+    runsDir = makeTempDir("nax-replay-cmd-test-");
+    stdoutWrites = [];
+    stderrWrites = [];
+    deps = makeBaseDeps(runsDir, stdoutWrites, stderrWrites);
+  });
+
+  afterEach(() => {
+    cleanupTempDir(runsDir);
+  });
+
+  test("readMetrics resolving undefined writes an explanatory note to stderr naming the run", async () => {
+    const exit = await runReplay("run-known", {}, deps);
+
+    expect(exit).toBe(0);
+    const stderr = stderrWrites.join("");
+    expect(stderr).toContain("run-known");
+    expect(stderr).toContain("no run metrics found");
+  });
+
+  test("readMetrics resolving a value writes no stderr note", async () => {
+    const runMetrics: RunMetrics = {
+      runId: "run-known",
+      feature: "feat-known",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      completedAt: "2026-01-01T00:10:00.000Z",
+      totalCost: 0,
+      totalStories: 0,
+      storiesCompleted: 0,
+      totalDurationMs: 600_000,
+      stories: [],
+      storiesFailed: 0,
+    };
+    deps = makeBaseDeps(runsDir, stdoutWrites, stderrWrites, {
+      readMetrics: mock(async () => runMetrics),
+    });
+
+    const exit = await runReplay("run-known", {}, deps);
+
+    expect(exit).toBe(0);
+    expect(stderrWrites.join("")).toBe("");
   });
 });
 

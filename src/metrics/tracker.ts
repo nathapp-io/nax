@@ -25,6 +25,7 @@ import { TokenUsage } from "./types";
  * lifetime of a project. Oldest runs are dropped first on write; runs are
  * always appended chronologically so this keeps the most recent N.
  */
+/** Exported via the `src/metrics` barrel so replay/reporting consumers can reference the cap without hardcoding it. */
 export const MAX_RETAINED_RUNS = 200;
 
 /**

@@ -72,7 +72,7 @@ describe("triageFlakyFindings — empty findings (AC1)", () => {
     const orig = _flakeTriageDeps.runFlakeProbe;
     _flakeTriageDeps.runFlakeProbe = async () => {
       calls += 1;
-      return { verdict: "consistent-failure", probeRuns: 1 } satisfies FlakeProbeVerdict;
+      return { verdict: "consistent-failure", probeRuns: 1, attributableRuns: 1 } satisfies FlakeProbeVerdict;
     };
     try {
       await triageFlakyFindings(makeInput());
@@ -89,14 +89,14 @@ describe("triageFlakyFindings — empty findings (AC1)", () => {
 
 describe("triageFlakyFindings — pre-existing test probing (AC2)", () => {
   afterEach(() => {
-    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1 });
+    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1, attributableRuns: 1 });
   });
 
   test("AC2 — invokes probe exactly once with file, testName, and resolved config", async () => {
     const calls: Array<{ file: string; testName: string; cfg: FlakeDetectionConfig }> = [];
     _flakeTriageDeps.runFlakeProbe = async ({ failure, config }) => {
       calls.push({ file: failure.file, testName: failure.testName, cfg: config });
-      return { verdict: "consistent-failure", probeRuns: 1 } satisfies FlakeProbeVerdict;
+      return { verdict: "consistent-failure", probeRuns: 1, attributableRuns: 1 } satisfies FlakeProbeVerdict;
     };
 
     const finding = makeFinding({ file: "test/unit/foo.test.ts", rule: "should work" });
@@ -122,14 +122,14 @@ describe("triageFlakyFindings — pre-existing test probing (AC2)", () => {
 
 describe("triageFlakyFindings — test file in diff (AC3)", () => {
   afterEach(() => {
-    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1 });
+    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1, attributableRuns: 1 });
   });
 
   test("AC3 — skips probe when test file is in changedTestFiles", async () => {
     let probeCalls = 0;
     _flakeTriageDeps.runFlakeProbe = async () => {
       probeCalls += 1;
-      return { verdict: "consistent-failure", probeRuns: 1 } satisfies FlakeProbeVerdict;
+      return { verdict: "consistent-failure", probeRuns: 1, attributableRuns: 1 } satisfies FlakeProbeVerdict;
     };
 
     const finding = makeFinding({ file: "test/unit/foo.test.ts", rule: "should work" });
@@ -151,14 +151,14 @@ describe("triageFlakyFindings — test file in diff (AC3)", () => {
 
 describe("triageFlakyFindings — test file mapped from changed source (AC4)", () => {
   afterEach(() => {
-    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1 });
+    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1, attributableRuns: 1 });
   });
 
   test("AC4 — skips probe when test file is in mappedTestFiles", async () => {
     let probeCalls = 0;
     _flakeTriageDeps.runFlakeProbe = async () => {
       probeCalls += 1;
-      return { verdict: "consistent-failure", probeRuns: 1 } satisfies FlakeProbeVerdict;
+      return { verdict: "consistent-failure", probeRuns: 1, attributableRuns: 1 } satisfies FlakeProbeVerdict;
     };
 
     const finding = makeFinding({ file: "test/unit/foo.test.ts", rule: "should work" });
@@ -183,12 +183,12 @@ describe("triageFlakyFindings — test file mapped from changed source (AC4)", (
 
 describe("triageFlakyFindings — verdict flaky (AC5)", () => {
   afterEach(() => {
-    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1 });
+    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1, attributableRuns: 1 });
   });
 
-  test("AC5 — relabels to flaky-test with meta.probeRuns and meta.probePasses", async () => {
+  test("AC5 — relabels to flaky-test with meta.probeRuns, meta.probePasses, and meta.attributableRuns", async () => {
     _flakeTriageDeps.runFlakeProbe = async () =>
-      ({ verdict: "flaky", probeRuns: 3, probePasses: 2 }) satisfies FlakeProbeVerdict;
+      ({ verdict: "flaky", probeRuns: 3, probePasses: 2, attributableRuns: 2 }) satisfies FlakeProbeVerdict;
 
     const finding = makeFinding({ file: "test/unit/foo.test.ts", rule: "should work" });
     const result = await triageFlakyFindings(makeInput({ findings: [finding] }));
@@ -196,6 +196,7 @@ describe("triageFlakyFindings — verdict flaky (AC5)", () => {
     expect(result.findings[0]?.category).toBe("flaky-test");
     expect(result.findings[0]?.meta?.probeRuns).toBe(3);
     expect(result.findings[0]?.meta?.probePasses).toBe(2);
+    expect(result.findings[0]?.meta?.attributableRuns).toBe(2);
   });
 });
 
@@ -205,12 +206,12 @@ describe("triageFlakyFindings — verdict flaky (AC5)", () => {
 
 describe("triageFlakyFindings — verdict consistent-failure (AC6)", () => {
   afterEach(() => {
-    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1 });
+    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1, attributableRuns: 1 });
   });
 
   test("AC6 — keeps category failed-test on consistent-failure verdict", async () => {
     _flakeTriageDeps.runFlakeProbe = async () =>
-      ({ verdict: "consistent-failure", probeRuns: 2 }) satisfies FlakeProbeVerdict;
+      ({ verdict: "consistent-failure", probeRuns: 2, attributableRuns: 2 }) satisfies FlakeProbeVerdict;
 
     const finding = makeFinding({ file: "test/unit/foo.test.ts", rule: "should work" });
     const result = await triageFlakyFindings(makeInput({ findings: [finding] }));
@@ -225,14 +226,14 @@ describe("triageFlakyFindings — verdict consistent-failure (AC6)", () => {
 
 describe("triageFlakyFindings — run-scoped quarantine memo (AC7)", () => {
   afterEach(() => {
-    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1 });
+    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1, attributableRuns: 1 });
   });
 
   test("AC7 — relabels to flaky-test and does NOT invoke probe again", async () => {
     let probeCalls = 0;
     _flakeTriageDeps.runFlakeProbe = async () => {
       probeCalls += 1;
-      return { verdict: "consistent-failure", probeRuns: 1 } satisfies FlakeProbeVerdict;
+      return { verdict: "consistent-failure", probeRuns: 1, attributableRuns: 1 } satisfies FlakeProbeVerdict;
     };
 
     const memo = new Map<string, true>();
@@ -255,7 +256,7 @@ describe("triageFlakyFindings — run-scoped quarantine memo (AC7)", () => {
     let probeCalls = 0;
     _flakeTriageDeps.runFlakeProbe = async () => {
       probeCalls += 1;
-      return { verdict: "consistent-failure", probeRuns: 1 } satisfies FlakeProbeVerdict;
+      return { verdict: "consistent-failure", probeRuns: 1, attributableRuns: 1 } satisfies FlakeProbeVerdict;
     };
 
     const memo = new Map<string, true>();
@@ -291,14 +292,14 @@ describe("triageFlakyFindings — run-scoped quarantine memo (AC7)", () => {
 
 describe("triageFlakyFindings — maxProbesPerGate cap (AC8)", () => {
   afterEach(() => {
-    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1 });
+    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1, attributableRuns: 1 });
   });
 
   test("AC8 — skips all probes and records the skip reason when over budget", async () => {
     let probeCalls = 0;
     _flakeTriageDeps.runFlakeProbe = async () => {
       probeCalls += 1;
-      return { verdict: "consistent-failure", probeRuns: 1 } satisfies FlakeProbeVerdict;
+      return { verdict: "consistent-failure", probeRuns: 1, attributableRuns: 1 } satisfies FlakeProbeVerdict;
     };
 
     // 6 distinct probe candidates, maxProbesPerGate=2 → over budget.
@@ -328,14 +329,14 @@ describe("triageFlakyFindings — maxProbesPerGate cap (AC8)", () => {
 
 describe("triageFlakyFindings — disabled (AC9)", () => {
   afterEach(() => {
-    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1 });
+    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1, attributableRuns: 1 });
   });
 
   test("AC9 — never invokes probe and returns findings unchanged when disabled", async () => {
     let probeCalls = 0;
     _flakeTriageDeps.runFlakeProbe = async () => {
       probeCalls += 1;
-      return { verdict: "flaky", probeRuns: 2, probePasses: 1 } satisfies FlakeProbeVerdict;
+      return { verdict: "flaky", probeRuns: 2, probePasses: 1, attributableRuns: 2 } satisfies FlakeProbeVerdict;
     };
 
     const finding = makeFinding({ file: "test/unit/foo.test.ts", rule: "should work" });
@@ -354,7 +355,7 @@ describe("triageFlakyFindings — disabled (AC9)", () => {
 
 describe("triageFlakyFindings — probe dependency throws (AC10)", () => {
   afterEach(() => {
-    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1 });
+    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1, attributableRuns: 1 });
   });
 
   test("AC10 — swallows probe exception and keeps failed-test category", async () => {

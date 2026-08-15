@@ -102,7 +102,7 @@ describe("productionTriageSeam", () => {
     let probeCalled = false;
     _flakeTriageDeps.runFlakeProbe = async () => {
       probeCalled = true;
-      return { verdict: "flaky", probeRuns: 2, probePasses: 1 };
+      return { verdict: "flaky", probeRuns: 2, probePasses: 1, attributableRuns: 2 };
     };
 
     const config = makeNaxConfig({
@@ -129,7 +129,7 @@ describe("productionTriageSeam", () => {
     let probeCalled = false;
     _flakeTriageDeps.runFlakeProbe = async () => {
       probeCalled = true;
-      return { verdict: "flaky", probeRuns: 2, probePasses: 1 };
+      return { verdict: "flaky", probeRuns: 2, probePasses: 1, attributableRuns: 2 };
     };
 
     const config = makeNaxConfig({

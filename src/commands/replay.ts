@@ -17,6 +17,7 @@ import type { Command } from "commander";
 import { NaxError } from "../errors";
 import type { NaxStatusFile } from "../execution/status-file";
 import type { LogEntry } from "../logger/types";
+import { MAX_RETAINED_RUNS } from "../metrics";
 import type { RunMetrics } from "../metrics/types";
 // Internal paths, not the `../replay` barrel: `../replay/index.ts` re-exports
 // `registerReplayCommand` from this file, so importing the barrel here would
@@ -134,6 +135,17 @@ export async function runReplay(
     eventsDir: discovered.meta.eventsDir,
   });
   const status = await deps.readStatus(discovered.meta.statusPath);
+
+  // GROWTH-1 follow-up: metrics.json retains only the last MAX_RETAINED_RUNS
+  // runs, so a discovered run (found via the central registry, independent
+  // of metrics.json) can legitimately have no metrics entry — cost, token,
+  // and per-story metric detail then silently disappear from the report with
+  // no indication why. Surface it explicitly instead of degrading quietly.
+  if (metrics === undefined) {
+    deps.stderr(
+      `Note: no run metrics found for ${discovered.meta.runId} — cost, token, and per-story metric detail will be unavailable in this report. This can happen if the run predates the retained metrics window (last ${MAX_RETAINED_RUNS} runs) or if metrics were never recorded for it.\n`,
+    );
+  }
 
   const timeline = deps.reconstructTimeline({
     entries,
