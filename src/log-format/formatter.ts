@@ -15,6 +15,7 @@ import type { AdvisoryFindingSummaryEntry } from "../review/review-audit.js";
 // undefined selector (crash: "undefined is not an object (evaluating 'selector.name')").
 // severity.ts is a dependency-free leaf, so importing it directly breaks the cycle.
 import { SEVERITY_RANK } from "../review/severity.js";
+import { stripControlChars } from "../utils/strip-control-chars.js";
 import { EMOJI, type FormatterOptions, type RunSummary } from "./types.js";
 
 /**
@@ -160,8 +161,10 @@ function formatRunStart(entry: LogEntry, c: ChalkLike, timestamp: string, _mode:
  */
 function formatStoryStart(entry: LogEntry, c: ChalkLike, _timestamp: string, mode: string): FormattedEntry {
   const data = entry.data as Record<string, unknown>;
-  const storyId = String(data.storyId || entry.storyId || "unknown");
-  const title = String(data.storyTitle || data.title || "Untitled story");
+  // SEC-09: storyId/title are PRD-authored (planner output) — strip
+  // ANSI/control chars before interpolating into a chalk-colorized line.
+  const storyId = stripControlChars(String(data.storyId || entry.storyId || "unknown"));
+  const title = stripControlChars(String(data.storyTitle || data.title || "Untitled story"));
   const complexity = typeof data.complexity === "string" ? data.complexity : "unknown";
   const tier = typeof data.modelTier === "string" ? data.modelTier : "unknown";
   const attempt = typeof data.attempt === "number" ? data.attempt : 1;
@@ -205,7 +208,8 @@ function formatStoryStart(entry: LogEntry, c: ChalkLike, _timestamp: string, mod
  */
 function formatStoryComplete(entry: LogEntry, c: ChalkLike, _timestamp: string, mode: string): FormattedEntry {
   const data = entry.data as Record<string, unknown>;
-  const storyId = String(data.storyId || entry.storyId || "unknown");
+  // SEC-09: storyId is PRD-authored; reason (below) is agent-authored escalation text.
+  const storyId = stripControlChars(String(data.storyId || entry.storyId || "unknown"));
   const success = data.success ?? true;
   const cost =
     typeof data.cost === "number" ? data.cost : typeof data.estimatedCostUsd === "number" ? data.estimatedCostUsd : 0;
@@ -229,7 +233,7 @@ function formatStoryComplete(entry: LogEntry, c: ChalkLike, _timestamp: string, 
   }
 
   if (mode === "verbose" && data.reason) {
-    lines.push(`     ${c.gray(`Reason: ${data.reason}`)}`);
+    lines.push(`     ${c.gray(`Reason: ${stripControlChars(String(data.reason))}`)}`);
   }
 
   lines.push("");
@@ -266,8 +270,11 @@ function formatDefault(entry: LogEntry, c: ChalkLike, timestamp: string, mode: s
   const levelColor = entry.level === "error" ? c.red : entry.level === "warn" ? c.yellow : c.gray;
   const parts = [c.gray(`[${timestamp}]`), levelColor(`${levelEmoji} ${entry.stage}`)];
 
+  // SEC-09: storyId is PRD-authored; message routinely interpolates agent
+  // stderr/output and error text — neither is ANSI/control-char sanitized
+  // upstream (the logger's redaction only targets secret-shaped substrings).
   if (entry.storyId) {
-    parts.push(c.dim(`[${entry.storyId}]`));
+    parts.push(c.dim(`[${stripControlChars(entry.storyId)}]`));
   }
   // sessionRole is a first-class LogEntry field (stripped from data by the logger);
   // render it as a tag so per-line provenance is visible without a JSONL cross-reference.
@@ -275,7 +282,7 @@ function formatDefault(entry: LogEntry, c: ChalkLike, timestamp: string, mode: s
     parts.push(c.dim(`(${entry.sessionRole})`));
   }
 
-  parts.push(entry.message);
+  parts.push(stripControlChars(entry.message));
 
   let output = parts.join(" ");
 
@@ -351,7 +358,7 @@ function buildDefaultMeta(data: Record<string, unknown>, mode: string): string[]
   if (typeof data.durationMs === "number" && data.durationMs > 0)
     meta.push(`${EMOJI.duration} ${formatDuration(data.durationMs)}`);
   if (typeof data.action === "string") meta.push(`action: ${data.action}`);
-  if (typeof data.reason === "string" && mode !== "quiet") meta.push(data.reason);
+  if (typeof data.reason === "string" && mode !== "quiet") meta.push(stripControlChars(data.reason));
 
   return meta;
 }

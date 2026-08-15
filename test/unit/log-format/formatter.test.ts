@@ -265,3 +265,62 @@ describe("formatAdvisorySummary", () => {
     expect(output).toContain("US-001");
   });
 });
+
+// SEC-09: agent-controlled/PRD-authored fields (message, storyId, story
+// title, escalation reason) are not ANSI-sanitized upstream. A crafted
+// value containing ESC (\x1b) sequences could move the cursor, clear the
+// screen, or write to the clipboard (OSC 52) in the user's terminal.
+describe("formatLogEntry — ANSI/control-char sanitization (SEC-09)", () => {
+  test("strips a CSI sequence embedded in the message", () => {
+    const { output } = formatLogEntry(
+      entry({ stage: "execution", message: "before\x1b[2Jafter" }),
+      { mode: "normal", useColor: false },
+    );
+    expect(output).not.toContain("\x1b[2J");
+    expect(output).toContain("beforeafter");
+  });
+
+  test("strips an OSC 52 clipboard-write sequence embedded in storyId", () => {
+    const { output } = formatLogEntry(
+      entry({ stage: "execution", storyId: "US-\x1b]52;c;evil\x07001" }),
+      { mode: "normal", useColor: false },
+    );
+    expect(output).not.toContain("\x1b]52");
+    expect(output).toContain("US-001");
+  });
+
+  test("strips a CSI sequence embedded in the PRD-authored story title", () => {
+    const { output } = formatLogEntry(
+      entry({
+        stage: "story.start",
+        message: "irrelevant",
+        data: { storyId: "US-001", title: "Login\x1b[31m form" },
+      }),
+      { mode: "normal", useColor: false },
+    );
+    expect(output).not.toContain("\x1b[31m");
+    expect(output).toContain("Login form");
+  });
+
+  test("strips a CSI sequence embedded in the escalation reason", () => {
+    const { output } = formatLogEntry(
+      entry({
+        stage: "story.complete",
+        message: "irrelevant",
+        data: { storyId: "US-001", success: false, reason: "crashed\x1b[2K here" },
+      }),
+      { mode: "verbose", useColor: false },
+    );
+    expect(output).not.toContain("\x1b[2K");
+    expect(output).toContain("crashed here");
+  });
+
+  test("json mode is a raw passthrough — not sanitized (machine-consumed, not rendered)", () => {
+    const { output } = formatLogEntry(entry({ stage: "execution", message: "raw\x1b[2Jvalue" }), {
+      mode: "json",
+      useColor: false,
+    });
+    const parsed = JSON.parse(output);
+    expect(parsed.message).toBe("raw\x1b[2Jvalue");
+  });
+});

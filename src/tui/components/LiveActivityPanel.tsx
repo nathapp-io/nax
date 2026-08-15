@@ -7,6 +7,7 @@
  * Shows recent escalation log entries.
  */
 
+import { stripControlChars } from "@/utils/strip-control-chars";
 import { Box, Text } from "ink";
 import type { ActiveCallState } from "../hooks/useAgentStreamEvents";
 import type { EscalationEntry, RunSummary } from "../hooks/usePipelineBusEvents";
@@ -69,9 +70,11 @@ export function LiveActivityPanel({
       </Box>
 
       {/* Error banner */}
+      {/* SEC-09: runErrored routinely embeds agent stderr / error text — strip
+          ANSI/control chars before Ink renders it. */}
       {hasError && (
         <Box paddingX={1} paddingY={1}>
-          <Text color="red">[FAIL] {runErrored}</Text>
+          <Text color="red">[FAIL] {stripControlChars(runErrored ?? "")}</Text>
         </Box>
       )}
 
@@ -143,16 +146,18 @@ function ActiveCallRow({ call, step, currentStage }: { call: ActiveCallState; st
   ) : currentStage ? (
     <Text dimColor>[{currentStage}]</Text>
   ) : null;
+  // SEC-09: storyId (PRD-controlled) and lastToolName (LLM tool_use output)
+  // are agent/PRD-controlled — strip ANSI/control chars before rendering.
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box flexDirection="row" gap={1}>
         <Text color="cyan">{call.agentName}</Text>
-        {call.storyId && <Text>{call.storyId}</Text>}
+        {call.storyId && <Text>{stripControlChars(call.storyId)}</Text>}
         {stageLabel}
       </Box>
       <Box flexDirection="row" gap={1}>
         {call.model && <Text dimColor>model:{call.model}</Text>}
-        {call.lastToolName && <Text dimColor>tool:{call.lastToolName}</Text>}
+        {call.lastToolName && <Text dimColor>tool:{stripControlChars(call.lastToolName)}</Text>}
         <Text dimColor>
           tools:{call.toolCallUpdates} msg:{call.messageUpdates}
         </Text>
@@ -180,7 +185,7 @@ function RunSummaryRow({ summary }: { summary: RunSummary }) {
 function EscalationRow({ entry }: { entry: EscalationEntry }) {
   return (
     <Box flexDirection="row" gap={1}>
-      <Text dimColor>{entry.storyId}</Text>
+      <Text dimColor>{stripControlChars(entry.storyId)}</Text>
       <Text color="yellow">{entry.fromTier}</Text>
       <Text dimColor>-&gt;</Text>
       <Text color="cyan">{entry.toTier}</Text>
