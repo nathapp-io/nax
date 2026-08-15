@@ -334,6 +334,58 @@ describe("runContestant (AC-6: pipeline crash classification)", () => {
   });
 });
 
+// ── BUG-03: worktreeManager.create() failure (incl. unwired deps) must not
+// crash the whole bake-off CLI invocation — it used to run before the try
+// block, so a throw there propagated uncaught out of runContestant.
+describe("runContestant (BUG-03: worktreeManager.create failure classification)", () => {
+  it("does not throw when worktreeManager.create rejects — returns dnf-crashed instead", async () => {
+    const wt = makeWorktreeManager();
+    wt.create = mock(async () => {
+      throw new Error("worktree create failed");
+    });
+    const pipeline = makePipeline(async () => {
+      throw new Error("should never be called");
+    });
+
+    let didThrow = false;
+    let result: ContestantResult | unknown;
+    try {
+      result = await withDeps(
+        { worktreeManager: wt, pipeline: pipeline.fn as unknown as typeof _contestantDeps.pipeline }, // test-ratchet-allow: as-unknown-as
+        () => runContestant("claude", baseOptions()),
+      );
+    } catch (err) {
+      didThrow = true;
+      result = err;
+    }
+
+    expect(didThrow).toBe(false);
+    expect((result as ContestantResult).status).toBe("dnf-crashed");
+    expect(((result as ContestantResult).error as string)).toContain("worktree create failed");
+    expect(pipeline.fn).not.toHaveBeenCalled();
+  });
+
+  it("reproduces the reported crash: entirely unwired deps.worktreeManager (undefined) yields dnf-crashed, not a TypeError throw", async () => {
+    let didThrow = false;
+    let result: ContestantResult | unknown;
+    try {
+      result = await withDeps(
+        {
+          worktreeManager: undefined as unknown as typeof _contestantDeps.worktreeManager, // test-ratchet-allow: as-unknown-as
+          pipeline: undefined as unknown as typeof _contestantDeps.pipeline, // test-ratchet-allow: as-unknown-as
+        },
+        () => runContestant("claude", baseOptions()),
+      );
+    } catch (err) {
+      didThrow = true;
+      result = err;
+    }
+
+    expect(didThrow).toBe(false);
+    expect((result as ContestantResult).status).toBe("dnf-crashed");
+  });
+});
+
 // ── AC-7: Cost-limit abort → status 'cost-limit' ──────────────────────────────
 
 describe("runContestant (AC-7: cost-limit abort classification)", () => {
