@@ -3,12 +3,12 @@
   "feature": "context-providers-22",
   "branchName": "feat/context-providers-22",
   "createdAt": "2026-08-15T00:00:00.000Z",
-  "updatedAt": "2026-08-15T04:42:09.322Z",
+  "updatedAt": "2026-08-15T04:53:56.267Z",
   "userStories": [
     {
       "id": "US-001",
       "title": "Capture authoritative lint and typecheck diagnostics",
-      "description": "**Goal** \u2014 Add parsed, provenance-bearing quality diagnostics to the existing story scratch JSONL whenever a lint or typecheck command fails.\n\n**Motivation** \u2014 A rectifier retrying a lint failure currently receives no structured compiler output, only agent-authored self-verification prose.\n\n**Approach** \u2014 Diagnostics persist as a new `tool-diagnostics` entry in the existing scratch JSONL rather than a new artifact path: `scratchDir` resolution is already plumbed through `stage-assembler`, and new path plumbing is where the fragments defect (#1592) lived. `parseDiagnostics` degrades rather than fails \u2014 an unrecognised toolchain yields one `Diagnostic` carrying a bounded tail of raw output, so a new language is never a hard error and never silently empty.\n\n**Scope** \u2014 In: add `parseDiagnostics`, the `tool-diagnostics` ScratchEntry variant, non-zero lint/typecheck capture, and SessionScratchProvider pre-cap filtering. Out: ToolDiagnosticsProvider and `query_scratch` consumption belong to US-002 and US-005; parsers beyond `tsc` and `biome` are not implemented; other toolchains take the raw-tail path.\n\n**Interface** \u2014 `parseDiagnostics` is importable from `src/quality/diagnostics.ts`; `ScratchEntry` accepts `{ kind: \"tool-diagnostics\", timestamp, storyId, diagnostics }`; `appendScratchEntry(scratchDir, entry) => Promise<void>` remains the persistence boundary.\n\n**Failure handling** \u2014 Diagnostics capture fails while writing the scratch entry: Log at warn and continue; capture never blocks story completion. Provider source file malformed (unparseable JSON / JSONL line): Skip the unreadable unit, return whatever parsed; never throws.",
+      "description": "**Goal** — Add parsed, provenance-bearing quality diagnostics to the existing story scratch JSONL whenever a lint or typecheck command fails.\n\n**Motivation** — A rectifier retrying a lint failure currently receives no structured compiler output, only agent-authored self-verification prose.\n\n**Approach** — Diagnostics persist as a new `tool-diagnostics` entry in the existing scratch JSONL rather than a new artifact path: `scratchDir` resolution is already plumbed through `stage-assembler`, and new path plumbing is where the fragments defect (#1592) lived. `parseDiagnostics` degrades rather than fails — an unrecognised toolchain yields one `Diagnostic` carrying a bounded tail of raw output, so a new language is never a hard error and never silently empty.\n\n**Scope** — In: add `parseDiagnostics`, the `tool-diagnostics` ScratchEntry variant, non-zero lint/typecheck capture, and SessionScratchProvider pre-cap filtering. Out: ToolDiagnosticsProvider and `query_scratch` consumption belong to US-002 and US-005; parsers beyond `tsc` and `biome` are not implemented; other toolchains take the raw-tail path.\n\n**Interface** — `parseDiagnostics` is importable from `src/quality/diagnostics.ts`; `ScratchEntry` accepts `{ kind: \"tool-diagnostics\", timestamp, storyId, diagnostics }`; `appendScratchEntry(scratchDir, entry) => Promise<void>` remains the persistence boundary.\n\n**Failure handling** — Diagnostics capture fails while writing the scratch entry: Log at warn and continue; capture never blocks story completion. Provider source file malformed (unparseable JSON / JSONL line): Skip the unreadable unit, return whatever parsed; never throws.",
       "acceptanceCriteria": [
         "When parseDiagnostics is called with a successful QualityCommandResult and tool name `tsc`, then it returns an array.",
         "When parseDiagnostics receives a tsc error for `src/a.ts` at line 12, then it returns one Diagnostic with file `src/a.ts`, line 12, and severity `error`.",
@@ -43,7 +43,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "pi",
         "initialProfileId": "pi-medium-balanced",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/quality/runner.ts",
@@ -56,14 +58,18 @@
         "src/quality/diagnostics.ts",
         "test/unit/quality/diagnostics.test.ts"
       ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9589fafa9cbfd33fda022a59ce0d67805912d2d9",
       "outOfScope": [
-        "parsers for toolchains other than `tsc` and `biome` \u2014 those take the raw-tail path by design."
+        "parsers for toolchains other than `tsc` and `biome` — those take the raw-tail path by design."
       ]
     },
     {
       "id": "US-002",
       "title": "Surface tool diagnostics as context",
-      "description": "**Goal** \u2014 Add a deterministic ToolDiagnosticsProvider that turns real scratch diagnostics into high-priority session context during execution and rectification.\n\n**Motivation** \u2014 A retrying agent needs what the compiler actually said, rather than an agent self-report parsed from an optional marker.\n\n**Approach** \u2014 New chunk kinds rather than reuse of existing ones. `KIND_WEIGHTS` is typed `Record<ChunkKind, number>`, so adding a kind fails `bun run typecheck` until its weight exists.\n\n**Scope** \u2014 In: add `diagnostics` kind at session scope with weight 0.95, read only `tool-diagnostics` JSONL entries defensively, register the provider, and activate it for execution and rectify. Out: diagnostic capture is US-001; prior-run and lint-config providers are US-003/US-004.\n\n**Interface** \u2014 `IContextProvider` is `{ id: string; kind: ChunkKind; deterministic?: boolean; fetch(...) }`; `ContextProviderResult` is `{ chunks: RawChunk[]; pullTools?: ToolDescriptor[]; budgetPressure?: ProviderBudgetPressure }`; `RawChunk.providerId` is set by the orchestrator, not the provider.\n\n**Failure handling** \u2014 Provider source file absent (no scratch file): `fetch()` returns an empty `chunks` array; never throws. Provider source file malformed (unparseable JSON / JSONL line): Skip the unreadable unit, return whatever parsed; never throws.",
+      "description": "**Goal** — Add a deterministic ToolDiagnosticsProvider that turns real scratch diagnostics into high-priority session context during execution and rectification.\n\n**Motivation** — A retrying agent needs what the compiler actually said, rather than an agent self-report parsed from an optional marker.\n\n**Approach** — New chunk kinds rather than reuse of existing ones. `KIND_WEIGHTS` is typed `Record<ChunkKind, number>`, so adding a kind fails `bun run typecheck` until its weight exists.\n\n**Scope** — In: add `diagnostics` kind at session scope with weight 0.95, read only `tool-diagnostics` JSONL entries defensively, register the provider, and activate it for execution and rectify. Out: diagnostic capture is US-001; prior-run and lint-config providers are US-003/US-004.\n\n**Interface** — `IContextProvider` is `{ id: string; kind: ChunkKind; deterministic?: boolean; fetch(...) }`; `ContextProviderResult` is `{ chunks: RawChunk[]; pullTools?: ToolDescriptor[]; budgetPressure?: ProviderBudgetPressure }`; `RawChunk.providerId` is set by the orchestrator, not the provider.\n\n**Failure handling** — Provider source file absent (no scratch file): `fetch()` returns an empty `chunks` array; never throws. Provider source file malformed (unparseable JSON / JSONL line): Skip the unreadable unit, return whatever parsed; never throws.",
       "acceptanceCriteria": [
         "When ToolDiagnosticsProvider is constructed with no arguments, then construction succeeds.",
         "When a ToolDiagnosticsProvider is constructed, then its id is `tool-diagnostics` and kind is `diagnostics`.",
@@ -112,12 +118,15 @@
       "expectedFiles": [
         "src/context/engine/providers/tool-diagnostics.ts",
         "test/unit/context/engine/providers/tool-diagnostics.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
       "title": "Provide failures from prior runs",
-      "description": "**Goal** \u2014 Add a deterministic PriorRunFailureProvider that exposes only the current story's historic failed attempts and failing test files.\n\n**Motivation** \u2014 A retrying agent currently receives no record of how this story failed on previous runs.\n\n**Approach** \u2014 New chunk kinds rather than reuse of existing ones. `KIND_WEIGHTS` is typed `Record<ChunkKind, number>`, so adding a kind fails `bun run typecheck` until its weight exists.\n\n**Scope** \u2014 In: add `prior-failure` kind at story scope with weight 0.85, load retained metrics, filter failures strictly by request.storyId, report aggregate attempt count and test files, register the provider, and activate it for rectify. Out: diagnostics context is US-002 and lint configuration is US-004; retained historic metrics are read-only and no migration is performed.\n\n**Interface** \u2014 `loadRunMetrics(outputDir: string) => Promise<RunMetrics[]>`, reading `<outputDir>/metrics.json`; `RunMetrics` contains `stories: StoryMetrics[]`, where StoryMetrics carries `storyId`, `success`, `attempts`, and optional `failingTestFiles`.\n\n**Failure handling** \u2014 Provider source file absent (no `metrics.json`): `fetch()` returns an empty `chunks` array; never throws. Provider source file malformed (unparseable JSON): Skip the unreadable unit, return whatever parsed; never throws.",
+      "description": "**Goal** — Add a deterministic PriorRunFailureProvider that exposes only the current story's historic failed attempts and failing test files.\n\n**Motivation** — A retrying agent currently receives no record of how this story failed on previous runs.\n\n**Approach** — New chunk kinds rather than reuse of existing ones. `KIND_WEIGHTS` is typed `Record<ChunkKind, number>`, so adding a kind fails `bun run typecheck` until its weight exists.\n\n**Scope** — In: add `prior-failure` kind at story scope with weight 0.85, load retained metrics, filter failures strictly by request.storyId, report aggregate attempt count and test files, register the provider, and activate it for rectify. Out: diagnostics context is US-002 and lint configuration is US-004; retained historic metrics are read-only and no migration is performed.\n\n**Interface** — `loadRunMetrics(outputDir: string) => Promise<RunMetrics[]>`, reading `<outputDir>/metrics.json`; `RunMetrics` contains `stories: StoryMetrics[]`, where StoryMetrics carries `storyId`, `success`, `attempts`, and optional `failingTestFiles`.\n\n**Failure handling** — Provider source file absent (no `metrics.json`): `fetch()` returns an empty `chunks` array; never throws. Provider source file malformed (unparseable JSON): Skip the unreadable unit, return whatever parsed; never throws.",
       "acceptanceCriteria": [
         "When PriorRunFailureProvider is constructed with no arguments, then construction succeeds.",
         "When a PriorRunFailureProvider is constructed, then its id is `prior-run-failure` and kind is `prior-failure`.",
@@ -167,12 +176,15 @@
       "expectedFiles": [
         "src/context/engine/providers/prior-run-failure.ts",
         "test/unit/context/engine/providers/prior-run-failure.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
       "title": "Provide package lint configuration",
-      "description": "**Goal** \u2014 Add a deterministic LintConfigProvider that identifies a package's governing linter and distils retry-relevant configuration.\n\n**Motivation** \u2014 A rectifier retrying a lint failure currently receives no lint configuration or linter requirements.\n\n**Approach** \u2014 `detectLintTool` is private in `detector.ts`; the public surface is `detectProjectProfile()` returning `ProjectProfile.lintTool`. This spec uses the public one. `lint-config` must not reuse the `static` kind. `static` is a floor kind that bypasses packing, which is the over-delivery the budget-truth work documented. A lint digest competes for budget like any other chunk.\n\n**Scope** \u2014 In: add `lint-config` kind at project scope with weight 0.8, detect from request.packageDir through the public profile detector, read/distil supported lint configuration, degrade to the detected tool name when no distiller exists, register it, and enable it only for rectify. Out: changing static floor behaviour, executing lint commands, and adding execution-stage lint-config are outside this story.\n\n**Interface** \u2014 `detectProjectProfile(workdir, existing) => Promise<ProjectProfile>` with `lintTool`; `IContextProvider.fetch()` must return `ContextProviderResult` and must not throw.\n\n**Failure handling** \u2014 Provider source file absent (no lint config): `fetch()` returns an empty `chunks` array; never throws. Provider source file malformed: return a chunk that names the detected tool and never throw.",
+      "description": "**Goal** — Add a deterministic LintConfigProvider that identifies a package's governing linter and distils retry-relevant configuration.\n\n**Motivation** — A rectifier retrying a lint failure currently receives no lint configuration or linter requirements.\n\n**Approach** — `detectLintTool` is private in `detector.ts`; the public surface is `detectProjectProfile()` returning `ProjectProfile.lintTool`. This spec uses the public one. `lint-config` must not reuse the `static` kind. `static` is a floor kind that bypasses packing, which is the over-delivery the budget-truth work documented. A lint digest competes for budget like any other chunk.\n\n**Scope** — In: add `lint-config` kind at project scope with weight 0.8, detect from request.packageDir through the public profile detector, read/distil supported lint configuration, degrade to the detected tool name when no distiller exists, register it, and enable it only for rectify. Out: changing static floor behaviour, executing lint commands, and adding execution-stage lint-config are outside this story.\n\n**Interface** — `detectProjectProfile(workdir, existing) => Promise<ProjectProfile>` with `lintTool`; `IContextProvider.fetch()` must return `ContextProviderResult` and must not throw.\n\n**Failure handling** — Provider source file absent (no lint config): `fetch()` returns an empty `chunks` array; never throws. Provider source file malformed: return a chunk that names the detected tool and never throw.",
       "acceptanceCriteria": [
         "When LintConfigProvider is constructed with no arguments, then construction succeeds.",
         "When a LintConfigProvider is constructed, then its id is `lint-config` and kind is `lint-config`.",
@@ -225,12 +237,15 @@
       "expectedFiles": [
         "src/context/engine/providers/lint-config.ts",
         "test/unit/context/engine/providers/lint-config.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
       "title": "Add query_scratch pull tool",
-      "description": "**Goal** \u2014 Add the query_scratch pull tool for on-demand, neutralized reads of a story's scratch entries.\n\n**Motivation** \u2014 Retrying agents need access to the record of what actually broke without forcing every scratch entry into push context.\n\n**Approach** \u2014 Add the descriptor, registry entry, runtime handler, and stage wiring for on-demand scratch reads. Thread the story scratch directories already resolved by the stage-assembly path into the pull-tool runtime so the handler reads the same session data as push providers. `query_scratch` invoked past its per-session call ceiling uses the existing pull-tool budget path, as for `query_neighbor`.\n\n**Scope** \u2014 In: descriptor with optional `kind` and `limit`, registry/runtime dispatch, the runtime scratch-directory handoff, story scratch JSONL reading and filtering, cross-agent neutralization, no-entry response, and execution/rectify stage wiring. Out: creating tool-diagnostics entries is US-001; provider push-context work is US-002; changing or independently implementing the shared budget mechanism is outside this story.\n\n**Interface** \u2014 `PULL_TOOL_REGISTRY` is `Record<string, ToolDescriptor>`; `DEFAULT_MAX_CALLS_PER_SESSION` is derived from `ContextV2ConfigSchema.parse({}).pull.maxCallsPerSession`; `callTool` currently dispatches `query_neighbor | query_feature_context` and default throws `PULL_TOOL_NO_HANDLER`. The query_scratch input schema is an object with optional `kind` and `limit`, no top-level `oneOf` or `anyOf`, and an empty or absent required list.\n\n**Failure handling** \u2014 A missing scratch file or filter with no matching entries returns a no-entries message rather than throwing. `query_scratch` invoked past its per-session call ceiling follows the existing pull-tool budget path.",
+      "description": "**Goal** — Add the query_scratch pull tool for on-demand, neutralized reads of a story's scratch entries.\n\n**Motivation** — Retrying agents need access to the record of what actually broke without forcing every scratch entry into push context.\n\n**Approach** — Add the descriptor, registry entry, runtime handler, and stage wiring for on-demand scratch reads. Thread the story scratch directories already resolved by the stage-assembly path into the pull-tool runtime so the handler reads the same session data as push providers. `query_scratch` invoked past its per-session call ceiling uses the existing pull-tool budget path, as for `query_neighbor`.\n\n**Scope** — In: descriptor with optional `kind` and `limit`, registry/runtime dispatch, the runtime scratch-directory handoff, story scratch JSONL reading and filtering, cross-agent neutralization, no-entry response, and execution/rectify stage wiring. Out: creating tool-diagnostics entries is US-001; provider push-context work is US-002; changing or independently implementing the shared budget mechanism is outside this story.\n\n**Interface** — `PULL_TOOL_REGISTRY` is `Record<string, ToolDescriptor>`; `DEFAULT_MAX_CALLS_PER_SESSION` is derived from `ContextV2ConfigSchema.parse({}).pull.maxCallsPerSession`; `callTool` currently dispatches `query_neighbor | query_feature_context` and default throws `PULL_TOOL_NO_HANDLER`. The query_scratch input schema is an object with optional `kind` and `limit`, no top-level `oneOf` or `anyOf`, and an empty or absent required list.\n\n**Failure handling** — A missing scratch file or filter with no matching entries returns a no-entries message rather than throwing. `query_scratch` invoked past its per-session call ceiling follows the existing pull-tool budget path.",
       "acceptanceCriteria": [
         "When PULL_TOOL_REGISTRY is read, then it contains query_scratch whose descriptor name is query_scratch.",
         "When the query_scratch descriptor inputSchema is read, then its type is object and it has no top-level oneOf or anyOf.",
@@ -278,6 +293,9 @@
       "expectedFiles": [
         "test/unit/context/engine/query-scratch.test.ts"
       ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
       "outOfScope": [
         "enforcement of the per-session call ceiling is existing pull-tool budget behaviour shared with `query_neighbor`; this story pins the descriptor's ceiling value but does not re-verify the budget path."
       ]
@@ -285,10 +303,10 @@
   ],
   "analysis": "This is an enhancement to Context Engine v2, not a greenfield feature. The closed ChunkKind union in src/context/engine/types.ts:100 and exhaustive Record<ChunkKind, number> in src/context/engine/scoring.ts:31 require the three new kinds and their weights to land together; otherwise TypeScript rejects the scorer. createDefaultOrchestrator in src/context/engine/orchestrator-factory.ts:37 is the reachability seam: it presently creates six built-in providers, so each new deterministic provider must be imported and registered there. The stage map in src/context/engine/stage-config.ts:64 defines reusable provider arrays: execution currently inherits session scratch, git history, code neighbors, and coverage, while rectify has session scratch and neighbors; wire diagnostics into both, prior-run failures and lint config into rectify only, and query_scratch into both pull-tool lists. The existing SessionScratchProvider (src/context/engine/providers/session-scratch.ts:38) parses JSONL defensively, uses injectable file dependencies, limits entries to 20 before rendering, and neutralizes cross-agent free text. US-001 must filter tool-diagnostics before that cap so high-volume diagnostics cannot hide verify records; the new diagnostics provider and pull handler should reuse the same scratch path/parsing/neutralization semantics rather than introduce a new artifact path. ScratchEntry is a discriminated union in src/session/scratch-writer.ts:85 and appendScratchEntry serializes it to <scratchDir>/scratch.jsonl at src/session/scratch-writer.ts:149, so tool-diagnostics is backward-compatible as an additive JSONL variant. QualityCommandResult is defined in src/quality/runner.ts:31 and the lint/typecheck operations invoke runQualityCommand at src/operations/lint-check.ts:76 and src/operations/typecheck-check.ts:78; capture must use the real result at those sites (or their established shared execution path), append only on non-zero outcomes, and remain best-effort with warn logging. Self-verification currently written by src/execution/post-run.ts:150 is agent-reported marker data, not authoritative command provenance. Prior-run failures must consume loadRunMetrics(outputDir) from src/metrics/tracker.ts:468 and filter RunMetrics.stories (src/metrics/types.ts:278) strictly to the requested story ID and unsuccessful attempts, including failingTestFiles without leaking other stories. LintConfigProvider must call the public detectProjectProfile(packageDir, existing) in src/project/detector.ts:163 rather than private detector helpers, use packageDir rather than repoRoot, and degrade gracefully for absent or malformed config. Pull tools are descriptor-driven: src/context/engine/pull-tools.ts:132 holds the registry and src/context/engine/tool-runtime.ts:107 dispatches names through a switch and existing budget objects. query_scratch needs a descriptor, registry entry, handler, descriptor ceiling inherited from DEFAULT_MAX_CALLS_PER_SESSION, bounded output, optional kind/limit filtering, and the normal existing budget path. Existing pull-tools and provider tests establish conventions under test/unit/context/engine/. Main risks are accidentally treating lint-config as static (which bypasses packing), making provider fetches throw on malformed/absent files, consuming the session scratch recency cap with diagnostics, duplicating diagnostic capture on retry paths, and exposing agent-specific tool names in scratch pull results. No data migration or backfill is required: historic metrics remain readable and only future failed quality commands create diagnostic entries.",
   "outOfScope": [
-    "LLM-backed context extraction, summarisation, and promotion (Context Engine v2 \u00a721 remainder) are not implemented by this spec; only deterministic providers are added.",
+    "LLM-backed context extraction, summarisation, and promotion (Context Engine v2 §21 remainder) are not implemented by this spec; only deterministic providers are added.",
     "`context-extract` and `context-summarize` entries are not added to `STAGE_CONTEXT_MAP`, because no code in `src/` emits those stage names and the entries would be dead config.",
     "The floor-kind budget behaviour of the `static` chunk kind is not changed by this spec.",
-    "Per-provider soft budgets (Context Engine v2 \u00a710) are not implemented; the `fetch()` signature is unchanged.",
+    "Per-provider soft budgets (Context Engine v2 §10) are not implemented; the `fetch()` signature is unchanged.",
     "RAG, graph, and KB providers are not implemented; they remain separate spec'd follow-ups.",
     "Diagnostics are not backfilled for runs that completed before this feature shipped.",
     "Diagnostic parsers beyond `tsc` and `biome` are not implemented; other toolchains take the raw-tail path.",
