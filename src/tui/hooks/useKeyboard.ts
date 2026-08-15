@@ -109,6 +109,16 @@ export function useKeyboard({ focus, currentStory, onAction, disabled = false }:
       return;
     }
 
+    // BUG-22: a Ctrl+<letter> combo shares its `input` character with the
+    // plain letter (e.g. Ctrl+C and "c" are both input === "c"), so without
+    // this guard Ctrl+C fell through to the "c" case below (SHOW_COST)
+    // instead of being left for Ink's own Ctrl+C exit handling. Ctrl+] is
+    // handled separately above (Agent-panel focus only); no other Ctrl
+    // combo has meaning here.
+    if (key.ctrl) {
+      return;
+    }
+
     // Character-based shortcuts
     switch (input.toLowerCase()) {
       case "p":

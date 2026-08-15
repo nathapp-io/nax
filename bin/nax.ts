@@ -757,6 +757,10 @@ program
     if (options.parallel !== undefined) {
       parallel = Number.parseInt(options.parallel, 10);
       if (Number.isNaN(parallel) || parallel < 0) {
+        // BUG-22: this validation runs after the TUI is already mounted
+        // (renderTui above) — without unmounting first, the error message
+        // printed over the still-live TUI frame instead of a clean error.
+        tuiInstance?.unmount();
         console.error(chalk.red("--parallel must be a non-negative integer"));
         process.exit(1);
       }
@@ -778,6 +782,10 @@ program
       });
       process.removeListener("SIGINT", onSigint);
       if (outcome === "cancelled") {
+        // BUG-22: unmount before exiting — the TUI is already mounted by
+        // this point, and exiting without unmounting left the cancellation
+        // message printed over the still-live TUI frame.
+        tuiInstance?.unmount();
         console.log(chalk.dim("\nScheduled run cancelled."));
         process.exit(0);
       }
