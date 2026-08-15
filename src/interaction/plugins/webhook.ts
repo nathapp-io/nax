@@ -218,6 +218,23 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
     return state.count <= maxRequests;
   }
 
+  /**
+   * Build a 429 response carrying a `Retry-After` header so a well-behaved
+   * caller knows when the current fixed window resets, instead of retrying
+   * blind. Must be called immediately after the `checkRateLimit` call that
+   * rejected the request, so `state.windowStart` reflects the active window.
+   */
+  private rateLimitedResponse(bucket: "pre" | "auth"): Response {
+    const windowMs = this.config.rateLimitWindowMs ?? DEFAULT_RATE_LIMIT_WINDOW_MS;
+    const state = this.rateLimitBuckets[bucket];
+    const now = _webhookPluginDeps.now();
+    const retryAfterSeconds = Math.max(1, Math.ceil((state.windowStart + windowMs - now) / 1000));
+    return new Response("Too Many Requests", {
+      status: 429,
+      headers: { "Retry-After": String(retryAfterSeconds) },
+    });
+  }
+
   async destroy(): Promise<void> {
     this.isDestroyed = true;
     this.resolvePendingReceivesOnDestroy();
@@ -491,7 +508,7 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
     // volume. This alone must not be able to starve authenticated callers —
     // see the separate "auth" bucket check after signature verification below.
     if (!this.checkRateLimit("pre")) {
-      return new Response("Too Many Requests", { status: 429 });
+      return this.rateLimitedResponse("pre");
     }
 
     const maxBytes = this.config.maxPayloadBytes ?? 1024 * 1024;
@@ -527,7 +544,7 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       // actually required — with requireSecret: false there is no auth check
       // at all, so the single "pre" bucket is correct as-is for that case.
       if (this.config.requireSecret && !this.checkRateLimit("auth")) {
-        return new Response("Too Many Requests", { status: 429 });
+        return this.rateLimitedResponse("auth");
       }
     }
 

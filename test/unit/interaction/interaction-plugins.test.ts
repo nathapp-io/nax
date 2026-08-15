@@ -238,6 +238,41 @@ describe("WebhookInteractionPlugin - rate limiting (SEC-8)", () => {
     }
   });
 
+  test("429 responses carry a Retry-After header naming seconds until the window resets", async () => {
+    fakeNowMs = 1_700_000_000_000;
+    _webhookPluginDeps.now = () => fakeNowMs;
+
+    const plugin = new WebhookInteractionPlugin();
+    await plugin.init({
+      url: "http://localhost/unused",
+      requireSecret: false,
+      callbackPort: 0,
+      rateLimitMaxRequests: 1,
+      rateLimitWindowMs: 10_000,
+    });
+
+    void plugin.receive("sec8-retry-after-1", 4000);
+    void plugin.receive("sec8-retry-after-2", 4000);
+    await Promise.resolve();
+    await Promise.resolve();
+    const port = plugin.callbackServerPort!;
+
+    try {
+      const under = await postCallback(port, "sec8-retry-after-1");
+      expect(under.status).toBe(200);
+      expect(under.headers.get("Retry-After")).toBeNull();
+
+      const over = await postCallback(port, "sec8-retry-after-2");
+      expect(over.status).toBe(429);
+      const retryAfter = over.headers.get("Retry-After");
+      expect(retryAfter).not.toBeNull();
+      expect(Number.parseInt(retryAfter ?? "", 10)).toBeGreaterThan(0);
+      expect(Number.parseInt(retryAfter ?? "", 10)).toBeLessThanOrEqual(10);
+    } finally {
+      await plugin.destroy();
+    }
+  });
+
   test("rate limit window resets after the configured window elapses", async () => {
     fakeNowMs = 1_700_000_000_000;
     _webhookPluginDeps.now = () => fakeNowMs;

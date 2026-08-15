@@ -4,6 +4,7 @@ import type { FixStrategy } from "../findings";
 import type { Finding } from "../findings/types";
 import type { QualityCommandOptions, QualityCommandResult } from "../quality/runner";
 import { runQualityCommand } from "../quality/runner";
+import { shellQuoteArg } from "../verification/shell-quote";
 import type { CallContext, DeterministicOperation } from "./types";
 
 export interface MechanicalLintFixInput {
@@ -25,17 +26,13 @@ export const _mechanicalLintFixDeps: MechanicalLintFixDeps = {
   runQualityCommand,
 };
 
-function shellQuotePath(path: string): string {
-  return `'${path.replaceAll("'", `'\\''`)}'`;
-}
-
 function buildCommand(
   broad: string | undefined,
   scoped: string | undefined,
   scopeFiles?: readonly string[],
 ): string | null {
   if (scoped && scopeFiles && scopeFiles.length > 0) {
-    return scoped.replaceAll("{{files}}", scopeFiles.map(shellQuotePath).join(" "));
+    return scoped.replaceAll("{{files}}", scopeFiles.map(shellQuoteArg).join(" "));
   }
   if (broad) {
     return broad;
