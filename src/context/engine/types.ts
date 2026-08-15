@@ -101,6 +101,7 @@ export type ChunkKind =
   | "static" // CLAUDE.md, .nax/rules/ — project-wide invariants
   | "feature" // context.md for this feature — accumulated learning
   | "test-coverage" // test coverage data (US-002 foundation)
+  | "diagnostics" // tool diagnostics (US-002 — lint/typecheck failure provenance)
   | "session" // session scratch — cross-stage memory (Phase 1)
   | "history" // git history diffs (Phase 3)
   | "neighbor" // import-graph neighbors (Phase 3)

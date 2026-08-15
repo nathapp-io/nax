@@ -15,6 +15,7 @@ import { GitHistoryProvider } from "./providers/git-history";
 import { SessionScratchProvider } from "./providers/session-scratch";
 import { StaticRulesProvider } from "./providers/static-rules";
 import { TestCoverageProvider } from "./providers/test-coverage";
+import { ToolDiagnosticsProvider } from "./providers/tool-diagnostics";
 import type { IContextProvider } from "./types";
 
 /**
@@ -62,6 +63,10 @@ export function createDefaultOrchestrator(
   // "session-scratch" pass AC-16 validation. It returns empty chunks when
   // request.storyScratchDirs is empty (verify/rectify stages supply dirs).
   providers.push(new SessionScratchProvider());
+  // US-002: ToolDiagnosticsProvider is always registered so stage-config references
+  // to "tool-diagnostics" pass AC-16 validation. It returns empty chunks when
+  // no scratch dir contains tool-diagnostics entries (defensive read).
+  providers.push(new ToolDiagnosticsProvider());
   // Phase 3: git history and code neighbors (always registered; active only when
   // request.touchedFiles is non-empty and the stage includes these provider IDs)
   // #507: scope is read from config so operators can tune for monorepo setups.

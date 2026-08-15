@@ -1,6 +1,6 @@
 {
-  "count": 2849,
-  "updatedAt": "2026-08-15T04:13:50.296Z",
+  "count": 2853,
+  "updatedAt": "2026-08-15T05:38:58.044Z",
   "byFile": {
     "src/pipeline/stages/acceptance-setup.ts": 1,
     "src/pipeline/stages/prompt.ts": 5,
@@ -19,6 +19,7 @@
     "src/context/engine/providers/git-history.ts": 2,
     "src/context/engine/providers/feature-context.ts": 7,
     "src/context/engine/providers/plugin-loader.ts": 2,
+    "src/context/engine/providers/tool-diagnostics.ts": 2,
     "src/context/engine/providers/code-neighbor.ts": 5,
     "src/context/engine/providers/plugin-cache.ts": 3,
     "src/context/engine/orchestrator.ts": 3,
@@ -163,6 +164,7 @@
     "test/unit/context/engine/scoring.test.ts": 2,
     "test/unit/context/engine/effectiveness-gate.test.ts": 2,
     "test/unit/context/engine/orchestrator-determinism.test.ts": 4,
+    "test/unit/context/engine/providers/tool-diagnostics.test.ts": 1,
     "test/unit/context/engine/providers/static-rules-paths.test.ts": 3,
     "test/unit/context/engine/providers/feature-context.test.ts": 4,
     "test/unit/context/engine/providers/test-coverage.test.ts": 8,
@@ -189,7 +191,7 @@
     "test/unit/context/engine/agent-profiles.test.ts": 1,
     "test/unit/context/engine/orchestrator.test.ts": 2,
     "test/unit/context/engine/dedupe.test.ts": 2,
-    "test/unit/context/engine/orchestrator-factory.test.ts": 8,
+    "test/unit/context/engine/orchestrator-factory.test.ts": 9,
     "test/unit/context/engine/staleness.test.ts": 1,
     "test/unit/context/engine/orchestrator-rebuild.test.ts": 2,
     "test/unit/context/engine/effectiveness-eval.test.ts": 2,

@@ -81,15 +81,19 @@ const PHASE_3_TDD_TEST_WRITER = [...PHASE_1_PROVIDERS, "code-neighbor"];
 const PHASE_3_TDD_IMPLEMENTER = [...PHASE_1_PROVIDERS, "git-history", "code-neighbor", "test-coverage"];
 
 /**
- * Phase 3 providers for execution stage — same as tdd-implementer.
+ * Phase 3 providers for execution stage — same as tdd-implementer, plus
+ * US-002 tool-diagnostics so the implementer sees authoritative lint/typecheck
+ * output when retrying after a quality failure.
  */
-const PHASE_3_EXECUTION = [...PHASE_1_PROVIDERS, "git-history", "code-neighbor", "test-coverage"];
+const PHASE_3_EXECUTION = [...PHASE_1_PROVIDERS, "git-history", "code-neighbor", "test-coverage", "tool-diagnostics"];
 
 /**
  * Phase 3 providers for rectify — code neighbors help the agent understand
  * the import graph when fixing failures; git history omitted (less relevant).
+ * US-002 adds tool-diagnostics so the rectifier gets authoritative
+ * lint/typecheck provenance instead of relying on agent self-reports.
  */
-const PHASE_3_RECTIFY = [...PHASE_1_PROVIDERS, "code-neighbor"];
+const PHASE_3_RECTIFY = [...PHASE_1_PROVIDERS, "code-neighbor", "tool-diagnostics"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage map
