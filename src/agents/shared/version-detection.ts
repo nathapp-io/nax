@@ -6,7 +6,7 @@
  */
 
 import { typedSpawn } from "../../utils/bun-deps";
-import { getInstalledAgents } from "../registry";
+import { getAllAgents, getInstalledAgents } from "../registry";
 
 /**
  * Information about an installed agent including its version
@@ -28,6 +28,7 @@ export interface AgentVersionInfo {
 export const _versionDetectionDeps = {
   spawn: typedSpawn,
   getInstalledAgents,
+  getAllAgents,
 };
 
 /**
@@ -74,20 +75,26 @@ export async function getAgentVersion(binaryName: string): Promise<string | null
  * Returns list of agents with their installation status and version info.
  */
 export async function getAgentVersions(): Promise<AgentVersionInfo[]> {
-  // BUG-19: getInstalledAgents() was called twice here for no reason — both
-  // calls return the same result (module-level state, no arguments).
+  // BUG-19: previously called getInstalledAgents() twice and mapped over
+  // that result alone — collapsing "all known agents" and "installed
+  // agents" into the same set means `installed` is always true, silently
+  // dropping the "available but not installed" report (multi-agent-health
+  // precheck's second section). getAllAgents() is the full candidate set;
+  // getInstalledAgents() is the (possibly smaller) subset actually on PATH.
+  const allAgents = _versionDetectionDeps.getAllAgents();
   const installedAgents = await _versionDetectionDeps.getInstalledAgents();
   const installedByName = new Map(installedAgents.map((a) => [a.name, a]));
 
   const versions = await Promise.all(
-    installedAgents.map(async (agent): Promise<AgentVersionInfo> => {
-      const version = installedByName.has(agent.name) ? await getAgentVersion(agent.binary) : null;
+    allAgents.map(async (agent): Promise<AgentVersionInfo> => {
+      const installed = installedByName.has(agent.name);
+      const version = installed ? await getAgentVersion(agent.binary) : null;
 
       return {
         name: agent.name,
         displayName: agent.displayName,
         version,
-        installed: installedByName.has(agent.name),
+        installed,
       };
     }),
   );

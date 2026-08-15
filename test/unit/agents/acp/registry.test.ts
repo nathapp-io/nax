@@ -11,7 +11,12 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { AcpAgentAdapter, _acpAdapterDeps } from "../../../../src/agents/acp/adapter";
-import { checkAgentHealth, createAgentRegistry, getInstalledAgents } from "../../../../src/agents/registry";
+import {
+  _registryTestAdapters,
+  checkAgentHealth,
+  createAgentRegistry,
+  getInstalledAgents,
+} from "../../../../src/agents/registry";
 import type { AgentConfig } from "../../../../src/config/schema";
 import type { NaxConfig } from "../../../../src/config/schema";
 import { logActiveProtocol } from "../../../../src/execution/lifecycle/run-initialization";
@@ -174,8 +179,16 @@ describe("createAgentRegistry — checkAgentHealth()", () => {
 describe("module-level getInstalledAgents() / checkAgentHealth() (BUG-19)", () => {
   const origWhich = _acpAdapterDeps.which;
 
+  beforeEach(() => {
+    // _registryTestAdapters is module-global state shared across test
+    // files in the same bun test process — a leaked entry from another
+    // file would make "returns empty when nothing is on PATH" flaky.
+    _registryTestAdapters.clear();
+  });
+
   afterEach(() => {
     _acpAdapterDeps.which = origWhich;
+    _registryTestAdapters.clear();
     mock.restore();
   });
 

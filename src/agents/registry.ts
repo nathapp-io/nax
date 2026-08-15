@@ -39,6 +39,17 @@ function buildAdapterList(): AgentAdapter[] {
 }
 
 /**
+ * All known agent adapters, regardless of installed status — the full
+ * candidate set `getInstalledAgents()` filters down from. Exists separately
+ * so callers that need to report on *un*installed agents too (e.g.
+ * version-detection's "available but not installed" list) have a set to
+ * diff `getInstalledAgents()`'s result against.
+ */
+export function getAllAgents(): AgentAdapter[] {
+  return buildAdapterList();
+}
+
+/**
  * BUG-19: this used to unconditionally return `[]`, so `multi-agent-health`
  * precheck always reported "No additional agents detected" regardless of
  * what was actually installed. Mirrors createAgentRegistry().getInstalledAgents().

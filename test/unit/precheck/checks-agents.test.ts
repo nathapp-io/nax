@@ -59,6 +59,14 @@ describe("checkMultiAgentHealth", () => {
     expect(result).toBeTruthy();
     expect(typeof result.passed).toBe("boolean");
   });
+
+  // BUG-19 (regression, caught in code review): getAgentVersions() briefly
+  // marked every agent as installed, making this "available but not
+  // installed" section unreachable regardless of what MOCK_VERSIONS says.
+  test("lists agents with installed: false under 'Available but not installed'", () => {
+    expect(result.message).toContain("Available but not installed");
+    expect(result.message).toContain("Codex");
+  });
 });
 
 describe("checkMultiAgentHealth — no agents installed", () => {
