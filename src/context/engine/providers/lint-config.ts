@@ -67,10 +67,10 @@ function contentHash8(content: string): string {
  *
  * Order matters: the first existing file wins. Only biome ships a distiller
  * today; every other entry degrades to a chunk that names the detected tool
- * and nothing else, matching AC7. Tools without a separate config file
- * (e.g. clippy, whose config lives in source attributes / `[lints.clippy]`
- * in Cargo.toml) are intentionally absent — when detected, AC8 applies and
- * fetch returns empty chunks.
+ * and nothing else, matching AC7. Clippy is included even though it has no
+ * dedicated config file: Rust projects are detected as clippy and always
+ * carry a Cargo.toml, which holds `[lints.clippy]` configuration. Without
+ * this entry a Rust package would fail AC7 and never surface a chunk.
  */
 const LINT_CONFIG_FILES: Record<string, string[]> = {
   biome: ["biome.json", "biome.jsonc"],
@@ -79,6 +79,9 @@ const LINT_CONFIG_FILES: Record<string, string[]> = {
   ruff: ["pyproject.toml", ".ruff.toml", "ruff.toml"],
   // golangci-lint: .golangci.{yml,yaml,toml,json}.
   "golangci-lint": [".golangci.yml", ".golangci.yaml", ".golangci.toml", ".golangci.json"],
+  // clippy: configured under [lints.clippy] in Cargo.toml. Rust projects
+  // always have Cargo.toml, so the candidate almost always matches.
+  clippy: ["Cargo.toml"],
 };
 
 /**
@@ -96,19 +99,27 @@ const LINT_CONFIG_FILES: Record<string, string[]> = {
 function distillLintConfig(tool: string, raw: string): string[] {
   if (tool !== "biome") return [];
 
-  let parsed: Record<string, unknown>;
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as Record<string, unknown>;
+    parsed = JSON.parse(raw);
   } catch {
     // Malformed JSON — return no distilled settings. The caller still
     // emits a chunk naming the tool, per AC10.
     return [];
   }
 
+  // AC10: never throw on malformed-but-valid JSON. JSON literals like
+  // `null`, `42`, `"foo"`, `true`, or `[...]` parse cleanly but are not
+  // objects — accessing `.formatter` on any of them would throw.
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return [];
+  }
+  const parsedObj = parsed as Record<string, unknown>;
+
   const lines: string[] = [];
 
   // formatter.indentStyle / formatter.indentWidth
-  const formatter = parsed.formatter;
+  const formatter = parsedObj.formatter;
   if (formatter && typeof formatter === "object") {
     const fmt = formatter as Record<string, unknown>;
     if (typeof fmt.indentStyle === "string") {
@@ -123,8 +134,8 @@ function distillLintConfig(tool: string, raw: string): string[] {
   }
 
   // Top-level indentWidth (legacy / common biome.json shape).
-  if (typeof parsed.indentWidth === "number" && !lines.some((l) => l.startsWith("indent width"))) {
-    lines.push(`indent width: ${parsed.indentWidth}`);
+  if (typeof parsedObj.indentWidth === "number" && !lines.some((l) => l.startsWith("indent width"))) {
+    lines.push(`indent width: ${parsedObj.indentWidth}`);
   }
 
   return lines;

@@ -261,6 +261,24 @@ describe("LintConfigProvider — AC7 degrade to detected tool name when no disti
       expect(result.chunks).toEqual([]);
     });
   });
+
+  test("AC7: returns a chunk naming clippy when Cargo.toml is present (clippy's lint config)", async () => {
+    await withTempDir(async (dir) => {
+      await writeFile(
+        join(dir, "Cargo.toml"),
+        "[package]\nname = \"x\"\n[lints.clippy]\nwarn = []\n",
+        "utf8",
+      );
+      _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "clippy" });
+      await wireRealDisk();
+
+      const provider = new LintConfigProvider();
+      const result = await provider.fetch(makeRequest({ packageDir: dir, repoRoot: dir }));
+
+      expect(result.chunks).toHaveLength(1);
+      expect(result.chunks[0].content.toLowerCase()).toContain("clippy");
+    });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -336,6 +354,48 @@ describe("LintConfigProvider — AC10 malformed lint config file", () => {
   test("AC10: returns a chunk naming biome when biome.json is malformed JSON", async () => {
     await withTempDir(async (dir) => {
       await writeFile(join(dir, "biome.json"), "{ not valid json", "utf8");
+      _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "biome" });
+      await wireRealDisk();
+
+      const provider = new LintConfigProvider();
+      await expect(provider.fetch(makeRequest({ packageDir: dir, repoRoot: dir }))).resolves.toBeDefined();
+      const result = await provider.fetch(makeRequest({ packageDir: dir, repoRoot: dir }));
+      expect(result.chunks).toHaveLength(1);
+      expect(result.chunks[0].content.toLowerCase()).toContain("biome");
+    });
+  });
+
+  test("AC10: does not throw when biome.json is valid JSON 'null' (defensive against non-object literals)", async () => {
+    await withTempDir(async (dir) => {
+      await writeFile(join(dir, "biome.json"), "null", "utf8");
+      _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "biome" });
+      await wireRealDisk();
+
+      const provider = new LintConfigProvider();
+      await expect(provider.fetch(makeRequest({ packageDir: dir, repoRoot: dir }))).resolves.toBeDefined();
+      const result = await provider.fetch(makeRequest({ packageDir: dir, repoRoot: dir }));
+      expect(result.chunks).toHaveLength(1);
+      expect(result.chunks[0].content.toLowerCase()).toContain("biome");
+    });
+  });
+
+  test("AC10: does not throw when biome.json is a JSON array (defensive against non-object literals)", async () => {
+    await withTempDir(async (dir) => {
+      await writeFile(join(dir, "biome.json"), "[]", "utf8");
+      _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "biome" });
+      await wireRealDisk();
+
+      const provider = new LintConfigProvider();
+      await expect(provider.fetch(makeRequest({ packageDir: dir, repoRoot: dir }))).resolves.toBeDefined();
+      const result = await provider.fetch(makeRequest({ packageDir: dir, repoRoot: dir }));
+      expect(result.chunks).toHaveLength(1);
+      expect(result.chunks[0].content.toLowerCase()).toContain("biome");
+    });
+  });
+
+  test("AC10: does not throw when biome.json is a JSON primitive (defensive against non-object literals)", async () => {
+    await withTempDir(async (dir) => {
+      await writeFile(join(dir, "biome.json"), "42", "utf8");
       _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "biome" });
       await wireRealDisk();
 
