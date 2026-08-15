@@ -91,6 +91,10 @@ export const executionStage: PipelineStage = {
       packageView,
       packageDir: ctx.workdir,
       ...(ctx.contextToolRunCounter ? { contextToolRunCounter: ctx.contextToolRunCounter } : {}),
+      // US-005: thread the story's session scratch dir so the pull-tool
+      // runtime's query_scratch handler can read the same JSONL the push
+      // providers (SessionScratchProvider / ToolDiagnosticsProvider) read.
+      ...(ctx.sessionScratchDir ? { sessionScratchDir: ctx.sessionScratchDir } : {}),
       agentName: resolved.agentName,
       storyId: ctx.story.id,
       featureName: ctx.prd.feature,

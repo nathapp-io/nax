@@ -632,3 +632,60 @@ describe("buildHopCallback — timeoutRetry wiring (AC6/AC7)", () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-005: story scratch directory handoff to the pull-tool runtime. The runtime
+// must receive the same storyScratchDirs the stage-assembly path resolved, so
+// the query_scratch handler reads the same session data as push providers.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildHopCallback — storyScratchDirs handoff to runtime (US-005)", () => {
+  test("passes ctx.sessionScratchDir as storyScratchDirs to createContextToolRuntime", async () => {
+    const SCRATCH_DIR = "/tmp/nax-scratch-sess-001";
+    let capturedOptions: Parameters<typeof _buildHopCallbackDeps.createContextToolRuntime>[0] | undefined;
+    const createRuntimeMock = mock((opts: Parameters<typeof _buildHopCallbackDeps.createContextToolRuntime>[0]) => {
+      capturedOptions = opts;
+      return undefined;
+    });
+    _buildHopCallbackDeps.createContextToolRuntime =
+      createRuntimeMock as typeof _buildHopCallbackDeps.createContextToolRuntime;
+
+    const agentManager = makeAgentManagerStub();
+    const sessionManager = makeSessionManager();
+    const ctx = makeCtx({
+      agentManager,
+      sessionManager,
+    }) as BuildHopCallbackContext & { sessionScratchDir?: string };
+    ctx.sessionScratchDir = SCRATCH_DIR;
+
+    const baseOptions = makeBaseOptions("p", ctx.config);
+    const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
+
+    await cb("claude", makeBundle(), { kind: "primary" } satisfies HopKind, baseOptions);
+
+    expect(capturedOptions).toBeDefined();
+    expect(capturedOptions?.storyScratchDirs).toEqual([SCRATCH_DIR]);
+  });
+
+  test("omits storyScratchDirs when ctx.sessionScratchDir is absent", async () => {
+    let capturedOptions: Parameters<typeof _buildHopCallbackDeps.createContextToolRuntime>[0] | undefined;
+    const createRuntimeMock = mock((opts: Parameters<typeof _buildHopCallbackDeps.createContextToolRuntime>[0]) => {
+      capturedOptions = opts;
+      return undefined;
+    });
+    _buildHopCallbackDeps.createContextToolRuntime =
+      createRuntimeMock as typeof _buildHopCallbackDeps.createContextToolRuntime;
+
+    const agentManager = makeAgentManagerStub();
+    const sessionManager = makeSessionManager();
+    const ctx = makeCtx({ agentManager, sessionManager });
+    const baseOptions = makeBaseOptions("p", ctx.config);
+    const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
+
+    await cb("claude", makeBundle(), { kind: "primary" } satisfies HopKind, baseOptions);
+
+    expect(capturedOptions).toBeDefined();
+    // No sessionScratchDir — either undefined or empty array
+    expect(capturedOptions?.storyScratchDirs ?? []).toEqual([]);
+  });
+});

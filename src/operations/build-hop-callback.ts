@@ -53,6 +53,15 @@ export interface BuildHopCallbackContext {
   contextToolRunCounter?: RunCallCounter;
   pipelineStage?: import("../config/permissions").PipelineStage;
   /**
+   * Absolute path to this story's session scratch directory (US-005).
+   * Threaded from PipelineContext.sessionScratchDir — the stage-assembly
+   * path resolves it once per story and stores it on the context so the
+   * pull-tool runtime can hand it to query_scratch without re-discovering
+   * disk. Absent / empty disables the scratch handler (it returns a
+   * no-entries message on its own — never throws).
+   */
+  sessionScratchDir?: string;
+  /**
    * Optional interaction bridge for mid-session human Q&A. Forwarded to
    * `buildRunInteractionHandler` so the agent can ask questions during a hop.
    */
@@ -108,6 +117,7 @@ export function buildHopCallback(
     effectiveTier,
     defaultAgent,
     contextToolRunCounter,
+    sessionScratchDir,
     pipelineStage,
     interactionBridge,
     maxInteractionTurns,
@@ -219,6 +229,10 @@ export function buildHopCallback(
           repoRoot: workdir,
           runCounter: runCounterForHops,
           sessionBudgets: sessionToolBudgets,
+          // US-005: thread the story scratch dir the stage-assembly path
+          // resolved, so query_scratch reads the same data the push
+          // providers (SessionScratchProvider / ToolDiagnosticsProvider) read.
+          ...(sessionScratchDir ? { storyScratchDirs: [sessionScratchDir] } : {}),
         })
       : undefined;
     const contextPullTools = workingBundle?.pullTools;

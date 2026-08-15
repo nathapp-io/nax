@@ -219,6 +219,10 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     // constructed fresh per iteration (iteration-runner.ts) and per parallel
     // story (parallel-worker.ts), so each gets its own counter.
     ...(ctx.contextToolRunCounter ? { contextToolRunCounter: ctx.contextToolRunCounter } : {}),
+    // US-005: thread the story's session scratch dir so the pull-tool
+    // runtime's query_scratch handler can read the same JSONL the push
+    // providers (SessionScratchProvider / ToolDiagnosticsProvider) read.
+    ...(ctx.sessionScratchDir ? { sessionScratchDir: ctx.sessionScratchDir } : {}),
     effectiveTier,
     defaultAgent,
     pipelineStage: op.stage,

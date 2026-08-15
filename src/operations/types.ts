@@ -23,6 +23,12 @@ export interface CallContext {
    * story attempt despite the key's name — see the note in call.ts.
    */
   readonly contextToolRunCounter?: import("../context/engine").RunCallCounter;
+  /**
+   * Story session scratch directory (US-005). Threaded from the pipeline
+   * context so the pull-tool runtime can hand it to query_scratch without
+   * re-discovering disk. Absent / empty disables the scratch handler.
+   */
+  readonly sessionScratchDir?: string;
   readonly storyId?: string;
   readonly featureName?: string;
   /**

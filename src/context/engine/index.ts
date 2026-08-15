@@ -48,13 +48,17 @@ export {
 export {
   QUERY_NEIGHBOR_DESCRIPTOR,
   QUERY_FEATURE_CONTEXT_DESCRIPTOR,
+  QUERY_SCRATCH_DESCRIPTOR,
   PULL_TOOL_REGISTRY,
+  DEFAULT_MAX_CALLS_PER_SESSION,
   PullToolBudget,
+  _pullToolsDeps,
   createRunCallCounter,
   handleQueryNeighbor,
   handleQueryFeatureContext,
+  handleQueryScratch,
 } from "./pull-tools";
-export type { PullCallRecord, RunCallCounter } from "./pull-tools";
+export type { PullCallRecord, RunCallCounter, QueryScratchOptions } from "./pull-tools";
 
 export { getAgentProfile, AGENT_PROFILES, CONSERVATIVE_DEFAULT_PROFILE } from "./agent-profiles";
 export type { AgentCapabilities, AgentProfile } from "./agent-profiles";

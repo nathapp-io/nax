@@ -1,13 +1,16 @@
 /**
  * Context Engine v2 — Pull Tools (Phase 4 + 5)
  *
- * Defines the canonical pull tool descriptors and their server-side handlers.
- * Pull tools are returned by ContextOrchestrator.assemble() alongside push
- * markdown; agent adapters register them on the session so the agent can
- * call them on-demand during execution.
+ * Defines the canonical pull tool descriptors, the central registry, and the
+ * shared budget tracker. Server-side handlers live in `./handlers/` — one file
+ * per family (query_neighbor, query_feature_context, query_scratch). Pull tool
+ * descriptors are returned by ContextOrchestrator.assemble() alongside push
+ * markdown; agent adapters register them on the session so the agent can call
+ * them on-demand during execution.
  *
  * Phase 4: query_neighbor for implementer / tdd roles.
  * Phase 5: query_feature_context for reviewer / rectifier roles.
+ * US-005: query_scratch for retry / rectification on-demand reads.
  * Phase 7: query_rag, query_graph, query_kb (separate specs).
  *
  * Budget rules (enforced by PullToolBudget):
@@ -19,14 +22,11 @@
  */
 
 import { ContextV2ConfigSchema } from "@/config";
-import type { ContextToolRuntimeConfig } from "@/config/selectors";
-import type { NaxConfig } from "@/config/types";
 import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
-import type { UserStory } from "@/prd";
-import { CodeNeighborProvider } from "./providers/code-neighbor";
-import { FeatureContextProviderV2 } from "./providers/feature-context";
-import type { ContextRequest, ToolDescriptor } from "./types";
+import { scratchFilePath } from "@/session";
+import type { ScratchEntry } from "@/session";
+import type { ToolDescriptor } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dependencies (injectable for testing)
@@ -34,6 +34,13 @@ import type { ContextRequest, ToolDescriptor } from "./types";
 
 export const _pullToolsDeps = {
   getLogger,
+  /** Read a file's text; returns "" when absent. Used by the query_scratch handler. */
+  readFile: async (path: string): Promise<string> => {
+    const f = Bun.file(path);
+    return (await f.exists()) ? f.text() : Promise.resolve("");
+  },
+  /** Existence check for a file path. Used by the query_scratch handler. */
+  fileExists: async (path: string): Promise<boolean> => Bun.file(path).exists(),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -52,7 +59,7 @@ export const _pullToolsDeps = {
  * and clobber every descriptor's own ceiling.
  */
 export const DEFAULT_MAX_CALLS_PER_SESSION = ContextV2ConfigSchema.parse({}).pull.maxCallsPerSession;
-const DEFAULT_MAX_TOKENS_PER_CALL = 2048;
+export const DEFAULT_MAX_TOKENS_PER_CALL = 2048;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Descriptor: query_neighbor
@@ -121,6 +128,58 @@ export const QUERY_FEATURE_CONTEXT_DESCRIPTOR: ToolDescriptor = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Descriptor: query_scratch (US-005)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Canonical descriptor for the query_scratch pull tool.
+ *
+ * Agents (retriers, implementers on a retry) call this to fetch the per-story
+ * record of what actually broke — verify-result, tool-diagnostics, rectify
+ * attempts — without forcing every entry into push context. The handler reads
+ * the same storyScratchDirs the push providers (SessionScratchProvider,
+ * ToolDiagnosticsProvider) already use, so the pull-style read sees the same
+ * data as the push-style render.
+ *
+ * Budget: per-session ceiling is the descriptor default (shared with
+ * query_neighbor / query_feature_context); enforcement is the existing
+ * pull-tool budget path. `query_scratch` invoked past its ceiling throws the
+ * same PULL_TOOL_BUDGET_EXHAUSTED error as query_neighbor.
+ *
+ * Filter args are both optional: `kind` narrows by entry kind, `limit` caps
+ * the number of entries returned. Most-recent entries are returned first.
+ *
+ * Failure handling: a missing scratch dir or no-match filter returns a
+ * no-entries message — never throws for expected absence.
+ */
+export const QUERY_SCRATCH_DESCRIPTOR: ToolDescriptor = {
+  name: "query_scratch",
+  description:
+    "Fetch on-demand records of what actually broke for this story — verify-result, " +
+    "tool-diagnostics, rectify-attempt entries from the session scratch JSONL. " +
+    "Use to read the record of a prior failure without forcing every entry into " +
+    "the push context. Optional: filter by `kind` (e.g. 'tool-diagnostics'), cap " +
+    "the response with `limit` (most-recent N entries).",
+  inputSchema: {
+    type: "object",
+    properties: {
+      kind: {
+        type: "string",
+        description:
+          "Optional scratch entry kind to filter by. When omitted, all " + "renderable entry kinds are returned.",
+      },
+      limit: {
+        type: "number",
+        description: "Maximum number of entries to return (most-recent first).",
+      },
+    },
+    additionalProperties: false,
+  },
+  maxCallsPerSession: DEFAULT_MAX_CALLS_PER_SESSION,
+  maxTokensPerCall: DEFAULT_MAX_TOKENS_PER_CALL,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Tool registry
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -132,6 +191,7 @@ export const QUERY_FEATURE_CONTEXT_DESCRIPTOR: ToolDescriptor = {
 export const PULL_TOOL_REGISTRY: Record<string, ToolDescriptor> = {
   query_neighbor: QUERY_NEIGHBOR_DESCRIPTOR,
   query_feature_context: QUERY_FEATURE_CONTEXT_DESCRIPTOR,
+  query_scratch: QUERY_SCRATCH_DESCRIPTOR,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -235,167 +295,21 @@ export class PullToolBudget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Handler: query_neighbor
+// Handler entry — re-exported for the runners + runtime. The implementations
+// live in `./handlers/<family>.ts` so each handler family can grow
+// independently without bloating the descriptor / budget module.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Server-side handler for the query_neighbor pull tool.
- *
- * Delegates to CodeNeighborProvider.fetch() with the requested file path.
- * Truncates the response to maxTokensPerCall * 4 characters.
- * Calls budget.consume() before executing — propagates the NaxError if exhausted.
- * Emits logger.info with pull-tool invocation metrics for curator ingestion.
- *
- * @param input           - Tool call arguments from the agent
- * @param workdir         - Working directory for file resolution
- * @param budget          - Budget tracker for this session
- * @param maxTokensPerCall - Per-call token ceiling (chars = tokens × 4)
- */
-export async function handleQueryNeighbor(
-  input: { filePath: string; depth?: number },
-  repoRoot: string,
-  budget: PullToolBudget,
-  maxTokensPerCall: number = DEFAULT_MAX_TOKENS_PER_CALL,
-  resolvedTestPatterns?: import("@/test-runners").ResolvedTestPatterns,
-  storyId?: string,
-  providerOptions?: { sourceGlob?: string; maxGlobFiles?: number },
-): Promise<string> {
-  budget.consume();
+// Re-export scratch-file path helpers and the ScratchEntry type so handler
+// implementations can use them without re-importing from session/scratch-writer.
+export { scratchFilePath };
+export type { ScratchEntry };
 
-  const provider = new CodeNeighborProvider(providerOptions ?? {});
-  // NOTE: packageDir intentionally equals repoRoot. Callers pass the story's
-  // already-resolved package dir AS repoRoot (build-hop-callback -> call.ts ->
-  // execution.ts -> iteration-runner, which joins story.workdir), so this IS
-  // package-scoped. Two attempts to "scope" it further were both wrong: joining
-  // story.workdir again double-joins in monorepos, and splitting repoRoot from
-  // packageDir redirects the cross-package scan at the main checkout under
-  // storyIsolation: "worktree". Do not "fix" this without a worktree test.
-  const request: ContextRequest = {
-    storyId: storyId ?? "_pull-tool",
-    repoRoot,
-    packageDir: repoRoot,
-    stage: "pull-tool",
-    role: "implementer",
-    budgetTokens: maxTokensPerCall,
-    touchedFiles: [input.filePath],
-    ...(resolvedTestPatterns && { resolvedTestPatterns }),
-  };
-  const result = await provider.fetch(request);
-
-  const content = result.chunks.map((c) => c.content).join("\n\n");
-  const maxChars = maxTokensPerCall * 4;
-  const truncated = content.length > maxChars;
-  const finalContent = truncated ? content.slice(0, maxChars) : content;
-
-  budget.record({
-    tool: "query_neighbor",
-    query: input.filePath,
-    at: new Date().toISOString(),
-    tokensReturned: Math.ceil(finalContent.length / 4),
-    chunkIds: result.chunks.map((c) => c.id),
-  });
-
-  const logger = _pullToolsDeps.getLogger();
-  const logData: Record<string, unknown> = {
-    storyId: storyId ?? "_pull-tool",
-    tool: "query_neighbor",
-    filePath: input.filePath,
-    packageDir: repoRoot,
-    resultCount: result.chunks.length,
-    resultBytes: finalContent.length,
-  };
-  if (truncated) {
-    logData.truncated = true;
-  }
-  logger.info("pull-tool", "invoked", logData);
-
-  return finalContent;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Handler: query_feature_context (Phase 5)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Filter feature context content by a keyword or section heading.
- * Splits on any markdown heading of level ≥ 2 (## ..., ### ..., …) and keeps
- * sections whose text contains the keyword (case-insensitive). Providers may
- * re-render top-level `##` headings as `###` when nesting content under a
- * parent chunk heading, so the split must accept both.
- * When no headings are found, returns the full content unchanged (section-based
- * filtering is not possible on flat content). Returns empty string when
- * sections exist but none match the keyword.
- */
-function filterByKeyword(content: string, keyword: string): string {
-  const lower = keyword.toLowerCase();
-  const sections = content.split(/(?=^#{2,}\s)/m);
-  if (sections.length <= 1) return content;
-  const matched = sections.filter((s) => s.toLowerCase().includes(lower));
-  return matched.join("");
-}
-
-/**
- * Server-side handler for the query_feature_context pull tool.
- *
- * Delegates to FeatureContextProviderV2.fetch() and optionally filters
- * the returned content by the keyword in input.filter.
- * Truncates the response to maxTokensPerCall * 4 characters.
- * Calls budget.consume() before executing — propagates the NaxError if exhausted.
- * Emits logger.info with pull-tool invocation metrics for curator ingestion.
- *
- * @param input            - Tool call arguments from the agent
- * @param story            - Current user story (needed by FeatureContextProviderV2)
- * @param config           - Nax config (needed by FeatureContextProviderV2)
- * @param workdir          - Working directory for feature-context resolution
- * @param budget           - Budget tracker for this session
- * @param maxTokensPerCall - Per-call token ceiling (chars = tokens × 4)
- */
-export async function handleQueryFeatureContext(
-  input: { filter?: string },
-  story: UserStory,
-  config: ContextToolRuntimeConfig,
-  repoRoot: string,
-  budget: PullToolBudget,
-  maxTokensPerCall: number = DEFAULT_MAX_TOKENS_PER_CALL,
-): Promise<string> {
-  budget.consume();
-
-  const provider = new FeatureContextProviderV2(story, config);
-  const request: ContextRequest = {
-    storyId: story.id,
-    repoRoot,
-    packageDir: repoRoot,
-    stage: "pull-tool",
-    role: "reviewer",
-    budgetTokens: maxTokensPerCall,
-  };
-  const result = await provider.fetch(request);
-
-  let content = result.chunks.map((c) => c.content).join("\n\n");
-
-  if (input.filter && content) {
-    content = filterByKeyword(content, input.filter);
-  }
-
-  const maxChars = maxTokensPerCall * 4;
-  const finalContent = content.length > maxChars ? content.slice(0, maxChars) : content;
-
-  budget.record({
-    tool: "query_feature_context",
-    query: input.filter ?? "",
-    at: new Date().toISOString(),
-    tokensReturned: Math.ceil(finalContent.length / 4),
-    chunkIds: result.chunks.map((c) => c.id),
-  });
-
-  const logger = _pullToolsDeps.getLogger();
-  logger.info("pull-tool", "invoked", {
-    storyId: story.id,
-    tool: "query_feature_context",
-    keyword: input.filter ?? null,
-    resultCount: result.chunks.length,
-    resultBytes: finalContent.length,
-  });
-
-  return finalContent;
-}
+// Re-export each handler family so the existing `import { handleQueryXxx } from
+// "./pull-tools"` paths continue to work. The implementations live in
+// `./handlers/<family>.ts` to keep this module under the 600-line file-size hard
+// limit; the pull-tools callers don't need to know about the split.
+export { handleQueryNeighbor } from "./handlers/query-neighbor";
+export { handleQueryFeatureContext } from "./handlers/query-feature-context";
+export { handleQueryScratch } from "./handlers/query-scratch";
+export type { QueryScratchOptions } from "./handlers/query-scratch";

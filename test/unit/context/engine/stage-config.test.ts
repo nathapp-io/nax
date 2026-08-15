@@ -26,6 +26,26 @@ describe("stage-config — tool-diagnostics provider registration (US-002)", () 
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// US-005: query_scratch pull tool registration
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("stage-config — query_scratch pull tool registration (US-005)", () => {
+  describe("AC11: rectify stage includes 'query_scratch' in pullToolNames", () => {
+    test("rectify stage includes 'query_scratch' in pullToolNames", () => {
+      const config = getStageContextConfig("rectify");
+      expect(config.pullToolNames).toContain("query_scratch");
+    });
+  });
+
+  describe("AC12: execution stage includes 'query_scratch' in pullToolNames", () => {
+    test("execution stage includes 'query_scratch' in pullToolNames", () => {
+      const config = getStageContextConfig("execution");
+      expect(config.pullToolNames).toContain("query_scratch");
+    });
+  });
+});
+
 describe("stage-config — test-coverage provider registration (AC3, AC4, AC5, AC6)", () => {
   describe("AC3: implementer stage lists 'test-coverage'", () => {
     const IMPLEMENTER_STAGES = ["execution", "tdd-implementer", "single-session", "tdd-simple", "no-test", "batch"];
