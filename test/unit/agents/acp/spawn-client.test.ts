@@ -108,19 +108,23 @@ describe("SpawnAcpClient — onPidSpawned callback (#228)", () => {
 
   // BUG-16: forceStop was declared on the AcpClient interface but never
   // implemented anywhere — closePhysicalSession's { force: true } branch was
-  // a dead call site. SpawnAcpClient must actually run `acpx <agent> stop`.
-  test("forceStop spawns `acpx <agentName> stop`", async () => {
+  // a dead call site. SpawnAcpClient must actually run `acpx --cwd <cwd>
+  // <agent> stop`. --cwd is required (matches every other acpx invocation
+  // in this client) — without it, the command scopes to the acpx process's
+  // own cwd instead of this client's worktree, risking the wrong queue
+  // owner in a parallel/worktree run with multiple instances of the same agent.
+  test("forceStop spawns `acpx --cwd <cwd> <agentName> stop`", async () => {
     const spawnedCommands: string[][] = [];
     _spawnClientDeps.spawn = (cmd, _opts) => {
       spawnedCommands.push(cmd as string[]);
       return makeSpawnResult(0);
     };
 
-    const client = new SpawnAcpClient("acpx claude", "/tmp");
+    const client = new SpawnAcpClient("acpx claude", "/tmp/my-worktree");
     await client.forceStop("claude");
 
     expect(spawnedCommands).toHaveLength(1);
-    expect(spawnedCommands[0]).toEqual(["acpx", "claude", "stop"]);
+    expect(spawnedCommands[0]).toEqual(["acpx", "--cwd", "/tmp/my-worktree", "claude", "stop"]);
   });
 
   test("forceStop does not throw when the stop command fails", async () => {

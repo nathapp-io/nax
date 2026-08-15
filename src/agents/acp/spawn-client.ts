@@ -270,14 +270,21 @@ export class SpawnAcpClient implements AcpClient {
 
   /**
    * BUG-16: hard-terminate the acpx queue-owner process for `agentName` via
-   * `acpx <agentName> stop`. Mirrors the session-level hard-stop already
-   * used by SpawnAcpSession.close({ forceTerminate: true }) (spawn-client-session.ts).
+   * `acpx --cwd <cwd> <agentName> stop`. `--cwd` is required here — acpx
+   * scopes session/queue-owner lookups to the invoking cwd (mirrors
+   * `sessions close`'s "current cwd" semantics), and without it this would
+   * default to the spawned acpx process's own cwd rather than this client's
+   * worktree, risking a hit against — or a miss of — the wrong queue owner
+   * in a parallel/worktree run where multiple agent instances of the same
+   * `agentName` run concurrently in different directories.
+   * Mirrors the session-level hard-stop already used by
+   * SpawnAcpSession.close({ forceTerminate: true }) (spawn-client-session.ts).
    * Failures are logged and swallowed — the caller (closePhysicalSession)
    * already wraps this in a best-effort `.catch(() => {})`, but logging here
    * gives visibility into why a force-close didn't actually terminate.
    */
   async forceStop(agentName: string, signal?: AbortSignal): Promise<void> {
-    const cmd = ["acpx", agentName, "stop"];
+    const cmd = ["acpx", "--cwd", this.cwd, agentName, "stop"];
     const { exitCode, stderr } = await this.trackedSpawn(cmd, signal, this.trackedSpawnDeadlineMs);
     if (exitCode !== 0) {
       getSafeLogger()?.debug("acp-adapter", "forceStop failed (ignored)", {
