@@ -143,6 +143,7 @@ export class AcpAgentAdapter implements AgentAdapter {
           onActiveCall: _options.onActiveCall,
           trackedSpawnDeadlineMs: _options.trackedSpawnDeadlineMs,
           trackedSpawnStartupDeadlineMs: _options.trackedSpawnStartupDeadlineMs,
+          env: _options.modelDef.env,
         },
       );
       await client.start();
@@ -326,6 +327,7 @@ export class AcpAgentAdapter implements AgentAdapter {
         onActiveCall: opts.onActiveCall,
         trackedSpawnDeadlineMs: opts.trackedSpawnDeadlineMs,
         trackedSpawnStartupDeadlineMs: opts.trackedSpawnStartupDeadlineMs,
+        env: modelDef.env,
       },
     );
     let session: import("./adapter-session-types").AcpSession | undefined;

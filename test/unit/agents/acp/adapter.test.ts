@@ -327,6 +327,36 @@ describe("complete()", () => {
     expect(capturedOnPidSpawned).toBe(tracker);
   });
 
+  // BUG-15: modelDef.env (config.models.<agent>.<tier>.env) was accepted by
+  // the schema but never forwarded to createClient — a per-model API
+  // key/base URL override was silently dropped.
+  test("forwards modelDef.env to createClient's AcpClientOptions", async () => {
+    let capturedEnv: Record<string, string> | undefined;
+    const session = makeSession();
+    _acpAdapterDeps.createClient = mock(
+      (
+        _cmd: string,
+        _cwd: string,
+        _timeout?: number,
+        _onPidSpawned?: (pid: number) => void,
+        _promptRetries?: number,
+        _onPidExited?: (pid: number) => void,
+        opts?: { env?: Record<string, string> },
+      ) => {
+        capturedEnv = opts?.env;
+        return makeClient(session) as unknown as ReturnType<typeof _acpAdapterDeps.createClient>; // test-ratchet-allow: as-unknown-as
+      },
+    );
+
+    await new AcpAgentAdapter("claude").complete(
+      "model-env-test",
+      makeCompleteOptions({
+        modelDef: { provider: "anthropic", model: "claude-sonnet-4-5", env: { ANTHROPIC_BASE_URL: "https://custom" } },
+      }),
+    );
+    expect(capturedEnv).toEqual({ ANTHROPIC_BASE_URL: "https://custom" });
+  });
+
   test("force-terminates the session on successful completion (kills queue-owner)", async () => {
     let capturedCloseOpts: { forceTerminate?: boolean } | undefined;
     const session = makeSession({

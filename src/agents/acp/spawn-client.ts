@@ -91,7 +91,11 @@ export class SpawnAcpClient implements AcpClient {
     this.cwd = cwd;
     this.timeoutSeconds = timeoutSeconds || 1800;
     this.promptRetries = promptRetries ?? 0;
-    this.env = buildAllowedEnv();
+    // BUG-15: modelDef.env (config.models.<agent>.<tier>.env) was accepted by
+    // the schema but never threaded here — a per-model API key/base URL
+    // override was silently ignored, and the subprocess ran on ambient env
+    // only, surfacing as confusing auth errors instead of the configured key.
+    this.env = buildAllowedEnv({ modelEnv: opts?.env });
     this.onPidSpawned = onPidSpawned;
     this.onPidExited = onPidExited;
     this.onStreamActivity = opts?.onStreamActivity;

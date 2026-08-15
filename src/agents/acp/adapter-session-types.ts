@@ -79,6 +79,14 @@ export interface AcpClientOptions {
    * the spawn-client module default when omitted (#1583).
    */
   trackedSpawnStartupDeadlineMs?: number;
+  /**
+   * BUG-15: per-model env overrides from config.models.<agent>.<tier>.env.
+   * Merged over the process env baseline in buildAllowedEnv() so a model
+   * entry can supply its own API key / base URL without polluting other
+   * models' subprocess env. Previously accepted by the schema but never
+   * threaded anywhere — silently ignored.
+   */
+  env?: Record<string, string>;
 }
 
 export interface AcpClient {

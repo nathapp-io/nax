@@ -129,6 +129,25 @@ describe("SpawnAcpClient — onPidSpawned callback (#228)", () => {
     const client = new SpawnAcpClient("acpx claude", "/tmp");
     await expect(client.forceStop("claude")).resolves.toBeUndefined();
   });
+
+  // BUG-15: opts.env (config.models.<agent>.<tier>.env) was accepted by the
+  // constructor's AcpClientOptions type but never passed into
+  // buildAllowedEnv() — a per-model API key/base URL override was silently
+  // dropped and the subprocess ran on ambient env only.
+  test("threads AcpClientOptions.env into the client's subprocess env as modelEnv", () => {
+    const client = new SpawnAcpClient("acpx claude", "/tmp", undefined, undefined, undefined, undefined, {
+      env: { ANTHROPIC_BASE_URL: "https://custom.example.com", ANTHROPIC_API_KEY: "from-model-def" },
+    });
+    const internals = client as unknown as { env: Record<string, string | undefined> }; // test-ratchet-allow: as-unknown-as
+    expect(internals.env.ANTHROPIC_BASE_URL).toBe("https://custom.example.com");
+    expect(internals.env.ANTHROPIC_API_KEY).toBe("from-model-def");
+  });
+
+  test("subprocess env is unaffected when no env override is passed", () => {
+    const client = new SpawnAcpClient("acpx claude", "/tmp");
+    const internals = client as unknown as { env: Record<string, string | undefined> }; // test-ratchet-allow: as-unknown-as
+    expect(internals.env.ANTHROPIC_BASE_URL).toBeUndefined();
+  });
 });
 
 describe("SpawnAcpClient — prompt EPIPE resilience", () => {
