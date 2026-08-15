@@ -67,20 +67,30 @@ function contentHash8(content: string): string {
  *
  * Order matters: the first existing file wins. Only biome ships a distiller
  * today; every other entry degrades to a chunk that names the detected tool
- * and nothing else, matching AC7. Clippy is included even though it has no
- * dedicated config file: Rust projects are detected as clippy and always
- * carry a Cargo.toml, which holds `[lints.clippy]` configuration. Without
- * this entry a Rust package would fail AC7 and never surface a chunk.
+ * and nothing else, matching AC7.
+ *
+ * Reachability: every candidate here must be reachable through the public
+ * detector. The detector only fires lintTool based on a small set of files
+ * — `biome.json`, `.eslintrc{,.js,.json}` for Node/Bun projects, and
+ * language-derived for Go/Rust/Python. Including candidates the detector
+ * never returns (e.g. `biome.jsonc`, `.eslintrc.cjs`, `.eslintrc.yaml`)
+ * would mislead readers: those candidates can never be reached because the
+ * detector sets `lintTool: undefined` when only those files are present.
+ *
+ * For language-detected tools, the standalone files (`.ruff.toml`,
+ * `ruff.toml`, `.golangci.*`, `Cargo.toml`) are reachable as fallbacks when
+ * the primary marker (e.g. pyproject.toml for ruff) is present.
  */
 const LINT_CONFIG_FILES: Record<string, string[]> = {
-  biome: ["biome.json", "biome.jsonc"],
-  eslint: [".eslintrc.json", ".eslintrc.js", ".eslintrc", ".eslintrc.cjs", ".eslintrc.yaml", ".eslintrc.yml"],
-  // ruff: configured under [tool.ruff] in pyproject.toml, or standalone .ruff.toml.
+  biome: ["biome.json"],
+  eslint: [".eslintrc.json", ".eslintrc.js", ".eslintrc"],
+  // ruff: language-detected when pyproject.toml or requirements.txt is present;
+  // standalone configs act as fallbacks.
   ruff: ["pyproject.toml", ".ruff.toml", "ruff.toml"],
-  // golangci-lint: .golangci.{yml,yaml,toml,json}.
+  // golangci-lint: language-detected (go.mod). Configs are fallbacks.
   "golangci-lint": [".golangci.yml", ".golangci.yaml", ".golangci.toml", ".golangci.json"],
-  // clippy: configured under [lints.clippy] in Cargo.toml. Rust projects
-  // always have Cargo.toml, so the candidate almost always matches.
+  // clippy: language-detected (Cargo.toml). Cargo.toml also acts as the
+  // config carrier ([lints.clippy] table), so the candidate almost always matches.
   clippy: ["Cargo.toml"],
 };
 
