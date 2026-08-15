@@ -32,6 +32,18 @@ rev 2 put **BUG-03 in P0**. It is a feature that crashes 100% of the time, so no
 
 ---
 
+## Status update (2026-08-15)
+
+**Batches 1–5 (all P0/P1 security & reliability findings): ✅ Fixed.** Landed in PR #1588 (commit `fed3681a`, "P0 + P1") covering all of SEC-02/03/05/07/08, BUG-01/02/04/05/06/07/09/10/11/12/13/14/17/18/20/21/24/25/26/28/29, MED-02/03/04/05. **SEC-04 and BUG-08** are HIGH/MEDIUM findings not explicitly named in a batch below — neither was actually touched by #1588 despite being adjacent in severity to what it covered; both were fixed later, in PR #1591 (see next paragraph).
+
+**Batch 6 (dead/inert surfaces, 10 findings) + SEC-04, SEC-09, BUG-08: ✅ Fixed.** Landed in PR #1591 (branch `fix/deep-review-batch6-pending-findings`): SEC-04 (streamed body-size enforcement — closes the gap for real, not just the loopback-only narrowing the severity correction above describes), SEC-06, SEC-09, MED-01, BUG-03 (contained to `dnf-crashed`, **not** made functional — see note below), BUG-08, BUG-15, BUG-16, BUG-19, BUG-22, BUG-23, BUG-27. Went through a `code-reviewer` subagent pass plus an automated security review before merge; both caught real issues (a regression in the BUG-19 fix, a `forceStop` scoping gap, MED-01 pattern tuning) that were fixed in the same PR — see the PR description for the full review trail.
+
+**BUG-03 caveat:** the crash is contained (a bad `worktreeManager`/`pipeline` dependency now yields a per-contestant `dnf-crashed` result instead of crashing the whole CLI), but `_contestantDeps` is still unwired to a real worktree-scoped pipeline implementation anywhere in `src/`/`bin/`. `nax run --compare` will still report every contestant as `dnf-crashed`. Making bake-off actually functional is a feature-completion task (worktree-scoped pipeline execution, per-contestant PRD/config, result aggregation), not a bug fix, and remains open.
+
+**Batch 7 (L1…L38 cleanup): still pending.** Not attempted in either PR — see the batch's own note for which items (L5, L8, L13) have live failure modes worth pulling forward.
+
+---
+
 ## Overall Grade: B- (74/100)
 
 | Dimension | Score |
@@ -77,6 +89,8 @@ if (isAbsolute(file)) {
 **Fix:** Delete the `isAbsolute` fallback, or contain via `validateModulePath` against `repoRoot`/`workdir`.
 
 #### SEC-04: Webhook callback enforces payload size only *after* fully buffering the body
+
+**Status:** ✅ Fixed — PR #1591 (streamed body reads with an early abort once `maxPayloadBytes` is exceeded).
 **Severity:** HIGH | **Category:** Security
 **File:** `src/interaction/plugins/webhook.ts:483-502`
 **Proof (verified):** Content-Length pre-check (line 486) is bypassable (chunked transfer); the authoritative check runs on `await req.text()` (line 491) — the full body is already in memory. Rate limiter bounds request count (300/window), not size.
@@ -113,6 +127,8 @@ this._mutex = this._mutex.then(() => write).catch(() => write);
 **Fix:** Add `detached: true` to the spawn (mirroring `executeWithTimeout`).
 
 #### BUG-03: `nax run --compare` (bake-off) always crashes — production deps never wired
+
+**Status:** ⚠️ Partially fixed — PR #1591 contains the crash (per-contestant `dnf-crashed` instead of a whole-CLI crash), but `_contestantDeps` is still unwired. Bake-off is not functional; see the PR/status-update note above.
 **Severity:** HIGH | **Category:** Bug
 **File:** `src/bakeoff/contestant.ts:49-52,101`
 **Proof (verified):** `_contestantDeps` holds `undefined as unknown as ...` stubs; grep across src/ and bin/ finds no installation site ("Production wiring installs these via init steps" is false). `bin/nax.ts:793-807` calls `runContestant(agent, options)` (2 args) → line 101 `await deps.worktreeManager.create(...)` throws `TypeError` **outside** the try/catch (starts line 103).
@@ -150,6 +166,8 @@ this._mutex = this._mutex.then(() => write).catch(() => write);
 ### 🟡 MEDIUM
 
 #### SEC-06: Global monkey-patch of `Bun.serve` + `globalThis.fetch` as a module side effect
+
+**Status:** ✅ Fixed — PR #1591 (install deferred to first server start; port-reuse hardened).
 **Severity:** MEDIUM | **Category:** Security/Quality
 **File:** `src/interaction/plugins/webhook-serve-compat.ts:55-90` (installed at webhook.ts:15-17)
 **Proof (verified):** `installServePortZeroCompat` rewrites `Bun.serve` and `globalThis.fetch` process-wide. Scope note (rev 2): the patched fetch intercepts **only** ports registered in `inMemoryServers` (i.e. while a compat in-memory server is live — itself only created when `Bun.serve` genuinely fails), so unrelated-fetch misrouting requires an in-memory server to be active; the wrap hazard is real but narrower than originally worded.
@@ -170,6 +188,8 @@ this._mutex = this._mutex.then(() => write).catch(() => write);
 **Fix:** Validate `profileName` as a single path segment at all three entry points.
 
 #### SEC-09: No ANSI/escape-sequence sanitization on agent-controlled display strings
+
+**Status:** ✅ Fixed — PR #1591 (shared `stripControlChars()` applied to TUI panel rows and the headless log formatter).
 **Severity:** MEDIUM | **Category:** Security
 **File:** `src/tui/components/StoriesPanel.tsx:159-164`, `LiveActivityPanel.tsx:147-159`, `src/log-format/formatter.ts:278`
 **Proof (verified):** story failure reasons (`slice(0, 25)`), titles, agent/model names render raw into Ink `<Text>`; Ink does not sanitize ESC sequences.
@@ -177,6 +197,8 @@ this._mutex = this._mutex.then(() => write).catch(() => write);
 **Fix:** One shared ESC/OSC strip util applied in TUI row renderers and the log formatter.
 
 #### BUG-08: Escalation quote-verifier reads files outside the workdir (path traversal)
+
+**Status:** ✅ Fixed — PR #1591 (routed through the existing `validateModulePath` containment guard). Not touched by PR #1588 despite the "Re-verified and confirmed" list above naming other findings in that pass.
 **Severity:** MEDIUM | **Category:** Security
 **File:** `src/execution/escalation/quote-integrity.ts:46,80`
 **Proof (verified):** regex `[a-zA-Z0-9_./-]+` admits `..`; `absPath = \`${workdir}/${triple.file}\`` with no containment check; `deps.readFile(absPath)` reads it.
@@ -222,6 +244,8 @@ this._mutex = this._mutex.then(() => write).catch(() => write);
 **Fix:** Race each tracked promise against a settle deadline; drop + log on timeout.
 
 #### BUG-15: Per-model `env` overrides are silently dropped in the ACP-only adapter
+
+**Status:** ✅ Fixed — PR #1591 (`buildAllowedEnv`'s existing `modelEnv` option threaded through both `createClient` call sites).
 **Severity:** MEDIUM | **Category:** Bug
 **File:** `src/agents/acp/spawn-client.ts:94`, `src/config/schemas-model.ts:17`
 **Proof (verified):** `models.<agent>.<tier>.env` is a first-class schema field; `SpawnAcpClient` constructor calls `this.env = buildAllowedEnv()` with no options, and `AcpClientOptions` has no `env` field — no consumer of `modelDef.env` anywhere in src.
@@ -229,6 +253,8 @@ this._mutex = this._mutex.then(() => write).catch(() => write);
 **Fix:** Thread `modelDef.env` through `AcpClientOptions.env` → `buildAllowedEnv`.
 
 #### BUG-16: `closePhysicalSession({ force: true })` silently no-ops — errored sessions never hard-terminated
+
+**Status:** ✅ Fixed — PR #1591 (`forceStop` implemented on `SpawnAcpClient`, scoped to the client's worktree via `--cwd` after a review-round fix).
 **Severity:** MEDIUM | **Category:** Bug
 **File:** `src/agents/acp/adapter-close-physical.ts:23-28`
 **Proof (verified):** grep shows `forceStop` exists only at this cast site — no production class implements it; the `else if (client.loadSession)` fallback is dead because `SpawnAcpClient` always has `closeSession`. So `session-manager-runtime.ts:119`'s force close never terminates the acpx queue-owner.
@@ -248,6 +274,8 @@ this._mutex = this._mutex.then(() => write).catch(() => write);
 **Fix:** AbortController timeout on the fetch (default ~30s) and/or a deadline race in `sendTurn`'s context-tool path.
 
 #### BUG-19: Module-level `getInstalledAgents()`/`checkAgentHealth()` registry stubs return `[]` — multi-agent precheck is dead
+
+**Status:** ✅ Fixed — PR #1591. First pass had a real regression (collapsed "all known agents" and "installed agents" into the same set, so `installed` was always `true`, keeping the "available but not installed" precheck section dead for a different reason) — caught by code review and fixed via a new `getAllAgents()` before merge.
 **Severity:** MEDIUM | **Category:** Bug
 **File:** `src/agents/registry.ts:31-39`, `src/agents/shared/version-detection.ts:9,76-100`
 **Proof (verified):** `version-detection.ts:9` imports the module-level `getInstalledAgents` (stub `return []`), and `getAgentVersions` calls it twice (lines 77 and 82) — always returns `[]`, so `multi-agent-health` precheck always reports "No additional agents detected". The real implementation exists only inside `createAgentRegistry()`.
@@ -268,12 +296,16 @@ this._mutex = this._mutex.then(() => write).catch(() => write);
 **Fix:** Fold `process.env` into the base map, or document the throw and wrap in `NaxError` with profile name + key path.
 
 #### BUG-22: TUI exit paths leave the TUI mounted; `q`+confirm only hides the UI (run keeps executing)
+
+**Status:** ✅ Fixed — PR #1591 (remaining gaps: `--parallel`/schedule-cancel exits now unmount first; a Ctrl+<letter> combo no longer falls through to the matching bare-letter shortcut).
 **Severity:** MEDIUM | **Category:** Reliability
 **File:** `bin/nax.ts:743` vs :757-765, :783-786; `src/tui/App.tsx:149-156,191-209`; `src/tui/hooks/useKeyboard.ts:113-141`
 **Proof (verified, rev 2 refinement):** (a) `--parallel` validation `exit(1)` and schedule-cancel `exit(0)` fire **after** `renderTui` (bin/nax.ts:743) without `unmount()` — message prints over the TUI frame. (b) `q`+`y` calls `exit()` only (UI unmount) — the runner keeps executing with no visible UI; **a real abort exists but only via `a`+confirm** (writes `ABORT` queue command, App.tsx:198-200) — the original wording overstated "no way to stop"; the defect is that `q` misleads the user into thinking the run quit while spend continues, and Ctrl+C lands on `SHOW_COST` (useKeyboard case "c") instead of quit/abort.
 **Fix:** On quit-confirm, write `{ type: "ABORT" }` to the queue file in addition to `exit()`; explicit ctrl+c branch in `useKeyboard`; hoist `--parallel` validation before `renderTui`; unmount before schedule-cancel exit.
 
 #### BUG-23: `nax run --json` silently ignored when stdout is a TTY
+
+**Status:** ✅ Fixed — PR #1591 (`formatterMode === "json"` added as a fourth headless trigger; extracted to a testable `resolveUseHeadless()`).
 **Severity:** MEDIUM | **Category:** Bug
 **File:** `bin/nax.ts:532-540,688-690`
 **Proof (verified):** `useHeadless = !isTTY || headlessFlag || headlessEnv` — `formatterMode === "json"` not considered; on a TTY the TUI mounts and `formatterMode: undefined` is passed to `run()` (bin/nax.ts:697).
@@ -298,6 +330,8 @@ this._mutex = this._mutex.then(() => write).catch(() => write);
 **Fix:** Keyword-gate the downgrade (text actually explains absent tests) or drop the auto-downgrade.
 
 #### BUG-27: Dependency cycles not validated at plan time → `topologicalSort` throws and aborts the merge batch
+
+**Status:** ✅ Fixed — PR #1591 (`validatePlanOutput` now fails fast on a cycle; `mergeAll` also defensively catches `topologicalSort`'s throw for PRDs written outside the validated path).
 **Severity:** MEDIUM | **Category:** Reliability
 **File:** `src/worktree/merge.ts:174-176,272-284`, `src/prd/schema.ts:234-242`
 **Proof (verified):** `validateStory` checks unknown IDs only (no cycle check); `mergeAll` calls `topologicalSort` first thing — the `visiting.has(storyId)` cycle branch throws (merge.ts:282-284) with no try/catch in `mergeAll` or `runParallelBatch` (execution/parallel-batch.ts:282). Sequential mode silently ends with the two stories forever `pending`/`"running"`.
@@ -316,6 +350,8 @@ this._mutex = this._mutex.then(() => write).catch(() => write);
 **Fix:** `[...passedStories].reverse().slice(0, 5)` or sort by completion recency.
 
 #### MED-01: Secret-redaction gaps — PEM keys, JWTs, auth headers, short keys pass through
+
+**Status:** ✅ Fixed — PR #1591. Went through three tuning passes: the initial patterns over-redacted ordinary prose ("Basic authentication failed") and had a tight PEM bound that could miss large legitimate cert-chain bundles (caught by code review + an automated security review) — final version requires credential-shaped values and bounds the PEM gap at 64KB.
 **Severity:** MEDIUM | **Category:** Security
 **File:** `src/logger/redact.ts:21-30`
 **Proof (verified):** `SECRET_VALUE_PATTERNS` covers `sk-`, `ghp_`, `npm_`, `AKIA`, `xox*`, `KEY=value` only; `SECRET_KEY_PATTERN` inspects object keys only. PEM blocks, `eyJ...` JWTs, `Bearer`/`Basic` headers, and short keys in free text pass through into the JSONL and terminal.
@@ -472,11 +508,11 @@ These do not crash; they produce a wrong verdict. Every fix needs a test pinning
 
 ### Batch 6 — P2. Dead or inert surfaces (10 findings)
 
-Real defects, but no live user impact — schedule after Batches 1–5.
+**Status: ✅ Fixed — PR #1591** (see "Status update" near the top of this doc). Real defects, but no live user impact — schedule after Batches 1–5.
 
 BUG-03 (bake-off crashes on every invocation; `_contestantDeps` has zero installation sites in `src`/`bin` — also move `worktreeManager.create` inside the try so failure yields `dnf-crashed`), BUG-19 (registry stubs return `[]`), BUG-16 (`forceStop` implemented nowhere — implement or delete the branch), BUG-15 (per-model `env` never threaded), BUG-23 (`--json` ignored on a TTY), BUG-22 (TUI quit/exit paths), BUG-27 (dependency-cycle validation), SEC-06, SEC-09, MED-01.
 
-### Batch 7 — P3. Cleanup
+### Batch 7 — P3. Cleanup (still pending)
 
 L1…L38. Pull **L5** (NaN cost accumulator), **L8** (pipe deadlock on >64KB diff output), and **L13** (`nax unlock` removing a live run's lock) forward into Batch 6 — they have live failure modes; the rest are hygiene.
 
