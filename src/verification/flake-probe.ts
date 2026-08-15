@@ -17,6 +17,7 @@ import { getSafeLogger } from "../logger";
 import type { Framework } from "../test-runners/detector";
 import type { TestFailure } from "../test-runners/types";
 import { executeWithTimeout } from "./executor";
+import { shellQuoteArg } from "./shell-quote";
 import type { TestExecutionResult } from "./types";
 
 // Frameworks that exit 0 for "zero tests matched the isolation filter" (primarily `go
@@ -32,8 +33,8 @@ function probeRanNoTests(output: string | undefined): boolean {
 }
 
 export type FlakeProbeVerdict =
-  | { verdict: "flaky"; probeRuns: number; probePasses: number }
-  | { verdict: "consistent-failure"; probeRuns: number }
+  | { verdict: "flaky"; probeRuns: number; probePasses: number; attributableRuns: number }
+  | { verdict: "consistent-failure"; probeRuns: number; attributableRuns: number }
   | { verdict: "unprobeable"; reason: string };
 
 export interface FlakeProbeInput {
@@ -75,16 +76,6 @@ export function escapeRegex(input: string): string {
 }
 
 /**
- * Single-quote a value for safe interpolation into a shell command string
- * (executed via `[shell, "-c", command]` — see `executeWithTimeout`). Wraps in
- * single quotes and escapes any embedded `'` using the standard
- * close-quote/escaped-quote/reopen-quote trick: `'` -> `'\''`.
- */
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-/**
  * Build an isolation command for the failing test, scoped to its framework.
  *
  * - bun / jest / vitest: `<base> <quoted file> -t '<escaped name>'`
@@ -93,7 +84,7 @@ function shellQuote(value: string): string {
  * - go: `<base> -run '^<escaped name>$'` (cwd scoped to the failing package)
  *
  * Filter values — and, for bun/jest/vitest, the file path — are
- * single-quoted (`shellQuote`) because the command is ultimately executed
+ * single-quoted (`shellQuoteArg`) because the command is ultimately executed
  * through a shell (`[shell, "-c", command]`) — an unquoted test name or file
  * path containing whitespace (or shell metacharacters, since both originate
  * from parsed output of an arbitrary target repo) would be word-split or
@@ -111,13 +102,13 @@ export function buildIsolationCommand(baseCommand: string, failure: TestFailure,
 
   switch (framework) {
     case "pytest":
-      return `${baseCommand} ${shellQuote(`${file}::${name}`)}`;
+      return `${baseCommand} ${shellQuoteArg(`${file}::${name}`)}`;
     case "go":
-      return `${baseCommand} -run ${shellQuote(`^${escapeRegex(name)}$`)}`;
+      return `${baseCommand} -run ${shellQuoteArg(`^${escapeRegex(name)}$`)}`;
     case "bun":
     case "jest":
     case "vitest":
-      return `${baseCommand} ${shellQuote(file)} -t ${shellQuote(escapeRegex(name))}`;
+      return `${baseCommand} ${shellQuoteArg(file)} -t ${shellQuoteArg(escapeRegex(name))}`;
     default:
       throw new NaxError(
         `[flake-probe] unsupported framework: ${framework as string}`,
@@ -214,7 +205,7 @@ export async function runFlakeProbe(input: FlakeProbeInput): Promise<FlakeProbeV
   }
 
   if (probePasses > 0) {
-    return { verdict: "flaky", probeRuns, probePasses };
+    return { verdict: "flaky", probeRuns, probePasses, attributableRuns };
   }
-  return { verdict: "consistent-failure", probeRuns };
+  return { verdict: "consistent-failure", probeRuns, attributableRuns };
 }

@@ -114,9 +114,13 @@ export const _flakeTriageDeps = {
 
 /**
  * Classify each `failed-test` finding in `input.findings`. Confirmed flakes
- * are relabeled to `category: "flaky-test"` with `meta: { probeRuns, probePasses }`
- * and recorded in the returned quarantine report. All other findings pass
- * through unchanged. Non-`failed-test` findings pass through untouched.
+ * are relabeled to `category: "flaky-test"` with
+ * `meta: { probeRuns, probePasses, attributableRuns }` — `probeRuns` is the
+ * raw number of probe attempts made, `attributableRuns` is the subset that
+ * actually produced a clean pass or genuine fail (excludes timeouts,
+ * executor crashes, and zero-matched runs) — and recorded in the returned
+ * quarantine report. All other findings pass through unchanged.
+ * Non-`failed-test` findings pass through untouched.
  *
  * Returns a new findings array; the input is not mutated.
  */
@@ -217,7 +221,12 @@ export async function triageFlakyFindings(input: FlakeTriageInput): Promise<Flak
 
     if (verdict.verdict === "flaky") {
       copy.category = "flaky-test";
-      copy.meta = { ...(copy.meta ?? {}), probeRuns: verdict.probeRuns, probePasses: verdict.probePasses };
+      copy.meta = {
+        ...(copy.meta ?? {}),
+        probeRuns: verdict.probeRuns,
+        probePasses: verdict.probePasses,
+        attributableRuns: verdict.attributableRuns,
+      };
       quarantineMemo.add(key);
       keys.push(key);
       reasons.push(`quarantined: ${key}`);
