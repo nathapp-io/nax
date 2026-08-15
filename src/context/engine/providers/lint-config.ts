@@ -65,13 +65,20 @@ function contentHash8(content: string): string {
 /**
  * Lint config source-file candidates per detected tool.
  *
- * Order matters: the first existing file wins. Only the supported
- * toolchains ship a distiller today; everything else degrades to a chunk
- * that names the detected tool and nothing else, matching AC7.
+ * Order matters: the first existing file wins. Only biome ships a distiller
+ * today; every other entry degrades to a chunk that names the detected tool
+ * and nothing else, matching AC7. Tools without a separate config file
+ * (e.g. clippy, whose config lives in source attributes / `[lints.clippy]`
+ * in Cargo.toml) are intentionally absent — when detected, AC8 applies and
+ * fetch returns empty chunks.
  */
 const LINT_CONFIG_FILES: Record<string, string[]> = {
   biome: ["biome.json", "biome.jsonc"],
   eslint: [".eslintrc.json", ".eslintrc.js", ".eslintrc", ".eslintrc.cjs", ".eslintrc.yaml", ".eslintrc.yml"],
+  // ruff: configured under [tool.ruff] in pyproject.toml, or standalone .ruff.toml.
+  ruff: ["pyproject.toml", ".ruff.toml", "ruff.toml"],
+  // golangci-lint: .golangci.{yml,yaml,toml,json}.
+  "golangci-lint": [".golangci.yml", ".golangci.yaml", ".golangci.toml", ".golangci.json"],
 };
 
 /**

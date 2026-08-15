@@ -213,6 +213,54 @@ describe("LintConfigProvider — AC7 degrade to detected tool name when no disti
       expect(result.chunks[0].content.toLowerCase()).toContain("eslint");
     });
   });
+
+  test("AC7: returns a chunk naming ruff when ruff config (pyproject.toml) is detected but no distiller exists", async () => {
+    await withTempDir(async (dir) => {
+      await writeFile(
+        join(dir, "pyproject.toml"),
+        "[tool.ruff]\nline-length = 100\n",
+        "utf8",
+      );
+      _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "ruff" });
+      await wireRealDisk();
+
+      const provider = new LintConfigProvider();
+      const result = await provider.fetch(makeRequest({ packageDir: dir, repoRoot: dir }));
+
+      expect(result.chunks).toHaveLength(1);
+      expect(result.chunks[0].content.toLowerCase()).toContain("ruff");
+    });
+  });
+
+  test("AC7: returns a chunk naming golangci-lint when .golangci.yml is detected but no distiller exists", async () => {
+    await withTempDir(async (dir) => {
+      await writeFile(
+        join(dir, ".golangci.yml"),
+        "run:\n  timeout: 5m\n",
+        "utf8",
+      );
+      _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "golangci-lint" });
+      await wireRealDisk();
+
+      const provider = new LintConfigProvider();
+      const result = await provider.fetch(makeRequest({ packageDir: dir, repoRoot: dir }));
+
+      expect(result.chunks).toHaveLength(1);
+      expect(result.chunks[0].content.toLowerCase()).toContain("golangci-lint");
+    });
+  });
+
+  test("AC7/AC8: returns empty chunks when ruff is detected but no config file exists", async () => {
+    await withTempDir(async (dir) => {
+      _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "ruff" });
+      await wireRealDisk();
+
+      const provider = new LintConfigProvider();
+      const result = await provider.fetch(makeRequest({ packageDir: dir, repoRoot: dir }));
+
+      expect(result.chunks).toEqual([]);
+    });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
