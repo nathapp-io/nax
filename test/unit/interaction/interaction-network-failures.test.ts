@@ -521,6 +521,43 @@ describe("WebhookInteractionPlugin - Payload Security", () => {
     await plugin.destroy();
   });
 
+  test("SEC-04: rejects an oversized chunked body with no Content-Length header, aborting before the full body is buffered", async () => {
+    const plugin = new WebhookInteractionPlugin();
+    await plugin.init({ url: "https://example.com/webhook", maxPayloadBytes: 100, requireSecret: false });
+
+    let bytesPulled = 0;
+    const totalChunks = 1000;
+    const chunkSize = 1024; // far more than maxPayloadBytes across the whole stream
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (bytesPulled >= totalChunks * chunkSize) {
+          controller.close();
+          return;
+        }
+        bytesPulled += chunkSize;
+        controller.enqueue(new TextEncoder().encode("x".repeat(chunkSize)));
+      },
+    });
+
+    // duplex: "half" is required by undici/Bun when a body is a stream.
+    const req = new Request("http://localhost:8765/nax/interact/test-id", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: stream,
+      duplex: "half",
+    } as RequestInit & { duplex: string });
+
+    const handleRequest = (plugin as unknown as { handleRequest: (req: Request) => Promise<Response> }) // test-ratchet-allow: as-unknown-as
+      .handleRequest;
+    const response = await handleRequest.call(plugin, req);
+
+    expect(response.status).toBe(413);
+    // The reader must have stopped well before draining the full (megabytes-sized) stream.
+    expect(bytesPulled).toBeLessThan(totalChunks * chunkSize);
+
+    await plugin.destroy();
+  });
+
   test("should reject malformed JSON with sanitized error", async () => {
     const plugin = new WebhookInteractionPlugin();
     await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
