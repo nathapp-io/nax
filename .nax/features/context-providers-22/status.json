@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-08-15T04-48-09-202Z",
+    "feature": "context-providers-22",
+    "startedAt": "2026-08-15T04:48:09.202Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 28364
+  },
+  "progress": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 3.5079466000000017,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 7,
+  "updatedAt": "2026-08-15T07:52:27.733Z",
+  "durationMs": 11058531,
+  "postRun": {
+    "acceptance": {
+      "status": "failed",
+      "failedACs": [
+        "AC-1",
+        "AC-2",
+        "AC-3",
+        "AC-4",
+        "AC-5",
+        "AC-6",
+        "AC-15",
+        "AC-16",
+        "AC-18",
+        "AC-19",
+        "AC-20",
+        "AC-28",
+        "AC-29",
+        "AC-34",
+        "AC-41",
+        "AC-42",
+        "AC-46",
+        "AC-47",
+        "AC-48",
+        "AC-51",
+        "AC-62"
+      ],
+      "retries": 4,
+      "lastRunAt": "2026-08-15T07:51:39.518Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-08-15T07:52:26.504Z"
+    }
+  }
+}

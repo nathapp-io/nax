@@ -12,9 +12,12 @@ import { ContextOrchestrator } from "./orchestrator";
 import { CodeNeighborProvider } from "./providers/code-neighbor";
 import { FeatureContextProviderV2 } from "./providers/feature-context";
 import { GitHistoryProvider } from "./providers/git-history";
+import { LintConfigProvider } from "./providers/lint-config";
+import { PriorRunFailureProvider } from "./providers/prior-run-failure";
 import { SessionScratchProvider } from "./providers/session-scratch";
 import { StaticRulesProvider } from "./providers/static-rules";
 import { TestCoverageProvider } from "./providers/test-coverage";
+import { ToolDiagnosticsProvider } from "./providers/tool-diagnostics";
 import type { IContextProvider } from "./types";
 
 /**
@@ -62,6 +65,21 @@ export function createDefaultOrchestrator(
   // "session-scratch" pass AC-16 validation. It returns empty chunks when
   // request.storyScratchDirs is empty (verify/rectify stages supply dirs).
   providers.push(new SessionScratchProvider());
+  // US-002: ToolDiagnosticsProvider is always registered so stage-config references
+  // to "tool-diagnostics" pass AC-16 validation. It returns empty chunks when
+  // no scratch dir contains tool-diagnostics entries (defensive read).
+  providers.push(new ToolDiagnosticsProvider());
+  // US-003: PriorRunFailureProvider is always registered so the rectify stage's
+  // stage-config reference to "prior-run-failure" resolves. It reads
+  // <request.repoRoot>/metrics.json; returns empty chunks when no prior
+  // failure is recorded for request.storyId (defensive read).
+  providers.push(new PriorRunFailureProvider());
+  // US-004: LintConfigProvider is always registered so the rectify stage's
+  // stage-config reference to "lint-config" resolves. It detects the lint
+  // tool from <request.packageDir> via the public detectProjectProfile and
+  // emits one project-scope chunk; returns empty chunks when no lint tool
+  // is detectable or the source file is unreadable (defensive read).
+  providers.push(new LintConfigProvider());
   // Phase 3: git history and code neighbors (always registered; active only when
   // request.touchedFiles is non-empty and the stage includes these provider IDs)
   // #507: scope is read from config so operators can tune for monorepo setups.

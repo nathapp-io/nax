@@ -53,6 +53,15 @@ export interface BuildHopCallbackContext {
   contextToolRunCounter?: RunCallCounter;
   pipelineStage?: import("../config/permissions").PipelineStage;
   /**
+   * Story scratch directories (US-005). Threaded from the stage-assembly
+   * path (PipelineContext.storyScratchDirs) so the pull-tool runtime's
+   * query_scratch handler reads the same set of session data as the push
+   * providers (SessionScratchProvider / ToolDiagnosticsProvider). Absent /
+   * empty disables the scratch handler (it returns a no-entries message on
+   * its own — never throws).
+   */
+  storyScratchDirs?: string[];
+  /**
    * Optional interaction bridge for mid-session human Q&A. Forwarded to
    * `buildRunInteractionHandler` so the agent can ask questions during a hop.
    */
@@ -108,6 +117,7 @@ export function buildHopCallback(
     effectiveTier,
     defaultAgent,
     contextToolRunCounter,
+    storyScratchDirs,
     pipelineStage,
     interactionBridge,
     maxInteractionTurns,
@@ -219,6 +229,13 @@ export function buildHopCallback(
           repoRoot: workdir,
           runCounter: runCounterForHops,
           sessionBudgets: sessionToolBudgets,
+          // US-005: thread the requesting agent so query_scratch neutralizes
+          // tool references for the actual reader (AC10), not story.id.
+          agentId: agentName,
+          // US-005: thread the story scratch dirs the stage-assembly path
+          // resolved, so query_scratch reads the same data the push
+          // providers (SessionScratchProvider / ToolDiagnosticsProvider) read.
+          ...(storyScratchDirs?.length ? { storyScratchDirs } : {}),
         })
       : undefined;
     const contextPullTools = workingBundle?.pullTools;

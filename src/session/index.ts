@@ -20,3 +20,14 @@ export type {
   NameForRequest,
 } from "./types";
 export { SESSION_TRANSITIONS } from "./types";
+// Re-export scratch-writer so callers can use `@/session/scratchFilePath` /
+// `@/session/ScratchEntry` instead of reaching into the internal path.
+export { scratchFilePath, appendScratchEntry, readDigestFile, writeDigestFile, digestFilePath } from "./scratch-writer";
+export type {
+  ScratchEntry,
+  VerifyScratchEntry,
+  RectifyScratchEntry,
+  TddSessionScratchEntry,
+  SelfVerificationScratchEntry,
+  ToolDiagnosticsScratchEntry,
+} from "./scratch-writer";

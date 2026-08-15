@@ -1,9 +1,13 @@
-import { describe, expect, test } from "bun:test";
-import { contextToolRuntimeConfigSelector } from "../../../../src/config";
-import type { ContextToolRuntimeConfig } from "../../../../src/config/selectors";
-import { createContextToolRuntime, createSessionToolBudgets } from "../../../../src/context/engine";
-import type { ContextBundle } from "../../../../src/context/engine";
-import { makeNaxConfig } from "../../../helpers/mock-nax-config";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { contextToolRuntimeConfigSelector } from "@/config";
+import type { ContextToolRuntimeConfig } from "@/config/selectors";
+import { createContextToolRuntime, createSessionToolBudgets } from "@/context/engine";
+import type { ContextBundle } from "@/context/engine";
+import { appendScratchEntry, scratchFilePath } from "@/session";
+import type { ScratchEntry } from "@/session";
+import { cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 describe("createContextToolRuntime — slice acceptance", () => {
   test("contextToolRuntimeConfigSelector picks context, execution, project, quality", () => {
@@ -127,5 +131,162 @@ describe("createContextToolRuntime — session-scoped pull budget", () => {
       threw = e;
     }
     expect(threw).toMatchObject({ code: "PULL_TOOL_UNKNOWN" });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-005: query_scratch runtime dispatch (AC11/AC12 require rectify and
+// execution stages to declare query_scratch in pullToolNames; this block
+// exercises the runtime dispatch wiring for the same.)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("createContextToolRuntime — query_scratch dispatch", () => {
+  const story = { id: "US-005", workdir: "" } as Parameters<typeof createContextToolRuntime>[0]["story"];
+
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = makeTempDir("nax-tool-runtime-scratch-");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tmpDir);
+  });
+
+  function makeBundleWithQueryScratch(maxCallsPerSession = 5): ContextBundle {
+    return {
+      pushMarkdown: "",
+      pullTools: [
+        {
+          name: "query_scratch",
+          description: "test scratch tool",
+          inputSchema: {
+            type: "object",
+            properties: { kind: { type: "string" }, limit: { type: "number" } },
+            required: [],
+          },
+          maxCallsPerSession,
+          maxTokensPerCall: 100,
+        },
+      ],
+      digest: "",
+      manifest: {
+        requestId: "test",
+        stage: "test",
+        totalBudgetTokens: 0,
+        usedTokens: 0,
+        includedChunks: [],
+        excludedChunks: [],
+        floorItems: [],
+        digestTokens: 0,
+        buildMs: 0,
+      },
+      chunks: [],
+    };
+  }
+
+  async function writeScratch(dir: string, entries: ScratchEntry[]): Promise<string> {
+    await mkdir(dir, { recursive: true });
+    for (const entry of entries) {
+      await appendScratchEntry(dir, entry);
+    }
+    return scratchFilePath(dir);
+  }
+
+  test("dispatches query_scratch to handleQueryScratch with the story's scratch dir", async () => {
+    const scratchDir = join(tmpDir, "sess-runtime");
+    await writeScratch(scratchDir, [
+      {
+        kind: "verify-result",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        storyId: "US-005",
+        stage: "verify",
+        success: false,
+        status: "TEST_FAILURE",
+        passCount: 0,
+        failCount: 1,
+        rawOutputTail: "runtime-dispatch",
+      },
+    ]);
+
+    const runtime = createContextToolRuntime({
+      bundle: makeBundleWithQueryScratch(),
+      story,
+      config: RUNTIME_CONFIG,
+      repoRoot: "/tmp",
+      storyScratchDirs: [scratchDir],
+    });
+
+    const result = await runtime?.callTool("query_scratch", {});
+    expect(typeof result).toBe("string");
+    expect(result).toContain("runtime-dispatch");
+  });
+
+  test("threads the requesting agent so cross-agent scratch is neutralized (AC10)", async () => {
+    const scratchDir = join(tmpDir, "sess-neutralize");
+    await writeScratch(scratchDir, [
+      {
+        kind: "verify-result",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        storyId: "US-005",
+        stage: "verify",
+        success: false,
+        status: "TEST_FAILURE",
+        passCount: 0,
+        failCount: 1,
+        rawOutputTail: "I used the Read tool to inspect the failure.",
+        writtenByAgent: "claude",
+      },
+    ]);
+
+    const runtime = createContextToolRuntime({
+      bundle: makeBundleWithQueryScratch(),
+      story,
+      config: RUNTIME_CONFIG,
+      repoRoot: "/tmp",
+      storyScratchDirs: [scratchDir],
+      agentId: "codex",
+    });
+
+    const result = await runtime?.callTool("query_scratch", {});
+    expect(result).not.toContain("the Read tool");
+    expect(result).toContain("a file read");
+  });
+
+  test("invocations past the per-session ceiling are rejected via the existing pull-tool budget", async () => {
+    const scratchDir = join(tmpDir, "sess-budget");
+    await writeScratch(scratchDir, [
+      {
+        kind: "verify-result",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        storyId: "US-005",
+        stage: "verify",
+        success: true,
+        status: "PASS",
+        passCount: 1,
+        failCount: 0,
+        rawOutputTail: "ok",
+      },
+    ]);
+
+    // Force a fresh budget per invocation (no session registry) — each runtime
+    // resets sessionCalls. To exercise the runtime's own budget gate, set
+    // maxCallsPerSession=1 and call twice from the same runtime.
+    const runtime = createContextToolRuntime({
+      bundle: makeBundleWithQueryScratch(1),
+      story,
+      config: RUNTIME_CONFIG,
+      repoRoot: "/tmp",
+      storyScratchDirs: [scratchDir],
+    });
+    await runtime?.callTool("query_scratch", {});
+
+    let threw: unknown;
+    try {
+      await runtime?.callTool("query_scratch", {});
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toMatchObject({ code: "PULL_TOOL_BUDGET_EXHAUSTED" });
   });
 });

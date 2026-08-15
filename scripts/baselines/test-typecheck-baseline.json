@@ -1,6 +1,6 @@
 {
   "count": 2013,
-  "updatedAt": "2026-08-14T13:45:36.370Z",
+  "updatedAt": "2026-08-15T08:03:03.689Z",
   "byFile": {
     "test/helpers/deps.ts": 2,
     "test/helpers/fake-agent-manager.ts": 3,

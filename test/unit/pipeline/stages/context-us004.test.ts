@@ -233,7 +233,14 @@ describe("contextStage — written manifest reflects lower weight (AC8)", () => 
     // throws CONTEXT_UNKNOWN_PROVIDER_IDS for any allowlisted ID that has no
     // registered provider. Register empty stubs for the rest so only
     // "code-neighbor" contributes chunks.
-    const emptyProviderIds = ["static-rules", "feature-context", "session-scratch", "git-history", "test-coverage"];
+    const emptyProviderIds = [
+      "static-rules",
+      "feature-context",
+      "session-scratch",
+      "git-history",
+      "test-coverage",
+      "tool-diagnostics", // US-002: registered in PHASE_3_EXECUTION
+    ];
     const emptyProviders: IContextProvider[] = emptyProviderIds.map((id) => ({
       id,
       kind: "static",

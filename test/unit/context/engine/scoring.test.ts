@@ -60,6 +60,20 @@ describe("scoreChunk", () => {
     expect(result.score).toBeCloseTo(0.7);
   });
 
+  test("AC3: diagnostics kind: kindWeight=0.95", () => {
+    const chunk = makeChunk({ role: ["implementer"], rawScore: 1.0, kind: "diagnostics" });
+    const result = scoreChunk(chunk, "implementer");
+    // roleMultiplier=1.0, kindWeight=0.95, freshness=1.0
+    expect(result.score).toBeCloseTo(0.95);
+  });
+
+  test("AC4: session kind: kindWeight=0.9", () => {
+    const chunk = makeChunk({ role: ["implementer"], rawScore: 1.0, kind: "session" });
+    const result = scoreChunk(chunk, "implementer");
+    // roleMultiplier=1.0, kindWeight=0.9, freshness=1.0
+    expect(result.score).toBeCloseTo(0.9);
+  });
+
   test("staleness penalty: halves the score", () => {
     const chunk = makeChunk({ role: ["implementer"], rawScore: 1.0, kind: "feature" });
     // Pass minScore=MIN_SCORE explicitly, stale as 4th arg

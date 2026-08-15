@@ -129,8 +129,15 @@ async function readScratchDir(
   const allEntries = parseJsonl(raw);
   if (allEntries.length === 0) return null;
 
+  // US-001: filter tool-diagnostics entries BEFORE the recency cap so a flood of
+  // diagnostic entries can't evict the verify-result / rectify-attempt entries a
+  // rectifier actually needs. Diagnostics are surfaced via the dedicated
+  // ToolDiagnosticsProvider / query_scratch, not this push-style session chunk.
+  const renderableEntries = allEntries.filter((e) => e.kind !== "tool-diagnostics");
+  if (renderableEntries.length === 0) return null;
+
   // Take most recent N entries (tail of the JSONL)
-  const entries = allEntries.slice(-MAX_ENTRIES_PER_DIR);
+  const entries = renderableEntries.slice(-MAX_ENTRIES_PER_DIR);
   const content = entries.map((e) => renderEntry(e, targetAgentId, ignoreMatchers)).join("\n\n");
 
   // Truncate content to the token ceiling so the reported token count

@@ -81,15 +81,24 @@ const PHASE_3_TDD_TEST_WRITER = [...PHASE_1_PROVIDERS, "code-neighbor"];
 const PHASE_3_TDD_IMPLEMENTER = [...PHASE_1_PROVIDERS, "git-history", "code-neighbor", "test-coverage"];
 
 /**
- * Phase 3 providers for execution stage — same as tdd-implementer.
+ * Phase 3 providers for execution stage — same as tdd-implementer, plus
+ * US-002 tool-diagnostics so the implementer sees authoritative lint/typecheck
+ * output when retrying after a quality failure.
  */
-const PHASE_3_EXECUTION = [...PHASE_1_PROVIDERS, "git-history", "code-neighbor", "test-coverage"];
+const PHASE_3_EXECUTION = [...PHASE_1_PROVIDERS, "git-history", "code-neighbor", "test-coverage", "tool-diagnostics"];
 
 /**
  * Phase 3 providers for rectify — code neighbors help the agent understand
  * the import graph when fixing failures; git history omitted (less relevant).
+ * US-002 adds tool-diagnostics so the rectifier gets authoritative
+ * lint/typecheck provenance instead of relying on agent self-reports.
+ * US-003 adds prior-run-failure so the rectifier sees this story's historic
+ * failed attempts and failing test files before retrying.
+ * US-004 adds lint-config so the rectifier retrying a lint failure has the
+ * package's lint settings — distilling the most retry-loop-relevant fields
+ * (e.g. biome indentWidth) — without re-discovering the linter.
  */
-const PHASE_3_RECTIFY = [...PHASE_1_PROVIDERS, "code-neighbor"];
+const PHASE_3_RECTIFY = [...PHASE_1_PROVIDERS, "code-neighbor", "tool-diagnostics", "prior-run-failure", "lint-config"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage map
@@ -120,6 +129,10 @@ export const STAGE_CONTEXT_MAP: Record<string, StageContextConfig> = {
     role: "implementer",
     budgetTokens: 12_000,
     providerIds: PHASE_3_EXECUTION,
+    // US-005 AC12: query_scratch lets the implementer re-read the prior
+    // verify-result / tool-diagnostics record on retry without flooding
+    // push context. Shared query_neighbor for cross-package import lookups.
+    pullToolNames: ["query_neighbor", "query_scratch"],
   },
 
   // TDD sub-sessions — each gets implementer role, moderate budget
@@ -153,7 +166,10 @@ export const STAGE_CONTEXT_MAP: Record<string, StageContextConfig> = {
     role: "implementer",
     budgetTokens: 8_000,
     providerIds: PHASE_3_RECTIFY,
-    pullToolNames: ["query_neighbor"],
+    // US-005 AC11: query_scratch lets the rectifier read the prior
+    // verify-result + tool-diagnostics record on demand instead of triaging
+    // blind. Shared query_neighbor for cross-package import lookups.
+    pullToolNames: ["query_neighbor", "query_scratch"],
   },
 
   // Review — reviewer role, sees reviewer-tagged chunks

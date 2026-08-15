@@ -13,7 +13,13 @@ import type { UserStory } from "@/prd";
 import { resolveTestFilePatterns } from "@/test-runners";
 import type { ResolvedTestPatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
-import { PullToolBudget, createRunCallCounter, handleQueryFeatureContext, handleQueryNeighbor } from "./pull-tools";
+import {
+  PullToolBudget,
+  createRunCallCounter,
+  handleQueryFeatureContext,
+  handleQueryNeighbor,
+  handleQueryScratch,
+} from "./pull-tools";
 import type { RunCallCounter } from "./pull-tools";
 import type { ContextBundle, ToolDescriptor } from "./types";
 
@@ -55,6 +61,21 @@ export function createContextToolRuntime(options: {
    * Omitted (tests, one-shot callers) means this runtime gets its own allowance.
    */
   sessionBudgets?: SessionToolBudgets;
+  /**
+   * Story scratch directories (US-005). Threaded through from the
+   * stage-assembly path so the query_scratch pull-tool handler reads the
+   * same session data as the push-style SessionScratchProvider /
+   * ToolDiagnosticsProvider. Absent / empty disables the scratch handler
+   * (it returns a no-entries message on its own — never throws).
+   */
+  storyScratchDirs?: string[];
+  /**
+   * Agent id of the requester (the agent invoking the pull tools). Threaded
+   * from buildHopCallback's hop agent so query_scratch neutralizes
+   * agent-specific tool references for the actual reader (AC-42 / US-005 AC10)
+   * instead of the handler's story.id default.
+   */
+  agentId?: string;
 }): ContextToolRuntime | undefined {
   const { bundle, story, config, repoRoot } = options;
   if (bundle.pullTools.length === 0) return undefined;
@@ -125,6 +146,15 @@ export function createContextToolRuntime(options: {
             repoRoot,
             getBudget(tool),
             tool.maxTokensPerCall,
+          );
+        case "query_scratch":
+          return handleQueryScratch(
+            input as { kind?: string; limit?: number },
+            story,
+            options.storyScratchDirs ?? [],
+            getBudget(tool),
+            tool.maxTokensPerCall,
+            options.agentId ? { targetAgent: options.agentId } : {},
           );
         default:
           throw new NaxError(`No runtime handler for context tool: ${name}`, "PULL_TOOL_NO_HANDLER", {

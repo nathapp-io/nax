@@ -5,6 +5,9 @@
  * QUERY_FEATURE_CONTEXT_DESCRIPTOR, and handleQueryFeatureContext.
  * Filesystem calls are intercepted via _codeNeighborDeps injection.
  * Feature context reads are intercepted via _featureContextV2Deps injection.
+ *
+ * The query_scratch descriptor and handler live in `./query-scratch.test.ts`
+ * (US-005) so this file stays under the 800-line test file hard limit.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";

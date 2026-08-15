@@ -1,0 +1,464 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When parseDiagnostics is called with a successful QualityCommandResult and tool name `tsc`, then it returns an array.",
+    "refined": "assert(Array.isArray(parseDiagnostics(tscOutput, 'tsc')))",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When parseDiagnostics receives a tsc error for `src/a.ts` at line 12, then it returns one Diagnostic with file `src/a.ts`, line 12, and severity `error`.",
+    "refined": "const result = parseDiagnostics('src/a.ts(12,1): error TS2304: Missing}', 'tsc'); assert(result.length === 1); assert(result[0].file === 'src/a.ts'); assert(result[0].line === 12); assert(result[0].severity === 'error')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When parseDiagnostics receives a biome diagnostic naming a rule, then it returns one Diagnostic whose rule equals that rule name.",
+    "refined": "const result = parseDiagnostics('{\"severity\":\"error\",\"rule\":\"no-empty\"}', 'biome'); assert(result.length === 1); assert(result[0].rule === 'no-empty')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When parseDiagnostics receives non-empty output for `unknown-linter`, then it returns exactly one Diagnostic with non-empty message and tool `unknown-linter`.",
+    "refined": "const result = parseDiagnostics('some raw output from unknown tool', 'unknown-linter'); assert(result.length === 1); assert(result[0].message.length > 0); assert(result[0].tool === 'unknown-linter')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When parseDiagnostics receives unknown-linter output longer than its bounded tail limit, then its one Diagnostic message length does not exceed that limit.",
+    "refined": "const longOutput = 'x'.repeat(BOUNDED_TAIL_LIMIT + 1000); const result = parseDiagnostics(longOutput, 'unknown-linter'); assert(result.length === 1); assert(result[0].message.length <= BOUNDED_TAIL_LIMIT)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When parseDiagnostics receives a successful QualityCommandResult with empty output, then it returns an empty array.",
+    "refined": "const result = parseDiagnostics('', 'tsc'); assert(result.length === 0)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When appendScratchEntry receives a tool-diagnostics entry with timestamp, storyId, and diagnostics, then it resolves without error.",
+    "refined": "const entry = { kind: 'tool-diagnostics', timestamp: 1700000000000, storyId: 'story-1', diagnostics: [] }; await expect(appendScratchEntry('/tmp/scratch', entry)).resolves.toBeUndefined()",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When a tool-diagnostics entry is appended and its scratch file is read back, then the persisted entry has kind `tool-diagnostics` and the same diagnostics-array length.",
+    "refined": "const entry = { kind: 'tool-diagnostics', timestamp: 1700000000000, storyId: 's1', diagnostics: [{file:'a.ts',line:1,severity:'error'}] }; await appendScratchEntry(scratchDir, entry); const lines = await readFileScratch(scratchDir); const parsed = JSON.parse(lines[lines.length-1]); assert(parsed.kind === 'tool-diagnostics'); assert(parsed.diagnostics.length === 1)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When SessionScratchProvider renders a scratch dir containing tool-diagnostics and verify-result entries, then its chunk includes the verify text and excludes the literal `tool-diagnostics`.",
+    "refined": "const scratchDir = createScratchWithEntries([{kind:'tool-diagnostics'},{kind:'verify-result',text:'All checks passed'}]); const provider = new SessionScratchProvider(scratchDir); const output = provider.getContent(); assert(output.includes('All checks passed')); assert(!output.includes('tool-diagnostics'))",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When a scratch dir contains 25 tool-diagnostics entries followed by one verify-result entry, then SessionScratchProvider output includes the verify text.",
+    "refined": "const entries = Array.from({length:25},()=>({kind:'tool-diagnostics'})).concat([{kind:'verify-result',text:'PASS'}); const scratchDir = createScratchWithEntries(entries); const provider = new SessionScratchProvider(scratchDir); assert(provider.getContent().includes('PASS'))",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When a lint or typecheck command returns a non-zero exitCode, then a tool-diagnostics entry is appended to the story scratch dir.",
+    "refined": "await runStory({ lintCommand: {cmd:'biome',args:['check'],exitCode:1,stdout:'error'} }); const scratchEntries = await readScratchFile(storyDir); assert(scratchEntries.some(e => e.kind === 'tool-diagnostics'))",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When appending a tool-diagnostics entry throws, then surrounding execution completes and reports success.",
+    "refined": "mock(appendScratchEntry).rejects(new Error('disk full')); const result = await runStory({lintCommand:{cmd:'biome',args:[],exitCode:1}}); assert(result.status === 'success' || result.exitCode === 0)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When ToolDiagnosticsProvider is constructed with no arguments, then construction succeeds.",
+    "refined": "new ToolDiagnosticsProvider() does not throw; returns instance with id and kind properties defined",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When a ToolDiagnosticsProvider is constructed, then its id is `tool-diagnostics` and kind is `diagnostics`.",
+    "refined": "const provider = new ToolDiagnosticsProvider(); expect(provider.id).toBe('tool-diagnostics'); expect(provider.kind).toBe('diagnostics')",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When scoreChunk scores a diagnostics chunk, then it applies kind weight 0.95.",
+    "refined": "const chunk = { kind: 'diagnostics', content: '{\"tool\":\"tsc\",\"diagnostics\":[]}', tokens: 25 }; expect(KIND_WEIGHTS['diagnostics']).toBe(0.95); expect(scoreChunk(chunk)).toBe(0.95)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When scoreChunk scores a session chunk, then it applies kind weight 0.9.",
+    "refined": "const chunk = { kind: 'session', content: 'summary', tokens: 10 }; expect(KIND_WEIGHTS['session']).toBe(0.9); expect(scoreChunk(chunk)).toBe(0.9)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When ToolDiagnosticsProvider.fetch receives no storyScratchDirs, then it returns empty chunks.",
+    "refined": "const provider = new ToolDiagnosticsProvider(); const result = provider.fetch({ storyScratchDirs: [] }); expect(result.chunks).toEqual([])",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When ToolDiagnosticsProvider.fetch names a nonexistent scratch dir, then it returns empty chunks without throwing.",
+    "refined": "const provider = new ToolDiagnosticsProvider(); expect(() => provider.fetch({ storyScratchDirs: ['/nonexistent/path/abc123'] })).not.toThrow(); const result = provider.fetch({ storyScratchDirs: ['/nonexistent/path/abc123'] }); expect(result.chunks).toEqual([])",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When a scratch JSONL contains one malformed line and one valid tool-diagnostics entry, then fetch returns one chunk.",
+    "refined": "Write temp file with '{ invalid json' + newline + '{\"kind\":\"tool-diagnostics\",\"file\":\"tsconfig.json\",\"diagnostics\":[]}'; provider.fetch({ storyScratchDirs: [tempDir] }); expect(result.chunks.length).toBe(1)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When fetch reads two tool-diagnostics entries from a real scratch directory, then combined chunk content names both diagnostic files.",
+    "refined": "Write file1.jsonl with {\"kind\":\"tool-diagnostics\",\"file\":\"tsconfig.json\",\"diagnostics\":[]} and file2.jsonl with {\"kind\":\"tool-diagnostics\",\"file\":\"src/index.ts\",\"diagnostics\":[]}; provider.fetch({ storyScratchDirs: [tempDir] }); expect(result.chunks[0].content).toContain('tsconfig.json'); expect(result.chunks[0].content).toContain('src/index.ts')",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When a scratch dir contains only verify-result entries, then fetch returns empty chunks.",
+    "refined": "Write temp file with only {\"kind\":\"verify-result\",\"passed\":true}; provider.fetch({ storyScratchDirs: [tempDir] }); expect(result.chunks).toEqual([])",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When fetch returns a chunk, then that chunk has kind diagnostics, scope session, and tokens greater than zero.",
+    "refined": "Write valid tool-diagnostics entry; provider.fetch({ storyScratchDirs: [tempDir] }); expect(result.chunks[0].kind).toBe('diagnostics'); expect(result.chunks[0].scope).toBe('session'); expect(result.chunks[0].tokens).toBeGreaterThan(0)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When createDefaultOrchestrator is built, then its providers include id `tool-diagnostics`.",
+    "refined": "const orchestrator = createDefaultOrchestrator(); expect(orchestrator.providers.some(p => p.id === 'tool-diagnostics')).toBe(true)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When rectify stage context config is resolved, then providerIds includes `tool-diagnostics`.",
+    "refined": "const config = resolveContextConfig('rectify'); expect(config.providerIds).toContain('tool-diagnostics')",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When execution stage context config is resolved, then providerIds includes `tool-diagnostics`.",
+    "refined": "const config = resolveContextConfig('execution'); expect(config.providerIds).toContain('tool-diagnostics')",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When PriorRunFailureProvider is constructed with no arguments, then construction succeeds.",
+    "refined": "Calling `new PriorRunFailureProvider()` with no arguments does not throw and returns an instance with `id` and `kind` properties defined.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When a PriorRunFailureProvider is constructed, then its id is `prior-run-failure` and kind is `prior-failure`.",
+    "refined": "`expect(new PriorRunFailureProvider().id).toBe('prior-run-failure')` AND `expect(new PriorRunFailureProvider().kind).toBe('prior-failure')` both pass.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When scoreChunk scores a prior-failure chunk, then it applies kind weight 0.85.",
+    "refined": "Calling `scoreChunk({ kind: 'prior-failure', content: '...', scope: 'story' })` returns an object where `weight === 0.85`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When fetch finds no metrics file at request.repoRoot, then it returns empty chunks without throwing.",
+    "refined": "`await provider.fetch({ storyId: 'story-1', repoRoot: '/path/with/no/metrics.json' })` resolves to `{ chunks: [] }` and does not reject or throw.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When metrics records request.storyId as failed in a prior run, then fetch returns one chunk naming that story ID.",
+    "refined": "With a temp metrics.json containing `{ stories: [{ storyId: 'story-1', success: false, attempts: 1 }] }`, calling `fetch({ storyId: 'story-1', repoRoot: tmpDir })` returns `{ chunks: [{ kind: 'prior-failure', scope: 'story', content: expect.stringContaining('story-1') }] }` with exactly one chunk.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When a requested story failed with two failingTestFiles, then its returned chunk names both files.",
+    "refined": "With a temp metrics.json containing `{ stories: [{ storyId: 'story-1', success: false, attempts: 1, failingTestFiles: ['src/foo.test.ts', 'src/bar.test.ts'] }] }`, the returned chunk's `content` string includes both 'src/foo.test.ts' and 'src/bar.test.ts'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When metrics never records the requested story as failed, then fetch returns empty chunks.",
+    "refined": "With a temp metrics.json containing `{ stories: [{ storyId: 'story-2', success: false, attempts: 1 }] }`, calling `fetch({ storyId: 'story-1', repoRoot: tmpDir })` returns `{ chunks: [] }`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When metrics records a failure only for a different story ID, then fetch returns empty chunks.",
+    "refined": "With a temp metrics.json containing `{ stories: [{ storyId: 'story-other', success: false, attempts: 1 }] }`, calling `fetch({ storyId: 'story-1', repoRoot: tmpDir })` returns `{ chunks: [] }`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When metrics.json is invalid JSON, then fetch returns empty chunks without throwing.",
+    "refined": "With a temp file at `<tmpDir>/metrics.json` containing invalid JSON (e.g., `{ invalid`), calling `fetch({ storyId: 'story-1', repoRoot: tmpDir })` resolves to `{ chunks: [] }` and does not throw.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-35",
+    "original": "When metrics records the requested story as failed in two runs, then its chunk reports the attempt count from both.",
+    "refined": "With a temp metrics.json containing two entries for story-1: `{ stories: [{ storyId: 'story-1', success: false, attempts: 2 }, { storyId: 'story-1', success: false, attempts: 3 }] }`, the returned chunk's `content` reports total attempt count of 5 (or sum of both attempts).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-36",
+    "original": "When fetch returns a chunk, then it has kind prior-failure and scope story.",
+    "refined": "Every chunk in the returned array has `kind === 'prior-failure'` and `scope === 'story'`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-37",
+    "original": "When createDefaultOrchestrator is built, then its providers include id `prior-run-failure`.",
+    "refined": "`expect(createDefaultOrchestrator().providers.some(p => p.id === 'prior-run-failure')).toBe(true)` passes.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-38",
+    "original": "When rectify stage context config is resolved, then providerIds includes `prior-run-failure`.",
+    "refined": "Resolving context config for the 'rectify' stage returns a config object where `config.providerIds` is an array containing `'prior-run-failure'`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-39",
+    "original": "When LintConfigProvider is constructed with no arguments, then construction succeeds.",
+    "refined": "new LintConfigProvider() does not throw and returns an object with id === 'lint-config' and kind === 'lint-config'",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-40",
+    "original": "When a LintConfigProvider is constructed, then its id is `lint-config` and kind is `lint-config`.",
+    "refined": "const p = new LintConfigProvider(); expect(p.id).toBe('lint-config'); expect(p.kind).toBe('lint-config');",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-41",
+    "original": "When scoreChunk scores a lint-config chunk, then it applies kind weight 0.8.",
+    "refined": "const score = scoreChunk({ kind: 'lint-config' }); expect(score.kindWeight).toBe(0.8);",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-42",
+    "original": "When scoreChunk scores a static chunk, then it applies kind weight 1.0.",
+    "refined": "const score = scoreChunk({ kind: 'static' }); expect(score.kindWeight).toBe(1.0);",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-43",
+    "original": "When fetch reads a package containing biome.json, then it returns one chunk naming biome.",
+    "refined": "With biome.json in request.packageDir, expect(fetch(request).chunks.length).toBe(1); expect(chunks[0].tool).toBe('biome');",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-44",
+    "original": "When biome.json sets an indent width, then the returned chunk reports that indent width.",
+    "refined": "With biome.json containing { \"indentWidth\": 4 }, expect(chunks[0].indentWidth).toBe(4);",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-45",
+    "original": "When a package uses detected lint configuration without a distiller, then fetch returns a chunk naming the detected tool.",
+    "refined": "When no distiller exists for the detected tool, expect(fetch(request).chunks.length).toBe(1); expect(chunks[0].tool).toBe(detectedTool);",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-46",
+    "original": "When a package has no lint configuration source file, then fetch returns empty chunks without throwing.",
+    "refined": "When no lint config file exists in packageDir, expect(() => fetch(request)).not.toThrow(); expect(fetch(request).chunks).toEqual([]);",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-47",
+    "original": "When no lint tool is detectable for a package, then fetch returns empty chunks without throwing.",
+    "refined": "When detectProjectProfile returns null/undefined for lintTool, expect(() => fetch(request)).not.toThrow(); expect(fetch(request).chunks).toEqual([]);",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-48",
+    "original": "When the detected lint config file is malformed, then fetch returns a chunk naming the tool without throwing.",
+    "refined": "When lint config file contains invalid JSON, expect(() => fetch(request)).not.toThrow(); expect(fetch(request).chunks.length).toBe(1); expect(chunks[0].tool).toBe(detectedTool);",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-49",
+    "original": "When fetch returns a chunk, then it has kind lint-config and scope project.",
+    "refined": "For any chunk returned by fetch, expect(chunk.kind).toBe('lint-config'); expect(chunk.scope).toBe('project');",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-50",
+    "original": "When packageDir contains lint config but repoRoot does not, then fetch returns one chunk.",
+    "refined": "With lint config present in packageDir but absent in repoRoot, expect(fetch(request).chunks.length).toBe(1);",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-51",
+    "original": "When detectProjectProfile is stubbed, then fetch invokes it with request.packageDir.",
+    "refined": "detectProjectProfile is called with (request.packageDir, existingProfiles) where existingProfiles is the second argument passed to fetch",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-52",
+    "original": "When createDefaultOrchestrator is built, then its providers include id `lint-config`.",
+    "refined": "const orchestrator = createDefaultOrchestrator(); expect(orchestrator.providers.some(p => p.id === 'lint-config')).toBe(true);",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-53",
+    "original": "When rectify stage context config is resolved, then providerIds includes `lint-config`.",
+    "refined": "const config = resolveContextConfig('rectify'); expect(config.providerIds).toContain('lint-config');",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-54",
+    "original": "When execution stage context config is resolved, then providerIds does not include `lint-config`.",
+    "refined": "const config = resolveContextConfig('execution'); expect(config.providerIds).not.toContain('lint-config');",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-55",
+    "original": "When PULL_TOOL_REGISTRY is read, then it contains query_scratch whose descriptor name is query_scratch.",
+    "refined": "When PULL_TOOL_REGISTRY is read, then it contains query_scratch whose descriptor name is query_scratch.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-56",
+    "original": "When the query_scratch descriptor inputSchema is read, then its type is object and it has no top-level oneOf or anyOf.",
+    "refined": "When the query_scratch descriptor inputSchema is read, then its type is object and it has no top-level oneOf or anyOf.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-57",
+    "original": "When the query_scratch descriptor inputSchema is read, then it declares optional kind and limit properties and has an empty or absent required list.",
+    "refined": "When the query_scratch descriptor inputSchema is read, then it declares optional kind and limit properties and has an empty or absent required list.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-58",
+    "original": "When the query_scratch descriptor is read, then maxCallsPerSession equals DEFAULT_MAX_CALLS_PER_SESSION.",
+    "refined": "When the query_scratch descriptor is read, then maxCallsPerSession equals DEFAULT_MAX_CALLS_PER_SESSION.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-59",
+    "original": "When callTool invokes query_scratch for a story with one verify-result entry, then it returns a non-empty string naming that entry outcome.",
+    "refined": "When callTool invokes query_scratch for a story with one verify-result entry, then it returns a non-empty string naming that entry outcome.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-60",
+    "original": "When query_scratch is invoked with kind tool-diagnostics against diagnostics and verify entries, then it names the diagnostic and excludes the verify entry.",
+    "refined": "When query_scratch is invoked with kind tool-diagnostics against diagnostics and verify entries, then it names the diagnostic and excludes the verify entry.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-61",
+    "original": "When query_scratch is invoked with limit 1 against three entries, then it returns content naming exactly one entry.",
+    "refined": "When query_scratch is invoked with limit 1 against three entries, then it returns content naming exactly one entry.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-62",
+    "original": "When query_scratch is invoked for a story with no scratch dir, then it returns a no-entries message without throwing.",
+    "refined": "When query_scratch is invoked for a story with no scratch dir, then it returns a no-entries message without throwing.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-63",
+    "original": "When query_scratch is invoked with a kind unused by every entry, then it returns a no-entries message.",
+    "refined": "When query_scratch is invoked with a kind unused by every entry, then it returns a no-entries message.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-64",
+    "original": "When query_scratch returns scratch content written by another agent, then agent-specific tool references are neutralized for the requesting agent.",
+    "refined": "When query_scratch returns scratch content written by another agent, then agent-specific tool references are neutralized for the requesting agent.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-65",
+    "original": "When rectify stage context config is resolved, then pullToolNames includes query_scratch.",
+    "refined": "When rectify stage context config is resolved, then pullToolNames includes query_scratch.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-66",
+    "original": "When execution stage context config is resolved, then pullToolNames includes query_scratch.",
+    "refined": "When execution stage context config is resolved, then pullToolNames includes query_scratch.",
+    "testable": true,
+    "storyId": "US-005"
+  }
+]

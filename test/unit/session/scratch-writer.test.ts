@@ -263,3 +263,83 @@ describe("readDigestFile", () => {
     expect(result).toBe(digest);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-001 AC7 + AC8: tool-diagnostics scratch entry persistence
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("appendScratchEntry — US-001 tool-diagnostics entry", () => {
+  const TOOL_DIAGNOSTICS_ENTRY: ScratchEntry = {
+    kind: "tool-diagnostics",
+    timestamp: "2026-01-01T00:00:00.000Z",
+    storyId: "US-001",
+    diagnostics: [
+      { file: "src/a.ts", line: 12, severity: "error", message: "Cannot find name 'foo'.", tool: "tsc" },
+      { file: "src/b.ts", line: 7, severity: "error", message: "Second error.", tool: "tsc" },
+    ],
+  };
+
+  test("AC7: appendScratchEntry with tool-diagnostics entry resolves without error", async () => {
+    const scratchDir = join(tmpDir, "sess-tool-diag");
+    await expect(appendScratchEntry(scratchDir, TOOL_DIAGNOSTICS_ENTRY)).resolves.toBeUndefined();
+  });
+
+  test("AC7: tool-diagnostics entry accepts timestamp, storyId, and diagnostics fields", async () => {
+    const scratchDir = join(tmpDir, "sess-tool-diag-shape");
+    const entry: ScratchEntry = {
+      kind: "tool-diagnostics",
+      timestamp: "2026-02-02T00:00:00.000Z",
+      storyId: "US-099",
+      diagnostics: [
+        { file: "src/foo.ts", line: 3, severity: "error", message: "x", tool: "tsc" },
+      ],
+    };
+    await expect(appendScratchEntry(scratchDir, entry)).resolves.toBeUndefined();
+  });
+
+  test("AC8: persisted entry has kind=tool-diagnostics and same diagnostics-array length", async () => {
+    const scratchDir = join(tmpDir, "sess-tool-diag-roundtrip");
+    await appendScratchEntry(scratchDir, TOOL_DIAGNOSTICS_ENTRY);
+
+    const raw = await Bun.file(scratchFilePath(scratchDir)).text();
+    const lines = raw.trim().split("\n").filter(Boolean);
+    expect(lines).toHaveLength(1);
+    const parsed = JSON.parse(lines[0]);
+    expect(parsed.kind).toBe("tool-diagnostics");
+    expect(parsed.storyId).toBe("US-001");
+    expect(parsed.timestamp).toBe("2026-01-01T00:00:00.000Z");
+    expect(parsed.diagnostics).toHaveLength(TOOL_DIAGNOSTICS_ENTRY.diagnostics.length);
+  });
+
+  test("AC8: multiple tool-diagnostics entries accumulate correctly with preserved lengths", async () => {
+    const scratchDir = join(tmpDir, "sess-tool-diag-multi");
+    const entryA: ScratchEntry = {
+      kind: "tool-diagnostics",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      storyId: "US-001",
+      diagnostics: [
+        { file: "src/a.ts", severity: "error", message: "a", tool: "tsc" },
+        { file: "src/b.ts", severity: "error", message: "b", tool: "tsc" },
+        { file: "src/c.ts", severity: "error", message: "c", tool: "tsc" },
+      ],
+    };
+    const entryB: ScratchEntry = {
+      kind: "tool-diagnostics",
+      timestamp: "2026-01-01T00:01:00.000Z",
+      storyId: "US-001",
+      diagnostics: [
+        { file: "src/d.ts", severity: "warning", message: "d", tool: "biome" },
+      ],
+    };
+    await appendScratchEntry(scratchDir, entryA);
+    await appendScratchEntry(scratchDir, entryB);
+
+    const raw = await Bun.file(scratchFilePath(scratchDir)).text();
+    const lines = raw.trim().split("\n").filter(Boolean);
+    expect(lines).toHaveLength(2);
+    expect(JSON.parse(lines[0]).diagnostics).toHaveLength(3);
+    expect(JSON.parse(lines[1]).diagnostics).toHaveLength(1);
+    expect(JSON.parse(lines[0]).kind).toBe("tool-diagnostics");
+    expect(JSON.parse(lines[1]).kind).toBe("tool-diagnostics");
+  });
+});

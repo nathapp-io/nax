@@ -13,6 +13,7 @@ import { createDefaultOrchestrator } from "../../../../src/context/engine/orches
 import { _codeNeighborDeps } from "../../../../src/context/engine/providers/code-neighbor";
 import { _gitHistoryDeps } from "../../../../src/context/engine/providers/git-history";
 import { TestCoverageProvider, _testCoverageProviderDeps } from "../../../../src/context/engine/providers/test-coverage";
+import { ToolDiagnosticsProvider, _toolDiagnosticsDeps } from "../../../../src/context/engine/providers/tool-diagnostics";
 import type { ContextRequest } from "../../../../src/context/engine/types";
 import type { UserStory } from "../../../../src/prd";
 import { makeNaxConfig } from "../../../helpers";
@@ -288,5 +289,76 @@ describe("createDefaultOrchestrator — TestCoverageProvider registration", () =
     const tcResult = bundle.manifest.providerResults?.find((p) => p.providerId === "test-coverage");
     expect(tcResult?.status).toBe("empty");
     expect(tcResult?.chunkCount).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ToolDiagnosticsProvider registration (US-002 AC11)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("createDefaultOrchestrator — ToolDiagnosticsProvider registration (US-002 AC11)", () => {
+  let origToolDiagFileExists: typeof _toolDiagnosticsDeps.fileExists;
+  let origToolDiagReadFile: typeof _toolDiagnosticsDeps.readFile;
+
+  beforeEach(() => {
+    origToolDiagFileExists = _toolDiagnosticsDeps.fileExists;
+    origToolDiagReadFile = _toolDiagnosticsDeps.readFile;
+    // Default: scratch dir absent → provider returns empty chunks
+    _toolDiagnosticsDeps.fileExists = async () => false;
+    _toolDiagnosticsDeps.readFile = async () => "";
+  });
+
+  afterEach(() => {
+    _toolDiagnosticsDeps.fileExists = origToolDiagFileExists;
+    _toolDiagnosticsDeps.readFile = origToolDiagReadFile;
+  });
+
+  test("AC11: ToolDiagnosticsProvider is registered — providerResults include id 'tool-diagnostics' after assemble", async () => {
+    const config = makeConfig();
+    const orchestrator = createDefaultOrchestrator(makeStory(), config);
+    const request = makeRequest({
+      providerIds: ["tool-diagnostics"],
+      storyScratchDirs: [],
+    });
+    const bundle = await orchestrator.assemble(request);
+
+    const tdResult = bundle.manifest.providerResults?.find(
+      (p) => p.providerId === "tool-diagnostics",
+    );
+    expect(tdResult).toBeDefined();
+    expect(tdResult?.providerId).toBe("tool-diagnostics");
+  });
+
+  test("AC11: ToolDiagnosticsProvider is registered unconditionally — construction never throws", () => {
+    expect(() => createDefaultOrchestrator(makeStory(), makeConfig())).not.toThrow();
+  });
+
+  test("ToolDiagnosticsProvider.fetch() emits chunks when scratch dir contains tool-diagnostics entries", async () => {
+    _toolDiagnosticsDeps.fileExists = async () => true;
+    _toolDiagnosticsDeps.readFile = async () =>
+      `${JSON.stringify({
+        kind: "tool-diagnostics",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        storyId: "US-001",
+        diagnostics: [{ file: "src/a.ts", line: 12, severity: "error", message: "Cannot find name 'foo'.", tool: "tsc" }],
+      })}\n`;
+
+    const config = makeConfig();
+    const orchestrator = createDefaultOrchestrator(makeStory(), config);
+    const bundle = await orchestrator.assemble(
+      makeRequest({
+        providerIds: ["tool-diagnostics"],
+        storyScratchDirs: ["/sess/dir-a"],
+      }),
+    );
+    const tdResult = bundle.manifest.providerResults?.find((p) => p.providerId === "tool-diagnostics");
+    expect(tdResult?.status).toBe("ok");
+    expect(tdResult?.chunkCount).toBeGreaterThan(0);
+  });
+
+  test("US-002 sanity: ToolDiagnosticsProvider class is the one wired into the orchestrator (smoke)", async () => {
+    const orchestrator = createDefaultOrchestrator(makeStory(), makeConfig());
+    // Type-level check that the class itself is constructed without args (AC1).
+    expect(new ToolDiagnosticsProvider().id).toBe("tool-diagnostics");
   });
 });

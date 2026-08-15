@@ -91,6 +91,16 @@ export const executionStage: PipelineStage = {
       packageView,
       packageDir: ctx.workdir,
       ...(ctx.contextToolRunCounter ? { contextToolRunCounter: ctx.contextToolRunCounter } : {}),
+      // US-005: thread the story scratch dirs the stage-assembly path resolved
+      // so the pull-tool runtime's query_scratch handler reads the same JSONL
+      // the push providers (SessionScratchProvider / ToolDiagnosticsProvider)
+      // read. Fall back to the single sessionScratchDir when no stage assembly
+      // has published the full list (e.g. TDD strategies that skip promptStage).
+      ...(ctx.storyScratchDirs?.length
+        ? { storyScratchDirs: ctx.storyScratchDirs }
+        : ctx.sessionScratchDir
+          ? { storyScratchDirs: [ctx.sessionScratchDir] }
+          : {}),
       agentName: resolved.agentName,
       storyId: ctx.story.id,
       featureName: ctx.prd.feature,

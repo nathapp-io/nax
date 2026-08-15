@@ -296,7 +296,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     ctx.config.review?.enabled === true &&
     ctx.config.review.checks?.includes("lint") &&
     ctx.config.quality.commands.lint
-      ? { workdir: ctx.workdir, storyId: story.id }
+      ? { workdir: ctx.workdir, storyId: story.id, sessionScratchDir: ctx.sessionScratchDir }
       : undefined;
 
   // typecheckCheck: gated by review.checks includes "typecheck" and a typecheck command is configured
@@ -304,7 +304,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     ctx.config.review?.enabled === true &&
     ctx.config.review.checks?.includes("typecheck") &&
     ctx.config.quality.commands.typecheck
-      ? { workdir: ctx.workdir, storyId: story.id }
+      ? { workdir: ctx.workdir, storyId: story.id, sessionScratchDir: ctx.sessionScratchDir }
       : undefined;
 
   // Semantic and adversarial review inputs must carry stat/diff (and for adversarial,

@@ -179,6 +179,9 @@ export async function assembleForStage(
           : await loadPluginProviders(pluginConfigs, ctx.projectDir)
         : [];
     const storyScratchDirs = await getStoryScratchDirs(ctx, options);
+    // US-005: publish the resolved dirs so the pull-tool runtime (query_scratch)
+    // reads the same set the push providers read, not just ctx.sessionScratchDir.
+    ctx.storyScratchDirs = storyScratchDirs;
 
     const orchestrator = _stageAssemblerDeps.createOrchestrator(
       ctx.story,
