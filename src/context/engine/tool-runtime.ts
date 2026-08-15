@@ -153,6 +153,7 @@ export function createContextToolRuntime(options: {
             story,
             options.storyScratchDirs ?? [],
             getBudget(tool),
+            tool.maxTokensPerCall,
             options.agentId ? { targetAgent: options.agentId } : {},
           );
         default:

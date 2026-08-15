@@ -45,13 +45,25 @@ export interface QueryScratchOptions {
 async function readScratchEntries(scratchDir: string): Promise<ScratchEntry[]> {
   const filePath = scratchFilePath(scratchDir);
   if (!(await _pullToolsDeps.fileExists(filePath))) return [];
-  const raw = await _pullToolsDeps.readFile(filePath);
+  let raw: string;
+  try {
+    raw = await _pullToolsDeps.readFile(filePath);
+  } catch {
+    // File disappeared or became unreadable between the existence check and the
+    // read — treat as absent (the spec mandates a no-entries response, not a throw).
+    return [];
+  }
   const entries: ScratchEntry[] = [];
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     try {
-      entries.push(JSON.parse(trimmed) as ScratchEntry);
+      const parsed: unknown = JSON.parse(trimmed);
+      // Skip non-object values (null, primitives, arrays) and objects without a
+      // string `kind` — they cannot be rendered and must not abort the query.
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) continue;
+      if (typeof (parsed as { kind?: unknown }).kind !== "string") continue;
+      entries.push(parsed as ScratchEntry);
     } catch {
       // Skip malformed lines — scratch may be partially written
     }
@@ -123,6 +135,7 @@ function renderScratchEntry(entry: ScratchEntry, targetAgent: string): string {
  * @param story            - Current user story (only story.id is used)
  * @param storyScratchDirs - Absolute paths to the story's scratch directories
  * @param budget           - Budget tracker for this session
+ * @param maxTokensPerCall - Per-call token ceiling (chars = tokens × 4)
  * @param options          - Cross-agent neutralization options (AC-42)
  */
 export async function handleQueryScratch(
@@ -130,6 +143,7 @@ export async function handleQueryScratch(
   story: UserStory,
   storyScratchDirs: string[],
   budget: PullToolBudget,
+  maxTokensPerCall: number = DEFAULT_MAX_TOKENS_PER_CALL,
   options: QueryScratchOptions = {},
 ): Promise<string> {
   budget.consume();
@@ -155,14 +169,19 @@ export async function handleQueryScratch(
       ? [...filtered].sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)).slice(0, input.limit)
       : filtered;
 
-  if (limited.length === 0) {
-    return "No matching scratch entries.";
+  // Render defensively: a malformed entry (e.g. a known kind missing a required
+  // field) must not abort the whole query — skip it and continue.
+  const rendered: string[] = [];
+  for (const entry of limited) {
+    try {
+      rendered.push(renderScratchEntry(entry, targetAgent));
+    } catch {
+      // Skip malformed entries — scratch may be partially written
+    }
   }
 
-  const content = limited.map((e) => renderScratchEntry(e, targetAgent)).join("\n\n");
-
-  // Mantra: respect the configured per-call token ceiling.
-  const maxChars = DEFAULT_MAX_TOKENS_PER_CALL * 4;
+  const content = rendered.join("\n\n");
+  const maxChars = maxTokensPerCall * 4;
   const finalContent = content.length > maxChars ? content.slice(0, maxChars) : content;
 
   budget.record({
@@ -179,9 +198,9 @@ export async function handleQueryScratch(
     tool: "query_scratch",
     kind: input.kind ?? null,
     limit: input.limit ?? null,
-    resultCount: limited.length,
+    resultCount: rendered.length,
     resultBytes: finalContent.length,
   });
 
-  return finalContent;
+  return rendered.length === 0 ? "No matching scratch entries." : finalContent;
 }

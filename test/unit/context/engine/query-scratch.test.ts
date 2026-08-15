@@ -282,7 +282,7 @@ describe("handleQueryScratch", () => {
     // the requester is `targetAgent: "codex"`. The neutralizer runs because
     // the writer differs from the requester AND the writer is "claude" (the
     // known tool-name catalogue).
-    const result = await handleQueryScratch({}, crossStory, [scratchDir], budget, {
+    const result = await handleQueryScratch({}, crossStory, [scratchDir], budget, undefined, {
       targetAgent: "codex",
     });
 
@@ -383,5 +383,82 @@ describe("handleQueryScratch", () => {
     expect(counter.calls).toHaveLength(1);
     expect(counter.calls[0]?.tool).toBe("query_scratch");
     expect(counter.calls[0]?.query).toBe("verify-result");
+  });
+
+  test("skips malformed JSON values and shape-less entries without aborting the query", async () => {
+    const scratchDir = join(tmpDir, "sess-malformed");
+    await mkdir(scratchDir, { recursive: true });
+    // A valid verify-result entry, a JSON null line, and a tdd-session object
+    // missing filesChanged — the malformed lines must be skipped, not crash the
+    // whole query (adversarial review).
+    await Bun.write(
+      scratchFilePath(scratchDir),
+      [
+        JSON.stringify({
+          kind: "verify-result",
+          timestamp: "2026-01-01T00:00:00.000Z",
+          storyId: STORY_ID,
+          stage: "verify",
+          success: false,
+          status: "TEST_FAILURE",
+          passCount: 0,
+          failCount: 1,
+          rawOutputTail: "real-failure",
+        }),
+        "null",
+        JSON.stringify({ kind: "tdd-session" }),
+        "",
+      ].join("\n"),
+    );
+
+    const { budget } = makeBudget();
+    const result = await handleQueryScratch({}, STORY, [scratchDir], budget);
+
+    expect(result).toContain("real-failure");
+  });
+
+  test("truncates to the passed maxTokensPerCall ceiling", async () => {
+    const scratchDir = join(tmpDir, "sess-truncate");
+    await writeScratchFile(scratchDir, [
+      {
+        kind: "verify-result",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        storyId: STORY_ID,
+        stage: "verify",
+        success: false,
+        status: "TEST_FAILURE",
+        passCount: 0,
+        failCount: 1,
+        rawOutputTail: "x".repeat(500),
+      },
+    ]);
+
+    const { budget } = makeBudget();
+    const result = await handleQueryScratch({}, STORY, [scratchDir], budget, 20);
+
+    expect(result.length).toBeLessThanOrEqual(20 * 4);
+  });
+
+  test("records the invocation even when no entries match the filter", async () => {
+    const scratchDir = join(tmpDir, "sess-no-match-record");
+    await writeScratchFile(scratchDir, [
+      {
+        kind: "verify-result",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        storyId: STORY_ID,
+        stage: "verify",
+        success: true,
+        status: "PASS",
+        passCount: 1,
+        failCount: 0,
+        rawOutputTail: "ok",
+      },
+    ]);
+
+    const { budget, counter } = makeBudget();
+    await handleQueryScratch({ kind: "tool-diagnostics" }, STORY, [scratchDir], budget);
+
+    expect(counter.calls).toHaveLength(1);
+    expect(counter.calls[0]?.tool).toBe("query_scratch");
   });
 });
