@@ -7,12 +7,19 @@ import type { QualityCommandOptions, QualityCommandResult } from "../quality/run
 import { runQualityCommand } from "../quality/runner";
 import type { LintOutputFormat, LintParseResult } from "../review/lint-parsing";
 import { parseLintOutput } from "../review/lint-parsing";
+import { appendScratchEntry } from "../session/scratch-writer";
 import { errorMessage } from "../utils/errors";
 import type { CallContext, DeterministicOperation } from "./types";
 
 export interface LintCheckInput {
   readonly workdir: string;
   readonly storyId: string;
+  /**
+   * Session scratch dir for tool-diagnostics capture (US-001). Populated by
+   * plan-inputs from PipelineContext.sessionScratchDir in production; injected
+   * tests may omit it and instead set `deps.sessionScratchDir`.
+   */
+  readonly sessionScratchDir?: string;
 }
 
 export interface LintCheckOutput {
@@ -38,6 +45,7 @@ export interface LintCheckDeps {
 export const _lintCheckDeps: LintCheckDeps = {
   runQualityCommand,
   parseLintOutput,
+  appendScratchEntry,
 };
 
 /**
@@ -125,7 +133,13 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
       return { success: true, status: "passed", findings: [], durationMs: Date.now() - start };
     }
 
-    await captureToolDiagnostics(input.storyId, result, "biome", deps.sessionScratchDir, deps.appendScratchEntry);
+    await captureToolDiagnostics(
+      input.storyId,
+      result,
+      "biome",
+      input.sessionScratchDir ?? deps.sessionScratchDir,
+      deps.appendScratchEntry,
+    );
 
     const parsed = deps.parseLintOutput(result.output, "auto", { workdir: input.workdir });
     const parsedFindings = parsed?.findings ?? [];

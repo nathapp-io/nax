@@ -7,12 +7,19 @@ import type { QualityCommandOptions, QualityCommandResult } from "../quality/run
 import { runQualityCommand } from "../quality/runner";
 import { parseTypecheckOutput } from "../review/typecheck-parsing";
 import type { TypecheckOutputFormat, TypecheckParseResult } from "../review/typecheck-parsing/types";
+import { appendScratchEntry } from "../session/scratch-writer";
 import { errorMessage } from "../utils/errors";
 import type { CallContext, DeterministicOperation } from "./types";
 
 export interface TypecheckCheckInput {
   readonly workdir: string;
   readonly storyId: string;
+  /**
+   * Session scratch dir for tool-diagnostics capture (US-001). Populated by
+   * plan-inputs from PipelineContext.sessionScratchDir in production; injected
+   * tests may omit it and instead set `deps.sessionScratchDir`.
+   */
+  readonly sessionScratchDir?: string;
 }
 
 export interface TypecheckCheckOutput {
@@ -42,6 +49,7 @@ export interface TypecheckCheckDeps {
 export const _typecheckCheckDeps: TypecheckCheckDeps = {
   runQualityCommand,
   parseTypecheckOutput,
+  appendScratchEntry,
 };
 
 /**
@@ -127,7 +135,13 @@ export const typecheckCheckOp: DeterministicOperation<TypecheckCheckInput, Typec
       return { success: true, status: "passed", findings: [], durationMs: Date.now() - start };
     }
 
-    await captureToolDiagnostics(input.storyId, result, "tsc", deps.sessionScratchDir, deps.appendScratchEntry);
+    await captureToolDiagnostics(
+      input.storyId,
+      result,
+      "tsc",
+      input.sessionScratchDir ?? deps.sessionScratchDir,
+      deps.appendScratchEntry,
+    );
 
     const parsed = deps.parseTypecheckOutput(result.output, "auto", { workdir: input.workdir });
     const parsedFindings = parsed?.findings ?? [];
