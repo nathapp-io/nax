@@ -74,17 +74,13 @@ export async function getAgentVersion(binaryName: string): Promise<string | null
  * Returns list of agents with their installation status and version info.
  */
 export async function getAgentVersions(): Promise<AgentVersionInfo[]> {
+  // BUG-19: getInstalledAgents() was called twice here for no reason — both
+  // calls return the same result (module-level state, no arguments).
   const installedAgents = await _versionDetectionDeps.getInstalledAgents();
   const installedByName = new Map(installedAgents.map((a) => [a.name, a]));
 
-  // Use all installed agents directly — getInstalledAgents now returns AcpAgentAdapters
-  // that have the correct name, displayName, and binary fields
-  const allAgents = await _versionDetectionDeps.getInstalledAgents();
-  const agentsByName = new Map(allAgents.map((a) => [a.name, a]));
-
-  // Also include any installed agents
   const versions = await Promise.all(
-    Array.from(agentsByName.values()).map(async (agent): Promise<AgentVersionInfo> => {
+    installedAgents.map(async (agent): Promise<AgentVersionInfo> => {
       const version = installedByName.has(agent.name) ? await getAgentVersion(agent.binary) : null;
 
       return {

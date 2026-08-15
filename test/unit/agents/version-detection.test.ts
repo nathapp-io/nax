@@ -133,6 +133,19 @@ describe("getAgentVersions", () => {
     expect(entry?.version).toBe("v9.9.9");
   });
 
+  // BUG-19: getInstalledAgents() was called twice for no reason.
+  test("calls getInstalledAgents exactly once per getAgentVersions() call", async () => {
+    let calls = 0;
+    _versionDetectionDeps.getInstalledAgents = mock(async () => {
+      calls++;
+      return [];
+    });
+    _versionDetectionDeps.spawn = mock(() => makeMockProc("", 1)) as typeof _versionDetectionDeps.spawn;
+
+    await getAgentVersions();
+    expect(calls).toBe(1);
+  });
+
   test("marks agent as not installed and version null when not in installed list", async () => {
     // No agents installed — getAgentVersions returns an empty array
     _versionDetectionDeps.getInstalledAgents = mock(async () => []);

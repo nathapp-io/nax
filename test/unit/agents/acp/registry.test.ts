@@ -11,7 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { AcpAgentAdapter, _acpAdapterDeps } from "../../../../src/agents/acp/adapter";
-import { createAgentRegistry } from "../../../../src/agents/registry";
+import { checkAgentHealth, createAgentRegistry, getInstalledAgents } from "../../../../src/agents/registry";
 import type { AgentConfig } from "../../../../src/config/schema";
 import type { NaxConfig } from "../../../../src/config/schema";
 import { logActiveProtocol } from "../../../../src/execution/lifecycle/run-initialization";
@@ -160,6 +160,44 @@ describe("createAgentRegistry — checkAgentHealth()", () => {
     const claudeEntry = health.find((e) => e.name === "claude");
     expect(claudeEntry).toBeDefined();
     expect(claudeEntry?.installed).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Module-level getInstalledAgents / checkAgentHealth (BUG-19)
+//
+// These used to unconditionally return [] regardless of what was actually
+// installed, so the "multi-agent-health" precheck always reported "No
+// additional agents detected" no matter what was really on PATH.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("module-level getInstalledAgents() / checkAgentHealth() (BUG-19)", () => {
+  const origWhich = _acpAdapterDeps.which;
+
+  afterEach(() => {
+    _acpAdapterDeps.which = origWhich;
+    mock.restore();
+  });
+
+  test("getInstalledAgents returns installed adapters instead of an unconditional []", async () => {
+    _acpAdapterDeps.which = mock((_name: string) => "/usr/local/bin/claude");
+    const installed = await getInstalledAgents();
+    expect(installed.length).toBeGreaterThan(0);
+    expect(installed.some((a) => a.name === "claude")).toBe(true);
+  });
+
+  test("getInstalledAgents returns empty when nothing is on PATH", async () => {
+    _acpAdapterDeps.which = mock((_name: string) => null);
+    const installed = await getInstalledAgents();
+    expect(installed).toEqual([]);
+  });
+
+  test("checkAgentHealth reflects real installed status instead of an unconditional []", async () => {
+    _acpAdapterDeps.which = mock((_name: string) => "/usr/local/bin/claude");
+    const health = await checkAgentHealth();
+    expect(health.length).toBeGreaterThan(0);
+    const claudeEntry = health.find((e) => e.name === "claude");
+    expect(claudeEntry?.installed).toBe(true);
   });
 });
 

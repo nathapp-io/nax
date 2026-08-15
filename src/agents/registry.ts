@@ -28,14 +28,39 @@ export function getAllAgentNames(): string[] {
   return KNOWN_AGENT_NAMES;
 }
 
-/** Get all installed agents on this machine */
-export async function getInstalledAgents(): Promise<AgentAdapter[]> {
-  return [];
+/**
+ * Build the module-level adapter list (test overrides + one AcpAgentAdapter
+ * per known agent name). Shared by the two config-less module-level
+ * functions below — createAgentRegistry() keeps its own cached version
+ * since it needs to reuse adapters across getAgent() calls too.
+ */
+function buildAdapterList(): AgentAdapter[] {
+  return [...Array.from(_registryTestAdapters.values()), ...KNOWN_AGENT_NAMES.map((name) => new AcpAgentAdapter(name))];
 }
 
-/** Check health of all agents */
+/**
+ * BUG-19: this used to unconditionally return `[]`, so `multi-agent-health`
+ * precheck always reported "No additional agents detected" regardless of
+ * what was actually installed. Mirrors createAgentRegistry().getInstalledAgents().
+ */
+export async function getInstalledAgents(): Promise<AgentAdapter[]> {
+  const allAdapters = buildAdapterList();
+  const results = await Promise.all(
+    allAdapters.map(async (agent) => ({ agent, installed: await agent.isInstalled() })),
+  );
+  return results.filter((r) => r.installed).map((r) => r.agent);
+}
+
+/** Check health of all agents. BUG-19: previously an unconditional `[]` stub. */
 export async function checkAgentHealth(): Promise<Array<{ name: string; displayName: string; installed: boolean }>> {
-  return [];
+  const allAdapters = buildAdapterList();
+  return Promise.all(
+    allAdapters.map(async (agent) => ({
+      name: agent.name,
+      displayName: agent.displayName,
+      installed: await agent.isInstalled(),
+    })),
+  );
 }
 
 /** Protocol-aware agent registry returned by createAgentRegistry() */
