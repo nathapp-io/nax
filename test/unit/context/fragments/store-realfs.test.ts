@@ -12,6 +12,8 @@
  * not add dep injection here — that would reintroduce the blind spot.
  */
 
+import { stat } from "node:fs/promises";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   listFragmentStoryIds,
@@ -21,6 +23,14 @@ import {
   writeFragment,
 } from "@/context/fragments";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+
+async function dirExists(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 const FEATURE_ID = "feat-fragments";
 let projectDir: string;
@@ -49,6 +59,27 @@ describe("fragment store — real filesystem", () => {
     await writeFragment(projectDir, FEATURE_ID, "US-001", "body text", 400);
 
     expect(await readFragment(projectDir, FEATURE_ID, "US-001")).toBe("body text");
+  });
+
+  /**
+   * The read and write paths share `fragmentPath`, so a wrong base directory is
+   * invisible to a round-trip assertion — it stays self-consistent while landing
+   * the file outside `.nax/`. That is exactly how fragments shipped writing to a
+   * stray top-level `features/` dir, where no `.nax`-scoped gitignore entry
+   * covered them and a run's auto-commit swept them into the user's repo. These
+   * two tests pin the absolute location, not the round trip.
+   */
+  test("writeFragment stores the fragment under .nax/features, alongside manifests", async () => {
+    await writeFragment(projectDir, FEATURE_ID, "US-001", "body text", 400);
+
+    const expected = join(projectDir, ".nax", "features", FEATURE_ID, "fragments", "US-001.md");
+    expect(await Bun.file(expected).exists()).toBe(true);
+  });
+
+  test("writeFragment does not create a top-level features/ directory in the repo", async () => {
+    await writeFragment(projectDir, FEATURE_ID, "US-001", "body text", 400);
+
+    expect(await dirExists(join(projectDir, "features"))).toBe(false);
   });
 });
 

@@ -9,6 +9,7 @@
 
 import { mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { featureDir, featuresDir } from "@/config";
 import { saveJsonFile } from "@/utils/json-file";
 import type { ContextManifest } from "./types";
 
@@ -24,7 +25,7 @@ export const _manifestStoreDeps = {
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
   listFeatureDirs: async (projectDir: string): Promise<string[]> => {
-    const baseDir = join(projectDir, ".nax", "features");
+    const baseDir = featuresDir(projectDir);
     try {
       const dirs: string[] = [];
       // `"*/"` + onlyFiles:false is what yields directories. A bare `"*"` scan
@@ -69,7 +70,7 @@ export const _manifestStoreDeps = {
 };
 
 export function contextStoryDir(projectDir: string, featureId: string, storyId: string): string {
-  return join(projectDir, ".nax", "features", featureId, "stories", storyId);
+  return join(featureDir(projectDir, featureId), "stories", storyId);
 }
 
 export function contextManifestPath(projectDir: string, featureId: string, storyId: string, stage: string): string {
@@ -261,7 +262,7 @@ export async function loadFeatureManifests(
   const projectDir = opts.projectDir ?? opts.featureDir;
   if (!featureId || !projectDir) return [];
 
-  const storiesDir = join(projectDir, ".nax", "features", featureId, "stories");
+  const storiesDir = join(featureDir(projectDir, featureId), "stories");
   const storyDirs = await _manifestStoreDeps.listStoryDirs(storiesDir);
   const results: StoredContextManifest[] = [];
 

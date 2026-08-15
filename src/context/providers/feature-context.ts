@@ -1,4 +1,3 @@
-import type { ContextConfig } from "@/config/selectors";
 /**
  * FeatureContextProvider — reads context.md for the current feature and
  * returns its raw contents for role-filtered injection at prompt-build time.
@@ -6,6 +5,9 @@ import type { ContextConfig } from "@/config/selectors";
  * v1 scope: read path only. Returns full (unfiltered) context.md content.
  * Role filtering and budget enforcement happen in the prompt builders.
  */
+import { join } from "node:path";
+import { featureDir } from "@/config";
+import type { ContextConfig } from "@/config/selectors";
 import { getLogger } from "@/logger";
 import type { UserStory } from "@/prd";
 import { errorMessage } from "@/utils/errors";
@@ -63,7 +65,7 @@ export class FeatureContextProvider {
     const featureId = await _featureContextDeps.resolveFeatureId(story, workdir, activeFeature);
     if (!featureId) return null;
 
-    const contextPath = `${workdir}/.nax/features/${featureId}/context.md`;
+    const contextPath = join(featureDir(workdir, featureId), "context.md");
 
     try {
       const exists = await _featureContextDeps.fileExists(contextPath);

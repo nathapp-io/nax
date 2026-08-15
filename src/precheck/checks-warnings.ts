@@ -7,6 +7,7 @@
 
 import { existsSync } from "node:fs";
 import { isAbsolute } from "node:path";
+import { PROJECT_FEATURES_DIR } from "../config";
 import type { ProjectProfile } from "../config/runtime-types";
 import type { PrecheckConfig } from "../config/selectors";
 import type { PRD } from "../prd/types";
@@ -163,7 +164,7 @@ export async function checkGitignoreCoversNax(workdir: string): Promise<Check> {
     "**/.nax-acceptance*",
     "**/_nax_acceptance_test.py",
     "**/_nax_suggested_test.py",
-    "**/.nax/features/*/",
+    `**/${PROJECT_FEATURES_DIR}/*/`,
   ];
   const missing = patterns.filter((pattern) => !content.includes(pattern));
   const passed = missing.length === 0;

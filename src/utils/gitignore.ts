@@ -5,23 +5,26 @@
  *  - `nax init` → appends to project .gitignore
  *  - `WorktreeManager.ensureGitExcludes()` → writes to .git/info/exclude (no commit, all worktrees)
  */
+
+import { PROJECT_FEATURES_DIR } from "@/config";
+
 export const NAX_GITIGNORE_ENTRIES = [
   ".nax-verifier-verdict.json",
   "nax.lock",
   ".nax/**/runs/",
   ".nax/metrics.json",
-  ".nax/features/*/status.json",
-  ".nax/features/*/plan/",
-  ".nax/features/*/acp-sessions.json",
-  ".nax/features/*/interactions/",
-  ".nax/features/*/progress.txt",
-  ".nax/features/*/acceptance-refined.json",
+  `${PROJECT_FEATURES_DIR}/*/status.json`,
+  `${PROJECT_FEATURES_DIR}/*/plan/`,
+  `${PROJECT_FEATURES_DIR}/*/acp-sessions.json`,
+  `${PROJECT_FEATURES_DIR}/*/interactions/`,
+  `${PROJECT_FEATURES_DIR}/*/progress.txt`,
+  `${PROJECT_FEATURES_DIR}/*/acceptance-refined.json`,
   ".nax-pids",
   ".nax-wt/",
   "**/.nax-acceptance*",
   "**/_nax_acceptance_test.py",
   "**/_nax_suggested_test.py",
-  "**/.nax/features/*/",
+  `**/${PROJECT_FEATURES_DIR}/*/`,
   ".nax/prompt-audit/",
   // Only reached when a run has no outputDir — nax-finish normally writes its
   // audit under `~/.nax/<project>/finish-audit/`. It still must be ignored:

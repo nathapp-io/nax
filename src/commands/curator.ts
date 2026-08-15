@@ -341,7 +341,7 @@ export async function curatorCommit(options: CuratorCommitOptions): Promise<void
     const targetPath = resolveCanonicalTargetPath(resolved.projectDir, proposal.canonicalFile);
     if (targetPath === null) {
       console.log(
-        `[skip] Proposal target "${proposal.canonicalFile}" is not an allowed curator target (.nax/rules/*.md or .nax/features/<id>/context.md) — skipping.`,
+        `[skip] Proposal target "${proposal.canonicalFile}" is not an allowed curator target (.nax/rules/*.md or .nax/features/<id>/context.md) — skipping.`, // nax-feature-dir-allow: log message
       );
       skippedProposals.add(proposal);
       continue;

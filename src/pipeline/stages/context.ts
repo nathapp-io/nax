@@ -16,6 +16,8 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
+import { featureDir } from "@/config";
 import { NaxError } from "@/errors";
 import { packageDirRelative } from "@/utils/paths";
 import {
@@ -87,7 +89,7 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
       const sessionId = ctx.sessionId ?? _contextStageDeps.uuid();
       if (!ctx.sessionId) ctx.sessionId = sessionId;
       const featureId = ctx.featureDir?.replace(/\/$/, "").split("/").pop() ?? "_unattached";
-      ctx.sessionScratchDir = `${ctx.projectDir}/.nax/features/${featureId}/sessions/${sessionId}`;
+      ctx.sessionScratchDir = join(featureDir(ctx.projectDir, featureId), "sessions", sessionId);
     }
   }
   if (!ctx.contextToolRunCounter) {

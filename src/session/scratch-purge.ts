@@ -9,6 +9,7 @@
 
 import { mkdir, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { featureDir } from "@/config";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps
@@ -56,7 +57,7 @@ export async function purgeStaleScratch(
   retentionDays: number,
   archiveInsteadOfDelete = false,
 ): Promise<number> {
-  const sessionsDir = join(projectDir, ".nax", "features", featureName, "sessions");
+  const sessionsDir = join(featureDir(projectDir, featureName), "sessions");
   const sessionIds = await _scratchPurgeDeps.listSessionDirs(sessionsDir);
 
   const cutoffMs = _scratchPurgeDeps.now() - retentionDays * 86_400_000;
@@ -83,7 +84,7 @@ export async function purgeStaleScratch(
     if (new Date(lastActivityAt).getTime() >= cutoffMs) continue;
 
     if (archiveInsteadOfDelete) {
-      const archiveDest = join(projectDir, ".nax", "features", featureName, "_archive", "sessions", sessionId);
+      const archiveDest = join(featureDir(projectDir, featureName), "_archive", "sessions", sessionId);
       await _scratchPurgeDeps.move(sessionDir, archiveDest);
     } else {
       await _scratchPurgeDeps.remove(sessionDir);

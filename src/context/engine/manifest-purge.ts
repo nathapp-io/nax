@@ -14,13 +14,14 @@
  */
 
 import { dirname, resolve } from "node:path";
+import { PROJECT_FEATURES_DIR } from "@/config";
 import { getLogger } from "@/logger";
 
 /** Maximum number of manifest entries the sweep will examine per invocation. */
 export const MAX_MANIFEST_SCAN = 5000;
 
 const DAY_MS = 86_400_000;
-const MANIFEST_PATTERN = ".nax/features/*/stories/*/{context-manifest-*,rebuild-manifest}.json";
+const MANIFEST_PATTERN = `${PROJECT_FEATURES_DIR}/*/stories/*/{context-manifest-*,rebuild-manifest}.json`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps

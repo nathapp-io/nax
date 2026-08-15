@@ -6,6 +6,7 @@
  */
 
 import { join } from "node:path";
+import { featureDir } from "@/config";
 import { buildDecomposePromptAsync } from "@/prompts";
 import { resolveDefaultAgent } from "../agents";
 import { parseDecomposeOutput } from "../agents/shared/decompose";
@@ -33,7 +34,7 @@ export async function planDecomposeCommand(
   config: NaxConfig,
   options: { feature: string; storyId: string },
 ): Promise<() => void> {
-  const prdPath = join(workdir, ".nax", "features", options.feature, "prd.json");
+  const prdPath = join(featureDir(workdir, options.feature), "prd.json");
 
   if (!_planDeps.existsSync(prdPath)) {
     throw new NaxError(`PRD not found: ${prdPath}`, "PRD_NOT_FOUND", {
