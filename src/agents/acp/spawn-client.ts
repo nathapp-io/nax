@@ -264,6 +264,26 @@ export class SpawnAcpClient implements AcpClient {
     }
   }
 
+  /**
+   * BUG-16: hard-terminate the acpx queue-owner process for `agentName` via
+   * `acpx <agentName> stop`. Mirrors the session-level hard-stop already
+   * used by SpawnAcpSession.close({ forceTerminate: true }) (spawn-client-session.ts).
+   * Failures are logged and swallowed — the caller (closePhysicalSession)
+   * already wraps this in a best-effort `.catch(() => {})`, but logging here
+   * gives visibility into why a force-close didn't actually terminate.
+   */
+  async forceStop(agentName: string, signal?: AbortSignal): Promise<void> {
+    const cmd = ["acpx", agentName, "stop"];
+    const { exitCode, stderr } = await this.trackedSpawn(cmd, signal, this.trackedSpawnDeadlineMs);
+    if (exitCode !== 0) {
+      getSafeLogger()?.debug("acp-adapter", "forceStop failed (ignored)", {
+        agentName,
+        exitCode,
+        stderr: stderr.slice(0, 200),
+      });
+    }
+  }
+
   async close(): Promise<void> {
     // No-op — spawn-based client has no persistent connection
   }

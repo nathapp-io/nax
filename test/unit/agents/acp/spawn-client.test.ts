@@ -105,6 +105,30 @@ describe("SpawnAcpClient — onPidSpawned callback (#228)", () => {
 
     expect(pids).toHaveLength(1);
   });
+
+  // BUG-16: forceStop was declared on the AcpClient interface but never
+  // implemented anywhere — closePhysicalSession's { force: true } branch was
+  // a dead call site. SpawnAcpClient must actually run `acpx <agent> stop`.
+  test("forceStop spawns `acpx <agentName> stop`", async () => {
+    const spawnedCommands: string[][] = [];
+    _spawnClientDeps.spawn = (cmd, _opts) => {
+      spawnedCommands.push(cmd as string[]);
+      return makeSpawnResult(0);
+    };
+
+    const client = new SpawnAcpClient("acpx claude", "/tmp");
+    await client.forceStop("claude");
+
+    expect(spawnedCommands).toHaveLength(1);
+    expect(spawnedCommands[0]).toEqual(["acpx", "claude", "stop"]);
+  });
+
+  test("forceStop does not throw when the stop command fails", async () => {
+    _spawnClientDeps.spawn = (_cmd, _opts) => makeSpawnResult(1);
+
+    const client = new SpawnAcpClient("acpx claude", "/tmp");
+    await expect(client.forceStop("claude")).resolves.toBeUndefined();
+  });
 });
 
 describe("SpawnAcpClient — prompt EPIPE resilience", () => {
