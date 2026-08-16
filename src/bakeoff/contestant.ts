@@ -6,6 +6,7 @@
  * is always torn down, even when the pipeline throws or signals abort.
  */
 
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import { projectOutputDir } from "../runtime/paths";
@@ -67,8 +68,29 @@ export interface ContestantRunnerDeps {
   pipeline: (ctx: ContestantRunContext) => Promise<ContestantPipelineResult>;
 }
 
+const STORY_ID_PREFIX = "bakeoff-contestant-";
+/** validateStoryId (src/prd/validate.ts) caps the whole story ID at 64 chars. */
+const MAX_STORY_ID_LENGTH = 64;
+const MAX_PROFILE_SEGMENT_LENGTH = MAX_STORY_ID_LENGTH - STORY_ID_PREFIX.length;
+
+/**
+ * Derives a worktree/branch-safe story ID from a contestant profile name.
+ * Profile names are validated far more permissively than story IDs (spaces
+ * and long names are allowed — see `validateProfileName` in
+ * `src/config/profile.ts`), so a raw profile name can violate
+ * `validateStoryId`'s `[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}` pattern and crash
+ * `WorktreeManager.create`. Illegal characters are replaced and an
+ * oversized/altered name gets a short content hash appended so two
+ * different profiles never collide after truncation.
+ */
 function safeStoryId(agent: string): string {
-  return `bakeoff-contestant-${agent}`;
+  const sanitized = agent.replace(/[^a-zA-Z0-9._-]/g, "-");
+  if (sanitized === agent && sanitized.length <= MAX_PROFILE_SEGMENT_LENGTH) {
+    return `${STORY_ID_PREFIX}${sanitized}`;
+  }
+  const suffix = `-${createHash("sha256").update(agent).digest("hex").slice(0, 8)}`;
+  const truncated = sanitized.slice(0, MAX_PROFILE_SEGMENT_LENGTH - suffix.length);
+  return `${STORY_ID_PREFIX}${truncated}${suffix}`;
 }
 
 function aggregateTotals(metrics: ContestantStoryMetric[]): {
@@ -98,11 +120,16 @@ export async function runContestant(
 ): Promise<ContestantResult> {
   const storyId = safeStoryId(agent);
 
+  // `agent` is the contestant's *profile* name (see ContestantRunContext.profile),
+  // not necessarily its resolved agent binary — a profile like "gpu-claude" can
+  // resolve to agent "claude". The real resolved `agent.default` already lives on
+  // options.config (set upstream by preflight's buildContestantConfig from the
+  // profile overlay), so it must be preserved here, not overwritten with the raw
+  // profile name.
   const pinnedConfig: NaxConfig = {
     ...options.config,
     agent: {
       ...(options.config.agent ?? {}),
-      default: agent,
       fallback: {
         ...(options.config.agent?.fallback ?? {}),
         enabled: false,
