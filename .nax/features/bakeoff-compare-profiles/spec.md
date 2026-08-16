@@ -1,6 +1,6 @@
 # SPEC: Bake-off `--compare` with profile contestants
 
-<!-- spec-writing: completed-through-phase-5 -->
+<!-- spec-writing: completed-through-phase-6 -->
 
 ## Summary
 
@@ -33,6 +33,8 @@ Contestants are **profile names**. `--compare cross-agent-pi,cross-agent-mm` res
 
 Accepting *either* an agent name or a profile name was rejected: profile names already collide with agent names (`~/.nax/profiles/opencode.json` and `.nax/profiles/codex.json` both exist), so any disambiguation rule silently produces a different comparison than intended. A separate `--compare-profiles` flag was rejected as two flags for one concept.
 
+The existing field names are **retained**: `BakeoffOptions.agents` and `ContestantResult.agent` keep their names and carry profile names as their values. Renaming them would ripple through `types.ts`, ranking, report rendering and six test files for no functional gain, and `run-action.test.ts` asserts on `callArg.agents` today.
+
 Per-contestant isolation is achieved by setting `outputDir` on each contestant's merged config. `RunOptions` has no output-dir field — the runtime derives it — so this is the only seam, and it redirects metrics, cost, status, runs, and prompt-audit together.
 
 ### Integration
@@ -44,7 +46,7 @@ Verified against the current tree:
 - `src/bakeoff/coordinator.ts` — `runBakeoff(options, deps)`; `persistBakeoffResult(result, outputDir)` writes `join(outputDir, "bakeoff.json")`; `handleRunAction(options, deps)` is the CLI dispatch that routes on `options.compare`.
 - `src/config/profile.ts` — `loadProfile(profileName, projectRoot)` deep-merges global then project profile JSON and throws `NaxError` code `PROFILE_NOT_FOUND` (message lists available names) or `PROFILE_NAME_INVALID`. **`validateProfileName` is module-private** — its path-segment guarantees are reachable only through `loadProfile`'s throw, not by direct call.
 - `src/config/merger.ts` — `deepMergeConfig(base, override)`.
-- `src/worktree/manager.ts` — `WorktreeManager.create(projectRoot, storyId)` / `remove(projectRoot, storyId)`; worktree path is `join(projectRoot, ".nax-wt", storyId)`, branch is `nax/${storyId}`. `create` already prunes, force-removes, and force-deletes a leftover branch, but the branch delete is gated on `hasWorktreeRecord` proving nax created it.
+- `src/worktree/manager.ts` — `WorktreeManager.create(projectRoot, storyId)` / `remove(projectRoot, storyId)`; worktree path is `join(projectRoot, ".nax-wt", storyId)`, branch is `nax/${storyId}`. `create` already prunes, force-removes, and force-deletes a leftover branch, but the branch delete is gated on a private `hasWorktreeRecord` check proving nax created it.
 - `src/prd/validate.ts` — `validateStoryId(id)` enforces `/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/`.
 - `src/execution/runner.ts` — `run(options: RunOptions): Promise<RunResult>`; `RunResult` is `{ success, iterations, storiesCompleted, totalCost, durationMs }`. `RunOptions` carries `prdPath`, `workdir`, `config`, `hooks`, `feature`, `featureDir`, `dryRun`, `statusFile` and **no** output-dir field.
 - `src/metrics/tracker.ts` — `loadRunMetrics(outputDir)` reads `join(outputDir, "metrics.json")`.
@@ -113,6 +115,7 @@ Contestant worktree ids carry a `bakeoff-` prefix, making `nax/bakeoff-…` a na
 - Accepting bare agent names as contestants; `--compare` accepts profile names only.
 - US-002 only: worktree removal failures remain best-effort and do not change the contestant's reported status.
 - US-004 only: reclaiming worktree directories left on disk without a matching git branch.
+- Concurrent bake-offs against the same repository; the `nax/bakeoff-` branch namespace is not locked, so two simultaneous bake-offs of the same feature and profile may contend for one worktree.
 
 ## Stories
 
@@ -163,6 +166,7 @@ Author the adapter that turns a `ContestantRunContext` into a real run and maps 
 - `src/metrics/tracker.ts` — `loadRunMetrics` and the metrics file location
 - `src/bakeoff/contestant.ts` — created by US-002 in its new form; the context and result types this adapter satisfies
 - `src/hooks/runner.ts` — `loadHooksConfig` for the run's hooks argument
+- `src/bakeoff/index.ts` — barrel the adapter must be exported from, so tests can import it via `@/bakeoff`
 
 #### Creates
 - `src/bakeoff/pipeline-adapter.ts` — the `run()` adapter, kept out of `contestant.ts` so that module stays free of `src/execution`
@@ -179,13 +183,14 @@ Derive contestant worktree ids in a reserved namespace, reclaim stale branches w
 
 ### US-005: Terminal cleanup
 
-Deletion-only. Remove the `_contestantDeps` module-level default, the agent-name validation surface superseded by profile resolution, and the superseded `pipeline` signature type. No new code.
+Deletion-only. Remove the `_contestantDeps` module-level default and its `src/bakeoff/index.ts` barrel export, the agent-name validation surface superseded by profile resolution, and the superseded `pipeline` signature type. No new code.
 
 Verification note: removals are verified by the build/static gate — `bun run typecheck` and `bun run lint` fail on any surviving reference.
 
 #### Context Files
 - `src/bakeoff/contestant.ts` — the default deps object being removed
 - `src/bakeoff/preflight.ts` — the superseded agent-name validation path
+- `src/bakeoff/index.ts` — barrel re-exporting `_contestantDeps`
 
 ### Seams
 
@@ -219,7 +224,7 @@ Verification note: removals are verified by the build/static gate — `bun run t
 - AC-18 `[unit]` the context's `config.outputDir` equals the context's `outputDir`.
 - AC-19 `[unit]` `runContestant` returns status `"dnf-crashed"` when the `pipeline` dependency rejects.
 - AC-20 `[unit]` a bake-off whose first contestant's pipeline rejects still invokes the pipeline for the second contestant.
-- AC-21 `[integration]` a two-contestant bake-off creates two distinct worktrees and removes both by the time it returns.
+- AC-21 `[integration]` a two-contestant bake-off creates two distinct directories under `.nax-wt` and removes both by the time it returns.
 - AC-22 `[unit]` `persistBakeoffResult` writes the result to a `bakeoff.json` nested under `bakeoff` and the feature name within the passed output directory.
 - AC-23 `[unit]` persisting results for two different features leaves both features' `bakeoff.json` files readable with their own feature values.
 
@@ -248,6 +253,7 @@ Verification note: removals are verified by the build/static gate — `bun run t
 - AC-41 `[unit]` the bake-off is rejected with an error naming the feature's `prd.json` path when that file is untracked by git.
 - AC-42 `[unit]` the bake-off is rejected with an error naming the feature's `prd.json` path when that file has uncommitted modifications.
 - AC-43 `[unit]` the bake-off rejection for an untracked PRD occurs without invoking the `pipeline` dependency.
+- AC-44 `[unit]` a contestant whose worktree creation fails is reported with status `"dnf-crashed"`.
 
 **Out of scope:**
 - Reclaiming a worktree directory present on disk with no corresponding git branch — the reclaim keys on the branch namespace only.
