@@ -14,7 +14,7 @@ import { WorktreeManager } from "../worktree/manager";
 import { runContestant } from "./contestant";
 import type { ContestantOptions, ContestantRunnerDeps } from "./contestant";
 import { pipeline } from "./pipeline-adapter";
-import { buildContestantConfig, parseCompareList, validateContestants } from "./preflight";
+import { buildContestantConfig, parseCompareList, reclaimStaleBakeoffBranches, validateContestants } from "./preflight";
 import type { ContestantValidationResult } from "./preflight";
 import { rankContestants } from "./ranking";
 import type { BakeoffResult, ContestantResult } from "./types";
@@ -77,6 +77,12 @@ export async function runBakeoff(
   deps: Partial<BakeoffCoordinatorDeps> = {},
 ): Promise<BakeoffResult> {
   const merged: BakeoffCoordinatorDeps = { ..._coordinatorDeps, ...deps };
+
+  // US-004 AC-6/AC-7: reclaim leftover nax/bakeoff-<id> branches (no live
+  // worktree record) before any contestant worktree is created, so a stale
+  // branch from a crashed prior run never blocks this one. Best-effort —
+  // failures are logged and swallowed inside the function itself.
+  await reclaimStaleBakeoffBranches(options.projectRoot);
 
   const { validAgents, errors, profileData } = await merged.validateContestants(options.agents, options.projectRoot);
 

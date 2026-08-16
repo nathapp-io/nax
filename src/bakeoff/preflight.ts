@@ -10,6 +10,7 @@ import type { NaxConfig } from "../config";
 import { deepMergeConfig } from "../config";
 import { loadProfile } from "../config/profile";
 import { NaxError } from "../errors";
+import { getSafeLogger } from "../logger";
 import { which as defaultWhich } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
 import { gitWithTimeout } from "../utils/git";
@@ -200,30 +201,43 @@ export function computeWorstCaseCost(contestantCount: number, maxCostPerContesta
  * record, freeing the reserved namespace for a fresh bake-off run
  * (US-004 AC-6, AC-7). Branches outside the `nax/bakeoff-` namespace are
  * never touched.
+ *
+ * Best-effort: called unconditionally as part of bake-off preflight, so any
+ * failure (e.g. projectRoot isn't a git repo) is logged and swallowed rather
+ * than aborting the run — a missed reclaim only risks a later worktree-create
+ * collision, which `WorktreeManager.create` already tolerates for its own
+ * orphans.
  */
 export async function reclaimStaleBakeoffBranches(projectRoot: string): Promise<void> {
-  const branchesResult = await gitWithTimeout(
-    ["for-each-ref", "--format=%(refname:short)", `refs/heads/${BAKEOFF_BRANCH_PREFIX}*`],
-    projectRoot,
-  );
-  if (branchesResult.exitCode !== 0) return;
+  try {
+    const branchesResult = await gitWithTimeout(
+      ["for-each-ref", "--format=%(refname:short)", `refs/heads/${BAKEOFF_BRANCH_PREFIX}*`],
+      projectRoot,
+    );
+    if (branchesResult.exitCode !== 0) return;
 
-  const branches = branchesResult.stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith(BAKEOFF_BRANCH_PREFIX));
-  if (branches.length === 0) return;
-
-  const worktreeListResult = await gitWithTimeout(["worktree", "list", "--porcelain"], projectRoot);
-  const recordedBranches = new Set(
-    worktreeListResult.stdout
+    const branches = branchesResult.stdout
       .split("\n")
-      .filter((line) => line.startsWith("branch "))
-      .map((line) => line.slice("branch ".length).trim()),
-  );
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith(BAKEOFF_BRANCH_PREFIX));
+    if (branches.length === 0) return;
 
-  for (const branch of branches) {
-    if (recordedBranches.has(`refs/heads/${branch}`)) continue;
-    await gitWithTimeout(["branch", "-D", branch], projectRoot);
+    const worktreeListResult = await gitWithTimeout(["worktree", "list", "--porcelain"], projectRoot);
+    const recordedBranches = new Set(
+      worktreeListResult.stdout
+        .split("\n")
+        .filter((line) => line.startsWith("branch "))
+        .map((line) => line.slice("branch ".length).trim()),
+    );
+
+    for (const branch of branches) {
+      if (recordedBranches.has(`refs/heads/${branch}`)) continue;
+      await gitWithTimeout(["branch", "-D", branch], projectRoot);
+    }
+  } catch (error) {
+    getSafeLogger()?.warn("bakeoff", "Failed to reclaim stale bake-off branches", {
+      projectRoot,
+      error: errorMessage(error),
+    });
   }
 }
