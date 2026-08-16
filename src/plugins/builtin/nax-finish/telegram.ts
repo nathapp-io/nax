@@ -68,6 +68,10 @@ export function buildEscalationMessage(
 /** Module-level deps for testability (`_deps` pattern). */
 export const _telegramDeps: { fetch: FetchFn } = { fetch: (...a) => fetch(...a) };
 
+/** SEC-4: 5s client-side cap for the notify fetch. Matches the interaction
+ *  plugin's sendMessage pattern (src/interaction/plugins/telegram.ts:188). */
+const NOTIFY_FETCH_TIMEOUT_MS = 5_000;
+
 /**
  * POST a plain-text message to a Telegram chat via the Bot API.
  *
@@ -79,12 +83,26 @@ export const _telegramDeps: { fetch: FetchFn } = { fetch: (...a) => fetch(...a) 
  * legacy Markdown has no reliable escape, and stripping the characters would
  * rewrite `_calendar.py` to `calendar.py`, pointing the reader at a file that
  * isn't the one under discussion. Plain text delivers the names intact.
+ *
+ * SEC-4: bounded by `NOTIFY_FETCH_TIMEOUT_MS` via AbortController so a hung
+ * Telegram API connection can't stall the post-run completion phase for the
+ * OS TCP timeout (~75s) or forever. The interaction plugin's `sendMessage`
+ * uses the same 5s pattern (src/interaction/plugins/telegram.ts:188).
  */
 export async function sendTelegramNotify(cfg: { token: string; chatId: string }, text: string): Promise<boolean> {
-  const res = await _telegramDeps.fetch(`https://api.telegram.org/bot${cfg.token}/sendMessage`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: cfg.chatId, text }),
-  });
-  return res.ok;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), NOTIFY_FETCH_TIMEOUT_MS);
+  try {
+    const res = await _telegramDeps.fetch(`https://api.telegram.org/bot${cfg.token}/sendMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: cfg.chatId, text }),
+      signal: controller.signal,
+    });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
 }
