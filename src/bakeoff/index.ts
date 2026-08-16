@@ -34,6 +34,7 @@ export type {
   ContestantValidationResult,
   PreflightDeps,
 } from "./preflight";
+export { _pipelineAdapterDeps, pipeline } from "./pipeline-adapter";
 export { rankContestants } from "./ranking";
 export { renderBakeoffReport } from "./report";
 export type { BakeoffResult, ContestantResult, ContestantStatus } from "./types";

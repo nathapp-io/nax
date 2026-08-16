@@ -8,10 +8,10 @@
 
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
-import { NaxError } from "../errors";
 import { WorktreeManager } from "../worktree/manager";
 import { runContestant } from "./contestant";
 import type { ContestantOptions, ContestantRunnerDeps } from "./contestant";
+import { pipeline } from "./pipeline-adapter";
 import { buildContestantConfig, parseCompareList, validateContestants } from "./preflight";
 import type { ContestantValidationResult } from "./preflight";
 import { rankContestants } from "./ranking";
@@ -43,17 +43,11 @@ export async function persistBakeoffResult(result: BakeoffResult, outputDir: str
 
 /**
  * Default `ContestantRunnerDeps` for production wiring: a real worktree
- * manager, and a pipeline stub. Wiring the pipeline to a real nax run is
- * US-003 — until then it reports every contestant as `dnf-crashed` rather
- * than silently no-op'ing.
+ * manager and the real pipeline adapter (`src/bakeoff/pipeline-adapter.ts`).
  */
 const _defaultContestantDeps: ContestantRunnerDeps = {
   worktreeManager: new WorktreeManager(),
-  pipeline: async () => {
-    throw new NaxError("Bake-off contestant pipeline is not yet wired to a real nax run", "NOT_IMPLEMENTED", {
-      stage: "bakeoff-contestant",
-    });
-  },
+  pipeline,
 };
 
 export const _coordinatorDeps: BakeoffCoordinatorDeps = {

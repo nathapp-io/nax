@@ -12,8 +12,8 @@
  */
 
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { _bakeoffCliDeps, handleRunAction } from "@/bakeoff";
-import type { BakeoffCliDeps, BakeoffResult, HandleRunActionOptions } from "@/bakeoff";
+import { _bakeoffCliDeps, handleRunAction, pipeline, runBakeoff, runContestant } from "@/bakeoff";
+import type { BakeoffCliDeps, BakeoffResult, ContestantRunnerDeps, HandleRunActionOptions } from "@/bakeoff";
 import type { NaxConfig } from "@/config";
 
 function baseOptions(overrides: Partial<HandleRunActionOptions> = {}): HandleRunActionOptions {
@@ -179,5 +179,48 @@ describe("handleRunAction (AC-11: no --compare routes to runSingleAgent)", () =>
 
     expect(runSingleAgentSpy).toHaveBeenCalledTimes(1);
     expect(runBakeoffSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleRunAction (US-003 AC1: pipeline adapter invocation count)", () => {
+  it("AC1: invokes the pipeline adapter exactly twice for two resolvable profiles", async () => {
+    let pipelineCallCount = 0;
+    const spyDeps: ContestantRunnerDeps = {
+      worktreeManager: {
+        create: async () => undefined,
+        remove: async () => undefined,
+      },
+      pipeline: async (ctx) => {
+        pipelineCallCount++;
+        // Route through the real pipeline adapter under test so a spy
+        // wrapper doesn't silently diverge from production wiring.
+        try {
+          return await pipeline(ctx);
+        } catch {
+          return { results: [], metrics: [] };
+        }
+      },
+    };
+
+    const stubbedRunBakeoff: BakeoffCliDeps["runBakeoff"] = (options) =>
+      runBakeoff(options, {
+        validateContestants: async () => ({
+          validAgents: ["profile-a", "profile-b"],
+          errors: [],
+          profileData: {},
+        }),
+        runContestant: (agent, contestantOptions) => runContestant(agent, contestantOptions, spyDeps),
+        persistBakeoffResult: async () => undefined,
+      });
+
+    await withCliDeps({ runBakeoff: stubbedRunBakeoff }, () =>
+      handleRunAction(
+        baseOptions({
+          compare: "profile-a,profile-b",
+        }),
+      ),
+    );
+
+    expect(pipelineCallCount).toBe(2);
   });
 });
