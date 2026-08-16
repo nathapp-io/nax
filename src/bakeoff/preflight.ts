@@ -12,6 +12,9 @@ import { loadProfile } from "../config/profile";
 import { NaxError } from "../errors";
 import { which as defaultWhich } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
+import { gitWithTimeout } from "../utils/git";
+
+const BAKEOFF_BRANCH_PREFIX = "nax/bakeoff-";
 
 export type ContestantValidationReason = "unknown-profile" | "no-acp-adapter" | "dnf-not-installed";
 
@@ -197,10 +200,30 @@ export function computeWorstCaseCost(contestantCount: number, maxCostPerContesta
  * record, freeing the reserved namespace for a fresh bake-off run
  * (US-004 AC-6, AC-7). Branches outside the `nax/bakeoff-` namespace are
  * never touched.
- *
- * STUB (US-004 test-writer session): real branch-listing + reclaim logic is
- * not yet implemented — currently a no-op.
  */
-export async function reclaimStaleBakeoffBranches(_projectRoot: string): Promise<void> {
-  // not implemented
+export async function reclaimStaleBakeoffBranches(projectRoot: string): Promise<void> {
+  const branchesResult = await gitWithTimeout(
+    ["for-each-ref", "--format=%(refname:short)", `refs/heads/${BAKEOFF_BRANCH_PREFIX}*`],
+    projectRoot,
+  );
+  if (branchesResult.exitCode !== 0) return;
+
+  const branches = branchesResult.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith(BAKEOFF_BRANCH_PREFIX));
+  if (branches.length === 0) return;
+
+  const worktreeListResult = await gitWithTimeout(["worktree", "list", "--porcelain"], projectRoot);
+  const recordedBranches = new Set(
+    worktreeListResult.stdout
+      .split("\n")
+      .filter((line) => line.startsWith("branch "))
+      .map((line) => line.slice("branch ".length).trim()),
+  );
+
+  for (const branch of branches) {
+    if (recordedBranches.has(`refs/heads/${branch}`)) continue;
+    await gitWithTimeout(["branch", "-D", branch], projectRoot);
+  }
 }

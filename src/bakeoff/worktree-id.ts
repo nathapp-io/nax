@@ -6,10 +6,30 @@
  * within its 64-character cap (US-004 AC-2..AC-5).
  */
 
+import { createHash } from "node:crypto";
+
+const MAX_WORKTREE_ID_LENGTH = 64;
+const HASH_SUFFIX_LENGTH = 8;
+
+/** Replaces characters outside validateStoryId's alphabet with `-`. */
+function sanitize(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, "-");
+}
+
 /**
- * STUB (US-004 test-writer session): real derivation (sanitize, truncate,
- * distinguishing-suffix-on-collision) is not yet implemented.
+ * Derives a `bakeoff-<feature>-<profile>` worktree ID, sanitized to
+ * validateStoryId's alphabet and truncated to at most 64 characters. When
+ * truncation would collide two distinct overlong inputs, a stable hash of
+ * the untruncated natural ID is appended as a distinguishing suffix.
  */
-export function deriveBakeoffWorktreeId(_feature: string, _profile: string): string {
-  return "";
+export function deriveBakeoffWorktreeId(feature: string, profile: string): string {
+  const natural = `bakeoff-${sanitize(feature)}-${sanitize(profile)}`;
+  if (natural.length <= MAX_WORKTREE_ID_LENGTH) {
+    return natural;
+  }
+
+  const hash = createHash("sha256").update(natural).digest("hex").slice(0, HASH_SUFFIX_LENGTH);
+  const suffix = `-${hash}`;
+  const prefixBudget = MAX_WORKTREE_ID_LENGTH - suffix.length;
+  return natural.slice(0, prefixBudget) + suffix;
 }

@@ -5,6 +5,7 @@
  */
 
 import { NaxError } from "../errors";
+import { gitWithTimeout } from "../utils/git";
 
 /**
  * Validates a story ID for use in git operations.
@@ -46,13 +47,21 @@ export function validateStoryId(id: string): void {
  * Rejects a bake-off invocation whose feature `prd.json` is untracked by git
  * or carries uncommitted modifications. Must be called before any worktree
  * is created and before any contestant spend occurs (US-004 AC-1, AC-8, AC-9).
- *
- * STUB (US-004 test-writer session): the real git tracked/clean check is not
- * yet implemented — always throws so callers surface the missing guard.
  */
-export async function assertPrdCommitted(prdPath: string, _projectRoot: string): Promise<void> {
-  throw new NaxError(`assertPrdCommitted not implemented for ${prdPath}`, "NOT_IMPLEMENTED", {
-    stage: "bakeoff-prd-guard",
-    prdPath,
-  });
+export async function assertPrdCommitted(prdPath: string, projectRoot: string): Promise<void> {
+  const tracked = await gitWithTimeout(["ls-files", "--error-unmatch", "--", prdPath], projectRoot);
+  if (tracked.exitCode !== 0) {
+    throw new NaxError(`Feature PRD is not tracked by git: ${prdPath}`, "PRD_NOT_COMMITTED", {
+      stage: "bakeoff-prd-guard",
+      prdPath,
+    });
+  }
+
+  const status = await gitWithTimeout(["status", "--porcelain", "--", prdPath], projectRoot);
+  if (status.stdout.trim().length > 0) {
+    throw new NaxError(`Feature PRD has uncommitted modifications: ${prdPath}`, "PRD_NOT_COMMITTED", {
+      stage: "bakeoff-prd-guard",
+      prdPath,
+    });
+  }
 }

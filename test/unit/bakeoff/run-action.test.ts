@@ -9,6 +9,12 @@
  *    the single-agent runner.
  *  - AC-11: when --compare is absent, handleRunAction routes to the
  *    single-agent runner and does not invoke runBakeoff.
+ *
+ * Contract drift (US-004): handleRunAction now calls the injected
+ * `assertPrdCommitted` guard before dispatching to runBakeoff. Tests below
+ * that exercise the --compare path but predate the guard override it with a
+ * no-op so they keep asserting dispatch behavior without needing a real git
+ * fixture — the guard's own behavior is covered separately (AC-1/AC-8/AC-9/AC-10).
  */
 
 import { afterEach, describe, expect, it, mock } from "bun:test";
@@ -61,6 +67,7 @@ describe("handleRunAction (AC-10: --compare routes to runBakeoff)", () => {
       {
         runBakeoff: runBakeoffSpy as unknown as BakeoffCliDeps["runBakeoff"],
         runSingleAgent: runSingleAgentSpy as unknown as BakeoffCliDeps["runSingleAgent"],
+        assertPrdCommitted: async () => undefined,
       },
       () =>
         handleRunAction(
@@ -93,6 +100,7 @@ describe("handleRunAction (AC-10: --compare routes to runBakeoff)", () => {
       {
         runBakeoff: runBakeoffSpy as unknown as BakeoffCliDeps["runBakeoff"],
         runSingleAgent: runSingleAgentSpy as unknown as BakeoffCliDeps["runSingleAgent"],
+        assertPrdCommitted: async () => undefined,
       },
       () =>
         handleRunAction(
@@ -124,6 +132,7 @@ describe("handleRunAction (AC-10: --compare routes to runBakeoff)", () => {
       {
         runBakeoff: runBakeoffSpy as unknown as BakeoffCliDeps["runBakeoff"],
         runSingleAgent: runSingleAgentSpy as unknown as BakeoffCliDeps["runSingleAgent"],
+        assertPrdCommitted: async () => undefined,
       },
       () => handleRunAction(baseOptions({ compare: "claude,codex", maxCostUsd: 5 })),
     );
@@ -213,7 +222,7 @@ describe("handleRunAction (US-003 AC1: pipeline adapter invocation count)", () =
         persistBakeoffResult: async () => undefined,
       });
 
-    await withCliDeps({ runBakeoff: stubbedRunBakeoff }, () =>
+    await withCliDeps({ runBakeoff: stubbedRunBakeoff, assertPrdCommitted: async () => undefined }, () =>
       handleRunAction(
         baseOptions({
           compare: "profile-a,profile-b",
