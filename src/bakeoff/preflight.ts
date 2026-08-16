@@ -5,16 +5,21 @@
  * Rejects invalid contestants before any spend occurs.
  */
 
-import { KNOWN_AGENT_NAMES } from "../agents";
 import { ACP_ADAPTER_NAMES, AcpAgentAdapter } from "../agents/acp";
+import type { NaxConfig } from "../config";
+import { deepMergeConfig } from "../config";
+import { loadProfile } from "../config/profile";
 import { NaxError } from "../errors";
 import { which as defaultWhich } from "../utils/bun-deps";
+import { errorMessage } from "../utils/errors";
 
-export type ContestantValidationReason = "unknown-agent" | "no-acp-adapter" | "dnf-not-installed";
+export type ContestantValidationReason = "unknown-profile" | "no-acp-adapter" | "dnf-not-installed";
 
 export interface ContestantValidationError {
   agent: string;
   reason: ContestantValidationReason;
+  /** Human-readable detail — for `unknown-profile`, names the profile that failed to resolve. */
+  message?: string;
 }
 
 export interface ContestantValidationResult {
@@ -26,16 +31,19 @@ export interface PreflightDeps {
   /** Takes the agent *name* — resolves to the real launch binary internally. */
   isInstalled: (agentName: string) => boolean;
   hasAcpAdapterEntry: (name: string) => boolean;
+  /** Resolves a `--compare` entry (a profile name) to its raw overlay data. */
+  loadProfile: (profileName: string, projectRoot: string) => Promise<Record<string, unknown>>;
 }
 
 /**
- * Per-call deps shape. `hasAcpAdapterEntry` is optional because the
- * test surface and the lean acceptance surface only require `isInstalled`.
- * When omitted, the default ACP adapter registry is consulted.
+ * Per-call deps shape. `hasAcpAdapterEntry`/`loadProfile` are optional because
+ * the test surface and the lean acceptance surface only require `isInstalled`.
+ * When omitted, the module-level `_preflightDeps` entries are consulted.
  */
 export interface PreflightCallableDeps {
   isInstalled: (agentName: string) => boolean;
   hasAcpAdapterEntry?: (name: string) => boolean;
+  loadProfile?: (profileName: string, projectRoot: string) => Promise<Record<string, unknown>>;
 }
 
 /**
@@ -49,6 +57,7 @@ export interface PreflightCallableDeps {
 export const _preflightDeps: PreflightDeps = {
   isInstalled: (agentName: string) => defaultWhich(new AcpAgentAdapter(agentName).binary) !== null,
   hasAcpAdapterEntry: (name: string) => ACP_ADAPTER_NAMES.has(name),
+  loadProfile: (profileName: string, projectRoot: string) => loadProfile(profileName, projectRoot),
 };
 
 /**
@@ -63,37 +72,89 @@ export function parseCompareList(input: string): string[] {
 }
 
 /**
- * Validate that every requested contestant is a known, runnable agent.
- * Returns both the validation errors and the subset of contestants that
- * passed pre-flight. `deps` is optional; when omitted, falls back to the
+ * Validate that every requested contestant (a profile name) resolves and
+ * that its resolved agent is registered and installed. Returns both the
+ * validation errors and the subset of contestant names that passed
+ * pre-flight. `deps` is optional; when omitted, falls back to the
  * module-level `_preflightDeps`.
  */
-export function validateContestants(
+export async function validateContestants(
   names: string[],
+  projectRoot: string,
   deps: PreflightCallableDeps = _preflightDeps,
-): ContestantValidationResult {
+): Promise<ContestantValidationResult> {
+  const hasAcpAdapterEntry = deps.hasAcpAdapterEntry ?? _preflightDeps.hasAcpAdapterEntry;
+  const loadProfileFn = deps.loadProfile ?? _preflightDeps.loadProfile;
+  if (!hasAcpAdapterEntry || !loadProfileFn) {
+    throw new NaxError(
+      "validateContestants requires hasAcpAdapterEntry and loadProfile deps",
+      "PREFLIGHT_DEPS_MISSING",
+      {
+        stage: "bakeoff-preflight",
+      },
+    );
+  }
+
   const errors: ContestantValidationError[] = [];
   const validAgents: string[] = [];
 
-  const hasAdapter = deps.hasAcpAdapterEntry ?? _preflightDeps.hasAcpAdapterEntry;
+  for (const name of names) {
+    let profileData: Record<string, unknown>;
+    try {
+      profileData = await loadProfileFn(name, projectRoot);
+    } catch (err) {
+      errors.push({
+        agent: name,
+        reason: "unknown-profile",
+        message: `Profile "${name}" could not be resolved: ${errorMessage(err)}`,
+      });
+      continue;
+    }
 
-  for (const agent of names) {
-    if (!KNOWN_AGENT_NAMES.includes(agent)) {
-      errors.push({ agent, reason: "unknown-agent" });
+    const agentConfig = profileData.agent as { default?: unknown } | undefined;
+    const resolvedAgent = typeof agentConfig?.default === "string" ? agentConfig.default : undefined;
+
+    if (!resolvedAgent || !hasAcpAdapterEntry(resolvedAgent)) {
+      errors.push({
+        agent: name,
+        reason: "no-acp-adapter",
+        message: `Profile "${name}" resolves to agent "${resolvedAgent}", which has no ACP adapter entry`,
+      });
       continue;
     }
-    if (!hasAdapter(agent)) {
-      errors.push({ agent, reason: "no-acp-adapter" });
+
+    if (!deps.isInstalled(resolvedAgent)) {
+      errors.push({
+        agent: name,
+        reason: "dnf-not-installed",
+        message: `Profile "${name}" resolves to agent "${resolvedAgent}", whose binary is not installed on PATH`,
+      });
       continue;
     }
-    if (!deps.isInstalled(agent)) {
-      errors.push({ agent, reason: "dnf-not-installed" });
-      continue;
-    }
-    validAgents.push(agent);
+
+    validAgents.push(name);
   }
 
   return { errors, validAgents };
+}
+
+/**
+ * Deep-merge a resolved profile's overlay onto the base config for one
+ * contestant, pinning `agent.fallback.enabled` off regardless of the
+ * overlay (a bake-off contestant never falls back to a different agent).
+ */
+export function buildContestantConfig(baseConfig: NaxConfig, profileData: Record<string, unknown>): NaxConfig {
+  const merged = deepMergeConfig<NaxConfig>(baseConfig as unknown as Record<string, unknown>, profileData);
+  return {
+    ...merged,
+    agent: {
+      ...merged.agent,
+      fallback: {
+        ...merged.agent?.fallback,
+        enabled: false,
+      },
+    },
+  };
 }
 
 /**

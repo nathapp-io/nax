@@ -84,7 +84,7 @@ describe("runBakeoff (AC-1: sequential execution)", () => {
 
     await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
         })) as BakeoffCoordinatorDeps["validateContestants"],
@@ -114,7 +114,7 @@ describe("runBakeoff (AC-1: sequential execution)", () => {
 
     await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
         })) as BakeoffCoordinatorDeps["validateContestants"],
@@ -137,8 +137,8 @@ describe("runBakeoff (AC-2: validation failure)", () => {
 
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((_names: string[]) => ({
-          errors: [{ agent: "bogus", reason: "unknown-agent" }],
+        validateContestants: (async (_names: string[], _projectRoot: string) => ({
+          errors: [{ agent: "bogus", reason: "unknown-profile" }],
           validAgents: [],
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
@@ -157,8 +157,8 @@ describe("runBakeoff (AC-2: validation failure)", () => {
   it("AC2 (boundary): validation failure returns a BakeoffResult (no throw) with empty ranking", async () => {
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((_names: string[]) => ({
-          errors: [{ agent: "bogus", reason: "unknown-agent" }],
+        validateContestants: (async (_names: string[], _projectRoot: string) => ({
+          errors: [{ agent: "bogus", reason: "unknown-profile" }],
           validAgents: [],
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: mock(async (agent: string) => makeResult({ agent })) as unknown as BakeoffCoordinatorDeps["runContestant"],
@@ -185,7 +185,7 @@ describe("runBakeoff (AC-3: one runContestant call per validated agent)", () => 
 
     await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
         })) as BakeoffCoordinatorDeps["validateContestants"],
@@ -213,7 +213,7 @@ describe("runBakeoff (AC-3: one runContestant call per validated agent)", () => 
 
     await withCoordinatorDeps(
       {
-        validateContestants: ((_names: string[]) => ({
+        validateContestants: (async (_names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: ["claude"],
         })) as BakeoffCoordinatorDeps["validateContestants"],
@@ -239,7 +239,7 @@ describe("runBakeoff (AC-4: ranking wiring)", () => {
 
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
         })) as BakeoffCoordinatorDeps["validateContestants"],
@@ -267,7 +267,7 @@ describe("runBakeoff (AC-4: ranking wiring)", () => {
 
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
         })) as BakeoffCoordinatorDeps["validateContestants"],
@@ -301,7 +301,7 @@ describe("runBakeoff (AC-7: fail-open across DNF contestants)", () => {
 
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
         })) as BakeoffCoordinatorDeps["validateContestants"],
@@ -323,7 +323,7 @@ describe("runBakeoff (AC-7: fail-open across DNF contestants)", () => {
   it("AC7 (boundary): every validated contestant appears in the ranking, including the one after the DNF", async () => {
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
         })) as BakeoffCoordinatorDeps["validateContestants"],
@@ -369,7 +369,7 @@ describe("runBakeoff (AC-8: all-DNF persistence + non-zero outcome)", () => {
 
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
         })) as BakeoffCoordinatorDeps["validateContestants"],
@@ -402,7 +402,7 @@ describe("runBakeoff (AC-8: all-DNF persistence + non-zero outcome)", () => {
   it("AC8 (boundary): single-DNF bake-off persists + signals non-zero", async () => {
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
         })) as BakeoffCoordinatorDeps["validateContestants"],
@@ -429,7 +429,7 @@ describe("runBakeoff (AC-9: at-least-one-finisher zero outcome)", () => {
   it("AC9: signals a zero exit outcome when at least one contestant finishes and a report is produced", async () => {
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
         })) as BakeoffCoordinatorDeps["validateContestants"],
@@ -453,7 +453,7 @@ describe("runBakeoff (AC-9: at-least-one-finisher zero outcome)", () => {
   it("AC9 (boundary): all-pass bake-off signals outcome === 0", async () => {
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
         })) as BakeoffCoordinatorDeps["validateContestants"],

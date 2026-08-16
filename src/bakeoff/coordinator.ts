@@ -27,7 +27,7 @@ export interface BakeoffOptions {
 
 /** Injectable dependencies for the coordinator. Tests override individual entries. */
 export interface BakeoffCoordinatorDeps {
-  validateContestants: (names: string[]) => ContestantValidationResult;
+  validateContestants: (names: string[], projectRoot: string) => Promise<ContestantValidationResult>;
   runContestant: (agent: string, options: ContestantOptions) => Promise<ContestantResult>;
   rankContestants: typeof rankContestants;
   persistBakeoffResult: (result: BakeoffResult, outputDir: string) => Promise<void>;
@@ -65,7 +65,7 @@ export async function runBakeoff(
 ): Promise<BakeoffResult> {
   const merged: BakeoffCoordinatorDeps = { ..._coordinatorDeps, ...deps };
 
-  const { validAgents, errors } = merged.validateContestants(options.agents);
+  const { validAgents, errors } = await merged.validateContestants(options.agents, options.projectRoot);
 
   const results: ContestantResult[] = [];
   for (const agent of validAgents) {

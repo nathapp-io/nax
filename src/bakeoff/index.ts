@@ -25,6 +25,7 @@ export type {
 export {
   _preflightDeps,
   assertCompareAgentExclusive,
+  buildContestantConfig,
   computeWorstCaseCost,
   parseCompareList,
   validateContestants,
