@@ -12,7 +12,7 @@ import { featureDir } from "../config";
 import { assertPrdCommitted } from "../prd";
 import { WorktreeManager } from "../worktree/manager";
 import { runContestant } from "./contestant";
-import type { ContestantOptions, ContestantRunnerDeps } from "./contestant";
+import type { ContestantOptions } from "./contestant";
 import { pipeline } from "./pipeline-adapter";
 import { buildContestantConfig, parseCompareList, reclaimStaleBakeoffBranches, validateContestants } from "./preflight";
 import type { ContestantValidationResult } from "./preflight";
@@ -43,18 +43,13 @@ export async function persistBakeoffResult(result: BakeoffResult, outputDir: str
   await Bun.write(filePath, JSON.stringify(result, null, 2));
 }
 
-/**
- * Default `ContestantRunnerDeps` for production wiring: a real worktree
- * manager and the real pipeline adapter (`src/bakeoff/pipeline-adapter.ts`).
- */
-const _defaultContestantDeps: ContestantRunnerDeps = {
-  worktreeManager: new WorktreeManager(),
-  pipeline,
-};
-
 export const _coordinatorDeps: BakeoffCoordinatorDeps = {
   validateContestants,
-  runContestant: (agent, options) => runContestant(agent, options, _defaultContestantDeps),
+  runContestant: (agent, options) =>
+    runContestant(agent, options, {
+      worktreeManager: new WorktreeManager(),
+      pipeline,
+    }),
   rankContestants,
   persistBakeoffResult,
 };
