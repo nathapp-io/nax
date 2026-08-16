@@ -118,14 +118,54 @@ export async function getAddedLinesPerFile(workdir: string, fromRef = "HEAD"): P
   return result;
 }
 
+/** Regex metacharacters that must be matched literally inside an allow pattern. */
+const REGEX_METACHARACTERS = ".+?^${}()|[]\\/";
+
+/**
+ * Translate a glob-style allow pattern into a fully-anchored RegExp.
+ *
+ * `**` matches across directory separators, `*` matches within one segment,
+ * and every other character is matched literally.
+ *
+ * Built as a single left-to-right scan rather than chained `.replace()` calls,
+ * which had four separate failure modes:
+ *   - `*` -> `[^/]*` ran after `**` -> `.*` and rewrote the `*` **inside** the
+ *     `.*` it had just produced, so the shipped default `src/**\/index.ts`
+ *     compiled to `src/.[^/]*\/index.ts` and matched exactly one directory
+ *     level — `src/a/b/index.ts` was reported as a hard violation.
+ *   - `.` stayed a wildcard, so `src/a.ts` also allowed `src/axts.ts`, widening
+ *     the allowlist and downgrading a real violation to soft.
+ *   - `[id]`, `a+b`, `app(1)` — ordinary directory names — silently matched
+ *     nothing, so allowed files were reported as violations.
+ *   - an unbalanced `(` threw out of the whole isolation check.
+ *
+ * Anchored `^...$` against the repo-relative path. This is deliberately
+ * stricter than the suffix-matching `globToRegex` in the context engine and
+ * `utils/path-filters`: those decide which rules apply, whereas widening this
+ * allowlist silently permits a source write the TDD session should not make.
+ */
+function allowPatternToRegex(pattern: string): RegExp {
+  let source = "";
+  for (let i = 0; i < pattern.length; i++) {
+    const char = pattern[i];
+    if (char === "*") {
+      if (pattern[i + 1] === "*") {
+        source += ".*";
+        i++;
+      } else {
+        source += "[^/]*";
+      }
+      continue;
+    }
+    source += REGEX_METACHARACTERS.includes(char) ? `\\${char}` : char;
+  }
+  // Every metacharacter is escaped above, so this can no longer throw.
+  return new RegExp(`^${source}$`); // nosemgrep: detect-non-literal-regexp — pattern is escaped, not interpolated raw
+}
+
 /** Check if a file path matches any of the allowed patterns (glob-like) */
 function matchesAllowedPath(filePath: string, allowedPaths: string[]): boolean {
-  return allowedPaths.some((pattern) => {
-    // Simple glob matching: ** = any directory, * = any filename segment
-    const regexPattern = pattern.replace(/\*\*/g, ".*").replace(/\*/g, "[^/]*").replace(/\//g, "\\/");
-    const regex = new RegExp(`^${regexPattern}$`); // nosemgrep: detect-non-literal-regexp — pattern from PRD scope config, not user input
-    return regex.test(filePath);
-  });
+  return allowedPaths.some((pattern) => allowPatternToRegex(pattern).test(filePath));
 }
 
 /**
