@@ -27,19 +27,19 @@ Each item is tagged with how far it was actually checked. Do not treat these as 
 | **L33** | MEDIUM | ✅ **Fixed** | `[read]` Two distinct defects. `skipPermissions` has **zero readers** outside `permissions.ts` (only `.mode` is consumed, in `acp/adapter.ts` and `middleware/audit.ts`) — dead output that `CLAUDE.md` still advertises as the destructuring pattern. Worse: the `execution.permissions` schema block has **zero readers** — it parses and silently does nothing, so a user configuring it gets no error and no effect. |
 | **L16** | MEDIUM | ✅ **Fixed** | `[read]` `parseRunLog` does `lines.map(line => JSON.parse(line))` inside one try/catch returning `[]`. A single truncated final line — exactly what a crashed run leaves — blanks the entire log for `nax runs list/show`, defeating the diagnostic tool precisely when it is needed. Should skip bad lines, not the file. |
 
-### Confirmed, correctly rated as low
+### Confirmed (originally rated low)
 
-| ID | Severity | Finding |
-|:---|:---|:---|
-| L2 | LOW-MED | `[read]` Uncancellable `await Bun.sleep(iterationDelayMs)` at `unified-executor.ts:554,647`. Violates the repo's own forbidden-patterns rule; `cancellableDelay` exists in `utils/bun-deps`. Ctrl+C will not interrupt the delay. |
-| L9 | LOW-MED | `[read]` `matchesAllowedPath` builds `new RegExp` from glob patterns. A `(`, `+`, or `[` in a scope pattern throws or matches wrongly. The `nosemgrep` note calls patterns "not user input", but PRD scope config is LLM-authored. |
-| L15 | LOW-MED | `[read]` `promptForConfirmation` registers only a `data` listener — no `end`/`error`, so stdin EOF on a TTY hangs forever with raw mode still set. Raw mode *is* restored on the normal and Ctrl+C paths, so that half of the original claim is weaker than filed. Both callers are interactive (`bin/nax.ts:493,647`). |
-| L12 | LOW | `[read]` `parseCommandToArgv` applies `~` expansion via `.map()` *after* quote parsing, so `"~/x"` expands inside quotes; `if (current.length > 0)` drops a legitimately empty `""` argument. |
-| L21 | LOW | `[read]` `sink({ ...entry })` is a shallow clone, so nested `entry.data` is shared across sinks — the isolation the doc comment claims is not provided. |
-| L1 | LOW | `[read]` `Bun.spawnSync` git call on the main thread at `run-setup.ts:322`. One-time and fast; cosmetic in practice. |
-| L3 | LOW | `[read]` `filePath.includes("../")` traversal check. `..//` *is* caught (it contains `../`); the real gap is absolute paths. Inputs are internal. |
-| L7 | LOW | `[shallow]` Feature name flows unvalidated into `runDir` path construction at `subscribers/registry.ts:53`. Overlaps L17. |
-| L14 | LOW | `[shallow]` `followLogs` re-reads the whole file per poll; stalls on rotation, crashes on deletion. |
+| ID | Severity | Status | Finding |
+|:---|:---|:---|:---|
+| L2 | LOW-MED | ✅ **Fixed** | `[read]` Uncancellable `await Bun.sleep(iterationDelayMs)` at `unified-executor.ts`. Now `cancellableDelay(..., ctx.runtime.signal)`. The `> 0` guard was dropped deliberately: with it, a run configured with no iteration delay never reached a cancellation point here at all. |
+| L9 | **MEDIUM** | ✅ **Fixed** | `[probe]` Worse than filed — **four** failure modes, not one. The chained replaces rewrote each other: `*` -> `[^/]*` ran after `**` -> `.*` and rewrote the `*` **inside** it, so the **shipped default** `src/**/index.ts` compiled to `src/.[^/]*/index.ts` and matched exactly one directory level. Plus `.` stayed a wildcard (`src/a.ts` allowed `src/axts.ts` — widening the allowlist), `[id]`/`a+b`/`app(1)` matched nothing, and an unbalanced `(` threw. Replaced with a single escaping scan. |
+| L15 | LOW-MED | ✅ **Fixed** | `[probe]` The filed "EOF hang" is real but hard to reach. The reachable defect is different: raw mode does no EOF processing, so **Ctrl+D arrived as ordinary data and fell into the "any other input" branch — confirming the run**. Extracted to `src/cli/confirm.ts` (testable), Ctrl+D now cancels, `end`/`error` are handled, and the terminal is restored exactly once on every path. |
+| L12 | LOW | Open | `[read]` `parseCommandToArgv` applies `~` expansion via `.map()` *after* quote parsing, so `"~/x"` expands inside quotes; `if (current.length > 0)` drops a legitimately empty `""` argument. |
+| L21 | LOW | Open | `[read]` `sink({ ...entry })` is a shallow clone, so nested `entry.data` is shared across sinks — the isolation the doc comment claims is not provided. |
+| L1 | LOW | Open | `[read]` `Bun.spawnSync` git call on the main thread at `run-setup.ts:322`. One-time and fast; cosmetic in practice. |
+| L3 | LOW | Open | `[read]` `filePath.includes("../")` traversal check. `..//` *is* caught (it contains `../`); the real gap is absolute paths. Inputs are internal. |
+| L7 | LOW | Open | `[shallow]` Feature name flows unvalidated into `runDir` path construction at `subscribers/registry.ts:53`. Overlaps L17. |
+| L14 | LOW | Open | `[shallow]` `followLogs` re-reads the whole file per poll; stalls on rotation, crashes on deletion. |
 
 ### Downgraded or refuted
 
@@ -60,8 +60,8 @@ L4, L6, L17, L18, L19, L22–L32, L34–L38 were left at their original severity
 2. ~~**L10**~~ — done. `markStoryFailed` now clears `passes`.
 3. ~~**L16**~~ — done. Per-line tolerant parse; malformed lines are skipped and counted in a warning.
 4. ~~**L33**~~ — done, both halves. `skipPermissions` and the unused `allowedTools` are gone from `ResolvedPermissions`; `execution.permissions` is now rejected at config load by `rejectUnimplementedPermissionsBlock`, alongside the `"scoped"` profile it belongs to, and its schema and `runtime-types.ts` entries were removed.
-5. **L2, L9, L15** — the remaining confirmed set; one small batch.
-6. Everything else — hygiene, genuinely.
+5. ~~**L2, L9, L15**~~ — done. L9 turned out to be MEDIUM, not LOW: it silently broke the shipped default allow pattern.
+6. Remaining: L1, L3, L7, L12, L14, L21 (confirmed but genuinely low), plus the never-re-verified group below.
 
 ### Why L33 was rejected rather than implemented
 

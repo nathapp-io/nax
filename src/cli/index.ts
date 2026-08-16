@@ -48,6 +48,7 @@ export { writeSetupConfig, _writeSetupDeps, type WriteSetupConfigResult } from "
 export { pluginsListCommand } from "./plugins";
 export { generateCommand, type GenerateCommandOptions } from "./generate";
 export { configCommand, type ConfigCommandOptions } from "./config";
+export { promptForConfirmation, _confirmDeps, type ConfirmStdin } from "./confirm";
 export { agentsListCommand } from "./agents";
 export { contextInspectCommand, type ContextInspectOptions } from "./context";
 export {

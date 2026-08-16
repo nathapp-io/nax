@@ -50,6 +50,7 @@ import {
   planCommand,
   planDecomposeCommand,
   pluginsListCommand,
+  promptForConfirmation,
   promptsCommand,
   promptsInitCommand,
   resolveRunProfileOverride,
@@ -122,52 +123,6 @@ function warnIfPlanDegraded(result: PlanResult): void {
   console.log(chalk.yellow("\n[WARN] PRD recovered after a plan failure — this is a degraded result"));
   console.log(chalk.dim(`   Cause: ${result.degraded.reason}`));
   console.log(chalk.dim("   Deterministic spec->PRD repairs were re-applied, but review the PRD before running."));
-}
-
-/**
- * Prompt user for a yes/no confirmation via stdin.
- * In tests or non-TTY environments, defaults to true.
- *
- * @param question - Confirmation question to display
- * @returns true if user answers Y/y, false if N/n, true by default for non-TTY
- */
-async function promptForConfirmation(question: string): Promise<boolean> {
-  // In non-TTY mode (tests, pipes), default to true
-  if (!process.stdin.isTTY) {
-    return true;
-  }
-
-  return new Promise((resolve) => {
-    process.stdout.write(chalk.bold(`${question} [Y/n] `));
-
-    process.stdin.setRawMode(true);
-    process.stdin.resume();
-    process.stdin.setEncoding("utf8");
-
-    const handler = (char: string) => {
-      process.stdin.setRawMode(false);
-      process.stdin.pause();
-      process.stdin.removeListener("data", handler);
-
-      process.stdout.write("\n");
-
-      if (char === "\u0003") {
-        // Ctrl+C — treat as cancellation, not confirmation
-        resolve(false);
-        process.exit(130);
-      }
-
-      const answer = char.toLowerCase();
-      if (answer === "n") {
-        resolve(false);
-      } else {
-        // Default to yes for Y, Enter, or any other input
-        resolve(true);
-      }
-    };
-
-    process.stdin.on("data", handler);
-  });
 }
 
 // ── init ─────────────────────────────────────────────
