@@ -17,18 +17,18 @@ describe("TelegramInteractionPlugin", () => {
     savedToken = process.env.NAX_TELEGRAM_TOKEN;
     savedChatId = process.env.NAX_TELEGRAM_CHAT_ID;
     savedBotToken = process.env.TELEGRAM_BOT_TOKEN;
-    delete process.env.NAX_TELEGRAM_TOKEN;
-    delete process.env.NAX_TELEGRAM_CHAT_ID;
-    delete process.env.TELEGRAM_BOT_TOKEN;
+    process.env.NAX_TELEGRAM_TOKEN = undefined;
+    process.env.NAX_TELEGRAM_CHAT_ID = undefined;
+    process.env.TELEGRAM_BOT_TOKEN = undefined;
   });
 
   afterEach(() => {
     if (savedToken !== undefined) process.env.NAX_TELEGRAM_TOKEN = savedToken;
-    else delete process.env.NAX_TELEGRAM_TOKEN;
+    else process.env.NAX_TELEGRAM_TOKEN = undefined;
     if (savedChatId !== undefined) process.env.NAX_TELEGRAM_CHAT_ID = savedChatId;
-    else delete process.env.NAX_TELEGRAM_CHAT_ID;
+    else process.env.NAX_TELEGRAM_CHAT_ID = undefined;
     if (savedBotToken !== undefined) process.env.TELEGRAM_BOT_TOKEN = savedBotToken;
-    else delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = undefined;
   });
 
   test("should validate required config", async () => {
@@ -766,4 +766,61 @@ describe("TelegramInteractionPlugin - fetch deps seam", () => {
 
     expect(urls.some((u) => u.includes("sendMessage"))).toBe(true);
   });
+});
+
+// ---------------------------------------------------------------------------
+// BUG-7: sendMessage must enforce a client-side timeout via AbortController
+// so a hung Telegram API doesn't stall the run.
+// ---------------------------------------------------------------------------
+
+describe("TelegramInteractionPlugin - sendMessage timeout (BUG-7)", () => {
+  const originalFetch = _telegramPluginDeps.fetch;
+
+  afterEach(() => {
+    mock.restore();
+    _telegramPluginDeps.fetch = originalFetch;
+  });
+
+  test("aborts sendMessage via AbortController when fetch never resolves", async () => {
+    let observedSignal: AbortSignal | undefined;
+    _telegramPluginDeps.fetch = mock(async (_url: string | URL | Request, init?: RequestInit) => {
+      observedSignal = init?.signal;
+      // Honor the abort signal: reject immediately when it fires.
+      return await new Promise<Response>((_resolve, reject) => {
+        if (init?.signal?.aborted) {
+          reject(new Error("aborted"));
+          return;
+        }
+        const timer = setTimeout(() => reject(new Error("test-timeout")), 30_000);
+        init?.signal?.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(new Error("aborted"));
+        });
+      });
+    }) as typeof fetch;
+
+    const plugin = new TelegramInteractionPlugin();
+    // @ts-expect-error bypass init to avoid getUpdates poller in this test
+    plugin.botToken = "bot-abc123";
+    // @ts-expect-error bypass init to avoid getUpdates poller in this test
+    plugin.chatId = "99999";
+
+    const start = Date.now();
+    await expect(
+      plugin.send({
+        id: "timeout-1",
+        type: "notify", // not interactive → skip drainBacklog getUpdates call
+        featureName: "f",
+        stage: "review",
+        summary: "s",
+        fallback: "abort",
+        createdAt: Date.now(),
+      } as InteractionRequest),
+    ).rejects.toThrow();
+    const elapsed = Date.now() - start;
+    // Bound: 5s abort + 1s buffer. Without the AbortController, this would
+    // ride OS TCP timeout (~75s+) or hang indefinitely.
+    expect(elapsed).toBeLessThan(7000);
+    expect(observedSignal).toBeDefined();
+  }, 10000);
 });
