@@ -25,6 +25,16 @@ describe("deriveBakeoffWorktreeId", () => {
     expect(() => validateStoryId(id)).not.toThrow();
   });
 
+  // AC-3: a profile whose illegal characters flank literal dots must not
+  // sanitize into a `..` path-traversal sequence (validateStoryId rejects
+  // `..` even though `.` alone is in its allowed alphabet).
+  it("US-004 AC3: does not produce a path-traversal '..' sequence for a profile like 'a/../b'", () => {
+    const id = deriveBakeoffWorktreeId("my-feature", "a/../b");
+    expect(id.startsWith("bakeoff-")).toBe(true);
+    expect(id.includes("..")).toBe(false);
+    expect(() => validateStoryId(id)).not.toThrow();
+  });
+
   // AC-4: an overlong feature+profile pair must still fit validateStoryId's cap.
   it("US-004 AC4: truncates to at most 64 characters for an overlong feature and profile", () => {
     const feature = "a-very-long-feature-name-that-goes-on-and-on-and-on-and-on";

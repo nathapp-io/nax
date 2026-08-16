@@ -11,9 +11,13 @@ import { createHash } from "node:crypto";
 const MAX_WORKTREE_ID_LENGTH = 64;
 const HASH_SUFFIX_LENGTH = 8;
 
-/** Replaces characters outside validateStoryId's alphabet with `-`. */
+/**
+ * Replaces characters outside validateStoryId's alphabet with `-`, then
+ * collapses any `..` run left in the result — validateStoryId rejects path
+ * traversal sequences even though `.` alone is in its allowed alphabet.
+ */
 function sanitize(value: string): string {
-  return value.replace(/[^a-zA-Z0-9._-]/g, "-");
+  return value.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/\.\./g, "-");
 }
 
 /**
