@@ -20,8 +20,16 @@
  */
 
 import type { UserStory } from "@/prd";
-import { DEFAULT_MAX_TOKENS_PER_CALL, _pullToolsDeps, scratchFilePath } from "../pull-tools";
-import type { PullToolBudget, ScratchEntry } from "../pull-tools";
+import { type ScratchEntry, scratchFilePath } from "@/session";
+import { formatDiagnostic } from "../diagnostic-formatter";
+// STYLE-6 fix: pull-tools.ts no longer re-exports handleQueryScratch, but
+// the dep-injection seam (`_pullToolsDeps`) and the token-budget constant
+// (`DEFAULT_MAX_TOKENS_PER_CALL`) still live there — those references are
+// one-way (`handlers → pull-tools`), not cyclical. `scratchFilePath` is
+// imported from its true home (`@/session`) for symmetry with
+// `tool-diagnostics.ts` (which already imports it that way).
+import { DEFAULT_MAX_TOKENS_PER_CALL, _pullToolsDeps } from "../pull-tools";
+import type { PullToolBudget } from "../pull-tools";
 import { neutralizeForAgent } from "../scratch-neutralizer";
 
 /**
@@ -114,12 +122,10 @@ function renderScratchEntry(entry: ScratchEntry, targetAgent: string): string {
       const lines = [`**Tool-diagnostics** at ${entry.timestamp}:`];
       for (const d of entry.diagnostics) {
         if (d === null || typeof d !== "object") continue;
-        const where = d.file
-          ? `${d.file}${d.line !== undefined ? `:${d.line}` : ""}${d.column !== undefined ? `:${d.column}` : ""}`
-          : "<unknown>";
-        const rule = d.rule ? ` (${d.rule})` : "";
-        const tool = d.tool ? ` [${d.tool}]` : "";
-        lines.push(`- **${d.severity ?? "error"}** ${where}${tool}${rule} — ${d.message}`);
+        // ENH-5 fix: render via the shared formatDiagnostic helper so the
+        // push path (ToolDiagnosticsProvider) and the pull path produce
+        // byte-identical output for the same input.
+        lines.push(formatDiagnostic(d));
       }
       return lines.join("\n");
     }

@@ -20,6 +20,7 @@
 import { createHash } from "node:crypto";
 import { scratchFilePath } from "@/session";
 import type { ToolDiagnosticsScratchEntry } from "@/session";
+import { formatDiagnostic } from "../diagnostic-formatter";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,24 +56,6 @@ function parseToolDiagnosticsJsonl(raw: string): ToolDiagnosticsScratchEntry[] {
     }
   }
   return entries;
-}
-
-/** Format one diagnostic as a single Markdown bullet line. */
-function formatDiagnostic(d: {
-  file?: string;
-  line?: number;
-  column?: number;
-  message: string;
-  severity?: string;
-  tool?: string;
-  rule?: string;
-}): string {
-  const where = d.file
-    ? `${d.file}${d.line !== undefined ? `:${d.line}` : ""}${d.column !== undefined ? `:${d.column}` : ""}`
-    : "<unknown>";
-  const rule = d.rule ? ` (${d.rule})` : "";
-  const tool = d.tool ? ` [${d.tool}]` : "";
-  return `- **${d.severity ?? "error"}** ${where}${tool}${rule} — ${d.message}`;
 }
 
 /** Render a list of tool-diagnostics entries as a Markdown block. */

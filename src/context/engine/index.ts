@@ -29,6 +29,11 @@ export { CodeNeighborProvider, _codeNeighborDeps, createContentCacheState } from
 export type { ContentCacheState } from "./providers/code-neighbor";
 export { assembleCodeNeighborChunk, contentHash8 } from "./providers/code-neighbor-chunk";
 export type { NeighborSection, AssembleCodeNeighborChunkInput } from "./providers/code-neighbor-chunk";
+// ENH-5 fix: shared diagnostic-rendering helper extracted from
+// ToolDiagnosticsProvider and handleQueryScratch — single source of truth
+// for the `file:line:col [tool] (rule) — message` Markdown shape.
+export { formatDiagnostic } from "./diagnostic-formatter";
+export type { DiagnosticLike } from "./diagnostic-formatter";
 export {
   loadPluginProviders,
   resolveModuleSpecifier,
@@ -56,9 +61,13 @@ export {
   createRunCallCounter,
   handleQueryNeighbor,
   handleQueryFeatureContext,
-  handleQueryScratch,
 } from "./pull-tools";
 export type { PullCallRecord, RunCallCounter, QueryScratchOptions } from "./pull-tools";
+
+// STYLE-6 fix: import handleQueryScratch directly from its handler module
+// to avoid the circular `pull-tools.ts` ↔ `handlers/query-scratch.ts`
+// reference that the previous re-export created.
+export { handleQueryScratch } from "./handlers/query-scratch";
 
 export { getAgentProfile, AGENT_PROFILES, CONSERVATIVE_DEFAULT_PROFILE } from "./agent-profiles";
 export type { AgentCapabilities, AgentProfile } from "./agent-profiles";
