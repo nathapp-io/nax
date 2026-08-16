@@ -40,7 +40,13 @@ rev 2 put **BUG-03 in P0**. It is a feature that crashes 100% of the time, so no
 
 **BUG-03 caveat:** the crash is contained (a bad `worktreeManager`/`pipeline` dependency now yields a per-contestant `dnf-crashed` result instead of crashing the whole CLI), but `_contestantDeps` is still unwired to a real worktree-scoped pipeline implementation anywhere in `src/`/`bin/`. `nax run --compare` will still report every contestant as `dnf-crashed`. Making bake-off actually functional is a feature-completion task (worktree-scoped pipeline execution, per-contestant PRD/config, result aggregation), not a bug fix, and remains open.
 
-**Batch 7 (L1…L38 cleanup): still pending.** Not attempted in either PR — see the batch's own note for which items (L5, L8, L13) have live failure modes worth pulling forward.
+**Batch 7 (L1…L38 cleanup): the three pulled-forward items are resolved; L1…L38 hygiene otherwise still pending.** This doc named L5, L8, and L13 as having live failure modes. On re-verification against source (2026-08-16), **two of the three were wrong**:
+
+- **L5 — refuted.** `src/pipeline/runner.ts` reads `if (result.cost) stageCostAccum += result.cost;`. The guard has been there since PR #304 and is falsy for `undefined`, `0`, *and* `NaN`, so a missing `cost` cannot poison the accumulator. The finding described an unguarded `+=` that does not exist.
+- **L8 — refuted.** The pattern is real (`await proc.exited` before draining `proc.stdout`, in `review/runner.ts`, `test-runners/detect/file-scan.ts`, `test-runners/detect/directory-scan.ts`, `agents/shared/version-detection.ts`), but the *deadlock* is not: it assumes POSIX 64KB pipe-buffer semantics that `Bun.spawn` does not have. Bun buffers the child's stdout internally. Measured on Bun 1.3.13: this repo's own `git ls-files` (132KB) and a synthetic **64MB** stream both complete through the exact pattern with the full byte count recovered. `gitLsFiles` already runs against this 132KB repo on every detection pass, which is why no hang was ever observed.
+- **L13 — confirmed, and worse than described.** Fixed in `fix(process): treat EPERM as alive in PID liveness probes`. The bare `catch { return false }` was not one site but **six** (`commands/unlock.ts`, `execution/lock.ts`, `precheck/checks-config.ts`, `agents/acp/spawn-client-process.ts`, `utils/queue-file-lock.ts`, `cli/status-features.ts`) with no SSOT — a violation of `monorepo-awareness.md` §C. `execution/lock.ts` is the more dangerous site than the cited `unlock.ts`: misreading a live holder as stale lets a **second run start on top of the first**. `unlock.ts`'s TOCTOU guard does not mitigate it, since the on-disk PID is unchanged. All six now route through `src/utils/process-alive.ts`, where only `ESRCH` proves absence.
+
+**Method note for whoever drains the rest of L1…L38:** two of the three items this doc flagged as highest-value were incorrect — one described code that never existed, the other assumed non-Bun runtime semantics. Reproduce before fixing, and prefer an empirical check over reasoning about buffer sizes.
 
 ---
 
@@ -514,7 +520,7 @@ BUG-03 (bake-off crashes on every invocation; `_contestantDeps` has zero install
 
 ### Batch 7 — P3. Cleanup (still pending)
 
-L1…L38. Pull **L5** (NaN cost accumulator), **L8** (pipe deadlock on >64KB diff output), and **L13** (`nax unlock` removing a live run's lock) forward into Batch 6 — they have live failure modes; the rest are hygiene.
+L1…L38. This batch originally pulled **L5**, **L8**, and **L13** forward as having live failure modes. Resolved 2026-08-16: **L5 and L8 refuted, L13 confirmed and fixed** — see the "Status update" section near the top of this doc for the evidence. The remaining L-items are hygiene and are still pending.
 
 ## Verified Clean (no findings)
 
