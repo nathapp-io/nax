@@ -13,12 +13,12 @@
  * existence checks the kernel would run for a real signal, then throws on
  * failure. Interpreting that throw is the whole subtlety:
  *
- * | errno   | Meaning                                          | Alive? |
- * |:--------|:-------------------------------------------------|:-------|
- * | (none)  | Probe succeeded                                   | yes    |
- * | `ESRCH` | No such process                                   | no     |
- * | `EPERM` | Process EXISTS, caller may not signal it          | yes    |
- * | other   | Probe inconclusive                                | yes    |
+ * | Outcome        | Meaning                                    | Alive? |
+ * |:---------------|:-------------------------------------------|:-------|
+ * | no throw       | Probe succeeded                            | yes    |
+ * | `ESRCH`        | No such process                            | no     |
+ * | `EPERM`        | Process EXISTS, caller may not signal it   | yes    |
+ * | any other/none | Probe inconclusive                         | yes    |
  *
  * Only `ESRCH` proves absence. A bare `catch { return false }` — the shape this
  * helper replaces — misreads `EPERM` as "dead", so a live run owned by another
@@ -47,10 +47,10 @@ export function isProcessAlive(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ESRCH") return false;
-    // EPERM and other errnos mean the process was not proven absent. Without an
-    // errno at all there is nothing to interpret, so treat it as dead.
-    return code !== undefined;
+    // Only ESRCH proves absence. EPERM, any other errno, and a throw carrying
+    // no errno at all all mean the same thing — the process was not proven
+    // gone — so they report alive. Reclaiming callers (lock steal, unlock
+    // delete) must never act on an inconclusive probe.
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
   }
 }

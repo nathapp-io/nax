@@ -54,12 +54,12 @@ describe("isProcessAlive", () => {
     expect(isProcessAlive(4321)).toBe(true);
   });
 
-  test("reports dead for a non-errno throw (no code to interpret)", () => {
+  test("reports alive for a throw carrying no errno — an inconclusive probe must not read as absence", () => {
     process.kill = (() => {
       throw new Error("boom");
     }) as typeof process.kill;
 
-    expect(isProcessAlive(4321)).toBe(false);
+    expect(isProcessAlive(4321)).toBe(true);
   });
 
   test("treats a non-positive pid as dead without probing", () => {

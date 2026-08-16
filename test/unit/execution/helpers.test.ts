@@ -226,6 +226,35 @@ describe("acquireLock and releaseLock", () => {
     await releaseLock(testDir);
   });
 
+  test("refuses to steal a lock whose holder cannot be probed (EPERM)", async () => {
+    // A lock held by a process this user may not signal — e.g. another user's
+    // run, or one at a different privilege level. process.kill(pid, 0) throws
+    // EPERM there, which means the holder EXISTS. Reading that as "dead" would
+    // let this run start on top of a live one.
+    const foreignPid = 4242;
+    await Bun.write(lockPath, JSON.stringify({ pid: foreignPid, timestamp: Date.now() - 60000 }));
+
+    const originalKill = process.kill;
+    process.kill = ((pid: number | string, _signal?: string | number) => {
+      if (pid === foreignPid) {
+        const err = new Error("EPERM") as NodeJS.ErrnoException;
+        err.code = "EPERM";
+        throw err;
+      }
+      return true;
+    }) as typeof process.kill;
+
+    try {
+      expect(await acquireLock(testDir)).toBe(false);
+
+      // The holder's lock must still be on disk, untouched.
+      const lockData = JSON.parse(await Bun.file(lockPath).text());
+      expect(lockData.pid).toBe(foreignPid);
+    } finally {
+      process.kill = originalKill;
+    }
+  });
+
   test("detects stale lock from OOM-killed process", async () => {
     // Spawn a short-lived child process
     const proc = spawn({

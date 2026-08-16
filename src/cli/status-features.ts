@@ -12,7 +12,7 @@ import { loadConfig } from "../config";
 import type { NaxStatusFile } from "../execution/status-file";
 import { countStories, loadPRD } from "../prd";
 import { projectOutputDir } from "../runtime";
-import { isProcessAlive } from "../utils/process-alive";
+import { isProcessAlive as isPidAlive } from "../utils/process-alive";
 
 /** Injectable deps for status-features (enables test isolation of output dir derivation) */
 export const _statusFeaturesDeps = {
@@ -51,16 +51,15 @@ interface FeatureSummary {
   costLimitStopped?: boolean;
 }
 
-/**
- * Known limitation of the liveness report below: PIDs are recycled by the OS,
- * so a long-dead run's PID can be reassigned to an unrelated live process,
+/*
+ * Known limitation of the `isPidAlive` reports below: PIDs are recycled by the
+ * OS, so a long-dead run's PID can be reassigned to an unrelated live process,
  * producing a false "⚡ Running" report. There is no cheap secondary signal
  * available here — status.json carries no process-start-time or lock-token
  * alongside the PID — so this is a best-effort liveness check, not a
  * guarantee. Cross-checking against a lock/start-time token would require a
  * status.json schema change.
  */
-const isPidAlive = isProcessAlive;
 
 /** Load status.json for a feature (if it exists) */
 async function loadStatusFile(featureDir: string): Promise<NaxStatusFile | null> {
