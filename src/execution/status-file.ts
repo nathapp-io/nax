@@ -74,7 +74,7 @@ export interface NaxStatusFile {
     /** ISO 8601 start timestamp */
     startedAt: string;
     /** Current run status */
-    status: "running" | "completed" | "failed" | "stalled" | "crashed" | "precheck-failed" | "cost-limit";
+    status: "running" | "completed" | "failed" | "stalled" | "crashed" | "precheck-failed" | "cost-limit" | "aborted";
     /** Whether this is a dry run */
     dryRun: boolean;
     /** Process ID for crash detection */

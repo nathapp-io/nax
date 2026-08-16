@@ -112,6 +112,22 @@ export async function loadProfile(profileName: string, projectRoot: string): Pro
 }
 
 /**
+ * Snapshot of `process.env` (via `_profileDeps.env` for testability) with
+ * secret-shaped keys excluded — see SENSITIVE_ENV_KEY_PATTERN. Used as the
+ * base `$VAR` substitution env everywhere config `$VAR`/`${VAR}` references
+ * are resolved: profile chains (loadProfileEnv) and the global/project/
+ * per-package config layers (CFG-2/CFG-3), which have no companion .env file
+ * of their own.
+ */
+export function sensitiveFilteredProcessEnv(): Record<string, string> {
+  const filtered: Record<string, string> = {};
+  for (const [key, value] of Object.entries(_profileDeps.env)) {
+    if (value !== undefined && !SENSITIVE_ENV_KEY_PATTERN.test(key)) filtered[key] = value;
+  }
+  return filtered;
+}
+
+/**
  * Loads and merges .env files for a named profile.
  * Project values override global, and both override process.env entries.
  * Returns an empty record when no .env files exist.
@@ -132,10 +148,7 @@ export async function loadProfileEnv(profileName: string, projectRoot: string): 
   // process.env entries"). Previously process.env was never folded in at
   // all, so any reference to an ambient (not profile-redefined) var
   // hard-failed config load before zod ever ran.
-  let merged: Record<string, string> = {};
-  for (const [key, value] of Object.entries(_profileDeps.env)) {
-    if (value !== undefined && !SENSITIVE_ENV_KEY_PATTERN.test(key)) merged[key] = value;
-  }
+  let merged: Record<string, string> = sensitiveFilteredProcessEnv();
 
   if (!globalExists && !projectExists) {
     return merged;

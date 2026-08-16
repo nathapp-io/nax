@@ -28,8 +28,43 @@ import { mergePackageConfig } from "./merge";
 import { deepMergeConfig } from "./merger";
 import { MAX_DIRECTORY_DEPTH } from "./path-security";
 import { PROJECT_NAX_DIR, globalConfigDir } from "./paths";
-import { loadProfile, loadProfileEnv, parseProfileList, resolveProfileNames } from "./profile";
+import {
+  loadProfile,
+  loadProfileEnv,
+  parseProfileList,
+  resolveProfileNames,
+  sensitiveFilteredProcessEnv,
+} from "./profile";
 import { DEFAULT_CONFIG, type NaxConfig, NaxConfigSchema } from "./schema";
+
+/**
+ * CFG-2/CFG-3: resolve `$VAR`/`${VAR}` references in a config layer that has
+ * no companion `.env` file of its own (global/project config, per-package
+ * profile overlays) against the ambient, secret-key-filtered process.env.
+ * Unlike the profile chain (which fail-fasts via loadProfile's own
+ * resolveEnvVars call — an intentional, reviewed profile.json), this warns
+ * and leaves the layer unresolved rather than throwing: these layers are
+ * loaded implicitly on every run, and a literal "$" that was never meant as
+ * a var reference must not hard-fail config load.
+ */
+function resolveEnvVarsWarnOnFailure(
+  config: Record<string, unknown>,
+  logger: ReturnType<typeof getLogger> | null,
+  layerName: string,
+): Record<string, unknown> {
+  try {
+    return resolveEnvVars(config, sensitiveFilteredProcessEnv()) as Record<string, unknown>;
+  } catch (err) {
+    if (err instanceof UnresolvedEnvVarError) {
+      logger?.warn("config", `${layerName} references undefined environment variable — left unresolved`, {
+        varName: err.varName,
+        path: err.path.join(".") || "(root)",
+      });
+      return config;
+    }
+    throw err;
+  }
+}
 
 /** Global config path */
 export function globalConfigPath(): string {
@@ -138,6 +173,12 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
       });
     }
   }
+
+  // CFG-2: global + project config never ran through $VAR resolution — a value
+  // like "test": "$TEST_CMD" landed in the run config as the literal
+  // unresolved string. Resolve against the ambient (secret-filtered)
+  // process.env, same as the profile chain below.
+  rawConfig = resolveEnvVarsWarnOnFailure(rawConfig, logger, "global/project config");
 
   // Layer 3: Profile chain (overrides global + project — it's a run-time mode selection).
   // Profiles overlay in order; a later profile overrides an earlier one. A missing
@@ -352,17 +393,45 @@ export async function loadConfigForWorkdir(
     defaultConfigWarn,
   ) as unknown as NaxConfig;
 
+  // CFG-3: the plain per-package overlay (.nax/mono/<pkg>/config.json) also
+  // never ran through $VAR resolution — same gap as CFG-2 at the root layer.
+  const envResolvedMerged = resolveEnvVarsWarnOnFailure(
+    merged as unknown as Record<string, unknown>,
+    logger,
+    `per-package config (${packageDir})`,
+  );
+
   // Per-package profile: apply the profile chain overlay on top of merged config.
   // Accepts the comma form; profiles overlay left-to-right (later overrides earlier).
   const packageChain = parseProfileList(packageProfile as string | string[] | undefined).filter(
     (name) => name && name !== "default",
   );
-  let rawMerged = merged as unknown as Record<string, unknown>;
+  let rawMerged = envResolvedMerged;
   if (packageChain.length > 0) {
     const packageRoot = join(repoRoot, packageDir);
     for (const name of packageChain) {
       const profileData = await loadProfile(name, packageRoot);
-      rawMerged = deepMergeConfig<Record<string, unknown>>(rawMerged, profileData);
+      // CFG-3: mirror the root profile chain's $VAR resolution (loader.ts
+      // layer 3) — without this, a per-package profile's "$VAR"-style
+      // references land in the merged config as literal unresolved strings
+      // while the same profile file at root level either resolves or throws.
+      const profileEnv = await loadProfileEnv(name, packageRoot);
+      let resolvedProfileData: Record<string, unknown>;
+      try {
+        resolvedProfileData =
+          Object.keys(profileEnv).length > 0
+            ? (resolveEnvVars(profileData, profileEnv) as Record<string, unknown>)
+            : profileData;
+      } catch (err) {
+        const varName = err instanceof UnresolvedEnvVarError ? err.varName : undefined;
+        const path = err instanceof UnresolvedEnvVarError ? err.path.join(".") : undefined;
+        throw new NaxError(
+          `Per-package profile "${name}" (${packageDir}) references an undefined environment variable${varName ? ` $${varName}` : ""}${path ? ` at "${path}"` : ""}.`,
+          "PROFILE_ENV_VAR_UNRESOLVED",
+          { stage: "config", profileName: name, packageDir, varName, path, cause: err },
+        );
+      }
+      rawMerged = deepMergeConfig<Record<string, unknown>>(rawMerged, resolvedProfileData);
     }
     rawMerged.profile = packageChain.join("+");
     rawMerged.profileChain = packageChain;
@@ -377,6 +446,10 @@ export async function loadConfigForWorkdir(
   rejectLegacyRectificationKeys(rawMerged);
   rejectDeadQualityFlags(rawMerged);
   rejectUnimplementedScopedProfile(rawMerged);
+  // CFG-1: same guard as the root chain — without it, a per-package
+  // `execution.permissions` block sails through and is silently stripped by
+  // Zod's `.strip()`, giving the user no error and no enforcement.
+  rejectUnimplementedPermissionsBlock(rawMerged);
   // Strip the four inert no-op keys again post-profile-overlay (a package
   // profile can reintroduce one). Runs after the reject guards and before
   // safeParse, mirroring the root chain. Post-merge placement yields one

@@ -353,6 +353,49 @@ function buildTestCandidates(
 // breaking scoped runs like `pnpm --filter ./packages/api test`.
 const PATH_TAKING_FLAGS = ["--config", "-c", "--project", "-p", "--filter", "--dir", "-F"];
 
+/**
+ * VER-2: quote-aware split of a shell command line into tokens. Preserves
+ * each token's raw text (quotes included) so `parts.join(" ")` reconstructs
+ * an equivalent command; a plain `split(/\s+/)` breaks any argument
+ * containing whitespace inside quotes (e.g. `"test dir/"`) into multiple
+ * bogus parts.
+ */
+function tokenizeCommand(command: string): string[] {
+  const tokens: string[] = [];
+  let current = "";
+  let quote: string | null = null;
+  for (const char of command.trim()) {
+    if (quote) {
+      current += char;
+      if (char === quote) quote = null;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      current += char;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      if (current) {
+        tokens.push(current);
+        current = "";
+      }
+      continue;
+    }
+    current += char;
+  }
+  if (current) tokens.push(current);
+  return tokens;
+}
+
+/** Strips one layer of matching surrounding quotes, for content inspection only. */
+function unquote(token: string): string {
+  if (token.length >= 2 && (token[0] === '"' || token[0] === "'") && token[token.length - 1] === token[0]) {
+    return token.slice(1, -1);
+  }
+  return token;
+}
+
 export function buildSmartTestCommand(testFiles: string[], baseCommand: string): string {
   if (testFiles.length === 0) {
     return baseCommand;
@@ -361,15 +404,16 @@ export function buildSmartTestCommand(testFiles: string[], baseCommand: string):
   const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
   const quotedTestFiles = testFiles.map(shellQuote);
 
-  const parts = baseCommand.trim().split(/\s+/);
+  const parts = tokenizeCommand(baseCommand);
 
   // Find the last token that looks like a path (contains '/') and is a
   // genuinely positional argument — not the value of a path-taking flag.
   let lastPathIndex = -1;
   for (let i = parts.length - 1; i >= 0; i--) {
-    if (!parts[i].includes("/")) continue;
-    const precededByPathFlag = i > 0 && PATH_TAKING_FLAGS.includes(parts[i - 1]);
-    const isCombinedFlagValue = PATH_TAKING_FLAGS.some((flag) => parts[i].startsWith(`${flag}=`));
+    const bare = unquote(parts[i]);
+    if (!bare.includes("/")) continue;
+    const precededByPathFlag = i > 0 && PATH_TAKING_FLAGS.includes(unquote(parts[i - 1]));
+    const isCombinedFlagValue = PATH_TAKING_FLAGS.some((flag) => bare.startsWith(`${flag}=`));
     if (precededByPathFlag || isCombinedFlagValue) continue;
     lastPathIndex = i;
     break;

@@ -71,7 +71,11 @@ export function buildDigest(chunks: PackedChunk[]): string {
   const scopeRank = Object.fromEntries(SCOPE_ORDER.map((s, i) => [s, i]));
   const sorted = [...chunks].sort((a, b) => {
     const scopeDiff = (scopeRank[a.scope] ?? 99) - (scopeRank[b.scope] ?? 99);
-    return scopeDiff !== 0 ? scopeDiff : a.id.localeCompare(b.id);
+    if (scopeDiff !== 0) return scopeDiff;
+    // CTX-5: code-point comparison, not localeCompare — the digest contract
+    // (AC-24) requires byte-identical output across machines, and
+    // localeCompare's ordering is not stable across locale/ICU versions.
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
   });
 
   const lines: string[] = [];

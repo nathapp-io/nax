@@ -84,7 +84,11 @@ function stableCacheKey(configs: ContextPluginProviderConfig[], workdir: string)
  *   4. Call disposeAll() in handleRunCompletion() before session teardown ends.
  */
 export class PluginProviderCache {
-  private readonly cache = new Map<string, IContextProvider[]>();
+  // CTX-6: cache the in-flight Promise, not just the resolved value — two
+  // parallel stories both missing the cache and both calling loadProviders()
+  // ran plugin init() twice with duplicated side effects (last-writer-wins).
+  // Caching the promise makes the second caller await the first's load.
+  private readonly cache = new Map<string, Promise<IContextProvider[]>>();
   private disposed = false;
 
   /**
@@ -108,9 +112,12 @@ export class PluginProviderCache {
     const hit = this.cache.get(key);
     if (hit) return hit;
 
-    const providers = await _pluginCacheDeps.loadProviders(enabled, workdir);
-    this.cache.set(key, providers);
-    return providers;
+    const loading = _pluginCacheDeps.loadProviders(enabled, workdir);
+    this.cache.set(key, loading);
+    // Don't cache a rejection — a transient load failure shouldn't poison
+    // every subsequent caller for the rest of the run.
+    loading.catch(() => this.cache.delete(key));
+    return loading;
   }
 
   /**
@@ -127,10 +134,15 @@ export class PluginProviderCache {
 
     const logger = getLogger();
 
-    // Dispose concurrently: a single hanging provider must not serialize the
-    // whole teardown behind its own deadline.
+    // Await every cached load concurrently first — a still-in-flight load
+    // must not serialize the loads behind each other before teardown even
+    // starts. Dispose concurrently too: a single hanging provider must not
+    // serialize the whole teardown behind its own deadline.
+    const allProviders = await Promise.all(
+      [...this.cache.values()].map((loading) => loading.catch(() => [] as IContextProvider[])),
+    );
     const disposals: Promise<void>[] = [];
-    for (const providers of this.cache.values()) {
+    for (const providers of allProviders) {
       for (const provider of providers) {
         const initialisable = provider as InitialisableProvider;
         if (typeof initialisable.dispose !== "function") continue;

@@ -147,7 +147,17 @@ export async function processQueueFile<T>(
       if (commands === null) return undefined;
 
       const result = await processor(commands);
-      await unlink(processingPath).catch(() => {});
+      // EXEC-3: an unlink failure here (permission, transient FS error, AV
+      // lock) must not be silently swallowed — a leftover
+      // .queue.txt.processing makes the next run's claimCommandsLocked
+      // re-apply this already-processed batch, exactly the double-apply
+      // BUG-11 built this function to eliminate.
+      await unlink(processingPath).catch((error) => {
+        logger?.warn("queue", "Failed to clear processed queue file — next run may re-apply this batch", {
+          error: (error as Error).message,
+          processingPath,
+        });
+      });
       return result;
     });
   } catch (error) {

@@ -25,10 +25,13 @@ import { getLogger } from "@/logger";
 // number the budget admitted it on.
 import { estimateTokens } from "@/optimizer";
 import { errorMessage } from "@/utils/errors";
-import { DEFAULT_CANONICAL_RULES_BUDGET_TOKENS, loadCanonicalRules } from "../../rules/canonical-loader";
+import { DEFAULT_CANONICAL_RULES_BUDGET_TOKENS } from "../../rules/canonical-loader";
 import type { CanonicalRule } from "../../rules/canonical-loader";
 import type { ProviderBudgetPressure, ProviderScopingReport } from "../manifest-types";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
+import { memoizedLoadCanonicalRules } from "./canonical-rules-cache";
+
+export { _resetCanonicalRulesCache } from "./canonical-rules-cache";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps
@@ -44,7 +47,7 @@ export const _staticRulesDeps = {
       return [];
     }
   },
-  loadCanonicalRules,
+  loadCanonicalRules: memoizedLoadCanonicalRules,
   splitRuleIntoSections,
   applySectionBudget,
 };
@@ -125,7 +128,7 @@ export function globToRegex(pattern: string): RegExp {
         const beforeSlash = i > 0 && pattern[i - 1] === "/";
         const afterSlash = pattern[i + 2] === "/";
         if (beforeSlash && afterSlash) {
-          regex = `${regex.slice(0, -1)}(?:.*\\/)?`;
+          regex = `${regex}(?:.*\\/)?`;
           i += 3;
         } else if (afterSlash) {
           regex += "(?:.*\\/)?";
@@ -283,10 +286,14 @@ export class StaticRulesProvider implements IContextProvider {
         }
       }
 
-      mergedRules.sort(
-        (a, b) =>
-          canonicalRulePriority(a) - canonicalRulePriority(b) || canonicalRuleId(a).localeCompare(canonicalRuleId(b)),
-      );
+      mergedRules.sort((a, b) => {
+        const priorityDiff = canonicalRulePriority(a) - canonicalRulePriority(b);
+        if (priorityDiff !== 0) return priorityDiff;
+        // CTX-5: code-point comparison, not localeCompare — see digest.ts.
+        const idA = canonicalRuleId(a);
+        const idB = canonicalRuleId(b);
+        return idA < idB ? -1 : idA > idB ? 1 : 0;
+      });
 
       // #558: rules exist but none apply to this package context — skip legacy fallback
       if (mergedRules.length === 0 && (repoRulesAll.length > 0 || packageRulesCount > 0)) {

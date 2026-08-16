@@ -285,12 +285,16 @@ describe("captureTreeState (AC8)", () => {
     // unkillable git subprocess. Every other git call in the project routes
     // through `gitWithTimeout` (src/utils/git.ts:45, GIT_TIMEOUT_MS=10_000)
     // which enforces a SIGKILL deadline. This test asserts the same invariant
-    // via an unresolvable proc — the helper must return within a small
-    // budget. The 200 ms ceiling is far below GIT_TIMEOUT_MS because the
-    // helper either runs its own kill timer (true positive) or hangs forever
-    // and the test's own timeout trips (true negative). With the source fix,
-    // the helper's internal timeout-aborted proc.exited resolves and the
-    // outer Promise.all completes; without it, this test times out.
+    // via an unresolvable proc — the helper must return within a bounded
+    // budget. captureTreeState makes two sequential git calls before the hung
+    // status hides the diff calls (rev-parse HEAD, then status --porcelain),
+    // each bounded by TREE_CAPTURE_TIMEOUT_MS (1000ms — VER-4 raised this
+    // from 75ms), so up to ~2000ms is expected; the race ceiling gives
+    // headroom above that. Either the helper runs its own kill timer (true
+    // positive) or hangs forever and the test's own timeout trips (true
+    // negative). With the source fix, the helper's internal timeout-aborted
+    // proc.exited resolves and the outer Promise.all completes; without it,
+    // this test times out.
     let killCalls = 0;
     _gitDeps.spawn = mock((_args: string[]) => {
       // proc.exited NEVER resolves — the hung-process scenario.
@@ -318,10 +322,11 @@ describe("captureTreeState (AC8)", () => {
     // default per-test timeout is much larger, so the runner will report
     // the test as failed rather than deadlocking the suite). The race
     // gives us a deterministic failure mode even if the fix is missing.
+    const RACE_CEILING_MS = 2500;
     const timedCapture = async (): Promise<TreeState | "TIMEOUT"> => {
       return Promise.race<Promise<TreeState> | Promise<"TIMEOUT">>([
         captureTreeState(tempDir!, { _deps: _gitDeps }),
-        new Promise<"TIMEOUT">((resolve) => setTimeout(() => resolve("TIMEOUT"), 200)),
+        new Promise<"TIMEOUT">((resolve) => setTimeout(() => resolve("TIMEOUT"), RACE_CEILING_MS)),
       ]);
     };
     const result = await timedCapture();
@@ -337,7 +342,7 @@ describe("captureTreeState (AC8)", () => {
     }
     // Belt-and-braces: directly bound the elapsed time, even if the helper
     // resolves correctly today but starts hanging tomorrow.
-    expect(elapsed).toBeLessThan(500);
+    expect(elapsed).toBeLessThan(RACE_CEILING_MS);
 
     // Source-level invariant: the helper must call kill on hung procs
     // exactly the same way gitWithTimeout does (one signal per proc). With

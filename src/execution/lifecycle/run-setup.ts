@@ -368,6 +368,13 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   if (!lockAcquired) {
     logger?.error("execution", "Another nax process is already running in this directory");
     logger?.error("execution", "If you believe this is an error, remove nax.lock manually");
+    // EXEC-2: installCrashHandlers ran above, before lock acquisition. This
+    // throw is outside the try/finally below (whose finally calls
+    // cleanupCrashHandlers), so without this call the SIGTERM/SIGINT/
+    // uncaughtException handlers stay installed — bound to a StatusWriter
+    // for a run that never started — for the lifetime of the process (e.g.
+    // in-process consumers like tests or an embedded TUI).
+    cleanupCrashHandlers();
     throw new LockAcquisitionError(workdir);
   }
 

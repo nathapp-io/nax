@@ -18,8 +18,14 @@ export interface CaptureTreeStateOptions {
  * process is caught quickly rather than blocking the orchestrator startup.
  * Mirrors the intent of gitWithTimeout (GIT_TIMEOUT_MS) but with a tighter
  * bound appropriate for git sub-second commands.
+ *
+ * VER-4: was 75ms, budgeted for a *single* call — but each of status/diff/
+ * diff-cached/hash-object gets its own 75ms deadline, and on cold page
+ * cache, large monorepos, or network-mounted repos a slow-but-healthy git
+ * call was routinely SIGKILLed, making `captureFailureSentinel()` fire and
+ * `nax resume` silently re-run everything. Raised to 1s of headroom per call.
  */
-const TREE_CAPTURE_TIMEOUT_MS = 75;
+const TREE_CAPTURE_TIMEOUT_MS = 1000;
 
 interface SpawnedProc {
   exited: Promise<number>;
@@ -37,27 +43,35 @@ function spawnGit(deps: CaptureTreeStateDeps, args: string[], workdir: string): 
 }
 
 async function spawnWithTimeout(proc: SpawnedProc, timeoutMs: number): Promise<{ stdout: string; exitCode: number }> {
-  const result = await Promise.race([
-    (async () => {
-      const [exitCode, stdout] = await Promise.all([
-        proc.exited,
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
-      ]);
-      return { stdout, exitCode };
-    })(),
-    new Promise<{ stdout: string; exitCode: number }>((resolve) =>
-      setTimeout(() => {
-        try {
-          proc.kill("SIGKILL");
-        } catch {
-          // ignore kill failure
-        }
-        resolve({ stdout: "", exitCode: 1 });
-      }, timeoutMs),
-    ),
-  ]);
-  return result;
+  // VER-4/EXEC-6: the losing side of this race must be cleared, or a timer
+  // that never fires (git won) still holds the event loop and later
+  // SIGKILLs an already-exited pid.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([
+      (async () => {
+        const [exitCode, stdout] = await Promise.all([
+          proc.exited,
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+        ]);
+        return { stdout, exitCode };
+      })(),
+      new Promise<{ stdout: string; exitCode: number }>((resolve) => {
+        timer = setTimeout(() => {
+          try {
+            proc.kill("SIGKILL");
+          } catch {
+            // ignore kill failure
+          }
+          resolve({ stdout: "", exitCode: 1 });
+        }, timeoutMs);
+      }),
+    ]);
+    return result;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**

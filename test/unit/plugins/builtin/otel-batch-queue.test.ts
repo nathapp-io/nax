@@ -212,7 +212,12 @@ describe("createBatchQueue", () => {
     // not silently folded into the in-flight batch
     expect(calls).toHaveLength(1);
 
-    await queue.flushNow();
+    // OTLP-1: flushNow() now awaits the in-flight send, so the second send
+    // must be resolved concurrently or this await never settles.
+    const secondFlush = queue.flushNow();
+    await waitForCondition(() => calls.length === 2, 1_000, 10);
+    pending[1]?.(true);
+    await secondFlush;
     expect(calls).toHaveLength(2);
     expect(calls[1]).toEqual([{ id: "span-in-flight" }]);
   });
