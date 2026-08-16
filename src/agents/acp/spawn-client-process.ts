@@ -13,6 +13,7 @@
 
 import { getSafeLogger } from "@/logger";
 import { type SpawnOptions, type SpawnResult, cancellableDelay } from "@/utils/bun-deps";
+import { isProcessAlive } from "@/utils/process-alive";
 import { killProcessGroup } from "@/utils/process-kill";
 
 export interface TrackedSpawnDeps {
@@ -40,14 +41,6 @@ const activeKillTimers = new Map<number, KillTreeHandle>();
  * SIGKILL so a reused/unrelated pid (the original process already reaped)
  * isn't signalled — mirrors verification/executor.ts's exitedDuringGrace guard.
  */
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Terminate a process tree by group PID: SIGTERM immediately, SIGKILL

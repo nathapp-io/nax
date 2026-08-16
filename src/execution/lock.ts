@@ -7,6 +7,7 @@
 
 import { rename, unlink } from "node:fs/promises";
 import path from "node:path";
+import { isProcessAlive } from "@/utils/process-alive";
 import { getLogger } from "../logger";
 
 /** Safely get logger instance, returns null if not initialized */
@@ -34,17 +35,6 @@ async function tryExclusiveCreate(targetPath: string, content: string): Promise<
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
     throw error;
-  }
-}
-
-/** Check if a process with given PID is still alive */
-function isProcessAlive(pid: number): boolean {
-  try {
-    // kill(pid, 0) checks if process exists without actually sending a signal
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
   }
 }
 

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, dirname } from "node:path";
+import { isProcessAlive } from "./process-alive";
 
 const LOCK_RETRY_MS = 10;
 const LOCK_TIMEOUT_MS = 5_000;
@@ -14,14 +15,7 @@ export const _queueLockDeps = {
   randomUUID,
   now: () => Date.now(),
   sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
-  isPidAlive: (pid: number) => {
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  },
+  isPidAlive: isProcessAlive,
 };
 
 function buildCandidatePath(queuePath: string): string {

@@ -7,6 +7,7 @@
 
 import { unlink } from "node:fs/promises";
 import { join } from "node:path";
+import { isProcessAlive } from "@/utils/process-alive";
 import chalk from "chalk";
 
 /**
@@ -17,19 +18,6 @@ export interface UnlockOptions {
   dir?: string;
   /** Force unlock without liveness check (from --force flag) */
   force?: boolean;
-}
-
-/**
- * Check if a process with given PID is still alive
- */
-function isProcessAlive(pid: number): boolean {
-  try {
-    // kill(pid, 0) checks if process exists without actually sending a signal
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**
