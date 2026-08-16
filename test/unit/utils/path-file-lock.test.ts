@@ -4,13 +4,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import * as pathFileLockModule from "@/utils/path-file-lock";
 
-let deps: typeof import("../../../src/utils/path-file-lock")._pathFileLockDeps;
+let deps: typeof pathFileLockModule._pathFileLockDeps;
 let orig: typeof deps;
 
 beforeEach(async () => {
-  const mod = await import("../../../src/utils/path-file-lock");
-  deps = mod._pathFileLockDeps;
+  deps = pathFileLockModule._pathFileLockDeps;
   orig = { ...deps };
 });
 
@@ -29,7 +29,7 @@ describe("withPathFileLock — concurrent writers (BUG-6)", () => {
     const target = `${dir}/metrics.json`;
     await Bun.write(target, "[]");
 
-    const mod = await import("../../../src/utils/path-file-lock");
+    const mod = await import("@/utils/path-file-lock");
     const writers = Array.from({ length: 8 }, (_, i) =>
       mod.withPathFileLock(target, async () => {
         const cur = (await Bun.file(target).json()) as number[];
@@ -56,7 +56,7 @@ describe("withPathFileLock — stale lock cleanup", () => {
     const staleName = "metrics.json.lock.0001000000000.8888.deadlock";
     await Bun.write(`${dir}/${staleName}`, "");
 
-    const mod = await import("../../../src/utils/path-file-lock");
+    const mod = await import("@/utils/path-file-lock");
     await mod.withPathFileLock(target, async () => {});
 
     const remaining = await Bun.$`ls ${dir}`.text();
@@ -78,7 +78,7 @@ describe("withPathFileLock — stale lock cleanup", () => {
       isPidAlive: (pid: number) => pid === 9999,
     });
 
-    const mod = await import("../../../src/utils/path-file-lock");
+    const mod = await import("@/utils/path-file-lock");
     // This call will time out (9999 is reported alive so listLiveCandidates keeps returning
     // a candidate, so we never win the acquisition). Use a short timeout via deps.now trick:
     // simpler — make readdir return ONLY the live candidate and accept that the call
@@ -109,7 +109,7 @@ describe("withPathFileLock — timeout", () => {
       isPidAlive: () => true,
     });
 
-    const mod = await import("../../../src/utils/path-file-lock");
+    const mod = await import("@/utils/path-file-lock");
     await expect(mod.withPathFileLock(target, async () => {}, { timeoutMs: 30, retryMs: 5 })).rejects.toThrow(
       /Timed out acquiring path lock/,
     );

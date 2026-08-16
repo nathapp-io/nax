@@ -17,8 +17,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _autoPrDeps, autoPrPlugin, defaultRun } from "../../../../src/plugins/builtin/auto-pr";
-import type { PostRunContext } from "../../../../src/plugins/types";
+import { _autoPrDeps, autoPrPlugin, defaultRun } from "@/plugins/builtin/auto-pr";
+import type { PostRunContext } from "@/plugins/types";
 
 function makeContext(overrides: Partial<PostRunContext> = {}): PostRunContext {
   return {
