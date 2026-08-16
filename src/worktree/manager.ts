@@ -4,15 +4,10 @@ import { join } from "node:path";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { validateStoryId } from "../prd/validate";
-import { spawn } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
+import { gitWithTimeout } from "../utils/git";
 import { NAX_GITIGNORE_ENTRIES } from "../utils/gitignore";
 import type { WorktreeInfo } from "./types";
-
-/** Injectable deps for testability — mock _managerDeps.spawn instead of global Bun.spawn */
-export const _managerDeps = {
-  spawn,
-};
 
 export class WorktreeManager {
   /**
@@ -68,12 +63,7 @@ export class WorktreeManager {
    */
   private async hasWorktreeRecord(projectRoot: string, branchName: string): Promise<boolean> {
     try {
-      const proc = _managerDeps.spawn(["git", "worktree", "list", "--porcelain"], {
-        cwd: projectRoot,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+      const { stdout, exitCode } = await gitWithTimeout(["worktree", "list", "--porcelain"], projectRoot);
       if (exitCode !== 0) return false;
 
       const targetBranch = `refs/heads/${branchName}`;
@@ -118,12 +108,8 @@ export class WorktreeManager {
     //    gone, but ONLY when hadWorktreeRecord proved it as a nax-created orphan
     try {
       // Step 1: Prune orphaned worktree references (dir deleted but .git/worktrees/ entry remains)
-      const pruneProc = _managerDeps.spawn(["git", "worktree", "prune"], {
-        cwd: projectRoot,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      await pruneProc.exited;
+      // BUG-5: route through gitWithTimeout so a wedged git (NFS hang) can't stall create().
+      await gitWithTimeout(["worktree", "prune"], projectRoot);
     } catch {
       // prune is best-effort
     }
@@ -143,12 +129,8 @@ export class WorktreeManager {
         // Step 3: the worktree directory is already gone (remove() found
         // nothing), but hadWorktreeRecord proves this branch/worktree pair
         // was created by a prior nax run — safe to force-delete the orphan.
-        const branchProc = _managerDeps.spawn(["git", "branch", "-D", branchName], {
-          cwd: projectRoot,
-          stdout: "pipe",
-          stderr: "pipe",
-        });
-        await branchProc.exited;
+        // BUG-5: route through gitWithTimeout so a wedged git can't stall create().
+        await gitWithTimeout(["branch", "-D", branchName], projectRoot);
       } catch {
         // branch may not exist — that's fine
       }
@@ -156,13 +138,10 @@ export class WorktreeManager {
 
     try {
       // Create worktree with new branch
-      const proc = _managerDeps.spawn(["git", "worktree", "add", worktreePath, "-b", branchName], {
-        cwd: projectRoot,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-
-      const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
+      const { exitCode, stderr } = await gitWithTimeout(
+        ["worktree", "add", worktreePath, "-b", branchName],
+        projectRoot,
+      );
       if (exitCode !== 0) {
         throw new NaxError(`Failed to create worktree: ${stderr || "unknown error"}`, "WORKTREE_ERROR", {
           stage: "worktree",
@@ -228,13 +207,7 @@ export class WorktreeManager {
 
     // Remove worktree
     try {
-      const proc = _managerDeps.spawn(["git", "worktree", "remove", worktreePath, "--force"], {
-        cwd: projectRoot,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-
-      const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
+      const { exitCode, stderr } = await gitWithTimeout(["worktree", "remove", worktreePath, "--force"], projectRoot);
       if (exitCode !== 0) {
         if (
           stderr.includes("not found") ||
@@ -269,13 +242,7 @@ export class WorktreeManager {
 
     // Delete branch
     try {
-      const proc = _managerDeps.spawn(["git", "branch", "-D", branchName], {
-        cwd: projectRoot,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-
-      const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
+      const { exitCode, stderr } = await gitWithTimeout(["branch", "-D", branchName], projectRoot);
       if (exitCode !== 0) {
         // Don't fail if branch doesn't exist
         if (!stderr.includes("not found")) {
@@ -297,17 +264,7 @@ export class WorktreeManager {
    */
   async list(projectRoot: string): Promise<WorktreeInfo[]> {
     try {
-      const proc = _managerDeps.spawn(["git", "worktree", "list", "--porcelain"], {
-        cwd: projectRoot,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-
-      const [exitCode, stderr, stdout] = await Promise.all([
-        proc.exited,
-        new Response(proc.stderr).text(),
-        new Response(proc.stdout).text(),
-      ]);
+      const { stdout, stderr, exitCode } = await gitWithTimeout(["worktree", "list", "--porcelain"], projectRoot);
       if (exitCode !== 0) {
         throw new NaxError(`Failed to list worktrees: ${stderr || "unknown error"}`, "WORKTREE_ERROR", {
           stage: "worktree",
