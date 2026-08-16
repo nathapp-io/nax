@@ -23,9 +23,9 @@ Each item is tagged with how far it was actually checked. Do not treat these as 
 | ID | Severity | Status | Finding |
 |:---|:---|:---|:---|
 | **L11** | HIGH | ✅ **Fixed** | `[probe]` `stripTrailingCommas` was regex-only and string-blind, so `,}` / `,]` inside string *values* were deleted. The rewrite still parsed, so the corruption was silent. `prd/schema.ts:523` and `acceptance/refinement.ts:28,62` call it **unconditionally** before any parse, so AC text quoting code was mangled into `prd.json`. |
-| **L10** | HIGH | Open | `[read]` `markStoryPassed` sets **both** `passes = true` and `status`; `markStoryFailed` sets **only** `status = "failed"` and never clears `passes`. A story that passed then failed keeps `passes: true`, and `story-selector.ts:163` / `story-context.ts:232` treat `passes` as "complete" — so it is skipped on re-run. The asymmetry between the two sibling functions is the tell. |
-| **L33** | MEDIUM | Open | `[read]` Two distinct defects. `skipPermissions` has **zero readers** outside `permissions.ts` (only `.mode` is consumed, in `acp/adapter.ts` and `middleware/audit.ts`) — dead output that `CLAUDE.md` still advertises as the destructuring pattern. Worse: the `execution.permissions` schema block has **zero readers** — it parses and silently does nothing, so a user configuring it gets no error and no effect. |
-| **L16** | MEDIUM | Open | `[read]` `parseRunLog` does `lines.map(line => JSON.parse(line))` inside one try/catch returning `[]`. A single truncated final line — exactly what a crashed run leaves — blanks the entire log for `nax runs list/show`, defeating the diagnostic tool precisely when it is needed. Should skip bad lines, not the file. |
+| **L10** | HIGH | ✅ **Fixed** | `[read]` `markStoryPassed` sets **both** `passes = true` and `status`; `markStoryFailed` set **only** `status = "failed"` and never cleared `passes`. The asymmetry between the two sibling functions is the tell. **Correction to an earlier draft of this row:** the consequence is *not* that the story is skipped — both selectors exclude `status === "failed"` independently, so the story itself is handled correctly. The damage is one level out, in **dependency** resolution: `story-selector.ts:174` reads `dep.passes \|\| dep.status === "passed"` and `story-context.ts:232` builds `completedIds` from `s.passes`, so a dependency that went passed → failed still reads as satisfied and its **dependents unblock and run**. `unified-executor.ts:719` marks a story failed on merge conflict after its pipeline passed, so the work never reached the base branch. |
+| **L33** | MEDIUM | ✅ **Fixed** | `[read]` Two distinct defects. `skipPermissions` has **zero readers** outside `permissions.ts` (only `.mode` is consumed, in `acp/adapter.ts` and `middleware/audit.ts`) — dead output that `CLAUDE.md` still advertises as the destructuring pattern. Worse: the `execution.permissions` schema block has **zero readers** — it parses and silently does nothing, so a user configuring it gets no error and no effect. |
+| **L16** | MEDIUM | ✅ **Fixed** | `[read]` `parseRunLog` does `lines.map(line => JSON.parse(line))` inside one try/catch returning `[]`. A single truncated final line — exactly what a crashed run leaves — blanks the entire log for `nax runs list/show`, defeating the diagnostic tool precisely when it is needed. Should skip bad lines, not the file. |
 
 ### Confirmed, correctly rated as low
 
@@ -56,11 +56,16 @@ L4, L6, L17, L18, L19, L22–L32, L34–L38 were left at their original severity
 
 ## Recommended order
 
-1. **L10** — silent story-state corruption that changes which stories run. Small fix (clear `passes` in `markStoryFailed`), needs a test asserting a passed→failed story is re-selected.
-2. **L16** — per-line tolerant parse; one-line fix, restores the crash-diagnosis path.
-3. **L33** — decide per half: delete the dead `skipPermissions` field, and either wire `execution.permissions` or reject it at parse time so it cannot silently no-op.
-4. **L2, L9, L15** — one small batch.
-5. Everything else — hygiene, genuinely.
+1. ~~**L11**~~ — done.
+2. ~~**L10**~~ — done. `markStoryFailed` now clears `passes`.
+3. ~~**L16**~~ — done. Per-line tolerant parse; malformed lines are skipped and counted in a warning.
+4. ~~**L33**~~ — done, both halves. `skipPermissions` and the unused `allowedTools` are gone from `ResolvedPermissions`; `execution.permissions` is now rejected at config load by `rejectUnimplementedPermissionsBlock`, alongside the `"scoped"` profile it belongs to, and its schema and `runtime-types.ts` entries were removed.
+5. **L2, L9, L15** — the remaining confirmed set; one small batch.
+6. Everything else — hygiene, genuinely.
+
+### Why L33 was rejected rather than implemented
+
+Per-stage permissions are **frozen, not merely unfinished**: acpx's own permission support is not mature enough to build on, which is also why SEC-01 was discarded. So the config surface for a frozen feature had to stop accepting input rather than grow an implementation. Rejecting at load mirrors `rejectUnimplementedScopedProfile` and is safe in practice — neither the global `~/.nax/config.json` nor this repo's `.nax/config.json` carried the key.
 
 ## Method note
 

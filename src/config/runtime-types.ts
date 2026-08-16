@@ -125,15 +125,8 @@ export interface ExecutionConfig {
   typecheckCommand?: string | null;
   /** Permission profile for the agent (default: "unrestricted") */
   permissionProfile?: "unrestricted" | "safe" | "scoped";
-  /** Per-stage permission overrides — only read when permissionProfile = "scoped" (Phase 2) */
-  permissions?: Record<
-    string,
-    {
-      mode: "approve-all" | "approve-reads" | "scoped";
-      allowedTools?: string[];
-      inherit?: string;
-    }
-  >;
+  // NOTE: the Phase 2 per-stage `permissions` block is intentionally absent —
+  // it is rejected at config load until GitHub #374 lands. See schemas-execution.ts.
   /** Enable smart test runner to scope test runs to changed files (default: true).
    * Accepts boolean for backward compat or a SmartTestRunnerConfig object. */
   smartTestRunner?: boolean | SmartTestRunnerConfig;

@@ -19,7 +19,7 @@ import { attachAuditSubscriber } from "../../../src/runtime/middleware/audit";
 import { PromptAuditor } from "../../../src/runtime/prompt-auditor";
 import { withTempDir } from "../../helpers/temp";
 
-const PERMS = { mode: "approve-reads" as const, skipPermissions: false };
+const PERMS = { mode: "approve-reads" as const };
 
 function makeAcceptanceGenEvent(): CompleteDispatchEvent {
   return {

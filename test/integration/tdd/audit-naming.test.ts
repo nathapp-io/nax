@@ -26,7 +26,7 @@ import { PromptAuditor } from "../../../src/runtime/prompt-auditor";
 import type { SessionRole } from "../../../src/runtime/session-role";
 import { withTempDir } from "../../helpers/temp";
 
-const PERMS = { mode: "approve-reads" as const, skipPermissions: false };
+const PERMS = { mode: "approve-reads" as const };
 
 function makeTddTurnEvent(role: SessionRole, turn = 1): SessionTurnDispatchEvent {
   const sessionName = `nax-abcd1234-tdd-calc-US-001-${role}`;

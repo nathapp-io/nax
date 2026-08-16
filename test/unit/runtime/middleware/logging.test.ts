@@ -7,7 +7,7 @@ import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEven
 import { attachLoggingSubscriber } from "../../../../src/runtime/middleware/logging";
 import { cleanupTempDir, makeTempDir } from "../../../helpers";
 
-const PERMS = { mode: "approve-reads" as const, skipPermissions: false };
+const PERMS = { mode: "approve-reads" as const };
 
 function makeSessionTurnEvent(overrides: Partial<SessionTurnDispatchEvent> = {}): SessionTurnDispatchEvent {
   return {

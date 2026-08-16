@@ -292,3 +292,31 @@ export function rejectUnimplementedScopedProfile(conf: Record<string, unknown>):
   ].join("\n");
   throw new NaxError(message, "CONFIG_SCOPED_PROFILE_UNIMPLEMENTED", { stage: "config" });
 }
+
+/**
+ * @internal Reject the `execution.permissions` policy block until Phase 2 lands.
+ *
+ * The block is the per-stage counterpart to `permissionProfile: "scoped"` and
+ * belongs to the same unimplemented feature (GitHub #374). Zod accepted and
+ * validated its whole shape while nothing in `src/` ever read it, so a user
+ * could write a per-stage permission policy, get no error, and get no
+ * enforcement — believing their agents were constrained while every stage ran
+ * under the resolved profile. Silently ignoring a stated security intent is
+ * worse than not offering the key, so this fails fast for the same reason the
+ * `"scoped"` profile above does.
+ *
+ * Remove this guard when scoped permissions are implemented (GitHub #374).
+ */
+export function rejectUnimplementedPermissionsBlock(conf: Record<string, unknown>): void {
+  const execution = conf.execution as Record<string, unknown> | undefined;
+  if (execution === null || typeof execution !== "object") return;
+  if (!("permissions" in execution)) return;
+
+  const message = [
+    "Invalid configuration — execution.permissions is not yet implemented.",
+    "Per-stage permission policy is tracked by GitHub #374. The block is currently",
+    "read by nothing, so leaving it in place would silently give you no enforcement.",
+    "Remove it and use execution.permissionProfile for now.",
+  ].join("\n");
+  throw new NaxError(message, "CONFIG_PERMISSIONS_BLOCK_UNIMPLEMENTED", { stage: "config" });
+}

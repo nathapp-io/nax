@@ -119,7 +119,6 @@ describe("openSession()", () => {
 
     expect(capturedOpts).toHaveLength(1);
     expect(capturedOpts[0].resolvedPermissions.mode).toBe("approve-reads");
-    expect(capturedOpts[0].resolvedPermissions.skipPermissions).toBe(false);
   });
 
   test("passes resume=false when no descriptor exists", async () => {

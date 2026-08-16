@@ -43,10 +43,9 @@ const REPRESENTATIVE_STAGES: PipelineStage[] = ["plan", "run", "rectification", 
 describe("resolvePermissions — unrestricted profile", () => {
   const config = makeConfig({ permissionProfile: "unrestricted" });
 
-  test.each(REPRESENTATIVE_STAGES)("stage=%s → approve-all + skipPermissions=true", (stage) => {
+  test.each(REPRESENTATIVE_STAGES)("stage=%s → approve-all", (stage) => {
     const result = resolvePermissions(config, stage);
     expect(result.mode).toBe("approve-all");
-    expect(result.skipPermissions).toBe(true);
   });
 });
 
@@ -57,10 +56,9 @@ describe("resolvePermissions — unrestricted profile", () => {
 describe("resolvePermissions — safe profile", () => {
   const config = makeConfig({ permissionProfile: "safe" });
 
-  test.each(REPRESENTATIVE_STAGES)("stage=%s → approve-reads + skipPermissions=false", (stage) => {
+  test.each(REPRESENTATIVE_STAGES)("stage=%s → approve-reads", (stage) => {
     const result = resolvePermissions(config, stage);
     expect(result.mode).toBe("approve-reads");
-    expect(result.skipPermissions).toBe(false);
   });
 });
 
@@ -71,10 +69,9 @@ describe("resolvePermissions — safe profile", () => {
 describe("resolvePermissions — scoped profile (Phase 2 stub)", () => {
   const config = makeConfig({ permissionProfile: "scoped" });
 
-  test.each(REPRESENTATIVE_STAGES)("stage=%s → safe defaults (approve-reads, skipPermissions=false)", (stage) => {
+  test.each(REPRESENTATIVE_STAGES)("stage=%s → safe defaults (approve-reads)", (stage) => {
     const result = resolvePermissions(config, stage);
     expect(result.mode).toBe("approve-reads");
-    expect(result.skipPermissions).toBe(false);
   });
 });
 
@@ -87,13 +84,11 @@ describe("resolvePermissions — default behaviour", () => {
     const config = makeConfig();
     const result = resolvePermissions(config, "run");
     expect(result.mode).toBe("approve-all");
-    expect(result.skipPermissions).toBe(true);
   });
 
   test("no config → unrestricted (approve-all)", () => {
     const result = resolvePermissions(undefined, "run");
     expect(result.mode).toBe("approve-all");
-    expect(result.skipPermissions).toBe(true);
   });
 });
 

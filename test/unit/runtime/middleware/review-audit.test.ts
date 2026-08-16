@@ -4,7 +4,7 @@ import { DispatchEventBus } from "../../../../src/runtime/dispatch-events";
 import type { ReviewDecisionEvent, SessionTurnDispatchEvent } from "../../../../src/runtime/dispatch-events";
 import { attachReviewAuditSubscriber } from "../../../../src/runtime/middleware/review-audit";
 
-const PERMS = { mode: "approve-reads" as const, skipPermissions: false };
+const PERMS = { mode: "approve-reads" as const };
 
 function makeSessionTurnEvent(overrides: Partial<SessionTurnDispatchEvent> = {}): SessionTurnDispatchEvent {
   return {

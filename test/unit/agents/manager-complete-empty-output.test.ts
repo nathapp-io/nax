@@ -6,7 +6,7 @@ import { makeNaxConfig } from "../../helpers";
 const baseOptions = {
   modelDef: { provider: "anthropic" as const, model: "claude-sonnet-4-6", env: {} as Record<string, string> },
   workdir: "/tmp/test",
-  resolvedPermissions: { skipPermissions: false, mode: "approve-reads" as const },
+  resolvedPermissions: { mode: "approve-reads" as const },
 };
 
 /** Build a NaxConfig slice for watchdog + fallback tuning used by these tests. */

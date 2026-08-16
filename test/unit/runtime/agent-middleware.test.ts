@@ -9,7 +9,7 @@ function makeCtx(overrides: Partial<MiddlewareContext> = {}): MiddlewareContext 
     kind: "run",
     request: null,
     config: DEFAULT_CONFIG,
-    resolvedPermissions: { mode: "approve-reads", skipPermissions: false },
+    resolvedPermissions: { mode: "approve-reads" },
     ...overrides,
   };
 }

@@ -19,6 +19,7 @@ import {
   rejectDeadQualityFlags,
   rejectLegacyAgentKeys,
   rejectLegacyRectificationKeys,
+  rejectUnimplementedPermissionsBlock,
   rejectUnimplementedScopedProfile,
   stripRemovedNoOpKeys,
 } from "./config-guards";
@@ -222,6 +223,9 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   // Fail fast on the not-yet-implemented scoped permission profile (GitHub #374)
   // rather than letting it silently degrade to "safe".
   rejectUnimplementedScopedProfile(rawConfig);
+  // Same feature, same treatment: the per-stage policy block is read by nothing,
+  // so accepting it would silently provide no enforcement.
+  rejectUnimplementedPermissionsBlock(rawConfig);
   // Strip the four inert no-op keys (warn-and-strip, not throw — see
   // config-guards.ts for the divergence rationale). Runs AFTER the reject guards
   // and BEFORE safeParse, so the removed key is gone before the schema sees it.
