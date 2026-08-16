@@ -453,6 +453,9 @@ export class ContextOrchestrator {
       chunks: packed.map(toContextChunk),
       // Propagate agentId when the caller specifies a target agent (Phase 7+).
       ...(request.agentId !== undefined && { agentId: request.agentId }),
+      // Propagate featureId so pull-tool handlers can rebuild an equivalent
+      // request (fragment reads early-return without it).
+      ...(request.featureId !== undefined && { featureId: request.featureId }),
     };
   }
 

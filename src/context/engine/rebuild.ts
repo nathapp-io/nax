@@ -246,5 +246,8 @@ export function rebuild(
     manifest,
     chunks: rebuiltChunks,
     agentId: targetAgentId,
+    // Carry the feature forward: a rebuild that dropped it would leave every
+    // post-swap hop's pull tools unable to reach dependency fragments.
+    ...(prior.featureId !== undefined && { featureId: prior.featureId }),
   };
 }

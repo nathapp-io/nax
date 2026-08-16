@@ -146,6 +146,9 @@ export function createContextToolRuntime(options: {
             repoRoot,
             getBudget(tool),
             tool.maxTokensPerCall,
+            // Without the bundle's feature the provider cannot reach this
+            // story's dependency fragments (it early-returns on a missing id).
+            bundle.featureId,
           );
         case "query_scratch":
           return handleQueryScratch(

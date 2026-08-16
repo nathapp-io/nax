@@ -648,3 +648,37 @@ describe("US-003 — repack to target ceiling", () => {
     );
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// featureId carrier — assemble() sets it, rebuild() must not drop it
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("featureId propagation", () => {
+  test("assemble() carries request.featureId onto the bundle", async () => {
+    const orch = new ContextOrchestrator([makeProvider("p1", makeChunkResult())]);
+
+    const bundle = await orch.assemble({ ...BASE_REQUEST, featureId: "feat-x" });
+
+    expect(bundle.featureId).toBe("feat-x");
+  });
+
+  test("rebuild() preserves featureId across an agent swap", async () => {
+    // A dropped featureId here would silently disable dependency-fragment
+    // reads for every post-swap hop's pull tools — invisible at runtime,
+    // since the provider's response to a missing id is an empty result.
+    const orch = new ContextOrchestrator([makeProvider("p1", makeChunkResult())]);
+    const prior = { ...(await orch.assemble({ ...BASE_REQUEST, featureId: "feat-x" })), agentId: "claude" };
+
+    const rebuilt = rebuild(prior, { newAgentId: "codex" });
+
+    expect(rebuilt.featureId).toBe("feat-x");
+  });
+
+  test("rebuild() omits featureId when the prior bundle had none", async () => {
+    const prior = await makePriorBundle();
+
+    const rebuilt = rebuild(prior, {});
+
+    expect(rebuilt.featureId).toBeUndefined();
+  });
+});
