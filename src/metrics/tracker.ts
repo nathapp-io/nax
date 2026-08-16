@@ -363,6 +363,21 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
 }
 
 /**
+ * Canonical path to `metrics.json` under a given output directory.
+ *
+ * Both `saveRunMetrics` and `loadRunMetrics` (and any read-side consumer
+ * that needs to point at the same file) must use this helper so the write
+ * location and read location can never drift apart (BUG-1 — see
+ * docs/20260816-review-since-0.80.0-canary.3.md).
+ *
+ * The output dir is `runtime.outputDir` (defaulting to
+ * `~/.nax/<projectKey>`), NOT the repo root.
+ */
+export function metricsPathFor(outputDir: string): string {
+  return path.join(outputDir, "metrics.json");
+}
+
+/**
  * Save run metrics to nax/metrics.json.
  *
  * Appends the run metrics to the existing metrics file (or creates it if missing).
@@ -383,7 +398,7 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
  * ```
  */
 export async function saveRunMetrics(outputDir: string, runMetrics: RunMetrics): Promise<void> {
-  const metricsPath = path.join(outputDir, "metrics.json");
+  const metricsPath = metricsPathFor(outputDir);
 
   // Compute totalTokens by summing all story tokens
   let totalInputTokens = 0;
@@ -466,7 +481,7 @@ export async function saveRunMetrics(outputDir: string, runMetrics: RunMetrics):
  * ```
  */
 export async function loadRunMetrics(outputDir: string): Promise<RunMetrics[]> {
-  const metricsPath = path.join(outputDir, "metrics.json");
+  const metricsPath = metricsPathFor(outputDir);
 
   const content = await loadJsonFile<RunMetrics[]>(metricsPath, "metrics");
   return Array.isArray(content) ? content : [];

@@ -6,8 +6,18 @@
  * failure recorded. Used by the rectify stage so a retrying agent has a
  * deterministic record of how this story failed previously.
  *
+ * Metrics are read from `<request.outputDir>/metrics.json`, the same location
+ * `saveRunMetrics(runtime.outputDir, …)` writes to (BUG-1 fix — see
+ * docs/20260816-review-since-0.80.0-canary.3.md). Before this fix the provider
+ * read from `<request.repoRoot>/metrics.json`, which is the repo root and
+ * never the production metrics location — the feature was silently dead in
+ * default setups (`~/.nax/<projectKey>` defaults, never the repo root).
+ *
+ * Falls back to `request.repoRoot` when `outputDir` is omitted (backward
+ * compat for callers/tests that predate the field).
+ *
  * Failure handling (per spec):
- * - Source file absent (no `metrics.json` at `request.repoRoot`):
+ * - Source file absent (no `metrics.json` at the resolved location):
  *   `fetch()` returns empty chunks; never throws.
  * - Source file malformed (unparseable JSON):
  *   `loadRunMetrics()` returns []; the provider surfaces empty chunks; never throws.
@@ -140,8 +150,13 @@ function buildChunk(storyId: string, totalAttempts: number, uniqueFailingFiles: 
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Reads `<request.repoRoot>/metrics.json` and emits one chunk per request
- * when the requested story has any prior-run failure recorded.
+ * Reads `<request.outputDir>/metrics.json` (the production metrics location,
+ * where `saveRunMetrics` writes) and emits one chunk per request when the
+ * requested story has any prior-run failure recorded.
+ *
+ * Falls back to `<request.repoRoot>/metrics.json` when `outputDir` is not
+ * provided — kept for backward compat with callers/tests that predate the
+ * BUG-1 fix and don't yet thread `outputDir` through.
  */
 export class PriorRunFailureProvider implements IContextProvider {
   readonly id = "prior-run-failure" as const;
@@ -153,9 +168,15 @@ export class PriorRunFailureProvider implements IContextProvider {
       return { chunks: [], pullTools: [] };
     }
 
+    // BUG-1 fix: read from request.outputDir (the production metrics
+    // location = runtime.outputDir, defaulting to ~/.nax/<projectKey>).
+    // Fall back to request.repoRoot for backward compat with callers that
+    // don't yet thread outputDir through.
+    const metricsLocation = request.outputDir ?? request.repoRoot;
+
     let runs: RunMetrics[] = [];
     try {
-      runs = await _priorRunFailureDeps.loadRunMetrics(request.repoRoot);
+      runs = await _priorRunFailureDeps.loadRunMetrics(metricsLocation);
     } catch (err) {
       // Defensive: loadRunMetrics already returns [] for missing/malformed
       // metrics.json (the spec's AC4/AC9 cases), but a future dep swap, a
@@ -165,7 +186,7 @@ export class PriorRunFailureProvider implements IContextProvider {
       // indistinguishable from a clean history — and never let fetch throw.
       getLogger().warn("prior-run-failure", "loadRunMetrics threw — returning empty chunks", {
         storyId,
-        repoRoot: request.repoRoot,
+        metricsLocation,
         error: errorMessage(err),
       });
       return { chunks: [], pullTools: [] };

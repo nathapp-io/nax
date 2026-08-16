@@ -36,6 +36,7 @@ function makeRequest(overrides: Partial<ContextRequest> = {}): ContextRequest {
   return {
     storyId: "US-003",
     repoRoot: "/repo",
+    outputDir: "/output",
     packageDir: "/repo",
     stage: "rectify",
     role: "implementer",
@@ -109,8 +110,8 @@ describe("PriorRunFailureProvider — AC1 + AC2 construction & identity", () => 
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("PriorRunFailureProvider — AC4 missing metrics file", () => {
-  test("returns empty chunks when no metrics file exists at request.repoRoot", async () => {
-    // loadRunMetrics (real dep) is wired; we point repoRoot at a directory
+  test("returns empty chunks when no metrics file exists at the metrics location", async () => {
+    // loadRunMetrics (real dep) is wired; we point outputDir at a directory
     // we know does not contain metrics.json. The dep is mocked per-test
     // to control behaviour without touching the global fs.
     const provider = new PriorRunFailureProvider();
@@ -120,12 +121,59 @@ describe("PriorRunFailureProvider — AC4 missing metrics file", () => {
       return [];
     };
 
-    const result = await provider.fetch(makeRequest({ repoRoot: "/repo" }));
+    const result = await provider.fetch(makeRequest({ repoRoot: "/repo", outputDir: "/output" }));
 
     expect(result.chunks).toHaveLength(0);
     expect(result.pullTools).toEqual([]);
-    // loadRunMetrics is invoked with request.repoRoot
-    expect(calls).toEqual(["/repo"]);
+    // loadRunMetrics is invoked with the production metrics location
+    // (request.outputDir), where saveRunMetrics actually writes — NOT
+    // request.repoRoot, which is the repo root and never contains
+    // metrics.json in default production setups (BUG-1).
+    expect(calls).toEqual(["/output"]);
+  });
+
+  test("BUG-1 regression: loadRunMetrics is invoked with request.outputDir (the production metrics location), not request.repoRoot", async () => {
+    // In production, saveRunMetrics writes to runtime.outputDir
+    // (= projectOutputDir(projectKey, config.outputDir), defaulting to
+    // ~/.nax/<projectKey>/metrics.json). request.repoRoot is the repo root
+    // — never the metrics location. The previous implementation read
+    // request.repoRoot, so the provider was silently dead in default
+    // production setups (BUG-1 in
+    // docs/20260816-review-since-0.80.0-canary.3.md).
+    const provider = new PriorRunFailureProvider();
+    const calls: string[] = [];
+    _priorRunFailureDeps.loadRunMetrics = async (dir: string) => {
+      calls.push(dir);
+      return [makeRunMetrics([makeStoryMetrics({ storyId: "US-003", success: false })])];
+    };
+
+    const result = await provider.fetch(
+      makeRequest({
+        storyId: "US-003",
+        repoRoot: "/some/repo/that/is/never/the/metrics/location",
+        outputDir: "/home/user/.nax/myproject",
+      }),
+    );
+
+    expect(calls).toEqual(["/home/user/.nax/myproject"]);
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0].kind).toBe("prior-failure");
+  });
+
+  test("falls back to request.repoRoot when request.outputDir is not provided (backward-compat for older callers)", async () => {
+    // Pre-fix callers may pass a request without outputDir. The provider
+    // must not throw — it falls back to repoRoot so the older layout
+    // keeps working until every caller threads outputDir through.
+    const provider = new PriorRunFailureProvider();
+    const calls: string[] = [];
+    _priorRunFailureDeps.loadRunMetrics = async (dir: string) => {
+      calls.push(dir);
+      return [];
+    };
+
+    await provider.fetch(makeRequest({ repoRoot: "/legacy/repo", outputDir: undefined }));
+
+    expect(calls).toEqual(["/legacy/repo"]);
   });
 
   test("does not throw when loadRunMetrics returns []", async () => {
@@ -419,7 +467,12 @@ describe("PriorRunFailureProvider — real-filesystem integration (loadRunMetric
     _priorRunFailureDeps.loadRunMetrics = loadRunMetrics;
 
     const provider = new PriorRunFailureProvider();
-    const result = await provider.fetch(makeRequest({ storyId: "US-003", repoRoot: tempDir }));
+    // BUG-1 fix: provider reads from request.outputDir (the production
+    // metrics location = runtime.outputDir), NOT request.repoRoot.
+    // Set repoRoot to a different empty dir to prove the read targets outputDir.
+    const result = await provider.fetch(
+      makeRequest({ storyId: "US-003", repoRoot: "/nonexistent/repo", outputDir: tempDir }),
+    );
 
     expect(result.chunks).toHaveLength(1);
     expect(result.chunks[0].kind).toBe("prior-failure");
@@ -433,7 +486,9 @@ describe("PriorRunFailureProvider — real-filesystem integration (loadRunMetric
     _priorRunFailureDeps.loadRunMetrics = loadRunMetrics;
 
     const provider = new PriorRunFailureProvider();
-    const result = await provider.fetch(makeRequest({ storyId: "US-003", repoRoot: tempDir }));
+    const result = await provider.fetch(
+      makeRequest({ storyId: "US-003", repoRoot: "/nonexistent/repo", outputDir: tempDir }),
+    );
 
     expect(result.chunks).toHaveLength(0);
   });
@@ -446,7 +501,9 @@ describe("PriorRunFailureProvider — real-filesystem integration (loadRunMetric
 
     const provider = new PriorRunFailureProvider();
     // Should not throw.
-    const result = await provider.fetch(makeRequest({ storyId: "US-003", repoRoot: tempDir }));
+    const result = await provider.fetch(
+      makeRequest({ storyId: "US-003", repoRoot: "/nonexistent/repo", outputDir: tempDir }),
+    );
     expect(result.chunks).toHaveLength(0);
   });
 
@@ -458,7 +515,9 @@ describe("PriorRunFailureProvider — real-filesystem integration (loadRunMetric
     _priorRunFailureDeps.loadRunMetrics = loadRunMetrics;
 
     const provider = new PriorRunFailureProvider();
-    const result = await provider.fetch(makeRequest({ storyId: "US-003", repoRoot: tempDir }));
+    const result = await provider.fetch(
+      makeRequest({ storyId: "US-003", repoRoot: "/nonexistent/repo", outputDir: tempDir }),
+    );
 
     expect(result.chunks).toHaveLength(0);
   });

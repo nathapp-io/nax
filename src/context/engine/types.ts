@@ -230,6 +230,21 @@ export interface ContextRequest {
    * continue to use `repoRoot`.
    */
   packageDir: string;
+  /**
+   * Runtime output directory where run artefacts (metrics.json, cost/, prompt-audit/)
+   * are written. Defaults to `~/.nax/<projectKey>`; overridable via
+   * `config.outputDir` (absolute or `~/...`).
+   *
+   * Sourced from `runtime.outputDir` at stage assembly. Read-side providers
+   * (e.g. PriorRunFailureProvider) MUST use this to find metrics.json — the
+   * write side (`saveRunMetrics(runtime.outputDir, …)`) writes here, never
+   * at `repoRoot` (BUG-1 — see
+   * docs/20260816-review-since-0.80.0-canary.3.md).
+   *
+   * Optional for backward compat with callers/tests that predate the field;
+   * providers reading metrics.json fall back to `repoRoot` when omitted.
+   */
+  outputDir?: string;
   /** Pipeline stage name (e.g. "execution", "verify", "review") */
   stage: string;
   /** Caller role — used by role filter and score adjustments */
