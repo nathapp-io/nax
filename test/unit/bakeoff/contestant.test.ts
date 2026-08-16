@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it, mock } from "bun:test";
-import { runContestant } from "@/bakeoff";
+import { deriveBakeoffWorktreeId, runContestant } from "@/bakeoff";
 import type {
   ContestantOptions,
   ContestantPipelineResult,
@@ -131,14 +131,31 @@ describe("runContestant (US-002 AC2: context.feature)", () => {
 // ── AC-3: context.worktree ends with the contestant worktree ID ──────────────
 
 describe("runContestant (US-002 AC3: context.worktree)", () => {
-  it("US-002 AC3: context.worktree path ends with the contestant worktree ID", async () => {
-    const { ctx } = await runAndCapture("claude", baseOptions());
-    expect(ctx?.worktree.endsWith("bakeoff-contestant-claude")).toBe(true);
+  it("US-002 AC3: context.worktree path ends with the feature+profile-derived worktree ID", async () => {
+    const { ctx } = await runAndCapture("claude", baseOptions({ feature: "test-feature" }));
+    const expectedId = deriveBakeoffWorktreeId("test-feature", "claude");
+    expect(ctx?.worktree.endsWith(expectedId)).toBe(true);
   });
 
   it("US-002 AC3 (boundary): a different profile changes the trailing worktree ID accordingly", async () => {
-    const { ctx } = await runAndCapture("codex", baseOptions());
-    expect(ctx?.worktree.endsWith("bakeoff-contestant-codex")).toBe(true);
+    const { ctx } = await runAndCapture("codex", baseOptions({ feature: "test-feature" }));
+    const expectedId = deriveBakeoffWorktreeId("test-feature", "codex");
+    expect(ctx?.worktree.endsWith(expectedId)).toBe(true);
+  });
+
+  // US-004: worktree IDs are derived from feature+profile, not profile alone —
+  // two contestants sharing a profile across different features must get
+  // distinct worktree IDs (deriveBakeoffWorktreeId(feature, profile)).
+  it("US-004: a different feature changes the trailing worktree ID even for the same profile", async () => {
+    const { ctx: ctxA } = await runAndCapture("claude", baseOptions({ feature: "feature-a" }));
+    const { ctx: ctxB } = await runAndCapture("claude", baseOptions({ feature: "feature-b" }));
+
+    const expectedA = deriveBakeoffWorktreeId("feature-a", "claude");
+    const expectedB = deriveBakeoffWorktreeId("feature-b", "claude");
+
+    expect(ctxA?.worktree.endsWith(expectedA)).toBe(true);
+    expect(ctxB?.worktree.endsWith(expectedB)).toBe(true);
+    expect(ctxA?.worktree).not.toBe(ctxB?.worktree);
   });
 });
 
