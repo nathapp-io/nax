@@ -11,7 +11,7 @@ import type { Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { runQualityCommand } from "../quality";
-import { autoCommitIfDirty } from "../utils/git";
+import { autoCommitIfDirty, gitWithTimeout } from "../utils/git";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { runAdversarialReview as _runAdversarialReviewImpl } from "./adversarial";
 import { resolveLanguageCommand } from "./language-commands";
@@ -216,23 +216,20 @@ function normalizeMechanicalFindings(
 /**
  * Get uncommitted tracked files via git diff --name-only HEAD.
  * Returns empty array if git command fails or working tree is clean.
+ *
+ * BUG-1: routes through gitWithTimeout so >64KB of `git diff --name-only HEAD`
+ * output (large diffs) cannot deadlock the run. Pre-fix the implementation
+ * awaited proc.exited before draining stdout; once the OS pipe buffer fills,
+ * git blocks writing and proc.exited never resolves. gitWithTimeout drains
+ * stdout/stderr concurrently and SIGKILLs after GIT_TIMEOUT_MS.
  */
 async function getUncommittedFilesImpl(workdir: string): Promise<string[]> {
   try {
-    const proc = Bun.spawn({
-      cmd: ["git", "diff", "--name-only", "HEAD"],
-      cwd: workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-
-    const exitCode = await proc.exited;
+    const { stdout, exitCode } = await gitWithTimeout(["diff", "--name-only", "HEAD"], workdir);
     if (exitCode !== 0) {
       return [];
     }
-
-    const output = await new Response(proc.stdout).text();
-    return output.trim().split("\n").filter(Boolean);
+    return stdout.trim().split("\n").filter(Boolean);
   } catch {
     return [];
   }

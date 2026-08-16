@@ -8,9 +8,9 @@
  * timer pair, which is deterministic and independent of CI scheduling.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { _executorDeps, appendForceExitFlag, executeWithTimeout, normalizeEnvironment } from "@/verification";
 import { withTimerSpy } from "@test/helpers";
-import { appendForceExitFlag, executeWithTimeout, normalizeEnvironment } from "@/verification";
 
 describe("appendForceExitFlag (VER-1)", () => {
   test("inserts before a pipe, not inside the redirect tail", () => {
@@ -94,4 +94,98 @@ describe("executeWithTimeout", () => {
     expect(result.timeout).toBe(true);
     expect(leaked).toEqual([]);
   }, 20_000);
+});
+
+// ---------------------------------------------------------------------------
+// BUG-2: executeWithTimeout must bound the pipe-drain waits on the SUCCESS
+// path, not just the timeout path. A subprocess that exits cleanly but whose
+// stdout/stderr pipes never close (orphaned grandchild holding the write-end)
+// used to wedge the call indefinitely on `await Promise.all([stdout, stderr])`.
+// ---------------------------------------------------------------------------
+
+describe("executeWithTimeout — BUG-2 drain-deadlock regression", () => {
+  let originalSpawn: typeof _executorDeps.spawn;
+
+  beforeEach(() => {
+    originalSpawn = _executorDeps.spawn;
+  });
+
+  afterEach(() => {
+    _executorDeps.spawn = originalSpawn;
+    mock.restore();
+  });
+
+  test("returns within drainTimeoutMs even when stdout/stderr pipes never close after the process exits", async () => {
+    // Reproduces BUG-2: proc.exited resolves (so we take the success path, not
+    // the timeout path), but the streams stay open because a grandchild
+    // inherited the write-end. Pre-fix, line 167's `Promise.all([stdoutPromise,
+    // stderrPromise])` waits forever. Post-fix, raceWithDeadline bounds both
+    // drains with drainTimeoutMs, mirroring the timeout path (lines 147-150).
+    _executorDeps.spawn = mock((_cmd: unknown, _opts: unknown) => {
+      return {
+        stdout: new ReadableStream({
+          start() {
+            /* never closes */
+          },
+        }),
+        stderr: new ReadableStream({
+          start() {
+            /* never closes */
+          },
+        }),
+        exited: Promise.resolve(0),
+        pid: 99999,
+        kill: mock(() => {}),
+      };
+    }) as unknown as typeof _executorDeps.spawn;
+
+    const start = Date.now();
+    const result = await executeWithTimeout("ignored — spawn is mocked", 10, undefined, {
+      drainTimeoutMs: 200,
+    });
+    const elapsed = Date.now() - start;
+
+    // Pre-fix this would be a hard hang; the test would time out at the suite
+    // default (~5s) and report a deadlock. Post-fix, raceWithDeadline caps the
+    // drain at drainTimeoutMs (200ms here) and the function returns whatever it
+    // managed to collect (empty in this mock).
+    expect(elapsed).toBeLessThan(2_000);
+    expect(result.timeout).toBe(false);
+    expect(result.success).toBe(true);
+    expect(result.exitCode).toBe(0);
+  }, 5_000);
+
+  test("captures partial stdout when the stream closes before the drain deadline", async () => {
+    // Positive control: when the stream DOES close (just not on the OS-pipe
+    // schedule), the drain captures the buffered output. This guards against a
+    // regression where raceWithDeadline accidentally throws away data the
+    // race actually won.
+    _executorDeps.spawn = mock((_cmd: unknown, _opts: unknown) => {
+      const bytes = new TextEncoder().encode("hello-from-child\n");
+      return {
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(bytes);
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
+        exited: Promise.resolve(0),
+        pid: 99999,
+        kill: mock(() => {}),
+      };
+    }) as unknown as typeof _executorDeps.spawn;
+
+    const result = await executeWithTimeout("ignored — spawn is mocked", 10, undefined, {
+      drainTimeoutMs: 1_000,
+    });
+
+    expect(result.timeout).toBe(false);
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("hello-from-child");
+  }, 5_000);
 });

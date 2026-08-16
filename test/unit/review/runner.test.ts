@@ -7,14 +7,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { _qualityRunnerDeps as _runnerDeps } from "../../../src/quality/runner";
 import {
   _reviewGitDeps as _deps,
   _reviewLintDeps as _lintDeps,
   _reviewSemanticDeps as _semanticDeps,
   runReview,
 } from "../../../src/review/runner";
-import { _qualityRunnerDeps as _runnerDeps } from "../../../src/quality/runner";
 import type { ReviewConfig } from "../../../src/review/types";
+import { _gitDeps } from "../../../src/utils/git";
 
 /** Minimal ReviewConfig with typecheck enabled but command set to disable via executionConfig */
 const typecheckConfig: ReviewConfig = {
@@ -67,7 +68,22 @@ describe("runReview — dirty working tree guard (RQ-001)", () => {
   describe("clean working tree", () => {
     test("proceeds when no uncommitted files; calls getUncommittedFiles with workdir", async () => {
       _deps.getUncommittedFiles = mock(async (_workdir: string) => []);
-      const result = await runReview({ config: typecheckConfig, workdir: "/tmp/fake-workdir", executionConfig: { typecheckCommand: null, maxIterations: 5, iterationDelayMs: 0, costLimit: 10, sessionTimeoutSeconds: 300, verificationTimeoutSeconds: 60, maxStoriesPerFeature: 20, contextProviderTokenBudget: 2000, rectification: { enabled: false, maxIterations: 3 }, regressionGate: { enabled: false } } });
+      const result = await runReview({
+        config: typecheckConfig,
+        workdir: "/tmp/fake-workdir",
+        executionConfig: {
+          typecheckCommand: null,
+          maxIterations: 5,
+          iterationDelayMs: 0,
+          costLimit: 10,
+          sessionTimeoutSeconds: 300,
+          verificationTimeoutSeconds: 60,
+          maxStoriesPerFeature: 20,
+          contextProviderTokenBudget: 2000,
+          rectification: { enabled: false, maxIterations: 3 },
+          regressionGate: { enabled: false },
+        },
+      });
       expect(result.success).toBe(true);
 
       const mockFn = mock(async (_workdir: string) => []);
@@ -171,9 +187,18 @@ describe("nax runtime file exclusions", () => {
     [".nax/features/*/prd.json", [".nax/features/ctx-simplify/prd.json"]],
     [".nax/features/*/acp-sessions.json", [".nax/features/cli/acp-sessions.json"]],
     ["monorepo-prefixed acp-sessions.json", ["apps/cli/nax/features/cli/acp-sessions.json"]],
-    [".nax/features/*/stories/*/context-manifest-*.json", [".nax/features/memory-guardrails/stories/US-001/context-manifest-review-semantic.json"]],
-    ["monorepo-prefixed context-manifest", ["apps/backend/nax/features/memory-guardrails/stories/US-001/context-manifest-verify.json"]],
-    [".nax/features/*/stories/*/rebuild-manifest.json", [".nax/features/memory-guardrails/stories/US-001/rebuild-manifest.json"]],
+    [
+      ".nax/features/*/stories/*/context-manifest-*.json",
+      [".nax/features/memory-guardrails/stories/US-001/context-manifest-review-semantic.json"],
+    ],
+    [
+      "monorepo-prefixed context-manifest",
+      ["apps/backend/nax/features/memory-guardrails/stories/US-001/context-manifest-verify.json"],
+    ],
+    [
+      ".nax/features/*/stories/*/rebuild-manifest.json",
+      [".nax/features/memory-guardrails/stories/US-001/rebuild-manifest.json"],
+    ],
     ["test-output .jsonl files under test/", ["test/unit/runtime/middleware/test-logging-sub-abc123.jsonl"]],
     ["coverage/ directory files", ["coverage/lcov.info"]],
     [".lcov files", ["report.lcov"]],
@@ -186,10 +211,7 @@ describe("nax runtime file exclusions", () => {
   test("agent source files trigger a warning but review still proceeds", async () => {
     // Dirty agent files produce a warning; review is not failed/escalated since
     // escalation cannot fix structural commit-scope gaps in auto-commit.
-    _deps.getUncommittedFiles = mock(async (_workdir: string) => [
-      ".nax/status.json",
-      "src/config/types.ts",
-    ]);
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => [".nax/status.json", "src/config/types.ts"]);
     const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
     expect(result.success).toBe(true);
     expect(result.checks.some((c) => c.check === "git-clean")).toBe(false);
@@ -258,14 +280,30 @@ describe("runReview — build check (BUILD-001)", () => {
 
   test("build check passes when command succeeds; fails when command fails", async () => {
     _deps.getUncommittedFiles = mock(async (_workdir: string) => []);
-    _runnerDeps.spawn = mock((_args: unknown) => ({ exited: Promise.resolve(0), stdout: { text: () => Promise.resolve("build output") }, stderr: { text: () => Promise.resolve("") }, kill: () => {} } as unknown as ReturnType<typeof Bun.spawn>));
+    _runnerDeps.spawn = mock(
+      (_args: unknown) =>
+        ({
+          exited: Promise.resolve(0),
+          stdout: { text: () => Promise.resolve("build output") },
+          stderr: { text: () => Promise.resolve("") },
+          kill: () => {},
+        }) as unknown as ReturnType<typeof Bun.spawn>,
+    );
     const pass = await runReview({ config: buildConfig, workdir: "/tmp/fake-workdir" });
     expect(pass.success).toBe(true);
     expect(pass.checks[0].check).toBe("build");
     expect(pass.checks[0].success).toBe(true);
     expect(pass.checks[0].command).toBe("echo 'build passed'");
 
-    _runnerDeps.spawn = mock((_args: unknown) => ({ exited: Promise.resolve(1), stdout: { text: () => Promise.resolve("") }, stderr: { text: () => Promise.resolve("Build failed") }, kill: () => {} } as unknown as ReturnType<typeof Bun.spawn>));
+    _runnerDeps.spawn = mock(
+      (_args: unknown) =>
+        ({
+          exited: Promise.resolve(1),
+          stdout: { text: () => Promise.resolve("") },
+          stderr: { text: () => Promise.resolve("Build failed") },
+          kill: () => {},
+        }) as unknown as ReturnType<typeof Bun.spawn>,
+    );
     const fail = await runReview({ config: buildConfig, workdir: "/tmp/fake-workdir" });
     expect(fail.success).toBe(false);
     expect(fail.checks[0].success).toBe(false);
@@ -282,8 +320,19 @@ describe("runReview — build check (BUILD-001)", () => {
 
     // In checks but no command
     let spawnCalled = false;
-    _runnerDeps.spawn = mock((_args: unknown) => { spawnCalled = true; return { exited: Promise.resolve(0), stdout: { text: () => Promise.resolve("") }, stderr: { text: () => Promise.resolve("") }, kill: () => {} } as unknown as ReturnType<typeof Bun.spawn>; });
-    const r2 = await runReview({ config: { enabled: true, checks: ["build"], commands: {} }, workdir: "/tmp/fake-workdir" });
+    _runnerDeps.spawn = mock((_args: unknown) => {
+      spawnCalled = true;
+      return {
+        exited: Promise.resolve(0),
+        stdout: { text: () => Promise.resolve("") },
+        stderr: { text: () => Promise.resolve("") },
+        kill: () => {},
+      } as unknown as ReturnType<typeof Bun.spawn>;
+    });
+    const r2 = await runReview({
+      config: { enabled: true, checks: ["build"], commands: {} },
+      workdir: "/tmp/fake-workdir",
+    });
     expect(r2.success).toBe(true);
     expect(r2.checks).toHaveLength(0);
     expect(spawnCalled).toBe(false);
@@ -379,8 +428,31 @@ describe("runReview — semantic check integration (AC-9)", () => {
   test("calls runSemanticReview (not spawn); result appears in checks array", async () => {
     _deps.getUncommittedFiles = mock(async () => []);
     let spawnCalled = false;
-    _runnerDeps.spawn = mock((_args: unknown) => { spawnCalled = true; return { exited: Promise.resolve(0), stdout: new ReadableStream({ start(c) { c.close(); } }), stderr: new ReadableStream({ start(c) { c.close(); } }), kill: () => {} } as unknown as ReturnType<typeof Bun.spawn>; });
-    _semanticDeps.runSemanticReview = mock(async () => ({ check: "semantic" as const, success: true, command: "", exitCode: 0, output: "all good", durationMs: 10 }));
+    _runnerDeps.spawn = mock((_args: unknown) => {
+      spawnCalled = true;
+      return {
+        exited: Promise.resolve(0),
+        stdout: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
+        kill: () => {},
+      } as unknown as ReturnType<typeof Bun.spawn>;
+    });
+    _semanticDeps.runSemanticReview = mock(async () => ({
+      check: "semantic" as const,
+      success: true,
+      command: "",
+      exitCode: 0,
+      output: "all good",
+      durationMs: 10,
+    }));
 
     const result = await runReview({ config: semanticConfig, workdir: "/tmp/fake-workdir" });
 
@@ -410,17 +482,191 @@ describe("runReview — semantic check integration (AC-9)", () => {
 
   test("passes storyGitRef+story to runSemanticReview; passes config.semantic when set", async () => {
     _deps.getUncommittedFiles = mock(async () => []);
-    const mockResult = { check: "semantic" as const, success: true, command: "", exitCode: 0, output: "passed", durationMs: 5 };
+    const mockResult = {
+      check: "semantic" as const,
+      success: true,
+      command: "",
+      exitCode: 0,
+      output: "passed",
+      durationMs: 5,
+    };
     _semanticDeps.runSemanticReview = mock(async () => mockResult);
 
     const story = { id: "US-001", title: "My story", description: "Does something", acceptanceCriteria: ["AC1"] };
-    // biome-ignore lint/suspicious/noExplicitAny: test stub for agentManager
-    await runReview({ config: semanticConfig, workdir: "/tmp/fake-workdir", storyId: "US-001", storyGitRef: "abc1234", story, agentManager: (() => null) as any });
-    expect(_semanticDeps.runSemanticReview).toHaveBeenCalledWith(expect.objectContaining({ workdir: "/tmp/fake-workdir", storyGitRef: "abc1234", story: expect.objectContaining({ id: "US-001" }) }));
+    await runReview({
+      config: semanticConfig,
+      workdir: "/tmp/fake-workdir",
+      storyId: "US-001",
+      storyGitRef: "abc1234",
+      story,
+      // biome-ignore lint/suspicious/noExplicitAny: test stub for agentManager
+      agentManager: (() => null) as any,
+    });
+    expect(_semanticDeps.runSemanticReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workdir: "/tmp/fake-workdir",
+        storyGitRef: "abc1234",
+        story: expect.objectContaining({ id: "US-001" }),
+      }),
+    );
 
     _semanticDeps.runSemanticReview = mock(async () => mockResult);
-    const configWithSemantic: ReviewConfig = { ...semanticConfig, semantic: { modelTier: "powerful", rules: ["no stubs"], timeoutMs: 600_000, excludePatterns: [":!test/"], diffMode: "embedded" as const, resetRefOnRerun: false } };
+    const configWithSemantic: ReviewConfig = {
+      ...semanticConfig,
+      semantic: {
+        modelTier: "powerful",
+        rules: ["no stubs"],
+        timeoutMs: 600_000,
+        excludePatterns: [":!test/"],
+        diffMode: "embedded" as const,
+        resetRefOnRerun: false,
+      },
+    };
     await runReview({ config: configWithSemantic, workdir: "/tmp/fake-workdir" });
-    expect(_semanticDeps.runSemanticReview).toHaveBeenCalledWith(expect.objectContaining({ workdir: "/tmp/fake-workdir", storyGitRef: undefined, semanticConfig: { modelTier: "powerful", rules: ["no stubs"], timeoutMs: 600_000, excludePatterns: [":!test/"], diffMode: "embedded", resetRefOnRerun: false } }));
+    expect(_semanticDeps.runSemanticReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workdir: "/tmp/fake-workdir",
+        storyGitRef: undefined,
+        semanticConfig: {
+          modelTier: "powerful",
+          rules: ["no stubs"],
+          timeoutMs: 600_000,
+          excludePatterns: [":!test/"],
+          diffMode: "embedded",
+          resetRefOnRerun: false,
+        },
+      }),
+    );
   });
+});
+
+// ---------------------------------------------------------------------------
+// BUG-1: getUncommittedFilesImpl must route through gitWithTimeout so that
+// >64KB of `git diff --name-only HEAD` output (large diffs) cannot deadlock the
+// run by filling the OS pipe buffer. The pre-fix code awaited proc.exited
+// before draining stdout, which hangs indefinitely once the pipe is full.
+// ---------------------------------------------------------------------------
+
+describe("getUncommittedFilesImpl — BUG-1 pipe-drain regression", () => {
+  let originalGetUncommittedFiles: typeof _deps.getUncommittedFiles;
+  let originalSpawn: typeof _gitDeps.spawn;
+
+  beforeEach(() => {
+    // Capture the impl reference at test start — previous describe blocks mock
+    // _deps.getUncommittedFiles, so we restore to the impl explicitly so this
+    // suite exercises the real code path. The impl is the module-load default
+    // unless a previous test leaked; the afterEach below restores whatever was
+    // captured here, so this is robust to test-run order.
+    originalGetUncommittedFiles = _deps.getUncommittedFiles;
+    originalSpawn = _gitDeps.spawn;
+  });
+
+  afterEach(() => {
+    _deps.getUncommittedFiles = originalGetUncommittedFiles;
+    _gitDeps.spawn = originalSpawn;
+    mock.restore();
+  });
+
+  test("routes git diff through _gitDeps.spawn (gitWithTimeout), not Bun.spawn", async () => {
+    // Pre-fix: getUncommittedFilesImpl called Bun.spawn directly, so mocking
+    // _gitDeps.spawn had no effect and the test would call the real Bun.spawn.
+    // Post-fix: the impl delegates to gitWithTimeout, which uses _gitDeps.spawn,
+    // and we can intercept the call here.
+    let capturedArgs: unknown[] | undefined;
+    let capturedOpts: unknown;
+    _gitDeps.spawn = mock((args: unknown[], opts: unknown) => {
+      capturedArgs = args;
+      capturedOpts = opts;
+      const bytes = new TextEncoder().encode("src/foo.ts\nsrc/bar.ts\n");
+      return {
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(bytes);
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
+        exited: Promise.resolve(0),
+        kill: mock(() => {}),
+      };
+    }) as unknown as typeof _gitDeps.spawn;
+
+    // Call whatever impl the test captured — relies on beforeEach ordering
+    // (other suites' afterEach restore the impl by this point in the run).
+    const result = await originalGetUncommittedFiles("/tmp/repo");
+
+    expect(capturedArgs).toEqual(["git", "diff", "--name-only", "HEAD"]);
+    expect((capturedOpts as { cwd?: string } | undefined)?.cwd).toBe("/tmp/repo");
+    expect((capturedOpts as { stdout?: unknown } | undefined)?.stdout).toBe("pipe");
+    expect(result).toEqual(["src/foo.ts", "src/bar.ts"]);
+  });
+
+  test("returns empty array on non-zero exit (gitWithTimeout contract)", async () => {
+    _gitDeps.spawn = mock((_args: unknown[], _opts: unknown) => {
+      return {
+        stdout: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
+        exited: Promise.resolve(1),
+        kill: mock(() => {}),
+      };
+    }) as unknown as typeof _gitDeps.spawn;
+
+    const result = await originalGetUncommittedFiles("/tmp/repo");
+
+    expect(result).toEqual([]);
+  });
+
+  test("returns empty array when stdout pipe never closes (BUG-1 deadlock regression)", async () => {
+    // Reproduces BUG-1: a hung subprocess whose stdout never closes. Pre-fix,
+    // proc.exited never resolves and the run hangs forever. Post-fix,
+    // gitWithTimeout's SIGKILL timer (GIT_TIMEOUT_MS = 10s) bounds the call,
+    // and concurrent pipe draining prevents the deadlock even if the process
+    // is wedged writing more than 64KB.
+    let resolveExited: (code: number) => void = () => {};
+    let killInvoked = false;
+    _gitDeps.spawn = mock((_args: unknown[], _opts: unknown) => {
+      return {
+        stdout: new ReadableStream({
+          start() {
+            /* never closes */
+          },
+        }),
+        stderr: new ReadableStream({
+          start() {
+            /* never closes */
+          },
+        }),
+        exited: new Promise<number>((r) => {
+          resolveExited = r;
+        }),
+        kill: mock(() => {
+          killInvoked = true;
+          resolveExited(137);
+        }),
+      };
+    }) as unknown as typeof _gitDeps.spawn;
+
+    const start = Date.now();
+    const result = await originalGetUncommittedFiles("/tmp/repo");
+    const elapsed = Date.now() - start;
+
+    // GIT_TIMEOUT_MS = 10_000 + slack. The call must return in finite time —
+    // a hang here means the fix is broken or someone reintroduced the
+    // "await proc.exited before draining stdout" pattern.
+    expect(elapsed).toBeLessThan(15_000);
+    expect(killInvoked).toBe(true);
+    expect(result).toEqual([]);
+  }, 20_000);
 });
