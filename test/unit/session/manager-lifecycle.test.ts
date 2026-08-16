@@ -125,7 +125,10 @@ describe("SessionManager.closeStory()", () => {
     const closed = mgr.closeStory("US-001");
     expect(closed).toHaveLength(1);
     expect(closed[0].state).toBe("COMPLETED");
-    expect(mgr.get(desc.id)?.state).toBe("COMPLETED");
+    // MEM-1: closeStory now deletes the descriptor (was retained with state=COMPLETED).
+    // The returned `closed` array carries the final state for callers; the descriptor
+    // is no longer retrievable from the manager.
+    expect(mgr.get(desc.id)).toBeNull();
   });
 
   test("transitions multiple sessions for the same story", () => {
@@ -149,9 +152,12 @@ describe("SessionManager.closeStory()", () => {
     const mgr = new SessionManager();
     const desc = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
     const priorActivity = desc.lastActivityAt;
-    mgr.closeStory("US-001");
-    const updated = mgr.get(desc.id)!;
-    expect(updated.lastActivityAt).not.toBe(priorActivity);
+    const closed = mgr.closeStory("US-001");
+    // MEM-1: closeStory now deletes the descriptor (was retained with the new
+    // lastActivityAt). The returned `closed` array carries the final descriptor,
+    // so the timestamp is verifiable there.
+    expect(closed).toHaveLength(1);
+    expect(closed[0]!.lastActivityAt).not.toBe(priorActivity);
   });
 
   test("skips already-COMPLETED sessions", () => {
