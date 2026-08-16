@@ -260,6 +260,8 @@ Verification note: removals are verified by the build/static gate — `bun run t
 
 ### US-005: Terminal cleanup
 
-No runtime acceptance criteria — this story only deletes superseded code.
+The deletions themselves are verified by the build/static gate, not by an AC. The single AC below pins the *surviving* behaviour — that the supported explicit-deps path still works once the module-level default is gone.
+
+- AC-45 `[unit]` `runContestant` invoked with an explicit deps object providing a worktree manager and a pipeline returns a `ContestantResult` whose `agent` equals the profile name it was given.
 
 Verification note: `bun run typecheck` and `bun run lint` — both fail on any surviving reference to the removed `_contestantDeps` default, the superseded agent-name validation path, or the old `pipeline` signature type.

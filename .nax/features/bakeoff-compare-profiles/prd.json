@@ -1,0 +1,282 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "bakeoff-compare-profiles",
+  "branchName": "feat/bakeoff-compare-profiles",
+  "createdAt": "2026-08-16T00:00:00.000Z",
+  "updatedAt": "2026-08-16T04:46:37.231Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Resolve profile contestants",
+      "description": "**Goal** \u2014 Resolve every `--compare` value as a profile and build the profile-derived contestant configuration.\n\n**Motivation** \u2014 Comparing agent names is also the wrong axis. A profile already bundles agent, per-tier models, and arbitrary config overrides \u2014 which is what a comparison wants to vary.\n\n**Approach** \u2014 Contestants are **profile names**. `--compare cross-agent-pi,cross-agent-mm` resolves each name through the existing asynchronous profile loader with the bake-off project root and deep-merges its overlay onto the base config, the same layering `src/config/loader.ts` applies for `--profile`.\n\nAccepting *either* an agent name or a profile name was rejected: profile names already collide with agent names (`~/.nax/profiles/opencode.json` and `.nax/profiles/codex.json` both exist), so any disambiguation rule silently produces a different comparison than intended. A separate `--compare-profiles` flag was rejected as two flags for one concept.\n\nThe existing field names are **retained**: `BakeoffOptions.agents` and `ContestantResult.agent` keep their names and carry profile names as their values. Renaming them would ripple through `types.ts`, ranking, report rendering and six test files for no functional gain, and `run-action.test.ts` asserts on `callArg.agents` today.\n\n**Scope** \u2014 In: profile loading, unknown-profile validation, resolved-agent ACP/PATH validation, deep merge, and fallback pinning. Out: per-contestant worktrees/output contexts (US-002); runner adapter (US-003); branch and PRD guards (US-004); accepting bare agent names as contestants; `--compare` accepts profile names only.",
+      "acceptanceCriteria": [
+        "When `validateContestants` resolves profile `cross-agent-pi`, then it returns `validAgents` containing `cross-agent-pi` and an empty `errors` array.",
+        "When a named profile does not resolve, then `validateContestants` returns one error with reason `unknown-profile`.",
+        "When one profile is unresolvable and another resolves in the same `validateContestants` call, then `validAgents` omits the unresolvable profile and retains the resolvable profile.",
+        "When `validateContestants` rejects an unresolvable profile, then its error message contains that profile name.",
+        "When `validateContestants` processes contestant names, then it invokes `loadProfile` once per name with that name as the first argument.",
+        "When a resolved profile's `agent.default` is absent from the ACP adapter registry, then `validateContestants` returns reason `no-acp-adapter`.",
+        "When a resolved profile's agent binary is absent from PATH, then `validateContestants` returns reason `dnf-not-installed`.",
+        "When a profile overlay exclusively sets a configuration key, then the contestant merged config returns the profile value for that key.",
+        "When both base config and a profile overlay set a configuration key, then the contestant merged config returns the profile value for that key.",
+        "When a contestant config is merged from a profile, then its `agent.default` equals the profile's `agent.default`.",
+        "When a profile overlay sets `agent.fallback.enabled` to true, then the contestant merged config has `agent.fallback.enabled` equal to false."
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "bakeoff",
+        "validation"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Changes profile resolution semantics across config and bake-off validation while preserving compatibility field names.",
+        "agentProfileId": "claude-final",
+        "agent": "claude",
+        "profileModelTier": "balanced",
+        "initialAgent": "claude",
+        "initialProfileId": "claude-final",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/bakeoff/preflight.ts",
+        "src/config/profile.ts",
+        "src/config/loader.ts",
+        "src/config/merger.ts",
+        "test/unit/bakeoff/preflight.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/bakeoff/preflight.test.ts",
+          "reason": "asserts `result.errors[0].reason` is `\"unknown-agent\"` for a name absent from `KNOWN_AGENT_NAMES`, and that `validateContestants([\"claude\",\"codex\"])` yields those names in `validAgents`. Contestants are profiles under this story, so both assertions pin a resolution path that no longer exists. US-001 owns replacing them with the profile equivalents: an unresolvable profile yields reason `\"unknown-profile\"`, and a resolvable profile name appears in `validAgents`."
+        }
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Provide isolated contestant execution contexts",
+      "description": "**Goal** \u2014 Give each profile contestant an explicit execution context with an isolated worktree and output root.\n\n**Motivation** \u2014 Two module-level dependencies are declared and never assigned, so `runContestant` calls `deps.worktreeManager.create(...)`, gets a `TypeError` on `undefined`, and reports that as `dnf-crashed`.\n\n**Approach** \u2014 Per-contestant isolation is achieved by setting `outputDir` on each contestant's merged config. `RunOptions` has no output-dir field \u2014 the runtime derives it \u2014 so this is the only seam, and it redirects metrics, cost, status, runs, and prompt-audit together.\n\n**Output scoping**\n\n```\n<projectOutputDir(projectKey, baseConfig.outputDir)>/bakeoff/<feature>/<profile>\n```\n\nThat path is set as `outputDir` on the contestant's merged config, and `bakeoff.json` moves alongside the contestant directories at `bakeoff/<feature>/bakeoff.json`. Paths are always derived from `projectOutputDir` \u2014 never hardcoded, because `globalConfigDir()` is redirected under test by `test/preload.ts` and `check-no-real-global-nax` enforces it.\n\n**Interface**\n```ts\nexport interface ContestantRunContext {\n  /** Profile name \u2014 also the contestant's label in the report. */\n  profile: string;\n  /** Base config + profile overlay, with fallback pinned off and outputDir set. */\n  config: NaxConfig;\n  /** This contestant's worktree \u2014 becomes the run's workdir. */\n  worktree: string;\n  /** This contestant's isolated output root. */\n  outputDir: string;\n  feature: string;\n}\n\npipeline: (ctx: ContestantRunContext) => Promise<ContestantPipelineResult>;\n```\n\n`deps` becomes a **required** parameter of `runContestant`; the mutable `_contestantDeps` default is deleted. A missing wiring then fails the build rather than surfacing as a contestant outcome.\n\n**Scope** \u2014 In: explicit runner deps, context construction, worktree/output isolation, sequential continuation, and feature-scoped persistence. Out: the real runner adapter (US-003); worktree namespace and PRD tracking guard (US-004); terminal deletion-only cleanup (US-005); US-002 only: worktree removal failures remain best-effort and do not change the contestant's reported status.",
+      "acceptanceCriteria": [
+        "When `runContestant` invokes its pipeline dependency, then the context `profile` equals the contestant profile name.",
+        "When `runContestant` invokes its pipeline dependency, then the context `feature` equals the bake-off feature.",
+        "When `runContestant` invokes its pipeline dependency, then the context `worktree` path ends with the contestant worktree ID.",
+        "When a bake-off runs two contestants, then their pipeline contexts have different `worktree` values.",
+        "When `runContestant` invokes its pipeline dependency, then the context `outputDir` equals the project output root joined with `bakeoff`, the feature, and the profile name.",
+        "When a bake-off runs two contestants, then their pipeline contexts have different `outputDir` values.",
+        "When `runContestant` invokes its pipeline dependency, then `context.config.outputDir` equals `context.outputDir`.",
+        "When the pipeline dependency rejects, then `runContestant` returns status `dnf-crashed`.",
+        "When the first contestant pipeline rejects in a bake-off, then the coordinator still invokes the pipeline for the second contestant.",
+        "When a two-contestant bake-off completes, then it has created two distinct `.nax-wt` directories and removed both before returning.",
+        "When `persistBakeoffResult` receives a feature result and output directory, then it writes `bakeoff.json` under `bakeoff/<feature>` within that directory.",
+        "When results for two features are persisted under one output directory, then both feature-scoped `bakeoff.json` files remain readable and contain their own feature values."
+      ],
+      "tags": [
+        "feature",
+        "bakeoff",
+        "worktree",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Replaces a defective dependency boundary and coordinates config, worktree lifecycle, paths, persistence, and tests.",
+        "agentProfileId": "claude-final",
+        "agent": "claude",
+        "profileModelTier": "balanced",
+        "initialAgent": "claude",
+        "initialProfileId": "claude-final",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/bakeoff/contestant.ts",
+        "src/bakeoff/coordinator.ts",
+        "src/runtime/paths.ts",
+        "src/worktree/manager.ts",
+        "test/unit/bakeoff/contestant.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/bakeoff/contestant.test.ts",
+          "reason": "its `withDeps` helper mutates the shared `_contestantDeps` object and its stubs implement `pipeline` as `(config) => \u2026`. This story deletes that default and changes the pipeline parameter to a `ContestantRunContext`, so every test in the file fails against a correct implementation. US-002 owns rewriting them to pass deps explicitly into `runContestant` and to assert on the context object's fields."
+        },
+        {
+          "path": "test/unit/bakeoff/coordinator.test.ts",
+          "reason": "supplies a `runContestant` dep typed against the old `(agent, options)` shape. US-002 owns updating it to the profile/context shape."
+        },
+        {
+          "path": "test/unit/bakeoff/report.test.ts",
+          "reason": "the case named \"AC5: writes bakeoff.json under outputDir \u2026\" asserts the file lands directly under the passed `outputDir`. This story moves it to `bakeoff/<feature>/bakeoff.json`, so the assertion fails against a correct implementation. US-002 owns updating it to the feature-scoped path."
+        }
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Adapt contestant contexts to real runs",
+      "description": "**Goal** \u2014 Implement and export the pipeline adapter that executes a contestant context through `Runner.run()` and normalizes run metrics.\n\n**Motivation** \u2014 A throwaway spike established the rest of the chain is sound: wiring only `worktreeManager` reached aggregation, ranking, `bakeoff.json`, report rendering, and the exit code, and a single-contestant run completed end to end inside a worktree.\n\n**Approach** \u2014 Author the adapter that turns a `ContestantRunContext` into a real run and maps the result back.\n\n**Interface**\n```ts\npipeline: (ctx: ContestantRunContext) => Promise<ContestantPipelineResult>;\n```\n\n**Scope** \u2014 In: a `src/bakeoff/pipeline-adapter.ts` adapter, `run()` option mapping, metrics loading/fallback, barrel export, and CLI seam coverage. Out: profile resolution and context construction (US-001, US-002); worktree guards (US-004); removal of superseded exports/types (US-005).",
+      "acceptanceCriteria": [
+        "When `handleRunAction` receives two resolvable profiles with a stubbed pipeline adapter, then the adapter is invoked exactly twice.",
+        "When the pipeline adapter invokes `run`, then its `workdir` equals the context `worktree`.",
+        "When the pipeline adapter invokes `run`, then its `prdPath` is located inside the context `worktree`.",
+        "When the pipeline adapter invokes `run`, then its `prdPath` names the context feature.",
+        "When the pipeline adapter invokes `run`, then its `statusFile` is located inside the context `outputDir`.",
+        "When the pipeline adapter invokes `run`, then its `config` equals the context `config`.",
+        "When `run` reports `storiesCompleted`, then the adapter returns a `results` array with that length.",
+        "When the pipeline adapter executes a context, then it invokes `loadRunMetrics` with the context `outputDir`.",
+        "When `loadRunMetrics` returns story metrics, then the adapter returns one metrics entry per story metric carrying that metric's cost and duration.",
+        "When `loadRunMetrics` yields no entries, then the adapter returns one metrics entry derived from the run result `totalCost` and `durationMs`."
+      ],
+      "tags": [
+        "feature",
+        "adapter",
+        "execution",
+        "metrics"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Introduces a new adapter across runner, hooks, metrics, CLI wiring, and isolated execution context.",
+        "agentProfileId": "claude-final",
+        "agent": "claude",
+        "profileModelTier": "balanced",
+        "initialAgent": "claude",
+        "initialProfileId": "claude-final",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/bakeoff/contestant.ts",
+        "src/execution/runner.ts",
+        "src/metrics/tracker.ts",
+        "src/hooks/runner.ts",
+        "src/bakeoff/index.ts"
+      ],
+      "expectedFiles": [
+        "src/bakeoff/pipeline-adapter.ts"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Guard bake-off worktrees and committed PRDs",
+      "description": "**Goal** \u2014 Reserve safe contestant worktree identities, reclaim only stale bake-off branches, and reject uncommitted feature PRDs before spend.\n\n**Motivation** \u2014 Feature `prd.json` untracked or carrying uncommitted modifications must reject the whole bake-off before any worktree is created and before any spend.\n\n**Approach** \u2014 Contestant worktree ids carry a `bakeoff-` prefix, making `nax/bakeoff-\u2026` a namespace no user branch occupies. Ids are derived from feature and profile, reduced to the character set `validateStoryId` accepts, and truncated to at most 64 characters with a stable distinguishing suffix when the natural id would overflow.\n\n**Scope** \u2014 In: safe/truncated ID derivation, reserved-namespace branch reclaim during preflight, committed/clean PRD validation, and per-contestant create-failure reporting. Out: changing `WorktreeManager`'s `hasWorktreeRecord` branch-reclaim guard; reclaiming worktree directories left on disk without a matching git branch; concurrent bake-offs against the same repository; the `nax/bakeoff-` branch namespace is not locked, so two simultaneous bake-offs of the same feature and profile may contend for one worktree; pipeline adapter work (US-003); terminal removal work (US-005).",
+      "acceptanceCriteria": [
+        "When the PRD-tracking guard rejects a compare invocation, then `handleRunAction` creates no worktree.",
+        "When a worktree ID is derived for a feature and profile, then it begins with `bakeoff-`.",
+        "When a profile name contains characters outside the story-ID alphabet, then its derived worktree ID passes `validateStoryId` without throwing.",
+        "When a feature and profile yield an overlong natural ID, then the derived worktree ID is at most 64 characters long.",
+        "When two distinct feature-and-profile pairs both yield overlong natural IDs, then their derived worktree IDs differ.",
+        "When preflight finds a leftover `nax/bakeoff-<id>` branch with no worktree record, then it removes that branch and subsequent worktree creation for the ID succeeds.",
+        "When preflight runs with a branch not beginning `nax/bakeoff-`, then that branch still exists afterward.",
+        "When a feature `prd.json` is untracked by git, then the bake-off rejects with an error naming that PRD path.",
+        "When a feature `prd.json` has uncommitted modifications, then the bake-off rejects with an error naming that PRD path.",
+        "When the feature PRD is untracked, then the bake-off rejects without invoking the pipeline dependency.",
+        "When contestant worktree creation fails, then that contestant is reported with status `dnf-crashed`."
+      ],
+      "tags": [
+        "feature",
+        "bakeoff",
+        "git",
+        "worktree",
+        "preflight"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Adds git-state safety gates and collision-resistant identity logic across preflight and worktree behavior.",
+        "agentProfileId": "claude-final",
+        "agent": "claude",
+        "profileModelTier": "balanced",
+        "initialAgent": "claude",
+        "initialProfileId": "claude-final",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/prd/validate.ts",
+        "src/worktree/manager.ts",
+        "src/bakeoff/preflight.ts",
+        "src/bakeoff/coordinator.ts",
+        "src/utils/git.ts"
+      ],
+      "outOfScope": [
+        "Reclaiming a worktree directory present on disk with no corresponding git branch \u2014 the reclaim keys on the branch namespace only."
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Remove superseded contestant APIs",
+      "description": "**Goal** \u2014 Delete obsolete mutable contestant defaults, agent-name validation surface, and old pipeline signature exports.\n\n**Motivation** \u2014 Six test files cover this subsystem and all pass, because each test overwrites the production defaults before reading them (`Object.assign(_contestantDeps, overrides)`). The suite validates the algorithm and is structurally blind to the wiring.\n\n**Approach** \u2014 Deletion-only. Remove the `_contestantDeps` module-level default and its `src/bakeoff/index.ts` barrel export, the agent-name validation surface superseded by profile resolution, and the superseded `pipeline` signature type. No new code.\n\n**Scope** \u2014 In: terminal API cleanup after all profile/context/adapter/guard consumers have migrated, including the compile-time rejection of a stale caller that omits `runContestant` dependencies. Out: new runtime behavior, profile resolution (US-001), context and persistence work (US-002), runner adapter (US-003), and worktree/preflight guards (US-004).",
+      "acceptanceCriteria": [
+        "When `runContestant` is invoked with an explicit deps object providing a worktree manager and a pipeline, then it returns a `ContestantResult` whose `agent` equals the profile name it was given."
+      ],
+      "tags": [
+        "refactor",
+        "cleanup",
+        "bakeoff"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-003",
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "no-test",
+        "reasoning": "Mechanical removal of obsolete internal API after all consumers have migrated.",
+        "noTestJustification": "This is deletion-only cleanup with no new runtime behavior; the migrated behavior is covered by the upstream stories and surviving references are caught by static review and repository quality gates.",
+        "agentProfileId": "pi-structural",
+        "agent": "pi",
+        "profileModelTier": "fast",
+        "initialAgent": "pi",
+        "initialProfileId": "pi-structural",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "src/bakeoff/contestant.ts",
+        "src/bakeoff/preflight.ts",
+        "src/bakeoff/index.ts"
+      ]
+    }
+  ],
+  "analysis": "The existing bake-off implementation is an enhancement/refactor, not greenfield. src/bakeoff/preflight.ts:12-93 validates names against KNOWN_AGENT_NAMES and returns unknown-agent; it must resolve each comparison entry with loadProfile(profile, projectRoot), validate the resolved agent.default against ACP_ADAPTER_NAMES and its adapter binary, and retain the existing agents/agent field names as profile labels. src/config/profile.ts:52-100 is the safe, authoritative profile resolver: validateProfileName is private and PROFILE_NOT_FOUND / PROFILE_NAME_INVALID must be handled through loadProfile. src/config/merger.ts:30-123 provides immutable deepMergeConfig semantics, so per-contestant configuration is base config plus one profile overlay, with fallback.enabled pinned false after merging. src/bakeoff/contestant.ts:36-58 declares an unwired _contestantDeps object using unsafe casts; src/bakeoff/contestant.ts:81-149 defaults runContestant to it, converting missing production wiring into dnf-crashed. Replace it with an explicit required dependency and a ContestantRunContext that carries profile, merged config, worktree, outputDir, and feature. The current pipeline only receives config, so it cannot correctly map run options to contestant state. src/bakeoff/coordinator.ts:19-139 runs validated entries sequentially, persists directly under outputDir, and routes CLI compare input; it must construct/profile-thread contestant config and persist under bakeoff/<feature>. Existing CLI tests deliberately assert callArg.agents (test/unit/bakeoff/run-action.test.ts:49-52), so those field names are a compatibility constraint even though values now denote profiles. src/runtime/paths.ts and src/runtime/index.ts establish that the output root must derive from projectOutputDir(projectKey, baseConfig.outputDir), never from a hardcoded global config path; setting the contestant merged config.outputDir is the only available run seam because RunOptions has no outputDir. src/worktree/manager.ts:66-204 validates story IDs and creates nax/<storyId> branches but only reclaims a stale branch when its private hasWorktreeRecord proves prior manager ownership. Bake-off preflight must derive safe, bounded bakeoff- IDs, reclaim only stale nax/bakeoff-* branches, and leave other namespace collisions untouched. src/prd/validate.ts:20-38 supplies the exact story-id grammar. The new pipeline adapter belongs in src/bakeoff/pipeline-adapter.ts, separate from contestant.ts, and maps context to runner.run() plus loadRunMetrics(outputDir), preserving result metrics with a run-result fallback. Existing test coverage is concentrated in test/unit/bakeoff/preflight.test.ts, contestant.test.ts, coordinator.test.ts, report.test.ts, and run-action.test.ts; contestant tests currently mutate _contestantDeps and use the old config-only pipeline signature, so US-002 must replace those helpers. Risks: profile/agent-name collisions make dual interpretation unsafe; deleting default deps changes internal call signatures and exports; output relocation can break report consumers; git branch reclamation must never delete user branches; and untracked or modified PRDs must stop all spend before worktree creation. Migration is intentionally internal: retain BakeoffOptions.agents and ContestantResult.agent names, change only their semantics to profile names, export the adapter through the bakeoff barrel, update unit/integration seams, then remove obsolete agent-name/default-deps API after consumers have moved.",
+  "outOfScope": [
+    "Keeping, merging, or applying a winning contestant's work; the bake-off remains report-only.",
+    "Running contestants in parallel; contestants continue to execute sequentially.",
+    "Changing `WorktreeManager`'s `hasWorktreeRecord` branch-reclaim guard.",
+    "Making `nax run --dry-run` free of LLM routing cost.",
+    "Copying an uncommitted PRD into a contestant worktree.",
+    "Accepting bare agent names as contestants; `--compare` accepts profile names only.",
+    "US-002 only: worktree removal failures remain best-effort and do not change the contestant's reported status.",
+    "US-004 only: reclaiming worktree directories left on disk without a matching git branch.",
+    "Concurrent bake-offs against the same repository; the `nax/bakeoff-` branch namespace is not locked, so two simultaneous bake-offs of the same feature and profile may contend for one worktree."
+  ],
+  "routingProfile": "cross-agent-pi"
+}
