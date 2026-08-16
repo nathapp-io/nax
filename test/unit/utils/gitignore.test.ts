@@ -8,7 +8,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fragmentPath } from "@/context";
 import { NAX_GITIGNORE_ENTRIES } from "@/utils/gitignore";
 import { journalDir } from "@/verification";
 
@@ -25,6 +26,19 @@ describe("NAX_GITIGNORE_ENTRIES", () => {
 
     expect(ignored).toBeDefined();
     expect(produced).toBe(join("/repo", ignored?.replace(/\/$/, "") ?? ""));
+  });
+
+  test("the ignored fragments pattern is the directory fragmentPath writes into", () => {
+    // Same pinning as the mutation journal above: fragments are rewritten by
+    // every run, so moving the directory without updating the ignore list
+    // would leave them committable in every user repo.
+    const ignored = NAX_GITIGNORE_ENTRIES.find((e) => e.includes("fragments"));
+    expect(ignored).toBeDefined();
+
+    const produced = dirname(fragmentPath("/repo", "my-feature", "US-001"));
+    const expanded = ignored?.replace("*", "my-feature").replace(/\/$/, "") ?? "";
+
+    expect(produced).toBe(join("/repo", expanded));
   });
 
   test("entries are relative patterns — an absolute path would never match", () => {

@@ -15,6 +15,14 @@ export const NAX_GITIGNORE_ENTRIES = [
   ".nax/metrics.json",
   `${PROJECT_FEATURES_DIR}/*/status.json`,
   `${PROJECT_FEATURES_DIR}/*/plan/`,
+  // Per-story context fragments, rewritten by every run. Like the sibling
+  // feature-tree entries above and below, this is subsumed by the blanket
+  // `**/<features>/*/` rule further down — it is listed explicitly because a
+  // repo that narrows that blanket rule to keep `prd.json` / `spec.md` under
+  // version control (as the nax repo itself does) must not silently start
+  // committing run artifacts. Kept in sync with `fragmentPath()` in
+  // src/context/fragments/store.ts.
+  `${PROJECT_FEATURES_DIR}/*/fragments/`,
   `${PROJECT_FEATURES_DIR}/*/acp-sessions.json`,
   `${PROJECT_FEATURES_DIR}/*/interactions/`,
   `${PROJECT_FEATURES_DIR}/*/progress.txt`,
