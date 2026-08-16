@@ -92,6 +92,16 @@ export const _featureContextV2Deps = {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Share of a stage's token budget that dependency fragments may occupy.
+ *
+ * Fragments are floor-kind, so this is the only thing bounding them — see the
+ * rationale at the call site in `collectFragmentChunks`. The effective bound is
+ * never below one fragment's write-time ceiling (`fragments.maxTokens`), so a
+ * small stage budget degrades to "nearest fragment only" rather than to none.
+ */
+const FRAGMENT_BUDGET_SHARE = 0.2;
+
 function contentHash8(content: string): string {
   return createHash("sha256").update(content).digest("hex").slice(0, 8);
 }
@@ -104,14 +114,22 @@ function renderEntryContent(section: string, text: string): string {
   return section ? `### ${section}\n\n${text}` : text;
 }
 
-/** Resolve on-disk projectDir for the feature (i.e. the `.nax` dir under repoRoot). */
-function projectDirFor(repoRoot: string): string {
-  // The fragment store and the feature PRD both live under repoRoot/.nax/.
+/**
+ * Resolve the `.nax` directory under repoRoot.
+ *
+ * NOTE: this is NOT the fragment store's `projectDir`. The store owns the
+ * `.nax` segment itself (`fragmentPath` -> `featureDir` -> `featuresDir`), so
+ * its `projectDir` argument is the REPO ROOT. Passing this helper's result
+ * there resolves to `<repoRoot>/.nax/.nax/...` and silently finds nothing —
+ * which is exactly the defect this comment exists to prevent recurring.
+ */
+function naxDirFor(repoRoot: string): string {
   return `${repoRoot}/.nax`;
 }
 
 function featurePrdPath(repoRoot: string, featureId: string): string {
-  return `${projectDirFor(repoRoot)}/features/${featureId}/prd.json`;
+  // Appends its own `/features/...`, so it takes the `.nax` dir, not the root.
+  return `${naxDirFor(repoRoot)}/features/${featureId}/prd.json`;
 }
 
 /**
@@ -310,7 +328,9 @@ export class FeatureContextProviderV2 implements IContextProvider {
     const featureId = request.featureId;
     if (!featureId) return [];
 
-    const projectDir = projectDirFor(request.repoRoot);
+    // The store owns the `.nax` segment — its `projectDir` is the repo root,
+    // matching what `completionStage` passes to `writeFragment` on capture.
+    const projectDir = request.repoRoot;
 
     // Fast path — empty fragment set means nothing to traverse (AC1 / AC10).
     const availableFragments = await _featureContextV2Deps.listFragmentStoryIds(projectDir, featureId);
@@ -328,6 +348,20 @@ export class FeatureContextProviderV2 implements IContextProvider {
     const decay = fragmentsConfig.decay;
     const out: RawChunk[] = [];
 
+    // Fragments are emitted as `kind: "feature"`, which is a FLOOR kind — they
+    // bypass the stage budget entirely and are force-included even when they
+    // score below the minimum. `decay ** distance` therefore only ORDERS them;
+    // it cannot exclude one. Without a bound here, a story late in a large
+    // feature pulls every transitive dependency's fragment into a 4k-token
+    // stage unmetered, starving the non-floor providers. BFS order makes this
+    // a nearest-first cut, which is the behaviour decay was meant to express.
+    const fragmentBudget = Math.max(
+      fragmentsConfig.maxTokens,
+      Math.floor(request.budgetTokens * FRAGMENT_BUDGET_SHARE),
+    );
+    let usedTokens = 0;
+    let droppedForBudget = 0;
+
     for (const [storyId, distance] of reached) {
       // AC8 / AC9: a reached story without a fragment contributes nothing.
       // The dep walk already terminated for cycles; listFragmentStoryIds
@@ -337,14 +371,36 @@ export class FeatureContextProviderV2 implements IContextProvider {
       const body = await _featureContextV2Deps.readFragment(projectDir, featureId, storyId);
       if (body === null) continue;
 
+      const bodyTokens = estimateTokens(body);
+      if (usedTokens + bodyTokens > fragmentBudget) {
+        droppedForBudget++;
+        continue;
+      }
+      usedTokens += bodyTokens;
+
       out.push({
         id: `feature-fragment:${storyId}`,
         kind: "feature",
         scope: "feature",
         role: ["implementer", "reviewer", "tdd"],
         content: body,
-        tokens: estimateTokens(body),
+        tokens: bodyTokens,
         rawScore: decay ** distance,
+      });
+    }
+
+    if (droppedForBudget > 0) {
+      // Warn, not debug: a silently truncated fragment set is the same class
+      // of invisible failure as the empty one this bound replaced.
+      // Note: the loop keeps scanning after a skip, so a small distant
+      // fragment may still fit once a larger nearer one has been dropped.
+      logger.warn("feature-context-v2", "Fragment budget reached — some dependency fragments were dropped", {
+        storyId: request.storyId,
+        featureId,
+        kept: out.length,
+        dropped: droppedForBudget,
+        fragmentBudget,
+        usedTokens,
       });
     }
 
