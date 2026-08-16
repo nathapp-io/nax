@@ -48,19 +48,39 @@ export interface RunsShowOptions {
 /**
  * Parse JSONL log file and extract run events.
  *
+ * Malformed lines are skipped individually rather than discarding the file. A
+ * crashed or SIGKILLed run leaves a half-written final line, and an
+ * all-or-nothing parse threw on it and returned `[]` — losing every valid
+ * entry before it, exactly when the log is most needed for diagnosis.
+ *
  * @param logPath - Path to .jsonl log file
  * @returns Array of log entries
  */
 async function parseRunLog(logPath: string): Promise<LogEntry[]> {
   const logger = getLogger();
+  let content: string;
   try {
-    const content = await Bun.file(logPath).text();
-    const lines = content.trim().split("\n").filter(Boolean);
-    return lines.map((line) => JSON.parse(line) as LogEntry);
+    content = await Bun.file(logPath).text();
   } catch (err) {
-    logger.warn("cli", "Failed to parse run log", { logPath, error: (err as Error).message });
+    logger.warn("cli", "Failed to read run log", { logPath, error: (err as Error).message });
     return [];
   }
+
+  const entries: LogEntry[] = [];
+  let skipped = 0;
+  for (const line of content.trim().split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      entries.push(JSON.parse(line) as LogEntry);
+    } catch {
+      skipped++;
+    }
+  }
+
+  if (skipped > 0) {
+    logger.warn("cli", "Skipped malformed run log lines", { logPath, skipped, parsed: entries.length });
+  }
+  return entries;
 }
 
 /**
