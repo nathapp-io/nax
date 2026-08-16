@@ -3,7 +3,7 @@
   "feature": "bakeoff-compare-profiles",
   "branchName": "feat/bakeoff-compare-profiles",
   "createdAt": "2026-08-16T00:00:00.000Z",
-  "updatedAt": "2026-08-16T06:07:31.379Z",
+  "updatedAt": "2026-08-16T06:38:06.554Z",
   "userStories": [
     {
       "id": "US-001",
@@ -221,7 +221,16 @@
       "status": "pending",
       "passes": false,
       "attempts": 0,
-      "escalations": [],
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "fromAgent": "claude",
+          "toAgent": "claude",
+          "reason": "Rectification exhausted with unfixed findings",
+          "timestamp": "2026-08-16T06:38:04.514Z"
+        }
+      ],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
@@ -233,7 +242,7 @@
         "initialProfileId": "claude-final",
         "initialModelTier": "balanced",
         "initialComplexity": "complex",
-        "modelTier": "balanced"
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/prd/validate.ts",
@@ -242,8 +251,21 @@
         "src/bakeoff/coordinator.ts",
         "src/utils/git.ts"
       ],
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Rectification exhausted with unfixed findings"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Tier balanced [review-incomplete]: Rectification exhausted with unfixed findings",
+          "cost": 25.014650000000003,
+          "timestamp": "2026-08-16T06:38:04.514Z",
+          "agent": "claude",
+          "agentProfileId": "claude-final"
+        }
+      ],
       "storyPoints": 1,
       "storyGitRef": "335968ed48a1c987adf0e120ca4ffa85ad316d96",
       "outOfScope": [
