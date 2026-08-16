@@ -51,7 +51,11 @@ async function removeWorktreeDirectory(projectRoot: string, storyId: string): Pr
     // BUG-12: drain both streams concurrently with the exit so a git error
     // emitting >64KB cannot block the child on a full pipe buffer, and so
     // non-zero exits are observable instead of invisible.
-    const [exitCode, stderr] = await Promise.all([
+    // BUG-3: bind all three tuple elements — the previous `const [exitCode,
+    // stderr]` aliased the second tuple element (stdout) to `stderr` and
+    // silently dropped the real stderr, so genuine git errors were invisible
+    // while stdout (usually empty) got logged as "stderr".
+    const [exitCode, stdout, stderr] = await Promise.all([
       proc.exited,
       new Response(proc.stdout).text().catch(() => ""),
       new Response(proc.stderr).text().catch(() => ""),
