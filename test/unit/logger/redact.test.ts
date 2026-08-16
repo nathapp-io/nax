@@ -174,6 +174,47 @@ describe("redactSecrets", () => {
     });
   });
 
+  // SEC-1 (Round 2 review): DATABASE_URL / *DSN / *URI / *_URL object keys
+  // were not in SECRET_KEY_PATTERN, so values like `postgres://admin:secret@db/prod`
+  // passed through both redaction layers. The KEY=value pattern required
+  // SECRET|TOKEN|... before `=`, which DATABASE_URL doesn't satisfy.
+  describe("SEC-1 URL userinfo credentials", () => {
+    test.each([
+      ["DATABASE_URL", "postgres://admin:s3cret@db.internal:5432/prod"],
+      ["REDIS_URL", "redis://:hunter2@cache.internal:6379/0"],
+      ["MONGO_URI", "mongodb://root:mongoPwd@mongo.internal:27017/admin"],
+      ["POSTGRES_DSN", "postgresql://user:p%40ss@host/db"],
+      ["SMTP_URL", "smtps://user:smtpPass@mail.internal:465"],
+      ["CONNECTIONSTRING", "Server=tcp:db,1433;User Id=sa;Password=Sql!Pass;"],
+    ])("redacts value of key %s", (key, value) => {
+      const out = redactSecrets({ [key]: value }) as Record<string, unknown>;
+      expect(out[key]).toBe("[REDACTED]");
+      // The JSON serialization of the redacted payload must NOT contain the
+      // raw value (the value is replaced wholesale with "[REDACTED]").
+      expect(JSON.stringify(out)).not.toContain(value);
+    });
+
+    test("redacts scheme://user:pass@host shape embedded in free text", () => {
+      const url = "postgres://admin:s3cret@db.internal:5432/prod";
+      const out = redactSecrets({ command: `DATABASE_URL=${url} npm run lint` }) as any;
+      expect(out.command).toContain("[REDACTED]");
+      expect(out.command).not.toContain("s3cret");
+    });
+
+    test("redacts scheme://user:pass@host in a `message` field", () => {
+      const url = "redis://:hunter2@cache.internal:6379/0";
+      const out = redactSecrets({ message: `connecting to ${url}` }) as any;
+      expect(out.message).not.toContain("hunter2");
+      expect(out.message).toContain("[REDACTED]");
+    });
+
+    // Sanity: a URL without credentials must NOT be redacted.
+    test("does NOT redact a credential-less URL (no false positives)", () => {
+      const out = redactSecrets({ homepage: "https://example.com/foo" }) as any;
+      expect(out.homepage).toBe("https://example.com/foo");
+    });
+  });
+
   // MED-02: unguarded recursion threw RangeError (stack overflow) out of
   // every logger call whenever a data payload contained a circular reference.
   describe("circular references (MED-02)", () => {

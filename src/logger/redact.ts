@@ -11,7 +11,12 @@
 // TOKEN(?!s\b) prevents matching plural metric keys like "tokens", "inputTokens",
 // "totalTokens" (which are counts, not credentials) while still matching "token",
 // "GITHUB_TOKEN", "accessToken", etc.
-const SECRET_KEY_PATTERN = /(SECRET|TOKEN(?!s\b)|API_?KEY|PASSWORD|PRIVATE_?KEY|ACCESS_?KEY|WEBHOOK)/i;
+// SEC-1 (Round 2 review): URL/URI/DSN/_URL/CONNECTIONSTRING were missing —
+// DATABASE_URL=postgres://admin:s3cret@db/prod passed through both redaction
+// layers (the KEY=value regex required SECRET|TOKEN|... before `=`, which
+// DATABASE_URL doesn't satisfy; the key pattern didn't match either).
+const SECRET_KEY_PATTERN =
+  /(SECRET|TOKEN(?!s\b)|API_?KEY|PASSWORD|PRIVATE_?KEY|ACCESS_?KEY|WEBHOOK|(?:\w+)?_URL|\w+_URI|\w+_DSN|CONNECTION\s*STRING)/i;
 
 /**
  * Patterns are reset via `re.lastIndex = 0` before every call because they carry
@@ -65,6 +70,17 @@ const SECRET_VALUE_PATTERNS: RegExp[] = [
   // that SECRET_KEY_PATTERN's object-key check can't reach because the
   // key/value are both embedded in one free-text string (e.g. raw HTTP logs).
   /(?:x-api-key|api[_-]?key)\s*[:=]\s*[^\s"',]+/gi,
+  // SEC-1 (Round 2 review): URL-embedded credentials (scheme://user:pass@host).
+  // Matches a scheme name (lowercase letters, digits, +, ., -), then ://, then
+  // optional user:password (no /, whitespace, or @), then @. The colon + @
+  // is the load-bearing signal that a credential is present; credential-less
+  // URLs like "https://example.com/foo" are intentionally left alone because
+  // they have no colon between :// and @.
+  // Examples:
+  //   postgres://admin:s3cret@db.internal:5432/prod  →  "postgres://admin:s3cret@"
+  //   redis://:hunter2@cache.internal:6379/0          →  "redis://:hunter2@"     (empty user)
+  //   mongodb://root:mongoPwd@mongo.internal:27017    →  "mongodb://root:mongoPwd@"
+  /\b[a-z][a-z0-9+.-]*:\/\/(?:[^/\s@]*:[^/\s@]+)@/gi,
 ];
 
 const REDACTED = "[REDACTED]";
