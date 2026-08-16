@@ -106,13 +106,37 @@ export function validateInjectedStory(raw: unknown, existingIds: ReadonlySet<str
     id = deriveNextStoryId(existingIds);
   }
 
-  const tags: string[] = Array.isArray(s.tags)
-    ? (s.tags as unknown[]).filter((t): t is string => typeof t === "string")
-    : [];
+  // BUG-9: validate element types BEFORE filtering. The previous implementation
+  // silently `.filter(typeof t === "string")` which masked LLM payloads that
+  // had numbers/objects in tags/dependencies — those entries just vanished and
+  // the caller got a story with fewer tags than they sent. Throw a NaxError
+  // matching the schema contract so authors know the payload is malformed.
+  if (Array.isArray(s.tags)) {
+    for (let i = 0; i < s.tags.length; i++) {
+      if (typeof s.tags[i] !== "string") {
+        throw new NaxError(
+          `[queue] INJECT story.tags[${i}] must be a string (got ${typeof s.tags[i]})`,
+          "SCHEMA_VALIDATION_FAILED",
+          { stage: "queue", tagIndex: i, tagType: typeof s.tags[i] },
+        );
+      }
+    }
+  }
+  if (Array.isArray(s.dependencies)) {
+    for (let i = 0; i < s.dependencies.length; i++) {
+      if (typeof s.dependencies[i] !== "string") {
+        throw new NaxError(
+          `[queue] INJECT story.dependencies[${i}] must be a string (got ${typeof s.dependencies[i]})`,
+          "SCHEMA_VALIDATION_FAILED",
+          { stage: "queue", depIndex: i, depType: typeof s.dependencies[i] },
+        );
+      }
+    }
+  }
 
-  const dependencies: string[] = Array.isArray(s.dependencies)
-    ? (s.dependencies as unknown[]).filter((d): d is string => typeof d === "string")
-    : [];
+  const tags: string[] = Array.isArray(s.tags) ? (s.tags as string[]) : [];
+
+  const dependencies: string[] = Array.isArray(s.dependencies) ? (s.dependencies as string[]) : [];
   for (const dep of dependencies) {
     if (!existingIds.has(dep)) {
       throw new NaxError(

@@ -249,7 +249,25 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>, seenIds
   // dependencies — normalize to match how IDs are stored/compared elsewhere, and dedup
   const rawDeps = s.dependencies;
   const dependencies: string[] = Array.isArray(rawDeps)
-    ? Array.from(new Set((rawDeps as string[]).map((dep) => normalizeStoryId(dep))))
+    ? (() => {
+        // BUG-9: LLM-authored PRD payloads can include non-string entries
+        // (numbers, objects). The previous `(rawDeps as string[]).map(...)`
+        // would call `normalizeStoryId` → `String.prototype.replace` on a
+        // non-string and throw a raw `TypeError` instead of a NaxError —
+        // bypassing the schema contract enforced everywhere else. Validate
+        // element types up front; mirrors the `.filter(typeof id === "string")`
+        // pattern at schema.ts:425.
+        for (const [i, dep] of rawDeps.entries()) {
+          if (typeof dep !== "string") {
+            throw new NaxError(
+              `[schema] story[${index}].dependencies[${i}] must be a string (got ${typeof dep})`,
+              "SCHEMA_VALIDATION_FAILED",
+              { stage: "schema", index, depIndex: i, depType: typeof dep },
+            );
+          }
+        }
+        return Array.from(new Set((rawDeps as string[]).map((dep: string) => normalizeStoryId(dep))));
+      })()
     : [];
 
   // Validate dependency references (against already-known IDs)
@@ -263,9 +281,22 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>, seenIds
     }
   }
 
-  // tags
+  // tags — same BUG-9 element-type guard as dependencies.
   const rawTags = s.tags;
-  const tags: string[] = Array.isArray(rawTags) ? (rawTags as string[]) : [];
+  const tags: string[] = Array.isArray(rawTags)
+    ? (() => {
+        for (const [i, tag] of rawTags.entries()) {
+          if (typeof tag !== "string") {
+            throw new NaxError(
+              `[schema] story[${index}].tags[${i}] must be a string (got ${typeof tag})`,
+              "SCHEMA_VALIDATION_FAILED",
+              { stage: "schema", index, tagIndex: i, tagType: typeof tag },
+            );
+          }
+        }
+        return rawTags as string[];
+      })()
+    : [];
 
   // workdir — optional, relative path only, no traversal
   const rawWorkdir = s.workdir;
