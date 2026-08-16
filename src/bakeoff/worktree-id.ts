@@ -28,7 +28,17 @@ export function deriveBakeoffWorktreeId(feature: string, profile: string): strin
     return natural;
   }
 
-  const hash = createHash("sha256").update(natural).digest("hex").slice(0, HASH_SUFFIX_LENGTH);
+  // Hash the raw, unsanitized inputs, encoded via JSON.stringify so the
+  // pairing is unambiguous (a plain join could itself collide, e.g.
+  // feature="a-b", profile="c" vs feature="a", profile="b-c") -- rather
+  // than hashing `natural`. Distinct raw feature/profile pairs that
+  // sanitize to the same characters (e.g. names differing only by a
+  // trailing '!' vs '?', both replaced with '-') must still hash
+  // differently, or they would collide on the same truncated ID.
+  const hash = createHash("sha256")
+    .update(JSON.stringify([feature, profile]))
+    .digest("hex")
+    .slice(0, HASH_SUFFIX_LENGTH);
   const suffix = `-${hash}`;
   const prefixBudget = MAX_WORKTREE_ID_LENGTH - suffix.length;
   return natural.slice(0, prefixBudget) + suffix;
