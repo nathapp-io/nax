@@ -17,6 +17,7 @@ export {
   collectBatchMetrics,
   saveRunMetrics,
   loadRunMetrics,
+  metricsPathFor,
   MAX_RETAINED_RUNS,
 } from "./tracker";
 export { calculateAggregateMetrics, deriveRunFallbackAggregates, getLastRun } from "./aggregator";

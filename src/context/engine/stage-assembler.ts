@@ -202,6 +202,11 @@ export async function assembleForStage(
       featureId: ctx.prd.feature,
       repoRoot: ctx.projectDir,
       packageDir: ctx.workdir,
+      // BUG-1 fix: thread the runtime output dir so providers that read
+      // metrics.json (PriorRunFailureProvider) hit the same location
+      // saveRunMetrics writes to. Without this, every rectify-stage probe
+      // silently missed in default production setups.
+      ...(ctx.runtime?.outputDir && { outputDir: ctx.runtime.outputDir }),
       stage,
       role: stageConfig.role,
       // AC-59: per-package stage budget — reads from ctx.config which is already the

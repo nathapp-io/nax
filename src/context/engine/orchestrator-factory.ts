@@ -71,8 +71,11 @@ export function createDefaultOrchestrator(
   providers.push(new ToolDiagnosticsProvider());
   // US-003: PriorRunFailureProvider is always registered so the rectify stage's
   // stage-config reference to "prior-run-failure" resolves. It reads
-  // <request.repoRoot>/metrics.json; returns empty chunks when no prior
-  // failure is recorded for request.storyId (defensive read).
+  // <request.outputDir>/metrics.json — the production metrics location,
+  // matching saveRunMetrics(runtime.outputDir, …) — and falls back to
+  // request.repoRoot when outputDir is omitted (backward compat).
+  // Returns empty chunks when no prior failure is recorded for request.storyId
+  // (defensive read).
   providers.push(new PriorRunFailureProvider());
   // US-004: LintConfigProvider is always registered so the rectify stage's
   // stage-config reference to "lint-config" resolves. It detects the lint
