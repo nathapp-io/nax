@@ -32,9 +32,57 @@ export function extractJsonFromMarkdown(text: string): string {
  * e.g. `{"a":1,}` → `{"a":1}`
  *
  * Common LLM quirk especially in truncated or partial responses.
+ *
+ * Only *structural* commas are removed. The scan tracks JSON string literals
+ * (honouring backslash escapes) and leaves their contents byte-for-byte
+ * intact: a trailing comma is syntax, but the same characters inside a string
+ * value are data — an acceptance criterion quoting `{a: 1,}`, a review finding
+ * quoting an array literal. A plain `/,\s*([}\]])/g` replace cannot tell the
+ * two apart, and because its rewrite still parses, the corruption is silent.
  */
 export function stripTrailingCommas(text: string): string {
-  return text.replace(/,\s*([}\]])/g, "$1");
+  const insideString = markStringLiteralSpans(text);
+
+  // The `\s*` between the comma and the closer cannot contain a quote, so a
+  // structural-looking match can only be spurious if the COMMA itself sits
+  // inside a string — one mask lookup is enough to decide.
+  return text.replace(/,\s*([}\]])/g, (match, closer: string, offset: number) =>
+    insideString[offset] ? match : closer,
+  );
+}
+
+/**
+ * One linear pass marking every index that falls inside a JSON string literal
+ * (quotes themselves excluded), honouring backslash escapes.
+ */
+function markStringLiteralSpans(text: string): Uint8Array {
+  const mask = new Uint8Array(text.length);
+  let inString = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charCodeAt(i);
+
+    if (inString) {
+      if (ch === 0x5c /* \ */) {
+        // Skip the escaped character so an escaped quote or an escaped
+        // backslash cannot be mistaken for the string terminator.
+        mask[i] = 1;
+        if (i + 1 < text.length) mask[i + 1] = 1;
+        i++;
+        continue;
+      }
+      if (ch === 0x22 /* " */) {
+        inString = false;
+        continue;
+      }
+      mask[i] = 1;
+      continue;
+    }
+
+    if (ch === 0x22 /* " */) inString = true;
+  }
+
+  return mask;
 }
 
 /**

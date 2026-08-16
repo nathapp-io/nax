@@ -520,7 +520,9 @@ BUG-03 (bake-off crashes on every invocation; `_contestantDeps` has zero install
 
 ### Batch 7 — P3. Cleanup (still pending)
 
-L1…L38. This batch originally pulled **L5**, **L8**, and **L13** forward as having live failure modes. Resolved 2026-08-16: **L5 and L8 refuted, L13 confirmed and fixed** — see the "Status update" section near the top of this doc for the evidence. The remaining L-items are hygiene and are still pending.
+L1…L38. This batch originally pulled **L5**, **L8**, and **L13** forward as having live failure modes. Resolved 2026-08-16: **L5 and L8 refuted, L13 confirmed and fixed** — see the "Status update" section near the top of this doc for the evidence.
+
+⚠️ **The "hygiene" label on the remainder was wrong.** A re-triage on 2026-08-16 promoted four items to real defects — **L11** (silent string corruption on the PRD path, since fixed), **L10** (`markStoryFailed` never clears `passes`, so a re-failed story is skipped), **L33** (`execution.permissions` parses but is never read), **L16** (one truncated JSONL line blanks `nax runs`). See **`docs/20260816-batch7-retriage.md`** for per-item verdicts, verification depth, and a recommended order. Severity labels in *this* document have now proven unreliable in both directions — use the re-triage instead.
 
 ## Verified Clean (no findings)
 

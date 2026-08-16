@@ -85,6 +85,30 @@ describe("stripTrailingCommas", () => {
   test("leaves valid JSON unchanged", () => {
     expect(stripTrailingCommas(JSON_FIXTURE)).toBe(JSON_FIXTURE);
   });
+
+  // A trailing comma is JSON *syntax*. The same characters inside a string
+  // VALUE are data — an acceptance criterion quoting `{a: 1,}`, a review
+  // finding quoting an array literal. Rewriting those silently corrupts the
+  // payload, and because the result still parses, nothing ever errors.
+  test.each<string>([
+    '{"note":"use {a: 1,} not {a: 1}"}',
+    '{"arr":"x,] y"}',
+    '{"spaced":"trailing ,   } inside"}',
+    '{"escaped":"quote \\" then ,] here"}',
+  ])("preserves comma sequences inside string values: %s", (input) => {
+    expect(stripTrailingCommas(input)).toBe(input);
+    expect(JSON.parse(stripTrailingCommas(input))).toEqual(JSON.parse(input));
+  });
+
+  test("still strips real trailing commas that sit next to string values", () => {
+    expect(stripTrailingCommas('{"a":"x,]",}')).toBe('{"a":"x,]"}');
+    expect(stripTrailingCommas('["a,}","b,]",]')).toBe('["a,}","b,]"]');
+  });
+
+  test("does not treat an escaped backslash as escaping the closing quote", () => {
+    // "path\\" is a complete string; the following `,]` is real syntax.
+    expect(stripTrailingCommas('["path\\\\",]')).toBe('["path\\\\"]');
+  });
 });
 
 // ---------------------------------------------------------------------------
