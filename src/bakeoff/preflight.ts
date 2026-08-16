@@ -237,6 +237,33 @@ export async function reclaimStaleBakeoffBranches(projectRoot: string): Promise<
 
     for (const branch of branches) {
       if (recordedBranches.has(`refs/heads/${branch}`)) continue;
+
+      // ENH-3 fix: capture the tip SHA before deleting, so a mistaken
+      // delete is recoverable (`git checkout <sha>` / `git branch <name>
+      // <sha>`). The previous implementation force-deleted with no
+      // breadcrumb, silently losing unmerged work in the shared
+      // `nax/bakeoff-*` namespace (docs/20260816-review-since-0.80.0-canary.3.md).
+      // Best-effort: a failed rev-parse (concurrent delete, unparseable
+      // ref) still lets the deletion proceed — the SHA log is
+      // observability, not a gate.
+      let sha: string | undefined;
+      try {
+        const shaResult = await gitWithTimeout(["rev-parse", branch], projectRoot);
+        if (shaResult.exitCode === 0) {
+          const trimmed = shaResult.stdout.trim();
+          if (trimmed) sha = trimmed;
+        }
+      } catch {
+        // swallow — deletion proceeds without the SHA breadcrumb
+      }
+
+      getSafeLogger()?.warn("bakeoff", "Reclaiming stale bake-off branch", {
+        projectRoot,
+        branch,
+        ...(sha ? { sha } : {}),
+        recoverable: sha ? `git checkout ${sha}  # or: git branch ${branch} ${sha}` : "(no SHA captured)",
+      });
+
       const deleteResult = await gitWithTimeout(["branch", "-D", branch], projectRoot);
       if (deleteResult.exitCode !== 0) {
         getSafeLogger()?.warn("bakeoff", "Failed to delete stale bake-off branch", {
