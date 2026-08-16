@@ -124,6 +124,22 @@ describe("markStoryFailed()", () => {
     expect(prd.userStories[0].status).toBe("pending");
   });
 
+  // `passes` is a separate field from `status`, and dependency resolution reads
+  // `passes` (story-selector.ts / story-context.ts) rather than `status`. A
+  // story can genuinely go passed -> failed: unified-executor.ts marks a story
+  // failed on merge conflict after its pipeline passed. If `passes` is left
+  // true, dependents treat the failure as satisfied and run anyway.
+  test("clears passes when a previously-passed story fails", () => {
+    const prd = makePrd([makeStory("US-001")]);
+    markStoryPassed(prd, "US-001");
+    expect(prd.userStories[0].passes).toBe(true);
+
+    markStoryFailed(prd, "US-001", "tests-failing");
+
+    expect(prd.userStories[0].status).toBe("failed");
+    expect(prd.userStories[0].passes).toBe(false);
+  });
+
   test("does not affect other stories", () => {
     const prd = makePrd([makeStory("US-001"), makeStory("US-002")]);
     markStoryFailed(prd, "US-001", "tests-failing");

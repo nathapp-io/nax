@@ -264,6 +264,12 @@ export function markStoryFailed(
       statusWriter?.resetPostRunStatus();
     }
     story.status = "failed";
+    // `passes` is what dependency resolution reads (story-selector.ts,
+    // story-context.ts), not `status`. A story can genuinely go passed ->
+    // failed — unified-executor.ts marks one failed on merge conflict after
+    // its pipeline passed — and leaving `passes` true there would let
+    // dependents unblock against work that never reached the base branch.
+    story.passes = false;
     story.attempts += 1;
     if (failureCategory !== undefined) {
       story.failureCategory = failureCategory;
