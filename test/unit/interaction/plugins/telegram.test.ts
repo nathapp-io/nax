@@ -784,7 +784,7 @@ describe("TelegramInteractionPlugin - sendMessage timeout (BUG-7)", () => {
   test("aborts sendMessage via AbortController when fetch never resolves", async () => {
     let observedSignal: AbortSignal | undefined;
     _telegramPluginDeps.fetch = mock(async (_url: string | URL | Request, init?: RequestInit) => {
-      observedSignal = init?.signal;
+      observedSignal = init?.signal ?? undefined;
       // Honor the abort signal: reject immediately when it fires.
       return await new Promise<Response>((_resolve, reject) => {
         if (init?.signal?.aborted) {

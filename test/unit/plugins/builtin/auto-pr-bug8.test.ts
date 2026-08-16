@@ -18,7 +18,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _autoPrDeps, autoPrPlugin, defaultRun } from "@/plugins/builtin/auto-pr";
-import type { PostRunContext } from "@/plugins/types";
+import type { PostRunActionResult, PostRunContext } from "@/plugins/types";
 
 function makeContext(overrides: Partial<PostRunContext> = {}): PostRunContext {
   return {
@@ -110,7 +110,7 @@ describe("BUG-8 — execute() re-checks hasOpenPr after push", () => {
     const beforeExecute = hasOpenPrCalls;
 
     const ctx = makeContext();
-    const result = await autoPrPlugin.extensions.postRunAction?.execute(ctx);
+    const result = (await autoPrPlugin.extensions.postRunAction?.execute(ctx)) as PostRunActionResult;
 
     // After shouldRun() consumed one call, execute() added exactly one more
     // (the recheck after the push).
@@ -130,7 +130,7 @@ describe("BUG-8 — execute() re-checks hasOpenPr after push", () => {
     _autoPrDeps.findPrTemplate = (async () => null) as typeof _autoPrDeps.findPrTemplate;
 
     const ctx = makeContext();
-    const result = await autoPrPlugin.extensions.postRunAction?.execute(ctx);
+    const result = (await autoPrPlugin.extensions.postRunAction?.execute(ctx)) as PostRunActionResult;
 
     expect(openDraftMock).toHaveBeenCalled();
     expect(result.success).toBe(true);
