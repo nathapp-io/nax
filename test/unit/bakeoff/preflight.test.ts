@@ -277,4 +277,75 @@ describe("reclaimStaleBakeoffBranches — failed branch deletion", () => {
     expect(call).toBeDefined();
     expect((call?.[2] as { branch?: string } | undefined)?.branch).toBe(staleBranch);
   });
+
+  // ENH-3 regression: before deleting a stale bake-off branch, the
+  // preflight must log its tip SHA so a mistaken delete is recoverable
+  // (`git checkout <sha>` / `git branch <name> <sha>`). The previous
+  // implementation force-deleted `nax/bakeoff-*` branches without any
+  // breadcrumb, which silently lost unmerged work in a shared namespace
+  // (docs/20260816-review-since-0.80.0-canary.3.md, ENH-3).
+  it("ENH-3 regression: logs the branch tip SHA before deleting a stale bake-off branch", async () => {
+    const staleBranch = "nax/bakeoff-stale-id";
+    const tipSha = "deadbeef1234567890abcdef1234567890abcdef";
+    _gitDeps.spawn = mockSpawnFor((args) => {
+      if (args[1] === "for-each-ref") return { output: `${staleBranch}\n`, exitCode: 0 };
+      if (args[1] === "worktree") return { output: "worktree /repo\nHEAD abc123\n", exitCode: 0 };
+      // rev-parse <branch> → SHA (called before `git branch -D`).
+      if (args[1] === "rev-parse") return { output: `${tipSha}\n`, exitCode: 0 };
+      if (args[1] === "branch" && args[2] === "-D") return { output: "", exitCode: 0 };
+      return { output: "", exitCode: 0 };
+    });
+
+    const logger = getSafeLogger();
+    if (!logger) throw new Error("expected logger to be initialized");
+    const warnSpy = spyOn(logger, "warn");
+
+    await reclaimStaleBakeoffBranches("/repo");
+
+    // The pre-delete warn must include the SHA so a user can recover
+    // (`git checkout <sha>` / `git branch <name> <sha>`).
+    const reclaimCall = warnSpy.mock.calls.find((c) =>
+      String(c[1]).includes("Reclaiming stale bake-off branch"),
+    );
+    expect(reclaimCall).toBeDefined();
+    const ctx = reclaimCall?.[2] as { branch?: string; sha?: string; projectRoot?: string } | undefined;
+    expect(ctx?.branch).toBe(staleBranch);
+    expect(ctx?.sha).toBe(tipSha);
+    expect(ctx?.projectRoot).toBe("/repo");
+  });
+
+  // ENH-3 regression (defensive): when rev-parse fails (e.g. branch
+  // already deleted by a concurrent run), the deletion must still
+  // proceed — the SHA log is best-effort observability, not a gate.
+  it("ENH-3 regression: still deletes the branch when rev-parse fails (SHA log is best-effort)", async () => {
+    const staleBranch = "nax/bakeoff-stale-id";
+    _gitDeps.spawn = mockSpawnFor((args) => {
+      if (args[1] === "for-each-ref") return { output: `${staleBranch}\n`, exitCode: 0 };
+      if (args[1] === "worktree") return { output: "worktree /repo\nHEAD abc123\n", exitCode: 0 };
+      // rev-parse fails — concurrent deletion or unparseable ref.
+      if (args[1] === "rev-parse") return { output: "", exitCode: 128 };
+      // Delete must still be attempted.
+      if (args[1] === "branch" && args[2] === "-D") return { output: "", exitCode: 0 };
+      return { output: "", exitCode: 0 };
+    });
+
+    const logger = getSafeLogger();
+    if (!logger) throw new Error("expected logger to be initialized");
+    const warnSpy = spyOn(logger, "warn");
+
+    await reclaimStaleBakeoffBranches("/repo");
+
+    // The reclaim warn still fires, but without a sha field — the
+    // deletion is logged as best-effort.
+    const reclaimCall = warnSpy.mock.calls.find((c) =>
+      String(c[1]).includes("Reclaiming stale bake-off branch"),
+    );
+    expect(reclaimCall).toBeDefined();
+    const ctx = reclaimCall?.[2] as { branch?: string; sha?: string | null } | undefined;
+    expect(ctx?.branch).toBe(staleBranch);
+    expect(ctx?.sha == null || ctx?.sha === "").toBe(true);
+    // And the failure-deletion warn must NOT have fired (delete succeeded).
+    const failureCall = warnSpy.mock.calls.find((c) => String(c[1]).includes("Failed to delete stale bake-off branch"));
+    expect(failureCall).toBeUndefined();
+  });
 });

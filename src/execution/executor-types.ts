@@ -55,7 +55,15 @@ export interface SequentialExecutionContext extends DispatchContext {
 }
 
 /** Reason the sequential/parallel execution loop stopped. */
-export type ExitReason = "completed" | "cost-limit" | "max-iterations" | "stalled" | "no-stories" | "pre-merge-aborted";
+export type ExitReason =
+  | "completed"
+  | "cost-limit"
+  | "max-iterations"
+  | "stalled"
+  | "no-stories"
+  | "pre-merge-aborted"
+  /** The run's AbortSignal was aborted during an iteration delay (BUG-2 fix). */
+  | "aborted";
 
 export interface SequentialExecutionResult {
   prd: PRD;

@@ -15,6 +15,7 @@ import type { PipelineContext } from "../pipeline/types";
 import { countStories, isComplete, isStalled, loadPRD, markStoryFailed, markStoryPassed, savePRD } from "../prd";
 import type { PRD } from "../prd/types";
 import { cancellableDelay } from "../utils/bun-deps";
+import { errorMessage } from "../utils/errors";
 import { buildNaxIgnoreIndex } from "../utils/path-filters";
 import { precomputeBatchPlan } from "./batching";
 import { maybeSendCostWarning } from "./cost-warning";
@@ -552,7 +553,22 @@ export async function executeUnified(
             pipelineEventBus.emit({ type: "run:paused", reason: "All remaining stories blocked", cost: totalCost });
             return buildResult("stalled");
           }
-          await cancellableDelay(ctx.config.execution.iterationDelayMs, ctx.runtime.signal);
+          // BUG-2 fix: treat an aborted delay as a clean stop. Without
+          // this, the rejection escapes executeUnified and races the
+          // signal handler's own teardown + process.exit(130) (see
+          // docs/20260816-review-since-0.80.0-canary.3.md).
+          try {
+            await cancellableDelay(ctx.config.execution.iterationDelayMs, ctx.runtime.signal);
+          } catch (err) {
+            if (ctx.runtime.signal.aborted) {
+              logger?.info("execution", "Iteration delay aborted — exiting cleanly", {
+                iterations,
+                reason: errorMessage(err),
+              });
+              return buildResult("aborted");
+            }
+            throw err;
+          }
           continue;
         }
         // batch.length === 0: fall through to sequential single-story path
@@ -645,7 +661,21 @@ export async function executeUnified(
         pipelineEventBus.emit({ type: "run:paused", reason: "All remaining stories blocked", cost: totalCost });
         return buildResult("stalled");
       }
-      await cancellableDelay(ctx.config.execution.iterationDelayMs, ctx.runtime.signal);
+      // BUG-2 fix: same handling as the parallel-batch delay above — an
+      // aborted delay is a clean stop, not an exception that escapes
+      // into the runner's finally.
+      try {
+        await cancellableDelay(ctx.config.execution.iterationDelayMs, ctx.runtime.signal);
+      } catch (err) {
+        if (ctx.runtime.signal.aborted) {
+          logger?.info("execution", "Iteration delay aborted — exiting cleanly", {
+            iterations,
+            reason: errorMessage(err),
+          });
+          return buildResult("aborted");
+        }
+        throw err;
+      }
     }
 
     // Post-run pipeline (acceptance tests) — only when acceptance is configured

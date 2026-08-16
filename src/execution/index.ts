@@ -119,6 +119,12 @@ export {
   type TreeState,
 } from "./checkpoint";
 export type { StoryRunResult } from "./types";
+// BUG-2 testability seam: re-export `executeUnified` + its `_deps`
+// shim so test files can mutate `_unifiedExecutorDeps` via the barrel
+// (alias-internals lint requires alias imports to target barrels, not
+// internal files). `executeUnified` itself is also a legitimate part of
+// the public surface — it's the main executor entry point.
+export { executeUnified, _unifiedExecutorDeps } from "./unified-executor";
 export {
   runCompletionPhase,
   _runnerCompletionDeps,
