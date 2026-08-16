@@ -271,12 +271,23 @@ describe("runContestant (worktree lifecycle around the pipeline)", () => {
   });
 });
 
-// ── Pinned config still forces fallback off and pins agent.default ───────────
+// ── Pinned config preserves the resolved agent.default and forces fallback off ──
 
 describe("runContestant (pinned config delivered via context.config)", () => {
-  it("delivers a config where agent.default === contestant name and agent.fallback.enabled === false", async () => {
-    const { ctx } = await runAndCapture("codex", baseOptions());
-    expect(ctx?.config.agent?.default).toBe("codex");
+  it("preserves the profile-resolved agent.default from options.config (does not overwrite it with the raw profile name) and forces agent.fallback.enabled === false", async () => {
+    // options.config.agent.default ("claude") is already the resolved agent —
+    // set upstream by preflight's buildContestantConfig from the profile
+    // overlay. The contestant argument ("gpu-claude-profile") is a *profile*
+    // name (ContestantRunContext.profile), which can differ from the agent it
+    // resolves to, so it must never stomp the already-resolved default.
+    const { ctx } = await runAndCapture("gpu-claude-profile", baseOptions({ config: baseConfig() }));
+    expect(ctx?.config.agent?.default).toBe("claude");
+    expect(ctx?.config.agent?.fallback?.enabled).toBe(false);
+  });
+
+  it("(boundary) a differently named profile still leaves agent.default untouched, proving it is not derived from the profile argument", async () => {
+    const { ctx } = await runAndCapture("some-other-profile-name", baseOptions({ config: baseConfig() }));
+    expect(ctx?.config.agent?.default).toBe("claude");
     expect(ctx?.config.agent?.fallback?.enabled).toBe(false);
   });
 });
