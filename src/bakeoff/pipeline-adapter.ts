@@ -12,6 +12,7 @@ import type { RunOptions, RunResult } from "../execution";
 import { loadHooksConfig } from "../hooks";
 import { loadRunMetrics } from "../metrics";
 import type { RunMetrics } from "../metrics";
+import { validateFeatureName } from "../utils/feature-name";
 import type {
   ContestantPipelineResult,
   ContestantRunContext,
@@ -48,8 +49,11 @@ function toMetrics(runs: RunMetrics[], result: RunResult): ContestantStoryMetric
  * the result back into a `ContestantPipelineResult`.
  */
 export async function pipeline(ctx: ContestantRunContext): Promise<ContestantPipelineResult> {
+  validateFeatureName(ctx.feature);
+
   const hooks = await _pipelineAdapterDeps.loadHooksConfig(ctx.worktree, globalConfigDir());
-  const prdPath = join(featureDir(ctx.worktree, ctx.feature), "prd.json");
+  const contestantFeatureDir = featureDir(ctx.worktree, ctx.feature);
+  const prdPath = join(contestantFeatureDir, "prd.json");
   const statusFile = join(ctx.outputDir, "status.json");
 
   const result = await _pipelineAdapterDeps.run({
@@ -58,6 +62,7 @@ export async function pipeline(ctx: ContestantRunContext): Promise<ContestantPip
     config: ctx.config,
     hooks,
     feature: ctx.feature,
+    featureDir: contestantFeatureDir,
     dryRun: false,
     statusFile,
   });
