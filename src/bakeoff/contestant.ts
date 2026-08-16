@@ -6,7 +6,7 @@
  * is always torn down, even when the pipeline throws or signals abort.
  */
 
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { NaxConfig } from "../config";
 import { projectOutputDir } from "../runtime/paths";
 import type { ContestantResult } from "./types";
@@ -118,7 +118,8 @@ export async function runContestant(
   };
 
   const worktree = join(options.projectRoot, ".nax-wt", storyId);
-  const outputDir = join(projectOutputDir(options.projectRoot, options.outputDir), "bakeoff", feature, agent);
+  const projectKey = options.config.name?.trim() || basename(options.projectRoot);
+  const outputDir = join(projectOutputDir(projectKey, options.outputDir), "bakeoff", feature, agent);
 
   const context: ContestantRunContext = {
     profile: agent,
