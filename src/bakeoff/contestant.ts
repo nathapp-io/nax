@@ -30,10 +30,30 @@ export interface ContestantOptions {
   projectRoot: string;
   config: NaxConfig;
   maxCostUsd?: number;
-  /** Forwarded from BakeoffOptions.feature; not read inside runContestant
-   * itself but is part of the tested cross-call contract (US-004 AC-27). */
+  /** Forwarded from BakeoffOptions.feature; also copied onto the pipeline's
+   * ContestantRunContext.feature (US-002 AC-2). */
   feature?: string;
+  /** The bake-off's project output root (BakeoffOptions.outputDir). Used to
+   * derive this contestant's isolated ContestantRunContext.outputDir. */
+  outputDir?: string;
   storiesTotal?: number;
+}
+
+/**
+ * Per-contestant execution context handed to the pipeline dependency. Gives
+ * each contestant an explicit, isolated worktree + output root instead of
+ * only a pinned config (US-002).
+ */
+export interface ContestantRunContext {
+  /** Profile name — also the contestant's label in the report. */
+  profile: string;
+  /** Base config + profile overlay, with fallback pinned off and outputDir set. */
+  config: NaxConfig;
+  /** This contestant's worktree — becomes the run's workdir. */
+  worktree: string;
+  /** This contestant's isolated output root. */
+  outputDir: string;
+  feature: string;
 }
 
 export interface ContestantRunnerDeps {
@@ -41,15 +61,9 @@ export interface ContestantRunnerDeps {
     create: (projectRoot: string, storyId: string) => Promise<unknown>;
     remove: (projectRoot: string, storyId: string) => Promise<unknown>;
   };
-  /** Pipeline receives the pinned config as its first positional argument. */
-  pipeline: (config: NaxConfig) => Promise<ContestantPipelineResult>;
+  /** Pipeline receives the contestant's isolated run context. */
+  pipeline: (ctx: ContestantRunContext) => Promise<ContestantPipelineResult>;
 }
-
-/** Production wiring installs these via init steps; tests override per-call. */
-export const _contestantDeps: ContestantRunnerDeps = {
-  worktreeManager: undefined as unknown as ContestantRunnerDeps["worktreeManager"],
-  pipeline: undefined as unknown as ContestantRunnerDeps["pipeline"],
-};
 
 function safeStoryId(agent: string): string {
   return `bakeoff-contestant-${agent}`;
@@ -78,7 +92,7 @@ function aggregateTotals(metrics: ContestantStoryMetric[]): {
 export async function runContestant(
   agent: string,
   options: ContestantOptions,
-  deps: ContestantRunnerDeps = _contestantDeps,
+  deps: ContestantRunnerDeps,
 ): Promise<ContestantResult> {
   const storyId = safeStoryId(agent);
 
@@ -98,6 +112,19 @@ export async function runContestant(
     },
   };
 
+  // TODO(implementer, US-002): worktree/outputDir must be derived from
+  // options.projectRoot/.nax-wt/<storyId> and
+  // projectOutputDir(...)/bakeoff/<feature>/<profile> respectively, and
+  // outputDir must be applied onto pinnedConfig.outputDir. Left as
+  // placeholders here so the pipeline contract compiles for test-writing.
+  const context: ContestantRunContext = {
+    profile: agent,
+    config: pinnedConfig,
+    worktree: "",
+    outputDir: "",
+    feature: options.feature ?? "",
+  };
+
   try {
     // BUG-03: worktreeManager.create() used to run before this try block —
     // a failure there (including the deps being unwired, e.g. undefined in
@@ -106,7 +133,7 @@ export async function runContestant(
     // instead of reporting this one contestant as "dnf-crashed" and letting
     // the sequential coordinator continue with the rest.
     await deps.worktreeManager.create(options.projectRoot, storyId);
-    const result = await deps.pipeline(pinnedConfig);
+    const result = await deps.pipeline(context);
 
     const totals = aggregateTotals(result.metrics);
     const storiesPassed = result.results.filter((r) => r.status === "passed").length;

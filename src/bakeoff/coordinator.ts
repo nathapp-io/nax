@@ -8,8 +8,10 @@
 
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
+import { NaxError } from "../errors";
+import { WorktreeManager } from "../worktree/manager";
 import { runContestant } from "./contestant";
-import type { ContestantOptions } from "./contestant";
+import type { ContestantOptions, ContestantRunnerDeps } from "./contestant";
 import { buildContestantConfig, parseCompareList, validateContestants } from "./preflight";
 import type { ContestantValidationResult } from "./preflight";
 import { rankContestants } from "./ranking";
@@ -39,9 +41,24 @@ export async function persistBakeoffResult(result: BakeoffResult, outputDir: str
   await Bun.write(filePath, JSON.stringify(result, null, 2));
 }
 
+/**
+ * Default `ContestantRunnerDeps` for production wiring: a real worktree
+ * manager, and a pipeline stub. Wiring the pipeline to a real nax run is
+ * US-003 — until then it reports every contestant as `dnf-crashed` rather
+ * than silently no-op'ing.
+ */
+const _defaultContestantDeps: ContestantRunnerDeps = {
+  worktreeManager: new WorktreeManager(),
+  pipeline: async () => {
+    throw new NaxError("Bake-off contestant pipeline is not yet wired to a real nax run", "NOT_IMPLEMENTED", {
+      stage: "bakeoff-contestant",
+    });
+  },
+};
+
 export const _coordinatorDeps: BakeoffCoordinatorDeps = {
   validateContestants,
-  runContestant: runContestant as unknown as BakeoffCoordinatorDeps["runContestant"],
+  runContestant: (agent, options) => runContestant(agent, options, _defaultContestantDeps),
   rankContestants,
   persistBakeoffResult,
 };
@@ -74,6 +91,7 @@ export async function runBakeoff(
       config: buildContestantConfig(options.config, profileData[agent] ?? {}),
       maxCostUsd: options.maxCostUsd,
       feature: options.feature,
+      outputDir: options.outputDir,
     };
     const result = await merged.runContestant(agent, contestantOptions);
     results.push(result);
@@ -169,5 +187,4 @@ export async function handleRunAction(
 }
 
 // Re-exports for downstream wiring that already imports these names.
-export { _contestantDeps } from "./contestant";
 export type { ContestantOptions, ContestantResult };

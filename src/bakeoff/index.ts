@@ -1,10 +1,8 @@
-export {
-  _contestantDeps,
-  runContestant,
-} from "./contestant";
+export { runContestant } from "./contestant";
 export type {
   ContestantOptions,
   ContestantPipelineResult,
+  ContestantRunContext,
   ContestantRunnerDeps,
   ContestantStoryMetric,
   ContestantStoryResult,

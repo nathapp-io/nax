@@ -11,9 +11,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
 import { _coordinatorDeps, renderBakeoffReport } from "@/bakeoff";
 import type { BakeoffCoordinatorDeps, BakeoffResult, ContestantResult } from "@/bakeoff";
 
@@ -72,7 +72,7 @@ describe("persistBakeoffResult (AC-5: bakeoff.json contents)", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("AC5: writes bakeoff.json under outputDir with feature, ranking length, and first-place agent matching the result", async () => {
+  it("US-002 AC11: writes bakeoff.json under bakeoff/<feature> within outputDir, with feature, ranking length, and first-place agent matching the result", async () => {
     const result = makeBakeoffResult({
       feature: "inline-charts",
       ranking: [
@@ -82,15 +82,14 @@ describe("persistBakeoffResult (AC-5: bakeoff.json contents)", () => {
       ],
     });
 
-    await withCoordinatorPersist(async () => {
-      // The implementation must be wired into _coordinatorDeps by the
-      // implementer in the next session. The call site is fixed; here we
-      // observe that calling through _coordinatorDeps.persistBakeoffResult
-      // produces the expected file.
-      await _coordinatorDeps.persistBakeoffResult(result, tempDir);
-    }, { persistBakeoffResult: _coordinatorDeps.persistBakeoffResult });
+    await withCoordinatorPersist(
+      async () => {
+        await _coordinatorDeps.persistBakeoffResult(result, tempDir);
+      },
+      { persistBakeoffResult: _coordinatorDeps.persistBakeoffResult },
+    );
 
-    const jsonPath = join(tempDir, "bakeoff.json");
+    const jsonPath = join(tempDir, "bakeoff", "inline-charts", "bakeoff.json");
     expect(existsSync(jsonPath)).toBe(true);
     const parsed = JSON.parse(readFileSync(jsonPath, "utf8")) as {
       feature: string;
@@ -103,14 +102,17 @@ describe("persistBakeoffResult (AC-5: bakeoff.json contents)", () => {
 
   // Boundary: when the bake-off wrote no winners (ranking length 0), the
   // file must still exist and the feature must round-trip correctly.
-  it("AC5 (boundary): persists even with an empty ranking array", async () => {
+  it("US-002 AC11 (boundary): persists even with an empty ranking array", async () => {
     const result = makeBakeoffResult({ feature: "empty-feature", ranking: [] });
 
-    await withCoordinatorPersist(async () => {
-      await _coordinatorDeps.persistBakeoffResult(result, tempDir);
-    }, { persistBakeoffResult: _coordinatorDeps.persistBakeoffResult });
+    await withCoordinatorPersist(
+      async () => {
+        await _coordinatorDeps.persistBakeoffResult(result, tempDir);
+      },
+      { persistBakeoffResult: _coordinatorDeps.persistBakeoffResult },
+    );
 
-    const jsonPath = join(tempDir, "bakeoff.json");
+    const jsonPath = join(tempDir, "bakeoff", "empty-feature", "bakeoff.json");
     expect(existsSync(jsonPath)).toBe(true);
     const parsed = JSON.parse(readFileSync(jsonPath, "utf8")) as {
       feature: string;
@@ -118,6 +120,35 @@ describe("persistBakeoffResult (AC-5: bakeoff.json contents)", () => {
     };
     expect(parsed.feature).toBe("empty-feature");
     expect(parsed.ranking).toEqual([]);
+  });
+
+  it("US-002 AC12: results for two features persisted under one output directory remain readable and contain their own feature values", async () => {
+    const first = makeBakeoffResult({
+      feature: "feature-one",
+      ranking: [makeResult({ agent: "claude", storiesPassed: 2 })],
+    });
+    const second = makeBakeoffResult({
+      feature: "feature-two",
+      ranking: [makeResult({ agent: "codex", storiesPassed: 1 })],
+    });
+
+    await withCoordinatorPersist(
+      async () => {
+        await _coordinatorDeps.persistBakeoffResult(first, tempDir);
+        await _coordinatorDeps.persistBakeoffResult(second, tempDir);
+      },
+      { persistBakeoffResult: _coordinatorDeps.persistBakeoffResult },
+    );
+
+    const firstPath = join(tempDir, "bakeoff", "feature-one", "bakeoff.json");
+    const secondPath = join(tempDir, "bakeoff", "feature-two", "bakeoff.json");
+    expect(existsSync(firstPath)).toBe(true);
+    expect(existsSync(secondPath)).toBe(true);
+
+    const parsedFirst = JSON.parse(readFileSync(firstPath, "utf8")) as { feature: string };
+    const parsedSecond = JSON.parse(readFileSync(secondPath, "utf8")) as { feature: string };
+    expect(parsedFirst.feature).toBe("feature-one");
+    expect(parsedSecond.feature).toBe("feature-two");
   });
 });
 
