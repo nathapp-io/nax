@@ -10,7 +10,7 @@ import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import { runContestant } from "./contestant";
 import type { ContestantOptions } from "./contestant";
-import { parseCompareList, validateContestants } from "./preflight";
+import { buildContestantConfig, parseCompareList, validateContestants } from "./preflight";
 import type { ContestantValidationResult } from "./preflight";
 import { rankContestants } from "./ranking";
 import type { BakeoffResult, ContestantResult } from "./types";
@@ -65,13 +65,13 @@ export async function runBakeoff(
 ): Promise<BakeoffResult> {
   const merged: BakeoffCoordinatorDeps = { ..._coordinatorDeps, ...deps };
 
-  const { validAgents, errors } = await merged.validateContestants(options.agents, options.projectRoot);
+  const { validAgents, errors, profileData } = await merged.validateContestants(options.agents, options.projectRoot);
 
   const results: ContestantResult[] = [];
   for (const agent of validAgents) {
     const contestantOptions: ContestantOptions = {
       projectRoot: options.projectRoot,
-      config: options.config,
+      config: buildContestantConfig(options.config, profileData[agent] ?? {}),
       maxCostUsd: options.maxCostUsd,
       feature: options.feature,
     };

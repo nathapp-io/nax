@@ -138,6 +138,22 @@ describe("validateContestants", () => {
     expect(result.errors[0].reason).toBe("dnf-not-installed");
     expect(result.validAgents).toEqual([]);
   });
+
+  // Regression: a loadProfile failure that is NOT "this profile name does
+  // not resolve" (e.g. malformed profile JSON) must not be silently
+  // downgraded to reason=unknown-profile — it propagates instead.
+  it("US-001: propagates a non-resolution loadProfile error instead of reporting unknown-profile", async () => {
+    const boom = new Error("Unexpected end of JSON input");
+    await expect(
+      validateContestants(["cross-agent-pi"], projectRoot, {
+        isInstalled: () => true,
+        hasAcpAdapterEntry: () => true,
+        loadProfile: async () => {
+          throw boom;
+        },
+      }),
+    ).rejects.toThrow(boom);
+  });
 });
 
 describe("buildContestantConfig", () => {

@@ -25,6 +25,8 @@ export interface ContestantValidationError {
 export interface ContestantValidationResult {
   errors: ContestantValidationError[];
   validAgents: string[];
+  /** Resolved profile overlay data, keyed by contestant name — one entry per `validAgents` member. */
+  profileData: Record<string, Record<string, unknown>>;
 }
 
 export interface PreflightDeps {
@@ -97,21 +99,31 @@ export async function validateContestants(
 
   const errors: ContestantValidationError[] = [];
   const validAgents: string[] = [];
+  const profileData: Record<string, Record<string, unknown>> = {};
 
   for (const name of names) {
-    let profileData: Record<string, unknown>;
+    let resolvedProfileData: Record<string, unknown>;
     try {
-      profileData = await loadProfileFn(name, projectRoot);
+      resolvedProfileData = await loadProfileFn(name, projectRoot);
     } catch (err) {
-      errors.push({
-        agent: name,
-        reason: "unknown-profile",
-        message: `Profile "${name}" could not be resolved: ${errorMessage(err)}`,
-      });
-      continue;
+      // Only a genuine "this profile name does not resolve" failure is
+      // reported as a per-contestant validation error. Anything else
+      // (malformed profile JSON, permission errors, unexpected I/O
+      // failures) is an operational/configuration defect, not a missing
+      // profile — swallowing it here would misreport it and hide the
+      // real cause, so it propagates instead.
+      if (err instanceof NaxError && (err.code === "PROFILE_NOT_FOUND" || err.code === "PROFILE_NAME_INVALID")) {
+        errors.push({
+          agent: name,
+          reason: "unknown-profile",
+          message: `Profile "${name}" could not be resolved: ${errorMessage(err)}`,
+        });
+        continue;
+      }
+      throw err;
     }
 
-    const agentConfig = profileData.agent as { default?: unknown } | undefined;
+    const agentConfig = resolvedProfileData.agent as { default?: unknown } | undefined;
     const resolvedAgent = typeof agentConfig?.default === "string" ? agentConfig.default : undefined;
 
     if (!resolvedAgent || !hasAcpAdapterEntry(resolvedAgent)) {
@@ -133,9 +145,10 @@ export async function validateContestants(
     }
 
     validAgents.push(name);
+    profileData[name] = resolvedProfileData;
   }
 
-  return { errors, validAgents };
+  return { errors, validAgents, profileData };
 }
 
 /**

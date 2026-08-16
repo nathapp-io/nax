@@ -87,6 +87,7 @@ describe("runBakeoff (AC-1: sequential execution)", () => {
         validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
         rankContestants,
@@ -117,6 +118,7 @@ describe("runBakeoff (AC-1: sequential execution)", () => {
         validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
         rankContestants,
@@ -140,6 +142,7 @@ describe("runBakeoff (AC-2: validation failure)", () => {
         validateContestants: (async (_names: string[], _projectRoot: string) => ({
           errors: [{ agent: "bogus", reason: "unknown-profile" }],
           validAgents: [],
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
         rankContestants,
@@ -160,6 +163,7 @@ describe("runBakeoff (AC-2: validation failure)", () => {
         validateContestants: (async (_names: string[], _projectRoot: string) => ({
           errors: [{ agent: "bogus", reason: "unknown-profile" }],
           validAgents: [],
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: mock(async (agent: string) => makeResult({ agent })) as unknown as BakeoffCoordinatorDeps["runContestant"],
         rankContestants,
@@ -188,6 +192,7 @@ describe("runBakeoff (AC-3: one runContestant call per validated agent)", () => 
         validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
         rankContestants,
@@ -216,6 +221,7 @@ describe("runBakeoff (AC-3: one runContestant call per validated agent)", () => 
         validateContestants: (async (_names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: ["claude"],
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
         rankContestants,
@@ -242,6 +248,7 @@ describe("runBakeoff (AC-4: ranking wiring)", () => {
         validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: mock(async (agent: string) =>
           agent === "claude" ? claudeResult : codexResult,
@@ -270,6 +277,7 @@ describe("runBakeoff (AC-4: ranking wiring)", () => {
         validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: mock(async (agent: string) =>
           agent === "claude" ? higher : lower,
@@ -304,6 +312,7 @@ describe("runBakeoff (AC-7: fail-open across DNF contestants)", () => {
         validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
         rankContestants,
@@ -326,6 +335,7 @@ describe("runBakeoff (AC-7: fail-open across DNF contestants)", () => {
         validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: mock(async (agent: string) =>
           makeResult({
@@ -372,6 +382,7 @@ describe("runBakeoff (AC-8: all-DNF persistence + non-zero outcome)", () => {
         validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: mock(async (agent: string) => allDnf.find((d) => d.agent === agent)!) as unknown as BakeoffCoordinatorDeps["runContestant"],
         rankContestants,
@@ -405,6 +416,7 @@ describe("runBakeoff (AC-8: all-DNF persistence + non-zero outcome)", () => {
         validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: mock(async (agent: string) =>
           makeResult({ agent, status: "dnf-crashed", storiesPassed: 0 }),
@@ -432,6 +444,7 @@ describe("runBakeoff (AC-9: at-least-one-finisher zero outcome)", () => {
         validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: mock(async (agent: string) =>
           makeResult({
@@ -456,6 +469,7 @@ describe("runBakeoff (AC-9: at-least-one-finisher zero outcome)", () => {
         validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: mock(async (agent: string) =>
           makeResult({ agent, status: "passed", storiesPassed: 3 }),
