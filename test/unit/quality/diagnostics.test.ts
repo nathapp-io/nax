@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { parseDiagnostics } from "@/quality";
+import { detectTool, parseDiagnostics } from "@/quality";
 import type { Diagnostic } from "@/quality/diagnostics";
 import type { QualityCommandResult } from "@/quality/runner";
 
@@ -170,5 +170,45 @@ describe("Diagnostic type shape", () => {
     };
     expect(sample.file).toBe("src/a.ts");
     expect(sample.tool).toBe("tsc");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUG-4 regression — `\bgo\b` / `\bcargo\b` regexes mislabel script names
+// containing "go"/"cargo" because `-` and `:` are word boundaries in regex.
+// A lint script named `go-lint` or `lint:go` was labelled `tool: "go"`, a raw
+// tail that the user then read as a Go toolchain failure. See
+// docs/20260816-review-since-0.80.0-canary.3.md (BUG-4).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("detectTool — BUG-4 regression: do not mislabel script names containing go/cargo", () => {
+  test("does not label a `go-lint` script as 'go'", () => {
+    // `bun run go-lint` → the script name contains `go` followed by `-`.
+    // The previous `\bgo\b` regex matched at the `-` boundary and returned "go".
+    expect(detectTool("bun run go-lint", "lint")).toBe("lint");
+  });
+
+  test("does not label a `lint:go` script as 'go'", () => {
+    // `npm run lint:go` → the script name contains `:go`. The previous
+    // `\bgo\b` regex matched at the `:` boundary and returned "go".
+    expect(detectTool("npm run lint:go", "lint")).toBe("lint");
+  });
+
+  test("does not label a `cargo-build` script as 'cargo'", () => {
+    expect(detectTool("bun run cargo-build", "lint")).toBe("lint");
+  });
+
+  test("does not label a `lint:cargo` script as 'cargo'", () => {
+    expect(detectTool("npm run lint:cargo", "lint")).toBe("lint");
+  });
+
+  test("still labels an actual `go test` invocation as 'go'", () => {
+    // Anchor to a known subcommand so a real `go build|test|run|vet|mod`
+    // call is still labelled correctly.
+    expect(detectTool("go test ./...", "lint")).toBe("go");
+  });
+
+  test("still labels an actual `cargo test` invocation as 'cargo'", () => {
+    expect(detectTool("cargo test --workspace", "lint")).toBe("cargo");
   });
 });

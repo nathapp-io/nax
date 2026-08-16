@@ -91,8 +91,17 @@ export async function promptForConfirmation(question: string): Promise<boolean> 
         finish(false);
         return;
       }
-      // Default to yes for Y, Enter, or any other input
-      finish(char.toLowerCase() !== "n");
+      // BUG-7 fix: raw-mode `data` events can deliver more than one byte
+      // per chunk (paste, escape sequences, or `"n" + Enter` coalesced into
+      // `"n\r"`). The previous `char.toLowerCase() !== "n"` operated on
+      // the entire chunk — `"n\r".toLowerCase()` is `"n\r"`, which is not
+      // equal to `"n"`, so the prompt confirmed instead of cancelling.
+      // Inspecting the first byte (`char[0]`) makes the no-explicit-no path
+      // work for coalesced input while keeping the documented
+      // "any other input confirms" default for genuine non-`n` keystrokes
+      // (see docs/20260816-review-since-0.80.0-canary.3.md, BUG-7).
+      // Default to yes for Y, Enter, or any other input.
+      finish(char[0]?.toLowerCase() !== "n");
     };
 
     // A stream that ends or errors before a keypress must not hang the CLI.

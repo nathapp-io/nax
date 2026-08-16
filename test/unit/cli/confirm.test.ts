@@ -133,6 +133,45 @@ describe("promptForConfirmation", () => {
     expect(h.rawModeCalls).toEqual([true, false]);
   });
 
+  // BUG-7 regression — raw-mode `data` events can deliver more than one
+  // byte per chunk (paste, or `"n" + Enter` coalesced, or escape sequences).
+  // The previous `char.toLowerCase() !== "n"` check operated on the whole
+  // chunk, so `"n\r".toLowerCase()` was `"n\r"`, which IS not equal to `"n"`,
+  // and the prompt confirmed instead of cancelling. See
+  // docs/20260816-review-since-0.80.0-canary.3.md (BUG-7).
+  test("treats a 'n' + Enter coalesced chunk as cancellation (first-byte check)", async () => {
+    const h = makeStdin();
+    _confirmDeps.stdin = h.stdin;
+
+    const pending = promptForConfirmation("go?");
+    h.emit("data", "n\r");
+
+    expect(await pending).toBe(false);
+    expect(h.rawModeCalls).toEqual([true, false]);
+  });
+
+  test("treats a 'N' + Enter coalesced chunk as cancellation (first-byte check)", async () => {
+    const h = makeStdin();
+    _confirmDeps.stdin = h.stdin;
+
+    const pending = promptForConfirmation("go?");
+    h.emit("data", "N\r");
+
+    expect(await pending).toBe(false);
+  });
+
+  test("treats a multi-byte chunk starting with 'y' as confirmation", async () => {
+    // Defensive coverage: a paste starting with 'y' must still confirm —
+    // the first-byte check must be symmetric, not biased against non-'n'.
+    const h = makeStdin();
+    _confirmDeps.stdin = h.stdin;
+
+    const pending = promptForConfirmation("go?");
+    h.emit("data", "y\r");
+
+    expect(await pending).toBe(true);
+  });
+
   test("detaches every listener and restores raw mode exactly once", async () => {
     const h = makeStdin();
     _confirmDeps.stdin = h.stdin;

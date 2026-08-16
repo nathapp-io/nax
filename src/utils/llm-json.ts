@@ -39,6 +39,15 @@ export function extractJsonFromMarkdown(text: string): string {
  * value are data — an acceptance criterion quoting `{a: 1,}`, a review finding
  * quoting an array literal. A plain `/,\s*([}\]])/g` replace cannot tell the
  * two apart, and because its rewrite still parses, the corruption is silent.
+ *
+ * Degenerate input: an odd number of unescaped quotes (truncated LLM output
+ * with a stray quote) flips `inString` to true at the unbalanced position
+ * and leaves it true through the rest of the input. The mask marks every
+ * subsequent character as "inside a string", so structural trailing commas
+ * after the unbalanced quote are *not* stripped. This is intentional —
+ * leaving them in makes the output fail JSON.parse, and the caller falls
+ * back to the next parseLLMJson tier. Optimising this case is out of scope;
+ * a stray quote in LLM output already indicates truncation worth retrying.
  */
 export function stripTrailingCommas(text: string): string {
   const insideString = markStringLiteralSpans(text);

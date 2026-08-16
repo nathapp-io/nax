@@ -59,8 +59,15 @@ export function detectTool(command: string, commandName: string): string {
   if (c.includes("golangci-lint")) return "golangci-lint";
   if (c.includes("ruff")) return "ruff";
   if (c.includes("mypy")) return "mypy";
-  if (/\bcargo\b/.test(c)) return "cargo";
-  if (/\bgo\b/.test(c)) return "go";
+  // BUG-4 fix: anchor `go`/`cargo` to a known subcommand. The previous
+  // `\bgo\b` / `\bcargo\b` regexes matched at the `-`/`:` word boundaries
+  // in script names (`bun run go-lint`, `npm run lint:go`), labelling
+  // unrelated script output as `tool: "go"` / `tool: "cargo"`. A real
+  // `go`/`cargo` invocation is always followed by a subcommand verb, so
+  // requiring one disambiguates (see
+  // docs/20260816-review-since-0.80.0-canary.3.md, BUG-4).
+  if (/\bcargo\s+(build|test|check|run|clippy|fmt|install|bench)\b/.test(c)) return "cargo";
+  if (/\bgo\s+(build|test|run|vet|mod|generate|fmt)\b/.test(c)) return "go";
   // Unknown (e.g. `bun run lint`) — generic command-name label, never a false tool.
   return commandName;
 }

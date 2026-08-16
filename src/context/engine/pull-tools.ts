@@ -305,11 +305,16 @@ export class PullToolBudget {
 export { scratchFilePath };
 export type { ScratchEntry };
 
-// Re-export each handler family so the existing `import { handleQueryXxx } from
-// "./pull-tools"` paths continue to work. The implementations live in
-// `./handlers/<family>.ts` to keep this module under the 600-line file-size hard
-// limit; the pull-tools callers don't need to know about the split.
+// STYLE-6 fix: do NOT re-export handler implementations from this module.
+// pull-tools.ts defines descriptors and shared infrastructure; the handlers
+// live in ./handlers/<family>.ts. Re-exporting `handleQueryScratch` here
+// creates a circular module reference (`pull-tools.ts` →
+// `handlers/query-scratch.ts` → `pull-tools.ts` for `_pullToolsDeps`),
+// which was previously benign only because every reference is inside a
+// function body and never at module top level. Importing the handlers
+// directly from `./handlers/query-scratch` is one-line per consumer and
+// removes the latent TDZ risk. Callers previously using the re-export
+// (`./pull-tools`) now import from `./handlers/query-scratch`.
 export { handleQueryNeighbor } from "./handlers/query-neighbor";
 export { handleQueryFeatureContext } from "./handlers/query-feature-context";
-export { handleQueryScratch } from "./handlers/query-scratch";
 export type { QueryScratchOptions } from "./handlers/query-scratch";
