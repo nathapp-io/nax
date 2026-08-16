@@ -223,6 +223,11 @@ export async function reclaimStaleBakeoffBranches(projectRoot: string): Promise<
     if (branches.length === 0) return;
 
     const worktreeListResult = await gitWithTimeout(["worktree", "list", "--porcelain"], projectRoot);
+    // A failed/timed-out `worktree list` must not be read as "no branches
+    // have worktree records" — that would force-delete live branches. Bail
+    // out and leave every bakeoff- branch alone until the next preflight run.
+    if (worktreeListResult.exitCode !== 0) return;
+
     const recordedBranches = new Set(
       worktreeListResult.stdout
         .split("\n")
