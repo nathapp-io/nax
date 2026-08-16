@@ -14,6 +14,7 @@ import { wireReporters } from "../pipeline/subscribers/reporters";
 import type { PipelineContext } from "../pipeline/types";
 import { countStories, isComplete, isStalled, loadPRD, markStoryFailed, markStoryPassed, savePRD } from "../prd";
 import type { PRD } from "../prd/types";
+import { cancellableDelay } from "../utils/bun-deps";
 import { buildNaxIgnoreIndex } from "../utils/path-filters";
 import { precomputeBatchPlan } from "./batching";
 import { maybeSendCostWarning } from "./cost-warning";
@@ -551,7 +552,7 @@ export async function executeUnified(
             pipelineEventBus.emit({ type: "run:paused", reason: "All remaining stories blocked", cost: totalCost });
             return buildResult("stalled");
           }
-          if (ctx.config.execution.iterationDelayMs > 0) await Bun.sleep(ctx.config.execution.iterationDelayMs);
+          await cancellableDelay(ctx.config.execution.iterationDelayMs, ctx.runtime.signal);
           continue;
         }
         // batch.length === 0: fall through to sequential single-story path
@@ -644,7 +645,7 @@ export async function executeUnified(
         pipelineEventBus.emit({ type: "run:paused", reason: "All remaining stories blocked", cost: totalCost });
         return buildResult("stalled");
       }
-      if (ctx.config.execution.iterationDelayMs > 0) await Bun.sleep(ctx.config.execution.iterationDelayMs);
+      await cancellableDelay(ctx.config.execution.iterationDelayMs, ctx.runtime.signal);
     }
 
     // Post-run pipeline (acceptance tests) — only when acceptance is configured
