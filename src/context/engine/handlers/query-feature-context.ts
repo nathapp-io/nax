@@ -46,6 +46,10 @@ function filterByKeyword(content: string, keyword: string): string {
  * @param repoRoot         - Working directory for feature-context resolution
  * @param budget           - Budget tracker for this session
  * @param maxTokensPerCall - Per-call token ceiling (chars = tokens × 4)
+ * @param featureId        - Feature under assembly, from the ContextBundle.
+ *                           Required for dependency-fragment reads: the
+ *                           provider early-returns without it, so omitting it
+ *                           silently limits this tool to context.md entries.
  */
 export async function handleQueryFeatureContext(
   input: { filter?: string },
@@ -54,6 +58,7 @@ export async function handleQueryFeatureContext(
   repoRoot: string,
   budget: PullToolBudget,
   maxTokensPerCall: number = DEFAULT_MAX_TOKENS_PER_CALL,
+  featureId?: string,
 ): Promise<string> {
   budget.consume();
 
@@ -65,6 +70,7 @@ export async function handleQueryFeatureContext(
     stage: "pull-tool",
     role: "reviewer",
     budgetTokens: maxTokensPerCall,
+    ...(featureId !== undefined && { featureId }),
   };
   const result = await provider.fetch(request);
 

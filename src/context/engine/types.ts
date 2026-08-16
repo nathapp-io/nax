@@ -161,6 +161,18 @@ export interface ContextBundle {
    * rebuildForAgent(). Used by renderForAgent() to pick the correct framing.
    */
   agentId?: string;
+  /**
+   * Feature the bundle was assembled for. Carried so the pull-tool runtime can
+   * rebuild an equivalent ContextRequest: `query_feature_context` constructs
+   * its own request, and without a featureId the fragment read path early-
+   * returns, leaving the pull tool blind to dependency fragments the push path
+   * delivers. The bundle is already threaded to the runtime, so riding along
+   * here avoids plumbing a new argument through build-hop-callback.
+   *
+   * Preserved across rebuild() — dropping it there would silently disable
+   * fragments for every post-swap hop.
+   */
+  featureId?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
