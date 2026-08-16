@@ -159,6 +159,37 @@ describe("pipeline (US-003 AC7: results length)", () => {
   });
 });
 
+describe("pipeline (US-003 AC7: per-story status from run metrics)", () => {
+  it("labels each story from its own success flag, not the overall result.success", async () => {
+    const ctx = baseContext();
+    // Partial-progress run: 2 of 5 stories passed before the run stopped,
+    // so the overall result is unsuccessful even though those 2 stories did pass.
+    stubRun({ success: false, storiesCompleted: 2 });
+    stubLoadRunMetrics([
+      makeRunMetrics({
+        stories: [
+          makeStoryMetric({ storyId: "s1", success: true }),
+          makeStoryMetric({ storyId: "s2", success: true }),
+        ],
+      }),
+    ]);
+
+    const result = await pipeline(ctx);
+
+    expect(result.results).toEqual([{ status: "passed" }, { status: "passed" }]);
+  });
+
+  it("falls back to the uniform result.success label when run metrics carry no stories", async () => {
+    const ctx = baseContext();
+    stubRun({ success: false, storiesCompleted: 2 });
+    stubLoadRunMetrics([]);
+
+    const result = await pipeline(ctx);
+
+    expect(result.results).toEqual([{ status: "failed" }, { status: "failed" }]);
+  });
+});
+
 describe("pipeline (US-003 AC8: loadRunMetrics invocation)", () => {
   it("AC8: invokes loadRunMetrics with the context outputDir", async () => {
     const ctx = baseContext();

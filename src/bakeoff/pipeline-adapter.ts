@@ -27,7 +27,13 @@ export const _pipelineAdapterDeps = {
   loadRunMetrics,
 };
 
-function toResults(result: RunResult): ContestantStoryResult[] {
+function toResults(runs: RunMetrics[], result: RunResult): ContestantStoryResult[] {
+  const latest = runs.at(-1);
+  if (latest && latest.stories.length > 0) {
+    return latest.stories.map((story) => ({
+      status: story.success ? "passed" : "failed",
+    }));
+  }
   const status: ContestantStoryResult["status"] = result.success ? "passed" : "failed";
   return Array.from({ length: result.storiesCompleted }, () => ({ status }));
 }
@@ -70,7 +76,7 @@ export async function pipeline(ctx: ContestantRunContext): Promise<ContestantPip
   const runs = await _pipelineAdapterDeps.loadRunMetrics(ctx.outputDir);
 
   return {
-    results: toResults(result),
+    results: toResults(runs, result),
     metrics: toMetrics(runs, result),
   };
 }
