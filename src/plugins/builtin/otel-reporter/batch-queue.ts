@@ -36,6 +36,12 @@ export function createBatchQueue<T>(opts: BatchQueueOptions<T>): BatchQueue<T> {
   let overflowing = false;
   let tornDown = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // OTLP-1: doFlush() is deliberately fire-and-forget for the periodic timer
+  // and the maxBatchSize auto-flush (a hung send must never block those), but
+  // flushNow()/teardown() need to know when the network call actually
+  // settles — track every detached send so they can wait on it, bounded by
+  // send()'s own retry/timeout budget.
+  const inFlightSends = new Set<Promise<void>>();
 
   const armTimer = (): void => {
     // forbidden-patterns.md: setInterval is banned; setTimeout is permitted here
@@ -57,15 +63,15 @@ export function createBatchQueue<T>(opts: BatchQueueOptions<T>): BatchQueue<T> {
     }
   };
 
-  // Dispatch is fire-and-forget: flushNow() resolves once the current batch has
-  // been dequeued and handed to `send`, not once the network call (plus its
-  // retry) settles. This lets an in-flight send that never resolves (e.g. a
-  // hung connection) never block a caller awaiting flushNow().
+  // Dequeue is synchronous/immediate; the network send is dispatched
+  // detached (tracked in inFlightSends) so periodic/auto-flush callers never
+  // block on it. flushNow() awaits the tracked set explicitly instead.
   const doFlush = (): Promise<void> => {
     if (tornDown || queue.length === 0) return Promise.resolve();
     const batch = queue;
     queue = [];
-    void sendWithRetry(batch);
+    const sendPromise = sendWithRetry(batch).finally(() => inFlightSends.delete(sendPromise));
+    inFlightSends.add(sendPromise);
     return Promise.resolve();
   };
 
@@ -90,7 +96,12 @@ export function createBatchQueue<T>(opts: BatchQueueOptions<T>): BatchQueue<T> {
 
   return {
     enqueue,
-    flushNow: () => doFlush(),
+    flushNow: async () => {
+      await doFlush();
+      // OTLP-1: wait for every in-flight send (this one plus any still
+      // settling from an earlier auto-flush), not just the dequeue.
+      await Promise.all(inFlightSends);
+    },
     teardown: () => {
       tornDown = true;
       if (timer !== undefined) clearTimeout(timer);

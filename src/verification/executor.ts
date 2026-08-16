@@ -208,11 +208,42 @@ export function appendForceExitFlag(command: string): string {
 
 /**
  * Append a flag to a command, inserting before any pipe/redirect.
+ *
+ * Quote-aware: a `|`/`>` inside a single- or double-quoted argument is not a
+ * split point. A `>` immediately preceded by a fd number (e.g. `2>&1`) is
+ * treated as part of the redirect token, so the flag is inserted before the
+ * whole `N>` sequence rather than in the middle of it.
  */
 function appendFlag(command: string, flag: string): string {
-  const pipeIndex = command.search(/[|>]/);
-  if (pipeIndex > 0) {
-    return `${command.slice(0, pipeIndex).trimEnd()} ${flag} ${command.slice(pipeIndex)}`;
+  let quote: string | null = null;
+  for (let i = 0; i < command.length; i++) {
+    const char = command[i];
+    if (quote) {
+      if (char === quote) quote = null;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === "|" || char === ">") {
+      let splitIndex = i;
+      if (char === ">") {
+        // A digit run before `>` is only an fd number (e.g. `2>&1`) when it is
+        // a standalone token — preceded by whitespace, start-of-string, or a
+        // shell operator. Digits glued onto a longer word (e.g. `file123>out`)
+        // are part of that word, not an fd: real shells treat `file123>out`
+        // as the single argument "file123" followed by a plain redirect, not
+        // as fd 123.
+        let digitStart = splitIndex;
+        while (digitStart > 0 && /[0-9]/.test(command[digitStart - 1] ?? "")) digitStart--;
+        const charBeforeDigits = command[digitStart - 1];
+        const isStandaloneFdToken =
+          digitStart < splitIndex && (digitStart === 0 || /[\s|;&]/.test(charBeforeDigits ?? ""));
+        if (isStandaloneFdToken) splitIndex = digitStart;
+      }
+      return `${command.slice(0, splitIndex).trimEnd()} ${flag} ${command.slice(splitIndex)}`;
+    }
   }
   return `${command} ${flag}`;
 }

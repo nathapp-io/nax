@@ -232,8 +232,9 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   }
 
   async cancel(requestId: string): Promise<void> {
-    await this.sendTimeoutMessage(requestId);
+    const pending = this.pendingMessages.get(requestId);
     this.resolveReceiver(requestId, "skip", "timeout");
+    void this.sendTimeoutMessage(requestId, pending);
   }
 
   private ensurePoller(): void {
@@ -290,8 +291,13 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   }
 
   private async expireReceiver(requestId: string): Promise<void> {
-    await this.sendTimeoutMessage(requestId);
+    // Snapshot the pending message before resolving clears it out of
+    // pendingMessages, then resolve immediately — a hung network must not
+    // delay the interaction result past the configured deadline. The edit
+    // below is fire-and-forget best-effort cleanup.
+    const pending = this.pendingMessages.get(requestId);
     this.resolveReceiver(requestId, "skip", "timeout");
+    void this.sendTimeoutMessage(requestId, pending);
   }
 
   private resolveReceiver(requestId: string, action: InteractionResponse["action"], respondedBy: string): void {
@@ -526,10 +532,18 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   }
 
   /**
-   * Edit message to show timeout/expired
+   * Edit message to show timeout/expired.
+   *
+   * Callers on the timeout/cancel path snapshot `pending` before resolving
+   * the receiver (which clears pendingMessages) and pass it in here, since
+   * this call is fire-and-forget and must not block resolution on a
+   * potentially-hung network (TEL-1).
    */
-  private async sendTimeoutMessage(requestId: string): Promise<void> {
-    const pending = this.pendingMessages.get(requestId);
+  private async sendTimeoutMessage(
+    requestId: string,
+    pendingArg?: { type: InteractionRequest["type"]; ids: number[] },
+  ): Promise<void> {
+    const pending = pendingArg ?? this.pendingMessages.get(requestId);
     if (!pending || !this.botToken || !this.chatId) {
       this.pendingMessages.delete(requestId);
       return;
@@ -538,16 +552,23 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     // Edit only the last message to avoid redundant notifications
     const lastId = pending.ids[pending.ids.length - 1];
     try {
-      await _telegramPluginDeps.fetch(`https://api.telegram.org/bot${this.botToken}/editMessageText`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: this.chatId,
-          message_id: lastId,
-          text: "⏱ EXPIRED — Interaction timed out",
-          reply_markup: { inline_keyboard: [] }, // Remove buttons so expired interactions can't be re-tapped
-        }),
-      });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), CALLBACK_API_TIMEOUT_MS);
+      try {
+        await _telegramPluginDeps.fetch(`https://api.telegram.org/bot${this.botToken}/editMessageText`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: this.chatId,
+            message_id: lastId,
+            text: "⏱ EXPIRED — Interaction timed out",
+            reply_markup: { inline_keyboard: [] }, // Remove buttons so expired interactions can't be re-tapped
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
     } catch {
       // Non-critical - fire-and-forget, no logging needed
     } finally {

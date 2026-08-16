@@ -20,6 +20,7 @@
 import { createHash } from "node:crypto";
 import { scratchFilePath } from "@/session";
 import type { ToolDiagnosticsScratchEntry } from "@/session";
+import { readJsonlTail } from "@/utils/jsonl-tail";
 import { formatDiagnostic } from "../diagnostic-formatter";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
@@ -29,7 +30,9 @@ import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk 
 
 export const _toolDiagnosticsDeps = {
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
-  readFile: (path: string): Promise<string> => Bun.file(path).text(),
+  // CTX-3: tail-read — only the most recent MAX_ENTRIES_PER_DIR entries are
+  // ever rendered (see below).
+  readFile: (path: string): Promise<string> => readJsonlTail(path),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,6 +42,13 @@ export const _toolDiagnosticsDeps = {
 function contentHash8(content: string): string {
   return createHash("sha256").update(content).digest("hex").slice(0, 8);
 }
+
+// CTX-4: mirrors SessionScratchProvider's caps — without them a story that
+// fails lint/typecheck repeatedly accumulates dozens of full diagnostic
+// blocks into one chunk, crowding out the rest of the token budget.
+const MAX_ENTRIES_PER_DIR = 20;
+const MAX_CHUNK_TOKENS = 500;
+const MAX_CHUNK_CHARS = MAX_CHUNK_TOKENS * 4;
 
 /** Parse JSONL text into an array of tool-diagnostics entries, skipping malformed lines. */
 function parseToolDiagnosticsJsonl(raw: string): ToolDiagnosticsScratchEntry[] {
@@ -92,11 +102,15 @@ async function readDiagnosticsDir(scratchDir: string): Promise<RawChunk | null> 
     // be readable. Mirrors the "never throws" contract for malformed JSONL.
     return null;
   }
-  const entries = parseToolDiagnosticsJsonl(raw);
-  if (entries.length === 0) return null;
+  const parsedEntries = parseToolDiagnosticsJsonl(raw);
+  if (parsedEntries.length === 0) return null;
 
-  const content = renderEntries(entries);
+  // Most-recent-N entries, matching SessionScratchProvider (CTX-4).
+  const entries = parsedEntries.slice(-MAX_ENTRIES_PER_DIR);
+
+  let content = renderEntries(entries);
   if (!content) return null;
+  if (content.length > MAX_CHUNK_CHARS) content = content.slice(0, MAX_CHUNK_CHARS);
 
   const hash = contentHash8(content);
   const tokens = Math.ceil(content.length / 4);

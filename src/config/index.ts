@@ -90,6 +90,7 @@ export {
   loadProfile,
   loadProfileEnv,
   listProfiles,
+  sensitiveFilteredProcessEnv,
 } from "./profile";
 export { pickSelector, reshapeSelector } from "./selector";
 export { getProjectKey } from "./project-key";

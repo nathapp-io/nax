@@ -5,8 +5,58 @@
  */
 
 /**
+ * Parses a dotenv value that starts with a quote character. Returns the
+ * unescaped value (double-quoted values support `\"`, `\\`, `\n` escapes;
+ * single-quoted values are literal, per standard dotenv semantics). Anything
+ * after the closing quote (e.g. a trailing `# comment`) is discarded.
+ */
+function parseQuotedValue(raw: string, quote: '"' | "'"): string {
+  let value = "";
+  for (let i = 1; i < raw.length; i++) {
+    const c = raw[i];
+    if (quote === '"' && c === "\\" && i + 1 < raw.length) {
+      const next = raw[i + 1];
+      if (next === "n") {
+        value += "\n";
+        i++;
+        continue;
+      }
+      if (next === '"' || next === "\\") {
+        value += next;
+        i++;
+        continue;
+      }
+      value += c;
+      continue;
+    }
+    if (c === quote) {
+      return value;
+    }
+    value += c;
+  }
+  // Unterminated quote — treat the rest of the line as the (unescaped) value.
+  return value;
+}
+
+/**
+ * Strips an inline `# comment` from an unquoted value — a `#` counts as a
+ * comment marker only when it starts the value or is preceded by whitespace,
+ * matching standard dotenv/shell behaviour (`FOO=bar#baz` keeps the `#`).
+ */
+function stripInlineComment(raw: string): string {
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] === "#" && (i === 0 || /\s/.test(raw[i - 1] ?? ""))) {
+      return raw.slice(0, i);
+    }
+  }
+  return raw;
+}
+
+/**
  * Parses dotenv file contents into a string record.
- * Strips comments, blank lines, export prefixes, and quotes.
+ * Strips comments (outside quotes), blank lines, export prefixes (including
+ * the whole-assignment-quoted `export "KEY=value"` form), and quotes —
+ * unescaping `\"`/`\\`/`\n` in double-quoted values.
  */
 export function parseDotenv(content: string): Record<string, string> {
   if (!content) return {};
@@ -14,20 +64,29 @@ export function parseDotenv(content: string): Record<string, string> {
   const result: Record<string, string> = {};
 
   for (const rawLine of content.split("\n")) {
-    const line = rawLine.trim();
+    let line = rawLine.trim();
 
     if (!line || line.startsWith("#")) continue;
 
-    const stripped = line.startsWith("export ") ? line.slice(7).trim() : line;
+    if (line.startsWith("export ")) {
+      line = line.slice(7).trim();
+      // `export "KEY=value"` — the whole assignment is quoted, not just the value.
+      if (line.length >= 2 && (line[0] === '"' || line[0] === "'") && line.endsWith(line[0])) {
+        line = line.slice(1, -1);
+      }
+    }
 
-    const eqIndex = stripped.indexOf("=");
+    const eqIndex = line.indexOf("=");
     if (eqIndex === -1) continue;
 
-    const key = stripped.slice(0, eqIndex).trim();
-    let value = stripped.slice(eqIndex + 1).trim();
+    const key = line.slice(0, eqIndex).trim();
+    const rawValue = line.slice(eqIndex + 1).trim();
 
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
+    let value: string;
+    if (rawValue.startsWith('"') || rawValue.startsWith("'")) {
+      value = parseQuotedValue(rawValue, rawValue[0] as '"' | "'");
+    } else {
+      value = stripInlineComment(rawValue).trim();
     }
 
     result[key] = value;
@@ -84,14 +143,21 @@ export class UnresolvedEnvVarError extends Error {
 const DOUBLE_DOLLAR_PLACEHOLDER = "__DOLLAR_ESCAPE__";
 
 function resolveString(str: string, env: Record<string, string>, path: string[]): string {
-  // First protect $$VAR escapes, then resolve $VAR references, then restore
+  const resolveOne = (varName: string): string => {
+    if (!(varName in env)) {
+      throw new UnresolvedEnvVarError(varName, path);
+    }
+    return env[varName];
+  };
+  // First protect $$VAR/$${VAR} escapes, then resolve $VAR and ${VAR}
+  // references (CFG-5 — the brace form previously passed through literally),
+  // then restore the escaped form.
   return str
-    .replace(/\$\$([A-Za-z_][A-Za-z0-9_]*)/g, `${DOUBLE_DOLLAR_PLACEHOLDER}$1`)
-    .replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_match, varName: string) => {
-      if (!(varName in env)) {
-        throw new UnresolvedEnvVarError(varName, path);
-      }
-      return env[varName];
-    })
-    .replace(new RegExp(`${DOUBLE_DOLLAR_PLACEHOLDER}([A-Za-z_][A-Za-z0-9_]*)`, "g"), "$$$1");
+    .replace(/\$\$(\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)/g, `${DOUBLE_DOLLAR_PLACEHOLDER}$1`)
+    .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, varName: string) => resolveOne(varName))
+    .replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_match, varName: string) => resolveOne(varName))
+    .replace(
+      new RegExp(`${DOUBLE_DOLLAR_PLACEHOLDER}(\\{[A-Za-z_][A-Za-z0-9_]*\\}|[A-Za-z_][A-Za-z0-9_]*)`, "g"),
+      "$$$1",
+    );
 }

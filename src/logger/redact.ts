@@ -22,9 +22,14 @@ const SECRET_VALUE_PATTERNS: RegExp[] = [
   /sk-[A-Za-z0-9_-]{16,}/g,
   /ghp_[A-Za-z0-9]{16,}/g,
   /gh[opsu]_[A-Za-z0-9]{16,}/g,
+  // LOG-1: GitHub fine-grained PATs — gh[opsu]_ above never matches "github_pat_"
+  // ("gh" + "i" is not one of [opsu]).
+  /github_pat_[A-Za-z0-9_]{20,}/g,
   /npm_[A-Za-z0-9]{8,}/g,
   /AKIA[0-9A-Z]{16}/g,
   /xox[baprs]-[A-Za-z0-9-]{10,}/g,
+  // LOG-1: Telegram bot tokens ("<bot-id>:<35-char secret>").
+  /\b\d{6,}:[A-Za-z0-9_-]{30,}\b/g,
   // KEY=value assignments inside strings (e.g. "NPM_TOKEN=somevalue")
   /(?:SECRET|TOKEN|API_?KEY|PASSWORD|PRIVATE_?KEY|ACCESS_?KEY|WEBHOOK)=[^\s"',]+/gi,
   // MED-01: PEM-encoded key/cert blocks (private keys, certificates, incl.
@@ -45,7 +50,17 @@ const SECRET_VALUE_PATTERNS: RegExp[] = [
   // essentially never do. Length floor kept at 8 (not raised to 16) so
   // short-but-real base64 credentials (e.g. "user:pass" -> ~16 raw chars,
   // shorter inputs shorter still) aren't under-redacted.
-  /\b(?:Bearer|Basic)\s+(?=[A-Za-z0-9\-._~+/]*[0-9+/_-])[A-Za-z0-9\-._~+/]{8,}={0,2}/gi,
+  /\bBearer\s+(?=[A-Za-z0-9\-._~+/]*[0-9+/_-])[A-Za-z0-9\-._~+/]{8,}={0,2}/gi,
+  // LOG-1: Basic creds are base64(user:pass) and are frequently pure-alphabetic
+  // (no digit/symbol), which the digit-requiring lookahead above misses. Require
+  // mixed case instead — real base64 output almost always mixes upper/lower,
+  // while English prose like "Basic authentication" does not. No `i` flag here
+  // (unlike Bearer): case-insensitivity would make [A-Z]/[a-z] equivalent,
+  // defeating the mixed-case check — so the "basic" keyword is spelled out
+  // char-by-char to stay case-insensitive for the scheme name only (the
+  // scheme is case-insensitive per RFC 7617; "basic"/"BASIC" are as valid as
+  // "Basic") while the payload lookaheads remain case-sensitive.
+  /\b[Bb][Aa][Ss][Ii][Cc]\s+(?=[A-Za-z0-9+/]*[A-Z])(?=[A-Za-z0-9+/]*[a-z])[A-Za-z0-9+/]{8,}={0,2}/g,
   // MED-01: header-style key:value / key=value pairs for api-key headers
   // that SECRET_KEY_PATTERN's object-key check can't reach because the
   // key/value are both embedded in one free-text string (e.g. raw HTTP logs).

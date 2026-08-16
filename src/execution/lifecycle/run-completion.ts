@@ -8,7 +8,7 @@
  * - Update final status
  */
 
-import { purgeStaleManifests } from "@/context/engine";
+import { _resetCanonicalRulesCache, purgeStaleManifests } from "@/context/engine";
 import { pipelineEventBus } from "@/pipeline";
 import { resolveDefaultAgent } from "../../agents";
 import type { IAgentManager } from "../../agents";
@@ -418,6 +418,11 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   clearLanguageCache();
   clearWorkspaceCache();
   clearGitRootCache();
+  // CTX-2: canonical-rules memoization joins the same per-run-cache-clear
+  // convention as the caches above — without this, a long-lived in-process
+  // consumer (embedded TUI, watch mode) would keep serving the first run's
+  // .nax/rules/ content to every subsequent run in the same process.
+  _resetCanonicalRulesCache();
 
   // Compute final story counts before emitting completion event (RL-002)
   const finalCounts = countStories(prd);
@@ -550,7 +555,11 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
           ? "completed"
           : isStalled(prd, config.execution.rectification?.maxAttemptsTotal)
             ? "stalled"
-            : "running",
+            : // The run has stopped (this is the completion phase) with stories
+              // still pending but not stalled — e.g. exitReason "pre-merge-aborted",
+              // "max-iterations", "no-stories". "running" would leave status.json
+              // claiming the (now-dead) PID is still live (EXEC-1).
+              "aborted",
   );
   await statusWriter.update(reportedTotal, iterations);
 

@@ -10,7 +10,35 @@
 
 import { describe, expect, test } from "bun:test";
 import { withTimerSpy } from "@test/helpers";
-import { executeWithTimeout, normalizeEnvironment } from "@/verification";
+import { appendForceExitFlag, executeWithTimeout, normalizeEnvironment } from "@/verification";
+
+describe("appendForceExitFlag (VER-1)", () => {
+  test("inserts before a pipe, not inside the redirect tail", () => {
+    expect(appendForceExitFlag("bun test 2>&1 | tee out")).toBe("bun test --forceExit 2>&1 | tee out");
+  });
+
+  test("inserts before a fd-redirect chain (> log 2>&1)", () => {
+    expect(appendForceExitFlag("bun test > log 2>&1")).toBe("bun test --forceExit > log 2>&1");
+  });
+
+  test("does not split on a pipe inside a quoted argument", () => {
+    expect(appendForceExitFlag("bun test -t 'a|b'")).toBe("bun test -t 'a|b' --forceExit");
+  });
+
+  test("does not split a filename that happens to end in digits before a redirect", () => {
+    // Regression: a naive "back up over any preceding digits" rule treats the
+    // "123" in "file123" as if it were a standalone fd number (like the "2" in
+    // "2>&1"), splitting the argument into "file" and "123". Real shells only
+    // treat a digit run as an fd number when it is its own token (preceded by
+    // whitespace/start-of-string/an operator) — verified against bash directly:
+    // `echo file123>out.txt` writes "file123" to out.txt, not to fd 123.
+    expect(appendForceExitFlag("bun test file123>out.txt")).toBe("bun test file123 --forceExit >out.txt");
+  });
+
+  test("appends at the end when there is no pipe or redirect", () => {
+    expect(appendForceExitFlag("bun test")).toBe("bun test --forceExit");
+  });
+});
 
 describe("normalizeEnvironment", () => {
   test("strips AI-optimized env vars by default", () => {

@@ -14,6 +14,17 @@ type ServeCompatReturn = ReturnType<typeof Bun.serve>;
 const PORT_ZERO_COMPAT_BASE = 40_000;
 const PORT_ZERO_COMPAT_SPAN = 20_000;
 
+/**
+ * WEB-1: the only requests this shim needs to intercept are nax's own
+ * webhook-interaction callbacks. Matching on port alone routes EVERY
+ * in-process fetch() through the interceptor — plugins, libraries, the OTLP
+ * exporter pointed at localhost:4318 — and the compat port span
+ * (40_000-59_999) overlaps exactly where users run dev servers, so a real
+ * service on a registered port would be silently shadowed. Path-prefix
+ * matching narrows the intercept to nax's own callback route.
+ */
+const CALLBACK_PATH_PREFIX = "/nax/interact/";
+
 let servePortZeroCompatInstalled = false;
 let servePortZeroCounter = 0;
 const inMemoryServers = new Map<number, { fetch: (request: Request) => Response | Promise<Response> }>();
@@ -91,7 +102,11 @@ export function installServePortZeroCompat(): void {
       input instanceof Request ? input : new Request(input instanceof URL ? input.toString() : input, init);
     const url = new URL(request.url);
     const port = Number.parseInt(url.port, 10);
-    if ((url.hostname === "localhost" || url.hostname === "127.0.0.1") && inMemoryServers.has(port)) {
+    if (
+      (url.hostname === "localhost" || url.hostname === "127.0.0.1") &&
+      url.pathname.startsWith(CALLBACK_PATH_PREFIX) &&
+      inMemoryServers.has(port)
+    ) {
       const server = inMemoryServers.get(port);
       if (!server) {
         return new Response("Not Found", { status: 404 });

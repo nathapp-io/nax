@@ -1,3 +1,4 @@
+import { NaxError } from "@/errors";
 import type { Finding } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
@@ -164,7 +165,28 @@ export class ExecutionPlan {
         });
       } else {
         const currentTree = await _storyOrchestratorDeps.captureTreeState(this.ctx.packageDir);
-        await _storyOrchestratorDeps.recordGreen(this.ctx.storyId, name, currentTree);
+        try {
+          await _storyOrchestratorDeps.recordGreen(this.ctx.storyId, name, currentTree);
+        } catch (error) {
+          // EXEC-9: recordGreen's CHECKPOINT_WRITE_FAILED (disk full, permission)
+          // is an infra failure, not a verdict on the phase that just genuinely
+          // passed. The story verdict (phasePassed above) is the SSOT — losing a
+          // resume checkpoint costs a full rerun on resume, which is recoverable;
+          // escalating the story through paid tiers for an infra error is not.
+          if (error instanceof NaxError && error.code === "CHECKPOINT_WRITE_FAILED") {
+            logger?.warn(
+              "story-orchestrator",
+              "recordGreen failed — resume checkpoint lost, story verdict unaffected",
+              {
+                storyId: this.ctx.storyId,
+                phase: name,
+                error: errorMessage(error),
+              },
+            );
+          } else {
+            throw error;
+          }
+        }
       }
     }
 

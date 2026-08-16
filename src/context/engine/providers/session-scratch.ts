@@ -16,9 +16,10 @@
  */
 
 import { createHash } from "node:crypto";
-import type { ScratchEntry } from "../../../session/scratch-writer";
-import { scratchFilePath } from "../../../session/scratch-writer";
-import { type NaxIgnoreMatcher, filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../../../utils/path-filters";
+import { scratchFilePath } from "@/session";
+import type { ScratchEntry } from "@/session";
+import { readJsonlTail } from "@/utils/jsonl-tail";
+import { type NaxIgnoreMatcher, filterNaxInternalPaths, resolveNaxIgnorePatterns } from "@/utils/path-filters";
 import { neutralizeForAgent } from "../scratch-neutralizer";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
@@ -38,7 +39,9 @@ const MAX_CHUNK_TOKENS = 500;
 
 export const _sessionScratchDeps = {
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
-  readFile: (path: string): Promise<string> => Bun.file(path).text(),
+  // CTX-3: tail-read, not a full read — only the most recent
+  // MAX_ENTRIES_PER_DIR entries are ever rendered.
+  readFile: (path: string): Promise<string> => readJsonlTail(path),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

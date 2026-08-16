@@ -92,6 +92,36 @@ describe("redactSecrets", () => {
       expect(out.output).toContain("[REDACTED]");
     });
 
+    // LOG-1 regression: splitting the combined Bearer|Basic pattern into two
+    // (to keep the mixed-case payload heuristic case-sensitive) must not
+    // lose case-insensitivity on the "Basic" scheme keyword itself — the
+    // scheme name is case-insensitive per RFC 7617.
+    test("redacts a Basic authorization header regardless of scheme-name casing", () => {
+      const lower = redactSecrets({ output: "Authorization: basic dXNlcjpwYXNzd29yZA==" }) as any;
+      expect(lower.output).not.toContain("dXNlcjpwYXNzd29yZA==");
+      expect(lower.output).toContain("[REDACTED]");
+
+      const upper = redactSecrets({ output: "Authorization: BASIC dXNlcjpwYXNzd29yZA==" }) as any;
+      expect(upper.output).not.toContain("dXNlcjpwYXNzd29yZA==");
+      expect(upper.output).toContain("[REDACTED]");
+    });
+
+    // LOG-1: gh[opsu]_ never matches "github_pat_" ("gh" + "i" is not one of [opsu]).
+    test("redacts a GitHub fine-grained PAT (github_pat_...)", () => {
+      const token = `github_pat_${"A".repeat(22)}_${"B".repeat(59)}`;
+      const out = redactSecrets({ output: `token: ${token}` }) as any;
+      expect(out.output).not.toContain(token);
+      expect(out.output).toContain("[REDACTED]");
+    });
+
+    // LOG-1: Telegram bot tokens ("<bot-id>:<secret>") had no dedicated pattern.
+    test("redacts a Telegram bot token", () => {
+      const token = "123456789:AAHfj93kdLp2mZ8xQvN4rT6yU1wX0sB7cD-EfG";
+      const out = redactSecrets({ output: `bot token: ${token}` }) as any;
+      expect(out.output).not.toContain(token);
+      expect(out.output).toContain("[REDACTED]");
+    });
+
     test("redacts an x-api-key header captured in free text", () => {
       const out = redactSecrets({ output: "x-api-key: abcd1234efgh5678" }) as any;
       expect(out.output).not.toContain("abcd1234efgh5678");

@@ -130,7 +130,12 @@ export async function autoDetectContextFiles(options: AutoDetectOptions): Promis
 
   // Build git grep command
   // Use -i for case-insensitive, -l for filename-only, -I to skip binary files
-  // Search in src/ directories only (exclude test, node_modules, etc.)
+  //
+  // CTX-7: no pathspec — a hardcoded "src/" pathspec only matches the
+  // TOP-LEVEL src/ directory (git pathspec semantics, not a glob), so
+  // monorepos (packages/*/src/) and lib/app layouts got zero matches and
+  // silently returned []. Repo-wide search + post-filtering below excludes
+  // node_modules/.git/.nax instead.
   const grepPattern = keywords.join("|"); // OR pattern
   const grepCommand = [
     "git",
@@ -141,8 +146,6 @@ export async function autoDetectContextFiles(options: AutoDetectOptions): Promis
     "-E", // extended regex
     "-e",
     grepPattern,
-    "--", // separator
-    "src/", // limit to src directory
   ];
 
   try {
@@ -177,6 +180,17 @@ export async function autoDetectContextFiles(options: AutoDetectOptions): Promis
     // Filter out test files, index files, generated files
     const filtered = allFiles.filter((filePath) => {
       const lower = filePath.toLowerCase();
+      // CTX-7: node_modules/.git/.nax exclusion, now that grep is repo-wide
+      // rather than scoped to a (monorepo-breaking) "src/" pathspec.
+      if (
+        lower.includes("node_modules/") ||
+        lower.startsWith(".git/") ||
+        lower.includes("/.git/") ||
+        lower.startsWith(".nax/") ||
+        lower.includes("/.nax/")
+      ) {
+        return false;
+      }
       // Exclude test files (ADR-009: use config-aware classification)
       if (isTestFileByPatterns(filePath, testFilePatterns)) {
         return false;

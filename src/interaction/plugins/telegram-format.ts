@@ -99,9 +99,9 @@ function buildCallbackData(id: string, suffix: string): string {
 export function buildHeader(request: InteractionRequest): string {
   const emoji = getStageEmoji(request.stage);
   let text = `${emoji} *${request.stage.toUpperCase()}*\n`;
-  text += `*Feature:* ${request.featureName}\n`;
+  text += `*Feature:* ${sanitizeMarkdown(request.featureName)}\n`;
   if (request.storyId) {
-    text += `*Story:* ${request.storyId}\n`;
+    text += `*Story:* ${sanitizeMarkdown(request.storyId)}\n`;
   }
   text += "\n";
   return text;

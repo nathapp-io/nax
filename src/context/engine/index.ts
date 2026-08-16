@@ -18,7 +18,13 @@ export { rebuild, type RebuildDeps } from "./rebuild";
 export { estimateAvailableBudgetTokens } from "./available-budget";
 export { getStageContextConfig, STAGE_CONTEXT_MAP, DEFAULT_STAGE_CONFIG } from "./stage-config";
 export type { StageContextConfig } from "./stage-config";
-export { StaticRulesProvider, _staticRulesDeps, globToRegex, normalizePath } from "./providers/static-rules";
+export {
+  StaticRulesProvider,
+  _staticRulesDeps,
+  globToRegex,
+  normalizePath,
+  _resetCanonicalRulesCache,
+} from "./providers/static-rules";
 export { FeatureContextProviderV2, _featureContextV2Deps } from "./providers/feature-context";
 export { SessionScratchProvider, _sessionScratchDeps } from "./providers/session-scratch";
 export { ToolDiagnosticsProvider, _toolDiagnosticsDeps } from "./providers/tool-diagnostics";
