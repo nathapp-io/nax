@@ -274,6 +274,7 @@ export interface CompleteOptions extends TrackedSpawnDeadlineOptions {
    * Defaults to "complete" when not provided.
    */
   pipelineStage?: import("../config/permissions").PipelineStage;
+  config?: import("../config/selectors").AgentManagerConfig;
   /**
    * @internal Set by `AgentManager.completeAs`; callers must not pass this — it will be overwritten.
    * PID registration callback attached by AgentManager when a PidRegistry is configured.
@@ -591,10 +592,6 @@ export interface AgentAdapter {
    */
   sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult>;
 
-  /**
-   * Close the physical session and its underlying transport client.
-   * Best-effort — errors are swallowed.
-   * Replaces the deprecated closeSession(sessionName, workdir).
-   */
+  /** Close the physical session and its underlying transport client. Best-effort — errors are swallowed. */
   closeSession(handle: SessionHandle): Promise<void>;
 }

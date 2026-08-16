@@ -192,3 +192,50 @@ describe("completeWithFallback retry success (AC6)", () => {
     expect(callCounts["codex"]).toBe(1);
   });
 });
+
+// BUG-4 (Round 2 review): when the registry returned `undefined` for the
+// requested agent (e.g. `agent.default: "foo"` where "foo" isn't registered),
+// completeWithFallback early-returned `{ output: "", tokenUsage: {0,0},
+// estimatedCostUsd: 0 }` with no `adapterFailure` and no fallback attempt —
+// silently producing empty success on every complete() path. The pre-fix
+// fail-stale synthesis at lines 514-519 only wrapped results from
+// `adapter.complete`, so a missing adapter skipped it entirely. `runAs`
+// correctly throws NaxError("AGENT_NOT_FOUND") at the same boundary.
+describe("completeWithFallback — BUG-4 missing adapter regression", () => {
+  test("throws NaxError('AGENT_NOT_FOUND') when registry has no entry for the requested agent", async () => {
+    const emptyRegistry = {
+      getAgent: (_name: string) => undefined,
+    } as unknown as AgentRegistry; // test-ratchet-allow: as-unknown-as
+
+    const m = new AgentManager(naxConfigWith(), emptyRegistry);
+
+    let caught: unknown;
+    try {
+      await m.completeWithFallback("prompt", baseOptions, "unregistered-agent");
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeDefined();
+    expect((caught as { code?: string }).code).toBe("AGENT_NOT_FOUND");
+    expect((caught as { message?: string }).message ?? "").toContain("unregistered-agent");
+  });
+
+  test("does NOT silently return empty success when the agent is missing (pre-fix regression)", async () => {
+    const emptyRegistry = {
+      getAgent: (_name: string) => undefined,
+    } as unknown as AgentRegistry; // test-ratchet-allow: as-unknown-as
+
+    const m = new AgentManager(naxConfigWith(), emptyRegistry);
+
+    // Pre-fix this resolved to `{ output: "", tokenUsage: {0,0}, ...}` with
+    // no adapterFailure — silently producing empty success on every
+    // complete() path. Post-fix it throws instead.
+    const callCompleteAs = () => m.completeAs("unregistered-agent", "prompt", {
+      ...baseOptions,
+      resolvedPermissions: baseOptions.resolvedPermissions,
+    });
+
+    await expect(callCompleteAs()).rejects.toMatchObject({ code: "AGENT_NOT_FOUND" });
+  });
+});

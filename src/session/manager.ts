@@ -441,7 +441,7 @@ export class SessionManager implements ISessionManager {
       );
     }
 
-    const resolvedPermissions = resolvePermissions(this._config, opts.pipelineStage);
+    const resolvedPermissions = resolvePermissions(opts.config ?? this._config, opts.pipelineStage);
     const existingDescriptor = this._findByName(name);
     const resume = existingDescriptor !== undefined;
 

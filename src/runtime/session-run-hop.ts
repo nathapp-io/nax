@@ -33,6 +33,8 @@ export function createSessionRunHop(
       role: options.sessionRole,
       workdir: options.workdir,
       pipelineStage: options.pipelineStage ?? "run",
+      // SEC-3: thread per-package config so monorepo permissionProfile is honored.
+      config: options.config,
       modelDef: options.modelDef,
       timeoutSeconds: options.timeoutSeconds,
       featureName: options.featureName,
@@ -60,6 +62,8 @@ export function createSessionRunHop(
             workdir: options.workdir,
             projectDir: options.projectDir,
             pipelineStage: options.pipelineStage ?? "run",
+            // SEC-3: thread per-package config so monorepo permissionProfile is honored.
+            config: options.config,
             sessionRole: options.sessionRole,
             signal: options.abortSignal,
             interactionHandler,
