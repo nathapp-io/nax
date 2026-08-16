@@ -3,7 +3,7 @@
   "feature": "bakeoff-compare-profiles",
   "branchName": "feat/bakeoff-compare-profiles",
   "createdAt": "2026-08-16T00:00:00.000Z",
-  "updatedAt": "2026-08-16T06:56:49.226Z",
+  "updatedAt": "2026-08-16T07:01:06.680Z",
   "userStories": [
     {
       "id": "US-001",
@@ -289,8 +289,8 @@
         "US-003",
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

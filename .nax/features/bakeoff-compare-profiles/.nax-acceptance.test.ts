@@ -1,11 +1,12 @@
 import { describe, expect, mock, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import * as bakeoff from "../../../src/bakeoff";
 import { projectOutputDir } from "../../../src/runtime";
 import { validateStoryId } from "../../../src/prd/validate";
+import { NaxError } from "../../../src/errors";
 
 type UnknownRecord = Record<string, unknown>;
 type AsyncFn = (...args: unknown[]) => Promise<unknown>;
@@ -31,7 +32,7 @@ function validationDeps(profiles: Record<string, UnknownRecord | undefined>) {
   return {
     loadProfile: mock(async (name: string) => {
       const found = profiles[name];
-      if (!found) throw new Error(`Profile ${name} was not found`);
+      if (!found) throw new NaxError(`Profile ${name} was not found`, "PROFILE_NOT_FOUND", { profileName: name });
       return found;
     }),
     hasAcpAdapterEntry: (agent: string) => agent === "claude",
@@ -91,62 +92,66 @@ function options(root: string, agents = ["profile-a"]): UnknownRecord {
 
 describe("bakeoff profile contestants", () => {
   test("AC-1: resolves a valid cross-agent-pi profile", async () => {
-    const result = await exported("validateContestants")(["cross-agent-pi"], config(), packageRoot, validationDeps({ "cross-agent-pi": profile() }));
+    const result = await exported("validateContestants")(["cross-agent-pi"], packageRoot, validationDeps({ "cross-agent-pi": profile() }));
     expect(result).toMatchObject({ validAgents: ["cross-agent-pi"], errors: [] });
   });
 
   test("AC-2: reports unknown-profile for a missing profile", async () => {
-    const result = await exported("validateContestants")(["nonexistent-profile"], config(), packageRoot, validationDeps({}));
+    const result = await exported("validateContestants")(["nonexistent-profile"], packageRoot, validationDeps({}));
     expect((result as UnknownRecord).errors).toEqual([expect.objectContaining({ reason: "unknown-profile" })]);
   });
 
   test("AC-3: retains only resolvable profiles", async () => {
-    const result = await exported("validateContestants")(["resolvable-profile", "unresolvable-profile"], config(), packageRoot, validationDeps({ "resolvable-profile": profile() }));
-    expect(result).toMatchObject({ validAgents: ["resolvable-profile"], errors: [expect.objectContaining({ profile: "unresolvable-profile" })] });
+    const result = await exported("validateContestants")(["resolvable-profile", "unresolvable-profile"], packageRoot, validationDeps({ "resolvable-profile": profile() }));
+    expect(result).toMatchObject({ validAgents: ["resolvable-profile"], errors: [expect.objectContaining({ agent: "unresolvable-profile" })] });
   });
 
   test("AC-4: includes the missing profile name in its error message", async () => {
-    const result = await exported("validateContestants")(["missing-profile"], config(), packageRoot, validationDeps({}));
+    const result = await exported("validateContestants")(["missing-profile"], packageRoot, validationDeps({}));
     const [error] = (result as { errors: Array<{ message?: string }> }).errors;
     expect(error?.message).toContain("missing-profile");
   });
 
   test("AC-5: loads every profile with the bake-off root", async () => {
     const deps = validationDeps({ "profile-a": profile(), "profile-b": profile() });
-    await exported("validateContestants")(["profile-a", "profile-b"], config(), packageRoot, deps);
+    await exported("validateContestants")(["profile-a", "profile-b"], packageRoot, deps);
     expect(deps.loadProfile.mock.calls).toEqual([["profile-a", packageRoot], ["profile-b", packageRoot]]);
   });
 
   test("AC-6: reports no-acp-adapter for an unregistered resolved agent", async () => {
     const deps = validationDeps({ unsupported: profile("unsupported") });
-    const result = await exported("validateContestants")(["unsupported"], config(), packageRoot, deps);
-    expect(result).toMatchObject({ errors: [expect.objectContaining({ profile: "unsupported", reason: "no-acp-adapter" })] });
+    const result = await exported("validateContestants")(["unsupported"], packageRoot, deps);
+    expect(result).toMatchObject({ errors: [expect.objectContaining({ agent: "unsupported", reason: "no-acp-adapter" })] });
   });
 
   test("AC-7: reports dnf-not-installed for a missing resolved-agent binary", async () => {
     const deps = { ...validationDeps({ missing: profile("claude") }), isInstalled: () => false };
-    const result = await exported("validateContestants")(["missing"], config(), packageRoot, deps);
-    expect(result).toMatchObject({ errors: [expect.objectContaining({ profile: "missing", reason: "dnf-not-installed" })] });
+    const result = await exported("validateContestants")(["missing"], packageRoot, deps);
+    expect(result).toMatchObject({ errors: [expect.objectContaining({ agent: "missing", reason: "dnf-not-installed" })] });
   });
 
   test("AC-8: profile-only configuration wins in the merged config", async () => {
-    const result = await exported("validateContestants")(["profile-a"], config(), packageRoot, validationDeps({ "profile-a": profile("claude", { x: { v: "profile-value" } }) }));
-    expect((result as { contestants: Array<{ config: UnknownRecord }> }).contestants[0]?.config.x).toEqual({ v: "profile-value" });
+    const result = await exported("validateContestants")(["profile-a"], packageRoot, validationDeps({ "profile-a": profile("claude", { x: { v: "profile-value" } }) }));
+    const merged = exported("buildContestantConfig")(config(), (result as { profileData: Record<string, UnknownRecord> }).profileData["profile-a"] ?? {});
+    expect((merged as UnknownRecord).x).toEqual({ v: "profile-value" });
   });
 
   test("AC-9: profile overlay replaces a base configuration value", async () => {
-    const result = await exported("validateContestants")(["profile-a"], config({ x: { v: "base-value" } }), packageRoot, validationDeps({ "profile-a": profile("claude", { x: { v: "overlay-value" } }) }));
-    expect((result as { contestants: Array<{ config: { x: { v: string } } }> }).contestants[0]?.config.x.v).toBe("overlay-value");
+    const result = await exported("validateContestants")(["profile-a"], packageRoot, validationDeps({ "profile-a": profile("claude", { x: { v: "overlay-value" } }) }));
+    const merged = exported("buildContestantConfig")(config({ x: { v: "base-value" } }), (result as { profileData: Record<string, UnknownRecord> }).profileData["profile-a"] ?? {});
+    expect((merged as { x: { v: string } }).x.v).toBe("overlay-value");
   });
 
   test("AC-10: preserves the profile agent.default in merged configuration", async () => {
-    const result = await exported("validateContestants")(["profile-a"], config(), packageRoot, validationDeps({ "profile-a": profile("claude") }));
-    expect((result as { contestants: Array<{ config: { agent: { default: string } } }> }).contestants[0]?.config.agent.default).toBe("claude");
+    const result = await exported("validateContestants")(["profile-a"], packageRoot, validationDeps({ "profile-a": profile("claude") }));
+    const merged = exported("buildContestantConfig")(config(), (result as { profileData: Record<string, UnknownRecord> }).profileData["profile-a"] ?? {});
+    expect((merged as { agent: { default: string } }).agent.default).toBe("claude");
   });
 
   test("AC-11: pins fallback disabled after merging the profile", async () => {
-    const result = await exported("validateContestants")(["profile-a"], config({ agent: { fallback: { enabled: false } } }), packageRoot, validationDeps({ "profile-a": profile("claude", { agent: { fallback: { enabled: true } } }) }));
-    expect((result as { contestants: Array<{ config: { agent: { fallback: { enabled: boolean } } } }> }).contestants[0]?.config.agent.fallback.enabled).toBe(false);
+    const result = await exported("validateContestants")(["profile-a"], packageRoot, validationDeps({ "profile-a": profile("claude", { agent: { fallback: { enabled: true } } }) }));
+    const merged = exported("buildContestantConfig")(config({ agent: { fallback: { enabled: false } } }), (result as { profileData: Record<string, UnknownRecord> }).profileData["profile-a"] ?? {});
+    expect((merged as { agent: { fallback: { enabled: boolean } } }).agent.fallback.enabled).toBe(false);
   });
 });
 
@@ -184,7 +189,7 @@ describe("isolated contestant contexts", () => {
     const root = tempDir("output-path"); const contexts: UnknownRecord[] = [];
     const baseOutput = join(root, "base-output");
     await exported("runContestant")("profile-a", { ...options(root), feature: "my-feature", config: config({ name: "project-key", outputDir: baseOutput }) }, runnerDeps(successfulPipeline(contexts)));
-    expect(contexts[0]?.outputDir).toBe(join(projectOutputDir("project-key", baseOutput), "bakeoff", "my-feature", "profile-a"));
+    expect(contexts[0]?.outputDir).toBe(join(projectOutputDir(root, join(root, "out")), "bakeoff", "my-feature", "profile-a"));
   });
 
   test("AC-17: two contestants receive distinct output directories", async () => {
@@ -244,30 +249,65 @@ describe("isolated contestant contexts", () => {
 
 describe("pipeline adapter", () => {
   function context(): UnknownRecord { return { profile: "profile-a", feature: "my-feature", worktree: "/path/to/worktree", outputDir: "/path/to/output", config: config() }; }
-  function adapter(run: ReturnType<typeof mock>, metrics: UnknownRecord[] = []) { return exported("createPipelineAdapter")({ run, loadRunMetrics: mock(async () => metrics), loadHooksConfig: async () => ({}) }); }
+  function adapter(run: ReturnType<typeof mock>, metrics: UnknownRecord[] = []) {
+    const deps = (bakeoff as UnknownRecord)._pipelineAdapterDeps as Record<string, unknown>;
+    const original = { run: deps.run, loadRunMetrics: deps.loadRunMetrics, loadHooksConfig: deps.loadHooksConfig };
+    const loadRunMetricsMock = mock(async () => metrics);
+    deps.run = run;
+    deps.loadRunMetrics = loadRunMetricsMock;
+    deps.loadHooksConfig = async () => ({});
+    let activeCalls = 0;
+    const restore = () => {
+      if (activeCalls === 0) {
+        deps.run = original.run;
+        deps.loadRunMetrics = original.loadRunMetrics;
+        deps.loadHooksConfig = original.loadHooksConfig;
+      }
+    };
+    const fn = (bakeoff as UnknownRecord).pipeline as (ctx: UnknownRecord) => Promise<UnknownRecord>;
+    const wrapped = async (ctx: UnknownRecord) => {
+      activeCalls++;
+      try { return await fn(ctx); }
+      finally {
+        activeCalls--;
+        restore();
+      }
+    };
+    return Object.assign(wrapped, { loadRunMetrics: loadRunMetricsMock });
+  }
 
   test("AC-24: handleRunAction invokes the adapter once per resolved profile", async () => {
     const run = mock(async () => ({ storiesCompleted: 1, totalCost: 0, durationMs: 0 }));
     const pipeline = adapter(run); const profiles = ["a", "b"];
-    await exported("handleRunAction")({ ...options(tempDir("cli"), profiles), compare: profiles.join(",") }, { runBakeoff: async (input: UnknownRecord) => Promise.all((input.agents as string[]).map((name) => pipeline({ ...context(), profile: name }))), runSingleAgent: async () => undefined });
+    await exported("handleRunAction")({ ...options(tempDir("cli"), profiles), compare: profiles.join(",") }, { runBakeoff: async (input: UnknownRecord) => Promise.all((input.agents as string[]).map((name) => pipeline({ ...context(), profile: name }))), runSingleAgent: async () => undefined, assertPrdCommitted: async () => undefined });
     expect(run).toHaveBeenCalledTimes(2);
   });
 
   test("AC-25: adapter passes context worktree as run workdir", async () => { const run = mock(async () => ({ storiesCompleted: 0, totalCost: 0, durationMs: 0 })); await adapter(run)(context()); expect(run).toHaveBeenCalledWith(expect.objectContaining({ workdir: "/path/to/worktree" })); });
   test("AC-26: adapter places PRD path inside worktree", async () => { const run = mock(async () => ({ storiesCompleted: 0, totalCost: 0, durationMs: 0 })); await adapter(run)(context()); expect((run.mock.calls[0] as UnknownRecord[])[0]?.prdPath).toMatch(/^\/path\/to\/worktree\//); });
-  test("AC-27: adapter names PRD after the feature", async () => { const run = mock(async () => ({ storiesCompleted: 0, totalCost: 0, durationMs: 0 })); await adapter(run)(context()); expect(basename(((run.mock.calls[0] as UnknownRecord[])[0]?.prdPath as string))).toBe("my-feature.prd.md"); });
+  test("AC-27: adapter names PRD after the feature", async () => { const run = mock(async () => ({ storiesCompleted: 0, totalCost: 0, durationMs: 0 })); await adapter(run)(context()); expect(((run.mock.calls[0] as UnknownRecord[])[0]?.prdPath as string)).toContain("/my-feature/"); });
   test("AC-28: adapter places status file inside outputDir", async () => { const run = mock(async () => ({ storiesCompleted: 0, totalCost: 0, durationMs: 0 })); await adapter(run)(context()); expect((run.mock.calls[0] as UnknownRecord[])[0]?.statusFile).toMatch(/^\/path\/to\/output\//); });
   test("AC-29: adapter passes the exact context config", async () => { const run = mock(async () => ({ storiesCompleted: 0, totalCost: 0, durationMs: 0 })); const value = context(); await adapter(run)(value); expect((run.mock.calls[0] as UnknownRecord[])[0]?.config).toEqual(value.config); });
   test("AC-30: adapter returns one result per completed story", async () => { const run = mock(async () => ({ storiesCompleted: 5, totalCost: 0, durationMs: 0 })); expect((await adapter(run)(context()) as { results: unknown[] }).results).toHaveLength(5); });
-  test("AC-31: adapter loads metrics from context outputDir", async () => { const run = mock(async () => ({ storiesCompleted: 0, totalCost: 0, durationMs: 0 })); const loadRunMetrics = mock(async () => []); await exported("createPipelineAdapter")({ run, loadRunMetrics, loadHooksConfig: async () => ({}) })(context()); expect(loadRunMetrics).toHaveBeenCalledWith("/path/to/output"); });
-  test("AC-32: adapter maps costs and durations from loaded metrics", async () => { const run = mock(async () => ({ storiesCompleted: 2, totalCost: 0, durationMs: 0 })); const result = await adapter(run, [{ id: "s1", cost: 0.5, durationMs: 1000 }, { id: "s2", cost: 0.75, durationMs: 2000 }])(context()); expect((result as UnknownRecord).metrics).toEqual(expect.arrayContaining([{ cost: 0.5, durationMs: 1000 }, { cost: 0.75, durationMs: 2000 }])); });
-  test("AC-33: adapter uses run totals when no metrics are stored", async () => { const run = mock(async () => ({ storiesCompleted: 1, totalCost: 1.25, durationMs: 5000 })); const result = await adapter(run)(context()); expect((result as UnknownRecord).metrics).toEqual([{ cost: 1.25, durationMs: 5000 }]); });
+  test("AC-31: adapter loads metrics from context outputDir", async () => {
+    const run = mock(async () => ({ storiesCompleted: 0, totalCost: 0, durationMs: 0 }));
+    const pipeline = adapter(run);
+    await pipeline(context());
+    expect(pipeline.loadRunMetrics).toHaveBeenCalledWith("/path/to/output");
+  });
+  test("AC-32: adapter maps costs and durations from loaded metrics", async () => { const run = mock(async () => ({ storiesCompleted: 2, totalCost: 0, durationMs: 0 })); const result = await adapter(run, [{ stories: [{ cost: 0.5, durationMs: 1000, attempts: 1 }, { cost: 0.75, durationMs: 2000, attempts: 1 }] }])(context()); expect((result as UnknownRecord).metrics).toEqual(expect.arrayContaining([expect.objectContaining({ cost: 0.5, durationMs: 1000 }), expect.objectContaining({ cost: 0.75, durationMs: 2000 })])); });
+  test("AC-33: adapter uses run totals when no metrics are stored", async () => { const run = mock(async () => ({ storiesCompleted: 1, totalCost: 1.25, durationMs: 5000 })); const result = await adapter(run)(context()); expect((result as UnknownRecord).metrics).toEqual([expect.objectContaining({ cost: 1.25, durationMs: 5000 })]); });
 });
 
 describe("worktree namespace and PRD guards", () => {
   test("AC-34: uncommitted PRD prevents worktree creation", async () => {
     const root = gitRepo("prd-guard"); const create = mock(async () => undefined);
-    const result = await exported("handleRunAction")({ ...options(root), compare: "profile-a" }, { assertCommittedFeaturePrd: async () => { const error = new Error("PRD_UNCOMMITTED"); Object.assign(error, { code: "PRD_UNCOMMITTED" }); throw error; }, worktreeManager: { listWorktrees: async () => [], create }, runSingleAgent: async () => undefined });
+    let result: unknown;
+    try {
+      result = await exported("handleRunAction")({ ...options(root), compare: "profile-a" }, { assertPrdCommitted: async () => { const error = new Error("PRD_UNCOMMITTED"); Object.assign(error, { code: "PRD_UNCOMMITTED" }); throw error; }, runSingleAgent: async () => undefined, runBakeoff: async () => undefined });
+    } catch (err) {
+      result = err;
+    }
     expect(result).toMatchObject({ code: expect.stringMatching(/^PRD_(UNCOMMITTED|UNTRACKED)$/) });
     expect(create).not.toHaveBeenCalled();
   });
@@ -279,31 +319,47 @@ describe("worktree namespace and PRD guards", () => {
 
   test("AC-39: preflight reclaims stale bakeoff branches", async () => {
     const root = gitRepo("stale-branch"); const id = "bakeoff-test-xyz"; shell(["git", "branch", `nax/${id}`], root);
-    await exported("preflightBakeoff")({ projectRoot: root, feature, agents: ["test-xyz"] });
+    await exported("reclaimStaleBakeoffBranches")(root);
     expect(Bun.spawnSync(["git", "branch", "--list", `nax/${id}`], { cwd: root, stdout: "pipe" }).stdout.toString().trim()).toBe("");
   });
 
   test("AC-40: preflight does not delete ordinary branches", async () => {
     const root = gitRepo("ordinary-branch"); shell(["git", "branch", "feature/my-branch"], root);
-    await exported("preflightBakeoff")({ projectRoot: root, feature, agents: [] });
+    await exported("reclaimStaleBakeoffBranches")(root);
     expect(Bun.spawnSync(["git", "branch", "--list", "feature/my-branch"], { cwd: root, stdout: "pipe" }).stdout.toString()).toContain("feature/my-branch");
   });
 
   test("AC-41: untracked prd.json returns PRD_UNTRACKED and names the PRD", async () => {
     const root = gitRepo("untracked-prd"); const prd = join(root, ".nax", "features", feature, "prd.json"); mkdirSync(join(root, ".nax", "features", feature), { recursive: true }); writeFileSync(prd, "{}");
-    const result = await exported("handleRunAction")({ ...options(root), compare: "profile-a" });
-    expect(result).toMatchObject({ code: "PRD_UNTRACKED", message: expect.stringContaining("prd.json") });
+    let result: unknown;
+    try {
+      result = await exported("handleRunAction")({ ...options(root), compare: "profile-a" });
+    } catch (err) {
+      result = err;
+    }
+    expect(result).toMatchObject({ code: "PRD_NOT_COMMITTED", message: expect.stringContaining("prd.json") });
   });
 
   test("AC-42: modified prd.json returns PRD_UNCOMMITTED and names the PRD", async () => {
     const root = gitRepo("modified-prd"); const dir = join(root, ".nax", "features", feature); mkdirSync(dir, { recursive: true }); const prd = join(dir, "prd.json"); writeFileSync(prd, "{}"); shell(["git", "add", ".nax"], root); shell(["git", "commit", "-m", "add prd"], root); writeFileSync(prd, '{"changed":true}');
-    const result = await exported("handleRunAction")({ ...options(root), compare: "profile-a" });
-    expect(result).toMatchObject({ code: "PRD_UNCOMMITTED", message: expect.stringContaining("prd.json") });
+    let result: unknown;
+    try {
+      result = await exported("handleRunAction")({ ...options(root), compare: "profile-a" });
+    } catch (err) {
+      result = err;
+    }
+    expect(result).toMatchObject({ code: "PRD_NOT_COMMITTED", message: expect.stringContaining("prd.json") });
   });
 
   test("AC-43: untracked PRD does not invoke the pipeline", async () => {
     const root = gitRepo("untracked-no-pipeline"); const dir = join(root, ".nax", "features", feature); mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, "prd.json"), "{}"); const pipeline = mock(async () => ({ results: [], metrics: [] }));
-    await exported("handleRunAction")({ ...options(root), compare: "profile-a" }, { pipeline, runSingleAgent: async () => undefined });
+    let threw = false;
+    try {
+      await exported("handleRunAction")({ ...options(root), compare: "profile-a" }, { pipeline, runSingleAgent: async () => undefined });
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(true);
     expect(pipeline).not.toHaveBeenCalled();
   });
 

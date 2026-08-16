@@ -2,3 +2,4 @@
 [2026-08-16T05:48:03.698Z] US-002 — PASSED — Provide isolated contestant execution contexts — Cost: $12.9917
 [2026-08-16T06:07:27.815Z] US-003 — PASSED — Adapt contestant contexts to real runs — Cost: $7.7049
 [2026-08-16T06:56:32.462Z] US-004 — PASSED — Guard bake-off worktrees and committed PRDs — Cost: $31.7208
+[2026-08-16T07:01:06.679Z] US-005 — PASSED — Remove superseded contestant APIs — Cost: $0.0733
