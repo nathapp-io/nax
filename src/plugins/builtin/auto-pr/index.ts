@@ -25,21 +25,43 @@ const PLUGIN_VERSION = "0.1.0";
 
 const GIT_REMOTE_CMD: readonly string[] = ["git", "remote", "get-url", "origin"] as const;
 
+/** Default wall-clock cap for any one subprocess (BUG-8). */
+export const DEFAULT_SUBPROCESS_TIMEOUT_MS = 30_000;
+
 /**
  * Default subprocess runner — wraps Bun.spawn with concurrent stdout/stderr
- * reads so non-trivial output does not deadlock. Tests override `_autoPrDeps.run`.
+ * reads so non-trivial output does not deadlock, under a wall-clock cap so a
+ * wedged `git push` / `gh` / `glab` cannot hang the run's completion phase.
+ * Mirrors the nax-finish defaultRun pattern (`src/plugins/builtin/nax-finish/index.ts:66-97`).
+ * Tests override `_autoPrDeps.run`.
  */
-async function defaultRun(
+export async function defaultRun(
   cmd: string[],
-  opts: { cwd: string },
+  opts: { cwd: string; timeoutMs?: number },
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(cmd, { cwd: opts.cwd, stdout: "pipe", stderr: "pipe" });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    proc.exited,
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-  return { exitCode, stdout, stderr };
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_SUBPROCESS_TIMEOUT_MS;
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    proc.kill();
+  }, timeoutMs);
+  try {
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    return timedOut
+      ? {
+          exitCode: exitCode === 0 ? 124 : exitCode,
+          stdout,
+          stderr: `${stderr}\n[auto-pr] command killed after ${timeoutMs}ms timeout`,
+        }
+      : { exitCode, stdout, stderr };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -192,6 +214,34 @@ const autoPrAction: IPostRunAction = {
       if (pushResult.exitCode !== 0) {
         const message = pushResult.stderr.trim() || `git push exited with code ${pushResult.exitCode}`;
         return { success: false, message: `Failed to push branch "${context.branch}" to origin: ${message}` };
+      }
+
+      // BUG-8: re-check for an open PR after the push. shouldRun() checked
+      // before the push completed, and a concurrent run may have opened a
+      // draft in the same window. Without this re-check, both runs end up
+      // calling openDraft() and creating duplicate PRs.
+      let existsAfterPush = false;
+      try {
+        existsAfterPush = await _autoPrDeps.hasOpenPr(
+          forge,
+          context.branch,
+          { run: _autoPrDeps.run, readText: _autoPrDeps.readText },
+          context.workdir,
+        );
+      } catch (checkErr) {
+        // Unknown → skip with warning rather than risk a duplicate.
+        context.logger.warn("Auto-PR re-check inconclusive — skipping to avoid duplicate PR", {
+          branch: context.branch,
+          error: String(checkErr),
+        });
+        return { success: false, message: `Auto-PR skipped: re-check inconclusive (${String(checkErr)})` };
+      }
+      if (existsAfterPush) {
+        context.logger.warn("Auto-PR skipped — open PR/MR appeared during push (concurrent run?)", {
+          branch: context.branch,
+          forge,
+        });
+        return { success: false, message: `Open PR/MR already exists for branch "${context.branch}"` };
       }
 
       const template = await _autoPrDeps.findPrTemplate(context.workdir, forge, {

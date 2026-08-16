@@ -25,7 +25,10 @@ export interface AutoPrDeps {
    * @param cmd - Argv array passed verbatim to the OS
    * @param opts - Working-directory and execution options
    */
-  run(cmd: string[], opts: { cwd: string }): Promise<{ exitCode: number; stdout: string; stderr: string }>;
+  run(
+    cmd: string[],
+    opts: { cwd: string; timeoutMs?: number },
+  ): Promise<{ exitCode: number; stdout: string; stderr: string }>;
 
   /**
    * Read a UTF-8 file from disk.
