@@ -6,7 +6,9 @@
  * is always torn down, even when the pipeline throws or signals abort.
  */
 
+import { join } from "node:path";
 import type { NaxConfig } from "../config";
+import { projectOutputDir } from "../runtime/paths";
 import type { ContestantResult } from "./types";
 
 export interface ContestantStoryResult {
@@ -112,17 +114,16 @@ export async function runContestant(
     },
   };
 
-  // TODO(implementer, US-002): worktree/outputDir must be derived from
-  // options.projectRoot/.nax-wt/<storyId> and
-  // projectOutputDir(...)/bakeoff/<feature>/<profile> respectively, and
-  // outputDir must be applied onto pinnedConfig.outputDir. Left as
-  // placeholders here so the pipeline contract compiles for test-writing.
+  const feature = options.feature ?? "";
+  const worktree = join(options.projectRoot, ".nax-wt", storyId);
+  const outputDir = join(projectOutputDir(options.projectRoot, options.outputDir), "bakeoff", feature, agent);
+
   const context: ContestantRunContext = {
     profile: agent,
-    config: pinnedConfig,
-    worktree: "",
-    outputDir: "",
-    feature: options.feature ?? "",
+    config: { ...pinnedConfig, outputDir },
+    worktree,
+    outputDir,
+    feature,
   };
 
   try {

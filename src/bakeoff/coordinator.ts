@@ -37,7 +37,7 @@ export interface BakeoffCoordinatorDeps {
 
 /** Default `persistBakeoffResult` dep: writes bakeoff.json under outputDir. */
 export async function persistBakeoffResult(result: BakeoffResult, outputDir: string): Promise<void> {
-  const filePath = join(outputDir, "bakeoff.json");
+  const filePath = join(outputDir, "bakeoff", result.feature, "bakeoff.json");
   await Bun.write(filePath, JSON.stringify(result, null, 2));
 }
 

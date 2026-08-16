@@ -3,7 +3,7 @@
   "feature": "bakeoff-compare-profiles",
   "branchName": "feat/bakeoff-compare-profiles",
   "createdAt": "2026-08-16T00:00:00.000Z",
-  "updatedAt": "2026-08-16T04:56:25.006Z",
+  "updatedAt": "2026-08-16T05:18:24.932Z",
   "userStories": [
     {
       "id": "US-001",
@@ -29,8 +29,8 @@
         "validation"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -104,7 +104,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "claude",
         "initialProfileId": "claude-final",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/bakeoff/contestant.ts",
@@ -129,7 +131,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "89963a441db87ad847ba77d316938144ffaa54b6"
     },
     {
       "id": "US-003",
