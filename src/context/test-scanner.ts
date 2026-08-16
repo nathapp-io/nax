@@ -6,6 +6,7 @@
  * Prevents test duplication across isolated story sessions.
  */
 
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import { Glob } from "bun";
 import { getLogger } from "../logger";
@@ -24,6 +25,15 @@ import { errorMessage } from "../utils/errors";
  * directly. Mirrors the schema default in schemas-execution.ts.
  */
 const DEFAULT_MAX_SCAN_FILES = 200;
+
+/**
+ * PERF-2: per-file size cap before reading into memory. Mirrors
+ * MAX_NEIGHBOR_FILE_SIZE_BYTES (1MB) in code-neighbor-cache. Without it a
+ * 50MB generated fixture or minified bundle in a test directory is fully
+ * buffered and regex-parsed just to discover there are no `describe`/`test`
+ * blocks.
+ */
+export const MAX_TEST_FILE_SIZE_BYTES = 1 * 1024 * 1024;
 
 /** Detail level for test summary */
 export type TestSummaryDetail = "names-only" | "names-and-counts" | "describe-blocks";
@@ -300,6 +310,30 @@ export async function scanTestFiles(options: TestScanOptions): Promise<TestFileI
 
     const fullPath = path.join(scanDir, filePath);
     try {
+      // PERF-2: stat before read. A minified bundle or generated fixture in a
+      // test dir can be tens of MB; buffering + regex-parsing just to find no
+      // describes/tests wastes memory. The 1MB cap mirrors
+      // MAX_NEIGHBOR_FILE_SIZE_BYTES in code-neighbor-cache.
+      try {
+        const fileStat = await stat(fullPath);
+        if (fileStat.size > MAX_TEST_FILE_SIZE_BYTES) {
+          getLogger().debug("test-scanner", "File exceeds size cap — skipped without read", {
+            path: fullPath,
+            sizeBytes: fileStat.size,
+            capBytes: MAX_TEST_FILE_SIZE_BYTES,
+          });
+          continue;
+        }
+      } catch (statErr) {
+        // Stat race (file deleted between glob and stat) is benign — fall through
+        // to the read path, which already handles the same race.
+        if ((statErr as NodeJS.ErrnoException).code !== "ENOENT") {
+          getLogger().debug("test-scanner", "stat failed — falling through to read", {
+            path: fullPath,
+            error: errorMessage(statErr),
+          });
+        }
+      }
       const source = await Bun.file(fullPath).text();
       const { describes, testCount } = extractTestStructure(source);
 

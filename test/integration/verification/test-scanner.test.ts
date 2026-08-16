@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { makeTempDir } from "../../helpers/temp";
 import {
   type TestFileInfo,
   deriveTestPatterns,
@@ -12,6 +11,7 @@ import {
   scanTestFiles,
   truncateToTokenBudget,
 } from "../../../src/context/test-scanner";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("extractTestStructure", () => {
   test("extracts describe and test blocks", () => {
@@ -147,7 +147,11 @@ describe("deriveTestPatterns", () => {
 
   test.each([
     ["plain .ts", ["src/utils.ts"], ["utils.test.ts", "utils.spec.ts", "utils.test.js", "utils.spec.js"]],
-    ["tsx/jsx extensions", ["src/component.tsx", "src/script.jsx"], ["component.test.tsx", "component.spec.tsx", "script.test.jsx", "script.spec.jsx"]],
+    [
+      "tsx/jsx extensions",
+      ["src/component.tsx", "src/script.jsx"],
+      ["component.test.tsx", "component.spec.tsx", "script.test.jsx", "script.spec.jsx"],
+    ],
   ] as const)("generates patterns for %s", (_label, contextFiles, expected) => {
     const patterns = deriveTestPatterns([...contextFiles]);
     for (const p of expected) expect(patterns).toContain(p);
@@ -340,6 +344,40 @@ describe("generateTestCoverageSummary with scoping", () => {
       expect(result.totalTests).toBe(0);
       expect(result.summary).toBe("");
       expect(result.tokens).toBe(0);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// PERF-2: an oversized test file (e.g. a 50MB generated fixture) must not be
+// fully read into memory just to discover there are no `describe`/`test`
+// blocks. Mirrors MAX_NEIGHBOR_FILE_SIZE_BYTES (1MB) in code-neighbor-cache.
+describe("scanTestFiles — per-file size cap (PERF-2)", () => {
+  test("skips files larger than MAX_TEST_FILE_SIZE_BYTES", async () => {
+    const tempDir = makeTempDir("nax-test-scanner-oversize-");
+    try {
+      const testDir = path.join(tempDir, "test");
+      await fs.mkdir(testDir);
+
+      // One small file (should be picked up) and one oversized file (should
+      // be skipped without buffering).
+      await fs.writeFile(path.join(testDir, "small.test.ts"), 'describe("S", () => { test("ok", () => {}); });');
+
+      // 2MB of whitespace + valid test syntax at the end. The scanner must
+      // stat-then-skip without reading the full buffer.
+      const big = `${" ".repeat(2 * 1024 * 1024)}describe("Big", () => { test("ok", () => {}); });`;
+      await fs.writeFile(path.join(testDir, "huge.test.ts"), big);
+
+      const result = await scanTestFiles({
+        workdir: tempDir,
+        testDir: "test",
+        scopeToStory: false,
+      });
+
+      const rels = result.map((f) => f.relativePath).sort();
+      expect(rels.some((p) => p.endsWith("small.test.ts"))).toBe(true);
+      expect(rels.some((p) => p.endsWith("huge.test.ts"))).toBe(false);
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
