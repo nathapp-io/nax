@@ -3,7 +3,7 @@
   "feature": "bakeoff-compare-profiles",
   "branchName": "feat/bakeoff-compare-profiles",
   "createdAt": "2026-08-16T00:00:00.000Z",
-  "updatedAt": "2026-08-16T06:38:06.554Z",
+  "updatedAt": "2026-08-16T06:56:49.226Z",
   "userStories": [
     {
       "id": "US-001",
@@ -218,8 +218,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [
         {
@@ -303,7 +303,9 @@
         "profileModelTier": "fast",
         "initialAgent": "pi",
         "initialProfileId": "pi-structural",
-        "initialModelTier": "fast"
+        "initialModelTier": "fast",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
       },
       "contextFiles": [
         "src/bakeoff/contestant.ts",
@@ -312,7 +314,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8b48ec19fc6741d12b89acf1c37f630f1a4a773d"
     }
   ],
   "analysis": "The existing bake-off implementation is an enhancement/refactor, not greenfield. src/bakeoff/preflight.ts:12-93 validates names against KNOWN_AGENT_NAMES and returns unknown-agent; it must resolve each comparison entry with loadProfile(profile, projectRoot), validate the resolved agent.default against ACP_ADAPTER_NAMES and its adapter binary, and retain the existing agents/agent field names as profile labels. src/config/profile.ts:52-100 is the safe, authoritative profile resolver: validateProfileName is private and PROFILE_NOT_FOUND / PROFILE_NAME_INVALID must be handled through loadProfile. src/config/merger.ts:30-123 provides immutable deepMergeConfig semantics, so per-contestant configuration is base config plus one profile overlay, with fallback.enabled pinned false after merging. src/bakeoff/contestant.ts:36-58 declares an unwired _contestantDeps object using unsafe casts; src/bakeoff/contestant.ts:81-149 defaults runContestant to it, converting missing production wiring into dnf-crashed. Replace it with an explicit required dependency and a ContestantRunContext that carries profile, merged config, worktree, outputDir, and feature. The current pipeline only receives config, so it cannot correctly map run options to contestant state. src/bakeoff/coordinator.ts:19-139 runs validated entries sequentially, persists directly under outputDir, and routes CLI compare input; it must construct/profile-thread contestant config and persist under bakeoff/<feature>. Existing CLI tests deliberately assert callArg.agents (test/unit/bakeoff/run-action.test.ts:49-52), so those field names are a compatibility constraint even though values now denote profiles. src/runtime/paths.ts and src/runtime/index.ts establish that the output root must derive from projectOutputDir(projectKey, baseConfig.outputDir), never from a hardcoded global config path; setting the contestant merged config.outputDir is the only available run seam because RunOptions has no outputDir. src/worktree/manager.ts:66-204 validates story IDs and creates nax/<storyId> branches but only reclaims a stale branch when its private hasWorktreeRecord proves prior manager ownership. Bake-off preflight must derive safe, bounded bakeoff- IDs, reclaim only stale nax/bakeoff-* branches, and leave other namespace collisions untouched. src/prd/validate.ts:20-38 supplies the exact story-id grammar. The new pipeline adapter belongs in src/bakeoff/pipeline-adapter.ts, separate from contestant.ts, and maps context to runner.run() plus loadRunMetrics(outputDir), preserving result metrics with a run-result fallback. Existing test coverage is concentrated in test/unit/bakeoff/preflight.test.ts, contestant.test.ts, coordinator.test.ts, report.test.ts, and run-action.test.ts; contestant tests currently mutate _contestantDeps and use the old config-only pipeline signature, so US-002 must replace those helpers. Risks: profile/agent-name collisions make dual interpretation unsafe; deleting default deps changes internal call signatures and exports; output relocation can break report consumers; git branch reclamation must never delete user branches; and untracked or modified PRDs must stop all spend before worktree creation. Migration is intentionally internal: retain BakeoffOptions.agents and ContestantResult.agent names, change only their semantics to profile names, export the adapter through the bakeoff barrel, update unit/integration seams, then remove obsolete agent-name/default-deps API after consumers have moved.",

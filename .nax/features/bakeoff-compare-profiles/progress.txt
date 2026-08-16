@@ -1,3 +1,4 @@
 [2026-08-16T05:18:21.353Z] US-001 — PASSED — Resolve profile contestants — Cost: $10.7526
 [2026-08-16T05:48:03.698Z] US-002 — PASSED — Provide isolated contestant execution contexts — Cost: $12.9917
 [2026-08-16T06:07:27.815Z] US-003 — PASSED — Adapt contestant contexts to real runs — Cost: $7.7049
+[2026-08-16T06:56:32.462Z] US-004 — PASSED — Guard bake-off worktrees and committed PRDs — Cost: $31.7208
