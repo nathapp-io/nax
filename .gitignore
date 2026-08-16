@@ -47,6 +47,7 @@ orchestrator/
 nax.lock
 .nax/features/*/runs/
 .nax/features/*/plan/
+.nax/features/*/fragments/
 .nax/prompt-audit/
 .nax/review-audit/
 .nax/review-verdicts/
