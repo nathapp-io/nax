@@ -6,15 +6,18 @@
  * the original "CLI compare options and contestant pre-flight" story.
  */
 
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import {
   assertCompareAgentExclusive,
   buildContestantConfig,
   computeWorstCaseCost,
   parseCompareList,
+  reclaimStaleBakeoffBranches,
   validateContestants,
 } from "@/bakeoff";
 import { NaxError } from "@/errors";
+import { getSafeLogger, initLogger, resetLogger } from "@/logger";
+import { _gitDeps } from "@/utils/git";
 import { makeNaxConfig } from "@test/helpers";
 
 describe("parseCompareList", () => {
@@ -218,5 +221,60 @@ describe("computeWorstCaseCost", () => {
   // AC-8: N × max-cost
   it("returns contestantCount * maxCostPerContestant (3 * 5 = 15)", () => {
     expect(computeWorstCaseCost(3, 5)).toBe(15);
+  });
+});
+
+describe("reclaimStaleBakeoffBranches — failed branch deletion", () => {
+  let origSpawn: typeof _gitDeps.spawn;
+
+  beforeEach(() => {
+    origSpawn = _gitDeps.spawn;
+    resetLogger();
+    initLogger({ level: "silent" });
+  });
+
+  afterEach(() => {
+    _gitDeps.spawn = origSpawn;
+    resetLogger();
+  });
+
+  function mockSpawnFor(handler: (args: string[]) => { output: string; exitCode: number }): typeof _gitDeps.spawn {
+    return mock((args: string[], _opts: unknown) => {
+      const { output, exitCode } = handler(args);
+      const bytes = new TextEncoder().encode(output);
+      return {
+        stdout: new ReadableStream({ start(c) { c.enqueue(bytes); c.close(); } }),
+        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        exited: Promise.resolve(exitCode),
+        kill: mock(() => {}),
+      };
+    }) as typeof _gitDeps.spawn;
+  }
+
+  // A stale branch whose `git branch -D` call fails must be logged as a
+  // warning, not silently dropped — otherwise preflight can report success
+  // while the branch still blocks worktree creation.
+  it("logs a warning when git branch -D fails for a stale bake-off branch", async () => {
+    const staleBranch = "nax/bakeoff-stale-id";
+    _gitDeps.spawn = mockSpawnFor((args) => {
+      // args[0] is the "git" executable itself — the subcommand is args[1].
+      if (args[1] === "for-each-ref") return { output: `${staleBranch}\n`, exitCode: 0 };
+      if (args[1] === "worktree") return { output: "worktree /repo\nHEAD abc123\n", exitCode: 0 };
+      if (args[1] === "branch" && args[2] === "-D") {
+        return { output: "", exitCode: 1 };
+      }
+      return { output: "", exitCode: 0 };
+    });
+
+    const logger = getSafeLogger();
+    if (!logger) throw new Error("expected logger to be initialized");
+    const warnSpy = spyOn(logger, "warn");
+
+    await reclaimStaleBakeoffBranches("/repo");
+
+    expect(warnSpy).toHaveBeenCalled();
+    const call = warnSpy.mock.calls.find((c) => String(c[1]).includes("Failed to delete stale bake-off branch"));
+    expect(call).toBeDefined();
+    expect((call?.[2] as { branch?: string } | undefined)?.branch).toBe(staleBranch);
   });
 });

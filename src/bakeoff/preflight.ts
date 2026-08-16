@@ -237,7 +237,14 @@ export async function reclaimStaleBakeoffBranches(projectRoot: string): Promise<
 
     for (const branch of branches) {
       if (recordedBranches.has(`refs/heads/${branch}`)) continue;
-      await gitWithTimeout(["branch", "-D", branch], projectRoot);
+      const deleteResult = await gitWithTimeout(["branch", "-D", branch], projectRoot);
+      if (deleteResult.exitCode !== 0) {
+        getSafeLogger()?.warn("bakeoff", "Failed to delete stale bake-off branch", {
+          projectRoot,
+          branch,
+          stderr: deleteResult.stderr,
+        });
+      }
     }
   } catch (error) {
     getSafeLogger()?.warn("bakeoff", "Failed to reclaim stale bake-off branches", {

@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertPrdCommitted, validateStoryId } from "@/prd";
+import { _gitDeps } from "@/utils/git";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 describe("validateStoryId", () => {
@@ -122,5 +123,40 @@ describe("assertPrdCommitted", () => {
     await commitAll(projectRoot, "add prd.json");
 
     await expect(assertPrdCommitted(prdPath, projectRoot)).resolves.toBeUndefined();
+  });
+});
+
+// ── US-004: fail-closed when `git status` itself cannot be determined ───────
+
+describe("assertPrdCommitted — git status failure", () => {
+  let origSpawn: typeof _gitDeps.spawn;
+
+  beforeEach(() => {
+    origSpawn = _gitDeps.spawn;
+  });
+
+  afterEach(() => {
+    _gitDeps.spawn = origSpawn;
+  });
+
+  // A failed/timed-out `git status` returns exit code != 0 with empty
+  // stdout, which must not be read as "clean" — that would let the bake-off
+  // proceed when git cannot actually determine whether the PRD is modified.
+  test("rejects when git status exits non-zero, even though stdout is empty", async () => {
+    _gitDeps.spawn = mock((args: string[], _opts: unknown) => {
+      // args[0] is the "git" executable itself — the subcommand is args[1].
+      const isStatus = args[1] === "status";
+      const bytes = new TextEncoder().encode("");
+      return {
+        stdout: new ReadableStream({ start(c) { c.enqueue(bytes); c.close(); } }),
+        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        exited: Promise.resolve(isStatus ? 1 : 0),
+        kill: mock(() => {}),
+      };
+    }) as typeof _gitDeps.spawn;
+
+    await expect(assertPrdCommitted("/repo/.nax/features/f/prd.json", "/repo")).rejects.toThrow(
+      "/repo/.nax/features/f/prd.json",
+    );
   });
 });

@@ -58,6 +58,13 @@ export async function assertPrdCommitted(prdPath: string, projectRoot: string): 
   }
 
   const status = await gitWithTimeout(["status", "--porcelain", "--", prdPath], projectRoot);
+  if (status.exitCode !== 0) {
+    throw new NaxError(`Failed to determine git status of feature PRD: ${prdPath}`, "PRD_STATUS_CHECK_FAILED", {
+      stage: "bakeoff-prd-guard",
+      prdPath,
+      stderr: status.stderr,
+    });
+  }
   if (status.stdout.trim().length > 0) {
     throw new NaxError(`Feature PRD has uncommitted modifications: ${prdPath}`, "PRD_NOT_COMMITTED", {
       stage: "bakeoff-prd-guard",
