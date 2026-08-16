@@ -9,15 +9,19 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
-import {
-  _coordinatorDeps,
-  rankContestants,
-  runBakeoff,
+import { _coordinatorDeps, rankContestants, runBakeoff, runContestant } from "@/bakeoff";
+import type {
+  BakeoffCoordinatorDeps,
+  BakeoffOptions,
+  BakeoffResult,
+  ContestantOptions,
+  ContestantResult,
+  ContestantRunContext,
+  ContestantRunnerDeps,
 } from "@/bakeoff";
-import type { BakeoffCoordinatorDeps, BakeoffOptions, BakeoffResult, ContestantResult } from "@/bakeoff";
 import type { NaxConfig } from "@/config";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -50,10 +54,7 @@ function baseOptions(overrides: Partial<BakeoffOptions> = {}): BakeoffOptions {
  * Replace `_coordinatorDeps` with the supplied overrides for the duration of
  * the callback. Mirrors the pattern used by other bake-off tests.
  */
-async function withCoordinatorDeps<T>(
-  overrides: Partial<BakeoffCoordinatorDeps>,
-  fn: () => Promise<T>,
-): Promise<T> {
+async function withCoordinatorDeps<T>(overrides: Partial<BakeoffCoordinatorDeps>, fn: () => Promise<T>): Promise<T> {
   const saved: Record<string, unknown> = {};
   for (const key of Object.keys(overrides)) {
     saved[key] = (_coordinatorDeps as Record<string, unknown>)[key];
@@ -84,9 +85,10 @@ describe("runBakeoff (AC-1: sequential execution)", () => {
 
     await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
         rankContestants,
@@ -114,9 +116,10 @@ describe("runBakeoff (AC-1: sequential execution)", () => {
 
     await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
         rankContestants,
@@ -137,9 +140,10 @@ describe("runBakeoff (AC-2: validation failure)", () => {
 
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((_names: string[]) => ({
-          errors: [{ agent: "bogus", reason: "unknown-agent" }],
+        validateContestants: (async (_names: string[], _projectRoot: string) => ({
+          errors: [{ agent: "bogus", reason: "unknown-profile" }],
           validAgents: [],
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
         rankContestants,
@@ -157,11 +161,14 @@ describe("runBakeoff (AC-2: validation failure)", () => {
   it("AC2 (boundary): validation failure returns a BakeoffResult (no throw) with empty ranking", async () => {
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((_names: string[]) => ({
-          errors: [{ agent: "bogus", reason: "unknown-agent" }],
+        validateContestants: (async (_names: string[], _projectRoot: string) => ({
+          errors: [{ agent: "bogus", reason: "unknown-profile" }],
           validAgents: [],
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
-        runContestant: mock(async (agent: string) => makeResult({ agent })) as unknown as BakeoffCoordinatorDeps["runContestant"],
+        runContestant: mock(async (agent: string) =>
+          makeResult({ agent }),
+        ) as unknown as BakeoffCoordinatorDeps["runContestant"],
         rankContestants,
         persistBakeoffResult: mock(async () => {}),
       },
@@ -185,9 +192,10 @@ describe("runBakeoff (AC-3: one runContestant call per validated agent)", () => 
 
     await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
         rankContestants,
@@ -213,9 +221,10 @@ describe("runBakeoff (AC-3: one runContestant call per validated agent)", () => 
 
     await withCoordinatorDeps(
       {
-        validateContestants: ((_names: string[]) => ({
+        validateContestants: (async (_names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: ["claude"],
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
         rankContestants,
@@ -239,9 +248,10 @@ describe("runBakeoff (AC-4: ranking wiring)", () => {
 
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: mock(async (agent: string) =>
           agent === "claude" ? claudeResult : codexResult,
@@ -267,9 +277,10 @@ describe("runBakeoff (AC-4: ranking wiring)", () => {
 
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: mock(async (agent: string) =>
           agent === "claude" ? higher : lower,
@@ -301,9 +312,10 @@ describe("runBakeoff (AC-7: fail-open across DNF contestants)", () => {
 
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
         rankContestants,
@@ -323,9 +335,10 @@ describe("runBakeoff (AC-7: fail-open across DNF contestants)", () => {
   it("AC7 (boundary): every validated contestant appears in the ranking, including the one after the DNF", async () => {
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: mock(async (agent: string) =>
           makeResult({
@@ -369,15 +382,20 @@ describe("runBakeoff (AC-8: all-DNF persistence + non-zero outcome)", () => {
 
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
-        runContestant: mock(async (agent: string) => allDnf.find((d) => d.agent === agent)!) as unknown as BakeoffCoordinatorDeps["runContestant"],
+        runContestant: mock(
+          async (agent: string) => allDnf.find((d) => d.agent === agent)!,
+        ) as unknown as BakeoffCoordinatorDeps["runContestant"],
         rankContestants,
         // Use real write semantics so the file actually exists on disk.
         persistBakeoffResult: async (r: BakeoffResult, dir: string) => {
-          await import("node:fs/promises").then((m) => m.writeFile(join(dir, "bakeoff.json"), JSON.stringify(r), "utf8"));
+          await import("node:fs/promises").then((m) =>
+            m.writeFile(join(dir, "bakeoff.json"), JSON.stringify(r), "utf8"),
+          );
         },
       },
       () => runBakeoff(baseOptions({ outputDir: tempDir })),
@@ -402,16 +420,19 @@ describe("runBakeoff (AC-8: all-DNF persistence + non-zero outcome)", () => {
   it("AC8 (boundary): single-DNF bake-off persists + signals non-zero", async () => {
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: mock(async (agent: string) =>
           makeResult({ agent, status: "dnf-crashed", storiesPassed: 0 }),
         ) as unknown as BakeoffCoordinatorDeps["runContestant"],
         rankContestants,
         persistBakeoffResult: async (r: BakeoffResult, dir: string) => {
-          await import("node:fs/promises").then((m) => m.writeFile(join(dir, "bakeoff.json"), JSON.stringify(r), "utf8"));
+          await import("node:fs/promises").then((m) =>
+            m.writeFile(join(dir, "bakeoff.json"), JSON.stringify(r), "utf8"),
+          );
         },
       },
       () => runBakeoff(baseOptions({ agents: ["claude"], outputDir: tempDir })),
@@ -429,9 +450,10 @@ describe("runBakeoff (AC-9: at-least-one-finisher zero outcome)", () => {
   it("AC9: signals a zero exit outcome when at least one contestant finishes and a report is produced", async () => {
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: mock(async (agent: string) =>
           makeResult({
@@ -453,9 +475,10 @@ describe("runBakeoff (AC-9: at-least-one-finisher zero outcome)", () => {
   it("AC9 (boundary): all-pass bake-off signals outcome === 0", async () => {
     const result = await withCoordinatorDeps(
       {
-        validateContestants: ((names: string[]) => ({
+        validateContestants: (async (names: string[], _projectRoot: string) => ({
           errors: [],
           validAgents: names,
+          profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
         runContestant: mock(async (agent: string) =>
           makeResult({ agent, status: "passed", storiesPassed: 3 }),
@@ -467,5 +490,119 @@ describe("runBakeoff (AC-9: at-least-one-finisher zero outcome)", () => {
     );
 
     expect(result.outcome).toBe(0);
+  });
+});
+
+// ── US-002: isolated per-contestant execution contexts ───────────────────────
+
+/**
+ * Wraps the real `runContestant` with a fake worktree manager + a
+ * context-capturing pipeline, so `runBakeoff`'s coordinator wiring is
+ * exercised end-to-end while observing the `ContestantRunContext` each
+ * contestant's pipeline actually received.
+ */
+function makeContextCapturingRunner(): {
+  runContestantSpy: BakeoffCoordinatorDeps["runContestant"];
+  contexts: Map<string, ContestantRunContext>;
+} {
+  const contexts = new Map<string, ContestantRunContext>();
+  const deps: ContestantRunnerDeps = {
+    worktreeManager: {
+      create: async () => {},
+      remove: async () => {},
+    },
+    pipeline: async (ctx: ContestantRunContext) => {
+      contexts.set(ctx.profile, ctx);
+      return { results: [{ status: "passed" }], metrics: [] };
+    },
+  };
+  const runContestantSpy = (agent: string, options: ContestantOptions) => runContestant(agent, options, deps);
+  return { runContestantSpy, contexts };
+}
+
+describe("runBakeoff (US-002 AC4: distinct worktree per contestant)", () => {
+  it("US-002 AC4: two contestants' pipeline contexts have different worktree values", async () => {
+    const { runContestantSpy, contexts } = makeContextCapturingRunner();
+
+    await withCoordinatorDeps(
+      {
+        validateContestants: (async (names: string[]) => ({
+          errors: [],
+          validAgents: names,
+          profileData: {},
+        })) as BakeoffCoordinatorDeps["validateContestants"],
+        runContestant: runContestantSpy,
+        rankContestants,
+        persistBakeoffResult: mock(async () => {}),
+      },
+      () => runBakeoff(baseOptions()),
+    );
+
+    const claudeWorktree = contexts.get("claude")?.worktree;
+    const codexWorktree = contexts.get("codex")?.worktree;
+    expect(claudeWorktree).toBeDefined();
+    expect(codexWorktree).toBeDefined();
+    expect(claudeWorktree).not.toBe(codexWorktree);
+  });
+});
+
+describe("runBakeoff (US-002 AC6: distinct outputDir per contestant)", () => {
+  it("US-002 AC6: two contestants' pipeline contexts have different outputDir values", async () => {
+    const { runContestantSpy, contexts } = makeContextCapturingRunner();
+
+    await withCoordinatorDeps(
+      {
+        validateContestants: (async (names: string[]) => ({
+          errors: [],
+          validAgents: names,
+          profileData: {},
+        })) as BakeoffCoordinatorDeps["validateContestants"],
+        runContestant: runContestantSpy,
+        rankContestants,
+        persistBakeoffResult: mock(async () => {}),
+      },
+      () => runBakeoff(baseOptions()),
+    );
+
+    const claudeOutputDir = contexts.get("claude")?.outputDir;
+    const codexOutputDir = contexts.get("codex")?.outputDir;
+    expect(claudeOutputDir).toBeDefined();
+    expect(codexOutputDir).toBeDefined();
+    expect(claudeOutputDir).not.toBe(codexOutputDir);
+  });
+});
+
+describe("runBakeoff (US-002 AC9: second contestant still runs after the first pipeline rejects)", () => {
+  it("US-002 AC9: the coordinator still invokes the pipeline for the second contestant when the first rejects", async () => {
+    const invoked: string[] = [];
+    const deps: ContestantRunnerDeps = {
+      worktreeManager: { create: async () => {}, remove: async () => {} },
+      pipeline: async (ctx: ContestantRunContext) => {
+        invoked.push(ctx.profile);
+        if (ctx.profile === "claude") {
+          throw new Error("first contestant pipeline rejected");
+        }
+        return { results: [{ status: "passed" }], metrics: [] };
+      },
+    };
+    const runContestantSpy = (agent: string, options: ContestantOptions) => runContestant(agent, options, deps);
+
+    const result = await withCoordinatorDeps(
+      {
+        validateContestants: (async (names: string[]) => ({
+          errors: [],
+          validAgents: names,
+          profileData: {},
+        })) as BakeoffCoordinatorDeps["validateContestants"],
+        runContestant: runContestantSpy,
+        rankContestants,
+        persistBakeoffResult: mock(async () => {}),
+      },
+      () => runBakeoff(baseOptions()),
+    );
+
+    expect(invoked).toEqual(["claude", "codex"]);
+    expect(result.ranking.find((r) => r.agent === "claude")?.status).toBe("dnf-crashed");
+    expect(result.ranking.find((r) => r.agent === "codex")?.status).toBe("passed");
   });
 });

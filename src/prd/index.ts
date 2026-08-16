@@ -44,6 +44,7 @@ export type { SpecContextFile } from "./context-files-extract";
 export { MAX_SPEC_CONTEXT_FILES, extractSpecContextFiles } from "./context-files-extract";
 export type { FailureCategory } from "../tdd/types";
 export { validateInjectedStory, deriveNextStoryId } from "./inject";
+export { assertPrdCommitted, validateStoryId } from "./validate";
 
 /** Maximum PRD file size (5MB) - reject larger PRDs to prevent memory issues */
 export const PRD_MAX_FILE_SIZE = 5 * 1024 * 1024;

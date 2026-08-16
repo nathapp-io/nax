@@ -1,0 +1,317 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `validateContestants` resolves profile `cross-agent-pi`, then it returns `validAgents` containing `cross-agent-pi` and an empty `errors` array.",
+    "refined": "Given a `validateContestants(['cross-agent-pi'])` call where the profile `cross-agent-pi` exists and is valid, the return value has shape `{ validAgents: string[], errors: Array<{profile: string, reason: string, message?: string}> }` where `validAgents.includes('cross-agent-pi')` is `true` and `errors.length === 0`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When a named profile does not resolve, then `validateContestants` returns one error with reason `unknown-profile`.",
+    "refined": "Given a `validateContestants(['nonexistent-profile'])` call where no profile with that name exists, the return value satisfies `errors.length === 1` and `errors[0].reason === 'unknown-profile'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When one profile is unresolvable and another resolves in the same `validateContestants` call, then `validAgents` omits the unresolvable profile and retains the resolvable profile.",
+    "refined": "Given a `validateContestants(['resolvable-profile', 'unresolvable-profile'])` call where `resolvable-profile` exists and `unresolvable-profile` does not, the return value satisfies `validAgents` equals `['resolvable-profile']` and `errors.length === 1` with `errors[0].profile === 'unresolvable-profile'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `validateContestants` rejects an unresolvable profile, then its error message contains that profile name.",
+    "refined": "Given a `validateContestants(['missing-profile'])` call, `errors[0].message?.includes('missing-profile')` is `true`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `validateContestants` processes contestant names, then it invokes `loadProfile` once per name with that name as the first argument.",
+    "refined": "Given a `validateContestants(['profile-a', 'profile-b'])` call, the `loadProfile` mock is called exactly twice: first with `('profile-a', <bakeoffRoot>)` and then with `('profile-b', <bakeoffRoot>)`, where the second argument is the bake-off project root passed to `validateContestants`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When a resolved profile's `agent.default` is absent from the ACP adapter registry, then `validateContestants` returns reason `no-acp-adapter`.",
+    "refined": "Given a profile that exists but declares `agent.default` set to an agent name not registered in the ACP adapter registry, `validateContestants` returns an error with `reason === 'no-acp-adapter'` and `profile` set to the profile name.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When a resolved profile's agent binary is absent from PATH, then `validateContestants` returns reason `dnf-not-installed`.",
+    "refined": "Given a profile that exists and references an agent whose binary is not found in PATH, `validateContestants` returns an error with `reason === 'dnf-not-installed'` and `profile` set to the profile name.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When a profile overlay exclusively sets a configuration key, then the contestant merged config returns the profile value for that key.",
+    "refined": "Given a base config without key `x.v` and a profile overlay that sets `x.v = 'profile-value'`, the returned merged contestant config satisfies `mergedConfig.x.v === 'profile-value'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When both base config and a profile overlay set a configuration key, then the contestant merged config returns the profile value for that key.",
+    "refined": "Given a base config with `x.v = 'base-value'` and a profile overlay with `x.v = 'overlay-value'`, the returned merged contestant config satisfies `mergedConfig.x.v === 'overlay-value'` (deep-merge profile wins).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When a contestant config is merged from a profile, then its `agent.default` equals the profile's `agent.default`.",
+    "refined": "Given a profile with `agent.default = 'claude'`, the returned merged contestant config satisfies `mergedConfig.agent.default === 'claude'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When a profile overlay sets `agent.fallback.enabled` to true, then the contestant merged config has `agent.fallback.enabled` equal to false.",
+    "refined": "Given a base config with `agent.fallback.enabled = false` and a profile overlay that sets `agent.fallback.enabled = true`, the returned merged contestant config satisfies `mergedConfig.agent.fallback.enabled === false` (fallback pinning — profile cannot enable fallback).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When `runContestant` invokes its pipeline dependency, then the context `profile` equals the contestant profile name.",
+    "refined": "Assert that the `ContestantRunContext` passed to `pipeline(ctx)` satisfies `ctx.profile === expectedProfileName` where `expectedProfileName` is the profile name from the contestant's config.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When `runContestant` invokes its pipeline dependency, then the context `feature` equals the bake-off feature.",
+    "refined": "Assert that the `ContestantRunContext` passed to `pipeline(ctx)` satisfies `ctx.feature === expectedFeatureName` where `expectedFeatureName` is the feature string from the bake-off configuration.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When `runContestant` invokes its pipeline dependency, then the context `worktree` path ends with the contestant worktree ID.",
+    "refined": "Assert that `context.worktree` is a string that ends with `/${contestant.worktreeId}` where `contestant.worktreeId` is the worktree identifier generated for that contestant.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When a bake-off runs two contestants, then their pipeline contexts have different `worktree` values.",
+    "refined": "Run a bake-off with exactly two contestants. Assert that `pipelineCall1.context.worktree !== pipelineCall2.context.worktree` and both values are truthy strings.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When `runContestant` invokes its pipeline dependency, then the context `outputDir` equals the project output root joined with `bakeoff`, the feature, and the profile name.",
+    "refined": "Assert that `context.outputDir` equals `projectOutputDir(projectKey, baseOutputDir) + '/bakeoff/' + context.feature + '/' + context.profile` where `projectOutputDir` is the project's output directory derivation function.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When a bake-off runs two contestants, then their pipeline contexts have different `outputDir` values.",
+    "refined": "Run a bake-off with exactly two contestants. Assert that `pipelineCall1.context.outputDir !== pipelineCall2.context.outputDir` and both values are truthy strings ending with distinct paths.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When `runContestant` invokes its pipeline dependency, then `context.config.outputDir` equals `context.outputDir`.",
+    "refined": "Assert that `context.config.outputDir === context.outputDir` immediately before the `pipeline(ctx)` call is invoked.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When the pipeline dependency rejects, then `runContestant` returns status `dnf-crashed`.",
+    "refined": "Mock the pipeline to reject with an error. Assert that `runContestant({ profile, config, pipeline, deps })` resolves to an object where `result.status === 'dnf-crashed'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When the first contestant pipeline rejects in a bake-off, then the coordinator still invokes the pipeline for the second contestant.",
+    "refined": "Run a bake-off with two contestants where the first pipeline mock rejects. Assert that the second pipeline mock was invoked at least once (call count >= 1) after the first contestant's rejection.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When a two-contestant bake-off completes, then it has created two distinct `.nax-wt` directories and removed both before returning.",
+    "refined": "Run a bake-off with exactly two contestants. Before `runBakeoff` resolves, assert two `.nax-wt/*` directories exist in the project root. After resolution, assert zero `.nax-wt/*` directories remain.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When `persistBakeoffResult` receives a feature result and output directory, then it writes `bakeoff.json` under `bakeoff/<feature>` within that directory.",
+    "refined": "Call `persistBakeoffResult({ feature, result }, outputDir)`. Assert that a file exists at `path.join(outputDir, 'bakeoff', feature, 'bakeoff.json')` and is valid JSON.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When results for two features are persisted under one output directory, then both feature-scoped `bakeoff.json` files remain readable and contain their own feature values.",
+    "refined": "Call `persistBakeoffResult` twice with distinct features A and B using the same outputDir. Read `outputDir/bakeoff/A/bakeoff.json` and `outputDir/bakeoff/B/bakeoff.json`. Assert both files exist, parse as JSON, and `fileA.feature === 'A'` and `fileB.feature === 'B'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When `handleRunAction` receives two resolvable profiles with a stubbed pipeline adapter, then the adapter is invoked exactly twice.",
+    "refined": "Given two Profile objects that both resolve to non-null values, when `handleRunAction(profiles, stubAdapter)` is called, then `stubAdapter` is called exactly 2 times (once per profile), verified via `expect(stubAdapter).toHaveBeenCalledTimes(2)`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When the pipeline adapter invokes `run`, then its `workdir` equals the context `worktree`.",
+    "refined": "Given a ContestantRunContext with `worktree: '/path/to/worktree'`, when the adapter calls `run(args)`, then `args.workdir === '/path/to/worktree'`, verified via `expect(runSpy).toHaveBeenCalledWith(expect.objectContaining({ workdir: context.worktree }))`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When the pipeline adapter invokes `run`, then its `prdPath` is located inside the context `worktree`.",
+    "refined": "Given a ContestantRunContext with `worktree: '/path/to/worktree'`, when the adapter calls `run(args)`, then `args.prdPath` starts with `context.worktree + '/'`, verified via `expect(args.prdPath).toMatch(new RegExp('^' + escapeRegExp(context.worktree) + '/'))`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When the pipeline adapter invokes `run`, then its `prdPath` names the context feature.",
+    "refined": "Given a ContestantRunContext with `feature: 'my-feature'`, when the adapter calls `run(args)`, then the filename of `args.prdPath` equals `'my-feature.prd.md'`, verified via `expect(basename(args.prdPath)).toBe('my-feature.prd.md')`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When the pipeline adapter invokes `run`, then its `statusFile` is located inside the context `outputDir`.",
+    "refined": "Given a ContestantRunContext with `outputDir: '/path/to/output'`, when the adapter calls `run(args)`, then `args.statusFile` starts with `context.outputDir + '/'`, verified via `expect(args.statusFile).toMatch(new RegExp('^' + escapeRegExp(context.outputDir) + '/'))`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When the pipeline adapter invokes `run`, then its `config` equals the context `config`.",
+    "refined": "Given a ContestantRunContext with `config: {...}`, when the adapter calls `run(args)`, then `JSON.stringify(args.config) === JSON.stringify(context.config)`, verified via `expect(args.config).toEqual(context.config)`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When `run` reports `storiesCompleted`, then the adapter returns a `results` array with that length.",
+    "refined": "Given `run` resolves with `{ storiesCompleted: 5 }`, when the adapter executes and resolves, then the result is `{ results: Array(5) }` with `results.length === 5`, verified via `expect(result.results).toHaveLength(5)` where `5` is drawn from `runResult.storiesCompleted`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When the pipeline adapter executes a context, then it invokes `loadRunMetrics` with the context `outputDir`.",
+    "refined": "Given a ContestantRunContext with `outputDir: '/path/to/output'`, when the adapter executes, then `loadRunMetricsSpy` is called with exactly `['/path/to/output']` as its argument, verified via `expect(loadRunMetricsSpy).toHaveBeenCalledWith(context.outputDir)`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When `loadRunMetrics` returns story metrics, then the adapter returns one metrics entry per story metric carrying that metric's cost and duration.",
+    "refined": "Given `loadRunMetrics` returns `[{ id: 's1', cost: 0.5, durationMs: 1000 }, { id: 's2', cost: 0.75, durationMs: 2000 }]`, when the adapter resolves, then `result.results` has length 2, `result.results[0].cost === 0.5`, `result.results[0].durationMs === 1000`, `result.results[1].cost === 0.75`, `result.results[1].durationMs === 2000`, verified via `expect(result.results).toEqual(expect.arrayContaining([{ cost: 0.5, durationMs: 1000 }, { cost: 0.75, durationMs: 2000 }]))`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When `loadRunMetrics` yields no entries, then the adapter returns one metrics entry derived from the run result `totalCost` and `durationMs`.",
+    "refined": "Given `loadRunMetrics` returns `[]` and `run` resolves with `{ totalCost: 1.25, durationMs: 5000 }`, when the adapter resolves, then `result.results` has length 1, `result.results[0].cost === 1.25`, `result.results[0].durationMs === 5000`, verified via `expect(result.results).toEqual([{ cost: 1.25, durationMs: 5000 }])`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When the PRD-tracking guard rejects a compare invocation, then `handleRunAction` creates no worktree.",
+    "refined": "Call `handleRunAction` with a feature having an uncommitted PRD. Assert that: (1) the function returns an error result with code `PRD_UNCOMMITTED` or `PRD_UNTRACKED`, AND (2) `WorktreeManager.listWorktrees()` returns an array containing no entry whose `path` matches the expected `bakeoff-*` worktree directory pattern.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "When a worktree ID is derived for a feature and profile, then it begins with `bakeoff-`.",
+    "refined": "Call the ID derivation function with any valid feature name and profile name. Assert that the returned string starts with the literal prefix `bakeoff-`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-36",
+    "original": "When a profile name contains characters outside the story-ID alphabet, then its derived worktree ID passes `validateStoryId` without throwing.",
+    "refined": "Call the ID derivation function with a profile name containing characters such as `!@#$%^&*()` and unicode. Assert that: (1) the function returns a string without throwing, AND (2) calling `validateStoryId()` on the returned string does not throw.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-37",
+    "original": "When a feature and profile yield an overlong natural ID, then the derived worktree ID is at most 64 characters long.",
+    "refined": "Call the ID derivation function with a feature and profile whose concatenation would exceed 64 characters. Assert that the returned string has `length <= 64`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-38",
+    "original": "When two distinct feature-and-profile pairs both yield overlong natural IDs, then their derived worktree IDs differ.",
+    "refined": "Call the ID derivation function with two distinct (feature, profile) pairs that each individually exceed 64 characters. Assert that the two returned strings are not equal.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-39",
+    "original": "When preflight finds a leftover `nax/bakeoff-<id>` branch with no worktree record, then it removes that branch and subsequent worktree creation for the ID succeeds.",
+    "refined": "Setup: Create a branch named `nax/bakeoff-test-xyz` in git and ensure `WorktreeManager` has no record for `test-xyz`. Run preflight. Assert: (1) `git branch --list nax/bakeoff-test-xyz` returns empty, AND (2) calling worktree creation for the same ID completes without error.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-40",
+    "original": "When preflight runs with a branch not beginning `nax/bakeoff-`, then that branch still exists afterward.",
+    "refined": "Setup: Create a branch named `feature/my-branch` in git. Run preflight. Assert that `git branch --list feature/my-branch` returns a list containing `feature/my-branch`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-41",
+    "original": "When a feature `prd.json` is untracked by git, then the bake-off rejects with an error naming that PRD path.",
+    "refined": "Setup: Create a feature directory with a `prd.json` that is not tracked by git (unadded). Invoke the bake-off. Assert that: (1) the returned error message includes the exact string `prd.json` or the full path to it, AND (2) the error code is `PRD_UNTRACKED`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-42",
+    "original": "When a feature `prd.json` has uncommitted modifications, then the bake-off rejects with an error naming that PRD path.",
+    "refined": "Setup: Create a committed `prd.json`, then modify it without committing. Invoke the bake-off. Assert that: (1) the returned error message includes the exact string `prd.json` or the full path to it, AND (2) the error code is `PRD_UNCOMMITTED`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-43",
+    "original": "When the feature PRD is untracked, then the bake-off rejects without invoking the pipeline dependency.",
+    "refined": "Setup: Create a feature with an untracked `prd.json`. Spy on or mock the pipeline invocation function. Invoke the bake-off. Assert that the pipeline spy was never called (call count === 0).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-44",
+    "original": "When contestant worktree creation fails, then that contestant is reported with status `dnf-crashed`.",
+    "refined": "Setup: Mock `WorktreeManager.create()` to throw an error for one specific contestant ID. Run the bake-off. Assert that the story result for the affected contestant contains `status: 'dnf-crashed'` and the result includes an error with the original failure reason.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-45",
+    "original": "When `runContestant` is invoked with an explicit deps object providing a worktree manager and a pipeline, then it returns a `ContestantResult` whose `agent` equals the profile name it was given.",
+    "refined": "Given a profile name 'test-profile' and a deps object containing a worktree manager and pipeline (both non-null), when `runContestant(deps, 'test-profile', ...)` is called, then the returned object must have `agent === 'test-profile'` and `agent` property must be a string.",
+    "testable": true,
+    "storyId": "US-005"
+  }
+]

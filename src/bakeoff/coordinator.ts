@@ -8,9 +8,13 @@
 
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
+import { featureDir } from "../config";
+import { assertPrdCommitted } from "../prd";
+import { WorktreeManager } from "../worktree/manager";
 import { runContestant } from "./contestant";
 import type { ContestantOptions } from "./contestant";
-import { parseCompareList, validateContestants } from "./preflight";
+import { pipeline } from "./pipeline-adapter";
+import { buildContestantConfig, parseCompareList, reclaimStaleBakeoffBranches, validateContestants } from "./preflight";
 import type { ContestantValidationResult } from "./preflight";
 import { rankContestants } from "./ranking";
 import type { BakeoffResult, ContestantResult } from "./types";
@@ -27,7 +31,7 @@ export interface BakeoffOptions {
 
 /** Injectable dependencies for the coordinator. Tests override individual entries. */
 export interface BakeoffCoordinatorDeps {
-  validateContestants: (names: string[]) => ContestantValidationResult;
+  validateContestants: (names: string[], projectRoot: string) => Promise<ContestantValidationResult>;
   runContestant: (agent: string, options: ContestantOptions) => Promise<ContestantResult>;
   rankContestants: typeof rankContestants;
   persistBakeoffResult: (result: BakeoffResult, outputDir: string) => Promise<void>;
@@ -35,13 +39,17 @@ export interface BakeoffCoordinatorDeps {
 
 /** Default `persistBakeoffResult` dep: writes bakeoff.json under outputDir. */
 export async function persistBakeoffResult(result: BakeoffResult, outputDir: string): Promise<void> {
-  const filePath = join(outputDir, "bakeoff.json");
+  const filePath = join(outputDir, "bakeoff", result.feature, "bakeoff.json");
   await Bun.write(filePath, JSON.stringify(result, null, 2));
 }
 
 export const _coordinatorDeps: BakeoffCoordinatorDeps = {
   validateContestants,
-  runContestant: runContestant as unknown as BakeoffCoordinatorDeps["runContestant"],
+  runContestant: (agent, options) =>
+    runContestant(agent, options, {
+      worktreeManager: new WorktreeManager(),
+      pipeline,
+    }),
   rankContestants,
   persistBakeoffResult,
 };
@@ -65,15 +73,22 @@ export async function runBakeoff(
 ): Promise<BakeoffResult> {
   const merged: BakeoffCoordinatorDeps = { ..._coordinatorDeps, ...deps };
 
-  const { validAgents, errors } = merged.validateContestants(options.agents);
+  // US-004 AC-6/AC-7: reclaim leftover nax/bakeoff-<id> branches (no live
+  // worktree record) before any contestant worktree is created, so a stale
+  // branch from a crashed prior run never blocks this one. Best-effort —
+  // failures are logged and swallowed inside the function itself.
+  await reclaimStaleBakeoffBranches(options.projectRoot);
+
+  const { validAgents, errors, profileData } = await merged.validateContestants(options.agents, options.projectRoot);
 
   const results: ContestantResult[] = [];
   for (const agent of validAgents) {
     const contestantOptions: ContestantOptions = {
       projectRoot: options.projectRoot,
-      config: options.config,
+      config: buildContestantConfig(options.config, profileData[agent] ?? {}),
       maxCostUsd: options.maxCostUsd,
       feature: options.feature,
+      outputDir: options.outputDir,
     };
     const result = await merged.runContestant(agent, contestantOptions);
     results.push(result);
@@ -133,6 +148,14 @@ export interface BakeoffCliDeps {
   runBakeoff: (options: BakeoffOptions) => Promise<BakeoffResult>;
   runSingleAgent: (options: unknown) => Promise<unknown>;
   handleRunAction: (options: HandleRunActionOptions) => Promise<unknown>;
+  /**
+   * PRD-tracking guard (US-004 AC-1, AC-8, AC-9, AC-10) — rejects the
+   * bake-off before any worktree is created or the pipeline is invoked when
+   * the feature's `prd.json` is untracked or has uncommitted modifications.
+   * Defaults to `assertPrdCommitted`. Only wired into the --compare path;
+   * the single-agent path never calls this dep.
+   */
+  assertPrdCommitted: (prdPath: string, projectRoot: string) => Promise<void>;
 }
 
 export const _bakeoffCliDeps: BakeoffCliDeps = {
@@ -142,6 +165,7 @@ export const _bakeoffCliDeps: BakeoffCliDeps = {
   },
   // Default delegates to the standalone function defined below.
   handleRunAction: (options: HandleRunActionOptions) => handleRunAction(options, _bakeoffCliDeps),
+  assertPrdCommitted,
 };
 
 /**
@@ -157,6 +181,9 @@ export async function handleRunAction(
     return deps.runSingleAgent(options);
   }
 
+  const prdPath = join(featureDir(options.projectRoot, options.feature), "prd.json");
+  await deps.assertPrdCommitted(prdPath, options.projectRoot);
+
   const agents = options.agents ?? compareList;
   return deps.runBakeoff({
     agents,
@@ -169,5 +196,4 @@ export async function handleRunAction(
 }
 
 // Re-exports for downstream wiring that already imports these names.
-export { _contestantDeps } from "./contestant";
 export type { ContestantOptions, ContestantResult };

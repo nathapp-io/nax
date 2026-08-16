@@ -9,7 +9,14 @@ import { rankContestants } from "../../../src/bakeoff/ranking";
 import type { ContestantResult, ContestantStatus } from "../../../src/bakeoff/types";
 
 // Helper to create a ContestantResult with defaults
-function makeContestant(overrides: Partial<ContestantResult> & { status: ContestantStatus; storiesPassed: number; costUsd: number; wallTimeMs: number }): ContestantResult {
+function makeContestant(
+  overrides: Partial<ContestantResult> & {
+    status: ContestantStatus;
+    storiesPassed: number;
+    costUsd: number;
+    wallTimeMs: number;
+  },
+): ContestantResult {
   return {
     name: "test-contestant",
     agent: "claude",

@@ -9,11 +9,17 @@
  *    the single-agent runner.
  *  - AC-11: when --compare is absent, handleRunAction routes to the
  *    single-agent runner and does not invoke runBakeoff.
+ *
+ * Contract drift (US-004): handleRunAction now calls the injected
+ * `assertPrdCommitted` guard before dispatching to runBakeoff. Tests below
+ * that exercise the --compare path but predate the guard override it with a
+ * no-op so they keep asserting dispatch behavior without needing a real git
+ * fixture — the guard's own behavior is covered separately (AC-1/AC-8/AC-9/AC-10).
  */
 
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { _bakeoffCliDeps, handleRunAction } from "@/bakeoff";
-import type { BakeoffCliDeps, BakeoffResult, HandleRunActionOptions } from "@/bakeoff";
+import { _bakeoffCliDeps, handleRunAction, pipeline, runBakeoff, runContestant } from "@/bakeoff";
+import type { BakeoffCliDeps, BakeoffResult, ContestantRunnerDeps, HandleRunActionOptions } from "@/bakeoff";
 import type { NaxConfig } from "@/config";
 
 function baseOptions(overrides: Partial<HandleRunActionOptions> = {}): HandleRunActionOptions {
@@ -61,6 +67,7 @@ describe("handleRunAction (AC-10: --compare routes to runBakeoff)", () => {
       {
         runBakeoff: runBakeoffSpy as unknown as BakeoffCliDeps["runBakeoff"],
         runSingleAgent: runSingleAgentSpy as unknown as BakeoffCliDeps["runSingleAgent"],
+        assertPrdCommitted: async () => undefined,
       },
       () =>
         handleRunAction(
@@ -93,6 +100,7 @@ describe("handleRunAction (AC-10: --compare routes to runBakeoff)", () => {
       {
         runBakeoff: runBakeoffSpy as unknown as BakeoffCliDeps["runBakeoff"],
         runSingleAgent: runSingleAgentSpy as unknown as BakeoffCliDeps["runSingleAgent"],
+        assertPrdCommitted: async () => undefined,
       },
       () =>
         handleRunAction(
@@ -124,6 +132,7 @@ describe("handleRunAction (AC-10: --compare routes to runBakeoff)", () => {
       {
         runBakeoff: runBakeoffSpy as unknown as BakeoffCliDeps["runBakeoff"],
         runSingleAgent: runSingleAgentSpy as unknown as BakeoffCliDeps["runSingleAgent"],
+        assertPrdCommitted: async () => undefined,
       },
       () => handleRunAction(baseOptions({ compare: "claude,codex", maxCostUsd: 5 })),
     );
@@ -179,5 +188,130 @@ describe("handleRunAction (AC-11: no --compare routes to runSingleAgent)", () =>
 
     expect(runSingleAgentSpy).toHaveBeenCalledTimes(1);
     expect(runBakeoffSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleRunAction (US-003 AC1: pipeline adapter invocation count)", () => {
+  it("AC1: invokes the pipeline adapter exactly twice for two resolvable profiles", async () => {
+    let pipelineCallCount = 0;
+    const spyDeps: ContestantRunnerDeps = {
+      worktreeManager: {
+        create: async () => undefined,
+        remove: async () => undefined,
+      },
+      pipeline: async (ctx) => {
+        pipelineCallCount++;
+        // Route through the real pipeline adapter under test so a spy
+        // wrapper doesn't silently diverge from production wiring.
+        try {
+          return await pipeline(ctx);
+        } catch {
+          return { results: [], metrics: [] };
+        }
+      },
+    };
+
+    const stubbedRunBakeoff: BakeoffCliDeps["runBakeoff"] = (options) =>
+      runBakeoff(options, {
+        validateContestants: async () => ({
+          validAgents: ["profile-a", "profile-b"],
+          errors: [],
+          profileData: {},
+        }),
+        runContestant: (agent, contestantOptions) => runContestant(agent, contestantOptions, spyDeps),
+        persistBakeoffResult: async () => undefined,
+      });
+
+    await withCliDeps({ runBakeoff: stubbedRunBakeoff, assertPrdCommitted: async () => undefined }, () =>
+      handleRunAction(
+        baseOptions({
+          compare: "profile-a,profile-b",
+        }),
+      ),
+    );
+
+    expect(pipelineCallCount).toBe(2);
+  });
+});
+
+describe("handleRunAction (US-004 AC1, AC10: PRD-tracking guard)", () => {
+  it("US-004 AC1: creates no worktree when the PRD-tracking guard rejects a compare invocation", async () => {
+    const worktreeCreateSpy = mock(async () => undefined);
+    const pipelineSpy = mock(async () => ({ results: [], metrics: [] }));
+
+    const spyDeps: ContestantRunnerDeps = {
+      worktreeManager: {
+        create: worktreeCreateSpy,
+        remove: async () => undefined,
+      },
+      pipeline: pipelineSpy,
+    };
+
+    const stubbedRunBakeoff: BakeoffCliDeps["runBakeoff"] = (options) =>
+      runBakeoff(options, {
+        validateContestants: async () => ({
+          validAgents: ["profile-a"],
+          errors: [],
+          profileData: {},
+        }),
+        runContestant: (agent, contestantOptions) => runContestant(agent, contestantOptions, spyDeps),
+        persistBakeoffResult: async () => undefined,
+      });
+
+    const rejectingGuard = mock(async (prdPath: string) => {
+      throw new Error(`prd not committed: ${prdPath}`);
+    });
+
+    await expect(
+      withCliDeps(
+        {
+          runBakeoff: stubbedRunBakeoff,
+          assertPrdCommitted: rejectingGuard as unknown as BakeoffCliDeps["assertPrdCommitted"],
+        },
+        () => handleRunAction(baseOptions({ compare: "profile-a" })),
+      ),
+    ).rejects.toThrow();
+
+    expect(rejectingGuard).toHaveBeenCalledTimes(1);
+    expect(worktreeCreateSpy).not.toHaveBeenCalled();
+  });
+
+  it("US-004 AC10: does not invoke the pipeline dependency when the feature PRD is untracked", async () => {
+    const pipelineSpy = mock(async () => ({ results: [], metrics: [] }));
+
+    const spyDeps: ContestantRunnerDeps = {
+      worktreeManager: {
+        create: async () => undefined,
+        remove: async () => undefined,
+      },
+      pipeline: pipelineSpy,
+    };
+
+    const stubbedRunBakeoff: BakeoffCliDeps["runBakeoff"] = (options) =>
+      runBakeoff(options, {
+        validateContestants: async () => ({
+          validAgents: ["profile-a"],
+          errors: [],
+          profileData: {},
+        }),
+        runContestant: (agent, contestantOptions) => runContestant(agent, contestantOptions, spyDeps),
+        persistBakeoffResult: async () => undefined,
+      });
+
+    const rejectingGuard = mock(async (prdPath: string) => {
+      throw new Error(`prd not committed: ${prdPath}`);
+    });
+
+    await expect(
+      withCliDeps(
+        {
+          runBakeoff: stubbedRunBakeoff,
+          assertPrdCommitted: rejectingGuard as unknown as BakeoffCliDeps["assertPrdCommitted"],
+        },
+        () => handleRunAction(baseOptions({ compare: "profile-a" })),
+      ),
+    ).rejects.toThrow();
+
+    expect(pipelineSpy).not.toHaveBeenCalled();
   });
 });

@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-08-16T04-49-57-436Z",
+    "feature": "bakeoff-compare-profiles",
+    "startedAt": "2026-08-16T04:49:57.436Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 81535
+  },
+  "progress": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 63.243243,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 7,
+  "updatedAt": "2026-08-16T07:13:08.137Z",
+  "durationMs": 8590701,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-08-16T07:12:19.238Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-08-16T07:13:06.936Z"
+    }
+  }
+}

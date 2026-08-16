@@ -422,7 +422,7 @@ program
         );
         process.exit(1);
       }
-      const { errors, validAgents } = validateContestants(contestants);
+      const { errors, validAgents } = await validateContestants(contestants, workdir);
       if (errors.length > 0) {
         console.error(chalk.red("Bake-off pre-flight failed:"));
         for (const e of errors) {
