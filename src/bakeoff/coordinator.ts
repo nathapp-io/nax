@@ -8,6 +8,7 @@
 
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
+import { featureDir } from "../config";
 import { WorktreeManager } from "../worktree/manager";
 import { runContestant } from "./contestant";
 import type { ContestantOptions, ContestantRunnerDeps } from "./contestant";
@@ -145,6 +146,14 @@ export interface BakeoffCliDeps {
   runBakeoff: (options: BakeoffOptions) => Promise<BakeoffResult>;
   runSingleAgent: (options: unknown) => Promise<unknown>;
   handleRunAction: (options: HandleRunActionOptions) => Promise<unknown>;
+  /**
+   * PRD-tracking guard (US-004 AC-1, AC-8, AC-9, AC-10) — rejects the
+   * bake-off before any worktree is created or the pipeline is invoked when
+   * the feature's `prd.json` is untracked or has uncommitted modifications.
+   * Defaults to a no-op so the single-agent and existing bake-off paths are
+   * unaffected until the real guard (`assertPrdCommitted`) is wired in.
+   */
+  assertPrdCommitted: (prdPath: string, projectRoot: string) => Promise<void>;
 }
 
 export const _bakeoffCliDeps: BakeoffCliDeps = {
@@ -154,6 +163,9 @@ export const _bakeoffCliDeps: BakeoffCliDeps = {
   },
   // Default delegates to the standalone function defined below.
   handleRunAction: (options: HandleRunActionOptions) => handleRunAction(options, _bakeoffCliDeps),
+  assertPrdCommitted: async (_prdPath: string, _projectRoot: string) => {
+    // not implemented — see assertPrdCommitted in src/prd/validate.ts
+  },
 };
 
 /**
@@ -168,6 +180,9 @@ export async function handleRunAction(
   if (compareList.length === 0) {
     return deps.runSingleAgent(options);
   }
+
+  const prdPath = join(featureDir(options.projectRoot, options.feature), "prd.json");
+  await deps.assertPrdCommitted(prdPath, options.projectRoot);
 
   const agents = options.agents ?? compareList;
   return deps.runBakeoff({

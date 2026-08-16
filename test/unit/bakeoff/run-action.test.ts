@@ -224,3 +224,85 @@ describe("handleRunAction (US-003 AC1: pipeline adapter invocation count)", () =
     expect(pipelineCallCount).toBe(2);
   });
 });
+
+describe("handleRunAction (US-004 AC1, AC10: PRD-tracking guard)", () => {
+  it("US-004 AC1: creates no worktree when the PRD-tracking guard rejects a compare invocation", async () => {
+    const worktreeCreateSpy = mock(async () => undefined);
+    const pipelineSpy = mock(async () => ({ results: [], metrics: [] }));
+
+    const spyDeps: ContestantRunnerDeps = {
+      worktreeManager: {
+        create: worktreeCreateSpy,
+        remove: async () => undefined,
+      },
+      pipeline: pipelineSpy,
+    };
+
+    const stubbedRunBakeoff: BakeoffCliDeps["runBakeoff"] = (options) =>
+      runBakeoff(options, {
+        validateContestants: async () => ({
+          validAgents: ["profile-a"],
+          errors: [],
+          profileData: {},
+        }),
+        runContestant: (agent, contestantOptions) => runContestant(agent, contestantOptions, spyDeps),
+        persistBakeoffResult: async () => undefined,
+      });
+
+    const rejectingGuard = mock(async (prdPath: string) => {
+      throw new Error(`prd not committed: ${prdPath}`);
+    });
+
+    await expect(
+      withCliDeps(
+        {
+          runBakeoff: stubbedRunBakeoff,
+          assertPrdCommitted: rejectingGuard as unknown as BakeoffCliDeps["assertPrdCommitted"],
+        },
+        () => handleRunAction(baseOptions({ compare: "profile-a" })),
+      ),
+    ).rejects.toThrow();
+
+    expect(rejectingGuard).toHaveBeenCalledTimes(1);
+    expect(worktreeCreateSpy).not.toHaveBeenCalled();
+  });
+
+  it("US-004 AC10: does not invoke the pipeline dependency when the feature PRD is untracked", async () => {
+    const pipelineSpy = mock(async () => ({ results: [], metrics: [] }));
+
+    const spyDeps: ContestantRunnerDeps = {
+      worktreeManager: {
+        create: async () => undefined,
+        remove: async () => undefined,
+      },
+      pipeline: pipelineSpy,
+    };
+
+    const stubbedRunBakeoff: BakeoffCliDeps["runBakeoff"] = (options) =>
+      runBakeoff(options, {
+        validateContestants: async () => ({
+          validAgents: ["profile-a"],
+          errors: [],
+          profileData: {},
+        }),
+        runContestant: (agent, contestantOptions) => runContestant(agent, contestantOptions, spyDeps),
+        persistBakeoffResult: async () => undefined,
+      });
+
+    const rejectingGuard = mock(async (prdPath: string) => {
+      throw new Error(`prd not committed: ${prdPath}`);
+    });
+
+    await expect(
+      withCliDeps(
+        {
+          runBakeoff: stubbedRunBakeoff,
+          assertPrdCommitted: rejectingGuard as unknown as BakeoffCliDeps["assertPrdCommitted"],
+        },
+        () => handleRunAction(baseOptions({ compare: "profile-a" })),
+      ),
+    ).rejects.toThrow();
+
+    expect(pipelineSpy).not.toHaveBeenCalled();
+  });
+});

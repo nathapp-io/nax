@@ -26,6 +26,7 @@ export {
   buildContestantConfig,
   computeWorstCaseCost,
   parseCompareList,
+  reclaimStaleBakeoffBranches,
   validateContestants,
 } from "./preflight";
 export type {
@@ -38,3 +39,4 @@ export { _pipelineAdapterDeps, pipeline } from "./pipeline-adapter";
 export { rankContestants } from "./ranking";
 export { renderBakeoffReport } from "./report";
 export type { BakeoffResult, ContestantResult, ContestantStatus } from "./types";
+export { deriveBakeoffWorktreeId } from "./worktree-id";

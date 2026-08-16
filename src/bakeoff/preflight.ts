@@ -191,3 +191,16 @@ export function assertCompareAgentExclusive(opts: { compare?: string; agent?: st
 export function computeWorstCaseCost(contestantCount: number, maxCostPerContestant: number): number {
   return contestantCount * maxCostPerContestant;
 }
+
+/**
+ * Removes leftover `nax/bakeoff-<id>` branches that have no live worktree
+ * record, freeing the reserved namespace for a fresh bake-off run
+ * (US-004 AC-6, AC-7). Branches outside the `nax/bakeoff-` namespace are
+ * never touched.
+ *
+ * STUB (US-004 test-writer session): real branch-listing + reclaim logic is
+ * not yet implemented — currently a no-op.
+ */
+export async function reclaimStaleBakeoffBranches(_projectRoot: string): Promise<void> {
+  // not implemented
+}
