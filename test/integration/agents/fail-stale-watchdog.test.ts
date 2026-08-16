@@ -62,7 +62,7 @@ function makeCompleteOptions(
   timeoutMs = 5000,
 ) {
   return {
-    resolvedPermissions: { mode: "approve-reads" as const, skipPermissions: false },
+    resolvedPermissions: { mode: "approve-reads" as const },
     modelDef: { provider: "anthropic" as const, model: "claude-haiku-4-5" as const },
     workdir: "/tmp/test",
     timeoutMs,

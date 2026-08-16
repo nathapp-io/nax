@@ -4,7 +4,7 @@ import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEven
 import { COST_ROW_SCHEMA_VERSION, attachCostSubscriber } from "../../../../src/runtime/middleware/cost";
 import { createNoOpCostAggregator, type CostEvent, type CostErrorEvent } from "../../../../src/runtime/cost-aggregator";
 
-const PERMS = { mode: "approve-reads" as const, skipPermissions: false };
+const PERMS = { mode: "approve-reads" as const };
 
 function makeSessionTurnEvent(overrides: Partial<SessionTurnDispatchEvent> = {}): SessionTurnDispatchEvent {
   return {

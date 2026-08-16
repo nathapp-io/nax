@@ -186,17 +186,11 @@ export const ExecutionConfigSchema = z.object({
   lintCommand: z.string().nullable().optional(),
   typecheckCommand: z.string().nullable().optional(),
   permissionProfile: z.enum(["unrestricted", "safe", "scoped"]).default("unrestricted"),
-  // Phase 2: per-stage permission overrides (only read when profile = "scoped")
-  permissions: z
-    .record(
-      z.string(),
-      z.object({
-        mode: z.enum(["approve-all", "approve-reads", "scoped"]),
-        allowedTools: z.array(z.string()).optional(),
-        inherit: z.string().optional(),
-      }),
-    )
-    .optional(),
+  // NOTE: the Phase 2 `permissions` block (per-stage overrides) deliberately has
+  // no schema entry. It was accepted and validated here while nothing in src/
+  // read it, so a user could state a permission policy and get no enforcement.
+  // `rejectUnimplementedPermissionsBlock` now fails the load instead. Re-add
+  // this alongside the resolver when GitHub #374 lands.
   smartTestRunner: smartTestRunnerFieldSchema,
   worktreeDependencies: WorktreeDependenciesConfigSchema.default({
     mode: "off",

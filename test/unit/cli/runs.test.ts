@@ -125,6 +125,21 @@ describe("nax runs — event lookup", () => {
     expect(row?.data?.status).toBe("completed");
   });
 
+  // A crashed or SIGKILLed run leaves a half-written final line. Parsing the file
+  // all-or-nothing threw on that line and blanked every valid entry before it —
+  // losing the log exactly when it is most needed for diagnosis.
+  test("a truncated final line does not blank the entries before it", async () => {
+    await seedRunLog(outputDir, { complete: true });
+    const logPath = join(outputDir, "features", "demo", "runs", `${RUN_ID}.jsonl`);
+    await writeFile(logPath, `${await Bun.file(logPath).text()}{"timestamp":"2026-08-11T12:00:04.000Z","st`);
+
+    const { entries } = captureLogger();
+    await runsShowCommand({ runId: RUN_ID, feature: "demo", workdir, outputDir });
+
+    expect(entries.some((e) => e.message === `Run: ${RUN_ID}`)).toBe(true);
+    expect(entries.find((e) => e.message === `Run: ${RUN_ID}`)?.data?.status).toBe("completed");
+  });
+
   // The completion phase emits multiple `run.complete` entries. Matching the stage
   // alone takes the FIRST — a purge notice with no summary payload — which reports a
   // completed run with zeroed totals. The summary is identified by its payload.

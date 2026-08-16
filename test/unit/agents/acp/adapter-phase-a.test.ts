@@ -11,7 +11,7 @@ function makeOpenSessionOpts(overrides: Partial<OpenSessionOpts> = {}): OpenSess
   return {
     agentName: "claude",
     workdir: ACP_WORKDIR,
-    resolvedPermissions: { mode: "approve-reads", skipPermissions: false },
+    resolvedPermissions: { mode: "approve-reads" },
     modelDef: { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
     timeoutSeconds: 30,
     ...overrides,

@@ -87,7 +87,7 @@ function makeCompleteOptions(overrides: Record<string, unknown> = {}): import(".
   return {
     modelDef: { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
     workdir: ACP_WORKDIR,
-    resolvedPermissions: { skipPermissions: false, mode: "approve-reads" as const },
+    resolvedPermissions: { mode: "approve-reads" as const },
     ...overrides,
   } as import("../../../../src/agents/types").ResolvedCompleteOptions;
 }
@@ -487,7 +487,7 @@ describe("complete() — modelDef primitive consumption", () => {
     });
 
     await new AcpAgentAdapter("claude").complete("test", makeCompleteOptions({
-      resolvedPermissions: { skipPermissions: true, mode: "approve-all" as const },
+      resolvedPermissions: { mode: "approve-all" as const },
     }));
     expect(capturedPermissionMode).toBe("approve-all");
   });

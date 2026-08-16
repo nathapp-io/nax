@@ -8,6 +8,7 @@ import { describe, test, expect } from "bun:test";
 import { selectIndependentBatch, groupStoriesByDependencies, selectNextStories } from "../../../src/execution/story-selector";
 import type { UserStory } from "../../../src/prd/types";
 import type { StoryBatch } from "../../../src/execution/batching";
+import { markStoryFailed, markStoryPassed } from "@/prd";
 import { makePRD, makeStory } from "../../helpers/mock-story";
 import { DEFAULT_CONFIG } from "../../../src/config";
 
@@ -44,6 +45,25 @@ describe("selectIndependentBatch", () => {
   test("returns an empty array when stories is empty", () => {
     const result = selectIndependentBatch([], 10);
     expect(result).toEqual([]);
+  });
+
+  test("does not unblock a dependent whose dependency went passed -> failed", () => {
+    // A story can pass its pipeline and still be marked failed afterwards —
+    // unified-executor.ts does exactly that on a merge conflict, so the work
+    // never reached the base branch. Driven through the real mark* functions
+    // rather than hand-built state, because the defect being pinned is that
+    // markStoryFailed left `passes` true while dependency resolution below
+    // reads `dep.passes`.
+    const dependency = createStory("US-001", []);
+    const dependent = createStory("US-002", ["US-001"]);
+    const prd = makePRD({ userStories: [dependency, dependent] });
+
+    markStoryPassed(prd, "US-001");
+    markStoryFailed(prd, "US-001", "tests-failing");
+
+    const result = selectIndependentBatch(prd.userStories, 10);
+
+    expect(result.map((s) => s.id)).not.toContain("US-002");
   });
 
   test("returns a single-element array when exactly one story has no unmet dependencies", () => {

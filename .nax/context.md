@@ -124,7 +124,7 @@ All agent permission decisions go through `resolvePermissions(config, stage)` in
 ```typescript
 // ✅ Correct
 import { resolvePermissions } from "../config/permissions";
-const { skipPermissions, mode } = resolvePermissions(config, "run");
+const { mode } = resolvePermissions(config, "run");
 
 // ❌ Wrong — local fallback
 const skip = config?.execution?.dangerouslySkipPermissions ?? true;
@@ -133,7 +133,12 @@ const skip = config?.execution?.dangerouslySkipPermissions ?? true;
 args.push("--dangerously-skip-permissions");
 ```
 
+`mode` is the only resolved value. The old `skipPermissions` field belonged to
+the CLI adapter, which no longer exists, and was removed — do not reintroduce it.
+
 **Profiles:** `unrestricted` (approve-all), `safe` (approve-reads), `scoped` (Phase 2).
+`scoped` and the per-stage `execution.permissions` block are both rejected at
+config load until GitHub #374 lands — neither is wired to anything.
 **Full spec:** `docs/architecture/agent-adapters.md` §14.
 
 ## Workflow Protocol

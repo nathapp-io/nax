@@ -24,12 +24,11 @@ export type PipelineStage =
   | "complete";
 
 export interface ResolvedPermissions {
-  /** ACP permission mode string */
+  /**
+   * ACP permission mode string — the only resolved value anything consumes
+   * (`agents/acp/adapter.ts`, `runtime/middleware/audit.ts`).
+   */
   mode: "approve-all" | "approve-reads" | "default";
-  /** CLI adapter: whether to pass --dangerously-skip-permissions */
-  skipPermissions: boolean;
-  /** Future: scoped tool allowlist (Phase 2) */
-  allowedTools?: string[];
 }
 
 /**
@@ -41,13 +40,13 @@ export function resolvePermissions(config: AgentManagerConfig | undefined, _stag
 
   switch (profile) {
     case "unrestricted":
-      return { mode: "approve-all", skipPermissions: true };
+      return { mode: "approve-all" };
     case "safe":
-      return { mode: "approve-reads", skipPermissions: false };
+      return { mode: "approve-reads" };
     case "scoped":
       return resolveScopedPermissions(config, _stage);
     default:
-      return { mode: "approve-reads", skipPermissions: false };
+      return { mode: "approve-reads" };
   }
 }
 
@@ -62,5 +61,5 @@ export function resolvePermissions(config: AgentManagerConfig | undefined, _stag
  * the loader guard.
  */
 function resolveScopedPermissions(_config: AgentManagerConfig | undefined, _stage: PipelineStage): ResolvedPermissions {
-  return { mode: "approve-reads", skipPermissions: false };
+  return { mode: "approve-reads" };
 }
