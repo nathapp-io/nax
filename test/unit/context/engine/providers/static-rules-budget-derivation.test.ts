@@ -79,9 +79,42 @@ describe("StaticRulesProvider — US-003 per-stage rules budget derivation", () 
     const provider = new StaticRulesProvider({ budgetTokens: 8192, rulesShare: 0.4, enforceBudget: true });
     const request: ContextRequest = { ...BASE_REQUEST, budgetTokens: 4000 };
     const result = await provider.fetch(request);
-    // Effective budget 1600: a(800)+b(800)=1600 fits, c(400) does not → keep [a,b], drop c
-    expect(result.chunks).toHaveLength(2);
+    // Effective budget 1600: a(800)+b(800)=1600 fits, c(400) does not → keep [a,b], drop c,
+    // append a standalone notice chunk (#1610) — 2 rule chunks + 1 notice chunk.
+    expect(result.chunks).toHaveLength(3);
     expect(result.budgetPressure?.droppedCount).toBe(1);
+    // #1610: a dropped-tail must surface in the emitted prompt content, not just telemetry,
+    // and as its OWN chunk — not spliced into whichever rule chunk happens to sort last,
+    // so it can't be silently eaten by downstream dedupe of a rule chunk.
+    const noticeChunk = result.chunks[result.chunks.length - 1];
+    expect(noticeChunk?.id).toBe("static-rules:__budget-notice__:US-003");
+    expect(noticeChunk?.kind).toBe("static");
+    expect(noticeChunk?.content).toContain("rule budget exceeded");
+    expect(noticeChunk?.content).toContain("c#");
+    // The rule chunks themselves stay unmodified by the notice.
+    for (const chunk of result.chunks.slice(0, -1)) {
+      expect(chunk.content).not.toContain("rule budget exceeded");
+    }
+  });
+
+  test("[#1610] soft mode (enforceBudget: false) never appends a notice chunk even when droppedIds is non-empty", async () => {
+    setupCanonical([
+      { fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 800, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(40), tokens: 800, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(40), tokens: 400, priority: 3 },
+    ]);
+    // enforceBudget defaults to false — soft mode keeps every section as a
+    // chunk even though applySectionBudget still reports droppedIds.
+    const provider = new StaticRulesProvider({ budgetTokens: 8192, rulesShare: 0.4 });
+    const request: ContextRequest = { ...BASE_REQUEST, budgetTokens: 4000 };
+    const result = await provider.fetch(request);
+    // Sanity: a drop is actually being reported by the section budget here —
+    // otherwise this test would pass vacuously regardless of the enforceBudget gate.
+    expect(result.budgetPressure?.droppedCount).toBeGreaterThan(0);
+    expect(result.chunks).toHaveLength(3);
+    for (const chunk of result.chunks) {
+      expect(chunk.content).not.toContain("rule budget exceeded");
+    }
   });
 
   test("[US-003 AC 6] global budgetTokens caps the effective budget (rulesShare * stage > global)", async () => {
@@ -110,9 +143,22 @@ describe("StaticRulesProvider — US-003 per-stage rules budget derivation", () 
     const provider = new StaticRulesProvider({ budgetTokens: 8192, rulesShare: 0.9, enforceBudget: true });
     const request: ContextRequest = { ...BASE_REQUEST, budgetTokens: 12000 };
     const result = await provider.fetch(request);
-    expect(result.chunks).toHaveLength(1);
+    // 1 retained rule chunk + 1 standalone notice chunk (#1610).
+    expect(result.chunks).toHaveLength(2);
     expect(result.chunks[0]?.id).toContain("a");
     expect(result.budgetPressure?.droppedCount).toBe(1);
+  });
+
+  test("[#1610] enforceBudget: true with an invalid effective budget (0) still surfaces a budget notice when sections existed", async () => {
+    setupCanonical([{ fileName: "a.md", id: "a", content: "A".repeat(40), tokens: 800, priority: 1 }]);
+    // rulesShare: 0 drives the derived effective budget to 0, an invalid
+    // threshold — applySectionBudget drops every section (droppedIds = all)
+    // and effectiveSections is empty, hitting the "totalScopedSections > 0"
+    // branch rather than the "everything filtered by scope" branch.
+    const provider = new StaticRulesProvider({ budgetTokens: 8192, rulesShare: 0, enforceBudget: true });
+    const result = await provider.fetch(BASE_REQUEST);
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0]?.content).toContain("rule budget exceeded");
   });
 
   test("[US-003 AC 7] returns empty chunk list without throwing when .nax/rules/ is absent", async () => {

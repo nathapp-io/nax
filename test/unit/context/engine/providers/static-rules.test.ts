@@ -155,9 +155,11 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
     ]);
     const provider = new StaticRulesProvider({ budgetTokens: 400, enforceBudget: true });
     const result = await provider.fetch(BASE_REQUEST);
-    expect(result.chunks).toHaveLength(2);
+    // 2 retained rule chunks + 1 standalone budget-drop notice chunk (#1610).
+    expect(result.chunks).toHaveLength(3);
     expect(result.chunks[0]?.id).toContain("a");
     expect(result.chunks[1]?.id).toContain("b");
+    expect(result.chunks[2]?.id).toContain("__budget-notice__");
   });
 
   test("[US-002 AC 5] emits chunks only for the surviving leading run and none for the dropped tail when budget is smaller than the store", async () => {
@@ -170,7 +172,8 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
     ]);
     const provider = new StaticRulesProvider({ budgetTokens: 500, enforceBudget: true });
     const r1 = await provider.fetch(BASE_REQUEST);
-    expect(r1.chunks).toHaveLength(1);
+    // 1 retained rule chunk (fail-open) + 1 notice chunk for the dropped tiny/tiny2 tail.
+    expect(r1.chunks).toHaveLength(2);
     expect(r1.chunks[0]?.id).toContain("huge");
 
     // Case 2: a non-empty leading run survives, the dropped tail is excluded
@@ -182,9 +185,10 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
     ]);
     const provider2 = new StaticRulesProvider({ budgetTokens: 30, enforceBudget: true });
     const r2 = await provider2.fetch(BASE_REQUEST);
-    // Extract the rule-id segment from each chunk id (format: static-rules:<ruleId>:<hash>)
+    // Extract the rule-id segment from each chunk id (format: static-rules:<ruleId>:<hash>).
+    // The trailing "__budget-notice__" chunk reports the dropped c/d tail (#1610).
     const ruleIds = r2.chunks.map((c) => c.id.split(":")[1]);
-    expect(ruleIds).toEqual(["a", "b"]);
+    expect(ruleIds).toEqual(["a", "b", "__budget-notice__"]);
   });
 
   test("propagates NeutralityLintError without falling back to legacy", async () => {
@@ -686,9 +690,9 @@ describe("StaticRulesProvider — US-003 budget pressure (enforced, enforceBudge
     const provider = new StaticRulesProvider({ budgetTokens: 30, enforceBudget: true });
     const result = await provider.fetch(BASE_REQUEST);
     // Leading run that fits inside 30: a(10) + b(10) → kept. c would push past → drop.
-    // Dropped tail: c, d.
+    // Dropped tail: c, d. Plus 1 standalone notice chunk reporting the drop (#1610).
     expect(result.budgetPressure?.droppedCount).toBe(2);
-    expect(result.chunks).toHaveLength(2);
+    expect(result.chunks).toHaveLength(3);
   });
 
   test("[US-003 AC 5] budgetPressure.droppedTokens equals the token total of rules omitted from chunks", async () => {
