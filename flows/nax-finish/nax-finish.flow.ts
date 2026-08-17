@@ -170,12 +170,24 @@ function commitFixNode(phase: FinishPhase) {
     }): Promise<{ committed: boolean; route: string; shaBefore: string | null; shaAfter: string | null }> {
       const i = inputOf(ctx);
       const messageCtx = { outputs: ctx.outputs as Record<string, unknown> };
+      // A rejection is only as good as its citation, so the path is checked the
+      // same way a reviewer's touchpoints are. A missing file does not veto the
+      // rejection — the fixer may have cited a line rather than a path, or moved
+      // the file — it marks it, so the PR body (and the commit message below)
+      // can say the waiver is unverified rather than silently presenting it as
+      // evidenced. Resolved before the commit so the shipped commit message can
+      // render a rejection the same way the PR body does, instead of `Fix: …`.
+      const dispositions = await validateDispositions(
+        i.workdir,
+        (ctx.outputs as Record<string, { dispositions?: FindingDisposition[] } | undefined>)[`fix_${phase}`]
+          ?.dispositions ?? [],
+      );
       // skipHooks: an intermediate checkpoint must not be rejected by a repo's
       // pre-commit hook — quality_gates runs the repo's real gates before any
       // PR opens, and a hook failure here would kill the flow mid-loop.
       const { committed, shaBefore, shaAfter } = await commitFixes(
         i.workdir,
-        buildFixCommitMessage(phase, i.feature, messageCtx, { workdir: i.workdir }),
+        buildFixCommitMessage(phase, i.feature, messageCtx, { workdir: i.workdir, dispositions }),
         { skipHooks: true },
       );
       // Routed BEFORE the round is recorded: `buildCommitRound` needs the
@@ -188,16 +200,6 @@ function commitFixNode(phase: FinishPhase) {
           : committed
             ? "changed"
             : "unchanged";
-      // A rejection is only as good as its citation, so the path is checked the
-      // same way a reviewer's touchpoints are. A missing file does not veto the
-      // rejection — the fixer may have cited a line rather than a path, or moved
-      // the file — it marks it, so the PR body can say the waiver is unverified
-      // rather than silently presenting it as evidenced.
-      const dispositions = await validateDispositions(
-        i.workdir,
-        (ctx.outputs as Record<string, { dispositions?: FindingDisposition[] } | undefined>)[`fix_${phase}`]
-          ?.dispositions ?? [],
-      );
       await appendRound(
         i,
         buildCommitRound({

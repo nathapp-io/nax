@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildFixCommitMessage } from "@flows/nax-finish/commit-message";
-import type { Finding } from "@flows/nax-finish/types";
+import type { Finding, FindingDisposition } from "@flows/nax-finish/types";
 
 const finding = (over: Partial<Finding> = {}): Finding => ({
   severity: "HIGH",
@@ -168,5 +168,66 @@ describe("buildFixCommitMessage — gate body names the failure", () => {
     expect(msg).toContain("case 0");
     expect(msg).toContain("...and 4 more failing test(s)");
     expect(msg).not.toContain("case 13");
+  });
+});
+
+// #1614-followup: the fixer can now reject a finding on cited counter-evidence
+// (`fix_<phase>`'s `## DISPOSITIONS`), but the shipped commit body kept reading
+// `Fix: <the fix text>` for it regardless — disagreeing with the PR body, which
+// rendered the same finding as rejected. Threading `dispositions` through fixes
+// that.
+describe("buildFixCommitMessage — dispositions", () => {
+  const rejected = (over: Partial<FindingDisposition> = {}): FindingDisposition => ({
+    index: 1,
+    disposition: "rejected",
+    evidence: "test/config/loader.test.ts:42",
+    ...over,
+  });
+
+  test("a rejected finding renders as rejected with its evidence, not as a fix", () => {
+    const msg = buildFixCommitMessage(
+      "quality",
+      "f",
+      ctxOf({ review_quality: { findings: [finding({ fix: "pass 'resolved' into buildRequest." })] } }),
+      { dispositions: [rejected()] },
+    );
+    expect(msg).toContain("rejected: `test/config/loader.test.ts:42`");
+    expect(msg).not.toContain("Fix: pass 'resolved' into buildRequest.");
+  });
+
+  test("a rejection with no cited evidence says so", () => {
+    const msg = buildFixCommitMessage("quality", "f", ctxOf({ review_quality: { findings: [finding()] } }), {
+      dispositions: [rejected({ evidence: undefined })],
+    });
+    expect(msg).toContain("rejected: no evidence cited");
+  });
+
+  test("an evidence path that does not resolve on disk is flagged, not discarded", () => {
+    const msg = buildFixCommitMessage("quality", "f", ctxOf({ review_quality: { findings: [finding()] } }), {
+      dispositions: [rejected({ evidenceMissing: true })],
+    });
+    expect(msg).toContain("evidence path not found");
+  });
+
+  test("a mixed batch renders each finding by its own disposition", () => {
+    const msg = buildFixCommitMessage(
+      "quality",
+      "f",
+      ctxOf({
+        review_quality: {
+          findings: [finding({ title: "A", fix: "Fix A" }), finding({ title: "B", fix: "Fix B" })],
+        },
+      }),
+      { dispositions: [{ index: 2, disposition: "rejected", evidence: "a.ts:1" }] },
+    );
+    expect(msg).toContain("- [HIGH] A");
+    expect(msg).toContain("Fix: Fix A");
+    expect(msg).toContain("- [HIGH] B — rejected: `a.ts:1`");
+    expect(msg).not.toContain("Fix: Fix B");
+  });
+
+  test("callers with no dispositions render exactly as before (gate/acceptance never pass any)", () => {
+    const msg = buildFixCommitMessage("quality", "f", ctxOf({ review_quality: { findings: [finding()] } }));
+    expect(msg).toContain("Fix: Drop the extra guard.");
   });
 });
