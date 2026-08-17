@@ -126,6 +126,17 @@ function activeIgnoreLines(content: string): string[] {
 }
 
 /**
+ * Whether the file already states a position on `entry`.
+ *
+ * A negation (`!dist/`) counts: the user has deliberately un-ignored the path,
+ * and since later rules win in gitignore syntax, appending the bare entry
+ * below would silently reverse that choice on every init.
+ */
+function hasOpinionOn(activeLines: ReadonlySet<string>, entry: string): boolean {
+  return activeLines.has(entry) || activeLines.has(`!${entry}`);
+}
+
+/**
  * Additively reconcile an ignore file against a list of entries.
  *
  * Creates the file when absent. When it exists, appends only the entries that
@@ -137,7 +148,10 @@ export async function patchIgnoreFile(
   entries: readonly string[],
   options: PatchIgnoreFileOptions = {},
 ): Promise<PatchIgnoreFileResult> {
-  const { header = "", footer = "", sectionComment = "# nax - generated files" } = options;
+  const { footer = "", sectionComment = "# nax - generated files" } = options;
+  // Without a header the created file is a bare list of paths, giving the
+  // reader no clue where it came from. Fall back to the section comment.
+  const header = options.header ?? `${sectionComment}\n`;
 
   const file = Bun.file(filePath);
   const existing = (await file.exists()) ? await file.text() : "";
@@ -146,7 +160,7 @@ export async function patchIgnoreFile(
   const isNew = existing.trim().length === 0;
 
   const active = new Set(activeIgnoreLines(existing));
-  const missing = entries.filter((entry) => !active.has(entry));
+  const missing = entries.filter((entry) => !hasOpinionOn(active, entry));
 
   if (missing.length === 0) return { created: false, added: [] };
 

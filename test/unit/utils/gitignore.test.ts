@@ -98,6 +98,20 @@ describe("patchIgnoreFile — creating a new file", () => {
     });
   });
 
+  test("labels the entries with the section comment when no header is supplied", async () => {
+    await withTempDir(async (dir) => {
+      const path = join(dir, ".gitignore");
+
+      await patchIgnoreFile(path, ["dist/"]);
+
+      // A bare list of paths in a fresh .gitignore gives the reader no clue
+      // where it came from or that it is safe to re-run init.
+      const content = await Bun.file(path).text();
+      expect(content.startsWith("#")).toBe(true);
+      expect(content).toContain("dist/");
+    });
+  });
+
   test("treats a whitespace-only existing file as new rather than appending to blank lines", async () => {
     await withTempDir(async (dir) => {
       const path = join(dir, ".naxignore");
@@ -202,6 +216,32 @@ describe("patchIgnoreFile — entry matching", () => {
       // "dist/" is a substring of "packages/dist/cache" but the standalone
       // rule is absent, so it must still be added.
       await Bun.write(path, "packages/dist/cache\n");
+
+      const result = await patchIgnoreFile(path, ["dist/"]);
+
+      expect(result.added).toEqual(["dist/"]);
+    });
+  });
+
+  test("does not re-add an entry the user explicitly negated", async () => {
+    await withTempDir(async (dir) => {
+      const path = join(dir, ".naxignore");
+      // "!dist/" means the user deliberately wants dist/ scanned. Appending
+      // "dist/" below it would silently win — later rules take precedence in
+      // gitignore syntax — reversing an explicit choice on every init.
+      await Bun.write(path, "!dist/\n");
+
+      const result = await patchIgnoreFile(path, ["dist/"]);
+
+      expect(result.added).toEqual([]);
+      expect(await Bun.file(path).text()).toBe("!dist/\n");
+    });
+  });
+
+  test("still adds an entry when an unrelated path is negated", async () => {
+    await withTempDir(async (dir) => {
+      const path = join(dir, ".naxignore");
+      await Bun.write(path, "!build/\n");
 
       const result = await patchIgnoreFile(path, ["dist/"]);
 
