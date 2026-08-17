@@ -453,7 +453,8 @@ export function formatAdvisorySummary(
   }
 
   const c = useColor ? chalk : createNoopChalk();
-  const sorted = [...findings].sort((a, b) => (SEVERITY_RANK[b.severity] ?? 0) - (SEVERITY_RANK[a.severity] ?? 0));
+  const rank = SEVERITY_RANK as Record<string, number>;
+  const sorted = [...findings].sort((a, b) => (rank[b.severity] ?? 0) - (rank[a.severity] ?? 0));
 
   const lines: string[] = [];
   lines.push("");

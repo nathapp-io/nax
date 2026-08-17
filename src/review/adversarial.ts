@@ -173,7 +173,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     projectDir,
     storyId: story.id,
     featureName,
-    blockingThreshold: blockingThreshold ?? "error",
+    blockingThreshold,
     startTime,
     logger,
   };

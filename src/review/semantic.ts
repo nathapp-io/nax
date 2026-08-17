@@ -246,7 +246,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     projectDir,
     storyId: story.id,
     featureName,
-    blockingThreshold: blockingThreshold ?? "error",
+    blockingThreshold,
     startTime,
     logger,
     testFileMatch,

@@ -19,6 +19,7 @@
  */
 
 import * as path from "node:path";
+import { getSafeLogger } from "@/logger";
 import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
 import { errorMessage } from "@/utils/errors";
 import { type FinishAutoFlowSettings, getFinishAutoFlowConfig, telegramCreds } from "./config";
@@ -136,7 +137,15 @@ async function defaultReadResult(resultPath: string): Promise<FinishResult | nul
   if (!(await f.exists())) return null;
   try {
     return JSON.parse(await f.text()) as FinishResult;
-  } catch {
+  } catch (err) {
+    // Log the parse failure — a malformed file and a missing file both resolve
+    // to null (and the same downstream "no result file" message), but only the
+    // former has a diagnostic worth keeping, and swallowing it silently would
+    // have made the "file exists but is corrupt" case indistinguishable from
+    // "the flow never ran" in the logs.
+    getSafeLogger()?.warn("plugins", `nax-finish: malformed result file at ${resultPath}`, {
+      error: errorMessage(err),
+    });
     return null;
   }
 }

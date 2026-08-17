@@ -32,7 +32,16 @@ export interface AdversarialOutcomeCtx {
   projectDir: string | undefined;
   storyId: string;
   featureName: string | undefined;
-  blockingThreshold: "error" | "warning" | "info";
+  /**
+   * Raw, possibly-undefined caller option — deliberately NOT defaulted here.
+   * Only the three pre-classification helpers below (catchDispatchFailure,
+   * handleRetryExhaustedFailOpen, handleTruncatedLooksLikeFail) read this field,
+   * and they must record the same `undefined` the caller passed (matching the
+   * pre-decomposition behavior) rather than a defaulted "error" that would
+   * change what's recorded in the audit event. Post-classification outcome
+   * builders read the defaulted `classification.threshold` instead.
+   */
+  blockingThreshold: "error" | "warning" | "info" | undefined;
   startTime: number;
   logger: Logger | null;
 }

@@ -248,20 +248,23 @@ export class PromptAuditor implements IPromptAuditor {
       }
       this._dirCreated = true;
     }
+    // Redact once — entry.prompt/response can be hundreds of KB, and scanning that
+    // text a second time via buildTxtContent(entry) + a second redactSecrets() call
+    // would rerun all ~14 secret patterns over it again for no benefit.
+    const safeEntry = redactSecrets(entry) as PromptAuditEntry | PromptAuditErrorEntry;
     try {
-      await _promptAuditorDeps.appendLine(this._jsonlPath, `${JSON.stringify(redactSecrets(entry))}\n`);
+      await _promptAuditorDeps.appendLine(this._jsonlPath, `${JSON.stringify(safeEntry)}\n`);
     } catch (err) {
       throw tagAuditError(err, "jsonl");
     }
 
     if (!("prompt" in entry) || !("response" in entry)) return;
-    const auditEntry = entry as PromptAuditEntry;
-    const filename = deriveTxtFilename(auditEntry);
+    // Filename derives from the original entry, not safeEntry — session names,
+    // story IDs, etc. are never secret-shaped, but this keeps filename generation
+    // provably independent of redaction either way.
+    const filename = deriveTxtFilename(entry as PromptAuditEntry);
     try {
-      await _promptAuditorDeps.write(
-        join(this._featureDir, filename),
-        redactSecrets(buildTxtContent(auditEntry)) as string,
-      );
+      await _promptAuditorDeps.write(join(this._featureDir, filename), buildTxtContent(safeEntry as PromptAuditEntry));
     } catch (err) {
       throw tagAuditError(err, "txt");
     }

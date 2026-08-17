@@ -244,6 +244,39 @@ export const _reviewGitDeps = {
   getUncommittedFiles: getUncommittedFilesImpl,
 };
 
+// Exclude nax runtime files — written by nax itself during the run, not by the agent.
+// Patterns use a suffix match (no leading ^) so they work in both single-package repos
+// (nax/features/…) and monorepos where paths are prefixed (apps/cli/nax/features/…).
+// Module-scoped (not per-call): the pattern list is static, so rebuilding it inside
+// guardUncommittedFiles on every review would just be wasted allocation.
+const NAX_RUNTIME_PATTERNS = [
+  /nax\.lock$/,
+  /nax\/metrics\.json$/,
+  /nax\/status\.json$/,
+  /nax\/features\/[^/]+\/status\.json$/,
+  /nax\/features\/[^/]+\/prd\.json$/,
+  /nax\/features\/[^/]+\/runs\//,
+  /nax\/features\/[^/]+\/plan\//,
+  /nax\/features\/[^/]+\/acp-sessions\.json$/,
+  /nax\/features\/[^/]+\/interactions\//,
+  /nax\/features\/[^/]+\/progress\.txt$/,
+  /nax\/features\/[^/]+\/acceptance-refined\.json$/,
+  /nax\/features\/[^/]+\/stories\/[^/]+\/context-manifest-[^/]+\.json$/,
+  /nax\/features\/[^/]+\/stories\/[^/]+\/rebuild-manifest\.json$/,
+  /\.nax-verifier-verdict\.json$/,
+  /\.nax-pids$/,
+  /\.nax-wt\//,
+  /\.nax-acceptance[^/]*$/,
+  /_nax_acceptance_test\.py$/,
+  /_nax_suggested_test\.py$/,
+  // Test-output artifacts — transient files leaked by tests, not agent changes.
+  // 2B migrated logging.test.ts to a temp dir; these guard against future leak patterns.
+  // Patterns match both repo-root paths (test/...) and monorepo-prefixed paths (.../test/...).
+  /(?:^|\/)test\/.*\.jsonl$/,
+  /(?:^|\/)coverage\//,
+  /\.lcov$/,
+];
+
 /**
  * RQ-001: warn (never block) about tracked files left uncommitted before review runs.
  * @design: BUG-074: autoCommitIfDirty runs first to sweep up dirty files the agent
@@ -259,36 +292,6 @@ async function guardUncommittedFiles(
   await autoCommitIfDirty(workdir, "review", "agent", storyId ?? "review", runtime?.dirtyWorktrees);
 
   const allUncommittedFiles = await _reviewGitDeps.getUncommittedFiles(workdir);
-  // Exclude nax runtime files — written by nax itself during the run, not by the agent.
-  // Patterns use a suffix match (no leading ^) so they work in both single-package repos
-  // (nax/features/…) and monorepos where paths are prefixed (apps/cli/nax/features/…).
-  const NAX_RUNTIME_PATTERNS = [
-    /nax\.lock$/,
-    /nax\/metrics\.json$/,
-    /nax\/status\.json$/,
-    /nax\/features\/[^/]+\/status\.json$/,
-    /nax\/features\/[^/]+\/prd\.json$/,
-    /nax\/features\/[^/]+\/runs\//,
-    /nax\/features\/[^/]+\/plan\//,
-    /nax\/features\/[^/]+\/acp-sessions\.json$/,
-    /nax\/features\/[^/]+\/interactions\//,
-    /nax\/features\/[^/]+\/progress\.txt$/,
-    /nax\/features\/[^/]+\/acceptance-refined\.json$/,
-    /nax\/features\/[^/]+\/stories\/[^/]+\/context-manifest-[^/]+\.json$/,
-    /nax\/features\/[^/]+\/stories\/[^/]+\/rebuild-manifest\.json$/,
-    /\.nax-verifier-verdict\.json$/,
-    /\.nax-pids$/,
-    /\.nax-wt\//,
-    /\.nax-acceptance[^/]*$/,
-    /_nax_acceptance_test\.py$/,
-    /_nax_suggested_test\.py$/,
-    // Test-output artifacts — transient files leaked by tests, not agent changes.
-    // 2B migrated logging.test.ts to a temp dir; these guard against future leak patterns.
-    // Patterns match both repo-root paths (test/...) and monorepo-prefixed paths (.../test/...).
-    /(?:^|\/)test\/.*\.jsonl$/,
-    /(?:^|\/)coverage\//,
-    /\.lcov$/,
-  ];
   const afterRuntimeFilter = allUncommittedFiles.filter(
     (f) => !NAX_RUNTIME_PATTERNS.some((pattern) => pattern.test(f)),
   );
