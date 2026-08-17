@@ -12,6 +12,7 @@
  * `escalate` node that exists to report precisely this.
  */
 import { extractJsonObject } from "acpx/flows";
+import { parseReviewReport } from "./findings-parse";
 import { type OutputsCtx, type StepsCtx, fixAttemptCount } from "./flow-ctx";
 import type { Finding, ReviewVerdict } from "./types";
 
@@ -52,11 +53,29 @@ function parseVerdictJson(text: string): ReviewVerdict {
 }
 
 /**
- * Parser for `review_spec` / `review_quality`, whose JSON is load-bearing —
- * `findingsOf` reads it and the fix loop is driven by it. An unreadable reply
- * routes to `reprompt` so `routeReview` can ask once more before escalating.
+ * Read a reviewer's reply, block format first.
+ *
+ * Three tiers, in cost order: the block contract the prompt asks for; then the
+ * JSON object older runs produced (a flow resumed from a journal recorded before
+ * #1614, or a reviewer that answered in the old shape anyway); then reprompt.
+ * The JSON tier is three lines and removes a whole class of resume failure, so
+ * it stays even though nothing asks for JSON any more.
  */
 export function parseReviewVerdict(text: string): ReviewVerdict {
+  const report = parseReviewReport(text);
+  if (report.findings.length > 0 || report.sawNoFindings) {
+    const judged = report.findings.find((f) => f.judgment);
+    const route = judged ? "escalate" : report.findings.length === 0 ? "clean" : "proceed";
+    return {
+      route,
+      findings: report.findings,
+      ...(judged ? { escalationReason: judged.judgmentReason ?? `Needs human judgment: ${judged.title}` } : {}),
+      touchpoints: report.touchpoints,
+      walk: report.walk,
+      sawTouchpointsSection: report.sawTouchpointsSection,
+      sawWalkSection: report.sawWalkSection,
+    };
+  }
   try {
     return parseVerdictJson(text);
   } catch {

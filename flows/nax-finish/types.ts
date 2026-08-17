@@ -76,6 +76,13 @@ export interface ReviewVerdict {
   escalationReason?: string;
   /** Bounded tail of an unparseable reply; set only when `route` is `reprompt`. */
   raw?: string;
+  /** Touchpoints the reviewer listed; read by the audit gate in `routeReviewAndRecord`. */
+  touchpoints?: Touchpoint[];
+  /** The per-AC or per-function walk lines the reviewer emitted. */
+  walk?: string[];
+  /** Whether the section was present at all — absent and empty are different failures. */
+  sawTouchpointsSection?: boolean;
+  sawWalkSection?: boolean;
 }
 /** Wall-clock budgets, forwarded from `finish.autoFlow.timeouts` by the plugin. */
 export interface FinishTimeouts {

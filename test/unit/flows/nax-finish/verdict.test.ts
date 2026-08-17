@@ -71,6 +71,55 @@ describe("parseReviewVerdict", () => {
   });
 });
 
+const BLOCK_REPLY = `## TOUCHPOINTS
+- src/a.ts:run — the only caller
+
+## WALK
+AC-1 Covered — done
+
+## FINDINGS
+[HIGH] Broken thing
+  Problem: a.ts:1 breaks.
+  Fix: unbreak it.
+`;
+
+describe("parseReviewVerdict — block format", () => {
+  test("parses severity blocks and routes proceed", () => {
+    const v = parseReviewVerdict(BLOCK_REPLY);
+    expect(v.route).toBe("proceed");
+    expect(v.findings).toHaveLength(1);
+    expect(v.findings[0].title).toBe("Broken thing");
+  });
+
+  test("carries the audit sections through for the gate to read", () => {
+    const v = parseReviewVerdict(BLOCK_REPLY);
+    expect(v.sawTouchpointsSection).toBe(true);
+    expect(v.sawWalkSection).toBe(true);
+    expect(v.touchpoints?.[0]?.path).toBe("src/a.ts");
+    expect(v.walk).toHaveLength(1);
+  });
+
+  test("No findings. routes clean", () => {
+    expect(parseReviewVerdict("## FINDINGS\nNo findings.").route).toBe("clean");
+  });
+
+  test("a judgment-marked finding escalates, and names its reason", () => {
+    const v = parseReviewVerdict(
+      "[MEDIUM] Design call\n  Problem: p\n  Fix: f\n  Judgment: yes — two valid designs, pick one\n",
+    );
+    expect(v.route).toBe("escalate");
+    expect(v.escalationReason).toContain("two valid designs");
+  });
+
+  test("findings without a judgment marker never escalate", () => {
+    expect(parseReviewVerdict(BLOCK_REPLY).route).toBe("proceed");
+  });
+
+  test("the real unparseable reply still routes reprompt", () => {
+    expect(parseReviewVerdict(REAL_UNPARSEABLE).route).toBe("reprompt");
+  });
+});
+
 describe("parseFixVerdict", () => {
   test("parses JSON like the review parser", () => {
     expect(parseFixVerdict(JSON.stringify({ route: "proceed", findings: [FINDING] })).findings).toHaveLength(1);

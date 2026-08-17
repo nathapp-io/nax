@@ -78,7 +78,7 @@ import {
 import type { Forge } from "./steps/forge";
 import { _prBodyDeps, buildFinishBody, buildFinishTitle } from "./steps/pr-body";
 import type { FinishInput, FinishPhase, FinishResult, ReviewVerdict } from "./types";
-import { parseFixVerdict, parseReviewVerdict, repromptCount } from "./verdict";
+import { parseFixVerdict, parseReviewVerdict } from "./verdict";
 
 /**
  * Disabled only on an explicit "0". An unset variable means enabled, so a flow
@@ -246,7 +246,6 @@ export default defineFlow({
           specPath: outs.specPath ?? "",
           since: incrementalSince(ctx, "spec"),
           priorFindings: findingsOf(ctx, "spec"),
-          retry: repromptCount(ctx, "spec") > 0,
         });
       },
       parse: parseReviewVerdict,
@@ -272,7 +271,6 @@ export default defineFlow({
           specPath: outs.specPath ?? "",
           since: incrementalSince(ctx, "quality"),
           priorFindings: findingsOf(ctx, "quality"),
-          retry: repromptCount(ctx, "quality") > 0,
         });
       },
       parse: parseReviewVerdict,
