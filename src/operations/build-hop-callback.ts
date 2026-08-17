@@ -279,6 +279,8 @@ export function buildHopCallback(
           role: resolvedRunOptions.sessionRole ?? "implementer",
           workdir,
           pipelineStage: stage,
+          // SEC-3: thread per-package config so monorepo permissionProfile is honored.
+          config,
           modelDef,
           // Only report a tier when one actually selected the model. A caller-pinned
           // modelDef bypassed tier resolution, and `effectiveTier` is defaulted, so
@@ -305,6 +307,8 @@ export function buildHopCallback(
         role: resolvedRunOptions.sessionRole ?? "implementer",
         workdir,
         pipelineStage: stage,
+        // SEC-3: thread per-package config so monorepo permissionProfile is honored.
+        config,
         modelDef,
         // See the pin rationale above — a pinned modelDef has no meaningful tier.
         ...(pinned ? {} : { modelTier: effectiveTier }),
@@ -331,6 +335,8 @@ export function buildHopCallback(
           workdir,
           projectDir,
           pipelineStage: stage,
+          // SEC-3: thread per-package config so monorepo permissionProfile is honored.
+          config,
           sessionRole: resolvedRunOptions.sessionRole,
           signal: resolvedRunOptions.abortSignal,
           contextPullTools,

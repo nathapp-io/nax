@@ -153,6 +153,31 @@ describe("buildHopCallback — primary hop (no failure)", () => {
     expect(hop.result.internalRoundTrips).toBe(1);
   });
 
+  // SEC-3 follow-up (Round 2 review): buildHopCallback already had the
+  // per-package `config` in scope (used for config.models / sessionTimeoutSeconds)
+  // but never threaded it into openSession/runAsSession, so a per-package
+  // execution.permissionProfile override was silently ignored on the primary
+  // callOp hop path — the majority of agent dispatch. Pins that both openSession
+  // calls and the runAsSession call receive the per-package config.
+  test("threads per-package config into openSession and runAsSession (SEC-3)", async () => {
+    const sessionManager = makeSessionManager({ openSession: mock(async () => makeHandle("nax-sec3-handle")) });
+    const agentManager = makeAgentManagerStub();
+    const packageConfig = makeNaxConfig({ execution: { permissionProfile: "safe" } });
+    const ctx = makeCtx({ sessionManager, agentManager, config: packageConfig });
+    const baseOptions = makeBaseOptions("do the work", packageConfig);
+    const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
+
+    await cb("claude", makeBundle(), { kind: "primary" } satisfies HopKind, baseOptions);
+
+    const openOpts = (sessionManager.openSession as ReturnType<typeof mock>).mock.calls[0]?.[1] as {
+      config?: unknown;
+    };
+    expect(openOpts.config).toBe(packageConfig);
+
+    const sessionOpts = (agentManager.runAsSession as ReturnType<typeof mock>).mock.calls[0]?.[3] as RunAsSessionOpts;
+    expect(sessionOpts.config).toBe(packageConfig);
+  });
+
   test("keepOpen:true — closeSession is NOT called after the turn", async () => {
     const sessionManager = makeSessionManager({
       openSession: mock(async () => makeHandle("nax-warm-handle")),
