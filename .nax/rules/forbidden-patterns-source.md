@@ -13,8 +13,10 @@ stages:
   - "tdd-simple"
   - "no-test"
   - "batch"
+  - "review"
   - "review-semantic"
   - "review-adversarial"
+  - "debate"
 ---
 
 # Forbidden Patterns

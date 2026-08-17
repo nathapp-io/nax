@@ -9,7 +9,6 @@ stages:
   - "tdd-test-writer"
   - "tdd-implementer"
   - "tdd-verifier"
-  - "verify"
   - "rectify"
   - "review"
   - "review-semantic"
