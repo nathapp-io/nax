@@ -5,26 +5,46 @@
  * Validates behavior — checks that the implementation satisfies the
  * story's acceptance criteria. Code quality (lint, style, conventions)
  * is handled by lint/typecheck, not semantic review.
+ *
+ * Decomposed per code-review TYPE-1 (2026-08-17): the orchestrator below stays a
+ * thin sequence of stages — skip checks, debate/dispatch, finding classification,
+ * outcome — with each stage's logic and its audit-recording extracted into named
+ * helpers in ./semantic-outcomes.ts. Control-flow order and every side effect
+ * (logging, `recordSemanticAudit` calls) are preserved exactly; only the
+ * grouping (and file) changed.
  */
 
 import type { IAgentManager } from "../agents";
 import type { ReviewConfig } from "../config/selectors";
-import { filterContextByRole } from "../context";
+import type { ContextBundle } from "../context/engine";
 import { DebateRunner } from "../debate";
 import type { DebateRunnerOptions } from "../debate";
 import { NaxError } from "../errors";
 import type { Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
 import { callOp as _callOp } from "../operations/call";
+import type { SemanticReviewOutput } from "../operations/semantic-review";
 import { semanticReviewOp } from "../operations/semantic-review";
 import { ReviewPromptBuilder } from "../prompts";
+import type { NaxRuntime } from "../runtime";
+import type { ResolvedTestPatterns } from "../test-runners";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
-import { llmFindingsToReviewFindings } from "./finding-projection";
 import { prepareSemanticReviewInput } from "./prepare-inputs";
 import { writeReviewAudit } from "./review-audit";
 import { runSemanticDebate } from "./semantic-debate";
-import { type LLMFinding, formatFindings, isBlockingSeverity, toReviewFindings } from "./semantic-helpers";
-import type { ReviewAck, ReviewCheckResult, SemanticReviewConfig, SemanticStory } from "./types";
+import type { SemanticOutcomeCtx } from "./semantic-outcomes";
+import {
+  buildAcIndexDroppedFailClosedResult,
+  buildBlockingFailureResult,
+  buildFeatureCtxBlock,
+  buildPassedResult,
+  catchDispatchFailure,
+  classifySemanticFindings,
+  handleRetryExhaustedFailOpen,
+  handleTruncatedLooksLikeFail,
+  skipResult,
+} from "./semantic-outcomes";
+import type { ReviewCheckResult, SemanticReviewConfig, SemanticStory } from "./types";
 
 // Re-export so existing callers (`import type { SemanticStory } from "./semantic"`) keep working.
 export type { SemanticStory };
@@ -35,41 +55,6 @@ export const _semanticDeps = {
   writeReviewAudit,
   callOp: _callOp,
 };
-
-function recordSemanticAudit(opts: {
-  runtime?: import("../runtime").NaxRuntime;
-  workdir: string;
-  projectDir?: string;
-  storyId: string;
-  featureName?: string;
-  parsed: boolean;
-  looksLikeFail?: boolean;
-  failOpen?: boolean;
-  passed?: boolean;
-  blockingThreshold?: "error" | "warning" | "info";
-  result: { passed: boolean; findings: unknown[] } | null;
-  advisoryFindings?: unknown[];
-  /** #1423 — prior findings resolved or withdrawn, recorded outside `result.findings`. */
-  acks?: ReviewAck[];
-}): void {
-  opts.runtime?.dispatchEvents.emitReviewDecision({
-    kind: "review-decision",
-    reviewer: "semantic",
-    workdir: opts.workdir,
-    projectDir: opts.projectDir,
-    storyId: opts.storyId,
-    featureName: opts.featureName,
-    timestamp: Date.now(),
-    parsed: opts.parsed,
-    looksLikeFail: opts.looksLikeFail,
-    failOpen: opts.failOpen,
-    passed: opts.passed,
-    blockingThreshold: opts.blockingThreshold,
-    result: opts.result,
-    advisoryFindings: opts.advisoryFindings,
-    acks: opts.acks,
-  });
-}
 
 export interface RunSemanticReviewOptions {
   workdir: string;
@@ -82,15 +67,15 @@ export interface RunSemanticReviewOptions {
   priorSemanticIterations?: Iteration[];
   blockingThreshold?: "error" | "warning" | "info";
   featureContextMarkdown?: string;
-  contextBundle?: import("../context/engine").ContextBundle;
+  contextBundle?: ContextBundle;
   projectDir?: string;
   naxIgnoreIndex?: NaxIgnoreIndex;
-  runtime?: import("../runtime").NaxRuntime;
+  runtime?: NaxRuntime;
   /**
    * Resolved test-file patterns (ADR-009 SSOT) — keeps a finding about a test
    * file in the test lane (#1368). Mirrors `runAdversarialReview`.
    */
-  resolvedTestPatterns?: import("../test-runners").ResolvedTestPatterns;
+  resolvedTestPatterns?: ResolvedTestPatterns;
 }
 
 /**
@@ -143,14 +128,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
   });
 
   if (prepared.skipReason === "no git ref") {
-    return {
-      check: "semantic",
-      success: true,
-      command: "",
-      exitCode: 0,
-      output: "skipped: no git ref",
-      durationMs: Date.now() - startTime,
-    };
+    return skipResult("skipped: no git ref", startTime);
   }
 
   const diffMode = semanticConfig.diffMode ?? "ref";
@@ -162,24 +140,10 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
   });
 
   if (prepared.skipReason === "no changes detected") {
-    return {
-      check: "semantic",
-      success: true,
-      command: "",
-      exitCode: 0,
-      output: "skipped: no changes detected",
-      durationMs: Date.now() - startTime,
-    };
+    return skipResult("skipped: no changes detected", startTime);
   }
   if (prepared.skipReason === "no production code changes") {
-    return {
-      check: "semantic",
-      success: true,
-      command: "",
-      exitCode: 0,
-      output: "skipped: no production code changes",
-      durationMs: Date.now() - startTime,
-    };
+    return skipResult("skipped: no production code changes", startTime);
   }
 
   // biome-ignore lint/style/noNonNullAssertion: skipReason undefined ⇒ effectiveRef present
@@ -197,28 +161,11 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       storyId: story.id,
       model: semanticConfig.model,
     });
-    return {
-      check: "semantic",
-      success: true,
-      command: "",
-      exitCode: 0,
-      output: "skipped: no agent available for model tier",
-      durationMs: Date.now() - startTime,
-    };
+    return skipResult("skipped: no agent available for model tier", startTime);
   }
 
   // Build feature context block for the prompt.
-  // When a v2 ContextBundle is provided, use its pushMarkdown directly — the orchestrator
-  // already applied role filtering and dedup, so the v1 filterContextByRole() pass is
-  // skipped (it would silently drop ##-section content from v2's rendered output).
-  let featureCtxBlock = "";
-  if (contextBundle) {
-    const md = contextBundle.pushMarkdown.trim();
-    if (md) featureCtxBlock = `${md}\n\n---\n\n`;
-  } else if (featureContextMarkdown) {
-    const filtered = filterContextByRole(featureContextMarkdown, "reviewer-semantic");
-    if (filtered.trim()) featureCtxBlock = `${filtered}\n\n---\n\n`;
-  }
+  const featureCtxBlock = buildFeatureCtxBlock(contextBundle, featureContextMarkdown);
 
   // Build prompt — mode determines whether diff is embedded or reviewer self-serves via tools.
   const basePrompt = new ReviewPromptBuilder().buildSemanticReviewPrompt(story, semanticConfig, {
@@ -293,11 +240,17 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     );
   }
 
-  // NOTE: llmCost stays 0 on the runtime path — buildHopCallback charges cost via
-  // costAggregator directly. ReviewCheckResult.cost is 0 for pipeline-managed
-  // reviews; per-stage cost roll-up is the trade-off for ADR-019 session-lifecycle
-  // ownership. Track in follow-up if per-check cost breakdown is needed.
-  const llmCost = 0;
+  const outcomeCtx: SemanticOutcomeCtx = {
+    runtime,
+    workdir,
+    projectDir,
+    storyId: story.id,
+    featureName,
+    blockingThreshold: blockingThreshold ?? "error",
+    startTime,
+    logger,
+    testFileMatch,
+  };
 
   const callCtx = {
     runtime,
@@ -308,7 +261,12 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     featureName,
     contextBundle,
   };
-  let opResult: import("../operations/semantic-review").SemanticReviewOutput;
+
+  // NOTE: llmCost stays 0 on the runtime path — buildHopCallback charges cost via
+  // costAggregator directly. ReviewCheckResult.cost is 0 for pipeline-managed
+  // reviews; per-stage cost roll-up is the trade-off for ADR-019 session-lifecycle
+  // ownership. Track in follow-up if per-check cost breakdown is needed.
+  let opResult: SemanticReviewOutput;
   try {
     opResult = await _semanticDeps.callOp(callCtx, semanticReviewOp, {
       workdir,
@@ -325,81 +283,10 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       blockingThreshold,
     });
   } catch (err) {
-    logger?.warn("semantic", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
-    recordSemanticAudit({
-      runtime,
-      workdir,
-      projectDir,
-      storyId: story.id,
-      featureName,
-      parsed: false,
-      looksLikeFail: false,
-      failOpen: true,
-      passed: true,
-      blockingThreshold,
-      result: null,
-    });
-    return {
-      check: "semantic",
-      success: true,
-      failOpen: true,
-      command: "",
-      exitCode: 0,
-      output: `skipped: LLM call failed — ${String(err)}`,
-      durationMs: Date.now() - startTime,
-    };
+    return catchDispatchFailure(err, outcomeCtx);
   }
-  if (opResult.failOpen) {
-    logger?.warn("semantic", "Retry exhausted — fail-open", { storyId: story.id });
-    recordSemanticAudit({
-      runtime,
-      workdir,
-      projectDir,
-      storyId: story.id,
-      featureName,
-      parsed: false,
-      looksLikeFail: false,
-      failOpen: true,
-      passed: true,
-      blockingThreshold,
-      result: null,
-    });
-    return {
-      check: "semantic",
-      success: true,
-      failOpen: true,
-      command: "",
-      exitCode: 0,
-      output: "semantic review: could not parse LLM response (fail-open)",
-      durationMs: Date.now() - startTime,
-    };
-  }
-  if (opResult.looksLikeFail) {
-    logger?.warn("semantic", "LLM returned truncated JSON with passed:false — treating as failure", {
-      storyId: story.id,
-    });
-    recordSemanticAudit({
-      runtime,
-      workdir,
-      projectDir,
-      storyId: story.id,
-      featureName,
-      parsed: false,
-      looksLikeFail: true,
-      failOpen: false,
-      passed: false,
-      blockingThreshold,
-      result: null,
-    });
-    return {
-      check: "semantic",
-      success: false,
-      command: "",
-      exitCode: 1,
-      output: "semantic review: LLM response truncated but indicated failure (passed:false found in partial response)",
-      durationMs: Date.now() - startTime,
-    };
-  }
+  if (opResult.failOpen) return handleRetryExhaustedFailOpen(outcomeCtx);
+  if (opResult.looksLikeFail) return handleTruncatedLooksLikeFail(outcomeCtx);
   if (opResult.repromptEvent) {
     runtime.dispatchEvents.emitReviewReprompt({
       kind: "review-reprompt-on-drop",
@@ -410,21 +297,14 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       costUsd: opResult.repromptEvent.costUsd,
     });
   }
-  // verify() has already run the full filter pipeline (sanitize → substantiate → AC-ground → split).
-  // opResult.findings = accepted findings (blocking + advisory); opResult.normalizedFindings = blocking only.
-  // opResult.passed preserves the model verdict after filtering so wrappers can
-  // still fail-closed when passed:false survives without remaining blockers.
-  const threshold = blockingThreshold ?? "error";
-  const allFindings = opResult.findings as LLMFinding[];
-  // #1423 — carry-forward bookkeeping, recorded alongside findings but never as one.
-  const acks = opResult.acks;
-  const blockingFindings = allFindings.filter((f) => isBlockingSeverity(f.severity, threshold));
-  const advisoryFindings = allFindings.filter((f) => !isBlockingSeverity(f.severity, threshold));
+
+  const classification = classifySemanticFindings(opResult, blockingThreshold);
+  const { allFindings, blockingFindings, advisoryFindings } = classification;
 
   if (advisoryFindings.length > 0) {
     logger?.debug(
       "review",
-      `Semantic review: ${advisoryFindings.length} advisory findings (below threshold '${threshold}')`,
+      `Semantic review: ${advisoryFindings.length} advisory findings (below threshold '${classification.threshold}')`,
       {
         storyId: story.id,
         findings: advisoryFindings.map((f) => ({ severity: f.severity, file: f.file, issue: f.issue })),
@@ -435,125 +315,13 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
   const durationMs = Date.now() - startTime;
 
   if (blockingFindings.length > 0) {
-    logger?.warn("review", `Semantic review failed: ${blockingFindings.length} blocking findings`, {
-      storyId: story.id,
-      durationMs,
-    });
-    logger?.debug("review", "Semantic review findings", {
-      storyId: story.id,
-      findings: blockingFindings.map((f) => ({
-        severity: f.severity,
-        file: f.file,
-        line: f.line,
-        issue: f.issue,
-        suggestion: f.suggestion,
-      })),
-    });
-    const output = `Semantic review failed:\n\n${formatFindings(blockingFindings)}`;
-    recordSemanticAudit({
-      runtime,
-      workdir,
-      projectDir,
-      storyId: story.id,
-      featureName,
-      parsed: true,
-      failOpen: false,
-      passed: false,
-      blockingThreshold: threshold,
-      acks,
-      result: {
-        passed: false,
-        findings: llmFindingsToReviewFindings(allFindings, { source: "semantic-review", isTestFile: testFileMatch }),
-      },
-      advisoryFindings:
-        advisoryFindings.length > 0
-          ? llmFindingsToReviewFindings(advisoryFindings, { source: "semantic-review", isTestFile: testFileMatch })
-          : undefined,
-    });
-    return {
-      check: "semantic",
-      success: false,
-      command: "",
-      exitCode: 1,
-      output,
-      durationMs,
-      findings: toReviewFindings(blockingFindings, { isTestFile: testFileMatch }),
-      advisoryFindings:
-        advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings, { isTestFile: testFileMatch }) : undefined,
-      cost: llmCost,
-    };
+    return buildBlockingFailureResult(outcomeCtx, classification, durationMs);
   }
 
   if (!opResult.passed && allFindings.length === 0) {
-    logger?.warn("review", "Semantic review fail-closed: blocking findings dropped (acIndex invalid)", {
-      storyId: story.id,
-      durationMs,
-    });
-    recordSemanticAudit({
-      runtime,
-      workdir,
-      projectDir,
-      storyId: story.id,
-      featureName,
-      parsed: true,
-      acks,
-      failOpen: false,
-      passed: false,
-      blockingThreshold: threshold,
-      result: { passed: false, findings: [] },
-      advisoryFindings:
-        advisoryFindings.length > 0
-          ? llmFindingsToReviewFindings(advisoryFindings, { source: "semantic-review", isTestFile: testFileMatch })
-          : undefined,
-    });
-    return {
-      check: "semantic",
-      success: false,
-      command: "",
-      exitCode: 1,
-      output:
-        'Semantic review failed: blocking finding(s) were dropped — acIndex was missing or out of range. The model emitted "passed: false" without valid AC attribution.',
-      durationMs,
-      advisoryFindings:
-        advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings, { isTestFile: testFileMatch }) : undefined,
-      cost: llmCost,
-    };
+    return buildAcIndexDroppedFailClosedResult(outcomeCtx, classification, durationMs);
   }
 
   // passed — either the model passed with no blocking findings, or there were no findings at all
-  logger?.info("review", "Semantic review passed", { storyId: story.id, durationMs });
-  recordSemanticAudit({
-    runtime,
-    workdir,
-    projectDir,
-    storyId: story.id,
-    featureName,
-    parsed: true,
-    acks,
-    failOpen: false,
-    passed: true,
-    blockingThreshold: threshold,
-    result: {
-      passed: true,
-      findings: llmFindingsToReviewFindings(allFindings, { source: "semantic-review", isTestFile: testFileMatch }),
-    },
-    advisoryFindings:
-      advisoryFindings.length > 0
-        ? llmFindingsToReviewFindings(advisoryFindings, { source: "semantic-review", isTestFile: testFileMatch })
-        : undefined,
-  });
-  return {
-    check: "semantic",
-    success: true,
-    command: "",
-    exitCode: 0,
-    output:
-      allFindings.length === 0
-        ? "Semantic review passed"
-        : "Semantic review passed (all findings were advisory — below blocking threshold)",
-    durationMs,
-    advisoryFindings:
-      advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings, { isTestFile: testFileMatch }) : undefined,
-    cost: llmCost,
-  };
+  return buildPassedResult(outcomeCtx, classification, durationMs);
 }
