@@ -169,6 +169,22 @@ describe("CodeNeighborProvider", () => {
     expect(content).toContain("src/consumer.ts");
   });
 
+  test("reverse deps backfill unused forward slots past their guaranteed minimum (#1611)", async () => {
+    // 1 forward dep leaves 7 slots free; 6 reverse-dep consumers should all
+    // appear, not just the 4-slot minimum reserved for reverse deps.
+    const consumers = Array.from({ length: 6 }, (_, i) => `src/consumer${i}.ts`);
+    const files: Record<string, string> = {
+      "src/service.ts": 'import "./dep0"',
+      "src/dep0.ts": "",
+    };
+    for (const c of consumers) files[c] = 'import "./service"';
+
+    setupDeps({ files, globFiles: consumers });
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/service.ts"] }));
+    const content = result.chunks[0]?.content ?? "";
+    for (const c of consumers) expect(content).toContain(c);
+  });
+
   test("combines neighbors from multiple files into one chunk", async () => {
     setupDeps({
       files: { "src/a.ts": "", "src/b.ts": "" },

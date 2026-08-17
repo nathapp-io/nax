@@ -406,10 +406,11 @@ async function collectNeighbors(
     }
   }
 
-  // Reserve a share of slots for reverse deps — otherwise forward deps
-  // (inserted first) would crowd them out at the final slice() below.
-  const reverseSlots = Math.min(reverseNeighbors.size, Math.ceil(MAX_NEIGHBORS_PER_FILE / 2));
-  const forwardSlots = MAX_NEIGHBORS_PER_FILE - reverseSlots;
+  // Guarantee reverse deps a minimum share of slots — otherwise forward deps
+  // (inserted first) would crowd them out at the final slice() below. The
+  // reverse loop still backfills past this minimum into unused forward slots.
+  const minReverseSlots = Math.min(reverseNeighbors.size, Math.ceil(MAX_NEIGHBORS_PER_FILE / 2));
+  const forwardSlots = MAX_NEIGHBORS_PER_FILE - minReverseSlots;
   const neighbors = new Set<string>();
   for (const f of forwardNeighbors) {
     if (neighbors.size >= forwardSlots) break;
