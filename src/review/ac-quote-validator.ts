@@ -17,11 +17,13 @@
  * next-tier escalation context.
  */
 
+import type { Severity } from "./severity";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /** Minimum shape required for AC-quote validation — satisfied by both LLMFinding and AdversarialLLMFinding. */
 export interface AcQuotable {
-  severity: string;
+  severity: Severity;
   file?: string;
   issue: string;
   acQuote?: string;

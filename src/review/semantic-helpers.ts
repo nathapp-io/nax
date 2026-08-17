@@ -9,11 +9,12 @@ import { extractAcks } from "./acks";
 import { resolveFixTarget } from "./category-fix-target";
 import { normalizeSemanticCategory } from "./semantic-categories";
 import { SEVERITY_RANK, isBlockingSeverity } from "./severity";
+import type { Severity } from "./severity";
 export { isBlockingSeverity };
 import type { ReviewAck, SemanticReviewConfig } from "./types";
 
 export interface LLMFinding {
-  severity: string;
+  severity: Severity;
   /**
    * Semantic taxonomy axis (see `semantic-categories.ts`). Optional on the wire —
    * a reviewer that omits it yields the pre-taxonomy empty category rather than

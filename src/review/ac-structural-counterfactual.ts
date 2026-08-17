@@ -12,6 +12,7 @@
  */
 
 import type { AcQuoteRejectionCode } from "./ac-quote-validator";
+import type { Severity } from "./severity";
 
 /**
  * Categories that should block a story under the structural alternative.
@@ -68,7 +69,7 @@ export function analyzeStructuralCounterfactual(
  * even when `categoryBlocking` is false.
  */
 export interface AdversarialDropAnalysis {
-  finding: { file: string; line: number; severity: string; category: string; issue: string };
+  finding: { file: string; line: number; severity: Severity; category: string; issue: string };
   dropCode: AcQuoteRejectionCode;
   acIndex?: number;
   rawCategory: string;
@@ -81,7 +82,7 @@ export interface AdversarialDropAnalysis {
  * Used to detect over-rejection risk if the structural alternative were adopted.
  */
 export interface AdversarialAcceptAnalysis {
-  finding: { file: string; line: number; severity: string; category: string };
+  finding: { file: string; line: number; severity: Severity; category: string };
   acIndex?: number;
   rawCategory: string;
   counterfactual: StructuralCounterfactual;

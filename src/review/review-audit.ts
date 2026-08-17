@@ -18,6 +18,7 @@ import { getSafeLogger } from "../logger";
 import { findNaxProjectRoot } from "../utils/nax-project-root";
 import { NAX_COMMIT, NAX_VERSION } from "../version";
 import type { AdversarialAcceptAnalysis, AdversarialDropAnalysis } from "./ac-structural-counterfactual";
+import type { Severity } from "./severity";
 import type { ReviewAck } from "./types";
 
 export interface ReviewAuditEntry {
@@ -120,7 +121,7 @@ export interface AdvisoryFindingSummaryEntry {
   storyId?: string;
   featureName?: string;
   reviewer: "semantic" | "adversarial";
-  severity: string;
+  severity: Severity;
   category?: string;
   file?: string;
   line?: number;
@@ -234,7 +235,7 @@ function toAdvisorySummaryEntries(entry: ReviewAuditDecision): AdvisoryFindingSu
   if (!entry.advisoryFindings || entry.advisoryFindings.length === 0) return [];
   return entry.advisoryFindings.map((raw) => {
     const f = raw as {
-      severity?: string;
+      severity?: Severity;
       category?: string;
       file?: string;
       line?: number;
