@@ -123,3 +123,61 @@ describe("InteractionChain.prompt() — choose normalization", () => {
     expect(response.action).toBe("reject");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// send() fallback cascade (BUG-7)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("InteractionChain.send() — fallback cascade (BUG-7)", () => {
+  function makeSend(impl: () => Promise<void>): InteractionPlugin {
+    return {
+      name: `send-${Math.random()}`,
+      send: mock(impl),
+      receive: mock(async () => {
+        throw new Error("not used");
+      }),
+    };
+  }
+
+  test("falls through to next plugin when primary send() rejects", async () => {
+    const primary = makeSend(async () => {
+      throw new Error("primary offline");
+    });
+    const secondary = makeSend(async () => {});
+    const chain = new InteractionChain({ defaultTimeout: 5000, defaultFallback: "abort" });
+    chain.register(secondary, 5);
+    chain.register(primary, 10);
+
+    await chain.send(makeRequest());
+    expect(primary.send).toHaveBeenCalled();
+    expect(secondary.send).toHaveBeenCalled();
+  });
+
+  test("throws when every plugin's send() rejects", async () => {
+    const a = makeSend(async () => {
+      throw new Error("a fail");
+    });
+    const b = makeSend(async () => {
+      throw new Error("b fail");
+    });
+    const chain = new InteractionChain({ defaultTimeout: 5000, defaultFallback: "abort" });
+    chain.register(b, 5);
+    chain.register(a, 10);
+
+    await expect(chain.send(makeRequest())).rejects.toThrow(/All interaction plugins failed/);
+  });
+
+  test("does not call lower-priority plugins after a primary success", async () => {
+    const primary = makeSend(async () => {});
+    const secondary = makeSend(async () => {
+      throw new Error("should not be reached");
+    });
+    const chain = new InteractionChain({ defaultTimeout: 5000, defaultFallback: "abort" });
+    chain.register(secondary, 5);
+    chain.register(primary, 10);
+
+    await chain.send(makeRequest());
+    expect(primary.send).toHaveBeenCalled();
+    expect(secondary.send).not.toHaveBeenCalled();
+  });
+});

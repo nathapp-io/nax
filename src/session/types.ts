@@ -169,6 +169,8 @@ export interface OpenSessionRequest {
   workdir: string;
   /** Pipeline stage — used by SessionManager to call resolvePermissions. */
   pipelineStage: import("../config/permissions").PipelineStage;
+  /** SEC-3: per-package effective config — iteration-runner threads this for monorepo batches. Falls back to SessionManager._config. */
+  config?: import("../config/selectors").AgentManagerConfig;
   /** Resolved model definition for the adapter. */
   modelDef: import("../config/schema").ModelDef;
   /**

@@ -484,10 +484,10 @@ export class AgentManager implements IAgentManager {
         const adapter = this._resolveRegistry().getAgent(currentAgent);
         if (!adapter) {
           _finalStatus = "error";
-          return {
-            result: { output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 },
-            fallbacks,
-          };
+          throw new NaxError(`Agent "${currentAgent}" not found in registry`, "AGENT_NOT_FOUND", {
+            stage: "complete",
+            agentName: currentAgent,
+          });
         }
 
         let result: CompleteResult;
@@ -670,8 +670,8 @@ export class AgentManager implements IAgentManager {
       );
     }
     const stage = opts.pipelineStage ?? "run";
-    /** @design Per plan §3.3 Note: resolvePermissions needs full NaxConfig. */
-    const resolvedPermissions = resolvePermissions(this._config, stage);
+    // SEC-3: per-package permissionProfile (monorepo). Per plan §3.3 Note: needs full NaxConfig.
+    const resolvedPermissions = resolvePermissions(opts.config ?? this._config, stage);
     const sessionRole = handle.role ?? opts.sessionRole ?? "main";
     const start = Date.now();
     try {
@@ -714,7 +714,7 @@ export class AgentManager implements IAgentManager {
 
   async completeAs(agentName: string, prompt: string, options: CompleteOptions): Promise<CompleteResult> {
     const stage = options.pipelineStage ?? "complete";
-    const resolvedPermissions = resolvePermissions(this._config, stage);
+    const resolvedPermissions = resolvePermissions(options.config ?? this._config, stage);
     const augmented: ResolvedCompleteOptions = {
       ...options,
       resolvedPermissions,

@@ -343,6 +343,50 @@ describe("saveRunMetrics - history cap (GROWTH-1)", () => {
   });
 });
 
+describe("saveRunMetrics - concurrent writers (BUG-6)", () => {
+  test("parallel saves preserve every appended run (no lost-update)", async () => {
+    const writerCount = 6;
+    const metrics = Array.from(
+      { length: writerCount },
+      (_, i) =>
+        ({
+          runId: `concurrent-${i}`,
+          feature: "test-feature",
+          startedAt: new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+          totalCost: 0.01,
+          totalStories: 1,
+          storiesCompleted: 1,
+          storiesFailed: 0,
+          totalDurationMs: 1000,
+          stories: [
+            {
+              storyId: "US-001",
+              complexity: "medium",
+              modelTier: "balanced",
+              modelUsed: "claude-sonnet-4",
+              attempts: 1,
+              finalTier: "balanced",
+              success: true,
+              cost: 0.01,
+              durationMs: 1000,
+              firstPassSuccess: true,
+              startedAt: new Date().toISOString(),
+              completedAt: new Date().toISOString(),
+            },
+          ],
+        }) satisfies RunMetrics,
+    );
+
+    await Promise.all(metrics.map((m) => saveRunMetrics(OUTPUT_DIR, m)));
+
+    const saved = await readMetricsFile();
+    expect(saved).toHaveLength(writerCount);
+    const ids = saved.map((s) => s.runId).sort();
+    expect(ids).toEqual(metrics.map((m) => m.runId).sort());
+  });
+});
+
 describe("loadRunMetrics - backward compatibility", () => {
   test("AC-6: successfully loads metrics.json without totalTokens field", async () => {
     const existingMetrics = [

@@ -1,12 +1,7 @@
 import { getSafeLogger } from "../logger";
-import { spawn } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
+import { gitWithTimeout } from "../utils/git";
 import type { WorktreeManager } from "./manager";
-
-/** Injectable deps for testability — mock _mergeDeps.spawn instead of global Bun.spawn */
-export const _mergeDeps = {
-  spawn,
-};
 
 /**
  * Why a merge did not succeed.
@@ -50,12 +45,9 @@ export class MergeEngine {
    * conflict", whose text contains "conflict" but says nothing about THIS merge.
    */
   private async isMidMerge(projectRoot: string): Promise<boolean> {
-    const proc = _mergeDeps.spawn(["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"], {
-      cwd: projectRoot,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    return (await proc.exited) === 0;
+    // BUG-5: route through gitWithTimeout so a wedged git can't stall the merge.
+    const { exitCode } = await gitWithTimeout(["rev-parse", "-q", "--verify", "MERGE_HEAD"], projectRoot);
+    return exitCode === 0;
   }
 
   /**
@@ -86,20 +78,10 @@ export class MergeEngine {
         return { success: false, failureKind: "error", error };
       }
 
-      const mergeProc = _mergeDeps.spawn(
-        ["git", "merge", "--no-ff", branchName, "-m", `Merge branch '${branchName}'`],
-        {
-          cwd: projectRoot,
-          stdout: "pipe",
-          stderr: "pipe",
-        },
+      const { exitCode, stderr, stdout } = await gitWithTimeout(
+        ["merge", "--no-ff", branchName, "-m", `Merge branch '${branchName}'`],
+        projectRoot,
       );
-
-      const [exitCode, stderr, stdout] = await Promise.all([
-        mergeProc.exited,
-        new Response(mergeProc.stderr).text(),
-        new Response(mergeProc.stdout).text(),
-      ]);
 
       if (exitCode === 0) {
         // Clean merge - cleanup worktree
@@ -329,16 +311,10 @@ export class MergeEngine {
 
     try {
       // Get current branch name from main repo
-      const currentBranchProc = _mergeDeps.spawn(["git", "rev-parse", "--abbrev-ref", "HEAD"], {
-        cwd: projectRoot,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-
-      const [exitCode, currentBranchRaw] = await Promise.all([
-        currentBranchProc.exited,
-        new Response(currentBranchProc.stdout).text(),
-      ]);
+      const { exitCode, stdout: currentBranchRaw } = await gitWithTimeout(
+        ["rev-parse", "--abbrev-ref", "HEAD"],
+        projectRoot,
+      );
       if (exitCode !== 0) {
         throw new Error("Failed to get current branch");
       }
@@ -346,26 +322,15 @@ export class MergeEngine {
       const currentBranch = currentBranchRaw.trim();
 
       // Rebase worktree branch onto current branch
-      const rebaseProc = _mergeDeps.spawn(["git", "rebase", currentBranch], {
-        cwd: worktreePath,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-
-      const [rebaseExitCode, rebaseStderr] = await Promise.all([
-        rebaseProc.exited,
-        new Response(rebaseProc.stderr).text(),
-      ]);
+      const { exitCode: rebaseExitCode, stderr: rebaseStderr } = await gitWithTimeout(
+        ["rebase", currentBranch],
+        worktreePath,
+      );
       if (rebaseExitCode !== 0) {
         const stderr = rebaseStderr;
 
         // Abort rebase on failure
-        const abortProc = _mergeDeps.spawn(["git", "rebase", "--abort"], {
-          cwd: worktreePath,
-          stdout: "pipe",
-          stderr: "pipe",
-        });
-        await abortProc.exited;
+        await gitWithTimeout(["rebase", "--abort"], worktreePath);
 
         throw new Error(`Rebase failed: ${stderr || "unknown error"}`);
       }
@@ -382,13 +347,7 @@ export class MergeEngine {
    */
   private async getConflictFiles(projectRoot: string): Promise<string[]> {
     try {
-      const proc = _mergeDeps.spawn(["git", "diff", "--name-only", "--diff-filter=U"], {
-        cwd: projectRoot,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-
-      const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+      const { stdout, exitCode } = await gitWithTimeout(["diff", "--name-only", "--diff-filter=U"], projectRoot);
       if (exitCode !== 0) {
         return [];
       }
@@ -412,13 +371,7 @@ export class MergeEngine {
    */
   private async abortMerge(projectRoot: string): Promise<boolean> {
     try {
-      const proc = _mergeDeps.spawn(["git", "merge", "--abort"], {
-        cwd: projectRoot,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-
-      const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
+      const { exitCode, stderr } = await gitWithTimeout(["merge", "--abort"], projectRoot);
       if (exitCode !== 0) {
         getSafeLogger()?.error("worktree", "Failed to abort merge", {
           exitCode,

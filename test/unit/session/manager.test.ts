@@ -342,10 +342,20 @@ describe("SessionManager.listActive()", () => {
 
 describe("SessionManager.sweepOrphans()", () => {
   test("returns 0 when no terminal sessions; removes old terminal sessions, keeps recent ones", () => {
+    // MEM-1: post-fix the sweep evicts both terminal AND non-terminal sessions
+    // older than TTL. The beforeEach pins `now` to a frozen 2025 clock but
+    // leaves `nowMs` as Date.now() (real wall-clock, 2026). Pin nowMs to
+    // the same fixed epoch so a freshly-created session isn't judged
+    // years-old and evicted on the first sweep call.
+    const origNowMs = _sessionManagerDeps.nowMs;
+    const FAKE_NOW_MS = new Date("2025-01-01T00:00:00.000Z").getTime();
+    _sessionManagerDeps.nowMs = () => FAKE_NOW_MS;
+
     const mgr = new SessionManager();
     mgr.create({ role: "main", agent: "claude", workdir: "/p" });
-    expect(mgr.sweepOrphans(0)).toBe(0);
+    expect(mgr.sweepOrphans(1_000)).toBe(0);
 
+    _sessionManagerDeps.nowMs = origNowMs;
     const mgr2 = new SessionManager();
     _sessionManagerDeps.now = () => new Date(Date.now() - 10_000).toISOString();
     const oldSess = mgr2.create({ role: "main", agent: "claude", workdir: "/p" });

@@ -5,9 +5,10 @@
  * Covers: MergeEngine topological sort and merge logic
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { _mergeDeps, MergeEngine } from "../../../src/worktree/merge";
-import type { StoryDependencies } from "../../../src/worktree/merge";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { _gitDeps } from "@/utils/git";
+import { MergeEngine } from "@/worktree";
+import type { StoryDependencies } from "@/worktree";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -281,16 +282,17 @@ interface FakeProc {
   stderr?: string;
 }
 
-/** Build a `_mergeDeps.spawn` stand-in that answers per git command. */
-function fakeSpawn(handler: (cmd: readonly string[]) => FakeProc): typeof _mergeDeps.spawn {
+/** Build a `_gitDeps.spawn` stand-in that answers per git command. */
+function fakeSpawn(handler: (cmd: readonly string[]) => FakeProc): typeof _gitDeps.spawn {
   return ((cmd: string[]) => {
     const res = handler(cmd);
     return {
       exited: Promise.resolve(res.exit),
       stdout: new Response(res.stdout ?? "").body,
       stderr: new Response(res.stderr ?? "").body,
+      kill: () => {},
     };
-  }) as unknown as typeof _mergeDeps.spawn;
+  }) as unknown as typeof _gitDeps.spawn;
 }
 
 const isMergeCmd = (cmd: readonly string[]) => cmd[1] === "merge" && cmd[2] === "--no-ff";
@@ -303,21 +305,21 @@ const DIRTY_TREE_STDERR =
   "error: Your local changes to the following files would be overwritten by merge:\n\tf.txt\nAborting\n";
 
 describe("MergeEngine — non-conflict git failures", () => {
-  let origSpawn: typeof _mergeDeps.spawn;
+  let origSpawn: typeof _gitDeps.spawn;
 
   beforeEach(() => {
-    origSpawn = _mergeDeps.spawn;
+    origSpawn = _gitDeps.spawn;
   });
 
   afterEach(() => {
-    _mergeDeps.spawn = origSpawn;
+    _gitDeps.spawn = origSpawn;
   });
 
   it("mergeAll stays total when a story fails for a non-conflict reason", async () => {
     // US-002 fails with the real dirty-tree message: exit 2, no "conflict" text,
     // repo left clean (no MERGE_HEAD, no unmerged files). Previously this threw
     // out of mergeAll, discarding US-001's recorded success and never trying US-003.
-    _mergeDeps.spawn = fakeSpawn((cmd) => {
+    _gitDeps.spawn = fakeSpawn((cmd) => {
       if (isMergeCmd(cmd) && cmd[3] === "nax/US-002") return { exit: 2, stderr: DIRTY_TREE_STDERR };
       if (isMergeCmd(cmd)) return { exit: 0 };
       if (isMergeHeadProbe(cmd)) return { exit: 1 }; // never mid-merge
@@ -342,9 +344,12 @@ describe("MergeEngine — non-conflict git failures", () => {
     //   "fatal: Exiting because of an unresolved conflict."
     // It contains "conflict", but THIS story caused nothing — the repo is clean
     // by the time we probe it, so it must be an error, not this story's conflict.
-    _mergeDeps.spawn = fakeSpawn((cmd) => {
+    _gitDeps.spawn = fakeSpawn((cmd) => {
       if (isMergeCmd(cmd)) {
-        return { exit: 128, stderr: "error: Merging is not possible.\nfatal: Exiting because of an unresolved conflict.\n" };
+        return {
+          exit: 128,
+          stderr: "error: Merging is not possible.\nfatal: Exiting because of an unresolved conflict.\n",
+        };
       }
       if (isMergeHeadProbe(cmd)) return { exit: 1 };
       if (isUnmergedProbe(cmd)) return { exit: 0, stdout: "" };
@@ -360,7 +365,7 @@ describe("MergeEngine — non-conflict git failures", () => {
 
   it("refuses to merge into a repository that is already mid-merge", async () => {
     let mergeAttempted = false;
-    _mergeDeps.spawn = fakeSpawn((cmd) => {
+    _gitDeps.spawn = fakeSpawn((cmd) => {
       if (isMergeCmd(cmd)) {
         mergeAttempted = true;
         return { exit: 0 };
@@ -407,7 +412,7 @@ describe("MergeEngine — non-conflict git failures", () => {
     // A genuine conflict, but the abort fails, so the repo stays mid-merge and
     // every later merge in the batch is invalid. Reporting a plain conflict here
     // would hand the story to rectification against an unusable repo.
-    _mergeDeps.spawn = conflictingRepo({ abortExit: 128, unmerged: "f.txt\n" });
+    _gitDeps.spawn = conflictingRepo({ abortExit: 128, unmerged: "f.txt\n" });
 
     const engine = new MergeEngine(mockWorktreeManager);
     const result = await engine.merge("/repo", "US-001");
@@ -417,7 +422,7 @@ describe("MergeEngine — non-conflict git failures", () => {
   });
 
   it("still reports a real conflict as a conflict, with its files", async () => {
-    _mergeDeps.spawn = conflictingRepo({ abortExit: 0, unmerged: "f.txt\nsrc/g.ts\n" });
+    _gitDeps.spawn = conflictingRepo({ abortExit: 0, unmerged: "f.txt\nsrc/g.ts\n" });
 
     const engine = new MergeEngine(mockWorktreeManager);
     const result = await engine.merge("/repo", "US-001");
@@ -430,7 +435,7 @@ describe("MergeEngine — non-conflict git failures", () => {
   it("mergeAll reports every story when the repo is stuck mid-merge", async () => {
     // The mid-merge guard makes each subsequent story fail fast rather than
     // being misreported as its own conflict.
-    _mergeDeps.spawn = fakeSpawn((cmd) => {
+    _gitDeps.spawn = fakeSpawn((cmd) => {
       if (isMergeHeadProbe(cmd)) return { exit: 0 };
       return { exit: 0 };
     });
@@ -447,6 +452,93 @@ describe("worktree barrel", () => {
   it("exports the merge surface so consumers need not reach into the leaf module", async () => {
     const barrel = await import("@/worktree");
     expect(barrel.MergeEngine).toBeDefined();
-    expect(barrel._mergeDeps).toBeDefined();
   });
+});
+
+// ---------------------------------------------------------------------------
+// BUG-5: worktree git ops had no timeout and left pipes unread. The MergeEngine
+// path (isMidMerge probe, git merge, rebase, rebase --abort, git diff
+// --diff-filter=U, git merge --abort) used to call _mergeDeps.spawn directly
+// and await proc.exited. A hung git (NFS, credential prompt) could stall the
+// pipeline indefinitely. Routes now go through gitWithTimeout — concurrent pipe
+// drain + SIGKILL after GIT_TIMEOUT_MS.
+// ---------------------------------------------------------------------------
+
+describe("MergeEngine — BUG-5 git-with-timeout regression", () => {
+  let origSpawn: typeof _gitDeps.spawn;
+
+  beforeEach(() => {
+    origSpawn = _gitDeps.spawn;
+  });
+
+  afterEach(() => {
+    _gitDeps.spawn = origSpawn;
+  });
+
+  // Slow regression: GIT_TIMEOUT_MS = 10_000ms in production. Pre-fix the
+  // mock would hang indefinitely; post-fix the SIGKILL timer at GIT_TIMEOUT_MS
+  // bounds the call. The test asserts the call returns within (timeout + slack)
+  // and SIGKILL was issued (proc.kill called).
+  it("isMidMerge does not hang when the MERGE_HEAD probe never exits", async () => {
+    let resolveExited: (code: number) => void = () => {};
+    let killInvoked = false;
+    // Only the FIRST MERGE_HEAD probe hangs to exercise the SIGKILL path;
+    // subsequent probes and the merge attempt return quickly so the test
+    // only spends GIT_TIMEOUT_MS once. Pre-fix the entire batch hangs
+    // indefinitely — that is the regression we want to catch.
+    let probeCount = 0;
+    _gitDeps.spawn = mock((...args: unknown[]) => {
+      const cmd = args[0] as string[];
+      const isProbe = cmd[1] === "rev-parse" && cmd.includes("MERGE_HEAD");
+      if (!isProbe || probeCount++ > 0) {
+        return {
+          stdout: new ReadableStream({
+            start(c) {
+              c.close();
+            },
+          }),
+          stderr: new ReadableStream({
+            start(c) {
+              c.close();
+            },
+          }),
+          exited: Promise.resolve(1),
+          kill: () => {},
+        };
+      }
+      return {
+        stdout: new ReadableStream({
+          start() {
+            /* never closes */
+          },
+        }),
+        stderr: new ReadableStream({
+          start() {
+            /* never closes */
+          },
+        }),
+        exited: new Promise<number>((r) => {
+          resolveExited = r;
+        }),
+        kill: () => {
+          killInvoked = true;
+          resolveExited(137);
+        },
+      };
+    }) as unknown as typeof _gitDeps.spawn; // test-ratchet-allow: as-unknown-as (mock spawn cast)
+
+    const engine = new MergeEngine(mockWorktreeManager);
+    const start = Date.now();
+    const result = await engine.merge("/repo", "US-001");
+    const elapsed = Date.now() - start;
+
+    // GIT_TIMEOUT_MS = 10_000 + slack. Pre-fix: hangs forever. Post-fix:
+    // SIGKILL fires at the timeout (killInvoked=true), isMidMerge returns
+    // false, the subsequent git merge attempt exits 1, merge() returns
+    // {success: false, failureKind: "error"}.
+    expect(elapsed).toBeLessThan(15_000);
+    expect(killInvoked).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.failureKind).toBe("error");
+  }, 20_000);
 });

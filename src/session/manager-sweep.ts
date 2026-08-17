@@ -15,20 +15,19 @@ export const DEFAULT_ORPHAN_TTL_MS = 4 * 60 * 60 * 1000;
 
 export function sweepOrphansImpl(sessions: Map<string, SessionDescriptor>, ttlMs: number): number {
   const cutoff = _sessionManagerDeps.nowMs() - ttlMs;
-  const terminal: SessionState[] = ["COMPLETED", "FAILED"];
   let removed = 0;
 
   for (const [id, session] of sessions.entries()) {
-    if (!terminal.includes(session.state)) continue;
     // A missing or unparseable lastActivityAt yields NaN, and `NaN < cutoff` is
-    // always false — a terminal session with no usable timestamp has no
-    // defensible retention window, so treat it as expired rather than leaking
-    // the map entry forever.
+    // always false — a session with no usable timestamp has no defensible
+    // retention window, so treat it as expired rather than leaking the map
+    // entry forever. (MEM-1: this applies to terminal AND non-terminal
+    // sessions — pre-fix the function skipped non-terminal entries entirely,
+    // so a session stuck RUNNING after a crash was never evicted.)
     const lastActivityMs = session.lastActivityAt ? new Date(session.lastActivityAt).getTime() : Number.NaN;
-    if (!Number.isFinite(lastActivityMs) || lastActivityMs < cutoff) {
-      sessions.delete(id);
-      removed++;
-    }
+    if (Number.isFinite(lastActivityMs) && lastActivityMs >= cutoff) continue;
+    sessions.delete(id);
+    removed++;
   }
 
   if (removed > 0) {

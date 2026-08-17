@@ -95,6 +95,19 @@ describe("validateInjectedStory()", () => {
     );
   });
 
+  test("BUG-9: rejects non-string entries in dependencies (no raw TypeError)", () => {
+    // Plausible LLM output — a number slipped into the array.
+    expect(() =>
+      validateInjectedStory({ ...validRaw, dependencies: ["US-001", 42 as unknown] }, new Set(["US-001"])),
+    ).toThrow(/dependencies/);
+  });
+
+  test("BUG-9: rejects non-string entries in tags (no raw TypeError)", () => {
+    expect(() =>
+      validateInjectedStory({ ...validRaw, tags: ["security", { nested: true } as unknown] }, new Set()),
+    ).toThrow(/tags/);
+  });
+
   test("rejects an invalid explicit id (path traversal)", () => {
     expect(() => validateInjectedStory({ ...validRaw, id: "../etc" }, new Set())).toThrow();
   });

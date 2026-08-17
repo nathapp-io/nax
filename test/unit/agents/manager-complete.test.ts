@@ -225,3 +225,39 @@ describe("AgentManager.completeAs — promptRetries flows from config, not optio
     expect(capturedOptions?.promptRetries).toBe(3);
   });
 });
+
+// SEC-3 (Round 2 review): completeAs previously resolved permissions from
+// AgentManager._config unconditionally. In a monorepo, a per-package
+// `.nax/mono/<pkg>/config.json` `execution.permissionProfile` was honored
+// for run-kind ops (manager.ts:630 reads `request.runOptions.config`) but
+// silently ignored by completeAs. This regression pins the contract: a
+// per-package config threaded via `options.config` takes precedence over
+// the root _config.
+describe("AgentManager.completeAs — SEC-3 per-package config threading", () => {
+  test("options.config.permissionProfile takes precedence over _config (pre-fix: ignored)", async () => {
+    let capturedOptions: CompleteOptions | undefined;
+    const registry = {
+      getAgent: () => ({
+        complete: mock(async (_prompt: string, opts: CompleteOptions) => {
+          capturedOptions = opts;
+          return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+        }),
+      }),
+    } as unknown as AgentRegistry;
+
+    // Root config: unrestricted (approve-all)
+    const rootConfig = makeNaxConfig({ execution: { permissionProfile: "unrestricted" } });
+    const m = new AgentManager(rootConfig, registry);
+
+    // Per-package override: safe (approve-reads)
+    const packageConfig = makeNaxConfig({ execution: { permissionProfile: "safe" } });
+
+    await m.completeAs("claude", "prompt", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+      config: packageConfig,
+    });
+
+    expect(capturedOptions?.resolvedPermissions?.mode).toBe("approve-reads");
+  });
+});

@@ -48,14 +48,39 @@ export class InteractionChain {
   }
 
   /**
-   * Send interaction request through the chain
+   * Send interaction request through the chain with fallback cascade.
+   *
+   * BUG-7: send() now mirrors receive() — on a transient plugin failure
+   * (network 5xx, hung connection at prompt time) we try the next plugin
+   * in priority order instead of aborting the run. Keyboard-build failures
+   * stay plugin-local (telegram.ts:162-167 swallows them and posts without
+   * buttons), so they never reach this cascade.
    */
   async send(request: InteractionRequest): Promise<void> {
-    const plugin = this.getPrimary();
-    if (!plugin) {
-      throw new NaxError("No interaction plugin registered", "INTERACTION_ERROR", { stage: "run" });
+    if (this.plugins.length === 0) {
+      throw new NaxError("No interaction plugin registered", "INTERACTION_ERROR", {
+        stage: "run",
+        requestId: request.id,
+      });
     }
-    await plugin.send(request);
+
+    const errors: Error[] = [];
+    for (const entry of this.plugins) {
+      try {
+        await entry.plugin.send(request);
+        return;
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        errors.push(error);
+      }
+    }
+
+    const errorMessages = errors.map((e) => e.message).join("; ");
+    throw new NaxError(`All interaction plugins failed: ${errorMessages}`, "INTERACTION_ERROR", {
+      stage: "run",
+      requestId: request.id,
+      pluginCount: this.plugins.length,
+    });
   }
 
   /**

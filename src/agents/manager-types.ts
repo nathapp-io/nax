@@ -108,6 +108,8 @@ export interface RunAsSessionOpts {
   /** Project directory — forwarded to DispatchEvent.projectDir. */
   projectDir?: string;
   pipelineStage?: import("../config/permissions").PipelineStage;
+  /** SEC-3: per-package effective config — iteration-runner threads this for monorepo batches. Falls back to AgentManager._config. */
+  config?: import("../config/selectors").AgentManagerConfig;
   /** Session role — forwarded to DispatchEvent.sessionRole for audit/cost correlation. */
   sessionRole?: SessionRole;
   signal?: AbortSignal;

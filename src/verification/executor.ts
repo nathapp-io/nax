@@ -164,7 +164,19 @@ export async function executeWithTimeout(
 
   const exitCode = typeof raceResult === "number" ? raceResult : 0;
   // Stream reads were started concurrently — await their completion now.
-  const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
+  // BUG-2: bound the drain with the same drainTimeoutMs the timeout path uses.
+  // proc.exited resolves when the spawned shell exits, NOT when all pipe
+  // write-ends close — a test-spawned grandchild (dev server, daemonized
+  // process) that inherits the pipe write-end keeps both streams open after
+  // the shell exits. Without the deadline, this call hangs indefinitely.
+  // Mirrors the timeout path (lines 147-150): raceWithDeadline caps the drain,
+  // and a DRAIN_TIMEOUT result becomes "" in the assembled output.
+  const [out, err] = await Promise.all([
+    raceWithDeadline(stdoutPromise, drainTimeoutMs),
+    raceWithDeadline(stderrPromise, drainTimeoutMs),
+  ]);
+  const stdout = out !== DRAIN_TIMEOUT ? out : "";
+  const stderr = err !== DRAIN_TIMEOUT ? err : "";
   const output = `${stdout}\n${stderr}`;
 
   return {

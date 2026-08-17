@@ -33,7 +33,13 @@ export async function hasOpenPr(forge: ForgeKind, branch: string, deps: AutoPrDe
       ? ["gh", "pr", "list", "--head", branch, "--state", "open", "--json", "number"]
       : ["glab", "mr", "list", "--source-branch", branch, "--state", "opened", "--output", "json"];
   const result = await deps.run(cmd, { cwd });
-  if (result.exitCode !== 0) return false;
+  // BUG-8: a non-zero exit previously meant "no open PR", letting a concurrent
+  // run slip a duplicate through (gh auth failure / transient API error both
+  // reported "no PR"). Return "unknown" via the thrown error so the caller
+  // treats it as a hard skip with a warning rather than a green light.
+  if (result.exitCode !== 0) {
+    throw new Error(`hasOpenPr: forge CLI exited with code ${result.exitCode}: ${result.stderr.trim()}`);
+  }
   try {
     const parsed = JSON.parse(result.stdout) as unknown;
     return Array.isArray(parsed) && parsed.length > 0;

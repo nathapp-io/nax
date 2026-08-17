@@ -179,16 +179,30 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
         const partLabel = chunks.length > 1 ? `[${i + 1}/${chunks.length}] ` : "";
         const text = `${header}\n${partLabel}${chunks[i]}`;
 
-        const response = await _telegramPluginDeps.fetch(`https://api.telegram.org/bot${this.botToken}/sendMessage`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: this.chatId,
-            text,
-            reply_markup: isLast && keyboard ? { inline_keyboard: keyboard } : undefined,
-            parse_mode: "Markdown",
-          }),
-        });
+        // BUG-7: client-side timeout guards against network hangs. sendMessage is
+        // the one Telegram call that previously lacked an AbortController — the
+        // other calls (getUpdates/answerCallbackQuery/clearInlineKeyboard/
+        // sendTimeoutMessage) all use 4-8s timers. A wedged TCP connection at
+        // prompt time stalled the entire run before this fix.
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+
+        let response: Response;
+        try {
+          response = await _telegramPluginDeps.fetch(`https://api.telegram.org/bot${this.botToken}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: this.chatId,
+              text,
+              reply_markup: isLast && keyboard ? { inline_keyboard: keyboard } : undefined,
+              parse_mode: "Markdown",
+            }),
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timer);
+        }
 
         if (!response.ok) {
           const errorBody = await response.text().catch(() => "");

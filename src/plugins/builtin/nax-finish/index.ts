@@ -23,7 +23,7 @@ import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, Post
 import { errorMessage } from "@/utils/errors";
 import { type FinishAutoFlowSettings, getFinishAutoFlowConfig, telegramCreds } from "./config";
 import { logTail, stderrTail } from "./output";
-import { buildEscalationMessage, buildTerminalMessage, sendTelegramNotify } from "./telegram";
+import { _telegramDeps, buildEscalationMessage, buildTerminalMessage, sendTelegramNotify } from "./telegram";
 
 interface FinishResult {
   feature: string;
@@ -187,6 +187,11 @@ function isFeatureBranch(b: string): boolean {
  * are taken as-is. Returns null when nothing exists — the caller reports that
  * rather than handing acpx a path it will fail to open.
  */
+// Re-exports for testability — tests must import these from the barrel rather
+// than `./telegram` directly (alias-internals lint rule).
+export { _telegramDeps, sendTelegramNotify } from "./telegram";
+export { buildEscalationMessage, buildTerminalMessage } from "./telegram";
+
 export async function resolveFlowPath(
   workdir: string,
   flowPath: string,

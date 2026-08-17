@@ -8,16 +8,12 @@
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config";
-import { makeMockRuntime, makeLogger, makePRD, makeStory } from "@test/helpers";
+import { type PipelineHandlerContext, _resultHandlerDeps, handlePipelineFailure } from "@/execution";
 import * as loggerModule from "@/logger";
-import type { UserStory } from "@/prd";
-import {
-  _resultHandlerDeps,
-  handlePipelineFailure,
-  type PipelineHandlerContext,
-} from "@/execution";
 import type { PipelineRunResult } from "@/pipeline";
 import { PluginRegistry } from "@/plugins";
+import type { UserStory } from "@/prd";
+import { makeLogger, makeMockRuntime, makePRD, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -96,17 +92,29 @@ describe("handlePipelineFailure — worktree removal drains streams (BUG-12)", (
     const bigOutput = "fatal: path is in use\n".repeat(16_384); // ~330KB
     const onRead = (() => {
       let resolveRead!: () => void;
-      const promise = new Promise<void>((res) => { resolveRead = res; });
+      const promise = new Promise<void>((res) => {
+        resolveRead = res;
+      });
       return { promise, resolveRead };
     })();
     _resultHandlerDeps.spawn = mock(() => ({
       stdout: new ReadableStream<Uint8Array>({
-        start(c) { c.enqueue(encoder.encode("warning: dirty worktree\n")); },
-        pull(c) { onRead.resolveRead(); c.close(); },
+        start(c) {
+          c.enqueue(encoder.encode("warning: dirty worktree\n"));
+        },
+        pull(c) {
+          onRead.resolveRead();
+          c.close();
+        },
       }),
       stderr: new ReadableStream<Uint8Array>({
-        start(c) { c.enqueue(encoder.encode(bigOutput)); },
-        pull(c) { onRead.resolveRead(); c.close(); },
+        start(c) {
+          c.enqueue(encoder.encode(bigOutput));
+        },
+        pull(c) {
+          onRead.resolveRead();
+          c.close();
+        },
       }),
       // Resolves only once BOTH streams have been read to completion.
       exited: Promise.all([onRead.promise, onRead.promise]).then(() => 0),
@@ -139,8 +147,17 @@ describe("handlePipelineFailure — worktree removal drains streams (BUG-12)", (
     _resultHandlerDeps.spawn = mock(() => {
       const encoder = new TextEncoder();
       return {
-        stdout: new ReadableStream<Uint8Array>({ start(c) { c.close(); } }),
-        stderr: new ReadableStream<Uint8Array>({ start(c) { c.enqueue(encoder.encode("fatal: worktree is dirty\n")); c.close(); } }),
+        stdout: new ReadableStream<Uint8Array>({
+          start(c) {
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream<Uint8Array>({
+          start(c) {
+            c.enqueue(encoder.encode("fatal: worktree is dirty\n"));
+            c.close();
+          },
+        }),
         exited: Promise.resolve(128),
         kill: mock(() => {}),
       };
@@ -151,6 +168,61 @@ describe("handlePipelineFailure — worktree removal drains streams (BUG-12)", (
     const warnCall = logger.calls.find((c) => c.level === "warn" && String(c.message).includes("worktree"));
     expect(warnCall).toBeDefined();
     expect(warnCall?.data?.exitCode ?? warnCall?.data?.exit ?? warnCall?.data?.code).toBe(128);
+    loggerSpy.mockRestore();
+  });
+
+  // BUG-3: stdout/stderr were swapped in the destructure — a 3-element tuple
+  // bound to 2 names drops the third and aliases `stderr` to stdout. The
+  // existing BUG-12 test only checked exitCode + warn-call presence, so the
+  // swap didn't surface. This regression asserts the *content* of stderr is
+  // what gets logged (not stdout, which is empty for `git worktree remove`).
+  test("logs the actual stderr content from git (BUG-3 stdout/stderr swap)", async () => {
+    const logger = makeLogger();
+    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+
+    const story = makeStory({ id: "US-bug3", status: "pending", passes: false, attempts: 2 });
+    const ctx = makeCtx(story, {
+      config: {
+        ...WORKTREE_CONFIG,
+        execution: {
+          ...WORKTREE_CONFIG.execution,
+          rectification: { ...WORKTREE_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
+        },
+      },
+    });
+
+    _resultHandlerDeps.spawn = mock(() => {
+      const encoder = new TextEncoder();
+      // Distinctive markers so the swap is unambiguous in the assertion below.
+      const STDOUT_MARKER = "stdout-marker-ignore-me\n";
+      const STDERR_MARKER = "stderr-marker-include-me\n";
+      return {
+        stdout: new ReadableStream<Uint8Array>({
+          start(c) {
+            c.enqueue(encoder.encode(STDOUT_MARKER));
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream<Uint8Array>({
+          start(c) {
+            c.enqueue(encoder.encode(STDERR_MARKER));
+            c.close();
+          },
+        }),
+        exited: Promise.resolve(128),
+        kill: mock(() => {}),
+      };
+    }) as unknown as typeof _resultHandlerDeps.spawn; // test-ratchet-allow: as-unknown-as (mock spawn cast)
+
+    await handlePipelineFailure(ctx, failResult);
+
+    const warnCall = logger.calls.find((c) => c.level === "warn" && String(c.message).includes("worktree"));
+    expect(warnCall).toBeDefined();
+    const loggedStderr = warnCall?.data?.stderr;
+    expect(typeof loggedStderr).toBe("string");
+    // The logged stderr must contain the real stderr content, NOT stdout.
+    expect(loggedStderr).toContain("stderr-marker-include-me");
+    expect(loggedStderr).not.toContain("stdout-marker-ignore-me");
     loggerSpy.mockRestore();
   });
 });

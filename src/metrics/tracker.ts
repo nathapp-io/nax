@@ -13,6 +13,7 @@ import { computePollutionMetrics } from "../context/engine/pollution";
 import { getLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
 import { loadJsonFile, saveJsonFile } from "../utils/json-file";
+import { withPathFileLock } from "../utils/path-file-lock";
 import type { ContextProviderMetrics, FloorOverageMetrics, RunMetrics, StoryMetrics } from "./types";
 import { TokenUsage } from "./types";
 
@@ -431,12 +432,17 @@ export async function saveRunMetrics(outputDir: string, runMetrics: RunMetrics):
       }
     : runMetrics;
 
-  // Load existing metrics (returns empty array if file doesn't exist or is invalid)
-  const existing = await loadJsonFile<RunMetrics[]>(metricsPath, "metrics");
-  const allMetrics = Array.isArray(existing) ? existing : [];
-
-  // Append new run
-  allMetrics.push(finalMetrics);
+  // BUG-6: serialize load-modify-save across processes so two parallel `nax run`
+  // invocations (or worktree-mode parallel stories writing to the same per-project
+  // metrics.json) cannot both read the same base, append, and have the later
+  // rename() silently drop the earlier writer's append. Lock is keyed by the
+  // metrics file path; the read/write happens entirely under the critical section.
+  const allMetrics = await withPathFileLock(metricsPath, async () => {
+    const existing = await loadJsonFile<RunMetrics[]>(metricsPath, "metrics");
+    const base = Array.isArray(existing) ? existing : [];
+    base.push(finalMetrics);
+    return base;
+  });
 
   // GROWTH-1: cap retained history to the last MAX_RETAINED_RUNS runs — drop
   // the oldest first. Runs are appended chronologically, so a simple tail

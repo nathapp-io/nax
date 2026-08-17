@@ -371,8 +371,9 @@ export class SessionManager implements ISessionManager {
       if (terminal.includes(session.state)) continue;
 
       const updated: SessionDescriptor = { ...session, state: "COMPLETED", lastActivityAt: now };
-      this._sessions.set(id, updated);
       this._persistDescriptor(updated);
+      this._sessions.delete(id);
+      if (updated.handle) this._liveHandles.delete(updated.handle);
       closed.push({ ...updated });
 
       getLogger().debug("session", "Session closed by closeStory", {
@@ -441,7 +442,7 @@ export class SessionManager implements ISessionManager {
       );
     }
 
-    const resolvedPermissions = resolvePermissions(this._config, opts.pipelineStage);
+    const resolvedPermissions = resolvePermissions(opts.config ?? this._config, opts.pipelineStage);
     const existingDescriptor = this._findByName(name);
     const resume = existingDescriptor !== undefined;
 
