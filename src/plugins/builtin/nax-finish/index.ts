@@ -122,11 +122,23 @@ export function finishResultPath(
   return path.join(finishAuditDir(ctx), `${runId}.result.json`);
 }
 
-/** Default result reader — reads the flow's terminal result off disk. */
+/**
+ * Default result reader — reads the flow's terminal result off disk.
+ *
+ * BUG-1 (code review 2026-08-17): a result file can exist but be malformed —
+ * the flow process killed mid-write, disk full — in which case treat it the
+ * same as "no result file" rather than letting JSON.parse throw. Mirrors
+ * `curator/collect.ts`'s `readJsonLines`, which already does this for its own
+ * on-disk reads with the same "must never fail the run" rationale.
+ */
 async function defaultReadResult(resultPath: string): Promise<FinishResult | null> {
   const f = Bun.file(resultPath);
   if (!(await f.exists())) return null;
-  return JSON.parse(await f.text()) as FinishResult;
+  try {
+    return JSON.parse(await f.text()) as FinishResult;
+  } catch {
+    return null;
+  }
 }
 
 /**
