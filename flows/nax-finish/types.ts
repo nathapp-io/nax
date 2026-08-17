@@ -15,6 +15,49 @@ export interface Finding {
   title: string;
   problem: string;
   fix: string;
+  /**
+   * Set when the reviewer marked this finding as needing a human — a spec
+   * conflict or a design call with no safe mechanical fix. This replaces the
+   * whole-reply `escalate` route the reviewer used to choose: escalation is a
+   * property of one finding, not of the phase, so reporting a design concern no
+   * longer halts the pipeline by itself.
+   */
+  judgment?: boolean;
+  /** Why this finding needs a human; the escalation reason when it escalates. */
+  judgmentReason?: string;
+}
+
+/** One external definition the reviewer says it opened before judging. */
+export interface Touchpoint {
+  /** Repo-relative path, or the literal `none` sentinel. */
+  path: string;
+  /** Symbol or line after the final `:`, when the reviewer gave one. */
+  symbol?: string;
+  /** The reviewer's stated reason for opening it (or for there being none). */
+  note: string;
+}
+
+/** A reviewer reply, parsed. Sections are reported separately from their content
+ * so an *absent* section is distinguishable from an *empty* one — only the first
+ * is a reviewer that skipped the obligation. */
+export interface ReviewReport {
+  findings: Finding[];
+  touchpoints: Touchpoint[];
+  walk: string[];
+  sawNoFindings: boolean;
+  sawTouchpointsSection: boolean;
+  sawWalkSection: boolean;
+}
+
+/** What the fix node did with one finding it was handed. */
+export interface FindingDisposition {
+  /** 1-based index into the findings list the fix prompt numbered. */
+  index: number;
+  disposition: "fixed" | "rejected";
+  /** `file:line` pinning the current behaviour; required for a rejection. */
+  evidence?: string;
+  /** Set by `commit_<phase>` when the cited evidence path does not exist. */
+  evidenceMissing?: boolean;
 }
 export interface ReviewVerdict {
   /**
