@@ -671,32 +671,26 @@ describe("loadCanonicalRules — US-006 real .nax/rules store stage scoping", ()
   });
 
   // forbidden-patterns.md was split into -source/-tests by SPEC-bounded-rules-floor
-  // US-005. Both halves keep the original "applies at every stage" semantics: they
-  // scope by `appliesTo:` only and still declare no `stages:` key.
-  test("[US-006 AC 2] returns forbidden-patterns-source.md with stages undefined", async () => {
-    const rules = await loadCanonicalRules(process.cwd());
-    const rule = rules.find(
-      (r) => r.path === "forbidden-patterns-source.md" || r.fileName === "forbidden-patterns-source.md",
-    );
-    expect(rule).toBeDefined();
-    expect(rule?.stages).toBeUndefined();
-  });
-
-  test("[US-006 AC 2] returns forbidden-patterns-tests.md with stages undefined", async () => {
-    const rules = await loadCanonicalRules(process.cwd());
-    const rule = rules.find(
-      (r) => r.path === "forbidden-patterns-tests.md" || r.fileName === "forbidden-patterns-tests.md",
-    );
-    expect(rule).toBeDefined();
-    expect(rule?.stages).toBeUndefined();
-  });
-
-  test("[US-006 AC 2] returns project-conventions.md with stages undefined", async () => {
-    const rules = await loadCanonicalRules(process.cwd());
-    const rule = rules.find((r) => r.path === "project-conventions.md" || r.fileName === "project-conventions.md");
-    expect(rule).toBeDefined();
-    expect(rule?.stages).toBeUndefined();
-  });
+  // US-005. Both halves, and project-conventions.md, originally declared no
+  // `stages:` key and so loaded at every stage. #1612 gave each an explicit stage
+  // list to keep them out of plan/route/verify/debate, where they were 6749
+  // tokens of freight per prompt. They must still be declared, still exclude
+  // plan, and still cover execution — an empty list would exclude plan while
+  // reaching no agent at all.
+  for (const fileName of [
+    "forbidden-patterns-source.md",
+    "forbidden-patterns-tests.md",
+    "project-conventions.md",
+  ]) {
+    test(`[US-006 AC 2] returns ${fileName} with stages that exclude plan`, async () => {
+      const rules = await loadCanonicalRules(process.cwd());
+      const rule = rules.find((r) => r.path === fileName || r.fileName === fileName);
+      expect(rule).toBeDefined();
+      expect(rule?.stages).toBeDefined();
+      expect(rule?.stages).not.toContain("plan");
+      expect(rule?.stages).toContain("execution");
+    });
+  }
 
   test("[US-006 AC 6] every CanonicalRule has an empty warnings list under the real .nax/rules store", async () => {
     const rules = await loadCanonicalRules(process.cwd());

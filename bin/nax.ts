@@ -143,175 +143,21 @@ program
       process.exit(1);
     }
 
-    // --package: scaffold per-package nax/context.md only
-    if (options.package) {
-      const { initPackage: initPkg } = await import("../src/cli/init-context");
-      try {
-        await initPkg(workdir, options.package, options.force);
-        console.log(chalk.green("\n[OK] Package scaffold created."));
-        console.log(chalk.dim(`  Created: ${options.package}/nax/context.md`));
-        console.log(chalk.dim(`\nNext: nax generate --package ${options.package}`));
-      } catch (err) {
-        console.error(chalk.red(`Error: ${(err as Error).message}`));
-        process.exit(1);
-      }
-      return;
-    }
-
-    const naxDir = join(workdir, ".nax");
-
-    if (existsSync(naxDir) && !options.force) {
-      console.log(chalk.yellow("nax already initialized. Use --force to overwrite."));
-      return;
-    }
-
-    // Validate and collision-check --name when explicitly provided
-    if (options.name) {
-      const { validateProjectName, checkInitCollision } = await import("../src/cli/init");
-      const nameValidation = validateProjectName(options.name);
-      if (!nameValidation.valid) {
-        console.error(chalk.red(`Invalid project name "${options.name}": ${nameValidation.error}`));
-        process.exit(1);
-      }
-      if (!options.force) {
-        const collision = await checkInitCollision(options.name, workdir, null);
-        if (collision.collision && collision.existing) {
-          console.error(
-            chalk.red(
-              [
-                `Project name collision: "${options.name}"`,
-                `  This project:    ${workdir}`,
-                `  Already in use:  ${collision.existing.workdir}  (last run: ${collision.existing.lastSeen})`,
-                "  Resolve:",
-                "    1. Rename: choose a different --name",
-                `    2. Reclaim: nax migrate --reclaim ${options.name}`,
-                `    3. Merge:   nax migrate --merge ${options.name}`,
-              ].join("\n"),
-            ),
-          );
-          process.exit(1);
-        }
-      }
-    }
-
-    // Create directory structure
-    mkdirSync(join(naxDir, "features"), { recursive: true });
-    mkdirSync(join(naxDir, "hooks"), { recursive: true });
-
-    // Write config (include name when explicitly provided)
-    const initConfig = options.name ? { ...DEFAULT_CONFIG, name: options.name } : DEFAULT_CONFIG;
-    await Bun.write(join(naxDir, "config.json"), JSON.stringify(initConfig, null, 2));
-
-    // Write default hooks.json
-    await Bun.write(
-      join(naxDir, "hooks.json"),
-      JSON.stringify(
-        {
-          hooks: {
-            "on-start": { command: 'echo "nax started: $NAX_FEATURE"', enabled: false },
-            "on-complete": { command: 'echo "nax complete: $NAX_FEATURE"', enabled: false },
-            "on-pause": { command: 'echo "nax paused: $NAX_REASON"', enabled: false },
-            "on-error": { command: 'echo "nax error: $NAX_REASON"', enabled: false },
-          },
-        },
-        null,
-        2,
-      ),
-    );
-
-    // Write .gitignore
-    await Bun.write(join(naxDir, ".gitignore"), "# nax temp files\n*.tmp\n.paused.json\n.nax-verifier-verdict.json\n");
-
-    // Write starter context.md
-    await Bun.write(
-      join(naxDir, "context.md"),
-      `# Project Context
-
-This document defines coding standards, architectural decisions, and forbidden patterns for this project.
-Run \`nax generate\` to regenerate agent config files (CLAUDE.md, AGENTS.md, .cursorrules, etc.) from this file.
-
-> Project metadata (dependencies, commands) is auto-injected by \`nax generate\`.
-
-## Coding Standards
-
-- Follow the project's existing code style and conventions
-- Write clear, self-documenting code with meaningful names
-- Keep functions small and focused (single responsibility)
-- Prefer immutability over mutation
-- Use consistent formatting throughout the codebase
-
-## Testing Requirements
-
-- All new code must include tests
-- Tests should cover happy paths, edge cases, and error conditions
-- Aim for high test coverage (80%+ recommended)
-- Tests must pass before marking a story as complete
-- Before writing tests, read existing test files to understand what is already covered
-- Do not duplicate test coverage that prior stories already wrote
-- Focus on testing NEW behavior introduced by this story
-
-## Architecture Rules
-
-- Follow the project's existing architecture patterns
-- Each module should have a clear, single purpose
-- Avoid tight coupling between modules
-- Use dependency injection where appropriate
-- Document architectural decisions in comments or docs
-
-## Forbidden Patterns
-
-- No hardcoded secrets, API keys, or credentials
-- No console.log in production code (use proper logging)
-- No \`any\` types in TypeScript (use proper typing)
-- No commented-out code (use version control instead)
-- No large files (split into smaller, focused modules)
-
-## Commit Standards
-
-- Write clear, descriptive commit messages
-- Follow conventional commits format (feat:, fix:, refactor:, etc.)
-- Commit early and often with atomic changes
-- Reference story IDs in commit messages
-
-## Documentation
-
-- Add JSDoc comments for public APIs
-- Update README when adding new features
-- Document complex algorithms or business logic
-- Keep documentation up-to-date with code changes
-
----
-
-**Note:** Customize this file to match your project's specific needs.
-`,
-    );
-
-    // Initialize prompt templates (final step, don't auto-wire config)
+    // All scaffolding lives in src/cli/init.ts — this action is wiring only.
+    // Init is idempotent: existing config/context files are preserved (unless
+    // --force), while .gitignore and .naxignore are reconciled on every run.
+    const { initCommand } = await import("../src/cli/init");
     try {
-      await promptsInitCommand({
-        workdir,
+      await initCommand({
+        projectRoot: workdir,
+        name: options.name,
         force: options.force,
-        autoWireConfig: false,
+        package: options.package,
       });
     } catch (err) {
-      console.error(chalk.red(`Failed to initialize templates: ${(err as Error).message}`));
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);
     }
-
-    console.log(chalk.green("✅ Initialized nax"));
-    console.log(chalk.dim(`   ${naxDir}/`));
-    console.log(chalk.dim("   ├── config.json"));
-    console.log(chalk.dim("   ├── context.md"));
-    console.log(chalk.dim("   ├── hooks.json"));
-    console.log(chalk.dim("   ├── features/"));
-    console.log(chalk.dim("   ├── hooks/"));
-    console.log(chalk.dim("   └── templates/"));
-    console.log(chalk.dim("       ├── test-writer.md"));
-    console.log(chalk.dim("       ├── implementer.md"));
-    console.log(chalk.dim("       ├── verifier.md"));
-    console.log(chalk.dim("       ├── single-session.md"));
-    console.log(chalk.dim("       └── tdd-simple.md"));
-    console.log(chalk.dim("\nNext: nax features create <name>"));
   });
 
 // ── setup ─────────────────────────────────────────────

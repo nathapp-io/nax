@@ -7,15 +7,20 @@
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { globalConfigDir, projectConfigDir } from "../config/paths";
+import { PROJECT_FEATURES_DIR, featuresDir, globalConfigDir, projectConfigDir } from "../config/paths";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { readProjectIdentity } from "../runtime";
-import { NAX_GITIGNORE_ENTRIES } from "../utils/gitignore";
+import {
+  NAX_GITIGNORE_ENTRIES,
+  NAX_NAXIGNORE_ENTRIES,
+  NAX_NAXIGNORE_HEADER,
+  NAX_NAXIGNORE_SUGGESTIONS,
+  patchIgnoreFile,
+} from "../utils/gitignore";
 import { initContext, initPackage } from "./init-context";
 import { buildInitConfig, detectStack } from "./init-detect";
 import type { ProjectStack } from "./init-detect";
-import { promptsInitCommand } from "./prompts";
 
 export const _initDeps = {
   log: console.log.bind(console) as (...args: unknown[]) => void,
@@ -111,29 +116,51 @@ export interface InitProjectOptions {
 /**
  * Add nax-specific entries to .gitignore if not already present.
  *
- * Appends a clearly marked nax section to the project .gitignore.
+ * Additive and idempotent — see `patchIgnoreFile`.
  */
 async function updateGitignore(projectRoot: string): Promise<void> {
   const logger = getLogger();
   const gitignorePath = join(projectRoot, ".gitignore");
 
-  let existing = "";
-  if (existsSync(gitignorePath)) {
-    existing = await Bun.file(gitignorePath).text();
-  }
+  const result = await patchIgnoreFile(gitignorePath, NAX_GITIGNORE_ENTRIES);
 
-  const missingEntries = NAX_GITIGNORE_ENTRIES.filter((entry) => !existing.includes(entry));
-
-  if (missingEntries.length === 0) {
+  if (result.added.length === 0) {
     logger.info("init", ".gitignore already has nax entries", { path: gitignorePath });
     return;
   }
 
-  const naxSection = `\n# nax — generated files\n${missingEntries.join("\n")}\n`;
-  await Bun.write(gitignorePath, existing + naxSection);
   logger.info("init", "Updated .gitignore with nax entries", {
     path: gitignorePath,
-    added: missingEntries,
+    created: result.created,
+    added: result.added,
+  });
+}
+
+/**
+ * Create or reconcile .naxignore — the paths nax's own context, review and
+ * verification passes skip.
+ *
+ * The explanatory header and commented suggestions are written only when the
+ * file is created, so a re-run never resurrects a suggestion the user removed.
+ */
+async function updateNaxignore(projectRoot: string): Promise<void> {
+  const logger = getLogger();
+  const naxignorePath = join(projectRoot, ".naxignore");
+
+  const result = await patchIgnoreFile(naxignorePath, NAX_NAXIGNORE_ENTRIES, {
+    header: NAX_NAXIGNORE_HEADER,
+    footer: NAX_NAXIGNORE_SUGGESTIONS,
+    sectionComment: "# nax - scanning exclusions",
+  });
+
+  if (result.added.length === 0) {
+    logger.info("init", ".naxignore already has nax entries", { path: naxignorePath });
+    return;
+  }
+
+  logger.info("init", result.created ? "Created .naxignore" : "Updated .naxignore with nax entries", {
+    path: naxignorePath,
+    added: result.added,
   });
 }
 
@@ -346,22 +373,24 @@ export async function initProject(projectRoot: string, options?: InitProjectOpti
     logger.info("init", "Project constitution already exists", { path: constitutionPath });
   }
 
-  // Create .nax/hooks/ directory if it doesn't exist
-  const hooksDir = join(projectDir, "hooks");
-  if (!existsSync(hooksDir)) {
-    await mkdir(hooksDir, { recursive: true });
-    logger.info("init", "Created project hooks directory", { path: hooksDir });
-  } else {
-    logger.info("init", "Project hooks directory already exists", { path: hooksDir });
+  // Create the hooks and features directories if they don't exist
+  for (const [label, dir] of [
+    ["hooks", join(projectDir, "hooks")],
+    ["features", featuresDir(projectRoot)],
+  ] as const) {
+    if (!existsSync(dir)) {
+      await mkdir(dir, { recursive: true });
+      logger.info("init", `Created project ${label} directory`, { path: dir });
+    } else {
+      logger.info("init", `Project ${label} directory already exists`, { path: dir });
+    }
   }
 
-  // Update .gitignore to include nax-specific entries
+  // Reconcile the repo's ignore files. Both are additive and idempotent, so
+  // they run on every init — including a re-init over an existing .nax/, which
+  // is the case where a user's ignore file has drifted out of date.
   await updateGitignore(projectRoot);
-
-  // Create prompt templates
-  // Pass autoWireConfig: false to prevent auto-wiring prompts.overrides
-  // Templates are created but not activated until user explicitly configures them
-  await promptsInitCommand({ workdir: projectRoot, force: false, autoWireConfig: false });
+  await updateNaxignore(projectRoot);
 
   // Print summary
   _initDeps.log("\n[OK] nax init complete. Created files:");
@@ -369,13 +398,17 @@ export async function initProject(projectRoot: string, options?: InitProjectOpti
   _initDeps.log("  - .nax/context.md");
   _initDeps.log("  - .nax/constitution.md");
   _initDeps.log("  - .nax/hooks/");
-  _initDeps.log("  - .nax/templates/");
+  _initDeps.log(`  - ${PROJECT_FEATURES_DIR}/`);
+  _initDeps.log("  - .gitignore  (nax entries)");
+  _initDeps.log("  - .naxignore");
   _initDeps.log("\nNext steps:");
   _initDeps.log("  1. Review .nax/context.md and fill in TODOs");
-  _initDeps.log("  2. Review .nax/config.json and adjust quality commands");
-  _initDeps.log("  3. Run: nax generate");
-  _initDeps.log("  4. Run: nax plan");
-  _initDeps.log("  5. Run: nax run");
+  _initDeps.log("  2. Review .naxignore and add paths nax should not scan");
+  _initDeps.log("  3. Review .nax/config.json and adjust quality commands");
+  _initDeps.log("  4. Run: nax generate");
+  _initDeps.log("  5. Run: nax plan");
+  _initDeps.log("  6. Run: nax run");
+  _initDeps.log("\nOptional: nax prompts --init  (scaffold overridable prompt templates)");
 
   logger.info("init", "Project config initialized successfully", { path: projectDir });
 }
@@ -388,7 +421,7 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
     await initGlobal();
   } else if (options.package) {
     const projectRoot = options.projectRoot ?? process.cwd();
-    await initPackage(projectRoot, options.package);
+    await initPackage(projectRoot, options.package, options.force);
     _initDeps.log("\n[OK] Package scaffold created.");
     _initDeps.log(`  Created: .nax/mono/${options.package}/context.md`);
     _initDeps.log("\nNext steps:");

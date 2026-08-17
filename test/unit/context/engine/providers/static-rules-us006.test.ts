@@ -4,8 +4,14 @@
  * US-006: stage scoping drives chunk emission from the real .nax/rules
  * store. The test-authoring rules declare `stages:` lists excluding
  * plan/acceptance/route so they never appear in plan or acceptance or
- * route contexts; rules that apply everywhere (forbidden-patterns.md,
- * project-conventions.md) emit chunks in every stage.
+ * route contexts.
+ *
+ * US-006 AC 4 originally asserted the opposite for forbidden-patterns-*
+ * and project-conventions: those declared no `stages:` key, so they loaded
+ * everywhere including plan. #1612 gave all three an explicit stage list
+ * precisely to stop that — 6749 tokens of freight per plan prompt — so the
+ * AC-4 cases below now assert exclusion at plan, paired with a positive
+ * case at execution so a rule scoped to nothing cannot pass vacuously.
  *
  * These tests run against the real `.nax/rules/` directory by importing
  * the real `loadCanonicalRules` and re-wiring `_staticRulesDeps` to
@@ -62,25 +68,30 @@ describe("StaticRulesProvider — US-006 real .nax/rules store stage scoping", (
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:testing-commands:"))).toBe(false);
   });
 
-  // Split into -source/-tests by SPEC-bounded-rules-floor US-005; the plan-stage
-  // emission contract holds for both halves.
-  test("[US-006 AC 4] emits a static-rules:forbidden-patterns-source: chunk when request.stage is plan", async () => {
-    const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
-    const result = await provider.fetch({ ...REAL_REPO_REQUEST, stage: "plan" });
-    expect(result.chunks.some((c) => c.id.startsWith("static-rules:forbidden-patterns-source:"))).toBe(true);
-  });
+  // Split into -source/-tests by SPEC-bounded-rules-floor US-005; the stage
+  // scoping introduced by #1612 applies to both halves.
+  const STAGE_SCOPED_EVERYWHERE_BUT_PLAN = [
+    "forbidden-patterns-source",
+    "forbidden-patterns-tests",
+    "project-conventions",
+  ] as const;
 
-  test("[US-006 AC 4] emits a static-rules:forbidden-patterns-tests: chunk when request.stage is plan", async () => {
-    const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
-    const result = await provider.fetch({ ...REAL_REPO_REQUEST, stage: "plan" });
-    expect(result.chunks.some((c) => c.id.startsWith("static-rules:forbidden-patterns-tests:"))).toBe(true);
-  });
+  for (const rule of STAGE_SCOPED_EVERYWHERE_BUT_PLAN) {
+    test(`[US-006 AC 4] emits no static-rules:${rule}: chunk when request.stage is plan`, async () => {
+      const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
+      const result = await provider.fetch({ ...REAL_REPO_REQUEST, stage: "plan" });
+      expect(result.chunks.some((c) => c.id.startsWith(`static-rules:${rule}:`))).toBe(false);
+    });
 
-  test("[US-006 AC 4] emits a static-rules:project-conventions: chunk when request.stage is plan", async () => {
-    const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
-    const result = await provider.fetch({ ...REAL_REPO_REQUEST, stage: "plan" });
-    expect(result.chunks.some((c) => c.id.startsWith("static-rules:project-conventions:"))).toBe(true);
-  });
+    // Guards the exclusion above against passing vacuously: a rule scoped to
+    // no stage at all, or one that stopped loading entirely, would satisfy the
+    // plan-stage assertion while silently reaching no agent anywhere.
+    test(`[US-006 AC 4] emits a static-rules:${rule}: chunk when request.stage is execution`, async () => {
+      const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
+      const result = await provider.fetch({ ...REAL_REPO_REQUEST, stage: "execution" });
+      expect(result.chunks.some((c) => c.id.startsWith(`static-rules:${rule}:`))).toBe(true);
+    });
+  }
 
   test("[US-006 AC 5] emits a static-rules:test-writing: chunk when request.stage is tdd-test-writer", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
