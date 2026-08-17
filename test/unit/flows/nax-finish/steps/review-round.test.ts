@@ -26,6 +26,18 @@ const COMPLETE = {
   walk: ["AC-1 Covered — yes"],
 };
 
+/**
+ * A verdict `auditGaps` flags: TOUCHPOINTS is fine but `## WALK` never showed
+ * up. Mirrors `COMPLETE` except for the one field that makes it gapped, so
+ * the only thing under test is the WALK obligation.
+ */
+const MISSING_WALK = {
+  sawTouchpointsSection: true,
+  sawWalkSection: false,
+  touchpoints: [{ path: "none", note: "n" }],
+  walk: [],
+};
+
 /** Capture every round `routeReviewAndRecord` appends, parsed back from JSONL. */
 function captureRounds(): FinishRound[] {
   const written: FinishRound[] = [];
@@ -115,5 +127,35 @@ describe("routeReviewAndRecord", () => {
     };
     const r = await routeReviewAndRecord(ctxWith({ route: "clean", findings: [], ...COMPLETE }), "quality");
     expect(r.route).toBe("clean");
+  });
+
+  test("routes a gapped verdict to incomplete and records the round with that outcome", async () => {
+    const rounds = captureRounds();
+    const r = await routeReviewAndRecord(ctxWith({ route: "clean", findings: [], ...MISSING_WALK }), "quality");
+
+    expect(r.route).toBe("incomplete");
+    expect(r.gaps).toBeDefined();
+    expect(r.gaps?.length).toBeGreaterThan(0);
+    expect(r.gaps?.[0]).toContain("WALK");
+    expect(rounds).toHaveLength(1);
+    expect(rounds[0]).toMatchObject({ phase: "quality", committed: false, outcome: "incomplete" });
+  });
+
+  test("escalates a second consecutive incomplete review, naming the reading obligations", async () => {
+    const rounds = captureRounds();
+    // A prior `route_quality` step already routed `incomplete` once — that is
+    // how `incompleteCount` learns this phase already used its one resend, the
+    // same way the reprompt-then-escalate tests simulate a prior attempt via
+    // the steps array.
+    const steps = [
+      makeFlowStep("review_quality"),
+      makeFlowStep("route_quality", { output: { route: "incomplete" } }),
+      makeFlowStep("review_quality"),
+    ];
+    const r = await routeReviewAndRecord(ctxWith({ route: "clean", findings: [], ...MISSING_WALK }, steps), "quality");
+
+    expect(r.route).toBe("escalate");
+    expect(r.escalationReason).toContain("reading obligations");
+    expect(rounds[0]).toMatchObject({ outcome: "escalated" });
   });
 });
