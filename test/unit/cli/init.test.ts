@@ -1,66 +1,48 @@
 /**
  * Unit tests for `nax init` command (PT-004, INIT-003)
  *
- * Tests that nax init creates the project nax/ directory structure,
- * scaffolds prompt templates, prints a summary, and generates stack-aware
- * constitution.md and updated .gitignore entries.
+ * Tests that nax init creates the project nax/ directory structure, prints a
+ * summary, generates a stack-aware constitution.md, and reconciles the repo's
+ * .gitignore and .naxignore without disturbing user content.
  */
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import { _initDeps, initProject } from "../../../src/cli/init";
+import { _initDeps, initCommand, initProject } from "../../../src/cli/init";
 import { withTempDir } from "../../helpers/temp";
 
-
-const TEMPLATE_FILES = [
-  "test-writer.md",
-  "implementer.md",
-  "verifier.md",
-  "single-session.md",
-  "tdd-simple.md",
-] as const;
-
-describe("initProject — creates templates alongside config", () => {
-  test("creates templates/ directory and standard init files (config.json, constitution.md, hooks/); config.json has no prompts.overrides", async () => {
+describe("initProject — creates the project config scaffold", () => {
+  test("creates config.json, constitution.md, hooks/ and features/; config.json has no prompts.overrides", async () => {
     await withTempDir(async (tempDir) => {
       await initProject(tempDir);
-      expect(existsSync(join(tempDir, ".nax", "templates"))).toBe(true);
       expect(existsSync(join(tempDir, ".nax", "config.json"))).toBe(true);
       expect(existsSync(join(tempDir, ".nax", "constitution.md"))).toBe(true);
       expect(existsSync(join(tempDir, ".nax", "hooks"))).toBe(true);
+      expect(existsSync(join(tempDir, ".nax", "features"))).toBe(true);
       const configContent = JSON.parse(await Bun.file(join(tempDir, ".nax", "config.json")).text());
       expect(configContent.prompts?.overrides).toBeUndefined();
     });
   });
 
-  test("creates all 5 template files in nax/templates/ and each is non-empty", async () => {
+  test("does not scaffold prompt templates — `nax prompts --init` is the opt-in path", async () => {
     await withTempDir(async (tempDir) => {
       await initProject(tempDir);
-      for (const file of TEMPLATE_FILES) {
-        const filePath = join(tempDir, ".nax", "templates", file);
-        expect(existsSync(filePath)).toBe(true);
-        expect((await Bun.file(filePath).text()).length).toBeGreaterThan(0);
-      }
+      expect(existsSync(join(tempDir, ".nax", "templates"))).toBe(false);
     });
   });
-});
 
-describe("initProject — with force flag", () => {
-  test("overwrites existing template files when called with force: true", async () => {
+  test("does not write hooks.json — an absent file already means 'no hooks'", async () => {
     await withTempDir(async (tempDir) => {
-      // First init
       await initProject(tempDir);
+      expect(existsSync(join(tempDir, ".nax", "hooks.json"))).toBe(false);
+    });
+  });
 
-      const testWriterPath = join(tempDir, ".nax", "templates", "test-writer.md");
-
-      // Overwrite with marker content
-      await Bun.write(testWriterPath, "MARKER_CONTENT_FOR_TESTING");
-
-      // Second init with force — would need to pass force through initProject
-      // For now, this tests the expected behavior once initProject accepts force
-      const markedContent = await Bun.file(testWriterPath).text();
-      expect(markedContent).toBe("MARKER_CONTENT_FOR_TESTING");
+  test("does not write a nested .nax/.gitignore — the repo-root .gitignore covers it", async () => {
+    await withTempDir(async (tempDir) => {
+      await initProject(tempDir);
+      expect(existsSync(join(tempDir, ".nax", ".gitignore"))).toBe(false);
     });
   });
 });
@@ -106,6 +88,144 @@ describe("initProject — .gitignore includes new nax entries", () => {
       expect(gitignore).toContain(".env");
       expect(gitignore).toContain("nax.lock");
     });
+  });
+});
+
+describe("initProject — creates .naxignore", () => {
+  test("creates .naxignore excluding nax's own state directory", async () => {
+    await withTempDir(async (tempDir) => {
+      await initProject(tempDir);
+
+      const naxignore = await Bun.file(join(tempDir, ".naxignore")).text();
+      expect(naxignore).toContain(".nax/");
+      expect(naxignore).toContain("node_modules/");
+    });
+  });
+
+  test("explains what the file does and offers commented suggestions", async () => {
+    await withTempDir(async (tempDir) => {
+      await initProject(tempDir);
+
+      const naxignore = await Bun.file(join(tempDir, ".naxignore")).text();
+      expect(naxignore).toMatch(/^#/);
+      expect(naxignore).toContain("# vendor/");
+    });
+  });
+
+  test("preserves an existing .naxignore and appends only what is missing", async () => {
+    await withTempDir(async (tempDir) => {
+      await Bun.write(join(tempDir, ".naxignore"), "my-fixtures/\n.nax/\n");
+
+      await initProject(tempDir);
+
+      const naxignore = await Bun.file(join(tempDir, ".naxignore")).text();
+      expect(naxignore).toContain("my-fixtures/");
+      expect(naxignore).toContain("node_modules/");
+      // Already present — appending it again would be a duplicate rule.
+      expect(naxignore.split("\n").filter((l) => l.trim() === ".nax/")).toHaveLength(1);
+      // The suggestion block belongs to file creation only.
+      expect(naxignore).not.toContain("# vendor/");
+    });
+  });
+});
+
+describe("initProject — re-running is idempotent", () => {
+  test("a second init leaves .gitignore and .naxignore byte-identical", async () => {
+    await withTempDir(async (tempDir) => {
+      await initProject(tempDir);
+      const gitignoreAfterFirst = await Bun.file(join(tempDir, ".gitignore")).text();
+      const naxignoreAfterFirst = await Bun.file(join(tempDir, ".naxignore")).text();
+
+      await initProject(tempDir);
+
+      expect(await Bun.file(join(tempDir, ".gitignore")).text()).toBe(gitignoreAfterFirst);
+      expect(await Bun.file(join(tempDir, ".naxignore")).text()).toBe(naxignoreAfterFirst);
+    });
+  });
+
+  test("a second init does not overwrite an edited config.json or context.md", async () => {
+    await withTempDir(async (tempDir) => {
+      await initProject(tempDir);
+      await Bun.write(join(tempDir, ".nax", "context.md"), "MY OWN CONTEXT");
+
+      await initProject(tempDir);
+
+      expect(await Bun.file(join(tempDir, ".nax", "context.md")).text()).toBe("MY OWN CONTEXT");
+    });
+  });
+
+  test("reconciles ignore files even when .nax/ already exists", async () => {
+    await withTempDir(async (tempDir) => {
+      await initProject(tempDir);
+      // Simulate a user who wiped the nax section out of .gitignore.
+      await Bun.write(join(tempDir, ".gitignore"), "node_modules/\n");
+
+      await initProject(tempDir);
+
+      expect(await Bun.file(join(tempDir, ".gitignore")).text()).toContain("nax.lock");
+    });
+  });
+});
+
+describe("initCommand — package scaffold", () => {
+  const PKG = "packages/api";
+
+  test("scaffolds the package context under .nax/mono/<pkg>/", async () => {
+    await withTempDir(async (tempDir) => {
+      await initCommand({ projectRoot: tempDir, package: PKG });
+      expect(existsSync(join(tempDir, ".nax", "mono", PKG, "context.md"))).toBe(true);
+    });
+  });
+
+  test("leaves an edited package context.md alone without force", async () => {
+    await withTempDir(async (tempDir) => {
+      await initCommand({ projectRoot: tempDir, package: PKG });
+      const contextPath = join(tempDir, ".nax", "mono", PKG, "context.md");
+      await Bun.write(contextPath, "MY OWN PACKAGE CONTEXT");
+
+      await initCommand({ projectRoot: tempDir, package: PKG });
+
+      expect(await Bun.file(contextPath).text()).toBe("MY OWN PACKAGE CONTEXT");
+    });
+  });
+
+  test("overwrites the package context.md when force is set", async () => {
+    await withTempDir(async (tempDir) => {
+      await initCommand({ projectRoot: tempDir, package: PKG });
+      const contextPath = join(tempDir, ".nax", "mono", PKG, "context.md");
+      await Bun.write(contextPath, "MY OWN PACKAGE CONTEXT");
+
+      await initCommand({ projectRoot: tempDir, package: PKG, force: true });
+
+      expect(await Bun.file(contextPath).text()).not.toBe("MY OWN PACKAGE CONTEXT");
+    });
+  });
+});
+
+// ─── bin/nax.ts delegates to initCommand rather than scaffolding inline ──────
+//
+// Source-text assertions, matching the convention in
+// plan-decompose-cli-wiring.test.ts: importing bin/nax.ts would execute the
+// commander program, and spawning the binary is banned by
+// forbidden-patterns-tests.md. These guard against the inline scaffolder
+// being reintroduced; initProject's own tests above cover the behavior.
+
+describe("bin/nax.ts init command — delegates to initCommand", () => {
+  async function binSource(): Promise<string> {
+    return await Bun.file(join(import.meta.dir, "../../../bin/nax.ts")).text();
+  }
+
+  test("delegates to initCommand instead of scaffolding inline", async () => {
+    expect(await binSource()).toContain("initCommand");
+  });
+
+  test("does not write hooks.json", async () => {
+    expect(await binSource()).not.toContain("hooks.json");
+  });
+
+  test("does not bail out when the project is already initialized", async () => {
+    // The bail prevented a re-init from reconciling drifted ignore files.
+    expect(await binSource()).not.toContain("nax already initialized");
   });
 });
 
