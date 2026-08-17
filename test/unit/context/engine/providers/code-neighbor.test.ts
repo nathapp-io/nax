@@ -155,6 +155,36 @@ describe("CodeNeighborProvider", () => {
     expect((await provider.fetch(makeRequest({ touchedFiles: ["src/utils/helper.ts"] }))).chunks[0]?.content ?? "").toContain("src/service.ts");
   });
 
+  test("reverse deps are not starved when forward deps alone reach MAX_NEIGHBORS_PER_FILE (#1611)", async () => {
+    // 8 forward deps (own file's imports) — meets MAX_NEIGHBORS_PER_FILE on their own.
+    const forwardDeps = Array.from({ length: 8 }, (_, i) => `./dep${i}`);
+    const serviceContent = forwardDeps.map((d) => `import "${d}"`).join("\n");
+    const files: Record<string, string> = { "src/service.ts": serviceContent };
+    for (let i = 0; i < 8; i++) files[`src/dep${i}.ts`] = "";
+    files["src/consumer.ts"] = 'import "./service"';
+
+    setupDeps({ files, globFiles: ["src/consumer.ts"] });
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/service.ts"] }));
+    const content = result.chunks[0]?.content ?? "";
+    expect(content).toContain("src/consumer.ts");
+  });
+
+  test("reverse deps backfill unused forward slots past their guaranteed minimum (#1611)", async () => {
+    // 1 forward dep leaves 7 slots free; 6 reverse-dep consumers should all
+    // appear, not just the 4-slot minimum reserved for reverse deps.
+    const consumers = Array.from({ length: 6 }, (_, i) => `src/consumer${i}.ts`);
+    const files: Record<string, string> = {
+      "src/service.ts": 'import "./dep0"',
+      "src/dep0.ts": "",
+    };
+    for (const c of consumers) files[c] = 'import "./service"';
+
+    setupDeps({ files, globFiles: consumers });
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/service.ts"] }));
+    const content = result.chunks[0]?.content ?? "";
+    for (const c of consumers) expect(content).toContain(c);
+  });
+
   test("combines neighbors from multiple files into one chunk", async () => {
     setupDeps({
       files: { "src/a.ts": "", "src/b.ts": "" },
