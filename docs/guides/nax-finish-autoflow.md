@@ -124,6 +124,41 @@ rejected as an incomplete review. There is no JSON: a reply constrained to one
 JSON object has nowhere to put the two enumerations the review dimensions depend
 on, and an unreadable object used to discard the whole review (#1614).
 
+### What a fix node can reject
+
+`fix_<phase>` does not have to apply every finding it is handed. When it has
+cited counter-evidence that the reported behaviour is already correct — an
+existing test or spec line that pins the current behaviour — it can reject the
+finding instead, in a fourth reply section:
+
+```
+## DISPOSITIONS
+[1] fixed
+[2] rejected — evidence: test/config/loader.test.ts:42
+```
+
+Each line is `[N] fixed` or `[N] rejected — evidence: <file:line>`, where `N`
+is the finding's 1-based index in the same list the reviewer sent. A rejection
+requires the citation — it must point at a real test or spec line, not a
+description of what the fixer believes. `commit_<phase>` checks that the cited
+path resolves in the repo; a citation that does not is not discarded, only
+marked — the fixer may have cited a line rather than a path, or the file may
+have moved — and both the PR body and the commit message render it with an
+**evidence path not found** caveat rather than presenting it as verified.
+
+A rejected finding shows up in the PR body's "Review rounds" section as
+`_rejected_: \`file:line\`` (or with the caveat above when the path didn't
+resolve), and the shipped `commit_<phase>` commit message renders it the same
+way — as rejected with its citation, never as `Fix: <text>` for a change that
+was never made.
+
+This is a different, separately-scoped convention from a reviewer's
+`Judgment: yes` marker (see [§5 Escalation](#5-escalation)): `Judgment` is
+reviewer-authored and escalates a finding to a human before any fix is
+attempted; `## DISPOSITIONS … rejected` is fixer-authored and rejects a
+finding on cited evidence instead of applying it. Don't conflate the two —
+they run at different points in the loop and mean different things.
+
 ### Why acceptance runs twice
 
 The `acceptance` node is the cheap fail-fast gate: it proves the feature meets
@@ -492,6 +527,11 @@ re-verified. This is deliberate: the quality dimension runs at a >=60% confidenc
 bar specifically to surface design and maintainability concerns, and a
 whole-phase escalate route made reporting one of those equivalent to stopping the
 pipeline.
+
+`Judgment: yes` (reviewer-authored, escalates to a human) and `## DISPOSITIONS
+… rejected` (fixer-authored, rejects a finding on cited evidence — see [What a
+fix node can reject](#what-a-fix-node-can-reject)) are two distinct markers
+scoped to different nodes; neither substitutes for the other.
 
 **Telegram (preferred when configured).** Credentials come from the telegram
 interaction plugin, or from env:
