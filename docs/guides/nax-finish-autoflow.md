@@ -109,6 +109,21 @@ the window, which happens when the acceptance loop commits between a spec fix an
 its re-review) falls back to a full review rather than guessing at a window and
 silently hiding code from the reviewer.
 
+### What a reviewer node returns
+
+Each reviewer replies in three sections, and all three are checked:
+
+| Section | Content | If missing |
+|:--------|:--------|:-----------|
+| `## TOUCHPOINTS` | one line per external definition the reviewer opened, or `- none — <justification>` | the review is sent back once, then escalated — never treated as clean |
+| `## WALK` | one line per AC (spec phase) or per changed function (quality phase) | same |
+| `## FINDINGS` | `[SEVERITY]` blocks, or the literal `No findings.` | a reply with neither blocks nor the sentinel routes `reprompt` |
+
+The touchpoint paths are checked against the repo, so a fabricated list is
+rejected as an incomplete review. There is no JSON: a reply constrained to one
+JSON object has nowhere to put the two enumerations the review dimensions depend
+on, and an unreadable object used to discard the whole review (#1614).
+
 ### Why acceptance runs twice
 
 The `acceptance` node is the cheap fail-fast gate: it proves the feature meets
@@ -449,12 +464,34 @@ The plugin passes them as the env vars `NAX_FINISH_SPEC_PROFILE` and
 `NAX_FINISH_QUALITY_PROFILE`, which the flow module reads at load time. You can
 set them yourself when running the flow by hand (§6).
 
+### Reviewer tier parity
+
+`reviewers.spec` and `reviewers.quality` default to `null`, which means both
+reviewer nodes inherit acpx's `--default-agent`. The `post-impl-review` skill, by
+contrast, dispatches its quality worker on a reviewer-tuned agent type at the
+invoking session's model. If you are comparing the two — or trusting the flow's
+reviewers to match what the skill finds — pin the profiles explicitly:
+
+```json
+{ "finish": { "autoFlow": { "reviewers": { "spec": "reviewer", "quality": "code-reviewer" } } } }
+```
+
+An unpinned comparison measures model tier as much as it measures the flow.
+
 ---
 
 ## 5. Escalation
 
 On anything needing human judgment the flow pushes what it fixed and sends a
 "needs judgment" summary naming the reason and the findings.
+
+Escalation is decided per finding, not per phase. A reviewer marks a finding
+`Judgment: yes — <why>` when it is a spec conflict or a design call with no safe
+mechanical fix; only those halt the flow. Everything else is fixed and
+re-verified. This is deliberate: the quality dimension runs at a >=60% confidence
+bar specifically to surface design and maintainability concerns, and a
+whole-phase escalate route made reporting one of those equivalent to stopping the
+pipeline.
 
 **Telegram (preferred when configured).** Credentials come from the telegram
 interaction plugin, or from env:
@@ -553,6 +590,7 @@ Run state is kept under `~/.acpx/flows/runs/`.
 | Flow killed at 90 minutes | Raise `timeouts.flowMs`. |
 | PR opened without the flow's fixes | Should not happen — both terminal nodes push first. Check for a failed push in the run output or the escalation comment. |
 | Duplicate PRs vs nax autoPR | Not possible by design: the flow promotes an existing draft rather than opening a second PR. |
+| A review escalated with "never discharged its reading obligations" | The reviewer returned findings but omitted `## TOUCHPOINTS` or `## WALK` twice, or listed touchpoint paths that do not exist in the repo. Its reply is in the acpx run bundle. This is working as designed — the alternative is a verdict with no evidence behind it being treated as an approval. |
 
 ---
 
