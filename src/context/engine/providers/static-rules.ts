@@ -16,7 +16,6 @@
 import { createHash } from "node:crypto";
 import { join, relative } from "node:path";
 import { applySectionBudget } from "@/context";
-import type { SectionBudgetResult } from "@/context";
 import { splitRuleIntoSections } from "@/context";
 import type { RuleSection } from "@/context";
 import { getLogger } from "@/logger";
@@ -27,9 +26,10 @@ import { estimateTokens } from "@/optimizer";
 import { errorMessage } from "@/utils/errors";
 import { DEFAULT_CANONICAL_RULES_BUDGET_TOKENS } from "../../rules/canonical-loader";
 import type { CanonicalRule } from "../../rules/canonical-loader";
-import type { ProviderBudgetPressure, ProviderScopingReport } from "../manifest-types";
+import type { ProviderScopingReport } from "../manifest-types";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 import { memoizedLoadCanonicalRules } from "./canonical-rules-cache";
+import { buildBudgetNoticeChunk, buildSectionBudgetPressure } from "./static-rules-budget-notice";
 
 export { _resetCanonicalRulesCache } from "./canonical-rules-cache";
 
@@ -199,33 +199,6 @@ function ruleMatchesPackage(paths: string[] | undefined, repoRoot: string, packa
   const patterns = paths.map((p) => globToRegex(normalizePath(p)));
   // Also test rel + "/" so that "packages/api/**" matches the base dir "packages/api"
   return patterns.some((pattern) => pattern.test(rel) || pattern.test(`${rel}/`));
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Budget pressure helper (US-003)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Build a `ProviderBudgetPressure` from the section budget result, or
- * return `null` when there is no overage and nothing was dropped.
- */
-function buildSectionBudgetPressure(
-  allSections: RuleSection[],
-  budgetResult: SectionBudgetResult,
-): ProviderBudgetPressure | null {
-  const { droppedIds, overageTokens } = budgetResult;
-  const droppedCount = droppedIds.length;
-  if (droppedCount === 0 && overageTokens <= 0) return null;
-
-  const kept = new Set(budgetResult.retainedSections);
-  let droppedTokens = 0;
-  for (const section of allSections) {
-    if (!kept.has(section)) {
-      droppedTokens += section.tokens;
-    }
-  }
-
-  return { overageTokens, droppedCount, droppedTokens, droppedIds };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -423,14 +396,19 @@ export class StaticRulesProvider implements IContextProvider {
             });
           }
           const emptyPressure = buildSectionBudgetPressure(allSections, budgetResult);
+          const emptyChunks: RawChunk[] =
+            this.enforceBudget && budgetResult.droppedIds.length > 0
+              ? [buildBudgetNoticeChunk(request.storyId, budgetResult.droppedIds.length, budgetResult.droppedIds)]
+              : [];
           return {
-            chunks: [],
+            chunks: emptyChunks,
             pullTools: [],
             ...(emptyPressure && { budgetPressure: emptyPressure }),
             scopingReport,
           };
         }
-        const chunks = effectiveSections.map((section) => {
+
+        const chunks: RawChunk[] = effectiveSections.map((section) => {
           const ruleId = sectionRuleIdMap.get(section) ?? section.ruleId ?? "unknown";
           const rulePath = sectionRulePathMap.get(section) ?? section.rulePath ?? ruleId;
           const content = `### ${rulePath}\n\n${section.content}`;
@@ -461,6 +439,13 @@ export class StaticRulesProvider implements IContextProvider {
           totalCanonicalRules: mergedRules.length,
           files: effectiveSections.map((s) => s.rulePath ?? "unknown"),
         });
+
+        // Standalone notice chunk (not spliced into the last rule chunk) so
+        // it survives dedupeChunks independently of whatever rule section
+        // happens to sort last (#1610).
+        if (this.enforceBudget && budgetResult.droppedIds.length > 0) {
+          chunks.push(buildBudgetNoticeChunk(request.storyId, budgetResult.droppedIds.length, budgetResult.droppedIds));
+        }
 
         const pressure = buildSectionBudgetPressure(allSections, budgetResult);
         return {
