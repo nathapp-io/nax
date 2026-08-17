@@ -36,6 +36,15 @@ export const MAX_FIX_ATTEMPTS = 3;
  */
 export const MAX_REPROMPT_ATTEMPTS = 1;
 
+/**
+ * Reviews sent back for missing evidence sections, per phase, before escalating.
+ *
+ * One, for the same reason `MAX_REPROMPT_ATTEMPTS` is one: a reviewer that
+ * ignores the reply contract twice is not going to honour it on a third ask, and
+ * a review is the most expensive node in the flow.
+ */
+export const MAX_INCOMPLETE_ATTEMPTS = 1;
+
 /** How much of an unparseable reply to carry forward — it lands in a PR comment and a Telegram message. */
 export const RAW_TAIL_LIMIT = 500;
 

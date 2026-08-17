@@ -50,7 +50,15 @@
  */
 import { defineFlow } from "acpx/flows";
 import { buildFixCommitMessage } from "./commit-message";
-import { findingsOf, fixAttemptCount, gateOutputs, incrementalSince, inputOf, loadCtxOf } from "./flow-ctx";
+import {
+  findingsOf,
+  fixAttemptCount,
+  gateOutputs,
+  incrementalSince,
+  inputOf,
+  loadCtxOf,
+  reviewGapsOf,
+} from "./flow-ctx";
 import { narrativePrompt, parseNarrativeNode } from "./narrative";
 import { buildReviewPrompt, fixPrompt } from "./review-prompts";
 import {
@@ -246,6 +254,7 @@ export default defineFlow({
           specPath: outs.specPath ?? "",
           since: incrementalSince(ctx, "spec"),
           priorFindings: findingsOf(ctx, "spec"),
+          gaps: reviewGapsOf(ctx, "spec"),
         });
       },
       parse: parseReviewVerdict,
@@ -271,6 +280,7 @@ export default defineFlow({
           specPath: outs.specPath ?? "",
           since: incrementalSince(ctx, "quality"),
           priorFindings: findingsOf(ctx, "quality"),
+          gaps: reviewGapsOf(ctx, "quality"),
         });
       },
       parse: parseReviewVerdict,
@@ -476,7 +486,13 @@ export default defineFlow({
       from: "route_spec",
       switch: {
         on: "$.route",
-        cases: { clean: "review_quality", fix: "fix_spec", escalate: "escalate", reprompt: "review_spec" },
+        cases: {
+          clean: "review_quality",
+          fix: "fix_spec",
+          escalate: "escalate",
+          reprompt: "review_spec",
+          incomplete: "review_spec",
+        },
       },
     },
     // Spec fixes re-run the acceptance gate first (they can break it), and the
@@ -488,7 +504,13 @@ export default defineFlow({
       from: "route_quality",
       switch: {
         on: "$.route",
-        cases: { clean: "quality_gates", fix: "fix_quality", escalate: "escalate", reprompt: "review_quality" },
+        cases: {
+          clean: "quality_gates",
+          fix: "fix_quality",
+          escalate: "escalate",
+          reprompt: "review_quality",
+          incomplete: "review_quality",
+        },
       },
     },
     // Quality fixes are re-reviewed by the same lens; the repo-root gates that

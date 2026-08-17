@@ -142,7 +142,11 @@ export type FinishRoundOutcome =
    * new meaning — a reader hitting it in an old artifact must still be told
    * what it meant when it was written.
    */
-  | "review-skipped";
+  | "review-skipped"
+  /** The reviewer replied with findings but skipped a required audit section, so
+   * the verdict was not acted on. Distinct from `unparseable`: there was a
+   * readable verdict, it just had no evidence behind it. */
+  | "incomplete";
 
 export interface FinishRound {
   ts: string;

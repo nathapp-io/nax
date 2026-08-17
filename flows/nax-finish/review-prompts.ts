@@ -366,11 +366,23 @@ export function buildReviewPrompt(
     specPath: string;
     since?: string | null;
     priorFindings?: Finding[];
+    gaps?: string[];
   },
 ): string {
   const dims = phase === "spec" ? SPEC_REVIEW_DIMENSIONS : QUALITY_REVIEW_DIMENSIONS;
+  const gapNotice =
+    args.gaps && args.gaps.length > 0
+      ? [
+          [
+            "IMPORTANT — your previous review was not accepted, because it skipped a required section:",
+            ...args.gaps.map((g) => `- ${g}`),
+            "Do the reading this time and emit all three sections. A verdict without them is not a review.",
+          ].join("\n"),
+        ]
+      : [];
   if (!args.since) {
     return [
+      ...gapNotice,
       `You are the ${phase.toUpperCase()} reviewer for a completed feature.`,
       `The spec/requirements source is: ${args.specPath}. Read it in full.`,
       `Fetch and review the diff: \`git diff ${args.base}...HEAD\` (also \`--name-only\` for the file list).`,
@@ -381,6 +393,7 @@ export function buildReviewPrompt(
     ].join("\n\n");
   }
   return [
+    ...gapNotice,
     `You are the ${phase.toUpperCase()} reviewer for a completed feature, continuing a review you already started.`,
     `On your previous pass over \`git diff ${args.base}...HEAD\` you raised the findings below, and they have since been fixed and committed. Everything else in that diff you already judged acceptable — do not re-derive a verdict on it.`,
     `Your findings from the previous pass:\n${JSON.stringify(args.priorFindings ?? [], null, 2)}`,

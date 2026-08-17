@@ -359,6 +359,7 @@ const EMPTY_ROUND_NOTE: Record<string, string> = {
   unparseable: "- _reviewer output could not be parsed_",
   escalated: "- _escalated for human review_",
   "review-skipped": "- _re-review skipped: this fix touched test files only_",
+  incomplete: "- _review sent back: required evidence sections missing_",
 };
 
 function buildRoundBlock(round: FinishRound): string {
@@ -366,6 +367,9 @@ function buildRoundBlock(round: FinishRound): string {
   if (round.findings.length === 0) {
     lines.push(EMPTY_ROUND_NOTE[round.outcome ?? ""] ?? "- _no findings_");
   } else {
+    if (round.outcome === "incomplete") {
+      lines.push("- _not acted on — the review was sent back for missing evidence sections_");
+    }
     for (const finding of round.findings) lines.push(renderFinding(finding));
   }
   return lines.join("\n");

@@ -89,6 +89,11 @@ describe("nax-finish flow graph", () => {
     expect(switchOf("route_quality").cases.clean).toBe("quality_gates");
   });
 
+  test("an incomplete review re-enters its own reviewer", () => {
+    expect(switchOf("route_spec").cases.incomplete).toBe("review_spec");
+    expect(switchOf("route_quality").cases.incomplete).toBe("review_quality");
+  });
+
   test("review fixes are re-verified, not applied once and trusted", () => {
     // spec fixes re-run the acceptance gate, which routes back into review_spec
     expect(toOf("commit_spec")).toBe("acceptance");
@@ -325,10 +330,17 @@ describe("review parse + route_* nodes", () => {
   });
 
   const finding = { severity: "HIGH" as const, title: "t", problem: "p", fix: "f" };
+  /** Discharges the review-audit gate so route_* tests exercise routing, not the gate. */
+  const COMPLETE = {
+    sawTouchpointsSection: true,
+    sawWalkSection: true,
+    touchpoints: [{ path: "none", note: "n" }],
+    walk: ["AC-1 Covered — yes"],
+  };
 
   test("route_spec sends findings to the fix node while under the cap", async () => {
     const out = (await nodeRun<{ route: string }>("route_spec").run(
-      ctxOf({ outputs: { review_spec: { route: "proceed", findings: [finding] } } }),
+      ctxOf({ outputs: { review_spec: { route: "proceed", findings: [finding], ...COMPLETE } } }),
     )) as { route: string };
     expect(out.route).toBe("fix");
   });
@@ -361,7 +373,7 @@ describe("review parse + route_* nodes", () => {
       ctxOf({
         outputs: {
           review_spec: { route: "proceed", findings: [finding] },
-          review_quality: { route: "clean", findings: [] },
+          review_quality: { route: "clean", findings: [], ...COMPLETE },
         },
       }),
     )) as { route: string };

@@ -18,6 +18,14 @@ const INPUT = {
 
 const FINDING = { severity: "HIGH", title: "t", problem: "p", fix: "f" };
 
+/** A verdict that discharges the review-audit gate — no `incomplete` gaps. */
+const COMPLETE = {
+  sawTouchpointsSection: true,
+  sawWalkSection: true,
+  touchpoints: [{ path: "none", note: "n" }],
+  walk: ["AC-1 Covered — yes"],
+};
+
 /** Capture every round `routeReviewAndRecord` appends, parsed back from JSONL. */
 function captureRounds(): FinishRound[] {
   const written: FinishRound[] = [];
@@ -36,7 +44,7 @@ const ctxWith = (verdict: unknown, steps = [makeFlowStep("review_quality")]) => 
 describe("routeReviewAndRecord", () => {
   test("records a round when the review passes with no findings", async () => {
     const rounds = captureRounds();
-    const r = await routeReviewAndRecord(ctxWith({ route: "clean", findings: [] }), "quality");
+    const r = await routeReviewAndRecord(ctxWith({ route: "clean", findings: [], ...COMPLETE }), "quality");
 
     expect(r.route).toBe("clean");
     expect(rounds).toHaveLength(1);
@@ -53,7 +61,7 @@ describe("routeReviewAndRecord", () => {
     // The round is appended at `commit_<phase>`, where the findings AND the
     // resulting commit are both known. Recording here too would double-count it.
     const rounds = captureRounds();
-    const r = await routeReviewAndRecord(ctxWith({ route: "proceed", findings: [FINDING] }), "quality");
+    const r = await routeReviewAndRecord(ctxWith({ route: "proceed", findings: [FINDING], ...COMPLETE }), "quality");
 
     expect(r.route).toBe("fix");
     expect(rounds).toEqual([]);
@@ -89,7 +97,7 @@ describe("routeReviewAndRecord", () => {
       makeFlowStep("commit_quality"),
       makeFlowStep("review_quality"),
     ];
-    await routeReviewAndRecord(ctxWith({ route: "clean", findings: [] }, steps), "quality");
+    await routeReviewAndRecord(ctxWith({ route: "clean", findings: [], ...COMPLETE }, steps), "quality");
 
     expect(rounds[0].attempt).toBe(2);
   });
@@ -105,7 +113,7 @@ describe("routeReviewAndRecord", () => {
     _resultDeps.appendText = async () => {
       throw new Error("EACCES");
     };
-    const r = await routeReviewAndRecord(ctxWith({ route: "clean", findings: [] }), "quality");
+    const r = await routeReviewAndRecord(ctxWith({ route: "clean", findings: [], ...COMPLETE }), "quality");
     expect(r.route).toBe("clean");
   });
 });
