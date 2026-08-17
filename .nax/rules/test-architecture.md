@@ -1,5 +1,5 @@
 ---
-priority: 25
+priority: 30
 appliesTo:
   - "test/**/*.test.ts"
 stages:
@@ -8,7 +8,6 @@ stages:
   - "tdd-test-writer"
   - "tdd-implementer"
   - "tdd-verifier"
-  - "verify"
   - "rectify"
   - "review"
   - "review-semantic"

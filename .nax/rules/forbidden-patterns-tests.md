@@ -1,7 +1,21 @@
 ---
-priority: 51
+priority: 6
 appliesTo:
   - "test/**/*.test.ts"
+stages:
+  - "context"
+  - "execution"
+  - "tdd-test-writer"
+  - "tdd-verifier"
+  - "tdd-implementer"
+  - "rectify"
+  - "autofix"
+  - "single-session"
+  - "tdd-simple"
+  - "batch"
+  - "acceptance"
+  - "review-semantic"
+  - "review-adversarial"
 ---
 
 # Forbidden Patterns

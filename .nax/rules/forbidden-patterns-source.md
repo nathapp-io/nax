@@ -1,8 +1,22 @@
 ---
-priority: 50
+priority: 5
 appliesTo:
   - "src/**/*.ts"
   - "bin/*.ts"
+stages:
+  - "context"
+  - "execution"
+  - "tdd-implementer"
+  - "rectify"
+  - "autofix"
+  - "single-session"
+  - "tdd-simple"
+  - "no-test"
+  - "batch"
+  - "review"
+  - "review-semantic"
+  - "review-adversarial"
+  - "debate"
 ---
 
 # Forbidden Patterns
