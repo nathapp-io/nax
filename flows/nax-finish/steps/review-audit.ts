@@ -21,6 +21,13 @@
  * the new prompt contract produces a verdict the gate can actually check.
  *
  * `node:fs` — not `Bun.file` — because `flows/` runs inside acpx's Node process.
+ *
+ * Both `touchpoint.path` and a disposition's `evidence` come from the
+ * reviewer/fixer's reply text — untrusted the same way any parsed LLM output
+ * is. `exists()` confines its resolved path under `workdir` before stat-ing
+ * it, so a `../`-laden path can never be used to probe existence outside the
+ * repo; a path that escapes reads as "does not exist," which is the correct
+ * verdict anyway since a legitimate touchpoint is always inside it.
  */
 import { stat } from "node:fs/promises";
 import * as path from "node:path";
@@ -30,8 +37,11 @@ import type { FindingDisposition, ReviewVerdict } from "../types";
 const MAX_CHECKED = 20;
 
 async function exists(workdir: string, rel: string): Promise<boolean> {
+  const root = path.resolve(workdir);
+  const resolved = path.resolve(root, rel);
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) return false;
   try {
-    await stat(path.resolve(workdir, rel));
+    await stat(resolved);
     return true;
   } catch {
     return false;

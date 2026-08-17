@@ -77,6 +77,18 @@ describe("parseReviewReport", () => {
     expect(r.findings).toEqual([]);
     expect(r.sawNoFindings).toBe(false);
   });
+
+  test("parses correctly even when sections appear out of the prescribed order", () => {
+    const r = parseReviewReport(
+      "## FINDINGS\n[MEDIUM] Out of order\n  Problem: p\n  Fix: f\n\n## WALK\nAC-1 Covered\n\n## TOUCHPOINTS\n- a.ts:sym — reason\n",
+    );
+    expect(r.sawTouchpointsSection).toBe(true);
+    expect(r.sawWalkSection).toBe(true);
+    expect(r.touchpoints).toEqual([{ path: "a.ts", symbol: "sym", note: "reason" }]);
+    expect(r.walk).toEqual(["AC-1 Covered"]);
+    expect(r.findings).toHaveLength(1);
+    expect(r.findings[0].title).toBe("Out of order");
+  });
 });
 
 describe("parseDispositions", () => {

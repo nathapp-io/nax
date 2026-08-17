@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { auditGaps } from "@flows/nax-finish/steps/review-audit";
+import { auditGaps, validateDispositions } from "@flows/nax-finish/steps/review-audit";
 import type { ReviewVerdict } from "@flows/nax-finish/types";
 
 const REPO = process.cwd();
@@ -48,5 +48,27 @@ describe("auditGaps", () => {
   test("a missing or empty WALK is a gap", async () => {
     expect((await auditGaps(base({ walk: [] }), REPO)).join(" ")).toContain("WALK");
     expect((await auditGaps(base({ sawWalkSection: false, walk: [] }), REPO)).join(" ")).toContain("WALK");
+  });
+
+  test("a touchpoint path escaping workdir via `../` is treated as not existing", async () => {
+    const gaps = await auditGaps(
+      base({ touchpoints: [{ path: "../../../../../../etc/passwd", note: "n" }] }),
+      REPO,
+    );
+    expect(gaps.join(" ")).toContain("does not exist");
+  });
+});
+
+describe("validateDispositions", () => {
+  test("a rejection whose evidence path exists is left untouched", async () => {
+    const d = await validateDispositions(REPO, [{ index: 1, disposition: "rejected", evidence: "package.json:1" }]);
+    expect(d[0].evidenceMissing).toBeUndefined();
+  });
+
+  test("a rejection whose evidence escapes workdir via `../` is marked evidenceMissing", async () => {
+    const d = await validateDispositions(REPO, [
+      { index: 1, disposition: "rejected", evidence: "../../../../../../etc/passwd:1" },
+    ]);
+    expect(d[0].evidenceMissing).toBe(true);
   });
 });
