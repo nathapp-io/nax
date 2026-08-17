@@ -71,6 +71,196 @@ export function globalConfigPath(): string {
   return join(globalConfigDir(), "config.json");
 }
 
+/** Shared plumbing threaded through every `loadConfig` layer function below. */
+interface ConfigLoadCtx {
+  logger: ReturnType<typeof getLogger> | null;
+  warnDedupe: ReturnType<typeof createConfigWarnDedupe>;
+}
+
+/**
+ * Resolve `projDir` (the `.nax/` directory) and `projectRoot` (its parent) from
+ * `startDir`, per the three cases documented on `loadConfig`'s own docstring:
+ * project root, `.nax/` dir directly, or omitted (falls back to `process.cwd()`).
+ */
+function resolveProjectPaths(startDir: string | undefined): { projDir: string | null; projectRoot: string } {
+  const projDir = startDir
+    ? basename(startDir) === PROJECT_NAX_DIR
+      ? startDir
+      : findProjectDir(startDir)
+    : findProjectDir();
+
+  const projectRoot = startDir
+    ? basename(startDir) === PROJECT_NAX_DIR
+      ? dirname(startDir)
+      : startDir
+    : process.cwd();
+
+  return { projDir, projectRoot };
+}
+
+/** Layer 1: Global config (~/.nax/config.json) — strip "profile" field before merging (AC 7). */
+async function applyGlobalLayer(
+  rawConfig: Record<string, unknown>,
+  ctx: ConfigLoadCtx,
+): Promise<{
+  rawConfig: Record<string, unknown>;
+  globalConfRaw: Record<string, unknown> | null;
+  // SEC-2 — the raw (post-shim, pre-defaults-merge) global layer, kept around so the
+  // project-layer warn check can tell "the global layer explicitly set this
+  // security-sensitive key" apart from "this key is just the unset schema default
+  // flowing through defaults + global merge". null when there is no global config file.
+  globalLayerConf: Record<string, unknown> | null;
+}> {
+  const globalConfRaw = await loadJsonFile<Record<string, unknown>>(globalConfigPath(), "config");
+  if (!globalConfRaw) return { rawConfig, globalConfRaw: null, globalLayerConf: null };
+  const { profile: _gProfile, ...globalConfStripped } = globalConfRaw;
+  const globalConf = applyConfigCompatShims(globalConfStripped, ctx.logger, ctx.warnDedupe);
+  return {
+    rawConfig: deepMergeConfig(rawConfig, globalConf),
+    globalConfRaw,
+    globalLayerConf: globalConf,
+  };
+}
+
+/** Layer 2: Project config (.nax/config.json) — strip "profile" field before merging (AC 8). */
+async function applyProjectLayer(
+  rawConfig: Record<string, unknown>,
+  projDir: string | null,
+  globalLayerConf: Record<string, unknown> | null,
+  ctx: ConfigLoadCtx,
+): Promise<Record<string, unknown>> {
+  if (!projDir) return rawConfig;
+  const projConf = await loadJsonFile<Record<string, unknown>>(join(projDir, "config.json"), "config");
+  if (!projConf) return rawConfig;
+  const { profile: _pProfile, ...projConfStripped } = projConf;
+  const resolvedProjConf = applyConfigCompatShims(projConfStripped, ctx.logger, ctx.warnDedupe);
+  const preProjectMergeConfig = rawConfig;
+  const merged = deepMergeConfig<Record<string, unknown>>(rawConfig, resolvedProjConf);
+  // SEC-2 / D-2 — warn (do not block, do not change precedence) when the
+  // project layer changed a security-sensitive key from the global value.
+  // `sourceLayerConf: globalLayerConf` scopes the check to keys the global
+  // layer actually set — with no global config file (globalLayerConf is
+  // null) this never warns, since there is nothing the project layer could
+  // be said to have "changed" from.
+  warnSecuritySensitiveOverrides(preProjectMergeConfig, merged, ctx.warnDedupe.warn, {
+    layerName: "project",
+    sourceLayerConf: globalLayerConf,
+  });
+  return merged;
+}
+
+/**
+ * Layer 3: Profile chain (overrides global + project — it's a run-time mode selection).
+ * Profiles overlay in order; a later profile overrides an earlier one. A missing
+ * profile file throws fail-fast (loadProfile). "default"-only chains apply no overlay.
+ */
+async function applyProfileChainLayer(
+  rawConfig: Record<string, unknown>,
+  overlayChain: readonly string[],
+  projectRoot: string,
+  ctx: ConfigLoadCtx,
+): Promise<Record<string, unknown>> {
+  let merged = rawConfig;
+  for (const name of overlayChain) {
+    const profileData = await loadProfile(name, projectRoot);
+    // Load companion .env for $VAR resolution — do NOT write to process.env (AC 9).
+    // Must resolve BEFORE merging, otherwise a "$MODEL_FAST"-style reference lands
+    // in the run config as the literal unresolved string (BUG-17) — the load path
+    // previously discarded loadProfileEnv's return value and never called
+    // resolveEnvVars, so this only ever worked via the separate `config profile show
+    // --unmask` command path.
+    const profileEnv = await loadProfileEnv(name, projectRoot);
+    let resolvedProfileData: Record<string, unknown>;
+    try {
+      resolvedProfileData =
+        Object.keys(profileEnv).length > 0
+          ? (resolveEnvVars(profileData, profileEnv) as Record<string, unknown>)
+          : profileData;
+    } catch (err) {
+      // BUG-21 — surface which profile and which key path referenced the
+      // unresolved $VAR, instead of a bare Error with no config context.
+      const varName = err instanceof UnresolvedEnvVarError ? err.varName : undefined;
+      const path = err instanceof UnresolvedEnvVarError ? err.path.join(".") : undefined;
+      throw new NaxError(
+        `Profile "${name}" references an undefined environment variable${varName ? ` $${varName}` : ""}${path ? ` at "${path}"` : ""}.`,
+        "PROFILE_ENV_VAR_UNRESOLVED",
+        { stage: "config", profileName: name, varName, path, cause: err },
+      );
+    }
+    // Same compat-shim chain as the file layers above (BUG-51) — a profile can carry
+    // the same legacy shapes (e.g. routing.strategy: "manual") and must be remapped
+    // rather than hard-failing Zod validation.
+    const shimmedProfileData = applyConfigCompatShims(resolvedProfileData, ctx.logger, ctx.warnDedupe);
+    const preProfileMergeConfig = merged;
+    merged = deepMergeConfig<Record<string, unknown>>(merged, shimmedProfileData);
+    // SEC-2 — profiles merge AFTER global + project and can just as easily undo a
+    // security-sensitive setting, invisibly (profile files live outside the repo,
+    // outside code review). Only warn when this profile itself sets the key.
+    warnSecuritySensitiveOverrides(preProfileMergeConfig, merged, ctx.warnDedupe.warn, {
+      layerName: `profile:${name}`,
+      sourceLayerConf: shimmedProfileData,
+    });
+  }
+  return merged;
+}
+
+/** Layer 4: CLI overrides (highest priority). */
+function applyCliOverridesLayer(
+  rawConfig: Record<string, unknown>,
+  cliOverrides: Record<string, unknown> | undefined,
+  ctx: ConfigLoadCtx,
+): Record<string, unknown> {
+  if (!cliOverrides) return rawConfig;
+  const shimmedCliOverrides = applyConfigCompatShims(cliOverrides, ctx.logger, ctx.warnDedupe);
+  const preCliMergeConfig = rawConfig;
+  const merged = deepMergeConfig<Record<string, unknown>>(rawConfig, shimmedCliOverrides);
+  // SEC-2 — CLI overrides win over every other layer; warn when one changes a
+  // security-sensitive key so the change isn't silently invisible.
+  warnSecuritySensitiveOverrides(preCliMergeConfig, merged, ctx.warnDedupe.warn, {
+    layerName: "CLI override",
+    sourceLayerConf: shimmedCliOverrides,
+  });
+  return merged;
+}
+
+/**
+ * Reject-guards + no-op-key strip + Zod validation for the fully-merged root config.
+ * Shared exit path for `loadConfig` once every layer above has merged.
+ */
+function finalizeAndValidateRootConfig(rawConfig: Record<string, unknown>): NaxConfig {
+  // ADR-012 Phase 6 — reject pre-migration agent keys with a migration pointer.
+  // Must run BEFORE Zod safeParse, otherwise .strip() silently drops the keys.
+  rejectLegacyAgentKeys(rawConfig);
+  // Rectification-config consolidation — reject the four legacy attempt-cap keys
+  // that were split across quality.autofix and execution.rectification before
+  // unification. Same Zod-strip rationale.
+  rejectLegacyRectificationKeys(rawConfig);
+  rejectDeadQualityFlags(rawConfig);
+  // Fail fast on the not-yet-implemented scoped permission profile (GitHub #374)
+  // rather than letting it silently degrade to "safe".
+  rejectUnimplementedScopedProfile(rawConfig);
+  // Same feature, same treatment: the per-stage policy block is read by nothing,
+  // so accepting it would silently provide no enforcement.
+  rejectUnimplementedPermissionsBlock(rawConfig);
+  // Strip the four inert no-op keys (warn-and-strip, not throw — see
+  // config-guards.ts for the divergence rationale). Runs AFTER the reject guards
+  // and BEFORE safeParse, so the removed key is gone before the schema sees it.
+  // Post-merge placement yields one warning per resolved config regardless of
+  // which layer supplied the key.
+  const stripped = stripRemovedNoOpKeys(rawConfig, defaultConfigWarn);
+
+  const result = NaxConfigSchema.safeParse(stripped);
+  if (!result.success) {
+    const errors = result.error.issues.map((err) => {
+      const path = String(err.path.join("."));
+      return path ? `${path}: ${err.message}` : err.message;
+    });
+    throw new Error(`Invalid configuration:\n${errors.join("\n")}`);
+  }
+
+  return result.data as NaxConfig;
+}
+
 /** Find project nax directory (walks up from cwd) */
 export function findProjectDir(startDir: string = process.cwd()): string | null {
   let dir = resolve(startDir);
@@ -108,20 +298,7 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   // legacy key set in more than one layer would otherwise warn once per layer.
   const warnDedupe = createConfigWarnDedupe();
 
-  // Resolve projDir: if startDir is already the .nax/ dir (basename === ".nax"), use it
-  // directly; otherwise treat startDir as the project root and walk up to find .nax/.
-  const projDir = startDir
-    ? basename(startDir) === PROJECT_NAX_DIR
-      ? startDir
-      : findProjectDir(startDir)
-    : findProjectDir();
-
-  // Determine projectRoot for profile resolution
-  const projectRoot = startDir
-    ? basename(startDir) === PROJECT_NAX_DIR
-      ? dirname(startDir)
-      : startDir
-    : process.cwd();
+  const { projDir, projectRoot } = resolveProjectPaths(startDir);
 
   // Resolve profile chain: CLI > NAX_PROFILE env > project config.json > global > ["default"].
   // Each source accepts the comma form; the chain overlays left-to-right (later wins).
@@ -133,46 +310,18 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   // "default" entries carry no overlay — drop them so only meaningful profiles merge.
   const overlayChain = profileChain.filter((name) => name && name !== "default");
 
-  // Layer 1: Global config (~/.nax/config.json) — strip "profile" field before merging (AC 7)
-  const globalConfRaw = await loadJsonFile<Record<string, unknown>>(globalConfigPath(), "config");
   let logger: ReturnType<typeof getLogger> | null = null;
   try {
     logger = getLogger();
   } catch {
     /* logger may not be init yet */
   }
-  // SEC-2 — the raw (post-shim, pre-defaults-merge) global layer, kept around so the
-  // project-layer warn check below can tell "the global layer explicitly set this
-  // security-sensitive key" apart from "this key is just the unset schema default
-  // flowing through defaults + global merge". null when there is no global config file.
-  let globalLayerConf: Record<string, unknown> | null = null;
-  if (globalConfRaw) {
-    const { profile: _gProfile, ...globalConfStripped } = globalConfRaw;
-    const globalConf = applyConfigCompatShims(globalConfStripped, logger, warnDedupe);
-    globalLayerConf = globalConf;
-    rawConfig = deepMergeConfig(rawConfig, globalConf);
-  }
+  const ctx: ConfigLoadCtx = { logger, warnDedupe };
 
-  // Layer 2: Project config (.nax/config.json) — strip "profile" field before merging (AC 8)
-  if (projDir) {
-    const projConf = await loadJsonFile<Record<string, unknown>>(join(projDir, "config.json"), "config");
-    if (projConf) {
-      const { profile: _pProfile, ...projConfStripped } = projConf;
-      const resolvedProjConf = applyConfigCompatShims(projConfStripped, logger, warnDedupe);
-      const preProjectMergeConfig = rawConfig;
-      rawConfig = deepMergeConfig(rawConfig, resolvedProjConf);
-      // SEC-2 / D-2 — warn (do not block, do not change precedence) when the
-      // project layer changed a security-sensitive key from the global value.
-      // `sourceLayerConf: globalLayerConf` scopes the check to keys the global
-      // layer actually set — with no global config file (globalLayerConf is
-      // null) this never warns, since there is nothing the project layer could
-      // be said to have "changed" from.
-      warnSecuritySensitiveOverrides(preProjectMergeConfig, rawConfig, warnDedupe.warn, {
-        layerName: "project",
-        sourceLayerConf: globalLayerConf,
-      });
-    }
-  }
+  const globalLayer = await applyGlobalLayer(rawConfig, ctx);
+  rawConfig = globalLayer.rawConfig;
+
+  rawConfig = await applyProjectLayer(rawConfig, projDir, globalLayer.globalLayerConf, ctx);
 
   // CFG-2: global + project config never ran through $VAR resolution — a value
   // like "test": "$TEST_CMD" landed in the run config as the literal
@@ -180,62 +329,9 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   // process.env, same as the profile chain below.
   rawConfig = resolveEnvVarsWarnOnFailure(rawConfig, logger, "global/project config");
 
-  // Layer 3: Profile chain (overrides global + project — it's a run-time mode selection).
-  // Profiles overlay in order; a later profile overrides an earlier one. A missing
-  // profile file throws fail-fast (loadProfile). "default"-only chains apply no overlay.
-  for (const name of overlayChain) {
-    const profileData = await loadProfile(name, projectRoot);
-    // Load companion .env for $VAR resolution — do NOT write to process.env (AC 9).
-    // Must resolve BEFORE merging, otherwise a "$MODEL_FAST"-style reference lands
-    // in the run config as the literal unresolved string (BUG-17) — the load path
-    // previously discarded loadProfileEnv's return value and never called
-    // resolveEnvVars, so this only ever worked via the separate `config profile show
-    // --unmask` command path.
-    const profileEnv = await loadProfileEnv(name, projectRoot);
-    let resolvedProfileData: Record<string, unknown>;
-    try {
-      resolvedProfileData =
-        Object.keys(profileEnv).length > 0
-          ? (resolveEnvVars(profileData, profileEnv) as Record<string, unknown>)
-          : profileData;
-    } catch (err) {
-      // BUG-21 — surface which profile and which key path referenced the
-      // unresolved $VAR, instead of a bare Error with no config context.
-      const varName = err instanceof UnresolvedEnvVarError ? err.varName : undefined;
-      const path = err instanceof UnresolvedEnvVarError ? err.path.join(".") : undefined;
-      throw new NaxError(
-        `Profile "${name}" references an undefined environment variable${varName ? ` $${varName}` : ""}${path ? ` at "${path}"` : ""}.`,
-        "PROFILE_ENV_VAR_UNRESOLVED",
-        { stage: "config", profileName: name, varName, path, cause: err },
-      );
-    }
-    // Same compat-shim chain as the file layers above (BUG-51) — a profile can carry
-    // the same legacy shapes (e.g. routing.strategy: "manual") and must be remapped
-    // rather than hard-failing Zod validation.
-    const shimmedProfileData = applyConfigCompatShims(resolvedProfileData, logger, warnDedupe);
-    const preProfileMergeConfig = rawConfig;
-    rawConfig = deepMergeConfig(rawConfig, shimmedProfileData);
-    // SEC-2 — profiles merge AFTER global + project and can just as easily undo a
-    // security-sensitive setting, invisibly (profile files live outside the repo,
-    // outside code review). Only warn when this profile itself sets the key.
-    warnSecuritySensitiveOverrides(preProfileMergeConfig, rawConfig, warnDedupe.warn, {
-      layerName: `profile:${name}`,
-      sourceLayerConf: shimmedProfileData,
-    });
-  }
+  rawConfig = await applyProfileChainLayer(rawConfig, overlayChain, projectRoot, ctx);
 
-  // Layer 4: CLI overrides (highest priority)
-  if (cliOverrides) {
-    const shimmedCliOverrides = applyConfigCompatShims(cliOverrides, logger, warnDedupe);
-    const preCliMergeConfig = rawConfig;
-    rawConfig = deepMergeConfig(rawConfig, shimmedCliOverrides);
-    // SEC-2 — CLI overrides win over every other layer; warn when one changes a
-    // security-sensitive key so the change isn't silently invisible.
-    warnSecuritySensitiveOverrides(preCliMergeConfig, rawConfig, warnDedupe.warn, {
-      layerName: "CLI override",
-      sourceLayerConf: shimmedCliOverrides,
-    });
-  }
+  rawConfig = applyCliOverridesLayer(rawConfig, cliOverrides, ctx);
 
   // Force-set profile + chain to the resolved values after all merges (AC 6).
   // `profile` is the composite display string ("a+b"); "default" when no overlay applied.
@@ -243,7 +339,8 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   rawConfig.profileChain = overlayChain;
 
   // Track if any configs were merged (for optimization - skip safeParse when just using defaults)
-  const hasMergedConfigs = globalConfRaw || projDir !== null || cliOverrides !== undefined || overlayChain.length > 0;
+  const hasMergedConfigs =
+    globalLayer.globalConfRaw || projDir !== null || cliOverrides !== undefined || overlayChain.length > 0;
 
   // Parse and validate with Zod
   // Skip validation if no configs were merged (rawConfig is just DEFAULT_CONFIG).
@@ -253,37 +350,7 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
     return structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>) as unknown as NaxConfig;
   }
 
-  // ADR-012 Phase 6 — reject pre-migration agent keys with a migration pointer.
-  // Must run BEFORE Zod safeParse, otherwise .strip() silently drops the keys.
-  rejectLegacyAgentKeys(rawConfig);
-  // Rectification-config consolidation — reject the four legacy attempt-cap keys
-  // that were split across quality.autofix and execution.rectification before
-  // unification. Same Zod-strip rationale.
-  rejectLegacyRectificationKeys(rawConfig);
-  rejectDeadQualityFlags(rawConfig);
-  // Fail fast on the not-yet-implemented scoped permission profile (GitHub #374)
-  // rather than letting it silently degrade to "safe".
-  rejectUnimplementedScopedProfile(rawConfig);
-  // Same feature, same treatment: the per-stage policy block is read by nothing,
-  // so accepting it would silently provide no enforcement.
-  rejectUnimplementedPermissionsBlock(rawConfig);
-  // Strip the four inert no-op keys (warn-and-strip, not throw — see
-  // config-guards.ts for the divergence rationale). Runs AFTER the reject guards
-  // and BEFORE safeParse, so the removed key is gone before the schema sees it.
-  // Post-merge placement yields one warning per resolved config regardless of
-  // which layer supplied the key.
-  rawConfig = stripRemovedNoOpKeys(rawConfig, defaultConfigWarn);
-
-  const result = NaxConfigSchema.safeParse(rawConfig);
-  if (!result.success) {
-    const errors = result.error.issues.map((err) => {
-      const path = String(err.path.join("."));
-      return path ? `${path}: ${err.message}` : err.message;
-    });
-    throw new Error(`Invalid configuration:\n${errors.join("\n")}`);
-  }
-
-  return result.data as NaxConfig;
+  return finalizeAndValidateRootConfig(rawConfig);
 }
 
 /**
