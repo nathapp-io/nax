@@ -24,7 +24,7 @@
 import { appendFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { getSafeLogger } from "../logger";
+import { getSafeLogger, redactSecrets } from "../logger";
 import { errorMessage } from "../utils/errors";
 
 export interface PromptAuditEntry {
@@ -249,7 +249,7 @@ export class PromptAuditor implements IPromptAuditor {
       this._dirCreated = true;
     }
     try {
-      await _promptAuditorDeps.appendLine(this._jsonlPath, `${JSON.stringify(entry)}\n`);
+      await _promptAuditorDeps.appendLine(this._jsonlPath, `${JSON.stringify(redactSecrets(entry))}\n`);
     } catch (err) {
       throw tagAuditError(err, "jsonl");
     }
@@ -258,7 +258,10 @@ export class PromptAuditor implements IPromptAuditor {
     const auditEntry = entry as PromptAuditEntry;
     const filename = deriveTxtFilename(auditEntry);
     try {
-      await _promptAuditorDeps.write(join(this._featureDir, filename), buildTxtContent(auditEntry));
+      await _promptAuditorDeps.write(
+        join(this._featureDir, filename),
+        redactSecrets(buildTxtContent(auditEntry)) as string,
+      );
     } catch (err) {
       throw tagAuditError(err, "txt");
     }

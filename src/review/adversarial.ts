@@ -11,25 +11,44 @@
  *   - Own ACP session (reviewer-adversarial), NOT the implementer session.
  *   - Default diffMode is "ref" (no 50KB cap; reviewer self-serves via git tools).
  *   - Findings carry a `category` field (input, error-path, abandonment, etc.).
+ *
+ * Decomposed per code-review TYPE-0 (2026-08-17): the orchestrator below stays a
+ * thin sequence of stages — skip checks, dispatch, finding classification,
+ * telemetry, outcome — with each stage's logic and its audit-recording extracted
+ * into named helpers in ./adversarial-outcomes.ts. Control-flow order and every
+ * side effect (logging, `recordAdversarialAudit` calls) are preserved exactly;
+ * only the grouping (and file) changed.
  */
 
 import type { IAgentManager } from "../agents";
 import type { ReviewConfig } from "../config/selectors";
-import { filterContextByRole } from "../context";
+import type { ContextBundle } from "../context/engine";
 import { NaxError } from "../errors";
 import type { Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
+import type { AdversarialReviewOutput } from "../operations/adversarial-review";
 import { adversarialReviewOp } from "../operations/adversarial-review";
 import { callOp as _callOp } from "../operations/call";
-import { extractDiffFiles } from "../utils/diff-files";
+import type { NaxRuntime } from "../runtime";
+import type { ResolvedTestPatterns } from "../test-runners";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
-import { recordAdversarialAudit } from "./adversarial-audit-event";
 import { buildCounterfactualTelemetry } from "./adversarial-counterfactual-telemetry";
-import { type AdversarialLLMFinding, formatFindings, toAdversarialReviewFindings } from "./adversarial-helpers";
+import type { AdversarialOutcomeCtx } from "./adversarial-outcomes";
+import {
+  buildBlockingFailureResult,
+  buildFeatureCtxBlock,
+  buildHallucinatedAcQuoteResult,
+  buildPassedResult,
+  buildUngroundedFailClosedResult,
+  catchDispatchFailure,
+  classifyAdversarialFindings,
+  handleRetryExhaustedFailOpen,
+  handleTruncatedLooksLikeFail,
+  resolveDiffFileSet,
+  skipResult,
+} from "./adversarial-outcomes";
 import { collectDiffFileList as _collectDiffFileList } from "./diff-utils";
-import { llmFindingsToReviewFindings } from "./finding-projection";
 import { prepareAdversarialReviewInput } from "./prepare-inputs";
-import { classifyRecurrence, tagCoverageGap } from "./recurrence-demotion";
 import { writeReviewAudit } from "./review-audit";
 import type { AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
 
@@ -51,12 +70,12 @@ export interface RunAdversarialReviewOptions {
   priorFailures?: Array<{ stage: string; modelTier: string }>;
   blockingThreshold?: "error" | "warning" | "info";
   featureContextMarkdown?: string;
-  contextBundle?: import("../context/engine").ContextBundle;
+  contextBundle?: ContextBundle;
   projectDir?: string;
   naxIgnoreIndex?: NaxIgnoreIndex;
-  runtime?: import("../runtime").NaxRuntime;
+  runtime?: NaxRuntime;
   priorAdversarialIterations?: Iteration[];
-  resolvedTestPatterns?: import("../test-runners").ResolvedTestPatterns;
+  resolvedTestPatterns?: ResolvedTestPatterns;
 }
 
 /**
@@ -96,14 +115,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   });
 
   if (prepared.skipReason === "no git ref") {
-    return {
-      check: "adversarial",
-      success: true,
-      command: "",
-      exitCode: 0,
-      output: "skipped: no git ref",
-      durationMs: Date.now() - startTime,
-    };
+    return skipResult("skipped: no git ref", startTime);
   }
 
   const diffMode = adversarialConfig.diffMode ?? "ref";
@@ -114,24 +126,10 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   });
 
   if (prepared.skipReason === "no changes detected") {
-    return {
-      check: "adversarial",
-      success: true,
-      command: "",
-      exitCode: 0,
-      output: "skipped: no changes detected",
-      durationMs: Date.now() - startTime,
-    };
+    return skipResult("skipped: no changes detected", startTime);
   }
   if (prepared.skipReason === "no code changes") {
-    return {
-      check: "adversarial",
-      success: true,
-      command: "",
-      exitCode: 0,
-      output: "skipped: no code changes",
-      durationMs: Date.now() - startTime,
-    };
+    return skipResult("skipped: no code changes", startTime);
   }
 
   // biome-ignore lint/style/noNonNullAssertion: skipReason undefined ⇒ effectiveRef present
@@ -151,28 +149,11 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       storyId: story.id,
       model: adversarialConfig.model,
     });
-    return {
-      check: "adversarial",
-      success: true,
-      command: "",
-      exitCode: 0,
-      output: "skipped: no agent available for model tier",
-      durationMs: Date.now() - startTime,
-    };
+    return skipResult("skipped: no agent available for model tier", startTime);
   }
 
   // Build feature context block for the prompt.
-  // When a v2 ContextBundle is provided, use its pushMarkdown directly — the orchestrator
-  // already applied role filtering and dedup, so the v1 filterContextByRole() pass is
-  // skipped (it would silently drop ##-section content from v2's rendered output).
-  let featureCtxBlock = "";
-  if (contextBundle) {
-    const md = contextBundle.pushMarkdown.trim();
-    if (md) featureCtxBlock = `${md}\n\n---\n\n`;
-  } else if (featureContextMarkdown) {
-    const filtered = filterContextByRole(featureContextMarkdown, "reviewer-adversarial");
-    if (filtered.trim()) featureCtxBlock = `${filtered}\n\n---\n\n`;
-  }
+  const featureCtxBlock = buildFeatureCtxBlock(contextBundle, featureContextMarkdown);
 
   // ADR-019 Pattern A: dispatch via callOp so the hop routes through
   // AgentManager.runWithFallback + buildHopCallback, firing the middleware chain
@@ -186,9 +167,17 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     );
   }
 
-  // NOTE: llmCost stays 0 on the runtime path — buildHopCallback charges cost via
-  // costAggregator. ReviewCheckResult.cost is 0 for pipeline-managed reviews.
-  const llmCost = 0;
+  const outcomeCtx: AdversarialOutcomeCtx = {
+    runtime,
+    workdir,
+    projectDir,
+    storyId: story.id,
+    featureName,
+    blockingThreshold: blockingThreshold ?? "error",
+    startTime,
+    logger,
+  };
+
   const callCtx = {
     runtime,
     packageView: runtime.packages.resolve(workdir),
@@ -198,7 +187,10 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     featureName,
     contextBundle,
   };
-  let opResult: import("../operations/adversarial-review").AdversarialReviewOutput;
+
+  // NOTE: llmCost stays 0 on the runtime path — buildHopCallback charges cost via
+  // costAggregator. ReviewCheckResult.cost is 0 for pipeline-managed reviews.
+  let opResult: AdversarialReviewOutput;
   try {
     opResult = await _adversarialDeps.callOp(callCtx, adversarialReviewOp, {
       workdir,
@@ -219,82 +211,10 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       resolvedTestPatterns,
     });
   } catch (err) {
-    logger?.warn("adversarial", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
-    recordAdversarialAudit({
-      runtime,
-      workdir,
-      projectDir,
-      storyId: story.id,
-      featureName,
-      parsed: false,
-      looksLikeFail: false,
-      failOpen: true,
-      passed: true,
-      blockingThreshold,
-      result: null,
-    });
-    return {
-      check: "adversarial",
-      success: true,
-      failOpen: true,
-      command: "",
-      exitCode: 0,
-      output: `skipped: LLM call failed — ${String(err)}`,
-      durationMs: Date.now() - startTime,
-    };
+    return catchDispatchFailure(err, outcomeCtx);
   }
-  if (opResult.failOpen) {
-    logger?.warn("adversarial", "Retry exhausted — fail-open", { storyId: story.id });
-    recordAdversarialAudit({
-      runtime,
-      workdir,
-      projectDir,
-      storyId: story.id,
-      featureName,
-      parsed: false,
-      looksLikeFail: false,
-      failOpen: true,
-      passed: true,
-      blockingThreshold,
-      result: null,
-    });
-    return {
-      check: "adversarial",
-      success: true,
-      failOpen: true,
-      command: "",
-      exitCode: 0,
-      output: "adversarial review: could not parse LLM response (fail-open)",
-      durationMs: Date.now() - startTime,
-    };
-  }
-  if (opResult.looksLikeFail) {
-    logger?.warn("adversarial", "LLM returned truncated JSON with passed:false — treating as failure", {
-      storyId: story.id,
-    });
-    recordAdversarialAudit({
-      runtime,
-      workdir,
-      projectDir,
-      storyId: story.id,
-      featureName,
-      parsed: false,
-      looksLikeFail: true,
-      failOpen: false,
-      passed: false,
-      blockingThreshold,
-      result: null,
-    });
-    return {
-      check: "adversarial",
-      success: false,
-      command: "",
-      exitCode: 1,
-      output:
-        "adversarial review: LLM response truncated but indicated failure (passed:false found in partial response)",
-      durationMs: Date.now() - startTime,
-    };
-  }
+  if (opResult.failOpen) return handleRetryExhaustedFailOpen(outcomeCtx);
+  if (opResult.looksLikeFail) return handleTruncatedLooksLikeFail(outcomeCtx);
 
   // Emit review-reprompt-on-drop telemetry if hopBody executed a reprompt.
   if (opResult.repromptEvent) {
@@ -308,62 +228,24 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     });
   }
 
-  // verify() has already run the full filter pipeline (substantiate → AC-ground → split).
-  // opResult.findings = accepted findings (blocking + advisory); opResult.acDropped = drops for telemetry.
-  // opResult.passed preserves the model verdict after filtering so wrappers can
-  // still fail-closed when passed:false survives without remaining blockers.
-  const threshold = blockingThreshold ?? "error";
-  const allFindings = opResult.findings as AdversarialLLMFinding[];
-  const patterns = resolvedTestPatterns?.regex ?? [];
-  const testFileMatch = (file: string): boolean => patterns.some((re) => re.test(file));
-  const recurrenceCfg = adversarialConfig.recurrenceDemotion ?? { enabled: true, maxBlockingRounds: 2 };
-  const {
-    blocking: blockingFindings,
-    advisory: advisoryOnly,
-    demoted,
-  } = classifyRecurrence(allFindings, priorAdversarialIterations ?? [], recurrenceCfg, testFileMatch, threshold);
-  const advisoryFindings = [...advisoryOnly, ...demoted];
-  // Precomputed conversions so every downstream `advisoryFindings` projection
-  // (ReviewFinding for review-audit persistence, Finding for the pipeline
-  // result) tags the recurrence-demoted subset with `meta.coverageGap: true`
-  // (Fix design §7) without re-deriving the split at each call site.
-  // #1368 — `testFileMatch` also decides the fix lane: a finding located in a test
-  // file goes to the test-writer whatever its category says, because the implementer
-  // may not edit test files and would answer UNRESOLVED.
-  const advisoryReviewFindings = [
-    ...llmFindingsToReviewFindings(advisoryOnly, { source: "adversarial-review", isTestFile: testFileMatch }),
-    ...tagCoverageGap(
-      llmFindingsToReviewFindings(demoted, { source: "adversarial-review", isTestFile: testFileMatch }),
-    ),
-  ];
-  const advisoryFindingsAsFindings = [
-    ...toAdversarialReviewFindings(advisoryOnly, { isTestFile: testFileMatch }),
-    ...tagCoverageGap(toAdversarialReviewFindings(demoted, { isTestFile: testFileMatch })),
-  ];
-  const acDropped = opResult.acDropped ?? [];
-  const acks = opResult.acks; // #1423 — recorded alongside findings, never as one.
+  const classification = classifyAdversarialFindings(
+    opResult,
+    blockingThreshold,
+    priorAdversarialIterations,
+    adversarialConfig,
+    resolvedTestPatterns,
+  );
+  const { threshold, blockingFindings, advisoryFindings, acDropped } = classification;
 
   // Issue #986 — build diff file set for structural counterfactual telemetry.
-  // Embedded mode: parse `diff` (already in memory). Ref mode: shell git diff
-  // --name-only via collectDiffFileList. diffAvailable=false signals "exclude
-  // this entry from percentage calculations" to the aggregation script.
-  let diffFiles: ReadonlySet<string>;
-  let diffAvailable: boolean;
-  if (diff && diff.length > 0) {
-    diffFiles = extractDiffFiles(diff);
-    diffAvailable = true;
-  } else {
-    const repoRoot = projectDir ?? workdir;
-    const packageDir = workdir !== repoRoot ? workdir : undefined;
-    const list = await _adversarialDeps.collectDiffFileList(workdir, effectiveRef, { naxIgnoreIndex, packageDir });
-    if (list === undefined) {
-      diffFiles = new Set();
-      diffAvailable = false;
-    } else {
-      diffFiles = new Set(list);
-      diffAvailable = true;
-    }
-  }
+  const { diffFiles, diffAvailable } = await resolveDiffFileSet(
+    diff,
+    workdir,
+    projectDir,
+    effectiveRef,
+    naxIgnoreIndex,
+    _adversarialDeps.collectDiffFileList,
+  );
 
   const { adversarialDropAnalysis, adversarialAcceptAnalysis } = buildCounterfactualTelemetry({
     acDropped,
@@ -389,57 +271,10 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   }
 
   const durationMs = Date.now() - startTime;
+  const telemetry = { adversarialDropAnalysis, adversarialAcceptAnalysis };
 
   if (blockingFindings.length > 0) {
-    logger?.warn("review", `Adversarial review failed: ${blockingFindings.length} blocking findings`, {
-      storyId: story.id,
-      durationMs,
-      findings: blockingFindings.map((f) => ({
-        severity: f.severity,
-        category: f.category,
-        file: f.file,
-        line: f.line,
-        issue: f.issue,
-      })),
-    });
-    recordAdversarialAudit({
-      runtime,
-      workdir,
-      projectDir,
-      storyId: story.id,
-      featureName,
-      parsed: true,
-      failOpen: false,
-      passed: false,
-      blockingThreshold: threshold,
-      result: {
-        passed: false,
-        findings: llmFindingsToReviewFindings(allFindings, { source: "adversarial-review", isTestFile: testFileMatch }),
-      },
-      advisoryFindings: advisoryFindings.length > 0 ? advisoryReviewFindings : undefined,
-      diffAvailable,
-      adversarialDropAnalysis,
-      adversarialAcceptAnalysis,
-      acks,
-    });
-    const output =
-      blockingFindings.length > 0
-        ? `Adversarial review failed:\n\n${formatFindings(blockingFindings)}`
-        : "Adversarial review failed (no findings)";
-    return {
-      check: "adversarial",
-      success: false,
-      command: "",
-      exitCode: 1,
-      output,
-      durationMs,
-      findings:
-        blockingFindings.length > 0
-          ? toAdversarialReviewFindings(blockingFindings, { isTestFile: testFileMatch })
-          : undefined,
-      advisoryFindings: advisoryFindings.length > 0 ? advisoryFindingsAsFindings : undefined,
-      cost: llmCost,
-    };
+    return buildBlockingFailureResult(outcomeCtx, classification, telemetry, diffAvailable, durationMs);
   }
 
   // #1378 — MODEL verdict, not `opResult.passed`: the latter now honours blockingThreshold,
@@ -447,126 +282,12 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   // concerns the model could not ground (Case B) and losing the demoted drops (Case A).
   if (!opResult.modelPassed && acDropped.length > 0) {
     if (acDropped.every((d) => d.code === "ac_quote_not_substring")) {
-      // Case A: every blocking finding cited a quote that does not exist in any AC.
-      // The model fabricated its grounding. Treat as pass — demote each dropped finding
-      // to "warning" and surface as advisory so it remains auditable.
-      const demotedFindings = toAdversarialReviewFindings(
-        acDropped.map((d) => ({ ...d.finding, severity: "warning" as const, acQuote: undefined, acIndex: undefined })),
-        { isTestFile: testFileMatch },
-      );
-      const allAdvisory = [...advisoryFindingsAsFindings, ...demotedFindings];
-
-      logger?.warn("review", "Adversarial review passed: all blocking findings discarded as hallucinated AC quotes", {
-        storyId: story.id,
-        durationMs,
-        droppedCount: acDropped.length,
-        drops: acDropped.map((d) => ({ file: d.finding.file, issue: d.finding.issue })),
-      });
-      recordAdversarialAudit({
-        runtime,
-        workdir,
-        projectDir,
-        storyId: story.id,
-        featureName,
-        parsed: true,
-        acks,
-        failOpen: false,
-        passed: true,
-        passReason: "ac_quote_not_substring_demoted",
-        blockingThreshold: threshold,
-        result: { passed: true, findings: [] },
-        advisoryFindings: allAdvisory.length > 0 ? allAdvisory : undefined,
-        diffAvailable,
-        adversarialDropAnalysis,
-        adversarialAcceptAnalysis: [],
-      });
-      return {
-        check: "adversarial",
-        success: true,
-        passReason: "ac_quote_not_substring_demoted",
-        command: "",
-        exitCode: 0,
-        output: `Adversarial review passed: ${acDropped.length} blocking finding(s) demoted to advisory — all cited AC quotes were fabricated and could not be validated.`,
-        durationMs,
-        advisoryFindings: allAdvisory.length > 0 ? allAdvisory : undefined,
-        cost: llmCost,
-      };
+      return buildHallucinatedAcQuoteResult(outcomeCtx, classification, telemetry, diffAvailable, durationMs);
     }
-
-    // Case B: mix includes missing_ac_quote or ac_quote_does_not_constrain_locus —
-    // fail-closed (existing behavior unchanged).
-    logger?.warn("review", "Adversarial review fail-closed: blocking findings dropped as ungrounded", {
-      storyId: story.id,
-      durationMs,
-      droppedCount: acDropped.length,
-      dropCodes: acDropped.map((d) => d.code),
-    });
-    const dropSummary = acDropped
-      .map((d, i) => `${i + 1}. [${d.code}] ${d.finding.file ?? "<unknown>"}: ${d.finding.issue}`)
-      .join("\n");
-    recordAdversarialAudit({
-      runtime,
-      workdir,
-      projectDir,
-      storyId: story.id,
-      featureName,
-      parsed: true,
-      acks,
-      failOpen: false,
-      passed: false,
-      blockingThreshold: threshold,
-      result: { passed: false, findings: [] },
-      advisoryFindings: advisoryFindings.length > 0 ? advisoryReviewFindings : undefined,
-      diffAvailable,
-      adversarialDropAnalysis,
-      adversarialAcceptAnalysis: [],
-    });
-    return {
-      check: "adversarial",
-      success: false,
-      command: "",
-      exitCode: 1,
-      output: `Adversarial review failed: ${acDropped.length} blocking finding(s) dropped as ungrounded — the model emitted "passed: false" with concerns it could not ground in any acceptance criterion. Drops:\n\n${dropSummary}`,
-      durationMs,
-      advisoryFindings: advisoryFindings.length > 0 ? advisoryFindingsAsFindings : undefined,
-      cost: llmCost,
-    };
+    return buildUngroundedFailClosedResult(outcomeCtx, classification, telemetry, diffAvailable, durationMs);
   }
 
   // passed — either the model passed with no blocking findings, or only advisory
   // findings remained after filtering and there were no AC-grounding drops.
-  logger?.info("review", "Adversarial review passed", { storyId: story.id, durationMs });
-  recordAdversarialAudit({
-    runtime,
-    workdir,
-    projectDir,
-    storyId: story.id,
-    featureName,
-    parsed: true,
-    acks,
-    failOpen: false,
-    passed: true,
-    blockingThreshold: threshold,
-    result: {
-      passed: true,
-      findings: llmFindingsToReviewFindings(allFindings, { source: "adversarial-review", isTestFile: testFileMatch }),
-    },
-    advisoryFindings: advisoryFindings.length > 0 ? advisoryReviewFindings : undefined,
-    diffAvailable,
-    adversarialDropAnalysis,
-    adversarialAcceptAnalysis: [],
-  });
-  return {
-    check: "adversarial",
-    success: true,
-    command: "",
-    exitCode: 0,
-    output:
-      allFindings.length === 0
-        ? "Adversarial review passed"
-        : "Adversarial review passed (all findings were advisory — below blocking threshold)",
-    durationMs,
-    advisoryFindings: advisoryFindings.length > 0 ? advisoryFindingsAsFindings : undefined,
-    cost: llmCost,
-  };
+  return buildPassedResult(outcomeCtx, classification, telemetry, diffAvailable, durationMs);
 }

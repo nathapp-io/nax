@@ -8,6 +8,7 @@
 
 export { Logger, initLogger, getLogger, getSafeLogger, resetLogger, addSink } from "./logger.js";
 export { formatConsole, formatJsonl } from "./formatters.js";
+export { redactSecrets } from "./redact.js";
 export type {
   LogLevel,
   LogEntry,
