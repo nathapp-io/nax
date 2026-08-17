@@ -131,11 +131,6 @@ export function findingsOf(ctx: OutputsCtx, phase: FinishPhase): Finding[] {
  * (round 1), no commit landed since it (nothing new to look at), or the commit
  * step recorded no `shaBefore`.
  */
-/** Why this phase's last review was sent back, so the retry is told what was missing. */
-export function reviewGapsOf(ctx: OutputsCtx, phase: "spec" | "quality"): string[] {
-  return ((ctx.outputs as Record<string, { gaps?: string[] } | undefined>)[`route_${phase}`]?.gaps ?? []) as string[];
-}
-
 export function incrementalSince(ctx: OutputsCtx & StepsCtx, phase: "spec" | "quality"): string | null {
   const steps = ctx.state.steps ?? [];
   const lastReview = steps.map((s) => s.nodeId).lastIndexOf(`review_${phase}`);
@@ -147,4 +142,9 @@ export function incrementalSince(ctx: OutputsCtx & StepsCtx, phase: "spec" | "qu
     );
   if (!firstCommit) return null;
   return (firstCommit.output as { shaBefore?: string | null } | undefined)?.shaBefore ?? null;
+}
+
+/** Why this phase's last review was sent back, so the retry is told what was missing. */
+export function reviewGapsOf(ctx: OutputsCtx, phase: "spec" | "quality"): string[] {
+  return ((ctx.outputs as Record<string, { gaps?: string[] } | undefined>)[`route_${phase}`]?.gaps ?? []) as string[];
 }
