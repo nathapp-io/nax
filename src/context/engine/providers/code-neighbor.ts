@@ -367,43 +367,57 @@ async function collectNeighbors(
   contentCacheState: ContentCacheState,
   siblingTestContext?: { globs: readonly string[]; regex: readonly RegExp[] },
 ): Promise<{ neighbors: string[]; truncated: boolean }> {
-  const neighbors = new Set<string>();
+  // Forward/reverse deps use independent budgets so import-heavy files can't
+  // starve the reverse-dep scan (#1611).
+  const forwardNeighbors = new Set<string>();
   let anyTruncated = false;
 
-  // Forward deps (JS/TS only) — check existence first (consistent with original
-  // behaviour), then read via the shared cache.
   const ownAbsPath = join(workdir, filePath);
   if (await _codeNeighborDeps.fileExists(ownAbsPath)) {
     const ownContent = await readCached(ownAbsPath, contentCacheState, _codeNeighborDeps);
     if (ownContent !== null && ownContent.length > 0) {
       for (const spec of parseImportSpecifiers(ownContent)) {
         const resolved = resolveImport(spec, filePath, workdir);
-        if (resolved && resolved !== filePath) neighbors.add(resolved);
+        if (resolved && resolved !== filePath) forwardNeighbors.add(resolved);
       }
     }
   }
 
-  // Reverse deps — scan for files that import this file.
   // Quick check uses the base name (without extension) — broad but avoids parsing every file.
   const fileBaseName = (filePath.split("/").pop() ?? filePath).replace(/\.[^.]+$/, "");
   const fileNoExt = filePath.replace(/\.[^.]+$/, "");
 
+  const reverseNeighbors = new Set<string>();
   outer: for (const { workdir: scanWorkdir, files: srcFiles, truncated } of scannedDirs) {
     if (truncated) anyTruncated = true;
     for (const srcFile of srcFiles) {
-      if (neighbors.size >= MAX_NEIGHBORS_PER_FILE) break outer;
+      if (reverseNeighbors.size >= MAX_NEIGHBORS_PER_FILE) break outer;
       if (srcFile === filePath) continue;
       const content = await readCached(join(scanWorkdir, srcFile), contentCacheState, _codeNeighborDeps);
       if (content?.includes(fileBaseName)) {
         for (const spec of parseImportSpecifiers(content)) {
           const resolved = resolveImport(spec, srcFile, scanWorkdir);
           if (resolved === filePath || resolved === fileNoExt) {
-            neighbors.add(srcFile);
+            reverseNeighbors.add(srcFile);
             break;
           }
         }
       }
     }
+  }
+
+  // Reserve a share of slots for reverse deps — otherwise forward deps
+  // (inserted first) would crowd them out at the final slice() below.
+  const reverseSlots = Math.min(reverseNeighbors.size, Math.ceil(MAX_NEIGHBORS_PER_FILE / 2));
+  const forwardSlots = MAX_NEIGHBORS_PER_FILE - reverseSlots;
+  const neighbors = new Set<string>();
+  for (const f of forwardNeighbors) {
+    if (neighbors.size >= forwardSlots) break;
+    neighbors.add(f);
+  }
+  for (const r of reverseNeighbors) {
+    if (neighbors.size >= MAX_NEIGHBORS_PER_FILE) break;
+    neighbors.add(r);
   }
 
   // Sibling test — resolver-driven (ADR-009). Skipped entirely when no context

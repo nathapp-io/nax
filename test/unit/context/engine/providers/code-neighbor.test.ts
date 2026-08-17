@@ -155,6 +155,20 @@ describe("CodeNeighborProvider", () => {
     expect((await provider.fetch(makeRequest({ touchedFiles: ["src/utils/helper.ts"] }))).chunks[0]?.content ?? "").toContain("src/service.ts");
   });
 
+  test("reverse deps are not starved when forward deps alone reach MAX_NEIGHBORS_PER_FILE (#1611)", async () => {
+    // 8 forward deps (own file's imports) — meets MAX_NEIGHBORS_PER_FILE on their own.
+    const forwardDeps = Array.from({ length: 8 }, (_, i) => `./dep${i}`);
+    const serviceContent = forwardDeps.map((d) => `import "${d}"`).join("\n");
+    const files: Record<string, string> = { "src/service.ts": serviceContent };
+    for (let i = 0; i < 8; i++) files[`src/dep${i}.ts`] = "";
+    files["src/consumer.ts"] = 'import "./service"';
+
+    setupDeps({ files, globFiles: ["src/consumer.ts"] });
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/service.ts"] }));
+    const content = result.chunks[0]?.content ?? "";
+    expect(content).toContain("src/consumer.ts");
+  });
+
   test("combines neighbors from multiple files into one chunk", async () => {
     setupDeps({
       files: { "src/a.ts": "", "src/b.ts": "" },
