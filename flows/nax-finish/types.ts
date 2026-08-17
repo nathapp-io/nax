@@ -83,6 +83,8 @@ export interface ReviewVerdict {
   /** Whether the section was present at all — absent and empty are different failures. */
   sawTouchpointsSection?: boolean;
   sawWalkSection?: boolean;
+  /** Set on a `fix_<phase>` output: what the fixer did with each finding it was handed. */
+  dispositions?: FindingDisposition[];
 }
 /** Wall-clock budgets, forwarded from `finish.autoFlow.timeouts` by the plugin. */
 export interface FinishTimeouts {
@@ -181,6 +183,8 @@ export interface FinishRound {
    * than by matching round timestamps against `git log`.
    */
   sha?: string;
+  /** What the fixer did with each finding it was handed (spec/quality phases). */
+  dispositions?: FindingDisposition[];
 }
 
 export interface FinishInput {

@@ -134,6 +134,19 @@ describe("parseFixVerdict", () => {
   test("never throws on empty output", () => {
     expect(parseFixVerdict("").route).toBe("proceed");
   });
+
+  test("keeps the dispositions it was given", () => {
+    const v = parseFixVerdict("## DISPOSITIONS\n[1] fixed\n[2] rejected — evidence: test/a.test.ts:9\n");
+    expect(v.dispositions).toHaveLength(2);
+    expect(v.dispositions?.[1]).toMatchObject({ index: 2, disposition: "rejected" });
+    expect(v.route).toBe("proceed");
+  });
+
+  test("still proceeds on an unreadable fix reply", () => {
+    const v = parseFixVerdict("I did the thing.");
+    expect(v.route).toBe("proceed");
+    expect(v.dispositions ?? []).toEqual([]);
+  });
 });
 
 const stepsCtx = (steps: FlowStepRecord[]) => ({ state: { steps }, outputs: {} });

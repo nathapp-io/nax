@@ -24,7 +24,7 @@
  */
 import { stat } from "node:fs/promises";
 import * as path from "node:path";
-import type { ReviewVerdict } from "../types";
+import type { FindingDisposition, ReviewVerdict } from "../types";
 
 /** Paths stat-ed per review. A reviewer listing more than this is not the failure mode. */
 const MAX_CHECKED = 20;
@@ -64,4 +64,18 @@ export async function auditGaps(verdict: ReviewVerdict, workdir: string): Promis
     gaps.push("no `## WALK` section: the per-AC (spec) or per-function (quality) enumeration is required");
   }
   return gaps;
+}
+
+/** Mark any rejection whose cited `file:line` does not resolve in the repo. */
+export async function validateDispositions(
+  workdir: string,
+  dispositions: FindingDisposition[],
+): Promise<FindingDisposition[]> {
+  return Promise.all(
+    dispositions.map(async (d) => {
+      if (d.disposition !== "rejected" || !d.evidence) return d;
+      const file = d.evidence.split(":")[0];
+      return (await exists(workdir, file)) ? d : { ...d, evidenceMissing: true };
+    }),
+  );
 }

@@ -411,22 +411,58 @@ export function buildReviewPrompt(
   ].join("\n\n");
 }
 
+/**
+ * The fix node's contract.
+ *
+ * For the two review phases it is no longer "apply these". Every finding used to
+ * be implemented unconditionally, so a false positive was always built — and on
+ * the diff behind #1614 the comparison review raised one finding a human
+ * withdrew, because the change it proposed contradicted a test deliberately
+ * pinning the current behaviour. `quality_gates` would then have proved the
+ * resulting suite green. Reporting more findings without a way to reject one
+ * scales the false-positive exposure with the true-positive one, so the two ship
+ * together.
+ *
+ * A rejection must cite the file:line that pins the behaviour: an unevidenced
+ * "I disagree" is how a real finding gets waived, and `commit_<phase>` checks
+ * that the cited path exists.
+ */
 export function fixPrompt(
   phase: "acceptance" | "spec" | "quality" | "gate",
   ctx: { outputs: Record<string, unknown> },
 ): string {
-  const outs = ctx.outputs as Record<string, { findings?: unknown; output?: string }>;
-  const detail =
-    phase === "gate"
-      ? (outs.quality_gates?.output ?? "")
-      : phase === "acceptance"
-        ? (outs.acceptance?.output ?? "")
-        : JSON.stringify(outs[`review_${phase}`]?.findings ?? []);
+  const outs = ctx.outputs as Record<string, { findings?: Finding[]; output?: string }>;
+  if (phase === "gate" || phase === "acceptance") {
+    const detail = phase === "gate" ? (outs.quality_gates?.output ?? "") : (outs.acceptance?.output ?? "");
+    return [
+      `Apply the recommended fixes for the ${phase} phase, directly in the repo.`,
+      "Do not commit, push, or open PRs — nax-finish commits and pushes your edits itself.",
+      `Context:\n${detail}`,
+      "After fixing, re-run the feature's acceptance tests and the relevant checks; only proceed when they pass.",
+      'Return exactly {"route":"proceed"} when done and green.',
+    ].join("\n\n");
+  }
+  const findings = outs[`review_${phase}`]?.findings ?? [];
+  const numbered = findings
+    .map((f, i) => `[${i + 1}] [${f.severity}] ${f.title}\n  Problem: ${f.problem}\n  Fix: ${f.fix}`)
+    .join("\n");
   return [
-    `Apply the recommended fixes for the ${phase} phase, directly in the repo.`,
+    `Resolve the ${phase} review findings below, directly in the repo.`,
     "Do not commit, push, or open PRs — nax-finish commits and pushes your edits itself.",
-    `Context:\n${detail}`,
-    "After fixing, re-run the feature's acceptance tests and the relevant checks; only proceed when they pass.",
-    'Return exactly {"route":"proceed"} when done and green.',
+    numbered,
+    [
+      "A finding may be REJECTED rather than fixed — but only on evidence, not on preference.",
+      "Reject when the change it asks for would contradict an existing test that deliberately",
+      "pins the current behaviour, or a spec statement that requires it. Cite the `file:line`.",
+      "Anything else you fix.",
+    ].join("\n"),
+    [
+      "After fixing, re-run the feature's acceptance tests and the relevant checks; only proceed when they pass.",
+      "Then end your reply with one line per finding, in this exact shape:",
+      "",
+      "## DISPOSITIONS",
+      "[1] fixed",
+      "[2] rejected — evidence: test/unit/foo.test.ts:42",
+    ].join("\n"),
   ].join("\n\n");
 }

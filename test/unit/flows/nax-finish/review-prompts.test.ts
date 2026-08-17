@@ -50,14 +50,32 @@ describe("fixPrompt", () => {
     expect(p).toContain("test XYZ failed");
   });
 
-  test("spec phase pulls review_spec.findings as JSON", () => {
-    const p = fixPrompt("spec", { outputs: { review_spec: { findings: [{ severity: "HIGH", title: "t" }] } } });
-    expect(p).toContain('"severity":"HIGH"');
+  test("spec phase numbers review_spec.findings", () => {
+    const p = fixPrompt("spec", {
+      outputs: { review_spec: { findings: [{ severity: "HIGH", title: "t", problem: "p", fix: "f" }] } },
+    });
+    expect(p).toContain("[1] [HIGH] t");
   });
 
-  test("quality phase pulls review_quality.findings as JSON", () => {
-    const p = fixPrompt("quality", { outputs: { review_quality: { findings: [{ severity: "LOW", title: "q" }] } } });
-    expect(p).toContain('"severity":"LOW"');
+  test("quality phase numbers review_quality.findings", () => {
+    const p = fixPrompt("quality", {
+      outputs: { review_quality: { findings: [{ severity: "LOW", title: "q", problem: "p", fix: "f" }] } },
+    });
+    expect(p).toContain("[1] [LOW] q");
+  });
+
+  test("the spec fix prompt numbers its findings and demands a disposition for each", () => {
+    const p = fixPrompt("spec", {
+      outputs: { review_spec: { findings: [{ severity: "HIGH", title: "T", problem: "p", fix: "f" }] } },
+    });
+    expect(p).toContain("[1] [HIGH] T");
+    expect(p).toContain("## DISPOSITIONS");
+    expect(p).toContain("rejected — evidence:");
+  });
+
+  test("the gate fix prompt has no dispositions section — it has no findings", () => {
+    const p = fixPrompt("gate", { outputs: { quality_gates: { output: "lint failed" } } });
+    expect(p).not.toContain("## DISPOSITIONS");
   });
 });
 

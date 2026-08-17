@@ -81,11 +81,12 @@ import {
   qualityGatesNode,
   resolveFeature,
   routeReviewAndRecord,
+  validateDispositions,
   writeResult,
 } from "./steps";
 import type { Forge } from "./steps/forge";
 import { _prBodyDeps, buildFinishBody, buildFinishTitle } from "./steps/pr-body";
-import type { FinishInput, FinishPhase, FinishResult, ReviewVerdict } from "./types";
+import type { FindingDisposition, FinishInput, FinishPhase, FinishResult, ReviewVerdict } from "./types";
 import { parseFixVerdict, parseReviewVerdict } from "./verdict";
 
 /**
@@ -187,6 +188,16 @@ function commitFixNode(phase: FinishPhase) {
           : committed
             ? "changed"
             : "unchanged";
+      // A rejection is only as good as its citation, so the path is checked the
+      // same way a reviewer's touchpoints are. A missing file does not veto the
+      // rejection — the fixer may have cited a line rather than a path, or moved
+      // the file — it marks it, so the PR body can say the waiver is unverified
+      // rather than silently presenting it as evidenced.
+      const dispositions = await validateDispositions(
+        i.workdir,
+        (ctx.outputs as Record<string, { dispositions?: FindingDisposition[] } | undefined>)[`fix_${phase}`]
+          ?.dispositions ?? [],
+      );
       await appendRound(
         i,
         buildCommitRound({
@@ -198,6 +209,7 @@ function commitFixNode(phase: FinishPhase) {
           failing: phase === "gate" ? (gateOutputs(ctx).failing ?? []) : undefined,
           shaAfter,
           now: new Date().toISOString(),
+          dispositions,
         }),
       );
       return { committed, route, shaBefore, shaAfter };

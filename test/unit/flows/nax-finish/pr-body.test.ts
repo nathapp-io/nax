@@ -151,6 +151,23 @@ describe("buildFinishBody — Review rounds (US-002 AC8-AC12)", () => {
     expect(body).toContain("- [LOW] Naming inconsistency");
   });
 
+  test("a rejected finding is rendered as waived, with its evidence", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        rounds: [
+          committedRound({
+            phase: "quality",
+            outcome: "fixed",
+            findings: [finding({ severity: "LOW", title: "Dead param" })],
+            dispositions: [{ index: 1, disposition: "rejected", evidence: "test/unit/a.test.ts:9" }],
+          }),
+        ],
+      }),
+    );
+    expect(body).toContain("_rejected_");
+    expect(body).toContain("test/unit/a.test.ts:9");
+  });
+
   test("renders the abbreviated seven-character SHA in the round heading when committed", () => {
     const body = buildFinishBody(
       baseCtx({

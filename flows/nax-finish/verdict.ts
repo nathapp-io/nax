@@ -12,7 +12,7 @@
  * `escalate` node that exists to report precisely this.
  */
 import { extractJsonObject } from "acpx/flows";
-import { parseReviewReport } from "./findings-parse";
+import { parseDispositions, parseReviewReport } from "./findings-parse";
 import { type OutputsCtx, type StepsCtx, fixAttemptCount } from "./flow-ctx";
 import type { Finding, ReviewVerdict } from "./types";
 
@@ -101,10 +101,16 @@ export function parseReviewVerdict(text: string): ReviewVerdict {
  * (`fix_spec → commit_spec`), so a reprompt route would have nowhere to go.
  */
 export function parseFixVerdict(text: string): ReviewVerdict {
+  const dispositions = parseDispositions(text);
+  // Route is always "proceed" — nothing downstream reads it (see docstring
+  // above), and computing it from `parseVerdictJson` is unsafe here: acpx's
+  // balanced-JSON matcher happily parses a bare `[1]` (the disposition line
+  // `[1] fixed`) as a one-element JSON array, which would silently flip the
+  // route to "clean" on a perfectly good disposition-only reply.
   try {
-    return parseVerdictJson(text);
+    return { route: "proceed", findings: parseVerdictJson(text).findings, dispositions };
   } catch {
-    return { route: "proceed", findings: [] };
+    return { route: "proceed", findings: [], dispositions };
   }
 }
 

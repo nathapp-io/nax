@@ -25,7 +25,7 @@ import { readSpecSummary, resolveNarrative } from "../narrative";
 import { findPrTemplate } from "../pr-template";
 import { type BodySection, type TemplateMode, mergeTemplate } from "../pr-template-merge";
 import { resolveTitle } from "../pr-title";
-import type { Finding, FinishInput, FinishRound, RunFn } from "../types";
+import type { Finding, FindingDisposition, FinishInput, FinishRound, RunFn } from "../types";
 import type { Forge } from "./forge";
 import { readRounds } from "./result";
 
@@ -370,7 +370,10 @@ function buildRoundBlock(round: FinishRound): string {
     if (round.outcome === "incomplete") {
       lines.push("- _not acted on — the review was sent back for missing evidence sections_");
     }
-    for (const finding of round.findings) lines.push(renderFinding(finding));
+    for (const [i, finding] of round.findings.entries()) {
+      const d = round.dispositions?.find((x) => x.index === i + 1);
+      lines.push(d?.disposition === "rejected" ? renderRejected(finding, d) : renderFinding(finding));
+    }
   }
   return lines.join("\n");
 }
@@ -382,6 +385,19 @@ function buildRoundsSection(rounds: FinishRound[]): string | null {
 
 function renderFinding(finding: Finding): string {
   return `- [${finding.severity}] ${finding.title}`;
+}
+
+/**
+ * A waived finding, shown as waived.
+ *
+ * The alternative — dropping it — would make a rejection indistinguishable from
+ * a fix in the only artifact a human reads, which is the failure this whole
+ * mechanism exists to avoid.
+ */
+function renderRejected(finding: Finding, d: FindingDisposition): string {
+  const evidence = d.evidence ? `\`${d.evidence}\`` : "_no evidence cited_";
+  const caveat = d.evidenceMissing ? " — **evidence path not found**" : "";
+  return `- [${finding.severity}] ${finding.title} — _rejected_: ${evidence}${caveat}`;
 }
 
 /**
