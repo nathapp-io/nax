@@ -1,5 +1,5 @@
 ---
-priority: 20
+priority: 40
 appliesTo:
   - "test/**/*.test.ts"
 stages:

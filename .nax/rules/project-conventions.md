@@ -1,8 +1,21 @@
 ---
-priority: 30
+priority: 20
 appliesTo:
   - "src/**/*.ts"
   - "bin/*.ts"
+stages:
+  - "context"
+  - "execution"
+  - "tdd-test-writer"
+  - "tdd-implementer"
+  - "rectify"
+  - "autofix"
+  - "single-session"
+  - "tdd-simple"
+  - "no-test"
+  - "batch"
+  - "review-semantic"
+  - "review-adversarial"
 ---
 
 # Project Conventions

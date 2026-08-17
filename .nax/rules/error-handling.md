@@ -1,5 +1,5 @@
 ---
-priority: 10
+priority: 15
 appliesTo:
   - "src/**/*.ts"
 stages:

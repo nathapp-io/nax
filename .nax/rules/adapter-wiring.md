@@ -14,6 +14,17 @@ appliesTo:
   - "src/verification/**/*.ts"
   - "src/runtime/**/*.ts"
   - "src/session/**/*.ts"
+stages:
+  - "context"
+  - "execution"
+  - "tdd-implementer"
+  - "rectify"
+  - "autofix"
+  - "single-session"
+  - "tdd-simple"
+  - "no-test"
+  - "batch"
+  - "review-adversarial"
 ---
 
 # Adapter Wiring

@@ -6,6 +6,16 @@ appliesTo:
   - "src/routing/**/*.ts"
   - "src/pipeline/**/*.ts"
   - "src/execution/**/*.ts"
+stages:
+  - "context"
+  - "execution"
+  - "tdd-implementer"
+  - "rectify"
+  - "autofix"
+  - "single-session"
+  - "tdd-simple"
+  - "no-test"
+  - "batch"
 ---
 
 # Retry Strategy

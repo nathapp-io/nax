@@ -1,5 +1,5 @@
 ---
-priority: 40
+priority: 10
 appliesTo:
   - "src/**/*.ts"
   - "bin/*.ts"
