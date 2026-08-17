@@ -9,4 +9,5 @@ export * from "./pr";
 export * from "./pr-narrative";
 export * from "./commit-round";
 export * from "./result";
+export * from "./review-audit";
 export * from "./review-round";

@@ -90,17 +90,6 @@ describe("reprompt edges", () => {
     },
   );
 
-  test("review_quality leads with the retry notice after a reprompt", () => {
-    const node = flow.nodes.review_quality as unknown as { prompt: (c: FlowNodeContext) => string };
-    const prompt = node.prompt(
-      ctxOf({
-        outputs: { load_ctx: { base: "origin/main", specPath: "spec.md" } },
-        steps: reviewRounds("quality", 1, REPROMPT_VERDICT),
-      }),
-    );
-    expect(prompt).toContain("previous reply could not be parsed");
-  });
-
   test("a retried review is a FULL review, not an incremental one", () => {
     // incrementalSince scopes a re-review to firstCommit.shaBefore..HEAD by finding
     // the first commit_* step after the last review_<phase>. On a reprompt re-entry
@@ -143,17 +132,6 @@ describe("reprompt edges", () => {
     );
     expect(out.route).toBe("escalate");
     expect(out.escalationReason).toContain("after 2 attempts");
-  });
-
-  test("review_spec leads with the retry notice after a reprompt", () => {
-    const node = flow.nodes.review_spec as unknown as { prompt: (c: FlowNodeContext) => string };
-    const prompt = node.prompt(
-      ctxOf({
-        outputs: { load_ctx: { base: "origin/main", specPath: "spec.md" } },
-        steps: reviewRounds("spec", 1, REPROMPT_VERDICT),
-      }),
-    );
-    expect(prompt).toContain("previous reply could not be parsed");
   });
 
   test("a retried spec review is a FULL review, not an incremental one", () => {

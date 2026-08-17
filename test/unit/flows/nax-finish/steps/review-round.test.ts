@@ -18,6 +18,26 @@ const INPUT = {
 
 const FINDING = { severity: "HIGH", title: "t", problem: "p", fix: "f" };
 
+/** A verdict that discharges the review-audit gate — no `incomplete` gaps. */
+const COMPLETE = {
+  sawTouchpointsSection: true,
+  sawWalkSection: true,
+  touchpoints: [{ path: "none", note: "n" }],
+  walk: ["AC-1 Covered — yes"],
+};
+
+/**
+ * A verdict `auditGaps` flags: TOUCHPOINTS is fine but `## WALK` never showed
+ * up. Mirrors `COMPLETE` except for the one field that makes it gapped, so
+ * the only thing under test is the WALK obligation.
+ */
+const MISSING_WALK = {
+  sawTouchpointsSection: true,
+  sawWalkSection: false,
+  touchpoints: [{ path: "none", note: "n" }],
+  walk: [],
+};
+
 /** Capture every round `routeReviewAndRecord` appends, parsed back from JSONL. */
 function captureRounds(): FinishRound[] {
   const written: FinishRound[] = [];
@@ -36,7 +56,7 @@ const ctxWith = (verdict: unknown, steps = [makeFlowStep("review_quality")]) => 
 describe("routeReviewAndRecord", () => {
   test("records a round when the review passes with no findings", async () => {
     const rounds = captureRounds();
-    const r = await routeReviewAndRecord(ctxWith({ route: "clean", findings: [] }), "quality");
+    const r = await routeReviewAndRecord(ctxWith({ route: "clean", findings: [], ...COMPLETE }), "quality");
 
     expect(r.route).toBe("clean");
     expect(rounds).toHaveLength(1);
@@ -53,7 +73,7 @@ describe("routeReviewAndRecord", () => {
     // The round is appended at `commit_<phase>`, where the findings AND the
     // resulting commit are both known. Recording here too would double-count it.
     const rounds = captureRounds();
-    const r = await routeReviewAndRecord(ctxWith({ route: "proceed", findings: [FINDING] }), "quality");
+    const r = await routeReviewAndRecord(ctxWith({ route: "proceed", findings: [FINDING], ...COMPLETE }), "quality");
 
     expect(r.route).toBe("fix");
     expect(rounds).toEqual([]);
@@ -89,7 +109,7 @@ describe("routeReviewAndRecord", () => {
       makeFlowStep("commit_quality"),
       makeFlowStep("review_quality"),
     ];
-    await routeReviewAndRecord(ctxWith({ route: "clean", findings: [] }, steps), "quality");
+    await routeReviewAndRecord(ctxWith({ route: "clean", findings: [], ...COMPLETE }, steps), "quality");
 
     expect(rounds[0].attempt).toBe(2);
   });
@@ -105,7 +125,37 @@ describe("routeReviewAndRecord", () => {
     _resultDeps.appendText = async () => {
       throw new Error("EACCES");
     };
-    const r = await routeReviewAndRecord(ctxWith({ route: "clean", findings: [] }), "quality");
+    const r = await routeReviewAndRecord(ctxWith({ route: "clean", findings: [], ...COMPLETE }), "quality");
     expect(r.route).toBe("clean");
+  });
+
+  test("routes a gapped verdict to incomplete and records the round with that outcome", async () => {
+    const rounds = captureRounds();
+    const r = await routeReviewAndRecord(ctxWith({ route: "clean", findings: [], ...MISSING_WALK }), "quality");
+
+    expect(r.route).toBe("incomplete");
+    expect(r.gaps).toBeDefined();
+    expect(r.gaps?.length).toBeGreaterThan(0);
+    expect(r.gaps?.[0]).toContain("WALK");
+    expect(rounds).toHaveLength(1);
+    expect(rounds[0]).toMatchObject({ phase: "quality", committed: false, outcome: "incomplete" });
+  });
+
+  test("escalates a second consecutive incomplete review, naming the reading obligations", async () => {
+    const rounds = captureRounds();
+    // A prior `route_quality` step already routed `incomplete` once — that is
+    // how `incompleteCount` learns this phase already used its one resend, the
+    // same way the reprompt-then-escalate tests simulate a prior attempt via
+    // the steps array.
+    const steps = [
+      makeFlowStep("review_quality"),
+      makeFlowStep("route_quality", { output: { route: "incomplete" } }),
+      makeFlowStep("review_quality"),
+    ];
+    const r = await routeReviewAndRecord(ctxWith({ route: "clean", findings: [], ...MISSING_WALK }, steps), "quality");
+
+    expect(r.route).toBe("escalate");
+    expect(r.escalationReason).toContain("reading obligations");
+    expect(rounds[0]).toMatchObject({ outcome: "escalated" });
   });
 });

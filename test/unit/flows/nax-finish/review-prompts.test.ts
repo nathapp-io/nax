@@ -18,13 +18,22 @@ describe("review prompts", () => {
     expect(QUALITY_REVIEW_DIMENSIONS).toContain("≥60% confident");
   });
 
-  test("spec prompt carries the classifier + strict JSON contract", () => {
+  test("spec prompt carries the classifier and the three-section output contract", () => {
     const p = buildReviewPrompt("spec", { base: "origin/main", specPath: ".nax/features/x/prd.json" });
     expect(p).toContain("git diff origin/main...HEAD");
     expect(p).toContain(".nax/features/x/prd.json");
-    expect(p).toContain('"route": "proceed" | "escalate"');
-    expect(p).toContain("spec conflict"); // escalate trigger
-    expect(p).toContain("recommended fix"); // proceed trigger
+    expect(p).toContain("## TOUCHPOINTS");
+    expect(p).toContain("## WALK");
+    expect(p).toContain("## FINDINGS");
+    expect(p).toContain("Judgment: yes");
+    expect(p).not.toContain("First char `{`");
+  });
+
+  test("the quality prompt asks for a per-function walk, the spec prompt for a per-AC walk", () => {
+    const spec = buildReviewPrompt("spec", { base: "origin/main", specPath: "s.md" });
+    const quality = buildReviewPrompt("quality", { base: "origin/main", specPath: "s.md" });
+    expect(spec).toContain("one line per AC");
+    expect(quality).toContain("one line per function");
   });
 });
 
@@ -41,14 +50,32 @@ describe("fixPrompt", () => {
     expect(p).toContain("test XYZ failed");
   });
 
-  test("spec phase pulls review_spec.findings as JSON", () => {
-    const p = fixPrompt("spec", { outputs: { review_spec: { findings: [{ severity: "HIGH", title: "t" }] } } });
-    expect(p).toContain('"severity":"HIGH"');
+  test("spec phase numbers review_spec.findings", () => {
+    const p = fixPrompt("spec", {
+      outputs: { review_spec: { findings: [{ severity: "HIGH", title: "t", problem: "p", fix: "f" }] } },
+    });
+    expect(p).toContain("[1] [HIGH] t");
   });
 
-  test("quality phase pulls review_quality.findings as JSON", () => {
-    const p = fixPrompt("quality", { outputs: { review_quality: { findings: [{ severity: "LOW", title: "q" }] } } });
-    expect(p).toContain('"severity":"LOW"');
+  test("quality phase numbers review_quality.findings", () => {
+    const p = fixPrompt("quality", {
+      outputs: { review_quality: { findings: [{ severity: "LOW", title: "q", problem: "p", fix: "f" }] } },
+    });
+    expect(p).toContain("[1] [LOW] q");
+  });
+
+  test("the spec fix prompt numbers its findings and demands a disposition for each", () => {
+    const p = fixPrompt("spec", {
+      outputs: { review_spec: { findings: [{ severity: "HIGH", title: "T", problem: "p", fix: "f" }] } },
+    });
+    expect(p).toContain("[1] [HIGH] T");
+    expect(p).toContain("## DISPOSITIONS");
+    expect(p).toContain("rejected — evidence:");
+  });
+
+  test("the gate fix prompt has no dispositions section — it has no findings", () => {
+    const p = fixPrompt("gate", { outputs: { quality_gates: { output: "lint failed" } } });
+    expect(p).not.toContain("## DISPOSITIONS");
   });
 });
 
@@ -99,36 +126,11 @@ describe("buildReviewPrompt — incremental re-review", () => {
     expect(p).toContain("assertion weakened, test deleted, check disabled");
   });
 
-  test("both rounds keep the full dimensions and the JSON contract", () => {
+  test("both rounds keep the full dimensions and the output contract", () => {
     for (const since of [null, "abc123"]) {
       const p = buildReviewPrompt("quality", { base: "origin/main", specPath: "s.md", since, priorFindings: PRIOR });
       expect(p).toContain("Confidence threshold");
-      expect(p).toContain('"route"');
+      expect(p).toContain("## FINDINGS");
     }
-  });
-});
-
-describe("buildReviewPrompt retry variant", () => {
-  const base = { base: "origin/main", specPath: "spec.md" };
-
-  test("omits the retry notice by default", () => {
-    expect(buildReviewPrompt("quality", base)).not.toContain("previous reply could not be parsed");
-  });
-
-  test("leads a full review with the retry notice when retrying", () => {
-    const p = buildReviewPrompt("quality", { ...base, retry: true });
-    expect(p).toContain("previous reply could not be parsed");
-    expect(p.indexOf("previous reply could not be parsed")).toBeLessThan(p.indexOf("You are the QUALITY reviewer"));
-  });
-
-  test("leads an incremental review with the retry notice too", () => {
-    const p = buildReviewPrompt("spec", { ...base, since: "abc123", priorFindings: [], retry: true });
-    expect(p).toContain("previous reply could not be parsed");
-    expect(p).toContain("abc123");
-  });
-
-  test("keeps the JSON contract last on a retry", () => {
-    const p = buildReviewPrompt("quality", { ...base, retry: true });
-    expect(p.trimEnd().endsWith("}")).toBe(true);
   });
 });

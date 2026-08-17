@@ -50,7 +50,15 @@
  */
 import { defineFlow } from "acpx/flows";
 import { buildFixCommitMessage } from "./commit-message";
-import { findingsOf, fixAttemptCount, gateOutputs, incrementalSince, inputOf, loadCtxOf } from "./flow-ctx";
+import {
+  findingsOf,
+  fixAttemptCount,
+  gateOutputs,
+  incrementalSince,
+  inputOf,
+  loadCtxOf,
+  reviewGapsOf,
+} from "./flow-ctx";
 import { narrativePrompt, parseNarrativeNode } from "./narrative";
 import { buildReviewPrompt, fixPrompt } from "./review-prompts";
 import {
@@ -73,12 +81,13 @@ import {
   qualityGatesNode,
   resolveFeature,
   routeReviewAndRecord,
+  validateDispositions,
   writeResult,
 } from "./steps";
 import type { Forge } from "./steps/forge";
 import { _prBodyDeps, buildFinishBody, buildFinishTitle } from "./steps/pr-body";
-import type { FinishInput, FinishPhase, FinishResult, ReviewVerdict } from "./types";
-import { parseFixVerdict, parseReviewVerdict, repromptCount } from "./verdict";
+import type { FindingDisposition, FinishInput, FinishPhase, FinishResult, ReviewVerdict } from "./types";
+import { parseFixVerdict, parseReviewVerdict } from "./verdict";
 
 /**
  * Disabled only on an explicit "0". An unset variable means enabled, so a flow
@@ -161,12 +170,24 @@ function commitFixNode(phase: FinishPhase) {
     }): Promise<{ committed: boolean; route: string; shaBefore: string | null; shaAfter: string | null }> {
       const i = inputOf(ctx);
       const messageCtx = { outputs: ctx.outputs as Record<string, unknown> };
+      // A rejection is only as good as its citation, so the path is checked the
+      // same way a reviewer's touchpoints are. A missing file does not veto the
+      // rejection — the fixer may have cited a line rather than a path, or moved
+      // the file — it marks it, so the PR body (and the commit message below)
+      // can say the waiver is unverified rather than silently presenting it as
+      // evidenced. Resolved before the commit so the shipped commit message can
+      // render a rejection the same way the PR body does, instead of `Fix: …`.
+      const dispositions = await validateDispositions(
+        i.workdir,
+        (ctx.outputs as Record<string, { dispositions?: FindingDisposition[] } | undefined>)[`fix_${phase}`]
+          ?.dispositions ?? [],
+      );
       // skipHooks: an intermediate checkpoint must not be rejected by a repo's
       // pre-commit hook — quality_gates runs the repo's real gates before any
       // PR opens, and a hook failure here would kill the flow mid-loop.
       const { committed, shaBefore, shaAfter } = await commitFixes(
         i.workdir,
-        buildFixCommitMessage(phase, i.feature, messageCtx, { workdir: i.workdir }),
+        buildFixCommitMessage(phase, i.feature, messageCtx, { workdir: i.workdir, dispositions }),
         { skipHooks: true },
       );
       // Routed BEFORE the round is recorded: `buildCommitRound` needs the
@@ -190,6 +211,7 @@ function commitFixNode(phase: FinishPhase) {
           failing: phase === "gate" ? (gateOutputs(ctx).failing ?? []) : undefined,
           shaAfter,
           now: new Date().toISOString(),
+          dispositions,
         }),
       );
       return { committed, route, shaBefore, shaAfter };
@@ -246,7 +268,7 @@ export default defineFlow({
           specPath: outs.specPath ?? "",
           since: incrementalSince(ctx, "spec"),
           priorFindings: findingsOf(ctx, "spec"),
-          retry: repromptCount(ctx, "spec") > 0,
+          gaps: reviewGapsOf(ctx, "spec"),
         });
       },
       parse: parseReviewVerdict,
@@ -272,7 +294,7 @@ export default defineFlow({
           specPath: outs.specPath ?? "",
           since: incrementalSince(ctx, "quality"),
           priorFindings: findingsOf(ctx, "quality"),
-          retry: repromptCount(ctx, "quality") > 0,
+          gaps: reviewGapsOf(ctx, "quality"),
         });
       },
       parse: parseReviewVerdict,
@@ -478,7 +500,13 @@ export default defineFlow({
       from: "route_spec",
       switch: {
         on: "$.route",
-        cases: { clean: "review_quality", fix: "fix_spec", escalate: "escalate", reprompt: "review_spec" },
+        cases: {
+          clean: "review_quality",
+          fix: "fix_spec",
+          escalate: "escalate",
+          reprompt: "review_spec",
+          incomplete: "review_spec",
+        },
       },
     },
     // Spec fixes re-run the acceptance gate first (they can break it), and the
@@ -490,7 +518,13 @@ export default defineFlow({
       from: "route_quality",
       switch: {
         on: "$.route",
-        cases: { clean: "quality_gates", fix: "fix_quality", escalate: "escalate", reprompt: "review_quality" },
+        cases: {
+          clean: "quality_gates",
+          fix: "fix_quality",
+          escalate: "escalate",
+          reprompt: "review_quality",
+          incomplete: "review_quality",
+        },
       },
     },
     // Quality fixes are re-reviewed by the same lens; the repo-root gates that

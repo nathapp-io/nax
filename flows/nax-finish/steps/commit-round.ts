@@ -8,7 +8,7 @@
  *
  * Pairs with `./review-round`, which records the rounds that produce no commit.
  */
-import type { Finding, FinishPhase, FinishRound, FinishRoundOutcome } from "../types";
+import type { Finding, FindingDisposition, FinishPhase, FinishRound, FinishRoundOutcome } from "../types";
 
 /** Phases that own a reviewer node; every other phase's round has nobody behind it. */
 const REVIEWED_PHASES: FinishPhase[] = ["spec", "quality"];
@@ -40,6 +40,8 @@ export interface CommitRoundInput {
   /** Post-commit HEAD, when there was a commit. */
   shaAfter?: string | null;
   now: string;
+  /** What the fixer did with each finding it was handed (spec/quality phases). */
+  dispositions?: FindingDisposition[];
 }
 
 /**
@@ -60,5 +62,6 @@ export function buildCommitRound(i: CommitRoundInput): FinishRound {
     route: i.route,
     ...(i.failing ? { failing: i.failing } : {}),
     ...(i.committed && i.shaAfter ? { sha: i.shaAfter } : {}),
+    ...(i.dispositions && i.dispositions.length > 0 ? { dispositions: i.dispositions } : {}),
   };
 }

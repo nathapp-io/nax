@@ -12,6 +12,7 @@
  * `escalate` node that exists to report precisely this.
  */
 import { extractJsonObject } from "acpx/flows";
+import { parseDispositions, parseReviewReport } from "./findings-parse";
 import { type OutputsCtx, type StepsCtx, fixAttemptCount } from "./flow-ctx";
 import type { Finding, ReviewVerdict } from "./types";
 
@@ -35,6 +36,15 @@ export const MAX_FIX_ATTEMPTS = 3;
  */
 export const MAX_REPROMPT_ATTEMPTS = 1;
 
+/**
+ * Reviews sent back for missing evidence sections, per phase, before escalating.
+ *
+ * One, for the same reason `MAX_REPROMPT_ATTEMPTS` is one: a reviewer that
+ * ignores the reply contract twice is not going to honour it on a third ask, and
+ * a review is the most expensive node in the flow.
+ */
+export const MAX_INCOMPLETE_ATTEMPTS = 1;
+
 /** How much of an unparseable reply to carry forward — it lands in a PR comment and a Telegram message. */
 export const RAW_TAIL_LIMIT = 500;
 
@@ -52,11 +62,29 @@ function parseVerdictJson(text: string): ReviewVerdict {
 }
 
 /**
- * Parser for `review_spec` / `review_quality`, whose JSON is load-bearing —
- * `findingsOf` reads it and the fix loop is driven by it. An unreadable reply
- * routes to `reprompt` so `routeReview` can ask once more before escalating.
+ * Read a reviewer's reply, block format first.
+ *
+ * Three tiers, in cost order: the block contract the prompt asks for; then the
+ * JSON object older runs produced (a flow resumed from a journal recorded before
+ * #1614, or a reviewer that answered in the old shape anyway); then reprompt.
+ * The JSON tier is three lines and removes a whole class of resume failure, so
+ * it stays even though nothing asks for JSON any more.
  */
 export function parseReviewVerdict(text: string): ReviewVerdict {
+  const report = parseReviewReport(text);
+  if (report.findings.length > 0 || report.sawNoFindings) {
+    const judged = report.findings.find((f) => f.judgment);
+    const route = judged ? "escalate" : report.findings.length === 0 ? "clean" : "proceed";
+    return {
+      route,
+      findings: report.findings,
+      ...(judged ? { escalationReason: judged.judgmentReason ?? `Needs human judgment: ${judged.title}` } : {}),
+      touchpoints: report.touchpoints,
+      walk: report.walk,
+      sawTouchpointsSection: report.sawTouchpointsSection,
+      sawWalkSection: report.sawWalkSection,
+    };
+  }
   try {
     return parseVerdictJson(text);
   } catch {
@@ -73,10 +101,16 @@ export function parseReviewVerdict(text: string): ReviewVerdict {
  * (`fix_spec → commit_spec`), so a reprompt route would have nowhere to go.
  */
 export function parseFixVerdict(text: string): ReviewVerdict {
+  const dispositions = parseDispositions(text);
+  // Route is always "proceed" — nothing downstream reads it (see docstring
+  // above), and computing it from `parseVerdictJson` is unsafe here: acpx's
+  // balanced-JSON matcher happily parses a bare `[1]` (the disposition line
+  // `[1] fixed`) as a one-element JSON array, which would silently flip the
+  // route to "clean" on a perfectly good disposition-only reply.
   try {
-    return parseVerdictJson(text);
+    return { route: "proceed", findings: parseVerdictJson(text).findings, dispositions };
   } catch {
-    return { route: "proceed", findings: [] };
+    return { route: "proceed", findings: [], dispositions };
   }
 }
 

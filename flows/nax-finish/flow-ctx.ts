@@ -143,3 +143,8 @@ export function incrementalSince(ctx: OutputsCtx & StepsCtx, phase: "spec" | "qu
   if (!firstCommit) return null;
   return (firstCommit.output as { shaBefore?: string | null } | undefined)?.shaBefore ?? null;
 }
+
+/** Why this phase's last review was sent back, so the retry is told what was missing. */
+export function reviewGapsOf(ctx: OutputsCtx, phase: "spec" | "quality"): string[] {
+  return ((ctx.outputs as Record<string, { gaps?: string[] } | undefined>)[`route_${phase}`]?.gaps ?? []) as string[];
+}

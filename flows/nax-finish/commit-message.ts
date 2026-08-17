@@ -12,7 +12,7 @@
  * Subject lines follow the repo's conventional-commit rule and the 72-column
  * git summary convention; the findings go in the body, one bullet each.
  */
-import type { Finding, FinishPhase } from "./types";
+import type { Finding, FindingDisposition, FinishPhase } from "./types";
 
 /** Git's conventional soft cap for a commit summary line. */
 const MAX_SUBJECT_LEN = 72;
@@ -89,6 +89,14 @@ interface MessageCtx {
 interface MessageOptions {
   /** Absolute repo root, used to rewrite quoted paths as repo-relative. */
   workdir?: string;
+  /**
+   * What `fix_<phase>` did with each finding it was handed, by 1-based index.
+   *
+   * Only `commit_<phase>` callers have this — `gate`/`acceptance` commits, and
+   * any caller that has not run a fix node yet, pass nothing, and every finding
+   * renders as before (`Fix: <text>`).
+   */
+  dispositions?: FindingDisposition[];
 }
 
 interface PhaseOutputs {
@@ -179,15 +187,31 @@ function bodyFor(phase: FinishPhase, ctx: MessageCtx, opts: MessageOptions): str
   }
   const findings = findingsFor(ctx, phase);
   if (findings.length === 0) return [];
-  return [
-    findings
-      .map((f) =>
-        [`- [${f.severity}] ${f.title}`, f.problem ? `  ${f.problem}` : "", f.fix ? `  Fix: ${f.fix}` : ""]
-          .filter(Boolean)
-          .join("\n"),
-      )
-      .join("\n"),
-  ];
+  const dispositions = opts.dispositions ?? [];
+  return [findings.map((f, i) => findingBody(f, i, dispositions)).join("\n")];
+}
+
+/**
+ * Render one finding's line(s) in the commit body, honouring `fix_<phase>`'s
+ * disposition when one exists.
+ *
+ * A rejected finding must not read `Fix: <the fix text>` — nothing was applied
+ * — so it renders the same way `pr-body.ts`'s `renderRejected` does: as
+ * rejected, with its evidence citation, so shipped git history and the PR body
+ * agree on what happened to the finding.
+ */
+function findingBody(f: Finding, index: number, dispositions: FindingDisposition[]): string {
+  const d = dispositions.find((x) => x.index === index + 1);
+  if (d?.disposition === "rejected") {
+    const evidence = d.evidence ? `\`${d.evidence}\`` : "no evidence cited";
+    const caveat = d.evidenceMissing ? " (evidence path not found)" : "";
+    return [`- [${f.severity}] ${f.title} — rejected: ${evidence}${caveat}`, f.problem ? `  ${f.problem}` : ""]
+      .filter(Boolean)
+      .join("\n");
+  }
+  return [`- [${f.severity}] ${f.title}`, f.problem ? `  ${f.problem}` : "", f.fix ? `  Fix: ${f.fix}` : ""]
+    .filter(Boolean)
+    .join("\n");
 }
 
 /** Human-readable phase label for the attribution trailer. */

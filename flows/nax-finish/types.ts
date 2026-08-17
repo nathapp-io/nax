@@ -15,6 +15,49 @@ export interface Finding {
   title: string;
   problem: string;
   fix: string;
+  /**
+   * Set when the reviewer marked this finding as needing a human — a spec
+   * conflict or a design call with no safe mechanical fix. This replaces the
+   * whole-reply `escalate` route the reviewer used to choose: escalation is a
+   * property of one finding, not of the phase, so reporting a design concern no
+   * longer halts the pipeline by itself.
+   */
+  judgment?: boolean;
+  /** Why this finding needs a human; the escalation reason when it escalates. */
+  judgmentReason?: string;
+}
+
+/** One external definition the reviewer says it opened before judging. */
+export interface Touchpoint {
+  /** Repo-relative path, or the literal `none` sentinel. */
+  path: string;
+  /** Symbol or line after the final `:`, when the reviewer gave one. */
+  symbol?: string;
+  /** The reviewer's stated reason for opening it (or for there being none). */
+  note: string;
+}
+
+/** A reviewer reply, parsed. Sections are reported separately from their content
+ * so an *absent* section is distinguishable from an *empty* one — only the first
+ * is a reviewer that skipped the obligation. */
+export interface ReviewReport {
+  findings: Finding[];
+  touchpoints: Touchpoint[];
+  walk: string[];
+  sawNoFindings: boolean;
+  sawTouchpointsSection: boolean;
+  sawWalkSection: boolean;
+}
+
+/** What the fix node did with one finding it was handed. */
+export interface FindingDisposition {
+  /** 1-based index into the findings list the fix prompt numbered. */
+  index: number;
+  disposition: "fixed" | "rejected";
+  /** `file:line` pinning the current behaviour; required for a rejection. */
+  evidence?: string;
+  /** Set by `commit_<phase>` when the cited evidence path does not exist. */
+  evidenceMissing?: boolean;
 }
 export interface ReviewVerdict {
   /**
@@ -33,6 +76,15 @@ export interface ReviewVerdict {
   escalationReason?: string;
   /** Bounded tail of an unparseable reply; set only when `route` is `reprompt`. */
   raw?: string;
+  /** Touchpoints the reviewer listed; read by the audit gate in `routeReviewAndRecord`. */
+  touchpoints?: Touchpoint[];
+  /** The per-AC or per-function walk lines the reviewer emitted. */
+  walk?: string[];
+  /** Whether the section was present at all — absent and empty are different failures. */
+  sawTouchpointsSection?: boolean;
+  sawWalkSection?: boolean;
+  /** Set on a `fix_<phase>` output: what the fixer did with each finding it was handed. */
+  dispositions?: FindingDisposition[];
 }
 /** Wall-clock budgets, forwarded from `finish.autoFlow.timeouts` by the plugin. */
 export interface FinishTimeouts {
@@ -92,7 +144,11 @@ export type FinishRoundOutcome =
    * new meaning — a reader hitting it in an old artifact must still be told
    * what it meant when it was written.
    */
-  | "review-skipped";
+  | "review-skipped"
+  /** The reviewer replied with findings but skipped a required audit section, so
+   * the verdict was not acted on. Distinct from `unparseable`: there was a
+   * readable verdict, it just had no evidence behind it. */
+  | "incomplete";
 
 export interface FinishRound {
   ts: string;
@@ -127,6 +183,8 @@ export interface FinishRound {
    * than by matching round timestamps against `git log`.
    */
   sha?: string;
+  /** What the fixer did with each finding it was handed (spec/quality phases). */
+  dispositions?: FindingDisposition[];
 }
 
 export interface FinishInput {

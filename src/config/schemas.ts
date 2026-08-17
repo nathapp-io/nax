@@ -453,6 +453,13 @@ export const NaxConfigSchema = z
                 sectionMap: z.record(z.string(), z.string()).default({}),
               })
               .default({ template: "merge", sectionMap: {} }),
+            /**
+             * Per-node acpx profiles. Both reviewers default to `null`, i.e.
+             * acpx's `--default-agent` — which is a *weaker* control than the
+             * equivalent skill, whose quality worker runs on a reviewer-tuned
+             * agent type. Pin these when comparing the two, or the comparison
+             * measures tier rather than the flow (#1614).
+             */
             reviewers: z
               .object({
                 spec: z.string().nullable().default(null),

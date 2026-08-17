@@ -295,33 +295,51 @@ the dispatcher.
 `;
 
 const CLASSIFIER = [
-  "After producing findings, classify the OVERALL route for this phase:",
-  '- Route "proceed" when every finding has a clear recommended fix you can apply now',
-  "  (CRITICAL/HIGH, or MEDIUM whose fix is clear and low-risk) — you will fix them and re-verify.",
-  '- Route "escalate" when ANY finding is a spec conflict, a contradiction with the spec,',
-  "  or a design/judgment concern with no safe mechanical fix. Do not attempt to fix those.",
-].join("\n");
-
-const JSON_CONTRACT = [
-  "Return exactly one JSON object and nothing else. First char `{`, last char `}`.",
-  "Shape:",
-  "{",
-  '  "route": "proceed" | "escalate",',
-  '  "findings": [{ "severity": "CRITICAL"|"HIGH"|"MEDIUM"|"LOW", "title": string, "problem": string, "fix": string }],',
-  '  "escalationReason": string   // required when route is "escalate"; omit otherwise',
-  "}",
+  "Mark a finding for human judgment — and only such a finding — by adding a",
+  "`Judgment: yes — <why>` line to its block. Use it when the finding is a spec",
+  "conflict, or a design/judgment call with no safe mechanical fix. Everything",
+  "else will be fixed and re-verified automatically, so a finding with a clear,",
+  "low-risk fix must NOT carry the marker.",
 ].join("\n");
 
 /**
- * Prepended when a previous attempt at this review returned something that was
- * not JSON. Lead position, not appended: the failure mode is a model that
- * narrates its findings and forgets the contract at the end of a long turn.
+ * The reply contract.
+ *
+ * This supersedes the "Output format — return ONLY this" section of
+ * `WORKER_PROTOCOL` above, which is kept verbatim so it stays diffable against
+ * the skill's `references/worker-protocol.md`. Its `[SEVERITY]` blocks are
+ * exactly this contract's `## FINDINGS` section; the two sections before it are
+ * what the flow adds, because the flow — unlike the skill's dispatcher — has no
+ * human reading the reply and so must be able to check the obligations itself.
+ *
+ * There is no JSON. A reply constrained to one JSON object has nowhere to put
+ * the per-AC and per-function enumerations both dimension references depend on,
+ * and an unreadable object used to discard the entire review (#1614).
  */
-const RETRY_NOTICE = [
-  "IMPORTANT — your previous reply could not be parsed as JSON, so it was discarded entirely.",
-  "Do not narrate your findings in prose. Do not describe what you reported.",
-  "Your entire reply must be the JSON object described at the end of this prompt: first char `{`, last char `}`.",
-].join("\n");
+function outputContract(phase: "spec" | "quality"): string {
+  const walk =
+    phase === "spec"
+      ? "one line per AC in the spec: `AC-3 Covered|Partial|Missing — <one clause>`"
+      : "one line per function or method the diff adds or changes: `path.ts:name — earns its place|concern: <one clause>`";
+  return `# Reply contract — your reply must be these three sections, in this order
+
+## TOUCHPOINTS
+One line per external touchpoint whose definition you actually opened:
+\`- path/to/file.ts:symbol — why you opened it\`. If the diff genuinely has none,
+the single line \`- none — <justification>\`. The paths are checked against the
+repo: a list whose paths do not exist is treated as an incomplete review, not a
+clean one, and you will be asked again.
+
+## WALK
+${walk}. This is the enumeration your dimension reference requires. One line each,
+no prose. A missing or empty WALK section is an incomplete review.
+
+## FINDINGS
+The \`[SEVERITY] …\` blocks defined in the worker protocol above — or the literal
+line \`No findings.\` if you found none. This section is the only thing that
+becomes a finding; the two above are the evidence that you were in a position to
+write it.`;
+}
 
 /**
  * Build the reviewer prompt.
@@ -348,25 +366,34 @@ export function buildReviewPrompt(
     specPath: string;
     since?: string | null;
     priorFindings?: Finding[];
-    retry?: boolean;
+    gaps?: string[];
   },
 ): string {
   const dims = phase === "spec" ? SPEC_REVIEW_DIMENSIONS : QUALITY_REVIEW_DIMENSIONS;
-  const lead = args.retry ? [RETRY_NOTICE] : [];
+  const gapNotice =
+    args.gaps && args.gaps.length > 0
+      ? [
+          [
+            "IMPORTANT — your previous review was not accepted, because it skipped a required section:",
+            ...args.gaps.map((g) => `- ${g}`),
+            "Do the reading this time and emit all three sections. A verdict without them is not a review.",
+          ].join("\n"),
+        ]
+      : [];
   if (!args.since) {
     return [
-      ...lead,
+      ...gapNotice,
       `You are the ${phase.toUpperCase()} reviewer for a completed feature.`,
       `The spec/requirements source is: ${args.specPath}. Read it in full.`,
       `Fetch and review the diff: \`git diff ${args.base}...HEAD\` (also \`--name-only\` for the file list).`,
       WORKER_PROTOCOL,
       dims,
       CLASSIFIER,
-      JSON_CONTRACT,
+      outputContract(phase),
     ].join("\n\n");
   }
   return [
-    ...lead,
+    ...gapNotice,
     `You are the ${phase.toUpperCase()} reviewer for a completed feature, continuing a review you already started.`,
     `On your previous pass over \`git diff ${args.base}...HEAD\` you raised the findings below, and they have since been fixed and committed. Everything else in that diff you already judged acceptable — do not re-derive a verdict on it.`,
     `Your findings from the previous pass:\n${JSON.stringify(args.priorFindings ?? [], null, 2)}`,
@@ -380,26 +407,62 @@ export function buildReviewPrompt(
     WORKER_PROTOCOL,
     dims,
     CLASSIFIER,
-    JSON_CONTRACT,
+    outputContract(phase),
   ].join("\n\n");
 }
 
+/**
+ * The fix node's contract.
+ *
+ * For the two review phases it is no longer "apply these". Every finding used to
+ * be implemented unconditionally, so a false positive was always built — and on
+ * the diff behind #1614 the comparison review raised one finding a human
+ * withdrew, because the change it proposed contradicted a test deliberately
+ * pinning the current behaviour. `quality_gates` would then have proved the
+ * resulting suite green. Reporting more findings without a way to reject one
+ * scales the false-positive exposure with the true-positive one, so the two ship
+ * together.
+ *
+ * A rejection must cite the file:line that pins the behaviour: an unevidenced
+ * "I disagree" is how a real finding gets waived, and `commit_<phase>` checks
+ * that the cited path exists.
+ */
 export function fixPrompt(
   phase: "acceptance" | "spec" | "quality" | "gate",
   ctx: { outputs: Record<string, unknown> },
 ): string {
-  const outs = ctx.outputs as Record<string, { findings?: unknown; output?: string }>;
-  const detail =
-    phase === "gate"
-      ? (outs.quality_gates?.output ?? "")
-      : phase === "acceptance"
-        ? (outs.acceptance?.output ?? "")
-        : JSON.stringify(outs[`review_${phase}`]?.findings ?? []);
+  const outs = ctx.outputs as Record<string, { findings?: Finding[]; output?: string }>;
+  if (phase === "gate" || phase === "acceptance") {
+    const detail = phase === "gate" ? (outs.quality_gates?.output ?? "") : (outs.acceptance?.output ?? "");
+    return [
+      `Apply the recommended fixes for the ${phase} phase, directly in the repo.`,
+      "Do not commit, push, or open PRs — nax-finish commits and pushes your edits itself.",
+      `Context:\n${detail}`,
+      "After fixing, re-run the feature's acceptance tests and the relevant checks; only proceed when they pass.",
+      'Return exactly {"route":"proceed"} when done and green.',
+    ].join("\n\n");
+  }
+  const findings = outs[`review_${phase}`]?.findings ?? [];
+  const numbered = findings
+    .map((f, i) => `[${i + 1}] [${f.severity}] ${f.title}\n  Problem: ${f.problem}\n  Fix: ${f.fix}`)
+    .join("\n");
   return [
-    `Apply the recommended fixes for the ${phase} phase, directly in the repo.`,
+    `Resolve the ${phase} review findings below, directly in the repo.`,
     "Do not commit, push, or open PRs — nax-finish commits and pushes your edits itself.",
-    `Context:\n${detail}`,
-    "After fixing, re-run the feature's acceptance tests and the relevant checks; only proceed when they pass.",
-    'Return exactly {"route":"proceed"} when done and green.',
+    numbered,
+    [
+      "A finding may be REJECTED rather than fixed — but only on evidence, not on preference.",
+      "Reject when the change it asks for would contradict an existing test that deliberately",
+      "pins the current behaviour, or a spec statement that requires it. Cite the `file:line`.",
+      "Anything else you fix.",
+    ].join("\n"),
+    [
+      "After fixing, re-run the feature's acceptance tests and the relevant checks; only proceed when they pass.",
+      "Then end your reply with one line per finding, in this exact shape:",
+      "",
+      "## DISPOSITIONS",
+      "[1] fixed",
+      "[2] rejected — evidence: test/unit/foo.test.ts:42",
+    ].join("\n"),
   ].join("\n\n");
 }
