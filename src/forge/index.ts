@@ -6,3 +6,5 @@
  */
 export type { ForgeDeps, ForgeKind, ForgeRunResult } from "./types";
 export { detectForge, forgeFromRemoteUrl, remoteHost } from "./detect";
+export type { OpenPrInput, OpenPrResult } from "./pr";
+export { extractUrl, hasOpenPr, openPr, viewArgv } from "./pr";
