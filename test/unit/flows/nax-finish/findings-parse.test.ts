@@ -97,10 +97,36 @@ describe("parseReviewReport", () => {
     expect(r.walk).toHaveLength(2);
   });
 
-  test("does not treat a section word inside prose as a heading", () => {
-    const r = parseReviewReport("I read the FINDINGS section of the spec.\n[LOW] t\n  Problem: p\n  Fix: f\n");
-    expect(r.sawTouchpointsSection).toBe(false);
+  // The three guards on GLUED_HEADING, each pinned by the case that fails
+  // without it. Relaxing any of them silently costs a finding's detail, which is
+  // the failure this whole seam exists to prevent — so none may go untested.
+
+  test("does not split when whitespace separates the prose from the #", () => {
+    // Adjacency is the signal: a concatenation artifact has no space before the
+    // `#`, prose always does. Without the `\\s` half of `[^\\s#]` this splits, the
+    // spurious heading flushes the finding, and its `Fix:` line is dropped.
+    const r = parseReviewReport(
+      "## FINDINGS\n[HIGH] t\n  Problem: see the block marked ## FINDINGS\n  Fix: do the thing\n",
+    );
     expect(r.findings).toHaveLength(1);
+    expect(r.findings[0].problem).toBe("see the block marked ## FINDINGS");
+    expect(r.findings[0].fix).toBe("do the thing");
+  });
+
+  test("does not split when the section word is not at end of line", () => {
+    // Adjacency holds here (`.` abuts `##`), so only the `$` anchor rejects it.
+    const r = parseReviewReport("## FINDINGS\n[HIGH] t\n  Problem: as noted.## FINDINGS below\n  Fix: f\n");
+    expect(r.findings).toHaveLength(1);
+    expect(r.findings[0].problem).toBe("as noted.## FINDINGS below");
+    expect(r.findings[0].fix).toBe("f");
+  });
+
+  test("does not split a well-formed heading at its own leading #", () => {
+    // Without the `#` half of `[^\\s#]` the leading `#` satisfies the prefix
+    // group and `## WALK` is rewritten to `#` + `# WALK`.
+    const r = parseReviewReport("## WALK\nAC-1 Covered\n");
+    expect(r.sawWalkSection).toBe(true);
+    expect(r.walk).toEqual(["AC-1 Covered"]);
   });
 
   test("parses correctly even when sections appear out of the prescribed order", () => {

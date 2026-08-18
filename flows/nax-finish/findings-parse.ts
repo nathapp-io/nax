@@ -30,10 +30,23 @@ const HEADING = /^\s*#{1,6}\s*(TOUCHPOINTS|WALK|FINDINGS|DISPOSITIONS)\s*:?\s*$/
  * it escalates on the second pass, which is how a clean quality review reached a
  * human as an incomplete one.
  *
- * `[^\s#]` is what keeps a well-formed `## TOUCHPOINTS` out: without it the
- * leading `#` satisfies the prefix group and the heading is split into `#` and
- * `# TOUCHPOINTS`, breaking the case that already worked. Requiring the tail
- * anchor (`$`) is what keeps a section word mentioned inside prose out.
+ * Three guards, each load-bearing, each pinned by a test that fails without it:
+ *
+ * - **`\s`** in `[^\s#]` — the prefix must *abut* the `#`. This is what tells a
+ *   concatenation artifact from prose: the join leaves no space (`bar.##`),
+ *   while prose that mentions a section always has one (`marked ## FINDINGS`).
+ *   Relax it and that Problem line becomes a heading, flushing the finding and
+ *   dropping its `Fix:` — detail lost silently, the very failure this seam
+ *   exists to prevent.
+ * - **`#`** in `[^\s#]` — keeps a well-formed `## TOUCHPOINTS` out. Without it
+ *   the leading `#` satisfies the prefix group and the heading is rewritten to
+ *   `#` + `# TOUCHPOINTS`, breaking the case that already worked.
+ * - **`$`** — the heading must end its line, so a section word quoted
+ *   mid-sentence is not one.
+ *
+ * `[ \t]` rather than `\s` inside the heading: `\s` matches `\n`, which under
+ * `/m` would let the tail span into following lines. `\r` needs no mention —
+ * `$` under `/m` matches before it, so CRLF replies are already handled.
  */
 const GLUED_HEADING = /^(.*[^\s#])(#{1,6}[ \t]*(?:TOUCHPOINTS|WALK|FINDINGS|DISPOSITIONS)[ \t]*:?[ \t]*)$/gim;
 const BLOCK = /^\s*\[(CRITICAL|HIGH|MEDIUM|LOW)\]\s+(.+?)\s*$/;
@@ -79,12 +92,13 @@ export function parseReviewReport(text: string): ReviewReport {
     sawTouchpointsSection: false,
     sawWalkSection: false,
   };
-  let section: Section = "findings";
-  let current: Finding | null = null;
-  let lastField: "problem" | "fix" | null = null;
   // `String.replace` with a /g regex resets `lastIndex` itself, so the shared
   // literal carries no state between calls.
   const normalized = text.replace(GLUED_HEADING, "$1\n$2");
+
+  let section: Section = "findings";
+  let current: Finding | null = null;
+  let lastField: "problem" | "fix" | null = null;
 
   const flush = () => {
     if (current) report.findings.push(current);
