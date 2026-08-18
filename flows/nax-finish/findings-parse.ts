@@ -16,6 +16,26 @@ type Section = "touchpoints" | "walk" | "findings";
 
 /** Headings are matched loosely — any level, any case, optional trailing colon. */
 const HEADING = /^\s*#{1,6}\s*(TOUCHPOINTS|WALK|FINDINGS|DISPOSITIONS)\s*:?\s*$/i;
+/**
+ * A heading that ends its line but does not start it.
+ *
+ * The reply the parser sees is the agent's whole message stream joined with no
+ * separator, so the first heading of the final report lands mid-line whenever
+ * the preceding narration message did not end in a newline — `…confidence
+ * bar.## TOUCHPOINTS`. `HEADING` is line-anchored and misses it, and because
+ * only the *first* heading can be glued this way, `WALK` and `FINDINGS` still
+ * parse: the review reads as one that skipped its touchpoints, and
+ * `steps/review-audit.ts` sends back a review that in fact did the reading. The
+ * re-review cannot help — the same reviewer narrates again and glues again — so
+ * it escalates on the second pass, which is how a clean quality review reached a
+ * human as an incomplete one.
+ *
+ * `[^\s#]` is what keeps a well-formed `## TOUCHPOINTS` out: without it the
+ * leading `#` satisfies the prefix group and the heading is split into `#` and
+ * `# TOUCHPOINTS`, breaking the case that already worked. Requiring the tail
+ * anchor (`$`) is what keeps a section word mentioned inside prose out.
+ */
+const GLUED_HEADING = /^(.*[^\s#])(#{1,6}[ \t]*(?:TOUCHPOINTS|WALK|FINDINGS|DISPOSITIONS)[ \t]*:?[ \t]*)$/gim;
 const BLOCK = /^\s*\[(CRITICAL|HIGH|MEDIUM|LOW)\]\s+(.+?)\s*$/;
 const FIELD = /^\s*(Problem|Fix|Judgment)\s*:\s*(.*)$/i;
 const NO_FINDINGS = /^\s*no findings\.?\s*$/i;
@@ -62,6 +82,9 @@ export function parseReviewReport(text: string): ReviewReport {
   let section: Section = "findings";
   let current: Finding | null = null;
   let lastField: "problem" | "fix" | null = null;
+  // `String.replace` with a /g regex resets `lastIndex` itself, so the shared
+  // literal carries no state between calls.
+  const normalized = text.replace(GLUED_HEADING, "$1\n$2");
 
   const flush = () => {
     if (current) report.findings.push(current);
@@ -69,7 +92,7 @@ export function parseReviewReport(text: string): ReviewReport {
     lastField = null;
   };
 
-  for (const line of text.split("\n")) {
+  for (const line of normalized.split("\n")) {
     const heading = HEADING.exec(line);
     if (heading) {
       flush();

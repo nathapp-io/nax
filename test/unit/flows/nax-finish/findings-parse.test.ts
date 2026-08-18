@@ -78,6 +78,31 @@ describe("parseReviewReport", () => {
     expect(r.sawNoFindings).toBe(false);
   });
 
+  test("reads a heading glued to the tail of the preceding narration line", () => {
+    // acpx joins the agent's messages with no separator, so the first heading of
+    // the final report lands mid-line whenever the last narration message did not
+    // end in a newline. Real reply, run-2026-08-18T04-13-00-511Z.
+    const r = parseReviewReport(
+      "No defects cleared the confidence bar.## TOUCHPOINTS\n- a.ts:sym — why\n\n## WALK\nb.ts:fn — earns its place\n\n## FINDINGS\nNo findings.\n",
+    );
+    expect(r.sawTouchpointsSection).toBe(true);
+    expect(r.touchpoints).toEqual([{ path: "a.ts", symbol: "sym", note: "why" }]);
+    expect(r.walk).toEqual(["b.ts:fn — earns its place"]);
+    expect(r.sawNoFindings).toBe(true);
+  });
+
+  test("leaves a well-formed heading at line start untouched", () => {
+    const r = parseReviewReport(FULL_REPLY);
+    expect(r.touchpoints).toHaveLength(3);
+    expect(r.walk).toHaveLength(2);
+  });
+
+  test("does not treat a section word inside prose as a heading", () => {
+    const r = parseReviewReport("I read the FINDINGS section of the spec.\n[LOW] t\n  Problem: p\n  Fix: f\n");
+    expect(r.sawTouchpointsSection).toBe(false);
+    expect(r.findings).toHaveLength(1);
+  });
+
   test("parses correctly even when sections appear out of the prescribed order", () => {
     const r = parseReviewReport(
       "## FINDINGS\n[MEDIUM] Out of order\n  Problem: p\n  Fix: f\n\n## WALK\nAC-1 Covered\n\n## TOUCHPOINTS\n- a.ts:sym — reason\n",
