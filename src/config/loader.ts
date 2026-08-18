@@ -477,10 +477,11 @@ export async function loadConfigForWorkdir(
   // the case where a per-package overlay introduces a no-op key on a mergeable
   // field like acceptance.generateTests). Post-merge placement yields one
   // warning per resolved config regardless of which layer supplied the key.
-  merged = stripRemovedNoOpKeys(
-    merged as unknown as Record<string, unknown>,
-    defaultConfigWarn,
-  ) as unknown as NaxConfig;
+  // #1620: the shared per-resolution dedupe, not the bare sink — this strip and
+  // the post-profile one below are two layers of the same resolution, so a key in
+  // both the overlay and a package profile warned twice where the root path warns
+  // once.
+  merged = stripRemovedNoOpKeys(merged as unknown as Record<string, unknown>, warnDedupe.warn) as unknown as NaxConfig;
 
   // CFG-3: the plain per-package overlay (.nax/mono/<pkg>/config.json) also
   // never ran through $VAR resolution — same gap as CFG-2 at the root layer.
@@ -546,7 +547,7 @@ export async function loadConfigForWorkdir(
   // profile can reintroduce one). Runs after the reject guards and before
   // safeParse, mirroring the root chain. Post-merge placement yields one
   // warning per resolved config regardless of which layer supplied the key.
-  rawMerged = stripRemovedNoOpKeys(rawMerged, defaultConfigWarn);
+  rawMerged = stripRemovedNoOpKeys(rawMerged, warnDedupe.warn);
   // #574's single-shim patch here (`_applyRemovedWorktreeInheritShim` on the merged
   // result) is gone: #1620 replaced it with the full chain run on each overlay layer
   // above, which covers that case and every other shim.

@@ -634,10 +634,14 @@ describe("loadConfigForWorkdir — compat-shim chain on per-package overlays (#1
   test("applyRemovedStrategyCompat: the removed value in a per-package PROFILE maps to keyword too", async () => {
     await writeRootConfig({});
     await writePackageOverride({ profile: "legacy", routing: { strategy: "keyword" } });
-    await writePackageProfile("legacy", { routing: { strategy: "adaptive" } });
+    // `maxIterations` is a non-legacy companion value: it pins that the profile layer
+    // really merged, so a future regression that drops package profiles entirely
+    // cannot make the strategy assertion below pass vacuously.
+    await writePackageProfile("legacy", { routing: { strategy: "adaptive" }, execution: { maxIterations: 7 } });
 
     const config = await loadForPackage();
 
+    expect(config.execution.maxIterations).toBe(7);
     expect(config.routing.strategy).toBe("keyword");
   });
 
@@ -712,10 +716,34 @@ describe("loadConfigForWorkdir — compat-shim chain on per-package overlays (#1
   test("a legacy key carried by BOTH the overlay and a per-package profile warns once per resolution", async () => {
     await writeRootConfig({});
     await writePackageOverride({ profile: "legacy", routing: { adaptive: { costThreshold: 0.5 } } });
-    await writePackageProfile("legacy", { routing: { adaptive: { costThreshold: 0.9 } } });
+    await writePackageProfile("legacy", {
+      routing: { adaptive: { costThreshold: 0.9 } },
+      execution: { maxIterations: 7 },
+    });
 
     const captured = await captureWorkdirWarnings(loadForPackage);
 
     expect(captured.filter((m) => m.includes("routing.adaptive"))).toHaveLength(1);
+    // Guards against a vacuous pass: one warning must mean "deduped across two
+    // layers", not "the profile layer was never merged".
+    expect((await loadForPackage()).execution.maxIterations).toBe(7);
+  });
+
+  // The two `stripRemovedNoOpKeys` calls on this path are two layers of ONE
+  // resolution, but each got the bare `defaultConfigWarn` sink — so a no-op key
+  // in both the overlay and a package profile warned twice, where the root path
+  // warns once per resolved config. They now share the per-resolution dedupe.
+  test("a removed no-op key in both the overlay and a per-package profile warns once, not twice", async () => {
+    await writeRootConfig({});
+    await writePackageOverride({ profile: "legacy", acceptance: { generateTests: false } });
+    await writePackageProfile("legacy", {
+      acceptance: { generateTests: false },
+      execution: { maxIterations: 7 },
+    });
+
+    const captured = await captureWorkdirWarnings(loadForPackage);
+
+    expect(captured.filter((m) => m.includes("generateTests"))).toHaveLength(1);
+    expect((await loadForPackage()).execution.maxIterations).toBe(7);
   });
 });
