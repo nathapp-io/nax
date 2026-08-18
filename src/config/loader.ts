@@ -10,6 +10,7 @@ import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { loadJsonFile } from "../utils/json-file";
 import {
+  _applyRemovedWorktreeInheritShim,
   applyConfigCompatShims,
   createConfigWarnDedupe,
   defaultConfigWarn,
@@ -522,6 +523,13 @@ export async function loadConfigForWorkdir(
   // safeParse, mirroring the root chain. Post-merge placement yields one
   // warning per resolved config regardless of which layer supplied the key.
   rawMerged = stripRemovedNoOpKeys(rawMerged, defaultConfigWarn);
+  // #574: this path never ran the compat-shim chain, so a per-package overlay
+  // carrying a removed value hard-fails safeParse below instead of migrating —
+  // and this is the config `prepareWorktreeDependencies` actually receives for a
+  // monorepo story (iteration-runner resolves it through here). Only the
+  // worktree shim is applied: the rest of the chain has the same hole today
+  // (e.g. `routing.strategy: "manual"`), but widening it belongs in its own change.
+  rawMerged = _applyRemovedWorktreeInheritShim(rawMerged, defaultConfigWarn);
   const result = NaxConfigSchema.safeParse(rawMerged);
   if (!result.success) {
     // Fail-fast — consistent with root-chain resolution (a missing profile file

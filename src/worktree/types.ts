@@ -21,7 +21,8 @@ export class WorktreeDependencyPreparationError extends Error {
 
   constructor(
     message: string,
-    readonly mode: "provision" | "off",
+    /** Only `provision` prepares anything, so only `provision` can fail. */
+    readonly mode: "provision",
     options?: { cause?: unknown },
   ) {
     super(message, options);

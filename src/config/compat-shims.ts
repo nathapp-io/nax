@@ -143,8 +143,10 @@ export function _applyRemovedWorktreeInheritShim(
   if (worktreeDependencies?.mode !== "inherit") return conf;
 
   warn(
-    'execution.worktreeDependencies.mode="inherit" was removed (issue #574) and is mapped to "off", which behaves identically. ' +
-      'Update your config to "off", or to "provision" with a setupCommand if the worktree needs its own install.',
+    'execution.worktreeDependencies.mode="inherit" was removed (issue #574) and is mapped to "off". ' +
+      "For JS/TS repos that is the same behaviour. If this repo needs its own install (a Python venv, bundler, composer), " +
+      'set mode "provision" with a setupCommand: "inherit" used to fail the run outright in that case, and "off" will now ' +
+      "proceed without installing.",
   );
   return {
     ...conf,

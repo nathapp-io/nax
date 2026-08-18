@@ -20,7 +20,7 @@ import {
   _applyRemovedRoutingKeysShim,
   _applyRemovedWorktreeInheritShim,
 } from "../../../src/config/compat-shims";
-import { loadConfig } from "../../../src/config/loader";
+import { loadConfig, loadConfigForWorkdir } from "../../../src/config/loader";
 
 describe("_applyRemovedRoutingKeysShim — routing keys removed with ROUTE-001", () => {
   test("warns and strips routing.customStrategyPath", () => {
@@ -528,6 +528,25 @@ describe("loadConfig — legacy key deprecation shim", () => {
   // #574: proves the shim is wired into the chain, not merely callable. Without it
   // the removed value reaches Zod, whose enum no longer accepts it, and the whole
   // config load hard-fails instead of migrating.
+  // #574 follow-up from code review: loadConfigForWorkdir merges per-package
+  // overlays and goes straight to safeParse without the compat-shim chain, so
+  // narrowing the enum turned a per-package `inherit` into a hard
+  // PER_PACKAGE_PROFILE_INVALID — on the very path that feeds
+  // prepareWorktreeDependencies for a monorepo story.
+  test("loadConfigForWorkdir maps a removed inherit mode in a per-package overlay instead of throwing", async () => {
+    await writeProjectConfig({ execution: { worktreeDependencies: { mode: "off" } } });
+    const pkgDir = join(tempDir, ".nax", "mono", "packages", "app");
+    mkdirSync(pkgDir, { recursive: true });
+    await Bun.write(
+      join(pkgDir, "config.json"),
+      JSON.stringify({ execution: { worktreeDependencies: { mode: "inherit" } } }),
+    );
+
+    const config = await loadConfigForWorkdir(join(tempDir, ".nax", "config.json"), "packages/app");
+
+    expect(config.execution.worktreeDependencies.mode).toBe("off");
+  });
+
   test("loadConfig maps a removed worktreeDependencies inherit mode to off end-to-end", async () => {
     await writeProjectConfig({ execution: { worktreeDependencies: { mode: "inherit" } } });
 
