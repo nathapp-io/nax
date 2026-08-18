@@ -255,7 +255,17 @@ regression, acceptance and review phases. It takes the live
 `phase: "finish"`, and honours `ctx.abortSignal`.
 
 Precedent: `runDeferredReview` is invoked exactly this way at
-`src/execution/unified-executor.ts:173`.
+`src/execution/unified-executor.ts:173`. `RunnerCompletionOptions extends
+DispatchContext` and `options.runtime` is already used throughout that file
+(`:214`, `:334`, `:369`, `:380`, `:423`, `:427`), so no new plumbing is needed.
+
+This also makes D5 stronger than "avoids extra plumbing". The rejected
+alternative — sequencing finish after the plugin actions inside `cleanupRun` —
+is not merely inconvenient, it is **unavailable**: `runner-completion.ts:427`
+calls `await options.runtime?.close()` at the end of the completion phase, and
+`cleanupRun` runs after that, from `runner.ts`'s `finally`. By the time auto-pr
+executes, the runtime is closed, its auditors flushed, its cost aggregator
+drained and its abort signal fired. There is no runtime left to thread.
 
 `PostRunPhase` gains a `"finish"` member:
 
@@ -263,6 +273,12 @@ Precedent: `runDeferredReview` is invoked exactly this way at
 // src/pipeline/event-bus.ts:174
 export type PostRunPhase = "regression" | "acceptance" | "review" | "acceptance-setup" | "finish";
 ```
+
+Adding the member is not a single-site change. `src/execution/status-writer.ts:118-120`
+narrows `setPostRunPhase` to `"acceptance" | "regression"` in its own overloads, and
+`src/tui/hooks/usePipelineBusEvents.ts:243` maps phases to TUI rows. Both need the
+new member, and an implementation plan must enumerate them rather than assume the
+union is the only site.
 
 Three things come free from being a phase rather than a plugin:
 
@@ -415,11 +431,25 @@ the working tree wherever the fix agent had reached, with no round recorded.
 
 ### 4.8 Cost
 
-Nothing bespoke. `callOp` books spend through `src/agents/cost` automatically and
-`postrun:phase:completed` carries `costUsd`, so finish's spend reaches
-`nax status`, `src/cli/status-cost.ts` and the TUI by the same route as the
-regression and review phases. The result file and PR body read the same
-aggregate. Today `FinishResult` carries no cost at all.
+`callOp` books spend through `src/agents/cost` automatically, so finish's spend
+lands in the run's `CostAggregator` with no extra work. Surfacing it per-phase is
+**not** free, and an earlier draft of this design was wrong about that:
+
+- `PostRunPhaseCompletedEvent.costUsd` exists (`src/pipeline/event-bus.ts:188`)
+  and `src/pipeline/subscribers/reporters.ts:90,112` forwards it, but **no emitter
+  in the codebase populates it today** — the acceptance phase at
+  `runner-completion.ts:248-258` emits `durationMs` and `details` only. It is a
+  declared channel, not an automatic mechanism.
+- Finish must therefore take a `CostAggregator.snapshot()`
+  (`src/runtime/cost-aggregator.ts:263`) before and after the phase and pass the
+  delta as `costUsd` explicitly.
+- **Ordering constraint:** `runner-completion.ts:427` closes the runtime with the
+  comment *"flushes auditors, drains cost aggregator, aborts signal"*. Finish must
+  run before that call, or its spend never reaches `totalCost` and its
+  `AbortSignal` is already aborted.
+
+Today `FinishResult` carries no cost at all, so this is still a net gain — it just
+costs one snapshot pair rather than nothing.
 
 ### 4.9 Reviewer prose convergence
 
