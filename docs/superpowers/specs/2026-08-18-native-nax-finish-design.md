@@ -510,8 +510,19 @@ indistinguishable from a coincidence.
 
 Each step is independently revertable.
 
-1. Extract `src/forge/`; switch auto-pr onto it. Existing auto-pr tests guard
-   this. No behaviour change, finish not involved.
+1. Extract `src/forge/`; switch auto-pr onto it. **This is not behaviour-neutral,
+   and an earlier draft of this design wrongly said it was.** The two forge
+   modules have diverged, and the flow's is strictly better:
+   `src/plugins/builtin/auto-pr/forge.ts:24` classifies with
+   `remoteUrl.includes("github.com")`, while `flows/nax-finish/steps/forge.ts:19-37`
+   parses the *host* out of both git URL forms and matches on that, with a
+   `gh`/`glab` CLI probe as a fallback for enterprise hosts naming neither forge.
+   The flow's own comment records why: *"`"gitlab.mycorp.com".includes("gitlab.com")`
+   is false, so the previous check rejected every self-hosted forge."*
+   auto-pr still carries that defect — `index.ts:176-177` returns `false` from
+   `shouldRun` when detection fails, so **auto-pr silently does nothing on any
+   self-hosted GitHub or GitLab**. Merging onto the flow's implementation fixes
+   it, and that fix needs its own regression test.
 2. Build `src/finish/` alongside the flow. `flows/` still present and still
    wired; nothing switched.
 3. Wire the phase into `src/execution/runner-completion.ts` behind
@@ -554,7 +565,7 @@ and is listed so the diff is not surprising.
 
 | # | Defect | Location | Evidence |
 | --- | --- | --- | --- |
-| F1 | `WORKER_PROTOCOL` / `outputContract` contradiction | `review-prompts.ts:280` vs `:319`, comment at `:308` | 2.3 — leading candidate for the 2/2 unparseable rate |
+| F1 | `WORKER_PROTOCOL` / `outputContract` contradiction | `review-prompts.ts:280` vs `:319`, comment at `:308` | 2.3 — **ALREADY SHIPPED separately in PR #1625** on `fix/finish-review-prompt-contract`, ahead of this port, to get a clean before/after measurement. Do not re-implement: the port inherits the three-constant split (`WORKER_PROTOCOL_MECHANICS`, `FINDING_BLOCK_SHAPE`, `WORKER_PROTOCOL`) when `review-prompts.ts` moves into `src/finish/review/`. |
 | F2 | Raw single-file config read for quality commands | `steps/quality.ts:84`, used at `steps/gates.ts:157` | 2.5 — ignores global layer, active profile, and per-package overlays |
 | F3 | Audit `attempt` field mixes two counters | `steps/review-round.ts:44` vs `commitFixNode` | 2.6 — real trail shows 1, 1, 3, 4 |
 
