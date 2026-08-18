@@ -7,15 +7,17 @@ function textStream(text = ""): ReadableStream<Uint8Array> {
   return new Response(text).body as ReadableStream<Uint8Array>;
 }
 
-const originalExistsSync = _worktreeDependencyDeps.existsSync;
 const originalSpawn = _worktreeDependencyDeps.spawn;
 
 describe("prepareWorktreeDependencies", () => {
   afterEach(() => {
-    _worktreeDependencyDeps.existsSync = originalExistsSync;
     _worktreeDependencyDeps.spawn = originalSpawn;
   });
 
+  // #574: `off` is the only no-install mode now that `inherit` is gone, and it is
+  // what a dependency-managed worktree gets. There is deliberately no manifest
+  // fixture here — `prepareWorktreeDependencies` no longer touches the filesystem,
+  // so writing a package.json would assert nothing.
   test("off returns the story package cwd without spawning setup", async () => {
     const spawnMock = mock(() => {
       throw new Error("spawn should not be called");
@@ -71,31 +73,4 @@ describe("prepareWorktreeDependencies", () => {
     ).rejects.toThrow(WorktreeDependencyPreparationError);
   });
 
-  test("inherit fails for dependency-managed repos outside the phase-1 allowlist", async () => {
-    const existsSyncMock = mock((target: string) => target.endsWith("/package.json"));
-    _worktreeDependencyDeps.existsSync = existsSyncMock as typeof _worktreeDependencyDeps.existsSync;
-
-    await expect(
-      prepareWorktreeDependencies({
-        projectRoot: "/repo",
-        worktreeRoot: "/repo/.nax-wt/US-004",
-        storyId: "US-004",
-        config: makeNaxConfig({ execution: { worktreeDependencies: { mode: "inherit" } } }),
-      }),
-    ).rejects.toThrow(/unsupported.*provision.*off/i);
-  });
-
-  test("inherit returns cwd for manifest-free worktrees in the phase-1 allowlist", async () => {
-    const existsSyncMock = mock(() => false);
-    _worktreeDependencyDeps.existsSync = existsSyncMock as typeof _worktreeDependencyDeps.existsSync;
-
-    const result = await prepareWorktreeDependencies({
-      projectRoot: "/repo",
-      worktreeRoot: "/repo/.nax-wt/US-005",
-      storyId: "US-005",
-      config: makeNaxConfig({ execution: { worktreeDependencies: { mode: "inherit" } } }),
-    });
-
-    expect(result).toEqual({ cwd: "/repo/.nax-wt/US-005" });
-  });
 });

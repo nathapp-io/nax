@@ -97,6 +97,15 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "execution.storyIsolation":
     'Story isolation mode. "shared" (default): all stories run on the main branch. "worktree": each story runs in an isolated git worktree (.nax-wt/<storyId>/); passed stories merge into main, failed commits never reach main.',
 
+  "execution.worktreeDependencies":
+    'How a story worktree gets its dependencies (only applies when storyIsolation="worktree"). "off" (default): install nothing. Because worktrees live at <projectRoot>/.nax-wt/<storyId>/ — inside the project root — Node/Bun resolution walks up to the root node_modules, so JS/TS repos need nothing here. "provision": run execution.worktreeDependencies.setupCommand from the worktree root before the story starts (required for ecosystems with no upward resolution: a Python venv, bundler, composer).',
+
+  "execution.worktreeDependencies.mode":
+    'Dependency preparation strategy for story worktrees: "off" (default, install nothing) or "provision" (run setupCommand first).',
+
+  "execution.worktreeDependencies.setupCommand":
+    'Install command run from the worktree root before a story starts, e.g. "bun install --frozen-lockfile". Rejected unless mode is "provision".',
+
   // Quality
   quality: "Quality gate configuration",
   "quality.commands": "Custom quality commands",

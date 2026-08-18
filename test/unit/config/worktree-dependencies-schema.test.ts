@@ -19,7 +19,7 @@ describe("execution.worktreeDependencies schema", () => {
     expect(config.execution.worktreeDependencies.setupCommand).toBeNull();
   });
 
-  test.each(["inherit", "provision", "off"] as const)("accepts mode=%s", (mode) => {
+  test.each(["provision", "off"] as const)("accepts mode=%s", (mode) => {
     const result = NaxConfigSchema.safeParse(
       withWorktreeDependencies({
         mode,
@@ -34,8 +34,20 @@ describe("execution.worktreeDependencies schema", () => {
   test("rejects setupCommand outside provision mode", () => {
     const result = NaxConfigSchema.safeParse(
       withWorktreeDependencies({
-        mode: "inherit",
+        mode: "off",
         setupCommand: "bun install",
+      }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  // Issue #574: "inherit" was removed. The compat shim maps it to "off" before Zod
+  // sees it, so a raw config is only rejected here when it bypasses the shim chain.
+  test("rejects the removed inherit mode", () => {
+    const result = NaxConfigSchema.safeParse(
+      withWorktreeDependencies({
+        mode: "inherit",
+        setupCommand: null,
       }),
     );
     expect(result.success).toBe(false);

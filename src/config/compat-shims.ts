@@ -122,6 +122,38 @@ export function _applyRemovedRoutingKeysShim(
   return newRouting === routing ? conf : { ...conf, routing: newRouting };
 }
 
+/**
+ * @internal Map the removed `execution.worktreeDependencies.mode: "inherit"` to `"off"`.
+ *
+ * `inherit` never inherited anything: it returned the same cwd as `off`, and threw
+ * outright when the worktree carried a dependency manifest — so it failed on exactly
+ * the repos it named. It is redundant besides. Worktrees live at
+ * `<projectRoot>/.nax-wt/<storyId>/`, inside the project root, so Node/Bun resolution
+ * already walks up to the root `node_modules`; `off` is what `inherit` promised.
+ *
+ * Mapped rather than rejected so an existing config keeps loading (issue #574).
+ * Returns a new object (immutable -- does not mutate the input).
+ */
+export function _applyRemovedWorktreeInheritShim(
+  conf: Record<string, unknown>,
+  warn: (msg: string) => void = defaultConfigWarn,
+): Record<string, unknown> {
+  const execution = conf.execution as Record<string, unknown> | undefined;
+  const worktreeDependencies = execution?.worktreeDependencies as Record<string, unknown> | undefined;
+  if (worktreeDependencies?.mode !== "inherit") return conf;
+
+  warn(
+    'execution.worktreeDependencies.mode="inherit" was removed (issue #574) and is mapped to "off". ' +
+      "For JS/TS repos that is the same behaviour. If this repo needs its own install (a Python venv, bundler, composer), " +
+      'set mode "provision" with a setupCommand: "inherit" used to fail the run outright in that case, and "off" will now ' +
+      "proceed without installing.",
+  );
+  return {
+    ...conf,
+    execution: { ...execution, worktreeDependencies: { ...worktreeDependencies, mode: "off" } },
+  };
+}
+
 /** @internal Backward compat: map deprecated routing.llm.batchMode to routing.llm.mode.
  * Returns a new object (immutable -- does not mutate the input). */
 function applyBatchModeCompat(
@@ -354,11 +386,14 @@ export function applyConfigCompatShims(
 ): Record<string, unknown> {
   const log = dedupe.wrapLogger(logger);
   const warn = dedupe.warn;
-  return _applyLegacyReviewExecutionShim(
-    _applyRemovedRoutingKeysShim(
-      applyRoutingRetryDeprecationWarning(
-        applyBatchModeCompat(
-          applyRemovedStrategyCompat(migrateLegacyReviewModelKey(migrateLegacyTestPattern(conf, log), log), warn),
+  return _applyRemovedWorktreeInheritShim(
+    _applyLegacyReviewExecutionShim(
+      _applyRemovedRoutingKeysShim(
+        applyRoutingRetryDeprecationWarning(
+          applyBatchModeCompat(
+            applyRemovedStrategyCompat(migrateLegacyReviewModelKey(migrateLegacyTestPattern(conf, log), log), warn),
+            warn,
+          ),
           warn,
         ),
         warn,

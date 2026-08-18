@@ -17,7 +17,7 @@ export interface FlakeDetectionConfig {
 /** Worktree dependency preparation strategy (WT-DEPS-001) */
 export interface WorktreeDependenciesConfig {
   /** How nax should prepare a fresh worktree before story execution */
-  mode: "inherit" | "provision" | "off";
+  mode: "provision" | "off";
   /** Explicit provisioning command override (valid only in provision mode) */
   setupCommand?: string | null;
 }
