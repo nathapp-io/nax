@@ -33,28 +33,30 @@ re-derive it.
 
 ### 2.1 The observed failure is inside runs, not at their end
 
-Three finish runs exist on disk, all on `etf-scraper`:
+Three finish runs exist on disk, all from a single downstream project. The
+project and its features are anonymised here as `<project>` and `feature-a/b/c`;
+the raw artifacts live on the maintainer's machine, not in this repository.
 
 ```
-$ ls ~/.nax/etf-scraper/finish-audit/*/
-crawl-status/run-2026-08-16T15-00-21-901Z.{jsonl,result.json}
-alphavantage-jets/run-2026-08-17T05-59-29-470Z.{jsonl,result.json}
-tier2-invesco/run-2026-08-17T02-27-25-518Z.{jsonl,result.json,decisions-*.json}
+$ ls ~/.nax/<project>/finish-audit/*/
+feature-a/run-2026-08-16T15-00-21-901Z.{jsonl,result.json}
+feature-b/run-2026-08-17T05-59-29-470Z.{jsonl,result.json}
+feature-c/run-2026-08-17T02-27-25-518Z.{jsonl,result.json,decisions-*.json}
 ```
 
 | feature | status | notes |
 | --- | --- | --- |
-| `crawl-status` | `opened` | PR #4 |
-| `alphavantage-jets` | `opened` | PR #6 |
-| `tier2-invesco` | `escalated` | 2 MEDIUM spec conflicts; correctly escalated, later resolved 1 fixed / 1 waived, PR #5 |
+| `feature-a` | `opened` | PR opened, no fixes needed on the spec pass |
+| `feature-b` | `opened` | PR opened after one spec fix and one quality fix |
+| `feature-c` | `escalated` | 2 MEDIUM spec conflicts; correctly escalated, later resolved by hand 1 fixed / 1 waived |
 
 Terminal outcomes are therefore fine. The defect is one level down: **both runs
 that reached the quality phase recorded `outcome: "unparseable"` on the quality
 reviewer's first attempt — 2 of 2.**
 
 ```
-crawl-status:       15:30:58 quality attempt 1 unparseable -> 15:32:40 attempt 2 passed   (102s lost)
-alphavantage-jets:  07:45:44 quality attempt 1 unparseable -> 07:47:11 fixed              (87s lost)
+feature-a:  15:30:58 quality attempt 1 unparseable -> 15:32:40 attempt 2 passed   (102s lost)
+feature-b:  07:45:44 quality attempt 1 unparseable -> 07:47:11 fixed              (87s lost)
 ```
 
 `flows/nax-finish/verdict.ts:33` puts one review at "128s and ~4.2M tokens", and
@@ -130,7 +132,7 @@ routes `reprompt`. That is the observed signature exactly.
 
 ```
 $ which acpx      -> ~/.nvm/versions/node/v22.22.2/bin/acpx
-$ npm ls -g acpx  -> acpx@0.13.1-next.1 -> ./../../workspace/sandbox/acpx
+$ npm ls -g acpx  -> acpx@0.13.1-next.1 -> <a local working checkout, not the registry>
 $ grep acpx package.json -> "acpx": "^0.12.1"        (node_modules holds 0.12.1)
 ```
 
@@ -185,7 +187,7 @@ overlay alike.
 Review rounds are numbered by `reviewAttemptCount` (count of `review_<phase>`
 steps) at `flows/nax-finish/steps/review-round.ts:44`; commit rounds are numbered
 by `fixAttemptCount` (count of `fix_<phase>` steps) in `commitFixNode`. Same
-phase, same trail. Real output from `alphavantage-jets`:
+phase, same trail. Real output from `feature-b`:
 
 ```
 quality attempt 1  unparseable
@@ -551,7 +553,7 @@ not mistake omission for oversight:
   shared content (4.9).
 - **Reconsidering the review loop itself** — the reprompt/incomplete counters,
   `MAX_FIX_ATTEMPTS = 3`, and whether escalation should remain
-  model-discretionary. `tier2-invesco` escalated at spec attempt 1 with two
+  model-discretionary. `feature-c` escalated at spec attempt 1 with two
   MEDIUM findings it never attempted to fix; whether that is right is a design
   question, not a port question.
 
@@ -577,12 +579,12 @@ and is listed so the diff is not surprising.
 per-package ones must now run its gates instead of escalating "nax-finish
 verified nothing".
 
-**Behaviour-level.** Run finish on `etf-scraper` — the only repo with recorded
-finishes — and compare the new audit trail against the three in
-`~/.nax/etf-scraper/finish-audit/`: same phases, same round shape, monotonic
+**Behaviour-level.** Run finish on the project that produced the three recorded
+runs and compare the new audit trail against them under
+`~/.nax/<project>/finish-audit/`: same phases, same round shape, monotonic
 `attempt` numbering, and **no `outcome: "unparseable"` on the quality reviewer's
 first attempt**. That last one is the measurable target this work exists for.
 
 **Environment-level.** The port is verified for reproducibility when a finish
-completes with `~/workspace/sandbox/acpx` off `PATH` and only the published acpx
-available.
+completes with the local acpx working checkout off `PATH` and only the published
+acpx available.
