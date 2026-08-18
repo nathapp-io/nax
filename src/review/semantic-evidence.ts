@@ -2,6 +2,7 @@ import { getSafeLogger } from "../logger";
 import { validateModulePath } from "../utils/path-security";
 import type { LLMFinding } from "./semantic-helpers";
 import { isBlockingSeverity } from "./semantic-helpers";
+import type { Severity } from "./severity";
 import type { SemanticReviewConfig } from "./types";
 
 const OBSERVED_PREVIEW_CHARS = 160;
@@ -37,7 +38,7 @@ export const _evidenceDeps = {
  * fields. Issue #987.
  */
 export interface FindingWithEvidence {
-  severity: string;
+  severity: Severity;
   file: string;
   line: number;
   issue: string;

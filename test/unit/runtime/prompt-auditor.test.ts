@@ -160,6 +160,40 @@ describe("PromptAuditor", () => {
     });
   });
 
+  test("record() redacts secrets embedded in prompt/response before writing JSONL and txt", async () => {
+    await withTempDir(async (dir) => {
+      const flushDir = join(dir, "audit");
+      let jsonlLine = "";
+      let txtContent = "";
+      const origAppend = _promptAuditorDeps.appendLine;
+      const origWrite = _promptAuditorDeps.write;
+      _promptAuditorDeps.appendLine = async (_p, d) => {
+        jsonlLine = d;
+      };
+      _promptAuditorDeps.write = async (p, d) => {
+        if (p.endsWith(".txt")) txtContent = String(d);
+        return 0;
+      };
+      const aud = new PromptAuditor("r-secret", flushDir, FEATURE);
+      aud.record(
+        makeEntry({
+          sessionName: "nax-abc-my-feature-us-000-run",
+          prompt: "connect to postgres://admin:s3cret@db.internal:5432/prod",
+          response: "GITHUB_TOKEN=ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        }),
+      );
+      await aud.flush();
+      expect(jsonlLine).not.toContain("s3cret");
+      expect(jsonlLine).not.toContain("ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+      expect(jsonlLine).toContain("[REDACTED]");
+      expect(txtContent).not.toContain("s3cret");
+      expect(txtContent).not.toContain("ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+      expect(txtContent).toContain("[REDACTED]");
+      _promptAuditorDeps.appendLine = origAppend;
+      _promptAuditorDeps.write = origWrite;
+    });
+  });
+
   describe("interactions (issue #1226)", () => {
     test("appends an === INTERACTIONS === section with question, reply, and turn index", async () => {
       await withTempDir(async (dir) => {

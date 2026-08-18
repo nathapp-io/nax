@@ -8,7 +8,7 @@
 import { describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { globalConfigDir, projectConfigDir } from "../../../src/config/paths";
+import { featureDir, globalConfigDir, projectConfigDir } from "../../../src/config/paths";
 
 describe("config/paths", () => {
   describe("globalConfigDir", () => {
@@ -56,6 +56,38 @@ describe("config/paths", () => {
       const result = projectConfigDir(projectRoot);
       expect(result).toContain("/project/.nax");
       expect(result.startsWith("/")).toBe(true);
+    });
+  });
+
+  describe("featureDir (SEC-3: featureId validation)", () => {
+    const root = "/path/to/project";
+
+    test("returns <root>/.nax/features/<featureId> for a normal slug", () => {
+      expect(featureDir(root, "auth-system")).toBe(join(root, ".nax", "features", "auth-system"));
+    });
+
+    test("allows the '_unattached' internal sentinel (leading underscore)", () => {
+      expect(featureDir(root, "_unattached")).toBe(join(root, ".nax", "features", "_unattached"));
+    });
+
+    test("rejects an empty featureId", () => {
+      expect(() => featureDir(root, "")).toThrow("Feature ID cannot be empty");
+    });
+
+    test("rejects path traversal", () => {
+      expect(() => featureDir(root, "../../etc/passwd")).toThrow("path traversal");
+    });
+
+    test("rejects a featureId shaped like a git flag", () => {
+      expect(() => featureDir(root, "--upload-pack=evil")).toThrow("git flags");
+    });
+
+    test("rejects a featureId with invalid characters", () => {
+      expect(() => featureDir(root, "has spaces")).toThrow("must match pattern");
+    });
+
+    test("rejects a featureId over 64 characters", () => {
+      expect(() => featureDir(root, "a".repeat(65))).toThrow("must match pattern");
     });
   });
 });

@@ -244,73 +244,54 @@ export const _reviewGitDeps = {
   getUncommittedFiles: getUncommittedFilesImpl,
 };
 
-/**
- * Run all configured review checks
- */
-export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
-  const {
-    config,
-    workdir,
-    executionConfig,
-    qualityCommands,
-    storyId,
-    storyGitRef,
-    story,
-    agentManager,
-    naxConfig,
-    retrySkipChecks,
-    featureName,
-    priorFailures,
-    priorSemanticIterations,
-    featureContextMarkdown,
-    contextBundles,
-    projectDir,
-    env,
-    naxIgnoreIndex,
-    runtime,
-    priorAdversarialIterations,
-  } = opts;
-  const startTime = Date.now();
-  const logger = getSafeLogger();
-  const checks: ReviewCheckResult[] = [];
-  let firstFailure: string | undefined;
+// Exclude nax runtime files — written by nax itself during the run, not by the agent.
+// Patterns use a suffix match (no leading ^) so they work in both single-package repos
+// (nax/features/…) and monorepos where paths are prefixed (apps/cli/nax/features/…).
+// Module-scoped (not per-call): the pattern list is static, so rebuilding it inside
+// guardUncommittedFiles on every review would just be wasted allocation.
+const NAX_RUNTIME_PATTERNS = [
+  /nax\.lock$/,
+  /nax\/metrics\.json$/,
+  /nax\/status\.json$/,
+  /nax\/features\/[^/]+\/status\.json$/,
+  /nax\/features\/[^/]+\/prd\.json$/,
+  /nax\/features\/[^/]+\/runs\//,
+  /nax\/features\/[^/]+\/plan\//,
+  /nax\/features\/[^/]+\/acp-sessions\.json$/,
+  /nax\/features\/[^/]+\/interactions\//,
+  /nax\/features\/[^/]+\/progress\.txt$/,
+  /nax\/features\/[^/]+\/acceptance-refined\.json$/,
+  /nax\/features\/[^/]+\/stories\/[^/]+\/context-manifest-[^/]+\.json$/,
+  /nax\/features\/[^/]+\/stories\/[^/]+\/rebuild-manifest\.json$/,
+  /\.nax-verifier-verdict\.json$/,
+  /\.nax-pids$/,
+  /\.nax-wt\//,
+  /\.nax-acceptance[^/]*$/,
+  /_nax_acceptance_test\.py$/,
+  /_nax_suggested_test\.py$/,
+  // Test-output artifacts — transient files leaked by tests, not agent changes.
+  // 2B migrated logging.test.ts to a temp dir; these guard against future leak patterns.
+  // Patterns match both repo-root paths (test/...) and monorepo-prefixed paths (.../test/...).
+  /(?:^|\/)test\/.*\.jsonl$/,
+  /(?:^|\/)coverage\//,
+  /\.lcov$/,
+];
 
-  // @design: BUG-074: Auto-commit any dirty files the agent left (e.g. bun.lock / package.json
-  // after `bun add`) before the uncommitted-changes check. Mirrors BUG-058/063.
+/**
+ * RQ-001: warn (never block) about tracked files left uncommitted before review runs.
+ * @design: BUG-074: autoCommitIfDirty runs first to sweep up dirty files the agent
+ * left (e.g. bun.lock / package.json after `bun add`) before the check. Mirrors BUG-058/063.
+ */
+async function guardUncommittedFiles(
+  workdir: string,
+  storyId: string | undefined,
+  runtime: RunReviewOptions["runtime"],
+  naxIgnoreIndex: NaxIgnoreIndex | undefined,
+  logger: ReturnType<typeof getSafeLogger>,
+): Promise<void> {
   await autoCommitIfDirty(workdir, "review", "agent", storyId ?? "review", runtime?.dirtyWorktrees);
 
-  // RQ-001: Check for uncommitted tracked files before running checks
   const allUncommittedFiles = await _reviewGitDeps.getUncommittedFiles(workdir);
-  // Exclude nax runtime files — written by nax itself during the run, not by the agent.
-  // Patterns use a suffix match (no leading ^) so they work in both single-package repos
-  // (nax/features/…) and monorepos where paths are prefixed (apps/cli/nax/features/…).
-  const NAX_RUNTIME_PATTERNS = [
-    /nax\.lock$/,
-    /nax\/metrics\.json$/,
-    /nax\/status\.json$/,
-    /nax\/features\/[^/]+\/status\.json$/,
-    /nax\/features\/[^/]+\/prd\.json$/,
-    /nax\/features\/[^/]+\/runs\//,
-    /nax\/features\/[^/]+\/plan\//,
-    /nax\/features\/[^/]+\/acp-sessions\.json$/,
-    /nax\/features\/[^/]+\/interactions\//,
-    /nax\/features\/[^/]+\/progress\.txt$/,
-    /nax\/features\/[^/]+\/acceptance-refined\.json$/,
-    /nax\/features\/[^/]+\/stories\/[^/]+\/context-manifest-[^/]+\.json$/,
-    /nax\/features\/[^/]+\/stories\/[^/]+\/rebuild-manifest\.json$/,
-    /\.nax-verifier-verdict\.json$/,
-    /\.nax-pids$/,
-    /\.nax-wt\//,
-    /\.nax-acceptance[^/]*$/,
-    /_nax_acceptance_test\.py$/,
-    /_nax_suggested_test\.py$/,
-    // Test-output artifacts — transient files leaked by tests, not agent changes.
-    // 2B migrated logging.test.ts to a temp dir; these guard against future leak patterns.
-    // Patterns match both repo-root paths (test/...) and monorepo-prefixed paths (.../test/...).
-    /(?:^|\/)test\/.*\.jsonl$/,
-    /(?:^|\/)coverage\//,
-    /\.lcov$/,
-  ];
   const afterRuntimeFilter = allUncommittedFiles.filter(
     (f) => !NAX_RUNTIME_PATTERNS.some((pattern) => pattern.test(f)),
   );
@@ -328,6 +309,178 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
       uncommittedCount: uncommittedFiles.length,
     });
   }
+}
+
+/** Shared story shape both LLM reviewers (semantic, adversarial) build from RunReviewOptions. */
+function buildReviewStory(storyId: string | undefined, story: SemanticStory | undefined): SemanticStory {
+  return {
+    id: storyId ?? "",
+    title: story?.title ?? "",
+    description: story?.description ?? "",
+    acceptanceCriteria: story?.acceptanceCriteria ?? [],
+  };
+}
+
+/** Semantic check: delegate to the LLM-based semantic reviewer instead of a shell command. */
+async function runSemanticCheck(opts: RunReviewOptions): Promise<ReviewCheckResult> {
+  const {
+    workdir,
+    storyGitRef,
+    story,
+    storyId,
+    config,
+    agentManager,
+    naxConfig,
+    featureName,
+    priorSemanticIterations,
+    featureContextMarkdown,
+    contextBundles,
+    projectDir,
+    naxIgnoreIndex,
+    runtime,
+  } = opts;
+  const semanticCfg = config.semantic ?? {
+    model: "balanced" as const,
+    diffMode: "ref" as const,
+    resetRefOnRerun: false,
+    rules: [] as string[],
+    timeoutMs: 600_000,
+    // excludePatterns omitted — runSemanticReview derives via resolveReviewExcludePatterns (ADR-009)
+  };
+  const runSemantic = _reviewSemanticDeps.runSemanticReview;
+  return runSemantic({
+    workdir,
+    storyGitRef,
+    story: buildReviewStory(storyId, story),
+    semanticConfig: semanticCfg,
+    agentManager,
+    naxConfig,
+    featureName,
+    priorSemanticIterations,
+    blockingThreshold: config.blockingThreshold,
+    featureContextMarkdown,
+    contextBundle: contextBundles?.semantic,
+    projectDir,
+    naxIgnoreIndex,
+    runtime,
+  });
+}
+
+/** Adversarial check: delegate to the LLM-based adversarial reviewer instead of a shell command. */
+async function runAdversarialCheck(opts: RunReviewOptions): Promise<ReviewCheckResult> {
+  const {
+    workdir,
+    storyGitRef,
+    story,
+    storyId,
+    config,
+    agentManager,
+    naxConfig,
+    featureName,
+    priorFailures,
+    featureContextMarkdown,
+    contextBundles,
+    projectDir,
+    naxIgnoreIndex,
+    runtime,
+    priorAdversarialIterations,
+  } = opts;
+  const adversarialCfg = config.adversarial ?? {
+    model: "balanced" as const,
+    diffMode: "ref" as const,
+    rules: [] as string[],
+    timeoutMs: 600_000,
+    // excludePatterns omitted — collectDiff always appends ALWAYS_EXCLUDED (.nax/ etc.) (ADR-009)
+    parallel: false,
+    maxConcurrentSessions: 2,
+  };
+  const runAdversarial = _reviewAdversarialDeps.runAdversarialReview;
+  return runAdversarial({
+    workdir,
+    storyGitRef,
+    story: buildReviewStory(storyId, story),
+    adversarialConfig: adversarialCfg,
+    agentManager,
+    config: naxConfig,
+    featureName,
+    priorFailures,
+    blockingThreshold: config.blockingThreshold,
+    featureContextMarkdown,
+    contextBundle: contextBundles?.adversarial,
+    projectDir,
+    naxIgnoreIndex,
+    runtime,
+    priorAdversarialIterations,
+  });
+}
+
+/**
+ * Mechanical check (lint / typecheck / build / ...): resolve its command and run it via
+ * runQualityCommand (or the scoped-lint path for "lint"). Returns null when the check is
+ * skipped (command not configured or disabled).
+ */
+async function runMechanicalCheck(
+  checkName: ReviewCheckName,
+  opts: RunReviewOptions,
+): Promise<ReviewCheckResult | null> {
+  const {
+    config,
+    workdir,
+    executionConfig,
+    qualityCommands,
+    storyId,
+    story,
+    storyGitRef,
+    naxConfig,
+    projectDir,
+    env,
+    naxIgnoreIndex,
+  } = opts;
+
+  // Resolve command using resolution strategy
+  const command = await resolveCommand(checkName, config, executionConfig, workdir, qualityCommands);
+
+  // Skip if explicitly disabled or not found
+  if (command === null) {
+    getSafeLogger()?.warn("review", `Skipping ${checkName} check (command not configured or disabled)`);
+    return null;
+  }
+
+  // Run the check
+  return checkName === "lint"
+    ? await _reviewLintDeps.runScopedLintCheck({
+        resolvedLintCommand: command,
+        configCommands: config.commands,
+        qualityCommands,
+        lintOutputFormat: naxConfig?.quality?.lintOutput?.format ?? "auto",
+        workdir,
+        projectDir,
+        storyId,
+        story: story as UserStory | undefined,
+        storyGitRef,
+        env,
+        stripEnvVars: naxConfig?.quality?.stripEnvVars ?? [],
+        naxIgnoreIndex,
+      })
+    : normalizeMechanicalFindings(
+        checkName,
+        await runCheck(checkName, command, workdir, storyId, env, naxConfig?.quality?.stripEnvVars ?? []),
+        workdir,
+      );
+}
+
+/**
+ * Run all configured review checks
+ */
+export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
+  const { config, workdir, storyId, retrySkipChecks, naxIgnoreIndex, runtime } = opts;
+  const startTime = Date.now();
+  const logger = getSafeLogger();
+  const checks: ReviewCheckResult[] = [];
+  let firstFailure: string | undefined;
+
+  // RQ-001: Check for uncommitted tracked files before running checks
+  await guardUncommittedFiles(workdir, storyId, runtime, naxIgnoreIndex, logger);
 
   for (const checkName of config.checks) {
     // #136: Skip checks that already passed in a previous review pass within this pipeline run.
@@ -339,39 +492,8 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
       continue;
     }
 
-    // Semantic check: delegate to LLM-based runner instead of shell command
-    if (checkName === "semantic") {
-      const semanticStory: SemanticStory = {
-        id: storyId ?? "",
-        title: story?.title ?? "",
-        description: story?.description ?? "",
-        acceptanceCriteria: story?.acceptanceCriteria ?? [],
-      };
-      const semanticCfg = config.semantic ?? {
-        model: "balanced" as const,
-        diffMode: "ref" as const,
-        resetRefOnRerun: false,
-        rules: [] as string[],
-        timeoutMs: 600_000,
-        // excludePatterns omitted — runSemanticReview derives via resolveReviewExcludePatterns (ADR-009)
-      };
-      const runSemantic = _reviewSemanticDeps.runSemanticReview;
-      const result = await runSemantic({
-        workdir,
-        storyGitRef,
-        story: semanticStory,
-        semanticConfig: semanticCfg,
-        agentManager,
-        naxConfig,
-        featureName,
-        priorSemanticIterations,
-        blockingThreshold: config.blockingThreshold,
-        featureContextMarkdown,
-        contextBundle: contextBundles?.semantic,
-        projectDir,
-        naxIgnoreIndex,
-        runtime,
-      });
+    if (checkName === "semantic" || checkName === "adversarial") {
+      const result = checkName === "semantic" ? await runSemanticCheck(opts) : await runAdversarialCheck(opts);
       checks.push(result);
       if (!result.success && !firstFailure) {
         firstFailure = `${checkName} failed`;
@@ -382,82 +504,8 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
       continue;
     }
 
-    // Adversarial check: delegate to LLM-based adversarial runner
-    if (checkName === "adversarial") {
-      const adversarialStory: SemanticStory = {
-        id: storyId ?? "",
-        title: story?.title ?? "",
-        description: story?.description ?? "",
-        acceptanceCriteria: story?.acceptanceCriteria ?? [],
-      };
-      const adversarialCfg = config.adversarial ?? {
-        model: "balanced" as const,
-        diffMode: "ref" as const,
-        rules: [] as string[],
-        timeoutMs: 600_000,
-        // excludePatterns omitted — collectDiff always appends ALWAYS_EXCLUDED (.nax/ etc.) (ADR-009)
-        parallel: false,
-        maxConcurrentSessions: 2,
-      };
-      const runAdversarial = _reviewAdversarialDeps.runAdversarialReview;
-      const result = await runAdversarial({
-        workdir,
-        storyGitRef,
-        story: adversarialStory,
-        adversarialConfig: adversarialCfg,
-        agentManager,
-        config: naxConfig,
-        featureName,
-        priorFailures,
-        blockingThreshold: config.blockingThreshold,
-        featureContextMarkdown,
-        contextBundle: contextBundles?.adversarial,
-        projectDir,
-        naxIgnoreIndex,
-        runtime,
-        priorAdversarialIterations,
-      });
-      checks.push(result);
-      if (!result.success && !firstFailure) {
-        firstFailure = `${checkName} failed`;
-      }
-      if (!result.success) {
-        break;
-      }
-      continue;
-    }
-
-    // Resolve command using resolution strategy
-    const command = await resolveCommand(checkName, config, executionConfig, workdir, qualityCommands);
-
-    // Skip if explicitly disabled or not found
-    if (command === null) {
-      getSafeLogger()?.warn("review", `Skipping ${checkName} check (command not configured or disabled)`);
-      continue;
-    }
-
-    // Run the check
-    const result =
-      checkName === "lint"
-        ? await _reviewLintDeps.runScopedLintCheck({
-            resolvedLintCommand: command,
-            configCommands: config.commands,
-            qualityCommands,
-            lintOutputFormat: naxConfig?.quality?.lintOutput?.format ?? "auto",
-            workdir,
-            projectDir,
-            storyId,
-            story: story as UserStory | undefined,
-            storyGitRef,
-            env,
-            stripEnvVars: naxConfig?.quality?.stripEnvVars ?? [],
-            naxIgnoreIndex,
-          })
-        : normalizeMechanicalFindings(
-            checkName,
-            await runCheck(checkName, command, workdir, storyId, env, naxConfig?.quality?.stripEnvVars ?? []),
-            workdir,
-          );
+    const result = await runMechanicalCheck(checkName, opts);
+    if (result === null) continue;
     checks.push(result);
 
     // Log outcome of mechanical checks (lint / typecheck / build).

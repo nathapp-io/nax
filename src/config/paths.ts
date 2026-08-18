@@ -6,8 +6,52 @@
 
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { NaxError } from "../errors";
 
 const GLOBAL_CONFIG_DIR_ENV = "NAX_GLOBAL_CONFIG_DIR";
+
+/**
+ * Feature ID charset, mirroring `validateStoryId` (`src/prd/validate.ts`) but with
+ * a leading underscore also allowed — `"_unattached"` (`src/pipeline/stages/context.ts`,
+ * `src/context/engine/stage-assembler.ts`) is a real internal sentinel used when a
+ * context request has no attached feature, and it must keep resolving through this
+ * same path. Traversal (`..`) and a leading `--` (git-flag-shaped) are rejected
+ * explicitly first so the error names the actual problem instead of a generic
+ * pattern mismatch.
+ */
+const FEATURE_ID_PATTERN = /^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,63}$/;
+
+/**
+ * SEC-3 (code review 2026-08-17): `featureDir` is the SSOT anchor for every
+ * feature-tree path (~38 call sites — `mkdir(recursive)`, artifact writes) but,
+ * unlike `validateStoryId`, took `featureId` unvalidated. `featureId` today only
+ * ever comes from the trusted CLI `--feature` flag, but the asymmetry with the
+ * story-ID path was a real gap should that ever change.
+ */
+function validateFeatureId(featureId: string): void {
+  if (!featureId || featureId.length === 0) {
+    throw new NaxError("Feature ID cannot be empty", "INVALID_FEATURE_ID", { stage: "config" });
+  }
+  if (featureId.includes("..")) {
+    throw new NaxError("Feature ID cannot contain path traversal (..)", "INVALID_FEATURE_ID", {
+      stage: "config",
+      featureId,
+    });
+  }
+  if (featureId.startsWith("--")) {
+    throw new NaxError("Feature ID cannot start with git flags (--)", "INVALID_FEATURE_ID", {
+      stage: "config",
+      featureId,
+    });
+  }
+  if (!FEATURE_ID_PATTERN.test(featureId)) {
+    throw new NaxError(
+      `Feature ID must match pattern [a-zA-Z0-9_][a-zA-Z0-9._-]{0,63}. Got: ${featureId}`,
+      "INVALID_FEATURE_ID",
+      { stage: "config", featureId },
+    );
+  }
+}
 
 /**
  * Returns the global config directory path (~/.nax).
@@ -71,5 +115,6 @@ export function featuresDir(root: string): string {
  * because the segment was open-coded at each site and one site dropped `.nax`.
  */
 export function featureDir(root: string, featureId: string): string {
+  validateFeatureId(featureId);
   return join(featuresDir(root), featureId);
 }

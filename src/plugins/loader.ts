@@ -401,13 +401,15 @@ function resolveModulePath(modulePath: string, projectRoot?: string): string {
  *
  * @param modulePath - Path to plugin module (should be resolved)
  * @param config - Plugin-specific config
+ * @param allowedRoots - Roots a file-path module must resolve under (SEC-2: required, not
+ *   defaulted — an empty list must fail closed rather than silently skip validation).
  * @param originalPath - Original path from config (for error messages)
  * @returns Validated plugin or null if invalid
  */
 async function loadAndValidatePlugin(
   initialModulePath: string,
   config: Record<string, unknown>,
-  allowedRoots: string[] = [],
+  allowedRoots: string[],
   originalPath?: string,
 ): Promise<NaxPlugin | null> {
   let attemptedPath = initialModulePath;
@@ -416,7 +418,17 @@ async function loadAndValidatePlugin(
     let modulePath = initialModulePath;
     const isFilePath = modulePath.startsWith("/") || modulePath.startsWith("./") || modulePath.startsWith("../");
 
-    if (isFilePath && allowedRoots.length > 0) {
+    if (isFilePath) {
+      // SEC-2: fail closed when no roots were supplied — the module-path check
+      // below would otherwise be silently skipped, letting an unvalidated file
+      // path reach `await import()` a few lines down.
+      if (allowedRoots.length === 0) {
+        const msg = `no allowed roots configured for file-path plugin module '${initialModulePath}'`;
+        const logger = getSafeLogger();
+        logger?.error("plugins", `Security: ${msg}`);
+        _pluginErrorSink(`[plugins] Security: ${msg}`);
+        return null;
+      }
       const validation = validateModulePath(modulePath, allowedRoots);
       if (!validation.valid) {
         const logger = getSafeLogger();
@@ -486,3 +498,6 @@ async function loadAndValidatePlugin(
     return null;
   }
 }
+
+/** @internal — exposes loadAndValidatePlugin for direct SEC-2 (fail-closed empty allowedRoots) testing. */
+export const _loadAndValidatePlugin = loadAndValidatePlugin;

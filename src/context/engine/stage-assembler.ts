@@ -88,7 +88,20 @@ export async function discoverSessionScratchDirsOnDisk(
   ttlMs: number,
 ): Promise<string[]> {
   const logger = getLogger();
-  const sessionsRoot = join(featureDir(projectDir, featureName), "sessions");
+  let sessionsRoot: string;
+  try {
+    // featureDir() validates featureName (SEC-3) and can throw for a legacy or
+    // malformed name — this function is documented best-effort, so that must
+    // degrade to "no sessions found" like every other failure here, not escape.
+    sessionsRoot = join(featureDir(projectDir, featureName), "sessions");
+  } catch (err) {
+    logger.debug("context-v2", "discoverSessionScratchDirsOnDisk: invalid featureName — treating as no sessions", {
+      storyId,
+      featureName,
+      error: errorMessage(err),
+    });
+    return [];
+  }
 
   let entries: string[];
   try {

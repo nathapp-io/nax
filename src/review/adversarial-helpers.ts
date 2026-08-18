@@ -10,11 +10,12 @@ import { tryParseLLMJson } from "../utils/llm-json";
 import { extractAcks } from "./acks";
 import { categoryToFixTarget, resolveFixTarget } from "./category-fix-target";
 import { isBlockingSeverity } from "./severity";
+import type { Severity } from "./severity";
 import type { ReviewAck } from "./types";
 export { isBlockingSeverity };
 
 export interface AdversarialLLMFinding {
-  severity: string;
+  severity: Severity;
   category: string;
   file: string;
   line: number;

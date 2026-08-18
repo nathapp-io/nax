@@ -19,6 +19,7 @@
  */
 
 import * as path from "node:path";
+import { getSafeLogger } from "@/logger";
 import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
 import { errorMessage } from "@/utils/errors";
 import { type FinishAutoFlowSettings, getFinishAutoFlowConfig, telegramCreds } from "./config";
@@ -122,11 +123,31 @@ export function finishResultPath(
   return path.join(finishAuditDir(ctx), `${runId}.result.json`);
 }
 
-/** Default result reader — reads the flow's terminal result off disk. */
+/**
+ * Default result reader — reads the flow's terminal result off disk.
+ *
+ * BUG-1 (code review 2026-08-17): a result file can exist but be malformed —
+ * the flow process killed mid-write, disk full — in which case treat it the
+ * same as "no result file" rather than letting JSON.parse throw. Mirrors
+ * `curator/collect.ts`'s `readJsonLines`, which already does this for its own
+ * on-disk reads with the same "must never fail the run" rationale.
+ */
 async function defaultReadResult(resultPath: string): Promise<FinishResult | null> {
   const f = Bun.file(resultPath);
   if (!(await f.exists())) return null;
-  return JSON.parse(await f.text()) as FinishResult;
+  try {
+    return JSON.parse(await f.text()) as FinishResult;
+  } catch (err) {
+    // Log the parse failure — a malformed file and a missing file both resolve
+    // to null (and the same downstream "no result file" message), but only the
+    // former has a diagnostic worth keeping, and swallowing it silently would
+    // have made the "file exists but is corrupt" case indistinguishable from
+    // "the flow never ran" in the logs.
+    getSafeLogger()?.warn("plugins", `nax-finish: malformed result file at ${resultPath}`, {
+      error: errorMessage(err),
+    });
+    return null;
+  }
 }
 
 /**
