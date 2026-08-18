@@ -8,7 +8,7 @@ import {
   commitRoundOutcome,
   filesInCommit,
   PUSH_TIMEOUT_MS,
-} from "../../../src/finish/commit";
+} from "@/finish";
 
 type GitCall = { args: string[]; workdir: string; timeoutMs?: number };
 type GitResult = { stdout: string; stderr: string; exitCode: number };

@@ -10,20 +10,19 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { AcceptanceGroupResult } from "@/cli";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
+import {
+  _acceptanceGateDeps,
+  _finishGitDeps,
+  _qualityGateDeps,
+  createFinishState,
+  gateCommitRoute,
+  MAX_FIX_ATTEMPTS,
+  readRounds,
+  runFinishMachine,
+} from "@/finish";
+import type { AuditTarget, Finding, FinishContext, FinishMachineDeps, FinishOps, FinishState, ReviewOutcome } from "@/finish";
 import type { QualityCommandOptions, QualityCommandResult } from "@/quality";
 import { withTempDir } from "@test/helpers";
-import { type AuditTarget, readRounds } from "../../../src/finish/audit";
-import { _finishGitDeps } from "../../../src/finish/commit";
-import type { FinishContext } from "../../../src/finish/context";
-import { _acceptanceGateDeps } from "../../../src/finish/gates/acceptance";
-import { _qualityGateDeps } from "../../../src/finish/gates/quality";
-import { runFinishMachine } from "../../../src/finish/machine";
-import type { FinishMachineDeps } from "../../../src/finish/machine";
-import type { FinishOps } from "../../../src/finish/ops";
-import { MAX_FIX_ATTEMPTS, type ReviewOutcome, gateCommitRoute } from "../../../src/finish/route";
-import { createFinishState } from "../../../src/finish/state";
-import type { FinishState } from "../../../src/finish/state";
-import type { Finding } from "../../../src/finish/types";
 
 const originalGit = _finishGitDeps.git;
 const originalAcceptanceRun = _acceptanceGateDeps.run;
@@ -33,7 +32,6 @@ afterEach(() => {
   _acceptanceGateDeps.run = originalAcceptanceRun;
   _qualityGateDeps.run = originalQuality.run;
   _qualityGateDeps.loadConfig = originalQuality.loadConfig;
-  _qualityGateDeps.loadConfigForWorkdir = originalQuality.loadConfigForWorkdir;
   _qualityGateDeps.loadPackageOverride = originalQuality.loadPackageOverride;
 });
 
@@ -147,7 +145,6 @@ function installQualityGateStub(
   const commands = opts.commands ?? { test: "true" };
   _qualityGateDeps.loadConfig = async () => configWithCommands(commands);
   _qualityGateDeps.loadPackageOverride = async () => null;
-  _qualityGateDeps.loadConfigForWorkdir = async () => configWithCommands({});
   const runFn: GateRunFn = opts.run ?? (() => ({ exitCode: 0 }));
   _qualityGateDeps.run = async (o: QualityCommandOptions): Promise<QualityCommandResult> => {
     trail.push(`quality-run:${o.commandName}`);

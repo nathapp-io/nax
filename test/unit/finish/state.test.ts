@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { NaxError } from "../../../src/errors";
-import { createFinishState, deserializeFinishState, serializeFinishState } from "../../../src/finish/state";
-import type { FinishPhase } from "../../../src/finish/types";
+import { NaxError } from "@/errors";
+import { createFinishState, deserializeFinishState, serializeFinishState } from "@/finish";
+import type { FinishPhase } from "@/finish";
 
 const ALL_PHASES: FinishPhase[] = ["acceptance", "spec", "quality", "gate"];
 

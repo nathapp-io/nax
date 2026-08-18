@@ -1,15 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import {
+  gateCommitRoute,
   MAX_FIX_ATTEMPTS,
   MAX_INCOMPLETE_ATTEMPTS,
-  gateCommitRoute,
   partitionTestFiles,
   routeAcceptance,
   routeQualityGates,
   routeReview,
-} from "../../../src/finish/route";
-import type { FinishPhaseState } from "../../../src/finish/state";
-import type { AcceptanceGateResult, Finding, QualityGateResult } from "../../../src/finish/types";
+} from "@/finish";
+import type { AcceptanceGateResult, Finding, FinishPhaseState, QualityGateResult } from "@/finish";
 
 const FINDING: Finding = { severity: "HIGH", title: "t", problem: "p", fix: "f" };
 

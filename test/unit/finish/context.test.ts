@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ResolveResult } from "@/cli";
-import { _finishContextDeps, loadFinishContext } from "../../../src/finish/context";
+import { _finishContextDeps, loadFinishContext } from "@/finish";
 
 type GitResult = { stdout: string; stderr: string; exitCode: number };
 
