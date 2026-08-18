@@ -78,6 +78,57 @@ describe("parseReviewReport", () => {
     expect(r.sawNoFindings).toBe(false);
   });
 
+  test("reads a heading glued to the tail of the preceding narration line", () => {
+    // acpx joins the agent's messages with no separator, so the first heading of
+    // the final report lands mid-line whenever the last narration message did not
+    // end in a newline. Real reply, run-2026-08-18T04-13-00-511Z.
+    const r = parseReviewReport(
+      "No defects cleared the confidence bar.## TOUCHPOINTS\n- a.ts:sym — why\n\n## WALK\nb.ts:fn — earns its place\n\n## FINDINGS\nNo findings.\n",
+    );
+    expect(r.sawTouchpointsSection).toBe(true);
+    expect(r.touchpoints).toEqual([{ path: "a.ts", symbol: "sym", note: "why" }]);
+    expect(r.walk).toEqual(["b.ts:fn — earns its place"]);
+    expect(r.sawNoFindings).toBe(true);
+  });
+
+  test("leaves a well-formed heading at line start untouched", () => {
+    const r = parseReviewReport(FULL_REPLY);
+    expect(r.touchpoints).toHaveLength(3);
+    expect(r.walk).toHaveLength(2);
+  });
+
+  // The three guards on GLUED_HEADING, each pinned by the case that fails
+  // without it. Relaxing any of them silently costs a finding's detail, which is
+  // the failure this whole seam exists to prevent — so none may go untested.
+
+  test("does not split when whitespace separates the prose from the #", () => {
+    // Adjacency is the signal: a concatenation artifact has no space before the
+    // `#`, prose always does. Without the `\\s` half of `[^\\s#]` this splits, the
+    // spurious heading flushes the finding, and its `Fix:` line is dropped.
+    const r = parseReviewReport(
+      "## FINDINGS\n[HIGH] t\n  Problem: see the block marked ## FINDINGS\n  Fix: do the thing\n",
+    );
+    expect(r.findings).toHaveLength(1);
+    expect(r.findings[0].problem).toBe("see the block marked ## FINDINGS");
+    expect(r.findings[0].fix).toBe("do the thing");
+  });
+
+  test("does not split when the section word is not at end of line", () => {
+    // Adjacency holds here (`.` abuts `##`), so only the `$` anchor rejects it.
+    const r = parseReviewReport("## FINDINGS\n[HIGH] t\n  Problem: as noted.## FINDINGS below\n  Fix: f\n");
+    expect(r.findings).toHaveLength(1);
+    expect(r.findings[0].problem).toBe("as noted.## FINDINGS below");
+    expect(r.findings[0].fix).toBe("f");
+  });
+
+  test("does not split a well-formed heading at its own leading #", () => {
+    // Without the `#` half of `[^\\s#]` the leading `#` satisfies the prefix
+    // group and `## WALK` is rewritten to `#` + `# WALK`.
+    const r = parseReviewReport("## WALK\nAC-1 Covered\n");
+    expect(r.sawWalkSection).toBe(true);
+    expect(r.walk).toEqual(["AC-1 Covered"]);
+  });
+
   test("parses correctly even when sections appear out of the prescribed order", () => {
     const r = parseReviewReport(
       "## FINDINGS\n[MEDIUM] Out of order\n  Problem: p\n  Fix: f\n\n## WALK\nAC-1 Covered\n\n## TOUCHPOINTS\n- a.ts:sym — reason\n",

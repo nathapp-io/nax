@@ -16,6 +16,39 @@ type Section = "touchpoints" | "walk" | "findings";
 
 /** Headings are matched loosely — any level, any case, optional trailing colon. */
 const HEADING = /^\s*#{1,6}\s*(TOUCHPOINTS|WALK|FINDINGS|DISPOSITIONS)\s*:?\s*$/i;
+/**
+ * A heading that ends its line but does not start it.
+ *
+ * The reply the parser sees is the agent's whole message stream joined with no
+ * separator, so the first heading of the final report lands mid-line whenever
+ * the preceding narration message did not end in a newline — `…confidence
+ * bar.## TOUCHPOINTS`. `HEADING` is line-anchored and misses it, and because
+ * only the *first* heading can be glued this way, `WALK` and `FINDINGS` still
+ * parse: the review reads as one that skipped its touchpoints, and
+ * `steps/review-audit.ts` sends back a review that in fact did the reading. The
+ * re-review cannot help — the same reviewer narrates again and glues again — so
+ * it escalates on the second pass, which is how a clean quality review reached a
+ * human as an incomplete one.
+ *
+ * Three guards, each load-bearing, each pinned by a test that fails without it:
+ *
+ * - **`\s`** in `[^\s#]` — the prefix must *abut* the `#`. This is what tells a
+ *   concatenation artifact from prose: the join leaves no space (`bar.##`),
+ *   while prose that mentions a section always has one (`marked ## FINDINGS`).
+ *   Relax it and that Problem line becomes a heading, flushing the finding and
+ *   dropping its `Fix:` — detail lost silently, the very failure this seam
+ *   exists to prevent.
+ * - **`#`** in `[^\s#]` — keeps a well-formed `## TOUCHPOINTS` out. Without it
+ *   the leading `#` satisfies the prefix group and the heading is rewritten to
+ *   `#` + `# TOUCHPOINTS`, breaking the case that already worked.
+ * - **`$`** — the heading must end its line, so a section word quoted
+ *   mid-sentence is not one.
+ *
+ * `[ \t]` rather than `\s` inside the heading: `\s` matches `\n`, which under
+ * `/m` would let the tail span into following lines. `\r` needs no mention —
+ * `$` under `/m` matches before it, so CRLF replies are already handled.
+ */
+const GLUED_HEADING = /^(.*[^\s#])(#{1,6}[ \t]*(?:TOUCHPOINTS|WALK|FINDINGS|DISPOSITIONS)[ \t]*:?[ \t]*)$/gim;
 const BLOCK = /^\s*\[(CRITICAL|HIGH|MEDIUM|LOW)\]\s+(.+?)\s*$/;
 const FIELD = /^\s*(Problem|Fix|Judgment)\s*:\s*(.*)$/i;
 const NO_FINDINGS = /^\s*no findings\.?\s*$/i;
@@ -59,6 +92,10 @@ export function parseReviewReport(text: string): ReviewReport {
     sawTouchpointsSection: false,
     sawWalkSection: false,
   };
+  // `String.replace` with a /g regex resets `lastIndex` itself, so the shared
+  // literal carries no state between calls.
+  const normalized = text.replace(GLUED_HEADING, "$1\n$2");
+
   let section: Section = "findings";
   let current: Finding | null = null;
   let lastField: "problem" | "fix" | null = null;
@@ -69,7 +106,7 @@ export function parseReviewReport(text: string): ReviewReport {
     lastField = null;
   };
 
-  for (const line of text.split("\n")) {
+  for (const line of normalized.split("\n")) {
     const heading = HEADING.exec(line);
     if (heading) {
       flush();
