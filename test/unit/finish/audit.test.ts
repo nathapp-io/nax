@@ -2,9 +2,9 @@ import { existsSync } from "node:fs";
 import { chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import { appendRound, readRounds, recordRound, resultPath, roundsPath, writeResult } from "@/finish/audit";
-import { createFinishState } from "@/finish/state";
-import type { FinishResult, FinishRound } from "@/finish/types";
+import { appendRound, readRounds, recordRound, resultPath, roundsPath, writeResult } from "../../../src/finish/audit";
+import { createFinishState } from "../../../src/finish/state";
+import type { FinishResult, FinishRound } from "../../../src/finish/types";
 import { withTempDir } from "@test/helpers";
 
 function baseRound(overrides: Partial<FinishRound> = {}): FinishRound {

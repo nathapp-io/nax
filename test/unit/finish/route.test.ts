@@ -7,9 +7,9 @@ import {
   routeAcceptance,
   routeQualityGates,
   routeReview,
-} from "@/finish/route";
-import type { FinishPhaseState } from "@/finish/state";
-import type { AcceptanceGateResult, Finding, QualityGateResult } from "@/finish/types";
+} from "../../../src/finish/route";
+import type { FinishPhaseState } from "../../../src/finish/state";
+import type { AcceptanceGateResult, Finding, QualityGateResult } from "../../../src/finish/types";
 
 const FINDING: Finding = { severity: "HIGH", title: "t", problem: "p", fix: "f" };
 

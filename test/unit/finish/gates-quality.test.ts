@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
-import { _qualityGateDeps, resolveGateCommands, runQualityGates } from "@/finish/gates/quality";
-import { routeQualityGates } from "@/finish/route";
-import type { FinishPhaseState } from "@/finish/state";
+import { _qualityGateDeps, resolveGateCommands, runQualityGates } from "../../../src/finish/gates/quality";
+import { routeQualityGates } from "../../../src/finish/route";
+import type { FinishPhaseState } from "../../../src/finish/state";
 
 const original = { ..._qualityGateDeps };
 afterEach(() => {

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { AcceptanceGroupResult } from "@/cli";
-import { _acceptanceGateDeps, runAcceptanceGate } from "@/finish/gates/acceptance";
-import { routeAcceptance } from "@/finish/route";
-import type { FinishPhaseState } from "@/finish/state";
+import { _acceptanceGateDeps, runAcceptanceGate } from "../../../src/finish/gates/acceptance";
+import { routeAcceptance } from "../../../src/finish/route";
+import type { FinishPhaseState } from "../../../src/finish/state";
 
 const originalRun = _acceptanceGateDeps.run;
 afterEach(() => {
