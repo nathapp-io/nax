@@ -1,13 +1,11 @@
 /**
  * Auto-PR Plugin — Types
  *
- * Config and dependency-injection shapes used by the auto-PR post-run action.
- *
- * Pure types only — no I/O or runtime behavior lives here.
+ * Forge types and injected I/O now live in `@/forge`; this file keeps only the
+ * plugin's own config surface and re-exports the shared names so existing
+ * importers keep compiling.
  */
-
-/** Forge identifier for the host repository. */
-export type ForgeKind = "github" | "gitlab";
+export type { ForgeDeps as AutoPrDeps, ForgeKind } from "@/forge";
 
 /** Configuration surface for `autoPr` in `nax.config.json`. */
 export interface AutoPrConfig {
@@ -15,27 +13,4 @@ export interface AutoPrConfig {
   enabled: boolean;
   /** Whether to create the PR as a draft (default: true) */
   draft: boolean;
-}
-
-/** Dependencies injected into the plugin so tests can swap fs/subprocess access. */
-export interface AutoPrDeps {
-  /**
-   * Run a subprocess and capture its exit code + output streams.
-   *
-   * @param cmd - Argv array passed verbatim to the OS
-   * @param opts - Working-directory and execution options
-   */
-  run(
-    cmd: string[],
-    opts: { cwd: string; timeoutMs?: number },
-  ): Promise<{ exitCode: number; stdout: string; stderr: string }>;
-
-  /**
-   * Read a UTF-8 file from disk.
-   *
-   * @param path - Absolute filesystem path (typically a `workdir`-rooted path
-   *               constructed by callers; the plugin does not interpret it).
-   * @returns File contents, or `null` if the file does not exist.
-   */
-  readText(path: string): Promise<string | null>;
 }

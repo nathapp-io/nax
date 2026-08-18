@@ -6,8 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { findPrTemplate } from "../../../../src/plugins/builtin/auto-pr/template";
-import type { AutoPrDeps } from "../../../../src/plugins/builtin/auto-pr/types";
+import { type ForgeDeps as AutoPrDeps, findPrTemplate } from "@/forge";
 
 function makeDeps(files: Record<string, string>): AutoPrDeps {
   return {
