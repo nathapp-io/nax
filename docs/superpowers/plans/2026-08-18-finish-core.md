@@ -18,7 +18,12 @@
 - **Duplication with `flows/nax-finish/` is expected for the whole of this plan.** Both trees exist; only one is wired. Do not delete, edit or "deduplicate" anything under `flows/`, and do not import from it: `flows/` is loaded by a separate acpx process where the `@/*` alias does not exist, so an import in either direction breaks one of the two.
 - **File size caps:** 600 lines for `src/`, 800 for `test/`. Enforced by `scripts/check-file-sizes.ts`. `machine.ts` is the file at risk; keep routing in `route.ts` and phase bodies short.
 - **No emojis** in code, comments, or documentation.
-- **Imports:** use the `@/` alias (`@/*` -> `./src/*`). `scripts/check-alias-internals.ts` forbids alias imports that reach into a module's internals, so `@/finish` must resolve through `src/finish/index.ts`. `scripts/check-deep-relatives.ts` has a frozen baseline of 2845 — **new tests must import `@/finish`, never `../../../src/finish/...`**.
+- **Imports:** use the `@/` alias (`@/*` -> `./src/*`). `scripts/check-alias-internals.ts` forbids **value** imports that reach past a barrel when `src/<dir>/index.ts` exists (type-only imports are exempt). Three consequences, each of which will fail the gate if ignored:
+  - **`src/cli/index.ts` exists**, so the resolvers must be imported as `import { resolveFeatureSpec } from "@/cli"` — **never** `@/cli/features-resolve`. Same for `@/quality`, `@/config`, `@/test-runners`.
+  - **`src/utils/` has no barrel**, so `@/utils/git` is correct and is what the rest of `src/` already does.
+  - **Inside `src/finish/`, import siblings relatively** (`./types`, `../route`), the way `src/forge/pr.ts` imports `./types`. Once `src/finish/index.ts` exists, `@/finish/types` is an alias-internal violation from anywhere, including from within the module.
+- `scripts/check-deep-relatives.ts` has a frozen baseline of 2845 — **new tests must import `@/finish`, never `../../../src/finish/...`**.
+- **Temp directories in tests:** use `makeTempDir` / `cleanupTempDir` / `withTempDir` from `test/helpers/temp.ts`. `.nax/rules/forbidden-patterns-tests.md` forbids hand-rolled `rm -rf` cleanup.
 - **Errors:** use `NaxError` from `src/errors.ts` with a `FINISH_*` code. The flow's own `FinishError` (`flows/nax-finish/errors.ts`) exists only because `flows/` cannot import `src/`; it does not move. `scripts/check-nax-error.ts` has a baseline — do not add violations.
 - **Commits:** conventional commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`). Attribution is disabled globally; do not add co-author trailers.
 - **Branch:** create `feat/finish-core` from `main` before Task 1.
@@ -159,6 +164,27 @@ export interface FinishState {
 }
 ```
 
+- [ ] Add the two gate result interfaces to `types.ts`, not to the gate modules. `route.ts` (Task 2) consumes both and is built before the gates, so defining them in `gates/*.ts` would make Task 2 uncompilable on its own:
+
+```ts
+export interface AcceptanceGateResult {
+  /** Every group that ran exited 0. Says nothing about groups that could not run. */
+  passed: boolean;
+  ran: number;
+  /** Packages whose acceptance test the resolver expected but which is absent on disk. */
+  missing: string[];
+  output: string;
+}
+
+export interface QualityGateResult {
+  passed: boolean;
+  /** Gate names that actually ran; empty means nothing was configured. */
+  ran: string[];
+  failing: string[];
+  output: string;
+}
+```
+
 - [ ] Add `createFinishState(init)` returning zeroed counters for all four phases and `status: "running"`.
 - [ ] Add `serializeFinishState(state): string` (`JSON.stringify`, 2-space) and `deserializeFinishState(text): FinishState`, which throws `NaxError("FINISH_STATE_VERSION")` on a `version` other than `1` and `NaxError("FINISH_STATE_UNPARSEABLE")` on bad JSON.
 
@@ -217,10 +243,11 @@ export function routeReview(
   5. **Findings with `st.fixAttempts >= MAX_FIX_ATTEMPTS` escalates**, reason `` `${phase} review still reporting ${n} finding(s) after ${st.fixAttempts} fix attempts.` `` Otherwise `fix`.
 - [ ] Add `routeAcceptance(result: AcceptanceGateResult, st: FinishPhaseState): { route: GateRoute; reason?: string }` and `routeQualityGates(result: QualityGateResult, st: FinishPhaseState): { route: GateRoute | "green"; reason?: string }`, lifting the routing out of `flows/nax-finish/steps/gates.ts` and leaving the running to Tasks 5-6. The four escalation reasons in that file are user-visible strings and stay byte-identical.
 - [ ] Add `gateCommitRoute(committed, files, testFileRegex): "changed" | "tests-only" | "unchanged"`, ported from `nax-finish.flow.ts`. Keep the two hazard branches exactly: an unresolvable post-commit SHA is `changed`, and an empty file list is `changed`. "Cannot classify" reviews; it never skips.
+- [ ] Port `partitionTestFiles` from `flows/nax-finish/steps/context.ts` into `route.ts` — `gateCommitRoute` is its only caller and lives here. Keep both hazards: an unparseable regex source is skipped rather than thrown (a bad pattern in one config entry must not take a finish down mid-loop), and no patterns at all classifies everything as non-test, because "cannot classify" must mean "review it".
 
 **Verification:**
 
-- [ ] `bun test test/unit/finish/route.test.ts` — the ported table, plus: an `undefined` outcome escalates and does not read `findings`; a `judgment` finding escalates even with `fixAttempts: 0`; gaps at the cap escalate with the phase-named reason; a clean review with gaps routes `incomplete`, never `clean`.
+- [ ] `bun test test/unit/finish/route.test.ts` — the ported table, plus: an `undefined` outcome escalates and does not read `findings`; a `judgment` finding escalates even with `fixAttempts: 0`; gaps at the cap escalate with the phase-named reason; a clean review with gaps routes `incomplete`, never `clean`; `partitionTestFiles` with no patterns returns everything as non-test; `gateCommitRoute` with a committed change and an empty file list returns `changed`.
 - [ ] `bun x tsc --noEmit && bun run lint`.
 - [ ] Commit: `feat(finish): add deterministic routing and caps over explicit state`.
 
@@ -232,7 +259,7 @@ export function routeReview(
 
 **Steps:**
 
-- [ ] Write `test/unit/finish/audit.test.ts` first, against a `tmpdir()` audit directory. Run it; watch it fail.
+- [ ] Write `test/unit/finish/audit.test.ts` first, using `withTempDir` from `test/helpers/temp.ts` for the audit directory. Run it; watch it fail.
 - [ ] Implement `src/finish/audit.ts`, porting `flows/nax-finish/steps/result.ts` with two changes: `node:fs/promises` stays (append needs `appendFile`; `Bun.write` has no append mode, and `mkdir` before append stays required because the per-project audit directory does not exist on a project's first run), and the audit directory is supplied by the caller rather than derived.
 
 ```ts
@@ -261,7 +288,25 @@ export async function readRounds(t: AuditTarget): Promise<FinishRound[]>;
 export async function writeResult(t: AuditTarget, result: FinishResult): Promise<void>;
 ```
 
-- [ ] Add `recordRound(t, state, phase, round): Promise<void>` — the one place a round is written. It increments `state.phases[phase].rounds`, stamps `attempt` from it, and calls `appendRound`. **No other module may call `appendRound` directly**; that single-writer rule is what makes D2.3 hold. Say so in the doc comment.
+- [ ] Add the single writer, typed so the rule is enforced by the compiler rather than by convention:
+
+```ts
+/**
+ * Record one round. The ONLY place `attempt` is assigned (D2.3).
+ *
+ * The caller cannot supply `attempt` -- the parameter type omits it -- so the
+ * two-counters-into-one-field defect (F3) cannot be reintroduced by a new call
+ * site. No other module may call `appendRound` directly.
+ */
+export async function recordRound(
+  t: AuditTarget,
+  state: FinishState,
+  phase: FinishPhase,
+  round: Omit<FinishRound, "attempt">,
+): Promise<void>;
+```
+
+  It increments `state.phases[phase].rounds`, stamps `attempt` from it, and calls `appendRound`.
 - [ ] `ts` is passed in by the caller, not read from `new Date()` inside — the machine tests assert ordering and must not depend on clock resolution.
 
 **Verification:**
@@ -279,13 +324,30 @@ export async function writeResult(t: AuditTarget, result: FinishResult): Promise
 
 **Steps:**
 
-- [ ] Copy `flows/nax-finish/commit-message.ts` to `src/finish/commit-message.ts`. Rewrite its imports to `@/finish/types`; change nothing else. Copy `test/unit/flows/nax-finish/commit-message.test.ts` to `test/unit/finish/commit-message.test.ts` with imports retargeted and **assertions untouched** — it is the evidence the port changed nothing.
-- [ ] Adapt the `messageCtx` parameter: `buildFixCommitMessage` currently takes acpx `ctx.outputs`. Change the signature to take the findings and dispositions directly (`{ findings: Finding[]; dispositions: FindingDisposition[] }`) and update the copied test's fixtures to build that object instead of an `outputs` map. This is the only permitted edit; the rendered strings must be identical, which the untouched assertions prove.
+- [ ] Copy `flows/nax-finish/commit-message.ts` to `src/finish/commit-message.ts`. Rewrite its imports to `./types`; change nothing else. Copy `test/unit/flows/nax-finish/commit-message.test.ts` to `test/unit/finish/commit-message.test.ts` with imports retargeted and **assertions untouched** — it is the evidence the port changed nothing.
+- [ ] Adapt the `MessageCtx` parameter — and adapt it to **all three** shapes it reads, not just findings. `buildFixCommitMessage` takes an acpx `ctx.outputs` map keyed by node id and reads `review_<phase>.findings`, `quality_gates.{failing,output}` **and** `acceptance.output` (`commit-message.ts:113,155,179,185`). A replacement carrying only findings silently drops the failing-gate list and the acceptance runner evidence from the commit body. Replace it with a named struct:
+
+```ts
+export interface CommitMessageCtx {
+  /** Findings the phase's reviewer reported (spec/quality phases). */
+  findings?: Finding[];
+  /** The quality gate's red command names and runner output (gate phase). */
+  gate?: { failing?: string[]; output?: string };
+  /** The acceptance runner's output (acceptance phase). */
+  acceptance?: { output?: string };
+}
+```
+
+  `outputsFor` and `findingsFor` collapse into direct reads. Keep `findingsFor`'s `Boolean(f?.title)` filter — a malformed finding must not render an empty bullet. Update the copied test's **fixtures** to build this struct instead of an `outputs` map; the **assertions on the rendered strings stay untouched**, and that is what proves the port changed nothing.
 - [ ] Write `test/unit/finish/commit.test.ts` first for the new module, stubbing `_finishGitDeps.git`. Run it; watch it fail.
 - [ ] Implement `src/finish/commit.ts`, porting `flows/nax-finish/steps/git.ts` onto `gitWithTimeout` (D2.6):
 
+**`gitWithTimeout(args, workdir, timeoutMs)` prepends `"git"` itself** (`src/utils/git.ts:73`). Every argv in `flows/nax-finish/steps/git.ts` leads with `"git"`, so a verbatim copy spawns `git git status`. Strip the leading element from all six call sites.
+
 ```ts
 export const _finishGitDeps = { git: gitWithTimeout };
+// correct:   _finishGitDeps.git(["status", "--porcelain"], repoRoot)
+// NOT:       _finishGitDeps.git(["git", "status", "--porcelain"], repoRoot)
 
 /** Push can legitimately outrun the 10s default in `@/utils/git`; a gate that times out mid-push
  *  would report a failure that already half-happened. */
@@ -301,12 +363,11 @@ export async function commitAndPush(repoRoot: string, branch: string, message: s
 ```
 
 - [ ] Keep every behaviour of the original, each of which is load-bearing: `git add -A` not `-u` (a fix routinely adds a new test file, and an untracked file is invisible to `git diff <base>...HEAD`); `--no-verify` on mid-loop checkpoints only (a repo's pre-commit hook must not kill a run over an intermediate state the gate loop is about to fix); the terminal `commitAndPush` leaves hooks on; an unconditional push (the local branch may be ahead of its remote from the run's own commits); and a **throwing** commit failure — an uncommitted fix is unreviewable, and continuing silently reproduces #1397.
-- [ ] Port `partitionTestFiles` from `flows/nax-finish/steps/context.ts` into `commit.ts` (its only caller is the gate-commit route). Keep both hazards: an unparseable regex source is skipped rather than thrown, and no patterns at all classifies everything as non-test — "cannot classify" must mean "review it".
-- [ ] Port `buildCommitRound` and `commitRoundOutcome` from `flows/nax-finish/steps/commit-round.ts` verbatim, changing only imports. `sha` and `failing` stay *omitted* rather than nulled: a reader distinguishes "no commit" from "record lost" by the key's absence, which only works if absence never means anything else.
+- [ ] Port `buildCommitRound` and `commitRoundOutcome` from `flows/nax-finish/steps/commit-round.ts`, with one change: **drop `attempt` from `CommitRoundInput` and return `Omit<FinishRound, "attempt">`**. `recordRound` (Task 3) is the sole assigner of that field; a builder that also sets it is the second writer D2.3 exists to remove. `sha` and `failing` stay *omitted* rather than nulled: a reader distinguishes "no commit" from "record lost" by the key's absence, which only works if absence never means anything else.
 
 **Verification:**
 
-- [ ] `bun test test/unit/finish/commit.test.ts test/unit/finish/commit-message.test.ts` — asserts: a clean tree commits nothing and returns `shaBefore === shaAfter`; a dirty tree runs `add -A` then `commit`; `skipHooks` adds `--no-verify` and the terminal push path does not; a failing `git commit` throws `NaxError`; the push uses `PUSH_TIMEOUT_MS`, not the 10s default; `partitionTestFiles` with no patterns returns everything as non-test.
+- [ ] `bun test test/unit/finish/commit.test.ts test/unit/finish/commit-message.test.ts` — asserts: a clean tree commits nothing and returns `shaBefore === shaAfter`; a dirty tree runs `add -A` then `commit`; `skipHooks` adds `--no-verify` and the terminal push path does not; a failing `git commit` throws `NaxError`; the push uses `PUSH_TIMEOUT_MS`, not the 10s default. (`partitionTestFiles` is covered by `route.test.ts` — Task 2.)
 - [ ] `bun x tsc --noEmit && bun run lint`.
 - [ ] Commit: `feat(finish): add commit rounds on nax's own git helper`.
 
@@ -316,7 +377,9 @@ export async function commitAndPush(repoRoot: string, branch: string, message: s
 
 **Files:** `src/finish/context.ts`, `test/unit/finish/context.test.ts`
 
-Replaces `load_ctx`, which shelled `nax features resolve --json` and re-parsed its output. In-process the resolvers are direct calls, so the JSON contract, the `FINISH_RESOLVE_UNPARSEABLE` error and `toAcceptanceStatus`'s degrade-to-`no-prd` narrowing all disappear — there is nothing left to narrow.
+Replaces `load_ctx`, which shelled `nax features resolve --json` and re-parsed its output. In-process the resolver is a direct call, so the JSON contract, the `FINISH_RESOLVE_UNPARSEABLE` error and `toAcceptanceStatus`'s degrade-to-`no-prd` narrowing all disappear — there is nothing left to narrow.
+
+**One call, not three.** `resolveFeatureSpec` already returns `acceptance` (from `resolveFeatureAcceptance`) and `testPatterns` on an `ok` result (`src/cli/features-resolve.ts:205-212`) — it is exactly what backs the `--json` output the flow was parsing. Calling the three resolvers separately would run acceptance resolution twice and lose the "resolve once" property `load_ctx`'s header comment exists to state. Note also that `testPatterns.regex` is **already `string[]` of sources**, not `RegExp[]`; there is no `.source` mapping to do.
 
 **Steps:**
 
@@ -325,11 +388,8 @@ Replaces `load_ctx`, which shelled `nax features resolve --json` and re-parsed i
 
 ```ts
 export const _finishContextDeps = {
-  git: gitWithTimeout,
-  resolveFeatureSpec,          // @/cli/features-resolve
-  resolveFeatureAcceptance,    // @/cli/features-acceptance
-  loadConfig,                  // @/config
-  resolveTestFilePatterns,     // @/test-runners
+  git: gitWithTimeout,         // @/utils/git
+  resolveFeatureSpec,          // @/cli  -- the barrel; @/cli/features-resolve is an alias-internal violation
 };
 
 export interface FinishContext {
@@ -339,6 +399,7 @@ export interface FinishContext {
   groups: AcceptanceGroupResult[];
   /** Regex sources from the ADR-009 SSOT. Empty means "cannot classify", never "nothing is a test". */
   testFileRegex: string[];
+  // `AcceptanceGroupResult` and `AcceptanceResolutionStatus` are type-only exports of `@/cli`.
   commitsAhead: number;
   route: "proceed" | "nothing-to-finish" | "escalate";
   reason?: string;
@@ -348,9 +409,11 @@ export async function loadFinishContext(feature: string, workdir: string): Promi
 ```
 
 - [ ] `detectBaseBranch`: `git remote show origin`, match `/HEAD branch:\s*(\S+)/`, else verify `origin/main`, else `origin/master`. Port verbatim — the unverified last resort is exactly why preflight below must not trust a zero.
-- [ ] Spec resolution: call `resolveFeatureSpec(feature, workdir)`. A result whose `specSource` is null (`status` `missing` or `feature-not-found`) is **not** a proceed — return `route: "escalate"` with a reason naming the feature and the paths it checked. The flow threw `FINISH_SPEC_NOT_FOUND` here; escalating is the same decision routed instead of thrown (I7).
-- [ ] Acceptance: call `resolveFeatureAcceptance(feature, workdir)` and take `status` and `groups` as given. It is documented never to throw and to degrade to `no-prd`, so the flow's `toAcceptanceStatus` narrowing is dead weight in-process — do not port it.
-- [ ] Test patterns: `resolveTestFilePatterns(await loadConfig(workdir), workdir)`, mapping to `.source` strings. A throw yields `[]`, matching the CLI's own `catch` — and `[]` means "cannot classify" downstream (Task 4).
+- [ ] Feature resolution: **one** `resolveFeatureSpec(feature, workdir)` call, read for all three fields.
+  - A result whose `specSource` is null (`status` `missing` or `feature-not-found`) is **not** a proceed — return `route: "escalate"` with a reason naming the feature and its `checked` paths. The flow threw `FINISH_SPEC_NOT_FOUND` here; escalating is the same decision routed instead of thrown (I7).
+  - **Wrap the call in a `try/catch`.** Unlike `resolveFeatureAcceptance`, which is documented never to throw, `resolveFeatureSpec` has no internal catch and `validateFeatureName` throws on an invalid feature name (`features-resolve.ts:200`). Context load runs before the machine, so its outer catch is not in play yet — a throw here must become `route: "escalate"`, not an unhandled rejection in the post-run phase.
+  - Take `acceptance.status` and `acceptance.groups` as given; the resolver degrades to `no-prd` itself, so the flow's `toAcceptanceStatus` narrowing is dead weight in-process — do not port it. Absent `acceptance` (only possible on a non-`ok` status, which already escalated) is `no-prd` with no groups.
+  - `testPatterns?.regex ?? []` is the classification input. `[]` means "cannot classify" downstream (Task 4), never "nothing is a test file".
 - [ ] Preflight: `git rev-list --count <base>..HEAD`. **A failed count must never be reported as zero.** Both a non-zero exit and an unreadable stdout return `route: "escalate"` with the ported reason text; only a parsed finite count may return `nothing-to-finish`. This is the defect that made a finish report "nothing to finish" having verified, reviewed and pushed nothing.
 
 **Verification:**
@@ -373,14 +436,7 @@ export async function loadFinishContext(feature: string, workdir: string): Promi
 ```ts
 export const _acceptanceGateDeps = { run: runQualityCommand };   // @/quality
 
-export interface AcceptanceGateResult {
-  /** Every group that ran exited 0. Says nothing about groups that could not run. */
-  passed: boolean;
-  ran: number;
-  /** Packages whose acceptance test the resolver expected but which is absent on disk. */
-  missing: string[];
-  output: string;
-}
+// AcceptanceGateResult comes from ./types (Task 1) -- do not redeclare it here.
 
 export async function runAcceptanceGate(
   repoRoot: string,
@@ -445,13 +501,7 @@ export async function resolveGateCommands(
   packageDirs: string[],
 ): Promise<GateCommand[]>;
 
-export interface QualityGateResult {
-  passed: boolean;
-  /** Gate names that actually ran; empty means nothing was configured. */
-  ran: string[];
-  failing: string[];
-  output: string;
-}
+// QualityGateResult comes from ./types (Task 1) -- do not redeclare it here.
 
 export async function runQualityGates(
   repoRoot: string,
@@ -568,6 +618,8 @@ Before opening the PR, verify each of these by running the command, not by readi
 - [ ] **The state stays serializable.** `grep -rnE "new (Map|Set)\(|=> " src/finish/state.ts` shows nothing in the interface or the constructors.
 - [ ] **The two regression tests were proven against the old behaviour**, not merely passing against the new — Task 3 and Task 7 each have an explicit revert step. If you skipped either, do it now: a fix that was never seen to fail is indistinguishable from a coincidence.
 - [ ] **Baselines unchanged.** `bun scripts/check-deep-relatives.ts` and `bun scripts/check-nax-error.ts` pass without `--update-baseline`.
+- [ ] **Barrels respected.** `bun scripts/check-alias-internals.ts` passes. The likely violation is `@/cli/features-resolve` or `@/finish/types`; both must be `@/cli` and `./types`.
+- [ ] **No import cycle from the CLI barrel.** `@/cli` is a heavy barrel (it re-exports `planCommand` and the plan pipeline). It does not import `@/execution` at runtime today — only a single type-only import in `status-features.ts` — so `src/finish` -> `@/cli` is acyclic, but plan 4 wires `src/finish` into `src/execution/runner-completion.ts`. Confirm `bun x tsc --noEmit` is clean and that `bun test test/unit/finish/` does not warn about a partially-initialized module before handing over.
 
 ## Follow-on plans
 
