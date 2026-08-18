@@ -25,7 +25,7 @@ import { resolveGateCommands, runQualityGates } from "./gates/quality";
 import type { FinishOps } from "./ops";
 import { gateCommitRoute, routeAcceptance, routeQualityGates, routeReview } from "./route";
 import type { FinishState } from "./state";
-import type { Finding, FinishPhase, FinishResult, FinishTimeouts, QualityGateResult } from "./types";
+import type { Finding, FinishResult, FinishTimeouts, QualityGateResult } from "./types";
 
 export interface FinishMachineDeps {
   context: FinishContext;
@@ -63,7 +63,16 @@ async function doEscalate(
   state.status = "escalated";
   state.escalationReason = reason;
   state.findings = findings;
-  const { url, deliveryError } = await deps.ops.escalate(state, reason, findings);
+  // ops.escalate is documented "must not throw" (./ops), but this is the
+  // terminal safety net -- a violation here must still leave a result on
+  // disk rather than propagate past the outer catch and skip writeResult.
+  let url: string | undefined;
+  let deliveryError: string | undefined;
+  try {
+    ({ url, deliveryError } = await deps.ops.escalate(state, reason, findings));
+  } catch (err) {
+    deliveryError = errorMessage(err);
+  }
   const result: FinishResult = {
     feature: state.feature,
     status: "escalated",
@@ -177,6 +186,11 @@ async function runReviewLoop(
     const outcome = await ops.review(phase, { state });
     phaseState.reviewAttempts += 1;
     const routed = routeReview(phase, outcome, phaseState);
+    // Set as soon as routing decides -- state.findings documents "the current
+    // phase's reviewer last reported" (./types), and a throw from any op past
+    // this point (fix, the commit, or a later phase) must escalate with these
+    // findings rather than the [] the outer catch would otherwise see.
+    state.findings = routed.findings;
 
     if (routed.route === "clean") {
       await recordRound(audit, state, phase, { ts: now(), phase, committed: false, outcome: "passed", findings: [] });
@@ -264,6 +278,7 @@ async function runQualityGatesLoop(state: FinishState, deps: FinishMachineDeps):
   const { audit, now, ops, context } = deps;
 
   for (;;) {
+    assertNotAborted(deps);
     const gates = await runGateZeroAndRepoGates(state, deps);
     const routed = routeQualityGates(gates, state.phases.gate);
 
