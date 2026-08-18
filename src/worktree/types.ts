@@ -21,7 +21,7 @@ export class WorktreeDependencyPreparationError extends Error {
 
   constructor(
     message: string,
-    readonly mode: "inherit" | "provision" | "off",
+    readonly mode: "provision" | "off",
     options?: { cause?: unknown },
   ) {
     super(message, options);

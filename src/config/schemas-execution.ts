@@ -124,7 +124,7 @@ const smartTestRunnerFieldSchema = z
 
 const WorktreeDependenciesConfigSchema = z
   .object({
-    mode: z.enum(["inherit", "provision", "off"]).default("off"),
+    mode: z.enum(["provision", "off"]).default("off"),
     setupCommand: z.string().nullable().default(null),
   })
   .superRefine((value, ctx) => {

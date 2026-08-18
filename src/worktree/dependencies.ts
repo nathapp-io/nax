@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import { spawn } from "../utils/bun-deps";
@@ -6,29 +5,20 @@ import { parseCommandToArgv } from "../utils/command-argv";
 import type { PrepareWorktreeDependenciesOptions, WorktreeDependencyContext } from "./types";
 import { WorktreeDependencyPreparationError } from "./types";
 
-const PHASE_ONE_INHERIT_UNSUPPORTED_FILES = [
-  "package.json",
-  "bun.lock",
-  "bun.lockb",
-  "package-lock.json",
-  "pnpm-lock.yaml",
-  "yarn.lock",
-  "requirements.txt",
-  "pyproject.toml",
-  "Cargo.toml",
-  "go.mod",
-  "Gemfile",
-  "composer.json",
-  "pom.xml",
-  "build.gradle",
-  "build.gradle.kts",
-] as const;
-
 export const _worktreeDependencyDeps = {
-  existsSync,
   spawn,
 };
 
+/**
+ * Resolve the cwd a story executes from inside its worktree, installing
+ * dependencies first when the repo needs its own install.
+ *
+ * `off` (the default) installs nothing, and for Node/Bun repos that is not a
+ * gap: worktrees live at `<projectRoot>/.nax-wt/<storyId>/`, inside the project
+ * root, so module resolution walks up to the root `node_modules` on its own.
+ * Ecosystems without that upward walk — a Python venv, bundler, composer —
+ * need `provision` with an explicit `setupCommand`.
+ */
 export async function prepareWorktreeDependencies(
   options: PrepareWorktreeDependenciesOptions,
 ): Promise<WorktreeDependencyContext> {
@@ -38,8 +28,6 @@ export async function prepareWorktreeDependencies(
   switch (mode) {
     case "off":
       return { cwd: resolvedCwd };
-    case "inherit":
-      return resolveInheritedDependencies(options, resolvedCwd);
     case "provision":
       return provisionDependencies(options.config, options.worktreeRoot, resolvedCwd);
   }
@@ -47,28 +35,6 @@ export async function prepareWorktreeDependencies(
 
 function resolveDependencyCwd(options: PrepareWorktreeDependenciesOptions): string {
   return options.storyWorkdir ? join(options.worktreeRoot, options.storyWorkdir) : options.worktreeRoot;
-}
-
-function resolveInheritedDependencies(
-  options: PrepareWorktreeDependenciesOptions,
-  resolvedCwd: string,
-): WorktreeDependencyContext {
-  if (hasDependencyManifests(options.worktreeRoot, resolvedCwd)) {
-    throw new WorktreeDependencyPreparationError(
-      `[worktree-deps] inherit mode is unsupported for dependency-managed worktrees in phase 1. Use mode "provision" with execution.worktreeDependencies.setupCommand, or switch to "off".`,
-      "inherit",
-    );
-  }
-  return { cwd: resolvedCwd };
-}
-
-function hasDependencyManifests(worktreeRoot: string, resolvedCwd: string): boolean {
-  const directories = resolvedCwd === worktreeRoot ? [worktreeRoot] : [worktreeRoot, resolvedCwd];
-  return directories.some((directory) =>
-    PHASE_ONE_INHERIT_UNSUPPORTED_FILES.some((filename) =>
-      _worktreeDependencyDeps.existsSync(join(directory, filename)),
-    ),
-  );
 }
 
 async function provisionDependencies(
@@ -79,7 +45,7 @@ async function provisionDependencies(
   const setupCommand = config.execution.worktreeDependencies.setupCommand;
   if (!setupCommand) {
     throw new WorktreeDependencyPreparationError(
-      "[worktree-deps] provision mode requires execution.worktreeDependencies.setupCommand in phase 1.",
+      "[worktree-deps] provision mode requires execution.worktreeDependencies.setupCommand.",
       "provision",
     );
   }

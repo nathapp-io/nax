@@ -1,11 +1,29 @@
 # SPEC: Worktree Dependency Strategies (WT-DEPS-001)
 
-**Status:** Draft
+**Status:** Partially superseded — `inherit` was removed (see below)
 **Date:** 2026-04-19
 **Author:** Nax Dev
 **Related issue:** #88
 
 ---
+
+> **Amendment (issue #574): the `inherit` mode described below was never built and has been removed.**
+>
+> As shipped, `inherit` returned the same cwd as `off` and threw whenever the worktree
+> carried a dependency manifest — so it failed on precisely the dependency-managed repos
+> this spec names as its motivating case. The allowlisted inheritance-strategy registry
+> (§`inherit`) does not exist.
+>
+> It was removed rather than implemented because the placement decision already provides
+> what it promised for the largest case: worktrees are created at
+> `<projectRoot>/.nax-wt/<storyId>/`, inside the project root, so Node/Bun module
+> resolution walks up to the root `node_modules` with no preparation step at all. `off`
+> is therefore the working default for JS/TS, and `provision` covers ecosystems with no
+> upward resolution (a Python venv, bundler, composer).
+>
+> A config carrying `mode: "inherit"` still loads — a compat shim maps it to `"off"` with
+> a deprecation warning. Everything below describing `inherit`, including it being the
+> default, is historical. The live modes are `provision` and `off`, default `off`.
 
 ## Summary
 
