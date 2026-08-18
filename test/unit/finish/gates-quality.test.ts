@@ -1,15 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
-import { _qualityGateDeps, resolveGateCommands, runQualityGates } from "../../../src/finish/gates/quality";
-import { routeQualityGates } from "../../../src/finish/route";
-import type { FinishPhaseState } from "../../../src/finish/state";
+import { _qualityGateDeps, resolveGateCommands, routeQualityGates, runQualityGates } from "@/finish";
+import type { FinishPhaseState } from "@/finish";
 
 const original = { ..._qualityGateDeps };
 afterEach(() => {
   _qualityGateDeps.run = original.run;
   _qualityGateDeps.loadConfig = original.loadConfig;
-  _qualityGateDeps.loadConfigForWorkdir = original.loadConfigForWorkdir;
   _qualityGateDeps.loadPackageOverride = original.loadPackageOverride;
 });
 
@@ -35,14 +33,27 @@ describe("resolveGateCommands", () => {
       expect(packageDir).toBe("apps/web");
       return { quality: { ...DEFAULT_CONFIG.quality, commands: { test: "bun test apps/web" } } };
     };
-    _qualityGateDeps.loadConfigForWorkdir = async (_rootConfigPath, packageDir) => {
-      expect(packageDir).toBe("apps/web");
-      return configWithCommands({ test: "bun test apps/web" });
-    };
 
     const commands = await resolveGateCommands("/repo", ["apps/web"]);
 
     expect(commands).toEqual([{ name: "test@apps/web", command: "bun test apps/web", cwd: "/repo/apps/web" }]);
+  });
+
+  test("a package overlay that sets only one gate does not fan out the root's other gates for that package", async () => {
+    // Regression for the fan-out bug: root has all four gates configured, the
+    // package overlay sets only `test`. Only `test@pkg` may appear -- picking
+    // up build/typecheck/lint from a merged config would re-run them a second
+    // time under the package's cwd.
+    _qualityGateDeps.loadConfig = async () =>
+      configWithCommands({ build: "root build", typecheck: "root typecheck", lint: "root lint", test: "root test" });
+    _qualityGateDeps.loadPackageOverride = async (_repoRoot, packageDir) => {
+      expect(packageDir).toBe("apps/web");
+      return { quality: { ...DEFAULT_CONFIG.quality, commands: { test: "bun test apps/web" } } };
+    };
+
+    const commands = await resolveGateCommands("/repo", ["apps/web"]);
+
+    expect(commands.map((c) => c.name)).toEqual(["build", "typecheck", "lint", "test", "test@apps/web"]);
   });
 
   test("a profile-layered root command is picked up (single-file read is gone)", async () => {
@@ -64,10 +75,6 @@ describe("resolveGateCommands", () => {
     _qualityGateDeps.loadPackageOverride = async (_repoRoot, packageDir) => {
       if (packageDir !== ".") return null;
       return { quality: { ...DEFAULT_CONFIG.quality, commands: { build: "echo root" } } };
-    };
-    _qualityGateDeps.loadConfigForWorkdir = async (_rootConfigPath, packageDir) => {
-      if (packageDir === ".") return configWithCommands({ build: "echo root" });
-      return configWithCommands({});
     };
 
     // packageDir "." resolves to the same cwd as the root ("/repo/." === "/repo"),
@@ -91,9 +98,6 @@ describe("resolveGateCommands", () => {
   test("a package that merely inherits root commands (no own quality.commands) is not fanned out", async () => {
     _qualityGateDeps.loadConfig = async () => configWithCommands({ test: "bun test" });
     _qualityGateDeps.loadPackageOverride = async () => null;
-    _qualityGateDeps.loadConfigForWorkdir = async () => {
-      throw new Error("loadConfigForWorkdir must not be called for a package with no own override");
-    };
 
     const commands = await resolveGateCommands("/repo", ["apps/inherits-only"]);
 
@@ -109,8 +113,6 @@ describe("resolveGateCommands", () => {
         commands: { lint: `lint@${packageDir}`, build: `build@${packageDir}` },
       },
     });
-    _qualityGateDeps.loadConfigForWorkdir = async (_rootConfigPath, packageDir) =>
-      configWithCommands({ lint: `lint@${packageDir}`, build: `build@${packageDir}` });
 
     const commands = await resolveGateCommands("/repo", ["pkg-b", "pkg-a"]);
 

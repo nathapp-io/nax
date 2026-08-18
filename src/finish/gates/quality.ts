@@ -17,14 +17,13 @@
  * suite once per such package.
  */
 import { join } from "node:path";
-import { type NaxConfig, PROJECT_NAX_DIR, loadConfig, loadConfigForWorkdir, loadPackageOverride } from "@/config";
+import { type NaxConfig, PROJECT_NAX_DIR, loadConfig, loadPackageOverride } from "@/config";
 import { runQualityCommand } from "@/quality";
 import type { QualityGateResult } from "../types";
 
 export const _qualityGateDeps = {
   run: runQualityCommand,
   loadConfig,
-  loadConfigForWorkdir,
   loadPackageOverride,
 };
 
@@ -49,10 +48,10 @@ export interface GateCommand {
 
 type QualityCommands = NaxConfig["quality"]["commands"];
 
-/** True when the package's own overlay file sets at least one `quality.commands` key. */
-function overlaySetsCommands(override: Partial<NaxConfig> | null): boolean {
+/** The package's own overlay `quality.commands`, or `undefined` when it sets none. */
+function overlayCommandsOf(override: Partial<NaxConfig> | null): QualityCommands | undefined {
   const commands = override?.quality?.commands;
-  return commands !== undefined && Object.keys(commands).length > 0;
+  return commands !== undefined && Object.keys(commands).length > 0 ? commands : undefined;
 }
 
 /**
@@ -91,19 +90,21 @@ export async function resolveGateCommands(repoRoot: string, packageDirs: string[
     add(gate, rootCommands[gate], repoRoot);
   }
 
-  const rootConfigPath = join(repoRoot, PROJECT_NAX_DIR, "config.json");
-
   for (const packageDir of packageDirs) {
     if (!packageDir) continue;
 
     const override = await _qualityGateDeps.loadPackageOverride(repoRoot, packageDir);
-    if (!overlaySetsCommands(override)) continue;
+    const overlayCommands = overlayCommandsOf(override);
+    if (!overlayCommands) continue;
 
-    const packageConfig = await _qualityGateDeps.loadConfigForWorkdir(rootConfigPath, packageDir);
-    const packageCommands: QualityCommands = packageConfig.quality?.commands ?? {};
     const packageCwd = join(repoRoot, packageDir);
     for (const gate of GATE_ORDER) {
-      add(`${gate}@${packageDir}`, packageCommands[gate], packageCwd);
+      // Only a gate the overlay itself names — never backfill from the merged
+      // config, which would silently re-add the root's inherited commands
+      // (loadConfigForWorkdir deep-merges quality.commands) and fan out a
+      // second run of every gate the package never actually overrode.
+      if (overlayCommands[gate] === undefined) continue;
+      add(`${gate}@${packageDir}`, overlayCommands[gate], packageCwd);
     }
   }
 
