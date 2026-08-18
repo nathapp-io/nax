@@ -93,10 +93,10 @@ async function runPreconditions(state: FinishState, deps: FinishMachineDeps): Pr
 }
 
 /**
- * Step 2: the acceptance fix-and-reverify loop. Also step 6's "gate zero"
- * reuses this when the acceptance status is not `disabled` — no, gate zero
- * runs the gate raw (see `runGateZero`); this function owns the *looped*
- * acceptance gate used at step 2 and again from step 4's spec-fix branch (I8).
+ * Step 2: the acceptance fix-and-reverify loop. Step 6's gate zero
+ * (`runGateZeroAndRepoGates`) re-runs the acceptance gate raw, not through
+ * this loop — this function owns only the looped acceptance gate used at
+ * step 2 and again from step 4's spec-fix branch (I8).
  */
 async function runAcceptanceLoop(state: FinishState, deps: FinishMachineDeps): Promise<FinishResult | null> {
   const { context, audit, now, ops } = deps;
