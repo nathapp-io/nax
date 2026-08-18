@@ -1,4 +1,4 @@
-# Finish Review Layer and LLM Ops (`src/finish/review/`, `src/finish/ops/`) Implementation Plan
+# Finish Review Layer and LLM Ops (`src/finish/review/`, `src/finish/operations/`) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -23,7 +23,7 @@ Unchanged from the finish-core plan; repeated because they are the ones a worker
 - **File size caps:** 600 lines for `src/`, 800 for `test/` (`scripts/check-file-sizes.ts`). `src/finish/review/prompt.ts` and the generated `prompts.gen.ts` are the two at risk — the prose is 288 lines of `.md` today.
 - **No emojis** in code, comments, or documentation. The three reference files are emoji-free today (they use `≥`, `≠`, `→`, all BMP); keep them that way.
 - **Imports:** `@/` alias for other modules, **relative inside `src/finish/`** (`./types`, `../route`), because `src/finish/index.ts` exists and `scripts/check-alias-internals.ts` flags any value import reaching past a barrel. `@/cli`, `@/config`, `@/operations`, `@/agents` — never their subpaths. `src/utils/` has no barrel, so `@/utils/git` is correct.
-- `scripts/check-deep-relatives.ts` has a frozen baseline — **new tests import `@/finish`**, not `../../../src/finish/...`. Existing `test/unit/operations/*.test.ts` files use deep relatives; do not copy that habit into new files. If the baseline must move, use `bun run check:deep-relatives:update` and say so in the commit.
+- `scripts/check-deep-relatives.ts` has a frozen baseline — **new tests import `@/finish` and `@test/helpers`**, never `../../../src/finish/...` or `../../helpers` (two `../` segments already counts). The existing `test/unit/operations/*.test.ts` files use deep relatives and `test/unit/finish/gates-quality.test.ts` uses the aliases; copy the finish file's style, not the operations one. If the baseline must move, use `bun run check:deep-relatives:update` and say so in the commit.
 - **Temp directories in tests:** `makeTempDir` / `cleanupTempDir` / `withTempDir` from `test/helpers/temp.ts`. `.nax/rules/forbidden-patterns-tests.md` forbids hand-rolled `rm -rf` cleanup.
 - **Errors:** `NaxError` from `src/errors.ts` with a `FINISH_*` code. `scripts/check-nax-error.ts` has a baseline — do not add violations.
 - **Commits:** conventional commits. Attribution is disabled globally; no co-author trailers.
@@ -48,16 +48,18 @@ Unchanged from the finish-core plan; repeated because they are the ones a worker
 | `src/finish/review/parse.ts` | `parseReviewReport`, `parseDispositions`. Pure, non-throwing. |
 | `src/finish/review/audit-gaps.ts` | `auditGaps`, `validateDispositions`. |
 | `src/finish/review/index.ts` | Barrel for the review subtree. |
-| `src/finish/ops/review-op.ts` | `finishReviewOp` — one `RunOperation`, parameterised by phase. |
-| `src/finish/ops/fix-op.ts` | `finishFixOp` — one `RunOperation`, parameterised by phase. |
-| `src/finish/ops/narrative-op.ts` | `finishNarrativeOp` plus the narrative prose helpers. |
-| `src/finish/ops/index.ts` | Barrel for the ops subtree. |
+| `src/finish/operations/review-op.ts` | `finishReviewOp` — one `RunOperation`, parameterised by phase. |
+| `src/finish/operations/fix-op.ts` | `finishFixOp` — one `RunOperation`, parameterised by phase. |
+| `src/finish/operations/narrative-op.ts` | `finishNarrativeOp` plus the narrative prose helpers. |
+| `src/finish/operations/pr-title.ts` | `sanitizeTitle`, `parseTitle`, `resolveTitle`, `TITLE_OPEN_TAG` / `TITLE_CLOSE_TAG`. Ported here because the narrative parser depends on it. |
+| `test/unit/finish/pr-title.test.ts` | Ported from `test/unit/flows/nax-finish/pr-title.test.ts`. |
+| `src/finish/operations/index.ts` | Barrel for the operations subtree. |
 | `test/unit/finish/review-parse.test.ts` | Ported from `test/unit/flows/nax-finish/findings-parse.test.ts`. |
 | `test/unit/finish/review-audit-gaps.test.ts` | Gate behaviour and path confinement. |
 | `test/unit/finish/review-prompt.test.ts` | Ported from `test/unit/flows/nax-finish/review-prompts.test.ts`. |
-| `test/unit/finish/ops-review.test.ts` | Op shape, build, parse, retry policy. |
-| `test/unit/finish/ops-fix.test.ts` | Op shape, build per phase, disposition parse and validation. |
-| `test/unit/finish/ops-narrative.test.ts` | Ported from `test/unit/flows/nax-finish/narrative.test.ts`. |
+| `test/unit/finish/op-review.test.ts` | Op shape, build, parse, retry policy. |
+| `test/unit/finish/op-fix.test.ts` | Op shape, build per phase, disposition parse and validation. |
+| `test/unit/finish/op-narrative.test.ts` | Ported from `test/unit/flows/nax-finish/narrative.test.ts`. |
 | `test/unit/finish/review-window.test.ts` | The two new state seams (Task 1). |
 
 **Modified:**
@@ -66,18 +68,21 @@ Unchanged from the finish-core plan; repeated because they are the ones a worker
 | --- | --- |
 | `src/finish/state.ts` | Two fields on `FinishPhaseState` — `reviewSince`, `reviewGaps` (Task 1). |
 | `src/finish/machine.ts` | Populate and clear them (Task 1). |
-| `src/finish/index.ts` | Re-export the review and ops subtrees. |
+| `src/finish/index.ts` | Re-export the review and operations subtrees. |
 | `src/runtime/session-role.ts` | Four new canonical roles (Task 6). |
+| `.nax/rules/adapter-wiring.md` | The same four roles in its `callOp` role table; the `.claude/rules/` mirror regenerated (Task 6). |
 | `package.json` | `check:review-prompts` script, appended to `lint`. |
 
 **Deleted:** none.
+
+> **The op directory is `src/finish/operations/`, not `src/finish/ops/`.** `src/finish/ops.ts` already exists (the `FinishOps` contract, plan 2). A sibling `ops/` directory would make `./ops` ambiguous for both Bun and TypeScript — the file wins, the directory's barrel is silently unreachable, and the module's own barrel `export ... from "./ops"` would resolve to whichever the tooling prefers. Do not "tidy" the name back.
 
 ---
 
 ## Out of scope for this plan
 
 - **The concrete `FinishOps` object.** `openDraftPr`, `promotePr` and `escalate` need the PR body, the forge calls and the notification channel; those are plan 4, which also assembles the `FinishOps` implementation that hands these ops their `CallContext`. This plan ships the ops themselves and their pure layers.
-- **The PR body, title and template merge.** `flows/nax-finish/steps/pr-body.ts`, `pr-title.ts` and `pr-template-merge.ts` move in plan 4. The narrative op ships here, but nothing consumes its prose until plan 4 amends the body with it.
+- **The PR body and template merge.** `flows/nax-finish/steps/pr-body.ts` and `pr-template-merge.ts` move in plan 4. The narrative op ships here, but nothing consumes its prose until plan 4 amends the body with it. **`pr-title.ts` is the exception and ships in this plan** — `parseNarrativeNode` calls `parseTitle`, and `parseNarrative` strips the title block using `TITLE_OPEN_TAG` / `TITLE_CLOSE_TAG`, so the narrative op cannot be ported without it. It is model-output parsing, which is this plan's subject; plan 4 consumes it.
 - **Config.** `finish.autoFlow.*` -> `finish.*`, the reviewer `{agent, model}` reshape and the compat shim are the wiring plan's. This plan takes the reviewer model selection as **op input**, so no schema change is needed to build or test it (D3.6).
 - **Wiring.** `PostRunPhase`, `runFinishPhase`, `status-writer.ts`, `usePipelineBusEvents.ts`, cost snapshots and deleting `flows/` all belong to the wiring plan.
 - **The `nax-toolkit-skills` sync.** Cutover step 5. This plan makes nax's copies canonical and proves them byte-identical to what ships today; the skills repo's own sync script and drift check are a separate PR in that repo.
@@ -100,9 +105,17 @@ Read these before writing code. Each departs from a line-by-line port and each h
 
 **D3.6 — Reviewer model selection arrives as op input, not from config.** `RunOperation.model` accepts a resolver `(input, ctx) => ConfiguredModel | undefined` (`src/operations/types.ts`), which is how `semanticReviewOp` carries its tier on `input.semanticConfig.model`. Do the same: `FinishReviewInput.model?: ConfiguredModel`, resolver returns it, `callOp` falls back to `"balanced"` when absent. That keeps the config reshape entirely in the wiring plan and keeps these ops testable with no config fixture.
 
-**D3.7 — The generator is the only writer of `prompts.gen.ts`, and the `.md` is the only source.** `worker-protocol.md` inlines the finding block that the flow's `.ts` interpolates as `${FINDING_BLOCK_SHAPE}` — that one interpolation is the *entire* difference between the two representations (verified by diff; the two dimension files are byte-identical). So the generator splits `worker-protocol.md` on its `## Output format` heading into `WORKER_PROTOCOL_MECHANICS` and the remainder, extracts `FINDING_BLOCK_SHAPE` from the fenced block inside that section, and emits `WORKER_PROTOCOL` as the whole file. The #1625 split (mechanics used alone by `buildReviewPrompt`, the full protocol exported only for byte-diffing) is preserved by construction — **do not re-derive that fix, and do not let the assembled prompt carry two output contracts again.**
+**D3.7 — The generator is the only writer of `prompts.gen.ts`, and the `.md` is the only source.** `worker-protocol.md` inlines the finding block that the flow's `.ts` interpolates as `${FINDING_BLOCK_SHAPE}` — that one interpolation is the *entire* difference between the two representations (verified by diff; the two dimension files are byte-identical). So the generator splits `worker-protocol.md` on its `## Output format` heading into `WORKER_PROTOCOL_MECHANICS` and the remainder, extracts `FINDING_BLOCK_SHAPE` as the fenced block inside that section **including its ``` fences** (that is what the constant holds today), and emits `WORKER_PROTOCOL` as the whole file. The #1625 split (mechanics used alone by `buildReviewPrompt`, the full protocol exported only for byte-diffing) is preserved by construction — **do not re-derive that fix, and do not let the assembled prompt carry two output contracts again.**
 
 **D3.8 — Dispositions are validated inside the fix op (closing D2.7).** `commit.ts` records dispositions as given; the fix op's `verify` hook resolves each rejection's cited path against the workdir and marks `evidenceMissing`. `verify` is the sanctioned hook for a post-parse pass that consults disk (`src/operations/types.ts`), and it is the only place with both the parsed value and a filesystem. Do not add a second validation pass in `commit.ts`.
+
+**D3.9 — Every finish op declares an empty-output escape, because `callOp` throws without one.** `src/operations/call.ts:422-466`: when the agent returns no output, `callOp` returns the retry strategy's `exhaustedFallback` if one was produced, else calls `op.recover`, else throws `CALL_OP_NO_OUTPUT`. That default is wrong for two of the three ops here:
+
+- **fix** — the fixer's real output is the working tree, which `commitFixes` reads independently. A throw on an empty reply discards a fix that is already on disk and escalates a run that in fact progressed. Declare `recover: async () => ({ dispositions: [] })` (the sanctioned "disk holds the artifact" use of `recover`, ADR-020 D4).
+- **narrative** — `runFinishMachine` calls `ops.narrate` inside its single try, **after** `promotePr` and **before** `state.status` is set (`machine.ts`, `finishTerminal`). A throw there turns a run that passed every gate and already promoted its PR into an `escalated` result. Declare `recover: async () => ({ narrative: "" })`.
+- **review** — a throw is not wanted either, but the retry strategy's `exhaustedFallback` already covers it: the empty-output branch of `makeParseRetryStrategy` calls it with `""`, and `callOp` returns that object. Note that the fallback must be a **plain object** (`callOp` rejects a non-object with `CALL_OP_INVALID_FALLBACK`) and that `callOp` merges `estimatedCostUsd` into whatever it returns, so the output type must tolerate the extra key.
+
+Also note what `exhaustedFallback` does **not** do here: `callOp` discards it whenever the outer `op.parse` succeeds, and our parse never fails (D3.4). Its only live role is the empty-output branch above. Do not build logic that assumes it fires on a merely unreadable reply.
 
 ---
 
@@ -136,6 +149,7 @@ Nothing downstream of this plan works without it: the ported prompts take `since
   reviewGaps?: string[];
 ```
 
+- [ ] Do **not** bump `FinishState.version`. Both fields are optional additions, so a state written before them still deserializes correctly and reads as "no window, no gaps" — which is the right answer for a run that predates them.
 - [ ] `createFinishState` leaves both absent (do not initialise to `null`/`[]` — absent is the "no window" signal and the serializer must not persist empties).
 - [ ] In `machine.ts`, add one private helper and call it after **every** `commitFixes` call site (the acceptance loop, the review loop, the gate loop):
 
@@ -176,12 +190,12 @@ function noteCommitWindow(state: FinishState, shaBefore: string | null): void {
 
 **Steps:**
 
-- [ ] Produce the three `.md` files **from the flow's constants**, not by hand and not by copying the skills repo (which may not be checked out): unescape `\``, `\$` and `\\` from the template literals in `flows/nax-finish/review-prompts.ts` and write the result. `SPEC_REVIEW_DIMENSIONS` -> `spec-review.md`, `QUALITY_REVIEW_DIMENSIONS` -> `code-quality.md`, `WORKER_PROTOCOL_MECHANICS + WORKER_PROTOCOL_OUTPUT_FORMAT` -> `worker-protocol.md` with `${FINDING_BLOCK_SHAPE}` replaced by the literal fenced block it interpolates (D3.7). Each file ends with a single trailing newline.
+- [ ] Produce the three `.md` files **from the flow's constants**, not by hand and not by copying the skills repo (which may not be checked out): unescape the template literals in `flows/nax-finish/review-prompts.ts` in **one left-to-right pass** over the three sequences `\``, `\${` and `\\` (a naive sequence of independent `replace` calls can double-unescape a literal backslash), and write the result. `SPEC_REVIEW_DIMENSIONS` -> `spec-review.md`, `QUALITY_REVIEW_DIMENSIONS` -> `code-quality.md`, `WORKER_PROTOCOL_MECHANICS + WORKER_PROTOCOL_OUTPUT_FORMAT` -> `worker-protocol.md` with `${FINDING_BLOCK_SHAPE}` replaced by the literal fenced block it interpolates (D3.7). Each file ends with a single trailing newline.
 - [ ] Write `scripts/generate-review-prompts.ts`. It reads the three `.md`, and emits `src/finish/review/prompts.gen.ts` exporting:
   - `SPEC_REVIEW_DIMENSIONS`, `QUALITY_REVIEW_DIMENSIONS` — whole files.
   - `WORKER_PROTOCOL` — the whole of `worker-protocol.md`.
   - `WORKER_PROTOCOL_MECHANICS` — everything before the `## Output format` heading.
-  - `FINDING_BLOCK_SHAPE` — the contents of the first fenced block inside the `## Output format` section.
+  - `FINDING_BLOCK_SHAPE` — the first fenced block inside the `## Output format` section, **including its opening and closing ``` fences**. Verified against `flows/nax-finish/review-prompts.ts:237`, where the constant begins and ends with an escaped fence: emitting the fence-less body would silently change every assembled reviewer prompt, because `outputContract` interpolates this constant directly (`review-prompts.ts:372`).
   - A header comment stating the file is generated by this script from `references/*.md` and must not be edited, and naming the check script.
   - Escaping: backtick and `${` must be escaped in the emitted template literals. A file that round-trips unequal is a generator bug, not an input problem.
 - [ ] Write `scripts/check-review-prompts-generated.ts`: regenerate in memory, compare to the committed file, exit 1 with the first differing line on drift. Follow the shape of an existing `scripts/check-*.ts` (`check-file-sizes.ts` is the closest for output style).
@@ -204,7 +218,7 @@ function noteCommitWindow(state: FinishState, shaBefore: string | null): void {
 
 **Steps:**
 
-- [ ] Port `test/unit/flows/nax-finish/findings-parse.test.ts` to `test/unit/finish/review-parse.test.ts`, importing from `@/finish`. **Drop only the glued-heading cases** (D3.3); everything else moves with its assertions untouched — it is the strongest evidence the port changed nothing.
+- [ ] Port `test/unit/flows/nax-finish/findings-parse.test.ts` to `test/unit/finish/review-parse.test.ts`, importing from `@/finish`. **Drop exactly one test** — `"reads a heading glued to the tail of the preceding narration line"` (D3.3). The other three glued-heading tests are **negative** guards (`"does not split when whitespace separates..."`, `"does not split when the section word is not at end of line"`, `"does not split a well-formed heading at its own leading #"`); they assert the parser leaves prose alone, still hold without the regex, and are exactly what proves the deletion changed no behaviour. Keep them, and note in the file that they now pass trivially. Everything else moves with its assertions untouched.
 - [ ] Port `flows/nax-finish/findings-parse.ts` to `src/finish/review/parse.ts`: `parseReviewReport` and `parseDispositions`, with `HEADING`, `BLOCK`, `FIELD`, `NO_FINDINGS`, `BULLET`, `DISPOSITION`, `EVIDENCE`, `parseTouchpoint` and `parseJudgment`. Keep every doc comment except `GLUED_HEADING`'s.
 - [ ] Delete the `GLUED_HEADING` constant and the `text.replace(GLUED_HEADING, "$1\n$2")` normalisation. Replace the removed block comment with a short one naming `src/agents/acp/adapter-output.ts`'s newline join as the reason it is unnecessary in-process, so a future reader does not "restore" it.
 - [ ] Keep the "section state starts at `findings`" behaviour and the `saw*Section` flags exactly as they are — the audit gate keys off them and `routeReview` keys off the gate.
@@ -229,7 +243,8 @@ function noteCommitWindow(state: FinishState, shaBefore: string | null): void {
 - [ ] Port `flows/nax-finish/steps/review-audit.ts` to `src/finish/review/audit-gaps.ts`: `auditGaps(report, workdir)` and `validateDispositions(workdir, dispositions)`, plus the private `exists` helper and `MAX_CHECKED = 20`.
 - [ ] Two changes from the source, both required here:
   - Take a `ReviewReport` (Task 3's output), not a `ReviewVerdict`. The fields are the same four (`touchpoints`, `walk`, `sawTouchpointsSection`, `sawWalkSection`) but `ReviewVerdict` is legacy shape (D3.5).
-  - Use `Bun.file(...).exists()` instead of `node:fs/promises` `stat` — the `node:fs` comment in the source exists only because `flows/` runs in acpx's Node process. **Keep the path confinement exactly as it is**: resolve under `workdir` and treat an escaping path as non-existent. Both `touchpoint.path` and a disposition's `evidence` are untrusted parsed model output.
+  - **Keep `stat` from `node:fs/promises`. Do not switch to `Bun.file(...).exists()`** — it returns `false` for a directory (verified: `await Bun.file("/tmp").exists()` is `false`), so a reviewer that cites a directory touchpoint would be judged to have listed a non-existent path, produce a spurious gap, and escalate at `MAX_INCOMPLETE_ATTEMPTS = 1`. `stat` is already used this way in `src/`, e.g. `src/context/test-scanner.ts`; the Bun-native preference does not extend to an API with different semantics. The source's `node:fs` comment can be rewritten, but the call stays.
+  - **Keep the path confinement exactly as it is**: resolve under `workdir` and treat an escaping path as non-existent. Both `touchpoint.path` and a disposition's `evidence` are untrusted parsed model output.
 - [ ] Keep the gap message strings verbatim — they are shown to the reviewer as the retry's instructions (Task 5's `gapNotice`), and a reworded string is a silently changed prompt.
 
 **Verification:**
@@ -274,13 +289,15 @@ export function buildFixPrompt(
 
 ### Task 6: The review op
 
-**Files:** `src/runtime/session-role.ts`, `src/finish/ops/review-op.ts`, `src/finish/ops/index.ts`, `test/unit/finish/ops-review.test.ts`
+**Files:** `src/runtime/session-role.ts`, `.nax/rules/adapter-wiring.md`, `src/finish/operations/review-op.ts`, `src/finish/operations/index.ts`, `test/unit/finish/op-review.test.ts`
 
 **Steps:**
 
 - [ ] Add `"finish-review-spec"`, `"finish-review-quality"`, `"finish-fix"` and `"finish-narrative"` to **both** `CanonicalSessionRole` and `KNOWN_SESSION_ROLES` in `src/runtime/session-role.ts`. The list is closed and an unknown role is a spec-review failure; adding to one and not the other compiles but fails `isSessionRole`.
-- [ ] Write `test/unit/finish/ops-review.test.ts` first. Model it on `test/unit/operations/acceptance-fix.test.ts` — assert `kind`, `name`, `session.role`, `session.lifetime`, `stage`, then drive `build` and `parse` directly with a `{ packageView, config }` context built from `makeTestRuntime()`. Import the op from `@/finish`. Close every runtime in `afterEach`.
-- [ ] Implement `src/finish/ops/review-op.ts`:
+- [ ] Add the four roles to the role table in **`.nax/rules/adapter-wiring.md`** (the canonical rules store; the table is at the "callOp run-kind" row). A role registry that the rule does not list is exactly the prose-rot the rules exist to prevent. Run `nax rules lint` before and after, and use no emoji — an astral character breaks the canonical loader. `.claude/rules/adapter-wiring.md` mirrors it; refresh that copy through `nax generate` rather than by hand.
+- [ ] Add the roles to `test/unit/runtime/` in the shape `session-role-plan-critic.test.ts` already uses (membership, no duplicates, `isSessionRole` true).
+- [ ] Write `test/unit/finish/op-review.test.ts` first. Model it on `test/unit/operations/acceptance-fix.test.ts` — assert `kind`, `name`, `session.role`, `session.lifetime`, `stage`, then drive `build` and `parse` directly with a `{ packageView, config }` context built from `makeTestRuntime()`. Import the op from `@/finish`. Close every runtime in `afterEach`.
+- [ ] Implement `src/finish/operations/review-op.ts`:
 
 ```ts
 export interface FinishReviewInput {
@@ -298,21 +315,22 @@ export interface FinishReviewInput {
 ```
 
   - `kind: "run"`, `name: "finish-review"`, `stage: "review"`, `config: finishConfigSelector` (already exists, `src/config/selectors.ts:138`).
-  - `session: { role: input.phase === "spec" ? ... }` is **not** expressible — `session.role` is a static field, not a resolver. Declare `session: { role: "finish-review-spec", lifetime: "fresh" }` on the op and pass the per-phase role through `CallContext.sessionOverride.role`, which `callOp` already honours. Assert that in the test so nobody "fixes" it into a non-existent resolver.
+  - `session: { role: input.phase === "spec" ? ... }` is **not** expressible — `session.role` is a static field, not a resolver. Declare `session: { role: "finish-review-spec", lifetime: "fresh" }` on the op and pass the per-phase role through `CallContext.sessionOverride.role`, which `callOp` honours at `src/operations/call.ts:169` (`ctx.sessionOverride?.role ?? runOp.session.role`). This is an established pattern, not an improvisation — `src/plan/critic.ts:109` runs `planDraftOp` under a `plan-revise` override the same way. Assert it in the test so nobody "fixes" it into a resolver the type does not allow.
   - `model: (input) => input.model`, `timeoutMs: (input) => input.timeoutMs`.
   - `build`: `{ role: {...}, task: { content: buildReviewPrompt(input.phase, input) } }` — same `ComposeInput` shape `semanticReviewOp` uses.
-  - `parse`: `parseReviewReport(output)`. Never throws (D3.4).
+  - Output type: `export type FinishReviewOutput = ReviewReport & { gaps: string[] }`. It is structurally the `ReviewOutcome` (`{ findings, gaps }`) that `routeReview` consumes, so the caller needs no adapter.
+  - `parse`: `{ ...parseReviewReport(output), gaps: [] }` — `parse` must already return the op's `O`, and gaps cannot be computed here because `parse` is required to be side-effect free. Never throws (D3.4).
   - `retry`: `makeParseRetryStrategy({ ... })`. Read `src/agents/retry/parse-retry.ts` before writing it — three of its options are easy to get wrong here:
     - `prompts` requires **both** `invalid` and `truncated` (`ParseRetryOpts` declares neither optional). Give each real text: `invalid` re-states the three-section contract; `truncated` asks for the FINDINGS section alone.
     - `looksTruncated` defaults to `looksLikeTruncatedJson`, which is meaningless against a free-text reply. Pass an explicit text-aware predicate (an unterminated finding block, i.e. a `[SEVERITY]` line with no following `Fix:`), or `() => false` if that proves noisy. Leaving the default in place silently classifies every reply by JSON heuristics.
     - `parse: (t) => parseReviewReport(t)` and `validate` must be the real check — the strategy re-parses `ctx.lastOutput` on every turn, so a constant `validate` over-retries. Validate that the reply produced findings **or** the `No findings.` marker, which is exactly the distinction between a review and a narration.
     - `exhaustedFallback: () => <empty report>` so exhaustion degrades to "no verdict" (which `routeReview` escalates) rather than throwing (D3.4). `reviewerKind: "finish-review"`, `maxAttempts: 2`.
-- [ ] Add `verify` that runs `auditGaps(report, input.workdir)` and returns the report with its gaps attached, so the caller gets `{ findings, gaps }` — the `ReviewOutcome` shape `routeReview` consumes (`src/finish/route.ts`). `verify` is the sanctioned disk-consulting hook; `parse` must stay side-effect free.
-- [ ] Export the op and a `FinishReviewOutput` type through `src/finish/ops/index.ts` and the module barrel.
+- [ ] Add `verify: async (parsed, input) => ({ ...parsed, gaps: await auditGaps(parsed, input.workdir) })`. `verify` is the sanctioned disk-consulting hook and its non-null return wins (`call.ts:557`); it must never return `null` here, which would fall through to `recover`/the unfiltered parse and silently ship a review with no gap check.
+- [ ] Export the op and a `FinishReviewOutput` type through `src/finish/operations/index.ts` and the module barrel.
 
 **Verification:**
 
-- [ ] `bun test test/unit/finish/ops-review.test.ts` — asserts: (1) op shape, including that `stage` is `"review"` and `session.lifetime` is `"fresh"`; (2) `build` for `spec` contains the spec dimensions and not the quality ones, and vice versa; (3) `build` with `since` produces the incremental prompt; (4) `parse` of a well-formed reply returns the findings and both `saw*Section` flags true; (5) `parse` of an empty string returns an empty report rather than throwing; (6) `verify` attaches the gaps `auditGaps` reports, against a temp workdir.
+- [ ] `bun test test/unit/finish/op-review.test.ts` — asserts: (1) op shape, including that `stage` is `"review"` and `session.lifetime` is `"fresh"`; (2) `build` for `spec` contains the spec dimensions and not the quality ones, and vice versa; (3) `build` with `since` produces the incremental prompt; (4) `parse` of a well-formed reply returns the findings and both `saw*Section` flags true; (5) `parse` of an empty string returns an empty report rather than throwing; (6) `verify` attaches the gaps `auditGaps` reports, against a temp workdir.
 - [ ] `bun test test/unit/runtime` — the session-role additions break nothing.
 - [ ] `bun x tsc --noEmit && bun run lint`.
 - [ ] Commit: `feat(finish): add the phase-parameterised review operation`.
@@ -321,7 +339,7 @@ export interface FinishReviewInput {
 
 ### Task 7: The fix op
 
-**Files:** `src/finish/ops/fix-op.ts`, `test/unit/finish/ops-fix.test.ts`
+**Files:** `src/finish/operations/fix-op.ts`, `test/unit/finish/op-fix.test.ts`
 
 **Steps:**
 
@@ -330,13 +348,14 @@ export interface FinishReviewInput {
   - `stage: "rectification"`, `session: { role: "finish-fix", lifetime: "fresh" }`, `name: "finish-fix"`, `config: finishConfigSelector`.
   - `build`: `buildFixPrompt(input.phase, input)`.
   - `parse`: `{ dispositions: parseDispositions(output) }` — nothing else in the reply is read. The flow's `parseFixVerdict` comment says why the route is not computed here: a bare `[1]` disposition line parses as a one-element JSON array and would flip the route. There is no route to flip now, but do not reintroduce a JSON tier for the same reason.
-  - `verify`: `validateDispositions(input.workdir, parsed.dispositions)` (D3.8), returning the marked list.
+  - `verify`: `async (parsed, input) => ({ dispositions: await validateDispositions(input.workdir, parsed.dispositions ?? []) })` (D3.8). It must return the op's `O` — a bare array would typecheck as `unknown` at the call site and lose the field name.
+  - `recover: async () => ({ dispositions: [] })` (D3.9) — without it an empty reply throws `CALL_OP_NO_OUTPUT` and discards a fix that is already on disk.
   - No `retry`: a fix reply carrying no DISPOSITIONS section is not a parse failure — the fixer's real output is the working tree, which `commitFixes` reads independently. Re-prompting for prose the machine does not depend on spends a turn for nothing. State this in the op's doc comment so it is not "fixed" later.
 - [ ] The op's output type is `FixOutcome` from `src/finish/ops.ts` (`{ dispositions?: FindingDisposition[] }`) — reuse it rather than declaring a parallel shape, so plan 4's assembly is a straight pass-through.
 
 **Verification:**
 
-- [ ] `bun test test/unit/finish/ops-fix.test.ts` — asserts: (1) op shape; (2) `build` for `gate` includes the gate output and does not number findings; (3) `build` for `spec` numbers findings 1-based in the order given; (4) `parse` reads `[1] fixed` / `[2] rejected — evidence: path:42` into two dispositions with the right indices; (5) `parse` of a reply with no DISPOSITIONS section returns an empty list without throwing; (6) `verify` marks `evidenceMissing` on a rejection citing a file absent from a temp workdir and leaves a present one unmarked.
+- [ ] `bun test test/unit/finish/op-fix.test.ts` — asserts: (1) op shape; (2) `build` for `gate` includes the gate output and does not number findings; (3) `build` for `spec` numbers findings 1-based in the order given; (4) `parse` reads `[1] fixed` / `[2] rejected — evidence: path:42` into two dispositions with the right indices; (5) `parse` of a reply with no DISPOSITIONS section returns an empty list without throwing; (6) `verify` marks `evidenceMissing` on a rejection citing a file absent from a temp workdir and leaves a present one unmarked.
 - [ ] `bun x tsc --noEmit && bun run lint`.
 - [ ] Commit: `feat(finish): add the phase-parameterised fix operation`.
 
@@ -344,19 +363,21 @@ export interface FinishReviewInput {
 
 ### Task 8: The narrative op
 
-**Files:** `src/finish/ops/narrative-op.ts`, `test/unit/finish/ops-narrative.test.ts`
+**Files:** `src/finish/operations/narrative-op.ts`, `src/finish/operations/pr-title.ts`, `test/unit/finish/op-narrative.test.ts`, `test/unit/finish/pr-title.test.ts`
 
 **Steps:**
 
-- [ ] Port `test/unit/flows/nax-finish/narrative.test.ts` to `test/unit/finish/ops-narrative.test.ts`, importing from `@/finish`.
-- [ ] Port `flows/nax-finish/narrative.ts`'s pure half into `src/finish/ops/narrative-op.ts`: `NARRATIVE_MAX_CHARS`, `buildNarrativePrompt`, `parseNarrative`, `parseNarrativeNode`, `resolveNarrative`, `readSpecSummary`, `truncate`, `sectionBody` and the tag/heading regexes. Drop `narrativePrompt(ctx)` — it is the acpx `ctx.outputs` adapter and its caller does not exist here.
-- [ ] `readSpecSummary` reads the spec from disk; move it onto `Bun.file` and keep its fallback behaviour (a missing or sectionless spec yields `null`, and `resolveNarrative` falls back accordingly).
+- [ ] Port `test/unit/flows/nax-finish/narrative.test.ts` to `test/unit/finish/op-narrative.test.ts`, importing from `@/finish`.
+- [ ] Port `flows/nax-finish/pr-title.ts` to `src/finish/operations/pr-title.ts` first, with its test (`test/unit/flows/nax-finish/pr-title.test.ts` -> `test/unit/finish/pr-title.test.ts`). `parseNarrativeNode` calls `parseTitle` and `parseNarrative` strips the title block via `TITLE_OPEN_TAG` / `TITLE_CLOSE_TAG`; the narrative module does not compile without it. Nothing else changes in that file.
+- [ ] Port `flows/nax-finish/narrative.ts`'s pure half into `src/finish/operations/narrative-op.ts`: `NARRATIVE_MAX_CHARS`, `buildNarrativePrompt`, `parseNarrative`, `parseNarrativeNode`, `resolveNarrative`, `readSpecSummary`, `truncate`, `sectionBody` and the tag/heading regexes. Drop `narrativePrompt(ctx)` — it is the acpx `ctx.outputs` adapter and its caller does not exist here.
+- [ ] **`readSpecSummary` keeps its signature** — `(specPath, readText)`, where `readText` is an injected reader. That parameter is its test seam and its whole suite drives it; replacing it with a direct `Bun.file` call would rewrite the ported tests, which defeats the point of porting them. The caller (plan 4) supplies `(path) => Bun.file(path).text().catch(() => null)`. Keep the fail-open behaviour: a missing or sectionless spec yields `null` and `resolveNarrative` falls back.
 - [ ] Add `finishNarrativeOp`: `stage: "complete"`, `session: { role: "finish-narrative", lifetime: "fresh" }`, `name: "finish-narrative"`, `config: finishConfigSelector`, `build` from `buildNarrativePrompt`, `parse` via `parseNarrativeNode`, `model: (input) => input.model`. No `retry` — an unusable narrative is dropped, never re-prompted, because the PR body has a deterministic fallback and the prose is cosmetic.
+- [ ] Add `recover: async () => ({ narrative: "" })` (D3.9). This one is not cosmetic bookkeeping: `finishTerminal` calls `ops.narrate` after the PR is already promoted, so a throw here reports a fully green run as `escalated`.
 - [ ] The op's input carries the base body text the narrative is written against (`{ base: string; model?: ConfiguredModel; timeoutMs?: number }`). Assembling that base body is plan 4's; this op only needs the string.
 
 **Verification:**
 
-- [ ] `bun test test/unit/finish/ops-narrative.test.ts` — the ported suite passes, including the truncation-at-`NARRATIVE_MAX_CHARS` and tag-extraction cases.
+- [ ] `bun test test/unit/finish/op-narrative.test.ts` — the ported suite passes, including the truncation-at-`NARRATIVE_MAX_CHARS` and tag-extraction cases.
 - [ ] Add one test: `parse` of a reply with no `<narrative>` tags and no "What changed" heading yields the empty result the PR body treats as "no narrative", rather than the raw reply.
 - [ ] `bun x tsc --noEmit && bun run lint`.
 - [ ] Commit: `feat(finish): add the narrative operation and its prose helpers`.
@@ -375,4 +396,4 @@ export interface FinishReviewInput {
 
 ## What the next plan inherits
 
-Plan 4 (PR, escalation, and the `FinishOps` assembly) starts from: the three ops, the review layer, the four session roles, and `FinishState` carrying its re-review window. It owes `pr-body.ts` / `pr-title.ts` / `pr-template-merge.ts`, `escalate.ts` and the notification channel, plus the object that hands each op a `CallContext` and satisfies `FinishOps` — at which point `runFinishMachine` is drivable for real and the wiring plan is the only thing left.
+Plan 4 (PR, escalation, and the `FinishOps` assembly) starts from: the three ops, the review layer, the four session roles, and `FinishState` carrying its re-review window. It owes `pr-body.ts` / `pr-template-merge.ts` (but **not** `pr-title.ts`, which ships here), `escalate.ts` and the notification channel, plus the object that hands each op a `CallContext` and satisfies `FinishOps` — at which point `runFinishMachine` is drivable for real and the wiring plan is the only thing left.
