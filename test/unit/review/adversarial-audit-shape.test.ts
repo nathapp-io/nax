@@ -335,6 +335,34 @@ describe("adversarial structural counterfactual telemetry (#986)", () => {
     });
   });
 
+  test("passed review records adversarialAcceptAnalysis: [] (BUG-1, v0.80.0 regression)", async () => {
+    await withTempDir(async (workdir) => {
+      const llmResponse = JSON.stringify({ passed: true, findings: [] });
+
+      const { auditor, decisions } = captureAuditDecisions();
+      const agentManager = agentManagerWithFixedLLMResponse(llmResponse);
+      const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
+
+      await runAdversarialReview({
+        workdir,
+        storyGitRef: "abc123",
+        story: STORY,
+        adversarialConfig: { ...CFG, diffMode: "embedded" },
+        agentManager,
+        featureName: "feat-passed",
+        runtime,
+      });
+
+      const decision = decisions[0]!;
+      expect(decision.passed).toBe(true);
+      // Pre-refactor (v0.80.0), every passed-style outcome hardcoded [] here —
+      // only the blocking-failure branch ever recorded real accept-analysis.
+      // A decomposition regression briefly passed the (currently always-empty,
+      // but not guaranteed to stay that way) telemetry value through instead.
+      expect(decision.adversarialAcceptAnalysis).toEqual([]);
+    });
+  });
+
   test("ref mode without diff records diffAvailable=false", async () => {
     // Reset the embedded-mode mock from beforeEach; this test installs its own
     // command-discriminating spawn so collectDiffStat succeeds (non-empty stat)
