@@ -1,14 +1,18 @@
 /**
  * Auto-PR Plugin — Forge Adapter Tests
  *
- * Tests for `detectForge`, `hasOpenPr`, and `openDraft` in `forge.ts`.
+ * Tests for `hasOpenPr` and `openDraft` (`@/forge`'s `openPr`), plus a
+ * plugin-level regression test for self-hosted forge classification.
  * Mirrors acceptance criteria US-003 §Forge adapter.
  */
 
 import { describe, expect, test } from "bun:test";
 import type { PostRunActionResult } from "@/plugins/extensions";
-import { detectForge, hasOpenPr, openDraft } from "../../../../src/plugins/builtin/auto-pr/forge";
-import type { AutoPrDeps } from "../../../../src/plugins/builtin/auto-pr/types";
+import { type ForgeDeps as AutoPrDeps, hasOpenPr, openPr as openDraft } from "@/forge";
+// `_autoPrDeps` is not exported from the `@/plugins` barrel — it is a test-only
+// injection seam on the plugin module itself. Import it the way the sibling
+// suite already does (`test/unit/plugins/builtin/auto-pr-acceptance.test.ts:27`).
+import { _autoPrDeps } from "../../../../src/plugins/builtin/auto-pr";
 
 interface CapturedRun {
   cmd: string[];
@@ -33,20 +37,6 @@ function makeDeps(
     readText: async () => null,
   };
 }
-
-describe("detectForge", () => {
-  test("AC1 — returns 'github' for git@github.com SSH remote", () => {
-    expect(detectForge("git@github.com:owner/repo.git")).toBe("github");
-  });
-
-  test("AC2 — returns 'gitlab' for https://gitlab.com HTTPS remote", () => {
-    expect(detectForge("https://gitlab.com/owner/repo.git")).toBe("gitlab");
-  });
-
-  test("AC3 — returns null for a non-github / non-gitlab host", () => {
-    expect(detectForge("https://example.com/owner/repo.git")).toBeNull();
-  });
-});
 
 describe("openDraft (GitHub)", () => {
   test("AC4 — argv begins with gh pr create --draft and includes --head <branch>", async () => {
@@ -190,5 +180,22 @@ describe("hasOpenPr", () => {
     expect(argv).toContain("--output");
     const outputIdx = argv.indexOf("--output");
     expect(argv[outputIdx + 1]).toBe("json");
+  });
+});
+
+// Before src/forge, the plugin classified with `remoteUrl.includes("github.com")`,
+// so a self-hosted host produced null, shouldRun returned false, and auto-PR
+// silently did nothing on every enterprise install.
+describe("auto-PR forge classification (self-hosted regression)", () => {
+  test("classifies a self-hosted GitLab remote", () => {
+    expect(_autoPrDeps.detectForge("git@gitlab.mycorp.com:team/repo.git")).toBe("gitlab");
+  });
+
+  test("classifies a self-hosted GitHub Enterprise remote", () => {
+    expect(_autoPrDeps.detectForge("https://github.mycorp.com/team/repo.git")).toBe("github");
+  });
+
+  test("still rejects a host naming neither forge", () => {
+    expect(_autoPrDeps.detectForge("git@git.corp.com:team/repo.git")).toBeNull();
   });
 });

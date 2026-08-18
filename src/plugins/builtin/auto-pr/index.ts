@@ -14,10 +14,14 @@
  */
 
 import * as path from "node:path";
+import {
+  forgeFromRemoteUrl as _detectForge,
+  findPrTemplate as _findPrTemplate,
+  hasOpenPr as _hasOpenPr,
+  openPr as _openDraft,
+} from "@/forge";
 import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
-import { detectForge as _detectForge, hasOpenPr as _hasOpenPr, openDraft as _openDraft } from "./forge";
 import { type PrBodyContext, buildBody, buildTitle } from "./pr-body";
-import { findPrTemplate as _findPrTemplate } from "./template";
 import type { AutoPrConfig, AutoPrDeps } from "./types";
 
 const PLUGIN_NAME = "nax-auto-pr";
