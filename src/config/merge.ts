@@ -32,7 +32,8 @@ function mergeModels(rootModels: NaxConfig["models"], overrideModels: NaxConfig[
  * - models: per-agent model tier mappings (deep)
  * - routing: strategy, llm (deep)
  * - execution: smartTestRunner, regressionGate (deep), flakeDetection (deep),
- *   mutationCheck (deep), rectification (deep), verificationTimeoutSeconds
+ *   mutationCheck (deep), rectification (deep), verificationTimeoutSeconds,
+ *   worktreeDependencies (deep)
  * - review: enabled, checks, commands (deep), semantic (deep), adversarial (deep)
  * - acceptance: enabled, testPath, fix (deep)
  * - quality: commands (deep), testing (deep), autofix (deep), lintOutput (deep)

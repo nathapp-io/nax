@@ -459,7 +459,7 @@ export function buildPassedResult(
     advisoryFindings: advisoryFindings.length > 0 ? advisoryReviewFindings : undefined,
     diffAvailable,
     adversarialDropAnalysis: telemetry.adversarialDropAnalysis,
-    adversarialAcceptAnalysis: telemetry.adversarialAcceptAnalysis,
+    adversarialAcceptAnalysis: [],
   });
   return {
     check: "adversarial",

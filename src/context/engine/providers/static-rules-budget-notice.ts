@@ -62,6 +62,11 @@ export function budgetNoticeText(droppedCount: number, droppedIds?: string[]): s
  * chunk's content, survives `dedupeChunks` independently of whatever rule
  * section happens to be last (#1610).
  */
+// The notice's own tokens are emitted *after* `applySectionBudget` has already
+// enforced `budgetTokens`, so the prompt can exceed the configured budget by this
+// chunk's size. Intentional: the notice must describe what was dropped, which
+// isn't knowable until after the budget pass runs, and its size is bounded by
+// MAX_LISTED_DROPPED_IDS.
 export function buildBudgetNoticeChunk(storyId: string, droppedCount: number, droppedIds?: string[]): RawChunk {
   const content = `> ${budgetNoticeText(droppedCount, droppedIds)}`;
   return {
