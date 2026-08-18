@@ -20,7 +20,7 @@ import {
   _applyRemovedRoutingKeysShim,
   _applyRemovedWorktreeInheritShim,
 } from "../../../src/config/compat-shims";
-import { loadConfig, loadConfigForWorkdir } from "../../../src/config/loader";
+import { _clearRootConfigCache, loadConfig, loadConfigForWorkdir } from "../../../src/config/loader";
 
 describe("_applyRemovedRoutingKeysShim — routing keys removed with ROUTE-001", () => {
   test("warns and strips routing.customStrategyPath", () => {
@@ -555,5 +555,195 @@ describe("loadConfig — legacy key deprecation shim", () => {
 
     const config = await loadConfig(tempDir);
     expect(config.execution.worktreeDependencies.mode).toBe("off");
+  });
+});
+
+// #1620: `loadConfigForWorkdir` ran no compat-shim chain, so a legacy value the
+// root config migrates with a warning instead hard-failed with
+// PER_PACKAGE_PROFILE_INVALID when it appeared in a per-package overlay — on the
+// config path story execution actually uses (iteration-runner resolves a story's
+// effective config through here whenever the story has a `workdir`). The chain
+// now runs per overlay layer, mirroring the root loader's per-layer placement.
+describe("loadConfigForWorkdir — compat-shim chain on per-package overlays (#1620)", () => {
+  let tempDir: string;
+  let originalGlobalDir: string | undefined;
+
+  beforeEach(() => {
+    tempDir = makeTempDir("nax-workdir-shim-");
+    mkdirSync(join(tempDir, ".nax"), { recursive: true });
+    originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+    process.env.NAX_GLOBAL_CONFIG_DIR = join(tempDir, ".global-nax");
+    _clearRootConfigCache();
+  });
+
+  afterEach(() => {
+    _clearRootConfigCache();
+    cleanupTempDir(tempDir);
+    if (originalGlobalDir === undefined) {
+      delete process.env.NAX_GLOBAL_CONFIG_DIR;
+    } else {
+      process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
+    }
+  });
+
+  const PKG = "packages/app";
+
+  async function writeRootConfig(config: Record<string, unknown>): Promise<void> {
+    await Bun.write(join(tempDir, ".nax", "config.json"), JSON.stringify(config));
+  }
+
+  async function writePackageOverride(override: Record<string, unknown>): Promise<void> {
+    const pkgDir = join(tempDir, ".nax", "mono", ...PKG.split("/"));
+    mkdirSync(pkgDir, { recursive: true });
+    await Bun.write(join(pkgDir, "config.json"), JSON.stringify(override));
+  }
+
+  async function writePackageProfile(name: string, data: Record<string, unknown>): Promise<void> {
+    const profilesDir = join(tempDir, ...PKG.split("/"), ".nax", "profiles");
+    mkdirSync(profilesDir, { recursive: true });
+    await Bun.write(join(profilesDir, `${name}.json`), JSON.stringify(data));
+  }
+
+  function loadForPackage() {
+    return loadConfigForWorkdir(join(tempDir, ".nax", "config.json"), PKG);
+  }
+
+  async function captureWorkdirWarnings(load: () => Promise<unknown>): Promise<string[]> {
+    const captured: string[] = [];
+    resetLogger();
+    initLogger({ level: "warn" });
+    const removeSink = addSink((entry) => captured.push(entry.message));
+    try {
+      await load();
+    } finally {
+      removeSink();
+      resetLogger();
+    }
+    return captured;
+  }
+
+  test("applyRemovedStrategyCompat: a removed routing.strategy in an overlay maps to keyword instead of throwing", async () => {
+    await writeRootConfig({});
+    await writePackageOverride({ routing: { strategy: "manual" } });
+
+    const config = await loadForPackage();
+
+    expect(config.routing.strategy).toBe("keyword");
+  });
+
+  test("applyRemovedStrategyCompat: the removed value in a per-package PROFILE maps to keyword too", async () => {
+    await writeRootConfig({});
+    await writePackageOverride({ profile: "legacy", routing: { strategy: "keyword" } });
+    // `maxIterations` is a non-legacy companion value: it pins that the profile layer
+    // really merged, so a future regression that drops package profiles entirely
+    // cannot make the strategy assertion below pass vacuously.
+    await writePackageProfile("legacy", { routing: { strategy: "adaptive" }, execution: { maxIterations: 7 } });
+
+    const config = await loadForPackage();
+
+    expect(config.execution.maxIterations).toBe(7);
+    expect(config.routing.strategy).toBe("keyword");
+  });
+
+  test("_applyRemovedRoutingKeysShim: routing.adaptive in an overlay is stripped WITH a warning", async () => {
+    await writeRootConfig({});
+    await writePackageOverride({ routing: { adaptive: { costThreshold: 0.5 } } });
+
+    const captured = await captureWorkdirWarnings(loadForPackage);
+
+    expect(captured.filter((m) => m.includes("routing.adaptive") && m.includes("removed"))).toHaveLength(1);
+  });
+
+  test("_applyRemovedRoutingKeysShim: routing.customStrategyPath in an overlay is stripped WITH a warning", async () => {
+    await writeRootConfig({});
+    await writePackageOverride({ routing: { customStrategyPath: "./x.ts" } });
+
+    const captured = await captureWorkdirWarnings(loadForPackage);
+
+    expect(captured.filter((m) => m.includes("routing.customStrategyPath"))).toHaveLength(1);
+  });
+
+  test("applyBatchModeCompat: routing.llm.batchMode in an overlay maps to routing.llm.mode", async () => {
+    await writeRootConfig({});
+    await writePackageOverride({ routing: { llm: { batchMode: true } } });
+
+    const config = await loadForPackage();
+
+    // Root config always carries a resolved routing.llm.mode ("hybrid" by default),
+    // so the mapping only happens if the shim runs on the overlay LAYER, before merge.
+    expect(config.routing.llm?.mode).toBe("one-shot");
+  });
+
+  test("applyRoutingRetryDeprecationWarning: routing.llm.retries in an overlay warns", async () => {
+    await writeRootConfig({});
+    await writePackageOverride({ routing: { llm: { retries: 3 } } });
+
+    const captured = await captureWorkdirWarnings(loadForPackage);
+
+    expect(captured.filter((m) => m.includes("routing.llm.retries"))).toHaveLength(1);
+  });
+
+  test("migrateLegacyTestPattern: context.testCoverage.testPattern in an overlay migrates to smartTestRunner.testFilePatterns", async () => {
+    await writeRootConfig({});
+    await writePackageOverride({ context: { testCoverage: { testPattern: "**/*.spec.ts" } } });
+
+    const config = await loadForPackage();
+
+    const smartTestRunner = config.execution.smartTestRunner as { testFilePatterns?: unknown };
+    expect(smartTestRunner.testFilePatterns).toEqual(["**/*.spec.ts"]);
+    expect(config.context?.testCoverage).not.toHaveProperty("testPattern");
+  });
+
+  test("migrateLegacyReviewModelKey: review.semantic.modelTier in an overlay migrates to review.semantic.model", async () => {
+    await writeRootConfig({});
+    await writePackageOverride({ review: { semantic: { enabled: true, modelTier: "fast" } } });
+
+    const config = await loadForPackage();
+
+    expect(config.review.semantic?.model).toBe("fast");
+    expect(config.review.semantic).not.toHaveProperty("modelTier");
+  });
+
+  test("_applyLegacyReviewExecutionShim: execution.inlineReview in an overlay is stripped WITH a warning", async () => {
+    await writeRootConfig({});
+    await writePackageOverride({ execution: { inlineReview: true } });
+
+    const captured = await captureWorkdirWarnings(loadForPackage);
+
+    expect(captured.filter((m) => m.includes("execution.inlineReview"))).toHaveLength(1);
+  });
+
+  test("a legacy key carried by BOTH the overlay and a per-package profile warns once per resolution", async () => {
+    await writeRootConfig({});
+    await writePackageOverride({ profile: "legacy", routing: { adaptive: { costThreshold: 0.5 } } });
+    await writePackageProfile("legacy", {
+      routing: { adaptive: { costThreshold: 0.9 } },
+      execution: { maxIterations: 7 },
+    });
+
+    const captured = await captureWorkdirWarnings(loadForPackage);
+
+    expect(captured.filter((m) => m.includes("routing.adaptive"))).toHaveLength(1);
+    // Guards against a vacuous pass: one warning must mean "deduped across two
+    // layers", not "the profile layer was never merged".
+    expect((await loadForPackage()).execution.maxIterations).toBe(7);
+  });
+
+  // The two `stripRemovedNoOpKeys` calls on this path are two layers of ONE
+  // resolution, but each got the bare `defaultConfigWarn` sink — so a no-op key
+  // in both the overlay and a package profile warned twice, where the root path
+  // warns once per resolved config. They now share the per-resolution dedupe.
+  test("a removed no-op key in both the overlay and a per-package profile warns once, not twice", async () => {
+    await writeRootConfig({});
+    await writePackageOverride({ profile: "legacy", acceptance: { generateTests: false } });
+    await writePackageProfile("legacy", {
+      acceptance: { generateTests: false },
+      execution: { maxIterations: 7 },
+    });
+
+    const captured = await captureWorkdirWarnings(loadForPackage);
+
+    expect(captured.filter((m) => m.includes("generateTests"))).toHaveLength(1);
+    expect((await loadForPackage()).execution.maxIterations).toBe(7);
   });
 });

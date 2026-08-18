@@ -10,7 +10,6 @@ import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { loadJsonFile } from "../utils/json-file";
 import {
-  _applyRemovedWorktreeInheritShim,
   applyConfigCompatShims,
   createConfigWarnDedupe,
   defaultConfigWarn,
@@ -448,7 +447,29 @@ export async function loadConfigForWorkdir(
 
   logger.debug("config", "Per-package config loaded", { packageConfigPath, packageDir });
   const { profile: packageProfile, ...packageFields } = packageOverride;
-  let merged = mergePackageConfig(rootConfig, packageFields);
+
+  // #1620: one dedupe per package resolution, mirroring `loadConfig`'s per-load
+  // dedupe — the overlay and its package profiles run the same chain, so a legacy
+  // key present in both would otherwise warn once per layer.
+  const warnDedupe = createConfigWarnDedupe();
+
+  // #1620: every overlay layer runs the SAME compat-shim chain as the root layers
+  // (global, project, profile, CLI). Without it a legacy value the root config
+  // migrates with a warning instead hard-failed `PER_PACKAGE_PROFILE_INVALID` here
+  // (e.g. `routing.strategy: "manual"`), and the mapping/warning shims that do not
+  // hard-fail lost their migration or their warning silently.
+  //
+  // Applied per LAYER (pre-merge), not to the merged result, because several shims
+  // only fire when the canonical key is absent — and the merged result always
+  // carries the root's resolved value for it. `routing.llm.batchMode` -> `mode` and
+  // `context.testCoverage.testPattern` -> `execution.smartTestRunner.testFilePatterns`
+  // would both silently no-op if the chain ran post-merge.
+  const shimmedPackageFields = applyConfigCompatShims(
+    packageFields as Record<string, unknown>,
+    logger,
+    warnDedupe,
+  ) as Partial<NaxConfig>;
+  let merged = mergePackageConfig(rootConfig, shimmedPackageFields);
 
   // Strip the four inert no-op keys from the per-package overlay result.
   // Runs for BOTH ordinary package overlays and package profiles (the profile
@@ -456,10 +477,11 @@ export async function loadConfigForWorkdir(
   // the case where a per-package overlay introduces a no-op key on a mergeable
   // field like acceptance.generateTests). Post-merge placement yields one
   // warning per resolved config regardless of which layer supplied the key.
-  merged = stripRemovedNoOpKeys(
-    merged as unknown as Record<string, unknown>,
-    defaultConfigWarn,
-  ) as unknown as NaxConfig;
+  // #1620: the shared per-resolution dedupe, not the bare sink — this strip and
+  // the post-profile one below are two layers of the same resolution, so a key in
+  // both the overlay and a package profile warned twice where the root path warns
+  // once.
+  merged = stripRemovedNoOpKeys(merged as unknown as Record<string, unknown>, warnDedupe.warn) as unknown as NaxConfig;
 
   // CFG-3: the plain per-package overlay (.nax/mono/<pkg>/config.json) also
   // never ran through $VAR resolution — same gap as CFG-2 at the root layer.
@@ -499,7 +521,10 @@ export async function loadConfigForWorkdir(
           { stage: "config", profileName: name, packageDir, varName, path, cause: err },
         );
       }
-      rawMerged = deepMergeConfig<Record<string, unknown>>(rawMerged, resolvedProfileData);
+      // #1620: same chain as the root profile layer (BUG-51) — a per-package
+      // profile can carry the same legacy shapes as any other layer.
+      const shimmedProfileData = applyConfigCompatShims(resolvedProfileData, logger, warnDedupe);
+      rawMerged = deepMergeConfig<Record<string, unknown>>(rawMerged, shimmedProfileData);
     }
     rawMerged.profile = packageChain.join("+");
     rawMerged.profileChain = packageChain;
@@ -522,14 +547,10 @@ export async function loadConfigForWorkdir(
   // profile can reintroduce one). Runs after the reject guards and before
   // safeParse, mirroring the root chain. Post-merge placement yields one
   // warning per resolved config regardless of which layer supplied the key.
-  rawMerged = stripRemovedNoOpKeys(rawMerged, defaultConfigWarn);
-  // #574: this path never ran the compat-shim chain, so a per-package overlay
-  // carrying a removed value hard-fails safeParse below instead of migrating —
-  // and this is the config `prepareWorktreeDependencies` actually receives for a
-  // monorepo story (iteration-runner resolves it through here). Only the
-  // worktree shim is applied: the rest of the chain has the same hole today
-  // (e.g. `routing.strategy: "manual"`), but widening it belongs in its own change.
-  rawMerged = _applyRemovedWorktreeInheritShim(rawMerged, defaultConfigWarn);
+  rawMerged = stripRemovedNoOpKeys(rawMerged, warnDedupe.warn);
+  // #574's single-shim patch here (`_applyRemovedWorktreeInheritShim` on the merged
+  // result) is gone: #1620 replaced it with the full chain run on each overlay layer
+  // above, which covers that case and every other shim.
   const result = NaxConfigSchema.safeParse(rawMerged);
   if (!result.success) {
     // Fail-fast — consistent with root-chain resolution (a missing profile file
