@@ -1,0 +1,248 @@
+/**
+ * How the repo's own PR/MR template is honoured when composing the body.
+ * Local rather than imported from `flows/pr-template-merge.ts` — `flows/` is a
+ * separate, live implementation on a different module system and must not be
+ * imported into `src/`. Plan 3 moves the real `pr-template-merge.ts` and
+ * re-points this.
+ */
+export type TemplateMode = "merge" | "strict" | "ignore";
+
+export type Severity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+export interface Finding {
+  severity: Severity;
+  title: string;
+  problem: string;
+  fix: string;
+  /**
+   * Set when the reviewer marked this finding as needing a human — a spec
+   * conflict or a design call with no safe mechanical fix. This replaces the
+   * whole-reply `escalate` route the reviewer used to choose: escalation is a
+   * property of one finding, not of the phase, so reporting a design concern no
+   * longer halts the pipeline by itself.
+   */
+  judgment?: boolean;
+  /** Why this finding needs a human; the escalation reason when it escalates. */
+  judgmentReason?: string;
+}
+
+/** One external definition the reviewer says it opened before judging. */
+export interface Touchpoint {
+  /** Repo-relative path, or the literal `none` sentinel. */
+  path: string;
+  /** Symbol or line after the final `:`, when the reviewer gave one. */
+  symbol?: string;
+  /** The reviewer's stated reason for opening it (or for there being none). */
+  note: string;
+}
+
+/** A reviewer reply, parsed. Sections are reported separately from their content
+ * so an *absent* section is distinguishable from an *empty* one — only the first
+ * is a reviewer that skipped the obligation. */
+export interface ReviewReport {
+  findings: Finding[];
+  touchpoints: Touchpoint[];
+  walk: string[];
+  sawNoFindings: boolean;
+  sawTouchpointsSection: boolean;
+  sawWalkSection: boolean;
+}
+
+/** What the fix node did with one finding it was handed. */
+export interface FindingDisposition {
+  /** 1-based index into the findings list the fix prompt numbered. */
+  index: number;
+  disposition: "fixed" | "rejected";
+  /** `file:line` pinning the current behaviour; required for a rejection. */
+  evidence?: string;
+  /** Set by `commit_<phase>` when the cited evidence path does not exist. */
+  evidenceMissing?: boolean;
+}
+export interface ReviewVerdict {
+  /**
+   * Neither `clean` nor `reprompt` is a model-produced route.
+   *
+   * `clean` — `parse` rewrites `proceed` with zero findings, so the graph can
+   * skip the fix node instead of prompting an agent to "apply fixes" for nothing.
+   *
+   * `reprompt` — `parse` could not read JSON out of the reply at all. Returning
+   * this rather than throwing is deliberate: a throw fails the acp node and kills
+   * the whole flow with no result file, bypassing the `escalate` sink that exists
+   * to report exactly this kind of dead end.
+   */
+  route: "proceed" | "escalate" | "clean";
+  findings: Finding[];
+  escalationReason?: string;
+  /** Touchpoints the reviewer listed; read by the audit gate in `routeReviewAndRecord`. */
+  touchpoints?: Touchpoint[];
+  /** The per-AC or per-function walk lines the reviewer emitted. */
+  walk?: string[];
+  /** Whether the section was present at all — absent and empty are different failures. */
+  sawTouchpointsSection?: boolean;
+  sawWalkSection?: boolean;
+  /** Set on a `fix_<phase>` output: what the fixer did with each finding it was handed. */
+  dispositions?: FindingDisposition[];
+}
+/** Wall-clock budgets, forwarded from `finish.autoFlow.timeouts` by the plugin. */
+export interface FinishTimeouts {
+  acceptanceMs?: number;
+  gateMs?: number;
+}
+/** The four fix-and-reverify loops, in graph order. */
+export type FinishPhase = "acceptance" | "spec" | "quality" | "gate";
+
+/**
+ * One completed fix round, appended to the audit trail as it happens.
+ *
+ * Rounds are appended at `commit_<phase>` as they happen rather than
+ * reconstructed by a terminal node from `ctx.state.steps` (which does retain
+ * every step's output). Appending live is what makes the trail survive a flow
+ * that is killed or times out: no terminal node runs on those paths, and a
+ * finish that died mid-loop is exactly when the record of what it already
+ * changed on the branch matters most.
+ */
+/**
+ * What produced a round — the difference between "a reviewer read this and
+ * approved it" and "nothing read this".
+ *
+ * Rounds used to be appended only where a fix produced a commit, so a review
+ * that passed left no record at all and was indistinguishable from a review
+ * that never ran (#1507). Every phase that executes now records a round, and
+ * this field says which of the five things happened.
+ *
+ * Optional because rounds recorded by earlier versions have no `outcome`, and
+ * the PR body still has to render those without claiming more than it knows.
+ */
+export type FinishRoundOutcome =
+  /** A reviewer reported findings and this phase's fix node ran. */
+  | "fixed"
+  /** A reviewer ran and reported nothing. The only value that means "approved". */
+  | "passed"
+  /**
+   * The reviewer replied, but no verdict could be read out of it.
+   *
+   * Read-only history now: nothing in this module produces this outcome —
+   * `ReviewVerdict.route` no longer has a `reprompt` member (D2.2), so there is
+   * no live path that writes it. Retained because older audit trails hold
+   * rounds with this outcome and a reader must still be able to render them.
+   */
+  | "unparseable"
+  /** Handed off to a human — an explicit escalate, a cap, or a node that emitted nothing. */
+  | "escalated"
+  /**
+   * This phase has no reviewer at all (`gate`, `acceptance`). Distinct from
+   * `passed`: an empty finding list here means "nobody looked", and rendering it
+   * as "no findings" manufactures evidence of a review that does not exist.
+   */
+  | "no-reviewer"
+  /**
+   * A re-review was owed and deliberately skipped.
+   *
+   * **No longer emitted.** It described the `gate` → `tests-only` route, which
+   * skipped `review_quality` as a cost tradeoff; #1510 closed that hole, so
+   * every committed gate fix is now re-reviewed and nothing writes this.
+   *
+   * Retained because the audit trail is read, not just written: a project that
+   * ran an earlier nax can hold rounds carrying this outcome, and dropping it
+   * from the union would make those unrenderable. Do not reuse the name for a
+   * new meaning — a reader hitting it in an old artifact must still be told
+   * what it meant when it was written.
+   */
+  | "review-skipped"
+  /** The reviewer replied with findings but skipped a required audit section, so
+   * the verdict was not acted on. Distinct from `unparseable`: there was a
+   * readable verdict, it just had no evidence behind it. */
+  | "incomplete";
+
+export interface FinishRound {
+  ts: string;
+  phase: FinishPhase;
+  /** 1-based; the Nth time this phase's fix node has run. */
+  attempt: number;
+  /** True when the fix produced a commit; false when it changed nothing. */
+  committed: boolean;
+  /** What produced this round; absent on rounds written before it existed. */
+  outcome?: FinishRoundOutcome;
+  /** Reviewer findings this round set out to fix (spec/quality phases). */
+  findings: Finding[];
+  /** Gate commands that were red this round (gate phase). */
+  failing?: string[];
+  /**
+   * The successor this round's commit routed to — `changed` / `tests-only` /
+   * `unchanged` for `gate`, `changed` / `unchanged` elsewhere.
+   *
+   * Recorded because `outcome` stopped carrying it. Until #1510 a tests-only
+   * gate fix was the only round writing `review-skipped`, so the outcome
+   * doubled as the classification; now every committed gate fix is reviewed
+   * and writes `no-reviewer`, which would leave "what did this fix touch?"
+   * unanswerable from the trail. That question is the input to deciding
+   * whether the re-review ever needs a cheaper, test-scoped form, so it has to
+   * survive the round it was computed in.
+   */
+  route?: string;
+  /**
+   * `HEAD` SHA after this round's commit (set only when `committed`); absent
+   * on no-op rounds so a reader can distinguish "no commit" from "record lost".
+   * Lets "Fixed in `<sha>`" be reconstructed from the audit trail alone, rather
+   * than by matching round timestamps against `git log`.
+   */
+  sha?: string;
+  /** What the fixer did with each finding it was handed (spec/quality phases). */
+  dispositions?: FindingDisposition[];
+}
+
+/**
+ * How the repo's own PR/MR template is honoured when composing the body.
+ * Absent (and absent fields) mean the defaults in `pr-template-merge.ts`.
+ */
+export interface FinishPrBodySettings {
+  /** `merge` (default) · `strict` (keep unfillable headings, empty) · `ignore`. */
+  template?: TemplateMode;
+  /** Normalised template heading → body-section key, layered over the defaults. */
+  sectionMap?: Record<string, string>;
+}
+export interface FinishResult {
+  feature: string;
+  status: "opened" | "promoted" | "already-ready" | "escalated" | "nothing-to-finish";
+  url?: string;
+  escalationReason?: string;
+  /**
+   * The findings behind an escalation. Persisted because the reason alone is a
+   * bare count ("3 finding(s) after 3 fix attempts"), and on the Telegram
+   * channel the composed PR comment — the only other thing carrying them — is
+   * never posted. Without this the findings survived only in acpx's run bundle.
+   */
+  findings?: Finding[];
+  /**
+   * Set when the escalation could not be delivered to its channel (forge
+   * comment failed, remote unrecognised). The result file is written before
+   * delivery is attempted, so an undelivered escalation is still reported
+   * rather than lost.
+   */
+  deliveryError?: string;
+  /**
+   * Every fix round the flow ran, on *all* terminal statuses — not just
+   * escalations. A successful finish that took four rounds to get there is the
+   * case worth auditing (it says the run's own review gates missed four
+   * defects), and it was previously the one case that recorded nothing.
+   */
+  rounds?: FinishRound[];
+}
+
+/** Result of running the feature's acceptance-test gate. */
+export interface AcceptanceGateResult {
+  /** Every group that ran exited 0. Says nothing about groups that could not run. */
+  passed: boolean;
+  ran: number;
+  /** Packages whose acceptance test the resolver expected but which is absent on disk. */
+  missing: string[];
+  output: string;
+}
+
+/** Result of running the repo's configured quality gates (lint, typecheck, etc.). */
+export interface QualityGateResult {
+  passed: boolean;
+  /** Gate names that actually ran; empty means nothing was configured. */
+  ran: string[];
+  failing: string[];
+  output: string;
+}
