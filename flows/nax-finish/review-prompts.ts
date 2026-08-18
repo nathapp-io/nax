@@ -225,7 +225,39 @@ maintainability concern stated with its cost is worth surfacing even at moderate
 confidence.
 `;
 
-export const WORKER_PROTOCOL = `# Worker protocol (shared mechanics)
+/**
+ * The one place the finding block's shape is defined.
+ *
+ * Extracted so the flow's reply contract can embed it directly. It used to live
+ * only inside `WORKER_PROTOCOL`'s output-format section, so dropping that
+ * section from the assembled prompt (see `WORKER_PROTOCOL_MECHANICS`) would have
+ * taken the block template with it — `outputContract`'s `## FINDINGS` said only
+ * "the `[SEVERITY] …` blocks defined in the worker protocol above".
+ */
+export const FINDING_BLOCK_SHAPE = `\`\`\`
+[SEVERITY] <short title>
+  Problem: <what's wrong, with file/line and the concrete cost>
+  Fix: <the concrete change, or "note intentional deviation">
+\`\`\``;
+
+/**
+ * The worker protocol minus its output-format section: how to fetch the diff,
+ * what churn to ignore, which collaborators to read, and the severity table.
+ *
+ * This is what `buildReviewPrompt` assembles. The omitted section is a *second,
+ * contradictory* reply contract — it opens "Return **only your findings**,
+ * nothing else: … no `FINDINGS` divider" and closes by requiring the literal
+ * line `No findings.` as the reviewer's "entire final message", while
+ * `outputContract` below demands three headed sections. The negative
+ * instruction came first and was the more emphatic of the two.
+ *
+ * The clean review was the sharpest edge: "entire final message" forbids
+ * emitting `## TOUCHPOINTS` and `## WALK` at all when nothing was found, which
+ * `steps/review-audit.ts` then reads as an incomplete review. Every quality
+ * review recorded in `~/.nax/<project>/finish-audit/` came back
+ * `outcome: "unparseable"` on its first attempt.
+ */
+export const WORKER_PROTOCOL_MECHANICS = `# Worker protocol (shared mechanics)
 
 Self-contained mechanics for a post-impl-review **worker** (SPEC or QUALITY).
 Read this plus your dimension reference (\`spec-review.md\` or \`code-quality.md\`) —
@@ -277,17 +309,15 @@ reads to judge an integration-shaped defect.)
 | MEDIUM | Partial coverage — AC present but incomplete; minor drift affecting correctness; an integration gap reachable through a now-permitted input; a test-isolation defect that can cause false positives or flakiness under reordering/parallelism; a resource leak; a swallowed error on a real path; a concurrency/race or performance regression the diff introduces; or an accessibility defect on a new interactive UI element |
 | LOW | Minor naming deviation, style mismatch, dead/redundant/duplicated code, unused locals, a soft convention deviation, or other non-blocking gap |
 
-## Output format — return ONLY this
+`;
+
+const WORKER_PROTOCOL_OUTPUT_FORMAT = `## Output format — return ONLY this
 
 Return **only your findings**, nothing else: no \`Spec:\`/\`Base:\` header, no
 \`FINDINGS\` divider, no \`VERDICT\` line (the dispatcher adds those). Emit each
 finding as a block:
 
-\`\`\`
-[SEVERITY] <short title>
-  Problem: <what's wrong, with file/line and the concrete cost>
-  Fix: <the concrete change, or "note intentional deviation">
-\`\`\`
+${FINDING_BLOCK_SHAPE}
 
 If you found nothing in your group, return the literal line \`No findings.\` as
 your entire final message. That message is the only thing that travels back to
@@ -305,12 +335,14 @@ const CLASSIFIER = [
 /**
  * The reply contract.
  *
- * This supersedes the "Output format — return ONLY this" section of
- * `WORKER_PROTOCOL` above, which is kept verbatim so it stays diffable against
- * the skill's `references/worker-protocol.md`. Its `[SEVERITY]` blocks are
- * exactly this contract's `## FINDINGS` section; the two sections before it are
- * what the flow adds, because the flow — unlike the skill's dispatcher — has no
- * human reading the reply and so must be able to check the obligations itself.
+ * The flow's only reply contract. It used to *compete* with the "Output format
+ * — return ONLY this" section of `WORKER_PROTOCOL`, which the prompt also
+ * carried; that section is no longer assembled (see `WORKER_PROTOCOL_MECHANICS`)
+ * and its block template now lives in `FINDING_BLOCK_SHAPE`, embedded below.
+ *
+ * The two sections before `## FINDINGS` are what the flow adds, because the flow
+ * — unlike the skill's dispatcher — has no human reading the reply and so must
+ * be able to check the obligations itself.
  *
  * There is no JSON. A reply constrained to one JSON object has nowhere to put
  * the per-AC and per-function enumerations both dimension references depend on,
@@ -335,10 +367,13 @@ ${walk}. This is the enumeration your dimension reference requires. One line eac
 no prose. A missing or empty WALK section is an incomplete review.
 
 ## FINDINGS
-The \`[SEVERITY] …\` blocks defined in the worker protocol above — or the literal
-line \`No findings.\` if you found none. This section is the only thing that
-becomes a finding; the two above are the evidence that you were in a position to
-write it.`;
+One block per finding, in exactly this shape:
+
+${FINDING_BLOCK_SHAPE}
+
+Or the literal line \`No findings.\` if you found none. This section is the only
+thing that becomes a finding; the two above are the evidence that you were in a
+position to write it.`;
 }
 
 /**
@@ -386,7 +421,7 @@ export function buildReviewPrompt(
       `You are the ${phase.toUpperCase()} reviewer for a completed feature.`,
       `The spec/requirements source is: ${args.specPath}. Read it in full.`,
       `Fetch and review the diff: \`git diff ${args.base}...HEAD\` (also \`--name-only\` for the file list).`,
-      WORKER_PROTOCOL,
+      WORKER_PROTOCOL_MECHANICS,
       dims,
       CLASSIFIER,
       outputContract(phase),
@@ -404,7 +439,7 @@ export function buildReviewPrompt(
       "",
       `Read whatever files you need — the spec is at ${args.specPath} and the whole repo is available. Scope means *what you judge*, not *what you may read*.`,
     ].join("\n"),
-    WORKER_PROTOCOL,
+    WORKER_PROTOCOL_MECHANICS,
     dims,
     CLASSIFIER,
     outputContract(phase),
@@ -466,3 +501,11 @@ export function fixPrompt(
     ].join("\n"),
   ].join("\n\n");
 }
+
+/**
+ * The protocol as the post-impl-review skill ships it, kept whole and exported
+ * so it stays byte-diffable against that skill's
+ * `references/worker-protocol.md` — the reason it was inlined verbatim. Nothing
+ * in this flow assembles it; `buildReviewPrompt` uses the mechanics alone.
+ */
+export const WORKER_PROTOCOL = `${WORKER_PROTOCOL_MECHANICS}${WORKER_PROTOCOL_OUTPUT_FORMAT}`;

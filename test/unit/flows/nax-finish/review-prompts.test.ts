@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  FINDING_BLOCK_SHAPE,
   QUALITY_REVIEW_DIMENSIONS,
   SPEC_REVIEW_DIMENSIONS,
+  WORKER_PROTOCOL,
+  WORKER_PROTOCOL_MECHANICS,
   buildReviewPrompt,
   fixPrompt,
 } from "@flows/nax-finish/review-prompts";
@@ -132,5 +135,90 @@ describe("buildReviewPrompt — incremental re-review", () => {
       expect(p).toContain("Confidence threshold");
       expect(p).toContain("## FINDINGS");
     }
+  });
+});
+
+// The assembled prompt used to carry two contradictory output contracts.
+// `WORKER_PROTOCOL` closes with "## Output format — return ONLY this" ("return
+// only your findings, nothing else: ... no `FINDINGS` divider"), and
+// `outputContract` then demands three headed sections. The negative instruction
+// came first and was the more emphatic of the two.
+//
+// The sharpest edge is the clean review: "return the literal line `No findings.`
+// as your entire final message" forbids emitting ## TOUCHPOINTS and ## WALK at
+// all when nothing was found — which is exactly what `steps/review-audit.ts`
+// treats as an incomplete review. Both quality reviews ever recorded came back
+// `outcome: "unparseable"` on their first attempt.
+describe("buildReviewPrompt — exactly one output contract", () => {
+  const CASES = [
+    { phase: "spec" as const, since: null },
+    { phase: "spec" as const, since: "abc123" },
+    { phase: "quality" as const, since: null },
+    { phase: "quality" as const, since: "abc123" },
+  ];
+
+  for (const { phase, since } of CASES) {
+    const label = `${phase} / ${since ? "re-review" : "first round"}`;
+
+    test(`${label}: the worker protocol's competing output format never reaches the prompt`, () => {
+      const p = buildReviewPrompt(phase, {
+        base: "origin/main",
+        specPath: "s.md",
+        since,
+        priorFindings: since ? [{ severity: "HIGH", title: "T", problem: "P", fix: "F" }] : undefined,
+      });
+      expect(p).not.toContain("## Output format");
+      expect(p).not.toContain("return ONLY this");
+      expect(p).not.toContain("nothing else");
+      expect(p).not.toContain("entire final message");
+      expect(p).not.toContain("no `FINDINGS` divider");
+    });
+
+    test(`${label}: the reply contract survives, block shape included`, () => {
+      const p = buildReviewPrompt(phase, {
+        base: "origin/main",
+        specPath: "s.md",
+        since,
+        priorFindings: since ? [{ severity: "HIGH", title: "T", problem: "P", fix: "F" }] : undefined,
+      });
+      expect(p).toContain("## TOUCHPOINTS");
+      expect(p).toContain("## WALK");
+      expect(p).toContain("## FINDINGS");
+      // Dropping the worker protocol's output section must not take the block
+      // template with it — `outputContract` used to just point at it.
+      expect(p).toContain("[SEVERITY] <short title>");
+      expect(p).toContain("Problem:");
+      expect(p).toContain("Fix:");
+      // A clean review still has a way to say so, from the reply contract.
+      expect(p).toContain("No findings.");
+    });
+
+    test(`${label}: the mechanics the worker still needs are all present`, () => {
+      const p = buildReviewPrompt(phase, {
+        base: "origin/main",
+        specPath: "s.md",
+        since,
+        priorFindings: since ? [{ severity: "HIGH", title: "T", problem: "P", fix: "F" }] : undefined,
+      });
+      expect(p).toContain("Worker protocol (shared mechanics)");
+      expect(p).toContain("## Filter noise");
+      expect(p).toContain("## Severity table");
+      expect(p).toContain("## Read the unchanged collaborators");
+    });
+  }
+
+  // The whole constant stays exported and byte-identical to the skill's
+  // references/worker-protocol.md, which is why it was inlined verbatim in the
+  // first place. Only what the *flow* assembles changes.
+  test("WORKER_PROTOCOL is still whole, and the mechanics are a strict prefix of it", () => {
+    expect(WORKER_PROTOCOL).toContain("## Output format — return ONLY this");
+    expect(WORKER_PROTOCOL).toContain("entire final message");
+    expect(WORKER_PROTOCOL.startsWith(WORKER_PROTOCOL_MECHANICS)).toBe(true);
+    expect(WORKER_PROTOCOL_MECHANICS).not.toContain("## Output format");
+  });
+
+  test("the finding block shape is its own constant, shared by both", () => {
+    expect(FINDING_BLOCK_SHAPE).toContain("[SEVERITY] <short title>");
+    expect(WORKER_PROTOCOL).toContain(FINDING_BLOCK_SHAPE);
   });
 });
