@@ -9,3 +9,6 @@ export { detectForge, forgeFromRemoteUrl, remoteHost } from "./detect";
 export type { OpenPrInput, OpenPrResult } from "./pr";
 export { extractUrl, hasOpenPr, openPr, viewArgv } from "./pr";
 export { findPrTemplate } from "./template";
+export { defaultForgeDeps } from "./deps";
+export type { BodySection, MergeOptions, TemplateMode } from "./template-merge";
+export { DEFAULT_SECTION_ALIASES, mergeTemplate } from "./template-merge";

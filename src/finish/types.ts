@@ -1,11 +1,6 @@
-/**
- * How the repo's own PR/MR template is honoured when composing the body.
- * Local rather than imported from `flows/pr-template-merge.ts` — `flows/` is a
- * separate, live implementation on a different module system and must not be
- * imported into `src/`. Plan 3 moves the real `pr-template-merge.ts` and
- * re-points this.
- */
-export type TemplateMode = "merge" | "strict" | "ignore";
+import type { TemplateMode } from "@/forge";
+
+export type { TemplateMode };
 
 export type Severity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 export interface Finding {
