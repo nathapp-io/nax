@@ -13,6 +13,14 @@ import { NaxError } from "@/errors";
 import { extractUrl, hasOpenPr, openPr, viewArgv } from "@/forge";
 import type { ForgeDeps, ForgeKind } from "@/forge";
 
+/** `ForgeDeps` carries no `warn` — this is `updatePrBody`'s own injectable seam, so its
+ * non-fatal-failure tests can assert a warning fired instead of only "did not throw". */
+export const _openDeps = {
+  warn: (message: string, details: Record<string, unknown>): void => {
+    process.emitWarning(message, { detail: JSON.stringify(details) });
+  },
+};
+
 /**
  * Parse `gh pr view --json isDraft,url` / `glab mr view --output json` stdout.
  *
@@ -100,12 +108,10 @@ export async function updatePrBody(
   try {
     const res = await deps.run(editCmd, { cwd: args.workdir });
     if (res.exitCode !== 0) {
-      process.emitWarning("[finish-pr] Failed to write PR title/body", {
-        detail: `${args.branch}: ${res.stderr.trim()}`,
-      });
+      _openDeps.warn("[finish-pr] Failed to write PR title/body", { branch: args.branch, error: res.stderr.trim() });
     }
   } catch (error) {
-    process.emitWarning("[finish-pr] Failed to write PR title/body", { detail: `${args.branch}: ${String(error)}` });
+    _openDeps.warn("[finish-pr] Failed to write PR title/body", { branch: args.branch, error });
   }
 }
 
@@ -116,26 +122,26 @@ export async function updatePrBody(
  * failed, a forge CLI that could not answer. The draft is a convenience: the
  * terminal promote creates the PR when none exists, so failing the run here
  * would discard work that is otherwise fine. `hasOpenPr` throws on a non-zero
- * exit by design (a `gh` auth failure must not read as "no PR"); the safe
- * decision at this call site is to skip.
+ * exit by design (a `gh` auth failure must not read as "no PR"); `openPr`'s
+ * own `deps.run` can also reject outright (missing binary, a killed
+ * subprocess) rather than merely returning a non-zero exit — both are wrapped
+ * in the same try/catch so this function's "never throws" contract (D4.5)
+ * holds regardless of which step failed.
  */
 export async function openDraftFinishPr(
   args: { workdir: string; branch: string; title: string; body: string; forge: ForgeKind },
   deps: ForgeDeps,
 ): Promise<{ url: string } | null> {
-  let alreadyOpen: boolean;
   try {
-    alreadyOpen = await hasOpenPr(args.forge, args.branch, deps, args.workdir);
+    if (await hasOpenPr(args.forge, args.branch, deps, args.workdir)) return null;
+    const result = await openPr(
+      args.forge,
+      { title: args.title, body: args.body, branch: args.branch, draft: true },
+      deps,
+      args.workdir,
+    );
+    return result.success && result.url ? { url: result.url } : null;
   } catch {
     return null;
   }
-  if (alreadyOpen) return null;
-
-  const result = await openPr(
-    args.forge,
-    { title: args.title, body: args.body, branch: args.branch, draft: true },
-    deps,
-    args.workdir,
-  );
-  return result.success && result.url ? { url: result.url } : null;
 }

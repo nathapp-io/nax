@@ -261,6 +261,9 @@ describe("machine-end-to-end", () => {
       const lastEditBody = recorder.editBodies[recorder.editBodies.length - 1];
       expect(lastEditBody).toContain("## Verification");
       expect(lastEditBody).toContain("| US-001 | First story | 3 |");
+      // D4.12 — the gates the machine actually ran must survive to the rendered
+      // body; an unwired `state.gatesRan` would silently render no line at all.
+      expect(lastEditBody).toContain("- Gates: test");
     });
   });
 

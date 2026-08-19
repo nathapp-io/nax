@@ -74,6 +74,34 @@ const PROMOTE_MESSAGE = (feature: string): string => `fix(${feature}): nax-finis
 const ESCALATION_PUSH_MESSAGE = (feature: string): string =>
   `wip(${feature}): nax-finish partial fixes before escalation`;
 
+/**
+ * Load the PR context and render it, falling back to a minimal title/body on
+ * any failure rather than propagating.
+ *
+ * `loadFinishPrContext` is itself fail-open per artifact, but the pure
+ * renderers (`buildFinishTitle` / `buildFinishBody`) are not guarded, and a
+ * throw here must not undo work `promotePr`'s already-fatal push just did —
+ * the branch is pushed and the gates are green by the time this runs, so
+ * losing that to an unrenderable PR body would be strictly worse than a
+ * generic one.
+ */
+async function buildPrContentOrFallback(
+  state: FinishState,
+  audit: AuditTarget,
+  forgeKind: ForgeKind,
+  prBody: FinishPrBodySettings | undefined,
+): Promise<{ title: string; body: string }> {
+  try {
+    const ctx = await loadFinishPrContext({ state, audit, forge: forgeKind, prBody });
+    return { title: buildFinishTitle(ctx), body: buildFinishBody(ctx) };
+  } catch (err) {
+    return {
+      title: `fix(${state.feature}): nax-finish automated fixes`,
+      body: `PR body could not be generated: ${errorMessage(err)}`,
+    };
+  }
+}
+
 export function createFinishOps(deps: FinishOpsDeps): FinishOps {
   const { callCtx, forge, forgeKind, audit, models, timeouts, prBody, preferTelegram, warn } = deps;
 
@@ -114,20 +142,26 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
         model: models?.fix,
         timeoutMs: timeouts?.fixMs,
       };
-      return _finishOpsDeps.callOp({ ...callCtx }, finishFixOp, input);
+      // Not `callCtx` alone — an explicit `sessionOverride: undefined` makes sure a
+      // context the caller built with one set (e.g. for a review call reused here)
+      // doesn't leak a reviewer role into the fixer once a caller starts wiring one in.
+      return _finishOpsDeps.callOp({ ...callCtx, sessionOverride: undefined }, finishFixOp, input);
     },
 
     async openDraftPr(state: FinishState) {
       if (forgeKind === null) return null;
-      const ctx = await loadFinishPrContext({ state, audit, forge: forgeKind, prBody });
+      // A context-load or render failure here must not surface as a throw: the
+      // draft is a convenience (D4.5) and the safe response to any failure in
+      // producing its content is the same as to any failure opening it — skip.
+      let content: { title: string; body: string };
+      try {
+        const ctx = await loadFinishPrContext({ state, audit, forge: forgeKind, prBody });
+        content = { title: buildFinishTitle(ctx), body: buildFinishBody(ctx) };
+      } catch {
+        return null;
+      }
       return openDraftFinishPr(
-        {
-          workdir: state.workdir,
-          branch: state.branch,
-          title: buildFinishTitle(ctx),
-          body: buildFinishBody(ctx),
-          forge: forgeKind,
-        },
+        { workdir: state.workdir, branch: state.branch, title: content.title, body: content.body, forge: forgeKind },
         forge,
       );
     },
@@ -135,28 +169,32 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
     async promotePr(state: FinishState) {
       await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature));
       if (forgeKind === null) return { status: "already-ready" };
-      const ctx = await loadFinishPrContext({ state, audit, forge: forgeKind, prBody });
+      const content = await buildPrContentOrFallback(state, audit, forgeKind, prBody);
       return openOrPromotePr(
-        {
-          workdir: state.workdir,
-          branch: state.branch,
-          title: buildFinishTitle(ctx),
-          body: buildFinishBody(ctx),
-          forge: forgeKind,
-        },
+        { workdir: state.workdir, branch: state.branch, title: content.title, body: content.body, forge: forgeKind },
         forge,
       );
     },
 
     async escalate(state: FinishState, reason: string, findings: Finding[]) {
-      let syncNote = "";
+      let pushError: string | undefined;
       try {
         await commitAndPush(state.workdir, state.branch, ESCALATION_PUSH_MESSAGE(state.feature));
       } catch (err) {
-        syncNote = `\n\n> Note: nax-finish could not push its partial fixes — ${String(err)}`;
+        pushError = errorMessage(err);
       }
+      const syncNote = pushError ? `\n\n> Note: nax-finish could not push its partial fixes — ${pushError}` : "";
       try {
-        if (forgeKind === null) return { deliveryError: "no forge detected" };
+        if (forgeKind === null) {
+          // The push failure would otherwise be lost here — this is the one
+          // branch that never reaches `buildEscalationComment`, so it has to
+          // carry `pushError` itself rather than via `syncNote`.
+          return {
+            deliveryError: pushError
+              ? `no forge detected; partial fixes could not be pushed either: ${pushError}`
+              : "no forge detected",
+          };
+        }
         const comment = buildEscalationComment(state.feature, reason, findings) + syncNote;
         const outcome = await postEscalation(
           { workdir: state.workdir, branch: state.branch, comment, forge: forgeKind, preferTelegram },

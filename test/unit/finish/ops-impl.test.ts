@@ -157,4 +157,53 @@ describe("ops-impl", () => {
     expect(commitArgv).toBeDefined();
     expect(commitArgv?.join(" ")).toContain("wip(demo): nax-finish partial fixes before escalation");
   });
+
+  test("promotePr rejects when the push fails, per D4.6", async () => {
+    const { deps } = baseDeps();
+    _finishGitDeps.git = async (args: string[]) => {
+      if (args[0] === "push") return { exitCode: 1, stdout: "", stderr: "remote rejected" };
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    await expect(createFinishOps(deps).promotePr(state)).rejects.toThrow(/remote rejected/);
+  });
+
+  test("escalate appends a sync note to the comment when the partial-fix push fails, per D4.7", async () => {
+    let comment: string | undefined;
+    const forge: ForgeDeps = {
+      run: async (cmd) => {
+        if (cmd.includes("view")) return { exitCode: 1, stdout: "", stderr: "" };
+        if (cmd.includes("create")) {
+          comment = cmd[cmd.indexOf("--body") + 1];
+          return { exitCode: 0, stdout: "https://x/1", stderr: "" };
+        }
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+      readText: async () => null,
+    };
+    const { deps } = baseDeps({ forge });
+    _finishGitDeps.git = async (args: string[]) => {
+      if (args[0] === "push") return { exitCode: 1, stdout: "", stderr: "no upstream" };
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    await createFinishOps(deps).escalate(state, "needs a human", []);
+    expect(comment).toContain("nax-finish could not push its partial fixes");
+    expect(comment).toContain("no upstream");
+  });
+
+  test("escalate returns the delivered url on a successful comment", async () => {
+    const { deps } = baseDeps();
+    const outcome = await createFinishOps(deps).escalate(state, "needs a human", []);
+    expect(outcome).toEqual({ url: "https://x/1" });
+  });
+
+  test("openDraftPr returns null rather than throwing when the forge cannot be spawned, per D4.5", async () => {
+    const forge: ForgeDeps = {
+      run: async () => {
+        throw new Error("gh missing");
+      },
+      readText: async () => null,
+    };
+    const { deps } = baseDeps({ forge });
+    await expect(createFinishOps(deps).openDraftPr(state)).resolves.toBeNull();
+  });
 });

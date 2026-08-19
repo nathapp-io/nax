@@ -20,8 +20,9 @@ export const DEFAULT_SUBPROCESS_TIMEOUT_MS = 30_000;
  * Default subprocess runner — wraps Bun.spawn with concurrent stdout/stderr
  * reads so non-trivial output does not deadlock, under a wall-clock cap so a
  * wedged `git push` / `gh` / `glab` cannot hang the run's completion phase.
- * Mirrors the nax-finish defaultRun pattern (`src/plugins/builtin/nax-finish/index.ts:66-97`).
- * Tests override `_autoPrDeps.run`.
+ * Lifted verbatim from `defaultRun` in `src/plugins/builtin/auto-pr/index.ts`
+ * (D4.11) — that module keeps its own copy and overrides `_autoPrDeps.run` in
+ * its tests; callers here inject a `ForgeDeps` directly instead of a seam.
  */
 export async function defaultRun(
   cmd: string[],
@@ -44,7 +45,7 @@ export async function defaultRun(
       ? {
           exitCode: exitCode === 0 ? 124 : exitCode,
           stdout,
-          stderr: `${stderr}\n[auto-pr] command killed after ${timeoutMs}ms timeout`,
+          stderr: `${stderr}\n[forge] command killed after ${timeoutMs}ms timeout`,
         }
       : { exitCode, stdout, stderr };
   } finally {
