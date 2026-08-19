@@ -37,29 +37,13 @@ export type { FinishOps, FixOutcome, FixRequest, ReviewRequest } from "./ops";
 export { _finishOpsDeps, createFinishOps } from "./ops-impl";
 export type { FinishOpsDeps } from "./ops-impl";
 export {
-  buildNarrativePrompt,
-  finishFixOp,
-  finishNarrativeOp,
-  finishReviewOp,
-  NARRATIVE_MAX_CHARS,
-  parseNarrative,
-  parseNarrativeNode,
   parseTitle,
-  readSpecSummary,
-  resolveNarrative,
   resolveTitle,
   sanitizeTitle,
   TITLE_CLOSE_TAG,
   TITLE_MAX_CHARS,
   TITLE_OPEN_TAG,
-} from "./operations";
-export type {
-  FinishFixInput,
-  FinishNarrativeInput,
-  FinishNarrativeOutput,
-  FinishReviewInput,
-  FinishReviewOutput,
-} from "./operations";
+} from "./pr-title";
 export { _finishPrDeps, loadFinishPrContext } from "./pr";
 export type { FinishPrContext, FinishPrStory, LoadPrContextArgs } from "./pr";
 export { buildFinishBody, buildFinishTitle } from "./pr";

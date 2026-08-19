@@ -19,14 +19,12 @@
  */
 import type { ConfiguredModel } from "@/config";
 import type { ForgeDeps, ForgeKind } from "@/forge";
-import { callOp } from "@/operations";
-import type { CallContext } from "@/operations";
+import { callOp, finishFixOp, finishNarrativeOp, finishReviewOp } from "@/operations";
+import type { CallContext, FinishFixInput, FinishNarrativeInput, FinishReviewInput } from "@/operations";
 import { errorMessage } from "../utils/errors";
 import type { AuditTarget } from "./audit";
 import { commitAndPush } from "./commit";
 import { buildEscalationComment, postEscalation } from "./escalate";
-import { finishFixOp, finishNarrativeOp, finishReviewOp } from "./operations";
-import type { FinishFixInput, FinishNarrativeInput, FinishReviewInput } from "./operations";
 import type { FinishOps, FixRequest, ReviewRequest } from "./ops";
 import {
   buildFinishBody,

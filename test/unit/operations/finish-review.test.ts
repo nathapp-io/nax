@@ -7,8 +7,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ConfigSelector } from "@/config";
 import type { FinishConfig } from "@/config/selectors";
-import type { FinishReviewInput } from "@/finish";
-import { finishReviewOp, MAX_INCOMPLETE_ATTEMPTS, routeReview } from "@/finish";
+import type { FinishReviewInput } from "@/operations";
+import { MAX_INCOMPLETE_ATTEMPTS, routeReview } from "@/finish";
+import { finishReviewOp } from "@/operations";
 import type { Finding } from "@/finish";
 import { ParseValidationError } from "@/agents/retry";
 import type { RetryStrategy } from "@/agents/retry";

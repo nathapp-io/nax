@@ -14,7 +14,7 @@ import {
   parseNarrativeNode,
   readSpecSummary,
   resolveNarrative,
-} from "@/finish";
+} from "@/operations";
 
 describe("resolveNarrative", () => {
   test("prefers the agent's text over the spec summary", () => {

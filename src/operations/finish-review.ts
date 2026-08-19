@@ -24,9 +24,9 @@ import { makeParseRetryStrategy } from "@/agents/retry";
 import type { ConfiguredModel } from "@/config";
 import { finishConfigSelector } from "@/config";
 import type { FinishConfig } from "@/config/selectors";
-import type { RunOperation } from "@/operations";
-import { auditGaps, buildReviewPrompt, parseReviewReport } from "../review";
-import type { Finding, ReviewReport } from "../types";
+import { auditGaps, buildReviewPrompt, parseReviewReport } from "../finish/review";
+import type { Finding, ReviewReport } from "../finish/types";
+import type { RunOperation } from "./types";
 
 export interface FinishReviewInput {
   phase: "spec" | "quality";

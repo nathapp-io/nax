@@ -10,10 +10,10 @@
 import type { ConfiguredModel } from "@/config";
 import { finishConfigSelector } from "@/config";
 import type { FinishConfig } from "@/config/selectors";
-import type { RunOperation } from "@/operations";
-import type { FixOutcome } from "../ops";
-import { buildFixPrompt, parseDispositions, validateDispositions } from "../review";
-import type { Finding, FinishPhase } from "../types";
+import type { FixOutcome } from "../finish/ops";
+import { buildFixPrompt, parseDispositions, validateDispositions } from "../finish/review";
+import type { Finding, FinishPhase } from "../finish/types";
+import type { RunOperation } from "./types";
 
 export interface FinishFixInput {
   phase: FinishPhase;

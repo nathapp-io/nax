@@ -136,3 +136,21 @@ export { verifyScopedOp, _verifyScopedDeps } from "./verify-scoped";
 export type { VerifyScopedInput, VerifyScopedOutput, VerifyScopedDeps } from "./verify-scoped";
 export { mutationCheckOp, _mutationCheckDeps } from "./mutation-check";
 export type { MutationCheckInput, MutationCheckOutput, MutationCheckDeps } from "./mutation-check";
+
+// The native nax-finish operations. The finish state machine dispatches these
+// through `callOp`; their prompt assembly, parsing and gap auditing live with
+// the rest of finish in `src/finish/`.
+export { finishReviewOp } from "./finish-review";
+export type { FinishReviewInput, FinishReviewOutput } from "./finish-review";
+export { finishFixOp } from "./finish-fix";
+export type { FinishFixInput } from "./finish-fix";
+export {
+  buildNarrativePrompt,
+  finishNarrativeOp,
+  NARRATIVE_MAX_CHARS,
+  parseNarrative,
+  parseNarrativeNode,
+  readSpecSummary,
+  resolveNarrative,
+} from "./finish-narrative";
+export type { FinishNarrativeInput, FinishNarrativeOutput } from "./finish-narrative";
