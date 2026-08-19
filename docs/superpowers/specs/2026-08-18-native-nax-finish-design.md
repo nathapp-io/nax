@@ -426,9 +426,13 @@ support, and are the exact configs that would silently misbehave on stock acpx.
 
 ### 4.7 Budgets
 
-No subprocess means no `proc.kill()`. `flowMs` becomes an `AbortSignal` deadline
-on the phase, threaded into `callOp` (which already accepts one) and into the
-gate runners. This is strictly better than today: killing the acpx process left
+No subprocess means no `proc.kill()`. `flowMs` becomes an `AbortSignal` deadline on the phase, passed to `callOp` via
+`CallContext.signal` and used by the phase's own loop guard. An earlier draft of
+this design said `callOp` already accepted a signal. It did not: it consulted
+`ctx.runtime.signal`, which fires only when the whole run ends. The optional
+`CallContext.signal` field added by the wiring plan is what makes a phase-scoped
+deadline reachable; absent it, the run's signal is still used.
+This is strictly better than today: killing the acpx process left
 the working tree wherever the fix agent had reached, with no round recorded.
 
 ### 4.8 Cost
