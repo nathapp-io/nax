@@ -28,7 +28,6 @@ export type { FinishContext } from "./context";
 export { _acceptanceGateDeps, runAcceptanceGate } from "./gates/acceptance";
 export { _qualityGateDeps, resolveGateCommands, runQualityGates } from "./gates/quality";
 export { runFinishMachine } from "./machine";
-export { auditGaps, validateDispositions } from "./review/audit-gaps";
 export type { FinishMachineDeps } from "./machine";
 export type { FinishOps, FixOutcome, FixRequest, ReviewRequest } from "./ops";
 export {
@@ -41,7 +40,19 @@ export {
   routeReview,
 } from "./route";
 export type { ReviewOutcome, RoutedReview } from "./route";
-export { parseDispositions, parseReviewReport } from "./review/parse";
+export {
+  auditGaps,
+  buildFixPrompt,
+  buildReviewPrompt,
+  FINDING_BLOCK_SHAPE,
+  parseDispositions,
+  parseReviewReport,
+  QUALITY_REVIEW_DIMENSIONS,
+  SPEC_REVIEW_DIMENSIONS,
+  validateDispositions,
+  WORKER_PROTOCOL,
+  WORKER_PROTOCOL_MECHANICS,
+} from "./review";
 export { createFinishState, deserializeFinishState, serializeFinishState } from "./state";
 export type { FinishPhaseState, FinishState, FinishStateInit, FinishStatus } from "./state";
 export type {
