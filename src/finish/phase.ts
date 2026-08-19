@@ -157,10 +157,15 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
         narrativeMs: settings.timeouts.stepMs ?? undefined,
       },
       prBody: settings.prBody,
-      // Telegram is the sole escalation channel only when it is both enabled
-      // and actually credentialed — enabled with no token would suppress the
-      // PR comment and then send nothing at all.
-      preferTelegram: settings.escalate.telegram && telegramCreds(ctx.config) !== null,
+      // Telegram is the sole escalation channel only when it is enabled,
+      // actually credentialed, AND notifications are not switched off —
+      // `preferTelegram` suppresses the PR comment, and `notify()` below
+      // sends nothing when `notify.mode` is "off", so dropping any one of
+      // these three conjuncts delivers the escalation precisely nowhere.
+      // The acpx plugin this replaced tested all three together; the port
+      // originally kept only two.
+      preferTelegram:
+        settings.notify.mode !== "off" && settings.escalate.telegram && telegramCreds(ctx.config) !== null,
       narrative: settings.narrative,
     });
     result = await _finishPhaseDeps.runFinishMachine(state, {
@@ -168,6 +173,10 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
       ops,
       audit,
       signal,
+      // The run's own signal, so the machine can tell a cancelled run (do not
+      // push or post) from a `flowMs` deadline (do escalate) — `signal` above
+      // carries both and cannot distinguish them.
+      runSignal: ctx.abortSignal,
       now: _finishPhaseDeps.now,
       timeouts: { acceptanceMs: settings.timeouts.acceptanceMs, gateMs: settings.timeouts.gateMs },
     });
@@ -185,7 +194,20 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
     ...(result ? { result: result.status } : {}),
     ...(result?.url ? { url: result.url } : {}),
     ...(result?.escalationReason ? { escalationReason: result.escalationReason } : {}),
+    ...(result?.deliveryError ? { deliveryError: result.deliveryError } : {}),
   });
+  // An escalation nobody received is the worst outcome this phase has: the run
+  // stopped for a human who was never told. The plugin this replaced logged it
+  // and failed its action; the phase cannot fail a run, so the log and the
+  // status entry above are the whole signal.
+  if (result?.deliveryError) {
+    getSafeLogger()?.warn("finish", "Finish escalated but the escalation was not delivered", {
+      storyId: "_run",
+      feature: result.feature,
+      error: result.deliveryError,
+      escalationReason: result.escalationReason,
+    });
+  }
   if (failure) {
     // NOT carried on the event: `RunPhaseDetails`
     // (`src/plugins/extensions.ts:391-395`) is a closed union of four shapes
@@ -216,5 +238,15 @@ async function notify(ctx: FinishPhaseContext, settings: FinishSettings, result:
     result.status === "escalated"
       ? buildEscalationMessage(result.feature, result.escalationReason ?? "", result.findings ?? [])
       : buildTerminalMessage({ feature: result.feature, status: result.status, url: result.url });
-  await _finishPhaseDeps.sendTelegramNotify(creds, text);
+  // The boolean matters: a `false` means Telegram rejected the message, and on
+  // an escalation Telegram is the ONLY channel (`preferTelegram` suppressed the
+  // PR comment). Discarding it turned a dropped page into silence.
+  const delivered = await _finishPhaseDeps.sendTelegramNotify(creds, text);
+  if (!delivered) {
+    getSafeLogger()?.warn("finish", "Finish Telegram notification was not delivered", {
+      storyId: "_run",
+      feature: result.feature,
+      status: result.status,
+    });
+  }
 }
