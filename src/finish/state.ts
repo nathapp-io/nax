@@ -67,6 +67,14 @@ export interface FinishState {
   phases: Record<FinishPhase, FinishPhaseState>;
   /** Findings the current phase's reviewer last reported; the fix step's input. */
   findings: Finding[];
+  /**
+   * Gate names the last quality-gate pass ran, for the PR body's Verification
+   * section. Recorded here because `runQualityGates`'s result is otherwise
+   * local to the machine's loop, and `FinishOps` — which builds the body —
+   * never sees it. An absent or empty list renders no gate line at all, which
+   * is why a silently-unset field would have gone unnoticed.
+   */
+  gatesRan?: string[];
   /** Set once the draft PR is open (D7), so promote is idempotent. */
   prUrl?: string;
   escalationReason?: string;

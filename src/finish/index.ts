@@ -54,6 +54,8 @@ export type {
   FinishReviewInput,
   FinishReviewOutput,
 } from "./operations";
+export { _finishPrDeps, loadFinishPrContext } from "./pr";
+export type { FinishPrContext, FinishPrStory, LoadPrContextArgs } from "./pr";
 export {
   gateCommitRoute,
   MAX_FIX_ATTEMPTS,
