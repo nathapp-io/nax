@@ -15,7 +15,7 @@ import type { FinishReviewInput } from "@/operations";
 import { finishReviewOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 import { _gitDeps } from "@/utils/git";
-import { makeTestRuntime, withTempDir } from "@test/helpers";
+import { makeTestRuntime, withDepsRestore, withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -147,26 +147,37 @@ describe("finishReviewOp.parse()", () => {
 
 describe("finishReviewOp.verify()", () => {
   // US-002: verify now consults git for the changed-file listing when the
-  // audit gates the WALK on it. Stub _gitDeps.spawn to a no-op-friendly
-  // empty-output mock so neither a real nor absent git repo is required.
-  const origSpawn = _gitDeps.spawn;
-  const emptyStream = new ReadableStream({
-    start(c) {
-      c.close();
-    },
-  });
-  _gitDeps.spawn = (() => ({
-    exited: Promise.resolve(0),
-    stdout: emptyStream,
-    stderr: emptyStream,
-    pid: 0,
-    kill: () => {},
-  })) as unknown as typeof _gitDeps.spawn; // test-ratchet-allow: as-unknown-as
-  afterEach(() => {
-    _gitDeps.spawn = origSpawn;
-  });
+  // audit gates the WALK on it. `_gitDeps` is a process-wide singleton, so
+  // we register `withDepsRestore` at describe-top and re-assign `_gitDeps.spawn`
+  // to a no-op-friendly empty-output mock in EACH test. That guarantees every
+  // verify() test (and every concurrent test that reads _gitDeps.spawn) sees
+  // the stub during the test and the real spawn afterwards.
+  withDepsRestore(_gitDeps, ["spawn"]);
+
+  /**
+   * Install a stub that returns an empty, immediately-closed stdout/stderr
+   * on every spawn so neither a real nor absent git repo is required.
+   * Safe to call inside a `test()` body — withDepsRestore restores the
+   * previous value in afterEach.
+   */
+  function installEmptySpawnStub() {
+    const empty = new ReadableStream({
+      start(c) {
+        c.close();
+      },
+    });
+    _gitDeps.spawn = (() =>
+      Promise.resolve({
+        exited: Promise.resolve(0),
+        stdout: empty,
+        stderr: empty,
+        pid: 0,
+        kill: () => {},
+      })) as unknown as typeof _gitDeps.spawn; // test-ratchet-allow: as-unknown-as
+  }
 
   test("attaches the gaps auditGaps reports, against a temp workdir", async () => {
+    installEmptySpawnStub();
     await withTempDir(async (dir) => {
       const ctx = makeCtx();
       const parsed = finishReviewOp.parse("[HIGH] Some finding\nProblem: p\nFix: f", SPEC_INPUT, ctx);
@@ -187,6 +198,7 @@ describe("finishReviewOp.verify()", () => {
   });
 
   test("verify never returns null", async () => {
+    installEmptySpawnStub();
     await withTempDir(async (dir) => {
       const ctx = makeCtx();
       const parsed = finishReviewOp.parse("No findings.", SPEC_INPUT, ctx);
