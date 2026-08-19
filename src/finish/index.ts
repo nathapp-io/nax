@@ -40,6 +40,7 @@ export {
   routeReview,
 } from "./route";
 export type { ReviewOutcome, RoutedReview } from "./route";
+export { parseDispositions, parseReviewReport } from "./review/parse";
 export { createFinishState, deserializeFinishState, serializeFinishState } from "./state";
 export type { FinishPhaseState, FinishState, FinishStateInit, FinishStatus } from "./state";
 export type {
