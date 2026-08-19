@@ -32,11 +32,77 @@ describe("review prompts", () => {
     expect(p).not.toContain("First char `{`");
   });
 
-  test("the quality prompt asks for a per-function walk, the spec prompt for a per-AC walk", () => {
+  test("the quality prompt asks for a per-file walk, the spec prompt for a per-AC walk", () => {
     const spec = buildReviewPrompt("spec", { base: "origin/main", specPath: "s.md" });
     const quality = buildReviewPrompt("quality", { base: "origin/main", specPath: "s.md" });
     expect(spec).toContain("one line per AC");
-    expect(quality).toContain("one line per function");
+    expect(quality).toContain("one line per file");
+    expect(quality).not.toContain("one line per function");
+  });
+});
+
+// US-001: Bound the quality reviewer reply contract.
+// Each acceptance criterion has its own test, named after the AC.
+describe("buildReviewPrompt — quality reply contract (US-001)", () => {
+  const QUALITY_BASE = "origin/main";
+  const SPEC_PATH = ".nax/features/x/spec.md";
+
+  // AC 1: the quality prompt asks for one line per file and omits one line per function.
+  test("AC 1: quality WALK is per file, not per function", () => {
+    const p = buildReviewPrompt("quality", { base: QUALITY_BASE, specPath: SPEC_PATH });
+    expect(p).toContain("one line per file");
+    expect(p).not.toContain("one line per function");
+  });
+
+  // AC 2: the spec prompt asks for one line per AC.
+  test("AC 2: spec WALK is per AC", () => {
+    const p = buildReviewPrompt("spec", { base: QUALITY_BASE, specPath: SPEC_PATH });
+    expect(p).toContain("one line per AC");
+  });
+
+  // AC 3: the quality prompt retains the per-function walk as private scratch work.
+  test("AC 3: quality prompt keeps the private per-function walk", () => {
+    const p = buildReviewPrompt("quality", { base: QUALITY_BASE, specPath: SPEC_PATH });
+    expect(p).toContain("write yourself");
+  });
+
+  // AC 4: the quality prompt in fresh-review form omits the spec path.
+  test("AC 4: quality fresh review omits specPath", () => {
+    const p = buildReviewPrompt("quality", { base: QUALITY_BASE, specPath: SPEC_PATH });
+    expect(p).not.toContain(SPEC_PATH);
+  });
+
+  // AC 5: the quality prompt in re-review form omits the spec path.
+  test("AC 5: quality re-review omits specPath", () => {
+    const p = buildReviewPrompt("quality", {
+      base: QUALITY_BASE,
+      specPath: SPEC_PATH,
+      since: "abc123",
+      priorFindings: [{ severity: "HIGH", title: "T", problem: "P", fix: "F" }],
+    });
+    expect(p).not.toContain(SPEC_PATH);
+  });
+
+  // AC 6: the spec prompt keeps the spec path in both fresh and re-review forms.
+  test("AC 6: spec prompt includes specPath in both fresh and re-review forms", () => {
+    const fresh = buildReviewPrompt("spec", { base: QUALITY_BASE, specPath: SPEC_PATH });
+    expect(fresh).toContain(SPEC_PATH);
+
+    const reReview = buildReviewPrompt("spec", {
+      base: QUALITY_BASE,
+      specPath: SPEC_PATH,
+      since: "abc123",
+      priorFindings: [{ severity: "HIGH", title: "T", problem: "P", fix: "F" }],
+    });
+    expect(reReview).toContain(SPEC_PATH);
+  });
+
+  // AC 7: the quality prompt still requires all three reply sections.
+  test("AC 7: quality prompt keeps all three reply sections", () => {
+    const p = buildReviewPrompt("quality", { base: QUALITY_BASE, specPath: SPEC_PATH });
+    expect(p).toContain("## TOUCHPOINTS");
+    expect(p).toContain("## WALK");
+    expect(p).toContain("## FINDINGS");
   });
 });
 

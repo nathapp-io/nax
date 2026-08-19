@@ -170,10 +170,13 @@ maintainability issues get missed: an agent that pattern-matches a few obvious
 smells and stops will always under-report. Look at each changed function
 deliberately.
 
-This enumeration goes in your reply, as the \`## WALK\` section the reply contract
-requires — one line per changed function, no prose. It is the evidence that you
-were in a position to write the findings below it; a reply without it is treated
-as an incomplete review and sent back.
+This per-function walk is **private scratch work** — it stays in your reasoning,
+you do not transcribe it into the reply. What you emit, in the \`## WALK\` section
+the reply contract requires, is **one line per changed file**, carrying that
+file's verdict (\`path — earns its place|concern: <one clause>\`). The
+per-function walk is what finds the defects; the per-file WALK is the
+checkable evidence that you walked the diff. A reply without the \`## WALK\`
+section is treated as an incomplete review and sent back.
 
 ## What to look for
 
