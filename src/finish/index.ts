@@ -30,6 +30,8 @@ export { _qualityGateDeps, resolveGateCommands, runQualityGates } from "./gates/
 export { runFinishMachine } from "./machine";
 export type { FinishMachineDeps } from "./machine";
 export type { FinishOps, FixOutcome, FixRequest, ReviewRequest } from "./ops";
+export { finishReviewOp } from "./operations";
+export type { FinishReviewInput, FinishReviewOutput } from "./operations";
 export {
   gateCommitRoute,
   MAX_FIX_ATTEMPTS,
