@@ -247,3 +247,70 @@ describe("runFinishPhase", () => {
     }
   });
 });
+
+/**
+ * Escalation delivery must reach exactly one channel.
+ *
+ * `preferTelegram` suppresses the PR/MR comment and makes Telegram the sole
+ * channel; `notify()` sends nothing at all when `notify.mode` is "off". Both
+ * true at once delivers the escalation nowhere, with no `deliveryError` to
+ * show for it — which is what the acpx plugin's three-conjunct guard
+ * (`notify.mode !== "off" && escalate.telegram && creds !== null`) prevented.
+ */
+describe("escalation channel selection", () => {
+  function capturePreferTelegram(opts: {
+    telegram?: boolean;
+    notifyMode?: "escalation" | "always" | "off";
+  }): Promise<boolean | undefined> {
+    const restore = { ..._finishPhaseDeps };
+    let seen: boolean | undefined;
+    _finishPhaseDeps.loadFinishContext = async () => proceedContext();
+    _finishPhaseDeps.detectForge = async () => "github";
+    _finishPhaseDeps.createFinishOps = (deps) => {
+      seen = deps.preferTelegram;
+      return { review: async () => ({ findings: [], gaps: [] }), fix: async () => ({}), openDraftPr: async () => null, promotePr: async () => ({ status: "opened" as const }), escalate: async () => ({}) };
+    };
+    _finishPhaseDeps.runFinishMachine = async () => ({ feature: "f", status: "already-ready" });
+    return runFinishPhase(makeCtx(opts))
+      .then(() => seen)
+      .finally(() => Object.assign(_finishPhaseDeps, restore));
+  }
+
+  test("credentialed telegram is the sole channel under the default notify mode", async () => {
+    expect(await capturePreferTelegram({ telegram: true })).toBe(true);
+  });
+
+  test("notify.mode off must NOT suppress the PR comment", async () => {
+    // Otherwise: no comment (preferTelegram) and no Telegram (mode off) —
+    // the escalation is delivered nowhere and nothing records that.
+    expect(await capturePreferTelegram({ telegram: true, notifyMode: "off" })).toBe(false);
+  });
+});
+
+test("an undelivered escalation is surfaced on the finish status entry", async () => {
+  const restore = { ..._finishPhaseDeps };
+  const updates: Array<Record<string, unknown>> = [];
+  _finishPhaseDeps.loadFinishContext = async () => proceedContext();
+  _finishPhaseDeps.detectForge = async () => "github";
+  _finishPhaseDeps.runFinishMachine = async () => ({
+    feature: "f",
+    status: "escalated",
+    escalationReason: "needs a human",
+    deliveryError: "gh pr comment failed",
+  });
+  const ctx = {
+    ...makeCtx(),
+    statusWriter: {
+      setPostRunPhase: (_phase: "finish", update: Record<string, unknown>) => {
+        updates.push(update);
+      },
+    },
+  };
+  try {
+    await runFinishPhase(ctx);
+    const terminal = updates[updates.length - 1];
+    expect(terminal.deliveryError).toBe("gh pr comment failed");
+  } finally {
+    Object.assign(_finishPhaseDeps, restore);
+  }
+});
