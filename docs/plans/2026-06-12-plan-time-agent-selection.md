@@ -1210,10 +1210,10 @@ Expected: clean.
 
 - [ ] **Step 3: Manual smoke on the real feature**
 
-Run (against the rs-stock repo that surfaced the bug):
+Run (against the downstream repo that surfaced the bug):
 
 ```bash
-cd /home/williamkhoo/Desktop/projects/work/rs-stock/rs-stock
+cd <downstream-repo>
 nax plan -f cross-ticker-get-indicators-v2 --from .nax/features/cross-ticker-get-indicators/spec.md --profile cross-agent
 ```
 

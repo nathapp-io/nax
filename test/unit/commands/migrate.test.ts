@@ -39,7 +39,7 @@ describe("detectGeneratedContent", () => {
   it("is idempotent — already-migrated state returns empty", async () => {
     await withTempDir(async (dir) => {
       const naxDir = path.join(dir, ".nax");
-      await Bun.write(path.join(naxDir, "config.json"), JSON.stringify({ name: "koda" }));
+      await Bun.write(path.join(naxDir, "config.json"), JSON.stringify({ name: "demo-app" }));
 
       const candidates = await detectGeneratedContent(naxDir);
       expect(candidates).toEqual([]);

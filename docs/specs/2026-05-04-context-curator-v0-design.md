@@ -209,7 +209,7 @@ Six heuristics, all deterministic group-by queries against `observations.jsonl`.
 | H5 | Stale chunk | `chunk-excluded` where `reason="stale"` | story still passed AND chunk excluded ≥ 2 runs back | Drop from `.nax/rules/...` | LOW |
 | H6 | Fix-cycle unchanged outcome | `fix-cycle.iteration` where `outcome="unchanged"` | `≥ 2` consecutive | Diagnose prompt may be wrong (advisory; no canonical-source target) | LOW |
 
-Thresholds in v0 are **starting guesses** per finding doc §428–432. Spec ships with calibration as a follow-up: koda dogfood validates real-world thresholds before promoting any rule to a default.
+Thresholds in v0 are **starting guesses** per finding doc §428–432. Spec ships with calibration as a follow-up: dogfood validates real-world thresholds before promoting any rule to a default.
 
 Threshold values live in config:
 ```json
@@ -298,10 +298,10 @@ nax curator gc [--keep <N>]           # prune old run dirs from rollup (defaults
 | ID | Risk | Severity | Mitigation |
 |:---|:---|:---|:---|
 | R1 | **`review.audit.enabled: false` by default** — most projects won't have review-audit JSONs to ingest. Curator quality drops. | High | Curator's `shouldRun` checks the flag and emits a clear warning: "review.audit.enabled is off — proposal quality will be reduced. Enable in `.nax/config.json`." Documentation makes the flag prominent. |
-| R2 | **Threshold calibration** — `≥2` is a guess; real signal-to-noise unknown. | High | Ship with config-driven thresholds (§6). Document koda dogfood as the calibration source for v0.5 defaults. |
+| R2 | **Threshold calibration** — `≥2` is a guess; real signal-to-noise unknown. | High | Ship with config-driven thresholds (§6). Document dogfood as the calibration source for v0.5 defaults. |
 | R3 | **Schema drift** — `Observation` payloads need to evolve (new `kind`s, new fields). Old rollup rows still exist. | Medium | `schemaVersion` field on every row; tolerant parsers; never reuse field names across versions. |
 | R4 | **Run jsonl payload drift** — `logger.info("pull-tool", …)` shape can drift as stages evolve. Curator's parser breaks silently. | Medium | Tolerant parsers (default missing fields to undefined, log warning). Schema lives in code (`schemas.ts`) for the curator, regenerated when emit shape changes. Integration test reads sample run jsonl and projects to observations end-to-end. |
-| R5 | **Performance on large runs** — 1000-story run could produce millions of observation rows. | Medium | observations.jsonl is per-runId, JSONL append is O(1). Rollup is append-only, periodic GC via `nax curator gc`. No real concern at current koda/nax scale (~10s of stories per run). |
+| R5 | **Performance on large runs** — 1000-story run could produce millions of observation rows. | Medium | observations.jsonl is per-runId, JSONL append is O(1). Rollup is append-only, periodic GC via `nax curator gc`. No real concern at current dogfood/nax scale (~10s of stories per run). |
 | R6 | **Cross-run rollup as personal data** — when sharing rollup (#900 §8 patterns), rows include workdir paths and story content. May leak. | Low | v0: per-user only. Sharing is opt-in via configurable path; document the leak surface. |
 | R7 | **Plugin running on aborted runs** — `IPostRunAction` runs even on failure. Curator may write proposals from a corrupted run. | Low | `shouldRun` checks `context.storySummary.completed > 0`. Aborted-mid-story runs still complete observations for completed stories; partial data is honest data. |
 | R8 | **Apply UX collisions** — user accepts H1 "add rule X" and H5 "drop rule X" in the same proposal file. | Low | `nax curator commit` validates: drops apply first, adds second. Conflicts (same line target) abort with a clear message; user resolves manually. |
@@ -312,7 +312,7 @@ nax curator gc [--keep <N>]           # prune old run dirs from rollup (defaults
 
 ## 11. Implementation sequence
 
-Eight PRs **plus a dogfood phase between PR 7 and PR 8**. Steps 1, 2, and 3 are independent of each other and of curator itself (they're emit shape changes); steps 4–7 are the curator proper. Dogfood is real-time on koda after the curator ships, not a PR-scope activity. PR 8 is a small calibration follow-up that commits tuned thresholds.
+Eight PRs **plus a dogfood phase between PR 7 and PR 8**. Steps 1, 2, and 3 are independent of each other and of curator itself (they're emit shape changes); steps 4–7 are the curator proper. Dogfood is real-time on the dogfood project after the curator ships, not a PR-scope activity. PR 8 is a small calibration follow-up that commits tuned thresholds.
 
 ### PR 1 — Pull-tool logger emits
 
@@ -411,17 +411,17 @@ Tests: each heuristic in isolation with synthetic observation inputs; render wit
 
 ### Dogfood phase (between PR 7 and PR 8)
 
-PRs 1–7 ship the v0 curator end-to-end. **Dogfood happens after**, in real time, on koda — not inside any single PR. The phase is open-ended; it ends when enough run signal has accumulated to commit calibrated threshold defaults.
+PRs 1–7 ship the v0 curator end-to-end. **Dogfood happens after**, in real time, on the dogfood project — not inside any single PR. The phase is open-ended; it ends when enough run signal has accumulated to commit calibrated threshold defaults.
 
 **Activities during dogfood:**
-- Enable curator on koda (`config.curator.enabled: true`, `config.review.audit.enabled: true`).
-- Run nax over koda stories as usual; curator produces proposals automatically post-run.
+- Enable curator on the dogfood project (`config.curator.enabled: true`, `config.review.audit.enabled: true`).
+- Run nax over dogfood stories as usual; curator produces proposals automatically post-run.
 - Operator reviews `curator-proposals.md` after each run; accepts/rejects via `nax curator commit`.
 - Track signal-to-noise per heuristic: how many proposals were accepted vs rejected, and why.
-- Optional: backfill observations over koda's existing run artifacts via `nax curator dryrun --backfill <runId>` to bootstrap a rollup faster.
+- Optional: backfill observations over the dogfood project's existing run artifacts via `nax curator dryrun --backfill <runId>` to bootstrap a rollup faster.
 
 **Exit criteria for the dogfood phase:**
-- ≥ 20 koda runs have produced curator proposals.
+- ≥ 20 dogfood runs have produced curator proposals.
 - For each heuristic (H1–H6): ≥ 1 accept and ≥ 1 reject in the dogfood window (gives signal both directions).
 - Operator has a defensible threshold value per heuristic, with a one-line rationale ("at threshold ≥ 2, H1 had 80% accept rate; at ≥ 3, only 40% — keep at 2").
 

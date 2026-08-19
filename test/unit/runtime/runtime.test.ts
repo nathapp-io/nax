@@ -212,9 +212,9 @@ describe("createRuntime outputDir", () => {
     expect(rt1.projectKey).toBe("my-project");
     expect(rt1.globalDir).toBe(path.join(globalConfigDir(), "global"));
 
-    const rt2 = makeRuntime(NaxConfigSchema.parse({ name: "koda" }), "/tmp/any-path");
-    expect(rt2.projectKey).toBe("koda");
-    expect(rt2.outputDir).toBe(path.join(globalConfigDir(), "koda"));
+    const rt2 = makeRuntime(NaxConfigSchema.parse({ name: "demo-app" }), "/tmp/any-path");
+    expect(rt2.projectKey).toBe("demo-app");
+    expect(rt2.outputDir).toBe(path.join(globalConfigDir(), "demo-app"));
   });
 });
 

@@ -17,7 +17,7 @@ const routing = (over: Partial<StoryRouting>): StoryRouting => ({
 
 describe("synthesizeBackfillMetric (#1296)", () => {
   test("failed-in-execution story → real attempts/model/tier, source execution-failed", () => {
-    // Mirrors rs-stock US-001: failed in execution, agent claude @ balanced, 2 attempts.
+    // Mirrors a downstream US-001: failed in execution, agent claude @ balanced, 2 attempts.
     const story = makeStory({ id: "US-001", status: "failed", attempts: 2, routing: routing({}) });
     const m = synthesizeBackfillMetric({
       storyId: "US-001",

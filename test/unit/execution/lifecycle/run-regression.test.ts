@@ -265,7 +265,7 @@ describe("runDeferredRegression — synthetic finding when no structured failure
       const call = verifyCalls.length;
       verifyCalls.push(`call-${call}`);
       // initial: suite fails (non-zero exit) but only a count is parseable, no
-      // structured failures — the rs-stock "230 passed, 10 errors" shape.
+      // structured failures — a downstream "230 passed, 10 errors" shape.
       if (call === 0) {
         return makeVerifyResult({
           output: "======================== 230 passed, 10 errors in 5.29s ========================",

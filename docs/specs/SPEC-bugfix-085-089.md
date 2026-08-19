@@ -2,7 +2,7 @@
 
 ## Summary
 
-Five bugs discovered from analysing the koda vcs-integration nax run (v0.54.1). Grouped by component:
+Five bugs discovered from analysing a downstream project's nax run (v0.54.1). Grouped by component:
 
 | Bug | Component | Severity | Issue |
 |:----|:----------|:---------|:------|

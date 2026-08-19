@@ -1,7 +1,7 @@
 # Rectifier Handoff Restoration — Implementer→Test-Writer + Escalation Fixes
 
 **Date:** 2026-05-26
-**Trigger:** Run `logs/2026-05-26T05-04-43.jsonl` line 275–278 — screener-ui-web US-001 paused silently after `findings.cycle` exited with `agent-gave-up`. Audit log `logs/prompt-audit/screener-ui-web/1779775142402-…-implementer-rectification-t01.txt` showed the implementer emitted `UNRESOLVED` without trying Exception 4 (mock_structure handoff) despite the case fitting it.
+**Trigger:** Run `logs/2026-05-26T05-04-43.jsonl` line 275–278 — the downstream web feature US-001 paused silently after `findings.cycle` exited with `agent-gave-up`. Audit log `logs/prompt-audit/the downstream web feature/1779775142402-…-implementer-rectification-t01.txt` showed the implementer emitted `UNRESOLVED` without trying Exception 4 (mock_structure handoff) despite the case fitting it.
 
 **Scope:** Three independent bugs that compound. Each ships in its own PR.
 
@@ -32,7 +32,7 @@ Additionally, `findings/cycle.ts` distinguishes `agent-gave-up` from cap-exhaust
 | B | Implementer→test-writer handoff broken: declarations parsed, never routed | `src/operations/autofix-{implementer,test-writer}-strategy.ts`, missing `validate` hook | high — escape valves 2 and 4 are unreachable |
 | C | Rectifier prompt says "three" exceptions but lists four for TDD; non-TDD strip is also broken | `src/prompts/builders/rectifier-builder-helpers.ts`, 6 call sites in `rectifier-builder.ts` | medium — agent refuses valid Exception 4 cases |
 
-All three reproduced in the screener-ui-web run. Fix C alone restores the prompt; Fix B routes a now-emitted declaration; Fix A escalates if the agent still gives up despite a working handoff.
+All three reproduced in the the downstream web feature run. Fix C alone restores the prompt; Fix B routes a now-emitted declaration; Fix A escalates if the agent still gives up despite a working handoff.
 
 ---
 
@@ -426,7 +426,7 @@ Rules:
 - FILES must list real test files. Each path must exist and be a test file.
 ```
 
-This is what unblocks the rs-stock E2E case. The current wording reads as case (a) only; case (b) is exactly what the screener-ui-web run needed. The phrase "hermetic/fixture-backed test surface" mirrors verbatim AC wording in such cases ("Given a hermetic Playwright fixture-backed API …") giving the agent a textual anchor.
+This is what unblocks the downstream E2E case. The current wording reads as case (a) only; case (b) is exactly what the the downstream web feature run needed. The phrase "hermetic/fixture-backed test surface" mirrors verbatim AC wording in such cases ("Given a hermetic Playwright fixture-backed API …") giving the agent a textual anchor.
 
 ### Files
 
@@ -517,7 +517,7 @@ This keeps the change off the `findings/` framework. The sink object is plain (`
 
 ### Q2 — Exception 4 case (b) wording — RESOLVED: language-neutral, no tool names
 
-Verified against the pre-implement rs-stock repo at `/home/williamkhoo/Desktop/projects/work/rs-stock/rs-stock/`. Tech: Next.js + Vitest + Playwright + TanStack Query, JS/TS only. The failing ACs read verbatim:
+Verified against the pre-implement downstream repo. Tech: Next.js + Vitest + Playwright + TanStack Query, JS/TS only. The failing ACs read verbatim:
 
 - **AC29:** *"Given `web/tests/e2e/screener.spec.ts`, when inspecting the repository, then the file exists and defines the screener happy-path flow **against fixture-backed API data**."*
 - **AC30:** *"Given a **hermetic Playwright fixture-backed API**, when `web/tests/e2e/screener.spec.ts` runs, then it loads `/`, observes at least 12 strategy options, selects `golden-cross`, …"*
@@ -551,13 +551,13 @@ that does NOT fit Exception 2. Two cases qualify:
       satisfy without new infrastructure.
 ```
 
-No tool names. The phrase "hermetic/fixture-backed test surface" mirrors AC wording in the rs-stock case and generalises across languages.
+No tool names. The phrase "hermetic/fixture-backed test surface" mirrors AC wording in that case and generalises across languages.
 
 ---
 
 ## Verification
 
-After all three PRs merge, re-run the screener-ui-web feature against the same PRD (pre-implement repo: `/home/williamkhoo/Desktop/projects/work/rs-stock/rs-stock/`). Expected behaviour:
+After all three PRs merge, re-run the the downstream web feature feature against the same PRD (against its pre-implement checkout). Expected behaviour:
 
 1. Implementer reaches the AC29/AC30 finding, recognises it fits Exception 4 case (b) (AC text uses "hermetic Playwright fixture-backed API"), emits `TEST_EDIT_REASON: mock_structure` with `FILES=web/tests/e2e/screener.spec.ts,web/playwright.config.ts` and a REASON paragraph naming the missing fixture layer.
 2. `runRectification.validate` closure runs the verifier re-run as today, then calls `rectification.postValidate` (B6). `postValidate` calls `validateMockStructureFiles` — both files exist and match resolved test patterns → both go to `valid` → sink's `mockHandoffs` is replaced with just the valid entries.
@@ -570,4 +570,4 @@ If the agent still cannot fulfil the handoff at `balanced` (e.g. the test-writer
 
 ### Regression guard
 
-Add an integration test under `test/integration/findings/autofix-handoff.test.ts` that reproduces the screener-ui-web shape: an implementer that always emits `TEST_EDIT_REASON: mock_structure` for a synthetic finding, and assert the test-writer fires in the next iteration with the declared files in `handoffFiles`. This catches future refactors that disconnect the sink, the same way `f38aedf2` did silently.
+Add an integration test under `test/integration/findings/autofix-handoff.test.ts` that reproduces the the downstream web feature shape: an implementer that always emits `TEST_EDIT_REASON: mock_structure` for a synthetic finding, and assert the test-writer fires in the next iteration with the declared files in `handoffFiles`. This catches future refactors that disconnect the sink, the same way `f38aedf2` did silently.

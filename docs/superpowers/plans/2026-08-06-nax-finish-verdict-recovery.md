@@ -64,7 +64,7 @@ import { describe, expect, test } from "bun:test";
 import { parseFixVerdict, parseReviewVerdict } from "@flows/nax-finish/verdict";
 
 // The real reply that killed flow run 2026-08-05T154112386Z-nax-finish-600cf3f3 on
-// rs-stock, with private identifiers replaced by generic equivalents — the shape
+// a downstream project, with private identifiers replaced by generic equivalents — the shape
 // (long, chatty, no brace anywhere) is authentic, only the names are not. Not a
 // synthetic "not json" string: the point is that a chatty reviewer emits no brace at
 // all, which defeats every extractJsonObject tier.
@@ -768,7 +768,7 @@ gh pr create --base main --title "fix(nax-finish): survive an unparseable review
 A reviewer returning prose instead of JSON threw inside `parseVerdict`, failing the
 acp node and killing the whole flow — exit 1, no result file, no notification.
 
-Observed on `rs-stock` (flow run
+Observed on a downstream project (flow run
 `2026-08-05T154112386Z-nax-finish-600cf3f3`): the run itself was clean, 4/4 stories,
 but the flow died at `review_quality` after 128s and ~4.2M tokens, losing the quality
 review, the quality gates and the PR.
@@ -823,5 +823,5 @@ small textual conflict in the flow file's import block at worst.
 
 - Node-level retry or `onError` edges in acpx
 - Reviewer model or profile changes
-- The two rs-stock findings the crash discarded
+- The two downstream findings the crash discarded
 - The `nax-finish` post-run `shouldRun` gate, which correctly declines on `main`

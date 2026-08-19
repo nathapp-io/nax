@@ -1034,7 +1034,7 @@ describe("AC-60: _review-retry.ts file existence", () => {
   test("_review-retry.ts exists (consolidation strategy)", async () => {
     // Consolidation lives in src/agents/retry/parse-retry.ts (not a separate _review-retry.ts)
     const file = Bun.file(
-      "/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/agents/retry/parse-retry.ts",
+      "src/agents/retry/parse-retry.ts",
     );
     const exists = await file.exists();
     expect(exists).toBe(true);
@@ -1048,7 +1048,7 @@ describe("AC-61-62: _review-retry imports", () => {
   test("_review-retry is only imported in semantic-review and adversarial-review", async () => {
     // Consolidation is via makeParseRetryStrategy imported from ../agents/retry
     const semanticFile = Bun.file(
-      "/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/operations/semantic-review.ts",
+      "src/operations/semantic-review.ts",
     );
     const semanticContent = await semanticFile.text();
     expect(semanticContent).toContain("makeParseRetryStrategy");
@@ -1070,7 +1070,7 @@ describe("AC-63: Build and test suites", () => {
 describe("AC-64-70: Retry strategy documentation", () => {
   test("Retry strategy rules are documented", async () => {
     const rulesFile = Bun.file(
-      "/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/.claude/rules/retry-strategy.md",
+      ".claude/rules/retry-strategy.md",
     );
     const rulesExist = await rulesFile.exists();
     expect(rulesExist).toBe(true);
