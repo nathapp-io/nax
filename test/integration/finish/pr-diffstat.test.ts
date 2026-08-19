@@ -92,7 +92,7 @@ describe("finish PR diffstat — nax artifact exclusion", () => {
   });
 
   test("excludes a per-package .nax/ directory — the monorepo case", async () => {
-    // The regression that shipped in rs-stock PR #446: a root-anchored
+    // The regression that shipped in a downstream PR: a root-anchored
     // pathspec leaves this file in the diffstat.
     const ctx = await load();
     expect(ctx.diffstat).not.toContain("_nax_acceptance_test.py");

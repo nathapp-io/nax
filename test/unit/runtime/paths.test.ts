@@ -154,9 +154,9 @@ describe("NaxConfigSchema name field", () => {
   it.each([
     ["a valid name", { name: "my-project" }],
     ["a name with underscores and digits", { name: "proj_1" }],
-    ["optional outputDir as absolute path", { name: "koda", outputDir: "/mnt/fast/nax/koda" }],
-    ["outputDir starting with ~/", { name: "koda", outputDir: "~/custom/koda" }],
-    ["curator.rollupPath", { name: "koda", curator: { rollupPath: "/mnt/share/rollup.jsonl" } }],
+    ["optional outputDir as absolute path", { name: "demo-app", outputDir: "/mnt/fast/nax/demo-app" }],
+    ["outputDir starting with ~/", { name: "demo-app", outputDir: "~/custom/demo-app" }],
+    ["curator.rollupPath", { name: "demo-app", curator: { rollupPath: "/mnt/share/rollup.jsonl" } }],
   ] as const)("accepts %s", (_label, input) => {
     expect(NaxConfigSchema.safeParse(input).success).toBe(true);
   });
@@ -166,7 +166,7 @@ describe("NaxConfigSchema name field", () => {
     ["reserved name 'global'", { name: "global" }],
     ["reserved name '_archive'", { name: "_archive" }],
     ["a name starting with '.'", { name: ".hidden" }],
-    ["relative outputDir", { name: "koda", outputDir: "relative/path" }],
+    ["relative outputDir", { name: "demo-app", outputDir: "relative/path" }],
   ] as const)("rejects %s", (_label, input) => {
     expect(NaxConfigSchema.safeParse(input).success).toBe(false);
   });

@@ -209,23 +209,23 @@ User triages with `nax curator apply <runId>` (interactive accept/reject), or ju
 
 ## Step 3 — Tier 1 feasibility audit (2026-04-30)
 
-Verified each Tier 1 source by greppping the nax source tree and inspecting koda's actual run artifacts at `~/Desktop/projects/nathapp/koda/.nax/`.
+Verified each Tier 1 source by greppping the nax source tree and inspecting the dogfood project's actual run artifacts at `<dogfood-repo>/.nax/`.
 
 ### Sources that already exist (no nax change needed)
 
 | Source | Where it lives | Verified by |
 |:---|:---|:---|
-| Context manifest | `<projectDir>/.nax/features/<id>/stories/<sid>/context-manifest-<stage>.json` | `src/context/engine/manifest-store.ts`; koda has `context-manifest-{context,tdd-test-writer,tdd-implementer}.json` for US-001 |
+| Context manifest | `<projectDir>/.nax/features/<id>/stories/<sid>/context-manifest-<stage>.json` | `src/context/engine/manifest-store.ts`; the dogfood project has `context-manifest-{context,tdd-test-writer,tdd-implementer}.json` for US-001 |
 | Rectification cycles | `<feature>/runs/<ts>.jsonl` with `stage:"rectify"` or `stage:"autofix"` | `src/pipeline/stages/rectify.ts:49,106,112`, `src/pipeline/stages/autofix-agent.ts:104+` |
 | Escalation events | `<feature>/runs/<ts>.jsonl` with `stage:"escalation"`; also persisted on `UserStory.escalations[]` | `src/execution/escalation/tier-escalation.ts:133` `logger.warn("escalation", "Story exceeded tier budget, escalating", …)` |
 | Story verdict | `.nax/metrics.json` per-story (`failed`, `firstPassSuccess`, `attempts`, `finalTier`) — cross-run | `src/metrics/tracker.ts:254` saves to `<workdir>/.nax/metrics.json` |
-| Stage timings | `<feature>/runs/<ts>.jsonl` — every event carries `timestamp` + `stage` | Confirmed in koda jsonl: 30+ distinct stage tags including `pipeline`, `tdd-*`, `routing`, `static-rules`, `context-v2` |
+| Stage timings | `<feature>/runs/<ts>.jsonl` — every event carries `timestamp` + `stage` | Confirmed in dogfood jsonl: 30+ distinct stage tags including `pipeline`, `tdd-*`, `routing`, `static-rules`, `context-v2` |
 
 ### Sources gated behind a flag (already exist — just enable)
 
 | Source | Status | How to enable |
 |:---|:---|:---|
-| **Review findings** | ✅ **`ReviewAuditor` already exists.** Originally flagged as a logger gap — that was wrong. `src/review/review-audit.ts` writes structured JSON per reviewer call to `.nax/review-audit/<featureName>/<epochMs>-<sessionName>.json`. Schema covers everything the curator needs: `reviewer` (semantic/adversarial), `storyId`, `parsed`, `result.passed`, `result.findings[]`, `advisoryFindings[]`, `blockingThreshold`, `failOpen`, plus session correlation IDs. Gated by `config.review.audit.enabled` (default `false`). Wired in `src/runtime/index.ts:140-142` — when disabled, falls back to `createNoOpReviewAuditor()`. Subscriber attached at `src/runtime/index.ts:179` via `attachReviewAuditSubscriber`. Confirmed working: koda has audit files for `memory-guardrails` from 2026-04-22. | Add to `.nax/config.json`: `"review": { "audit": { "enabled": true } }` |
+| **Review findings** | ✅ **`ReviewAuditor` already exists.** Originally flagged as a logger gap — that was wrong. `src/review/review-audit.ts` writes structured JSON per reviewer call to `.nax/review-audit/<featureName>/<epochMs>-<sessionName>.json`. Schema covers everything the curator needs: `reviewer` (semantic/adversarial), `storyId`, `parsed`, `result.passed`, `result.findings[]`, `advisoryFindings[]`, `blockingThreshold`, `failOpen`, plus session correlation IDs. Gated by `config.review.audit.enabled` (default `false`). Wired in `src/runtime/index.ts:140-142` — when disabled, falls back to `createNoOpReviewAuditor()`. Subscriber attached at `src/runtime/index.ts:179` via `attachReviewAuditSubscriber`. Confirmed working: the dogfood project has audit files for `memory-guardrails` from 2026-04-22. | Add to `.nax/config.json`: `"review": { "audit": { "enabled": true } }` |
 
 ### Sources still missing (need nax logger gap fixed)
 
@@ -239,7 +239,7 @@ Verified each Tier 1 source by greppping the nax source tree and inspecting koda
 | Source | Path | Use |
 |:---|:---|:---|
 | **Per-story metrics** | `.nax/metrics.json` — structured array, cross-run already | Strongest single source for Layer A. Has `firstPassSuccess`, `attempts`, `agentUsed`, `runtimeCrashes`, `tokensProduced`, `chunksKept` per story. |
-| **Prompt audit jsonl** | `.nax/prompt-audit/<feature>/<sessionId>.jsonl` | Tier 3 (LLM-distill) source: full prompts per session. Confirmed in koda. Out of scope for v0. |
+| **Prompt audit jsonl** | `.nax/prompt-audit/<feature>/<sessionId>.jsonl` | Tier 3 (LLM-distill) source: full prompts per session. Confirmed in the dogfood project. Out of scope for v0. |
 | **Cost jsonl** | `.nax/cost/<runId>.jsonl` | Per-call cost. Not directly useful for curator (Tier 0). |
 
 ### Net feasibility for v0
@@ -261,8 +261,8 @@ Each of the 2 remaining gaps is a self-contained, no-behavior-change PR.
 
 ### Implication for the design
 
-- **v0 can ship today** with 6 sources by enabling `review.audit.enabled` in koda's config + walking the existing artifacts. That covers 80–90% of the heuristics.
-- **The pull-tool gap matters less than originally claimed**, because pull tools are off by default in koda anyway. Adding the audit only becomes urgent once `context.v2.pull.enabled: true`.
+- **v0 can ship today** with 6 sources by enabling `review.audit.enabled` in the dogfood project's config + walking the existing artifacts. That covers 80–90% of the heuristics.
+- **The pull-tool gap matters less than originally claimed**, because pull tools are off by default in the dogfood project anyway. Adding the audit only becomes urgent once `context.v2.pull.enabled: true`.
 - **The acceptance gap matters most for failure-recovery proposals.** Worth fixing in v0 if it's a one-line change; defer otherwise.
 - **`metrics.json` + `review-audit/*.json` together are Layer A's primary inputs**, not the run jsonl. Both are already structured, normalized, and cross-run. The run jsonl supplements with timing and escalation events.
 

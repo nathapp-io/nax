@@ -11,7 +11,7 @@
 ## Orientation — read this before Task 1
 
 You are working in a git worktree at
-`/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/.claude/worktrees/finish-pr-narrative-and-template`,
+`<repo-root>/.claude/worktrees/finish-pr-narrative-and-template`,
 on branch `feat/finish-pr-narrative-and-template`, based on `main` @ `4e802d98`.
 
 **The design document this plan implements is at

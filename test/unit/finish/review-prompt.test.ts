@@ -102,7 +102,7 @@ describe("buildFixPrompt", () => {
   });
 });
 
-// Reviews were 58% of the flow's wall clock on rs-stock/pipeline-run-outcome
+// Reviews were 58% of the flow's wall clock on one downstream feature
 // (7 calls, 1306s of 2232s), most of it re-reading code an earlier round had
 // already cleared.
 describe("buildReviewPrompt — incremental re-review", () => {

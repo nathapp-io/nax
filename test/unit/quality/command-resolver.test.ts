@@ -150,7 +150,7 @@ describe("resolveQualityTestCommands — {{package}} substitution", () => {
 describe("resolveQualityTestCommands — orchestrator promotion", () => {
   test("promotes resolved scoped template to testCommand for turbo + storyWorkdir", async () => {
     const origRead = _commandResolverDeps.readPackageName;
-    _commandResolverDeps.readPackageName = mock(() => Promise.resolve("@koda/cli"));
+    _commandResolverDeps.readPackageName = mock(() => Promise.resolve("@acme/cli"));
     try {
       const config = makeConfig({
         quality: {
@@ -161,7 +161,7 @@ describe("resolveQualityTestCommands — orchestrator promotion", () => {
       const result = await resolveQualityTestCommands(config, "/workdir", "apps/cli");
       expect(result.rawTestCommand).toBe("bunx turbo test");
       // SEC-02: shell-quoted substitution — see note above.
-      expect(result.testCommand).toBe("bunx turbo test --filter='@koda/cli'");
+      expect(result.testCommand).toBe("bunx turbo test --filter='@acme/cli'");
       expect(result.testScopedTemplate).toBeUndefined(); // cleared for orchestrators
       expect(result.isMonorepoOrchestrator).toBe(true);
     } finally {
@@ -171,7 +171,7 @@ describe("resolveQualityTestCommands — orchestrator promotion", () => {
 
   test("no promotion when storyWorkdir is absent (full monorepo suite)", async () => {
     const origRead = _commandResolverDeps.readPackageName;
-    _commandResolverDeps.readPackageName = mock(() => Promise.resolve("@koda/cli"));
+    _commandResolverDeps.readPackageName = mock(() => Promise.resolve("@acme/cli"));
     try {
       const config = makeConfig({
         quality: {
@@ -207,7 +207,7 @@ describe("resolveQualityTestCommands — orchestrator promotion", () => {
 
   test("always clears testScopedTemplate for orchestrators regardless of promotion", async () => {
     const origRead = _commandResolverDeps.readPackageName;
-    _commandResolverDeps.readPackageName = mock(() => Promise.resolve("@koda/cli"));
+    _commandResolverDeps.readPackageName = mock(() => Promise.resolve("@acme/cli"));
     try {
       const config = makeConfig({
         quality: {

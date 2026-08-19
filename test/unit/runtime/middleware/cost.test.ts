@@ -471,11 +471,11 @@ describe("attachCostSubscriber", () => {
     const recorded: CostEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
     const bus = new DispatchEventBus();
-    attachCostSubscriber(bus, agg, "r-001", "rs-stock");
+    attachCostSubscriber(bus, agg, "r-001", "demo-app");
 
     bus.emitDispatch(makeSessionTurnEvent());
 
-    expect(recorded[0].projectKey).toBe("rs-stock");
+    expect(recorded[0].projectKey).toBe("demo-app");
   });
 
   test("#1433: omits projectKey when none is supplied", () => {
@@ -493,11 +493,11 @@ describe("attachCostSubscriber", () => {
     const errors: CostErrorEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), recordError: (e: CostErrorEvent) => errors.push(e) };
     const bus = new DispatchEventBus();
-    attachCostSubscriber(bus, agg, "r-001", "rs-stock");
+    attachCostSubscriber(bus, agg, "r-001", "demo-app");
 
     bus.emitDispatchError(makeErrorEvent());
 
-    expect(errors[0].projectKey).toBe("rs-stock");
+    expect(errors[0].projectKey).toBe("demo-app");
   });
 
   // ── #1464: effort as a dispatch dimension + schema v3 ────────────────────

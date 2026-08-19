@@ -28,7 +28,7 @@
  *              story's demotions across re-runs
  *
  * Example:
- *   bun scripts/analyze-coverage-gap.ts ~/.nax --since 2026-07-17 --project nathapp-nestjs-platform
+ *   bun scripts/analyze-coverage-gap.ts ~/.nax --since 2026-07-17 --project my-project
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";

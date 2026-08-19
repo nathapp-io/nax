@@ -4,9 +4,8 @@
 where the reviewer agent gave up (unparseable output) or failed to converge.
 
 **Evidence base:** 1,857 review-audit records dated `2026-07-01` or later, read from
-`~/.nax/<project>/review-audit/**/*.json` across `nax`, `rs-stock`, `nathapp-nestjs`,
-`nathapp-nestjs-platform`, `nathapp-nestjs-starter`, `nathapp-nestjs-outbox-providers`
-(plus `koda` and `iot-system`, which share the schema).
+`~/.nax/<project>/review-audit/**/*.json` across `nax` and seven downstream
+projects that share the schema.
 
 **Code base:** `repos/nax` @ `c8f74c5f` (v0.75.5). Cross-checked against
 `repos/nax-spec-kit-skills` @ `c82da98` (v0.2.9).
@@ -295,7 +294,7 @@ cd ~/.nax && jq -s -r '
 ' */review-audit/*/*.json
 
 # the 17-round non-convergence
-cd ~/.nax/nathapp-nestjs-platform/review-audit/auth-security-hardening && jq -s -r '
+cd ~/.nax/<project>/review-audit/<feature> && jq -s -r '
   map(select(.storyId=="US-004" and .reviewer=="adversarial"))
   | sort_by(.timestamp) | .[]
   | "\(.timestamp[5:16])\tpassed=\(.passed)\tn=\((.result.findings//[])|length)\terrors=\((.result.findings//[])|map(select(.severity=="error"))|length)"

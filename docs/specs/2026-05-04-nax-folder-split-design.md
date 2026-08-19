@@ -77,9 +77,9 @@ Each `~/.nax/<name>/` carries an identity file written on first run:
 
 ```json
 {
-  "name": "koda",
+  "name": "myapp",
   "workdir": "/abs/path/to/first/seen/workdir",
-  "remoteUrl": "git@github.com:nathapp/koda.git",
+  "remoteUrl": "git@github.com:acme/myapp.git",
   "createdAt": "2026-05-04T10:00:00Z",
   "lastSeen": "2026-05-04T10:30:00Z"
 }
@@ -106,50 +106,50 @@ The `mkdir` for `~/.nax/<name>/` is the race lock. Two concurrent first-run term
 ### 3.4 Block message
 
 ```
-✗ Project name collision: "koda"
+✗ Project name collision: "myapp"
   This project:    /current/workdir
-                   remote: git@github.com:newteam/koda.git
+                   remote: git@github.com:newteam/myapp.git
   Already in use:  /first/seen/workdir
-                   remote: git@github.com:nathapp/koda.git
+                   remote: git@github.com:acme/myapp.git
                    last run: 2026-04-15 (3 weeks ago)
 
   Resolve:
     1. Rename this project: edit `name` in <workdir>/.nax/config.json
-    2. Reclaim the name:    nax migrate --reclaim koda
-                            (archives existing data to ~/.nax/_archive/koda-<ts>/)
-    3. Same project moved?  nax migrate --merge koda
+    2. Reclaim the name:    nax migrate --reclaim myapp
+                            (archives existing data to ~/.nax/_archive/myapp-<ts>/)
+    3. Same project moved?  nax migrate --merge myapp
                             (rewrites identity to new workdir/remote)
 ```
 
 ### 3.5 Worktree behavior
 
 Two worktrees of the same repo:
-- Both have `name: "koda"` (same `<workdir>/.nax/config.json` — VCS'd).
+- Both have `name: "myapp"` (same `<workdir>/.nax/config.json` — VCS'd).
 - Both have the same git remote URL.
-- First worktree's run creates `~/.nax/koda/.identity` with its workdir + remote.
-- Second worktree's run looks up `koda`, sees remote matches → not a collision, shares the dir.
+- First worktree's run creates `~/.nax/myapp/.identity` with its workdir + remote.
+- Second worktree's run looks up `myapp`, sees remote matches → not a collision, shares the dir.
 - Concurrent runs from both worktrees write to the same `runs/<runId>/`, `prompt-audit/<feature>/<runId>.jsonl`, etc. — already per-runId-scoped, so no contention.
 
 Worktree sharing falls out cleanly because remote URL is the primary identity, workdir is informational.
 
 ### 3.6 Stale identity (project deleted from disk)
 
-A project was deleted but `~/.nax/koda/.identity` remains. New `koda` legitimately wants the name.
+A project was deleted but `~/.nax/myapp/.identity` remains. New `myapp` legitimately wants the name.
 
 **Resolution:** require explicit `nax migrate --reclaim`. Auto-staleness-detection is rejected — mounted volumes and network drives can be transiently absent, and we must not nuke real data.
 
 ### 3.7 Project rename (config `name` change)
 
-User changes `config.json` `name` from `koda` → `koda-v2`. On next run:
-- `~/.nax/koda-v2/` doesn't exist; naive precheck would treat it as new and orphan `~/.nax/koda/`.
+User changes `config.json` `name` from `myapp` → `myapp-v2`. On next run:
+- `~/.nax/myapp-v2/` doesn't exist; naive precheck would treat it as new and orphan `~/.nax/myapp/`.
 - Before failing the "no identity" path, the precheck scans all `~/.nax/*/.identity` for one with matching workdir + remote. If found, surfaces a rename prompt:
 
 ```
-Looks like this project was named "koda" previously.
-Move data to "koda-v2"? [y/N]
+Looks like this project was named "myapp" previously.
+Move data to "myapp-v2"? [y/N]
 ```
 
-Confirming runs `mv ~/.nax/koda ~/.nax/koda-v2` and updates the marker.
+Confirming runs `mv ~/.nax/myapp ~/.nax/myapp-v2` and updates the marker.
 
 ---
 
@@ -162,7 +162,7 @@ The codebase currently joins paths via `join(workdir, ".nax", ...)`. This become
 | Path category | New resolver | Example |
 |:---|:---|:---|
 | **Project inputs** (config, features, rules) | `projectInputDir(workdir)` → `<workdir>/.nax` | `<workdir>/.nax/config.json` |
-| **Project outputs** (runs, audits, manifests) | `projectOutputDir(runtime)` → `~/.nax/<projectKey>` | `~/.nax/koda/runs/<runId>/` |
+| **Project outputs** (runs, audits, manifests) | `projectOutputDir(runtime)` → `~/.nax/<projectKey>` | `~/.nax/myapp/runs/<runId>/` |
 | **Global outputs** (cross-project rollup, etc.) | `globalOutputDir()` → `~/.nax/global` | `~/.nax/global/curator/rollup.jsonl` |
 
 `runtime.outputDir` is added to `NaxRuntime` and computed once at runtime construction.
@@ -193,14 +193,14 @@ Some users may want `~/.nax/<projectKey>/` on a different volume (faster SSD, en
 ```json
 // <workdir>/.nax/config.json
 {
-  "name": "koda",
-  "outputDir": "/mnt/fast-ssd/nax/koda"   // optional; default ~/.nax/<name>
+  "name": "myapp",
+  "outputDir": "/mnt/fast-ssd/nax/myapp"   // optional; default ~/.nax/<name>
 }
 ```
 
 **Accepted path forms:**
-- Absolute paths (`/mnt/fast-ssd/nax/koda`)
-- Tilde-expanded home paths (`~/custom-nax/koda`) — expanded via `os.homedir()` at runtime
+- Absolute paths (`/mnt/fast-ssd/nax/myapp`)
+- Tilde-expanded home paths (`~/custom-nax/myapp`) — expanded via `os.homedir()` at runtime
 
 **Rejected path forms:**
 - Relative paths (`./local-nax`, `local-nax`) — prevents accidentally scattering output dirs across worktrees of the same project. Validation surfaces a clear error: `outputDir must be absolute or start with ~/`.
@@ -231,7 +231,7 @@ nax init --name <name> --merge    # rewrite existing identity to this workdir/re
 Interactive prompt:
 ```
 $ nax init
-Project name [koda]:
+Project name [myapp]:
 ```
 
 ### 5.3 Validation rules for `name`
@@ -270,7 +270,7 @@ If `<workdir>/.nax/config.json` already exists, `nax init` prompts before any ch
 
 ```
 $ nax init
-config.json already exists with name="koda".
+config.json already exists with name="myapp".
 Update? [y/N]
 ```
 
@@ -318,8 +318,8 @@ Safe-by-default: never deletes, only moves. If the same destination file already
 
 ```
 ✗ Cross-filesystem migration detected
-  Source:      /mnt/external-drive/koda/.nax/runs/
-  Destination: /home/me/.nax/koda/runs/
+  Source:      /mnt/external-drive/myapp/.nax/runs/
+  Destination: /home/me/.nax/myapp/runs/
 
   These are on different filesystems. Atomic rename is not available.
   Re-run with `--cross-fs` to copy+delete (slower, not atomic — partial
@@ -334,23 +334,23 @@ Safe-by-default: never deletes, only moves. If the same destination file already
 ### 6.3 `--reclaim` flow
 
 ```
-nax migrate --reclaim koda
-  1. Read ~/.nax/koda/.identity
-  2. mkdir ~/.nax/_archive/koda-<ts>/
-  3. mv ~/.nax/koda/* ~/.nax/_archive/koda-<ts>/
-  4. rmdir ~/.nax/koda/
-  5. (next nax run for current project will create a fresh ~/.nax/koda/)
+nax migrate --reclaim myapp
+  1. Read ~/.nax/myapp/.identity
+  2. mkdir ~/.nax/_archive/myapp-<ts>/
+  3. mv ~/.nax/myapp/* ~/.nax/_archive/myapp-<ts>/
+  4. rmdir ~/.nax/myapp/
+  5. (next nax run for current project will create a fresh ~/.nax/myapp/)
 ```
 
-The user retains access to archived data under `~/.nax/_archive/koda-<ts>/`. No `nax restore-archive` command in v0; manual `mv` works.
+The user retains access to archived data under `~/.nax/_archive/myapp-<ts>/`. No `nax restore-archive` command in v0; manual `mv` works.
 
 ### 6.4 `--merge` flow
 
 For "same project, different workdir" cases (project moved to a new path, or git remote URL changed):
 
 ```
-nax migrate --merge koda
-  1. Read ~/.nax/koda/.identity (old identity)
+nax migrate --merge myapp
+  1. Read ~/.nax/myapp/.identity (old identity)
   2. Re-write workdir/remoteUrl fields to current values
   3. Update lastSeen
   4. (no data movement; only identity is rewritten)
@@ -362,7 +362,7 @@ If `nax run` precheck detects unmigrated generated content under `<workdir>/.nax
 
 ```
 $ nax run
-[migrate] Found generated content under <workdir>/.nax/. Moving to ~/.nax/koda/...
+[migrate] Found generated content under <workdir>/.nax/. Moving to ~/.nax/myapp/...
 [migrate] Done. 47 files moved. <workdir>/.gitignore updated.
 [run] Starting...
 ```
@@ -418,7 +418,7 @@ All call-sites currently using `join(workdir, ".nax", ...)` for **output** paths
 
 ```json
 {
-  "name": "koda",
+  "name": "myapp",
   "curator": {
     "rollupPath": "/mnt/team-share/nax-rollup.jsonl"
   }
@@ -451,8 +451,8 @@ This unblocks four sharing models without committing to any:
 |:---|:---|:---|:---|
 | **R1** | **Implicit identity inversion.** A user moves a project to a new path; first run after the move sees workdir mismatch and blocks. | Medium | §3.7 rename detection scans `~/.nax/*/.identity` for matching workdir/remote and prompts. Workdir-only projects (no git remote) hit this case more often; surface clear `--merge` guidance. |
 | **R2** | **`~/.nax/` filesystem assumption.** Some platforms have non-standard home dirs (`$HOME` unset, Windows under WSL, sandboxed CI). | Medium | Use Node's `os.homedir()` (Bun-compatible). Allow `NAX_HOME` env override. Document. |
-| **R3** | **Permissions / multi-user.** Shared dev machines: user A's `~/.nax/koda/` invisible to user B. | Low | Acceptable — this is a feature, not a bug. Cross-user sharing is via §8.2 configurable path. |
-| **R4** | **Volume separation.** User runs nax from `/mnt/external-drive/koda` but `~/.nax/` is on `/`. Performance hit, or `~/` runs out of space. | Medium | §4.3 `outputDir` override. |
+| **R3** | **Permissions / multi-user.** Shared dev machines: user A's `~/.nax/myapp/` invisible to user B. | Low | Acceptable — this is a feature, not a bug. Cross-user sharing is via §8.2 configurable path. |
+| **R4** | **Volume separation.** User runs nax from `/mnt/external-drive/myapp` but `~/.nax/` is on `/`. Performance hit, or `~/` runs out of space. | Medium | §4.3 `outputDir` override. |
 | **R5** | **CI cache reuse.** CI persists `~/.nax/` across jobs; one job's data leaks into the next. | Low | Per-runId scoping bounds the problem; data co-location across CI runs of the same project is mostly desirable (cache warmup). |
 | **R6** | **Migration data loss.** `nax migrate` move fails partway through. Atomic `mv` (single `rename(2)`) only works on same-filesystem moves; cross-filesystem requires copy+delete which is slower and not atomic. | Medium | Use atomic `mv` (rename) which is single-syscall on POSIX same-filesystem moves. Cross-filesystem moves fall back to copy+delete; surface a warning and require `--cross-fs` flag in that case. |
 | **R7** | **Reserved-name escape.** User names project `_archive` to break the archive convention. | Low | §5.3 validation list; reject. |

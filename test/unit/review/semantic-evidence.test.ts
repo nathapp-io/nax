@@ -173,8 +173,8 @@ describe("substantiateSemanticEvidence — ref mode", () => {
       // repo location). The file is unreadable, so we preserve rather than demote.
       const finding = makeFinding({
         verifiedBy: {
-          command: "grep -n 'deleteAllBySourceType' /Users/williamkhoo/repos/koda/apps/api/src/rag/rag.service.ts",
-          file: "/Users/williamkhoo/repos/koda/apps/api/src/rag/rag.service.ts",
+          command: "grep -n 'deleteAllBySourceType' /Users/dev/repos/demo-app/apps/api/src/rag/rag.service.ts",
+          file: "/Users/dev/repos/demo-app/apps/api/src/rag/rag.service.ts",
           line: 723,
           observed: "const cleared = await this.deleteAllBySourceType(projectId, 'code');",
         },

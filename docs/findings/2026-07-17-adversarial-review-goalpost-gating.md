@@ -9,7 +9,7 @@
 
 ## 1. Executive summary
 
-A nax feature run (`auth-security-hardening`, project `nathapp-nestjs-platform`) had one story, **US-004**, loop through **~18 adversarial-review rounds across 3 runs** without converging, and was manually stopped.
+A nax feature run (a downstream project's auth-hardening feature) had one story, **US-004**, loop through **~18 adversarial-review rounds across 3 runs** without converging, and was manually stopped.
 
 Investigation found the implementation was **interface-correct** and its acceptance-criteria (AC) tests passed; semantic review passed cleanly every round. **Adversarial review was the sole blocker**, and it blocked on findings that were *factually true about the code but out of the story's AC scope* (atomic rate-limit windows, TOTP replay-window semantics, tenant-column nullability) — none of which the ACs require.
 

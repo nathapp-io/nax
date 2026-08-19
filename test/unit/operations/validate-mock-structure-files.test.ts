@@ -254,7 +254,7 @@ describe("validateMockStructureFiles", () => {
   // the story's package. Resolving against `packageDir` alone double-prefixed the
   // path, so a real, existing test file was rejected as nonexistent, the
   // mock-structure handoff was stripped, and the story deadlocked into a wasted
-  // tier escalation (rs-stock metrics-endpoint-protection US-002).
+  // tier escalation (a downstream feature's US-002).
   describe("monorepo path anchoring (packageDir !== repoRoot)", () => {
     // A Python package at apps/api whose test patterns are package-relative.
     const pyPatterns: ResolvedTestPatterns = {

@@ -83,7 +83,7 @@ describe("parseNarrative", () => {
   });
 
   test("strips leaked preamble and a bold heading when the sentinel is absent", () => {
-    // The exact shape observed on rs-stock PR #446: acpx concatenates every
+    // The exact shape observed on a downstream PR: acpx concatenates every
     // agent message chunk of the turn, so between-tool-call narration lands in
     // `parse`'s input with no separator at all.
     const reply = [

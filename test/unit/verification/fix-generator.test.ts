@@ -196,7 +196,7 @@ describe("groupACsByRelatedStories", () => {
     expect(allACs.length).toBe(10);
   });
 
-  test("28 ACs with same related story produce 1 group (koda scenario)", () => {
+  test("28 ACs with same related story produce 1 group (partial-pass scenario)", () => {
     const prd = makePrd([
       makeStory(
         "US-001",

@@ -9,7 +9,7 @@ A reviewer node in the `nax-finish` flow returned prose instead of JSON. `parseV
 threw, the node failed, and the whole flow died with exit 1 and no result file. The
 post-run plugin had nothing to read and nothing to notify from.
 
-Observed on `rs-stock`, flow run
+Observed on a downstream project, flow run
 `2026-08-05T154112386Z-nax-finish-600cf3f3`. The run itself was clean — 4/4 stories.
 The flow got through `load_ctx → acceptance → review_spec → route_spec →
 fix_spec → commit_spec → acceptance → review_spec → route_spec` and died at
@@ -221,7 +221,7 @@ Invariants after this change:
 - `parseReviewVerdict` on prose with no braces → `route: "reprompt"`
 - `parseFixVerdict` never throws on any of the same inputs
 - The regression fixture is the **real captured output** — the artifact from
-  the rs-stock run (`sha256-926e009aa773a68da5cb0aaf126d3ea50feb81dc81fd6d6f618bcd4acea4b20d`),
+  the downstream run (`sha256-926e009aa773a68da5cb0aaf126d3ea50feb81dc81fd6d6f618bcd4acea4b20d`),
   with private identifiers replaced by generic equivalents, not a synthetic
   `"not json"` string
 - `repromptCount` ignores legitimate `review_*` re-entries and counts only steps whose
@@ -252,7 +252,7 @@ Invariants after this change:
 - Reviewer model or profile changes. The failing reviewer was
   `nax-quality-reviewer` (claude-agent-acp, sonnet); swapping models is a different
   lever and would not make the flow survive the next non-compliant reply.
-- The two rs-stock findings the crash discarded. They are real and tracked separately
+- The two downstream findings the crash discarded. They are real and tracked separately
   in that project.
 - The `nax-finish` post-run `shouldRun` gate. It correctly declines on `main`; that it
   declines at `debug` level is a separate observability issue.

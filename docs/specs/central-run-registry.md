@@ -45,9 +45,9 @@ A global `~/.nax/runs/` registry that indexes every nax run via path references 
   "runId": "run-2026-03-07T05-30-00-000Z",
   "project": "my-app",
   "feature": "auth-system",
-  "workdir": "/Users/william/projects/my-app",
-  "statusPath": "/Users/william/projects/my-app/nax/features/auth-system/status.json",
-  "eventsDir": "/Users/william/projects/my-app/nax/features/auth-system/runs",
+  "workdir": "/Users/alice/projects/my-app",
+  "statusPath": "/Users/alice/projects/my-app/nax/features/auth-system/status.json",
+  "eventsDir": "/Users/alice/projects/my-app/nax/features/auth-system/runs",
   "registeredAt": "2026-03-07T05:30:00.000Z"
 }
 ```

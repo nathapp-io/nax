@@ -35,7 +35,7 @@
  *              separate ("how many rounds within a single run").
  *
  * Example (the #736 gate corpus):
- *   bun scripts/analyze-adversarial-convergence.ts ~/.nax --since 2026-05-11 --project nax,rs-stock
+ *   bun scripts/analyze-adversarial-convergence.ts ~/.nax --since 2026-05-11 --project nax,my-project
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";

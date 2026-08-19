@@ -62,7 +62,7 @@ const NBF_CONFIG = {
 
 // Scope "both" — nbf runs autofix-implementer + autofix-test-writer, and verifierGuard
 // adds the verifier to the deterministic revalidation. This is the config under which the
-// verifier-SSOT exemption can mask a red full-suite gate (the rs-stock US-001 shape).
+// verifier-SSOT exemption can mask a red full-suite gate (the downstream US-001 shape).
 const NBF_BOTH_CONFIG = {
   review: {
     adversarial: {
@@ -125,7 +125,7 @@ describe("E2E: non-blocking fix (ADR-024)", () => {
   });
 
   test("best-effort fix regresses the full-suite gate -> restored, story stays green (issue #1293)", async () => {
-    // The rs-stock/tool-enabled-llmnode US-001 shape, end-to-end. Scope "both" puts the
+    // The downstream US-001 shape that surfaced this, end-to-end. Scope "both" puts the
     // verifier in the nbf revalidation. The story is green through the main pipeline
     // (full-suite gate passes at attempt 0), adversarial passes with an advisory finding,
     // nbf runs — and its best-effort fix REGRESSES the full-suite gate (attempt >= 1).

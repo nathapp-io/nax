@@ -17,7 +17,7 @@
 - **Logging:** project logger only (`getLogger()` / `logger.info(...)`), no `console.*`; `storyId` first key in any log data object.
 - **Imports:** value imports hit barrels (`@/routing`, `@/operations`); type-only imports may hit leaf paths. `greenfieldGateOp` already imports from the leaf `../context/greenfield` — match that existing style for the greenfield helpers.
 - **Lint scope:** the repo's `bun run lint` only checks `src/ bin/`. Test files are NOT linted (so `as any` in tests is fine and pre-existing).
-- **Do NOT touch** the other repo at `~/workspace/subrina-coder/projects/nestjs-infra/...`. Work only in the nax repo at `/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax`.
+- **Do NOT touch** any sibling repo checked out next to this one. Work only in the nax repo at `<repo-root>`.
 
 ## Background (why — read once, then ignore)
 

@@ -17,7 +17,7 @@ This was a deliberate choice (the ADR-024 implementation plan, `2026-06-07-non-b
 
 ### The assumption that broke
 
-The "test-writer owns adversarial" default was implicitly tuned for the **blocking** finding stream, which is test-gap-dominated. A forensic pass over 147 adversarial review-audits (rs-stock + nathapp-nestjs-platform, 2026-06-13 → 06-17) shows the blocking and advisory streams have **opposite category mixes**:
+The "test-writer owns adversarial" default was implicitly tuned for the **blocking** finding stream, which is test-gap-dominated. A forensic pass over 147 adversarial review-audits (two downstream projects, 2026-06-13 → 06-17) shows the blocking and advisory streams have **opposite category mixes**:
 
 | category | BLOCKING (`error`) | ADVISORY (`warning`/`info`) |
 |:--|--:|--:|

@@ -282,7 +282,7 @@ Per project standards (`.claude/rules/project-conventions.md`):
 
 Manual smoke:
 
-- [ ] Re-run the koda dogfood feature `memory-phase4-graph-code-intelligence` on the fix branch
+- [ ] Re-run the downstream dogfood feature that surfaced this on the fix branch
 - [ ] Confirm the cycle-1 attempt-2 prompt audit contains adversarial findings, not the original build error
 - [ ] Confirm cycle terminates in ≤2 iterations (down from 5+)
 
@@ -297,7 +297,7 @@ Single PR, no flag. Both defects land together; splitting them creates an awkwar
 **PR description template:**
 
 ```
-Fixes two layered defects in runAgentRectification observed in koda
+Fixes two layered defects in runAgentRectification observed in a downstream project
 dogfood (US-001 cycle 1 — 3 attempts wasted, ~14 min):
 
 1. noOp detection used HEAD-only ref comparison, captured BEFORE the

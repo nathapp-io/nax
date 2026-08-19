@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-29-codex-effort-suffix-decomposition-design.md`
 
-**Repo root:** `/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax`
+**Repo root:** `<repo-root>` (this nax checkout)
 
 ## Background (read this first)
 

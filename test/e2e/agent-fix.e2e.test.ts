@@ -211,7 +211,7 @@ describe("E2E: agent-fix", () => {
     // real adversarialReviewOp normalizes it) must be claimed by autofix-implementer,
     // which can edit source — NOT autofix-test-writer, which is forbidden from touching
     // source. Prior to #1333 the test-writer's blanket clause claimed it, so the source
-    // bug could never be fixed and rectification exhausted (repro: rs-stock
+    // bug could never be fixed and rectification exhausted (repro: a downstream
     // tier3-analytics-tools US-002). This test would fire autofix-test-writer on the old
     // code. Compare with the test-gap (fixTarget=test) sibling above.
     const tw = () => ({ output: JSON.stringify({ filesChanged: ["test/a.test.ts"] }) });

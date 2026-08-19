@@ -106,7 +106,7 @@ describe("isTestLevelFailure", () => {
   test.each([
     ["AC-ERROR sentinel", ["AC-ERROR"], 10],
     [">80% of ACs fail (9/10)", ["AC-1","AC-2","AC-3","AC-4","AC-5","AC-6","AC-7","AC-8","AC-9"], 10],
-    ["exactly 28/31 case (koda scenario)", Array.from({ length: 28 }, (_, i) => `AC-${i + 1}`), 31],
+    ["exactly 28/31 case (partial-pass scenario)", Array.from({ length: 28 }, (_, i) => `AC-${i + 1}`), 31],
     ["AC-ERROR mixed with other failures", ["AC-1", "AC-ERROR", "AC-3"], 10],
   ] as const)("returns true when %s", (_label, failedACs, totalACs) => {
     expect(isTestLevelFailure([...failedACs], totalACs)).toBe(true);

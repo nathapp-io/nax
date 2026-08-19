@@ -360,7 +360,7 @@ Four waves, sequenced so each is independently shippable and reversible.
 
 **Validation:**
 1. Re-run the hello-lint dogfood (`68d35d37-…`) that produced #771/#772 — assert exactly N entries for N dispatches, zero `run-run-US-001*` files.
-2. Re-run the `tdd-calc` dogfood (`/home/williamkhoo/Desktop/projects/nathapp/nax-dogfood/fixtures/tdd-calc/`) — assert per-role audit files (`*-test-writer.txt`, `*-implementer.txt`, `*-verifier.txt`).
+2. Re-run the `tdd-calc` dogfood (the `tdd-calc` fixture in the local dogfood checkout) — assert per-role audit files (`*-test-writer.txt`, `*-implementer.txt`, `*-verifier.txt`).
 3. Assert acceptance audit file is `*-acceptance-gen-complete.txt` (D6 role-drift fix).
 
 ### Wave 2 — `DispatchContext` base + `wrapAdapterAsManager` gated (closes Gap B)
