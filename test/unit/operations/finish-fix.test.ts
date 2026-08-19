@@ -62,6 +62,14 @@ describe("finishFixOp shape", () => {
   test("no retry field is declared", () => {
     expect(finishFixOp.retry).toBeUndefined();
   });
+
+  test("timeoutMs prefers the input, else execution.sessionTimeoutSeconds", () => {
+    // finish.timeouts.stepMs defaults to null, so an input with no timeoutMs is
+    // the common case and must still be bounded.
+    const ctx = makeCtx();
+    expect(finishFixOp.timeoutMs?.({ ...GATE_INPUT, timeoutMs: 4242 }, ctx)).toBe(4242);
+    expect(finishFixOp.timeoutMs?.(GATE_INPUT, ctx)).toBe(ctx.config.execution.sessionTimeoutSeconds * 1000);
+  });
 });
 
 describe("finishFixOp.build()", () => {

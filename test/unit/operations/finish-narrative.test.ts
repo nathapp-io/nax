@@ -6,7 +6,13 @@
  * to be reachable without one — that is why `resolveNarrative` exists as a
  * separate function rather than folded into `parse`.
  */
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import type { ConfigSelector } from "@/config";
+import type { FinishConfig } from "@/config/selectors";
+import type { NaxRuntime } from "@/runtime";
+import { makeTestRuntime } from "@test/helpers";
+import type { FinishNarrativeInput } from "@/operations";
+import { finishNarrativeOp } from "@/operations";
 import {
   NARRATIVE_MAX_CHARS,
   buildNarrativePrompt,
@@ -232,5 +238,33 @@ describe("parseNarrativeNode", () => {
     expect(out.narrative).toBeFalsy();
     expect(out.narrative).toBe("");
     expect(out.narrative).not.toContain("<title>");
+  });
+});
+
+const createdRuntimes: NaxRuntime[] = [];
+afterEach(async () => {
+  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+  createdRuntimes.length = 0;
+});
+
+// `op.config` is declared as `ConfigSelector<C> | readonly (keyof NaxConfig)[]`
+// on OperationBase; this op only ever uses the selector form, so the narrowing
+// is safe — the same pattern the sibling finish op tests use.
+function makeCtx() {
+  const runtime = makeTestRuntime();
+  createdRuntimes.push(runtime);
+  const view = runtime.packages.repo();
+  return { packageView: view, config: view.select(finishNarrativeOp.config as ConfigSelector<FinishConfig>) };
+}
+
+const NARRATIVE_INPUT: FinishNarrativeInput = { base: "origin/main" };
+
+describe("finishNarrativeOp shape", () => {
+  test("timeoutMs prefers the input, else execution.sessionTimeoutSeconds", () => {
+    // finish.timeouts.stepMs defaults to null, so an input with no timeoutMs is
+    // the common case and must still be bounded.
+    const ctx = makeCtx();
+    expect(finishNarrativeOp.timeoutMs?.({ ...NARRATIVE_INPUT, timeoutMs: 777 }, ctx)).toBe(777);
+    expect(finishNarrativeOp.timeoutMs?.(NARRATIVE_INPUT, ctx)).toBe(ctx.config.execution.sessionTimeoutSeconds * 1000);
   });
 });

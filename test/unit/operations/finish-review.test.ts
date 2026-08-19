@@ -70,7 +70,15 @@ describe("finishReviewOp shape", () => {
     ) => unknown;
     expect(modelResolver({ ...SPEC_INPUT, model }, ctx)).toEqual(model);
     expect(finishReviewOp.timeoutMs?.({ ...SPEC_INPUT, timeoutMs: 12345 }, ctx)).toBe(12345);
-    expect(finishReviewOp.timeoutMs?.(SPEC_INPUT, ctx)).toBeUndefined();
+  });
+
+  test("timeoutMs falls back to execution.sessionTimeoutSeconds when finish.timeouts.stepMs is unset", () => {
+    // finish.timeouts.stepMs defaults to null, so the common case is an input
+    // with no timeoutMs at all. Resolving it here rather than leaving it
+    // undefined keeps the bound explicit and independent of callOp's own
+    // run-kind fallback -- which complete-kind ops do not get at all.
+    const ctx = makeCtx();
+    expect(finishReviewOp.timeoutMs?.(SPEC_INPUT, ctx)).toBe(ctx.config.execution.sessionTimeoutSeconds * 1000);
   });
 });
 

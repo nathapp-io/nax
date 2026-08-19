@@ -223,7 +223,12 @@ export const finishNarrativeOp: RunOperation<FinishNarrativeInput, FinishNarrati
   config: finishConfigSelector,
   session: { role: "finish-narrative", lifetime: "fresh" },
   model: (input) => input.model,
-  timeoutMs: (input) => input.timeoutMs,
+  // `finish.timeouts.stepMs` when set, otherwise the run's own session timeout.
+  // Not left undefined: `callOp` does fall back to `execution.sessionTimeoutSeconds`
+  // for run-kind ops, but that is a branch inside `callOp` that nothing pins for
+  // these ops, and complete-kind ops get no such fallback at all. Resolving it
+  // here makes the bound explicit and matches the acceptance ops.
+  timeoutMs: (input, ctx) => input.timeoutMs ?? ctx.config.execution.sessionTimeoutSeconds * 1000,
   build(input, _ctx) {
     const content = buildNarrativePrompt({ base: input.base });
     return {
