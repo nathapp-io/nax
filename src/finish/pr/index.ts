@@ -5,3 +5,4 @@
  */
 export { _finishPrDeps, loadFinishPrContext } from "./context";
 export type { FinishPrContext, FinishPrStory, LoadPrContextArgs } from "./context";
+export { buildFinishBody, buildFinishTitle } from "./body";
