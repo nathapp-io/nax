@@ -8,6 +8,7 @@
 import path from "node:path";
 import { groupStoriesByPackage } from "@/acceptance";
 import { type NaxConfig, loadConfigForWorkdir } from "@/config";
+import type { FinishPhaseContext, FinishResult } from "@/finish";
 import type { LoadedHooksConfig } from "@/hooks";
 import { fireHook } from "@/hooks";
 import { getSafeLogger } from "@/logger";
@@ -16,12 +17,12 @@ import { pipelineEventBus } from "@/pipeline";
 import type { PipelineEventEmitter } from "@/pipeline/events";
 import type { AgentGetFn } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";
-import { isComplete } from "@/prd";
+import { countStories, isComplete } from "@/prd";
 import type { PRD } from "@/prd";
 import type { DispatchContext } from "@/runtime/dispatch-context";
 import type { ISessionManager } from "@/session";
 import { errorMessage } from "@/utils/errors";
-import { autoCommitIfDirty } from "@/utils/git";
+import { autoCommitIfDirty, gitWithTimeout } from "@/utils/git";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import type { DeferredReviewResult } from "./deferred-review";
 import type { ExitReason } from "./executor-types";
@@ -101,6 +102,7 @@ export const _runnerCompletionDeps: {
   runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<AcceptanceLoopResult>;
   handleRunCompletion(opts: RunCompletionOptions): Promise<RunCompletionResult>;
   loadConfigForWorkdir(rootConfigPath: string, workdir?: string): Promise<NaxConfig>;
+  runFinishPhase(ctx: FinishPhaseContext): Promise<FinishResult | null>;
 } = {
   async runAcceptanceLoop(ctx) {
     const { runAcceptanceLoop } = await import("./lifecycle/acceptance-loop");
@@ -111,6 +113,13 @@ export const _runnerCompletionDeps: {
     return handleRunCompletion(opts);
   },
   loadConfigForWorkdir,
+  // Dynamic import (matching handleRunCompletion's own pattern above), not a
+  // static one: the finish module imports the CLI barrel, and a static import
+  // here would create a load-time cycle back through this module's own tree.
+  async runFinishPhase(ctx) {
+    const { runFinishPhase } = await import("@/finish");
+    return runFinishPhase(ctx);
+  },
 };
 
 /**
@@ -423,6 +432,31 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     options.runtime?.dirtyWorktrees,
   );
 
+  // Native finish phase (design 4.1). Must precede runtime.close(), whose own
+  // comment below says it drains the cost aggregator and aborts the signal —
+  // after it, finish's spend never reaches totalCost and its deadline signal
+  // is already fired. Fail-open: a finish that cannot run never fails a run
+  // whose stories all passed.
+  try {
+    await _runnerCompletionDeps.runFinishPhase({
+      runtime: options.runtime,
+      config: options.config,
+      feature: options.feature,
+      workdir: options.workdir,
+      branch: await resolveBranch(options.workdir),
+      runId: options.runId,
+      agentName: options.agentManager.getDefault(),
+      abortSignal: options.abortSignal,
+      storySummary: finishStorySummary(options),
+      statusWriter: options.statusWriter,
+    });
+  } catch (err) {
+    logger?.warn("finish", "Finish phase failed; the run is unaffected", {
+      storyId: "_run",
+      error: errorMessage(err),
+    });
+  }
+
   // Close the NaxRuntime — flushes auditors, drains cost aggregator, aborts signal
   await options.runtime?.close();
 
@@ -434,4 +468,41 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     acceptancePassed,
     pluginGateFailed,
   };
+}
+
+/**
+ * The three counts `shouldRunFinish` gates on, in the shape the plugin's own
+ * gate read them.
+ *
+ * `completed` is `options.storiesCompleted`, **not** `countStories(prd).passed`.
+ * `buildPostRunContext` (`src/execution/lifecycle/run-cleanup.ts:151-156`)
+ * builds `PostRunContext.storySummary.completed` from the runner's
+ * `storiesCompleted` counter and takes only `failed`/`skipped`/`paused` from
+ * `countStories`. Substituting `passed` here would silently change the gate
+ * the native phase inherits.
+ *
+ * `countStories().failed` already folds in `regression-failed`, matching the
+ * classification the deferred regression gate uses.
+ */
+function finishStorySummary(options: RunnerCompletionOptions): { completed: number; failed: number; paused: number } {
+  const counts = countStories(options.prd);
+  return { completed: options.storiesCompleted, failed: counts.failed, paused: counts.paused };
+}
+
+/**
+ * The branch finish would open a PR from.
+ *
+ * There is no `currentBranch` helper in `@/utils/git` — an earlier draft of
+ * this plan invented one. This is the idiom `runner.ts:344-348` already uses
+ * to resolve the branch it hands `cleanupRun`, including the fail-closed
+ * empty-string default: `isFeatureBranch("")` is false, so an unresolvable
+ * branch makes finish stand down rather than guess.
+ */
+async function resolveBranch(workdir: string): Promise<string> {
+  try {
+    const { stdout, exitCode } = await gitWithTimeout(["branch", "--show-current"], workdir);
+    return exitCode === 0 ? stdout.trim() : "";
+  } catch {
+    return "";
+  }
 }
