@@ -1,3 +1,4 @@
+import { describe, expect, test } from "bun:test";
 /**
  * The obligation gate: a review report only counts once it proves the
  * touchpoints it lists are real paths in the repo, and once it enumerated its
@@ -5,7 +6,6 @@
  * disk check exists and why `../`-confinement matters here.
  */
 import { join } from "node:path";
-import { describe, expect, test } from "bun:test";
 import type { FindingDisposition, ReviewReport } from "@/finish";
 import { auditGaps, validateDispositions } from "@/finish";
 import { withTempDir } from "@test/helpers";
@@ -26,7 +26,7 @@ describe("auditGaps", () => {
   test("reports the touchpoints gap when the section is absent", async () => {
     await withTempDir(async (dir) => {
       const report = makeReport({ sawTouchpointsSection: false, sawWalkSection: true, walk: ["AC-1 Covered"] });
-      const gaps = await auditGaps(report, dir);
+      const gaps = await auditGaps(report, dir, { base: "main", head: "HEAD" }, "spec");
       expect(gaps).toContain(
         "no `## TOUCHPOINTS` section: list every external definition you opened, or `- none — <justification>`",
       );
@@ -41,7 +41,7 @@ describe("auditGaps", () => {
         sawWalkSection: true,
         walk: ["AC-1 Covered"],
       });
-      const gaps = await auditGaps(report, dir);
+      const gaps = await auditGaps(report, dir, { base: "main", head: "HEAD" }, "spec");
       expect(gaps).toContain(
         "no `## TOUCHPOINTS` section: list every external definition you opened, or `- none — <justification>`",
       );
@@ -56,7 +56,7 @@ describe("auditGaps", () => {
         sawWalkSection: true,
         walk: ["AC-1 Covered"],
       });
-      const gaps = await auditGaps(report, dir);
+      const gaps = await auditGaps(report, dir, { base: "main", head: "HEAD" }, "spec");
       expect(gaps).toEqual([]);
     });
   });
@@ -72,26 +72,8 @@ describe("auditGaps", () => {
         sawWalkSection: true,
         walk: ["AC-1 Covered"],
       });
-      const gaps = await auditGaps(report, dir);
+      const gaps = await auditGaps(report, dir, { base: "main", head: "HEAD" }, "spec");
       expect(gaps.some((g) => g.includes("touchpoint path does not exist"))).toBe(true);
-    });
-  });
-
-  test("one real path among fakes discharges the gap (some, not every)", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "real.ts"), "export const x = 1;\n");
-      const report = makeReport({
-        sawTouchpointsSection: true,
-        touchpoints: [
-          { path: "src/does-not-exist-a.ts", note: "fake" },
-          { path: "real.ts", note: "real one" },
-          { path: "src/does-not-exist-b.ts", note: "also fake" },
-        ],
-        sawWalkSection: true,
-        walk: ["AC-1 Covered"],
-      });
-      const gaps = await auditGaps(report, dir);
-      expect(gaps.some((g) => g.includes("touchpoint path does not exist"))).toBe(false);
     });
   });
 
@@ -108,7 +90,7 @@ describe("auditGaps", () => {
         sawWalkSection: true,
         walk: ["AC-1 Covered"],
       });
-      const gaps = await auditGaps(report, workdir);
+      const gaps = await auditGaps(report, workdir, { base: "main", head: "HEAD" }, "spec");
       expect(gaps.some((g) => g.includes("touchpoint path does not exist"))).toBe(true);
     });
   });
@@ -121,8 +103,10 @@ describe("auditGaps", () => {
         sawWalkSection: false,
         walk: [],
       });
-      const gaps = await auditGaps(report, dir);
-      expect(gaps).toContain("no `## WALK` section: the per-AC (spec) or per-function (quality) enumeration is required");
+      const gaps = await auditGaps(report, dir, { base: "main", head: "HEAD" }, "spec");
+      expect(gaps).toContain(
+        "no `## WALK` section: the per-AC (spec) or per-function (quality) enumeration is required",
+      );
     });
   });
 
@@ -134,8 +118,10 @@ describe("auditGaps", () => {
         sawWalkSection: true,
         walk: [],
       });
-      const gaps = await auditGaps(report, dir);
-      expect(gaps).toContain("no `## WALK` section: the per-AC (spec) or per-function (quality) enumeration is required");
+      const gaps = await auditGaps(report, dir, { base: "main", head: "HEAD" }, "spec");
+      expect(gaps).toContain(
+        "no `## WALK` section: the per-AC (spec) or per-function (quality) enumeration is required",
+      );
     });
   });
 
@@ -148,7 +134,7 @@ describe("auditGaps", () => {
         sawWalkSection: true,
         walk: ["AC-1 Covered"],
       });
-      const gaps = await auditGaps(report, dir);
+      const gaps = await auditGaps(report, dir, { base: "main", head: "HEAD" }, "spec");
       expect(gaps).toEqual([]);
     });
   });

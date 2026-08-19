@@ -5,15 +5,16 @@
  * built from `makeTestRuntime()`.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import type { ConfigSelector } from "@/config";
-import type { FinishConfig } from "@/config/selectors";
-import type { FinishReviewInput } from "@/operations";
-import { MAX_INCOMPLETE_ATTEMPTS, routeReview } from "@/finish";
-import { finishReviewOp } from "@/operations";
-import type { Finding } from "@/finish";
 import { ParseValidationError } from "@/agents/retry";
 import type { RetryStrategy } from "@/agents/retry";
+import type { ConfigSelector } from "@/config";
+import type { FinishConfig } from "@/config/selectors";
+import { MAX_INCOMPLETE_ATTEMPTS, routeReview } from "@/finish";
+import type { Finding } from "@/finish";
+import type { FinishReviewInput } from "@/operations";
+import { finishReviewOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
+import { _gitDeps } from "@/utils/git";
 import { makeTestRuntime, withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -145,6 +146,26 @@ describe("finishReviewOp.parse()", () => {
 });
 
 describe("finishReviewOp.verify()", () => {
+  // US-002: verify now consults git for the changed-file listing when the
+  // audit gates the WALK on it. Stub _gitDeps.spawn to a no-op-friendly
+  // empty-output mock so neither a real nor absent git repo is required.
+  const origSpawn = _gitDeps.spawn;
+  const emptyStream = new ReadableStream({
+    start(c) {
+      c.close();
+    },
+  });
+  _gitDeps.spawn = (() => ({
+    exited: Promise.resolve(0),
+    stdout: emptyStream,
+    stderr: emptyStream,
+    pid: 0,
+    kill: () => {},
+  })) as unknown as typeof _gitDeps.spawn; // test-ratchet-allow: as-unknown-as
+  afterEach(() => {
+    _gitDeps.spawn = origSpawn;
+  });
+
   test("attaches the gaps auditGaps reports, against a temp workdir", async () => {
     await withTempDir(async (dir) => {
       const ctx = makeCtx();

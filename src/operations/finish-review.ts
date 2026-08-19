@@ -175,7 +175,15 @@ export const finishReviewOp: RunOperation<FinishReviewInput, FinishReviewOutput,
   // verify is the sanctioned disk-consulting hook (ADR-020 §D4); a non-null
   // return wins over parse's result. Must never return null here — that
   // would fall through and silently skip the gap check.
+  //
+  // US-002: threads the review range (`base`..`head`) and `phase` through to
+  // auditGaps so the quality phase can gate the WALK against the changed-file
+  // list (`git diff <base>...HEAD`) while the spec phase keeps its shape-only
+  // checks. AC15 pins that the spawned git command carries the review range.
   async verify(parsed, input, _verifyCtx) {
-    return { ...parsed, gaps: await auditGaps(parsed, input.workdir) };
+    return {
+      ...parsed,
+      gaps: await auditGaps(parsed, input.workdir, { base: input.base, head: "HEAD" }, input.phase),
+    };
   },
 };
