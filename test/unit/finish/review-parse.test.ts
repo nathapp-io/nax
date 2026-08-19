@@ -84,13 +84,10 @@ describe("parseReviewReport", () => {
     expect(r.walk).toHaveLength(2);
   });
 
-  // The three guards below used to pin GLUED_HEADING's three regex clauses in
-  // the ported acpx flow. That regex is gone here (D3.3): in-process, message
-  // assembly always joins with "\n" (see src/agents/acp/adapter-output.ts),
-  // so a heading can no longer land mid-line and there is nothing left to
-  // guard against. These now pass trivially — HEADING never matches inside
-  // these lines regardless of adjacency or trailing content — and are kept to
-  // prove the deletion changed no other behaviour.
+  // The three guards below pin GLUED_HEADING's clauses: it splits only where
+  // the heading is directly adjacent to the prose before it AND ends the line.
+  // Whitespace between the two, or trailing content after the heading word,
+  // means the reviewer is talking *about* a section rather than opening one.
 
   test("does not split when whitespace separates the prose from the #", () => {
     const r = parseReviewReport(
@@ -140,15 +137,34 @@ describe("parseReviewReport", () => {
     expect(r.sawNoFindings).toBe(true);
   });
 
-  test("reads a literally glued heading as a missing section, not a split one", () => {
-    // In-process this input cannot arise from message joining (adapter-output
-    // always joins with "\n"), so treating it as unparsed prose — rather than
-    // splitting it into a heading — is correct, not a regression.
+  test("splits a heading glued to the narration before it", () => {
+    // The real shape observed on a live finish run (quality attempt 1): the
+    // ACP wire path accumulates every message
+    // chunk into ONE assistant message, so the reviewer's closing narration
+    // and its first heading arrive with nothing between them. Read as prose,
+    // the whole TOUCHPOINTS section disappears and `auditGaps` fails a review
+    // that in fact discharged its obligations.
     const r = parseReviewReport(
-      "No defects cleared the confidence bar.## TOUCHPOINTS\n- a.ts:sym — why\n\n## WALK\nb.ts:fn — earns its place\n\n## FINDINGS\nNo findings.\n",
+      "I have enough to write the report now.## TOUCHPOINTS\n- a.ts:sym — why\n\n## WALK\nb.ts:fn — earns its place\n\n## FINDINGS\nNo findings.\n",
     );
-    expect(r.sawTouchpointsSection).toBe(false);
-    expect(r.touchpoints).toEqual([]);
+    expect(r.sawTouchpointsSection).toBe(true);
+    expect(r.touchpoints).toEqual([{ path: "a.ts", symbol: "sym", note: "why" }]);
+    expect(r.walk).toEqual(["b.ts:fn — earns its place"]);
+    expect(r.sawNoFindings).toBe(true);
+  });
+
+  test("splits a glued heading at any level, case, and trailing colon", () => {
+    const r = parseReviewReport("done.# touchpoints:\n- a.ts:sym — why\n");
+    expect(r.sawTouchpointsSection).toBe(true);
+    expect(r.touchpoints).toEqual([{ path: "a.ts", symbol: "sym", note: "why" }]);
+  });
+
+  test("splits a glued DISPOSITIONS heading, closing the section before it", () => {
+    const r = parseReviewReport("## WALK\nAC-1 Covered\nall four handled.## DISPOSITIONS\n- a.ts:sym — why\n");
+    // DISPOSITIONS resets the section to findings, so the bullet below it is
+    // not swept into the walk enumeration. The narration the heading was glued
+    // to stays in the walk section it was actually written in.
+    expect(r.walk).toEqual(["AC-1 Covered", "all four handled."]);
   });
 });
 

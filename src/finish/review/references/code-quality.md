@@ -7,12 +7,17 @@ test code — and judge each changed function on its own merits.
 
 ## Forcing function — enumerate before you conclude
 
-Before reporting, walk **every function/method the diff adds or changes** and
-write yourself a one-line verdict for each: *earns its place* or *concern: …*.
-This enumeration is a thinking tool — it does not go in the final report, only
-the resulting findings do. Skipping it is how real maintainability issues get
-missed: an agent that pattern-matches a few obvious smells and stops will always
-under-report. Look at each changed function deliberately.
+Before reporting, walk **every function/method the diff adds or changes — in
+test files as well as production ones** — and write yourself a one-line verdict
+for each: *earns its place* or *concern: …*. Skipping it is how real
+maintainability issues get missed: an agent that pattern-matches a few obvious
+smells and stops will always under-report. Look at each changed function
+deliberately.
+
+This enumeration goes in your reply, as the `## WALK` section the reply contract
+requires — one line per changed function, no prose. It is the evidence that you
+were in a position to write the findings below it; a reply without it is treated
+as an incomplete review and sent back.
 
 ## What to look for
 
