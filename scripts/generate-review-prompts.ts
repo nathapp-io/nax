@@ -41,7 +41,7 @@ export function escapeForTemplateLiteral(text: string): string {
 }
 
 /** Splits worker-protocol.md into its mechanics prefix and output-format section. */
-function splitWorkerProtocol(wholeText: string): { mechanics: string; outputFormatSection: string } {
+export function splitWorkerProtocol(wholeText: string): { mechanics: string; outputFormatSection: string } {
   const headingIndex = wholeText.indexOf(OUTPUT_FORMAT_HEADING);
   if (headingIndex === -1) {
     throw new Error(`worker-protocol.md is missing the "${OUTPUT_FORMAT_HEADING}" heading`);
@@ -53,7 +53,7 @@ function splitWorkerProtocol(wholeText: string): { mechanics: string; outputForm
 }
 
 /** Extracts the first fenced code block (including its ``` fences) from `text`. */
-function extractFirstFencedBlock(text: string): string {
+export function extractFirstFencedBlock(text: string): string {
   const match = text.match(/```[\s\S]*?```/);
   if (!match) throw new Error("No fenced block found in the Output format section");
   return match[0];

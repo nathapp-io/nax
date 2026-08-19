@@ -21,7 +21,7 @@ import { generatePromptsFileContent } from "./generate-review-prompts";
 const ROOT = join(import.meta.dir, "..");
 const OUTPUT_FILE = join(ROOT, "src", "finish", "review", "prompts.gen.ts");
 
-function firstDifferingLine(
+export function firstDifferingLine(
   expected: string,
   actual: string,
 ): { line: number; expected: string; actual: string } | null {
