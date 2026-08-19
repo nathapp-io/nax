@@ -218,6 +218,15 @@ describe("machine-loops", () => {
     });
   });
 
+  test("green gate pass records the gate names on state.gatesRan", async () => {
+    await withTempDir(async (dir) => {
+      const { deps } = makeDeps({ auditDir: dir });
+      const state = baseState();
+      await runFinishMachine(state, deps);
+      expect(state.gatesRan).toEqual(["test"]);
+    });
+  });
+
   test("incomplete route: re-reviews exactly once (MAX_INCOMPLETE_ATTEMPTS) then escalates", async () => {
     await withTempDir(async (dir) => {
       const { deps, trail } = makeDeps({

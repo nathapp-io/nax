@@ -7,13 +7,12 @@
  * No I/O — these functions receive a `PrBodyContext` and return strings.
  */
 
+// Imported from `@/forge`, not re-implemented, so the draft body and the
+// nax-finish body compose a template identically. The merger now lives in
+// `src/forge/` — the `flows/nax-finish/` copy that this module used to import
+// from is the same code, kept byte-identical until the flow is retired.
+import { type BodySection, type MergeOptions, mergeTemplate } from "@/forge";
 import type { UserStory } from "@/prd/types";
-// Imported from `flows/`, not re-implemented, so the draft body and the
-// nax-finish body compose a template identically. `flows/` is the more
-// constrained runtime (acpx's Node process — no `Bun`, no `@/*`), so code that
-// lives there runs here too; the reverse is not true, which is why the other
-// shared helpers in this directory were ported the other way.
-import { type BodySection, type MergeOptions, mergeTemplate } from "@flows/nax-finish/pr-template-merge";
 
 const SECONDS_PER_MINUTE = 60;
 const MS_PER_SECOND = 1000;

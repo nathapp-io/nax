@@ -30,6 +30,8 @@ export { _qualityGateDeps, resolveGateCommands, runQualityGates } from "./gates/
 export { runFinishMachine } from "./machine";
 export type { FinishMachineDeps } from "./machine";
 export type { FinishOps, FixOutcome, FixRequest, ReviewRequest } from "./ops";
+export { _finishOpsDeps, createFinishOps } from "./ops-impl";
+export type { FinishOpsDeps } from "./ops-impl";
 export {
   buildNarrativePrompt,
   finishFixOp,
@@ -54,6 +56,12 @@ export type {
   FinishReviewInput,
   FinishReviewOutput,
 } from "./operations";
+export { _finishPrDeps, loadFinishPrContext } from "./pr";
+export type { FinishPrContext, FinishPrStory, LoadPrContextArgs } from "./pr";
+export { buildFinishBody, buildFinishTitle } from "./pr";
+export { openDraftFinishPr, openOrPromotePr, parseView, updatePrBody } from "./pr";
+export { buildEscalationComment, postEscalation } from "./escalate";
+export type { EscalationOutcome } from "./escalate";
 export {
   gateCommitRoute,
   MAX_FIX_ATTEMPTS,

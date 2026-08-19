@@ -306,6 +306,7 @@ async function runQualityGatesLoop(state: FinishState, deps: FinishMachineDeps):
   for (;;) {
     assertNotAborted(deps);
     const gates = await runGateZeroAndRepoGates(state, deps);
+    state.gatesRan = gates.ran;
     const routed = routeQualityGates(gates, state.phases.gate);
 
     if (routed.route === "green") {
