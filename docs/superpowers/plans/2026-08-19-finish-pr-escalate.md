@@ -29,6 +29,8 @@ Unchanged from plans 2 and 3; repeated because they are the ones a worker trips 
 - `scripts/check-deep-relatives.ts` has a frozen baseline — **new tests import `@/finish`, `@/forge` and `@test/helpers`**, never `../../../src/...` or `../../helpers`. Copy the style of `test/unit/finish/gates-quality.test.ts`. If the baseline must move, use `bun run check:deep-relatives:update` and say so in the commit.
 - **Temp directories in tests:** `makeTempDir` / `cleanupTempDir` / `withTempDir` from `test/helpers/temp.ts`. `.nax/rules/forbidden-patterns-tests.md` forbids hand-rolled `rm -rf` cleanup.
 - **Errors:** `NaxError` from `src/errors.ts` with a `FINISH_*` / `FORGE_*` code. `scripts/check-nax-error.ts` has a baseline — do not add violations.
+- **Test ratchets** (`.claude/rules/test-ratchets.md`), all in `bun run lint`'s chain: `check:test-typecheck` counts type errors under `tsconfig.test.json` and `check:test-as-unknown-as` counts `as unknown as` casts — **neither may grow**. Every cast in this plan's tests is a single `as` (`{} as CallContext`, `as Finding`), which is fine; never reach for `as unknown as` to silence a type error, fix the fixture instead. `check:test-mocks --strict` bans inline `IAgentManager` / `AgentAdapter` mocks and local `makeConfig()` / `makeStory()` factories — the local `depsFor()` / `baseDeps()` helpers below are neither, so they pass.
+- **`check:feature-dir-ssot`** enforces that `.nax/features/<name>` is never open-coded. Task 2 must build the PRD path with `featureDir()` for this reason, not just for tidiness.
 - **Commits:** conventional commits. Attribution is disabled globally; no co-author trailers.
 - **Branch:** `feat/finish-pr-escalate`, created from `main` (already created alongside this plan).
 - **Gates before every commit:** `bun x tsc --noEmit`, `bun run lint`, and the task's own tests. A pre-commit hook runs the full static-check suite and will reject the commit if anything fails.
@@ -39,7 +41,9 @@ Unchanged from plans 2 and 3; repeated because they are the ones a worker trips 
 
 Read these before Task 1. They were settled against the real code; do not re-derive them.
 
-**D4.1 — `pr-template-merge.ts` moves to `src/forge/template-merge.ts`.** It is the one module under `flows/` that `src/` already imports (`src/plugins/builtin/auto-pr/pr-body.ts:16`, via the `@flows/*` tsconfig alias). Finish's native body builder needs it too, and plan 5 deletes `flows/`, so it must move now rather than acquire a second consumer of a doomed path. It lands in `src/forge/` and not `src/finish/` because auto-pr must not import `@/finish` internals, and `src/forge/` is already the shared home for the sibling concern (`findPrTemplate`). The `flows/` copy is **left in place** — `flows/` cannot import `src/` and the flow still runs — and dies with the rest of `flows/` in plan 5. The now-unused `@flows/*` alias in `tsconfig.json` also stays until then.
+**D4.1 — `pr-template-merge.ts` is COPIED to `src/forge/template-merge.ts`, not moved.** It is the one module under `flows/` that `src/` already imports (`src/plugins/builtin/auto-pr/pr-body.ts:16`, via the `@flows/*` tsconfig alias). Finish's native body builder needs it too, and plan 5 deletes `flows/`, so a `src/` copy has to exist now rather than let a second consumer depend on a doomed path. It lands in `src/forge/` and not `src/finish/` because auto-pr must not import `@/finish` internals, and `src/forge/` is already the shared home for the sibling concern (`findPrTemplate`).
+
+The `flows/` original **cannot be deleted in this plan**: `flows/nax-finish/steps/pr-body.ts:26` and `flows/nax-finish/types.ts:1` both import it, and `flows/` cannot import `src/`. Both copies exist until plan 5 deletes the tree. **Its test stays too** — `test/unit/flows/nax-finish/pr-template-merge.test.ts` guards the implementation that is still live, and deleting it to avoid a duplicate would drop coverage from running code. The new `test/unit/forge/template-merge.test.ts` is a copy, and Task 1 adds one cheap equivalence test so the two cannot silently diverge while both exist. The `@flows/*` alias in `tsconfig.json` also stays until plan 5.
 
 **D4.2 — the PR subtree is `src/finish/pr/{context,body,open,index}.ts`.** `flows/nax-finish/steps/pr-body.ts` is 462 lines doing two jobs (load artifacts, render markdown). Split at that seam: the loader is I/O and fail-open policy, the renderer is pure and is where every future body change lands. Both stay well under the 600-line cap, and the renderer being pure is what lets its tests run with no disk at all.
 
@@ -53,13 +57,19 @@ Read these before Task 1. They were settled against the real code; do not re-der
 
 **D4.7 — escalation pushes partial fixes best-effort.** Also faithful to the flow: the escalate path tries `commitAndPush` so a human sees the partial work, and on failure appends a `syncNote` to the comment rather than losing the escalation itself. The push is inside its own try/catch, never outside.
 
-**D4.8 — template mode and section map are factory options, not config reads.** They live at `finish.autoFlow.prBody` today, and `autoFlow` is the plugin-shaped block plan 5 reshapes. `createFinishOps` takes `prBody?: { template?: TemplateMode; sectionMap?: Record<string, string> }` defaulting to `{ template: "merge", sectionMap: {} }`, and plan 5 supplies it from config. Same for the four model selections and `preferTelegram`. This plan reads no config for PR composition.
+**D4.8 — template mode and section map are factory options, not config reads, and their type already exists.** They live at `finish.autoFlow.prBody` today, and `autoFlow` is the plugin-shaped block plan 5 reshapes. `createFinishOps` takes `prBody?: FinishPrBodySettings` defaulting to `{ template: "merge", sectionMap: {} }`, and plan 5 supplies it from config. Same for the four model selections and `preferTelegram`. This plan reads no config for PR composition.
+
+**Use the existing type. Do not declare a new one.** `src/finish/types.ts` already exports `FinishPrBodySettings { template?: TemplateMode; sectionMap?: Record<string, string> }` and a local `TemplateMode`, both placed there by plan 2 as placeholders for exactly this moment — its header comment even says "Plan 3 moves the real `pr-template-merge.ts` and re-points this" (it slipped to plan 4). Nothing in `src/finish/` references either type yet, so this plan is their first consumer. Task 1 re-points `TemplateMode` at `@/forge` so there is one definition, not two.
 
 **D4.9 — `callOp` is injected through `_finishOpsDeps`.** `src/finish/ops-impl.ts` exports `export const _finishOpsDeps = { callOp }` and calls `_finishOpsDeps.callOp(...)`, matching `_callOpDeps` / `_autoPrDeps` / `_finishGitDeps`. Without it, every test of the factory needs a `NaxRuntime`. The seam is exported from `@/finish` so tests reach it without a deep relative.
 
 **D4.11 — the default `ForgeDeps` implementation moves into `src/forge/`.** `ForgeDeps` is `src/forge/`'s own contract but the module ships no default implementation, so the only one in the repo is `defaultRun` / `defaultReadText` inside `src/plugins/builtin/auto-pr/index.ts`. `src/finish/` must not import from `@/plugins` — that inverts the layering, and the plugin's copy is wrapped in a test seam (`_autoPrDeps`) with its own baseline of tests. Task 1 therefore adds `src/forge/deps.ts` exporting `defaultForgeDeps: ForgeDeps`, a straight lift of those two functions including the wall-clock cap (a wedged `gh` must not hang a run's completion phase). Auto-PR keeps its own copy for now; converging it is a plan 5 opportunity, not this plan's scope.
 
 **D4.10 — per-phase reviewer role goes through `sessionOverride.role`.** `finishReviewOp.session.role` is the static default `"finish-review-spec"`; the factory passes `{ ...ctx, sessionOverride: { role: phase === "spec" ? "finish-review-spec" : "finish-review-quality" } }`. This is settled in plan 3's header comment and matches `src/plan/critic.ts`. Do not add a resolver field to `RunOperation`.
+
+**D4.12 — the machine records which gates ran on `FinishState`.** The body's Verification section reports `- Gates: <names>`, which the flow sourced from its gate node's output (`gateOutputs(ctx).ran`). In the native machine `runQualityGates` returns `ran` to `runQualityGatesLoop` and nowhere else — `FinishOps` never sees it, so a factory option or a thunk would render an empty gate line on every PR and nobody would notice, because an empty list renders as *no line at all*. Task 6 therefore adds `gatesRan?: string[]` to `FinishState` and one assignment in `runQualityGatesLoop` (`state.gatesRan = gates.ran`) after each `runGateZeroAndRepoGates`; `loadFinishPrContext` reads `state.gatesRan ?? []`. This is the only change to `machine.ts` in this plan and it needs a test asserting the field survives to the rendered body.
+
+The draft opened at step 3 legitimately has no gate line — gates have not run yet. That matches the flow, which only ever built a body at the end.
 
 ---
 
@@ -69,7 +79,7 @@ Read these before Task 1. They were settled against the real code; do not re-der
 
 | File | Responsibility |
 | --- | --- |
-| `src/forge/template-merge.ts` | Moved from `flows/nax-finish/pr-template-merge.ts`. `mergeTemplate`, `BodySection`, `TemplateMode`, `MergeOptions`, `DEFAULT_SECTION_ALIASES`. |
+| `src/forge/template-merge.ts` | Copied from `flows/nax-finish/pr-template-merge.ts` (the original stays — D4.1). `mergeTemplate`, `BodySection`, `TemplateMode`, `MergeOptions`, `DEFAULT_SECTION_ALIASES`. |
 | `src/forge/deps.ts` | `defaultForgeDeps` — the default `ForgeDeps` implementation (D4.11). |
 | `src/finish/pr/context.ts` | `loadFinishPrContext`, `FinishPrContext`, `FinishPrStory`, `_finishPrDeps`. Artifact reads, diffstat, template load. All fail-open. |
 | `src/finish/pr/body.ts` | `buildFinishBody`, `buildFinishTitle`. Pure renderers over `FinishPrContext`. |
@@ -77,7 +87,7 @@ Read these before Task 1. They were settled against the real code; do not re-der
 | `src/finish/pr/index.ts` | Barrel for the PR subtree. |
 | `src/finish/escalate.ts` | `buildEscalationComment`, `postEscalation`, `EscalationOutcome`. |
 | `src/finish/ops-impl.ts` | `createFinishOps`, `FinishOpsDeps`, `_finishOpsDeps`. |
-| `test/unit/forge/template-merge.test.ts` | Ported from `test/unit/flows/nax-finish/pr-template-merge.test.ts`. |
+| `test/unit/forge/template-merge.test.ts` | Copied from `test/unit/flows/nax-finish/pr-template-merge.test.ts`, plus one equivalence test against the `flows/` copy. |
 | `test/unit/finish/pr-context.test.ts` | Loader: artifact parsing, fail-open paths, diffstat pathspec. |
 | `test/unit/finish/pr-body.test.ts` | Renderer, ported from `test/unit/flows/nax-finish/pr-body.test.ts`. |
 | `test/unit/finish/pr-open.test.ts` | Draft open, promote, body edit, `parseView`. |
@@ -90,51 +100,51 @@ Read these before Task 1. They were settled against the real code; do not re-der
 | File | Change |
 | --- | --- |
 | `src/plugins/builtin/auto-pr/pr-body.ts` | Import `mergeTemplate` from `@/forge`, not `@flows/nax-finish/pr-template-merge`. |
-| `src/forge/index.ts` | Export the template-merge surface. |
+| `src/forge/index.ts` | Export the template-merge surface and `defaultForgeDeps`. |
+| `src/finish/types.ts` | Re-point `TemplateMode` at `@/forge`; drop the stale "Plan 3 moves..." comment. Add `gatesRan?: string[]` reference in `FinishState` (declared in `state.ts`). |
+| `src/finish/state.ts` | Add `gatesRan?: string[]` to `FinishState` (D4.12). |
+| `src/finish/machine.ts` | One assignment: `state.gatesRan = gates.ran` in `runQualityGatesLoop` (D4.12). |
 | `src/finish/index.ts` | Export the PR subtree, escalation and the ops factory. |
 
-**Deleted:**
-
-| File | Why |
-| --- | --- |
-| `flows/nax-finish/pr-template-merge.ts` | Moved to `src/forge/` (D4.1). Nothing under `flows/` imports it — verify with the grep in Task 1 Step 1 before deleting. |
-| `test/unit/flows/nax-finish/pr-template-merge.test.ts` | Moves with it. |
+**Deleted:** nothing. Everything under `flows/` stays until plan 5 (D4.1).
 
 ---
 
-### Task 1: Move the template merger into `src/forge/`
+### Task 1: Copy the template merger and default deps into `src/forge/`
 
 **Files:**
-- Create: `src/forge/template-merge.ts` (moved content)
-- Modify: `src/forge/index.ts`, `src/plugins/builtin/auto-pr/pr-body.ts:16`
-- Delete: `flows/nax-finish/pr-template-merge.ts`, `test/unit/flows/nax-finish/pr-template-merge.test.ts`
-- Test: `test/unit/forge/template-merge.test.ts` (moved content)
+- Create: `src/forge/template-merge.ts` (copied content), `src/forge/deps.ts`
+- Modify: `src/forge/index.ts`, `src/plugins/builtin/auto-pr/pr-body.ts:16`, `src/finish/types.ts`
+- Test: `test/unit/forge/template-merge.test.ts` (copied content plus one equivalence test)
+- Unchanged: `flows/nax-finish/pr-template-merge.ts` and its test both stay (D4.1)
 
 **Interfaces:**
 - Produces: `mergeTemplate(template: string | null | undefined, sections: BodySection[], opts?: MergeOptions): string`; `interface BodySection { key: string; heading: string; body: string }`; `type TemplateMode = "merge" | "strict" | "ignore"`; `interface MergeOptions { mode?: TemplateMode; sectionMap?: Record<string, string> }`; `DEFAULT_SECTION_ALIASES: Record<string, string>`. Tasks 3 and 6 consume these; `src/plugins/builtin/auto-pr/pr-body.ts` already does.
 
-- [ ] **Step 1: Confirm nothing under `flows/` still imports it**
+- [ ] **Step 1: Confirm the importers, and that the original must stay**
 
 ```bash
 grep -rn "pr-template-merge" flows/ src/ test/ scripts/ tsconfig.json
 ```
 
-Expected: exactly three importers — `flows/nax-finish/steps/pr-body.ts`, `src/plugins/builtin/auto-pr/pr-body.ts`, and the two test files. **If `flows/nax-finish/steps/pr-body.ts` imports it, the file cannot be deleted yet** (`flows/` cannot import `src/`): in that case copy it to `src/forge/template-merge.ts`, leave the `flows/` copy and its test alone, and note in the commit that the duplicate dies in plan 5. Everything else in this task is unchanged.
+Expected, and already verified while writing this plan: `flows/nax-finish/steps/pr-body.ts:26` and `flows/nax-finish/types.ts:1` import it from inside `flows/`, `src/plugins/builtin/auto-pr/pr-body.ts:16` imports it through the `@flows/*` alias, and each tree has a test. The two `flows/` importers are why this is a **copy, not a move** — `flows/` cannot import `src/`, so deleting the original breaks the live flow. Do not delete anything in this task.
 
-- [ ] **Step 2: Move the file and its test**
+- [ ] **Step 2: Copy the file and its test**
 
 ```bash
-git mv flows/nax-finish/pr-template-merge.ts src/forge/template-merge.ts
-git mv test/unit/flows/nax-finish/pr-template-merge.test.ts test/unit/forge/template-merge.test.ts
+cp flows/nax-finish/pr-template-merge.ts src/forge/template-merge.ts
+cp test/unit/flows/nax-finish/pr-template-merge.test.ts test/unit/forge/template-merge.test.ts
 ```
 
 Then in `src/forge/template-merge.ts` replace the "Lives under `flows/` ... because `flows/` is the more constrained runtime" paragraph of the header comment with:
 
 ```
  * Lives in `src/forge/` because both consumers are here: the auto-PR plugin's
- * body builder and `src/finish/pr/body.ts`. It was under `flows/` while the
- * finish flow was the only other caller; `flows/` cannot import `src/`, so the
- * flow keeps its own copy until plan 5 deletes that tree.
+ * body builder and `src/finish/pr/body.ts`. `flows/nax-finish/` keeps a
+ * byte-identical copy because it cannot import `src/`; that copy and this
+ * comment both go when plan 5 deletes the flow. Until then, edit neither
+ * without editing the other — `test/unit/forge/template-merge.test.ts` has an
+ * equivalence test that fails if they drift.
 ```
 
 Leave every other line of the module byte-identical — the alias table and the merge semantics are settled behaviour (nax#1504, nax#1477) and this task changes neither.
@@ -154,7 +164,25 @@ export { DEFAULT_SECTION_ALIASES, mergeTemplate } from "./template-merge";
 import { type BodySection, type MergeOptions, mergeTemplate } from "@/forge";
 ```
 
-In `test/unit/forge/template-merge.test.ts`, change the import to `@/forge` (it is a new file in a directory whose sibling tests already use the alias).
+In `test/unit/forge/template-merge.test.ts`, change the import to `@/forge` (it is a new file in a directory whose sibling tests already use the alias), and append the drift guard that justifies keeping two copies:
+
+```ts
+import { mergeTemplate as flowMergeTemplate } from "@flows/nax-finish/pr-template-merge";
+
+test("stays byte-identical to the flows copy that is still live", () => {
+  const template = "## Summary\n\n<!-- what changed -->\n\n## Testing\n\n- [ ] tests pass\n";
+  const sections = [
+    { key: "narrative", heading: "What changed", body: "Ported the merger." },
+    { key: "verification", heading: "Verification", body: "- Gates: lint, test" },
+    { key: "footer", heading: "", body: "3/3 stories" },
+  ];
+  for (const mode of ["merge", "strict", "ignore"] as const) {
+    expect(mergeTemplate(template, sections, { mode })).toBe(flowMergeTemplate(template, sections, { mode }));
+  }
+});
+```
+
+This test is deleted in plan 5 along with the `flows/` copy it compares against.
 
 - [ ] **Step 4: Add the default `ForgeDeps` implementation (D4.11)**
 
@@ -183,17 +211,29 @@ export const defaultForgeDeps: ForgeDeps = { run: defaultRun, readText: defaultR
 
 Add to `src/forge/index.ts`: `export { defaultForgeDeps } from "./deps";`. Do not modify the auto-PR plugin's copy in this task.
 
-- [ ] **Step 5: Run the moved test plus every consumer's test**
+- [ ] **Step 5: Re-point `src/finish/types.ts`'s placeholder `TemplateMode` (D4.8)**
 
-Run: `bun test test/unit/forge/ test/unit/plugins/auto-pr* test/unit/flows/nax-finish/pr-body.test.ts`
-Expected: PASS, with no change to any assertion. The flow's own `pr-body.test.ts` still passes because the `flows/` copy is untouched (or, if Step 1 found the flow importing it, because the copy stayed).
+`src/finish/types.ts` opens with a locally declared `TemplateMode` whose comment says a later plan will re-point it. This is that plan. Replace the declaration and its comment with a re-export so there is exactly one definition:
 
-- [ ] **Step 6: Static checks and commit**
+```ts
+import type { TemplateMode } from "@/forge";
+
+export type { TemplateMode };
+```
+
+Leave `FinishPrBodySettings` exactly as it is — it already has the shape Tasks 2 and 6 need, and it is now typed against the real `TemplateMode`. Run `bun x tsc --noEmit` here specifically: if anything in `src/finish/` was silently relying on the local declaration, this is where it surfaces (nothing should — nothing referenced it before this plan).
+
+- [ ] **Step 6: Run the copied test plus every consumer's test**
+
+Run: `bun test test/unit/forge/ test/unit/plugins/auto-pr* test/unit/flows/nax-finish/`
+Expected: PASS, with no change to any assertion. Every `flows/` test still passes because nothing under `flows/` was touched, and the new equivalence test proves the copy is faithful.
+
+- [ ] **Step 7: Static checks and commit**
 
 ```bash
 bun x tsc --noEmit && bun run lint && bun test test/unit/forge/
 git add -A
-git commit -m "refactor(forge): move the PR template merger and default deps into src/forge"
+git commit -m "refactor(forge): add the PR template merger and default deps to src/forge"
 ```
 
 ---
@@ -205,7 +245,7 @@ git commit -m "refactor(forge): move the PR template merger and default deps int
 - Test: `test/unit/finish/pr-context.test.ts`
 
 **Interfaces:**
-- Consumes: `readRounds` and `AuditTarget` from `../audit`; `readSpecSummary`, `resolveNarrative`, `resolveTitle` from `../operations`; `findPrTemplate` and `ForgeKind` from `@/forge`; `TemplateMode` from `@/forge`; `featureDir` from `@/config`.
+- Consumes: `readRounds` and `AuditTarget` from `../audit`; `readSpecSummary`, `resolveNarrative`, `resolveTitle` from `../operations`; `findPrTemplate`, `defaultForgeDeps` and `ForgeKind` from `@/forge`; `TemplateMode` and `FinishPrBodySettings` from `../types`; `featureDir` from `@/config`.
 - Produces:
 
 ```ts
@@ -232,11 +272,11 @@ export interface FinishPrContext {
 export interface LoadPrContextArgs {
   state: FinishState;
   audit: AuditTarget;
-  gatesRan: string[];
   forge?: ForgeKind;
   narrative?: string;
   title?: string;
-  prBody?: { template?: TemplateMode; sectionMap?: Record<string, string> };
+  /** `FinishPrBodySettings` from `../types` — do not redeclare the shape (D4.8). */
+  prBody?: FinishPrBodySettings;
 }
 
 export async function loadFinishPrContext(args: LoadPrContextArgs): Promise<FinishPrContext>;
@@ -254,7 +294,8 @@ Task 3 consumes `FinishPrContext`; Task 6 calls `loadFinishPrContext`.
 1. Input is a `FinishState` + `AuditTarget`, not a `FinishInput`. `feature`, `workdir`, `base` and `specPath` are already fields of `FinishState`; `readRounds` takes the `AuditTarget`.
 2. The PRD path is `join(featureDir(state.workdir, state.feature), "prd.json")` and status is its sibling `status.json`. The flow took a caller-supplied `prdPath` because acpx handed it one; in-process `featureDir` is the SSOT (`src/config/paths.ts:117`) and open-coding `.nax` is what shipped the stray-directory bug it warns about.
 3. `findPrTemplate(workdir, forge, deps)` comes from `@/forge` and takes `ForgeKind`, not the flow's `Forge`.
-4. `templateMode` / `templateSectionMap` come from `args.prBody` (D4.8), not from a config read.
+4. `templateMode` / `templateSectionMap` come from `args.prBody` (D4.8), typed as the existing `FinishPrBodySettings` from `../types` — do not declare a second inline shape.
+5. `gatesRan` is read off `state.gatesRan ?? []` (D4.12), not passed in. The machine is the only thing that knows which gates ran, and Task 6 is where it starts recording them; until then this renders as no gate line, which is the correct output for a body built before the gates run.
 
 Everything else is a faithful port, **including every fail-open path and the comments explaining them**: `readJson` warns and returns `undefined` on a genuine read failure but is silent on ENOENT; `runDiffstat` returns `{}` on an empty `base` and `undefined` on any non-zero exit or throw; `loadTemplate` returns `undefined` when the forge is unknown or the read throws. The `NAX_ARTIFACT_PATHSPEC = "**/.nax/**"` glob and both `:(glob...)` pathspecs are load-bearing — copy them exactly, comment included.
 
@@ -308,12 +349,10 @@ describe("loadFinishPrContext", () => {
     const ctx = await loadFinishPrContext({
       state: stateFor(dir),
       audit: { auditDir: join(dir, "audit"), runId: "run-1" },
-      gatesRan: ["lint"],
     });
 
     expect(ctx.stories).toEqual([{ id: "US-001", title: "First", acCount: 3 }]);
     expect(ctx.outOfScope).toEqual(["not this"]);
-    expect(ctx.gatesRan).toEqual(["lint"]);
   });
 
   test("drops a story row whose id or title is not a string", async () => {
@@ -328,7 +367,6 @@ describe("loadFinishPrContext", () => {
     const ctx = await loadFinishPrContext({
       state: stateFor(dir),
       audit: { auditDir: join(dir, "audit"), runId: "run-1" },
-      gatesRan: [],
     });
 
     expect(ctx.stories.map((s) => s.id)).toEqual(["US-002"]);
@@ -346,7 +384,6 @@ describe("loadFinishPrContext", () => {
     const ctx = await loadFinishPrContext({
       state: stateFor(dir),
       audit: { auditDir: join(dir, "audit"), runId: "run-1" },
-      gatesRan: [],
     });
 
     expect(ctx.diffstat).toContain("src/a.ts");
@@ -369,7 +406,6 @@ describe("loadFinishPrContext", () => {
     const ctx = await loadFinishPrContext({
       state,
       audit: { auditDir: join(dir, "audit"), runId: "run-1" },
-      gatesRan: [],
     });
 
     expect(ran).toBe(false);
@@ -382,10 +418,22 @@ describe("loadFinishPrContext", () => {
     const ctx = await loadFinishPrContext({
       state: stateFor(dir),
       audit: { auditDir: join(dir, "audit"), runId: "run-1" },
-      gatesRan: [],
     });
 
     expect(ctx.title).toBe("feat: demo");
+  });
+
+  test("reports the gate names the machine recorded on state", async () => {
+    _finishPrDeps.run = async () => ({ exitCode: 1, stdout: "", stderr: "" });
+    const withGates = stateFor(dir);
+    withGates.gatesRan = ["lint", "typecheck"];
+
+    const ctx = await loadFinishPrContext({
+      state: withGates,
+      audit: { auditDir: join(dir, "audit"), runId: "run-1" },
+    });
+
+    expect(ctx.gatesRan).toEqual(["lint", "typecheck"]);
   });
 
   test("carries the caller's template mode and section map", async () => {
@@ -394,7 +442,6 @@ describe("loadFinishPrContext", () => {
     const ctx = await loadFinishPrContext({
       state: stateFor(dir),
       audit: { auditDir: join(dir, "audit"), runId: "run-1" },
-      gatesRan: [],
       prBody: { template: "strict", sectionMap: { notes: "narrative" } },
     });
 
@@ -427,13 +474,15 @@ Create `src/finish/pr/context.ts` following the port notes above. The shape of t
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { featureDir } from "@/config";
-import { findPrTemplate } from "@/forge";
-import type { ForgeKind, TemplateMode } from "@/forge";
+import { defaultForgeDeps, findPrTemplate } from "@/forge";
+import type { ForgeKind } from "@/forge";
 import type { AuditTarget } from "../audit";
 import { readRounds } from "../audit";
 import { readSpecSummary, resolveNarrative, resolveTitle } from "../operations";
 import type { FinishState } from "../state";
-import type { FinishRound } from "../types";
+// TemplateMode is re-exported by ../types from @/forge (Task 1, D4.8) --
+// import it from ../types like every other finish-side type, not from @/forge.
+import type { FinishPrBodySettings, FinishRound, TemplateMode } from "../types";
 
 // ... interfaces exactly as in the Interfaces block above ...
 
@@ -468,7 +517,7 @@ export type { FinishPrContext, FinishPrStory, LoadPrContextArgs } from "./pr";
 ```
 
 Run: `bun test test/unit/finish/pr-context.test.ts`
-Expected: PASS (6 tests).
+Expected: PASS (7 tests).
 
 - [ ] **Step 5: Static checks and commit**
 
@@ -561,7 +610,7 @@ git commit -m "feat(finish): render the PR title and body natively"
 - Test: `test/unit/finish/pr-open.test.ts`
 
 **Interfaces:**
-- Consumes: `detectForge`, `hasOpenPr`, `openPr`, `viewArgv`, `extractUrl`, `ForgeDeps`, `ForgeKind` from `@/forge`; `commitAndPush` from `../commit`.
+- Consumes: `hasOpenPr`, `openPr`, `viewArgv`, `extractUrl`, `ForgeDeps`, `ForgeKind` from `@/forge`. Note it does NOT call `detectForge` — the forge is resolved once by the caller and passed in, which is what stops the body and the create command from disagreeing about it.
 - Produces:
 
 ```ts
@@ -791,7 +840,7 @@ git commit -m "feat(finish): open, promote and update the finish PR natively"
 - Test: `test/unit/finish/escalate.test.ts`
 
 **Interfaces:**
-- Consumes: `detectForge`, `viewArgv`, `extractUrl`, `ForgeDeps`, `ForgeKind` from `@/forge`; `Finding` from `./types`.
+- Consumes: `viewArgv`, `extractUrl`, `ForgeDeps`, `ForgeKind` from `@/forge`; `Finding` from `./types`. As in Task 4, the forge arrives resolved; this module never detects it.
 - Produces:
 
 ```ts
@@ -940,8 +989,8 @@ git commit -m "feat(finish): deliver escalations through the forge natively"
 
 **Files:**
 - Create: `src/finish/ops-impl.ts`
-- Modify: `src/finish/index.ts`
-- Test: `test/unit/finish/ops-impl.test.ts`
+- Modify: `src/finish/index.ts`, `src/finish/state.ts` (D4.12), `src/finish/machine.ts` (D4.12, one line)
+- Test: `test/unit/finish/ops-impl.test.ts`, `test/unit/finish/machine-loops.test.ts` (one added test)
 
 **Interfaces:**
 - Consumes: everything above, plus `finishReviewOp`, `finishFixOp`, `finishNarrativeOp` from `../operations`; `callOp` and `CallContext` from `@/operations`; `commitAndPush` from `../commit`; `ConfiguredModel` from `@/config`.
@@ -964,11 +1013,10 @@ export interface FinishOpsDeps {
     narrative?: ConfiguredModel;
   };
   timeouts?: { reviewMs?: number; fixMs?: number; narrativeMs?: number };
-  prBody?: { template?: TemplateMode; sectionMap?: Record<string, string> };
-  /** Telegram is the sole escalation channel when true (D4.3 in the flow's terms). */
+  /** The existing `FinishPrBodySettings` from `./types` (D4.8). */
+  prBody?: FinishPrBodySettings;
+  /** Telegram is the sole escalation channel when true. */
   preferTelegram?: boolean;
-  /** Gate names the body's Verification section reports. Mutated by the caller as gates run. */
-  gatesRan?: () => string[];
   /** Narrative is opt-out: when false, `narrate` is omitted from the returned object. */
   narrative?: boolean;
   warn?: (message: string, details: Record<string, unknown>) => void;
@@ -985,14 +1033,40 @@ Plan 5 calls `createFinishOps` and hands the result to `runFinishMachine`.
 
 - `review(phase, req)` calls `_finishOpsDeps.callOp({ ...deps.callCtx, sessionOverride: { role: phase === "spec" ? "finish-review-spec" : "finish-review-quality" } }, finishReviewOp, { phase, base: state.base, specPath: state.specPath, workdir: state.workdir, since: state.phases[phase].reviewSince, gaps: state.phases[phase].reviewGaps, priorFindings: state.findings, model, timeoutMs })`. It returns `{ findings, gaps }` unchanged — `FinishReviewOutput` is structurally a superset of `ReviewOutcome`, so no adapter. It does **not** catch: a review that cannot run must reach the machine's catch and escalate.
 - `fix(phase, req)` calls `finishFixOp` with `{ phase, workdir: state.workdir, findings, failing, gateOutput, acceptanceOutput, model, timeoutMs }` and returns its `FixOutcome` unchanged. No catch, same reason.
-- `openDraftPr(state)` returns `null` immediately when `forgeKind` is null; otherwise loads the context (`loadFinishPrContext` with `forge: forgeKind`, `gatesRan: deps.gatesRan?.() ?? []`, `prBody`), renders title and body, and calls `openDraftFinishPr`.
+- `openDraftPr(state)` returns `null` immediately when `forgeKind` is null; otherwise loads the context (`loadFinishPrContext` with `forge: forgeKind`, `prBody`), renders title and body, and calls `openDraftFinishPr`.
 - `promotePr(state)` runs `commitAndPush(state.workdir, state.branch, \`fix(${state.feature}): nax-finish automated fixes\`)` **first** (D4.6), then — when `forgeKind` is non-null — loads context, renders, and calls `openOrPromotePr`. With a null forge it returns `{ status: "already-ready" }` after the push, because there is nothing to promote and the branch is still pushed. Neither call is caught.
 - `narrate(state)` is present on the returned object only when `deps.narrative !== false`. Its entire body is inside one try/catch (D4.4): call `finishNarrativeOp` under `sessionOverride: { role: "finish-narrative" }` with `{ base: state.base, model, timeoutMs }`, then re-load the PR context passing the resulting `narrative` and `title`, render, and `updatePrBody`. On any throw, `warn` and return.
 - `escalate(state, reason, findings)` never throws (D4.3). It: (1) tries `commitAndPush` for the partial fixes and, on failure, records a `syncNote` string (D4.7); (2) builds the comment with `buildEscalationComment(state.feature, reason, findings) + syncNote`; (3) calls `postEscalation` when `forgeKind` is non-null, returning `{ url }`; (4) catches everything and returns `{ deliveryError: errorMessage(err) }`. With a null forge it returns `{ deliveryError: "no forge detected" }` — the escalation still needs somewhere to say it went nowhere.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Record the gate names on `FinishState` (D4.12)**
 
-`test/unit/finish/ops-impl.test.ts` — the seven behaviours that matter. Use a fake `callOp` through `_finishOpsDeps` and a `ForgeDeps` whose `run` records commands. A minimal `callCtx` cast (`{} as CallContext`) is sufficient: nothing in the factory reads it except to spread it.
+This comes first because the body builder already reads the field. In `src/finish/state.ts`, add to `FinishState`:
+
+```ts
+  /**
+   * Gate names the last quality-gate pass ran, for the PR body's Verification
+   * section. Recorded here because `runQualityGates`'s result is otherwise
+   * local to the machine's loop, and `FinishOps` — which builds the body —
+   * never sees it. An absent or empty list renders no gate line at all, which
+   * is why a silently-unset field would have gone unnoticed.
+   */
+  gatesRan?: string[];
+```
+
+In `src/finish/machine.ts`'s `runQualityGatesLoop`, immediately after `const gates = await runGateZeroAndRepoGates(state, deps);`:
+
+```ts
+    state.gatesRan = gates.ran;
+```
+
+Add one test to `test/unit/finish/machine-loops.test.ts` asserting that after a green gate pass `state.gatesRan` equals the gate names the stubbed `runQualityGates` reported. Copy the stubbing style already in that file (`_qualityGateDeps`).
+
+Run: `bun test test/unit/finish/machine-loops.test.ts`
+Expected: PASS.
+
+- [ ] **Step 2: Write the failing tests for the factory**
+
+`test/unit/finish/ops-impl.test.ts` — the nine behaviours that matter. Use a fake `callOp` through `_finishOpsDeps` and a `ForgeDeps` whose `run` records commands. A minimal `callCtx` cast (`{} as CallContext`) is sufficient: nothing in the factory reads it except to spread it.
 
 ```ts
 import { afterEach, describe, expect, test } from "bun:test";
@@ -1121,14 +1195,19 @@ test("promotePr pushes before it talks to the forge", async () => {
 });
 ```
 
-The push assertion needs `commitAndPush`'s git seam stubbed too — `_finishGitDeps.git`, exported from `@/finish`. Stub it in that test to record its argv into the same `calls` array and return `{ exitCode: 0, stdout: "", stderr: "" }`, and restore it in `afterEach`.
+The push assertion needs `commitAndPush`'s git seam stubbed too — `_finishGitDeps.git`, exported from `@/finish`. Stub it to record its argv into the same `calls` array and return `{ exitCode: 0, stdout: "", stderr: "" }`, and restore it in `afterEach`.
 
-- [ ] **Step 2: Run to verify failure**
+Two mechanics of that stub matter, both verified against `src/finish/commit.ts`:
+
+- `_finishGitDeps.git` is `gitWithTimeout`, which **prepends `"git"` itself**, so the recorded argv is `["push", "--set-upstream", "origin", "feat/demo"]` — no leading `"git"` to match on.
+- `commitAndPush` calls `commitFixes` first, which runs `git status --porcelain`. An empty stdout reads as a clean tree, so it returns `{ committed: false }` without an `add`/`commit`, and the push still runs unconditionally (`commit.ts` documents why: the branch can be ahead of its remote with nothing new to commit). Returning empty stdout is therefore the simplest correct stub — do not make it return dirty output unless the test is specifically about committing.
+
+- [ ] **Step 3: Run to verify failure**
 
 Run: `bun test test/unit/finish/ops-impl.test.ts`
 Expected: FAIL — `createFinishOps` is not exported.
 
-- [ ] **Step 3: Implement the factory**
+- [ ] **Step 4: Implement the factory**
 
 Create `src/finish/ops-impl.ts` per the implementation notes. Header comment:
 
@@ -1154,7 +1233,7 @@ Create `src/finish/ops-impl.ts` per the implementation notes. Header comment:
  */
 ```
 
-- [ ] **Step 4: Export and run**
+- [ ] **Step 5: Export and run**
 
 Add to `src/finish/index.ts`:
 
@@ -1164,13 +1243,13 @@ export type { FinishOpsDeps } from "./ops-impl";
 ```
 
 Run: `bun test test/unit/finish/ops-impl.test.ts`
-Expected: PASS (9 tests).
+Expected: PASS (9 tests in ops-impl.test.ts, plus the machine-loops test from Step 1).
 
-- [ ] **Step 5: Static checks and commit**
+- [ ] **Step 6: Static checks and commit**
 
 ```bash
 bun x tsc --noEmit && bun run lint && bun test test/unit/finish/
-git add src/finish/ops-impl.ts src/finish/index.ts test/unit/finish/ops-impl.test.ts
+git add src/finish/ops-impl.ts src/finish/index.ts src/finish/state.ts src/finish/machine.ts test/unit/finish/ops-impl.test.ts test/unit/finish/machine-loops.test.ts
 git commit -m "feat(finish): assemble the concrete FinishOps object"
 ```
 
@@ -1249,5 +1328,5 @@ Expected: no output. `src/finish/` is complete but wired to nothing; plan 5 wire
 ## Self-Review Notes
 
 - **Spec coverage.** Design section 4.2's module list is now fully realised except `phase.ts` (plan 5). Section 4.7's draft lifecycle is Task 4 plus `openDraftPr`/`promotePr` in Task 6. Section 4.5's operations were plan 3; this plan only binds them.
-- **Out of scope, deliberately.** Wiring `"finish"` into `PostRunPhase` (three sites: the type, `status-writer.ts:118-120`, `usePipelineBusEvents.ts:243`), the cost-aggregator delta, the config reshape from `finish.autoFlow`, the Telegram send itself, and deleting `flows/` — all plan 5. The `@flows/*` tsconfig alias also stays until then.
+- **Out of scope, deliberately.** Wiring `"finish"` into `PostRunPhase` (three sites: the type, `src/execution/status-writer.ts`'s `setPostRunPhase` overloads at ~117-119, and `src/tui/hooks/usePipelineBusEvents.ts`'s phase map at ~69-72 — re-locate both by symbol, the line numbers drift), the cost-aggregator delta, the config reshape from `finish.autoFlow`, the Telegram send itself, and deleting `flows/` — all plan 5. The `@flows/*` tsconfig alias also stays until then.
 - **Known duplication after this plan.** `flows/nax-finish/steps/{pr,pr-body,pr-narrative,escalate}.ts` still exist and still run. That is expected and is not a defect to file.
