@@ -57,7 +57,7 @@
         },
         {
           "path": "src/finish/review/prompts.gen.ts",
-          "reason": "generated from the reference markdown by `scripts/generate-review-prompts.ts`. Regenerate it; do not hand-edit. `scripts/check-review-prompts-generated.ts` fails the build when it is stale."
+          "reason": "generated from the reference markdown by `scripts/generate-review-prompts.ts`. Regenerate it; do not hand-edit. `scripts/check-review-prompts-generated.ts` fails the build when it is stale, but that check runs only under `bun run lint`, and this repo's nax quality gate is `quality.commands.lint = bun run lint:json`, which omits it. A stale generated file therefore passes every gate you see locally and fails only in CI, so run the generator deliberately rather than relying on the gates."
         }
       ]
     },

@@ -223,7 +223,11 @@ story.
   quality prompt is per-file and that the spec prompt remains per-AC.
 - `src/finish/review/prompts.gen.ts` — generated from the reference markdown by
   `scripts/generate-review-prompts.ts`. Regenerate it; do not hand-edit.
-  `scripts/check-review-prompts-generated.ts` fails the build when it is stale.
+  `scripts/check-review-prompts-generated.ts` fails the build when it is stale,
+  but that check runs only under `bun run lint`, and this repo's nax quality gate
+  is `quality.commands.lint = bun run lint:json`, which omits it. A stale
+  generated file therefore passes every gate you see locally and fails only in
+  CI, so run the generator deliberately rather than relying on the gates.
 
 **US-002**
 
@@ -285,7 +289,7 @@ story.
    that still requires all three reply sections: the returned prompt string
    includes the headings `## TOUCHPOINTS`, `## WALK` and `## FINDINGS`.
 
-**Verification note — read this before implementing.** That `prompts.gen.ts`
+**Verification note** — read this before implementing. That `prompts.gen.ts`
 matches the reference markdown is not an acceptance criterion; it is verified by
 the repo's build/static gate `bun run lint`, which ends in `bun run
 check:review-prompts` (`scripts/check-review-prompts-generated.ts`). CI reaches
