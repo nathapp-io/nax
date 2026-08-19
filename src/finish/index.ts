@@ -63,6 +63,15 @@ export { openDraftFinishPr, openOrPromotePr, parseView, updatePrBody } from "./p
 export { buildEscalationComment, postEscalation } from "./escalate";
 export type { EscalationOutcome } from "./escalate";
 export {
+  _notifyDeps,
+  buildEscalationMessage,
+  buildTerminalMessage,
+  isTelegramConfigured,
+  sendTelegramNotify,
+  TELEGRAM_MAX_MESSAGE_CHARS,
+  telegramCreds,
+} from "./notify";
+export {
   gateCommitRoute,
   MAX_FIX_ATTEMPTS,
   MAX_INCOMPLETE_ATTEMPTS,
