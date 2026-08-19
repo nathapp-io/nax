@@ -48,7 +48,10 @@ const DEFAULT_FINISH_AUTO_FLOW_CONFIG: Omit<FinishAutoFlowSettings, "defaultAgen
 
 function selectFinish(config: unknown): { autoFlow?: Partial<FinishAutoFlowSettings> } | undefined {
   if (!config || typeof config !== "object") return undefined;
-  return finishConfigSelector.select(config as NaxConfig)?.finish as
+  // The `finish` slice is now flat (finish.*); this plugin still reads the
+  // pre-flatten `finish.autoFlow` shape and is deleted in the cutover. The
+  // cast keeps the dead path compiling without reshaping it.
+  return finishConfigSelector.select(config as NaxConfig)?.finish as unknown as
     | { autoFlow?: Partial<FinishAutoFlowSettings> }
     | undefined;
 }
