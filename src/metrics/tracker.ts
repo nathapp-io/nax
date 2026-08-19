@@ -435,43 +435,47 @@ export async function saveRunMetrics(outputDir: string, runMetrics: RunMetrics):
   // BUG-6: serialize load-modify-save across processes so two parallel `nax run`
   // invocations (or worktree-mode parallel stories writing to the same per-project
   // metrics.json) cannot both read the same base, append, and have the later
-  // rename() silently drop the earlier writer's append. Lock is keyed by the
-  // metrics file path; the read/write happens entirely under the critical section.
-  const allMetrics = await withPathFileLock(metricsPath, async () => {
+  // rename() silently drop the earlier writer's append. The entire
+  // read-append-cap-write sequence must sit inside the critical section: a
+  // writer that releases the lock before its write lands lets a peer read a
+  // stale base and overwrite the append. Lock is keyed by the metrics file path.
+  await withPathFileLock(metricsPath, async () => {
     const existing = await loadJsonFile<RunMetrics[]>(metricsPath, "metrics");
-    const base = Array.isArray(existing) ? existing : [];
-    base.push(finalMetrics);
-    return base;
+    const allMetrics = Array.isArray(existing) ? existing : [];
+    allMetrics.push(finalMetrics);
+
+    // GROWTH-1: cap retained history to the last MAX_RETAINED_RUNS runs — drop
+    // the oldest first. Runs are appended chronologically, so a simple tail
+    // slice keeps the most recent ones.
+    const isTruncating = allMetrics.length > MAX_RETAINED_RUNS;
+    const cappedMetrics = isTruncating ? allMetrics.slice(allMetrics.length - MAX_RETAINED_RUNS) : allMetrics;
+
+    // GROWTH-1: make the resulting semantic drift observable — aggregate
+    // metrics (calculateAggregateMetrics) and any downstream consumer (e.g.
+    // `nax status --cost`) silently become "totals across the last
+    // MAX_RETAINED_RUNS runs" instead of true all-time history once this
+    // fires. Logged once per process lifetime (see hasWarnedAboutRunTruncation)
+    // so it doesn't spam on every run after the cap is first hit. The check and
+    // set are serialized under the lock, so concurrent truncating saves cannot
+    // both pass the guard and double-log.
+    if (isTruncating && !hasWarnedAboutRunTruncation) {
+      hasWarnedAboutRunTruncation = true;
+      const droppedCount = allMetrics.length - MAX_RETAINED_RUNS;
+      getLogger().warn(
+        "metrics",
+        "Run-history cap reached — oldest run-entries dropped from metrics.json; aggregate metrics now cover only the retained window",
+        {
+          droppedCount,
+          maxRetainedRuns: MAX_RETAINED_RUNS,
+          metricsPath,
+        },
+      );
+    }
+
+    // Write back under the lock so the next acquirer always reads what the
+    // previous writer actually persisted.
+    await saveJsonFile(metricsPath, cappedMetrics, "metrics");
   });
-
-  // GROWTH-1: cap retained history to the last MAX_RETAINED_RUNS runs — drop
-  // the oldest first. Runs are appended chronologically, so a simple tail
-  // slice keeps the most recent ones.
-  const isTruncating = allMetrics.length > MAX_RETAINED_RUNS;
-  const cappedMetrics = isTruncating ? allMetrics.slice(allMetrics.length - MAX_RETAINED_RUNS) : allMetrics;
-
-  // GROWTH-1: make the resulting semantic drift observable — aggregate
-  // metrics (calculateAggregateMetrics) and any downstream consumer (e.g.
-  // `nax status --cost`) silently become "totals across the last
-  // MAX_RETAINED_RUNS runs" instead of true all-time history once this
-  // fires. Logged once per process lifetime (see hasWarnedAboutRunTruncation)
-  // so it doesn't spam on every run after the cap is first hit.
-  if (isTruncating && !hasWarnedAboutRunTruncation) {
-    hasWarnedAboutRunTruncation = true;
-    const droppedCount = allMetrics.length - MAX_RETAINED_RUNS;
-    getLogger().warn(
-      "metrics",
-      "Run-history cap reached — oldest run-entries dropped from metrics.json; aggregate metrics now cover only the retained window",
-      {
-        droppedCount,
-        maxRetainedRuns: MAX_RETAINED_RUNS,
-        metricsPath,
-      },
-    );
-  }
-
-  // Write back
-  await saveJsonFile(metricsPath, cappedMetrics, "metrics");
 }
 
 /**
