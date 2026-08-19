@@ -30,8 +30,30 @@ export { _qualityGateDeps, resolveGateCommands, runQualityGates } from "./gates/
 export { runFinishMachine } from "./machine";
 export type { FinishMachineDeps } from "./machine";
 export type { FinishOps, FixOutcome, FixRequest, ReviewRequest } from "./ops";
-export { finishFixOp, finishReviewOp } from "./operations";
-export type { FinishFixInput, FinishReviewInput, FinishReviewOutput } from "./operations";
+export {
+  buildNarrativePrompt,
+  finishFixOp,
+  finishNarrativeOp,
+  finishReviewOp,
+  NARRATIVE_MAX_CHARS,
+  parseNarrative,
+  parseNarrativeNode,
+  parseTitle,
+  readSpecSummary,
+  resolveNarrative,
+  resolveTitle,
+  sanitizeTitle,
+  TITLE_CLOSE_TAG,
+  TITLE_MAX_CHARS,
+  TITLE_OPEN_TAG,
+} from "./operations";
+export type {
+  FinishFixInput,
+  FinishNarrativeInput,
+  FinishNarrativeOutput,
+  FinishReviewInput,
+  FinishReviewOutput,
+} from "./operations";
 export {
   gateCommitRoute,
   MAX_FIX_ATTEMPTS,
