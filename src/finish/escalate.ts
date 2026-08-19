@@ -37,13 +37,14 @@ export interface EscalationOutcome {
 /**
  * Deliver an escalation.
  *
- * `preferTelegram` (set by the plugin only when Telegram is both enabled and
- * credentialed) makes Telegram the sole channel: the flow posts no comment and
- * — critically — opens no draft PR to hold one, matching the design's
- * "prefer Telegram when configured, else fall back to a PR/MR comment". The
- * plugin sends the message itself after reading the result file. It still reads
- * any existing PR/MR so the notification can carry a link, which is a read-only
- * lookup with no side effect.
+ * `preferTelegram` (set by `runFinishPhase` in `phase.ts` only when Telegram is
+ * both enabled and credentialed) makes Telegram the sole channel: the flow
+ * posts no comment and — critically — opens no draft PR to hold one, matching
+ * the design's "prefer Telegram when configured, else fall back to a PR/MR
+ * comment". `runFinishPhase`'s own `notify()` helper sends the message itself
+ * after the machine returns a result. It still reads any existing PR/MR so the
+ * notification can carry a link, which is a read-only lookup with no side
+ * effect.
  */
 export async function postEscalation(
   args: { workdir: string; branch: string; comment: string; forge: ForgeKind; preferTelegram?: boolean },
