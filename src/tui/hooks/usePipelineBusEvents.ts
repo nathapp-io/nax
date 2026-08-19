@@ -64,12 +64,13 @@ export interface PipelineBusState {
   escalationLog: EscalationEntry[];
   /** Current orchestrator step per story (e.g. "test-writer", "implementer", "verifier") */
   storySteps: Record<string, string>;
-  /** Post-run phase statuses (acceptance, acceptance-setup, regression, review) */
+  /** Post-run phase statuses (acceptance, acceptance-setup, regression, review, finish) */
   postRunPhases: {
     acceptance?: PostRunPhaseState;
     "acceptance-setup"?: PostRunPhaseState;
     regression?: PostRunPhaseState;
     review?: PostRunPhaseState;
+    finish?: PostRunPhaseState;
   };
   /**
    * Id of the most recently failed story — target for the TUI "retry last failed" (r) key.

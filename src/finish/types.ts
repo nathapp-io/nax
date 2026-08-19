@@ -77,7 +77,7 @@ export interface ReviewVerdict {
   /** Set on a `fix_<phase>` output: what the fixer did with each finding it was handed. */
   dispositions?: FindingDisposition[];
 }
-/** Wall-clock budgets, forwarded from `finish.autoFlow.timeouts` by the plugin. */
+/** Wall-clock budgets, forwarded from `finish.timeouts` by `runFinishPhase`. */
 export interface FinishTimeouts {
   acceptanceMs?: number;
   gateMs?: number;

@@ -8,9 +8,7 @@
  */
 
 // Imported from `@/forge`, not re-implemented, so the draft body and the
-// nax-finish body compose a template identically. The merger now lives in
-// `src/forge/` — the `flows/nax-finish/` copy that this module used to import
-// from is the same code, kept byte-identical until the flow is retired.
+// nax-finish body compose a template identically.
 import { type BodySection, type MergeOptions, mergeTemplate } from "@/forge";
 import type { UserStory } from "@/prd/types";
 

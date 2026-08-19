@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_SECTION_ALIASES, type BodySection, mergeTemplate } from "@/forge";
-import { mergeTemplate as flowMergeTemplate } from "@flows/nax-finish/pr-template-merge";
 import { TEMPLATE_BY_NAME, TEMPLATE_FIXTURES, UNPARSEABLE_FIXTURE_NAMES } from "@test/fixtures/pr-templates";
 
 /**
@@ -279,19 +278,5 @@ describe("mergeTemplate — degenerate inputs", () => {
     const baseline = mergeTemplate(TEMPLATE_BY_NAME.nax, sections());
     mergeTemplate(TEMPLATE_BY_NAME.nax, sections(), { sectionMap: { notes: "outOfScope", what: "" } });
     expect(mergeTemplate(TEMPLATE_BY_NAME.nax, sections())).toBe(baseline);
-  });
-});
-
-describe("mergeTemplate — src/forge copy vs the live flows copy", () => {
-  test("stays byte-identical to the flows copy that is still live", () => {
-    const template = "## Summary\n\n<!-- what changed -->\n\n## Testing\n\n- [ ] tests pass\n";
-    const sections: BodySection[] = [
-      { key: "narrative", heading: "What changed", body: "Ported the merger." },
-      { key: "verification", heading: "Verification", body: "- Gates: lint, test" },
-      { key: "footer", heading: "", body: "3/3 stories" },
-    ];
-    for (const mode of ["merge", "strict", "ignore"] as const) {
-      expect(mergeTemplate(template, sections, { mode })).toBe(flowMergeTemplate(template, sections, { mode }));
-    }
   });
 });

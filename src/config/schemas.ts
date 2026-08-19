@@ -36,7 +36,7 @@ import {
   PromptsConfigSchema,
   RoutingConfigSchema,
 } from "./schemas-infra";
-import { ModelMapSchema } from "./schemas-model";
+import { ConfiguredModelSchema, ModelMapSchema } from "./schemas-model";
 import { ReportersConfigSchema } from "./schemas-reporters";
 import { AdversarialReviewConfigSchema, ReviewConfigSchema } from "./schemas-review";
 
@@ -402,122 +402,79 @@ export const NaxConfigSchema = z
       .default({ enabled: false, draft: true }),
     finish: z
       .object({
-        autoFlow: z
+        enabled: z.boolean().default(false),
+        /**
+         * Whether the phase spends an agent turn writing the PR body's
+         * "What changed" section. Disabled -> the body carries the
+         * mechanical fallback (spec Summary) or no such section at all.
+         */
+        narrative: z.boolean().default(true),
+        /**
+         * How the repo's own PR/MR template is honoured.
+         *
+         * `merge` (default) treats the template as shape: headings the body
+         * can fill keep their wording, headings it cannot are dropped, and
+         * content with no matching heading is appended under nax's own.
+         * `strict` keeps the unfillable headings, empty, for repos whose CI
+         * asserts a set of headings exists. `ignore` skips the template.
+         *
+         * Never appends the template verbatim -- that shipped an unfilled
+         * form below a filled one (#1504).
+         */
+        prBody: z
           .object({
-            enabled: z.boolean().default(false),
-            flowPath: z.string().default("flows/nax-finish/nax-finish.flow.ts"),
-            defaultAgent: z.string().nullable().default(null),
+            template: z.enum(["merge", "strict", "ignore"]).default("merge"),
             /**
-             * acpx `--model`, a run-wide *fallback*. acpx resolves a node's
-             * model as `node.model ?? agent.model ?? --model`, so this only
-             * reaches nodes whose agent entry pins no model of its own — i.e.
-             * the `fix_*` nodes, not the profile-pinned reviewers.
-             *
-             * Opt-in (null) because that precedence needs an acpx build that
-             * accepts a `model` on agent entries. On a build without it there is
-             * nothing above `--model` in the chain, so it would override the
-             * reviewers too.
+             * Template heading -> body-section key, layered over the defaults
+             * in `src/forge/template-merge.ts`. Matched case- and
+             * punctuation-insensitively; an empty value suppresses a default
+             * alias. Known keys: `narrative`, `stories`, `verification`,
+             * `rounds`, `outOfScope`.
              */
-            model: z.string().min(1, "model must be non-empty").nullable().default(null),
-            /**
-             * Whether the flow spends an agent turn writing the PR body's
-             * "What changed" section. Disabled → the body carries the
-             * mechanical fallback (spec §Summary) or no such section at all.
-             */
-            narrative: z.boolean().default(true),
-            /**
-             * How the repo's own PR/MR template is honoured.
-             *
-             * `merge` (default) treats the template as *shape*: headings the
-             * body can fill keep their wording, headings it cannot are
-             * dropped, and content with no matching heading is appended under
-             * nax's own. `strict` keeps the unfillable headings, empty, for
-             * repos whose CI asserts a set of headings exists. `ignore` skips
-             * the template entirely.
-             *
-             * Never appends the template verbatim — that shipped an unfilled
-             * form below a filled one (#1504).
-             */
-            prBody: z
-              .object({
-                template: z.enum(["merge", "strict", "ignore"]).default("merge"),
-                /**
-                 * Template heading → body-section key, layered over the
-                 * defaults in `flows/nax-finish/pr-template-merge.ts`. Keys are
-                 * matched case- and punctuation-insensitively. An empty value
-                 * suppresses a default alias.
-                 *
-                 * Known section keys: `narrative`, `stories`, `verification`,
-                 * `rounds`, `outOfScope`.
-                 */
-                sectionMap: z.record(z.string(), z.string()).default({}),
-              })
-              .default({ template: "merge", sectionMap: {} }),
-            /**
-             * Per-node acpx profiles. Both reviewers default to `null`, i.e.
-             * acpx's `--default-agent` — which is a *weaker* control than the
-             * equivalent skill, whose quality worker runs on a reviewer-tuned
-             * agent type. Pin these when comparing the two, or the comparison
-             * measures tier rather than the flow (#1614).
-             */
-            reviewers: z
-              .object({
-                spec: z.string().nullable().default(null),
-                quality: z.string().nullable().default(null),
-                /** Profile that writes the "What changed" narrative. */
-                narrative: z.string().nullable().default(null),
-              })
-              .default({ spec: null, quality: null, narrative: null }),
-            escalate: z.object({ telegram: z.boolean().default(true) }).default({ telegram: true }),
-            notify: z
-              .object({ mode: z.enum(["escalation", "always", "off"]).default("escalation") })
-              .default({ mode: "escalation" }),
-            // Wall-clock caps. Every one of these bounds a subprocess the flow
-            // awaits; without them a hung gate stalls the whole run's
-            // completion phase, which has no timeout of its own.
-            timeouts: z
-              .object({
-                /** Per acceptance-test group. */
-                acceptanceMs: z.number().int().positive().default(600_000),
-                /** Per quality gate (build / typecheck / lint / test / format). */
-                gateMs: z.number().int().positive().default(900_000),
-                /** Whole `acpx flow run` subprocess. */
-                flowMs: z.number().int().positive().default(5_400_000),
-                /**
-                 * Per flow *step* (one review or fix agent turn), passed to acpx as
-                 * `--timeout`. null keeps acpx's own 15-minute default, which a
-                 * large-diff review can exceed.
-                 */
-                stepMs: z.number().int().positive().nullable().default(null),
-              })
-              .default({ acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null }),
+            sectionMap: z.record(z.string(), z.string()).default({}),
           })
-          .default({
-            enabled: false,
-            flowPath: "flows/nax-finish/nax-finish.flow.ts",
-            defaultAgent: null,
-            model: null,
-            narrative: true,
-            prBody: { template: "merge", sectionMap: {} },
-            reviewers: { spec: null, quality: null, narrative: null },
-            escalate: { telegram: true },
-            notify: { mode: "escalation" },
-            timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },
-          }),
+          .default({ template: "merge", sectionMap: {} }),
+        /**
+         * Per-step model selection, resolved by `resolveConfiguredModel` the
+         * same way every other operation's is. null falls through to
+         * `callOp`'s own default ("balanced").
+         */
+        reviewers: z
+          .object({
+            spec: ConfiguredModelSchema.nullable().default(null),
+            quality: ConfiguredModelSchema.nullable().default(null),
+            narrative: ConfiguredModelSchema.nullable().default(null),
+            fix: ConfiguredModelSchema.nullable().default(null),
+          })
+          .default({ spec: null, quality: null, narrative: null, fix: null }),
+        escalate: z.object({ telegram: z.boolean().default(true) }).default({ telegram: true }),
+        notify: z
+          .object({ mode: z.enum(["escalation", "always", "off"]).default("escalation") })
+          .default({ mode: "escalation" }),
+        // Wall-clock caps. Every one bounds work the phase awaits; without
+        // them a hung gate stalls the run's completion phase, which has no
+        // timeout of its own.
+        timeouts: z
+          .object({
+            /** Per acceptance-test group. */
+            acceptanceMs: z.number().int().positive().default(600_000),
+            /** Per quality gate (build / typecheck / lint / test). */
+            gateMs: z.number().int().positive().default(900_000),
+            /** Whole-phase deadline, enforced as an AbortSignal (design 4.7). */
+            flowMs: z.number().int().positive().default(5_400_000),
+            /** Per LLM op (one review, fix or narrative turn). null keeps callOp's own default. */
+            stepMs: z.number().int().positive().nullable().default(null),
+          })
+          .default({ acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null }),
       })
       .default({
-        autoFlow: {
-          enabled: false,
-          flowPath: "flows/nax-finish/nax-finish.flow.ts",
-          defaultAgent: null,
-          model: null,
-          narrative: true,
-          prBody: { template: "merge", sectionMap: {} },
-          reviewers: { spec: null, quality: null, narrative: null },
-          escalate: { telegram: true },
-          notify: { mode: "escalation" },
-          timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },
-        },
+        enabled: false,
+        narrative: true,
+        prBody: { template: "merge", sectionMap: {} },
+        reviewers: { spec: null, quality: null, narrative: null, fix: null },
+        escalate: { telegram: true },
+        notify: { mode: "escalation" },
+        timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },
       }),
     reporters: ReportersConfigSchema,
     profile: z.string().default("default"),

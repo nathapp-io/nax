@@ -1,7 +1,7 @@
 /**
  * The finish PR diffstat against a real git repository.
  *
- * `pr-body.test.ts` asserts the pathspec *string* the loader passes. That
+ * `pr-context.test.ts` asserts the pathspec *string* the loader passes. That
  * cannot catch the bug this exists for: the string was right in spirit and
  * wrong in behaviour. nax writes run artifacts to a repo-root `.nax/` AND to a
  * per-package `<pkg>/.nax/` in a monorepo, and a root-anchored `:!.nax/**`
@@ -16,7 +16,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadFinishPrContext } from "@flows/nax-finish/steps/pr-body";
+import { createFinishState, loadFinishPrContext } from "@/finish";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const ROOT_ARTIFACT = ".nax/features/f/spec.md";
@@ -67,11 +67,22 @@ afterEach(() => {
   cleanupTempDir(testDir);
 });
 
+function stateFor(base: string) {
+  return createFinishState({
+    feature: "f",
+    workdir: repo,
+    branch: "feat/f",
+    runId: "run-1",
+    base,
+    specPath: ".nax/features/f/spec.md",
+  });
+}
+
 const load = () =>
-  loadFinishPrContext(
-    { feature: "f", workdir: repo, branch: "feat/f", prdPath: "prd.json", escalateTelegram: false },
-    { base: baseSha, gatesRan: [] },
-  );
+  loadFinishPrContext({
+    state: stateFor(baseSha),
+    audit: { auditDir: join(repo, ".nax", "audit"), runId: "run-1" },
+  });
 
 describe("finish PR diffstat — nax artifact exclusion", () => {
   test("excludes the repo-root .nax/ directory", async () => {
@@ -104,10 +115,10 @@ describe("finish PR diffstat — nax artifact exclusion", () => {
     write("packages/api/src/other.py", "x = 1\n");
     await git(["add", "."]);
     await git(["commit", "-m", "code only"]);
-    const onlyCode = await loadFinishPrContext(
-      { feature: "f", workdir: repo, branch: "feat/f", prdPath: "prd.json", escalateTelegram: false },
-      { base: await git(["rev-parse", "HEAD~1"]), gatesRan: [] },
-    );
+    const onlyCode = await loadFinishPrContext({
+      state: stateFor(await git(["rev-parse", "HEAD~1"])),
+      audit: { auditDir: join(repo, ".nax", "audit"), runId: "run-1" },
+    });
     expect(onlyCode.diffstat).toContain("other.py");
     expect(onlyCode.artifactSummary).toBeUndefined();
   });

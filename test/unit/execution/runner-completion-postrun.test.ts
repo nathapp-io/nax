@@ -22,7 +22,7 @@ import type { RunCompletionResult } from "../../../src/execution/lifecycle/run-c
 import type { NaxConfig } from "../../../src/config";
 import type { PRD, UserStory } from "../../../src/prd";
 import type { LoadedHooksConfig } from "../../../src/hooks";
-import { makeNaxConfig } from "../../helpers";
+import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -679,5 +679,76 @@ describe("runCompletionPhase - forwards parallel mode as isSequential", () => {
     await runCompletionPhase(opts);
 
     expect(captured?.isSequential).toBe(expectedIsSequential);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// finish phase (Task 6) — placement + fail-open + unconditional call
+// ---------------------------------------------------------------------------
+
+/**
+ * makeOpts() does not build a DispatchContext (runtime/agentManager/sessionManager/
+ * abortSignal) — the runner-completion source only ever touches `options.runtime`
+ * through optional chaining, so the other describe blocks in this file never
+ * needed one. The finish-phase seam does need a real runtime (to observe close()
+ * ordering), so this helper layers one on top of makeOpts() the same way other
+ * cases here already layer on extra fields (e.g. `featureDir`, `parallel`).
+ */
+function makeOptsWithRuntime(
+  config: NaxConfig,
+  prd: PRD,
+  statusWriter: ReturnType<typeof makeStatusWriter>,
+): RunnerCompletionOptions {
+  const runtime = makeTestRuntime({ config });
+  return {
+    ...makeOpts(config, prd, statusWriter),
+    runtime,
+    agentManager: runtime.agentManager,
+    sessionManager: runtime.sessionManager,
+    abortSignal: runtime.signal,
+  };
+}
+
+describe("finish phase", () => {
+  test("runs before the runtime is closed", async () => {
+    const order: string[] = [];
+    _runnerCompletionDeps.runFinishPhase = mock(async () => {
+      order.push("finish");
+      return null;
+    });
+    const opts = makeOptsWithRuntime(makeConfig(false), makePRD([{ id: "US-001", status: "passed" }]), makeStatusWriter());
+    // Wrap the runtime's own close so the ordering is observed, not asserted
+    // from a fake: makeOptsWithRuntime builds a real tracked runtime.
+    const close = opts.runtime.close.bind(opts.runtime);
+    opts.runtime.close = async () => {
+      order.push("close");
+      await close();
+    };
+
+    await runCompletionPhase(opts);
+    expect(order).toEqual(["finish", "close"]);
+  });
+
+  test("a throwing finish phase does not fail the run", async () => {
+    _runnerCompletionDeps.runFinishPhase = mock(async () => {
+      throw new Error("boom");
+    });
+    const result = await runCompletionPhase(
+      makeOptsWithRuntime(makeConfig(false), makePRD([{ id: "US-001", status: "passed" }]), makeStatusWriter()),
+    );
+    expect(result.acceptancePassed).toBe(true);
+  });
+
+  test("gating is the phase's own concern — the runner always calls it", async () => {
+    const calls: unknown[] = [];
+    _runnerCompletionDeps.runFinishPhase = mock(async (ctx) => {
+      calls.push(ctx);
+      return null;
+    });
+    await runCompletionPhase(
+      makeOptsWithRuntime(makeConfig(true), makePRD([{ id: "US-001", status: "failed" }]), makeStatusWriter()),
+    );
+    expect(calls).toHaveLength(1);
+    expect((calls[0] as { storySummary: { failed: number } }).storySummary.failed).toBe(1);
   });
 });

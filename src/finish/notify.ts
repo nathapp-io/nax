@@ -1,10 +1,16 @@
 /**
- * nax-finish Plugin — Telegram Escalation Notifier
+ * Telegram notification for the finish phase.
  *
- * Sends a one-shot Telegram message when the nax-finish flow escalates
- * (e.g. ambiguous design call requiring human input). Independent of the
- * `src/interaction/plugins/telegram.ts` interaction plugin — this is a
- * fire-and-forget notification, not an interactive request/response.
+ * Lifted from `src/plugins/builtin/nax-finish/telegram.ts` and that
+ * directory's `config.ts`, both deleted in the cutover. Independent of
+ * `src/interaction/plugins/telegram.ts`: this is a fire-and-forget
+ * notification, not an interactive request/response.
+ *
+ * Separate from `./escalate` deliberately. That module posts a comment
+ * through the forge and takes `ForgeDeps`; this one takes a `fetch` and
+ * knows nothing about a forge. `postEscalation`'s `preferTelegram` branch
+ * returns `channel: "telegram"` without sending anything — this module is
+ * what actually sends, called by the phase after it reads the result.
  */
 
 type FetchFn = (input: string | Request | URL, init?: RequestInit) => Promise<Response>;
@@ -66,7 +72,7 @@ export function buildEscalationMessage(
 }
 
 /** Module-level deps for testability (`_deps` pattern). */
-export const _telegramDeps: { fetch: FetchFn } = { fetch: (...a) => fetch(...a) };
+export const _notifyDeps: { fetch: FetchFn } = { fetch: (...a) => fetch(...a) };
 
 /** SEC-4: 5s client-side cap for the notify fetch. Matches the interaction
  *  plugin's sendMessage pattern (src/interaction/plugins/telegram.ts:188). */
@@ -93,7 +99,7 @@ export async function sendTelegramNotify(cfg: { token: string; chatId: string },
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), NOTIFY_FETCH_TIMEOUT_MS);
   try {
-    const res = await _telegramDeps.fetch(`https://api.telegram.org/bot${cfg.token}/sendMessage`, {
+    const res = await _notifyDeps.fetch(`https://api.telegram.org/bot${cfg.token}/sendMessage`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ chat_id: cfg.chatId, text }),
@@ -105,4 +111,24 @@ export async function sendTelegramNotify(cfg: { token: string; chatId: string },
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Resolve Telegram credentials from `ctx.config.interaction` — only meaningful
+ * when `interaction.plugin === "telegram"`, in which case `interaction.config`
+ * carries `botToken`/`chatId` (see `src/interaction/plugins/telegram.ts`).
+ * Falls back to the same env vars the telegram interaction plugin itself uses.
+ */
+export function telegramCreds(config: unknown): { token: string; chatId: string } | null {
+  const interaction = (config as { interaction?: { plugin?: string; config?: { botToken?: string; chatId?: string } } })
+    ?.interaction;
+  const tg = interaction?.plugin === "telegram" ? (interaction.config ?? {}) : {};
+  const token = tg.botToken ?? process.env.NAX_TELEGRAM_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN ?? null;
+  const chatId = tg.chatId ?? process.env.NAX_TELEGRAM_CHAT_ID ?? null;
+  return token && chatId ? { token, chatId } : null;
+}
+
+/** Whether Telegram is configured for escalation notifications. */
+export function isTelegramConfigured(config: unknown): boolean {
+  return telegramCreds(config) !== null;
 }

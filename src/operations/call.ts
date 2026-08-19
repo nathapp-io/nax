@@ -63,6 +63,8 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   const timeoutMs = resolveTimeoutMs(op, input, buildCtx);
   // Stamp a fresh callId per invocation; preserve caller-supplied one (AC7).
   const callId = ctx.callId ?? newCorrelationId();
+  // The caller's deadline wins over the run's; see CallContext.signal.
+  const abortSignal = ctx.signal ?? ctx.runtime.signal;
 
   const config = ctx.runtime.configLoader.current();
   const defaultAgent = ctx.runtime.agentManager.getDefault();
@@ -117,7 +119,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
           storyId: ctx.storyId,
         });
         if (!decision.retry) throw err;
-        if (ctx.runtime.signal?.aborted) {
+        if (abortSignal?.aborted) {
           throw new NaxError(`callOp[${op.name}]: aborted before retry`, "CALL_OP_ABORTED", {
             stage: op.stage,
             storyId: ctx.storyId,
@@ -135,8 +137,8 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
           failureKind: failure instanceof Error ? "error" : (failure as AdapterFailure).outcome,
           failureMessage: errorMessage(failure),
         });
-        await _callOpDeps.sleep(decision.delayMs, ctx.runtime.signal);
-        if (ctx.runtime.signal?.aborted) {
+        await _callOpDeps.sleep(decision.delayMs, abortSignal);
+        if (abortSignal?.aborted) {
           throw new NaxError(`callOp[${op.name}]: aborted during retry sleep`, "CALL_OP_ABORTED", {
             stage: op.stage,
             storyId: ctx.storyId,
@@ -328,7 +330,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
         lastRetryTurn = result;
         return result;
       }
-      if (ctx.runtime.signal?.aborted) {
+      if (abortSignal?.aborted) {
         throw new NaxError(`callOp[${op.name}]: aborted during retry`, "CALL_OP_ABORTED", {
           stage: op.stage,
           storyId: ctx.storyId,
@@ -346,8 +348,8 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
         failureKind: "error",
         failureMessage: `sendWithParseRetry: parse probe failed at attempt ${attempt}`,
       });
-      await _callOpDeps.sleep(decision.delayMs, ctx.runtime.signal);
-      if (ctx.runtime.signal?.aborted) {
+      await _callOpDeps.sleep(decision.delayMs, abortSignal);
+      if (abortSignal?.aborted) {
         throw new NaxError(`callOp[${op.name}]: aborted during retry sleep`, "CALL_OP_ABORTED", {
           stage: op.stage,
           storyId: ctx.storyId,
@@ -401,7 +403,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   const rawOutcome = await ctx.runtime.agentManager.runWithFallback(
     {
       runOptions,
-      signal: ctx.runtime.signal,
+      signal: abortSignal,
       executeHop,
       noFallback: runOp.noFallback,
       bundle: ctx.contextBundle,
@@ -412,7 +414,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
 
   // Abort check: if the signal was aborted during the hop (e.g. in sendWithParseRetry),
   // buildHopCallback's catch swallowed it. Surface it here before parse runs.
-  if (ctx.runtime.signal?.aborted) {
+  if (abortSignal?.aborted) {
     throw new NaxError(`callOp[${op.name}]: aborted`, "CALL_OP_ABORTED", { stage: op.stage, storyId: ctx.storyId });
   }
 

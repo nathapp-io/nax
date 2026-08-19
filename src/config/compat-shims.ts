@@ -363,6 +363,71 @@ export function warnSecuritySensitiveOverrides(
   }
 }
 
+/** @internal Keys that existed only to marshal across the acpx process boundary. */
+const REMOVED_FINISH_KEYS = ["flowPath", "defaultAgent", "model"] as const;
+
+/**
+ * @internal Lift `finish.autoFlow.*` onto `finish.*`.
+ *
+ * The `autoFlow` segment was named after a flow that no longer exists — finish
+ * is an in-process post-run phase, not a subprocess. `flowPath`, `defaultAgent`
+ * and `model` go with it: the first pointed at a deleted file, and the other two
+ * were acpx argv that has no in-process equivalent (`model`'s "floor, not
+ * override" behaviour was a property of the personal acpx fork, design 2.4).
+ *
+ * `reviewers.{spec,quality,narrative}` were acpx profile names; the schema now
+ * takes a `ConfiguredModel`. A leftover string is mapped to null with a warning
+ * rather than rejected, so an unmigrated config keeps loading and simply falls
+ * back to the default model selection.
+ *
+ * An explicit `finish.<key>` alongside `finish.autoFlow.<key>` wins — the user
+ * migrated that key and the stale one must not clobber it.
+ *
+ * Returns a new object (immutable -- does not mutate the input).
+ */
+export function _applyFinishAutoFlowShim(
+  conf: Record<string, unknown>,
+  warn: (msg: string) => void = defaultConfigWarn,
+): Record<string, unknown> {
+  const finish = conf.finish as Record<string, unknown> | undefined;
+  const autoFlow = finish?.autoFlow as Record<string, unknown> | undefined;
+  if (!autoFlow) return conf;
+
+  warn(
+    "finish.autoFlow.* has moved to finish.* — nax-finish is an in-process post-run phase, not an acpx flow. " +
+      "Move your keys up one level; finish.autoFlow will stop being read in a future release.",
+  );
+
+  const { autoFlow: _dropped, ...explicitFinish } = finish ?? {};
+  const lifted: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(autoFlow)) {
+    if ((REMOVED_FINISH_KEYS as readonly string[]).includes(key)) {
+      warn(`finish.autoFlow.${key} was removed with the acpx flow and has no effect. Remove it from your config.`);
+      continue;
+    }
+    if (key === "reviewers" && value && typeof value === "object") {
+      const reviewers: Record<string, unknown> = {};
+      for (const [slot, profile] of Object.entries(value as Record<string, unknown>)) {
+        if (typeof profile === "string" && profile.length > 0) {
+          warn(
+            `finish.autoFlow.reviewers.${slot} was an acpx profile name ("${profile}"). ` +
+              `finish.reviewers.${slot} now takes a model tier or { agent, model } object; the profile name is ignored. Set it explicitly to keep pinning that reviewer.`,
+          );
+          reviewers[slot] = null;
+          continue;
+        }
+        reviewers[slot] = profile ?? null;
+      }
+      lifted.reviewers = reviewers;
+      continue;
+    }
+    lifted[key] = value;
+  }
+
+  // Explicit finish.* wins over anything lifted from autoFlow.
+  return { ...conf, finish: { ...lifted, ...explicitFinish } };
+}
+
 /**
  * @internal Apply the full compat-shim chain (legacy key migrations + deprecation
  * mappings) to a single raw config layer, in the fixed order the migrations depend on.
@@ -386,12 +451,15 @@ export function applyConfigCompatShims(
 ): Record<string, unknown> {
   const log = dedupe.wrapLogger(logger);
   const warn = dedupe.warn;
-  return _applyRemovedWorktreeInheritShim(
-    _applyLegacyReviewExecutionShim(
-      _applyRemovedRoutingKeysShim(
-        applyRoutingRetryDeprecationWarning(
-          applyBatchModeCompat(
-            applyRemovedStrategyCompat(migrateLegacyReviewModelKey(migrateLegacyTestPattern(conf, log), log), warn),
+  return _applyFinishAutoFlowShim(
+    _applyRemovedWorktreeInheritShim(
+      _applyLegacyReviewExecutionShim(
+        _applyRemovedRoutingKeysShim(
+          applyRoutingRetryDeprecationWarning(
+            applyBatchModeCompat(
+              applyRemovedStrategyCompat(migrateLegacyReviewModelKey(migrateLegacyTestPattern(conf, log), log), warn),
+              warn,
+            ),
             warn,
           ),
           warn,

@@ -12,6 +12,7 @@ import { getSafeLogger } from "../logger";
 import type { PRD } from "../prd";
 import {
   type AcceptancePhaseStatus,
+  type FinishPhaseStatus,
   type PostRunStatus,
   type RegressionPhaseStatus,
   type RunStateSnapshot,
@@ -116,9 +117,10 @@ export class StatusWriter {
    */
   setPostRunPhase(phase: "acceptance", update: Partial<AcceptancePhaseStatus>): void;
   setPostRunPhase(phase: "regression", update: Partial<RegressionPhaseStatus>): void;
+  setPostRunPhase(phase: "finish", update: Partial<FinishPhaseStatus>): void;
   setPostRunPhase(
-    phase: "acceptance" | "regression",
-    update: Partial<AcceptancePhaseStatus> | Partial<RegressionPhaseStatus>,
+    phase: "acceptance" | "regression" | "finish",
+    update: Partial<AcceptancePhaseStatus> | Partial<RegressionPhaseStatus> | Partial<FinishPhaseStatus>,
   ): void {
     if (!this._postRun) {
       this._postRun = {
@@ -131,10 +133,15 @@ export class StatusWriter {
         ...this._postRun,
         acceptance: { ...this._postRun.acceptance, ...(update as Partial<AcceptancePhaseStatus>) },
       };
-    } else {
+    } else if (phase === "regression") {
       this._postRun = {
         ...this._postRun,
         regression: { ...this._postRun.regression, ...(update as Partial<RegressionPhaseStatus>) },
+      };
+    } else {
+      this._postRun = {
+        ...this._postRun,
+        finish: { ...(this._postRun.finish ?? { status: "not-run" }), ...(update as Partial<FinishPhaseStatus>) },
       };
     }
   }
@@ -151,6 +158,9 @@ export class StatusWriter {
     return {
       acceptance: base.acceptance.status === "running" ? { status: "not-run" } : base.acceptance,
       regression: base.regression.status === "running" ? { status: "not-run" } : base.regression,
+      ...(base.finish
+        ? { finish: base.finish.status === "running" ? { ...base.finish, status: "not-run" } : base.finish }
+        : {}),
     };
   }
 

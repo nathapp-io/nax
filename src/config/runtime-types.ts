@@ -482,7 +482,7 @@ export type {
   SessionMode,
 } from "../debate/types";
 
-export type { FinishAutoFlowConfig, FinishConfig, FinishTimeoutsConfig } from "./runtime-types-finish";
+export type { FinishConfig, FinishTimeoutsConfig } from "./runtime-types-finish";
 
 /** Full nax configuration */
 export interface NaxConfig {

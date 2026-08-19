@@ -17,12 +17,11 @@
     "rootDir": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@test/*": ["./test/*"],
-      "@flows/*": ["./flows/*"]
+      "@test/*": ["./test/*"]
     },
     "jsx": "react-jsx",
     "jsxImportSource": "react"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "bin/**/*.ts", "flows/**/*.ts"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "bin/**/*.ts"],
   "exclude": ["node_modules", "dist", "test", "scripts"]
 }

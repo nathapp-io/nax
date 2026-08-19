@@ -12,6 +12,8 @@
  */
 export { appendRound, readRounds, recordRound, resultPath, roundsPath, writeResult } from "./audit";
 export type { AuditTarget } from "./audit";
+export { readFinishConfig } from "./config";
+export type { FinishSettings } from "./config";
 export {
   _finishGitDeps,
   buildCommitRound,
@@ -29,6 +31,8 @@ export { _acceptanceGateDeps, runAcceptanceGate } from "./gates/acceptance";
 export { _qualityGateDeps, resolveGateCommands, runQualityGates } from "./gates/quality";
 export { runFinishMachine } from "./machine";
 export type { FinishMachineDeps } from "./machine";
+export { _finishPhaseDeps, runFinishPhase, shouldRunFinish } from "./phase";
+export type { FinishPhaseContext } from "./phase";
 export type { FinishOps, FixOutcome, FixRequest, ReviewRequest } from "./ops";
 export { _finishOpsDeps, createFinishOps } from "./ops-impl";
 export type { FinishOpsDeps } from "./ops-impl";
@@ -62,6 +66,15 @@ export { buildFinishBody, buildFinishTitle } from "./pr";
 export { openDraftFinishPr, openOrPromotePr, parseView, updatePrBody } from "./pr";
 export { buildEscalationComment, postEscalation } from "./escalate";
 export type { EscalationOutcome } from "./escalate";
+export {
+  _notifyDeps,
+  buildEscalationMessage,
+  buildTerminalMessage,
+  isTelegramConfigured,
+  sendTelegramNotify,
+  TELEGRAM_MAX_MESSAGE_CHARS,
+  telegramCreds,
+} from "./notify";
 export {
   gateCommitRoute,
   MAX_FIX_ATTEMPTS,

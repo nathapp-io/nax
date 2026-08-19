@@ -73,6 +73,17 @@ export interface CallContext {
   readonly scopeId?: string;
   /** Optional pinned callId. callOp generates a fresh one when absent. */
   readonly callId?: string;
+  /**
+   * A deadline narrower than the run's own, honoured in preference to
+   * `runtime.signal`. The post-run finish phase supplies one built from
+   * `finish.timeouts.flowMs` so a whole-phase budget can interrupt an
+   * in-flight op; `runtime.signal` alone only fires when the run ends,
+   * which is too late to bound a phase.
+   *
+   * Absent means "use the run's signal" — the behaviour every existing
+   * caller has today.
+   */
+  readonly signal?: AbortSignal;
   readonly phaseTelemetry?: {
     readonly testStrategy: TestStrategy;
     readonly sessionModel: "single-session" | "three-session";

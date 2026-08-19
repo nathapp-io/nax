@@ -1,6 +1,6 @@
 {
-  "count": 2014,
-  "updatedAt": "2026-08-16T15:59:16.460Z",
+  "count": 2001,
+  "updatedAt": "2026-08-19T07:48:30.457Z",
   "byFile": {
     "test/helpers/deps.ts": 2,
     "test/helpers/fake-agent-manager.ts": 3,
@@ -203,11 +203,6 @@
     "test/unit/findings/cycle-iteration-log.test.ts": 15,
     "test/unit/findings/cycle-prior-iterations.test.ts": 2,
     "test/unit/findings/cycle.test.ts": 4,
-    "test/unit/flows/nax-finish/flow-commits.test.ts": 3,
-    "test/unit/flows/nax-finish/flow-graph-open-pr-metadata.test.ts": 1,
-    "test/unit/flows/nax-finish/flow-graph.test.ts": 1,
-    "test/unit/flows/nax-finish/pr-body.test.ts": 6,
-    "test/unit/flows/nax-finish/steps/forge.test.ts": 2,
     "test/unit/hooks/on-all-stories-complete.test.ts": 10,
     "test/unit/interaction/init-headless.test.ts": 2,
     "test/unit/interaction/plugins/telegram-authorization.test.ts": 3,

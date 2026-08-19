@@ -505,57 +505,50 @@ exclude: ["**/.nax-acceptance*"]
 
 **Why this matters:** the acceptance test files import production code with relative paths (e.g. `./src/utils/detect-provider.ts`). They run correctly from their package directory under nax control, but should be excluded from the normal test pipeline to avoid unexpected failures or duplicate runs.
 
-### Autonomous Finish Flow (`finish.autoFlow`)
-
-> Full walkthrough, including how to configure the acpx reviewer agent profiles:
-> [nax-finish-autoflow.md](./nax-finish-autoflow.md).
+### Autonomous Finish (`finish`)
 
 After a **successful** run on a feature branch, nax can drive the whole finish
 ritual — acceptance gate, spec review, quality review, repo-root quality gates,
-PR — without a human in the terminal, as an [acpx flow](https://www.npmjs.com/package/acpx).
-It auto-fixes what it can, and on anything needing human judgment it **stops and
-escalates** instead of guessing. It never merges.
+PR — without a human in the terminal, as an in-process post-run phase (no
+subprocess, no external flow file). It auto-fixes what it can, and on anything
+needing human judgment it **stops and escalates** instead of guessing. It
+never merges.
 
 **Opt-in — off by default:**
 
 ```json
 {
   "finish": {
-    "autoFlow": {
-      "enabled": true,
-      "reviewers": { "spec": "nax-spec-reviewer", "quality": "nax-quality-reviewer" },
-      "escalate": { "telegram": true },
-      "notify": { "mode": "escalation" },
-      "timeouts": { "acceptanceMs": 600000, "gateMs": 900000, "flowMs": 5400000 }
-    }
+    "enabled": true,
+    "reviewers": { "spec": "balanced", "quality": "balanced" },
+    "escalate": { "telegram": true },
+    "notify": { "mode": "escalation" },
+    "timeouts": { "acceptanceMs": 600000, "gateMs": 900000, "flowMs": 5400000 }
   }
 }
 ```
 
 | Key | Default | Meaning |
 |:---|:---|:---|
-| `enabled` | `false` | Master gate. The flow never fires unless this is true. |
-| `flowPath` | `flows/nax-finish/nax-finish.flow.ts` | Relative paths resolve against the **nax install** first, then your repo (so you can vendor a variant). Absolute paths are used as-is. |
-| `defaultAgent` | `agent.default` | acpx `--default-agent` for nodes with no pinned profile. Defaults to the agent the run itself used — setting only `reviewers` no longer leaves the `fix_*` nodes on acpx's own default. |
-| `model` | `null` | acpx `--model`, a run-wide model *floor* (`node.model ?? agent.model ?? --model`). Reaches the `fix_*` nodes; cannot override a profile-pinned reviewer whose agent entry names its own model. Opt-in — requires an acpx build that reads `model` from agent entries. Never derived from `config.models`. |
-| `reviewers.spec` / `reviewers.quality` | `null` | acpx agent profiles (from `~/.acpx/config.json`) for the two review phases — each runs in its own isolated session, so they can be different agents/models. Unset → `defaultAgent`. |
+| `enabled` | `false` | Master gate. Finish never fires unless this is true. |
+| `narrative` | `true` | Whether the phase spends an agent turn writing the PR body's "What changed" section. Disabled → the body carries the mechanical fallback (spec Summary) or no such section. |
+| `prBody.template` | `"merge"` | How the repo's own PR/MR template is honoured: `merge` fills matching headings and drops the rest, `strict` keeps unfillable headings empty, `ignore` skips the template entirely. |
+| `prBody.sectionMap` | `{}` | Template heading → body-section key overrides, layered over the defaults in `src/forge/template-merge.ts`. Known keys: `narrative`, `stories`, `verification`, `rounds`, `outOfScope`. |
+| `reviewers.spec` / `reviewers.quality` / `reviewers.narrative` / `reviewers.fix` | `null` | A model tier name (e.g. `"balanced"`) or `{ agent, model }` object, resolved the same way every other operation's model is. `null` falls through to the op's own default. |
 | `escalate.telegram` | `true` | Prefer Telegram for escalations when `interaction.plugin` is `telegram` (or `NAX_TELEGRAM_TOKEN` + `NAX_TELEGRAM_CHAT_ID` are set). With no credentials it falls back to a PR/MR comment. |
 | `notify.mode` | `"escalation"` | `escalation` preserves escalation-only reporting; `always` also reports clean outcomes and crashes; `off` disables Telegram and uses the escalation comment fallback. |
 | `timeouts.acceptanceMs` | 10 min | Cap per acceptance-test group. |
-| `timeouts.gateMs` | 15 min | Cap per quality gate. |
-| `timeouts.flowMs` | 90 min | Cap on the whole `acpx flow run` subprocess. |
-| `timeouts.stepMs` | `null` | Cap per flow step (one agent turn), passed to acpx as `--timeout`. `null` keeps acpx's own 15-minute default. |
+| `timeouts.gateMs` | 15 min | Cap per quality gate (build / typecheck / lint / test). |
+| `timeouts.flowMs` | 90 min | Whole-phase deadline, enforced as an `AbortSignal`. |
+| `timeouts.stepMs` | `null` | Cap per LLM op (one review, fix or narrative turn). `null` keeps the op's own default. |
 
 **It runs only when** the run succeeded (no failed or paused stories, at least
 one completed), HEAD is not `main`/`master`, and `enabled` is true.
 
-**Requirements:**
-
-- `acpx` on `PATH` with flows support (`acpx flow run`), and `gh` or `glab`
-  authenticated for the PR/MR step.
-- **`quality.commands` must be configured** — the flow runs those commands at the
-  repo root as its final gate. With none configured it escalates rather than
-  opening a PR, because a green gate that verified nothing is worse than no gate.
+**Requirements:** `quality.commands` must be configured — the phase runs those
+commands at the repo root as its final gate. With none configured it escalates
+rather than opening a PR, because a green gate that verified nothing is worse
+than no gate. `gh` or `glab` must be authenticated for the PR/MR step.
 
 **What it does with what it finds:**
 
@@ -566,10 +559,17 @@ one completed), HEAD is not `main`/`master`, and `enabled` is true.
 | Spec conflicts, contradictions, design calls, or anything it can't get green | Commits and pushes what it fixed, then escalates via Telegram or a PR/MR comment. No ready PR. |
 | Branch has no commits ahead of base | Reports `nothing-to-finish` and stops. |
 
-The flow's audit trail — one line per fix round, plus the terminal state — is
+The phase's audit trail — one line per fix round, plus the terminal state — is
 written to `~/.nax/<project>/finish-audit/<feature>/`, beside `prompt-audit/`
-and `review-audit/`. See
-[nax-finish-autoflow.md](./nax-finish-autoflow.md#audit-trail).
+and `review-audit/`.
+
+**Migrating from `finish.autoFlow`:** the old acpx-subprocess flow was removed
+along with `flowPath` and `defaultAgent` — those two keys, plus `model`, are
+now pure no-ops and only produce a deprecation warning if still present. Move
+your keys from `finish.autoFlow.*` up to `finish.*`; `reviewers.*` used to
+take acpx profile names and now takes a model tier or `{ agent, model }`
+object, so a leftover profile-name string is mapped to `null` (falling back
+to the default model selection) rather than rejected.
 
 The interactive, approval-gated `nax-finish` skill still exists for manual
 finishes — this is the autonomous path, not a replacement.
