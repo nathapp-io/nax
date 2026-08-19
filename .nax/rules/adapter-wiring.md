@@ -54,7 +54,7 @@ The agent adapter exposes exactly 4 primitives: `openSession`, `sendTurn`, `clos
 
 | Role | Dispatch |
 |:---|:---|
-| `main` *(default)*, `test-writer`, `verifier`, `implementer`, `diagnose`, `source-fix`, `test-fix`, `reviewer-semantic`, `reviewer-adversarial`, `acceptance-gen`, `plan`, `plan-draft`, `plan-revise`, `plan-critic`, `plan-refine`, `setup`, `debate-stateful`, `debate-hybrid`, `debate-plan` | `callOp` run-kind |
+| `main` *(default)*, `test-writer`, `verifier`, `implementer`, `diagnose`, `source-fix`, `test-fix`, `reviewer-semantic`, `reviewer-adversarial`, `acceptance-gen`, `plan`, `plan-draft`, `plan-revise`, `plan-critic`, `plan-refine`, `setup`, `debate-stateful`, `debate-hybrid`, `debate-plan`, `finish-review-spec`, `finish-review-quality`, `finish-fix`, `finish-narrative` | `callOp` run-kind |
 | `decompose`, `refine`, `fix-gen`, `auto`, `synthesis`, `judge` | `callOp` complete-kind |
 
 ## Rule 3: Adapter primitives stay inside the wiring layer

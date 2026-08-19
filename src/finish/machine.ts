@@ -48,6 +48,22 @@ function assertNotAborted(deps: FinishMachineDeps): void {
 }
 
 /**
+ * Record the window a later re-review will diff from (D3.2).
+ *
+ * Applies to every reviewed phase that has already produced a verdict and has
+ * no window yet — a commit made by the acceptance loop during a spec fix must
+ * widen the spec reviewer's next window, which is why this is not scoped to the
+ * phase that owns the commit.
+ */
+function noteCommitWindow(state: FinishState, shaBefore: string | null): void {
+  if (!shaBefore) return;
+  for (const phase of ["spec", "quality"] as const) {
+    const st = state.phases[phase];
+    if (st.reviewAttempts > 0 && !st.reviewSince) st.reviewSince = shaBefore;
+  }
+}
+
+/**
  * Hand a terminal escalation to `ops.escalate` and persist the result.
  *
  * The single path every escalation goes through — both a routed `escalate`
@@ -146,6 +162,7 @@ async function runAcceptanceLoop(state: FinishState, deps: FinishMachineDeps): P
       { workdir: state.workdir },
     );
     const commit = await commitFixes(state.workdir, message, { skipHooks: true });
+    noteCommitWindow(state, commit.committed ? commit.shaBefore : null);
     await recordRound(
       audit,
       state,
@@ -185,6 +202,10 @@ async function runReviewLoop(
     assertNotAborted(deps);
     const outcome = await ops.review(phase, { state });
     phaseState.reviewAttempts += 1;
+    // The window and the gap notice describe the attempt just consumed --
+    // clear both before routing decides anything for this call.
+    phaseState.reviewSince = undefined;
+    phaseState.reviewGaps = undefined;
     const routed = routeReview(phase, outcome, phaseState);
     // Set as soon as routing decides -- state.findings documents "the current
     // phase's reviewer last reported" (./types), and a throw from any op past
@@ -205,6 +226,10 @@ async function runReviewLoop(
         outcome: "incomplete",
         findings: routed.findings,
       });
+      // Order matters: the clear above runs at the top of the next
+      // iteration after ops.review has already been handed the state, so a
+      // gap set here survives exactly one review call.
+      phaseState.reviewGaps = routed.gaps ?? [];
       continue;
     }
     if (routed.route === "escalate") {
@@ -227,6 +252,7 @@ async function runReviewLoop(
       { workdir: state.workdir, dispositions: fixOutcome.dispositions },
     );
     const commit = await commitFixes(state.workdir, message, { skipHooks: true });
+    noteCommitWindow(state, commit.committed ? commit.shaBefore : null);
     await recordRound(
       audit,
       state,
@@ -314,6 +340,7 @@ async function runQualityGatesLoop(state: FinishState, deps: FinishMachineDeps):
       { workdir: state.workdir },
     );
     const commit = await commitFixes(state.workdir, message, { skipHooks: true });
+    noteCommitWindow(state, commit.committed ? commit.shaBefore : null);
     const files = commit.committed && commit.shaAfter ? await filesInCommit(state.workdir, commit.shaAfter) : null;
     const gateRoute = gateCommitRoute(commit.committed, files, context.testFileRegex);
 

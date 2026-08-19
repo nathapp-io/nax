@@ -31,6 +31,30 @@ export { runFinishMachine } from "./machine";
 export type { FinishMachineDeps } from "./machine";
 export type { FinishOps, FixOutcome, FixRequest, ReviewRequest } from "./ops";
 export {
+  buildNarrativePrompt,
+  finishFixOp,
+  finishNarrativeOp,
+  finishReviewOp,
+  NARRATIVE_MAX_CHARS,
+  parseNarrative,
+  parseNarrativeNode,
+  parseTitle,
+  readSpecSummary,
+  resolveNarrative,
+  resolveTitle,
+  sanitizeTitle,
+  TITLE_CLOSE_TAG,
+  TITLE_MAX_CHARS,
+  TITLE_OPEN_TAG,
+} from "./operations";
+export type {
+  FinishFixInput,
+  FinishNarrativeInput,
+  FinishNarrativeOutput,
+  FinishReviewInput,
+  FinishReviewOutput,
+} from "./operations";
+export {
   gateCommitRoute,
   MAX_FIX_ATTEMPTS,
   MAX_INCOMPLETE_ATTEMPTS,
@@ -40,6 +64,19 @@ export {
   routeReview,
 } from "./route";
 export type { ReviewOutcome, RoutedReview } from "./route";
+export {
+  auditGaps,
+  buildFixPrompt,
+  buildReviewPrompt,
+  FINDING_BLOCK_SHAPE,
+  parseDispositions,
+  parseReviewReport,
+  QUALITY_REVIEW_DIMENSIONS,
+  SPEC_REVIEW_DIMENSIONS,
+  validateDispositions,
+  WORKER_PROTOCOL,
+  WORKER_PROTOCOL_MECHANICS,
+} from "./review";
 export { createFinishState, deserializeFinishState, serializeFinishState } from "./state";
 export type { FinishPhaseState, FinishState, FinishStateInit, FinishStatus } from "./state";
 export type {
@@ -51,4 +88,6 @@ export type {
   FinishRound,
   FinishTimeouts,
   QualityGateResult,
+  ReviewReport,
+  Touchpoint,
 } from "./types";
