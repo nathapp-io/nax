@@ -143,4 +143,18 @@ describe("ops-impl", () => {
     expect(pushIndex).toBeGreaterThanOrEqual(0);
     expect(pushIndex).toBeLessThan(forgeIndex);
   });
+
+  test("escalate pushes partial fixes under the flow's wip commit message", async () => {
+    const gitCalls: string[][] = [];
+    const { deps } = baseDeps({ forgeKind: null });
+    _finishGitDeps.git = async (args: string[]) => {
+      gitCalls.push(args);
+      if (args[0] === "status") return { exitCode: 0, stdout: " M file.ts\n", stderr: "" };
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    await createFinishOps(deps).escalate(state, "needs a human", []);
+    const commitArgv = gitCalls.find((c) => c[0] === "commit");
+    expect(commitArgv).toBeDefined();
+    expect(commitArgv?.join(" ")).toContain("wip(demo): nax-finish partial fixes before escalation");
+  });
 });

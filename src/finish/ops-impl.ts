@@ -67,8 +67,12 @@ export interface FinishOpsDeps {
 
 export const _finishOpsDeps: { callOp: typeof callOp } = { callOp };
 
-/** The commit both the promote and the escalation paths push before touching the forge. */
-const PARTIAL_FIX_MESSAGE = (feature: string): string => `fix(${feature}): nax-finish automated fixes`;
+/** The commit the promote path pushes before touching the forge (matches the flow, line 344). */
+const PROMOTE_MESSAGE = (feature: string): string => `fix(${feature}): nax-finish automated fixes`;
+
+/** The commit the escalate path pushes so the escalation describes state a human can see (flow line 441). */
+const ESCALATION_PUSH_MESSAGE = (feature: string): string =>
+  `wip(${feature}): nax-finish partial fixes before escalation`;
 
 export function createFinishOps(deps: FinishOpsDeps): FinishOps {
   const { callCtx, forge, forgeKind, audit, models, timeouts, prBody, preferTelegram, warn } = deps;
@@ -129,7 +133,7 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
     },
 
     async promotePr(state: FinishState) {
-      await commitAndPush(state.workdir, state.branch, PARTIAL_FIX_MESSAGE(state.feature));
+      await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature));
       if (forgeKind === null) return { status: "already-ready" };
       const ctx = await loadFinishPrContext({ state, audit, forge: forgeKind, prBody });
       return openOrPromotePr(
@@ -147,9 +151,9 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
     async escalate(state: FinishState, reason: string, findings: Finding[]) {
       let syncNote = "";
       try {
-        await commitAndPush(state.workdir, state.branch, PARTIAL_FIX_MESSAGE(state.feature));
+        await commitAndPush(state.workdir, state.branch, ESCALATION_PUSH_MESSAGE(state.feature));
       } catch (err) {
-        syncNote = `\n\n> Automated fixes could not be pushed: ${errorMessage(err)}`;
+        syncNote = `\n\n> Note: nax-finish could not push its partial fixes — ${String(err)}`;
       }
       try {
         if (forgeKind === null) return { deliveryError: "no forge detected" };
