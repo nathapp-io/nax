@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-08-19T14-45-02-371Z",
+    "feature": "finish-quality-walk-bounding",
+    "startedAt": "2026-08-19T14:45:02.371Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 1026
+  },
+  "progress": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 2.547118189,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 3,
+  "updatedAt": "2026-08-19T15:51:12.435Z",
+  "durationMs": 3970064,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-08-19T15:49:50.586Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-08-19T15:51:11.176Z"
+    }
+  }
+}
