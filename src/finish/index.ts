@@ -28,6 +28,7 @@ export type { FinishContext } from "./context";
 export { _acceptanceGateDeps, runAcceptanceGate } from "./gates/acceptance";
 export { _qualityGateDeps, resolveGateCommands, runQualityGates } from "./gates/quality";
 export { runFinishMachine } from "./machine";
+export { auditGaps, validateDispositions } from "./review/audit-gaps";
 export type { FinishMachineDeps } from "./machine";
 export type { FinishOps, FixOutcome, FixRequest, ReviewRequest } from "./ops";
 export {
@@ -52,4 +53,6 @@ export type {
   FinishRound,
   FinishTimeouts,
   QualityGateResult,
+  ReviewReport,
+  Touchpoint,
 } from "./types";
