@@ -30,6 +30,8 @@ export { _qualityGateDeps, resolveGateCommands, runQualityGates } from "./gates/
 export { runFinishMachine } from "./machine";
 export type { FinishMachineDeps } from "./machine";
 export type { FinishOps, FixOutcome, FixRequest, ReviewRequest } from "./ops";
+export { _finishOpsDeps, createFinishOps } from "./ops-impl";
+export type { FinishOpsDeps } from "./ops-impl";
 export {
   buildNarrativePrompt,
   finishFixOp,
