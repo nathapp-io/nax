@@ -50,10 +50,30 @@ export interface RegressionPhaseStatus {
   skipped?: boolean;
 }
 
+/** Status of the native finish phase during post-run */
+export interface FinishPhaseStatus {
+  status: PostRunPhaseStatus;
+  /** ISO 8601 timestamp of the last finish run */
+  lastRunAt?: string;
+  /** Terminal status the finish machine reached */
+  result?: "opened" | "promoted" | "already-ready" | "escalated" | "nothing-to-finish";
+  /** PR/MR the phase opened, promoted or commented on */
+  url?: string;
+  /** Why finish stopped, when `result` is "escalated" */
+  escalationReason?: string;
+}
+
 /** Aggregate post-run phase statuses */
 export interface PostRunStatus {
   acceptance: AcceptancePhaseStatus;
   regression: RegressionPhaseStatus;
+  /**
+   * Optional because a status file written before the native finish phase
+   * existed has no such key, and `buildStatusSnapshot` copies `postRun`
+   * through verbatim. A required field would make every pre-existing
+   * status.json fail to type-check on read.
+   */
+  finish?: FinishPhaseStatus;
 }
 
 // ============================================================================

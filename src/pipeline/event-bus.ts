@@ -171,7 +171,7 @@ export interface StoryPhaseCompletedEvent {
   details?: PhaseDetails;
 }
 
-export type PostRunPhase = "regression" | "acceptance" | "review" | "acceptance-setup";
+export type PostRunPhase = "regression" | "acceptance" | "review" | "acceptance-setup" | "finish";
 
 export interface PostRunPhaseStartedEvent {
   type: "postrun:phase:started";
