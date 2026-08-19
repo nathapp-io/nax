@@ -13,9 +13,10 @@ import { join } from "node:path";
 import { featureDir } from "@/config";
 import { defaultForgeDeps, findPrTemplate } from "@/forge";
 import type { ForgeKind } from "@/forge";
+import { readSpecSummary, resolveNarrative } from "@/operations";
 import type { AuditTarget } from "../audit";
 import { readRounds } from "../audit";
-import { readSpecSummary, resolveNarrative, resolveTitle } from "../operations";
+import { resolveTitle } from "../pr-title";
 import type { FinishState } from "../state";
 // TemplateMode is re-exported by ../types from @/forge (Task 1, D4.8) --
 // import it from ../types like every other finish-side type, not from @/forge.

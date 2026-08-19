@@ -9,8 +9,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ConfigSelector } from "@/config";
 import type { FinishConfig } from "@/config/selectors";
-import type { FinishFixInput } from "@/finish";
-import { finishFixOp } from "@/finish";
+import type { FinishFixInput } from "@/operations";
+import { finishFixOp } from "@/operations";
 import type { Finding } from "@/finish";
 import type { NaxRuntime } from "@/runtime";
 import { makeTestRuntime, withTempDir } from "@test/helpers";
@@ -61,6 +61,14 @@ describe("finishFixOp shape", () => {
 
   test("no retry field is declared", () => {
     expect(finishFixOp.retry).toBeUndefined();
+  });
+
+  test("timeoutMs prefers the input, else execution.sessionTimeoutSeconds", () => {
+    // finish.timeouts.stepMs defaults to null, so an input with no timeoutMs is
+    // the common case and must still be bounded.
+    const ctx = makeCtx();
+    expect(finishFixOp.timeoutMs?.({ ...GATE_INPUT, timeoutMs: 4242 }, ctx)).toBe(4242);
+    expect(finishFixOp.timeoutMs?.(GATE_INPUT, ctx)).toBe(ctx.config.execution.sessionTimeoutSeconds * 1000);
   });
 });
 

@@ -11,8 +11,8 @@
 import type { ConfiguredModel } from "@/config";
 import { finishConfigSelector } from "@/config";
 import type { FinishConfig } from "@/config/selectors";
-import type { RunOperation } from "@/operations";
-import { TITLE_CLOSE_TAG, TITLE_MAX_CHARS, TITLE_OPEN_TAG, parseTitle } from "./pr-title";
+import { TITLE_CLOSE_TAG, TITLE_MAX_CHARS, TITLE_OPEN_TAG, parseTitle } from "../finish/pr-title";
+import type { RunOperation } from "./types";
 
 /** Longest narrative rendered into a PR body, in characters, including the ellipsis. */
 export const NARRATIVE_MAX_CHARS = 4000;
@@ -223,7 +223,12 @@ export const finishNarrativeOp: RunOperation<FinishNarrativeInput, FinishNarrati
   config: finishConfigSelector,
   session: { role: "finish-narrative", lifetime: "fresh" },
   model: (input) => input.model,
-  timeoutMs: (input) => input.timeoutMs,
+  // `finish.timeouts.stepMs` when set, otherwise the run's own session timeout.
+  // Not left undefined: `callOp` does fall back to `execution.sessionTimeoutSeconds`
+  // for run-kind ops, but that is a branch inside `callOp` that nothing pins for
+  // these ops, and complete-kind ops get no such fallback at all. Resolving it
+  // here makes the bound explicit and matches the acceptance ops.
+  timeoutMs: (input, ctx) => input.timeoutMs ?? ctx.config.execution.sessionTimeoutSeconds * 1000,
   build(input, _ctx) {
     const content = buildNarrativePrompt({ base: input.base });
     return {

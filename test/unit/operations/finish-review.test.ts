@@ -7,8 +7,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ConfigSelector } from "@/config";
 import type { FinishConfig } from "@/config/selectors";
-import type { FinishReviewInput } from "@/finish";
-import { finishReviewOp, MAX_INCOMPLETE_ATTEMPTS, routeReview } from "@/finish";
+import type { FinishReviewInput } from "@/operations";
+import { MAX_INCOMPLETE_ATTEMPTS, routeReview } from "@/finish";
+import { finishReviewOp } from "@/operations";
 import type { Finding } from "@/finish";
 import { ParseValidationError } from "@/agents/retry";
 import type { RetryStrategy } from "@/agents/retry";
@@ -69,7 +70,15 @@ describe("finishReviewOp shape", () => {
     ) => unknown;
     expect(modelResolver({ ...SPEC_INPUT, model }, ctx)).toEqual(model);
     expect(finishReviewOp.timeoutMs?.({ ...SPEC_INPUT, timeoutMs: 12345 }, ctx)).toBe(12345);
-    expect(finishReviewOp.timeoutMs?.(SPEC_INPUT, ctx)).toBeUndefined();
+  });
+
+  test("timeoutMs falls back to execution.sessionTimeoutSeconds when finish.timeouts.stepMs is unset", () => {
+    // finish.timeouts.stepMs defaults to null, so the common case is an input
+    // with no timeoutMs at all. Resolving it here rather than leaving it
+    // undefined keeps the bound explicit and independent of callOp's own
+    // run-kind fallback -- which complete-kind ops do not get at all.
+    const ctx = makeCtx();
+    expect(finishReviewOp.timeoutMs?.(SPEC_INPUT, ctx)).toBe(ctx.config.execution.sessionTimeoutSeconds * 1000);
   });
 });
 
