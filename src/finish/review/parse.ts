@@ -17,18 +17,39 @@ type Section = "touchpoints" | "walk" | "findings";
 /** Headings are matched loosely — any level, any case, optional trailing colon. */
 const HEADING = /^\s*#{1,6}\s*(TOUCHPOINTS|WALK|FINDINGS|DISPOSITIONS)\s*:?\s*$/i;
 /**
- * The old acpx flow (`flows/nax-finish/findings-parse.ts`) joined the agent's
- * message stream with no separator, so a heading could land mid-line — for
- * example `…confidence bar.## TOUCHPOINTS` — whenever the preceding narration
- * message did not itself end in a newline. That required a `GLUED_HEADING`
- * regex here to re-insert the missing newline before parsing.
+ * Re-insert the newline a glued heading is missing, so `HEADING` can see it.
  *
- * In-process, `extractOutput` in `src/agents/acp/adapter-output.ts` builds the
- * reply by joining assistant messages with `"\n"` (`.join("\n")`), so a
- * heading can never land mid-line: every message boundary is already a
- * newline boundary. The glued-heading case this guarded against cannot arise
- * here — do not restore the regex.
+ * The old acpx flow (`flows/nax-finish/findings-parse.ts`) carried this regex
+ * because it joined the agent's message stream with no separator, letting a
+ * heading land mid-line — `…the report now.## TOUCHPOINTS` — whenever the
+ * preceding narration did not itself end in a newline.
+ *
+ * The port dropped it, on the reasoning that `extractOutput`
+ * (`src/agents/acp/adapter-output.ts`) joins assistant messages with `"\n"`,
+ * so every message boundary is already a newline boundary. That reasoning is
+ * wrong, and a real run disproved it: the ACP wire path never produces more
+ * than one assistant message per turn. `handleAcpEvent` accumulates every
+ * `agent_message_chunk` into a single buffer with `state.text += text`
+ * (`src/agents/acp/parser.ts`), and the session client wraps that one buffer
+ * as one `{ role: "assistant" }` message (`src/agents/acp/spawn-client-session.ts`),
+ * so `join("\n")` has nothing to join and chunk boundaries stay glued exactly
+ * as they were under acpx. On a live finish run the quality reviewer's reply opened
+ * `I have enough to write the report now.## TOUCHPOINTS`; the section was read
+ * as prose, its six touchpoints were dropped, and `auditGaps` failed a review
+ * that had in fact done the reading. With `MAX_INCOMPLETE_ATTEMPTS = 1` a
+ * second such reply escalates the run.
+ *
+ * Deliberately narrow — it splits only where the heading is *directly*
+ * adjacent to the prose before it and *ends* the line:
+ *
+ * - `([^\s#])` — a preceding non-space, non-`#` character. Whitespace before
+ *   the `#` means the reviewer is talking about a section (`the block marked
+ *   ## FINDINGS`), not opening one; excluding `#` stops a well-formed
+ *   `## WALK` from being split at its own second hash.
+ * - `(?=[ \t]*(?:\r?\n|$))` — nothing but the heading to end of line. Trailing
+ *   content (`as noted.## FINDINGS below`) is prose too.
  */
+const GLUED_HEADING = /([^\s#])(#{1,6}[ \t]*(?:TOUCHPOINTS|WALK|FINDINGS|DISPOSITIONS)[ \t]*:?)(?=[ \t]*(?:\r?\n|$))/gi;
 const BLOCK = /^\s*\[(CRITICAL|HIGH|MEDIUM|LOW)\]\s+(.+?)\s*$/;
 const FIELD = /^\s*(Problem|Fix|Judgment)\s*:\s*(.*)$/i;
 const NO_FINDINGS = /^\s*no findings\.?\s*$/i;
@@ -76,6 +97,7 @@ export function parseReviewReport(text: string): ReviewReport {
   let section: Section = "findings";
   let current: Finding | null = null;
   let lastField: "problem" | "fix" | null = null;
+  const normalized = text.replace(GLUED_HEADING, "$1\n$2");
 
   const flush = () => {
     if (current) report.findings.push(current);
@@ -83,7 +105,7 @@ export function parseReviewReport(text: string): ReviewReport {
     lastField = null;
   };
 
-  for (const line of text.split("\n")) {
+  for (const line of normalized.split("\n")) {
     const heading = HEADING.exec(line);
     if (heading) {
       flush();
