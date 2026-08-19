@@ -21,7 +21,8 @@ Merged predecessors: #1626 (forge), #1627 (finish core), #1628 (review ops), #16
 - **`SRC_LIMIT` is 600 lines, `TEST_LIMIT` is 800.** Enforced by `bun run check:file-sizes` with a baseline of 10 grandfathered files. Run `wc -l` on every file you touch before adding to it. Do not add to the baseline.
 - **No emoji, no astral-plane characters** anywhere in `src/`, `flows/` or `.nax/rules/`. `bun run check:no-control-bytes` enforces the control-byte half.
 - **`src/` must never import from `flows/`.** The `@flows/*` tsconfig alias exists for tests only. Task 8 deletes both.
-- **Deep relative imports are baselined at 2844** (`bun run check:deep-relatives`). Cross-module imports use the `@/` aliases and stop at the module barrel — `scripts/check-alias-internals.ts` rejects `@/finish/machine`, so import from `@/finish`.
+- **Deep relative imports are baselined at 2844** (`bun run check:deep-relatives`). The scan covers `test/` as well as `src/`, and the baseline is exact — **every new file, test files included, must use `@/` and `@test/` aliases**. Several existing suites (e.g. `test/unit/execution/runner-completion-postrun.test.ts`) use `../../../src/...`; they are grandfathered into the baseline. Adding cases to such a file is fine, creating a new one in its style is not. Imports stop at the module barrel — `scripts/check-alias-internals.ts` rejects `@/finish/machine`, so import from `@/finish`.
+- **`bun run check:test-as-unknown-as` is baselined at 830 and `check-test-typecheck` at 2014.** Neither may grow. This rules out hand-rolled `as unknown as NaxRuntime` fakes: use `makeTestRuntime` from `@test/helpers`, or add an injectable seam, whichever the task specifies.
 - **Every new `NaxError` needs a code.** `bun run check:nax-error` has a baseline of 110 violations, currently at 104; do not raise it.
 - **`src/finish/review/prompts.gen.ts` is generated.** Edit `src/finish/review/references/*.md` and run `bun run gen:review-prompts`. `bun run check:review-prompts` fails on drift. No task here touches it.
 - **Quality gate for every task:** `bun run typecheck && bun run lint && bun test test/unit/<area>`. Full `bun run test` before the final commit of each task.
@@ -83,7 +84,7 @@ Design §4.7's phrase "threaded into `callOp` (which already accepts one)" is in
 - Modify: `src/execution/status-file.ts:38-57`
 - Modify: `src/execution/status-writer.ts:113-140`
 - Modify: `src/tui/hooks/usePipelineBusEvents.ts:66-72`
-- Test: `test/unit/execution/status-writer.test.ts`
+- Test: `test/unit/execution/status-writer-finish.test.ts` (new — there is no `status-writer.test.ts`; `setPostRunPhase` is exercised today from `runner-completion-postrun.test.ts` and `crash-recovery.test.ts`)
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
@@ -93,11 +94,11 @@ This is a pure type-widening task with no behaviour. It ships first so Task 5 ha
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `test/unit/execution/status-writer.test.ts`:
+Create `test/unit/execution/status-writer-finish.test.ts`. **Use `@/` aliases, not deep relatives** (Global Constraints). Build the writer the way `test/unit/execution/crash-recovery.test.ts` builds it — read that file first rather than guessing the constructor:
 
 ```ts
 test("setPostRunPhase('finish') merges into postRun and survives crash recovery", () => {
-  const writer = new StatusWriter(/* same construction as the sibling tests in this file */);
+  const writer = makeStatusWriter(); // local helper, mirroring crash-recovery.test.ts
   writer.setPostRunPhase("finish", { status: "running" });
   expect(writer.getPostRunStatus().finish).toEqual({ status: "not-run" });
 
@@ -120,7 +121,7 @@ The first assertion pins crash recovery: `getPostRunStatus()` already rewrites a
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/unit/execution/status-writer.test.ts -t "finish"`
+Run: `bun test test/unit/execution/status-writer-finish.test.ts`
 Expected: FAIL — TypeScript rejects `"finish"` as the first argument to `setPostRunPhase`, and `getPostRunStatus().finish` is not a property.
 
 - [ ] **Step 3: Widen `PostRunPhase`**
@@ -248,7 +249,7 @@ Expected: clean. If `tsc` names a site that switches exhaustively on `PostRunPha
 - [ ] **Step 10: Commit**
 
 ```bash
-git add src/pipeline/event-bus.ts src/execution/status-file.ts src/execution/status-writer.ts src/tui/hooks/usePipelineBusEvents.ts test/unit/execution/status-writer.test.ts
+git add src/pipeline/event-bus.ts src/execution/status-file.ts src/execution/status-writer.ts src/tui/hooks/usePipelineBusEvents.ts test/unit/execution/status-writer-finish.test.ts
 git commit -m "feat(execution): add finish as a post-run phase"
 ```
 
@@ -260,7 +261,7 @@ git commit -m "feat(execution): add finish as a post-run phase"
 - Modify: `src/config/schemas.ts:402-520`
 - Modify: `src/config/runtime-types-finish.ts`
 - Modify: `src/config/compat-shims.ts`
-- Test: `test/unit/config/compat-shims.test.ts`, `test/unit/config/schemas.test.ts`
+- Test: `test/unit/config/loader-legacy-shim.test.ts` (the repo's shim suite; there is no `compat-shims.test.ts`)
 
 **Interfaces:**
 - Consumes: nothing from Task 1.
@@ -270,7 +271,7 @@ Design §4.6's table drives this. `flowPath` and `defaultAgent` are removed outr
 
 - [ ] **Step 1: Write the failing shim test**
 
-Append to `test/unit/config/compat-shims.test.ts`:
+Append to `test/unit/config/loader-legacy-shim.test.ts`, matching that file's existing import style:
 
 ```ts
 describe("_applyFinishAutoFlowShim", () => {
@@ -332,7 +333,7 @@ The third case matters because a user mid-migration will have both. The fourth p
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `bun test test/unit/config/compat-shims.test.ts -t "_applyFinishAutoFlowShim"`
+Run: `bun test test/unit/config/loader-legacy-shim.test.ts -t "_applyFinishAutoFlowShim"`
 Expected: FAIL — `_applyFinishAutoFlowShim` is not exported.
 
 - [ ] **Step 3: Write the shim**
@@ -424,7 +425,7 @@ export function _applyFinishAutoFlowShim(
 
 - [ ] **Step 5: Run the shim test**
 
-Run: `bun test test/unit/config/compat-shims.test.ts -t "_applyFinishAutoFlowShim"`
+Run: `bun test test/unit/config/loader-legacy-shim.test.ts -t "_applyFinishAutoFlowShim"`
 Expected: PASS.
 
 - [ ] **Step 6: Reshape the schema**
@@ -510,7 +511,7 @@ Replace the whole `finish:` block in `src/config/schemas.ts` (currently `:402-52
       }),
 ```
 
-`reviewers.fix` is new — plan 4's `FinishOpsDeps.models` already has a `fix` slot (`src/finish/ops-impl.ts`, `models?: { reviewSpec, reviewQuality, fix, narrative }`) with nothing to fill it. `ConfiguredModelSchema` is the existing schema for `ModelTier | { agent, model }`; if `src/config/` does not already export one under that name, locate the schema `models` uses and reuse it rather than declaring a second.
+`reviewers.fix` is new — plan 4's `FinishOpsDeps.models` already has a `fix` slot (`src/finish/ops-impl.ts`, `models?: { reviewSpec, reviewQuality, fix, narrative }`) with nothing to fill it. `ConfiguredModelSchema` already exists in `src/config/schemas-model.ts` and is the schema for `ModelTier | { agent, model }`. Import it the way `schemas-execution.ts:7` and `schemas-infra.ts:8` do — `import { ConfiguredModelSchema } from "./schemas-model";` — and do not declare a second.
 
 - [ ] **Step 7: Follow the runtime types**
 
@@ -712,63 +713,63 @@ Read "A correction to carry into Task 4" above before starting. `callOp` already
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `test/unit/operations/call.test.ts`:
+Append to `test/unit/operations/call.test.ts`. **Use that file's existing helpers** — it imports `makeTestRuntime` from `@test/helpers` and builds selectors with `pickSelector`; there is no `makeFakeRuntime`, `baseCtx` or `passthroughSelector`. Read its first 90 lines before writing:
 
 ```ts
-test("ctx.signal aborts a retry even when runtime.signal is live", async () => {
-  const controller = new AbortController();
-  const runtime = makeFakeRuntime({ signal: new AbortController().signal }); // never aborted
-  let attempts = 0;
-  const op: RunOperation<{ x: number }, string, unknown> = {
+const abortSel = pickSelector("finish-abort-test", "routing");
+
+function abortingOp(name: string, onRetry: () => void): RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> {
+  return {
     kind: "run",
-    name: "test-abort",
+    name,
     stage: "review",
-    config: passthroughSelector,
+    config: abortSel,
     session: { role: "finish-review-spec", lifetime: "fresh" },
     build: () => ({ task: { id: "task", content: "go", overridable: false } }),
     parse: (out) => out,
     retry: {
       shouldRetry: () => {
-        attempts += 1;
-        controller.abort();
+        onRetry();
         return { retry: true, delayMs: 0 };
       },
     },
   };
+}
+
+test("ctx.signal aborts a retry while runtime.signal is still live", async () => {
+  const runtime = makeTestRuntime();           // its own signal is never aborted
+  const caller = new AbortController();
+  let attempts = 0;
+  const op = abortingOp("test-caller-abort", () => {
+    attempts += 1;
+    caller.abort();
+  });
 
   await expect(
-    callOp({ ...baseCtx, runtime, signal: controller.signal }, op, { x: 1 }),
+    callOp(makeCtx(runtime, { signal: caller.signal }), op, { text: "x" }),
   ).rejects.toThrow(/aborted/);
   expect(attempts).toBe(1);
 });
 
-test("ctx.signal absent falls back to runtime.signal", async () => {
-  const runtimeController = new AbortController();
-  const runtime = makeFakeRuntime({ signal: runtimeController.signal });
+test("with no ctx.signal, runtime.signal still aborts", async () => {
+  const parent = new AbortController();
+  // parentSignal is the sanctioned seam for driving runtime.signal from a test
+  // (src/runtime/index.ts:175, 205-207) — aborting it aborts the runtime's own
+  // controller. Do not reach for a hand-built runtime fake; check-test-as-unknown-as
+  // is baselined and must not grow.
+  const runtime = makeTestRuntime({ parentSignal: parent.signal });
   let attempts = 0;
-  const op: RunOperation<{ x: number }, string, unknown> = {
-    kind: "run",
-    name: "test-abort-fallback",
-    stage: "review",
-    config: passthroughSelector,
-    session: { role: "finish-review-spec", lifetime: "fresh" },
-    build: () => ({ task: { id: "task", content: "go", overridable: false } }),
-    parse: (out) => out,
-    retry: {
-      shouldRetry: () => {
-        attempts += 1;
-        runtimeController.abort();
-        return { retry: true, delayMs: 0 };
-      },
-    },
-  };
+  const op = abortingOp("test-runtime-abort", () => {
+    attempts += 1;
+    parent.abort();
+  });
 
-  await expect(callOp({ ...baseCtx, runtime }, op, { x: 1 })).rejects.toThrow(/aborted/);
+  await expect(callOp(makeCtx(runtime), op, { text: "x" }).rejects.toThrow(/aborted/);
   expect(attempts).toBe(1);
 });
 ```
 
-Use whatever fake-runtime and base-context helpers this file already has rather than inventing new ones; the two assertions that matter are "the caller's signal wins" and "no caller signal means the runtime's signal still works".
+`makeCtx(runtime, extra?)` is a local helper returning the `CallContext` this file already builds for its other `callOp` cases — copy that construction rather than inventing fields, and spread `extra` over it. The second assertion is the regression guard: `ctx.signal` is optional and every existing caller omits it, so the fallback must keep working.
 
 - [ ] **Step 2: Run it to verify it fails**
 
@@ -1173,7 +1174,14 @@ describe("runFinishPhase", () => {
 
 `proceedContext()` is a local helper returning the `route: "proceed"` `FinishContext` used by the first test. The last case matters because `preferTelegram` is set from `escalate.telegram && telegramCreds(config) !== null`: enabled-but-uncredentialed must fall back to the PR comment, and the notifier must not be handed null credentials.
 
-Write `makeCtx` as a local helper in this file building a `FinishPhaseContext` over fakes: a fake `NaxRuntime` exposing `outputDir`, `packages.resolve()`, `costAggregator.snapshot()` returning the two totals in sequence, and a fake `agentManager.getDefault()`. Do not reach for a shared helper that does not exist.
+Write `makeCtx` as a local helper building a `FinishPhaseContext` over a **real** `makeTestRuntime()` from `@test/helpers` — not a hand-built fake, which would need an `as unknown as NaxRuntime` cast and grow a baselined ratchet. Drive the cost delta through the seam instead:
+
+```ts
+let costReadings = [0, 0];
+_finishPhaseDeps.snapshotCost = () => costReadings.shift() ?? 0;
+```
+
+The first test sets `costReadings = [1.0, 1.25]` and asserts `costUsd` is `0.25`. `makeCtx(opts)` accepts `{ emit?, telegram?, notifyMode? }`: `emit` swaps the `pipelineEventBus` subscriber (subscribe in the test and unsubscribe in `afterEach` rather than replacing the module), `telegram` decides whether the `config` passed in carries `interaction: { plugin: "telegram", config: { botToken, chatId } }`, and `notifyMode` sets `finish.notify.mode`.
 
 - [ ] **Step 6: Run to verify it fails**
 
@@ -1198,6 +1206,7 @@ Expected: FAIL — `runFinishPhase` is not exported.
  * stories all passed, so this returns null and emits a failed phase instead.
  */
 import { detectForge, defaultForgeDeps } from "@/forge";
+import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
 import { pipelineEventBus } from "@/pipeline";
 import type { NaxRuntime } from "@/runtime";
@@ -1219,6 +1228,15 @@ export const _finishPhaseDeps = {
   runFinishMachine,
   sendTelegramNotify,
   now: () => new Date().toISOString(),
+  /**
+   * The cost reading, as a seam.
+   *
+   * Not inlined as `ctx.runtime.costAggregator.snapshot()`: asserting the
+   * delta would then need a hand-built runtime fake, and
+   * `check:test-as-unknown-as` is baselined at 830 and must not grow. With
+   * the seam a test stubs one function and uses a real `makeTestRuntime()`.
+   */
+  snapshotCost: (runtime: NaxRuntime): number => runtime.costAggregator.snapshot().totalCostUsd,
 };
 
 export interface FinishPhaseContext {
@@ -1277,7 +1295,7 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
   pipelineEventBus.emit({ type: "postrun:phase:started", phase: "finish" });
   ctx.statusWriter?.setPostRunPhase("finish", { status: "running" });
   const startedAt = Date.now();
-  const costBefore = ctx.runtime.costAggregator.snapshot().totalCostUsd;
+  const costBefore = _finishPhaseDeps.snapshotCost(ctx.runtime);
   const { signal, dispose } = phaseSignal(ctx.abortSignal, settings.timeouts.flowMs);
 
   let result: FinishResult | null = null;
@@ -1337,7 +1355,7 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
     dispose();
   }
 
-  const costUsd = ctx.runtime.costAggregator.snapshot().totalCostUsd - costBefore;
+  const costUsd = _finishPhaseDeps.snapshotCost(ctx.runtime) - costBefore;
   const passed = failure === undefined && result?.status !== "escalated";
   ctx.statusWriter?.setPostRunPhase("finish", {
     status: passed ? "passed" : "failed",
@@ -1346,13 +1364,20 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
     ...(result?.url ? { url: result.url } : {}),
     ...(result?.escalationReason ? { escalationReason: result.escalationReason } : {}),
   });
+  if (failure) {
+    // NOT carried on the event: `RunPhaseDetails`
+    // (`src/plugins/extensions.ts:391-395`) is a closed union of four shapes
+    // and none of them has an `error` field. Widening a union shared by every
+    // post-run phase for one field is the wrong trade; the reason is already
+    // durable on the status file and in the log.
+    getSafeLogger()?.warn("finish", "Finish phase could not run", { storyId: "_run", error: failure });
+  }
   pipelineEventBus.emit({
     type: "postrun:phase:completed",
     phase: "finish",
     passed,
     durationMs: Date.now() - startedAt,
     costUsd,
-    ...(failure ? { details: { error: failure } } : {}),
   });
 
   if (result) await notify(ctx, settings, result);
@@ -1373,7 +1398,7 @@ async function notify(ctx: FinishPhaseContext, settings: FinishSettings, result:
 }
 ```
 
-Check the emitted event objects against `PostRunPhaseStartedEvent` / `PostRunPhaseCompletedEvent` in `src/pipeline/event-bus.ts:176-190` and drop or rename any field those interfaces do not declare — `tsc` will say which.
+The emitted objects match `PostRunPhaseStartedEvent` / `PostRunPhaseCompletedEvent` (`src/pipeline/event-bus.ts:176-190`): `{ type, phase }` and `{ type, phase, passed, durationMs?, costUsd?, details? }`. `details` is deliberately omitted — see the comment above. Re-check with `tsc` anyway.
 
 - [ ] **Step 8: Export from the barrel**
 
@@ -1407,7 +1432,7 @@ git commit -m "feat(finish): add runFinishPhase, the post-run phase entry point"
 
 **Files:**
 - Modify: `src/execution/runner-completion.ts`
-- Test: `test/unit/execution/runner-completion.test.ts`
+- Test: `test/unit/execution/runner-completion-postrun.test.ts` (append; there is no `runner-completion.test.ts`)
 
 **Interfaces:**
 - Consumes: `runFinishPhase`, `FinishPhaseContext` from `@/finish` (Task 5); `setPostRunPhase("finish", …)` (Task 1).
@@ -1417,36 +1442,47 @@ Placement is constrained on both sides. It must run **after** `handleRunCompleti
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `test/unit/execution/runner-completion.test.ts`:
+Append to `test/unit/execution/runner-completion-postrun.test.ts` and **reuse that file's existing harness**: its `makeOpts(config, prd, statusWriter)` factory, its `origDeps = { ..._runnerCompletionDeps }` save/restore in `beforeEach`/`afterEach`, and `mock()` from `bun:test`. That file already stubs `handleRunCompletion`, `loadConfigForWorkdir` and `runAcceptanceLoop`, so a finish case only has to add its own stub. It uses deep-relative imports and is grandfathered into the baseline — do not create a new file in that style.
 
 ```ts
-test("runs the finish phase before closing the runtime", async () => {
-  const order: string[] = [];
-  const restore = { ..._runnerCompletionDeps };
-  _runnerCompletionDeps.runFinishPhase = async () => {
-    order.push("finish");
-    return null;
-  };
-  const runtime = makeFakeRuntime({ close: async () => void order.push("close") });
-  try {
-    await runCompletionPhase(makeOptions({ runtime, feature: "f", prd: passingPrd() }));
-    expect(order).toEqual(["finish", "close"]);
-  } finally {
-    Object.assign(_runnerCompletionDeps, restore);
-  }
-});
+describe("finish phase", () => {
+  test("runs before the runtime is closed", async () => {
+    const order: string[] = [];
+    _runnerCompletionDeps.runFinishPhase = mock(async () => {
+      order.push("finish");
+      return null;
+    });
+    const opts = makeOpts(makeConfig(true), makePrd(["passed"]), makeStatusWriter());
+    // Wrap the runtime's own close so the ordering is observed, not asserted
+    // from a fake: makeOpts builds a real tracked runtime.
+    const close = opts.runtime.close.bind(opts.runtime);
+    opts.runtime.close = async () => {
+      order.push("close");
+      await close();
+    };
 
-test("a throwing finish phase does not fail the run", async () => {
-  const restore = { ..._runnerCompletionDeps };
-  _runnerCompletionDeps.runFinishPhase = async () => {
-    throw new Error("boom");
-  };
-  try {
-    const result = await runCompletionPhase(makeOptions({ prd: passingPrd() }));
+    await runCompletionPhase(opts);
+    expect(order).toEqual(["finish", "close"]);
+  });
+
+  test("a throwing finish phase does not fail the run", async () => {
+    _runnerCompletionDeps.runFinishPhase = mock(async () => {
+      throw new Error("boom");
+    });
+    const result = await runCompletionPhase(makeOpts(makeConfig(true), makePrd(["passed"]), makeStatusWriter()));
     expect(result.acceptancePassed).toBe(true);
-  } finally {
-    Object.assign(_runnerCompletionDeps, restore);
-  }
+  });
+
+  test("gating is the phase's own concern — the runner always calls it", async () => {
+    const calls: unknown[] = [];
+    _runnerCompletionDeps.runFinishPhase = mock(async (ctx) => {
+      calls.push(ctx);
+      return null;
+    });
+    await runCompletionPhase(makeOpts(makeConfig(true), makePrd(["failed"]), makeStatusWriter()));
+    expect(calls).toHaveLength(1);
+    expect((calls[0] as { storySummary: { failed: number } }).storySummary.failed).toBe(1);
+  });
 });
 ```
 
@@ -1454,7 +1490,7 @@ The second test is not redundant with `runFinishPhase`'s own fail-open: that gua
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `bun test test/unit/execution/runner-completion.test.ts -t "finish phase"`
+Run: `bun test test/unit/execution/runner-completion-postrun.test.ts -t "finish phase"`
 Expected: FAIL — `_runnerCompletionDeps.runFinishPhase` is not a property.
 
 - [ ] **Step 3: Add the seam**
@@ -1486,11 +1522,11 @@ Immediately before `await options.runtime?.close();` at `:427`:
       config: options.config,
       feature: options.feature,
       workdir: options.workdir,
-      branch: await currentBranch(options.workdir),
+      branch: await resolveBranch(options.workdir),
       runId: options.runId,
       agentName: options.agentManager.getDefault(),
       abortSignal: options.abortSignal,
-      storySummary: finishStorySummary(options.prd),
+      storySummary: finishStorySummary(options),
       statusWriter: options.statusWriter,
     });
   } catch (err) {
@@ -1501,27 +1537,48 @@ Immediately before `await options.runtime?.close();` at `:427`:
   }
 ```
 
-Add the mapping helper near the bottom of the same file:
+Add both helpers near the bottom of the same file:
 
 ```ts
 /**
- * The three counts `shouldRunFinish` gates on, from nax's own counter.
+ * The three counts `shouldRunFinish` gates on, in the shape the plugin's own
+ * gate read them.
  *
- * `countStories` (`@/prd`) reports `passed`, not `completed` — reuse it rather
- * than writing a second counter, but map the name. The plugin this replaces
- * read `completed` off `PostRunContext.storySummary`, which the plugin host
- * built from the same `passed` count, so the two agree.
+ * `completed` is `options.storiesCompleted`, **not** `countStories(prd).passed`.
+ * `buildPostRunContext` (`src/execution/lifecycle/run-cleanup.ts:151-156`)
+ * builds `PostRunContext.storySummary.completed` from the runner's
+ * `storiesCompleted` counter and takes only `failed`/`skipped`/`paused` from
+ * `countStories`. Substituting `passed` here would silently change the gate
+ * the native phase inherits.
  *
- * `failed` from `countStories` already folds in `regression-failed`, matching
- * the classification the deferred regression gate uses.
+ * `countStories().failed` already folds in `regression-failed`, matching the
+ * classification the deferred regression gate uses.
  */
-function finishStorySummary(prd: PRD): { completed: number; failed: number; paused: number } {
-  const counts = countStories(prd);
-  return { completed: counts.passed, failed: counts.failed, paused: counts.paused };
+function finishStorySummary(options: RunnerCompletionOptions): { completed: number; failed: number; paused: number } {
+  const counts = countStories(options.prd);
+  return { completed: options.storiesCompleted, failed: counts.failed, paused: counts.paused };
+}
+
+/**
+ * The branch finish would open a PR from.
+ *
+ * There is no `currentBranch` helper in `@/utils/git` — an earlier draft of
+ * this plan invented one. This is the idiom `runner.ts:344-348` already uses
+ * to resolve the branch it hands `cleanupRun`, including the fail-closed
+ * empty-string default: `isFeatureBranch("")` is false, so an unresolvable
+ * branch makes finish stand down rather than guess.
+ */
+async function resolveBranch(workdir: string): Promise<string> {
+  try {
+    const { stdout, exitCode } = await gitWithTimeout(["branch", "--show-current"], workdir);
+    return exitCode === 0 ? stdout.trim() : "";
+  } catch {
+    return "";
+  }
 }
 ```
 
-Import `countStories` from `@/prd` alongside the existing `isComplete` import at `:19`. `currentBranch` is the existing git helper in `@/utils/git` — confirm the exported name with `grep -n "export.*[Bb]ranch" src/utils/git.ts` and use it rather than shelling out here.
+Imports: add `countStories` to the existing `@/prd` import at `:19-20` (which already brings in `isComplete` and the `PRD` type), and `gitWithTimeout` to the existing `@/utils/git` import at `:24` (which already brings in `autoCommitIfDirty`). `errorMessage` is already imported at `:23` and `logger` is already in scope at the insertion point.
 
 - [ ] **Step 5: Run the tests**
 
@@ -1544,7 +1601,7 @@ Expected: one hit, the dynamic import in `runner-completion.ts`. This is the inv
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/execution/runner-completion.ts test/unit/execution/runner-completion.test.ts
+git add src/execution/runner-completion.ts test/unit/execution/runner-completion-postrun.test.ts
 git commit -m "feat(execution): run the native finish phase before closing the runtime
 
 src/finish/ has been complete and unreachable since #1629; this is the
