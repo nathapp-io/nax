@@ -206,6 +206,29 @@ describe("runFinishPhase", () => {
     }
   });
 
+  test("a throwing statusWriter never breaks the fail-open contract", async () => {
+    const events: Array<{ type: string; passed?: boolean }> = [];
+    const restore = { ..._finishPhaseDeps };
+    _finishPhaseDeps.loadFinishContext = async () => proceedContext();
+    _finishPhaseDeps.detectForge = async () => null;
+    _finishPhaseDeps.runFinishMachine = async () => ({ feature: "f", status: "already-ready" });
+    const ctx = {
+      ...makeCtx({ emit: (e) => events.push(e) }),
+      statusWriter: {
+        setPostRunPhase: () => {
+          throw new Error("status write failed");
+        },
+      },
+    };
+    try {
+      const result = await runFinishPhase(ctx);
+      expect(result?.status).toBe("already-ready");
+      expect(events.map((e) => e.type)).toEqual(["postrun:phase:started", "postrun:phase:completed"]);
+    } finally {
+      Object.assign(_finishPhaseDeps, restore);
+    }
+  });
+
   test("telegram enabled but uncredentialed sends nothing and does not throw", async () => {
     const sent: string[] = [];
     const restore = { ..._finishPhaseDeps };

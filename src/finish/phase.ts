@@ -93,6 +93,21 @@ function phaseSignal(runSignal: AbortSignal, flowMs: number): { signal: AbortSig
   };
 }
 
+/**
+ * Writes a `finish` status update, swallowing any throw from the writer.
+ *
+ * Keeps the fail-open contract: `runFinishPhase` never propagates a failure
+ * from the status file — writing "running" or a terminal status is best
+ * effort, logged on failure but never fatal to the run.
+ */
+function writeFinishStatus(ctx: FinishPhaseContext, update: Record<string, unknown>): void {
+  try {
+    ctx.statusWriter?.setPostRunPhase("finish", update);
+  } catch (err) {
+    getSafeLogger()?.warn("finish", "Finish phase status write failed", { storyId: "_run", error: errorMessage(err) });
+  }
+}
+
 export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishResult | null> {
   const settings = readFinishConfig(ctx.config);
   if (!shouldRunFinish({ enabled: settings.enabled, branch: ctx.branch, storySummary: ctx.storySummary })) {
@@ -100,7 +115,7 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
   }
 
   pipelineEventBus.emit({ type: "postrun:phase:started", phase: "finish" });
-  ctx.statusWriter?.setPostRunPhase("finish", { status: "running" });
+  writeFinishStatus(ctx, { status: "running" });
   const startedAt = Date.now();
   const costBefore = _finishPhaseDeps.snapshotCost(ctx.runtime);
   const { signal, dispose } = phaseSignal(ctx.abortSignal, settings.timeouts.flowMs);
@@ -164,7 +179,7 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
 
   const costUsd = _finishPhaseDeps.snapshotCost(ctx.runtime) - costBefore;
   const passed = failure === undefined && result?.status !== "escalated";
-  ctx.statusWriter?.setPostRunPhase("finish", {
+  writeFinishStatus(ctx, {
     status: passed ? "passed" : "failed",
     lastRunAt: _finishPhaseDeps.now(),
     ...(result ? { result: result.status } : {}),
