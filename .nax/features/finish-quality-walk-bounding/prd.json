@@ -3,7 +3,7 @@
   "feature": "finish-quality-walk-bounding",
   "branchName": "feat/finish-quality-walk-bounding",
   "createdAt": "2026-08-19T14:29:23Z",
-  "updatedAt": "2026-08-19T14:31:52.084Z",
+  "updatedAt": "2026-08-19T14:49:58.481Z",
   "userStories": [
     {
       "id": "US-001",
@@ -38,7 +38,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/finish/review/prompt.ts",
@@ -46,9 +48,6 @@
         "src/finish/review/references/spec-review.md",
         "scripts/generate-review-prompts.ts",
         "test/unit/finish/review-prompt.test.ts"
-      ],
-      "outOfScope": [
-        "Gating the SPEC phase's WALK against the spec's AC list. Issue #1635 proposes it; the spec phase is at 72% first-attempt health with no observed failure, so it is deferred to its own issue rather than bundled here. #1635 is descoped to the quality phase."
       ],
       "modifiedFiles": [
         {
@@ -59,7 +58,11 @@
           "path": "src/finish/review/prompts.gen.ts",
           "reason": "generated from the reference markdown by `scripts/generate-review-prompts.ts`. Regenerate it; do not hand-edit. `scripts/check-review-prompts-generated.ts` fails the build when it is stale, but that check runs only under `bun run lint`, and this repo's nax quality gate is `quality.commands.lint = bun run lint:json`, which omits it. A stale generated file therefore passes every gate you see locally and fails only in CI, so run the generator deliberately rather than relying on the gates."
         }
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4c9a591dad59bd23aeac5b5d453fce339c06e567"
     },
     {
       "id": "US-002",
@@ -114,12 +117,6 @@
         "src/finish/pr/context.ts",
         "src/finish/types.ts"
       ],
-      "outOfScope": [
-        "Changing `MAX_INCOMPLETE_ATTEMPTS`, `MAX_FIX_ATTEMPTS`, or any routing threshold in `src/finish/route.ts`.",
-        "Changing `parseReviewReport` or the `ReviewReport` shape. The WALK stays `string[]`; the path token is extracted at the point of use.",
-        "Changing the reply format to JSON, or altering the parse-retry strategy on `finishReviewOp`. Measurement shows the failure is not format-bound.",
-        "Adding a diff-size guard or splitting the quality review across multiple workers. The finish phase already runs spec and quality as two separate sequential reviewer operations with independent session roles."
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/finish/review-audit-gaps.test.ts",
@@ -129,7 +126,10 @@
           "path": "test/unit/operations/finish-review.test.ts",
           "reason": "its `finishReviewOp.verify()` block calls `verify` directly and asserts on the returned `gaps`. `verify` now consults git for the changed-file list, so those cases must stub the git seam and supply a `base`."
         }
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "This is a two-story enhancement to the existing finish-review flow. `buildReviewPrompt` selects generated spec or quality dimensions and unconditionally inserts `args.specPath` in both its fresh and `since` re-review branches (src/finish/review/prompt.ts:89-138); its private `outputContract` currently requires a per-function quality WALK but keeps the spec WALK per AC (src/finish/review/prompt.ts:43-68). The quality reference contains the private `write yourself` per-function forcing function and currently turns that enumeration into a public, per-function WALK (src/finish/review/references/code-quality.md:8-20). It is compiled into `prompts.gen.ts` by `scripts/generate-review-prompts.ts`, so the markdown and generated artifact must be changed/regenerated as one unit; hand-editing generated output risks the stale-generated guard. Existing prompt tests already cover phase contracts and fresh/re-review behavior in test/unit/finish/review-prompt.test.ts.\n\n`auditGaps(report, workdir)` presently has a two-argument public signature, checks only section shape, and considers one real touchpoint sufficient (src/finish/review/audit-gaps.ts:63-82). Its containment-safe `exists()` helper and `MAX_CHECKED = 20` should remain the filesystem boundary (src/finish/review/audit-gaps.ts:42-55), but the touchpoint quorum changes from any to most cited paths. The only production caller is `finishReviewOp.verify`, which currently forwards only `parsed` and `input.workdir` (src/operations/finish-review.ts:175-180). `FinishReviewInput` already has `phase` and `base`; the implementation should extend the audit call with those values so only quality reviews run a changed-file coverage check. Use `gitWithTimeout` and its injectable `_gitDeps.spawn` seam for `git diff --name-only <base>...HEAD`; failure must degrade to existing shape checks rather than create a false incomplete route. The parser and `ReviewReport.walk: string[]` remain unchanged: extract the leading whitespace-delimited token at audit time. Define audit-local `.nax`, lockfile, and generated-output filters rather than exporting the private context-module pathspec.\n\nAffected tests are test/unit/finish/review-prompt.test.ts, test/unit/finish/review-audit-gaps.test.ts, and test/unit/operations/finish-review.test.ts. The direct verify tests use SPEC_INPUT with `base` already supplied (test/unit/operations/finish-review.test.ts:36-43,147-184); quality integration coverage must stub `_gitDeps.spawn` and prove the passed range includes `origin/main...HEAD`. Main risks are contract drift between the generated quality reference and reply contract, a `path:symbol` WALK format that fails exact matching, and infrastructure failures accidentally escalating reviews. There is no user-data migration or compatibility migration: the function signature change is internal, has one production caller, and all test callers must be updated together. Routing thresholds and parser behavior are intentionally unchanged, so existing incomplete retry semantics provide the one directed re-review.",
