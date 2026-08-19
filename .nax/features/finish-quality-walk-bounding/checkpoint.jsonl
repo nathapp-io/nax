@@ -8,3 +8,6 @@
 {"storyId":"US-001","phase":"adversarial-review","headSha":"a86bee57f1c6bac5a52e62e5d4d3d5ed765488cd","dirtyDigest":"152b4c76922bb5b8b1d201157b5d519f74d4888470f5bf4c642c430a31e2ba29","runId":"run-2026-08-19T14-45-02-371Z","ts":1787151428551}
 {"storyId":"US-002","phase":"test-writer","headSha":"273a67d16d5edaa4291e20c2ef335d62ef853231","dirtyDigest":"0e572e0da5ec630eda696b5137ae56586098b69435997b5b36fa6ed4586af7ae","runId":"run-2026-08-19T14-45-02-371Z","ts":1787151737976}
 {"storyId":"US-002","phase":"greenfield-gate","headSha":"273a67d16d5edaa4291e20c2ef335d62ef853231","dirtyDigest":"dcb0e9653b019240d5795b2bde7186a9159299f45a210488090a34300b0a0b15","runId":"run-2026-08-19T14-45-02-371Z","ts":1787151738050}
+{"storyId":"US-002","phase":"implementer","headSha":"db199172073b17bca0d3dfef022d460a47f8de86","dirtyDigest":"","runId":"run-2026-08-19T14-45-02-371Z","ts":1787152712955}
+{"storyId":"US-002","phase":"full-suite-gate","headSha":"db199172073b17bca0d3dfef022d460a47f8de86","dirtyDigest":"bc2fea1c1ad4064ba566ab2f6629e6feefc3db9e0f93fe31954cf88013d4ffd9","runId":"run-2026-08-19T14-45-02-371Z","ts":1787152795970}
+{"storyId":"US-002","phase":"mutation-check","headSha":"db199172073b17bca0d3dfef022d460a47f8de86","dirtyDigest":"b152dbd3b9a1cec9c3d68cca896dc9f4eda362b02f79e33ae62820a5e7047bc0","runId":"run-2026-08-19T14-45-02-371Z","ts":1787152802484}

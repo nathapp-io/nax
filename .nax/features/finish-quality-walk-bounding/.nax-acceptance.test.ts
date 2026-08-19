@@ -44,7 +44,7 @@ async function gapsFor(
   phase: "spec" | "quality" = "quality",
 ) {
   stubChangedFiles(changedFiles.join("\n"));
-  return auditGaps(report({ walk, ...overrides }), workdir, phase, BASE);
+  return auditGaps(report({ walk, ...overrides }), workdir, { base: BASE, head: "HEAD" }, phase);
 }
 
 async function writePaths(workdir: string, paths: string[]) {
@@ -137,7 +137,7 @@ describe("finish-quality-walk-bounding acceptance", () => {
   test("AC-13: a failed changed-file lookup adds no unwalked-files gap", async () => {
     await withTempDir(async (workdir) => {
       stubChangedFiles("", 1);
-      const gaps = await auditGaps(report({ walk: ["src/a.ts"] }), workdir, "quality", BASE);
+      const gaps = await auditGaps(report({ walk: ["src/a.ts"] }), workdir, { base: BASE, head: "HEAD" }, "quality");
       expect(gaps.some((gap) => /unwalked[ -]files/i.test(gap))).toBe(false);
     });
   });
@@ -148,8 +148,8 @@ describe("finish-quality-walk-bounding acceptance", () => {
       const gaps = await auditGaps(
         report({ touchpoints: undefined, sawTouchpointsSection: false, walk: ["src/a.ts"] }),
         workdir,
+        { base: BASE, head: "HEAD" },
         "quality",
-        BASE,
       );
       expect(gaps).toHaveLength(1);
       expect(gaps[0]).toMatch(/touchpoints?.*(section|shape)|no.*touchpoints?/i);
