@@ -166,14 +166,13 @@ describe("finishReviewOp.verify()", () => {
         c.close();
       },
     });
-    _gitDeps.spawn = (() =>
-      Promise.resolve({
-        exited: Promise.resolve(0),
-        stdout: empty,
-        stderr: empty,
-        pid: 0,
-        kill: () => {},
-      })) as unknown as typeof _gitDeps.spawn; // test-ratchet-allow: as-unknown-as
+    _gitDeps.spawn = (() => ({
+      exited: Promise.resolve(0),
+      stdout: empty,
+      stderr: empty,
+      pid: 0,
+      kill: () => {},
+    })) as unknown as typeof _gitDeps.spawn; // test-ratchet-allow: as-unknown-as
   }
 
   test("attaches the gaps auditGaps reports, against a temp workdir", async () => {
