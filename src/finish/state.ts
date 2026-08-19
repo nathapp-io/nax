@@ -32,6 +32,22 @@ export interface FinishPhaseState {
    * reads 1, 1, 3, 4 and nothing downstream can order it (design F3).
    */
   rounds: number;
+  /**
+   * The commit this phase's next review diffs from — the `shaBefore` of the
+   * first commit that landed after its last verdict, not the latest one.
+   *
+   * The acceptance loop can commit between a spec fix and its re-review (I8),
+   * so a window anchored on the most recent commit would silently exclude the
+   * fix that triggered it. Unset means "no commit since the last verdict", and
+   * the reviewer reads the full branch diff.
+   */
+  reviewSince?: string;
+  /**
+   * Why this phase's last review was sent back, so the retry is told what it
+   * skipped. Cleared when a review runs, because it describes the previous
+   * attempt only.
+   */
+  reviewGaps?: string[];
 }
 
 export type FinishStatus = "running" | "opened" | "promoted" | "already-ready" | "escalated" | "nothing-to-finish";
