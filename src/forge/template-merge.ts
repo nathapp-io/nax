@@ -33,11 +33,7 @@
  * mapping explicitly when a team wants its headings honoured.
  *
  * Lives in `src/forge/` because both consumers are here: the auto-PR plugin's
- * body builder and `src/finish/pr/body.ts`. `flows/nax-finish/` keeps a
- * byte-identical copy because it cannot import `src/`; that copy and this
- * comment both go when plan 5 deletes the flow. Until then, edit neither
- * without editing the other — `test/unit/forge/template-merge.test.ts` has an
- * equivalence test that fails if they drift.
+ * body builder and `src/finish/pr/body.ts`.
  */
 
 /** One nax-authored section of the body. */

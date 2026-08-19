@@ -514,7 +514,8 @@ indistinguishable from a coincidence.
 
 ## 6. Cutover
 
-Each step is independently revertable.
+Each step is independently revertable. Status: 1-4 **done** (#1626, #1627/#1628/#1629,
+wiring PR, cutover PR); step 5 is open and lives in the `nax-spec-kit-skills` repo.
 
 1. Extract `src/forge/`; switch auto-pr onto it. **This is not behaviour-neutral,
    and an earlier draft of this design wrongly said it was.** The two forge
