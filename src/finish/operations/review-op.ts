@@ -48,6 +48,24 @@ export interface FinishReviewInput {
  */
 export type FinishReviewOutput = ReviewReport & { gaps: string[] };
 
+/**
+ * The gap the exhausted-retry fallback carries.
+ *
+ * Load-bearing, not decorative. `callOp` returns a captured `exhaustedFallback`
+ * directly — its `!rawOutput` branch and its parse-failure branch both `return`
+ * without going through `runPostParse`, which is the only caller of
+ * `op.verify`. `verify` is where this op's `gaps` normally come from
+ * (`auditGaps`), so on the exhausted path it never runs. A fallback with an
+ * empty `gaps` array therefore reaches `routeReview` as
+ * `{findings: [], gaps: []}` and routes **clean**: a reviewer that produced
+ * nothing at all would be recorded as a passing review and the PR promoted on
+ * the strength of it. Carrying the gap here is what makes `routeReview` treat
+ * it as no verdict — one re-review, then escalate — which is the behaviour the
+ * acpx flow had when its reprompt budget ran out.
+ */
+const NO_REPLY_GAP =
+  "the reviewer produced no usable reply after every retry — no `## TOUCHPOINTS`, `## WALK` or `## FINDINGS` section was received, so nothing reviewed this diff";
+
 const EMPTY_REVIEW_REPORT: FinishReviewOutput = {
   findings: [],
   touchpoints: [],
@@ -55,7 +73,7 @@ const EMPTY_REVIEW_REPORT: FinishReviewOutput = {
   sawNoFindings: false,
   sawTouchpointsSection: false,
   sawWalkSection: false,
-  gaps: [],
+  gaps: [NO_REPLY_GAP],
 };
 
 const FINDING_BLOCK_START = /^\s*\[(CRITICAL|HIGH|MEDIUM|LOW)\]/;
@@ -140,10 +158,13 @@ export const finishReviewOp: RunOperation<FinishReviewInput, FinishReviewOutput,
       invalid: () => INVALID_PROMPT,
       truncated: () => TRUNCATED_PROMPT,
     },
-    // Degrade to "no verdict" (routeReview escalates on this), not a throw.
-    // parseReviewReport never throws, so the only live trigger for this is
-    // genuinely empty output — an unreadable-but-present reply is handled
-    // by parse() returning an empty-but-valid report instead.
+    // Degrade to "no verdict", not a throw. The verdict-ness lives in
+    // EMPTY_REVIEW_REPORT's `gaps` (see NO_REPLY_GAP): callOp returns this
+    // object without ever calling op.verify, so it must arrive at routeReview
+    // already un-routable as clean. parseReviewReport never throws, so the
+    // live trigger is genuinely empty output — an unreadable-but-present reply
+    // is handled by parse() returning an empty-but-valid report, which does
+    // get its gaps from verify.
     exhaustedFallback: () => EMPTY_REVIEW_REPORT,
   }),
   // verify is the sanctioned disk-consulting hook (ADR-020 §D4); a non-null
