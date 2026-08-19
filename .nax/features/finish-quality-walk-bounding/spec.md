@@ -180,22 +180,6 @@ reviewer to read the spec. Both edits land in `buildReviewPrompt` /
 `outputContract` and the quality dimension reference, and both necessarily break
 the same existing test file, so they ship as one story.
 
-- Context Files:
-  - `src/finish/review/prompt.ts`
-  - `src/finish/review/references/code-quality.md`
-  - `src/finish/review/references/spec-review.md`
-  - `scripts/generate-review-prompts.ts`
-- Modifies:
-  - **US-001** `test/unit/finish/review-prompt.test.ts` — its test *"the quality
-    prompt asks for a per-function walk, the spec prompt for a per-AC walk"*
-    asserts the returned quality prompt contains `one line per function`. That
-    assertion pins the exact contract this story replaces. It must become an
-    assertion that the quality prompt is per-file and that the spec prompt
-    remains per-AC.
-  - **US-001** `src/finish/review/prompts.gen.ts` — generated from the reference
-    markdown by `scripts/generate-review-prompts.ts`. Regenerate it; do not
-    hand-edit. `scripts/check-review-prompts-generated.ts` fails the build when
-    it is stale.
 
 **US-002 — Gate the WALK against the diff's changed files** *(depends on US-001)*
 
@@ -204,21 +188,52 @@ subtract noise, and report the files the WALK does not name. Tighten the
 touchpoint check from "at least one cited path exists" to "most cited paths
 exist". Applies to the quality phase only.
 
-- Context Files:
-  - `src/finish/review/audit-gaps.ts`
-  - `src/operations/finish-review.ts`
-  - `src/utils/git.ts`
-  - `src/finish/pr/context.ts`
-  - `src/finish/types.ts`
-- Modifies:
-  - **US-002** `test/unit/finish/review-audit-gaps.test.ts` — every one of its
-    nine call sites invokes `auditGaps(report, dir)` with two arguments. This
-    story changes that signature, so all of them must be updated to supply the
-    review range and phase.
-  - **US-002** `test/unit/operations/finish-review.test.ts` — its
-    `finishReviewOp.verify()` block calls `verify` directly and asserts on the
-    returned `gaps`. `verify` now consults git for the changed-file list, so
-    those cases must stub the git seam and supply a `base`.
+
+### Context Files
+
+Files each story reads for context. None is authored by the story that lists it.
+
+**US-001**
+
+- `src/finish/review/prompt.ts`
+- `src/finish/review/references/code-quality.md`
+- `src/finish/review/references/spec-review.md`
+- `scripts/generate-review-prompts.ts`
+
+**US-002**
+
+- `src/finish/review/audit-gaps.ts`
+- `src/operations/finish-review.ts`
+- `src/utils/git.ts`
+- `src/finish/pr/context.ts`
+- `src/finish/types.ts`
+
+### Modifies
+
+Existing files whose correct change under this spec necessarily breaks them.
+Each bullet names exactly one path; the bold line above a group is its owning
+story.
+
+**US-001**
+
+- `test/unit/finish/review-prompt.test.ts` — its test *"the quality prompt asks
+  for a per-function walk, the spec prompt for a per-AC walk"* asserts the
+  returned quality prompt contains `one line per function`. That assertion pins
+  the exact contract this story replaces. It must become an assertion that the
+  quality prompt is per-file and that the spec prompt remains per-AC.
+- `src/finish/review/prompts.gen.ts` — generated from the reference markdown by
+  `scripts/generate-review-prompts.ts`. Regenerate it; do not hand-edit.
+  `scripts/check-review-prompts-generated.ts` fails the build when it is stale.
+
+**US-002**
+
+- `test/unit/finish/review-audit-gaps.test.ts` — every one of its nine call sites
+  invokes `auditGaps(report, dir)` with two arguments. This story changes that
+  signature, so all of them must be updated to supply the review range and phase.
+- `test/unit/operations/finish-review.test.ts` — its `finishReviewOp.verify()`
+  block calls `verify` directly and asserts on the returned `gaps`. `verify` now
+  consults git for the changed-file list, so those cases must stub the git seam
+  and supply a `base`.
 
 ### Seams
 
