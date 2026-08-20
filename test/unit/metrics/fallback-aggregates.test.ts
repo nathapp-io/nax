@@ -4,8 +4,8 @@
 // The helper is a pure function over StoryMetrics[] → RunFallbackAggregate | undefined.
 
 import { describe, expect, test } from "bun:test";
-import { deriveRunFallbackAggregates } from "../../../src/metrics/aggregator";
-import type { AgentFallbackHop, RunFallbackAggregate, RunMetrics, StoryMetrics } from "../../../src/metrics/types";
+import { deriveRunFallbackAggregates } from "@/metrics/aggregator";
+import type { AgentFallbackHop, RunFallbackAggregate, RunMetrics, StoryMetrics } from "@/metrics/types";
 
 function storyWithHops(storyId: string, hops: AgentFallbackHop[], extra: Partial<StoryMetrics> = {}): StoryMetrics {
   return {

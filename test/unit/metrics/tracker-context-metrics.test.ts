@@ -7,13 +7,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import { _manifestStoreDeps } from "../../../src/context/engine/manifest-store";
-import type { ContextManifest } from "../../../src/context/engine/types";
-import { collectStoryMetrics } from "../../../src/metrics/tracker";
-import type { PipelineContext } from "../../../src/pipeline/types";
-import type { PRD, UserStory } from "../../../src/prd";
-import { makeStory } from "../../helpers";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { _manifestStoreDeps } from "@/context/engine/manifest-store";
+import type { ContextManifest } from "@/context/engine/types";
+import { collectStoryMetrics } from "@/metrics/tracker";
+import type { PipelineContext } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd";
+import { makeStory } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
 
 const PROJECT_DIR = "/repo";

@@ -8,11 +8,11 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { NaxConfig } from "../../../src/config";
-import { collectStoryMetrics } from "../../../src/metrics/tracker";
-import type { PipelineContext } from "../../../src/pipeline/types";
-import type { PRD, UserStory } from "../../../src/prd";
-import type { StoryRouting } from "../../../src/prd/types";
+import type { NaxConfig } from "@/config";
+import { collectStoryMetrics } from "@/metrics/tracker";
+import type { PipelineContext } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd";
+import type { StoryRouting } from "@/prd/types";
 // VerifyResult inlined after orchestrator-types.ts deletion (issue #1116).
 interface VerifyResult {
   success: boolean;
@@ -27,7 +27,7 @@ interface VerifyResult {
   countsTowardEscalation: boolean;
   scopeTestFallback?: boolean;
 }
-import { makeNaxConfig } from "../../helpers";
+import { makeNaxConfig } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-tracker-test-${randomUUID()}`;

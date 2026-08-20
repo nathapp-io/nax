@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type RunMetrics, type StoryMetrics, calculateAggregateMetrics, getLastRun } from "../../../src/metrics";
+import { type RunMetrics, type StoryMetrics, calculateAggregateMetrics, getLastRun } from "@/metrics";
 
 describe("metrics/aggregator", () => {
   describe("calculateAggregateMetrics", () => {

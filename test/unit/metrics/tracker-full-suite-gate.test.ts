@@ -9,11 +9,11 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import type { NaxConfig } from "../../../src/config";
-import type { PipelineContext } from "../../../src/pipeline/types";
-import type { PRD, UserStory } from "../../../src/prd";
-import { collectBatchMetrics, collectStoryMetrics } from "../../../src/metrics/tracker";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import type { NaxConfig } from "@/config";
+import type { PipelineContext } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd";
+import { collectBatchMetrics, collectStoryMetrics } from "@/metrics/tracker";
 import { makeMockRuntime } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-tracker-gate-test-${randomUUID()}`;
