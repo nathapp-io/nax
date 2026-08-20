@@ -6,11 +6,11 @@
  */
 
 import { join } from "node:path";
+import { discoverWorkspacePackages } from "@/test-runners/detect";
 import type { ProjectProfile } from "../config";
 import { detectProjectProfile } from "../project";
 import type { DetectionResult } from "../test-runners/detect";
 import { detectTestFilePatternsForWorkspace } from "../test-runners/detect";
-import { discoverWorkspacePackages } from "../test-runners/detect/workspace";
 import type { Orchestrator, PackageFacts, RepoAnalysis, RepoShape } from "./setup-types";
 
 // ─── Canonical script names to audit for presence ────────────────────────────
