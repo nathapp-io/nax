@@ -29,7 +29,7 @@ export {
   mockDiffUtilsDeps,
 } from "./review-audit";
 export { withDepsRestore } from "./deps";
-export { waitForCondition } from "./timeout";
+export { waitForCondition, withTimeout } from "./timeout";
 export { makeLinkWithCosts } from "./link-with-costs";
 export { makeMockCallContext } from "./call-context";
 export { makeMockPlanInputs } from "./plan-inputs";

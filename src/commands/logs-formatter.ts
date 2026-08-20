@@ -134,7 +134,9 @@ const DEFAULT_FOLLOW_LOGS_DEPS: FollowLogsDeps = {
  * injectable dependencies for testability. Incremental reads are
  * byte-aligned via the injected `readRange` seam, so non-ASCII content
  * in the file does not cause the offset and the read to drift out of
- * sync. When the file is rewritten shorter than the consumed offset
+ * sync. The offset advances only past complete lines (last `\n`), so a
+ * partial trailing line observed on one poll is re-read on the next.
+ * When the file is rewritten shorter than the consumed offset
  * (in-place truncation), the offset is resynchronised back to 0 so the
  * next append is detected from the new file's start.
  */
@@ -173,8 +175,11 @@ export async function followLogs(
 /**
  * Reads the file from `start` (byte offset) to EOF via the injected
  * `readRange` seam, splits the result on newline, formats each line,
- * and returns the new offset (start + byte length of the content
- * returned). Skips invalid JSON lines.
+ * and returns the new offset. The offset advances only to the byte
+ * position past the last complete line (last `\n`); any bytes after
+ * that point form a partial line that the next poll re-reads. Skips
+ * invalid JSON lines and never throws on a partial trailing line —
+ * that is the "malformed-line continuation" invariant.
  */
 async function consumeRange(
   filePath: string,
@@ -186,7 +191,11 @@ async function consumeRange(
   const chunk = await deps.readRange(filePath, start);
   if (!chunk) return start;
 
-  for (const line of chunk.split("\n")) {
+  const bytes = Buffer.from(chunk, "utf8");
+  const lastNewline = bytes.lastIndexOf(0x0a);
+  const complete = lastNewline === -1 ? "" : chunk.slice(0, lastNewline + 1);
+
+  for (const line of complete.split("\n")) {
     if (!line.trim()) continue;
 
     try {
@@ -206,7 +215,7 @@ async function consumeRange(
     }
   }
 
-  return start + Buffer.byteLength(chunk, "utf8");
+  return start + Buffer.byteLength(complete, "utf8");
 }
 
 /**
