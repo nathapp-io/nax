@@ -111,11 +111,18 @@ export interface FollowLogsDeps {
   emit: (line: string) => void;
   /** Waits between polls. Defaults to cancellableDelay; rejects on abort. */
   sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** Reads the file from a byte offset to EOF. Defaults to `Bun.file(path).slice(start).text()`. */
+  readRange: (filePath: string, start: number) => Promise<string>;
+}
+
+async function defaultReadRange(filePath: string, start: number): Promise<string> {
+  return Bun.file(filePath).slice(start).text();
 }
 
 const DEFAULT_FOLLOW_LOGS_DEPS: FollowLogsDeps = {
   emit: (line) => console.log(line),
   sleep: (ms, signal) => cancellableDelay(ms, signal),
+  readRange: defaultReadRange,
 };
 
 /**
@@ -123,9 +130,13 @@ const DEFAULT_FOLLOW_LOGS_DEPS: FollowLogsDeps = {
  *
  * Returns `"cancelled"` when the supplied signal fires — either at the
  * top of the loop on the next iteration, or via the injected `sleep`
- * rejecting on abort. Read logic is unchanged from the pre-story
- * implementation; output and inter-poll delay are routed through
- * injectable dependencies for testability.
+ * rejecting on abort. Output and inter-poll delay are routed through
+ * injectable dependencies for testability. Incremental reads are
+ * byte-aligned via the injected `readRange` seam, so non-ASCII content
+ * in the file does not cause the offset and the read to drift out of
+ * sync. When the file is rewritten shorter than the consumed offset
+ * (in-place truncation), the offset is resynchronised back to 0 so the
+ * next append is detected from the new file's start.
  */
 export async function followLogs(
   filePath: string,
@@ -138,11 +149,44 @@ export async function followLogs(
 
   if (signal?.aborted) return "cancelled";
 
-  const file = Bun.file(filePath);
-  const content = await file.text();
-  const lines = content.trim().split("\n");
+  let lastOffset = await consumeRange(filePath, 0, deps, options, mode);
 
-  for (const line of lines) {
+  while (true) {
+    if (signal?.aborted) return "cancelled";
+
+    try {
+      await deps.sleep(500, signal);
+    } catch {
+      return "cancelled";
+    }
+
+    const currentSize = (await Bun.file(filePath).stat()).size;
+
+    if (currentSize > lastOffset) {
+      lastOffset = await consumeRange(filePath, lastOffset, deps, options, mode);
+    } else if (currentSize < lastOffset) {
+      lastOffset = await consumeRange(filePath, 0, deps, options, mode);
+    }
+  }
+}
+
+/**
+ * Reads the file from `start` (byte offset) to EOF via the injected
+ * `readRange` seam, splits the result on newline, formats each line,
+ * and returns the new offset (start + byte length of the content
+ * returned). Skips invalid JSON lines.
+ */
+async function consumeRange(
+  filePath: string,
+  start: number,
+  deps: FollowLogsDeps,
+  options: { json?: boolean; story?: string; level?: LogLevel },
+  mode: VerbosityMode,
+): Promise<number> {
+  const chunk = await deps.readRange(filePath, start);
+  if (!chunk) return start;
+
+  for (const line of chunk.split("\n")) {
     if (!line.trim()) continue;
 
     try {
@@ -162,47 +206,7 @@ export async function followLogs(
     }
   }
 
-  let lastSize = (await Bun.file(filePath).stat()).size;
-
-  while (true) {
-    if (signal?.aborted) return "cancelled";
-
-    try {
-      await deps.sleep(500, signal);
-    } catch {
-      return "cancelled";
-    }
-
-    const currentSize = (await Bun.file(filePath).stat()).size;
-
-    if (currentSize > lastSize) {
-      const newFile = Bun.file(filePath);
-      const newContent = await newFile.text();
-      const newLines = newContent.slice(lastSize).trim().split("\n");
-
-      for (const line of newLines) {
-        if (!line.trim()) continue;
-
-        try {
-          const entry: LogEntry = JSON.parse(line);
-
-          if (!shouldDisplayEntry(entry, options)) {
-            continue;
-          }
-
-          const formatted = formatLogEntry(entry, { mode, useColor: true });
-
-          if (formatted.shouldDisplay && formatted.output) {
-            deps.emit(formatted.output);
-          }
-        } catch {
-          // Skip invalid JSON lines
-        }
-      }
-
-      lastSize = currentSize;
-    }
-  }
+  return start + Buffer.byteLength(chunk, "utf8");
 }
 
 /**
