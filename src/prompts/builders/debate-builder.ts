@@ -14,6 +14,11 @@
 import type { DebateResolverContext, Debater, Proposal, Rebuttal } from "@/debate/types";
 import type { Finding } from "@/findings";
 import type { DiffContext } from "@/review/types";
+// Leaf import (not the `src/debate` barrel): the barrel re-exports `./runner`,
+// which loads `runner-plan-helpers`, `verifiers/...`, and other modules that
+// import from `src/operations`, which re-exports from `src/agents` — closing a
+// 10+ hop cycle through `src/prompts/builders/debate-builder.ts`. `personas`
+// has no imports of its own, so the leaf is cycle-free (#Phase C escalation).
 import { PERSONA_FRAGMENTS } from "../../debate/personas";
 import type { ComposeInput } from "../compose";
 
