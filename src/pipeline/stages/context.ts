@@ -19,13 +19,18 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { featureDir } from "@/config";
 import { FeatureContextProvider } from "@/context";
-import type { ContextRequest, IContextProvider } from "@/context/engine";
 import {
+  type ContextRequest,
+  type IContextProvider,
   NeutralityLintError,
   createDefaultOrchestrator,
   createRunCallCounter,
   deriveProviderWeights,
+  estimateAvailableBudgetTokens,
+  getStageContextConfig,
   loadFeatureManifests,
+  loadPluginProviders,
+  writeContextManifest,
 } from "@/context/engine";
 import type { ContextElement } from "@/context/types";
 import { NaxError } from "@/errors";
@@ -33,10 +38,6 @@ import { getLogger } from "@/logger";
 import { getContextFiles } from "@/prd";
 import { errorMessage } from "@/utils/errors";
 import { packageDirRelative } from "@/utils/paths";
-import { estimateAvailableBudgetTokens } from "../../context/engine/available-budget";
-import { writeContextManifest } from "../../context/engine/manifest-store";
-import { loadPluginProviders } from "../../context/engine/providers/plugin-loader";
-import { getStageContextConfig } from "../../context/engine/stage-config";
 import { buildStoryContextFullFromCtx } from "../../execution/helpers";
 import { readDigestFile, writeDigestFile } from "../../session/scratch-writer";
 import { resolveTestFilePatterns } from "../../test-runners/resolver";
