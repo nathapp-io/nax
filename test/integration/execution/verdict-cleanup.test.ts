@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { applyPostRunInspection } from "../../../src/execution/post-run";
+import { applyPostRunInspection } from "@/execution/post-run";
 
 describe("applyPostRunInspection — TDD verdict cleanup", () => {
   test("removes .nax-verifier-verdict.json even when verifier short-circuited", async () => {

@@ -5,7 +5,7 @@
  */
 
 import { mock } from "bun:test";
-import type { UserStory, PRD } from "../../../src/prd/types";
+import type { UserStory, PRD } from "@/prd/types";
 
 export function makePendingStory(id: string): UserStory {
   return {

@@ -6,12 +6,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { NaxConfig } from "../../../src/config/schema";
-import { DEFAULT_CONFIG } from "../../../src/config/schema";
-import { initLogger, resetLogger } from "../../../src/logger";
-import { acceptanceStage } from "../../../src/pipeline/stages/acceptance";
-import type { PipelineContext } from "../../../src/pipeline/types";
-import type { PRD } from "../../../src/prd/types";
+import type { NaxConfig } from "@/config/schema";
+import { DEFAULT_CONFIG } from "@/config/schema";
+import { initLogger, resetLogger } from "@/logger";
+import { acceptanceStage } from "@/pipeline/stages/acceptance";
+import type { PipelineContext } from "@/pipeline/types";
+import type { PRD } from "@/prd/types";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 let testDir: string;

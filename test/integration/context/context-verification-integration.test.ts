@@ -7,10 +7,10 @@
 import { describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { buildContext } from "../../../src/context/builder";
-import type { ContextBudget, StoryContext } from "../../../src/context/types";
-import { getContextFiles, getExpectedFiles } from "../../../src/prd";
-import type { PRD, UserStory } from "../../../src/prd";
+import { buildContext } from "@/context/builder";
+import type { ContextBudget, StoryContext } from "@/context/types";
+import { getContextFiles, getExpectedFiles } from "@/prd";
+import type { PRD, UserStory } from "@/prd";
 import { makeTempDir } from "@test/helpers";
 
 const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({

@@ -13,16 +13,16 @@
 
 import { describe, expect, mock, test } from "bun:test";
 import { makeMockRuntime } from "@test/helpers";
-import type { NaxConfig } from "../../../src/config";
-import { InteractionChain } from "../../../src/interaction/chain";
-import { pipelineEventBus } from "../../../src/pipeline/event-bus";
-import { wireInteraction } from "../../../src/pipeline/subscribers/interaction";
-import { CLIInteractionPlugin } from "../../../src/interaction/plugins/cli";
-import type { InteractionPlugin, InteractionRequest, InteractionResponse, TriggerName } from "../../../src/interaction/types";
-import { TRIGGER_METADATA } from "../../../src/interaction/types";
-import type { PipelineContext } from "../../../src/pipeline/types";
-import type { SequentialExecutionContext } from "../../../src/execution/unified-executor";
-import type { PRD, UserStory } from "../../../src/prd/types";
+import type { NaxConfig } from "@/config";
+import { InteractionChain } from "@/interaction/chain";
+import { pipelineEventBus } from "@/pipeline/event-bus";
+import { wireInteraction } from "@/pipeline/subscribers/interaction";
+import { CLIInteractionPlugin } from "@/interaction/plugins/cli";
+import type { InteractionPlugin, InteractionRequest, InteractionResponse, TriggerName } from "@/interaction/types";
+import { TRIGGER_METADATA } from "@/interaction/types";
+import type { PipelineContext } from "@/pipeline/types";
+import type { SequentialExecutionContext } from "@/execution/unified-executor";
+import type { PRD, UserStory } from "@/prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -241,7 +241,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
 
     // Import and invoke the failure handler or sequential executor path
     // that should fire 'human-review' when a story has exceeded max retries
-    const { handlePipelineFailure } = await import("../../../src/execution/pipeline-result-handler");
+    const { handlePipelineFailure } = await import("@/execution/pipeline-result-handler");
     await handlePipelineFailure(
       {
         config: baseConfig as NaxConfig,
@@ -309,12 +309,12 @@ describe("AC2: max retries triggers human-review interaction", () => {
     const prd: PRD = { ...basePrd, userStories: [failingStory] };
 
     // Verify the trigger is enabled
-    const { isTriggerEnabled } = await import("../../../src/interaction/triggers");
+    const { isTriggerEnabled } = await import("@/interaction/triggers");
     const enabled = isTriggerEnabled("human-review" as TriggerName, baseConfig as NaxConfig);
     expect(enabled).toBe(true);
 
     // Call handlePipelineFailure to trigger the human-review request
-    const { handlePipelineFailure } = await import("../../../src/execution/pipeline-result-handler");
+    const { handlePipelineFailure } = await import("@/execution/pipeline-result-handler");
     await handlePipelineFailure(
       {
         config: baseConfig as NaxConfig,
@@ -378,7 +378,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
     chain.register(plugin, 10);
 
     // When human-review returns 'skip', the story outcome should be 'skipped'
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
 
     const exhaustedStory: UserStory = {
       ...baseStory,
@@ -432,7 +432,7 @@ describe("AC3: CLI interaction plugin for non-headless human-review", () => {
 
   test("initInteractionChain registers CLI plugin for non-headless mode", async () => {
     // FAILS if initInteractionChain doesn't register CLI plugin when headless=false
-    const { initInteractionChain } = await import("../../../src/interaction");
+    const { initInteractionChain } = await import("@/interaction");
 
     const config = {
       ...baseConfig,
@@ -454,7 +454,7 @@ describe("AC3: CLI interaction plugin for non-headless human-review", () => {
 
   test("human-review request sent through CLI plugin contains all required fields", async () => {
     // FAILS until BUG-025 implements human-review trigger in TRIGGER_METADATA
-    const { createTriggerRequest } = await import("../../../src/interaction/triggers");
+    const { createTriggerRequest } = await import("@/interaction/triggers");
 
     const request = createTriggerRequest(
       "human-review" as TriggerName,

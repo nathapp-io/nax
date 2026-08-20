@@ -7,8 +7,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runReview } from "../../../src/review";
-import type { ReviewConfig } from "../../../src/review";
+import { runReview } from "@/review";
+import type { ReviewConfig } from "@/review";
 import { makeTempDir } from "@test/helpers";
 
 describe("Review Phase", () => {

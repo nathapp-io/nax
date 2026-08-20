@@ -13,9 +13,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
-import { makeNaxConfig, makeStory } from "../../helpers";
-import { generateTestCoverageSummary } from "../../../src/context/test-scanner";
-import { TestCoverageProvider, _testCoverageProviderDeps } from "../../../src/context/engine/providers/test-coverage";
+import { makeNaxConfig, makeStory } from "@test/helpers";
+import { generateTestCoverageSummary } from "@/context/test-scanner";
+import { TestCoverageProvider, _testCoverageProviderDeps } from "@/context/engine/providers/test-coverage";
 
 const STORY = makeStory({ id: "story-001", title: "Test Story" });
 const BASE_CONFIG = makeNaxConfig({

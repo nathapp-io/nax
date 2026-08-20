@@ -6,8 +6,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { NaxPlugin } from "../../../src/plugins/types";
-import { validatePlugin } from "../../../src/plugins/validator";
+import type { NaxPlugin } from "@/plugins/types";
+import { validatePlugin } from "@/plugins/validator";
 
 describe("validatePlugin", () => {
   describe("valid plugins", () => {

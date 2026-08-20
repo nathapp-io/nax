@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { run } from "../../../src/execution/runner";
-import type { RunOptions } from "../../../src/execution/runner";
-import { initLogger, resetLogger } from "../../../src/logger";
-import type { PRD, UserStory } from "../../../src/prd";
+import { DEFAULT_CONFIG } from "@/config";
+import { run } from "@/execution/runner";
+import type { RunOptions } from "@/execution/runner";
+import { initLogger, resetLogger } from "@/logger";
+import type { PRD, UserStory } from "@/prd";
 
 // Zero out iterationDelayMs so tests don't sleep 2s between iterations (DEFAULT_CONFIG = 2000ms)
 const TEST_CONFIG = {
@@ -538,7 +538,7 @@ describe("execution runner — lite mode routing", () => {
 
   test("config tdd.strategy='lite' routes complex stories to three-session-tdd-lite", async () => {
     // Using routeTask directly to verify routing decision
-    const { routeTask } = await import("../../../src/routing");
+    const { routeTask } = await import("@/routing");
 
     const configWithLiteStrategy = {
       ...TEST_CONFIG,
@@ -558,7 +558,7 @@ describe("execution runner — lite mode routing", () => {
   });
 
   test("config tdd.strategy='strict' routes complex stories to three-session-tdd", async () => {
-    const { routeTask } = await import("../../../src/routing");
+    const { routeTask } = await import("@/routing");
 
     const configWithStrictStrategy = {
       ...TEST_CONFIG,
@@ -580,7 +580,7 @@ describe("execution runner — lite mode routing", () => {
   // #408: complex (non-security) always routes to three-session-tdd-lite regardless of tags.
   // LITE_TAGS logic removed — tags no longer affect strategy selection.
   test("config tdd.strategy='auto' routes complex stories to three-session-tdd-lite (#408)", async () => {
-    const { routeTask } = await import("../../../src/routing");
+    const { routeTask } = await import("@/routing");
 
     // complex keyword in title → complex complexity → three-session-tdd-lite
     const routing = routeTask(

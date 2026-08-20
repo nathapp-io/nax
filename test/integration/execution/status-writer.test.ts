@@ -13,10 +13,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import type { NaxConfig } from "../../../src/config";
-import type { NaxStatusFile } from "../../../src/execution/status-file";
-import { StatusWriter, type StatusWriterContext } from "../../../src/execution/status-writer";
-import type { PRD, UserStory } from "../../../src/prd";
+import type { NaxConfig } from "@/config";
+import type { NaxStatusFile } from "@/execution/status-file";
+import { StatusWriter, type StatusWriterContext } from "@/execution/status-writer";
+import type { PRD, UserStory } from "@/prd";
 import { makeTempDir } from "@test/helpers";
 
 // ============================================================================

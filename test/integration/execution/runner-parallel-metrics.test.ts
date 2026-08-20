@@ -23,9 +23,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { initLogger, resetLogger } from "../../../src/logger";
-import type { RunParallelBatchResult } from "../../../src/execution/parallel-batch";
-import type { UserStory } from "../../../src/prd/types";
+import { initLogger, resetLogger } from "@/logger";
+import type { RunParallelBatchResult } from "@/execution/parallel-batch";
+import type { UserStory } from "@/prd/types";
 import { makePendingStory, makePrd, makeCtx } from "./_parallel-metrics-helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ let origSelectIndependentBatch: unknown;
 
 beforeEach(async () => {
   initLogger();
-  const mod = await import("../../../src/execution/unified-executor");
+  const mod = await import("@/execution/unified-executor");
   deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
   origRunParallelBatch = deps.runParallelBatch;
   origSelectIndependentBatch = deps.selectIndependentBatch;
@@ -87,7 +87,7 @@ describe("AC-1 — completed story cost equals storyCosts.get(story.id)", () => 
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === s1.id);
@@ -108,7 +108,7 @@ describe("AC-1 — completed story cost equals storyCosts.get(story.id)", () => 
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === s1.id);
@@ -130,7 +130,7 @@ describe("AC-2 — durationMs equals storyDurations.get(story.id), not batch wal
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap, durMap));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === s1.id);
@@ -157,7 +157,7 @@ describe("AC-2 — durationMs equals storyDurations.get(story.id), not batch wal
       totalCost: 0.1,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === s1.id);
@@ -188,7 +188,7 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
       totalCost: 0.15,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([conflictStory, cleanStory]) as never);
 
     const rectM = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
@@ -210,7 +210,7 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
       totalCost: 0.18,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([conflictStory, cleanStory]) as never);
 
     const rectM = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
@@ -235,7 +235,7 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
       totalCost: 0.25,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([conflictStory, cleanStory]) as never);
 
     const rectM = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
@@ -258,7 +258,7 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
       totalCost: 0.14,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([failedConflict, cleanStory]) as never);
 
     const rectEntry = result.allStoryMetrics.find(
@@ -281,7 +281,7 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
       totalCost: 0.13,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([conflictStory, cleanStory]) as never);
 
     const rectM = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
@@ -305,7 +305,7 @@ describe("AC-4 — story:started emitted with correct storyId before batch execu
       return makeBatch([s1, s2], new Map([[s1.id, 0.1], [s2.id, 0.1]]));
     });
 
-    const { pipelineEventBus } = await import("../../../src/pipeline/event-bus");
+    const { pipelineEventBus } = await import("@/pipeline/event-bus");
     const origEmit = pipelineEventBus.emit.bind(pipelineEventBus);
     pipelineEventBus.emit = mock((event: Record<string, unknown>) => {
       if (event.type === "story:started") eventLog.push(`started:${event.storyId}`);
@@ -313,7 +313,7 @@ describe("AC-4 — story:started emitted with correct storyId before batch execu
     }) as typeof pipelineEventBus.emit;
 
     try {
-      const { executeUnified } = await import("../../../src/execution/unified-executor");
+      const { executeUnified } = await import("@/execution/unified-executor");
       await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
     } finally {
       pipelineEventBus.emit = origEmit;
@@ -341,7 +341,7 @@ describe("AC-4 — story:started emitted with correct storyId before batch execu
       makeBatch([s1, s2], new Map([[s1.id, 0.1], [s2.id, 0.1]])),
     );
 
-    const { pipelineEventBus } = await import("../../../src/pipeline/event-bus");
+    const { pipelineEventBus } = await import("@/pipeline/event-bus");
     const origEmit = pipelineEventBus.emit.bind(pipelineEventBus);
     pipelineEventBus.emit = mock((event: Record<string, unknown>) => {
       if (event.type === "story:started") startedIds.push(event.storyId as string);
@@ -349,7 +349,7 @@ describe("AC-4 — story:started emitted with correct storyId before batch execu
     }) as typeof pipelineEventBus.emit;
 
     try {
-      const { executeUnified } = await import("../../../src/execution/unified-executor");
+      const { executeUnified } = await import("@/execution/unified-executor");
       await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
     } finally {
       pipelineEventBus.emit = origEmit;
@@ -366,12 +366,12 @@ describe("AC-4 — story:started emitted with correct storyId before batch execu
 
 describe("AC-5 — executeUnified is the entry point; legacy dispatch function is absent", () => {
   test("executeUnified is exported from unified-executor", async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     expect(typeof mod.executeUnified).toBe("function");
   });
 
   test("unified-executor module does not export the removed runParallelExecution function", async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     const keys = Object.keys(mod);
     expect(keys).not.toContain("runParallelExecution");
   });
@@ -398,7 +398,7 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     deps.selectIndependentBatch = mock(() => [s1, s2, s3]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2, s3], costMap));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(makeCtx({ parallelCount: 3 }) as never, makePrd([s1, s2, s3]) as never);
 
     expect(result.storiesCompleted).toBe(3);
@@ -412,7 +412,7 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
 
     expect(result.totalCost).toBe(1.0);
@@ -426,7 +426,7 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     // maxIterations: 1 → the loop processes the batch then exits naturally
     const result = await executeUnified(makeCtx({ parallelCount: 2, maxIterations: 1 }) as never, makePrd([s1, s2]) as never);
 
@@ -441,7 +441,7 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
 
     const ids = result.allStoryMetrics.map((m) => m.storyId);
@@ -457,7 +457,7 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
 
     for (const m of result.allStoryMetrics) {
@@ -473,7 +473,7 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
 
     for (const m of result.allStoryMetrics) {
@@ -496,7 +496,7 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
       totalCost: 0.32,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(
       makeCtx({ parallelCount: 3 }) as never,
       makePrd([s1, s2, rectStory]) as never,
@@ -515,7 +515,7 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(
       makeCtx({ parallelCount: 2, costLimit: 100, maxIterations: 10 }) as never,
       makePrd([s1, s2]) as never,

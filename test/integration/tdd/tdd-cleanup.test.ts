@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _cleanupDeps, cleanupProcessTree, getPgid } from "../../../src/tdd/cleanup";
+import { _cleanupDeps, cleanupProcessTree, getPgid } from "@/tdd/cleanup";
 import { withDepsRestore } from "@test/helpers";
 
 withDepsRestore(_cleanupDeps, ["spawn", "sleep", "kill", "killProcessGroupFn"]);

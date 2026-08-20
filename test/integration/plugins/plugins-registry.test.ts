@@ -6,8 +6,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { PluginRegistry } from "../../../src/plugins/registry";
-import type { NaxPlugin } from "../../../src/plugins/types";
+import { PluginRegistry } from "@/plugins/registry";
+import type { NaxPlugin } from "@/plugins/types";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

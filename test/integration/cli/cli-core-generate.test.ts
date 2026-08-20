@@ -8,10 +8,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { generateCommand } from "../../../src/cli/generate";
-import { loadConfig } from "../../../src/config/loader";
-import { generateAll, generateFor } from "../../../src/context/generator";
-import type { AgentType } from "../../../src/context/types";
+import { generateCommand } from "@/cli/generate";
+import { loadConfig } from "@/config/loader";
+import { generateAll, generateFor } from "@/context/generator";
+import type { AgentType } from "@/context/types";
 import { makeTempDir } from "@test/helpers";
 
 describe("nax generate command", () => {

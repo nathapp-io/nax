@@ -8,7 +8,7 @@
 import { describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { featureDir, globalConfigDir, projectConfigDir } from "../../../src/config/paths";
+import { featureDir, globalConfigDir, projectConfigDir } from "@/config/paths";
 
 describe("config/paths", () => {
   describe("globalConfigDir", () => {

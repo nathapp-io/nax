@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
-import { planCommand } from "../../../src/cli/plan";
-import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config/schema";
+import { planCommand } from "@/cli/plan";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config/schema";
 
 describe("planCommand", () => {
   let tmpDir: string;

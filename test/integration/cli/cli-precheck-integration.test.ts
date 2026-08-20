@@ -8,9 +8,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { NaxConfig } from "../../../src/config";
-import type { PRD, UserStory } from "../../../src/prd/types";
-import { runPrecheck } from "../../../src/precheck";
+import type { NaxConfig } from "@/config";
+import type { PRD, UserStory } from "@/prd/types";
+import { runPrecheck } from "@/precheck";
 import { fullDescribe } from "../../helpers/env";
 import { makeTempDir } from "@test/helpers";
 

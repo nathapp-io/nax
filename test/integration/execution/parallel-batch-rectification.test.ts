@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { initLogger, resetLogger } from "../../../src/logger";
-import type { LoadedHooksConfig } from "../../../src/hooks";
-import type { PluginRegistry } from "../../../src/plugins";
-import type { PRD, UserStory } from "../../../src/prd/types";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
+import { initLogger, resetLogger } from "@/logger";
+import type { LoadedHooksConfig } from "@/hooks";
+import type { PluginRegistry } from "@/plugins";
+import type { PRD, UserStory } from "@/prd/types";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ afterEach(() => {
 
 describe("AC-6: runParallelBatch rectification success", () => {
   test("calls rectifyConflictedStory when merge conflict detected", async () => {
-    const { runParallelBatch, _parallelBatchDeps } = await import("../../../src/execution/parallel-batch");
+    const { runParallelBatch, _parallelBatchDeps } = await import("@/execution/parallel-batch");
 
     const stories = [makeStory("US-001")];
     const prd = makePrd(stories);
@@ -110,7 +110,7 @@ describe("AC-6: runParallelBatch rectification success", () => {
   });
 
   test("sets rectified: true in mergeConflicts when rectification succeeds", async () => {
-    const { runParallelBatch, _parallelBatchDeps } = await import("../../../src/execution/parallel-batch");
+    const { runParallelBatch, _parallelBatchDeps } = await import("@/execution/parallel-batch");
 
     const stories = [makeStory("US-001")];
     const prd = makePrd(stories);
@@ -160,7 +160,7 @@ describe("AC-6: runParallelBatch rectification success", () => {
 
 describe("AC-7: runParallelBatch rectification failure", () => {
   test("sets rectified: false when rectifyConflictedStory fails", async () => {
-    const { runParallelBatch, _parallelBatchDeps } = await import("../../../src/execution/parallel-batch");
+    const { runParallelBatch, _parallelBatchDeps } = await import("@/execution/parallel-batch");
 
     const stories = [makeStory("US-001")];
     const prd = makePrd(stories);
@@ -211,13 +211,13 @@ describe("AC-7: runParallelBatch rectification failure", () => {
 
 describe("AC-8: merge-conflict-rectify exports", () => {
   test("src/execution/merge-conflict-rectify.ts exports ConflictedStoryInfo", async () => {
-    const module = await import("../../../src/execution/merge-conflict-rectify");
+    const module = await import("@/execution/merge-conflict-rectify");
     expect(module).toBeDefined();
     expect(typeof module.rectifyConflictedStory).toBe("function");
   });
 
   test("exports rectifyConflictedStory function with correct signature", async () => {
-    const { rectifyConflictedStory } = await import("../../../src/execution/merge-conflict-rectify");
+    const { rectifyConflictedStory } = await import("@/execution/merge-conflict-rectify");
     expect(typeof rectifyConflictedStory).toBe("function");
   });
 });

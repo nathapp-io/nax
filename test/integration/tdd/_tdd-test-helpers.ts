@@ -6,13 +6,13 @@
  * global Bun.spawn to avoid cross-file contamination in parallel test runs.
  */
 import { mock } from "bun:test";
-import type { AgentAdapter, AgentResult } from "../../../src/agents";
-import { _fullSuiteGateDeps } from "../../../src/operations/full-suite-gate";
-import { _isolationDeps } from "../../../src/tdd/isolation";
-import { _rollbackDeps } from "../../../src/tdd/rollback";
-import { _gitDeps } from "../../../src/utils/git";
-import { _executorDeps } from "../../../src/verification/executor";
-import { _regressionRunnerDeps } from "../../../src/verification/runners";
+import type { AgentAdapter, AgentResult } from "@/agents";
+import { _fullSuiteGateDeps } from "@/operations/full-suite-gate";
+import { _isolationDeps } from "@/tdd/isolation";
+import { _rollbackDeps } from "@/tdd/rollback";
+import { _gitDeps } from "@/utils/git";
+import { _executorDeps } from "@/verification/executor";
+import { _regressionRunnerDeps } from "@/verification/runners";
 
 /** Saved originals for teardown */
 export interface SavedDeps {

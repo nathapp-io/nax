@@ -7,12 +7,12 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
-import type { AdversarialReviewOutput } from "../../../src/operations/adversarial-review";
-import { _adversarialDeps, runAdversarialReview } from "../../../src/review/adversarial";
-import { _diffUtilsDeps } from "../../../src/review/diff-utils";
-import type { ReviewRepromptEvent } from "../../../src/runtime/dispatch-events";
-import type { NaxRuntime } from "../../../src/runtime";
+import { adversarialReviewOp } from "@/operations/adversarial-review";
+import type { AdversarialReviewOutput } from "@/operations/adversarial-review";
+import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
+import { _diffUtilsDeps } from "@/review/diff-utils";
+import type { ReviewRepromptEvent } from "@/runtime/dispatch-events";
+import type { NaxRuntime } from "@/runtime";
 import { makeMockRuntime } from "@test/helpers";
 import { withTempDir } from "@test/helpers";
 
@@ -127,7 +127,7 @@ function makeMockedCallOpWithSendTracking(opts: {
   secondTurnOutput: string;
   onSendCount: (count: number) => void;
 }) {
-  return async (_ctx: unknown, op: typeof adversarialReviewOp, input: import("../../../src/operations/adversarial-review").AdversarialReviewInput) => {
+  return async (_ctx: unknown, op: typeof adversarialReviewOp, input: import("@/operations/adversarial-review").AdversarialReviewInput) => {
     let sendCount = 0;
 
     const mockSend = async () => {
@@ -150,9 +150,9 @@ function makeMockedCallOpWithSendTracking(opts: {
 
     opts.onSendCount(sendCount);
 
-    const parseFn = op.parse as (output: string, input: import("../../../src/operations/adversarial-review").AdversarialReviewInput, ctx: unknown) => AdversarialReviewOutput;
+    const parseFn = op.parse as (output: string, input: import("@/operations/adversarial-review").AdversarialReviewInput, ctx: unknown) => AdversarialReviewOutput;
     const parsed = parseFn(hopResult.output, input, {});
-    const verifyFn = op.verify as (parsed: AdversarialReviewOutput, input: import("../../../src/operations/adversarial-review").AdversarialReviewInput, ctx: unknown) => Promise<AdversarialReviewOutput>;
+    const verifyFn = op.verify as (parsed: AdversarialReviewOutput, input: import("@/operations/adversarial-review").AdversarialReviewInput, ctx: unknown) => Promise<AdversarialReviewOutput>;
     const verified = await verifyFn(parsed, input, {});
     return verified;
   };

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { verifyTestWriterIsolation } from "../../../src/tdd";
+import { verifyTestWriterIsolation } from "@/tdd";
 import { makeTempDir } from "@test/helpers";
 
 describe("verifyTestWriterIsolation", () => {

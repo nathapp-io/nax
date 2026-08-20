@@ -10,7 +10,7 @@ import {
   generateTestCoverageSummary,
   scanTestFiles,
   truncateToTokenBudget,
-} from "../../../src/context/test-scanner";
+} from "@/context/test-scanner";
 import { makeTempDir } from "@test/helpers";
 
 describe("extractTestStructure", () => {

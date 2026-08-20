@@ -12,12 +12,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import type { NaxConfig } from "../../../src/config/schema";
-import { initLogger, resetLogger } from "../../../src/logger";
-import { routingStage } from "../../../src/pipeline/stages/routing";
-import type { PipelineContext } from "../../../src/pipeline/types";
-import { PluginRegistry } from "../../../src/plugins/registry";
-import type { PRD, UserStory } from "../../../src/prd/types";
+import type { NaxConfig } from "@/config/schema";
+import { initLogger, resetLogger } from "@/logger";
+import { routingStage } from "@/pipeline/stages/routing";
+import type { PipelineContext } from "@/pipeline/types";
+import { PluginRegistry } from "@/plugins/registry";
+import type { PRD, UserStory } from "@/prd/types";
 import { makeTempDir } from "@test/helpers";
 
 function createTestContext(workdir: string, overrides?: Partial<PipelineContext>): PipelineContext {

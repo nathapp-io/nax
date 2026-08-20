@@ -10,17 +10,17 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { _registryTestAdapters } from "../../../src/agents/registry";
+import { _registryTestAdapters } from "@/agents/registry";
 import type {
   AgentAdapter,
   AgentCapabilities,
   AgentResult,
   AgentRunOptions,
-} from "../../../src/agents/types";
-import type { NaxConfig } from "../../../src/config";
-import { run } from "../../../src/execution/runner";
-import { loadHooksConfig } from "../../../src/hooks";
-import { savePRD } from "../../../src/prd";
+} from "@/agents/types";
+import type { NaxConfig } from "@/config";
+import { run } from "@/execution/runner";
+import { loadHooksConfig } from "@/hooks";
+import { savePRD } from "@/prd";
 import { makeTempDir } from "@test/helpers";
 
 // ============================================================================
@@ -44,7 +44,7 @@ class MockAgentAdapter implements AgentAdapter {
   async run(_o: AgentRunOptions): Promise<AgentResult> {
     return { success: true, exitCode: 0, output: "", durationMs: 10, estimatedCostUsd: 0 };
   }
-  async complete(_prompt: string): Promise<import("../../../src/agents/types").CompleteResult> {
+  async complete(_prompt: string): Promise<import("@/agents/types").CompleteResult> {
     return { output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
   }
 }

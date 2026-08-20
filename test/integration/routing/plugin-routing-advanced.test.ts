@@ -13,13 +13,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import * as loggerModule from "../../../src/logger";
-import { PluginRegistry } from "../../../src/plugins/registry";
-import type { NaxPlugin } from "../../../src/plugins/types";
-import type { UserStory } from "../../../src/prd/types";
-import { routeStory } from "../../../src/routing/router";
-import type { RoutingContext, RoutingDecision, RoutingStrategy } from "../../../src/routing";
+import { DEFAULT_CONFIG } from "@/config";
+import * as loggerModule from "@/logger";
+import { PluginRegistry } from "@/plugins/registry";
+import type { NaxPlugin } from "@/plugins/types";
+import type { UserStory } from "@/prd/types";
+import { routeStory } from "@/routing/router";
+import type { RoutingContext, RoutingDecision, RoutingStrategy } from "@/routing";
 
 // ============================================================================
 // Test Helpers

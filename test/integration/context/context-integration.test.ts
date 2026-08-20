@@ -5,19 +5,19 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { buildContext, formatContextAsMarkdown } from "../../../src/context/builder";
+import { DEFAULT_CONFIG } from "@/config";
+import { buildContext, formatContextAsMarkdown } from "@/context/builder";
 
-import type { ContextBudget, StoryContext } from "../../../src/context/types";
+import type { ContextBudget, StoryContext } from "@/context/types";
 
 // Zero out iterationDelayMs so tests don't sleep 2s between iterations (DEFAULT_CONFIG = 2000ms)
 const TEST_CONFIG = {
   ...DEFAULT_CONFIG,
   execution: { ...DEFAULT_CONFIG.execution, iterationDelayMs: 0 },
 };
-import { run } from "../../../src/execution/runner";
-import type { RunOptions } from "../../../src/execution/runner";
-import type { PRD, UserStory } from "../../../src/prd";
+import { run } from "@/execution/runner";
+import type { RunOptions } from "@/execution/runner";
+import type { PRD, UserStory } from "@/prd";
 
 // Sample PRD for testing
 const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({

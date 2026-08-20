@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { loadPlugins } from "../../../src/plugins/loader";
+import { loadPlugins } from "@/plugins/loader";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 async function createTempDir(): Promise<string> {

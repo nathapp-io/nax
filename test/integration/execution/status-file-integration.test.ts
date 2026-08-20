@@ -15,7 +15,7 @@ import * as nodeFs from "node:fs";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { _registryTestAdapters } from "../../../src/agents/registry";
+import { _registryTestAdapters } from "@/agents/registry";
 import { makeTempDir } from "@test/helpers";
 import type {
   AgentAdapter,
@@ -26,13 +26,13 @@ import type {
   DecomposeResult,
   PlanOptions,
   PlanResult,
-} from "../../../src/agents/types";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import type { NaxConfig } from "../../../src/config";
-import { run } from "../../../src/execution/runner";
-import type { RunOptions } from "../../../src/execution/runner";
-import type { NaxStatusFile } from "../../../src/execution/status-file";
-import type { PRD } from "../../../src/prd/types";
+} from "@/agents/types";
+import { DEFAULT_CONFIG } from "@/config";
+import type { NaxConfig } from "@/config";
+import { run } from "@/execution/runner";
+import type { RunOptions } from "@/execution/runner";
+import type { NaxStatusFile } from "@/execution/status-file";
+import type { PRD } from "@/prd/types";
 
 // ============================================================================
 // Mock agent (satisfies agent installation check in runner)
@@ -61,7 +61,7 @@ class MockAgentAdapter implements AgentAdapter {
   async decompose(_o: DecomposeOptions): Promise<DecomposeResult> {
     return { stories: [] };
   }
-  async complete(_prompt: string): Promise<import("../../../src/agents/types").CompleteResult> {
+  async complete(_prompt: string): Promise<import("@/agents/types").CompleteResult> {
     return { output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
   }
 }

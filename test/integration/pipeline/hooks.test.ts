@@ -7,8 +7,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { fireHook, loadHooksConfig } from "../../../src/hooks/runner";
-import type { HookContext, HooksConfig } from "../../../src/hooks/types";
+import { fireHook, loadHooksConfig } from "@/hooks/runner";
+import type { HookContext, HooksConfig } from "@/hooks/types";
 
 describe("Hook Security", () => {
   test("executes safe commands without shell", async () => {

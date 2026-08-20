@@ -16,11 +16,11 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import * as agentModule from "../../../src/agents";
-import type { NaxConfig } from "../../../src/config/schema";
-import { run } from "../../../src/execution/runner";
-import type { LoadedHooksConfig } from "../../../src/hooks";
-import type { NaxPlugin } from "../../../src/plugins/types";
+import * as agentModule from "@/agents";
+import type { NaxConfig } from "@/config/schema";
+import { run } from "@/execution/runner";
+import type { LoadedHooksConfig } from "@/hooks";
+import type { NaxPlugin } from "@/plugins/types";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // Test fixture helpers

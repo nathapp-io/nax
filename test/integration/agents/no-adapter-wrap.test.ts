@@ -9,7 +9,7 @@ import { describe, expect, test } from "bun:test";
 
 describe("ADR-020: wrapAdapterAsManager is forbidden", () => {
   test("is not exported from src/agents/utils", async () => {
-    const mod = await import("../../../src/agents/utils");
+    const mod = await import("@/agents/utils");
     expect("wrapAdapterAsManager" in mod).toBe(false);
   });
 

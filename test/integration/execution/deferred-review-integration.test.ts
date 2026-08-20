@@ -15,13 +15,13 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { NaxConfig } from "../../../src/config";
-import { _deferredReviewDeps } from "../../../src/execution/deferred-review";
-import type { SequentialExecutionContext } from "../../../src/execution/executor-types";
-import { executeUnified } from "../../../src/execution/unified-executor";
-import type { PluginRegistry } from "../../../src/plugins";
-import type { IReviewPlugin } from "../../../src/plugins/extensions";
-import type { PRD } from "../../../src/prd/types";
+import type { NaxConfig } from "@/config";
+import { _deferredReviewDeps } from "@/execution/deferred-review";
+import type { SequentialExecutionContext } from "@/execution/executor-types";
+import { executeUnified } from "@/execution/unified-executor";
+import type { PluginRegistry } from "@/plugins";
+import type { IReviewPlugin } from "@/plugins/extensions";
+import type { PRD } from "@/prd/types";
 import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -8,8 +8,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { configCommand } from "../../../src/cli/config";
-import { loadConfig } from "../../../src/config/loader";
+import { configCommand } from "@/cli/config";
+import { loadConfig } from "@/config/loader";
 import { makeTempDir } from "@test/helpers";
 
 /**

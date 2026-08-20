@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { RunOptions } from "../../../src/execution/runner";
+import type { RunOptions } from "@/execution/runner";
 
 describe("CLI --parallel flag parsing", () => {
   test("parses --parallel 4 correctly", () => {

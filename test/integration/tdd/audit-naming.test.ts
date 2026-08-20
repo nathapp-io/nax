@@ -19,11 +19,11 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import type { SessionTurnDispatchEvent } from "../../../src/runtime/dispatch-events";
-import { DispatchEventBus } from "../../../src/runtime/dispatch-events";
-import { attachAuditSubscriber } from "../../../src/runtime/middleware/audit";
-import { PromptAuditor } from "../../../src/runtime/prompt-auditor";
-import type { SessionRole } from "../../../src/runtime/session-role";
+import type { SessionTurnDispatchEvent } from "@/runtime/dispatch-events";
+import { DispatchEventBus } from "@/runtime/dispatch-events";
+import { attachAuditSubscriber } from "@/runtime/middleware/audit";
+import { PromptAuditor } from "@/runtime/prompt-auditor";
+import type { SessionRole } from "@/runtime/session-role";
 import { withTempDir } from "@test/helpers";
 
 const PERMS = { mode: "approve-reads" as const };

@@ -8,7 +8,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { logsCommand } from "../../../src/commands/logs";
+import { logsCommand } from "@/commands/logs";
 
 const TEST_WORKSPACE = join(import.meta.dir, "../../..", "tmp", "cli-logs-test");
 const REGISTRY_DIR = join(TEST_WORKSPACE, "registry");

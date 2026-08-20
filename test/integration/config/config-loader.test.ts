@@ -16,7 +16,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { globalConfigPath, loadConfig } from "../../../src/config/loader";
+import { globalConfigPath, loadConfig } from "@/config/loader";
 import { makeTempDir } from "@test/helpers";
 
 describe("Config Loader - Backward Compatibility", () => {

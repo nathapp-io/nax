@@ -13,8 +13,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { precheckCommand } from "../../../src/commands/precheck";
-import { EXIT_CODES } from "../../../src/precheck";
+import { precheckCommand } from "@/commands/precheck";
+import { EXIT_CODES } from "@/precheck";
 
 const TEMP_DIR = join(import.meta.dir, "tmp-precheck-cli");
 

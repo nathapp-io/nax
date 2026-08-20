@@ -7,9 +7,9 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import path from "node:path";
 import { mkdir, rename, rm } from "node:fs/promises";
-import { groupStoriesIntoBatches } from "../../../src/execution/runner";
-import type { PRD, UserStory } from "../../../src/prd";
-import { PRD_MAX_FILE_SIZE, loadPRD } from "../../../src/prd";
+import { groupStoriesIntoBatches } from "@/execution/runner";
+import type { PRD, UserStory } from "@/prd";
+import { PRD_MAX_FILE_SIZE, loadPRD } from "@/prd";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // Helper to create test stories

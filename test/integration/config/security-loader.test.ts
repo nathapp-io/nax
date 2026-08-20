@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { loadPlugins as loadPluginsWithBuiltins, _setPluginErrorSink, _resetPluginErrorSink } from "../../../src/plugins/loader";
+import { loadPlugins as loadPluginsWithBuiltins, _setPluginErrorSink, _resetPluginErrorSink } from "@/plugins/loader";
 import { resolve } from "node:path";
 import * as fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";

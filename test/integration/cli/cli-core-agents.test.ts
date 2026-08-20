@@ -7,9 +7,9 @@
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { rm } from "node:fs/promises";
-import { _acpAdapterDeps } from "../../../src/agents/acp/adapter";
-import { agentsListCommand, _cliAgentsDeps } from "../../../src/cli/agents";
-import { DEFAULT_CONFIG } from "../../../src/config";
+import { _acpAdapterDeps } from "@/agents/acp/adapter";
+import { agentsListCommand, _cliAgentsDeps } from "@/cli/agents";
+import { DEFAULT_CONFIG } from "@/config";
 import { makeTempDir } from "@test/helpers";
 
 describe("agentsListCommand", () => {

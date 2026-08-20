@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { buildPlanForStrategy } from "../../../src/execution/build-plan-for-strategy";
-import type { PlanInputs } from "../../../src/execution/plan-inputs";
-import { implementerOp, testWriterOp, verifierOp } from "../../../src/tdd";
-import type { ResolvedTestPatterns } from "../../../src/test-runners";
+import { DEFAULT_CONFIG } from "@/config";
+import { buildPlanForStrategy } from "@/execution/build-plan-for-strategy";
+import type { PlanInputs } from "@/execution/plan-inputs";
+import { implementerOp, testWriterOp, verifierOp } from "@/tdd";
+import type { ResolvedTestPatterns } from "@/test-runners";
 import { makeMockCallContext } from "@test/helpers";
 import { makeRuntimeWithFakeAgent } from "@test/helpers";
-import type { UserStory } from "../../../src/prd";
+import type { UserStory } from "@/prd";
 import { type SavedDeps, createMockAgent, mockAllSpawn, mockGitSpawn, restoreDeps, saveDeps, stubFullSuiteGateContext } from "./_tdd-test-helpers";
 
 let saved: SavedDeps;
