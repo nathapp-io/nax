@@ -44,7 +44,7 @@ function outputContract(phase: "spec" | "quality"): string {
   const walk =
     phase === "spec"
       ? "one line per AC in the spec: `AC-3 Covered|Partial|Missing — <one clause>`"
-      : "one line per function or method the diff adds or changes: `path.ts:name — earns its place|concern: <one clause>`";
+      : "one line per file the diff adds or changes: `path.ts — earns its place|concern: <one clause>`";
   return `# Reply contract — your reply must be these three sections, in this order
 
 ## TOUCHPOINTS
@@ -108,10 +108,12 @@ export function buildReviewPrompt(
         ]
       : [];
   if (!args.since) {
+    const specNotice =
+      phase === "spec" && args.specPath ? [`The spec/requirements source is: ${args.specPath}. Read it in full.`] : [];
     return [
       ...gapNotice,
       `You are the ${phase.toUpperCase()} reviewer for a completed feature.`,
-      `The spec/requirements source is: ${args.specPath}. Read it in full.`,
+      ...specNotice,
       `Fetch and review the diff: \`git diff ${args.base}...HEAD\` (also \`--name-only\` for the file list).`,
       WORKER_PROTOCOL_MECHANICS,
       dims,
@@ -119,8 +121,7 @@ export function buildReviewPrompt(
       outputContract(phase),
     ].join("\n\n");
   }
-  return [
-    ...gapNotice,
+  const reReviewBody = [
     `You are the ${phase.toUpperCase()} reviewer for a completed feature, continuing a review you already started.`,
     `On your previous pass over \`git diff ${args.base}...HEAD\` you raised the findings below, and they have since been fixed and committed. Everything else in that diff you already judged acceptable — do not re-derive a verdict on it.`,
     `Your findings from the previous pass:\n${JSON.stringify(args.priorFindings ?? [], null, 2)}`,
@@ -129,13 +130,20 @@ export function buildReviewPrompt(
       "1. **Resolved?** Does the fix actually resolve each finding above? A finding that was papered over (assertion weakened, test deleted, check disabled) is NOT resolved — re-raise it.",
       "2. **Broken?** Did the fix introduce a new problem, in the changed lines or in the unchanged code they now call into?",
       "",
-      `Read whatever files you need — the spec is at ${args.specPath} and the whole repo is available. Scope means *what you judge*, not *what you may read*.`,
+      ...(phase === "spec" && args.specPath
+        ? [
+            `Read whatever files you need — the spec is at ${args.specPath} and the whole repo is available. Scope means *what you judge*, not *what you may read*.`,
+          ]
+        : [
+            "Read whatever files you need — the whole repo is available. Scope means *what you judge*, not *what you may read*.",
+          ]),
     ].join("\n"),
     WORKER_PROTOCOL_MECHANICS,
     dims,
     CLASSIFIER,
     outputContract(phase),
-  ].join("\n\n");
+  ];
+  return [...gapNotice, ...reReviewBody].join("\n\n");
 }
 
 /**

@@ -1,0 +1,156 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `buildReviewPrompt(\"quality\", ...)` is called, then its returned prompt includes `one line per file` and omits `one line per function`.",
+    "refined": "The string returned by `buildReviewPrompt(\"quality\", { base: \"...\" })` must contain the substring \"one line per file\" and must NOT contain the substring \"one line per function\".",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `buildReviewPrompt(\"spec\", ...)` is called, then its returned prompt includes `one line per AC`.",
+    "refined": "The string returned by `buildReviewPrompt(\"spec\", { base: \"...\" })` must contain the substring \"one line per AC\".",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `buildReviewPrompt(\"quality\", ...)` is called, then its returned prompt includes `write yourself` to retain the private per-function walk.",
+    "refined": "The string returned by `buildReviewPrompt(\"quality\", { base: \"...\" })` must contain the substring \"write yourself\".",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `buildReviewPrompt(\"quality\", { base, specPath: \".nax/features/x/spec.md\" })` is called without `since`, then its returned prompt omits `.nax/features/x/spec.md`.",
+    "refined": "The string returned by `buildReviewPrompt(\"quality\", { base: \"...\", specPath: \".nax/features/x/spec.md\" })` must NOT contain the substring \".nax/features/x/spec.md\".",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `buildReviewPrompt(\"quality\", { base, specPath: \".nax/features/x/spec.md\", since, priorFindings })` is called with a non-empty `priorFindings`, then its returned prompt omits `.nax/features/x/spec.md`.",
+    "refined": "The string returned by `buildReviewPrompt(\"quality\", { base: \"...\", specPath: \".nax/features/x/spec.md\", since: \"...\", priorFindings: [\"finding\"] })` must NOT contain the substring \".nax/features/x/spec.md\".",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When `buildReviewPrompt(\"spec\", { base, specPath: \".nax/features/x/spec.md\" })` is called with and without `since`, then each returned prompts includes `.nax/features/x/spec.md`.",
+    "refined": "Both strings returned by `buildReviewPrompt(\"spec\", { base: \"...\", specPath: \".nax/features/x/spec.md\" })` and `buildReviewPrompt(\"spec\", { base: \"...\", specPath: \".nax/features/x/spec.md\", since: \"...\" })` must contain the substring \".nax/features/x/spec.md\".",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When `buildReviewPrompt(\"quality\", ...)` is called, then its returned prompt includes `## TOUCHPOINTS`, `## WALK`, and `## FINDINGS`.",
+    "refined": "The string returned by `buildReviewPrompt(\"quality\", { base: \"...\" })` must contain the substring \"## TOUCHPOINTS\", the substring \"## WALK\", AND the substring \"## FINDINGS\".",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When a quality review range lists `src/a.ts` and `src/b.ts` and its WALK names both paths, then `auditGaps` returns no gap mentioning unwalked files.",
+    "refined": "Given phase='quality', base='origin/main', changedFiles=['src/a.ts', 'src/b.ts'], and walk=['src/a.ts', 'src/b.ts'], auditGaps(report, workdir, 'quality', 'origin/main') returns an array where no element's lowercase string contains 'unwalked' or either filename in an unwalked context.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When a quality review range lists `src/a.ts` and `src/b.ts` and its WALK names only `src/a.ts`, then `auditGaps` returns a gap naming `src/b.ts`.",
+    "refined": "Given phase='quality', base='origin/main', changedFiles=['src/a.ts', 'src/b.ts'], and walk=['src/a.ts'], auditGaps(report, workdir, 'quality', 'origin/main') returns an array containing at least one element where the string 'src/b.ts' appears (file is named as unwalked).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When a quality WALK contains `src/a.ts — earns its place` for changed file `src/a.ts`, then `auditGaps` returns no unwalked-files gap for `src/a.ts`.",
+    "refined": "Given phase='quality', base='origin/main', changedFiles=['src/a.ts'], and walk=['src/a.ts — earns its place'], auditGaps(report, workdir, 'quality', 'origin/main') returns an array where no element contains both 'src/a.ts' and 'unwalked' in proximity.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When a quality review range lists `src/a.ts` and `packages/core/.nax/config.json` and its WALK names only `src/a.ts`, then `auditGaps` returns no unwalked-files gap.",
+    "refined": "Given phase='quality', base='origin/main', changedFiles=['src/a.ts', 'packages/core/.nax/config.json'], and walk=['src/a.ts'], auditGaps(report, workdir, 'quality', 'origin/main') returns an array where no element contains '.nax/' or 'packages/core/.nax/config.json' in an unwalked context.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When a quality review range lists `src/a.ts` and `bun.lock` and its WALK names only `src/a.ts`, then `auditGaps` returns no unwalked-files gap.",
+    "refined": "Given phase='quality', base='origin/main', changedFiles=['src/a.ts', 'bun.lock'], and walk=['src/a.ts'], auditGaps(report, workdir, 'quality', 'origin/main') returns an array where no element contains 'bun.lock' or 'lock' in an unwalked context.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When the changed-file git invocation exits non-zero, then `auditGaps` returns no unwalked-files gap.",
+    "refined": "Given _gitDeps.spawn returns { success: false, exitCode: 1 } for the diff command, auditGaps(report, workdir, 'quality', 'origin/main') returns an array where no element's lowercase string contains 'unwalked-files' or 'unwalked files'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When the changed-file git invocation exits non-zero and a report has no `## TOUCHPOINTS` section, then `auditGaps` returns the existing touchpoints shape gap.",
+    "refined": "Given _gitDeps.spawn returns { success: false } and report.walk is present but report.touchpoints is undefined/null, auditGaps(report, workdir, 'quality', 'origin/main') returns an array with exactly one element matching a touchpoints shape gap pattern (e.g., containing 'touchpoint' and 'shape' or similar).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When `auditGaps` is called for phase `spec` and the WALK names none of the changed files, then it returns no unwalked-files gap.",
+    "refined": "Given phase='spec', base='origin/main', changedFiles=['src/a.ts'], and walk=['src/b.ts'], auditGaps(report, workdir, 'spec', 'origin/main') returns an array where no element's lowercase string contains 'unwalked-files' or 'unwalked files'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When four cited touchpoint paths have one existing path, then `auditGaps` returns the touchpoint-path gap.",
+    "refined": "Given _fsDeps.existsSync returns true for only 1 of 4 touchpoint paths, auditGaps(report, workdir, 'quality', 'origin/main') returns an array containing an element where 'touchpoint' appears and at least 3 of the 4 non-existing paths are named.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When four cited touchpoint paths have three existing paths, then `auditGaps` returns no touchpoint-path gap.",
+    "refined": "Given _fsDeps.existsSync returns true for 3 of 4 touchpoint paths, auditGaps(report, workdir, 'quality', 'origin/main') returns an array where no element contains 'touchpoint' in a gap context.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When a report's `## WALK` section is absent or empty, then `auditGaps` returns the existing missing-WALK gap.",
+    "refined": "Given report.walk is undefined/null/empty string, auditGaps(report, workdir, 'quality', 'origin/main') returns an array with exactly one element matching a missing-WALK gap pattern (e.g., containing 'walk' and 'missing' or 'absent').",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When the changed-file listing succeeds but all changed paths are excluded noise, then `auditGaps` returns no unwalked-files gap.",
+    "refined": "Given _gitDeps.spawn returns { success: true, stdout: '.nax/config.json\nbun.lock\npackage.json' } (all noise), auditGaps(report, workdir, 'quality', 'origin/main') returns an array where no element's lowercase string contains 'unwalked-files'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When a quality WALK line has no extractable leading changed-file path, then it provides no coverage and `auditGaps` names each otherwise-unwalked required file.",
+    "refined": "Given walk=['— some comment without file path', '   ', 'src/a.ts'] and changedFiles=['src/a.ts', 'src/b.ts'], auditGaps(report, workdir, 'quality', 'origin/main') returns an array containing 'src/b.ts' as an unwalked file.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When a quality WALK names a path outside the changed-file set while all required changed paths are named, then `auditGaps` returns no unwalked-files gap.",
+    "refined": "Given changedFiles=['src/a.ts'] and walk=['src/a.ts', 'src/c.ts'] (src/c.ts not in changed files), auditGaps(report, workdir, 'quality', 'origin/main') returns an array where no element's lowercase string contains 'unwalked'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When `finishReviewOp.verify` receives quality input with `base: \"origin/main\"` and `_gitDeps.spawn` is stubbed, then the stubbed git invocation receives arguments containing `origin/main...HEAD`.",
+    "refined": "Calling finishReviewOp.verify with input where input.phase='quality' and input.base='origin/main', and _gitDeps.spawn is a jest/mock function, verify that _gitDeps.spawn was called and the args array passed to the first call includes a string 'origin/main...HEAD'.",
+    "testable": true,
+    "storyId": "US-002"
+  }
+]

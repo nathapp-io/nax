@@ -37,6 +37,7 @@
  */
 import { stat } from "node:fs/promises";
 import * as path from "node:path";
+import { gitWithTimeout } from "@/utils/git";
 import type { FindingDisposition, ReviewReport } from "../types";
 
 /** Paths stat-ed per review. A reviewer listing more than this is not the failure mode. */
@@ -55,12 +56,75 @@ async function exists(workdir: string, rel: string): Promise<boolean> {
 }
 
 /**
+ * Noise classes the worker protocol already tells the reviewer to ignore
+ * (`src/finish/review/references/worker-protocol.md` §"Filter noise"). These
+ * are subtracted from the changed-file set before the WALK is gated against it,
+ * so churn in them is never reported as an unwalked file.
+ */
+function isNoise(rel: string): boolean {
+  const segments = rel.split("/");
+  if (segments.includes(".nax")) return true;
+  const name = segments[segments.length - 1];
+  if (name.endsWith(".lock") || name === "package-lock.json" || name === "pnpm-lock.yaml") return true;
+  if (/(^|\/)(dist|build|\.next|\.turbo|__pycache__)(\/|$)/.test(rel)) return true;
+  if (/\.generated\./.test(name)) return true;
+  return false;
+}
+
+/** The leading whitespace-delimited token of a WALK line, or null when none. */
+function walkPathToken(line: string): string | null {
+  const token = line.trim().split(/\s+/)[0];
+  return token.length > 0 ? token : null;
+}
+
+/**
+ * The changed files the review range touches, minus noise. Returns `[]` when
+ * the git invocation fails (non-zero exit, timeout, or throw) so a git
+ * infrastructure problem never produces a spurious unwalked-file gap.
+ */
+async function changedFiles(workdir: string, range: FinishReviewRange): Promise<string[]> {
+  try {
+    const { stdout, exitCode } = await gitWithTimeout(
+      ["diff", "--name-only", `${range.base}...${range.head}`],
+      workdir,
+    );
+    if (exitCode !== 0) return [];
+    return stdout
+      .split("\n")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && !isNoise(s));
+  } catch {
+    return [];
+  }
+}
+
+/** Review range the audit resolves changed files from (`<base>...<head>`). */
+export interface FinishReviewRange {
+  base: string;
+  head: string;
+}
+
+/** Review phase; quality gates WALK coverage against changed files, spec does not. */
+export type FinishReviewPhase = "spec" | "quality";
+
+/**
  * What this review failed to do. Empty means it may be routed on.
  *
  * Only ever called for a report that already parsed; an unreadable reply is the
  * `reprompt` path's business and is handled before this runs.
+ *
+ * US-002: the coverage gate is per-file and exact. For a `quality` review the
+ * changed-file set is resolved from `<range.base>...<range.head>` and compared
+ * against the leading token of each WALK line, so a WALK naming 4 of 30 changed
+ * items now fails exactly like one naming 0. `spec` reviews are deliberately not
+ * gated this way (issue #1635 defers that) — only the existing shape checks run.
  */
-export async function auditGaps(report: ReviewReport, workdir: string): Promise<string[]> {
+export async function auditGaps(
+  report: ReviewReport,
+  workdir: string,
+  range?: FinishReviewRange,
+  phase: FinishReviewPhase = "spec",
+): Promise<string[]> {
   const gaps: string[] = [];
   const touchpoints = report.touchpoints ?? [];
   if (!report.sawTouchpointsSection || touchpoints.length === 0) {
@@ -68,7 +132,10 @@ export async function auditGaps(report: ReviewReport, workdir: string): Promise<
   } else if (!touchpoints.some((t) => t.path === "none")) {
     const checked = touchpoints.slice(0, MAX_CHECKED);
     const found = await Promise.all(checked.map((t) => exists(workdir, t.path)));
-    if (!found.some(Boolean)) {
+    // Require most checked cited paths to exist; a reviewer that lists paths it
+    // never opened (or that do not exist) is an incomplete review.
+    const foundCount = found.filter(Boolean).length;
+    if (foundCount * 2 <= checked.length) {
       gaps.push(
         `touchpoint path does not exist in the repo (checked: ${checked
           .map((t) => t.path)
@@ -78,6 +145,22 @@ export async function auditGaps(report: ReviewReport, workdir: string): Promise<
   }
   if (!report.sawWalkSection || (report.walk ?? []).length === 0) {
     gaps.push("no `## WALK` section: the per-AC (spec) or per-function (quality) enumeration is required");
+  }
+  if (phase === "quality" && range) {
+    const required = await changedFiles(workdir, range);
+    if (required.length > 0) {
+      const walked = new Set<string>();
+      for (const line of report.walk ?? []) {
+        const token = walkPathToken(line);
+        if (token && required.includes(token)) walked.add(token);
+      }
+      const unwalked = required.filter((file) => !walked.has(file));
+      if (unwalked.length > 0) {
+        gaps.push(
+          `unwalked changed files not named in \`## WALK\` (${unwalked.length}): ${unwalked.join(", ")} — walk every changed file`,
+        );
+      }
+    }
   }
   return gaps;
 }

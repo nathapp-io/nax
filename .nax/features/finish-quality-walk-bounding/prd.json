@@ -1,0 +1,149 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "finish-quality-walk-bounding",
+  "branchName": "feat/finish-quality-walk-bounding",
+  "createdAt": "2026-08-19T14:29:23Z",
+  "updatedAt": "2026-08-19T15:49:42.413Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Bound the quality reviewer reply contract",
+      "description": "**Goal** — Bound the quality reviewer's public `## WALK` reply to one line per changed file while retaining exhaustive per-function private reasoning and removing the quality phase's spec-reading instruction.\n\n**Motivation** — On a large diff the quality reviewer must emit hundreds of enumeration lines before it reaches `## FINDINGS`, and it resolves that pressure in one of two ways: run out of budget mid-reply, or emit a token walk to get to the findings.\n\n**Approach** — The WALK becomes per-file; the per-function walk stays, privately. The forcing function is what finds the defects — it is not being removed. What changes is that its output no longer has to be transcribed into the reply. The reviewer walks every changed function in its own reasoning, then emits one line per changed *file* carrying that file's verdict. `references/code-quality.md` and `outputContract(\"quality\")` are updated together so the reference and the reply contract continue to agree; a disagreement between those two is the regression that PR #1636 fixed and this spec must not reintroduce.\n\n**Scope** — In: `src/finish/review/prompt.ts`, `src/finish/review/references/code-quality.md`, regenerated `src/finish/review/prompts.gen.ts`, and their prompt tests. Out: diff-relative WALK coverage and touchpoint quorum changes belong to US-002; the spec phase's contract remains per AC.\n\n**Interface**\n```typescript\nbuildReviewPrompt(phase, args) — src/finish/review/prompt.ts. Builds both phases' prompts. Its private outputContract(phase) holds the per-phase WALK instruction.\n```\n\nThe quality public WALK line must start with a bare repo-relative path and no `:symbol` suffix or surrounding punctuation, for example `src/finish/review/prompt.ts — earns its place`, so US-002 can extract it exactly. Keep all three reply sections and preserve both fresh and `since`-narrowed prompt behavior; only the quality phase omits `specPath`.",
+      "acceptanceCriteria": [
+        "When `buildReviewPrompt(\"quality\", ...)` is called, then its returned prompt includes `one line per file` and omits `one line per function`.",
+        "When `buildReviewPrompt(\"spec\", ...)` is called, then its returned prompt includes `one line per AC`.",
+        "When `buildReviewPrompt(\"quality\", ...)` is called, then its returned prompt includes `write yourself` to retain the private per-function walk.",
+        "When `buildReviewPrompt(\"quality\", { base, specPath: \".nax/features/x/spec.md\" })` is called without `since`, then its returned prompt omits `.nax/features/x/spec.md`.",
+        "When `buildReviewPrompt(\"quality\", { base, specPath: \".nax/features/x/spec.md\", since, priorFindings })` is called with a non-empty `priorFindings`, then its returned prompt omits `.nax/features/x/spec.md`.",
+        "When `buildReviewPrompt(\"spec\", { base, specPath: \".nax/features/x/spec.md\" })` is called with and without `since`, then each returned prompt includes `.nax/features/x/spec.md`.",
+        "When `buildReviewPrompt(\"quality\", ...)` is called, then its returned prompt includes `## TOUCHPOINTS`, `## WALK`, and `## FINDINGS`."
+      ],
+      "tags": [
+        "feature",
+        "finish",
+        "prompt",
+        "review"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a coordinated prompt/reference/generated-artifact update with existing unit coverage and a precise, low-risk contract change.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/finish/review/prompt.ts",
+        "src/finish/review/references/code-quality.md",
+        "src/finish/review/references/spec-review.md",
+        "scripts/generate-review-prompts.ts",
+        "test/unit/finish/review-prompt.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/finish/review-prompt.test.ts",
+          "reason": "its test *\"the quality prompt asks for a per-function walk, the spec prompt for a per-AC walk\"* asserts the returned quality prompt contains `one line per function`. That assertion pins the exact contract this story replaces. It must become an assertion that the quality prompt is per-file and that the spec prompt remains per-AC."
+        },
+        {
+          "path": "src/finish/review/prompts.gen.ts",
+          "reason": "generated from the reference markdown by `scripts/generate-review-prompts.ts`. Regenerate it; do not hand-edit. `scripts/check-review-prompts-generated.ts` fails the build when it is stale, but that check runs only under `bun run lint`, and this repo's nax quality gate is `quality.commands.lint = bun run lint:json`, which omits it. A stale generated file therefore passes every gate you see locally and fails only in CI, so run the generator deliberately rather than relying on the gates."
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4c9a591dad59bd23aeac5b5d453fce339c06e567"
+    },
+    {
+      "id": "US-002",
+      "title": "Gate quality WALK coverage against changed files",
+      "description": "**Goal** — Make quality-review WALK auditing diff-relative, exact per file, and resistant to git infrastructure failures while requiring most cited touchpoint paths to exist.\n\n**Motivation** — `auditGaps` checks the WALK's *shape* and not its *coverage*: a WALK naming 4 of 30 changed items passes exactly like a complete one.\n\n**Approach** — Coverage gating is per-file and exact. `auditGaps` gains the diff range, lists the changed files, subtracts the noise classes the worker protocol already tells the reviewer to ignore, and requires the WALK to name all of them. The comparison is exact-path, on the leading token of each WALK line. When files are unwalked, the gap message names them, so the re-review is directed rather than generic.\n\n**Approach** — One directed re-review before escalation — no new machinery. `routeReview` already routes gaps to `incomplete` while `incompleteAttempts < MAX_INCOMPLETE_ATTEMPTS` (cap 1) and escalates past it. A coverage gap therefore already produces exactly one directed re-review before escalating. `route.ts` is deliberately not changed.\n\n**Scope** — In: extend `auditGaps`, wire `FinishReviewInput.base` and `phase` through `finishReviewOp.verify`, use `gitWithTimeout`, add audit-local noise filters, and update audit/operation tests. Out: US-001 owns prompt wording and generated-reference regeneration; do not alter `route.ts`, the parser, `ReviewReport`, retry strategy, or shared `NAX_ARTIFACT_PATHSPEC`.\n\n**Interface**\n```typescript\nauditGaps(report: ReviewReport, workdir: string): Promise<string[]>\nfinishReviewOp.verify(parsed, input, ctx)\ngitWithTimeout(...)\nreport.walk: string[]\n```\n\nChange the audit signature and its one production call so the audit receives the review range and phase. Obtain changed files with the sanctioned git helper for `<base>...HEAD`; on a non-zero exit, timeout, or git error, emit no unwalked-file gap and retain existing shape checks. For quality only, exclude `.nax/` paths at any depth, lockfiles, and generated output, then compare required paths to the leading whitespace-delimited WALK token. A malformed line provides no coverage; extra WALK paths are ignored. If no reviewable files remain, emit no coverage gap. Preserve containment-safe stats and `MAX_CHECKED`; change the touchpoint condition to require most checked cited paths to exist.",
+      "acceptanceCriteria": [
+        "When a quality review range lists `src/a.ts` and `src/b.ts` and its WALK names both paths, then `auditGaps` returns no gap mentioning unwalked files.",
+        "When a quality review range lists `src/a.ts` and `src/b.ts` and its WALK names only `src/a.ts`, then `auditGaps` returns a gap naming `src/b.ts`.",
+        "When a quality WALK contains `src/a.ts — earns its place` for changed file `src/a.ts`, then `auditGaps` returns no unwalked-files gap for `src/a.ts`.",
+        "When a quality review range lists `src/a.ts` and `packages/core/.nax/config.json` and its WALK names only `src/a.ts`, then `auditGaps` returns no unwalked-files gap.",
+        "When a quality review range lists `src/a.ts` and `bun.lock` and its WALK names only `src/a.ts`, then `auditGaps` returns no unwalked-files gap.",
+        "When the changed-file git invocation exits non-zero, then `auditGaps` returns no unwalked-files gap.",
+        "When the changed-file git invocation exits non-zero and a report has no `## TOUCHPOINTS` section, then `auditGaps` returns the existing touchpoints shape gap.",
+        "When `auditGaps` is called for phase `spec` and the WALK names none of the changed files, then it returns no unwalked-files gap.",
+        "When four cited touchpoint paths have one existing path, then `auditGaps` returns the touchpoint-path gap.",
+        "When four cited touchpoint paths have three existing paths, then `auditGaps` returns no touchpoint-path gap.",
+        "When a report's `## WALK` section is absent or empty, then `auditGaps` returns the existing missing-WALK gap.",
+        "When the changed-file listing succeeds but all changed paths are excluded noise, then `auditGaps` returns no unwalked-files gap.",
+        "When a quality WALK line has no extractable leading changed-file path, then it provides no coverage and `auditGaps` names each otherwise-unwalked required file.",
+        "When a quality WALK names a path outside the changed-file set while all required changed paths are named, then `auditGaps` returns no unwalked-files gap.",
+        "When `finishReviewOp.verify` receives quality input with `base: \"origin/main\"` and `_gitDeps.spawn` is stubbed, then the stubbed git invocation receives arguments containing `origin/main...HEAD`."
+      ],
+      "tags": [
+        "feature",
+        "finish",
+        "review",
+        "git",
+        "verification"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "The story changes a public internal audit signature and creates a cross-module git-to-operation wiring path with failure degradation and untrusted-text parsing.",
+        "agentProfileId": "opencode-balanced",
+        "agent": "opencode",
+        "profileModelTier": "powerful",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-balanced",
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/finish/review/audit-gaps.ts",
+        "src/operations/finish-review.ts",
+        "src/utils/git.ts",
+        "src/finish/pr/context.ts",
+        "src/finish/types.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/finish/review-audit-gaps.test.ts",
+          "reason": "every one of its nine call sites invokes `auditGaps(report, dir)` with two arguments. This story changes that signature, so all of them must be updated to supply the review range and phase."
+        },
+        {
+          "path": "test/unit/operations/finish-review.test.ts",
+          "reason": "its `finishReviewOp.verify()` block calls `verify` directly and asserts on the returned `gaps`. `verify` now consults git for the changed-file list, so those cases must stub the git seam and supply a `base`."
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "273a67d16d5edaa4291e20c2ef335d62ef853231"
+    }
+  ],
+  "analysis": "This is a two-story enhancement to the existing finish-review flow. `buildReviewPrompt` selects generated spec or quality dimensions and unconditionally inserts `args.specPath` in both its fresh and `since` re-review branches (src/finish/review/prompt.ts:89-138); its private `outputContract` currently requires a per-function quality WALK but keeps the spec WALK per AC (src/finish/review/prompt.ts:43-68). The quality reference contains the private `write yourself` per-function forcing function and currently turns that enumeration into a public, per-function WALK (src/finish/review/references/code-quality.md:8-20). It is compiled into `prompts.gen.ts` by `scripts/generate-review-prompts.ts`, so the markdown and generated artifact must be changed/regenerated as one unit; hand-editing generated output risks the stale-generated guard. Existing prompt tests already cover phase contracts and fresh/re-review behavior in test/unit/finish/review-prompt.test.ts.\n\n`auditGaps(report, workdir)` presently has a two-argument public signature, checks only section shape, and considers one real touchpoint sufficient (src/finish/review/audit-gaps.ts:63-82). Its containment-safe `exists()` helper and `MAX_CHECKED = 20` should remain the filesystem boundary (src/finish/review/audit-gaps.ts:42-55), but the touchpoint quorum changes from any to most cited paths. The only production caller is `finishReviewOp.verify`, which currently forwards only `parsed` and `input.workdir` (src/operations/finish-review.ts:175-180). `FinishReviewInput` already has `phase` and `base`; the implementation should extend the audit call with those values so only quality reviews run a changed-file coverage check. Use `gitWithTimeout` and its injectable `_gitDeps.spawn` seam for `git diff --name-only <base>...HEAD`; failure must degrade to existing shape checks rather than create a false incomplete route. The parser and `ReviewReport.walk: string[]` remain unchanged: extract the leading whitespace-delimited token at audit time. Define audit-local `.nax`, lockfile, and generated-output filters rather than exporting the private context-module pathspec.\n\nAffected tests are test/unit/finish/review-prompt.test.ts, test/unit/finish/review-audit-gaps.test.ts, and test/unit/operations/finish-review.test.ts. The direct verify tests use SPEC_INPUT with `base` already supplied (test/unit/operations/finish-review.test.ts:36-43,147-184); quality integration coverage must stub `_gitDeps.spawn` and prove the passed range includes `origin/main...HEAD`. Main risks are contract drift between the generated quality reference and reply contract, a `path:symbol` WALK format that fails exact matching, and infrastructure failures accidentally escalating reviews. There is no user-data migration or compatibility migration: the function signature change is internal, has one production caller, and all test callers must be updated together. Routing thresholds and parser behavior are intentionally unchanged, so existing incomplete retry semantics provide the one directed re-review.",
+  "outOfScope": [
+    "Gating the SPEC phase's WALK against the spec's AC list. Issue #1635 proposes it; the spec phase is at 72% first-attempt health with no observed failure, so it is deferred to its own issue rather than bundled here. #1635 is descoped to the quality phase.",
+    "Changing `MAX_INCOMPLETE_ATTEMPTS`, `MAX_FIX_ATTEMPTS`, or any routing threshold in `src/finish/route.ts`.",
+    "Changing `parseReviewReport` or the `ReviewReport` shape. The WALK stays `string[]`; the path token is extracted at the point of use.",
+    "Changing the reply format to JSON, or altering the parse-retry strategy on `finishReviewOp`. Measurement shows the failure is not format-bound.",
+    "Adding a diff-size guard or splitting the quality review across multiple workers. The finish phase already runs spec and quality as two separate sequential reviewer operations with independent session roles.",
+    "Updating `finish-audit-stats.py`. It lives in the separate `nax-global` repository (`~/.nax` is a symlink to it) and cannot be modified from this repo.",
+    "Demonstrating that the reviewer's real-world finding yield or first-attempt health improves. That is behavioural on a live model and is measured over subsequent runs against the 34% baseline recorded above; no acceptance criterion in this spec asserts it."
+  ],
+  "routingProfile": "cross-agent"
+}
