@@ -8,8 +8,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { _promptsInitDeps, promptsInitCommand } from "../../../src/cli/prompts";
-import { buildRoleTaskSection } from "../../../src/prompts/sections/role-task";
+import { _promptsInitDeps, promptsInitCommand } from "@/cli/prompts";
+import { buildRoleTaskSection } from "@/prompts/sections/role-task";
 import { makeTempDir } from "@test/helpers";
 
 

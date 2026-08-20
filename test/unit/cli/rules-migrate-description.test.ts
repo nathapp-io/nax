@@ -5,7 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _rulesCLIDeps, rulesMigrateCommand } from "../../../src/cli/rules";
+import { _rulesCLIDeps, rulesMigrateCommand } from "@/cli/rules";
 
 let origReadFile: typeof _rulesCLIDeps.readFile;
 let origWriteFile: typeof _rulesCLIDeps.writeFile;

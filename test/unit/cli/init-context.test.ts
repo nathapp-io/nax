@@ -12,7 +12,7 @@ import {
   generateContextTemplate,
   initContext,
   scanProject,
-} from "../../../src/cli/init-context";
+} from "@/cli/init-context";
 import { withTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------

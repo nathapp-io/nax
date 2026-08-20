@@ -17,7 +17,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _rulesCLIDeps, rulesExportCommand } from "../../../src/cli/rules";
+import { _rulesCLIDeps, rulesExportCommand } from "@/cli/rules";
 
 let origWriteFile: typeof _rulesCLIDeps.writeFile;
 let origGlobInDir: typeof _rulesCLIDeps.globInDir;

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generatePackageContextTemplate, initPackage } from "../../../src/cli/init-context";
+import { generatePackageContextTemplate, initPackage } from "@/cli/init-context";
 import { makeTempDir } from "@test/helpers";
 
 describe("generatePackageContextTemplate (MW-005)", () => {

@@ -19,8 +19,8 @@ import {
   rulesExportCommand,
   rulesLintCommand,
   translateLegacyFrontmatter,
-} from "../../../src/cli/rules";
-import { lintForNeutrality } from "../../../src/context/rules/canonical-loader";
+} from "@/cli/rules";
+import { lintForNeutrality } from "@/context/rules/canonical-loader";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers

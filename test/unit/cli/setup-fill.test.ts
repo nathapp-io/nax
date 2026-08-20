@@ -7,11 +7,11 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { _fillScriptsDeps, fillScripts } from "../../../src/cli/setup-fill";
-import { _analyzeRepoDeps, analyzeRepo } from "../../../src/cli/setup-analyze";
-import type { RepoAnalysis } from "../../../src/cli/setup-types";
-import type { ProjectProfile } from "../../../src/config";
-import type { DetectionResult } from "../../../src/test-runners/detect";
+import { _fillScriptsDeps, fillScripts } from "@/cli/setup-fill";
+import { _analyzeRepoDeps, analyzeRepo } from "@/cli/setup-analyze";
+import type { RepoAnalysis } from "@/cli/setup-types";
+import type { ProjectProfile } from "@/config";
+import type { DetectionResult } from "@/test-runners/detect";
 import { withTempDir } from "@test/helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────

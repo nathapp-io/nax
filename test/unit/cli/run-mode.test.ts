@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveUseHeadless } from "../../../src/cli/run-mode";
+import { resolveUseHeadless } from "@/cli/run-mode";
 
 describe("resolveUseHeadless (BUG-23)", () => {
   test("TTY + normal formatter → TUI (not headless)", () => {

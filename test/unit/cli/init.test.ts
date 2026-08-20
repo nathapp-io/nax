@@ -9,7 +9,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import { _initDeps, initCommand, initProject } from "../../../src/cli/init";
+import { _initDeps, initCommand, initProject } from "@/cli/init";
 import { withTempDir } from "@test/helpers";
 
 describe("initProject — creates the project config scaffold", () => {

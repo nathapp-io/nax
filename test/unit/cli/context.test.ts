@@ -6,8 +6,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { formatContextInspect } from "../../../src/cli/context";
-import type { StoredContextManifest } from "../../../src/context/engine/manifest-store";
+import { formatContextInspect } from "@/cli/context";
+import type { StoredContextManifest } from "@/context/engine/manifest-store";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

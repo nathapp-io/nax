@@ -16,9 +16,9 @@ import { describe, expect, test } from "bun:test";
 import {
   buildInitConfig,
   detectStack,
-} from "../../../src/cli/init-detect";
-import type { StackInfo } from "../../../src/cli/init-detect";
-import { initProject } from "../../../src/cli/init";
+} from "@/cli/init-detect";
+import type { StackInfo } from "@/cli/init-detect";
+import { initProject } from "@/cli/init";
 import { withTempDir } from "@test/helpers";
 
 

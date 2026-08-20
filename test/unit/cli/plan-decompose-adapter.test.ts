@@ -13,12 +13,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { _planDeps, planDecomposeCommand } from "../../../src/cli/plan";
-import type { DecomposeResult, DecomposedStory } from "../../../src/agents/shared/types-extended";
+import { _planDeps, planDecomposeCommand } from "@/cli/plan";
+import type { DecomposeResult, DecomposedStory } from "@/agents/shared/types-extended";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { makeMockAgentManager, makeNaxConfig, makePRD } from "../../helpers";
-import type { PRD, UserStory } from "../../../src/prd/types";
-import type { NaxConfig } from "../../../src/config";
+import { makeMockAgentManager, makeNaxConfig, makePRD } from "@test/helpers";
+import type { PRD, UserStory } from "@/prd/types";
+import type { NaxConfig } from "@/config";
 
 function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
@@ -280,7 +280,7 @@ describe("plan.ts module exports — local buildDecomposePrompt removed (US-002 
   test("plan.ts does not export buildDecomposePrompt with (targetStory, siblings, codebaseContext) signature", async () => {
     // After US-002 the local buildDecomposePrompt(targetStory, siblings, codebaseContext)
     // must be removed. We verify it is no longer exported.
-    const planModule = await import("../../../src/cli/plan") as Record<string, unknown>;
+    const planModule = await import("@/cli/plan") as Record<string, unknown>;
     // The shared buildDecomposePrompt in src/agents/shared/decompose.ts takes DecomposeOptions.
     // The plan-specific overload (positional params) must not exist as a named export.
     const fn = planModule["buildDecomposePrompt"];

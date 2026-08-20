@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import path from "node:path";
 import { rm, mkdir } from "node:fs/promises";
-import { globalConfigDir } from "../../../src/config/paths";
-import { writeProjectIdentity } from "../../../src/runtime";
-import { validateProjectName, checkInitCollision } from "../../../src/cli/init";
+import { globalConfigDir } from "@/config/paths";
+import { writeProjectIdentity } from "@/runtime";
+import { validateProjectName, checkInitCollision } from "@/cli/init";
 
 describe("validateProjectName", () => {
   it("accepts 'my-project'", () => {
