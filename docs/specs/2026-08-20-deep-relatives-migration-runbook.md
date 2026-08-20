@@ -63,7 +63,7 @@ Final ratchet state (all green):
 | Ratchet | Baseline | Final |
 |:---|---:|---:|
 | `check:deep-relatives` | 2,845 | 0 — ratchet deleted, §7.3 |
-| `check:import-cycles` | 42 | 29 |
+| `check:import-cycles` | 42 loops | 135 modules — metric changed, see §7.3 |
 | `check:test-typecheck` | 2,001 | 2,001 |
 | `check:test-as-unknown-as` | 815 | 815 |
 | `check:alias-internals` | 77 barrels | 83 barrels OK — 6 added by §7.3 |
@@ -96,7 +96,7 @@ bun run test
 | Check | Must read |
 |:---|---:|
 | `check:alias-internals` | OK (barrel count rises as nested barrels are added) |
-| `check:import-cycles` | 29 |
+| `check:import-cycles` | 135 modules (was 29 loops during the run) |
 | `check:test-typecheck` | 2,001 |
 | `check:test-as-unknown-as` | 815 |
 | `bun run test` | 0 fail |
@@ -158,9 +158,9 @@ rule. Do not attempt mechanically. Procedure for a human or stronger model:
 3. Run `bun scripts/check-import-cycles.ts`. **If the count rises, revert both
    edits** and leave the import as a deep relative — a deep relative is
    strictly better than a cycle. (The "above 42" in the original was written
-   when actual == baseline == 42; compare against the *current* reading, now
-   29.) Note the §7.2 caveat: no new cycles reported is not proof —
-   `bun run test` is.
+   when actual == baseline == 42; compare against the *current* reading — now
+   135, and counting modules rather than loops since the §7.2 defect was
+   fixed.)
 4. Record why anything was left behind.
 
 Precedent: two imports in `src/pipeline/stages/context.ts` and
@@ -300,8 +300,9 @@ what produced the fat `@/review` barrel and the cycle hell in §7.1/§7.2.
 | `src/pipeline/subscribers/hooks.ts` | `src/execution/story-context/index.ts` | `bfefa9514` |
 | `src/execution/lifecycle/run-initialization.ts` | `src/review/runner/index.ts` | `285393a7f` |
 
-`check:import-cycles` held at 29 and the full suite stayed green through every
-commit — as expected for a change that alters no module identity. **The two §5
+`check:import-cycles` held at 29 loops — its metric at the time — and the full
+suite stayed green through every commit, as expected for a change that alters
+no module identity. **The two §5
 "permanent by design" exemptions were retired too**; that verdict was an
 artifact of only ever attempting barrel routing.
 
@@ -334,11 +335,19 @@ literal path, not just its import specifier.
   67.46% against a recorded 67.97%. Measured in a clean worktree at that
   commit — identical numbers, so it is not caused by the migration. It is not
   in `bun run lint`, `check:all`, or the pre-commit hook, only in CI.
-- **`check:import-cycles` has a real blind spot** (found in §7.2, still
-  unfixed): its DFS marks each node `DONE` after the first visit, so when a
-  node sits in more than one simple cycle of the same SCC, only the
-  first-discovered cycle is reported. A reading of 0 is **not** proof a barrel
-  change is safe — `bun run test` is. Worth its own issue.
+- ~~**`check:import-cycles` has a real blind spot**~~ — **fixed** in
+  `58728075a`. Its DFS marked each node `DONE` after the first visit, so within
+  one strongly connected component only the first loop discovered was ever
+  reported; a module could join an existing component and the check still read
+  clean. It now uses Tarjan's SCC algorithm and counts the **modules** inside a
+  cycle rather than the loops — complete and linear, where enumerating every
+  simple cycle is not viable (`src/`'s largest component has 94 modules). A
+  newly cyclic module also fails the check even when the total drops, so one
+  added cycle cannot hide behind two removed. Baseline re-derived: 29 loops →
+  135 modules, which is the extent the DFS was hiding, not a regression.
+  Verified against the old script on the §7.2 change: its `--list` mentions
+  `review-builder.ts` zero times, while the new one prints the full 8-hop loop
+  §7.2 had to trace by hand.
 - **The two rule roots have drifted.** `.claude/rules/project-conventions.md`
   and `test-architecture.md` are marked auto-generated from `.nax/rules/`, but
   carry hand-added #1647 content the canonical files lack. Running
