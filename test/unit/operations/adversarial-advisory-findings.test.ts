@@ -1,7 +1,7 @@
 // test/unit/operations/adversarial-advisory-findings.test.ts
 import { describe, expect, test } from "bun:test";
-import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
-import type { AdversarialReviewInput } from "../../../src/operations/adversarial-review";
+import { adversarialReviewOp } from "@/operations/adversarial-review";
+import type { AdversarialReviewInput } from "@/operations/adversarial-review";
 
 const story = { id: "us-001", title: "t", acceptanceCriteria: [] } as unknown as AdversarialReviewInput["story"];
 

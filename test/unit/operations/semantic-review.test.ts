@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { Iteration } from "../../../src/findings";
-import { semanticReviewOp } from "../../../src/operations/semantic-review";
-import type { SemanticReviewInput } from "../../../src/operations/semantic-review";
-import { callOp } from "../../../src/operations";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime } from "../../helpers";
-import type { NaxRuntime } from "../../../src/runtime";
+import type { Iteration } from "@/findings";
+import { semanticReviewOp } from "@/operations/semantic-review";
+import type { SemanticReviewInput } from "@/operations/semantic-review";
+import { callOp } from "@/operations";
+import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

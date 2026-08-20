@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { AdapterFailure } from "../../../src/context/engine";
-import { _callOpDeps, callOp } from "../../../src/operations";
-import type { RunOperation } from "../../../src/operations";
-import { DEFAULT_CONFIG, pickSelector } from "../../../src/config";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager } from "../../helpers";
-import type { NaxRuntime } from "../../../src/runtime";
+import type { AdapterFailure } from "@/context/engine";
+import { _callOpDeps, callOp } from "@/operations";
+import type { RunOperation } from "@/operations";
+import { DEFAULT_CONFIG, pickSelector } from "@/config";
+import { makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
 
 // This file covers synthesis logic in sendWithFileOutput (src/operations/call.ts).
 // The AC9 tests below are a forward-declaration placeholder — Task 2 adds

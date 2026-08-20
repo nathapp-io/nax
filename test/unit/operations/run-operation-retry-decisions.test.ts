@@ -54,7 +54,7 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
       retry: { shouldRetry: () => ({ retry: false as const }) },
     } as unknown as RunOperation<
       { text: string },
-      import("../../../src/agents/types").TurnResult,
+      import("@/agents/types").TurnResult,
       Pick<typeof DEFAULT_CONFIG, "routing">
     >;
 
@@ -234,7 +234,7 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
       retry: costAccumulationStrategy,
     } as unknown as RunOperation<
       { text: string },
-      import("../../../src/agents/types").TurnResult,
+      import("@/agents/types").TurnResult,
       Pick<typeof DEFAULT_CONFIG, "routing">
     >;
 
@@ -289,7 +289,7 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
       retry: noRetryStrategy,
     } as unknown as RunOperation<
       { text: string },
-      import("../../../src/agents/types").TurnResult,
+      import("@/agents/types").TurnResult,
       Pick<typeof DEFAULT_CONFIG, "routing">
     >;
 

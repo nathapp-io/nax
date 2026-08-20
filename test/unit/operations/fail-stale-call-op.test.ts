@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AdapterFailure } from "../../../src/context/engine";
+import type { AdapterFailure } from "@/context/engine";
 
 /**
  * Tests for callOp operation-level handling of fail-stale failures.

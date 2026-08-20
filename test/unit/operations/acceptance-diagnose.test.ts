@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeTestRuntime } from "../../helpers";
-import type { AcceptanceDiagnoseInput } from "../../../src/operations/acceptance-diagnose";
-import type { NaxRuntime } from "../../../src/runtime";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import type { AcceptanceDiagnoseInput } from "@/operations/acceptance-diagnose";
+import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
-import { acceptanceDiagnoseOp } from "../../../src/operations/acceptance-diagnose";
+import { acceptanceDiagnoseOp } from "@/operations/acceptance-diagnose";
 
 const SAMPLE_INPUT: AcceptanceDiagnoseInput = {
   testOutput: "FAIL: expected 1 but got 2",

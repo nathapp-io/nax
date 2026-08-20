@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { callOp } from "../../../src/operations";
-import type { RunOperation } from "../../../src/operations";
-import { DEFAULT_CONFIG, pickSelector } from "../../../src/config";
-import { ParseValidationError, makeParseRetryStrategy } from "../../../src/agents/retry";
-import type { RetryStrategy } from "../../../src/agents/retry";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager } from "../../helpers";
-import type { NaxRuntime } from "../../../src/runtime";
+import { callOp } from "@/operations";
+import type { RunOperation } from "@/operations";
+import { DEFAULT_CONFIG, pickSelector } from "@/config";
+import { ParseValidationError, makeParseRetryStrategy } from "@/agents/retry";
+import type { RetryStrategy } from "@/agents/retry";
+import { makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
 
 // ---------------------------------------------------------------------------
 // Shared helpers

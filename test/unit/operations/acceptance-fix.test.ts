@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeTestRuntime } from "../../helpers";
-import type { AcceptanceFixSourceInput, AcceptanceFixTestInput } from "../../../src/operations/acceptance-fix";
-import type { NaxRuntime } from "../../../src/runtime";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import type { AcceptanceFixSourceInput, AcceptanceFixTestInput } from "@/operations/acceptance-fix";
+import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
-import { acceptanceFixSourceOp, acceptanceFixTestOp } from "../../../src/operations/acceptance-fix";
+import { acceptanceFixSourceOp, acceptanceFixTestOp } from "@/operations/acceptance-fix";
 
 const SOURCE_INPUT: AcceptanceFixSourceInput = {
   testOutput: "FAIL: expected true but got false",

@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { routingConfigSelector } from "../../../src/config";
-import type { ClassifyRouteInput } from "../../../src/operations/classify-route";
-import { classifyRouteBatchOp, classifyRouteOp } from "../../../src/operations/classify-route";
-import { makeNaxConfig, makeTestRuntime } from "../../helpers";
-import type { NaxRuntime } from "../../../src/runtime";
+import { routingConfigSelector } from "@/config";
+import type { ClassifyRouteInput } from "@/operations/classify-route";
+import { classifyRouteBatchOp, classifyRouteOp } from "@/operations/classify-route";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

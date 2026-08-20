@@ -33,10 +33,10 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { semanticReviewOp } from "../../../src/operations/semantic-review";
-import type { SemanticReviewInput } from "../../../src/operations/semantic-review";
-import { makeTestRuntime, withTempDir } from "../../helpers";
-import type { NaxRuntime } from "../../../src/runtime";
+import { semanticReviewOp } from "@/operations/semantic-review";
+import type { SemanticReviewInput } from "@/operations/semantic-review";
+import { makeTestRuntime, withTempDir } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 

@@ -35,10 +35,10 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
-import type { AdversarialReviewInput } from "../../../src/operations/adversarial-review";
-import { makeTestRuntime, withTempDir } from "../../helpers";
-import type { NaxRuntime } from "../../../src/runtime";
+import { adversarialReviewOp } from "@/operations/adversarial-review";
+import type { AdversarialReviewInput } from "@/operations/adversarial-review";
+import { makeTestRuntime, withTempDir } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 

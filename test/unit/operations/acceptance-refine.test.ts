@@ -4,7 +4,7 @@ import type { BuildContext } from "@/operations/types";
 import { acceptanceConfigSelector } from "@/config";
 import type { AcceptanceConfig } from "@/config/selectors";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeTestRuntime } from "../../helpers";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
