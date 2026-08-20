@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-08-20T06:30:29.890Z",
+  "updatedAt": "2026-08-20T14:24:12.429Z",
   "byFile": {
     "src/acceptance/content-loader.ts": 0,
     "src/agents/acp/adapter-close-physical.ts": 0.0741,
@@ -76,7 +76,7 @@
     "src/pipeline/runner.ts": 0.7692,
     "src/pipeline/stages/acceptance.ts": 0.721,
     "src/pipeline/stages/constitution.ts": 0.1707,
-    "src/pipeline/stages/context.ts": 0.6797,
+    "src/pipeline/stages/context.ts": 0.6746,
     "src/pipeline/stages/optimizer.ts": 0.4063,
     "src/pipeline/subscribers/interaction.ts": 0.7031,
     "src/plan/strategies/write-prd.ts": 0.7143,
