@@ -14,10 +14,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _acceptanceSetupDeps, acceptanceSetupStage } from "../../../../src/pipeline/stages/acceptance-setup";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import { DEFAULT_CONFIG } from "../../../../src/config";
-import { makePRD, makeStory } from "../../../helpers";
+import { _acceptanceSetupDeps, acceptanceSetupStage } from "@/pipeline/stages/acceptance-setup";
+import type { PipelineContext } from "@/pipeline/types";
+import { DEFAULT_CONFIG } from "@/config";
+import { makePRD, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

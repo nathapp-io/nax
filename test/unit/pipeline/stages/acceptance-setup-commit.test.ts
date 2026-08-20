@@ -8,9 +8,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _acceptanceSetupDeps, acceptanceSetupStage } from "../../../../src/pipeline/stages/acceptance-setup";
-import { DEFAULT_CONFIG } from "../../../../src/config";
-import type { PipelineContext } from "../../../../src/pipeline/types";
+import { _acceptanceSetupDeps, acceptanceSetupStage } from "@/pipeline/stages/acceptance-setup";
+import { DEFAULT_CONFIG } from "@/config";
+import type { PipelineContext } from "@/pipeline/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -172,7 +172,7 @@ describe("acceptance-setup: autoCommitIfDirty skipped on fingerprint match", () 
     const ctx = makeCtx();
 
     // Compute the real fingerprint so the stored meta matches
-    const { computeACFingerprint } = await import("../../../../src/pipeline/stages/acceptance-setup");
+    const { computeACFingerprint } = await import("@/pipeline/stages/acceptance-setup");
     const acs = ctx.prd.userStories.flatMap((s) => s.acceptanceCriteria);
     const fingerprint = computeACFingerprint(acs);
 

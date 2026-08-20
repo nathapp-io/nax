@@ -6,11 +6,11 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
-import type { PRD, UserStory } from "../../../../src/prd";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import type { _routingDeps as RoutingDeps } from "../../../../src/pipeline/stages/routing";
-import { makeNaxConfig, makeStory } from "../../../helpers";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import type { PRD, UserStory } from "@/prd";
+import type { PipelineContext } from "@/pipeline/types";
+import type { _routingDeps as RoutingDeps } from "@/pipeline/stages/routing";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-routing-test-${randomUUID()}`;
 

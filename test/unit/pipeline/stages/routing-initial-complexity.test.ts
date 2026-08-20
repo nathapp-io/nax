@@ -8,12 +8,12 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
-import type { PRD, UserStory } from "../../../../src/prd";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import type { _routingDeps as RoutingDeps } from "../../../../src/pipeline/stages/routing";
-import type { StoryRouting } from "../../../../src/prd/types";
-import { makeNaxConfig, makeStory } from "../../../helpers";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import type { PRD, UserStory } from "@/prd";
+import type { PipelineContext } from "@/pipeline/types";
+import type { _routingDeps as RoutingDeps } from "@/pipeline/stages/routing";
+import type { StoryRouting } from "@/prd/types";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-routing-initial-complexity-test-${randomUUID()}`;
 
@@ -154,7 +154,7 @@ describe("routingStage - initialComplexity set on first classification", () => {
 // ---------------------------------------------------------------------------
 
 describe("routingStage - initialComplexity never overwritten after first classify", () => {
-  let origRoutingDeps: typeof import("../../../../src/pipeline/stages/routing")["_routingDeps"];
+  let origRoutingDeps: typeof import("@/pipeline/stages/routing")["_routingDeps"];
 
   afterEach(() => {
     mock.restore();

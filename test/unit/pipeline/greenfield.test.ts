@@ -9,8 +9,8 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isGreenfieldStory } from "../../../src/context/greenfield";
-import type { UserStory } from "../../../src/prd/types";
+import { isGreenfieldStory } from "@/context/greenfield";
+import type { UserStory } from "@/prd/types";
 import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,9 +1,9 @@
 import { readFile, rm } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { PipelineEventBus } from "../../../../src/pipeline/event-bus";
-import { type MetaJson, wireRegistry } from "../../../../src/pipeline/subscribers/registry";
-import { globalConfigDir } from "../../../../src/config/paths";
+import { PipelineEventBus } from "@/pipeline/event-bus";
+import { type MetaJson, wireRegistry } from "@/pipeline/subscribers/registry";
+import { globalConfigDir } from "@/config/paths";
 import { waitForFile } from "../../../helpers/fs";
 
 describe("wireRegistry", () => {

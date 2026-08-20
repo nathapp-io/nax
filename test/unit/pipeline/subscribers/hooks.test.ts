@@ -1,8 +1,8 @@
 // RE-ARCH: keep
 import { describe, expect, test, mock } from "bun:test";
-import { wireHooks } from "../../../../src/pipeline/subscribers/hooks";
-import { PipelineEventBus } from "../../../../src/pipeline/event-bus";
-import type { LoadedHooksConfig } from "../../../../src/hooks";
+import { wireHooks } from "@/pipeline/subscribers/hooks";
+import { PipelineEventBus } from "@/pipeline/event-bus";
+import type { LoadedHooksConfig } from "@/hooks";
 
 const EMPTY_HOOKS: LoadedHooksConfig = {};
 

@@ -11,9 +11,9 @@ import {
   _acceptanceSetupDeps,
   acceptanceSetupStage,
   computeACFingerprint,
-} from "../../../../src/pipeline/stages/acceptance-setup";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import { DEFAULT_CONFIG } from "../../../../src/config";
+} from "@/pipeline/stages/acceptance-setup";
+import type { PipelineContext } from "@/pipeline/types";
+import { DEFAULT_CONFIG } from "@/config";
 
 // ---------------------------------------------------------------------------
 // Helpers

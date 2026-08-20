@@ -15,7 +15,7 @@ import { NeutralityLintError } from "@/context";
 import type { PipelineContext } from "@/pipeline";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 // _contextStageDeps is test-only and not re-exported from the pipeline/stages barrel.
-import { contextStage, _contextStageDeps } from "../../../../src/pipeline/stages/context";
+import { contextStage, _contextStageDeps } from "@/pipeline/stages/context";
 
 let origCreateOrchestrator: typeof _contextStageDeps.createOrchestrator;
 let origReadDigest: typeof _contextStageDeps.readDigest;

@@ -7,10 +7,10 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { _promptStageDeps, promptStage } from "../../../../src/pipeline/stages/prompt";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import type { PRD, UserStory } from "../../../../src/prd";
-import { makeSparseNaxConfig, makeStory } from "../../../helpers";
+import { _promptStageDeps, promptStage } from "@/pipeline/stages/prompt";
+import type { PipelineContext } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd";
+import { makeSparseNaxConfig, makeStory } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-prompt-acceptance-${randomUUID()}`;
 

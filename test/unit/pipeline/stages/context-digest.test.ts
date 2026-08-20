@@ -8,9 +8,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { NaxError } from "@/errors";
-import type { ContextBundle, ContextRequest } from "../../../../src/context/engine";
-import { _contextStageDeps, contextStage } from "../../../../src/pipeline/stages/context";
-import type { PipelineContext } from "../../../../src/pipeline/types";
+import type { ContextBundle, ContextRequest } from "@/context/engine";
+import { _contextStageDeps, contextStage } from "@/pipeline/stages/context";
+import type { PipelineContext } from "@/pipeline/types";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
