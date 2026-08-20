@@ -77,6 +77,71 @@ describe("scanForDeepRelatives", () => {
     write(root, "scripts/check-deep-relatives.ts", 'import { X } from "../../utils";\n');
     expect(scanForDeepRelatives(root)).toHaveLength(0);
   });
+
+  test("skips deep-relative imports inside single-quoted string literals", () => {
+    write(
+      root,
+      "src/a/b/c.ts",
+      'write(root, "src/a/b/c.ts", \'import { X } from "../../utils";\\n\');\n',
+    );
+    expect(scanForDeepRelatives(root)).toHaveLength(0);
+  });
+
+  test("skips deep-relative imports inside double-quoted string literals", () => {
+    write(
+      root,
+      "src/a/b/c.ts",
+      'const fixture = "import { X } from \\"../../utils\\";";\n',
+    );
+    expect(scanForDeepRelatives(root)).toHaveLength(0);
+  });
+
+  test("skips deep-relative imports inside template literals", () => {
+    write(
+      root,
+      "src/a/b/c.ts",
+      "const fixture = `import { X } from \"../../utils\";`;\n",
+    );
+    expect(scanForDeepRelatives(root)).toHaveLength(0);
+  });
+
+  test("flags the real import but skips the same string in a fixture on the same line", () => {
+    write(
+      root,
+      "src/a/b/c.ts",
+      'import { X } from "../../real";\nconst fixture = \'from "../../fake"\';\n',
+    );
+    const violations = scanForDeepRelatives(root);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.importPath).toBe("../../real");
+  });
+
+  test("flags real imports inside comments (the form we want to see)", () => {
+    write(root, "src/a/b/c.ts", '// import { X } from "../../utils";\n');
+    const violations = scanForDeepRelatives(root);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.importPath).toBe("../../utils");
+  });
+
+  test("skips deep-relative imports inside multi-line template literals", () => {
+    write(
+      root,
+      "src/a/b/c.ts",
+      'const fixture = `\n  import { X } from "../../utils";\n`;\n',
+    );
+    expect(scanForDeepRelatives(root)).toHaveLength(0);
+  });
+
+  test("flags a real import while skipping a template literal on the next line", () => {
+    write(
+      root,
+      "src/a/b/c.ts",
+      'import { X } from "../../real";\nconst fixture = `\n  from "../../fake"\n`;\n',
+    );
+    const violations = scanForDeepRelatives(root);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.importPath).toBe("../../real");
+  });
 });
 
 describe("formatReport", () => {

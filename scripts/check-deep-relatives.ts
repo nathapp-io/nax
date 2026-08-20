@@ -100,7 +100,9 @@ export function scanForDeepRelatives(rootDir: string): DeepRelativeViolation[] {
         continue;
       }
 
+      const stringRegionList = stringRanges(content);
       const lines = content.split("\n");
+      let cursor = 0;
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i] ?? "";
         const matches = [
@@ -108,6 +110,8 @@ export function scanForDeepRelatives(rootDir: string): DeepRelativeViolation[] {
           ...line.matchAll(/import\(\s*["'](\.\.\/\.\.(?:\/[^"']*)?)['"]\s*\)/g),
         ];
         for (const m of matches) {
+          const abs = cursor + (m.index ?? 0);
+          if (stringRegionList.some(([s, e]) => abs >= s && abs < e)) continue;
           const spec = m[1];
           if (!spec) continue;
           violations.push({
@@ -117,11 +121,55 @@ export function scanForDeepRelatives(rootDir: string): DeepRelativeViolation[] {
             suggestion: suggestAlias(spec, rel),
           });
         }
+        cursor += line.length + 1;
       }
     }
   }
 
   return violations;
+}
+
+/** Half-open [start, end) offsets of every string literal in `content` (offsets are absolute, not per-line). Tracks single, double, and backtick quotes; respects `\\` escapes; supports strings spanning multiple lines (template literals, unterminated single/double quotes). Skips line and block comments — quote characters inside a comment are not real strings, so a deep-relative pattern inside a comment is still flagged (intentional — see runbook section 6: comments should be rewritten to show the form we want copied). */
+function stringRanges(content: string): ReadonlyArray<readonly [number, number]> {
+  const out: Array<[number, number]> = [];
+  let i = 0;
+  let quote: string | null = null;
+  let start = 0;
+  while (i < content.length) {
+    const c = content[i];
+    if (quote === null) {
+      if (c === "/" && content[i + 1] === "/") {
+        while (i < content.length && content[i] !== "\n") i += 1;
+        continue;
+      }
+      if (c === "/" && content[i + 1] === "*") {
+        i += 2;
+        while (i < content.length - 1 && !(content[i] === "*" && content[i + 1] === "/")) i += 1;
+        if (i < content.length) i += 2;
+        continue;
+      }
+      if (c === "'" || c === '"' || c === "`") {
+        quote = c;
+        start = i;
+        i += 1;
+      } else {
+        i += 1;
+      }
+    } else {
+      if (c === "\\" && i + 1 < content.length) {
+        i += 2;
+        continue;
+      }
+      if (c === quote) {
+        out.push([start, i + 1]);
+        quote = null;
+        start = i + 1;
+      }
+      i += 1;
+    }
+  }
+  if (quote !== null) out.push([start, content.length]);
+  return out;
 }
 
 function loadBaseline(): Baseline | null {
