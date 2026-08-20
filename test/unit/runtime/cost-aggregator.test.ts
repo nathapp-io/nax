@@ -1,5 +1,5 @@
 import { describe, test, expect, mock } from "bun:test";
-import { CostAggregator, _costAggDeps, createNoOpCostAggregator, type CostEvent } from "../../../src/runtime/cost-aggregator";
+import { CostAggregator, _costAggDeps, createNoOpCostAggregator, type CostEvent } from "@/runtime/cost-aggregator";
 import { withTempDir } from "@test/helpers";
 import { join } from "node:path";
 

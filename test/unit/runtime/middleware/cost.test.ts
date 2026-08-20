@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { DispatchEventBus } from "../../../../src/runtime/dispatch-events";
-import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "../../../../src/runtime/dispatch-events";
-import { COST_ROW_SCHEMA_VERSION, attachCostSubscriber } from "../../../../src/runtime/middleware/cost";
-import { createNoOpCostAggregator, type CostEvent, type CostErrorEvent } from "../../../../src/runtime/cost-aggregator";
+import { DispatchEventBus } from "@/runtime/dispatch-events";
+import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "@/runtime/dispatch-events";
+import { COST_ROW_SCHEMA_VERSION, attachCostSubscriber } from "@/runtime/middleware/cost";
+import { createNoOpCostAggregator, type CostEvent, type CostErrorEvent } from "@/runtime/cost-aggregator";
 
 const PERMS = { mode: "approve-reads" as const };
 

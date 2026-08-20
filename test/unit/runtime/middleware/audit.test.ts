@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { DispatchEventBus } from "../../../../src/runtime/dispatch-events";
-import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "../../../../src/runtime/dispatch-events";
-import { attachAuditSubscriber } from "../../../../src/runtime/middleware/audit";
+import { DispatchEventBus } from "@/runtime/dispatch-events";
+import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "@/runtime/dispatch-events";
+import { attachAuditSubscriber } from "@/runtime/middleware/audit";
 import {
   createNoOpPromptAuditor,
   type PromptAuditEntry,
   type PromptAuditErrorEntry,
-} from "../../../../src/runtime/prompt-auditor";
+} from "@/runtime/prompt-auditor";
 
 const PERMS = { mode: "approve-reads" as const };
 

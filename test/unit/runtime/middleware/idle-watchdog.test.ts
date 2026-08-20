@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { initLogger, getLogger, resetLogger } from "../../../../src/logger";
-import type { LogEntry } from "../../../../src/logger/types";
-import { AgentStreamEventBus, type IAgentStreamEventBus } from "../../../../src/runtime/agent-stream-events";
-import { attachAgentIdleWatchdog } from "../../../../src/runtime/middleware/idle-watchdog";
-import type { FakeClock } from "../../../helpers";
-import { makeNaxConfig } from "../../../helpers";
-import { cleanupTempDir, makeTempDir } from "../../../helpers";
+import { initLogger, getLogger, resetLogger } from "@/logger";
+import type { LogEntry } from "@/logger/types";
+import { AgentStreamEventBus, type IAgentStreamEventBus } from "@/runtime/agent-stream-events";
+import { attachAgentIdleWatchdog } from "@/runtime/middleware/idle-watchdog";
+import type { FakeClock } from "@test/helpers";
+import { makeNaxConfig } from "@test/helpers";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
   GRACE_MS,
   GRACE_SECONDS,
