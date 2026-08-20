@@ -10,6 +10,7 @@
 import { createHash } from "node:crypto";
 import { relative } from "node:path";
 import type { NaxConfig } from "@/config/types";
+import { generateTestCoverageSummary } from "@/context";
 import type { TestScanOptions, TestScanResult } from "@/context/test-scanner";
 import { getLogger } from "@/logger";
 import { getContextFiles } from "@/prd";
@@ -18,7 +19,6 @@ import { coerceSmartRunner } from "@/test-runners";
 import type { ResolvedTestPatterns } from "@/test-runners/resolver";
 import { errorMessage } from "@/utils/errors";
 import { resolveTestFilePatterns } from "../../../test-runners/resolver";
-import { generateTestCoverageSummary } from "../../test-scanner";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────

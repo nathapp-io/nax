@@ -18,6 +18,7 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { featureDir } from "@/config";
+import { FeatureContextProvider } from "@/context";
 import type { ContextRequest, IContextProvider } from "@/context/engine";
 import {
   NeutralityLintError,
@@ -36,7 +37,6 @@ import { estimateAvailableBudgetTokens } from "../../context/engine/available-bu
 import { writeContextManifest } from "../../context/engine/manifest-store";
 import { loadPluginProviders } from "../../context/engine/providers/plugin-loader";
 import { getStageContextConfig } from "../../context/engine/stage-config";
-import { FeatureContextProvider } from "../../context/providers/feature-context";
 import { buildStoryContextFullFromCtx } from "../../execution/helpers";
 import { readDigestFile, writeDigestFile } from "../../session/scratch-writer";
 import { resolveTestFilePatterns } from "../../test-runners/resolver";
