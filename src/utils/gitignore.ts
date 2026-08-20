@@ -15,31 +15,50 @@
 
 import { PROJECT_FEATURES_DIR } from "@/config";
 
+/**
+ * Run artifacts written inside `<features>/<name>/`.
+ *
+ * Each is listed individually rather than ignoring the feature directory
+ * wholesale: `spec.md`, `prd.json`, `prd-fidelity-report.md`,
+ * `acceptance-meta.json` and the planning notes beside them are the feature's
+ * source of truth and belong in version control. A rule that ignores the
+ * whole `<features>/<name>` directory hides those too — silently, since git
+ * never reports an ignored file.
+ *
+ * Each is prefixed with a `**` path segment so the rule also covers a monorepo
+ * package's own `.nax/`, which is where nax writes when a story carries a
+ * `workdir`.
+ */
+const FEATURE_RUN_ARTIFACTS = [
+  "runs/",
+  "plan/",
+  "sessions/",
+  "stories/",
+  // Per-story context fragments, rewritten by every run. Kept in sync with
+  // `fragmentPath()` in src/context/fragments/store.ts.
+  "fragments/",
+  "interactions/",
+  "semantic-verdicts/",
+  "status.json",
+  "checkpoint.jsonl",
+  "progress.txt",
+  "acp-sessions.json",
+  "acceptance-refined.json",
+  // Backups the LLM-recovery path drops beside the file it rewrote.
+  "*.bak",
+].map((artifact) => `**/${PROJECT_FEATURES_DIR}/*/${artifact}`);
+
 export const NAX_GITIGNORE_ENTRIES = [
   ".nax-verifier-verdict.json",
   "nax.lock",
   ".nax/**/runs/",
   ".nax/metrics.json",
-  `${PROJECT_FEATURES_DIR}/*/status.json`,
-  `${PROJECT_FEATURES_DIR}/*/plan/`,
-  // Per-story context fragments, rewritten by every run. Like the sibling
-  // feature-tree entries above and below, this is subsumed by the blanket
-  // `**/<features>/*/` rule further down — it is listed explicitly because a
-  // repo that narrows that blanket rule to keep `prd.json` / `spec.md` under
-  // version control (as the nax repo itself does) must not silently start
-  // committing run artifacts. Kept in sync with `fragmentPath()` in
-  // src/context/fragments/store.ts.
-  `${PROJECT_FEATURES_DIR}/*/fragments/`,
-  `${PROJECT_FEATURES_DIR}/*/acp-sessions.json`,
-  `${PROJECT_FEATURES_DIR}/*/interactions/`,
-  `${PROJECT_FEATURES_DIR}/*/progress.txt`,
-  `${PROJECT_FEATURES_DIR}/*/acceptance-refined.json`,
+  ...FEATURE_RUN_ARTIFACTS,
   ".nax-pids",
   ".nax-wt/",
   "**/.nax-acceptance*",
   "**/_nax_acceptance_test.py",
   "**/_nax_suggested_test.py",
-  `**/${PROJECT_FEATURES_DIR}/*/`,
   ".nax/prompt-audit/",
   // Only reached when a run has no outputDir — nax-finish normally writes its
   // audit under `~/.nax/<project>/finish-audit/`. It still must be ignored:

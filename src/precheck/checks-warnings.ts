@@ -164,7 +164,11 @@ export async function checkGitignoreCoversNax(workdir: string): Promise<Check> {
     "**/.nax-acceptance*",
     "**/_nax_acceptance_test.py",
     "**/_nax_suggested_test.py",
-    `**/${PROJECT_FEATURES_DIR}/*/`,
+    // Substring-matched, so this also passes for the `**/`-prefixed form
+    // `nax init` writes. Never assert the bare feature directory here: a
+    // blanket `<features>/*/` rule ignores the committed `spec.md` and
+    // `prd.json` alongside the run artifacts.
+    `${PROJECT_FEATURES_DIR}/*/fragments/`,
   ];
   const missing = patterns.filter((pattern) => !content.includes(pattern));
   const passed = missing.length === 0;

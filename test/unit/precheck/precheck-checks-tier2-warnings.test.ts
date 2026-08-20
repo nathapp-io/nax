@@ -252,7 +252,7 @@ nax.lock
 **/.nax-acceptance*
 **/_nax_acceptance_test.py
 **/_nax_suggested_test.py
-**/.nax/features/*/
+**/.nax/features/*/fragments/
 `.trim(),
     );
 
