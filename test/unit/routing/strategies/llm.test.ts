@@ -10,8 +10,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { initLogger, resetLogger } from "../../../../src/logger";
-import { makeNaxConfig } from "../../../helpers";
+import { initLogger, resetLogger } from "@/logger";
+import { makeNaxConfig } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -57,7 +57,7 @@ describe("LLM routing cache utilities", () => {
   // BUG-19), not a module-level singleton, so there's nothing to reset between tests.
 
   test("clearCache empties the cache", async () => {
-    const { clearCache, getCacheSize, injectCacheEntry } = await import("../../../../src/routing/strategies/llm");
+    const { clearCache, getCacheSize, injectCacheEntry } = await import("@/routing/strategies/llm");
     const cache = new Map();
     injectCacheEntry(cache, "CACHE-UTIL-001", {
       complexity: "simple",
@@ -71,7 +71,7 @@ describe("LLM routing cache utilities", () => {
   });
 
   test("clearCacheForStory removes only that entry", async () => {
-    const { getCacheSize, injectCacheEntry, clearCacheForStory } = await import("../../../../src/routing/strategies/llm");
+    const { getCacheSize, injectCacheEntry, clearCacheForStory } = await import("@/routing/strategies/llm");
     const cache = new Map();
     injectCacheEntry(cache, "CACHE-A", {
       complexity: "simple",

@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { UserStory } from "../../../src/prd/types";
-import { _callOpDeps } from "../../../src/operations";
-import { resolveRouting, tryLlmBatchRoute } from "../../../src/routing/router";
-import { makeMockAgentManager, makeNaxConfig, makeStory } from "../../helpers";
+import type { UserStory } from "@/prd/types";
+import { _callOpDeps } from "@/operations";
+import { resolveRouting, tryLlmBatchRoute } from "@/routing/router";
+import { makeMockAgentManager, makeNaxConfig, makeStory } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
-import type { DispatchContext } from "../../../src/runtime/dispatch-context";
-import type { NaxRuntime } from "../../../src/runtime";
+import type { DispatchContext } from "@/runtime/dispatch-context";
+import type { NaxRuntime } from "@/runtime";
 
 // The mock runtime makes the routing LLM call fail, which the classify-route op
 // retries behind a 1s base backoff. The retry cadence is classify-route's

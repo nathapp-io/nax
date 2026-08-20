@@ -7,13 +7,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import { initLogger, resetLogger } from "../../../src/logger";
-import type { UserStory } from "../../../src/prd/types";
-import { classifyComplexity, complexityToModelTier, determineTestStrategy } from "../../../src/routing";
-import { classifyRouteOp, classifyRouteBatchOp } from "../../../src/operations";
-import { makeStory } from "../../helpers";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { initLogger, resetLogger } from "@/logger";
+import type { UserStory } from "@/prd/types";
+import { classifyComplexity, complexityToModelTier, determineTestStrategy } from "@/routing";
+import { classifyRouteOp, classifyRouteBatchOp } from "@/operations";
+import { makeStory } from "@test/helpers";
 
 /** Minimal keyword-route helper replacing the deleted keywordStrategy object. */
 function keywordRoute(story: UserStory, config: NaxConfig) {
@@ -165,7 +165,7 @@ describe("LLM routing config accepts retry and timeout fields with correct defau
   });
 
   test("NaxConfigSchema validates retries and retryDelayMs", async () => {
-    const { NaxConfigSchema } = await import("../../../src/config/schemas");
+    const { NaxConfigSchema } = await import("@/config/schemas");
 
     const result = NaxConfigSchema.safeParse({
       ...DEFAULT_CONFIG,
@@ -189,7 +189,7 @@ describe("LLM routing config accepts retry and timeout fields with correct defau
   });
 
   test("NaxConfigSchema rejects negative retries", async () => {
-    const { NaxConfigSchema } = await import("../../../src/config/schemas");
+    const { NaxConfigSchema } = await import("@/config/schemas");
 
     const result = NaxConfigSchema.safeParse({
       ...DEFAULT_CONFIG,
