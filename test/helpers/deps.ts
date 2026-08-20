@@ -7,7 +7,7 @@
  * Usage:
  *
  * ```ts
- * import { withDepsRestore } from "../../helpers/deps";
+ * import { withDepsRestore } from "@test/helpers";
  *
  * describe("my module", () => {
  *   // Save specific keys — restored after every test

@@ -2,7 +2,7 @@
  * Barrel export for test helpers. Import from here in test files:
  *
  * ```ts
- * import { makeMockAgentManager, makeNaxConfig, makeStory } from "../../helpers";
+ * import { makeMockAgentManager, makeNaxConfig, makeStory } from "@test/helpers";
  * ```
  *
  * See .claude/rules/test-helpers.md for usage guidelines.

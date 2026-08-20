@@ -6,7 +6,7 @@
  *
  * Usage:
  * ```ts
- * import { makeTestContext, makeTestStory, makeTestPRD } from "../../helpers/pipeline-context";
+ * import { makeTestContext, makeTestStory, makeTestPRD } from "@test/helpers";
  *
  * const ctx = makeTestContext({ workdir: "/tmp/mytest" });
  * const ctx = makeTestContext({
