@@ -3,7 +3,7 @@
   "feature": "logs-follow-tailing",
   "branchName": "fix/logs-follow-tailing",
   "createdAt": "2026-08-20T02:50:06Z",
-  "updatedAt": "2026-08-20T04:01:58.824Z",
+  "updatedAt": "2026-08-20T04:17:19.780Z",
   "userStories": [
     {
       "id": "US-001",
@@ -89,8 +89,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

@@ -162,7 +162,7 @@ describe("logs-follow-tailing acceptance", () => {
       await expect(follow(filePath, { json: true }, { _deps: { emit, readRange, sleep } })).resolves.toBe("cancelled");
       expect(emit.mock.calls.length - initialCallCount).toBe(1);
       expect(JSON.parse(emitted.at(-1) ?? "")).toEqual({ message: "appended" });
-      expect(seed).toContain("✓ ✓ ✓");
+      expect(seed).toContain("α ✓ β ✓ γ ✓ δ");
       expect(readRange.mock.calls.some(([, start]) => start === bytes(seed))).toBe(true);
     });
   });
@@ -173,6 +173,7 @@ describe("logs-follow-tailing acceptance", () => {
       const appended = [jsonLine({ message: "1 ✓" }), jsonLine({ message: "2 ✓" }), jsonLine({ message: "3 ✓" })];
       const emitted: string[] = [];
       const emit = mock((line: string) => emitted.push(line));
+      const readRange = mock(rangeReader);
       let baseline = 0;
       let polls = 0;
       const sleep = async () => {
@@ -197,6 +198,7 @@ describe("logs-follow-tailing acceptance", () => {
       const filePath = writeFixture(dir, initial);
       const emitted: string[] = [];
       const emit = mock((line: string) => emitted.push(line));
+      const readRange = mock(rangeReader);
       const appends = [jsonLine({ n: 4 }), jsonLine({ n: 5 })];
       let polls = 0;
       const sleep = async () => {
@@ -219,6 +221,7 @@ describe("logs-follow-tailing acceptance", () => {
       const filePath = writeFixture(dir, jsonLine({ message: "before ✓" }));
       const emitted: string[] = [];
       const emit = mock((line: string) => emitted.push(line));
+      const readRange = mock(rangeReader);
       let polls = 0;
       const sleep = async () => {
         if (polls === 0) {
@@ -297,9 +300,9 @@ describe("logs-follow-tailing acceptance", () => {
       await expect(
         follow(filePath, { json: true }, { _deps: { emit: mock((_line: string) => {}), readRange, sleep } }),
       ).resolves.toBe("cancelled");
-      expect(readRange.mock.calls.map(([fp]) => fp)).toEqual([filePath, filePath]);
-      expect(starts).toEqual([0, bytes(first)]);
-      expect(starts.slice(1)).not.toContain(0);
+      expect(readRange.mock.calls.map(([fp]) => fp)).toEqual([filePath, filePath, filePath]);
+      expect(starts).toEqual([0, 0, bytes(first)]);
+      expect(starts.slice(2)).not.toContain(0);
     });
   });
 });
