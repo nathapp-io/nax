@@ -14,11 +14,11 @@ import type { AcDroppedEntry, AcGroundingMinimalRejection } from "@/review/ac-qu
 import type { LLMFinding } from "@/review/semantic-helpers";
 import type { SemanticReviewConfig, SemanticStory } from "@/review/types";
 import { wrapJsonPrompt } from "@/utils/llm-json";
-// Leaf import (not the `src/review` barrel): the barrel re-exports `./runner`,
-// which imports `./semantic`, which imports from `../prompts` (the barrel),
-// which re-exports `./builders/review-builder` — closing a 6-hop cycle through
-// this very file's top-level `const SEMANTIC_OUTPUT_SCHEMA` template literal
-// (#Phase C escalation: routing through `@/review` TDZs `SEMANTIC_CATEGORY_ENUM_LINE`).
+// Leaf import (not the `src/review` barrel): the barrel also re-exports
+// `./adversarial`, which reaches `src/operations/adversarial-review.ts` ->
+// `@/prompts` -> this very file -> the barrel again, a 5-hop cycle
+// independent of the `./runner` cycle documented in the barrel's header
+// (#Phase C escalation).
 import { SEMANTIC_CATEGORY_ENUM_LINE } from "../../review/semantic-categories";
 import { buildReviewOutOfScopeBlock } from "../sections";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";

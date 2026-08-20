@@ -14,7 +14,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExecutionConfig } from "@/config/schema";
-import { runReview } from "@/review";
+import { runReview } from "@/review/runner";
 import type { ReviewConfig } from "@/review";
 import { makeTempDir } from "@test/helpers";
 

@@ -1,6 +1,6 @@
 # Deep-Relative Migration Runbook
 
-**Status:** Active — in progress
+**Status:** Complete — 5 residuals (Phase E blocked per §7)
 **Branch:** `chore/deep-relatives-migration`
 **Date:** 2026-08-20
 **Follows:** PR #1649 (issue #1647), PR #1650 (issue #1648)
@@ -31,6 +31,32 @@ Re-read these counts at any time:
 ```bash
 bun scripts/migrate-deep-relatives.ts --dry-run
 ```
+
+### Outcome (post-run)
+
+The migration reduced **2,528 → 5** deep-relative imports (99.8%). The 5
+residuals are intentional — see §7. Two codemod bugs were found and fixed
+during the run — see §9.
+
+| Class | Initial | Final | What happened |
+|:---|---:|---:|:---|
+| `test` | 2,344 | 0 | Phase A — 17 batches, all committed |
+| `src-specifier` | 112 | 0 | Phase B — 6 batches, all committed |
+| `barrel-routing` | 60¹ | 5 | Phase C — 55 routed across 21 commits, 5 escalated |
+| `unresolved` | 17 | 0 | Phase D — `@scripts/*` alias added (13 imports), 4 JSDoc rewrites |
+| **Total** | **2,533** | **5** | |
+
+¹ 60, not the 54 in the table above — the ancestor-barrel fix (§9.2) reclassified 6 `src-specifier` cases as `barrel-routing` after this runbook was drafted.
+
+Final ratchet state (all green):
+
+| Ratchet | Baseline | Final |
+|:---|---:|---:|
+| `check:deep-relatives` | 2,845 | 5 |
+| `check:import-cycles` | 42 | 39 |
+| `check:test-typecheck` | 2,001 | 2,001 |
+| `check:test-as-unknown-as` | 815 | 815 |
+| `check:alias-internals` | 77 barrels | 77 barrels OK |
 
 ## 1. Rules that override everything
 
@@ -127,11 +153,20 @@ Precedent: two imports in `src/pipeline/stages/context.ts` and
 `src/pipeline/subscribers/hooks.ts` are permanently exempt for this reason.
 Routing them through `@/execution` closes a 12-hop `pipeline -> execution` loop.
 
+> **Note from the run:** The dry-run count was 60, not the 54 estimated above.
+> The §9.2 ancestor-barrel fix reclassified 6 imports from `src-specifier` to
+> `barrel-routing` because they bypass a non-immediate-parent barrel (e.g. the
+> §5 precedent cases, which were previously classified as `src-specifier`).
+> 55 of the 60 were routed; 5 are residuals (2 runbook exemptions + 3 cycle
+> raisers). See §7 for the full list.
+
 ## 6. Phase D — no alias exists (18) — escalate
 
 Two groups, each needing a decision rather than an edit:
 
-- **14 in `test/unit/scripts/`** importing `../../../scripts/*`. No `@scripts/*`
+- **13 in `test/unit/scripts/`** (one fewer than the 14 estimated here —
+  one was a string-literal fixture in `check-gate-reachability.test.ts` that
+  the §9.1 fix reclassified) importing `../../../scripts/*`. No `@scripts/*`
   alias exists. Either add one to `tsconfig.json` and `tsconfig.test.json`, or
   accept them as the permanent tail.
 - **4 JSDoc code-fence examples** in
@@ -159,6 +194,86 @@ Only once `check:deep-relatives` reports **0**:
 If the count cannot reach 0 because Phase D is unresolved, stop and report the
 residual rather than deleting anything.
 
+### Actual outcome — Phase E blocked
+
+`check:deep-relatives` reports **5**, not 0. Phase D is fully resolved (the
+`@scripts/*` alias was added and all 13 imports in `test/unit/scripts/` were
+routed; the 4 JSDoc code-fence examples in `test/helpers/` were rewritten to
+`@test/helpers`). The 5 residuals come from Phase C — they cannot be cleared
+without barrel-splitting work outside the scope of this migration, so **Phase E
+was not executed**. The baseline stays at 2,845. The codemod, checker, and
+their baseline file remain in place.
+
+The 5 residuals:
+
+| File:Line | Spec | Why it stays |
+|:---|:---|:---|
+| `src/pipeline/stages/context.ts:43` | `../../execution/helpers` | Runbook §5 exemption — routing through `@/execution` closes a 12-hop pipeline → execution loop |
+| `src/pipeline/subscribers/hooks.ts:16` | `../../execution/story-context` | Runbook §5 exemption — same loop |
+| `src/prompts/builders/review-builder.ts:22` | `../../review/semantic-categories` | Phase C cycle-raiser — `@/review` → `runner` → `semantic` → `@/prompts` → `review-builder` (TDZ) |
+| `src/prompts/builders/debate-builder.ts:22` | `../../debate/personas` | Phase C cycle-raiser — 7 new cycles via `@/debate` → `runner` → `runner-plan` → `verifiers` → ... |
+| `src/debate/verifiers/plan-checklist.ts:19` | `../../plan/spec-deltas` | Phase C cycle-raiser — 40 new cycles via `@/plan` → `strategies` → `cli` → `agents`/`operations` |
+
+All 5 carry in-tree `// (#Phase C escalation)` comments documenting the cycle
+path.
+
+The two runbook exemptions are **permanent by design** — they are the §5
+precedent. The three cycle-raisers can be cleared by future barrel-splitting
+work:
+
+- Split `src/review/index.ts` to drop `./runner` (clears `review-builder.ts`).
+- Split `src/debate/index.ts` to drop the runner chain (clears `debate-builder.ts`).
+- Split `src/plan/index.ts` to drop `./strategies` (clears `plan-checklist.ts`).
+
+After those three barrel splits and a fresh Phase C pass on the affected
+imports, expect `check:deep-relatives` → 2 (the two runbook exemptions only).
+At that point, **Phase E is unblocked**: deleting the four files and removing
+the two `package.json` scripts is a straightforward cleanup with no further
+decisions.
+
+### §7.1 First attempt on `review-builder.ts` — partial win, residual unchanged
+
+Dropped `./runner` from `src/review/index.ts` (commit pending). This is a
+genuine improvement on its own — `check:import-cycles` dropped from 39 to 29 —
+and cleaned up the barrel's 3 real `runReview` consumers
+(`src/execution/lifecycle/run-initialization.ts` and two
+`test/integration/review/*.test.ts` files) to import `runner.ts` directly
+instead of through a barrel that never should have carried it.
+
+It did **not**, however, unblock `review-builder.ts`. Routing
+`SEMANTIC_CATEGORY_ENUM_LINE` through the (now-`runner`-free) `@/review`
+barrel still produces a TDZ crash
+(`ReferenceError: Cannot access 'SEMANTIC_CATEGORY_ENUM_LINE' before
+initialization`, first observed failing 25 unrelated `test/unit/` files,
+e.g. `test/unit/prompts/builders/one-shot-builder.test.ts`) — caught by
+`bun run test`, not by `check:import-cycles` or `tsc`, since the cycle
+checker only tracks `src/` and this path is exercised at test-runtime
+module-init order.
+
+Root cause: a **second, independent cycle** through `./adversarial` (already
+barrel-exported, line 11 of `index.ts`, ahead of `./semantic-categories` at
+line 28):
+
+```
+src/review/index.ts -> ./adversarial -> src/operations/adversarial-review.ts
+  -> src/prompts/index.ts -> src/prompts/builders/review-builder.ts
+  -> src/review/index.ts   (closes the loop)
+```
+
+`review-builder.ts` reverted to leaf-importing `../../review/semantic-categories`
+(unchanged behavior; only its header comment was corrected). The residual
+count is still **5** — the `./runner` split alone doesn't move it.
+
+**Clearing `review-builder.ts` for real requires also splitting `./adversarial`
+out of the barrel** (or breaking the `operations/adversarial-review.ts` ->
+`@/prompts` edge some other way). Before attempting that: `./adversarial`'s
+barrel exports (`runAdversarialReview`, `_adversarialDeps`, etc.) have a wider
+consumer footprint than `./runner` did — check every `@/review` importer that
+touches adversarial-specific exports before repeating this approach, and treat
+`bun run test` (not just `check:import-cycles`) as load-bearing verification,
+since this class of regression is a runtime TDZ, not a static cycle-count
+change.
+
 ## 8. Why the rules exist
 
 Both non-obvious rules come from failures hit while building this, not caution.
@@ -172,3 +287,60 @@ Both non-obvious rules come from failures hit while building this, not caution.
   their line-scoped `// test-ratchet-allow` markers and shifted
   `check:test-as-unknown-as` from 815 to 816. The codemod's own edits were
   innocent.
+
+## 9. Bug fixes during the run
+
+Two bugs in the codemod and checker were caught and fixed while executing the
+phases. Both are recorded here so the next person who touches the migration
+tooling knows the pitfalls.
+
+### 9.1 Checker regexed string literals (commit 01d76a834)
+
+The checker's regex matched `from "../../foo"` even when the entire pattern
+sat inside a `'…'` / `"…"` / `` `…` `` string literal — typical in test
+fixtures that exercise the parser with realistic input. The codemod then
+blindly rewrote those fixtures, breaking the parser tests that depended on the
+deep-relative text as test data (8 failures in
+`test/unit/scripts/check-deep-relatives.test.ts`).
+
+Fix: precompute string-literal ranges for the whole file (single, double,
+backtick; respects `\\` escapes; supports multi-line template literals and
+unterminated quotes) and skip matches whose start offset falls inside one.
+Comments are still flagged (runbook §6 wants JSDoc examples rewritten to show
+the alias form). Cross-line string state is tracked by passing `content` to
+`stringRanges` and matching `cursor + m.index` against the returned ranges.
+
+This dropped 26 false positives from the ratchet (476 → 450) and unblocked the
+Phase A tail batch.
+
+### 9.2 Codemod missed nested barrels (commit 53ba31d84)
+
+`targetDirHasBarrel` originally checked only the **immediate parent** of the
+target file for a barrel (`src/context/engine/providers/plugin-loader` checked
+`src/context/engine/providers/index.ts`, not `src/context/engine/index.ts`).
+That misses the §5 precedent — the two imports in
+`src/pipeline/stages/context.ts` and `src/pipeline/subscribers/hooks.ts` —
+which are precisely the cases the runbook calls out as **permanently exempt**.
+The codemod rewrote them anyway, producing `@/context/engine/providers/...`
+aliases that bypass `src/context/engine/index.ts` and failed
+`check:alias-internals` (77 barrels).
+
+Fix: walk every ancestor from the target's directory up to the anchor (`src/`
+or `test/`) and classify as `barrel-routing` if any of them has an `index.ts`.
+
+This reclassified 6 imports from `src-specifier` to `barrel-routing`, leaving
+them for Phase C manual escalation instead of producing broken rewrites.
+
+### 9.3 `@scripts/*` alias added (commit 55328ec96)
+
+Phase D required routing `test/unit/scripts/*.test.ts` imports of
+`../../../scripts/*` to a path alias. No `@scripts/*` alias existed, so:
+
+1. Added `@scripts/*: ["./scripts/*"]` to `tsconfig.json` (inherited by
+   `tsconfig.test.json`).
+2. Extended `suggestAlias` in the checker to recognize `scripts/` as an
+   anchor and return `@scripts/<sub>`.
+3. Extended `classify` in the codemod to accept `@scripts/` aliases (same
+   exemption test files already get for `@/` and `@test/`).
+
+13 test imports were then rewritten in commit 5c2e908cf.
