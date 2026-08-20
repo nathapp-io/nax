@@ -11,6 +11,11 @@ import { join } from "node:path";
 import type { VerifierFinding } from "@/plan/spec-deltas";
 import { validatePlanOutput } from "@/prd";
 import type { PRD } from "@/prd/types";
+// Leaf import (not the `src/plan` barrel): the barrel re-exports `./strategies`
+// which transitively depends on `src/cli`, `src/agents`, `src/operations` —
+// closing 20+ cycles through `src/debate/verifiers/plan-checklist.ts`. The
+// leaf `formatSpecDeltas` has no internal imports so it's cycle-free
+// (#Phase C escalation).
 import { formatSpecDeltas } from "../../plan/spec-deltas";
 import type { FactsManifest } from "../facts-manifest";
 import { parseFactsManifest } from "../facts-manifest";
