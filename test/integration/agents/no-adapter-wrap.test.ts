@@ -14,7 +14,7 @@ describe("ADR-020: wrapAdapterAsManager is forbidden", () => {
   });
 
   test("fakeAgentManager is available from test helpers", async () => {
-    const { fakeAgentManager } = await import("../../helpers/fake-agent-manager");
+    const { fakeAgentManager } = await import("@test/helpers");
     expect(typeof fakeAgentManager).toBe("function");
   });
 });

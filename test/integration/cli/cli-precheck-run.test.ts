@@ -11,8 +11,7 @@ import { DEFAULT_CONFIG } from "@/config";
 import { run } from "@/execution";
 import type { PRD } from "@/prd/types";
 import { EXIT_CODES, runPrecheck } from "@/precheck";
-import { fullTest } from "../../helpers/env";
-import { makeTempDir } from "@test/helpers";
+import { fullTest, makeTempDir } from "@test/helpers";
 
 // Requires real claude binary — skipped by default, run with FULL=1.
 const skipInCI = fullTest;

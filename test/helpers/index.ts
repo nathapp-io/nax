@@ -44,3 +44,7 @@ export type { ScriptedAgentSpec, ScriptedTurn, E2EOptions, E2EResult, E2EGates }
 export { DEFAULT_TEST_ROUTING, makeTestContext, makeTestPRD, makeTestStory } from "./pipeline-context";
 export { makeMutationCheckCtx, makeMutationCheckDeps } from "./mutation-check";
 export type { MutationCheckCtxOptions } from "./mutation-check";
+export { fullTest, fullDescribe } from "./env";
+export { waitForFile } from "./fs";
+export { fakeAgentManager } from "./fake-agent-manager";
+export type { FakeAgentManagerOptions } from "./fake-agent-manager";

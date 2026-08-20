@@ -330,7 +330,7 @@ describe("checkPRDValid (Tier 1 blocker)", () => {
 });
 
 // Requires real `claude` binary — skipped by default, run with FULL=1.
-import { fullTest as skipInCI } from "../../helpers/env";
+import { fullTest as skipInCI } from "@test/helpers";
 
 describe("checkClaudeCLI (Tier 1 blocker)", () => {
   skipInCI("runs claude --version command", async () => {

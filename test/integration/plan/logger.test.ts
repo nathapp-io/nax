@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { fullTest } from "../../helpers/env";
+import { fullTest } from "@test/helpers";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { Logger, getLogger, initLogger, resetLogger } from "@/logger";

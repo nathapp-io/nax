@@ -11,8 +11,7 @@ import { join } from "node:path";
 import type { NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd/types";
 import { runPrecheck } from "@/precheck";
-import { fullDescribe } from "../../helpers/env";
-import { makeTempDir } from "@test/helpers";
+import { fullDescribe, makeTempDir } from "@test/helpers";
 
 // Requires real claude binary — skipped by default, run with FULL=1.
 const describeWithClaude = fullDescribe;

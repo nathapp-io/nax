@@ -15,8 +15,7 @@ import { DEFAULT_CONFIG } from "@/config";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
-import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
-import { fakeAgentManager } from "../../helpers/fake-agent-manager";
+import { fakeAgentManager, makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-test-storyid-${randomUUID()}`;
 

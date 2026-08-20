@@ -11,8 +11,7 @@ import { _statusFeaturesDeps, displayFeatureStatus } from "@/cli/status-features
 import type { NaxStatusFile } from "@/execution/status-file";
 import type { PRD } from "@/prd";
 // Requires real PID checks — skipped by default, run with FULL=1.
-import { fullTest as skipInCI } from "../../helpers/env";
-import { makeTempDir } from "@test/helpers";
+import { fullTest as skipInCI, makeTempDir } from "@test/helpers";
 
 describe("displayFeatureStatus", () => {
   let testDir: string;

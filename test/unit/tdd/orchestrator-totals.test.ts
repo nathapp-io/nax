@@ -14,9 +14,7 @@ import type { UserStory } from "@/prd";
 import { _isolationDeps } from "@/tdd/isolation";
 import { _rollbackDeps } from "@/tdd/rollback";
 import { _gitDeps } from "@/utils/git";
-import { makeNaxConfig, makeMockRuntime } from "@test/helpers";
-import { fakeAgentManager } from "../../helpers/fake-agent-manager";
-import { makeMockCallContext } from "@test/helpers";
+import { fakeAgentManager, makeMockCallContext, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 // Mock spawn-based deps so the post-dispatch isolation/getChangedFiles/autoCommit
 // helpers don't try to invoke real `git`. This test asserts on cost/duration aggregation.

@@ -11,9 +11,7 @@ import { promptLoaderConfigSelector } from "@/config";
 import type { NaxConfig } from "@/config";
 import { loadOverride } from "@/prompts/loader";
 import type { PromptRole } from "@/prompts/core/types";
-import { fullTest } from "../../helpers/env";
-import { makeTempDir } from "@test/helpers";
-import { makeNaxConfig } from "@test/helpers";
+import { fullTest, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

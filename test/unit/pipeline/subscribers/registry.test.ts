@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { PipelineEventBus } from "@/pipeline/event-bus";
 import { type MetaJson, wireRegistry } from "@/pipeline/subscribers/registry";
 import { globalConfigDir } from "@/config/paths";
-import { waitForFile } from "../../../helpers/fs";
+import { waitForFile } from "@test/helpers";
 
 describe("wireRegistry", () => {
   let workdir: string;
