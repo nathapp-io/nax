@@ -9,10 +9,10 @@
  * In headless mode the caller skips this entirely — paused stories stay paused.
  */
 
-import type { InteractionChain } from "../../interaction/chain";
-import type { InteractionResponse } from "../../interaction/types";
+import type { InteractionChain } from "@/interaction/chain";
+import type { InteractionResponse } from "@/interaction/types";
+import type { PRD } from "@/prd/types";
 import { getSafeLogger } from "../../logger";
-import type { PRD } from "../../prd/types";
 
 export interface PausedStoryPromptSummary {
   resumed: string[];

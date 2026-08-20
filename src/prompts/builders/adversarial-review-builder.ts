@@ -7,10 +7,10 @@
  *   - Adversarial asks: "Where does this break? What is missing?"
  */
 
-import type { Iteration } from "../../findings";
-import type { AcDroppedEntry, AcQuoteRejectionCode } from "../../review/ac-quote-validator";
-import type { AdversarialLLMFinding } from "../../review/adversarial-helpers";
-import type { AdversarialReviewConfig, SemanticStory } from "../../review/types";
+import type { Iteration } from "@/findings";
+import type { AcDroppedEntry, AcQuoteRejectionCode } from "@/review/ac-quote-validator";
+import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
+import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
 import { buildReviewOutOfScopeBlock } from "../sections";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";
 

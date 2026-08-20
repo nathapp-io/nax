@@ -1,4 +1,4 @@
-import type { AdapterFailure } from "../../context/engine";
+import type { AdapterFailure } from "@/context/engine";
 import { getSafeLogger } from "../../logger";
 import type { RetryContext, RetryDecision, RetryStrategy } from "./types";
 

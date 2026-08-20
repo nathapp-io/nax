@@ -6,7 +6,7 @@
  * Cache lives in llm-cache.ts; re-exported here for backward compat.
  */
 
-import type { UserStory } from "../../prd";
+import type { UserStory } from "@/prd";
 import { OneShotPromptBuilder, type RoutingCandidate, type SchemaDescriptor } from "../../prompts";
 import { typedSpawn } from "../../utils/bun-deps";
 

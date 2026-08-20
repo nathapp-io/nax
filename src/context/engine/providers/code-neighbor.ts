@@ -8,10 +8,10 @@
  */
 
 import { join, relative, resolve } from "node:path";
+import type { NaxIgnoreMatcher } from "@/utils/path-filters";
 import { getLogger } from "../../../logger";
 import { detectLanguage } from "../../../project";
 import { discoverWorkspacePackages } from "../../../test-runners/detect/workspace";
-import type { NaxIgnoreMatcher } from "../../../utils/path-filters";
 import { isRelativeAndSafe } from "../../../utils/path-security";
 import type { ContextProviderResult, ContextRequest, IContextProvider } from "../types";
 import { type ContentCacheState, createContentCacheState, readCached } from "./code-neighbor-cache";

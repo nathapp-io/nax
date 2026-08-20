@@ -9,16 +9,16 @@
  */
 
 import { join } from "node:path";
+import type { AgentAdapter } from "@/agents/types";
+import type { NaxConfig } from "@/config";
+import type { AgentGetFn } from "@/pipeline/types";
+import type { PRD } from "@/prd/types";
+import type { ReviewConfig } from "@/review/types";
 import { resolveDefaultAgent } from "../../agents";
-import type { AgentAdapter } from "../../agents/types";
-import type { NaxConfig } from "../../config";
 import { AgentNotFoundError, AgentNotInstalledError, StoryLimitExceededError } from "../../errors";
 import { getSafeLogger } from "../../logger";
-import type { AgentGetFn } from "../../pipeline/types";
 import { countStories, loadPRD, markStoryPassed, resetFailedStoriesToPending, savePRD } from "../../prd";
-import type { PRD } from "../../prd/types";
 import { runReview } from "../../review/runner";
-import type { ReviewConfig } from "../../review/types";
 import { spawn } from "../../utils/bun-deps";
 import { hasCommitsForStory } from "../../utils/git";
 

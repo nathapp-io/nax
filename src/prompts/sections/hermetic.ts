@@ -8,7 +8,7 @@
  * Roles that do NOT: verifier (read-only, writes no test code).
  */
 
-import type { ProjectProfile } from "../../config/runtime-types";
+import type { ProjectProfile } from "@/config/runtime-types";
 
 const HERMETIC_ROLES = new Set(["test-writer", "implementer", "tdd-simple", "batch", "single-session"]);
 

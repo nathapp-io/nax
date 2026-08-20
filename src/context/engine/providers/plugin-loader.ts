@@ -19,7 +19,7 @@
  */
 
 import { isAbsolute, join, resolve } from "node:path";
-import type { ContextPluginProviderConfig } from "../../../config/runtime-types";
+import type { ContextPluginProviderConfig } from "@/config/runtime-types";
 import { getLogger } from "../../../logger";
 import type { IContextProvider } from "../types";
 

@@ -21,10 +21,10 @@
  * ```
  */
 
-import { assembleForStage } from "../../context/engine";
+import { assembleForStage } from "@/context/engine";
+import type { AcceptanceEntry } from "@/prompts/sections/acceptance";
 import { getLogger } from "../../logger";
 import { PromptBuilder } from "../../prompts";
-import type { AcceptanceEntry } from "../../prompts/sections/acceptance";
 import { resolveSelfVerificationPromptInput } from "../../quality";
 import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";

@@ -4,7 +4,7 @@
  * Formats story title, description, and numbered acceptance criteria.
  */
 
-import type { UserStory } from "../../prd/types";
+import type { UserStory } from "@/prd/types";
 import { buildModifiedFilesLines } from "./modified-files";
 import { buildOutOfScopeLines } from "./out-of-scope";
 

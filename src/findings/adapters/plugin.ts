@@ -1,4 +1,4 @@
-import type { ReviewFinding } from "../../plugins/types";
+import type { ReviewFinding } from "@/plugins/types";
 import type { Finding } from "../types";
 
 /**

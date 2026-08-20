@@ -3,8 +3,8 @@
  * and adapter-lifecycle.ts. Kept separate to avoid circular imports.
  */
 
-import type { PipelineStage } from "../../config/permissions";
-import type { AgentStreamEvent } from "../../runtime/agent-stream-events";
+import type { PipelineStage } from "@/config/permissions";
+import type { AgentStreamEvent } from "@/runtime/agent-stream-events";
 import type { SessionTokenUsage } from "./wire-types";
 
 export interface AcpSessionResponse {

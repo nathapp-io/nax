@@ -6,7 +6,7 @@
  * them to the plugins module directly.
  */
 
-import type { ReviewFinding } from "../../../plugins/types";
+import type { ReviewFinding } from "@/plugins/types";
 import type { PromptSection } from "../types";
 
 export type { ReviewFinding };

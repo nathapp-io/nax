@@ -31,3 +31,4 @@ export type {
   SelfVerificationScratchEntry,
   ToolDiagnosticsScratchEntry,
 } from "./scratch-writer";
+export { purgeStaleScratch } from "./scratch-purge";

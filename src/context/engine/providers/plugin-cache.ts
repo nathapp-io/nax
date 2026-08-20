@@ -16,7 +16,7 @@
  * See: docs/reviews/context-engine-v2-findings-2-and-5-proposal.md (Finding 5)
  */
 
-import type { ContextPluginProviderConfig } from "../../../config/runtime-types";
+import type { ContextPluginProviderConfig } from "@/config/runtime-types";
 import { NaxError } from "../../../errors";
 import { getLogger } from "../../../logger";
 import type { IContextProvider } from "../types";

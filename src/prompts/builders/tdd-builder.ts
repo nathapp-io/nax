@@ -21,11 +21,11 @@
  * Backwards-compat alias: PromptBuilder re-exported from src/prompts/index.ts
  */
 
-import type { PromptLoaderConfig } from "../../config/selectors";
-import type { NaxConfig } from "../../config/types";
+import type { PromptLoaderConfig } from "@/config/selectors";
+import type { NaxConfig } from "@/config/types";
+import type { UserStory } from "@/prd";
+import type { SelfVerificationPromptInput } from "@/quality/self-verification";
 import { filterContextByRole, truncateToContextBudget } from "../../context";
-import type { UserStory } from "../../prd";
-import type { SelfVerificationPromptInput } from "../../quality/self-verification";
 import { SectionAccumulator } from "../core";
 import type { PromptOptions, PromptRole, PromptSection } from "../core";
 import { universalConstitutionSection, universalContextSection } from "../core";

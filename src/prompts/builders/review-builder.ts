@@ -9,10 +9,10 @@
  * src/prompts, so importing semantic.ts here would form a cycle.
  */
 
+import type { Iteration } from "@/findings";
 import type { AcDroppedEntry, AcGroundingMinimalRejection } from "@/review/ac-quote-validator";
 import type { LLMFinding } from "@/review/semantic-helpers";
 import type { SemanticReviewConfig, SemanticStory } from "@/review/types";
-import type { Iteration } from "../../findings";
 // Leaf import (not the `src/review` barrel) for the same reason as the type
 // imports above: semantic.ts imports this builder from src/prompts, so pulling
 // the barrel in would close a cycle. `semantic-categories` has no imports of

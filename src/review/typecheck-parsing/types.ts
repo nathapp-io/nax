@@ -1,4 +1,4 @@
-import type { Finding } from "../../findings";
+import type { Finding } from "@/findings";
 
 export type TypecheckOutputFormat = "auto" | "tsc" | "text" | "none";
 

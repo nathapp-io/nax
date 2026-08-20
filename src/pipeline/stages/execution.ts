@@ -9,18 +9,18 @@
  *   → applyPostRunInspection → decideStageAction.
  */
 
+import type { AgentAdapter } from "@/agents/types";
 import { isThreeSessionStrategy } from "@/config";
+import { buildPlanForStrategy, requiresInitialRefCapture } from "@/execution";
+import type { TddMode } from "@/execution/post-run";
+import type { StoryOrchestratorResult } from "@/execution/story-orchestrator";
+import type { CallContext } from "@/operations/types";
 import { validateAgentForTier } from "../../agents";
-import type { AgentAdapter } from "../../agents/types";
 import { NaxError } from "../../errors";
-import { buildPlanForStrategy, requiresInitialRefCapture } from "../../execution/build-plan-for-strategy";
 import { assemblePlanInputsFromCtx } from "../../execution/plan-inputs";
 import { _postRunDeps, applyPostRunInspection, decideStageAction } from "../../execution/post-run";
-import type { TddMode } from "../../execution/post-run";
-import type { StoryOrchestratorResult } from "../../execution/story-orchestrator";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { getLogger } from "../../logger";
-import type { CallContext } from "../../operations/types";
 import { captureGitRef, getUntrackedPaths } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 

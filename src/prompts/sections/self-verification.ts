@@ -1,4 +1,4 @@
-import type { SelfVerificationPromptInput } from "../../quality/self-verification";
+import type { SelfVerificationPromptInput } from "@/quality/self-verification";
 
 const CHECK_HEADER = "# Self-Verification Gate";
 

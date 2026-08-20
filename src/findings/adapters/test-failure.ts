@@ -1,4 +1,4 @@
-import type { TestFailure, TestSummary } from "../../test-runners";
+import type { TestFailure, TestSummary } from "@/test-runners";
 import type { Finding } from "../types";
 
 export function testFailureToFinding(failure: TestFailure): Finding {

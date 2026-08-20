@@ -73,3 +73,24 @@ afterEach(() => { _myDeps.spawn = origSpawn; });
 ```
 
 Shared TDD orchestrator tests use `test/integration/tdd/_tdd-test-helpers.ts` which wraps `saveDeps()`, `restoreDeps()`, and `mockGitSpawn()` for convenience.
+
+## Importing the code under test
+
+A test may value-import a `src/` internal directly through the `@/` alias, even
+when that directory has a barrel that does not re-export it:
+
+```typescript
+import { applyConfigCompatShims } from "@/config/compat-shims";
+```
+
+This is deliberate (GitHub #1647). Before it, a test of any non-barrelled
+internal was unwritable: `check:deep-relatives` rejected the `../../../src/...`
+form and `check:alias-internals` rejected the `@/...` form, so the two gates
+were jointly unsatisfiable. Prefer the barrel (`@/config`) when the symbol is
+exported from it; reach for the internal path only when it is not.
+
+`@test/<dir>/<internal>` remains forbidden — shared helpers and fixtures are a
+real public API for tests, so import them from their barrel (`@test/helpers`).
+
+See `.claude/rules/project-conventions.md` for the full path-alias rules and
+the deep-relative and import-cycle ratchets.

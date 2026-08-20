@@ -5,7 +5,7 @@
  * enabling mid-session agent ↔ human communication.
  */
 
-import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../../interaction/types";
+import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "@/interaction/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

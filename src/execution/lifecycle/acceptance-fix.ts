@@ -8,14 +8,14 @@
  * resolves the diagnosis per iteration.
  */
 
-import { loadSourceFilesForDiagnosis } from "../../acceptance/fix-diagnosis";
-import type { DiagnosisResult, SemanticVerdict } from "../../acceptance/types";
+import { loadSourceFilesForDiagnosis } from "@/acceptance";
+import type { DiagnosisResult, SemanticVerdict } from "@/acceptance/types";
+import type { FixTarget } from "@/findings";
+import type { CallContext } from "@/operations/types";
 import { NaxError } from "../../errors";
-import type { FixTarget } from "../../findings";
 import { getSafeLogger } from "../../logger";
 import { acceptanceDiagnoseOp } from "../../operations";
 import { callOp as _callOp } from "../../operations/call";
-import type { CallContext } from "../../operations/types";
 import { isTestLevelFailure } from "./acceptance-helpers";
 import type { AcceptanceLoopContext } from "./acceptance-loop";
 

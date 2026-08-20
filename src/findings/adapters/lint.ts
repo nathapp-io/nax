@@ -1,4 +1,4 @@
-import type { LintDiagnostic } from "../../review/lint-parsing/types";
+import type { LintDiagnostic } from "@/review/lint-parsing/types";
 import { rebaseToWorkdir } from "../path-utils";
 import type { Finding } from "../types";
 

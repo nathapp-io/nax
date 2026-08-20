@@ -15,8 +15,8 @@
  * - Returns unsubscribe function for cleanup
  */
 
-import type { NaxConfig } from "../../config";
-import type { InteractionChain } from "../../interaction/chain";
+import type { NaxConfig } from "@/config";
+import type { InteractionChain } from "@/interaction/chain";
 import { executeTrigger, isTriggerEnabled } from "../../interaction/triggers";
 import { getSafeLogger } from "../../logger";
 import type { PipelineEventBus, StoryFailedEvent } from "../event-bus";

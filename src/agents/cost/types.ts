@@ -2,7 +2,7 @@
  * Cost tracking types — shared across all agent adapters.
  */
 
-import type { ModelTier } from "../../config/schema";
+import type { ModelTier } from "@/config/schema";
 
 export type { ModelTier };
 

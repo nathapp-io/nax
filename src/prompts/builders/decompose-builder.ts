@@ -9,8 +9,8 @@
  *   - plan mode: splits a single targetStory into sub-stories
  */
 
+import type { DecomposeOptions } from "@/agents/types";
 import type { AgentRoutingProfile } from "@/config";
-import type { DecomposeOptions } from "../../agents/types";
 import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE } from "../../config/test-strategy";
 import type { SchemaDescriptor } from "../core";
 import { OneShotPromptBuilder } from "./one-shot-builder";

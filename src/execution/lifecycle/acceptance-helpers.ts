@@ -7,10 +7,10 @@
  */
 
 import path from "node:path";
-import { isStubTestContent } from "../../acceptance/heuristics";
+import { isStubTestContent } from "@/acceptance";
+import type { PipelineContext } from "@/pipeline/types";
+import type { PRD } from "@/prd/types";
 import { getSafeLogger } from "../../logger";
-import type { PipelineContext } from "../../pipeline/types";
-import type { PRD } from "../../prd/types";
 import { filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../../utils/path-filters";
 import type { AcceptanceLoopResult } from "./acceptance-loop";
 

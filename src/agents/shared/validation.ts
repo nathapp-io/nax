@@ -4,7 +4,7 @@
  * Runtime validation for agent capabilities and tier compatibility.
  */
 
-import type { ModelTier } from "../../config/schema";
+import type { ModelTier } from "@/config/schema";
 import type { AgentAdapter } from "../types";
 
 /**

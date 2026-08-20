@@ -5,7 +5,7 @@
  * with per-tier attempt budgets.
  */
 
-import type { TierConfig } from "../../config";
+import type { TierConfig } from "@/config";
 
 /** Result of escalateTier — includes both the next tier name and optional next agent. */
 export interface EscalateTierResult {
