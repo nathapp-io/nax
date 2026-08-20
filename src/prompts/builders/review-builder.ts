@@ -14,10 +14,11 @@ import type { AcDroppedEntry, AcGroundingMinimalRejection } from "@/review/ac-qu
 import type { LLMFinding } from "@/review/semantic-helpers";
 import type { SemanticReviewConfig, SemanticStory } from "@/review/types";
 import { wrapJsonPrompt } from "@/utils/llm-json";
-// Leaf import (not the `src/review` barrel) for the same reason as the type
-// imports above: semantic.ts imports this builder from src/prompts, so pulling
-// the barrel in would close a cycle. `semantic-categories` has no imports of
-// its own, so the leaf is cycle-free.
+// Leaf import (not the `src/review` barrel): the barrel re-exports `./runner`,
+// which imports `./semantic`, which imports from `../prompts` (the barrel),
+// which re-exports `./builders/review-builder` — closing a 6-hop cycle through
+// this very file's top-level `const SEMANTIC_OUTPUT_SCHEMA` template literal
+// (#Phase C escalation: routing through `@/review` TDZs `SEMANTIC_CATEGORY_ENUM_LINE`).
 import { SEMANTIC_CATEGORY_ENUM_LINE } from "../../review/semantic-categories";
 import { buildReviewOutOfScopeBlock } from "../sections";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";

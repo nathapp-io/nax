@@ -17,10 +17,10 @@ import { getSafeLogger } from "@/logger";
 import type { AgentGetFn } from "@/pipeline/types";
 import { countStories, loadPRD, markStoryPassed, resetFailedStoriesToPending, savePRD } from "@/prd";
 import type { PRD } from "@/prd/types";
+import { runReview } from "@/review";
 import type { ReviewConfig } from "@/review/types";
 import { spawn } from "@/utils/bun-deps";
 import { hasCommitsForStory } from "@/utils/git";
-import { runReview } from "../../review/runner";
 
 /**
  * Injectable dependencies for reconcileState — allows tests to mock
