@@ -293,7 +293,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
 
   // Auto-migrate generated content out of .nax/ if needed (no-op when already migrated)
   {
-    const { detectGeneratedContent, migrateCommand } = await import("../../commands/migrate");
+    const { detectGeneratedContent, migrateCommand } = await import("@/commands");
     const naxDir = path.join(workdir, ".nax");
     const candidates = await detectGeneratedContent(naxDir).catch(() => []);
     if (candidates.length > 0) {
