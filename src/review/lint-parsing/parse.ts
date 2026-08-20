@@ -1,4 +1,4 @@
-import { lintDiagnosticToFinding } from "../../findings";
+import { lintDiagnosticToFinding } from "@/findings";
 import { biomeJsonStrategy } from "./strategies/biome-json";
 import { eslintJsonStrategy } from "./strategies/eslint-json";
 import { ruffAnnotatedStrategy } from "./strategies/ruff-annotated";

@@ -1,4 +1,4 @@
-import { getSafeLogger } from "../../logger";
+import { getSafeLogger } from "@/logger";
 import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus } from "../dispatch-events";
 
 export function attachLoggingSubscriber(bus: IDispatchEventBus, runId: string): () => void {

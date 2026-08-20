@@ -1,4 +1,4 @@
-import { NaxError } from "../../errors";
+import { NaxError } from "@/errors";
 import type { AgentMiddleware, MiddlewareContext } from "../agent-middleware";
 
 export function cancellationMiddleware(): AgentMiddleware {

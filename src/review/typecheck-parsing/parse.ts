@@ -1,4 +1,4 @@
-import { genericTypecheckDiagnosticToFinding } from "../../findings";
+import { genericTypecheckDiagnosticToFinding } from "@/findings";
 import { typecheckTextBlockStrategy } from "./strategies/text-block";
 import { tscStrategy } from "./strategies/tsc";
 import type {
