@@ -13,9 +13,9 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { NaxError } from "../../errors";
-import { getLogger } from "../../logger";
-import { errorMessage } from "../../utils/errors";
+import { NaxError } from "@/errors";
+import { getLogger } from "@/logger";
+import { errorMessage } from "@/utils/errors";
 import { NeutralityLintError } from "../rules/canonical-loader";
 import { getAgentProfile } from "./agent-profiles";
 import { renderForAgent } from "./agent-renderer";

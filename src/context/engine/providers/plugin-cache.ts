@@ -17,8 +17,8 @@
  */
 
 import type { ContextPluginProviderConfig } from "@/config/runtime-types";
-import { NaxError } from "../../../errors";
-import { getLogger } from "../../../logger";
+import { NaxError } from "@/errors";
+import { getLogger } from "@/logger";
 import type { IContextProvider } from "../types";
 import type { InitialisableProvider } from "./plugin-loader";
 import { loadPluginProviders } from "./plugin-loader";

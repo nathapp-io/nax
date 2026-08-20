@@ -14,8 +14,8 @@
  */
 
 import { createHash } from "node:crypto";
-import { gitWithTimeout } from "../../../utils/git";
-import { isRelativeAndSafe } from "../../../utils/path-security";
+import { gitWithTimeout } from "@/utils/git";
+import { isRelativeAndSafe } from "@/utils/path-security";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
