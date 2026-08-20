@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   findAliasInternalViolations,
   formatAliasViolationReport,
+  formatShadowedBarrelReport,
   loadBarrels,
   scanFileForAliasInternals,
 } from "../../../scripts/check-alias-internals";
@@ -228,5 +229,67 @@ describe("test-importer exemption (GitHub #1647)", () => {
 
     const { barrels } = loadBarrels(root);
     expect(scanFileForAliasInternals(file, content, barrels, root)).toHaveLength(1);
+  });
+});
+
+describe("shadowed directory barrels (GitHub #1648)", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = makeTempDir("nax-alias-check-");
+    setupRepo(root);
+  });
+  afterEach(() => cleanupTempDir(root));
+
+  test("reports nothing when no sibling file shadows a barrel", () => {
+    expect(loadBarrels(root).shadowed).toEqual([]);
+  });
+
+  test("detects a directory barrel shadowed by a same-named sibling file", () => {
+    writeFileSync(join(root, "src", "routing.ts"), 'export * from "./routing/index";\n');
+
+    const { shadowed } = loadBarrels(root);
+    expect(shadowed).toHaveLength(1);
+    expect(shadowed[0]).toEqual({
+      alias: "@/routing",
+      shadowedBy: "src/routing.ts",
+      barrel: "src/routing/index.ts",
+    });
+  });
+
+  test("drops the shadowed barrel from the reachable set, so it is never suggested", () => {
+    writeFileSync(join(root, "src", "routing.ts"), "export const x = 1;\n");
+
+    const { barrels } = loadBarrels(root);
+    expect(barrels.has("@/routing")).toBe(false);
+    expect(barrels.has("@/config")).toBe(true);
+  });
+
+  test("a shadowed barrel's internals are not reported as alias violations", () => {
+    writeFileSync(join(root, "src", "routing.ts"), "export const x = 1;\n");
+
+    const file = join(root, "src", "consumer.ts");
+    const content = 'import { Router } from "@/routing/router";\n';
+    writeFileSync(file, content);
+
+    const { barrels } = loadBarrels(root);
+    expect(scanFileForAliasInternals(file, content, barrels, root)).toEqual([]);
+  });
+
+  test("detects a shadowed @test/ barrel too", () => {
+    writeFileSync(join(root, "test", "helpers.ts"), "export const h = 1;\n");
+
+    const { shadowed } = loadBarrels(root);
+    expect(shadowed.map((s) => s.alias)).toContain("@test/helpers");
+  });
+
+  test("report names the file, the barrel and the remedy", () => {
+    const message = formatShadowedBarrelReport([
+      { alias: "@/routing", shadowedBy: "src/routing.ts", barrel: "src/routing/index.ts" },
+    ]);
+    expect(message).toContain("[FAIL] 1 directory barrel(s) shadowed");
+    expect(message).toContain("src/routing.ts");
+    expect(message).toContain("src/routing/index.ts");
+    expect(message).toContain("fold it into the barrel");
   });
 });
