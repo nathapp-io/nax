@@ -11,13 +11,10 @@ export type {
 } from "./types.js";
 export { estimateTokens } from "./types.js";
 export { NoopOptimizer } from "./noop.optimizer.js";
-export { RuleBasedOptimizer } from "./rule-based.optimizer.js";
 
 import type { NaxConfig } from "../config/schema.js";
-import { getSafeLogger } from "../logger/index.js";
 import type { PluginRegistry } from "../plugins/registry.js";
 import { NoopOptimizer } from "./noop.optimizer.js";
-import { RuleBasedOptimizer } from "./rule-based.optimizer.js";
 import type { IPromptOptimizer } from "./types.js";
 
 /**
@@ -25,39 +22,27 @@ import type { IPromptOptimizer } from "./types.js";
  *
  * Resolution order:
  * 1. Plugin-provided optimizer (if any plugins provide "optimizer")
- * 2. Built-in strategy from config (rule-based, noop)
- * 3. Fallback to NoopOptimizer
+ * 2. NoopOptimizer (pass-through)
+ *
+ * The `rule-based` built-in was removed: no config in the life of the repo ever
+ * selected it, and its per-rule `optimizer.strategies` block was absent from the
+ * Zod schema, so it was unconfigurable even when opted into. Anything beyond
+ * pass-through now arrives as a plugin via `IPromptOptimizer`.
  *
  * @param config - Nax configuration
  * @param pluginRegistry - Plugin registry (optional, for plugin-provided optimizers)
  * @returns Resolved optimizer instance
  */
 export function resolveOptimizer(config: NaxConfig, pluginRegistry?: PluginRegistry): IPromptOptimizer {
-  // Check if optimizer is disabled
   if (!config.optimizer?.enabled) {
     return new NoopOptimizer();
   }
 
-  // 1. Check plugin registry first
-  if (pluginRegistry) {
-    const pluginOptimizers = pluginRegistry.getOptimizers();
-    if (pluginOptimizers.length > 0) {
-      // Use first plugin optimizer (plugin optimizers use the same interface)
-      return pluginOptimizers[0];
-    }
+  const pluginOptimizers = pluginRegistry?.getOptimizers() ?? [];
+  if (pluginOptimizers.length > 0) {
+    // Plugin optimizers use the same interface as the built-in.
+    return pluginOptimizers[0];
   }
 
-  // 2. Use built-in strategy from config
-  const strategy = config.optimizer.strategy ?? "noop";
-
-  switch (strategy) {
-    case "rule-based":
-      return new RuleBasedOptimizer();
-    case "noop":
-      return new NoopOptimizer();
-    default:
-      // Unknown strategy, fallback to noop
-      getSafeLogger()?.warn("optimizer", `Unknown optimizer strategy '${strategy}', using noop`);
-      return new NoopOptimizer();
-  }
+  return new NoopOptimizer();
 }

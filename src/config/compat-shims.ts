@@ -123,6 +123,42 @@ export function _applyRemovedRoutingKeysShim(
 }
 
 /**
+ * @internal Strip optimizer keys whose feature was removed with the rule-based optimizer.
+ *
+ * `optimizer.strategy` only ever selected between the removed `rule-based` built-in, a
+ * never-implemented `llm` value, and the `noop` default; `optimizer.strategies` carried
+ * the rule-based per-rule knobs and was never in `OptimizerConfigSchema` at all, so Zod
+ * already dropped it silently — the warn is the point. Plugin-provided optimizers are
+ * unaffected: they are selected by `optimizer.enabled`, never by `strategy`.
+ *
+ * @param conf - Raw merged config object
+ * @param warn - Called once per removed key with a message naming the key and "removed"
+ * @returns New config object with removed keys stripped (immutable -- does not mutate input)
+ */
+export function _applyRemovedOptimizerKeysShim(
+  conf: Record<string, unknown>,
+  warn: (msg: string) => void = defaultConfigWarn,
+): Record<string, unknown> {
+  const optimizer = conf.optimizer as Record<string, unknown> | undefined;
+  if (!optimizer || typeof optimizer !== "object") return conf;
+
+  const REMOVED_OPTIMIZER_KEYS = ["strategy", "strategies"] as const;
+  let newOptimizer = optimizer;
+
+  for (const key of REMOVED_OPTIMIZER_KEYS) {
+    if (key in newOptimizer) {
+      warn(
+        `optimizer.${key} was removed along with the rule-based optimizer and has no effect. Remove it from your config; set optimizer.enabled and provide a plugin optimizer instead.`,
+      );
+      const { [key]: _removed, ...rest } = newOptimizer;
+      newOptimizer = rest;
+    }
+  }
+
+  return newOptimizer === optimizer ? conf : { ...conf, optimizer: newOptimizer };
+}
+
+/**
  * @internal Map the removed `execution.worktreeDependencies.mode: "inherit"` to `"off"`.
  *
  * `inherit` never inherited anything: it returned the same cwd as `off`, and threw
@@ -451,23 +487,16 @@ export function applyConfigCompatShims(
 ): Record<string, unknown> {
   const log = dedupe.wrapLogger(logger);
   const warn = dedupe.warn;
-  return _applyFinishAutoFlowShim(
-    _applyRemovedWorktreeInheritShim(
-      _applyLegacyReviewExecutionShim(
-        _applyRemovedRoutingKeysShim(
-          applyRoutingRetryDeprecationWarning(
-            applyBatchModeCompat(
-              applyRemovedStrategyCompat(migrateLegacyReviewModelKey(migrateLegacyTestPattern(conf, log), log), warn),
-              warn,
-            ),
-            warn,
-          ),
-          warn,
-        ),
-        warn,
-      ),
-      warn,
-    ),
-    warn,
-  );
+
+  let out = migrateLegacyTestPattern(conf, log);
+  out = migrateLegacyReviewModelKey(out, log);
+  out = applyRemovedStrategyCompat(out, warn);
+  out = applyBatchModeCompat(out, warn);
+  out = applyRoutingRetryDeprecationWarning(out, warn);
+  out = _applyRemovedRoutingKeysShim(out, warn);
+  out = _applyLegacyReviewExecutionShim(out, warn);
+  out = _applyRemovedWorktreeInheritShim(out, warn);
+  out = _applyFinishAutoFlowShim(out, warn);
+  out = _applyRemovedOptimizerKeysShim(out, warn);
+  return out;
 }

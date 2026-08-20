@@ -39,7 +39,7 @@ src/
 ├── logger/           # Logger module (formatters, types)
 ├── logging/          # Structured JSONL logger
 ├── metrics/          # Story metrics collection, run-level aggregation
-├── optimizer/        # Prompt optimization (rule-based, no-op)
+├── optimizer/        # Prompt optimization seam (no-op built-in, plugin-provided)
 ├── pipeline/         # Pipeline engine (stages, subscribers, runner)
 │   ├── stages/       # 15 pipeline stages (see subsystems.md §17)
 │   └── subscribers/  # Event subscribers (reporters, interaction)

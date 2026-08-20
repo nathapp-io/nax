@@ -212,8 +212,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
 
   // Optimizer
   optimizer: "Prompt optimizer configuration",
-  "optimizer.enabled": "Enable prompt optimizer",
-  "optimizer.strategy": "Optimization strategy: rule-based | llm | noop",
+  "optimizer.enabled": "Enable prompt optimizer (pass-through unless a plugin provides one)",
 
   // Plugins
   plugins: "Plugin configurations",
