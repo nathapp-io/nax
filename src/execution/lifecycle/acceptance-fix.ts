@@ -13,9 +13,8 @@ import type { DiagnosisResult, SemanticVerdict } from "@/acceptance/types";
 import { NaxError } from "@/errors";
 import type { FixTarget } from "@/findings";
 import { getSafeLogger } from "@/logger";
-import { acceptanceDiagnoseOp } from "@/operations";
+import { callOp as _callOp, acceptanceDiagnoseOp } from "@/operations";
 import type { CallContext } from "@/operations/types";
-import { callOp as _callOp } from "../../operations/call";
 import { isTestLevelFailure } from "./acceptance-helpers";
 import type { AcceptanceLoopContext } from "./acceptance-loop";
 
