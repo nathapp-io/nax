@@ -3,7 +3,7 @@
   "feature": "logs-follow-tailing",
   "branchName": "fix/logs-follow-tailing",
   "createdAt": "2026-08-20T02:50:06Z",
-  "updatedAt": "2026-08-20T02:53:58.550Z",
+  "updatedAt": "2026-08-20T04:01:58.824Z",
   "userStories": [
     {
       "id": "US-001",
@@ -24,8 +24,8 @@
         "cli"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -37,7 +37,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/commands/logs-formatter.ts",
@@ -46,9 +48,6 @@
         "test/unit/commands/logs.test.ts",
         "test/integration/cli/cli-core-logs.test.ts",
         "src/utils/bun-deps.ts"
-      ],
-      "outOfScope": [
-        "Byte-aligned incremental reads, byte-range-reader injection, shrink resynchronisation, and non-ASCII tailing tests belong to US-002."
       ],
       "modifiedFiles": [
         {
@@ -59,6 +58,13 @@
           "path": "test/integration/cli/cli-core-logs.test.ts",
           "reason": "the skipped follow-mode test names the missing cancellation hook as its reason for skipping; it must drive `logsCommand` with an abort signal instead."
         }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "06e763589d68e860fa291c99f3d6f4b9f6428e96",
+      "outOfScope": [
+        "Byte-aligned incremental reads, byte-range-reader injection, shrink resynchronisation, and non-ASCII tailing tests belong to US-002."
       ]
     },
     {
@@ -96,21 +102,27 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/commands/logs-formatter.ts",
         "src/logger/types.ts",
         "test/unit/commands/logs.test.ts"
       ],
-      "outOfScope": [
-        "Cancellation, injected `emit`, and injected `sleep` are produced by US-001."
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/commands/logs.test.ts",
           "reason": "the same file gains the byte-offset, truncation and malformed-line criteria; any follow-mode expectation that pins the pre-fix read behaviour must be replaced by the invariant that every appended entry is emitted exactly once regardless of the byte width of preceding characters."
         }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6e7e632125da4aec5e1177960fa32c4181453f5f",
+      "outOfScope": [
+        "Cancellation, injected `emit`, and injected `sleep` are produced by US-001."
       ]
     }
   ],
