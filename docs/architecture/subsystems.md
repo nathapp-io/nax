@@ -1619,19 +1619,18 @@ Thin wrappers and shared resolution utilities that sit between `bin/nax.ts` and 
 
 ## §44 Optimizer (`src/optimizer/`)
 
-Prompt token-reduction layer, invoked as pipeline stage 6 (`src/pipeline/stages/optimizer.ts`). Two built-in implementations: `NoopOptimizer` (pass-through) and `RuleBasedOptimizer` (heuristic whitespace/section reduction). A plugin can provide a third via `IPromptOptimizer`. Strategy is resolved once per run by `resolveOptimizer(config, pluginRegistry)`.
+Prompt token-reduction seam, invoked as pipeline stage 6 (`src/pipeline/stages/optimizer.ts`). One built-in implementation: `NoopOptimizer` (pass-through). A plugin can provide a real optimizer via `IPromptOptimizer`. Resolved once per run by `resolveOptimizer(config, pluginRegistry)`.
 
 **Key exports:**
 - `IPromptOptimizer` — interface: `optimize(input) → Promise<PromptOptimizerResult>`
 - `PromptOptimizerInput`, `PromptOptimizerResult` — input/output types
-- `NoopOptimizer` — returns prompt unchanged; used when no plugin or rule-based config is active
-- `RuleBasedOptimizer` — strips redundant whitespace, collapses repeated sections
-- `resolveOptimizer(config, pluginRegistry?)` — factory: plugin → rule-based → noop
+- `NoopOptimizer` — returns prompt unchanged; used whenever no plugin optimizer is active
+- `resolveOptimizer(config, pluginRegistry?)` — factory: plugin → noop
 - `estimateTokens(text)` — rough character-based token estimator
 
 **Entry point:** `src/optimizer/index.ts`
 
-> **Coverage note:** `rule-based.optimizer.ts` core logic has thin unit test coverage (§10 gap in gap analysis). Add targeted tests before extending rule logic.
+> **History:** a `RuleBasedOptimizer` built-in shipped in v0.10 (2026-02-23) and was removed on 2026-08-20. No config ever selected it, and its per-rule `optimizer.strategies` block was never in `OptimizerConfigSchema`, so it was unconfigurable even when opted into. The `optimizer.strategy` / `optimizer.strategies` keys are stripped with a warning by `_applyRemovedOptimizerKeysShim`.
 
 ---
 

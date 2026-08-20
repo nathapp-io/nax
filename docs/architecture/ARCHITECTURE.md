@@ -76,7 +76,7 @@ Deep reference for each subsystem — consult when working on a specific module.
 - **§41 Log Format** — Human-facing terminal renderer; consumes `LogEntry` from §40; `VerbosityMode`, `formatRunSummary`. Leaf — never writes log records.
 - **§42 CLI** — High-level command implementations (`initCommand`, `planCommand`, `acceptCommand`, `generateCommand`, …). One of two directories permitted to use `process.cwd()`.
 - **§43 Commands** — Thin CLI wrappers + `resolveProject(opts)` shared entry point; curator, logs, precheck, migrate sub-commands.
-- **§44 Optimizer** — Pipeline stage 6; `NoopOptimizer` / `RuleBasedOptimizer` / plugin; `resolveOptimizer` factory.
+- **§44 Optimizer** — Pipeline stage 6; `NoopOptimizer` / plugin; `resolveOptimizer` factory.
 - **§45 Plan** — Spec → `prd.json` pipeline: four strategies (single/pipeline/debate/refine), `runPlanCritic`, `finalizePrdRouting`.
 - **§46 Precheck** — Pre-run validation suite; two tiers (environment + project); `EXIT_CODES`; gates every `nax run` via `run-setup.ts`.
 - **§47 Project** — Heuristic language/framework/type detection from manifest files; `detectLanguage`, `detectProjectProfile`. Authoritative detector — do not re-derive manifest lookups elsewhere.

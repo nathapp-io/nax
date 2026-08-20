@@ -142,7 +142,6 @@ export const RoutingConfigSchema = z.object({
 
 export const OptimizerConfigSchema = z.object({
   enabled: z.boolean(),
-  strategy: z.enum(["rule-based", "llm", "noop"]).optional(),
 });
 
 export const PluginConfigEntrySchema = z.object({

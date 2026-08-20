@@ -85,7 +85,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/queue/` | Mid-run queue control (PAUSE, ABORT, SKIP) |
 | `src/worktree/` | Git worktree management for parallel execution |
 | `src/tui/` | React/Ink terminal UI |
-| `src/optimizer/` | Prompt optimization (rule-based, no-op) |
+| `src/optimizer/` | Prompt optimization seam (no-op built-in, plugin-provided) |
 | `src/project/` | Auto-detect project type, language, frameworks |
 
 ### Plugin Extension Points

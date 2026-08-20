@@ -319,28 +319,10 @@ export interface AcceptanceConfig {
 
 /** Optimizer config (v0.10) */
 export interface OptimizerConfig {
-  /** Enable prompt optimizer */
+  /** Enable prompt optimizer. With no optimizer plugin loaded this is a
+   * pass-through: the built-in `rule-based` strategy and its `strategies`
+   * knobs were removed, so a custom optimizer arrives via `IPromptOptimizer`. */
   enabled: boolean;
-  /** Optimization strategy: "rule-based" | "llm" | "noop" */
-  strategy?: "rule-based" | "llm" | "noop";
-  /** Strategy-specific configurations */
-  strategies?: {
-    "rule-based"?: {
-      stripWhitespace?: boolean;
-      compactCriteria?: boolean;
-      deduplicateContext?: boolean;
-      maxPromptTokens?: number;
-    };
-    llm?: {
-      model?: ModelTier;
-      targetReduction?: number;
-      minPromptTokens?: number;
-    };
-    custom?: {
-      module?: string;
-      options?: Record<string, unknown>;
-    };
-  };
 }
 
 export interface PluginConfigEntry {

@@ -5,19 +5,18 @@
  * semantic meaning. Runs between prompt assembly and agent execution.
  *
  * Resolution order for optimizer selection:
- * 1. Plugin-provided optimizer (if plugins loaded)
- * 2. Built-in strategy from config (rule-based, noop)
- * 3. Fallback to NoopOptimizer
+ * 1. Plugin-provided optimizer (if plugins loaded and optimizer.enabled)
+ * 2. NoopOptimizer (pass-through)
  *
  * @returns
  * - `continue`: Optimization complete (or skipped if disabled)
  *
  * @example
  * ```ts
- * // With rule-based optimizer enabled
+ * // With a plugin-provided optimizer enabled
  * await optimizerStage.execute(ctx);
- * // ctx.prompt: optimized, whitespace stripped, criteria compacted
- * // Logs: "optimizer: rule-based: 15% savings"
+ * // ctx.prompt: optimized by the plugin
+ * // Logs: "optimizer: my-plugin: 15% savings"
  *
  * // With optimizer disabled
  * await optimizerStage.execute(ctx);
