@@ -6,7 +6,7 @@
  * near-identical outputs with 90%+ overlap.
  */
 
-import type { Debater, DebaterPersona } from "./types";
+import type { Debater, DebaterPersona } from "../types";
 
 // ─── Persona fragments ────────────────────────────────────────────────────────
 
