@@ -38,7 +38,12 @@ export interface LogsOptions {
   run?: string;
   /** Output raw JSONL (from --json / -j flag) */
   json?: boolean;
-  /** Abort signal forwarded to follow mode. */
+  /**
+   * Abort signal forwarded to follow mode. No production caller sets this
+   * today — `bin/nax.ts` does not wire SIGINT to it — so this seam is
+   * currently exercised only by tests. Wiring a real SIGINT handler in
+   * the CLI entry point is a separate, out-of-scope concern.
+   */
   signal?: AbortSignal;
 }
 

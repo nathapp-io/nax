@@ -67,7 +67,7 @@ US-001 introduces `FollowLogsDeps` with `emit` and `sleep`; US-002 adds `readRan
 Two behaviours change in the loop body:
 
 - The incremental read becomes **byte-aligned**: the offset and the read live in the same domain, so the appended range is obtained by byte position rather than by slicing a decoded string. `BunFile` exposes a byte-ranged read that satisfies this. This also removes the whole-file re-read and re-decode on every tick.
-- The offset is **resynchronised when the file shrinks**. Today the loop only acts when `currentSize > lastSize`, so an in-place truncation leaves `lastSize` stale forever and the tail goes permanently silent.
+- The offset is **resynchronised when the file shrinks**. Today the loop only acts when `currentSize > lastSize`, so an in-place truncation leaves `lastSize` stale forever and the tail goes permanently silent. Resync jumps the offset directly to the new (smaller) file size — it does not re-scan from byte 0. Any content already present in the shrunk file at the moment of resync is not (re-)emitted; only appends made after that point are captured. This intentionally drops content that may never have been seen, in exchange for never re-emitting an entry already emitted before the truncation.
 
 Output currently goes through direct `console.log` calls. Those move behind an injectable `emit` dependency so a test can capture emitted lines; the default `emit` preserves today's behaviour. Bun-native APIs only, per `project-conventions.md`.
 
@@ -156,6 +156,6 @@ Fixtures for every criterion below contain at least one entry whose `message` in
 
 4. `[unit]` A line that is not valid JSON, appended between two valid entries containing `✓` characters, is skipped without rejecting, and the valid entry appended after it is still emitted.
 
-5. `[unit]` When the followed file is rewritten to a shorter length than the offset already observed, `followLogs` resynchronises to the new length and emits an entry appended after that truncation.
+5. `[unit]` When the followed file is rewritten to a shorter length than the offset already observed, `followLogs` resynchronises the offset directly to the new length (without re-scanning from byte 0, so content already present in the file at resync time is not re-emitted) and emits an entry appended after that truncation.
 
 6. `[unit]` On the poll following an append, the injected `readRange` dependency is invoked with a start offset equal to the byte length of the content already consumed, not `0`, confirming the tail reads only the appended range rather than the whole file.

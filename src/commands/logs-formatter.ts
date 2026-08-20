@@ -113,16 +113,23 @@ export interface FollowLogsDeps {
   sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
   /** Reads the file from a byte offset to EOF. Defaults to `Bun.file(path).slice(start).text()`. */
   readRange: (filePath: string, start: number) => Promise<string>;
+  /** Reads the file's current byte size. Defaults to `Bun.file(path).stat().size`. */
+  size: (filePath: string) => Promise<number>;
 }
 
 async function defaultReadRange(filePath: string, start: number): Promise<string> {
   return Bun.file(filePath).slice(start).text();
 }
 
+async function defaultSize(filePath: string): Promise<number> {
+  return (await Bun.file(filePath).stat()).size;
+}
+
 const DEFAULT_FOLLOW_LOGS_DEPS: FollowLogsDeps = {
   emit: (line) => console.log(line),
   sleep: (ms, signal) => cancellableDelay(ms, signal),
   readRange: defaultReadRange,
+  size: defaultSize,
 };
 
 /**
@@ -137,8 +144,13 @@ const DEFAULT_FOLLOW_LOGS_DEPS: FollowLogsDeps = {
  * sync. The offset advances only past complete lines (last `\n`), so a
  * partial trailing line observed on one poll is re-read on the next.
  * When the file is rewritten shorter than the consumed offset
- * (in-place truncation), the offset is resynchronised back to 0 so the
- * next append is detected from the new file's start.
+ * (in-place truncation), the offset is resynchronised to the new file
+ * size: any content already present in the shrunk file at that point is
+ * not re-emitted, and only subsequent appends are captured. If the
+ * followed file is deleted or rotated to a different inode while
+ * polling, the size check fails and the loop returns `"cancelled"`
+ * rather than letting the error propagate and crash the CLI — following
+ * across rotation is out of scope for this function.
  */
 export async function followLogs(
   filePath: string,
@@ -158,16 +170,22 @@ export async function followLogs(
 
     try {
       await deps.sleep(500, signal);
+    } catch (err) {
+      if (signal?.aborted) return "cancelled";
+      throw err;
+    }
+
+    let currentSize: number;
+    try {
+      currentSize = await deps.size(filePath);
     } catch {
       return "cancelled";
     }
 
-    const currentSize = (await Bun.file(filePath).stat()).size;
-
     if (currentSize > lastOffset) {
       lastOffset = await consumeRange(filePath, lastOffset, deps, options, mode);
     } else if (currentSize < lastOffset) {
-      lastOffset = await consumeRange(filePath, 0, deps, options, mode);
+      lastOffset = currentSize;
     }
   }
 }
@@ -191,8 +209,7 @@ async function consumeRange(
   const chunk = await deps.readRange(filePath, start);
   if (!chunk) return start;
 
-  const bytes = Buffer.from(chunk, "utf8");
-  const lastNewline = bytes.lastIndexOf(0x0a);
+  const lastNewline = chunk.lastIndexOf("\n");
   const complete = lastNewline === -1 ? "" : chunk.slice(0, lastNewline + 1);
 
   for (const line of complete.split("\n")) {

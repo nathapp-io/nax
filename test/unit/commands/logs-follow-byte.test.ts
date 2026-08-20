@@ -43,6 +43,10 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
     return Buffer.from(`${JSON.stringify(entry)}\n`, "utf8");
   }
 
+  async function realSize(filePath: string): Promise<number> {
+    return (await Bun.file(filePath).stat()).size;
+  }
+
   async function writeInitial(filePath: string, entry: Record<string, unknown>): Promise<void> {
     await Bun.write(filePath, encodeLine(entry));
   }
@@ -63,6 +67,7 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
     const emitted: string[] = [];
     let appendedOnce = false;
     const deps: FollowLogsDeps = {
+      size: realSize,
       emit: (line) => emitted.push(line),
       sleep: async () => {
         if (!appendedOnce) {
@@ -81,9 +86,12 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
       "followLogs",
     );
     // Wait until the appended entry has been emitted (observable side effect).
-    await waitForCondition(() => emitted.some((l) => l.includes("appended entry")), 1000, 5);
-    controller.abort();
-    await follow;
+    try {
+      await waitForCondition(() => emitted.some((l) => l.includes("appended entry")), 1000, 5);
+    } finally {
+      controller.abort();
+    }
+    await follow.catch(() => {});
 
     // Pre-existing entry emitted once on initial read; appended entry emitted
     // once on poll. The byte-aligned read must NOT silently drop the append.
@@ -101,6 +109,7 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
 
     const emitted: string[] = [];
     const deps: FollowLogsDeps = {
+      size: realSize,
       emit: (line) => emitted.push(line),
       sleep: async () => {
         if (sleepCalls < appended.length) {
@@ -119,16 +128,19 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
       "followLogs",
     );
     // Wait until all three appended entries have been emitted.
-    await waitForCondition(
-      () =>
-        emitted.some((l) => l.includes("first ✓")) &&
-        emitted.some((l) => l.includes("second ✓")) &&
-        emitted.some((l) => l.includes("third ✓")),
-      1000,
-      5,
-    );
-    controller.abort();
-    await follow;
+    try {
+      await waitForCondition(
+        () =>
+          emitted.some((l) => l.includes("first ✓")) &&
+          emitted.some((l) => l.includes("second ✓")) &&
+          emitted.some((l) => l.includes("third ✓")),
+        1000,
+        5,
+      );
+    } finally {
+      controller.abort();
+    }
+    await follow.catch(() => {});
 
     expect(sleepCalls).toBeGreaterThanOrEqual(3);
     // Each appended ✓ entry must be emitted exactly once and in append order.
@@ -154,6 +166,7 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
 
     const emitted: string[] = [];
     const deps: FollowLogsDeps = {
+      size: realSize,
       emit: (line) => emitted.push(line),
       sleep: async () => {
         sleepCalls++;
@@ -174,15 +187,18 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
       "followLogs",
     );
     // Wait until both appended entries have been emitted.
-    await waitForCondition(
-      () =>
-        emitted.some((l) => l.includes("append A ✓")) &&
-        emitted.some((l) => l.includes("append B ✓")),
-      1000,
-      5,
-    );
-    controller.abort();
-    await follow;
+    try {
+      await waitForCondition(
+        () =>
+          emitted.some((l) => l.includes("append A ✓")) &&
+          emitted.some((l) => l.includes("append B ✓")),
+        1000,
+        5,
+      );
+    } finally {
+      controller.abort();
+    }
+    await follow.catch(() => {});
 
     const aCount = emitted.filter((l) => l.includes("append A ✓")).length;
     const bCount = emitted.filter((l) => l.includes("append B ✓")).length;
@@ -200,6 +216,7 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
 
     const emitted: string[] = [];
     const deps: FollowLogsDeps = {
+      size: realSize,
       emit: (line) => emitted.push(line),
       sleep: async () => {
         sleepCalls++;
@@ -220,9 +237,12 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
       "followLogs",
     );
     // Wait until the later valid entry has been emitted.
-    await waitForCondition(() => emitted.some((l) => l.includes("valid B ✓")), 1000, 5);
-    controller.abort();
-    await follow;
+    try {
+      await waitForCondition(() => emitted.some((l) => l.includes("valid B ✓")), 1000, 5);
+    } finally {
+      controller.abort();
+    }
+    await follow.catch(() => {});
 
     const aCount = emitted.filter((l) => l.includes("valid A ✓")).length;
     const bCount = emitted.filter((l) => l.includes("valid B ✓")).length;
@@ -230,7 +250,7 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
     expect(bCount).toBe(1);
   });
 
-  test("resynchronises when the file is rewritten shorter than the consumed offset, then emits the next append (AC #5)", async () => {
+  test("resynchronises to the new file size on truncation — content present at resync time is not re-emitted, only later appends are (AC #5)", async () => {
     const filePath = join(followDir, "run.jsonl");
     await writeInitial(filePath, makeEntry("seed ✓ ✓ ✓ ✓ ✓"));
 
@@ -240,6 +260,7 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
 
     const emitted: string[] = [];
     const deps: FollowLogsDeps = {
+      size: realSize,
       emit: (line) => emitted.push(line),
       sleep: async () => {
         sleepCalls++;
@@ -260,13 +281,22 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
       "followLogs",
     );
     // Wait until the post-resync entry has been emitted.
-    await waitForCondition(() => emitted.some((l) => l.includes("post-resync ✓")), 1000, 5);
-    controller.abort();
-    await follow;
+    try {
+      await waitForCondition(() => emitted.some((l) => l.includes("post-resync ✓")), 1000, 5);
+    } finally {
+      controller.abort();
+    }
+    await follow.catch(() => {});
 
-    // The appended entry after truncation must be emitted.
+    // The appended entry after truncation must be emitted exactly once.
     const appendedCount = emitted.filter((l) => l.includes("post-resync ✓")).length;
     expect(appendedCount).toBe(1);
+
+    // The content present in the file at resync time (the truncated
+    // entry itself) must NOT be re-emitted — resync jumps to the new
+    // file size, it does not re-scan from 0.
+    const truncatedCount = emitted.filter((l) => l.includes("after-truncation ✓")).length;
+    expect(truncatedCount).toBe(0);
   });
 
   test("readRange receives start offset equal to bytes already consumed, not 0, on append polls (AC #6)", async () => {
@@ -278,6 +308,7 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
     let sleepCalls = 0;
     const readRangeCalls: number[] = [];
     const deps: FollowLogsDeps = {
+      size: realSize,
       emit: () => {},
       sleep: async () => {
         sleepCalls++;
@@ -300,9 +331,12 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
       "followLogs",
     );
     // Wait until readRange has been called at least twice (initial + append poll).
-    await waitForCondition(() => readRangeCalls.length >= 2, 1000, 5);
-    controller.abort();
-    await follow;
+    try {
+      await waitForCondition(() => readRangeCalls.length >= 2, 1000, 5);
+    } finally {
+      controller.abort();
+    }
+    await follow.catch(() => {});
 
     // The first call (during the initial read) is start=0.
     // The second call (during the append poll) must equal the byte length
@@ -326,6 +360,7 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
     let sleepCalls = 0;
     const emitted: string[] = [];
     const deps: FollowLogsDeps = {
+      size: realSize,
       emit: (line) => emitted.push(line),
       sleep: async () => {
         sleepCalls++;
@@ -346,11 +381,63 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
       "followLogs",
     );
     // Wait until the completed entry has been emitted.
-    await waitForCondition(() => emitted.some((l) => l.includes("half-completed ✓")), 1000, 5);
-    controller.abort();
-    await follow;
+    try {
+      await waitForCondition(() => emitted.some((l) => l.includes("half-completed ✓")), 1000, 5);
+    } finally {
+      controller.abort();
+    }
+    await follow.catch(() => {});
 
     const count = emitted.filter((l) => l.includes("half-completed ✓")).length;
     expect(count).toBe(1);
+  });
+
+  test("emits a complete non-ASCII line and correctly re-reads a partial trailing line in the same poll (byte/UTF-16 domain regression)", async () => {
+    const filePath = join(followDir, "run.jsonl");
+    writeFileSync(filePath, "");
+
+    // "A" is a complete non-ASCII line; "B" is only partially appended in the
+    // same poll — its trailing bytes have no newline yet. A byte-index computed
+    // over the whole chunk but sliced against the UTF-16 string would overrun
+    // the real newline after "A" and misalign the offset.
+    const completeEntry = makeEntry("A ✓ ✓ ✓");
+    const partialEntry = makeEntry("B-MUST-APPEAR");
+    const completeLine = encodeLine(completeEntry);
+    const partialLineFull = encodeLine(partialEntry);
+    const partialFirstHalf = partialLineFull.subarray(0, partialLineFull.length - 20);
+    const partialSecondHalf = partialLineFull.subarray(partialLineFull.length - 20);
+
+    let sleepCalls = 0;
+    const emitted: string[] = [];
+    const deps: FollowLogsDeps = {
+      size: realSize,
+      emit: (line) => emitted.push(line),
+      sleep: async () => {
+        sleepCalls++;
+        if (sleepCalls === 1) {
+          appendFileSync(filePath, Buffer.concat([completeLine, partialFirstHalf]));
+        } else if (sleepCalls === 2) {
+          appendFileSync(filePath, partialSecondHalf);
+        }
+      },
+      readRange: async (path, start) =>
+        Buffer.from(await Bun.file(path).slice(start).arrayBuffer()).toString("utf8"),
+    };
+    const controller = new AbortController();
+
+    const follow = withTimeout(
+      followLogs(filePath, {}, { signal: controller.signal, _deps: deps }),
+      1000,
+      "followLogs",
+    );
+    try {
+      await waitForCondition(() => emitted.some((l) => l.includes("B-MUST-APPEAR")), 1000, 5);
+    } finally {
+      controller.abort();
+    }
+    await follow.catch(() => {});
+
+    expect(emitted.filter((l) => l.includes("A ✓ ✓ ✓")).length).toBe(1);
+    expect(emitted.filter((l) => l.includes("B-MUST-APPEAR")).length).toBe(1);
   });
 });

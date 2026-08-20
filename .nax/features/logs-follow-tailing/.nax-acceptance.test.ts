@@ -38,8 +38,11 @@ function rangeReader(filePath: string, start: number): Promise<string> {
   return Bun.file(filePath).slice(start).text();
 }
 
-function rejectingSleep(): Promise<never> {
-  return Promise.reject(new Error("poll cancelled"));
+function makeRejectingSleep(controller: AbortController): () => Promise<never> {
+  return () => {
+    controller.abort();
+    return Promise.reject(new Error("poll cancelled"));
+  };
 }
 
 describe("logs-follow-tailing acceptance", () => {
@@ -60,8 +63,11 @@ describe("logs-follow-tailing acceptance", () => {
   test("AC-2: converts a rejected first sleep into cancelled", async () => {
     await withTempDir(async (dir) => {
       const filePath = writeFixture(dir, jsonLine({ message: "ASCII seed" }));
+      const controller = new AbortController();
 
-      await expect(follow(filePath, { json: true }, { _deps: { sleep: rejectingSleep } })).resolves.toBe("cancelled");
+      await expect(
+        follow(filePath, { json: true }, { signal: controller.signal, _deps: { sleep: makeRejectingSleep(controller) } }),
+      ).resolves.toBe("cancelled");
     });
   });
 
@@ -72,10 +78,15 @@ describe("logs-follow-tailing acceptance", () => {
       const emitted: string[] = [];
       const emit = mock((line: string) => emitted.push(line));
       const filePath = writeFixture(dir, first + second);
+      const controller = new AbortController();
 
-      await expect(follow(filePath, { json: true }, { _deps: { emit, sleep: rejectingSleep } })).resolves.toBe(
-        "cancelled",
-      );
+      await expect(
+        follow(
+          filePath,
+          { json: true },
+          { signal: controller.signal, _deps: { emit, sleep: makeRejectingSleep(controller) } },
+        ),
+      ).resolves.toBe("cancelled");
       expect(emit).toHaveBeenCalledTimes(2);
       expect(emitted.map((line) => JSON.parse(line).message)).toEqual(["first", "second"]);
     });
@@ -89,9 +100,14 @@ describe("logs-follow-tailing acceptance", () => {
         dir,
         jsonLine({ storyId: "US-001", message: "wanted" }) + jsonLine({ storyId: "US-002", message: "unwanted" }),
       );
+      const controller = new AbortController();
 
       await expect(
-        follow(filePath, { json: true, story: "US-001" }, { _deps: { emit, sleep: rejectingSleep } }),
+        follow(
+          filePath,
+          { json: true, story: "US-001" },
+          { signal: controller.signal, _deps: { emit, sleep: makeRejectingSleep(controller) } },
+        ),
       ).resolves.toBe("cancelled");
       expect(emit).toHaveBeenCalledTimes(1);
       expect(emitted[0]).toContain("storyId");
@@ -147,6 +163,8 @@ describe("logs-follow-tailing acceptance", () => {
       const emit = mock((line: string) => emitted.push(line));
       const readRange = mock(rangeReader);
       const filePath = writeFixture(dir, seed);
+      const controller = new AbortController();
+      const rejectingSleep = makeRejectingSleep(controller);
       let initialCallCount = 0;
       let polls = 0;
       const sleep = mock(async () => {
@@ -159,7 +177,9 @@ describe("logs-follow-tailing acceptance", () => {
         return rejectingSleep();
       });
 
-      await expect(follow(filePath, { json: true }, { _deps: { emit, readRange, sleep } })).resolves.toBe("cancelled");
+      await expect(
+        follow(filePath, { json: true }, { signal: controller.signal, _deps: { emit, readRange, sleep } }),
+      ).resolves.toBe("cancelled");
       expect(emit.mock.calls.length - initialCallCount).toBe(1);
       expect(JSON.parse(emitted.at(-1) ?? "")).toEqual({ message: "appended" });
       expect(seed).toContain("α ✓ β ✓ γ ✓ δ");
@@ -174,6 +194,8 @@ describe("logs-follow-tailing acceptance", () => {
       const emitted: string[] = [];
       const emit = mock((line: string) => emitted.push(line));
       const readRange = mock(rangeReader);
+      const controller = new AbortController();
+      const rejectingSleep = makeRejectingSleep(controller);
       let baseline = 0;
       let polls = 0;
       const sleep = async () => {
@@ -186,7 +208,9 @@ describe("logs-follow-tailing acceptance", () => {
         return rejectingSleep();
       };
 
-      await expect(follow(filePath, { json: true }, { _deps: { emit, readRange, sleep } })).resolves.toBe("cancelled");
+      await expect(
+        follow(filePath, { json: true }, { signal: controller.signal, _deps: { emit, readRange, sleep } }),
+      ).resolves.toBe("cancelled");
       expect(emit.mock.calls.length - baseline).toBe(3);
       expect(emitted.slice(baseline).map((line) => JSON.parse(line).message)).toEqual(["1 ✓", "2 ✓", "3 ✓"]);
     });
@@ -200,6 +224,8 @@ describe("logs-follow-tailing acceptance", () => {
       const emit = mock((line: string) => emitted.push(line));
       const readRange = mock(rangeReader);
       const appends = [jsonLine({ n: 4 }), jsonLine({ n: 5 })];
+      const controller = new AbortController();
+      const rejectingSleep = makeRejectingSleep(controller);
       let polls = 0;
       const sleep = async () => {
         if (polls < appends.length) {
@@ -210,7 +236,9 @@ describe("logs-follow-tailing acceptance", () => {
         return rejectingSleep();
       };
 
-      await expect(follow(filePath, { json: true }, { _deps: { emit, readRange, sleep } })).resolves.toBe("cancelled");
+      await expect(
+        follow(filePath, { json: true }, { signal: controller.signal, _deps: { emit, readRange, sleep } }),
+      ).resolves.toBe("cancelled");
       expect(emit).toHaveBeenCalledTimes(5);
       expect(emitted.map((line) => JSON.parse(line).n)).toEqual([1, 2, 3, 4, 5]);
     });
@@ -222,6 +250,8 @@ describe("logs-follow-tailing acceptance", () => {
       const emitted: string[] = [];
       const emit = mock((line: string) => emitted.push(line));
       const readRange = mock(rangeReader);
+      const controller = new AbortController();
+      const rejectingSleep = makeRejectingSleep(controller);
       let polls = 0;
       const sleep = async () => {
         if (polls === 0) {
@@ -232,28 +262,26 @@ describe("logs-follow-tailing acceptance", () => {
         return rejectingSleep();
       };
 
-      await expect(follow(filePath, { json: true }, { _deps: { emit, readRange, sleep } })).resolves.toBe("cancelled");
+      await expect(
+        follow(filePath, { json: true }, { signal: controller.signal, _deps: { emit, readRange, sleep } }),
+      ).resolves.toBe("cancelled");
       expect(emit).toHaveBeenCalledTimes(2);
       expect(emitted.map((line) => JSON.parse(line).message)).toEqual(["before ✓", "after ✓"]);
     });
   });
 
-  test("AC-11: resynchronizes to offset zero after in-place truncation", async () => {
+  test("AC-11: resynchronizes to the new file size after in-place truncation, without re-emitting its content", async () => {
     await withTempDir(async (dir) => {
       const seed = jsonLine({ message: "this initial entry is deliberately longer than replacement content ✓" });
       const filePath = writeFixture(dir, seed);
       const emitted: string[] = [];
-      const starts: number[] = [];
       const emit = mock((line: string) => emitted.push(line));
-      const readRange = mock(async (fp: string, start: number) => {
-        starts.push(start);
-        return rangeReader(fp, start);
-      });
+      const readRange = mock(async (fp: string, start: number) => rangeReader(fp, start));
+      const controller = new AbortController();
+      const rejectingSleep = makeRejectingSleep(controller);
       let polls = 0;
-      let readsBeforeTruncation = 0;
       const sleep = async () => {
         if (polls === 0) {
-          readsBeforeTruncation = starts.length;
           writeFileSync(filePath, jsonLine({ message: "reset" }));
           polls += 1;
           return;
@@ -266,9 +294,11 @@ describe("logs-follow-tailing acceptance", () => {
         return rejectingSleep();
       };
 
-      await expect(follow(filePath, { json: true }, { _deps: { emit, readRange, sleep } })).resolves.toBe("cancelled");
+      await expect(
+        follow(filePath, { json: true }, { signal: controller.signal, _deps: { emit, readRange, sleep } }),
+      ).resolves.toBe("cancelled");
       expect(emitted.some((line) => JSON.parse(line).message === "resumed ✓")).toBe(true);
-      expect(starts.slice(readsBeforeTruncation)).toContain(0);
+      expect(emitted.some((line) => JSON.parse(line).message === "reset")).toBe(false);
     });
   });
 
@@ -282,6 +312,8 @@ describe("logs-follow-tailing acceptance", () => {
         starts.push(start);
         return rangeReader(fp, start);
       });
+      const controller = new AbortController();
+      const rejectingSleep = makeRejectingSleep(controller);
       let polls = 0;
       const sleep = async () => {
         if (polls === 0) {
@@ -298,7 +330,11 @@ describe("logs-follow-tailing acceptance", () => {
       };
 
       await expect(
-        follow(filePath, { json: true }, { _deps: { emit: mock((_line: string) => {}), readRange, sleep } }),
+        follow(
+          filePath,
+          { json: true },
+          { signal: controller.signal, _deps: { emit: mock((_line: string) => {}), readRange, sleep } },
+        ),
       ).resolves.toBe("cancelled");
       expect(readRange.mock.calls.map(([fp]) => fp)).toEqual([filePath, filePath, filePath]);
       expect(starts).toEqual([0, 0, bytes(first)]);

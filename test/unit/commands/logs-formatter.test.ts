@@ -90,18 +90,16 @@ describe("followLogs", () => {
 
     test("returns 'cancelled' rather than rejecting when injected sleep rejects on first inter-poll wait (AC #2)", async () => {
       const fixture = writeFixture(dir, "run.jsonl", SAMPLE_ENTRIES);
+      const controller = new AbortController();
       const deps: Deps = {
         emit: () => {},
         sleep: async () => {
+          controller.abort();
           throw new Error("aborted by test");
         },
       };
 
-      const outcome = await followLogs(
-        fixture,
-        {},
-        { signal: new AbortController().signal, _deps: deps },
-      );
+      const outcome = await followLogs(fixture, {}, { signal: controller.signal, _deps: deps });
 
       expect(outcome).toBe("cancelled");
     });

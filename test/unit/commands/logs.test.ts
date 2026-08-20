@@ -216,7 +216,7 @@ describe("logsCommand", () => {
       await expect(logsCommand(options)).resolves.toBeUndefined();
     });
 
-    test("aborting the signal mid-flight returns cleanly to undefined", async () => {
+    test("signal aborted synchronously right after invoking logsCommand (before any async work starts) resolves cleanly — genuine mid-poll abort is covered in logs-follow-byte.test.ts", async () => {
       const controller = new AbortController();
       const result = logsCommand({ dir: projectDir, follow: true, signal: controller.signal });
       controller.abort();
@@ -232,7 +232,7 @@ describe("logsCommand", () => {
       await expect(logsCommand(options)).resolves.toBeUndefined();
     });
 
-    test("--story filter with --follow and an already-aborted signal resolves to undefined", async () => {
+    test("already-aborted signal short-circuits before any read, regardless of --story being set (does not exercise filtering)", async () => {
       const controller = new AbortController();
       controller.abort();
 
@@ -258,7 +258,7 @@ describe("logsCommand", () => {
       await expect(logsCommand({ dir: projectDir, level })).resolves.toBeUndefined();
     });
 
-    test("--level filter with --follow and an already-aborted signal resolves to undefined", async () => {
+    test("already-aborted signal short-circuits before any read, regardless of --level being set (does not exercise filtering)", async () => {
       const controller = new AbortController();
       controller.abort();
 
@@ -359,7 +359,7 @@ describe("logsCommand", () => {
       await expect(logsCommand(options)).resolves.toBeUndefined();
     });
 
-    test("--json with --follow and an already-aborted signal resolves to undefined", async () => {
+    test("already-aborted signal short-circuits before any read, regardless of --json being set (does not exercise raw-output formatting)", async () => {
       const controller = new AbortController();
       controller.abort();
 
