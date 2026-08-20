@@ -13,14 +13,19 @@ import { validateAgentForTier } from "@/agents";
 import type { AgentAdapter } from "@/agents/types";
 import { isThreeSessionStrategy } from "@/config";
 import { NaxError } from "@/errors";
-import { buildPlanForStrategy, requiresInitialRefCapture } from "@/execution";
+import {
+  _postRunDeps,
+  applyPostRunInspection,
+  assemblePlanInputsFromCtx,
+  buildPlanForStrategy,
+  decideStageAction,
+  requiresInitialRefCapture,
+} from "@/execution";
 import type { TddMode } from "@/execution/post-run";
 import type { StoryOrchestratorResult } from "@/execution/story-orchestrator";
 import { getLogger } from "@/logger";
 import type { CallContext } from "@/operations/types";
 import { captureGitRef, getUntrackedPaths } from "@/utils/git";
-import { assemblePlanInputsFromCtx } from "../../execution/plan-inputs";
-import { _postRunDeps, applyPostRunInspection, decideStageAction } from "../../execution/post-run";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
