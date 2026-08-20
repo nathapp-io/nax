@@ -42,6 +42,8 @@
     "test:e2e": "timeout -k 5s 180s bun test test/e2e/ --timeout=60000",
     "test:coverage": "bun run scripts/check-coverage.ts",
     "test:coverage:report": "bun run scripts/check-coverage.ts --report",
+    "test:coverage:update": "bun run scripts/check-coverage.ts --update-baseline",
+    "test:coverage:list": "bun run scripts/check-coverage.ts --list",
     "report:test-overlap": "bun run scripts/report-test-overlap.ts",
     "report:dead-tests": "bun run scripts/report-dead-tests.ts",
     "check:test-mocks": "bun scripts/check-inline-test-mocks.ts --strict",
@@ -80,18 +82,8 @@
   },
   "license": "MIT",
   "author": "William Khoo",
-  "keywords": [
-    "ai",
-    "agent",
-    "orchestrator",
-    "tdd",
-    "coding"
-  ],
-  "files": [
-    "dist/",
-    "README.md",
-    "CHANGELOG.md"
-  ],
+  "keywords": ["ai", "agent", "orchestrator", "tdd", "coding"],
+  "files": ["dist/", "README.md", "CHANGELOG.md"],
   "repository": {
     "type": "git",
     "url": "https://github.com/nathapp-io/nax.git"
