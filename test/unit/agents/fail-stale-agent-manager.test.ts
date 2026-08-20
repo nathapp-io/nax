@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { AgentManager } from "../../../src/agents/manager";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import type { AdapterFailure } from "../../../src/context/engine";
+import { AgentManager } from "@/agents/manager";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import type { AdapterFailure } from "@/context/engine";
 
 const staleFailureRetryable: AdapterFailure = {
   category: "availability",

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { AcpAgentAdapter, AcpSessionHandleImpl, _acpAdapterDeps } from "../../../../src/agents/acp/adapter";
-import { NO_OP_INTERACTION_HANDLER } from "../../../../src/agents/interaction-handler";
+import { AcpAgentAdapter, AcpSessionHandleImpl, _acpAdapterDeps } from "@/agents/acp/adapter";
+import { NO_OP_INTERACTION_HANDLER } from "@/agents/interaction-handler";
 import { SessionTurnError } from "@/agents";
-import type { OpenSessionOpts } from "../../../../src/agents/types";
+import type { OpenSessionOpts } from "@/agents/types";
 import { makeClient, makeSession } from "./adapter.test";
 
 const ACP_WORKDIR = "/tmp/nax-phase-a-test";

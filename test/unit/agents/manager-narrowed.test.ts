@@ -1,10 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { _registryTestAdapters } from "../../../src/agents/registry";
-import type { AgentAdapter } from "../../../src/agents/types";
-import { resolveDefaultAgent } from "../../../src/agents/utils";
-import { createAgentRegistry } from "../../../src/agents/registry";
-import { AgentManagerConfig } from "../../../src/config/selectors";
-import { makeAgentAdapter } from "../../helpers";
+import { _registryTestAdapters } from "@/agents/registry";
+import type { AgentAdapter } from "@/agents/types";
+import { resolveDefaultAgent } from "@/agents/utils";
+import { createAgentRegistry } from "@/agents/registry";
+import { AgentManagerConfig } from "@/config/selectors";
+import { makeAgentAdapter } from "@test/helpers";
 
 const makeSlicedConfig = (agent: Record<string, unknown> = {}, execution: Record<string, unknown> = {}): AgentManagerConfig =>
   ({ agent: agent as AgentManagerConfig["agent"], execution: execution as unknown as AgentManagerConfig["execution"] });

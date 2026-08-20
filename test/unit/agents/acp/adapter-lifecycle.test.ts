@@ -16,8 +16,8 @@ import {
   _acpAdapterDeps,
   ensureAcpSession,
   runSessionPrompt,
-} from "../../../../src/agents/acp/adapter";
-import type { AcpClient, AcpSession, AcpSessionResponse } from "../../../../src/agents/acp/adapter";
+} from "@/agents/acp/adapter";
+import type { AcpClient, AcpSession, AcpSessionResponse } from "@/agents/acp/adapter";
 import { withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────

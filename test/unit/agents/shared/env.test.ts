@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { buildAllowedEnv } from "../../../../src/agents/shared/env";
+import { buildAllowedEnv } from "@/agents/shared/env";
 
 describe("buildAllowedEnv (shared)", () => {
   let origEnv: NodeJS.ProcessEnv;

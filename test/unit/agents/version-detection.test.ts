@@ -11,8 +11,8 @@ import {
   _versionDetectionDeps,
   getAgentVersion,
   getAgentVersions,
-} from "../../../src/agents/shared/version-detection";
-import type { AgentAdapter } from "../../../src/agents/types";
+} from "@/agents/shared/version-detection";
+import type { AgentAdapter } from "@/agents/types";
 
 // ---------------------------------------------------------------------------
 // Helpers

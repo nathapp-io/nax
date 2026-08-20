@@ -10,18 +10,18 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { AcpAgentAdapter, _acpAdapterDeps } from "../../../../src/agents/acp/adapter";
+import { AcpAgentAdapter, _acpAdapterDeps } from "@/agents/acp/adapter";
 import {
   _registryTestAdapters,
   checkAgentHealth,
   createAgentRegistry,
   getInstalledAgents,
-} from "../../../../src/agents/registry";
-import type { AgentConfig } from "../../../../src/config/schema";
-import type { NaxConfig } from "../../../../src/config/schema";
-import { logActiveProtocol } from "../../../../src/execution/lifecycle/run-initialization";
-import { DEFAULT_CONFIG } from "../../../../src/config/schema";
-import { makeNaxConfig } from "../../../helpers";
+} from "@/agents/registry";
+import type { AgentConfig } from "@/config/schema";
+import type { NaxConfig } from "@/config/schema";
+import { logActiveProtocol } from "@/execution/lifecycle/run-initialization";
+import { DEFAULT_CONFIG } from "@/config/schema";
+import { makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // createAgentRegistry — protocol selection

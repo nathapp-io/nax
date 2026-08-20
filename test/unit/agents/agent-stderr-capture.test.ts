@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import type { AgentResult } from "../../../src/agents/types";
+import type { AgentResult } from "@/agents/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures

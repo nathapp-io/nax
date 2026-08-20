@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeParseRetryStrategy } from "../../../../src/agents/retry/parse-retry";
-import { ParseValidationError } from "../../../../src/agents/retry/types";
-import type { RetryContext } from "../../../../src/agents/retry/types";
+import { makeParseRetryStrategy } from "@/agents/retry/parse-retry";
+import { ParseValidationError } from "@/agents/retry/types";
+import type { RetryContext } from "@/agents/retry/types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -365,7 +365,7 @@ describe("makeParseRetryStrategy", () => {
 
   describe("AC-11: exported from index", () => {
     test("makeParseRetryStrategy is exported from src/agents/retry/index.ts", async () => {
-      const mod = await import("../../../../src/agents/retry");
+      const mod = await import("@/agents/retry");
       expect(typeof mod.makeParseRetryStrategy).toBe("function");
     });
   });

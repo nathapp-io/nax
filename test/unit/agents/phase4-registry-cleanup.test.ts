@@ -11,8 +11,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { AgentManager } from "../../../src/agents/manager";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { AgentManager } from "@/agents/manager";
+import { DEFAULT_CONFIG } from "@/config/defaults";
 
 const ROOT = join(import.meta.dir, "../../../");
 

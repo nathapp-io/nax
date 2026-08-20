@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { AgentManager } from "../../../src/agents/manager";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { AgentManager } from "@/agents/manager";
+import { DEFAULT_CONFIG } from "@/config/defaults";
 
 describe("AgentManager availability recovery between stories", () => {
   test("transient unavailable state from one story does not bleed into the next", () => {

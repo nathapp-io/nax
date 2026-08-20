@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseAgentError } from "../../../../src/agents/acp/parse-agent-error";
+import { parseAgentError } from "@/agents/acp/parse-agent-error";
 
 describe("parseAgentError", () => {
   test("detects rate-limit from direct JSON type", () => {

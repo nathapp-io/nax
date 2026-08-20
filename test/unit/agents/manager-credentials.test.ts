@@ -1,8 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
-import { AgentManager } from "../../../src/agents/manager";
-import { NaxConfigSchema } from "../../../src/config/schemas";
-import type { AgentAdapter } from "../../../src/agents/types";
-import { makeAgentAdapter } from "../../../test/helpers";
+import { AgentManager } from "@/agents/manager";
+import { NaxConfigSchema } from "@/config/schemas";
+import type { AgentAdapter } from "@/agents/types";
+import { makeAgentAdapter } from "@test/helpers";
 
 function stubAdapter(name: string, hasCreds: boolean): AgentAdapter {
   return makeAgentAdapter({

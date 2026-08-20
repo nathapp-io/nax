@@ -11,9 +11,9 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { AcpAgentAdapter, _acpAdapterDeps } from "../../../../src/agents/acp/adapter";
-import { CompleteError } from "../../../../src/agents/types";
-import type { AgentRunOptions } from "../../../../src/agents/types";
+import { AcpAgentAdapter, _acpAdapterDeps } from "@/agents/acp/adapter";
+import { CompleteError } from "@/agents/types";
+import type { AgentRunOptions } from "@/agents/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ACP mock types — mirror expected acpx interfaces for test isolation
@@ -83,13 +83,13 @@ export function makeClient(
 const ACP_WORKDIR = `/tmp/nax-acp-test-${randomUUID()}`;
 
 /** Default CompleteOptions with required primitives for unit tests. */
-function makeCompleteOptions(overrides: Record<string, unknown> = {}): import("../../../../src/agents/types").ResolvedCompleteOptions {
+function makeCompleteOptions(overrides: Record<string, unknown> = {}): import("@/agents/types").ResolvedCompleteOptions {
   return {
     modelDef: { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
     workdir: ACP_WORKDIR,
     resolvedPermissions: { mode: "approve-reads" as const },
     ...overrides,
-  } as import("../../../../src/agents/types").ResolvedCompleteOptions;
+  } as import("@/agents/types").ResolvedCompleteOptions;
 }
 
 export function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptions {

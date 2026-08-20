@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { ParseValidationError } from "../../../../src/agents/retry";
-import type { RetryContext, RetryDecision } from "../../../../src/agents/retry";
-import type { TurnResult } from "../../../../src/agents/types";
+import { ParseValidationError } from "@/agents/retry";
+import type { RetryContext, RetryDecision } from "@/agents/retry";
+import type { TurnResult } from "@/agents/types";
 
 describe("ParseValidationError", () => {
   test("extends Error and sets name property", () => {

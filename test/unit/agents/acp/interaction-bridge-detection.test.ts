@@ -8,12 +8,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../../../../src/interaction/types";
+import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "@/interaction/types";
 import {
   AcpInteractionBridge,
   type BridgeConfig,
   type SessionNotification,
-} from "../../../../src/agents/acp/interaction-bridge";
+} from "@/agents/acp/interaction-bridge";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
