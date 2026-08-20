@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _scopedLintDeps, runAutofixLint, runScopedLintCheck } from "../../../src/review/scoped-lint";
-import type { ReviewConfig } from "../../../src/review/types";
+import { _scopedLintDeps, runAutofixLint, runScopedLintCheck } from "@/review/scoped-lint";
+import type { ReviewConfig } from "@/review/types";
 
 const baseReviewConfig: ReviewConfig = {
   enabled: true,

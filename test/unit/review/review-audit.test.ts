@@ -5,8 +5,8 @@ import {
   writeReviewAudit,
   toPersistedEntry,
   _reviewAuditDeps,
-} from "../../../src/review/review-audit";
-import type { ReviewAuditEntry } from "../../../src/review/review-audit";
+} from "@/review/review-audit";
+import type { ReviewAuditEntry } from "@/review/review-audit";
 import { NAX_VERSION, NAX_COMMIT } from "@/version";
 
 // ─────────────────────────────────────────────────────────────────────────────

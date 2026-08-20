@@ -10,13 +10,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { AgentResult } from "../../../src/agents/types";
-import type { IAgentManager } from "../../../src/agents/manager-types";
-import { _adversarialDeps, runAdversarialReview } from "../../../src/review/adversarial";
-import { _diffUtilsDeps } from "../../../src/review/diff-utils";
-import type { AdversarialReviewConfig } from "../../../src/review/types";
-import type { SemanticStory } from "../../../src/review/types";
-import { makeMockAgentManager } from "../../helpers";
+import type { AgentResult } from "@/agents/types";
+import type { IAgentManager } from "@/agents/manager-types";
+import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
+import { _diffUtilsDeps } from "@/review/diff-utils";
+import type { AdversarialReviewConfig } from "@/review/types";
+import type { SemanticStory } from "@/review/types";
+import { makeMockAgentManager } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------

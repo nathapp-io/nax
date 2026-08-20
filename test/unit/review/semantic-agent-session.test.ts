@@ -4,14 +4,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { computeAcpHandle } from "../../../src/agents/acp/adapter";
-import type { AgentResult } from "../../../src/agents/types";
-import type { IAgentManager } from "../../../src/agents/manager-types";
-import { _diffUtilsDeps } from "../../../src/review/diff-utils";
-import { runSemanticReview } from "../../../src/review/semantic";
-import type { SemanticStory } from "../../../src/review/semantic";
-import type { SemanticReviewConfig } from "../../../src/review/types";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "../../helpers";
+import { computeAcpHandle } from "@/agents/acp/adapter";
+import type { AgentResult } from "@/agents/types";
+import type { IAgentManager } from "@/agents/manager-types";
+import { _diffUtilsDeps } from "@/review/diff-utils";
+import { runSemanticReview } from "@/review/semantic";
+import type { SemanticStory } from "@/review/semantic";
+import type { SemanticReviewConfig } from "@/review/types";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -103,7 +103,7 @@ function makeRuntime(agentManager: IAgentManager) {
   return makeMockRuntime({ agentManager });
 }
 
-async function callRunSemanticReview(agentManager: IAgentManager): Promise<import("../../../src/review/types").ReviewCheckResult> {
+async function callRunSemanticReview(agentManager: IAgentManager): Promise<import("@/review/types").ReviewCheckResult> {
   return runSemanticReview({
     workdir: "/tmp/wd",
     storyGitRef: "abc123",
@@ -117,7 +117,7 @@ async function callRunSemanticReview(agentManager: IAgentManager): Promise<impor
 async function callRunSemanticReviewWithFeature(
   agentManager: IAgentManager,
   featureName?: string,
-): Promise<import("../../../src/review/types").ReviewCheckResult> {
+): Promise<import("@/review/types").ReviewCheckResult> {
   return runSemanticReview({
     workdir: "/tmp/wd",
     storyGitRef: "abc123",
@@ -132,7 +132,7 @@ async function callRunSemanticReviewWithFeature(
 async function callSemanticReviewWithRef(
   storyGitRef: string | undefined,
   agentManager: IAgentManager | undefined,
-): Promise<import("../../../src/review/types").ReviewCheckResult> {
+): Promise<import("@/review/types").ReviewCheckResult> {
   return runSemanticReview({
     workdir: "/tmp/wd",
     storyGitRef,

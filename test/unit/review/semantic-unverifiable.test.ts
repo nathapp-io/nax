@@ -11,12 +11,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentResult } from "../../../src/agents/types";
-import { _diffUtilsDeps } from "../../../src/review/diff-utils";
-import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
-import type { SemanticStory } from "../../../src/review/semantic";
-import type { SemanticReviewConfig } from "../../../src/review/types";
-import { makeMockAgentManager } from "../../helpers";
+import type { AgentResult } from "@/agents/types";
+import { _diffUtilsDeps } from "@/review/diff-utils";
+import { _semanticDeps, runSemanticReview } from "@/review/semantic";
+import type { SemanticStory } from "@/review/semantic";
+import type { SemanticReviewConfig } from "@/review/types";
+import { makeMockAgentManager } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
 import { withTempDir } from "@test/helpers";
 

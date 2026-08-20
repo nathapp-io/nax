@@ -24,9 +24,9 @@ import {
   checkFindingEvidence,
   downgradeUnsubstantiatedFinding,
   substantiateSemanticEvidence,
-} from "../../../src/review/semantic-evidence";
+} from "@/review/semantic-evidence";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
-import type { LLMFinding } from "../../../src/review/semantic-helpers";
+import type { LLMFinding } from "@/review/semantic-helpers";
 import { makeLogger, type MockLogger } from "@test/helpers";
 import { withTempDir } from "@test/helpers";
 

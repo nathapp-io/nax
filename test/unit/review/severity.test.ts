@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isBlockingSeverity } from "../../../src/review/severity";
+import { isBlockingSeverity } from "@/review/severity";
 
 describe("isBlockingSeverity — SSOT in src/review/severity.ts", () => {
   test("error is blocking at default threshold", () => {

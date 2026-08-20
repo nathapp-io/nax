@@ -6,7 +6,7 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import { toAdversarialReviewFindings } from "../../../src/review/adversarial-helpers";
+import { toAdversarialReviewFindings } from "@/review/adversarial-helpers";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import { _adversarialDeps, llmFindingsToReviewFindings } from "@/review";
 import { _reviewAuditDeps, ReviewAuditor } from "@/runtime";

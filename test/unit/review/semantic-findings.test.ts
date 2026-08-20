@@ -11,13 +11,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { AgentResult } from "../../../src/agents/types";
-import type { AgentAdapter } from "../../../src/agents/types";
-import { _diffUtilsDeps } from "../../../src/review/diff-utils";
-import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
-import type { SemanticStory } from "../../../src/review/semantic";
-import type { SemanticReviewConfig } from "../../../src/review/types";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "../../helpers";
+import type { AgentResult } from "@/agents/types";
+import type { AgentAdapter } from "@/agents/types";
+import { _diffUtilsDeps } from "@/review/diff-utils";
+import { _semanticDeps, runSemanticReview } from "@/review/semantic";
+import type { SemanticStory } from "@/review/semantic";
+import type { SemanticReviewConfig } from "@/review/types";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -70,7 +70,7 @@ function makeRuntime(agentManager: ReturnType<typeof makeAgentManager>) {
   return makeMockRuntime({ agentManager });
 }
 
-async function callRunSemanticReview(llmResponse: string, overrides?: Partial<import("../../../src/review/types").ReviewCheckResult>): Promise<import("../../../src/review/types").ReviewCheckResult> {
+async function callRunSemanticReview(llmResponse: string, overrides?: Partial<import("@/review/types").ReviewCheckResult>): Promise<import("@/review/types").ReviewCheckResult> {
   const agentManager = makeAgentManager(llmResponse);
   return runSemanticReview({
     workdir: "/tmp/wd",

@@ -7,8 +7,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _adversarialDeps, runAdversarialReview } from "../../../src/review/adversarial";
-import { _diffUtilsDeps } from "../../../src/review/diff-utils";
+import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
+import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
 import type { AgentAdapter, IAgentManager } from "@/agents";
 import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
@@ -309,7 +309,7 @@ function setupHappyPathDeps(statContent = STAT_OUTPUT) {
   _diffUtilsDeps.spawn = makeSpawnMock(statContent);
 }
 
-async function callRunAdversarialReview(llmResponse: string): Promise<import("../../../src/review/types").ReviewCheckResult> {
+async function callRunAdversarialReview(llmResponse: string): Promise<import("@/review/types").ReviewCheckResult> {
   const agentManager = makeAgentManager(llmResponse);
   const runtime = makeMockRuntime({ agentManager });
   return runAdversarialReview({

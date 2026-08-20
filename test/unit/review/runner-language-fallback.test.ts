@@ -12,8 +12,8 @@ import {
   _reviewRunnerDeps,
   resolveCommand,
   resolveLanguageCommand,
-} from "../../../src/review/runner";
-import type { ReviewConfig } from "../../../src/review/types";
+} from "@/review/runner";
+import type { ReviewConfig } from "@/review/types";
 
 /** Minimal ReviewConfig with no explicit commands — lets fallback logic run */
 const emptyConfig: ReviewConfig = {

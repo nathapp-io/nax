@@ -14,13 +14,13 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { IAgentManager } from "../../../src/agents";
-import { _diffUtilsDeps } from "../../../src/review/diff-utils";
-import { runAdversarialReview } from "../../../src/review/adversarial";
-import type { AdversarialReviewConfig, SemanticStory } from "../../../src/review/types";
-import { makeAgentAdapter, makeMockRuntime, makeMockAgentManager } from "../../helpers";
-import type { NaxRuntime } from "../../../src/runtime";
-import type { ReviewRepromptEvent } from "../../../src/runtime/dispatch-events";
+import type { IAgentManager } from "@/agents";
+import { _diffUtilsDeps } from "@/review/diff-utils";
+import { runAdversarialReview } from "@/review/adversarial";
+import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
+import { makeAgentAdapter, makeMockRuntime, makeMockAgentManager } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
+import type { ReviewRepromptEvent } from "@/runtime/dispatch-events";
 
 const STORY: SemanticStory = {
   id: "STORY-REP-01",
