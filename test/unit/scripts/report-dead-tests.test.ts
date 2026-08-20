@@ -101,6 +101,71 @@ describe("findDeadImports", () => {
     expect(deadImports).not.toContain("src/config/loader");
   });
 
+  // The repo's own TypeScript convention writes runtime-relative specifiers with a
+  // `.js` extension that resolves to a `.ts` file on disk. importExists() used to
+  // append `.ts` without stripping that suffix, probing `<path>.js.ts` and reporting
+  // a live module as dead. That false positive caused 98b27affe to delete five real
+  // test files, including all 24 RuleBasedOptimizer tests. Every pre-existing test in
+  // this block used extensionless specifiers, so none of them could catch it.
+  test("resolves a .js specifier to its .ts file on disk", () => {
+    const testInfo = {
+      path: "test/unit/example.test.ts",
+      imports: ["src/config/loader.js"],
+      testNames: [],
+      describes: [],
+    };
+
+    expect(findDeadImports(testInfo, tempDir)).toEqual([]);
+  });
+
+  test("resolves a .jsx specifier to its .tsx file on disk", () => {
+    writeFileSync(join(tempDir, "src", "config", "panel.tsx"), "export const panel = {};");
+    const testInfo = {
+      path: "test/unit/example.test.ts",
+      imports: ["src/config/panel.jsx"],
+      testNames: [],
+      describes: [],
+    };
+
+    expect(findDeadImports(testInfo, tempDir)).toEqual([]);
+  });
+
+  test("resolves a .js specifier pointing at a directory barrel", () => {
+    writeFileSync(join(tempDir, "src", "pipeline", "index.ts"), "export const p = {};");
+    const testInfo = {
+      path: "test/unit/example.test.ts",
+      imports: ["src/pipeline/index.js"],
+      testNames: [],
+      describes: [],
+    };
+
+    expect(findDeadImports(testInfo, tempDir)).toEqual([]);
+  });
+
+  test("still flags a .js specifier whose module genuinely does not exist", () => {
+    const testInfo = {
+      path: "test/unit/example.test.ts",
+      imports: ["src/config/missing.js"],
+      testNames: [],
+      describes: [],
+    };
+
+    expect(findDeadImports(testInfo, tempDir)).toContain("src/config/missing.js");
+  });
+
+  test("does not strip .js from a module whose real filename ends in .js", () => {
+    // A literal `foo.js.ts` on disk must still resolve via the unstripped path.
+    writeFileSync(join(tempDir, "src", "config", "legacy.js.ts"), "export const legacy = {};");
+    const testInfo = {
+      path: "test/unit/example.test.ts",
+      imports: ["src/config/legacy.js"],
+      testNames: [],
+      describes: [],
+    };
+
+    expect(findDeadImports(testInfo, tempDir)).toEqual([]);
+  });
+
   test("checks both .ts and .ts extensions", () => {
     const testInfo = {
       path: "test/unit/example.test.ts",
